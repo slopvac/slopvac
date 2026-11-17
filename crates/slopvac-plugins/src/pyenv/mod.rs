@@ -81,7 +81,7 @@ use serde_json::json;
 use slopvac_sanitize::{line as esc, terminal};
 
 pub use lock::{LockedPackage, LockedWheel, PyLock};
-pub use runtime::{MANIFEST_FILE, PythonRuntime, pep440_specifier};
+pub use runtime::{MANIFEST_FILE, PythonRuntime, RuntimeError, RuntimeResult, pep440_specifier};
 
 use crate::extract::{Evicted, ExtractError, TreeHash, evict, verify_tree};
 use crate::oci::Digest;
@@ -138,10 +138,10 @@ pub enum PyEnvError {
     },
     /// The `[plugin]` table of the pack manifest cannot select an environment.
     Manifest {
-        /// The manifest file.
+        /// The manifest file. Messages show it redacted.
         path: PathBuf,
         /// What is wrong.
-        why: String,
+        source: RuntimeError,
     },
     /// No environment is built for the plugin tree.
     EnvMissing {
@@ -204,9 +204,10 @@ impl PyEnvError {
             } => format!(
                 "package `{package}` is not a vendored wheel ({source_kind}); slopvac builds environments from locked wheels only and runs no build backend"
             ),
-            Self::Manifest { path, why } => format!(
-                "the manifest {} cannot select a Python environment: {why}",
-                path.to_string_lossy()
+            Self::Manifest { path, source } => format!(
+                "the manifest {} cannot select a Python environment: {}",
+                slopvac_fs::display_under_root(path, Path::new(".")),
+                source.unescaped()
             ),
             Self::EnvMissing { plugin, python } => format!(
                 "no Python environment is built for plugin `{plugin}` ({python}); run `slopvac plugins sync`"
@@ -263,6 +264,7 @@ impl std::error::Error for PyEnvError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Tree(e) => Some(e),
+            Self::Manifest { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
             _ => None,
         }

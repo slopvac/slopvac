@@ -1,6 +1,11 @@
 //! A scripted fake `uv` for the managed Python environment tests. It lays out
 //! a venv whose `bin/python` links to a real interpreter, so plugins run.
-#![allow(dead_code, unreachable_pub, missing_docs)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    missing_docs,
+    reason = "shared test support across test binaries"
+)]
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

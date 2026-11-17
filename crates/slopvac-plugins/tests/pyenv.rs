@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
+use rstest::rstest;
 use sha2::{Digest as _, Sha256};
 use slopvac_plugins::extract::{Limits, evict, extract_targz};
 use slopvac_plugins::oci::Digest;
@@ -524,74 +525,40 @@ fn a_python_runtime_in_the_manifest_selects_a_managed_environment() {
     );
 }
 
-#[test]
-fn a_tree_that_asks_for_no_python_environment_selects_none() {
-    let data =
-        "schema_version = 3\nid = \"d\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n";
-    let cases = [
-        ("no-manifest", None),
-        ("data", Some(data.to_owned())),
-        ("default", Some(manifest("plugin", "command = \"bin/x\"\n"))),
-        (
-            "native",
-            Some(manifest(
-                "plugin",
-                "command = \"bin/x\"\nruntime = \"native\"\n",
-            )),
-        ),
-    ];
-    for (name, m) in cases {
-        assert_eq!(read_runtime(name, m.as_deref()).unwrap(), None, "{name}");
-    }
+const DATA_MANIFEST: &str =
+    "schema_version = 3\nid = \"d\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n";
+
+#[rstest]
+#[case::no_manifest(None)]
+#[case::data(Some(DATA_MANIFEST.to_owned()))]
+#[case::default(Some(manifest("plugin", "command = \"bin/x\"\n")))]
+#[case::native(Some(manifest("plugin", "command = \"bin/x\"\nruntime = \"native\"\n")))]
+fn a_tree_that_asks_for_no_python_environment_selects_none(#[case] m: Option<String>) {
+    assert_eq!(read_runtime("none", m.as_deref()).unwrap(), None);
 }
 
-#[test]
-fn a_manifest_that_cannot_select_an_environment_is_refused() {
-    let py = |extra: &str| manifest("plugin", &format!("runtime = \"python\"\n{extra}"));
-    let cases = [
-        ("no-request", py("command = \"a.py\"\n")),
-        ("no-command", py("python = \"3.12\"\n")),
-        (
-            "option-request",
-            py("python = \"--index-url=x\"\ncommand = \"a.py\"\n"),
-        ),
-        ("dash-command", py("python = \"3.12\"\ncommand = \"-c\"\n")),
-        (
-            "parent-command",
-            py("python = \"3.12\"\ncommand = \"../a.py\"\n"),
-        ),
-        (
-            "absolute-command",
-            py("python = \"3.12\"\ncommand = \"/bin/sh\"\n"),
-        ),
-        (
-            "backslash-command",
-            py("python = \"3.12\"\ncommand = 'a\\b.py'\n"),
-        ),
-        (
-            "unknown-runtime",
-            manifest("plugin", "runtime = \"node\"\ncommand = \"a.js\"\n"),
-        ),
-        (
-            "request-on-native",
-            manifest("plugin", "python = \"3.12\"\ncommand = \"a\"\n"),
-        ),
-        (
-            "python-in-a-data-pack",
-            manifest(
-                "data",
-                "runtime = \"python\"\npython = \"3.12\"\ncommand = \"a.py\"\n",
-            ),
-        ),
-        ("not-toml", "[plugin\n".to_owned()),
-    ];
-    for (name, m) in cases {
-        let err = read_runtime(name, Some(&m)).unwrap_err();
-        assert!(
-            matches!(err, PyEnvError::Manifest { .. }),
-            "{name}: {err:?}"
-        );
-    }
+fn python_plugin(extra: &str) -> String {
+    manifest("plugin", &format!("runtime = \"python\"\n{extra}"))
+}
+
+#[rstest]
+#[case::no_request(python_plugin("command = \"a.py\"\n"))]
+#[case::no_command(python_plugin("python = \"3.12\"\n"))]
+#[case::option_request(python_plugin("python = \"--index-url=x\"\ncommand = \"a.py\"\n"))]
+#[case::dash_command(python_plugin("python = \"3.12\"\ncommand = \"-c\"\n"))]
+#[case::parent_command(python_plugin("python = \"3.12\"\ncommand = \"../a.py\"\n"))]
+#[case::absolute_command(python_plugin("python = \"3.12\"\ncommand = \"/bin/sh\"\n"))]
+#[case::backslash_command(python_plugin("python = \"3.12\"\ncommand = 'a\\b.py'\n"))]
+#[case::unknown_runtime(manifest("plugin", "runtime = \"node\"\ncommand = \"a.js\"\n"))]
+#[case::request_on_native(manifest("plugin", "python = \"3.12\"\ncommand = \"a\"\n"))]
+#[case::python_in_a_data_pack(manifest(
+    "data",
+    "runtime = \"python\"\npython = \"3.12\"\ncommand = \"a.py\"\n"
+))]
+#[case::not_toml("[plugin\n".to_owned())]
+fn a_manifest_that_cannot_select_an_environment_is_refused(#[case] m: String) {
+    let err = read_runtime("refused", Some(&m)).unwrap_err();
+    assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
 }
 
 /// The shared pack-manifest conformance cases, the ones the schema test also reads.
@@ -680,76 +647,93 @@ fn manifest_values_are_escaped_once_in_the_error_text() {
     let expected = r"`x\\y\u{7}` is not a runtime; use `native` or `python`";
     assert!(err.to_string().ends_with(expected), "{err}");
 }
-#[test]
-fn version_requirements_translate_to_pep_440_specifiers() {
-    // Worked out by hand from semver's rules for partial versions.
-    let cases = [
-        // A lone bare version is already a uv request.
-        ("3", "3"),
-        ("3.12", "3.12"),
-        ("3.12.4", "3.12.4"),
-        ("=3", "==3.*"),
-        ("=3.12", "==3.12.*"),
-        ("=3.12.4", "==3.12.4"),
-        ("^3", ">=3,<4"),
-        ("^3.12", ">=3.12,<4"),
-        ("^3.12.4", ">=3.12.4,<4"),
-        ("^0", ">=0,<1"),
-        ("^0.0", ">=0.0,<0.1"),
-        ("^0.2", ">=0.2,<0.3"),
-        ("^0.2.3", ">=0.2.3,<0.3"),
-        ("^0.0.3", ">=0.0.3,<0.0.4"),
-        ("^0.0.0", ">=0.0.0,<0.0.1"),
-        ("~3", ">=3,<4"),
-        ("~3.12", ">=3.12,<3.13"),
-        ("~3.12.4", ">=3.12.4,<3.13"),
-        (">=3", ">=3"),
-        (">=3.12", ">=3.12"),
-        (">=3.12.4", ">=3.12.4"),
-        ("<4", "<4"),
-        ("<3.13", "<3.13"),
-        ("<3.13.1", "<3.13.1"),
-        (">3", ">=4"),
-        (">3.12", ">=3.13"),
-        (">3.12.4", ">3.12.4"),
-        ("<=3", "<4"),
-        ("<=3.12", "<3.13"),
-        ("<=3.12.4", "<=3.12.4"),
-        // Lists join with commas; a bare version in a list means `=`.
-        (">=3.11,<3.13", ">=3.11,<3.13"),
-        (">=3.11,<=3.12", ">=3.11,<3.13"),
-        ("^3.11,<3.13", ">=3.11,<4,<3.13"),
-        ("3.12,>=3.12.1", "==3.12.*,>=3.12.1"),
-    ];
-    for (req, expected) in cases {
-        assert_eq!(pep440_specifier(req).as_deref(), Ok(expected), "{req}");
-    }
+// Worked out by hand from semver's rules for partial versions. A lone bare version is
+// already a uv request, and in a list a bare version means `=`.
+#[rstest]
+#[case::v_3("3", "3")]
+#[case::v_3_12("3.12", "3.12")]
+#[case::v_3_12_4("3.12.4", "3.12.4")]
+#[case::v_eq_3("=3", "==3.*")]
+#[case::v_eq_3_12("=3.12", "==3.12.*")]
+#[case::v_eq_3_12_4("=3.12.4", "==3.12.4")]
+#[case::v_caret_3("^3", ">=3,<4")]
+#[case::v_caret_3_12("^3.12", ">=3.12,<4")]
+#[case::v_caret_3_12_4("^3.12.4", ">=3.12.4,<4")]
+#[case::v_caret_0("^0", ">=0,<1")]
+#[case::v_caret_0_0("^0.0", ">=0.0,<0.1")]
+#[case::v_caret_0_2("^0.2", ">=0.2,<0.3")]
+#[case::v_caret_0_2_3("^0.2.3", ">=0.2.3,<0.3")]
+#[case::v_caret_0_0_3("^0.0.3", ">=0.0.3,<0.0.4")]
+#[case::v_caret_0_0_0("^0.0.0", ">=0.0.0,<0.0.1")]
+#[case::v_tilde_3("~3", ">=3,<4")]
+#[case::v_tilde_3_12("~3.12", ">=3.12,<3.13")]
+#[case::v_tilde_3_12_4("~3.12.4", ">=3.12.4,<3.13")]
+#[case::v_ge_3(">=3", ">=3")]
+#[case::v_ge_3_12(">=3.12", ">=3.12")]
+#[case::v_ge_3_12_4(">=3.12.4", ">=3.12.4")]
+#[case::v_lt_4("<4", "<4")]
+#[case::v_lt_3_13("<3.13", "<3.13")]
+#[case::v_lt_3_13_1("<3.13.1", "<3.13.1")]
+#[case::v_gt_3(">3", ">=4")]
+#[case::v_gt_3_12(">3.12", ">=3.13")]
+#[case::v_gt_3_12_4(">3.12.4", ">3.12.4")]
+#[case::v_le_3("<=3", "<4")]
+#[case::v_le_3_12("<=3.12", "<3.13")]
+#[case::v_le_3_12_4("<=3.12.4", "<=3.12.4")]
+#[case::v_ge_3_11_and_lt_3_13(">=3.11,<3.13", ">=3.11,<3.13")]
+#[case::v_ge_3_11_and_le_3_12(">=3.11,<=3.12", ">=3.11,<3.13")]
+#[case::v_caret_3_11_and_lt_3_13("^3.11,<3.13", ">=3.11,<4,<3.13")]
+#[case::v_3_12_and_ge_3_12_1("3.12,>=3.12.1", "==3.12.*,>=3.12.1")]
+fn version_requirements_translate_to_pep_440_specifiers(#[case] req: &str, #[case] expected: &str) {
+    assert_eq!(pep440_specifier(req).unwrap(), expected);
+}
+
+#[rstest]
+#[case::v_caret_3_12_dash_rc_1("^3.12-rc.1", "pre-release")]
+#[case::v_3_12_dash_rc1("3.12-rc1", "pre-release")]
+#[case::v_ge_3_12_and_lt_3_13_dash_beta(">=3.12,<3.13-beta", "pre-release")]
+#[case::v_empty("", "one to three numbers")]
+#[case::v_caret("^", "one to three numbers")]
+#[case::v_ge_3_12_and_lt_4_empty_part(">=3.12,,<4", "one to three numbers")]
+#[case::v_3_12_4_1("3.12.4.1", "one to three numbers")]
+#[case::v_3_4("3..4", "one to three numbers")]
+#[case::v_caret_99999999999999999999("^99999999999999999999", "too large")]
+#[case::v_caret_18446744073709551615("^18446744073709551615", "too large")]
+#[case::v_gt_18446744073709551615(">18446744073709551615", "too large")]
+fn version_requirements_with_no_pep_440_form_are_refused_naming_the_value(
+    #[case] req: &str,
+    #[case] why: &str,
+) {
+    let err = pep440_specifier(req).unwrap_err().to_string();
+    assert!(err.contains(&format!("`{req}`")), "{req}: {err}");
+    assert!(err.contains(why), "{req}: {err}");
 }
 
 #[test]
-fn version_requirements_with_no_pep_440_form_are_refused_naming_the_value() {
-    let cases = [
-        ("^3.12-rc.1", "pre-release"),
-        ("3.12-rc1", "pre-release"),
-        (">=3.12,<3.13-beta", "pre-release"),
-        ("", "one to three numbers"),
-        ("^", "one to three numbers"),
-        (">=3.12,,<4", "one to three numbers"),
-        ("3.12.4.1", "one to three numbers"),
-        ("3..4", "one to three numbers"),
-        ("^99999999999999999999", "too large"),
-        ("^18446744073709551615", "too large"),
-        (">18446744073709551615", "too large"),
-    ];
-    for (req, why) in cases {
-        let err = pep440_specifier(req).unwrap_err();
-        assert!(err.contains(&format!("`{req}`")), "{req}: {err}");
-        assert!(err.contains(why), "{req}: {err}");
-    }
-    // Five caret comparators of `^10.10.10` translate to 5 x 2 clauses past 64 bytes.
+fn a_translation_past_64_bytes_is_refused() {
+    // Five caret comparators of `^10.10.10` translate to 5 x 2 clauses.
     let long = ["^10.10.10"; 5].join(",");
-    let err = pep440_specifier(&long).unwrap_err();
+    let err = pep440_specifier(&long).unwrap_err().to_string();
     assert!(err.contains("more than 64 bytes"), "{err}");
+}
+
+#[test]
+fn a_manifest_error_shows_the_file_not_the_cache_path() {
+    let s = Scratch::new("rt-redact");
+    let tree = s.dir("cache/trees/tree-abc");
+    fs::create_dir_all(&tree).unwrap();
+    assert!(tree.is_absolute());
+    fs::write(
+        tree.join(MANIFEST_FILE),
+        python_plugin("python = \"3.12\"\ncommand = \"-c\"\n"),
+    )
+    .unwrap();
+    let text = PythonRuntime::read(&tree).unwrap_err().to_string();
+    assert_eq!(
+        text,
+        "the manifest <external>/slopvac-pack.toml cannot select a Python environment: \
+         `-c` is not a relative script path inside the pack"
+    );
 }
 
 #[test]
@@ -766,7 +750,7 @@ fn the_manifest_reader_hands_uv_the_translated_request() {
     );
     let err = read_runtime("translate-pre", Some(&m)).unwrap_err();
     assert!(
-        matches!(&err, PyEnvError::Manifest { why, .. } if why.contains("`3.12-rc.1`")),
+        matches!(&err, PyEnvError::Manifest { source, .. } if source.to_string().contains("`3.12-rc.1`")),
         "{err:?}"
     );
 }
