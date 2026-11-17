@@ -13,6 +13,7 @@ on:
         default: ""
   workflow_dispatch:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - ".github/workflows/wheels.yml"
       - "crates/slopvac/pyproject.toml"
@@ -28,6 +29,7 @@ concurrency:
 jobs:
   build:
     name: ${{ matrix.target }}
+    if: github.event.pull_request.draft != true
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
