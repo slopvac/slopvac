@@ -54,7 +54,10 @@ rustix = { version = "1", default-features = false, features = [
   "std",
   "process",
 ] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls = { version = "0.23", default-features = false, features = [
+  "ring",
+  "std",
+] }
 saphyr = "0.3"
 # The event parser behind saphyr, pinned to the version saphyr 0.3 uses.
 saphyr-parser = "0.3.4"
