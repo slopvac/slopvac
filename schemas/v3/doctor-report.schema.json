@@ -161,7 +161,7 @@
       },
       "additionalProperties": false
     },
-    "ConfigSource": {
+    "DoctorConfigFile": {
       "type": "object",
       "properties": {
         "layer": {
@@ -198,7 +198,7 @@
         "sources": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ConfigSource"
+            "$ref": "#/$defs/DoctorConfigFile"
           }
         }
       },

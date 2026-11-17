@@ -35,6 +35,13 @@ These keys have no 2.x counterpart.
 - Finding: `pack`, `span`, `end_line`, `contexts`, `fix` and `provenance`
   ([`RuleProvenance`](../../schemas/v3/common.schema.json#/$defs/RuleProvenance)).
 
+`contexts` names the text context a match sits in. Comment text in a source file carries
+the tag `code-comment`, singular like `prose` and `code-span`. The input mode
+`code-comments` is a different thing: it selects the input surface (`--mode`, and a rule's
+`applies_to.modes` in [`rule.schema.json`](../../schemas/v3/rule.schema.json)). The mode keeps
+its plural spelling because it is a CLI and config value. The two spellings differ on
+purpose, and no code maps one to the other.
+
 ## 2.x key dispositions
 
 A 2.x key is `preserve`d, `rename`d or `remove`d. 3.0 has no deprecation window and no

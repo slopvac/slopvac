@@ -11,7 +11,7 @@
     "entries": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/Entry"
+        "$ref": "#/$defs/BlocklistEntry"
       }
     }
   },
@@ -24,7 +24,7 @@
   },
   "additionalProperties": false,
   "$defs": {
-    "Entry": {
+    "BlocklistEntry": {
       "description": "One refused word. The word is trimmed and lower-cased on load. A word and part of speech pair appears once.",
       "type": "object",
       "properties": {
