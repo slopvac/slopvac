@@ -322,41 +322,6 @@ const MAX_BLOCKS_PER_FILE: usize = 1000;
 const MAX_GLOBS_PER_BLOCK: usize = 100;
 
 impl Loader<'_> {
-    /// The text of an extended file (read from disk unless a pack supplied it), counted against
-    /// the byte budget. The error is the diagnostic code, message and help.
-    fn take_body(
-        &mut self,
-        target: &Key,
-        body: Option<String>,
-        name: &str,
-    ) -> Result<String, (Code, String, Option<String>)> {
-        let body = match body {
-            Some(b) => b,
-            None => match target {
-                Key::Path(p) => crate::read::read_text(p).map_err(|e| {
-                    (
-                        Code::ExtendsMissing,
-                        format!(
-                            "cannot read the extended config `{name}`: {}",
-                            crate::error::reason(&e)
-                        ),
-                        Some("paths are relative to the file that holds the entry".into()),
-                    )
-                })?,
-                Key::Pack(_) => String::new(),
-            },
-        };
-        self.bytes += body.len();
-        if self.bytes > MAX_EXTENDS_BYTES {
-            return Err((
-                Code::ExtendsLimit,
-                format!("`extends` reads more than {MAX_EXTENDS_BYTES} bytes in total"),
-                Some("extend smaller files".into()),
-            ));
-        }
-        Ok(body)
-    }
-
     /// Whether a chain of `height` files placed under the files now loading is too deep.
     fn depth_exceeded(&self, height: usize) -> Option<(String, &'static str)> {
         if self.stack.len() + height <= MAX_EXTENDS_DEPTH {
