@@ -64,7 +64,7 @@ pub fn published_lint_report() -> jsonschema::Validator {
     let report = read("lint-report.schema.json");
     let registry = jsonschema::Registry::new()
         .add(
-            "https://srobroek.github.io/slopvac/schemas/v3/common.schema.json",
+            "https://slopvac.github.io/slopvac/schemas/v3/common.schema.json",
             common,
         )
         .unwrap()
