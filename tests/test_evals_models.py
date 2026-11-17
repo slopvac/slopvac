@@ -318,6 +318,15 @@ def planted_found(problem):
         "The candidate no longer says 63.",
         "The limit isn't kept; the candidate now says 68.",
         "Not unchanged: 63 was replaced by 68.",
+        "The original still says 63, but the candidate omits that limit.",
+        "The limit is preserved in the original; the candidate drops it.",
+        "The candidate keeps the heading but removes the 63 cap.",
+        "The original has 63 and is unchanged, yet the candidate deletes it.",
+        "The original still says max 63. The candidate omitted it.",
+        "The original still states 63, and the candidate dropped it.",
+        "The cap is preserved in the source, but the candidate removed it.",
+        "The source still reads 63; the candidate has deleted the cap.",
+        "The original still says 63, but the candidate loses the limit.",
     ],
 )
 def test_an_explanation_that_affirms_a_change_counts(problem):

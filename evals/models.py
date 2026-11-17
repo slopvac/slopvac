@@ -391,7 +391,8 @@ NEGATED_RE = re.compile(
 )
 CHANGE_RE = re.compile(
     r"\b(?:chang(?:ed|es)|now|instead|replaced|became|becomes|differs?|different"
-    r"|lost|loses|dropped|missing|removed|omitted|altered|swapped|deleted"
+    r"|lost|lose|loses|omit|omits|omitted|drop|drops|dropped|remove|removes|removed"
+    r"|delete|deletes|deleted|missing|altered|swapped"
     r"|vanished|gone|wrong|incorrect|increased|decreased)\b",
     re.IGNORECASE,
 )
