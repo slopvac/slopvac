@@ -43,3 +43,5 @@
 "finding-origin-label-257-code-points.json" = "/documents/0/findings/1/origin/label"
 "finding-origin-segment-65-characters.json" = "/documents/0/findings/1/origin/segment"
 "finding-origin-locator-513-code-points.json" = "/documents/0/findings/1/origin/locator"
+"finding-origin-label-257-astral-code-points.json" = "/documents/0/findings/1/origin/label"
+"finding-origin-locator-513-astral-code-points.json" = "/documents/0/findings/1/origin/locator"

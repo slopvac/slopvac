@@ -84,7 +84,7 @@ the original file bytes, and a segment range does not. `SegmentRange` takes no `
   segments has distinct locators and distinct ids. JSON Schema cannot check this across findings, so the
   producer validator of slopvac-8l4.20.1 enforces it, and a consumer may rely on it.
 - The `label` holds at most 256 code points, with the same forbidden characters but no
-  escaping. A segment id matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`.
+  escaping. A segment id matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\s\S])`.
 
 ### Stability
 
@@ -111,7 +111,10 @@ result for a finding with an origin gets:
   and `name` set to `label`. Its `kind` is `resource` for a container part and `element`
   only for an XML element.
 - `locations[0].properties["slopvac/local"]` holding the local start and end as a pair
-  of `LineCol` values under `start` and `end`.
+  of `LineCol` values under `start` and `end`, plus `"unit": "code-point"` and
+  `"base": 1`. Lines and columns are 1-based, and the column counts Unicode code points
+  from the segment line start, as in [positions](positions.md#binary-hosts). They are not
+  UTF-16 code units, whatever `columnKind` a SARIF region would use.
 - `message.text` repeating the text form `path!locator:line:col`. The renderer encodes
   `%` as `%25` and `!` as `%21` in the path and in the locator. A reader takes `line` and
   `col` from the right, splits the rest at the first `!`, then decodes both parts.

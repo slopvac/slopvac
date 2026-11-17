@@ -52,6 +52,15 @@ fn label_accepts_256_code_points_and_rejects_257() {
 }
 
 #[test]
+fn astral_characters_count_as_one_code_point_in_label_and_locator() {
+    // U+1F600 is 4 UTF-8 bytes and 2 UTF-16 units; the limits count code points.
+    assert!(OriginLabel::new("\u{1F600}".repeat(256)).is_ok());
+    assert!(OriginLabel::new("\u{1F600}".repeat(257)).is_err());
+    assert!(OriginLocator::new("\u{1F600}".repeat(512)).is_ok());
+    assert!(OriginLocator::new("\u{1F600}".repeat(513)).is_err());
+}
+
+#[test]
 fn segment_id_accepts_64_characters_and_rejects_65() {
     assert!(SegmentId::new("a".repeat(64)).is_ok());
     assert!(SegmentId::new("a".repeat(65)).is_err());
