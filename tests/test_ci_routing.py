@@ -254,6 +254,19 @@ def test_schema_changes_route_to_rust(path):
     assert in_class("rust", path)
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "crates/slopvac-engine/tests/fixtures/x.json",
+        "crates/slopvac-rules/tests/fixtures/x.json",
+    ],
+)
+def test_fixtures_read_by_contract_tests_run_the_full_suite(path):
+    outputs = classes_of([path])
+    assert "code" in outputs
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+
+
 @pytest.mark.parametrize("job", ["evals-ratchet", "docs-site"])
 def test_folded_job_calls_its_workflow_with_read_only_token(job):
     call = JOBS[job]
