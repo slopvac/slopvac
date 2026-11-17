@@ -328,3 +328,54 @@ fn the_overlap_error_gives_the_line_of_the_block() {
         }
     }
 }
+
+/// 2.x categories that no rule belongs to: 3.0 has none of them.
+const RULE_LESS: [&str; 4] = ["meta", "orwell-voice", "prose-density", "ste-vocabulary"];
+
+#[test]
+fn rule_less_categories_are_dropped_with_one_notice_each() {
+    let validator = config_validator();
+    for name in RULE_LESS {
+        let text = format!(
+            "profile = \"strict\"\n[categories]\n{name} = \"error\"\nprose-format = \"warning\"\n\
+             [[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\n{name} = \"off\"\n"
+        );
+        for preserve_behavior in [false, true] {
+            let rewrite = migrate_config(
+                &text,
+                "slopvac.toml",
+                &RenameTable::bundled(),
+                Options { preserve_behavior },
+            )
+            .unwrap();
+            let case = format!("{name}, preserve_behavior = {preserve_behavior}");
+            assert!(
+                !rewrite.text.contains(&format!("core:{name}")),
+                "{case}: {}",
+                rewrite.text
+            );
+            let notices: Vec<&String> = rewrite
+                .notes
+                .iter()
+                .filter(|n| n.starts_with("config-legacy-dropped: "))
+                .collect();
+            assert_eq!(
+                notices,
+                [
+                    &format!(
+                        "config-legacy-dropped: slopvac.toml:3: `categories.{name}`: category no longer exists in 3.0"
+                    ),
+                    &format!(
+                        "config-legacy-dropped: slopvac.toml:8: `overrides[0].categories.{name}`: category no longer exists in 3.0"
+                    ),
+                ],
+                "{case}"
+            );
+            let errors: Vec<String> = validator
+                .iter_errors(&as_json(&rewrite.text))
+                .map(|e| e.to_string())
+                .collect();
+            assert!(errors.is_empty(), "{case}: {errors:?}");
+        }
+    }
+}

@@ -145,6 +145,17 @@ struct Cx<'a> {
 }
 
 impl Cx<'_> {
+    /// Drop a setting that 3.0 no longer has and go on. The note is the
+    /// `config-legacy-dropped` line, without the exit 2 of a blocking drop.
+    fn drop_note(&mut self, path: &str, reason: &str) {
+        let dropped = Dropped {
+            file: self.file.to_owned(),
+            key: path.to_owned(),
+            line: self.lines.get(path).copied().unwrap_or(1),
+            reason: reason.to_owned(),
+        };
+        self.notes.push(dropped.notice());
+    }
     fn drop_key(&mut self, path: &str, reason: impl Into<String>) {
         self.dropped.push(Dropped {
             file: self.file.to_owned(),
@@ -345,6 +356,10 @@ fn migrate_categories(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<
     let mut out = Vec::new();
     for (k, item) in entries {
         let kp = join(path, k.get());
+        if cx.renames.is_removed_category(k.get()) {
+            cx.drop_note(&kp, "category no longer exists in 3.0");
+            continue;
+        }
         let Some(new) = cx.renames.category(k.get()) else {
             cx.drop_key(&kp, "unknown 2.x category; the rename table has no entry");
             continue;

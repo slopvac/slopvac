@@ -18,6 +18,7 @@ pub struct RenameTable {
     rules: BTreeMap<String, String>,
     categories: BTreeMap<String, String>,
     removed: BTreeSet<String>,
+    removed_categories: BTreeSet<String>,
 }
 
 impl RenameTable {
@@ -39,7 +40,8 @@ impl RenameTable {
         Ok(Self {
             rules: read_map(&doc, "rules")?,
             categories: read_map(&doc, "categories")?,
-            removed: read_removed(&doc)?,
+            removed: read_removed(&doc, "rules")?,
+            removed_categories: read_removed(&doc, "categories")?,
         })
     }
 
@@ -55,6 +57,13 @@ impl RenameTable {
         self.removed.contains(name)
     }
 
+    /// Whether this 2.x category owns no rule, so 3.0 has no category of that name.
+    /// `migrate` drops every reference to it.
+    #[must_use]
+    pub fn is_removed_category(&self, name: &str) -> bool {
+        self.removed_categories.contains(name)
+    }
+
     /// The 3.0 name for a 2.x category, or `None` when the name is unknown.
     #[must_use]
     pub fn category(&self, name: &str) -> Option<String> {
@@ -62,18 +71,21 @@ impl RenameTable {
     }
 }
 
-fn read_removed(doc: &DocumentMut) -> Result<BTreeSet<String>, Error> {
+fn read_removed(doc: &DocumentMut, key: &str) -> Result<BTreeSet<String>, Error> {
     let Some(item) = doc.get("removed") else {
         return Ok(BTreeSet::new());
     };
-    item.get("rules")
-        .and_then(Item::as_array)
-        .ok_or_else(|| Error::RenameTable("removed.rules: expected an array".into()))?
+    let Some(array) = item.get(key) else {
+        return Ok(BTreeSet::new());
+    };
+    array
+        .as_array()
+        .ok_or_else(|| Error::RenameTable(format!("removed.{key}: expected an array")))?
         .iter()
         .map(|v| {
             v.as_str()
                 .map(str::to_owned)
-                .ok_or_else(|| Error::RenameTable("removed.rules: expected strings".into()))
+                .ok_or_else(|| Error::RenameTable(format!("removed.{key}: expected strings")))
         })
         .collect()
 }
@@ -127,7 +139,8 @@ mod tests {
         ] {
             assert_eq!(t.rule(old).as_deref(), Some(new), "{old}");
         }
-        assert_eq!(t.category("meta").as_deref(), Some("core:meta"));
+        assert!(t.is_removed_category("meta"));
+        assert_eq!(t.category("meta"), None);
     }
 
     #[test]

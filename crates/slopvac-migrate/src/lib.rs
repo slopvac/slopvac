@@ -53,6 +53,14 @@ pub struct Dropped {
     pub reason: String,
 }
 
+impl Dropped {
+    /// The setting as a note: the `config-legacy-dropped` code and the line of the
+    /// error form, for a drop that does not stop the migration.
+    pub(crate) fn notice(&self) -> String {
+        format!("config-legacy-dropped: {self}")
+    }
+}
+
 impl fmt::Display for Dropped {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
