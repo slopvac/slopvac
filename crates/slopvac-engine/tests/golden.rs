@@ -516,6 +516,21 @@ fn divergence_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden-divergences.json")
 }
 
+/// The difference between one engine document and the parity golden of `profile/id` with the
+/// reviewed `deltas` applied. This is the comparison every run goes through.
+fn compare_run(
+    profile: &str,
+    id: &str,
+    deltas: &[toml::Table],
+    mut got: Value,
+) -> serde_json::Map<String, Value> {
+    let path = format!("tests/golden/v3/parity/{profile}/{id}.json");
+    let mut want = read_json(&root().join(path));
+    apply_deltas(&mut want, deltas, profile, id);
+    mask(&mut want, &mut got);
+    differences(&want, &got)
+}
+
 /// Lint every input of `tier` at every profile and return the differences, by `profile/id`.
 /// Runs that the engine skips (RST without docutils) are absent.
 fn compute(tier: &str) -> BTreeMap<String, serde_json::Map<String, Value>> {
@@ -527,14 +542,13 @@ fn compute(tier: &str) -> BTreeMap<String, serde_json::Map<String, Value>> {
             .iter()
             .filter(|e| e.tier == tier && !skipped(&e.id))
         {
-            let path = format!("tests/golden/v3/parity/{profile}/{}.json", entry.id);
-            let mut want = read_json(&root().join(path));
-            apply_deltas(&mut want, &deltas, profile, &entry.id);
-            let Some(mut got) = lint(&engine, entry) else {
+            let Some(got) = lint(&engine, entry) else {
                 continue;
             };
-            mask(&mut want, &mut got);
-            runs.insert(format!("{profile}/{}", entry.id), differences(&want, &got));
+            runs.insert(
+                format!("{profile}/{}", entry.id),
+                compare_run(profile, &entry.id, &deltas, got),
+            );
         }
     }
     runs
@@ -883,19 +897,78 @@ fn every_recorded_delta_names_known_modes() {
     }
 }
 
-#[test]
-fn a_parity_delta_moves_the_expected_findings() {
-    let (mut want, _) = base_pair();
-    let first = want["document"]["findings"][0].clone();
+/// A delta fixture for `issue-254` at `normal`, built from the golden itself: the golden
+/// document, the first finding, and a parity delta of `kind` for it.
+fn delta_fixture(kind: &str, extra: &str) -> (Value, Value, Vec<toml::Table>) {
+    let (want, document) = base_pair();
+    assert!(document["findings"].as_array().unwrap().len() >= 2);
+    let first = &document["findings"][0];
     let source = format!(
-        "[[delta]]\ninput = \"issue-254\"\nprofile = \"normal\"\nkind = \"removed\"\nrule_id = {}\nline = {}\ncolumn = {}\nmodes = [\"parity\"]\n",
+        "[[delta]]\ninput = \"issue-254\"\nprofile = \"normal\"\nkind = \"{kind}\"\nrule_id = {}\nline = {}\ncolumn = {}\nmodes = [\"parity\"]\n{extra}",
         first["rule_id"], first["line"], first["column"]
     );
     let deltas = deltas_for(&source, "parity").unwrap();
-    let before = want["document"]["findings"].as_array().unwrap().len();
-    apply_deltas(&mut want, &deltas, "normal", "issue-254");
+    (want, document, deltas)
+}
+
+fn without_first(document: &Value) -> Value {
+    let mut out = document.clone();
+    out["findings"].as_array_mut().unwrap().remove(0);
+    out
+}
+
+#[test]
+fn a_removed_delta_makes_the_comparison_expect_the_finding_gone() {
+    let (_, document, deltas) = delta_fixture("removed", "");
+    // The engine no longer reports the finding: that agrees with the delta.
+    let diff = compare_run("normal", "issue-254", &deltas, without_first(&document));
+    assert!(diff.is_empty(), "{diff:?}");
+    // The engine still reports it: the comparison names exactly that finding.
+    let diff = compare_run("normal", "issue-254", &deltas, document.clone());
+    assert_eq!(diff["extra"].as_array().unwrap().len(), 1);
     assert_eq!(
-        want["document"]["findings"].as_array().unwrap().len(),
-        before - 1
+        identity(&diff["extra"][0]),
+        identity(&document["findings"][0])
     );
+    assert_eq!(diff.len(), 1, "{diff:?}");
+}
+
+#[test]
+fn a_removed_delta_leaves_the_other_findings_expected() {
+    let (_, document, deltas) = delta_fixture("removed", "");
+    let mut got = without_first(&document);
+    got["findings"].as_array_mut().unwrap().remove(0);
+    let diff = compare_run("normal", "issue-254", &deltas, got);
+    let missing = diff["missing"].as_array().unwrap();
+    assert_eq!(missing.len(), 1);
+    assert_eq!(missing[0], identity(&document["findings"][1]));
+    assert_eq!(diff.len(), 1, "{diff:?}");
+}
+
+#[test]
+fn drift_unrelated_to_a_delta_is_still_rejected() {
+    let (_, document, deltas) = delta_fixture("removed", "");
+    let mut got = without_first(&document);
+    got["findings"][0]["message"] = json!("a different message");
+    let diff = compare_run("normal", "issue-254", &deltas, got);
+    let changed = diff["changed"].as_array().unwrap();
+    assert_eq!(changed.len(), 1);
+    assert_eq!(identity(&changed[0]), identity(&document["findings"][1]));
+    assert_eq!(changed[0]["rust"]["message"], "a different message");
+    assert_eq!(diff.len(), 1, "{diff:?}");
+}
+
+#[test]
+fn a_changed_delta_makes_the_comparison_expect_the_new_value() {
+    let (_, document, deltas) =
+        delta_fixture("changed", "set = { message = \"reviewed wording\" }\n");
+    let mut got = document.clone();
+    got["findings"][0]["message"] = json!("reviewed wording");
+    assert!(compare_run("normal", "issue-254", &deltas, got).is_empty());
+    // The golden wording no longer matches: only the targeted finding differs.
+    let diff = compare_run("normal", "issue-254", &deltas, document.clone());
+    let changed = diff["changed"].as_array().unwrap();
+    assert_eq!(changed.len(), 1);
+    assert_eq!(identity(&changed[0]), identity(&document["findings"][0]));
+    assert_eq!(diff.len(), 1, "{diff:?}");
 }
