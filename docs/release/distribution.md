@@ -62,6 +62,8 @@ When `slopvac self update` refuses or fails, it exits 2, leaves the installed bi
 | `update-prerelease-refused` | The latest release is a candidate (`X.Y.Z-rc.N`). Self update installs stable releases only. |
 | `update-verification-failed` | The signature does not parse, does not verify against the embedded key, or names another file or version. |
 | `update-in-progress` | Another `self update` held the update lock for the whole 60-second wait. Run it again when the other update finishes. |
+| `update-lock-unsafe` | The lock file `slopvac.update.lock` beside the binary is a symbolic link, has more than one hard link, belongs to another user, or has a mode looser than `0600`. Nothing is written through it. Remove the file after you check why it is there, then run the update again. |
+| `update-interrupted` | An earlier update died part-way, and the installed binary matches neither the build it replaced nor the build it was installing. The update refuses to install over it. Check the installed `slopvac`, delete `slopvac.update.lock` beside it, and run the update again. |
 | `self-update-failed` | The download of the archive or its `.minisig` failed (a missing signature lands here), or extraction or replacement failed, or the platform has no self-update support. |
 
 If the latest release is not newer than the running binary, `slopvac self update` reports that it is up to date and exits 0.

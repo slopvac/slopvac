@@ -69,6 +69,12 @@ pub enum UpdateError {
     /// Another update held the lock for the whole wait.
     #[error("{0}")]
     Busy(String),
+    /// The update lock file is not safe to use.
+    #[error("{0}")]
+    LockUnsafe(String),
+    /// An earlier update died part-way and left an installed binary that it does not know.
+    #[error("{0}")]
+    Interrupted(String),
     /// Writing the new binary failed.
     #[error("cannot replace the installed binary: {0}")]
     Replace(String),
@@ -78,6 +84,8 @@ impl From<LockError> for UpdateError {
     fn from(e: LockError) -> Self {
         match e {
             LockError::Busy(_) => Self::Busy(e.to_string()),
+            LockError::Unsafe { .. } => Self::LockUnsafe(e.to_string()),
+            LockError::Interrupted { .. } => Self::Interrupted(e.to_string()),
             LockError::Io { .. } => Self::Replace(e.to_string()),
         }
     }
@@ -114,8 +122,10 @@ pub fn asset_name(target: &str) -> String {
 /// candidate channel, so a signed prerelease is refused before any download.
 ///
 /// The update holds an exclusive lock beside `exe` from before the download until after the
-/// rename. Under the lock it reads the version the last update installed and refuses when that
-/// is not older than `version`. It waits up to a minute for another update, then fails with
+/// rename. Under the lock it establishes the installed version from the lock record and a
+/// fingerprint of the executable, and refuses when that is not older than `version`. It records
+/// the update before the rename, so an updater that dies part-way is recovered or refused by the
+/// next one, never installed over. It waits up to a minute for another update, then fails with
 /// [`UpdateError::Busy`].
 pub fn update(
     fetcher: &dyn Fetcher,
@@ -152,32 +162,28 @@ fn update_waiting(
     exe: &Path,
     lock_timeout: Duration,
 ) -> Result<(), UpdateError> {
-    let newer = match (
+    let not_newer = |current: &str| UpdateError::NotNewer {
+        current: current.to_owned(),
+        requested: version.to_owned(),
+    };
+    let (Ok(cur), Ok(new)) = (
         semver::Version::parse(current),
         semver::Version::parse(version),
-    ) {
-        (Ok(_), Ok(new)) if !new.pre.is_empty() => {
-            return Err(UpdateError::Prerelease(version.to_owned()));
-        }
-        (Ok(cur), Ok(new)) => new > cur,
-        _ => false,
+    ) else {
+        return Err(not_newer(current));
     };
-    if !newer {
-        return Err(UpdateError::NotNewer {
-            current: current.to_owned(),
-            requested: version.to_owned(),
-        });
+    if !new.pre.is_empty() {
+        return Err(UpdateError::Prerelease(version.to_owned()));
+    }
+    if new <= cur {
+        return Err(not_newer(current));
     }
     let mut lock = UpdateLock::acquire(exe, lock_timeout)?;
-    // Another update may have installed a version since this process started. Its record is
-    // read under the lock, so no update is in flight while it is compared.
-    if let Some(installed) = lock.recorded_version()
-        && semver::Version::parse(version).is_ok_and(|new| new <= installed)
-    {
-        return Err(UpdateError::NotNewer {
-            current: installed.to_string(),
-            requested: version.to_owned(),
-        });
+    // Another update may have installed a version since this process started. The version is
+    // established under the lock, so no update is in flight while it is compared.
+    let installed = lock.installed_version(&cur)?;
+    if new <= installed {
+        return Err(not_newer(&installed.to_string()));
     }
     let asset = asset_name(target);
     let url = format!("{}/v{version}/{asset}", base_url.trim_end_matches('/'));
@@ -200,8 +206,9 @@ fn update_waiting(
     verifier.verify(&archive, &signature, &expected)?;
 
     let binary = extract_binary(&archive)?;
+    lock.begin(&installed, &new, &binary)?;
     replace(exe, &binary)?;
-    lock.record(version);
+    lock.finish(&new)?;
     Ok(())
 }
 
@@ -535,6 +542,102 @@ mod tests {
         assert_eq!(std::fs::read(&exe).unwrap(), b"old");
     }
 
+    fn ver(s: &str) -> semver::Version {
+        semver::Version::parse(s).unwrap()
+    }
+
+    /// An updater to `to` that dies right after the rename: pending record, new bytes, no final.
+    fn die_after_rename(exe: &Path, from: &str, to: &str, bytes: &[u8]) {
+        let mut dead = UpdateLock::acquire(exe, Duration::ZERO).unwrap();
+        dead.begin(&ver(from), &ver(to), bytes).unwrap();
+        std::fs::write(exe, bytes).unwrap();
+    }
+
+    #[test]
+    fn an_older_update_refuses_to_install_over_a_newer_one_that_died_before_recording() {
+        let (_dir, exe) = installed();
+        die_after_rename(&exe, "3.0.0", "3.2.0", b"binary 3.2.0");
+        let files = release(tar_gz("slopvac", b"binary 3.1.0"));
+        let err = update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, UpdateError::NotNewer { ref current, .. } if current == "3.2.0"),
+            "{err}"
+        );
+        assert_eq!(std::fs::read(&exe).unwrap(), b"binary 3.2.0");
+    }
+
+    #[test]
+    fn an_update_over_an_unknown_binary_left_by_a_dead_updater_fails_interrupted() {
+        let (_dir, exe) = installed();
+        die_after_rename(&exe, "3.0.0", "3.2.0", b"binary 3.2.0");
+        std::fs::write(&exe, b"another installer's build").unwrap();
+        let files = release(tar_gz("slopvac", b"binary 3.1.0"));
+        let err = update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+        )
+        .unwrap_err();
+        assert!(matches!(err, UpdateError::Interrupted(_)), "{err}");
+        assert_eq!(std::fs::read(&exe).unwrap(), b"another installer's build");
+    }
+
+    #[test]
+    fn an_update_proceeds_when_the_dead_updater_never_reached_the_rename() {
+        let (_dir, exe) = installed();
+        let mut dead = UpdateLock::acquire(&exe, Duration::ZERO).unwrap();
+        dead.begin(&ver("3.0.0"), &ver("3.2.0"), b"binary 3.2.0")
+            .unwrap();
+        drop(dead);
+        let files = release(tar_gz("slopvac", b"binary 3.1.0"));
+        update(
+            &files,
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), b"binary 3.1.0");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_planted_lock_symlink_fails_the_update_before_any_download() {
+        let (dir, exe) = installed();
+        let victim = dir.path().join("victim");
+        std::fs::write(&victim, b"precious").unwrap();
+        std::os::unix::fs::symlink(&victim, dir.path().join("slopvac.update.lock")).unwrap();
+        let err = update(
+            &Files(HashMap::new()),
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+        )
+        .unwrap_err();
+        assert!(matches!(err, UpdateError::LockUnsafe(_)), "{err}");
+        assert_eq!(std::fs::read(&victim).unwrap(), b"precious");
+        assert_eq!(std::fs::read(&exe).unwrap(), b"old");
+    }
+
     #[test]
     fn an_update_that_cannot_get_the_lock_in_time_fails_busy_and_changes_nothing() {
         let (_dir, exe) = installed();
@@ -548,7 +651,7 @@ mod tests {
             "3.1.0",
             TARGET,
             &exe,
-            Duration::from_millis(100),
+            Duration::ZERO,
         )
         .unwrap_err();
         assert!(matches!(err, UpdateError::Busy(_)), "{err}");

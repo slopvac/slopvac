@@ -217,6 +217,8 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
             UpdateError::Verify(_) => "update-verification-failed",
             UpdateError::Prerelease(_) => "update-prerelease-refused",
             UpdateError::Busy(_) => "update-in-progress",
+            UpdateError::LockUnsafe(_) => "update-lock-unsafe",
+            UpdateError::Interrupted(_) => "update-interrupted",
             _ => "self-update-failed",
         };
         Failure::new(code, e.to_string())

@@ -432,16 +432,22 @@ fn signed_release(keys: &minisign::KeyPair, version: &str, binary: &[u8]) -> Ser
     }
 }
 
-/// Serves `inner`, and holds each archive download for `lag` so a racing update overlaps it.
-struct Slow {
+/// Serves `inner`, and stops the first archive download until the test lets it go.
+///
+/// The download happens while the update holds the lock, so the test controls exactly when the
+/// holder finishes without any sleep.
+struct Gate {
     inner: Server,
-    lag: std::time::Duration,
+    entered: std::sync::Mutex<std::sync::mpsc::Sender<()>>,
+    release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+    held: std::sync::atomic::AtomicBool,
 }
 
-impl Fetcher for Slow {
+impl Fetcher for Gate {
     fn get(&self, url: &str, limit: u64) -> Result<Vec<u8>, FetchError> {
-        if url != LATEST {
-            std::thread::sleep(self.lag);
+        if url != LATEST && !self.held.swap(true, Ordering::SeqCst) {
+            self.entered.lock().unwrap().send(()).unwrap();
+            self.release.lock().unwrap().recv().unwrap();
         }
         self.inner.get(url, limit)
     }
@@ -449,58 +455,55 @@ impl Fetcher for Slow {
 
 type Outcome = Result<String, command::Failure>;
 
-/// Two `self update` runs on one installed binary, released together by a barrier. The one that
-/// does not start first waits 100 ms, which is inside the other's 300 ms download, so it reaches
-/// the lock while the first holds it. Returns the install and each run's outcome (older, newer).
-fn race(older_starts_first: bool) -> (Fixture, Outcome, Outcome) {
-    use std::sync::Barrier;
-    use std::time::Duration;
+/// Two `self update` runs on one installed binary. The first stops inside its download, so it
+/// holds the lock. The second starts then and has to wait for the lock. Returns the install and
+/// each run's outcome, first then second.
+fn race(first: (&str, &[u8]), second: (&str, &[u8])) -> (Fixture, Outcome, Outcome) {
+    use std::sync::mpsc::channel;
 
     let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
     let fx = installed();
-    let build = |version: &str, binary: &[u8]| {
+    let build = |version: &str, fetcher: Arc<dyn Fetcher + Send + Sync>| {
         let verifier = MinisignVerifier::from_base64(&keys.pk.to_base64()).unwrap();
         let mut rt = runtime(&fx, server(version), Box::new(verifier));
-        rt.fetcher = Arc::new(Slow {
-            inner: signed_release(&keys, version, binary),
-            lag: Duration::from_millis(300),
-        });
+        rt.fetcher = fetcher;
         rt
     };
-    let barrier = Barrier::new(2);
-    let head_start = Duration::from_millis(100);
-    let (older_out, newer_out) = std::thread::scope(|scope| {
-        let older_run = scope.spawn(|| {
-            barrier.wait();
-            if !older_starts_first {
-                std::thread::sleep(head_start);
-            }
+    let (entered_tx, entered_rx) = channel();
+    let (release_tx, release_rx) = channel();
+    let (first_out, second_out) = std::thread::scope(|scope| {
+        let first_run = scope.spawn(|| {
             // `Runtime` is not `Send`, so each thread builds its own.
-            update(&build("3.1.0", b"binary 3.1.0"))
+            let gate = Gate {
+                inner: signed_release(&keys, first.0, first.1),
+                entered: std::sync::Mutex::new(entered_tx),
+                release: std::sync::Mutex::new(release_rx),
+                held: false.into(),
+            };
+            update(&build(first.0, Arc::new(gate)))
         });
-        let newer_run = scope.spawn(|| {
-            barrier.wait();
-            if older_starts_first {
-                std::thread::sleep(head_start);
-            }
-            update(&build("3.2.0", b"binary 3.2.0"))
+        entered_rx.recv().unwrap();
+        let second_run = scope.spawn(|| {
+            let plain = signed_release(&keys, second.0, second.1);
+            update(&build(second.0, Arc::new(plain)))
         });
-        (older_run.join().unwrap(), newer_run.join().unwrap())
+        release_tx.send(()).unwrap();
+        (first_run.join().unwrap(), second_run.join().unwrap())
     });
-    (fx, older_out, newer_out)
+    (fx, first_out, second_out)
 }
 
 #[test]
-fn racing_updates_end_on_the_newer_release_when_the_older_starts_first() {
-    let (fx, older, newer) = race(true);
+fn racing_updates_end_on_the_newer_release_when_the_older_holds_the_lock_first() {
+    let (fx, older, newer) = race(("3.1.0", b"binary 3.1.0"), ("3.2.0", b"binary 3.2.0"));
     assert_eq!(older.unwrap(), "Updated slopvac 3.0.0 to 3.1.0.\n");
     assert_eq!(newer.unwrap(), "Updated slopvac 3.0.0 to 3.2.0.\n");
     assert_eq!(content(&fx.exe), b"binary 3.2.0");
 }
 
 #[test]
-fn a_slower_older_update_does_not_roll_back_a_newer_install() {
-    let (fx, older, newer) = race(false);
+fn a_waiting_older_update_does_not_roll_back_a_newer_install() {
+    let (fx, newer, older) = race(("3.2.0", b"binary 3.2.0"), ("3.1.0", b"binary 3.1.0"));
     assert_eq!(newer.unwrap(), "Updated slopvac 3.0.0 to 3.2.0.\n");
     let refused = older.unwrap_err();
     assert_eq!(refused.code, "self-update-failed");
@@ -512,4 +515,19 @@ fn a_slower_older_update_does_not_roll_back_a_newer_install() {
         refused.message
     );
     assert_eq!(content(&fx.exe), b"binary 3.2.0");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_planted_lock_symlink_fails_with_its_own_code_and_leaves_the_target_alone() {
+    let fx = installed();
+    let victim = fx.dir.path().join("victim");
+    std::fs::write(&victim, b"precious").unwrap();
+    let lock = fx.exe.with_file_name("slopvac.update.lock");
+    std::os::unix::fs::symlink(&victim, lock).unwrap();
+    let rt = runtime(&fx, server("3.1.0"), Box::new(Fixed(Ok(()))));
+    let failure = update(&rt).unwrap_err();
+    assert_eq!(failure.code, "update-lock-unsafe");
+    assert_eq!(content(&victim), b"precious");
+    assert_eq!(content(&fx.exe), b"old binary");
 }
