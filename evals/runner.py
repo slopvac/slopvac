@@ -285,7 +285,19 @@ def run_engine(
 
 
 def manifest_digest(manifest: Mapping[str, Any]) -> str:
-    return lib.sha256_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")))
+    """Digest of what scoring depends on; per-document `provenance` is excluded.
+
+    Provenance records where a licence or date came from. Adding or correcting
+    it must not invalidate recorded results or the committed baseline.
+    """
+    scored = {
+        **manifest,
+        "documents": [
+            {k: v for k, v in d.items() if k != "provenance"}
+            for d in manifest.get("documents", [])
+        ],
+    }
+    return lib.sha256_text(json.dumps(scored, sort_keys=True, separators=(",", ":")))
 
 
 def check_corpus(results: Mapping[str, Any], manifest: Mapping[str, Any]) -> None:
