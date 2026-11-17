@@ -14,9 +14,16 @@ fn run(kind: &str, model: &str, family: &str, tier: &str, rate: f64, runs: u32) 
 
 fn file(version: u8, repeats: u32, rows: &[String]) -> String {
     format!(
-        r#"{{"schema_version":{version},"date":"2026-11-14","repeats":{repeats},"rows":[{}]}}"#,
+        r#"{{"schema_version":{version},"status":"published","date":"2026-11-14","repeats":{repeats},"rows":[{}]}}"#,
         rows.join(",")
     )
+}
+
+fn pending() -> Evals {
+    Evals::parse(
+        r#"{"schema_version":2,"status":"pending-reevaluation","date":"2026-11-14","repeats":3,"rows":[]}"#,
+    )
+    .unwrap()
 }
 
 fn evals(rows: &[String]) -> Evals {
@@ -137,7 +144,12 @@ fn invalid_results_are_rejected_with_a_code() {
         file(2, 2, &[]),
         file(2, 3, &[run("other", "m", "f", "t", 0.5, 12)]),
         file(2, 3, &[run("update", "m", "f", "t", 1.5, 12)]),
-        r#"{"schema_version":2,"date":"d","runs":[]}"#.to_owned(),
+        r#"{"schema_version":2,"status":"published","date":"d","runs":[]}"#.to_owned(),
+        r#"{"schema_version":2,"status":"soon","date":"d","repeats":3,"rows":[]}"#.to_owned(),
+        format!(
+            r#"{{"schema_version":2,"status":"pending-reevaluation","date":"d","repeats":3,"rows":[{}]}}"#,
+            run("update", "m", "f", "t", 0.5, 12)
+        ),
         "not json".to_owned(),
     ];
     for c in cases {
@@ -150,15 +162,23 @@ fn invalid_results_are_rejected_with_a_code() {
 }
 
 #[test]
-fn embedded_data_lists_the_rewrite_reviewers_and_no_other_type() {
-    let e = Evals::embedded().unwrap();
-    assert_eq!(e.ranked(ReviewType::Rewrite).len(), 3);
-    assert_eq!(e.ranked(ReviewType::Mechanical).len(), 0);
-    assert_eq!(e.ranked(ReviewType::Update).len(), 0);
+fn pending_data_publishes_no_ranking_in_the_table_or_in_prime() {
+    let pending_text = "Reviewer model recommendations are pending re-evaluation.";
+    let md = markdown(&pending());
+    assert!(md.contains(pending_text));
+    assert!(!md.contains("##"));
+    assert!(!md.contains('|'));
+    for kind in [None, Some(ReviewType::Rewrite)] {
+        let prime = prime_guidance(&pending(), kind);
+        assert!(prime.starts_with(pending_text), "{prime}");
+        assert!(!prime.contains('`'));
+    }
 }
 
 #[test]
-fn prime_review_lists_the_embedded_guidance() {
+fn embedded_data_is_pending_and_the_rendered_review_topic_says_so() {
+    let e = Evals::embedded().unwrap();
+    assert_eq!(e.rows.len(), 0);
     let text = prime::render(
         Some("review"),
         &Settings {
@@ -169,9 +189,11 @@ fn prime_review_lists_the_embedded_guidance() {
         std::path::Path::new("/nonexistent"),
     )
     .unwrap();
-    assert!(text.contains(&prime_guidance(&Evals::embedded().unwrap(), None)));
-    assert!(text.contains("`gpt-6.1-sol`"));
-    assert!(text.contains("Results exist only for the rewrite reviewer."));
+    assert!(text.contains(&prime_guidance(&e, None)));
+    assert!(text.contains("pending re-evaluation"));
+    for banned in ["gpt-", "claude-", "slopvac-8l4", "STUB", "15.8"] {
+        assert!(!text.contains(banned), "{banned}");
+    }
 }
 
 /// The checked-in table must equal the generated one. Set `SLOPVAC_BLESS=1` to rewrite it.

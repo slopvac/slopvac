@@ -1089,8 +1089,9 @@ def test_recommendations_keep_reviewer_rows_only_with_a_rate_per_model():
         }
         for task, ok in (("r1", True), ("r1", True), ("r1", False), ("r2", False))
     ]
-    out = models.recommendations(results)
+    out = models.recommendations(results, publish=True)
     assert out["schema_version"] == 2
+    assert out["status"] == "published"
     assert out["date"] == "d"
     assert out["repeats"] == 3
     # r1 averages 2/3 and r2 is 0, so the rate is 1/3. Author rows are dropped.
@@ -1105,6 +1106,26 @@ def test_recommendations_keep_reviewer_rows_only_with_a_rate_per_model():
             "runs": 4,
         }
     ]
+
+
+def test_recommendations_publish_nothing_unless_asked():
+    results = results_with({"t1": [True, True, True]})
+    results["runs"].append(
+        {
+            "type": "rewrite",
+            "role": "reviewer",
+            "model": "m",
+            "task": "r1",
+            "score": {"success": True, "planted": 1},
+        }
+    )
+    assert models.recommendations(results) == {
+        "schema_version": 2,
+        "status": "pending-reevaluation",
+        "date": "d",
+        "repeats": 3,
+        "rows": [],
+    }
 
 
 def test_the_committed_recommendations_match_the_committed_results():

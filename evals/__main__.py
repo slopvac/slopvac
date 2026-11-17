@@ -137,7 +137,8 @@ def cmd_models(args: argparse.Namespace) -> int:
             _emit(summary, args.out)
             return 0
         if args.models_command == "recommend":
-            _emit(models.recommendations(models.load(Path(args.results))), args.out)
+            results = models.load(Path(args.results))
+            _emit(models.recommendations(results, publish=args.publish), args.out)
             return 0
         if args.models_command == "cost":
             report = models.estimate_cost(
@@ -443,6 +444,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="write the reviewer rows that feed the agents crate and the docs",
     )
     rc.add_argument("results")
+    rc.add_argument(
+        "--publish",
+        action="store_true",
+        help="write the rows; without it the file is pending re-evaluation, with no rows",
+    )
     rc.add_argument("--out")
     rc.set_defaults(func=cmd_models)
     cs = msub.add_parser(
