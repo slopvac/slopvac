@@ -74,7 +74,7 @@ option_if_let_else = "warn"
 # does not index, slice or do offset arithmetic on untrusted text.
 indexing_slicing = "allow"          # reason: span crates opt in
 string_slice = "allow"              # reason: span crates opt in
-arithmetic_side_effects = "allow"   # reason: span crates opt in
+arithmetic_side_effects = "allow"   # reason: off until every span-crate entry point has an input cap (slopvac-8l4.21.9)
 # Skipped restriction lints.
 missing_docs_in_private_items = "allow" # reason: rustc `missing_docs` covers the public API; private docs are noise
 missing_assert_message = "allow"        # reason: assertions in tests name the behaviour through the test name
