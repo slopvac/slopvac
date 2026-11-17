@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import ab as ab_mod
 from . import corpuslib as lib
-from . import gate, labelling, models, runner, scoring
+from . import gate, labelling, models, procs, runner, scoring
 
 
 def _cache(args: argparse.Namespace) -> Path:
@@ -190,7 +190,11 @@ def cmd_models(args: argparse.Namespace) -> int:
             return 2
         models.dump(results, out)
         return 0
-    except (models.ModelEvalError, runner.EngineError) as exc:
+    except (
+        models.ModelEvalError,
+        runner.EngineError,
+        procs.UnsupportedPlatform,
+    ) as exc:
         print(f"evals models: {exc}", file=sys.stderr)
         return 2
 

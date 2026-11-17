@@ -750,6 +750,7 @@ def command_ask(
     A reply carries the usage summed over its attempts, or None when any attempt
     that ran to the end reported none.
     """
+    procs.require_noreap_wait()
     argv = shlex.split(command)
 
     def ask(prompt: str) -> Reply:

@@ -204,6 +204,8 @@ Each count is small, so every interval is wide. Treat the table as a sanity chec
 
 These evals compare models on the three review types: `mechanical`, `update` and `rewrite`. Their results feed the dated recommendation table in prime and the docs. Reviewer tasks cover rewrites only for now; mechanical and update reviewer tasks are tracked in slopvac-8l4.15.8.
 
+Model runs need Python 3.13 or later on macOS. The harness waits for a model command without reaping it, so it can still kill the command's process group safely, and macOS lacks `os.waitid` before 3.13. On an older Python the run stops with a message before it reserves or spawns anything.
+
 ```sh
 python -m evals models plan --models models.json            # count the calls and input size
 python -m evals models run --models models.json --confirm-calls <N> --max-invocations <M>

@@ -1401,3 +1401,25 @@ def test_cost_after_ctrl_c_and_resume_counts_the_reservation_with_no_journal_lin
     scratch = tmp_path / "results.json"
     models.dump(results, scratch)
     assert cost_of(scratch) == from_journal
+
+
+# --- a Python without os.waitid is refused before anything spawns ------------------------
+
+
+def test_without_os_waitid_the_harness_refuses_before_spawning_or_reserving(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delattr(os, "waitid")
+    marker = tmp_path / "spawned"
+    body = f"import pathlib; pathlib.Path({str(marker)!r}).write_text('x')\n"
+    cmd = f"{sys.executable} {script(tmp_path, 'touch.py', body)}"
+    with pytest.raises(procs.UnsupportedPlatform, match="Python 3.13"):
+        procs.run_group(cmd.split(), timeout=5)
+    ledger = tmp_path / "l.jsonl"
+    with (
+        models.Budget(5, ledger) as budget,
+        pytest.raises(procs.UnsupportedPlatform, match="Python 3.13"),
+    ):
+        models.command_ask(cmd, budget=budget)
+    assert not marker.exists()
+    assert ledger.read_text() == ""

@@ -34,6 +34,25 @@ OUTER_TIMEOUT = 900
 POLL_SECONDS = 0.02
 
 
+class UnsupportedPlatform(RuntimeError):
+    """The interpreter lacks the wait call the no-reap guarantee depends on."""
+
+
+def require_noreap_wait() -> None:
+    """Fail before any spawn when `os.waitid` is missing.
+
+    macOS gained `os.waitid` in Python 3.13. Without it nothing here can wait for
+    a leader without reaping it, and falling back to `wait` or `poll` would free
+    the pid and group id before the group kill. So the harness refuses to run.
+    """
+    if not hasattr(os, "waitid"):
+        raise UnsupportedPlatform(
+            "evals need os.waitid to wait without reaping the child, and this "
+            "Python lacks it (on macOS it needs Python 3.13 or later); "
+            "run evals on Python 3.13 or later"
+        )
+
+
 def _wait_exit_noreap(pid: int, timeout: float) -> None:
     """Block until child `pid` has exited, leaving it unreaped. Raises TimeoutExpired."""
     deadline = time.monotonic() + timeout
@@ -126,6 +145,7 @@ def run_group(
     `subprocess.TimeoutExpired` once everything is dead. An interrupt also cleans
     up before it propagates.
     """
+    require_noreap_wait()
     proc = subprocess.Popen(
         list(argv),
         stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
