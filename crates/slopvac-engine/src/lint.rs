@@ -392,7 +392,7 @@ impl Engine {
             rst_options: RstOptions::from_env(),
             rst: RstAdapter::new(RstOptions::from_env()),
         };
-        engine.resolve()?;
+        engine.resolve();
         if !engine.casing_rules.is_empty() {
             engine.terms = TermSet::builtin();
         }
@@ -514,7 +514,7 @@ impl Engine {
 
     /// Decide which rules run: level, `applies_to`, and whether the engine runs the kind.
     #[allow(clippy::too_many_lines)]
-    fn resolve(&mut self) -> Result<(), EngineError> {
+    fn resolve(&mut self) {
         // A rule id defined by several sets belongs to the last one: a set added later, such as
         // the generated locale rule, replaces the same id in an earlier set.
         let mut owner: HashMap<&RuleId, usize> = HashMap::new();
@@ -631,7 +631,6 @@ impl Engine {
                     .insert(rule.id().as_str().to_owned(), Catalog::Loaded(s));
             }
         }
-        Ok(())
     }
 
     /// Why the engine does not execute `rule`, or `None` when it does.
@@ -758,8 +757,10 @@ impl Engine {
         findings.extend(run.invalid_directives()?);
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
         self.apply_genre(&genre, &mut findings);
-        let not_run = self.not_run_notices(&genre.id)?;
-        Ok(self.document(input, &prepared, &tags, genre, not_run, findings, extra))
+        // Notices about rules that cannot run come first, then the ones the parse raised.
+        let mut notices = self.not_run_notices(&genre.id)?;
+        notices.extend(extra);
+        Ok(self.document(input, &prepared, &tags, genre, findings, notices))
     }
 
     /// The notices about active rules the engine does not run and that apply to a document of
@@ -906,13 +907,11 @@ impl Engine {
         prepared: &Prepared<'_>,
         tags: &TagIndex,
         genre: GenreResult,
-        not_run: Vec<Notice>,
         findings: Vec<Finding>,
         extra: Vec<Notice>,
     ) -> Document {
         let words = prepared.words();
-        let mut unchecked = not_run;
-        unchecked.extend(extra);
+        let mut unchecked = extra;
         unchecked.extend(self.vocabulary.plan(&genre.id).notices().iter().cloned());
         let scoring = score_document(
             &findings,
