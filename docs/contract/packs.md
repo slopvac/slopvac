@@ -47,7 +47,22 @@ The 2.x genres map to genre files with these profiles: `consumer` normal, `refer
 
 ## 5. Taggers
 
-A declarative tagger sets one context tag on each text unit where a `match` entry matches and no `unless` entry matches. The tag span is the whole unit. Output equals what a code tagger returns for the same unit: a span, the tag as `kind`, `confidence` and `evidence`. Taggers are deterministic and read nothing but the unit text.
+A declarative tagger sets one context tag. Output equals what a code tagger returns: a span, the tag as `kind`, `confidence` and `evidence`. Taggers are deterministic. A tagger has `match` entries or a `when` object, never both.
+
+A tagger with `match` sets the tag on each text unit where a `match` entry matches and no `unless` entry matches. The tag span is the whole unit, and the tagger reads nothing but the unit text.
+
+A tagger with `when` reads document structure. `when` takes these conditions, and all given conditions must hold:
+
+- `path` matches the file path with forward slashes.
+- `front_matter` names a `key` and optionally a `matches` pattern for its value. Without `matches` the key only has to exist.
+- `heading_path` matches when any enclosing heading matches.
+- `admonition_title` matches the title of the enclosing admonition.
+- `block_kind` is one of `heading`, `paragraph`, `list-item`, `table-row`, `code-block` and `quote`. Blocks of kind `code-block` are skipped unless `block_kind` names them.
+- `sentence` matches the text of a sentence.
+
+`scope` sets how far the tag spreads: `sentence` (the default) tags each matching sentence, `paragraph` the matching block, `section` the enclosing heading section and `document` the whole document. `scope` needs `when`, and `when` excludes `unit`. The built-in structural taggers use this shape.
+
+A genre lists `contexts` to give every document of the genre a context tag for the whole document, at confidence 1. Genres that extend it inherit the tags. A context such as `security` comes only from a declaration like this one and never from vocabulary.
 
 ## 6. Terms and blocklists
 

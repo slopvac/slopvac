@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/genre.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/genre.schema.json",
   "title": "slopvac v3 genre",
   "description": "A document purpose class as data. A genre may extend other genres, so a content type such as how-to extends a broader genre. Detection signals score a document, and the genre with the highest score at or above its threshold wins. A config [[genres]] block or front matter overrides detection. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
   "type": "object",
@@ -49,6 +49,14 @@
       "items": {
         "$ref": "config.schema.json#/$defs/Ref"
       }
+    },
+    "contexts": {
+      "description": "Context tags that every document of this genre carries, whole document, at confidence 1. A genre that extends this one inherits them. Use it for a context that only a declaration should set, such as security, which no vocabulary signal may infer.",
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/ContextTag"
+      },
+      "uniqueItems": true
     },
     "categories": {
       "type": "object",

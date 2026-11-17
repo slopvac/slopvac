@@ -57,7 +57,9 @@ def spdx_or_none(value: str | None) -> str | None:
     return None if value in (None, "NOASSERTION", "other") else value
 
 
-def pin_repo(repo: str, repos: dict[str, Any], *, latest: bool = False) -> dict[str, Any]:
+def pin_repo(
+    repo: str, repos: dict[str, Any], *, latest: bool = False
+) -> dict[str, Any]:
     """Resolve the pin, licence and copyright line once per repo.
 
     Human sources pin the last commit before the cutoff. Stated-LLM sources

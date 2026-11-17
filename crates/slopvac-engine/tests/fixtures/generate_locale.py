@@ -16,8 +16,8 @@ Two files come out of ``slopvac.locale`` (2.x), and neither is edited by hand:
   list), and the findings of ``engine.Engine.run`` over a frozen corpus with the generated
   rule alone switched on.
 
-STUB(slopvac-8l4.3.29): this fixture stands in for the golden suite (slopvac-8l4.2.7), as
-``generate.py`` does for the other rules.
+The golden suite (slopvac-8l4.2.7) has no locale input, so this fixture stays the reference
+for the generated spelling rule until slopvac-8l4.3.44 wires that rule into the golden runs.
 
 ``--check`` recomputes both files and fails when they differ.
 """

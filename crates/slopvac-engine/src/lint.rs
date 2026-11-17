@@ -1204,10 +1204,10 @@ impl Run<'_> {
         if engine.checkers.is_empty() {
             return Ok(Vec::new());
         }
-        let mut diagrams: Vec<(Extraction, Vec<NearbyProse<'_>>)> = Vec::new();
+        let mut diagrams: Vec<(DiagramFormat, Extraction, Vec<NearbyProse<'_>>)> = Vec::new();
         match self.input.kind {
             Kind::Diagram(format) => {
-                diagrams.push((extract(format, self.input.source, 0), Vec::new()));
+                diagrams.push((format, extract(format, self.input.source, 0), Vec::new()));
             }
             _ => {
                 for block in &self.parsed.blocks {
@@ -1224,6 +1224,7 @@ impl Run<'_> {
                         continue;
                     };
                     diagrams.push((
+                        format,
                         extract_fenced(format, self.input.source, body.start()..body.end()),
                         self.nearby_prose(block.span),
                     ));
@@ -1231,7 +1232,7 @@ impl Run<'_> {
             }
         }
         let mut out = Vec::new();
-        for (extraction, nearby) in &diagrams {
+        for (format, extraction, nearby) in &diagrams {
             let prose: Vec<slopvac_diagrams::ProseBlock<'_>> = nearby
                 .iter()
                 .map(|n| slopvac_diagrams::ProseBlock {
@@ -1240,6 +1241,7 @@ impl Run<'_> {
                 })
                 .collect();
             let input = DiagramInput {
+                format: *format,
                 source: self.input.source,
                 extraction,
                 prose: &prose,

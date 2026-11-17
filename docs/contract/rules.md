@@ -108,7 +108,7 @@ Under 2.x the placeholder stayed in the pattern as literal text. The effect is t
 
 `body-sentence` is a sentence that is not in a heading or a table.
 It came with the 2.x change that fixed `ste-procedural.condition-after-command`
-([#268](https://github.com/srobroek/slopvac/pull/268)), which was not merged when this spec was written.
+([#268](https://github.com/slopvac/slopvac/pull/268)), which was not merged when this spec was written.
 It equals `sentence` with `exclude_blocks: [heading, table]`, and the scope stays for that rule's sake.
 
 `exclude_blocks` lists block kinds the rule must not look inside, on top of what the scope already leaves out.
