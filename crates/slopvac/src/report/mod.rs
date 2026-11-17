@@ -263,6 +263,14 @@ pub fn run(
         .get_one::<PathBuf>("include-text")
         .map(|p| issue::read_sample(p))
         .transpose()?;
+    let body_file = m.get_one::<PathBuf>("body-file");
+    if body_file.is_some_and(|p| p.as_os_str() == "-") {
+        // `gh --body-file -` reads standard input, so the body would be lost.
+        return Err(ReportError::BodyFile {
+            reason: "`-` means standard input to gh; write ./- for a file of that name".into(),
+        }
+        .into());
+    }
     let run_gh = m.get_flag("yes");
     if run_gh && deps.offline {
         return Err(ReportError::OfflineNetworkNeeded.into());
@@ -285,7 +293,6 @@ pub fn run(
         write_all(err_out, format!("warning: {warning}\n").as_bytes())?;
     }
 
-    let body_file = m.get_one::<PathBuf>("body-file");
     if let Some(path) = body_file {
         write_body(path, &report.body)?;
         write_all(out, b"Wrote the body to the file you named.\n")?;
@@ -303,7 +310,7 @@ pub fn run(
             create_with_gh(deps, &report.title, path, out)?;
         }
     } else {
-        write_all(out, footer(&url, &report.labels).as_bytes())?;
+        write_all(out, footer(&url, category.labels).as_bytes())?;
     }
     if !run_gh {
         open_if_asked(m, deps, &url.url);
@@ -355,7 +362,9 @@ fn write_body(path: &Path, body: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-fn footer(url: &github::FormUrl, labels: &[String]) -> String {
+/// `labels` are the form's own, the ones its issue template sets. `agent-reported` is not among
+/// them: the form never adds it.
+fn footer(url: &github::FormUrl, labels: &[&str]) -> String {
     let mut text = String::from(
         "Nothing was posted. Add --body-file FILE --gh to print the GitHub CLI command, and --yes to run it.\n",
     );

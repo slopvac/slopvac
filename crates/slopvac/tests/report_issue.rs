@@ -190,7 +190,11 @@ fn a_plain_run_previews_and_prints_the_form_url_without_calling_gh() {
     assert!(out.contains("### What happened\n\nit crashed"), "{out}");
     assert!(!out.contains("Labels:"), "{out}");
     assert!(
-        out.contains("The issue form adds the labels: bug, needs-triage, agent-reported"),
+        !out.contains("agent-reported"),
+        "the form does not set it:\n{out}"
+    );
+    assert!(
+        out.contains("The issue form adds the labels: bug, needs-triage\n"),
         "{out}"
     );
     assert!(out.contains("Nothing was posted."), "{out}");
@@ -1629,4 +1633,37 @@ fn gh_sees_the_pinned_host_and_repository_whatever_the_caller_exports() {
         lines[1]
     );
     assert!(!recorded.contains("evil.example"));
+}
+
+#[test]
+fn a_body_file_named_dash_is_refused_because_gh_would_read_stdin() {
+    let w = World::new();
+    let dir = tempfile::tempdir().unwrap();
+    let (result, out) = w.run(&refs(&bug(&["--body-file", "-", "--gh"])));
+    let err = result.unwrap_err();
+    assert_eq!(err.code, "report-body-file");
+    assert!(err.message.contains("./-"), "{}", err.message);
+    assert_eq!(out, "");
+    assert!(w.gh.created.borrow().is_empty());
+    // The same name with a directory part is an ordinary file for gh.
+    let ok = dir.path().join("-");
+    let (result, _) = w.run(&refs(&bug(&["--body-file", ok.to_str().unwrap(), "--gh"])));
+    assert_eq!(result.unwrap(), 0);
+}
+
+#[test]
+fn a_relative_dash_path_is_written_and_printed_as_given() {
+    let w = World::new();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("sub")).unwrap();
+    let path = dir.path().join("sub").join("-");
+    let (_, out) = w.run(&refs(&bug(&[
+        "--body-file",
+        path.to_str().unwrap(),
+        "--gh",
+    ])));
+    assert!(
+        out.contains(&format!("--body-file {}", path.display())),
+        "{out}"
+    );
 }
