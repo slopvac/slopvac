@@ -202,7 +202,7 @@ pub struct Signal {
     pub kind: SignalKind,
     /// Score added when the signal matches. Defaults to 1.
     #[serde(default = "default_weight")]
-    pub weight: f32,
+    pub weight: f64,
     /// `path`: glob over the path.
     #[serde(default, deserialize_with = "present")]
     pub glob: Option<String>,
@@ -219,11 +219,11 @@ pub struct Signal {
     _extensions: Extensions,
 }
 
-fn default_weight() -> f32 {
+fn default_weight() -> f64 {
     1.0
 }
 
-fn default_min_score() -> f32 {
+fn default_min_score() -> f64 {
     1.0
 }
 
@@ -233,7 +233,7 @@ fn default_min_score() -> f32 {
 pub struct Detect {
     /// Score a genre needs to be a candidate. Defaults to 1.
     #[serde(default = "default_min_score")]
-    pub min_score: f32,
+    pub min_score: f64,
     /// Detection signals, at least one.
     pub signals: Vec<Signal>,
     #[serde(flatten)]
@@ -333,8 +333,8 @@ impl GenreSpec {
         }
         for c in self.categories.values() {
             if let CategorySettings::Table(t) = c
-                && (matches!(t.max_per_100_words, Some(Budget::Limit(n)) if n < 0.0)
-                    || t.weight.is_some_and(|w| w < 0.0))
+                && (matches!(t.max_per_100_words, Some(Budget::Limit(n)) if !at_least_zero(n))
+                    || t.weight.is_some_and(|w| !at_least_zero(w)))
             {
                 return Err(fail("budgets and weights are at least 0".into()));
             }
@@ -349,14 +349,14 @@ impl GenreSpec {
 impl Detect {
     fn validate(&self, genre: &str) -> Result<(), Error> {
         let fail = |msg: &str| Error::Parse(format!("genre `{genre}`: {msg}"));
-        if self.min_score <= 0.0 || self.min_score.is_nan() {
+        if !above_zero(self.min_score) {
             return Err(fail("`min_score` must be greater than 0"));
         }
         if self.signals.is_empty() {
             return Err(fail("`detect.signals` needs at least one signal"));
         }
         for s in &self.signals {
-            if s.weight <= 0.0 || s.weight.is_nan() {
+            if !above_zero(s.weight) {
                 return Err(fail("signal weight must be greater than 0"));
             }
             let (own, others) = s.fields();
@@ -382,6 +382,16 @@ impl Detect {
         }
         Ok(())
     }
+}
+
+/// A finite number of at least 0. NaN and infinity fail, as does anything below 0.
+fn at_least_zero(n: f64) -> bool {
+    n.is_finite() && n >= 0.0
+}
+
+/// A finite number above 0 (`exclusiveMinimum: 0`).
+fn above_zero(n: f64) -> bool {
+    n.is_finite() && n > 0.0
 }
 
 impl Signal {
@@ -419,7 +429,7 @@ pub fn parse_genres(yaml: &str) -> Result<Vec<GenreSpec>, Error> {
 
 struct CompiledSignal {
     matcher: Matcher,
-    weight: f32,
+    weight: f64,
 }
 
 enum Matcher {
@@ -431,7 +441,7 @@ enum Matcher {
 
 struct Genre {
     spec: GenreSpec,
-    min_score: f32,
+    min_score: f64,
     signals: Vec<CompiledSignal>,
 }
 
@@ -465,7 +475,7 @@ pub struct GenreResult {
     /// Signals behind the choice.
     pub reasons: Vec<Reason>,
     /// Detection score for every concrete genre, best first.
-    pub scores: Vec<(String, f32)>,
+    pub scores: Vec<(String, f64)>,
 }
 
 /// A `[[genres]]` block reduced to what assignment needs.
@@ -653,7 +663,7 @@ impl GenreRegistry {
         let rel = normalize_path(opts.relative_path.unwrap_or_else(|| doc.path()));
         let rel = rel.as_str();
         let candidates = self.score(doc, rel)?;
-        let mut scores: Vec<(String, f32)> = candidates
+        let mut scores: Vec<(String, f64)> = candidates
             .iter()
             .map(|(g, s, _)| (g.spec.id.clone(), *s))
             .collect();
@@ -687,7 +697,7 @@ impl GenreRegistry {
                 format!("`[[genres]]` block {i} matches `{rel}`"),
             );
         }
-        let mut best: Option<&(&Genre, f32, Vec<Reason>)> = None;
+        let mut best: Option<&(&Genre, f64, Vec<Reason>)> = None;
         // packs.md section 4: a tie goes to the genre listed last in the config, then to the
         // lexically smaller qualified id. The registry holds the genres in the order the
         // host registered them, which is the order the config lists its packs and genre
@@ -725,7 +735,7 @@ impl GenreRegistry {
         &self,
         doc: &dyn DocumentView,
         parent: &str,
-    ) -> Result<Vec<(String, f32)>, Error> {
+    ) -> Result<Vec<(String, f64)>, Error> {
         let mut out = Vec::new();
         let rel = normalize_path(doc.path());
         for (g, score, _) in self.score(doc, &rel)? {
@@ -794,7 +804,7 @@ impl GenreRegistry {
 
 impl Genre {
     /// A genre with detection signals is a candidate when its score reaches `min_score`.
-    fn is_candidate(&self, score: f32) -> bool {
+    fn is_candidate(&self, score: f64) -> bool {
         !self.signals.is_empty() && score >= self.min_score
     }
 }
@@ -810,7 +820,7 @@ fn ref_name(r: &str) -> &str {
     r.rsplit_once(':').map_or(r, |(_, name)| name)
 }
 
-type Candidate<'a> = (&'a Genre, f32, Vec<Reason>);
+type Candidate<'a> = (&'a Genre, f64, Vec<Reason>);
 
 /// Whether a `files` list matches a path relative to the config directory. Patterns use
 /// gitignore semantics (`docs/config.md`, `exclude` and `files`): a leading `!` negates and

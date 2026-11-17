@@ -44,7 +44,7 @@ fn a_signal_counts_once_however_many_headings_match() {
         ("consumer", GenreSource::Default)
     );
     let internal = r.scores.iter().find(|(id, _)| id == "internal").unwrap();
-    assert!((internal.1 - 1.5).abs() < f32::EPSILON);
+    assert!((internal.1 - 1.5).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn below_threshold_falls_back_to_the_default() {
     );
     assert_eq!(r.reasons[0].signal, "default");
     let consumer = r.scores.iter().find(|(id, _)| id == "consumer").unwrap();
-    assert!((consumer.1 - 2.0).abs() < f32::EPSILON);
+    assert!((consumer.1 - 2.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -371,9 +371,9 @@ fn front_matter_signals_compare_the_exact_value() {
         let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
         r.scores[0].1
     };
-    assert!((score("type: guide\n") - 1.0).abs() < f32::EPSILON);
-    assert!(score("type: guides\n").abs() < f32::EPSILON);
-    assert!((score("draft: true\nowner: me\n") - 2.0).abs() < f32::EPSILON);
+    assert!((score("type: guide\n") - 1.0).abs() < f64::EPSILON);
+    assert!(score("type: guides\n").abs() < f64::EPSILON);
+    assert!((score("draft: true\nowner: me\n") - 2.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -466,5 +466,37 @@ fn a_tie_goes_to_the_genre_defined_last_in_either_order() {
         let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
         assert_eq!(r.id, last, "defined order {first}, {last}");
         assert_eq!(r.source, GenreSource::Detected);
+    }
+}
+
+#[test]
+fn a_tiny_min_score_does_not_make_every_genre_a_candidate() {
+    // 1e-50 is above 0, so the schema allows it. Narrowed to f32 it would be 0 and every
+    // genre would reach it, so a document with no match must still get the default.
+    let y = "
+- {schema_version: 3, id: base}
+- {schema_version: 3, id: a, detect: {min_score: 1e-50, signals: [{kind: text, pattern: zzz}]}}
+";
+    let reg = GenreRegistry::new(parse_genres(y).unwrap(), "base").unwrap();
+    let doc = PlainDocument::from_markdown("a.md", "nothing here\n");
+    let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
+    assert_eq!((r.id.as_str(), r.source), ("base", GenreSource::Default));
+}
+
+#[test]
+fn non_finite_numbers_are_errors_everywhere() {
+    let bad = [
+        "- {schema_version: 3, id: a, detect: {min_score: .nan, signals: [{kind: path, glob: x}]}}\n",
+        "- {schema_version: 3, id: a, detect: {min_score: .inf, signals: [{kind: path, glob: x}]}}\n",
+        "- {schema_version: 3, id: a, detect: {signals: [{kind: path, glob: x, weight: .nan}]}}\n",
+        "- {schema_version: 3, id: a, detect: {signals: [{kind: path, glob: x, weight: .inf}]}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {weight: .nan}}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {weight: .inf}}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {max_per_100_words: .nan}}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {max_per_100_words: .inf}}}\n",
+    ];
+    for y in bad {
+        let r = parse_genres(y).and_then(|s| GenreRegistry::new(s, "a"));
+        assert!(r.is_err(), "{y}");
     }
 }

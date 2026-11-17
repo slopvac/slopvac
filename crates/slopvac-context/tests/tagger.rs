@@ -198,7 +198,10 @@ fn a_pattern_is_capped_at_4096_bytes() {
         ),
         "{err:?}"
     );
-    assert_eq!(err.to_string(), "pattern is 4097 bytes, over the 4096-byte limit");
+    assert_eq!(
+        err.to_string(),
+        "pattern is 4097 bytes, over the 4096-byte limit"
+    );
 }
 
 #[test]
@@ -209,6 +212,17 @@ fn the_generated_words_pattern_is_capped_at_4096_bytes_after_escaping() {
     // 2030 dots are 2030 bytes raw and 4060 escaped (`\.` each), so 4097 with the wrapper.
     assert!(matches!(
         compiles(&format!("words: ['{}']", ".".repeat(2030))),
-        Err(slopvac_context::Error::PatternTooLong { len: 4097, max: 4096 })
+        Err(slopvac_context::Error::PatternTooLong {
+            len: 4097,
+            max: 4096
+        })
     ));
+}
+
+#[test]
+fn a_non_finite_confidence_is_an_error() {
+    for v in [".nan", ".inf", "-.inf"] {
+        let y = format!("{HEAD}confidence: {v}\nmatch:\n  - pattern: x\n");
+        assert!(spec(&y).is_err(), "{v}");
+    }
 }
