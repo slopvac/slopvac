@@ -39,7 +39,7 @@ import shlex
 import subprocess
 import tempfile
 import threading
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -543,6 +543,7 @@ class Budget:
         self.ledger = ledger
         self.spent = 0
         self.unfinished_at_start = 0
+        self.reserved_by_model: Counter[str | None] = Counter()
         self._lock = threading.Lock()
         self._fd: int | None = None
         self._handle: Any = None
@@ -568,6 +569,8 @@ class Budget:
                     continue
                 event = json.loads(line)
                 (reserved if event["event"] == "reserve" else finished).add(event["n"])
+                if event["event"] == "reserve":
+                    self.reserved_by_model[event.get("model")] += 1
         self.spent = len(reserved)
         self.unfinished_at_start = len(reserved - finished)
         self._handle = ledger.open("a", encoding="utf-8")
@@ -586,6 +589,7 @@ class Budget:
                     f"invocation ceiling of {self.ceiling} reached; nothing more was started"
                 )
             self.spent += 1
+            self.reserved_by_model[model] += 1
             self._append({"event": "reserve", "n": self.spent, "model": model})
             return self.spent
 
@@ -694,6 +698,41 @@ class Journal:
                 os.fsync(fh.fileno())
             self._entries[job] = entry
             self._lines.append(entry)
+
+
+def unjournaled(
+    executions: Iterable[Mapping[str, Any]], reserved: Mapping[str | None, int]
+) -> list[dict[str, Any]]:
+    """Ledger reservations that no journal line accounts for, as usage-less executions.
+
+    Ctrl-C keeps the ledger's reservations but skips the journal, so the journal
+    alone understates the spend. Each journal line covers `attempts` reservations
+    of its model. A reservation beyond those counts as an invocation with no
+    usage on record, which makes the cost report incomplete.
+    """
+    covered: Counter[str | None] = Counter()
+    for e in executions:
+        covered[e.get("model")] += e.get("attempts", 1)
+    return [
+        {
+            "job": None,
+            "model": model,
+            "error": "interrupted: reserved in the ledger, never journaled",
+            "attempts": 1,
+            "usage": None,
+        }
+        for model, count in sorted(reserved.items(), key=lambda kv: str(kv[0]))
+        for _ in range(max(count - covered[model], 0))
+    ]
+
+
+def ledger_reservations(path: Path) -> Counter[str | None]:
+    """Reservations per model in a ledger (older entries name no model)."""
+    reserved: Counter[str | None] = Counter()
+    for line in path.read_text("utf-8").splitlines():
+        if line and (event := json.loads(line))["event"] == "reserve":
+            reserved[event.get("model")] += 1
+    return reserved
 
 
 def command_ask(
@@ -957,7 +996,14 @@ def execute(
         "failed_calls": sum(1 for r in runs if r.get("error")),
         "unscored_runs": sum(1 for r in runs if r.get("unscored")),
         "invocations": budget.spent if budget else None,
-        "executions": journal.executions()
+        "executions": [
+            *journal.executions(),
+            *(
+                unjournaled(journal.executions(), budget.reserved_by_model)
+                if budget
+                else []
+            ),
+        ]
         if journal
         else [
             {
@@ -1057,9 +1103,15 @@ def load_usage_records(path: Path) -> list[tuple[str, dict[str, int] | None]]:
     journal, and the cost comes from that. A results file without it (written
     before it existed) falls back to one execution per row, which can miss
     superseded work. Lines without `usage` or `model` come from older runs.
+    For a `<run>.journal.jsonl` the sibling `<run>.ledger.jsonl` adds the
+    reservations that never reached the journal (an interrupted call).
     """
     if path.suffix == ".jsonl":
         entries = [json.loads(x) for x in path.read_text("utf-8").splitlines() if x]
+        stem = path.name.removesuffix(".journal.jsonl")
+        ledger = path.with_name(stem + ".ledger.jsonl")
+        if path.name.endswith(".journal.jsonl") and ledger.is_file():
+            entries += unjournaled(entries, ledger_reservations(ledger))
     else:
         data = load(path)
         entries = data["executions"] if "executions" in data else data["runs"]

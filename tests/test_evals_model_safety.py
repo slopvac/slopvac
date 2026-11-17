@@ -1342,3 +1342,62 @@ def test_one_execution_behind_several_rows_is_charged_once(tmp_path, spawn_log):
     assert len(results["runs"]) == 6 and spawns(tmp_path) == 3
     for path in (journal_path, out):
         assert cost_of(path)["models"]["m"]["tokens"] == {"input": 21}
+
+
+# --- an interrupted run's spend stays in the cost report ---------------------------------
+
+INTERRUPTS_FIRST_RUN = """\
+import os, pathlib, signal, sys, time
+marker = pathlib.Path(os.environ["MARKER"])
+sys.stdin.read()
+if not marker.exists():
+    marker.write_text("x")
+    os.kill(os.getppid(), signal.SIGINT)
+    time.sleep(60)
+print('slopvac-usage {"input": 5}', file=sys.stderr)
+print("[]")
+"""
+
+
+def test_cost_after_ctrl_c_and_resume_counts_the_reservation_with_no_journal_line(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MARKER", str(tmp_path / "marker"))
+    cmd = f"{sys.executable} {script(tmp_path, 'once.py', INTERRUPTS_FIRST_RUN)}"
+    journal_path, ledger = tmp_path / "r.journal.jsonl", tmp_path / "r.ledger.jsonl"
+    with models.Budget(10, ledger) as budget, pytest.raises(KeyboardInterrupt):
+        models.execute(
+            author_tasks(1),
+            roster(cmd),
+            3,
+            no_findings,
+            workers=1,
+            budget=budget,
+            journal=models.Journal(journal_path),
+        )
+    with models.Budget(10, ledger) as budget:
+        results = models.execute(
+            author_tasks(1),
+            roster(cmd),
+            3,
+            no_findings,
+            workers=1,
+            budget=budget,
+            journal=models.Journal(journal_path),
+        )
+    # The ledger holds four reservations of "m": one interrupted, then three on
+    # the resume. The journal holds three lines, so one reservation is spend
+    # with no usage on record.
+    from_journal = cost_of(journal_path)
+    assert from_journal["complete"] is False
+    assert from_journal["models"]["m"]["invocations"] == 4
+    assert from_journal["models"]["m"]["missing_usage"] == 1
+    assert sorted((e["model"], e["usage"] is None) for e in results["executions"]) == [
+        ("m", False),
+        ("m", False),
+        ("m", False),
+        ("m", True),
+    ]
+    scratch = tmp_path / "results.json"
+    models.dump(results, scratch)
+    assert cost_of(scratch) == from_journal
