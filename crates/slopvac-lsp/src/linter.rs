@@ -123,12 +123,9 @@ fn kind_of(path: &str) -> Kind {
 
 impl Linter for EngineLinter {
     fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
-        let input = Input {
-            path,
-            source: text,
-            kind: kind_of(path),
-            bom: BomMode::Buffer,
-        };
+        let input = Input::new(path, text)
+            .with_kind(kind_of(path))
+            .with_bom(BomMode::Buffer);
         self.engine
             .lint(&input)
             .map(|document| Linted {

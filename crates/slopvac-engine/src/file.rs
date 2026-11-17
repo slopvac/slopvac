@@ -113,10 +113,7 @@ pub fn fix_file_hooked(
         Err(refusal) => return Ok(FileFix::Refused(refusal)),
     };
     let source = String::from_utf8(bytes).map_err(|_| FixError::NotUtf8(shown.clone()))?;
-    let input = Input {
-        kind,
-        ..Input::markdown(&shown, &source)
-    };
+    let input = Input::new(&shown, &source).with_kind(kind);
     let document = engine.lint(&input)?;
     let report = fix_document(engine, &input, &document, changed_lines)?;
     let diff = unified_diff(&shown, &source, &report.text);
@@ -134,10 +131,7 @@ pub fn fix_file_hooked(
     {
         return Ok(FileFix::Refused(refusal));
     }
-    let document = engine.lint(&Input {
-        source: &report.text,
-        ..input
-    })?;
+    let document = engine.lint(&input.with_source(&report.text))?;
     Ok(FileFix::Done(Box::new(FileResult {
         document,
         report,
