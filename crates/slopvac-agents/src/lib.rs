@@ -13,6 +13,7 @@ pub mod managed;
 pub mod models;
 pub mod prime;
 pub mod review;
+pub mod reviewers;
 pub mod setup;
 
 pub use error::AgentsError;

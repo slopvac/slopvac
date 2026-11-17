@@ -2,6 +2,15 @@
 
 use std::path::PathBuf;
 
+/// A warning or notice that does not stop the run. The code is stable and kebab-case.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Notice {
+    /// The stable code.
+    pub code: &'static str,
+    /// The message.
+    pub message: String,
+}
+
 /// A setup or steering failure. Each variant has a stable kebab-case code.
 #[derive(Debug, thiserror::Error)]
 pub enum AgentsError {

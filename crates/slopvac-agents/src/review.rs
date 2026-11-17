@@ -10,9 +10,10 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use serde::Serialize;
 
 use crate::claims::{self, Report};
-use crate::error::AgentsError;
+use crate::error::{AgentsError, Notice};
 
 // STUB(slopvac-8l4.11.8): `ReviewEnv` is filled by the caller; config and the provider hook replace it.
+// The `[review] author_model` and `[review] model` lookups sit behind the same seam.
 
 /// Genres whose claims carry contract weight. A review of one never runs as `mechanical`.
 pub const STRICT_GENRES: [&str; 4] = ["reference", "specification", "api", "decision-record"];
@@ -362,8 +363,10 @@ pub struct ReviewEnv<'a> {
     pub provider: Option<&'a dyn ModelProvider>,
     /// `review_approval`.
     pub approval: Approval,
-    /// The author's model, if known.
+    /// The author's model from `[review] author_model`, if set. `--author-model` wins.
     pub author_model: Option<String>,
+    /// The reviewer model from `[review] model`, if set. `--reviewer-model` wins.
+    pub reviewer_model: Option<String>,
 }
 
 /// The plan a review run prints.
@@ -381,8 +384,16 @@ pub struct Plan {
     pub payload: Payload,
     /// False for `mechanical`, which never calls a provider.
     pub uses_provider: bool,
+    /// The author's model, if known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author_model: Option<String>,
+    /// The reviewer's model, if known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reviewer_model: Option<String>,
     /// True when the reviewer model was compared with the author's.
     pub reviewer_model_checked: bool,
+    /// Notices that leave the run intact, such as an unchecked model rule.
+    pub notices: Vec<Notice>,
     /// The provider's report; absent on `--dry-run`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub report: Option<String>,
@@ -443,6 +454,12 @@ pub fn command() -> Command {
                 .help("Model that reviews; it must differ from the author's"),
         )
         .arg(
+            Arg::new("author-model")
+                .long("author-model")
+                .value_name("MODEL")
+                .help("Model that wrote the revision; overrides [review] author_model"),
+        )
+        .arg(
             Arg::new("dry-run")
                 .long("dry-run")
                 .action(ArgAction::SetTrue)
@@ -482,10 +499,26 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
         env.approval,
         matches.get_flag("scope-approved"),
     )?;
-    let reviewer = matches.get_one::<String>("reviewer-model").cloned();
-    let checked = match &reviewer {
-        Some(r) => check_reviewer_model(env.author_model.as_deref(), r)?,
-        None => false,
+    let uses_provider = review_type != ReviewType::Mechanical;
+    let author = matches
+        .get_one::<String>("author-model")
+        .cloned()
+        .or_else(|| env.author_model.clone());
+    let reviewer = matches
+        .get_one::<String>("reviewer-model")
+        .cloned()
+        .or_else(|| env.reviewer_model.clone())
+        .or_else(|| env.provider.map(|p| p.model().to_owned()));
+    let checked = match (&author, &reviewer) {
+        (Some(a), Some(r)) => check_reviewer_model(Some(a), r)?,
+        _ => false,
+    };
+    let notices = if uses_provider {
+        unchecked_notice(author.is_some(), reviewer.is_some())
+            .into_iter()
+            .collect()
+    } else {
+        Vec::new()
     };
     let mut plan = Plan {
         review_type,
@@ -493,8 +526,11 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
         stats,
         scope,
         payload: payload(review_type, &report, &original, &revised),
-        uses_provider: review_type != ReviewType::Mechanical,
+        uses_provider,
+        author_model: author,
+        reviewer_model: reviewer,
         reviewer_model_checked: checked,
+        notices,
         report: None,
     };
     if plan.uses_provider && !matches.get_flag("dry-run") {
@@ -504,6 +540,23 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
         .map_err(|e| AgentsError::Usage(format!("review json: {e}")))?;
     json.push('\n');
     Ok(json)
+}
+
+/// The notice for a run whose "different model" rule could not be checked.
+fn unchecked_notice(author_known: bool, reviewer_known: bool) -> Option<Notice> {
+    let missing = match (author_known, reviewer_known) {
+        (true, true) => return None,
+        (false, true) => "the author model",
+        (true, false) => "the reviewer model",
+        (false, false) => "the author model and the reviewer model",
+    };
+    Some(Notice {
+        code: "review-model-unchecked",
+        message: format!(
+            "the reviewer is not checked against the author: {missing} is unknown. \
+             Pass --author-model and --reviewer-model, or set author_model and model under [review]."
+        ),
+    })
 }
 
 fn call_provider(env: &ReviewEnv<'_>, plan: &Plan) -> Result<String, AgentsError> {
@@ -517,6 +570,6 @@ fn call_provider(env: &ReviewEnv<'_>, plan: &Plan) -> Result<String, AgentsError
         code: "review-provider-missing",
         message: "no trusted model provider: run `slopvac plugins trust` for one and name it under [review] provider, or use --dry-run".into(),
     })?;
-    check_reviewer_model(env.author_model.as_deref(), provider.model())?;
+    check_reviewer_model(plan.author_model.as_deref(), provider.model())?;
     provider.review(&plan.payload)
 }

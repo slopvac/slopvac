@@ -6,7 +6,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command, builder::PossibleValuesParser};
 
 use crate::block::{self, State};
 use crate::content::{self, BlockKind};
-use crate::error::AgentsError;
+use crate::error::{AgentsError, Notice};
 use crate::fsx::Project;
 use crate::guidance::Guidance;
 use crate::harness::{self, Harness};
@@ -50,6 +50,8 @@ pub struct Outcome {
     pub lines: Vec<String>,
     /// Exit code.
     pub exit: u8,
+    /// Warnings that leave the exit code alone.
+    pub notices: Vec<Notice>,
 }
 
 /// The `setup` subcommand, for the CLI epic to mount.
@@ -120,6 +122,8 @@ struct Plan {
     block_text: String,
     skill_text: Option<String>,
     agent_text: Option<String>,
+    /// The reviewer agent is wanted but its model is unset.
+    reviewer_model_unset: bool,
 }
 
 type Paths = (PathBuf, Option<PathBuf>, Option<PathBuf>);
@@ -142,6 +146,7 @@ fn list(project: &Project) -> Result<Outcome, AgentsError> {
     Ok(Outcome {
         lines,
         exit: EXIT_OK,
+        notices: Vec::new(),
     })
 }
 
@@ -171,7 +176,18 @@ fn plan(opts: &Options) -> Result<Plan, AgentsError> {
         if !content::valid_model(m) {
             return Err(usage(&format!("invalid reviewer model {m:?}.")));
         }
+        if let Some(format) = harness.agent_format() {
+            content::check_model_format(format, m).map_err(|message| AgentsError::Coded {
+                code: "setup-reviewer-model-format",
+                message,
+            })?;
+        }
     }
+    // `inherit` leaves the choice to the harness, which is the same as no model.
+    let model = opts
+        .reviewer_model
+        .as_deref()
+        .filter(|m| *m != content::INHERIT);
     let project = Project::open(&opts.root)?;
     let (steering, skill, agent) = paths(&harness, &project)?;
     Ok(Plan {
@@ -184,9 +200,23 @@ fn plan(opts: &Options) -> Result<Plan, AgentsError> {
         agent_text: harness
             .agent_format()
             .filter(|_| opts.agent)
-            .map(|fmt| content::reviewer_agent(fmt, opts.reviewer_model.as_deref())),
+            .map(|fmt| content::reviewer_agent(fmt, model)),
+        reviewer_model_unset: opts.agent && model.is_none(),
         harness,
     })
+}
+
+fn notices(p: &Plan) -> Vec<Notice> {
+    if !p.reviewer_model_unset {
+        return Vec::new();
+    }
+    vec![Notice {
+        code: "setup-reviewer-model-unset",
+        message: "no reviewer model is set, so the reviewer agent inherits the harness model, \
+                  which is probably the author's. Pass --reviewer-model with a model from a \
+                  different family than the author's."
+            .into(),
+    }]
 }
 
 fn check(p: &Plan) -> Outcome {
@@ -214,7 +244,11 @@ fn check(p: &Plan) -> Outcome {
         .iter()
         .map(|(s, path)| format!("{} {}", s.word(), p.project.display(path)))
         .collect();
-    Outcome { lines, exit }
+    Outcome {
+        lines,
+        exit,
+        notices: notices(p),
+    }
 }
 
 fn skill_in_use_elsewhere(p: &Plan) -> bool {
@@ -263,6 +297,7 @@ fn remove(p: &Plan) -> Result<Outcome, AgentsError> {
     Ok(Outcome {
         lines,
         exit: EXIT_OK,
+        notices: Vec::new(),
     })
 }
 
@@ -299,6 +334,7 @@ fn install(p: &Plan, unrequested: Unrequested) -> Result<Outcome, AgentsError> {
     Ok(Outcome {
         lines,
         exit: EXIT_OK,
+        notices: notices(p),
     })
 }
 
