@@ -70,6 +70,7 @@ const MAX_SIDECAR_LINE: u64 = 1025;
 
 /// Counts the nodes a tree occupies on disk: every file, every directory that
 /// holds something (including implicit parents of nested files) and the sidecar.
+#[derive(Debug)]
 struct NodeBudget {
     used: usize,
     limit: usize,
@@ -587,6 +588,138 @@ pub fn extract_targz<S: std::hash::BuildHasher>(
     leftover?;
     closed?;
     Ok(out)
+}
+
+/// A tree built file by file in a private staging directory, for sources that
+/// are not a `.tar.gz` (a pinned git commit). Nothing reaches the store until
+/// [`StagedTree::install`], so the caller can hash the tree, compare it with the
+/// lock and drop it without a trace. Dropping the value removes the staging
+/// directory.
+///
+/// Files are created exclusively with a plain name, so a second spelling of one
+/// name or a path through a link fails instead of replacing anything. The
+/// executable set is part of the tree: as for a project directory, the tree
+/// carries its own `.slopvac-exec` list, and [`tree_hash`] refuses a tree whose
+/// file modes disagree with it.
+#[derive(Debug)]
+pub struct StagedTree {
+    staging: tempfile::TempDir,
+    root: PathBuf,
+    executable: HashSet<String>,
+    files: usize,
+    bytes: u64,
+    names: HashMap<String, (String, bool)>,
+    dirs: HashSet<String>,
+    budget: NodeBudget,
+}
+
+impl StagedTree {
+    /// An empty staged tree under `store`, which is created if needed. The tree
+    /// may hold at most `limits.nodes` files and directories.
+    ///
+    /// # Errors
+    /// [`ExtractError::Io`] when the staging directory cannot be made, or
+    /// [`ExtractError::Refused`] when `store` is not a private directory.
+    pub fn new(store: &Path, limits: Limits) -> Result<Self, ExtractError> {
+        ensure_private_dir(store)?;
+        let staging_parent = store.join(".staging");
+        ensure_private_child(&staging_parent)?;
+        let staging = tempfile::Builder::new()
+            .prefix("x-")
+            .tempdir_in(&staging_parent)
+            .map_err(io_err("creating the staging directory"))?;
+        let root = staging.path().join("tree");
+        fs::create_dir(&root).map_err(io_err("creating the tree directory"))?;
+        Ok(Self {
+            staging,
+            root,
+            executable: HashSet::new(),
+            files: 0,
+            bytes: 0,
+            names: HashMap::new(),
+            dirs: HashSet::new(),
+            budget: NodeBudget::new(limits.nodes),
+        })
+    }
+
+    /// Write one regular file from `content`, which the caller has already
+    /// bounded in size.
+    ///
+    /// # Errors
+    /// [`ExtractError::Refused`] for a name the extractor would refuse or a name
+    /// that is taken or collides with another, or when the tree has too many
+    /// nodes; [`ExtractError::Io`] for a failed write.
+    pub fn write_file(
+        &mut self,
+        path: &str,
+        content: &mut dyn Read,
+        executable: bool,
+    ) -> Result<(), ExtractError> {
+        let rel = normalise_entry_path(path.as_bytes())?;
+        // Everything that can refuse the name is checked before anything is
+        // created: case and Unicode collisions, then the node budget.
+        claim_with_parents(&mut self.names, &rel, false)?;
+        let parents = new_parents(&self.dirs, &rel);
+        self.budget.charge(parents.len() + 1)?;
+        self.dirs.extend(parents);
+        let target = self.root.join(&rel);
+        if let Some(dir) = target.parent() {
+            fs::create_dir_all(dir).map_err(io_err("creating a directory"))?;
+        }
+        let mut out =
+            create_file(&target, executable).map_err(io_err(format!("creating `{rel}`")))?;
+        let (_, len) = hash_stream(content, Some(&mut out), &rel, None)?;
+        self.bytes += len;
+        self.files += 1;
+        if executable {
+            self.executable.insert(rel);
+        }
+        Ok(())
+    }
+
+    /// The staging directory of the tree, for inspection.
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The tree hash of what was written.
+    ///
+    /// # Errors
+    /// As [`tree_hash`].
+    pub fn hash(&self) -> Result<TreeHash, ExtractError> {
+        tree_hash(&self.root)
+    }
+
+    /// Seal the tree and move it into `store` under its hash. The hash is
+    /// computed again here, so what is stored is what was hashed last.
+    ///
+    /// # Errors
+    /// As [`tree_hash`], plus [`ExtractError::Io`] when the move fails.
+    pub fn install(self, store: &Path) -> Result<Extracted, ExtractError> {
+        let hash = tree_hash(&self.root)?;
+        let exec: HashSet<&str> = self.executable.iter().map(String::as_str).collect();
+        let result = install(&self.root, store, &hash, &exec);
+        let leftover = if self.root.exists() {
+            evict(&self.root).map(drop)
+        } else {
+            Ok(())
+        };
+        let closed = self
+            .staging
+            .close()
+            .map_err(io_err("removing the staging directory"));
+        let (root, quarantined) = result?;
+        leftover?;
+        closed?;
+        Ok(Extracted {
+            root,
+            hash,
+            files: self.files,
+            bytes: self.bytes,
+            quarantined,
+        })
+    }
 }
 
 fn unpack<S: std::hash::BuildHasher>(
