@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 /// Why generating, writing or checking the schemas failed.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// A schema file could not be read or written.
     #[error("cannot access {path}")]

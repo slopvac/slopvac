@@ -17,6 +17,7 @@ const DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
 
 /// One generated file.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Generated {
     /// File name inside `schemas/v3`.
     pub file: &'static str,
@@ -26,6 +27,7 @@ pub struct Generated {
 
 /// A committed file that differs from the generated one.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Drift {
     /// File name inside `schemas/v3`.
     pub file: &'static str,

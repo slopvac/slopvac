@@ -5,7 +5,10 @@ in key order, in which subschemas are `$defs` and in annotations, so a text diff
 little. This script reduces both sides to a normal form and reports what still differs.
 
     python scripts/contract/schema_equivalence.py --old-ref origin/main \
-        common lint-report rule category
+        --expect-pattern '^[a-z]+$' '^[a-z]+(?![\\s\\S])' common lint-report
+
+`--expect-pattern OLD NEW` records a reviewed pattern change: an old `pattern` equal to OLD
+counts as unchanged when the new side holds NEW.
 
 The normal form:
 
@@ -154,9 +157,9 @@ def _merge(parts: list[dict]) -> list[dict]:
                 continue
             if (set(target) & OBJECT_SHAPE) and (set(part) & OBJECT_SHAPE):
                 continue
-            if "required" in shared:
+            if "required" in part:
                 target["required"] = sorted(
-                    set(target["required"]) | set(part["required"])
+                    set(target.get("required", [])) | set(part["required"])
                 )
             target.update({k: v for k, v in part.items() if k != "required"})
             break
