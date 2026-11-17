@@ -35,13 +35,26 @@ proptest saves failing cases to a `<test file>.proptest-regressions` file next t
 
 ## Fuzzing
 
-The `fuzz/` crate holds cargo-fuzz targets for the parsers that read untrusted text: `frontmatter_spans`, `config_load` and `parse_document` (Markdown, MDX and HTML). Each target must not panic on any input. The crate is excluded from the workspace and needs the nightly toolchain, so stable builds never compile it.
+The `fuzz/` crate holds cargo-fuzz targets for the parsers that read untrusted text: `config_load` and `parse_document` (Markdown, MDX and HTML). Each target must not panic on any input. The crate is excluded from the workspace and needs the nightly toolchain, so stable builds never compile it.
 
 ```sh
-just fuzz frontmatter_spans 120   # target, then seconds (default 60)
+just fuzz config_load 120   # target, then seconds (default 60)
 ```
 
 The scheduled workflow `rust-fuzz.yml` runs every target for 5 minutes each night and uploads crashing inputs as artifacts. Reproduce one with `cargo +nightly fuzz run <target> <artifact>`. Fix the bug, then add a regression test that uses the minimised input.
+
+`frontmatter-spans` comes from crates.io, and its repository (`srobroek/frontmatter-spans`) owns its tests and fuzz target. The `config_load` target still exercises it through `slopvac-config`.
+
+## Develop against a local `frontmatter-spans`
+
+To test a change to `frontmatter-spans` before it is released, point Cargo at a local checkout with a command-line override. Nothing lands in a tracked file:
+
+```sh
+cargo nextest run --workspace \
+  --config 'patch.crates-io.frontmatter-spans.path="../frontmatter-spans"'
+```
+
+Alternatively, add a `[patch.crates-io]` table with the same path to `Cargo.toml` and keep it out of your commits. CI and releases build from the crates.io version, so never commit an override. Remove it once the change is released and the workspace requirement is bumped.
 
 ## Mutation testing
 

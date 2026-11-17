@@ -78,10 +78,6 @@ Caf = "Caf"
 eror = "eror"
 modee = "modee"
 
-# Mixed-case YAML boolean probe in frontmatter-spans tests.
-[default.extend-identifiers]
-TrUe = "TrUe"
-
 [default]
 # Abbreviated commit SHAs cited in the research record (`cace892253`, `ba...`).
 extend-ignore-re = ["\\b[0-9a-f]{10,40}\\b"]

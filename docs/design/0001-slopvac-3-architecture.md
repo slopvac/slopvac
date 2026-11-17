@@ -88,10 +88,11 @@ Build the stack on `toml_edit`, `saphyr`, serde, and `schemars`. Record file, li
 
 ### 7. Generic front-matter crate with value spans
 
-Write `frontmatter-spans` for YAML, TOML, and JSON, with per-value spans and serde support.
+Write `frontmatter-spans` for YAML, TOML, and JSON, with per-value spans and serde support. The crate lives in its own repository, `srobroek/frontmatter-spans`, and slopvac depends on its crates.io release (`frontmatter-spans = "0.1.1"` in `[workspace.dependencies]`). The repository holds its tests, fuzzing and release process.
 
 - Evidence: among the crates evaluated, none gave front matter with value spans (plan, "Rust crate research").
 - Rejected: an existing front-matter crate plus a second parse to recover positions.
+- Rejected: keeping the crate in this workspace. It has no slopvac dependency, and a separate repository lets other projects use it and gives it its own release cycle.
 
 ### 8. JSON-RPC 2.0 over stdio for code plugins
 

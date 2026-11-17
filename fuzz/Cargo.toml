@@ -12,13 +12,6 @@ publish = false
 cargo-fuzz = true
 
 [[bin]]
-name = "frontmatter_spans"
-path = "fuzz_targets/frontmatter_spans.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "config_load"
 path = "fuzz_targets/config_load.rs"
 test = false
@@ -33,7 +26,6 @@ doc = false
 bench = false
 
 [dependencies]
-frontmatter-spans = { path = "../crates/frontmatter-spans" }
 libfuzzer-sys = "0.4"
 slopvac-config = { path = "../crates/slopvac-config" }
 slopvac-model = { path = "../crates/slopvac-model" }

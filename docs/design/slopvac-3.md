@@ -71,7 +71,7 @@ When 3.0 ships, a bead tracks the replies on #252 to #257 and the Slack thread.
 | Regex | `pcre2` (JIT, match limits). The `regex` crate is optional for patterns without lookaround. |
 | Word lists | `aho-corasick` |
 | Markdown | `pulldown-cmark`. `markdown-rs` for MDX. A pre-pass masks `:::` and `!!!` containers. |
-| Front matter | A new generic crate, `frontmatter-spans`: YAML, TOML, and JSON with per-value spans and serde support. |
+| Front matter | A new generic crate, `frontmatter-spans`, published from `srobroek/frontmatter-spans`: YAML, TOML, and JSON with per-value spans and serde support. |
 | Part-of-speech tags | A Rust port of the `prose` v3.3.1 tagger that Vale uses (decision record 0001, decision 25). The binary embeds the model under CC BY-SA 4.0 with attribution and a notice that covers the model file only. |
 | Spelling | `spellbook` with SCOWL and VarCon data |
 | Code comments | A pure-Rust lexer that ports the 2.x comment projection. `tree-sitter` reads only the grammars that have no external scanner. |

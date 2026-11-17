@@ -28,7 +28,7 @@ clap = { version = "4.6", features = ["derive"] }
 crossbeam-channel = "0.5"
 etcetera = "0.11"
 flate2 = "1.1"
-frontmatter-spans = { path = "crates/frontmatter-spans" }
+frontmatter-spans = "0.1.1"
 globset = "0.4"
 html5ever = "0.40"
 html5gum = "0.9"

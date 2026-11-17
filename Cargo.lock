@@ -793,9 +793,10 @@ dependencies = [
 
 [[package]]
 name = "frontmatter-spans"
-version = "0.0.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9acff1511ae78e8d69890c86a94e4f38f82f2687ae4dcd1383ae9c9a70f563d"
 dependencies = [
- "proptest",
  "saphyr",
  "saphyr-parser",
  "serde",
