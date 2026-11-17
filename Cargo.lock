@@ -2420,6 +2420,7 @@ dependencies = [
  "serde_json",
  "slopvac-agents",
  "slopvac-config",
+ "slopvac-engine",
  "slopvac-lsp",
  "slopvac-migrate",
  "slopvac-model",

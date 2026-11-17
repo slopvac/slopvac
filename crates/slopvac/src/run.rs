@@ -8,10 +8,12 @@ use clap::ArgMatches;
 
 use crate::cli;
 use crate::color::{self, ColorChoice};
-use crate::engine_stub::{LintRequest, Linter, StubLinter};
+use crate::engine::{self, EngineLinter, LintRequest, Linter};
 use crate::env::Env;
 use crate::errors::CliError;
-use crate::{exit, generate, init, inspect, logging, offline, output, redact, stdin};
+use crate::{
+    exit, generate, init, inspect, lint_settings, logging, offline, output, redact, stdin,
+};
 
 /// Settings every command shares, resolved once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,13 +209,11 @@ fn dispatch(
             write_stdout(out, text.as_bytes())
         }
         Some(("lint", m)) => lint(m, out, err_out),
-        Some(("lsp", m)) => slopvac_lsp::run(m)
-            .map(|exit| match exit {
-                slopvac_lsp::Exit::AfterShutdown => exit::PASS,
-                // LSP says `exit` without `shutdown` ends the process with status 1.
-                slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
-            })
-            .map_err(|e| CliError::new("lsp-failed", e.to_string())),
+        Some(("lsp", m)) => lsp(m).map(|exit| match exit {
+            slopvac_lsp::Exit::AfterShutdown => exit::PASS,
+            // LSP says `exit` without `shutdown` ends the process with status 1.
+            slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
+        }),
         Some(("migrate", m)) => migrate(m, out),
         Some(("completions", m)) => {
             let shell = *m
@@ -236,23 +236,10 @@ fn dispatch(
             out,
             generate::markdown_reference(&cli::command()).as_bytes(),
         ),
-        Some((name, _)) => {
-            let owner = cli::PLACEHOLDERS
-                .iter()
-                .find(|(n, ..)| *n == name)
-                .map(|(_, _, o)| *o)
-                .or(match name {
-                    "rules" | "explain" => Some("slopvac-8l4.12.11"),
-                    _ => None,
-                });
-            Err(CliError::new(
-                "command-not-wired",
-                format!(
-                    "`slopvac {name}` is not available in this build yet ({}).",
-                    owner.unwrap_or("not wired")
-                ),
-            ))
-        }
+        Some((name, _)) => Err(CliError::new(
+            "command-not-wired",
+            format!("`slopvac {name}` is not available in this build yet."),
+        )),
         None => {
             let mut cmd = cli::command();
             write_stdout(out, cmd.render_help().to_string().as_bytes())
@@ -372,6 +359,15 @@ fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliErr
     Ok(exit::PASS)
 }
 
+/// Start the language server with the rules and the settings of the project config.
+fn lsp(m: &ArgMatches) -> Result<slopvac_lsp::Exit, CliError> {
+    let root = std::env::current_dir().unwrap_or_default();
+    let (rules, settings) = engine::project_settings(&root)?;
+    let linter = slopvac_lsp::EngineLinter::new(vec![rules], settings)
+        .map_err(|e| CliError::new("engine-unavailable", e.to_string()))?;
+    slopvac_lsp::run(m, linter).map_err(|e| CliError::new("lsp-failed", e.to_string()))
+}
+
 fn man(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     let failed = |err: std::io::Error| {
         CliError::new(
@@ -392,8 +388,7 @@ fn lint(
     out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    // STUB(slopvac-8l4.12.12): the real engine replaces StubLinter.
-    lint_with(m, &mut std::io::stdin().lock(), &StubLinter, out, err_out)
+    lint_with(m, &mut std::io::stdin().lock(), &EngineLinter, out, err_out)
 }
 
 fn lint_with(
@@ -433,6 +428,20 @@ fn lint_with(
         targets,
         stdin,
         stdin_plan: plan,
+        config: m.get_one::<PathBuf>("config").cloned(),
+        code_comments: m.get_one::<String>("mode").map(String::as_str) == Some("code-comments"),
+        overrides: lint_settings::Overrides {
+            min_score: m.get_one::<f64>("min-score").copied(),
+            max_per_100_words: m.get_one::<f64>("max-per-100-words").copied(),
+            only_categories: m
+                .get_many::<String>("category")
+                .map(|v| v.cloned().collect())
+                .unwrap_or_default(),
+            disable: m
+                .get_many::<String>("disable")
+                .map(|v| v.cloned().collect())
+                .unwrap_or_default(),
+        },
     });
     for err in &outcome.incomplete {
         let _ = writeln!(err_out, "{err}");
@@ -451,7 +460,7 @@ fn lint_with(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine_stub::RunOutcome;
+    use crate::engine::RunOutcome;
     use crate::env::MapEnv;
     use crate::stdin::StdinPlan;
     use std::cell::RefCell;
