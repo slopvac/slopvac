@@ -2,20 +2,20 @@
 
 The stable release prerequisites live in [distribution](distribution.md#maintainer-setup): the Homebrew tap and App access, the minisign secret and public key, the release-please App with Administration: Read-only, the `v*` tag ruleset and immutable releases. Candidates also need the signing key. This page lists only what [release candidates](candidates.md) add. A maintainer does these by hand, because no workflow or script in this repository changes repository, PyPI or GitHub settings.
 
-## PyPI Trusted Publishing for candidates
+## PyPI Trusted Publishing
 
-PyPI matches the publishing workflow by file name and environment. Candidates upload from a new workflow, so register it for the `slopvac` project at <https://pypi.org/manage/project/slopvac/settings/publishing/> before the first candidate:
+PyPI matches the publishing workflow by file name and environment. Candidates and stable 3.x releases both upload from `publish-pypi.yml`, so register it for the `slopvac` project at <https://pypi.org/manage/project/slopvac/settings/publishing/> before the first candidate:
 
 | Field | Value |
 | --- | --- |
 | Owner | `slopvac` |
 | Repository name | `slopvac` |
-| Workflow name | `candidate.yml` |
+| Workflow name | `publish-pypi.yml` |
 | Environment name | `pypi` |
 
 The PyPI trusted publisher owner is the `slopvac` GitHub organisation. The release GitHub App is installed on the `slopvac` organisation.
 
-Stable releases keep the registration of `publish-lint.yml` that already exists. If a later change publishes stable wheels from another workflow, register that file the same way.
+The 2.x registration of `publish-lint.yml` stays while 2.x releases remain. No other workflow uploads to PyPI.
 
 ## The `pypi` environment
 
@@ -39,7 +39,7 @@ The environment is separate from `release` so that adding `rc/v*` never lets a c
 
 Create a second ruleset that targets `refs/tags/rc/v*` with the same settings as the `v*` ruleset in [distribution](distribution.md#protect-version-tags): active, with the update, deletion and non-fast-forward rules, and a bypass list that is empty or admin-only.
 
-No workflow checks this ruleset. `scripts/release_ruleset.py` accepts only plain `vX.Y.Z` tags. The stable gate does not rely on it: it needs a passed `candidate.yml` push run for the candidate tag at its current commit, so a moved tag has no passed run until its run passes. The ruleset keeps the tag that testers installed from fixed.
+No workflow checks this ruleset. `scripts/release_ruleset.py` accepts only plain `vX.Y.Z` tags. The stable gate does not rely on it: it needs a passed `publish-pypi.yml` push run for the candidate tag at its current commit, so a moved tag has no passed run until its run passes. The ruleset keeps the tag that testers installed from fixed.
 
 ## Pin the tag rulesets
 
@@ -53,7 +53,7 @@ python3 scripts/release_ruleset.py update-pins --repo slopvac/slopvac
 
 ## Check the setup
 
-Run the `Release candidate` workflow by hand (`workflow_dispatch`) on a branch with `dry-run` on. It exercises the build and tests and publishes nothing. The first real upload happens only when someone pushes an `rc/vX.Y.Z-rc.N` tag and approves the `pypi` environment.
+Run the `Publish to PyPI` workflow by hand (`workflow_dispatch`) on a branch with `dry-run` on. It exercises the build and tests and publishes nothing. The first real upload happens only when someone pushes an `rc/vX.Y.Z-rc.N` or `vX.Y.Z` tag and approves the `pypi` environment.
 
 ## Release signing key
 

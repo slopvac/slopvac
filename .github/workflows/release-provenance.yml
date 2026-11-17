@@ -1,9 +1,10 @@
 name: Release provenance
 
 # Reusable gate for stable releases (bead slopvac-8l4.13.4). The cargo-dist
-# release workflow calls it as a plan job, so a stable `vX.Y.Z` tag cannot
-# publish unless a passed candidate (rc/vX.Y.Z-rc.N) tested the same tree.
-# The release workflow only starts on plain vX.Y.Z tags.
+# release workflow (release.yml) and the PyPI workflow (publish-pypi.yml) both
+# call it, so a stable `vX.Y.Z` tag cannot publish unless a passed candidate
+# (rc/vX.Y.Z-rc.N, a push run of publish-pypi.yml) tested the same tree.
+# Both callers only start on plain vX.Y.Z tags.
 
 # A maintainer can also dispatch it with a tag to run only the tag ruleset check,
 # token mint included. That path skips the candidate checks and publishes nothing.

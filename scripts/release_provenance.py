@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""Candidate tags and the provenance gate for stable releases.
+"""Release tags and the provenance gate for stable releases.
 
 A candidate is an ``rc/vX.Y.Z-rc.N`` tag cut on demand. A stable ``vX.Y.Z`` tag
 may publish only when a passed candidate for the same version tested the exact
-tree being promoted.
+tree being promoted. Both publish from publish-pypi.yml.
 
 Subcommands:
   parse-tag TAG
-      print the Cargo and PyPI versions for a candidate tag
+      print the Cargo and PyPI versions for a candidate or stable tag, whether
+      it is stable, and ``active=true`` when publish-pypi.yml handles it (a
+      candidate, or a stable tag of major 3 or later)
   check-stable TAG --repo OWNER/NAME --sha SHA
       exit 0 when TAG points at SHA (the commit the workflow runs on) and a
       passed candidate tested that tree
   verify-tag TAG SHA
       exit 0 when TAG on the remote still resolves to SHA; run it right before
       publishing, so a tag moved after the check cannot be released
-  requires-gate VERSION
-      print true when a stable release of VERSION needs the gate
+  is-legacy VERSION
+      print true when VERSION is below major 3, the only versions the
+      publish-lint.yml workflow may publish
   check-draft TAG --repo OWNER/NAME [--app-slug SLUG]
       exit 0 when the release for TAG is unpublished and was created by
       github-actions[bot] or SLUG[bot] (release-please); read-only
@@ -42,8 +45,8 @@ _BASE = rf"{_NUM}\.{_NUM}\.{_NUM}"
 _RC_TAG = re.compile(rf"rc/v(?P<base>{_BASE})-rc\.(?P<n>[1-9][0-9]*)")
 _STABLE_TAG = re.compile(rf"v(?P<base>{_BASE})")
 _STABLE_VERSION = re.compile(rf"(?P<major>{_NUM})\.{_NUM}\.{_NUM}")
-_PRE_VERSION = re.compile(rf"{_BASE}(?:a|b|rc)[0-9]+")
-CANDIDATE_WORKFLOW = "candidate.yml"
+_PRE_VERSION = re.compile(rf"(?P<major>{_NUM})\.{_NUM}\.{_NUM}(?:a|b|rc)[0-9]+")
+CANDIDATE_WORKFLOW = "publish-pypi.yml"
 # Releases from this major version on need a passed candidate. 2.x candidates are
 # untagged branch builds, so they cannot satisfy a candidate-tag gate.
 GATED_FROM_MAJOR = 3
@@ -59,12 +62,48 @@ class Candidate:
     pypi_version: str
 
 
+@dataclass(frozen=True)
+class ReleaseTag:
+    cargo_version: str
+    pypi_version: str
+    stable: bool
+    active: bool
+
+
 def parse_candidate_tag(tag: str) -> Candidate:
     match = _RC_TAG.fullmatch(tag)
     if match is None:
         raise ValueError(f"not a candidate tag (expected rc/vX.Y.Z-rc.N): {tag}")
     base, n = match["base"], match["n"]
     return Candidate(cargo_version=f"{base}-rc.{n}", pypi_version=f"{base}rc{n}")
+
+
+def parse_release_tag(tag: str) -> ReleaseTag:
+    """Parse a candidate or a stable tag of the single 3.x PyPI publisher.
+
+    ``active`` is false for a stable tag below major 3: those releases do not
+    publish binary wheels, so publish-pypi.yml does nothing for them.
+    """
+    stable = _STABLE_TAG.fullmatch(tag)
+    if stable is None:
+        candidate = parse_candidate_tag(tag)
+        return ReleaseTag(
+            candidate.cargo_version, candidate.pypi_version, stable=False, active=True
+        )
+    base = stable["base"]
+    return ReleaseTag(base, base, stable=True, active=requires_gate(base))
+
+
+def is_legacy_version(version: str) -> bool:
+    """True for a version of a major below 3, stable or prerelease.
+
+    publish-lint.yml builds the pure-Python 2.x package, so it may publish only
+    these. Anything else, including a version it cannot parse, is refused.
+    """
+    match = _STABLE_VERSION.fullmatch(version) or _PRE_VERSION.fullmatch(version)
+    if match is None:
+        raise ValueError(f"not a version: {version}")
+    return int(match["major"]) < GATED_FROM_MAJOR
 
 
 def requires_gate(version: str) -> bool:
@@ -237,8 +276,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     verify = sub.add_parser("verify-tag")
     verify.add_argument("tag")
     verify.add_argument("sha")
-    gate = sub.add_parser("requires-gate")
-    gate.add_argument("version")
+    legacy = sub.add_parser("is-legacy")
+    legacy.add_argument("version")
     draft = sub.add_parser("check-draft")
     draft.add_argument("tag")
     draft.add_argument("--repo", required=True, help="owner/name")
@@ -248,9 +287,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "parse-tag":
-            candidate = parse_candidate_tag(args.tag)
-            print(f"cargo={candidate.cargo_version}")
-            print(f"pypi={candidate.pypi_version}")
+            release = parse_release_tag(args.tag)
+            print(f"cargo={release.cargo_version}")
+            print(f"pypi={release.pypi_version}")
+            print(f"stable={'true' if release.stable else 'false'}")
+            print(f"active={'true' if release.active else 'false'}")
         elif args.command == "check-stable":
             print(f"candidate={check_stable(args.tag, args.repo, args.sha)}")
         elif args.command == "verify-tag":
@@ -260,7 +301,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "route-tag":
             print(f"gated={'true' if route_tag(args.tag) else 'false'}")
         else:
-            print("true" if requires_gate(args.version) else "false")
+            print("true" if is_legacy_version(args.version) else "false")
     except (ValueError, RuntimeError) as err:
         print(f"error: {err}", file=sys.stderr)
         return 1

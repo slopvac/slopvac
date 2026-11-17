@@ -153,32 +153,6 @@ def test_the_provenance_job_gets_no_secrets_and_read_permissions(workflow):
     assert job["permissions"] == {"actions": "read", "contents": "read"}
 
 
-def _publish_jobs() -> dict:
-    return yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "publish-lint.yml").read_text(
-            encoding="utf-8"
-        )
-    )["jobs"]
-
-
-def test_the_stable_pypi_job_waits_for_the_provenance_job():
-    publish = _publish_jobs()
-    assert "provenance" in publish["pypi"]["needs"]
-    assert publish["provenance"]["uses"] == "./.github/workflows/release-provenance.yml"
-
-
-def test_the_provenance_gate_applies_only_to_gated_versions():
-    publish = _publish_jobs()
-    assert "needs.build.outputs.gated == 'true'" in publish["provenance"]["if"]
-    # 2.x skips the gate job, and the stable job must still run then.
-    condition = publish["pypi"]["if"]
-    assert (
-        "(needs.build.outputs.gated != 'true' || needs.provenance.result == 'success')"
-        in condition
-    )
-    assert "!cancelled()" in condition
-
-
 # --- hardening the raw cargo-dist output -------------------------------------
 
 RAW = ROOT / "tests" / "fixtures" / "release.generated.yml"
@@ -417,7 +391,11 @@ def test_the_legacy_ruleset_check_reads_with_the_app_token_and_no_fallback(workf
 
 
 def test_the_pypi_gate_passes_only_the_app_key():
-    provenance = _publish_jobs()["provenance"]
+    provenance = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "publish-pypi.yml").read_text(
+            encoding="utf-8"
+        )
+    )["jobs"]["provenance"]
     assert provenance["secrets"] == {
         "RELEASE_APP_PRIVATE_KEY": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}"
     }
