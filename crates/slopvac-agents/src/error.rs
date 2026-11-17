@@ -16,6 +16,11 @@ pub enum AgentsError {
     /// The begin/end markers are missing one half or repeated.
     #[error("malformed or ambiguous slopvac markers in {0}; repair the begin/end pair first")]
     MalformedMarkers(PathBuf),
+    /// The file has an unterminated code fence that would hide the block.
+    #[error(
+        "{0} has an unterminated code fence that would hide the slopvac block; close the fence first"
+    )]
+    UnclosedFence(PathBuf),
     /// The file is not UTF-8.
     #[error("steering must be UTF-8: {0}")]
     NotUtf8(PathBuf),
@@ -195,7 +200,7 @@ impl AgentsError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::UnsafeTarget(_) => "steering-unsafe-target",
-            Self::MalformedMarkers(_) => "steering-malformed",
+            Self::MalformedMarkers(_) | Self::UnclosedFence(_) => "steering-malformed",
             Self::NotUtf8(_) => "steering-not-utf8",
             Self::Conflict(_) => "steering-conflict",
             Self::NotManaged(_) => "steering-not-managed",
