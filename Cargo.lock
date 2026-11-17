@@ -2647,6 +2647,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "slopvac-packs"
+version = "0.0.0"
+dependencies = [
+ "rstest",
+ "semver",
+ "slopvac-fs",
+ "slopvac-model",
+ "slopvac-sanitize",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "slopvac-parse"
 version = "0.0.0"
 dependencies = [
