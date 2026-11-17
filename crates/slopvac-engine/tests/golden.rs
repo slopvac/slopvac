@@ -881,11 +881,11 @@ fn a_delta_applies_to_the_modes_it_lists() {
 
 #[test]
 fn a_delta_that_lists_only_a_misspelled_mode_is_an_error() {
-    let source = "[[delta]]\ninput = \"a\"\nmodes = [\"polcy\"]\n";
+    let source = "[[delta]]\ninput = \"a\"\nmodes = [\"not-a-mode\"]\n";
     for mode in MODES {
         assert_eq!(
             deltas_for(source, mode).unwrap_err(),
-            "unknown mode `polcy`"
+            "unknown mode `not-a-mode`"
         );
     }
 }
