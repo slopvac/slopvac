@@ -413,3 +413,103 @@ fn unknown_installs_point_to_the_slopvac_org_releases() {
     );
     assert_eq!(srv.hits.load(Ordering::SeqCst), 0);
 }
+
+/// A release server for `version`, signed like release CI signs it.
+fn signed_release(keys: &minisign::KeyPair, version: &str, binary: &[u8]) -> Server {
+    let url = format!("{BASE}/v{version}/slopvac-{TARGET}.tar.gz");
+    let bytes = archive(binary);
+    let sig = sign_with(keys, &bytes, Some(&comment(TARGET, version)));
+    Server {
+        files: HashMap::from([
+            (
+                LATEST.to_owned(),
+                format!(r#"{{"tag_name":"v{version}"}}"#).into_bytes(),
+            ),
+            (format!("{url}.minisig"), sig.into_bytes()),
+            (url, bytes),
+        ]),
+        hits: AtomicUsize::new(0),
+    }
+}
+
+/// Serves `inner`, and holds each archive download for `lag` so a racing update overlaps it.
+struct Slow {
+    inner: Server,
+    lag: std::time::Duration,
+}
+
+impl Fetcher for Slow {
+    fn get(&self, url: &str, limit: u64) -> Result<Vec<u8>, FetchError> {
+        if url != LATEST {
+            std::thread::sleep(self.lag);
+        }
+        self.inner.get(url, limit)
+    }
+}
+
+type Outcome = Result<String, command::Failure>;
+
+/// Two `self update` runs on one installed binary, released together by a barrier. The one that
+/// does not start first waits 100 ms, which is inside the other's 300 ms download, so it reaches
+/// the lock while the first holds it. Returns the install and each run's outcome (older, newer).
+fn race(older_starts_first: bool) -> (Fixture, Outcome, Outcome) {
+    use std::sync::Barrier;
+    use std::time::Duration;
+
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    let fx = installed();
+    let build = |version: &str, binary: &[u8]| {
+        let verifier = MinisignVerifier::from_base64(&keys.pk.to_base64()).unwrap();
+        let mut rt = runtime(&fx, server(version), Box::new(verifier));
+        rt.fetcher = Arc::new(Slow {
+            inner: signed_release(&keys, version, binary),
+            lag: Duration::from_millis(300),
+        });
+        rt
+    };
+    let barrier = Barrier::new(2);
+    let head_start = Duration::from_millis(100);
+    let (older_out, newer_out) = std::thread::scope(|scope| {
+        let older_run = scope.spawn(|| {
+            barrier.wait();
+            if !older_starts_first {
+                std::thread::sleep(head_start);
+            }
+            // `Runtime` is not `Send`, so each thread builds its own.
+            update(&build("3.1.0", b"binary 3.1.0"))
+        });
+        let newer_run = scope.spawn(|| {
+            barrier.wait();
+            if older_starts_first {
+                std::thread::sleep(head_start);
+            }
+            update(&build("3.2.0", b"binary 3.2.0"))
+        });
+        (older_run.join().unwrap(), newer_run.join().unwrap())
+    });
+    (fx, older_out, newer_out)
+}
+
+#[test]
+fn racing_updates_end_on_the_newer_release_when_the_older_starts_first() {
+    let (fx, older, newer) = race(true);
+    assert_eq!(older.unwrap(), "Updated slopvac 3.0.0 to 3.1.0.\n");
+    assert_eq!(newer.unwrap(), "Updated slopvac 3.0.0 to 3.2.0.\n");
+    assert_eq!(content(&fx.exe), b"binary 3.2.0");
+}
+
+#[test]
+fn a_slower_older_update_does_not_roll_back_a_newer_install() {
+    let (fx, older, newer) = race(false);
+    assert_eq!(newer.unwrap(), "Updated slopvac 3.0.0 to 3.2.0.\n");
+    let refused = older.unwrap_err();
+    assert_eq!(refused.code, "self-update-failed");
+    assert!(
+        refused
+            .message
+            .contains("refusing to install 3.1.0: it is not newer than the running 3.2.0"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(content(&fx.exe), b"binary 3.2.0");
+}

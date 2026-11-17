@@ -2,20 +2,24 @@
 //!
 //! The order is fixed and every step is fail-closed:
 //!
-//! 1. download the archive and its `.minisig`;
-//! 2. [`ArtifactVerifier::verify`] the archive bytes and the release identity the signature names;
-//! 3. extract the binary into memory;
-//! 4. write it beside the installed binary and rename it into place.
+//! 1. take the update lock, and refuse if the installed version is already at or past the target;
+//! 2. download the archive and its `.minisig`;
+//! 3. [`ArtifactVerifier::verify`] the archive bytes and the release identity the signature names;
+//! 4. extract the binary into memory;
+//! 5. write it beside the installed binary and rename it into place, then release the lock.
 //!
-//! Nothing in the install directory changes before step 4, and step 4 starts only after steps 1
-//! to 3 succeed. Verification covers the archive bytes, not a digest taken from the same server.
+//! Nothing but the lock file changes in the install directory before step 5, and step 5 starts
+//! only after steps 2 to 4 succeed. The lock spans steps 1 to 5, so two updates cannot interleave
+//! and a slower older one cannot rename over a newer install. Verification covers the archive bytes, not a digest taken from the same server.
 
 use std::io::Read;
 use std::path::Path;
+use std::time::Duration;
 
 use thiserror::Error;
 
 use crate::fetch::{FetchError, Fetcher};
+use crate::lock::{self, LockError, UpdateLock};
 use crate::verify::{ArtifactVerifier, ReleaseFile, VerifyError};
 
 /// Where release assets live.
@@ -62,9 +66,21 @@ pub enum UpdateError {
     /// The archive is damaged.
     #[error("cannot read the archive: {0}")]
     Archive(String),
+    /// Another update held the lock for the whole wait.
+    #[error("{0}")]
+    Busy(String),
     /// Writing the new binary failed.
     #[error("cannot replace the installed binary: {0}")]
     Replace(String),
+}
+
+impl From<LockError> for UpdateError {
+    fn from(e: LockError) -> Self {
+        match e {
+            LockError::Busy(_) => Self::Busy(e.to_string()),
+            LockError::Io { .. } => Self::Replace(e.to_string()),
+        }
+    }
 }
 
 /// The Rust target triple of this build, for the platforms `self update` supports.
@@ -96,6 +112,11 @@ pub fn asset_name(target: &str) -> String {
 /// server cannot pass off an older or another target's signed archive. `version` must also be
 /// a stable release newer than `current`: `self update` has no downgrade flag and no
 /// candidate channel, so a signed prerelease is refused before any download.
+///
+/// The update holds an exclusive lock beside `exe` from before the download until after the
+/// rename. Under the lock it reads the version the last update installed and refuses when that
+/// is not older than `version`. It waits up to a minute for another update, then fails with
+/// [`UpdateError::Busy`].
 pub fn update(
     fetcher: &dyn Fetcher,
     verifier: &dyn ArtifactVerifier,
@@ -104,6 +125,32 @@ pub fn update(
     version: &str,
     target: &str,
     exe: &Path,
+) -> Result<(), UpdateError> {
+    update_waiting(
+        fetcher,
+        verifier,
+        base_url,
+        current,
+        version,
+        target,
+        exe,
+        lock::DEFAULT_TIMEOUT,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "`update` is the public seven-argument form; this adds only the lock wait that tests shorten"
+)]
+fn update_waiting(
+    fetcher: &dyn Fetcher,
+    verifier: &dyn ArtifactVerifier,
+    base_url: &str,
+    current: &str,
+    version: &str,
+    target: &str,
+    exe: &Path,
+    lock_timeout: Duration,
 ) -> Result<(), UpdateError> {
     let newer = match (
         semver::Version::parse(current),
@@ -118,6 +165,17 @@ pub fn update(
     if !newer {
         return Err(UpdateError::NotNewer {
             current: current.to_owned(),
+            requested: version.to_owned(),
+        });
+    }
+    let mut lock = UpdateLock::acquire(exe, lock_timeout)?;
+    // Another update may have installed a version since this process started. Its record is
+    // read under the lock, so no update is in flight while it is compared.
+    if let Some(installed) = lock.recorded_version()
+        && semver::Version::parse(version).is_ok_and(|new| new <= installed)
+    {
+        return Err(UpdateError::NotNewer {
+            current: installed.to_string(),
             requested: version.to_owned(),
         });
     }
@@ -142,7 +200,9 @@ pub fn update(
     verifier.verify(&archive, &signature, &expected)?;
 
     let binary = extract_binary(&archive)?;
-    replace(exe, &binary)
+    replace(exe, &binary)?;
+    lock.record(version);
+    Ok(())
 }
 
 /// Pull the `slopvac` executable out of a `.tar.gz`.
@@ -264,7 +324,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"new");
-        assert_eq!(leftovers(dir.path()), ["slopvac"]);
+        assert_eq!(leftovers(dir.path()), ["slopvac", "slopvac.update.lock"]);
     }
 
     #[test]
@@ -337,7 +397,7 @@ mod tests {
                 "{err}"
             );
             assert_eq!(std::fs::read(&exe).unwrap(), b"old");
-            assert_eq!(leftovers(dir.path()), ["slopvac"]);
+            assert_eq!(leftovers(dir.path()), ["slopvac", "slopvac.update.lock"]);
         }
     }
 
@@ -472,6 +532,26 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, UpdateError::Archive(_)));
+        assert_eq!(std::fs::read(&exe).unwrap(), b"old");
+    }
+
+    #[test]
+    fn an_update_that_cannot_get_the_lock_in_time_fails_busy_and_changes_nothing() {
+        let (_dir, exe) = installed();
+        let _held = UpdateLock::acquire(&exe, Duration::ZERO).unwrap();
+        // An empty server: reaching the download would fail with `Download`, not `Busy`.
+        let err = update_waiting(
+            &Files(HashMap::new()),
+            &Verdict(Ok(())),
+            BASE,
+            "3.0.0",
+            "3.1.0",
+            TARGET,
+            &exe,
+            Duration::from_millis(100),
+        )
+        .unwrap_err();
+        assert!(matches!(err, UpdateError::Busy(_)), "{err}");
         assert_eq!(std::fs::read(&exe).unwrap(), b"old");
     }
 

@@ -6,7 +6,7 @@
 //!   [`Notice`](notice::Notice) that `prime`, JSON `notices` and `--version --json` show.
 //! - [`install`]: which channel installed this binary, and so which command upgrades it.
 //! - [`policy`]: the project `[network]` settings (a stub until the config layer lands).
-//! - [`pipeline`]: download, verify, extract, replace. Verification is its own step
+//! - [`pipeline`]: lock, download, verify, extract, replace. Verification is its own step
 //!   ([`verify::ArtifactVerifier`]) and runs before anything touches the installed binary.
 //! - [`command`]: the clap subtree and the `self update` entry point.
 //!
@@ -18,6 +18,7 @@ mod bounded;
 pub mod command;
 pub mod fetch;
 pub mod install;
+mod lock;
 pub mod notice;
 pub mod pipeline;
 pub mod policy;
