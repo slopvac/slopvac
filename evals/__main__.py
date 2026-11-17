@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import ab as ab_mod
 from . import corpuslib as lib
-from . import gate, labelling, models, runner, scoring
+from . import gate, labelling, models, procs, runner, scoring
 
 
 def _cache(args: argparse.Namespace) -> Path:
@@ -111,12 +111,14 @@ def cmd_gate(args: argparse.Namespace) -> int:
     except (OSError, ValueError, runner.EngineError) as exc:
         print(f"evals gate: {exc}", file=sys.stderr)
         return 2
-    result = gate.compare(baseline, cards)
+    verdicts = scoring.load_verdicts(Path(args.labels)) if args.labels else {}
+    rows = [{"rule": key[1], "label": label} for key, label in verdicts.items()]
+    result = gate.compare(baseline, cards, labels=rows)
     text = gate.markdown(result, mode)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
     sys.stdout.write(text)
-    return 1 if result["regressions"] and mode == "enforce" else 0
+    return 1 if not result["passed"] and mode == "enforce" else 0
 
 
 def _model_tasks(args: argparse.Namespace) -> tuple[list[dict], list[dict]]:
@@ -194,7 +196,11 @@ def cmd_models(args: argparse.Namespace) -> int:
             return 2
         models.dump(results, out)
         return 0
-    except (models.ModelEvalError, runner.EngineError) as exc:
+    except (
+        models.ModelEvalError,
+        runner.EngineError,
+        procs.UnsupportedPlatform,
+    ) as exc:
         print(f"evals models: {exc}", file=sys.stderr)
         return 2
 

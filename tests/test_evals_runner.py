@@ -141,6 +141,57 @@ def test_engine_exit_two_is_an_error(tmp_path):
         engine.lint([tmp_path / "a.md"])
 
 
+def test_a_report_with_paths_relative_to_the_engine_directory_is_matched(
+    tmp_path, monkeypatch
+):
+    script = tmp_path / "rel.py"
+    script.write_text(
+        "import json, os, sys\n"
+        "docs = [{'path': os.path.relpath(p), 'words': 4, 'findings': []}\n"
+        "        for p in sys.argv[1:] if p.endswith('.md')]\n"
+        "print(json.dumps({'documents': docs}))\n"
+    )
+    engine = runner.Engine("rel", (sys.executable, str(script)))
+    cache = tmp_path / "cache"
+    d = make_doc("a", "markdown")
+    write_cache(cache, d)
+    out = runner.run_engine(engine, {"documents": [d]}, cache)
+    assert out["documents"]["a"]["words"] == 4
+
+
+def test_run_skip_format_skips_that_format_and_still_runs_the_other_documents(
+    tmp_path, fake, monkeypatch
+):
+    engine, calls = fake
+    cache = tmp_path / "cache"
+    manifest = {
+        "documents": [make_doc("a", "markdown"), make_doc("b", "commit-message")]
+    }
+    for d in manifest["documents"]:
+        write_cache(cache, d)
+    monkeypatch.setattr(cli.lib, "load_manifest", lambda: manifest)
+    out = tmp_path / "out.json"
+    code = cli.main(
+        [
+            "run",
+            "--engine",
+            " ".join(engine.command),
+            "--cache",
+            str(cache),
+            "--skip-format",
+            "markdown",
+            "--out",
+            str(out),
+        ]
+    )
+    assert code == 0
+    results = json.loads(out.read_text())
+    assert sorted(results["documents"]) == ["b"]
+    assert list(results["skipped"]) == ["a"]
+    linted = [p for c in calls() for p in c["argv"] if p.endswith((".md", ".txt"))]
+    assert [Path(p).suffix for p in linted] == [".txt"]
+
+
 def test_an_incomplete_run_with_a_report_keeps_its_findings(tmp_path):
     script = tmp_path / "inc.py"
     script.write_text(
