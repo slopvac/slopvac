@@ -372,6 +372,11 @@ def _parse_findings(answer: str) -> list[dict[str, str]]:
 
 REVIEW_METRIC = "detection by quotation"
 AUTHOR_METRIC = "lexical retention smoke check"
+# Bump when scoring changes. Rows scored before 15.17 carry no version and are
+# "legacy": they were never rescored, so they must not take the new metric names.
+SCORER_VERSION = "15.17"
+LEGACY_SCORER = "legacy"
+LEGACY_METRIC = "legacy (pre-15.17)"
 
 # A finding that denies the loss is not a finding. These are plain phrase lists, not
 # a meaning-level oracle. A denial counts only when nothing else in the explanation
@@ -930,6 +935,7 @@ def _row(
         "family": model["family"],
         "tier": model["tier"],
         "repeat": repeat,
+        "scorer_version": SCORER_VERSION,
         "output_sha256": hashlib.sha256(answer.encode()).hexdigest(),
         "usage": dict(usage) if usage else None,
     }
@@ -1194,6 +1200,7 @@ def execute(
         "schema": RESULTS_SCHEMA,
         "date": date or dt.date.today().isoformat(),
         "prompt_version": PROMPT_VERSION,
+        "scorer_version": SCORER_VERSION,
         "tasks_sha256": tasks_digest(tasks),
         "repeats": repeats,
         "only_model": only_model,
@@ -1304,11 +1311,14 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
     Repeats of one task are averaged first, so the task is the unit of resampling.
     Reviewer runs that grade a rewrite with no lost facts are excluded: there
     was nothing to find. Unscored runs (an incomplete lint) are left out too.
+    A run without a `scorer_version` is legacy and keeps a legacy label. Rows from
+    different scorer versions never share a ranking: that raises ModelEvalError.
     """
     groups: dict[tuple[str, str, str], dict[str, list[float]]] = defaultdict(
         lambda: defaultdict(list)
     )
     info: dict[str, dict[str, str]] = {m["name"]: m for m in results["models"]}
+    versions: set[str] = set()
     for run in results["runs"]:
         score = run["score"]
         if score is None:
@@ -1319,8 +1329,16 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
             and not score["planted"]
         ):
             continue
+        versions.add(run.get("scorer_version") or LEGACY_SCORER)
         key = (run["type"], run["role"], run["model"])
         groups[key][run["task"]].append(1.0 if score["success"] else 0.0)
+    if len(versions) > 1:
+        raise ModelEvalError(
+            f"mixed scorer versions {sorted(versions)}: rescore the legacy rows "
+            "from the journal before summarising"
+        )
+    version = next(iter(versions), results.get("scorer_version") or LEGACY_SCORER)
+    legacy = version == LEGACY_SCORER
     rows = []
     for (rtype, role, model), per_task in sorted(groups.items()):
         means = [sum(v) / len(v) for v in per_task.values()]
@@ -1332,7 +1350,10 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
                 "type": rtype,
                 "role": role,
                 "model": model,
-                "metric": REVIEW_METRIC if role == "reviewer" else AUTHOR_METRIC,
+                "metric": LEGACY_METRIC
+                if legacy
+                else (REVIEW_METRIC if role == "reviewer" else AUTHOR_METRIC),
+                "scorer_version": version,
                 "family": info[model]["family"],
                 "tier": info[model]["tier"],
                 "tasks": len(per_task),
@@ -1356,6 +1377,7 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
         "schema": RESULTS_SCHEMA,
         "date": results["date"],
         "prompt_version": results["prompt_version"],
+        "scorer_version": version,
         "repeats": results["repeats"],
         "rows": rows,
         "ranking": ranking,

@@ -957,6 +957,72 @@ def test_summary_ranks_models_by_success_per_task():
     assert summary["date"] == "2026-11-14"
 
 
+def fresh_results():
+    tasks = [t for t in tiny_tasks() if t["id"] != "a1"]
+    return models.execute(
+        tasks,
+        roster("good", "poor"),
+        3,
+        NO_FINDINGS,
+        ask_for=fake_ask,
+        date="2026-11-14",
+    )
+
+
+def as_legacy(results):
+    """The shape of a results file written before scorer versions existed."""
+    legacy = {k: v for k, v in results.items() if k != "scorer_version"}
+    legacy["runs"] = [
+        {k: v for k, v in r.items() if k != "scorer_version"} for r in results["runs"]
+    ]
+    return legacy
+
+
+def test_results_and_every_run_row_record_the_scorer_version():
+    out = fresh_results()
+    assert out["scorer_version"] == models.SCORER_VERSION
+    assert {r["scorer_version"] for r in out["runs"]} == {models.SCORER_VERSION}
+
+
+def test_a_summary_of_freshly_scored_runs_reports_the_scorer_and_metric_names():
+    summary = models.summarize(fresh_results(), resamples=20)
+    assert summary["scorer_version"] == models.SCORER_VERSION
+    labels = {(r["role"], r["metric"], r["scorer_version"]) for r in summary["rows"]}
+    assert labels == {
+        ("author", "lexical retention smoke check", models.SCORER_VERSION),
+        ("reviewer", "detection by quotation", models.SCORER_VERSION),
+    }
+
+
+def test_a_summary_of_legacy_scores_does_not_wear_the_new_metric_names():
+    summary = models.summarize(as_legacy(fresh_results()), resamples=20)
+    assert summary["scorer_version"] == "legacy"
+    assert {r["metric"] for r in summary["rows"]} == {"legacy (pre-15.17)"}
+    assert {r["scorer_version"] for r in summary["rows"]} == {"legacy"}
+
+
+def test_the_committed_legacy_results_are_labelled_legacy():
+    path = Path(models.RESULTS_DIR) / "2026-11-14.json"
+    summary = models.summarize(models.load(path), resamples=20)
+    assert {r["metric"] for r in summary["rows"]} == {"legacy (pre-15.17)"}
+
+
+def test_legacy_and_freshly_scored_rows_are_never_ranked_together():
+    mixed = fresh_results()
+    mixed["runs"] = as_legacy(mixed)["runs"][:3] + mixed["runs"][3:]
+    with pytest.raises(models.ModelEvalError, match="scorer"):
+        models.summarize(mixed, resamples=20)
+
+
+def test_the_summarize_command_exits_2_on_mixed_scorer_versions(tmp_path, capsys):
+    mixed = fresh_results()
+    mixed["runs"] = as_legacy(mixed)["runs"][:3] + mixed["runs"][3:]
+    path = tmp_path / "mixed.json"
+    models.dump(mixed, path)
+    assert cli.main(["models", "summarize", str(path)]) == 2
+    assert "scorer" in capsys.readouterr().err
+
+
 def test_authored_reviews_with_nothing_lost_are_left_out_of_the_summary():
     tasks = [t for t in tiny_tasks() if t["id"] == "a2"]
     out = models.execute(
