@@ -47,6 +47,7 @@ use std::path::Path;
 use std::path::PathBuf;
 #[cfg(unix)]
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// The first argument that selects launcher mode.
@@ -55,13 +56,29 @@ pub const FLAG: &str = "--slopvac-plugin-launcher";
 #[cfg(unix)]
 const ENV_PREFIX: &str = "SLOPVAC_PLUGIN_ENV_";
 
+/// Whether [`intercept`] has run in this process.
+static INSTALLED: AtomicBool = AtomicBool::new(false);
+
+/// Why the host cannot name its launcher.
+#[derive(Debug)]
+pub(crate) enum LaunchError {
+    /// The running program never called [`intercept`], so a child started
+    /// through it would be the program itself, not the launcher.
+    NotInstalled,
+    /// The OS cannot name the running executable.
+    CurrentExe(std::io::Error),
+}
+
 /// Which program the host starts as the launcher.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Launcher {
     /// The running executable, which must call [`intercept`] first thing in
-    /// `main`. Production uses this.
+    /// `main`. Production uses this. A process that never called
+    /// [`intercept`] gets [`PluginError::LauncherNotInstalled`](crate::PluginError::LauncherNotInstalled)
+    /// and nothing starts.
     // STUB(slopvac-8l4.9.24): the `slopvac` binary does not call `intercept`
-    // yet, so a plugin it starts this way fails to start.
+    // yet, so a plugin it starts this way fails closed with
+    // `launcher-not-installed`.
     #[default]
     CurrentExe,
     /// Another program that calls [`intercept`], such as this package's
@@ -71,9 +88,17 @@ pub enum Launcher {
 
 impl Launcher {
     /// The absolute path of the program.
-    pub(crate) fn path(&self) -> std::io::Result<PathBuf> {
+    ///
+    /// # Errors
+    ///
+    /// [`LaunchError::NotInstalled`] for [`Launcher::CurrentExe`] when the
+    /// process never called [`intercept`]; nothing is spawned then.
+    pub(crate) fn path(&self) -> Result<PathBuf, LaunchError> {
         match self {
-            Self::CurrentExe => std::env::current_exe(),
+            Self::CurrentExe if !INSTALLED.load(Ordering::Acquire) => {
+                Err(LaunchError::NotInstalled)
+            }
+            Self::CurrentExe => std::env::current_exe().map_err(LaunchError::CurrentExe),
             Self::Program(p) => Ok(p.clone()),
         }
     }
@@ -139,6 +164,7 @@ pub(crate) fn command<'a>(
 /// failure the launcher prints one line to standard error and exits with
 /// status 127, so the plugin fails to start.
 pub fn intercept() {
+    INSTALLED.store(true, Ordering::Release);
     let mut argv = std::env::args_os();
     let _ = argv.next();
     if argv.next().as_deref() != Some(OsStr::new(FLAG)) {

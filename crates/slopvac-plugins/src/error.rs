@@ -60,6 +60,13 @@ pub enum PluginError {
     /// The program did not start.
     #[error("plugin failed to start: {}", esc(.0))]
     SpawnFailed(String),
+    /// The running program never called
+    /// [`launch::intercept`](crate::launch::intercept), so the host cannot
+    /// start the launcher. Nothing was spawned.
+    #[error(
+        "the running program did not install the slopvac plugin launcher, so plugins and git pack sources cannot start"
+    )]
+    LauncherNotInstalled,
     /// The reply disagrees with the hashed manifest.
     #[error("plugin declaration mismatch: {}", esc(.0))]
     DeclarationMismatch(String),
@@ -106,6 +113,7 @@ impl PluginError {
             Self::ProtocolViolation(_) => "plugin-protocol-violation",
             Self::OutputInvalid(_) => "plugin-output-invalid",
             Self::SpawnFailed(_) => "plugin-spawn-failed",
+            Self::LauncherNotInstalled => "launcher-not-installed",
             Self::DeclarationMismatch(_) => "plugin-declaration-mismatch",
             Self::RequestIdExhausted => "request-id-exhausted",
             Self::ProtocolVersionUnsupported { .. } => "protocol-version-unsupported",
