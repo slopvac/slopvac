@@ -166,6 +166,8 @@ _NO_RUST_GROUPS = {
         ("release.yml", "host"),
         ("release.yml", "publish-homebrew-formula"),
         ("release.yml", "announce"),
+        ("revocations.yml", "build-sign"),
+        ("revocations.yml", "push"),
         ("trunk-dev-stale-branches.yml", "stale-bead-branches"),
     ],
 }

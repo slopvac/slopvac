@@ -67,7 +67,7 @@ Tests inject other keys through the public fields of `KeyPolicy`, through `Revoc
 
 ### How first-party packs are signed
 
-Release CI signs release artifacts with `MINISIGN_SECRET_KEY` in minisign's default prehashed mode. Signing first-party packs and the revocation list is not wired into a workflow yet, so no first-party pack or revocation list is signed. A signed empty revocation list must be published before the CLI ships. A first-party pack carries a signed statement and its `.minisig` as the two signature layers described in [the threat model](../contract/threat-model.md#53-rotation-and-revocation). The statement names the namespace `slopvac` and the key id `D9914BDB4570AC6D`. The revocation list will be signed with the same key. No one signs by hand and no one reads the secret key.
+Release CI signs release artifacts with `MINISIGN_SECRET_KEY` in minisign's default prehashed mode. The `Revocation list` workflow signs the revocation list the same way, as [the last section](#the-signed-revocation-list) describes. Signing first-party packs is not wired into a workflow yet, so no first-party pack is signed. A first-party pack carries a signed statement and its `.minisig` as the two signature layers described in [the threat model](../contract/threat-model.md#53-rotation-and-revocation). The statement names the namespace `slopvac` and the key id `D9914BDB4570AC6D`. The revocation list uses the same key. No one signs by hand and no one reads the secret key.
 
 ### Rotate the key
 
@@ -77,3 +77,24 @@ The first-party key set is compiled in, so it changes only with a slopvac releas
 2. Replace `keys/slopvac-release.pub` with the new public key, update the key id on this page, and release a binary that embeds it. The embedded-key tests in `crates/slopvac-plugins/tests/sign.rs` and `crates/slopvac-update/src/verify.rs` must change in the same pull request.
 3. Re-sign the first-party packs and publish a new revocation list with the new key.
 4. If the old key leaked, publish a list that names its key id, signed while the old key is still a root. Binaries that embed the old key keep trusting it until the user upgrades, which is residual risk R8 in the threat model.
+
+## The signed revocation list
+
+Every online `slopvac plugins sync` fetches a signed revocation list from `ghcr.io/slopvac/slopvac-revocations:latest`. The list names publisher keys and artifact digests that must not run. The list this workflow publishes is empty, because nothing is revoked yet. Its signature must verify with `keys/slopvac-release.pub`.
+
+A list is valid for 30 days. The `Revocation list` workflow (`revocations.yml`) signs a new one every Monday and pushes it, so one is always in force. If the weekly runs stop and the list lapses, every online sync fails with exit 2 until someone pushes a new list (K6 in [the threat model](../contract/threat-model.md)). Offline runs keep using the cached list and print a notice.
+
+The workflow has two jobs:
+
+- `build-sign` runs in the `release` environment with `contents: read`. It is the only job that reads `MINISIGN_SECRET_KEY`. It runs `scripts/revocation_list.py build`, which writes the canonical list, signs it in prehashed mode and checks the result against the committed public key.
+- `push` has `packages: write` and no secret. It checks the signature again, pushes the two files with a pinned `oras` and then pulls the result back to check it.
+
+The `release` environment limits `build-sign` to `main` and `v*` refs, and the workflow has no `pull_request` trigger.
+
+### First run
+
+1. Run the `Revocation list` workflow by hand on `main` (`workflow_dispatch`) and approve the `release` environment if it asks.
+2. Open the new `slopvac-revocations` package under the `slopvac` organisation's packages. Packages in an organisation start private. Change its visibility to public, and link it to the `slopvac/slopvac` repository so the workflow keeps write access. While it is private, users cannot pull the list anonymously and every online sync fails.
+3. Check the result without a login: `oras manifest fetch ghcr.io/slopvac/slopvac-revocations:latest` must show the artifact type `application/vnd.slopvac.revocations.v1` and two layers, the list and then its signature.
+
+Rerun the workflow whenever the list has lapsed. A rerun issues a newer list, which replaces the old one. The CLI refuses a list with an older `issued` time than the one it cached.
