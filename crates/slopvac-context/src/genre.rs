@@ -688,8 +688,14 @@ impl GenreRegistry {
             );
         }
         let mut best: Option<&(&Genre, f32, Vec<Reason>)> = None;
+        // packs.md section 4: a tie goes to the genre listed last in the config, then to the
+        // lexically smaller qualified id. The registry holds the genres in the order the
+        // host registered them, which is the order the config lists its packs and genre
+        // files, so a later position is a genre listed later. Positions are unique, so a tie
+        // always resolves on the first rule; the id rule would only apply to two genres at
+        // one position, and `new` rejects a repeated id. `>=` lets the later candidate win.
         for c in candidates.iter().filter(|(g, s, _)| g.is_candidate(*s)) {
-            if best.is_none_or(|b| c.1 > b.1) {
+            if best.is_none_or(|b| c.1 >= b.1) {
                 best = Some(c);
             }
         }

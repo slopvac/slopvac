@@ -450,3 +450,21 @@ fn the_built_in_security_genre_declares_the_security_context() {
     assert_eq!(reg.contexts("security").unwrap(), ["security"]);
     assert!(reg.contexts("consumer").unwrap().is_empty());
 }
+
+#[test]
+fn a_tie_goes_to_the_genre_defined_last_in_either_order() {
+    let genre = |id: &str| {
+        format!(
+            "- {{schema_version: 3, id: {id}, detect: {{signals: [{{kind: text, pattern: tie}}]}}}}\n"
+        )
+    };
+    let base = "- {schema_version: 3, id: base}\n";
+    let doc = PlainDocument::from_markdown("a.md", "tie\n");
+    for (first, last) in [("alpha", "beta"), ("beta", "alpha")] {
+        let y = format!("{base}{}{}", genre(first), genre(last));
+        let reg = GenreRegistry::new(parse_genres(&y).unwrap(), "base").unwrap();
+        let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
+        assert_eq!(r.id, last, "defined order {first}, {last}");
+        assert_eq!(r.source, GenreSource::Detected);
+    }
+}
