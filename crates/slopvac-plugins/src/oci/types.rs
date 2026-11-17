@@ -1,5 +1,6 @@
 //! Digests, descriptors and manifests (OCI image spec v1.1 subset).
 
+use crate::num::widen;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -120,7 +121,7 @@ impl Descriptor {
         Self {
             media_type: media_type.to_owned(),
             digest: Digest::of(bytes),
-            size: bytes.len() as u64,
+            size: widen(bytes.len()),
             artifact_type: None,
             annotations: BTreeMap::new(),
         }

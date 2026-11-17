@@ -3,6 +3,7 @@
 //! Every error type that interpolates text from a plugin, a registry, a cache
 //! or a lock file must show it escaped. Each case below puts the same hostile
 //! string into string fields and checks the whole message.
+#![cfg(test)]
 
 use slopvac_plugins::apply::ApplyError;
 use slopvac_plugins::extract::ExtractError;

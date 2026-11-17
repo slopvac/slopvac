@@ -1,4 +1,5 @@
 //! Host conformance tests (plugin-protocol.md section 12.1) against a scripted fake plugin.
+#![cfg(test)]
 #![cfg(unix)]
 
 mod common;
@@ -1139,8 +1140,12 @@ struct BlockingGate {
 
 impl SpawnGate for BlockingGate {
     fn check(&self, _: &PluginSpec) -> Result<(), PluginError> {
-        self.entered.send(()).unwrap();
-        self.release.recv().unwrap();
+        if let Err(e) = self.entered.send(()) {
+            panic!("the test dropped the entry receiver: {e}");
+        }
+        if let Err(e) = self.release.recv() {
+            panic!("the test dropped the release sender: {e}");
+        }
         Ok(())
     }
 }
@@ -1160,6 +1165,10 @@ fn tm2b_a_start_blocked_in_its_gate_does_not_spawn_after_a_breach() {
         release,
     };
     let pidfile = std::env::temp_dir().join(format!("slopvac-gate-{}", std::process::id()));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the pid file is absent unless an earlier run left one"
+    )]
     let _ = std::fs::remove_file(&pidfile);
     let blocked_spec = spec_with("hang", &json!({}), Some(&pidfile), decl());
     std::thread::scope(|s| {
@@ -1199,6 +1208,10 @@ fn tm2b_output_after_the_shutdown_acknowledgement_makes_it_unclean() {
 fn hold_final_stderr_read(release: crossbeam_channel::Receiver<()>) -> ReadHook {
     ReadHook::new(move |total| {
         if total >= 2 << 20 {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the hold ends at the release or at `NO_HANG`; the hook has no use for which"
+            )]
             let _ = release.recv_timeout(NO_HANG);
         }
     })

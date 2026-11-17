@@ -18,9 +18,8 @@
 //! - An artifact has exactly one layer of each. They are never listed in the statement.
 //! - The minisign trusted comment is signed but never used to decide anything.
 
+use crate::num::{push_fmt, widen};
 use std::collections::BTreeMap;
-
-use std::fmt::Write as _;
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -118,7 +117,7 @@ impl PublicKey {
             .map_err(|e| SignError::InvalidKey(e.to_string()))?;
         let id: [u8; 8] = raw[2..10]
             .try_into()
-            .map_err(|_| SignError::InvalidKey("short key".into()))?;
+            .map_err(|e| SignError::InvalidKey(format!("short key: {e}")))?;
         Ok(Self { inner, id, raw })
     }
 
@@ -140,7 +139,7 @@ impl PublicKey {
     pub fn key_id(&self) -> String {
         // minisign prints the id as a little-endian integer: reverse the stored bytes.
         self.id.iter().rev().fold(String::new(), |mut acc, b| {
-            let _ = write!(acc, "{b:02X}");
+            push_fmt(&mut acc, format_args!("{b:02X}"));
             acc
         })
     }
@@ -288,7 +287,9 @@ fn canonical(v: &Value, out: &mut Vec<u8>) {
             }
             out.push(b']');
         }
-        other => out.extend_from_slice(other.to_string().as_bytes()),
+        other @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) => {
+            out.extend_from_slice(other.to_string().as_bytes());
+        }
     }
 }
 
@@ -307,7 +308,12 @@ impl Statement {
     /// Never: the type always serialises.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        canonical_json(&serde_json::to_value(self).expect("statement serialises"))
+        #[expect(
+            clippy::expect_used,
+            reason = "the derived Serialize of Statement cannot fail, and a fallback would sign different bytes"
+        )]
+        let value = serde_json::to_value(self).expect("statement serialises");
+        canonical_json(&value)
     }
 
     /// Build the statement for a manifest that has no signature layers yet.
@@ -423,10 +429,17 @@ pub(crate) fn parse_canonical<T: serde::de::DeserializeOwned>(
 
 /// Verify a prehashed minisign signature by `key` over exactly `bytes`.
 pub(crate) fn verify_bytes(key: &PublicKey, bytes: &[u8], minisig: &str) -> Result<(), SignError> {
-    let sig = minisign_verify::Signature::decode(minisig).map_err(|_| SignError::BadSignature)?;
-    key.inner
-        .verify(bytes, &sig, false)
-        .map_err(|_| SignError::BadSignature)
+    // `BadSignature` is a unit variant: it deliberately carries no detail, so a
+    // caller learns nothing about why a signature failed. The cause goes to the
+    // debug log; it names the error and the public key id, never key or signature bytes.
+    let sig = minisign_verify::Signature::decode(minisig).map_err(|e| {
+        tracing::debug!(key_id = %key.key_id(), error = %e, "the minisign signature does not decode");
+        SignError::BadSignature
+    })?;
+    key.inner.verify(bytes, &sig, false).map_err(|e| {
+        tracing::debug!(key_id = %key.key_id(), error = %e, "the minisign signature does not verify");
+        SignError::BadSignature
+    })
 }
 
 /// Whether `text` is 16 uppercase hex digits, the form of a key id.
@@ -616,13 +629,18 @@ pub fn fetch_and_verify(
     expect: &Expectation<'_>,
 ) -> Result<Verified, SignError> {
     let (statement, minisig) = signature_layers(manifest)?;
-    if statement.size > MAX_STATEMENT_BYTES as u64 {
+    if statement.size > widen(MAX_STATEMENT_BYTES) {
         return Err(SignError::StatementTooLarge);
     }
     let statement_bytes =
-        client.fetch_blob_bytes(repository, statement, MAX_STATEMENT_BYTES as u64)?;
-    let sig_bytes = client.fetch_blob_bytes(repository, minisig, MAX_MINISIG_BYTES as u64)?;
-    let sig_text = String::from_utf8(sig_bytes).map_err(|_| SignError::BadSignature)?;
+        client.fetch_blob_bytes(repository, statement, widen(MAX_STATEMENT_BYTES))?;
+    let sig_bytes = client.fetch_blob_bytes(repository, minisig, widen(MAX_MINISIG_BYTES))?;
+    // `BadSignature` is a unit variant: it deliberately carries no detail. The
+    // cause goes to the debug log without the bytes.
+    let sig_text = String::from_utf8(sig_bytes).map_err(|e| {
+        tracing::debug!(error = %e, "the signature layer is not UTF-8");
+        SignError::BadSignature
+    })?;
     verify(manifest, &statement_bytes, &sig_text, policy, expect)
 }
 
@@ -717,8 +735,9 @@ pub fn verify_rotation(
             "the new key is not the one the rotation names, or equals the old key",
         ));
     }
-    let bound = PublicKey::from_base64(&st.new_key)
-        .map_err(|_| SignError::InvalidStatement("newKey is not a minisign public key".into()))?;
+    let bound = PublicKey::from_base64(&st.new_key).map_err(|e| {
+        SignError::InvalidStatement(format!("newKey is not a minisign public key: {e}"))
+    })?;
     if bound.raw != proof.new_key.raw || bound.key_id() != st.new_key_id {
         return Err(mismatch(
             "the new key differs from the key the rotation binds",

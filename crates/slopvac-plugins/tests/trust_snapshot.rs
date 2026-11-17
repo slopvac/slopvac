@@ -1,4 +1,5 @@
 //! `parse_store`: the trust store rules applied to bytes the caller read itself.
+#![cfg(test)]
 
 use std::path::Path;
 

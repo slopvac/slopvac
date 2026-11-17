@@ -1,4 +1,5 @@
 //! Behavior of the pack index through its public interface.
+#![cfg(test)]
 
 use std::fs;
 use std::path::PathBuf;

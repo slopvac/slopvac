@@ -141,10 +141,10 @@ impl Plugin {
             let ids: Vec<&str> = batch.iter().map(|d| d.document().id.as_str()).collect();
             let entries = match_entries(&result, "document", &ids)?;
             for ((slot, entry), doc) in out[range].iter_mut().zip(entries).zip(batch) {
-                let outcome = match entry.get("error") {
-                    Some(e) => Err(parse_error_object(e).map_or_else(|e| e, PluginError::Rpc)),
-                    None => parse(entry, doc),
-                };
+                let outcome = entry.get("error").map_or_else(
+                    || parse(entry, doc),
+                    |e| Err(parse_error_object(e).map_or_else(|e| e, PluginError::Rpc)),
+                );
                 *slot = Some(DocOutcome {
                     id: doc.document().id.clone(),
                     outcome,

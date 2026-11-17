@@ -1,5 +1,10 @@
 //! A scripted HTTP/1.1 server for the OCI client tests.
-#![allow(dead_code, unreachable_pub, missing_docs)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    missing_docs,
+    reason = "each test binary uses a different subset of this shared server; the items are crate-private test support"
+)]
 
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -167,7 +172,9 @@ pub fn base64_std(bytes: &[u8]) -> String {
             .fold(0u32, |a, (i, &b)| a | (u32::from(b) << (16 - 8 * i)));
         for i in 0..4 {
             if i <= chunk.len() {
-                out.push(char::from(T[((n >> (18 - 6 * i)) & 63) as usize]));
+                out.push(char::from(
+                    T[usize::try_from((n >> (18 - 6 * i)) & 63).unwrap()],
+                ));
             } else {
                 out.push('=');
             }
@@ -225,13 +232,26 @@ fn serve(
         let resp = handler(&req);
         let mut head = format!("HTTP/1.1 {} X\r\nConnection: close\r\n", resp.status);
         for (k, v) in &resp.headers {
-            let _ = write!(head, "{k}: {v}\r\n");
+            write!(head, "{k}: {v}\r\n").unwrap();
         }
-        let _ = write!(head, "Content-Length: {}\r\n\r\n", resp.body.len());
-        let _ = out.write_all(head.as_bytes());
-        if req.method != "HEAD" {
-            let _ = out.write_all(&resp.body);
-        }
-        let _ = out.flush();
+        write!(head, "Content-Length: {}\r\n\r\n", resp.body.len()).unwrap();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a client that has hung up (a timeout test) is not an error of the scripted server"
+        )]
+        let _ = respond(
+            &mut out,
+            &head,
+            (req.method != "HEAD").then_some(resp.body.as_slice()),
+        );
     }
+}
+
+/// Write the response head, the body when there is one, and flush.
+fn respond(out: &mut impl Write, head: &str, body: Option<&[u8]>) -> std::io::Result<()> {
+    out.write_all(head.as_bytes())?;
+    if let Some(body) = body {
+        out.write_all(body)?;
+    }
+    out.flush()
 }

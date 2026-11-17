@@ -82,10 +82,15 @@ impl<'de> Deserialize<'de> for Whole {
             fn visit_i64<E: de::Error>(self, v: i64) -> Result<Whole, E> {
                 u64::try_from(v)
                     .map(Whole)
-                    .map_err(|_| E::custom("negative number"))
+                    .map_err(|e| E::custom(format!("negative number: {e}")))
             }
 
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(
+                clippy::as_conversions,
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "std has no checked f64 to u64 conversion; the guard below proves v is a whole number in 0..=2^53"
+            )]
             fn visit_f64<E: de::Error>(self, v: f64) -> Result<Whole, E> {
                 // 2^53 is the largest bound below which every whole f64 is exact.
                 if v.fract() == 0.0 && (0.0..=9_007_199_254_740_992.0).contains(&v) {

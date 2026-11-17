@@ -5,6 +5,7 @@
 //! (PR #288, branch `contract/8l4.2.4-pack-schemas`, commit 5f39a88efc).
 //! Once that contract is on main, point `FIXTURES` at the schema directory
 //! and delete the copies.
+#![cfg(test)]
 
 use std::collections::BTreeMap;
 use std::fs;

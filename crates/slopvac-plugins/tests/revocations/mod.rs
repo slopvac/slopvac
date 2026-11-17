@@ -1,6 +1,11 @@
 //! A revocation-list registry for tests: a root key, hand-written list JSON and
 //! a server that serves the list as an OCI artifact.
-#![allow(dead_code, unreachable_pub, missing_docs)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    missing_docs,
+    reason = "each test binary uses a different subset of this shared server; the items are crate-private test support"
+)]
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -82,9 +87,11 @@ pub struct ListServer {
 
 fn unchanged(_: &mut Manifest) {}
 
+const UNCHANGED: Edit = unchanged;
+
 impl ListServer {
     pub fn start(initial: Option<Signed>) -> Self {
-        let current = Arc::new(Mutex::new(initial.map(|s| (s, unchanged as Edit))));
+        let current = Arc::new(Mutex::new(initial.map(|s| (s, UNCHANGED))));
         let shared = Arc::clone(&current);
         let server = Server::start(move |req| {
             let Some((signed, edit)) = shared.lock().unwrap().clone() else {
@@ -106,7 +113,7 @@ impl ListServer {
     }
 
     pub fn serve(&self, signed: Option<Signed>) {
-        *self.current.lock().unwrap() = signed.map(|s| (s, unchanged as Edit));
+        *self.current.lock().unwrap() = signed.map(|s| (s, UNCHANGED));
     }
 
     /// Serve `signed` in a manifest that `edit` changed after it was built.

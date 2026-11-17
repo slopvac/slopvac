@@ -8,6 +8,10 @@
 //! need `unsafe`; that is deferred (see `kill_tree`).
 
 use std::io;
+
+use crate::process::kill_then_reap;
+#[cfg(unix)]
+use crate::process::signal_failed;
 use std::process::{Child, Command, ExitStatus};
 
 /// A spawned helper that has not been reaped yet.
@@ -38,6 +42,13 @@ impl Contained {
 
     /// Whether the helper has exited. On Unix the exit stays unreaped, so the
     /// process group is still reserved and can be signalled safely.
+    #[cfg_attr(
+        unix,
+        expect(
+            clippy::needless_pass_by_ref_mut,
+            reason = "the non-Unix build caches the polled status, so the signature must take `&mut self`"
+        )
+    )]
     pub(super) fn has_exited(&mut self) -> io::Result<bool> {
         #[cfg(unix)]
         {
@@ -65,26 +76,41 @@ impl Contained {
     }
 
     /// Kill the helper and its descendants, then reap the helper.
-    pub(super) fn kill_tree(mut self) {
+    ///
+    /// # Errors
+    /// The first failure to signal the group, kill the helper or reap it. A
+    /// helper that could not be killed is not waited for, since the wait would
+    /// block on it.
+    pub(super) fn kill_tree(mut self) -> io::Result<()> {
         #[cfg(unix)]
-        {
+        let mut failure = {
             use rustix::process::{Pid, Signal, kill_process_group};
             // The helper is unreaped, so its pid still names the group. An
-            // error means the group is already empty.
-            let _ = kill_process_group(Pid::from_child(&self.child), Signal::KILL);
-        }
+            // empty group is not a failure.
+            let sent = kill_process_group(Pid::from_child(&self.child), Signal::KILL);
+            sent.err()
+                .filter(|e| signal_failed(Err(*e)))
+                .map(io::Error::from)
+        };
+        #[cfg(not(unix))]
+        let mut failure: Option<io::Error> = None;
         // Residual (slopvac-8l4.9.13): once the helper has exited, Windows no
         // longer has its pid to name a tree, so a descendant that outlived it and
         // still holds stdout is not killed here. The lookup still ends at its
         // deadline and never joins the blocked reader. Job objects close this gap.
         #[cfg(not(unix))]
         if self.status.is_none() {
-            let _ = Command::new(taskkill_path())
+            if let Err(e) = Command::new(taskkill_path())
                 .args(["/T", "/F", "/PID", &self.child.id().to_string()])
-                .output();
+                .output()
+            {
+                failure = Some(e);
+            }
         }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Err(e) = kill_then_reap(&mut self.child) {
+            failure.get_or_insert(e);
+        }
+        failure.map_or(Ok(()), Err)
     }
 }
 

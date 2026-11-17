@@ -84,7 +84,7 @@ pub(crate) fn locate(root: &Path, rel: &str, windows: bool) -> Result<Located, A
     };
     let parent_rel = parent_abs
         .strip_prefix(&canon)
-        .map_err(|_| ApplyError::PathRefused(format!("`{rel}` leaves the project root")))?
+        .map_err(|e| ApplyError::PathRefused(format!("`{rel}` leaves the project root: {e}")))?
         .to_owned();
     let comps: Vec<OsString> = parent_rel
         .components()
@@ -157,7 +157,10 @@ pub(crate) enum Current {
 }
 
 #[cfg(unix)]
-#[allow(clippy::unnecessary_wraps)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "keeps the signature of the Windows variant, which can fail"
+)]
 fn link_count(_: &cap_std::fs::File, m: &cap_std::fs::Metadata) -> std::io::Result<u64> {
     use cap_std::fs::MetadataExt;
     Ok(m.nlink())
@@ -181,7 +184,7 @@ pub(crate) fn read_current(parent: &Dir, name: &OsStr, shown: &str) -> Result<Cu
 fn nonblocking(opts: &mut OpenOptions) -> Result<(), ApplyError> {
     use cap_std::fs::OpenOptionsExt;
     let flag = i32::try_from(rustix::fs::OFlags::NONBLOCK.bits())
-        .map_err(|_| ApplyError::Io("O_NONBLOCK does not fit".into()))?;
+        .map_err(|e| ApplyError::Io(format!("O_NONBLOCK does not fit: {e}")))?;
     opts.custom_flags(flag);
     Ok(())
 }
@@ -337,6 +340,10 @@ pub(crate) fn replace(
     };
     let result = finish(file);
     if result.is_err() {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the commit error being returned is the one to report; the temp name is unique and never read back"
+        )]
         let _ = parent.remove_file(&tmp);
     }
     result
@@ -640,6 +647,10 @@ mod tests {
                 }
             })
             .map(|(c, _)| c);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the test thread has timed out and dropped the receiver, which the assertion below reports"
+            )]
             let _ = tx.send(got);
         });
         let got = rx

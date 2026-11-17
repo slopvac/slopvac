@@ -1,7 +1,7 @@
 //! The dependency lock a Python plugin ships: a PEP 751 `pylock.toml` whose
 //! every package is a hash-pinned wheel inside the signed artifact (Y1, Y2).
 
-use std::fmt::Write as _;
+use crate::num::{push_fmt, widen};
 use std::fs::File;
 use std::io::{Read as _, Seek as _, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -62,10 +62,11 @@ impl PyLock {
         File::open(path)
             .and_then(|f| f.take(MAX_LOCK_BYTES + 1).read_to_end(&mut raw))
             .map_err(PyEnvError::io(format!("reading {}", path.display())))?;
-        if raw.len() as u64 > MAX_LOCK_BYTES {
+        if widen(raw.len()) > MAX_LOCK_BYTES {
             return Err(PyEnvError::Lock("larger than 4 MiB".into()));
         }
-        let text = String::from_utf8(raw).map_err(|_| PyEnvError::Lock("not UTF-8".into()))?;
+        let text =
+            String::from_utf8(raw).map_err(|e| PyEnvError::Lock(format!("not UTF-8: {e}")))?;
         Self::parse(&text)
     }
 
@@ -168,7 +169,7 @@ impl PyLock {
             entries += pkg_entries;
             bytes += pkg_bytes;
         }
-        if entries > MAX_NODES as u64 || bytes > MAX_BYTES {
+        if entries > widen(MAX_NODES) || bytes > MAX_BYTES {
             return Err(PyEnvError::Refused(format!(
                 "the wheels declare {entries} entries and {bytes} bytes; an environment holds at most {MAX_NODES} entries and 1 GiB"
             )));
@@ -201,12 +202,12 @@ impl PyLock {
     pub fn requirements(&self) -> String {
         let mut out = String::new();
         for p in &self.packages {
-            let _ = write!(out, "{}=={}", p.name, p.version);
+            push_fmt(&mut out, format_args!("{}=={}", p.name, p.version));
             if let Some(m) = &p.marker {
-                let _ = write!(out, " ; {m}");
+                push_fmt(&mut out, format_args!(" ; {m}"));
             }
             for w in &p.wheels {
-                let _ = write!(out, " --hash=sha256:{}", w.sha256);
+                push_fmt(&mut out, format_args!(" --hash=sha256:{}", w.sha256));
             }
             out.push('\n');
         }
@@ -494,8 +495,10 @@ fn zip_listing(path: &Path) -> Result<(u64, u64, Vec<String>), String> {
         let name = cd
             .get(i + 46..i + 46 + name_len)
             .ok_or("a damaged central directory")?;
-        names
-            .push(String::from_utf8(name.to_vec()).map_err(|_| "an entry name that is not UTF-8")?);
+        names.push(
+            String::from_utf8(name.to_vec())
+                .map_err(|e| format!("an entry name that is not UTF-8: {e}"))?,
+        );
         let skip = 46 + u16_at(&cd, i + 28) + u16_at(&cd, i + 30) + u16_at(&cd, i + 32);
         i += usize::try_from(skip).map_err(|e| e.to_string())?;
     }
@@ -504,7 +507,7 @@ fn zip_listing(path: &Path) -> Result<(u64, u64, Vec<String>), String> {
 
 pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().fold(String::with_capacity(64), |mut s, b| {
-        let _ = write!(s, "{b:02x}");
+        push_fmt(&mut s, format_args!("{b:02x}"));
         s
     })
 }

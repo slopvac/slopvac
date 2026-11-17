@@ -46,7 +46,7 @@ pub fn edited_bytes(source: &[u8], edits: &[FixEdit]) -> Result<Vec<u8>, ApplyEr
             "{inserted} inserted bytes exceed the cap of {MAX_INSERTED_BYTES}"
         )));
     }
-    let text = std::str::from_utf8(source).map_err(|_| bad("source is not UTF-8"))?;
+    let text = std::str::from_utf8(source).map_err(|e| bad(format!("source is not UTF-8: {e}")))?;
     if edits.iter().any(|e| !e.span.fits(text)) {
         return Err(bad("a span is outside the text or inside a character"));
     }

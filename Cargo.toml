@@ -89,6 +89,8 @@ tempfile = "3"
 thiserror = "2"
 toml = "1"
 toml_edit = "0.25"
+# Libraries log through `tracing` and never install a subscriber.
+tracing = "0.1.44"
 unicode-normalization = "0.1"
 ureq = { version = "3.5", default-features = false, features = [
   "rustls",

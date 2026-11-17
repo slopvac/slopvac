@@ -7,6 +7,7 @@
 //! while streaming, writes into a private staging directory with exclusive
 //! creation, hashes the tree, and renames it atomically into the store.
 
+use crate::num::widen;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
@@ -155,7 +156,7 @@ impl std::error::Error for ExtractError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
-            _ => None,
+            Self::Refused(_) | Self::Malformed(_) | Self::Tampered { .. } => None,
         }
     }
 }
@@ -291,7 +292,7 @@ struct Counting<R> {
 impl<R: Read> Read for Counting<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
-        let total = self.seen.fetch_add(n as u64, Ordering::SeqCst) + n as u64;
+        let total = self.seen.fetch_add(widen(n), Ordering::SeqCst) + widen(n);
         if total > self.limit {
             return Err(io::Error::other(format!(
                 "compressed size exceeds {} bytes",
@@ -313,7 +314,7 @@ struct Guarded<R> {
 impl<R: Read> Read for Guarded<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
-        self.expanded += n as u64;
+        self.expanded += widen(n);
         if self.expanded > self.limits.expanded_bytes {
             return Err(io::Error::other(format!(
                 "expanded size exceeds {} bytes",
@@ -332,7 +333,8 @@ impl<R: Read> Read for Guarded<R> {
 }
 
 fn normalise_entry_path(raw: &[u8]) -> Result<String, ExtractError> {
-    let s = std::str::from_utf8(raw).map_err(|_| refused("entry path is not UTF-8"))?;
+    let s =
+        std::str::from_utf8(raw).map_err(|e| refused(format!("entry path is not UTF-8: {e}")))?;
     let s = s.strip_prefix("./").unwrap_or(s);
     let s = s.strip_suffix('/').unwrap_or(s);
     check_name(s).map_err(|e| refused(format!("entry path `{s}`: {e}")))?;
@@ -721,7 +723,7 @@ fn write_sidecar(
         path: EXEC_SIDECAR.to_owned(),
         executable: false,
         sha: Sha256::digest(&sidecar).into(),
-        len: sidecar.len() as u64,
+        len: widen(sidecar.len()),
     }))
 }
 
@@ -731,7 +733,9 @@ fn pax_paths(block: &[u8]) -> Result<Vec<Vec<u8>>, ExtractError> {
     let mut paths = Vec::new();
     for ext in tar::PaxExtensions::new(block) {
         let ext = ext.map_err(|e| ExtractError::Malformed(e.to_string()))?;
-        let key = ext.key().map_err(|_| refused("PAX key is not UTF-8"))?;
+        let key = ext
+            .key()
+            .map_err(|e| refused(format!("PAX key is not UTF-8: {e}")))?;
         if key == "path" {
             paths.push(ext.value_bytes().to_vec());
         } else if key == "size" || key.starts_with("GNU.sparse") {
@@ -794,7 +798,7 @@ fn read_meta(entry: &mut impl Read) -> Result<Vec<u8>, ExtractError> {
         .take(MAX_META_BYTES + 1)
         .read_to_end(&mut buf)
         .map_err(|e| ExtractError::Malformed(e.to_string()))?;
-    if buf.len() as u64 > MAX_META_BYTES {
+    if widen(buf.len()) > MAX_META_BYTES {
         return Err(refused(format!(
             "extension header larger than {MAX_META_BYTES} bytes"
         )));
@@ -858,7 +862,7 @@ fn hash_stream(
             out.write_all(&buf[..n])
                 .map_err(io_err(format!("writing `{what}`")))?;
         }
-        len += n as u64;
+        len += widen(n);
         if cap.is_some_and(|c| len > c) {
             return Err(refused(format!("`{what}` is larger than allowed")));
         }
@@ -999,7 +1003,8 @@ fn tree_hash_observed(
             let name = entry
                 .file_name()
                 .into_string()
-                .map_err(|_| refused("a file name is not UTF-8"))?;
+                // `Err` hands back the unconverted name; the message states the cause.
+                .map_err(|_name| refused("a file name is not UTF-8"))?;
             let rel = if prefix.is_empty() {
                 name
             } else {
@@ -1096,7 +1101,8 @@ fn mark_executables(bytes: &[u8], files: &mut [FileRecord]) -> Result<(), Extrac
         }
         let idx = files
             .binary_search_by(|r| r.path.as_bytes().cmp(line.as_slice()))
-            .map_err(|_| refused("the executable list names a missing file"))?;
+            // `Err` is the insertion point of a missing key, not a failure with a cause.
+            .map_err(|_insertion_point| refused("the executable list names a missing file"))?;
         if files[idx].path == EXEC_SIDECAR {
             return Err(refused("the executable list names itself"));
         }
@@ -1144,6 +1150,10 @@ pub fn evict(dir: &Path) -> Result<Evicted, ExtractError> {
     let mut stack = vec![(dir.to_owned(), 0usize)];
     let mut nodes = NodeBudget::new(MAX_TREE_NODES);
     while let Some((path, depth)) = stack.pop() {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a failed chmod shows up as a failed read_dir or removal below, which return `ExtractError::Io`"
+        )]
         let _ = set_mode(&path, 0o700);
         let Ok(rd) = fs::read_dir(&path) else {
             continue;
@@ -1159,6 +1169,10 @@ pub fn evict(dir: &Path) -> Result<Evicted, ExtractError> {
                 stack.push((e.path(), depth + 1));
             } else if cfg!(windows) && ty.is_file() {
                 // Windows refuses to delete read-only files.
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a failed chmod shows up as a failed removal, which returns `ExtractError::Io`"
+                )]
                 let _ = set_mode(&e.path(), 0o600);
             }
         }
@@ -1256,6 +1270,10 @@ mod open_regular_tests {
     fn within_ten_seconds<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the test has timed out and dropped the receiver, which its assertion reports"
+            )]
             let _ = tx.send(f());
         });
         rx.recv_timeout(Duration::from_secs(10))

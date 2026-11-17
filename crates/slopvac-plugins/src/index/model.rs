@@ -23,6 +23,10 @@ pub const MAX_DESCRIPTION_CHARS: usize = 1024;
 /// Longest source, in characters.
 pub const MAX_SOURCE_CHARS: usize = 2048;
 /// Largest `slopvac_api`.
+#[expect(
+    clippy::as_conversions,
+    reason = "const context: `From` is not const and u32 to u64 is lossless"
+)]
 pub const MAX_API: u64 = u32::MAX as u64;
 /// Largest major, minor or patch number in a version (nine digits).
 pub const MAX_VERSION_NUMBER: u64 = 999_999_999;

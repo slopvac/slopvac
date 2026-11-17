@@ -57,6 +57,7 @@
 mod listing;
 mod lock;
 
+use crate::num::widen;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -219,7 +220,17 @@ impl std::fmt::Display for PyEnvError {
                 esc(&Self::step_head(step, status)),
                 terminal(output)
             ),
-            _ => f.write_str(&esc(&self.unescaped())),
+            Self::Lock(_)
+            | Self::SourceOnly { .. }
+            | Self::Wheel { .. }
+            | Self::Installer(_)
+            | Self::OfflinePythonMissing(_)
+            | Self::Changed { .. }
+            | Self::Refused(_)
+            | Self::UnsupportedPlatform
+            | Self::Record { .. }
+            | Self::Tree(_)
+            | Self::Io { .. } => f.write_str(&esc(&self.unescaped())),
         }
     }
 }
@@ -229,7 +240,16 @@ impl std::error::Error for PyEnvError {
         match self {
             Self::Tree(e) => Some(e),
             Self::Io { source, .. } => Some(source),
-            _ => None,
+            Self::Lock(_)
+            | Self::SourceOnly { .. }
+            | Self::Wheel { .. }
+            | Self::Installer(_)
+            | Self::OfflinePythonMissing(_)
+            | Self::Step { .. }
+            | Self::Changed { .. }
+            | Self::Refused(_)
+            | Self::UnsupportedPlatform
+            | Self::Record { .. } => None,
         }
     }
 }
@@ -434,7 +454,8 @@ impl ManagedEnv {
             "platform": i.platform,
             "machine": i.machine,
         });
-        String::from_utf8(canonical_json(&doc)).expect("canonical JSON is UTF-8")
+        // `canonical_json` writes UTF-8 only, so the lossy conversion never substitutes.
+        String::from_utf8_lossy(&canonical_json(&doc)).into_owned()
     }
 
     /// The digest of the lock, the interpreter request and the content
@@ -495,8 +516,15 @@ impl ManagedEnv {
                 path: f.path.clone(),
                 why: why.to_owned(),
             };
-            let meta = fs::metadata(&f.path).map_err(|_| changed("is missing"))?;
-            let mtime = mtime_of(&meta).map_err(|_| changed("has no modification time"))?;
+            let meta = fs::metadata(&f.path).map_err(|e| {
+                if e.kind() == io::ErrorKind::NotFound {
+                    changed("is missing")
+                } else {
+                    changed(&format!("cannot be read: {e}"))
+                }
+            })?;
+            let mtime =
+                mtime_of(&meta).map_err(|e| changed(&format!("has no modification time: {e}")))?;
             if meta.len() != f.size || mtime != f.mtime {
                 return Err(changed("changed size or modification time"));
             }
@@ -900,8 +928,28 @@ struct Staging(PathBuf, bool);
 impl Drop for Staging {
     fn drop(&mut self) {
         if self.1 {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "Drop cannot report; an environment without a record cannot be loaded and the next install evicts this path first"
+            )]
             let _ = evict(&self.0);
         }
+    }
+}
+
+/// The error for a step that passed its deadline, after killing and reaping it.
+///
+/// A step that cannot be killed is not waited for, since the wait would block on
+/// it, and the error says so.
+fn timed_out(child: &mut impl crate::process::Reap, step: &str) -> PyEnvError {
+    let output = crate::process::kill_then_reap(child)
+        .err()
+        .map(|e| format!("the step could not be killed or reaped: {e}"))
+        .unwrap_or_default();
+    PyEnvError::Step {
+        step: step.to_owned(),
+        status: "timed out".into(),
+        output,
     }
 }
 
@@ -939,13 +987,7 @@ fn run(
         }
     };
     let Some(status) = status else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(PyEnvError::Step {
-            step: step.to_owned(),
-            status: "timed out".into(),
-            output: String::new(),
-        });
+        return Err(timed_out(&mut child, step));
     };
     if status.success() {
         return Ok(out_path);
@@ -1032,7 +1074,7 @@ fn read_record(path: &Path) -> Result<Option<EnvRecord>, PyEnvError> {
     f.take(MAX_RECORD_BYTES + 1)
         .read_to_end(&mut raw)
         .map_err(|e| damaged(e.to_string()))?;
-    if raw.len() as u64 > MAX_RECORD_BYTES {
+    if widen(raw.len()) > MAX_RECORD_BYTES {
         return Err(damaged("larger than 64 MiB".into()));
     }
     let r: EnvRecord = serde_json::from_slice(&raw).map_err(|e| damaged(e.to_string()))?;
@@ -1111,5 +1153,35 @@ mod tests {
             (t.walk.nodes, t.walk.depth, t.walk.bytes, t.step),
             (5, 3, 7, Duration::from_millis(9))
         );
+    }
+
+    #[test]
+    fn a_step_whose_kill_fails_says_so_and_is_not_waited_for() {
+        use crate::process::testing::ScriptedChild;
+        let mut child = ScriptedChild::new(Some(std::io::ErrorKind::Other), true);
+        let err = timed_out(&mut child, "install");
+        let PyEnvError::Step {
+            step,
+            status,
+            output,
+        } = err
+        else {
+            panic!("expected a step error, got {err:?}");
+        };
+        assert_eq!((step.as_str(), status.as_str()), ("install", "timed out"));
+        assert!(output.contains("could not be killed"), "{output}");
+        assert!(!child.waited, "a wait on a live step would block");
+    }
+
+    #[test]
+    fn a_step_that_is_killed_reports_only_the_timeout() {
+        use crate::process::testing::ScriptedChild;
+        let mut child = ScriptedChild::new(None, false);
+        let err = timed_out(&mut child, "install");
+        assert!(
+            matches!(&err, PyEnvError::Step { output, .. } if output.is_empty()),
+            "{err:?}"
+        );
+        assert!(child.waited);
     }
 }

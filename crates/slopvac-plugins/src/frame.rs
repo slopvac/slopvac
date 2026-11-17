@@ -1,5 +1,6 @@
 //! Content-Length framing (plugin-protocol.md section 2.1).
 
+use crate::num::widen;
 use std::io::{self, BufRead, Read, Write};
 
 use slopvac_sanitize::line as esc;
@@ -36,10 +37,10 @@ fn read_line<R: BufRead>(r: &mut R) -> Result<Option<Vec<u8>>, FrameError> {
             }
             return Err(framing("stream ended inside a header line"));
         }
-        let (take, found) = match buf.iter().position(|&b| b == b'\n') {
-            Some(i) => (i + 1, true),
-            None => (buf.len(), false),
-        };
+        let (take, found) = buf
+            .iter()
+            .position(|&b| b == b'\n')
+            .map_or((buf.len(), false), |i| (i + 1, true));
         // The line ending adds two bytes beyond the content limit.
         if line.len() + take > MAX_HEADER_LINE + 2 {
             return Err(framing(format!(
@@ -77,7 +78,8 @@ fn parse_length(value: &[u8]) -> Result<usize, FrameError> {
             .and_then(|n| n.checked_add(u64::from(d - b'0')))
             .ok_or_else(|| framing("Content-Length overflows 64 bits"))?;
     }
-    usize::try_from(n).map_err(|_| framing("Content-Length overflows the platform size"))
+    usize::try_from(n)
+        .map_err(|e| framing(format!("Content-Length overflows the platform size: {e}")))
 }
 
 /// Read one frame body, or `None` at a clean end of stream.
@@ -141,7 +143,7 @@ pub fn read_frame_with<R: BufRead>(
         )));
     }
     let mut body = Vec::new();
-    let got = r.take(len as u64).read_to_end(&mut body)?;
+    let got = r.take(widen(len)).read_to_end(&mut body)?;
     if got < len {
         return Err(framing("stream ended inside a body"));
     }

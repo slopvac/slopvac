@@ -1,4 +1,5 @@
 //! Signature verification tests (TM-22 to TM-25, TM-30 parts, threat model section 7.3).
+#![cfg(test)]
 
 mod oci_server;
 
@@ -484,10 +485,10 @@ fn fetch_and_verify_reads_the_signature_blobs_from_the_registry() {
     );
     let server = Server::start(move |req| {
         let digest = req.path.rsplit('/').next().unwrap_or_default();
-        match blobs.get(digest) {
-            Some(b) => Response::new(200).body(b.clone()),
-            None => Response::new(404),
-        }
+        blobs.get(digest).map_or_else(
+            || Response::new(404),
+            |b| Response::new(200).body(b.clone()),
+        )
     });
     let r = Reference::parse(&format!("{}/acme/style:1.2.0", server.registry())).unwrap();
     let client = Client::with_loopback_http_for_tests(Box::new(Anonymous));

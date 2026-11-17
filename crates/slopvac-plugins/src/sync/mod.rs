@@ -47,6 +47,7 @@
 mod cache;
 mod error;
 
+use crate::num::widen;
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read};
@@ -274,7 +275,7 @@ impl<'a> Syncer<'a> {
         let change = match before {
             TreeState::Intact(dir) if *dir == done.root => Change::Unchanged,
             TreeState::Tampered(_) => Change::Reinstalled,
-            _ => Change::Installed,
+            TreeState::Absent | TreeState::Intact(_) => Change::Installed,
         };
         Ok(outcome(change, done.root, done.quarantined))
     }
@@ -422,13 +423,13 @@ impl<'a> Syncer<'a> {
             pack,
             reference,
             statement,
-            MAX_STATEMENT_BYTES as u64,
+            widen(MAX_STATEMENT_BYTES),
             "signed statement",
         )?;
         let minisig_bytes =
             self.small_blob(pack, reference, minisig, MAX_MINISIG_BYTES, "signature")?;
-        let minisig_text =
-            String::from_utf8(minisig_bytes).map_err(|_| layout("the signature is not text"))?;
+        let minisig_text = String::from_utf8(minisig_bytes)
+            .map_err(|e| layout(&format!("the signature is not text: {e}")))?;
         let version = pack.version.to_string();
         let expect = Expectation {
             id: id.as_str(),
@@ -477,7 +478,7 @@ impl<'a> Syncer<'a> {
         reference: &Reference,
         locked: &Digest,
     ) -> Result<Vec<u8>, SyncError> {
-        if let Some(path) = self.store.blob(locked, MAX_MANIFEST_BYTES as u64)
+        if let Some(path) = self.store.blob(locked, widen(MAX_MANIFEST_BYTES))
             && let Ok(bytes) = fs::read(path)
         {
             return Ok(bytes);
@@ -670,7 +671,10 @@ pub fn status(
                         _ => PackState::InPlaceChanged(dir),
                     }
                 }
-                _ => match store.inspect(&pack.digest)? {
+                SourceKind::Oci(_)
+                | SourceKind::Archive(_)
+                | SourceKind::Git { .. }
+                | SourceKind::Path(_) => match store.inspect(&pack.digest)? {
                     TreeState::Absent => PackState::NotInstalled,
                     TreeState::Intact(dir) => PackState::Recorded(dir),
                     TreeState::Tampered(dir) => PackState::Tampered(dir),

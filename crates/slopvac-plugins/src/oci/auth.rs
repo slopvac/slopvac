@@ -9,7 +9,9 @@
 //! timeout, no output cap and no name check, which the threat model (N6)
 //! requires, so this module reads the config and runs the helper itself.
 
+use crate::num::widen;
 use std::fmt;
+use std::io;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -269,6 +271,80 @@ fn find_with_suffixes(
     })
 }
 
+/// Write the registry name to the helper's stdin on a thread.
+fn feed_registry(mut stdin: std::process::ChildStdin, registry: &str) {
+    // A helper that never reads is caught by the lookup's deadline.
+    let reg = registry.to_owned();
+    std::thread::spawn(move || {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a helper that exits without reading ends the lookup through its exit status or the deadline"
+        )]
+        let _ = stdin.write_all(reg.as_bytes());
+    });
+}
+
+/// Read the helper's stdout on a thread: to end-of-file or one byte past the cap.
+///
+/// Killing the helper's whole tree closes every write end, so the reader never
+/// outlives a lookup.
+fn read_output(
+    stdout: impl Read + Send + 'static,
+) -> std::sync::mpsc::Receiver<io::Result<Vec<u8>>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let read = stdout
+            .take(widen(HELPER_MAX_OUTPUT) + 1)
+            .read_to_end(&mut buf)
+            .map(|_| buf);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the lookup drops the receiver only after it has given up on this reader"
+        )]
+        let _ = tx.send(read);
+    });
+    rx
+}
+
+/// What polling the output reader found.
+#[derive(Debug, PartialEq, Eq)]
+enum Polled {
+    Pending,
+    Done(Vec<u8>),
+    /// The lookup must end; the reason.
+    Failed(String),
+}
+
+/// Take what the output reader has sent, if anything.
+fn poll_output(rx: &std::sync::mpsc::Receiver<io::Result<Vec<u8>>>, program: &str) -> Polled {
+    match rx.try_recv() {
+        Ok(Ok(buf)) if buf.len() > HELPER_MAX_OUTPUT => Polled::Failed(format!(
+            "`{program}` printed more than {HELPER_MAX_OUTPUT} bytes"
+        )),
+        Ok(Ok(buf)) => Polled::Done(buf),
+        Ok(Err(e)) => Polled::Failed(format!("reading the output of `{program}`: {e}")),
+        Err(std::sync::mpsc::TryRecvError::Empty) => Polled::Pending,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            Polled::Failed("helper reader failed".into())
+        }
+    }
+}
+
+/// The credential error for `why`. A failed kill is named in it: the helper may
+/// still be running.
+fn stop_error(why: String, stopped: io::Result<()>) -> OciError {
+    match stopped {
+        Ok(()) => OciError::Credential(why),
+        Err(e) => OciError::Credential(format!("{why}; the helper could not be stopped: {e}")),
+    }
+}
+
+/// Kill the helper's tree, and build the credential error for `why`.
+fn abort_helper(helper: Contained, why: String) -> OciError {
+    stop_error(why, helper.kill_tree())
+}
+
 fn run_helper(
     name: &str,
     registry: &str,
@@ -300,27 +376,13 @@ fn run_helper(
         .stderr(Stdio::null());
     let mut helper = Contained::spawn(&mut command)
         .map_err(|e| cred(format!("cannot start `{program}`: {e}")))?;
-    if let Some(mut stdin) = helper.child_mut().stdin.take() {
-        // A helper that never reads is caught by the deadline below.
-        let reg = registry.to_owned();
-        std::thread::spawn(move || {
-            let _ = stdin.write_all(reg.as_bytes());
-        });
+    if let Some(stdin) = helper.child_mut().stdin.take() {
+        feed_registry(stdin, registry);
     }
-    let Some(mut stdout) = helper.child_mut().stdout.take() else {
-        helper.kill_tree();
-        return Err(cred("no helper stdout".into()));
+    let Some(stdout) = helper.child_mut().stdout.take() else {
+        return Err(abort_helper(helper, "no helper stdout".into()));
     };
-    let (tx, rx) = std::sync::mpsc::channel();
-    // The reader ends at end-of-file or after one byte past the cap. Killing the
-    // helper's whole tree closes every write end, so it never outlives a lookup.
-    std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = (&mut stdout)
-            .take(HELPER_MAX_OUTPUT as u64 + 1)
-            .read_to_end(&mut buf);
-        let _ = tx.send(buf);
-    });
+    let rx = read_output(stdout);
     let mut exited = false;
     let mut output = None;
     while !exited || output.is_none() {
@@ -328,39 +390,29 @@ fn run_helper(
             exited = match helper.has_exited() {
                 Ok(done) => done,
                 Err(e) => {
-                    helper.kill_tree();
-                    return Err(cred(format!("waiting for `{program}`: {e}")));
+                    return Err(abort_helper(
+                        helper,
+                        format!("waiting for `{program}`: {e}"),
+                    ));
                 }
             };
         }
         if output.is_none() {
-            match rx.try_recv() {
-                Ok(buf) if buf.len() > HELPER_MAX_OUTPUT => {
-                    helper.kill_tree();
-                    return Err(cred(format!(
-                        "`{program}` printed more than {HELPER_MAX_OUTPUT} bytes"
-                    )));
-                }
-                Ok(buf) => output = Some(buf),
-                Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    helper.kill_tree();
-                    return Err(cred("helper reader failed".into()));
-                }
+            match poll_output(&rx, &program) {
+                Polled::Pending => {}
+                Polled::Done(buf) => output = Some(buf),
+                Polled::Failed(why) => return Err(abort_helper(helper, why)),
             }
         }
         if exited && output.is_some() {
             break;
         }
         if Instant::now() >= deadline {
-            helper.kill_tree();
-            return Err(cred(format!("`{program}` timed out")));
+            return Err(abort_helper(helper, format!("`{program}` timed out")));
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    let Some(out) = output else {
-        return Err(cred("helper did not finish".into()));
-    };
+    let out = output.ok_or_else(|| cred("helper did not finish".into()))?;
     let status = helper
         .reap()
         .map_err(|e| cred(format!("waiting for `{program}`: {e}")))?;
@@ -368,8 +420,13 @@ fn run_helper(
         // "credentials not found in native keychain" is a normal miss.
         return Ok(None);
     }
-    let reply: HelperReply = serde_json::from_slice(&out)
-        .map_err(|_| cred(format!("`{program}` printed invalid JSON")))?;
+    let reply: HelperReply = serde_json::from_slice(&out).map_err(|e| {
+        cred(format!(
+            "`{program}` printed invalid JSON (line {}, column {})",
+            e.line(),
+            e.column()
+        ))
+    })?;
     if reply.username == "<token>" {
         return Err(cred(
             "identity tokens from credential helpers are not supported".into(),
@@ -394,13 +451,18 @@ impl DefaultCredentials {
         f.take(MAX_CONFIG_BYTES + 1)
             .read_to_end(&mut raw)
             .map_err(|e| OciError::Credential(format!("reading the Docker config: {e}")))?;
-        if raw.len() as u64 > MAX_CONFIG_BYTES {
+        if widen(raw.len()) > MAX_CONFIG_BYTES {
             return Err(OciError::Credential(
                 "the Docker config is larger than 1 MiB".into(),
             ));
         }
-        let cfg: DockerConfig = serde_json::from_slice(&raw)
-            .map_err(|_| OciError::Credential("the Docker config is not valid JSON".into()))?;
+        let cfg: DockerConfig = serde_json::from_slice(&raw).map_err(|e| {
+            OciError::Credential(format!(
+                "the Docker config is not valid JSON (line {}, column {})",
+                e.line(),
+                e.column()
+            ))
+        })?;
         let helper = unique_match(
             cfg.cred_helpers
                 .iter()
@@ -651,5 +713,59 @@ mod tests {
             ..DefaultCredentials::default()
         };
         assert_eq!(both.credential("ghcr.io").unwrap().unwrap().username, "me");
+    }
+
+    /// A reader whose every read fails, as a broken pipe would.
+    struct BrokenPipe;
+
+    impl Read for BrokenPipe {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("pipe broke"))
+        }
+    }
+
+    fn poll_until_settled(rx: &std::sync::mpsc::Receiver<io::Result<Vec<u8>>>) -> Polled {
+        let end = Instant::now() + Duration::from_secs(10);
+        loop {
+            match poll_output(rx, "docker-credential-x") {
+                Polled::Pending if Instant::now() < end => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                polled @ (Polled::Pending | Polled::Done(_) | Polled::Failed(_)) => return polled,
+            }
+        }
+    }
+
+    #[test]
+    fn a_read_error_on_the_helper_output_becomes_a_credential_error() {
+        let polled = poll_until_settled(&read_output(BrokenPipe));
+        let Polled::Failed(why) = polled else {
+            panic!("expected the lookup to fail, got {polled:?}");
+        };
+        assert_eq!(
+            why,
+            "reading the output of `docker-credential-x`: pipe broke"
+        );
+        assert_eq!(
+            stop_error(why.clone(), Ok(())).to_string(),
+            OciError::Credential(why).to_string()
+        );
+    }
+
+    #[test]
+    fn complete_helper_output_is_not_an_error() {
+        let polled = poll_until_settled(&read_output(&b"{}"[..]));
+        assert_eq!(polled, Polled::Done(b"{}".to_vec()));
+    }
+
+    #[test]
+    fn a_helper_that_could_not_be_stopped_is_named_in_the_error() {
+        let stopped = Err(io::Error::other("kill refused"));
+        let err = stop_error("`docker-credential-x` timed out".into(), stopped);
+        assert!(
+            matches!(&err, OciError::Credential(m)
+                if m == "`docker-credential-x` timed out; the helper could not be stopped: kill refused"),
+            "{err:?}"
+        );
     }
 }

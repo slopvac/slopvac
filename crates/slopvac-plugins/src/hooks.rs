@@ -630,7 +630,10 @@ pub fn plugin_path(root: &Path, path: Option<&Path>) -> String {
             .components()
             .filter_map(|c| match c {
                 Component::Normal(s) => Some(s.to_string_lossy().into_owned()),
-                _ => None,
+                Component::Prefix(_)
+                | Component::RootDir
+                | Component::CurDir
+                | Component::ParentDir => None,
             })
             .collect();
         if !parts.is_empty() && !rel.components().any(|c| matches!(c, Component::ParentDir)) {

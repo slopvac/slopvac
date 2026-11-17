@@ -15,6 +15,7 @@
 //! the reader never sees end of stream. Dropping a plugin waits for the reap,
 //! up to five seconds after the kill.
 
+use crate::num::widen;
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufReader, Read, Write};
 use std::path::PathBuf;
@@ -239,7 +240,8 @@ impl IdAllocator {
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |c| {
                 (c <= self.max).then_some(c + 1)
             })
-            .map_err(|_| PluginError::RequestIdExhausted)
+            // `Err` is the unchanged counter, not a failure with a cause.
+            .map_err(|_unchanged| PluginError::RequestIdExhausted)
     }
 }
 
@@ -285,14 +287,17 @@ impl Shared {
         lock(&self.frames).take();
         let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
         for p in drained {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a full or closed reply channel means the caller already has an answer or has left"
+            )]
             let _ = p.reply.try_send((Instant::now(), Err(first.clone())));
         }
         first
     }
 
     fn stderr_tail(&self) -> String {
-        let ring = lock(&self.stderr);
-        let bytes: Vec<u8> = ring.iter().copied().collect();
+        let bytes: Vec<u8> = lock(&self.stderr).iter().copied().collect();
         let start = bytes.len().saturating_sub(STDERR_SHOWN);
         let text = String::from_utf8_lossy(&bytes[start..]);
         let text = text.trim_end();
@@ -308,6 +313,10 @@ impl Shared {
     fn release_pending(&self) {
         let drained: Vec<Pending> = lock(&self.pending).drain().map(|(_, p)| p).collect();
         for p in drained {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a full or closed reply channel means the caller already has an answer or has left"
+            )]
             let _ = p.reply.try_send((
                 Instant::now(),
                 Err(PluginError::Usage("the plugin has shut down".into())),
@@ -317,6 +326,10 @@ impl Shared {
 
     /// Collect the exit status and stderr tail, fail every pending request.
     fn tear_down_after_exit(&self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a timeout is the expected outcome when stderr stays open; the tail is read as it stands"
+        )]
         let _ = self.stderr_done.recv_timeout(Duration::from_millis(500));
         let status = self
             .group
@@ -399,6 +412,10 @@ impl Shared {
         };
         match lock(&self.pending).remove(&id) {
             Some(p) => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a full or closed reply channel means the caller already has an answer or has left"
+                )]
                 let _ = p.reply.try_send((Instant::now(), reply));
                 Ok(true)
             }
@@ -419,10 +436,10 @@ struct Counted<R> {
 impl<R: Read> Read for Counted<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
-        self.read = self.read.saturating_add(n as u64);
+        self.read = self.read.saturating_add(widen(n));
         // Charged as bytes leave the pipe: partial frames, read-ahead and
         // failed streams count too.
-        if let Err(m) = self.budget.charge_stdout(n as u64) {
+        if let Err(m) = self.budget.charge_stdout(widen(n)) {
             self.breach = Some(m);
             return Err(io::Error::other("whole-run budget exceeded"));
         }
@@ -457,7 +474,7 @@ fn reader_loop(shared: &Shared, stdout: impl Read, limits_ready: &Receiver<()>) 
             Err(FrameError::Framing(m)) => return shared.violation(m),
             Ok(Some(body)) => {
                 // Bytes buffered for the next frame are not consumed yet.
-                let total = r.get_ref().read - r.buffer().len() as u64;
+                let total = r.get_ref().read - widen(r.buffer().len());
                 if total > shared.caps.stdout_bytes {
                     return shared.violation("standard output volume cap reached");
                 }
@@ -487,7 +504,7 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
         match stderr.read(&mut buf) {
             Ok(0) | Err(_) => break,
             Ok(n) => {
-                total = total.saturating_add(n as u64);
+                total = total.saturating_add(widen(n));
                 {
                     let mut ring = lock(&shared.stderr);
                     ring.extend(&buf[..n]);
@@ -497,7 +514,7 @@ fn stderr_loop(shared: &Shared, mut stderr: impl Read, done: Sender<()>) {
                 if let Some(hook) = &shared.stderr_read_hook {
                     (hook.0)(total);
                 }
-                if let Err(m) = shared.budget.charge_stderr(n as u64) {
+                if let Err(m) = shared.budget.charge_stderr(widen(n)) {
                     shared.violation(m);
                     break;
                 }
@@ -677,6 +694,10 @@ impl Conn {
         deadline_passed: bool,
         method: &str,
     ) -> Reply {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a failed write means the plugin is wedged; the wait below then times out and `fail` kills it"
+        )]
         let _ = self.notify(
             "$/cancelRequest",
             Some(json!({"id": id})),
@@ -701,6 +722,10 @@ impl Conn {
 
     fn cancel_all(&self) {
         for p in lock(&self.shared.pending).values() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a full channel means a cancel is already queued; a closed one means the request ended"
+            )]
             let _ = p.cancel.try_send(());
         }
     }
@@ -825,7 +850,7 @@ fn check_reply(
     let l = reply.limits;
     let max_msg = usize::try_from(l.max_message_bytes)
         .ok()
-        .filter(|&m| m as u64 >= MIN_MESSAGE_BYTES && m <= cfg.max_message_bytes)
+        .filter(|&m| widen(m) >= MIN_MESSAGE_BYTES && m <= cfg.max_message_bytes)
         .ok_or_else(|| {
             out(format!(
                 "maxMessageBytes {} is outside the allowed range",
@@ -941,6 +966,10 @@ impl Plugin {
             .store(negotiated.max_message_bytes, Ordering::SeqCst);
         // The reader stopped after the reply; it resumes under the new limit.
         if let Some(ready) = conn.limits_ready.take() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the reader drops its receiver only after it ended the connection, which every later call reports through `dead`"
+            )]
             let _ = ready.send(());
         }
         conn.notify("initialized", Some(json!({})), cfg.timeouts.initialize)?;
@@ -1047,6 +1076,10 @@ impl Plugin {
                 // Before `exit`, so the waiter sees it when the leader leaves.
                 shared.group.acknowledge();
             }
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "if `exit` is not delivered, closing the pipe and the group kill below still end the plugin"
+            )]
             let _ = self.conn.notify("exit", None, self.timeouts.exit);
         }
         // Closing the pipe ends the writer after it flushes `exit`.
@@ -1128,6 +1161,10 @@ struct Slot<'a>(&'a Receiver<()>);
 
 impl Drop for Slot<'_> {
     fn drop(&mut self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "an empty channel means the slot was already free"
+        )]
         let _ = self.0.try_recv();
     }
 }
@@ -1265,7 +1302,9 @@ mod tests {
             let far = Instant::now() + Duration::from_secs(60);
             match wait_for(&reply_rx, &cancel_rx, far) {
                 Wake::Reply(Some(Ok(v))) => assert_eq!(v, json!(round)),
-                other => panic!("round {round}: {other:?}"),
+                other @ (Wake::Reply(_) | Wake::Late(_) | Wake::Cancel | Wake::Deadline) => {
+                    panic!("round {round}: {other:?}")
+                }
             }
         }
     }
