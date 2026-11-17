@@ -2,7 +2,7 @@
 
 Slopvac ships a MegaLinter plugin descriptor and a Trunk linter definition. Both install the slopvac wheel from PyPI, run `slopvac lint` on prose files, and fail on exit 1 and exit 2. The files live in `integrations/` in this repository.
 
-Both integrations pin version 3.0.0, the first release with the `slopvac lint` command they call. Until that release is on PyPI, neither descriptor can install slopvac, so neither has run end to end. Tests check their structure and, for MegaLinter, their schema (`tests/test_integration_descriptors.py`).
+Both integrations pin version 3.0.0, the first release with the `slopvac lint` command they call. Until that release is on PyPI, neither descriptor can install slopvac, so neither has run end to end. The descriptor tests in `tests/test_integration_descriptors.py` are not integration acceptance. They validate the descriptor structure, check the MegaLinter descriptor against the upstream schema, and keep the version pins in step. Two of them also run the built slopvac CLI with the arguments from each descriptor (`test_descriptor_command_is_accepted_by_the_cli`, `test_lint_help_lists_every_descriptor_flag`). None of them runs MegaLinter or Trunk, installs the wheel, or checks how either tool reads the exit code or the SARIF report. Real runs of both tools wait for 3.0.0 on PyPI and are tracked in `slopvac-8l4.13.47`.
 
 ## Windows
 
