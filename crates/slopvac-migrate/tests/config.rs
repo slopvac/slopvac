@@ -155,6 +155,28 @@ fn migration_is_idempotent() {
 }
 
 #[test]
+fn a_config_the_version_gate_accepts_or_finds_newer_is_already_migrated() {
+    for text in ["schema_version = 4\n", "schema_version = \"3\"\n"] {
+        assert!(
+            matches!(migrate(text), Err(Error::AlreadyMigrated { .. })),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_2x_config_migrates_to_one_the_version_gate_accepts() {
+    for text in ["profile = \"strict\"\n", "schema_version = 2\n"] {
+        let out = migrate(text).unwrap();
+        let root = slopvac_config::tree::parse_toml(&out).unwrap();
+        assert!(
+            slopvac_config::version::check_version(&root, &out).is_ok(),
+            "{out}"
+        );
+    }
+}
+
+#[test]
 fn guidance_and_thresholds_copy() {
     let src = "[thresholds]\nmax_errors = 2\nmin_score = 80.0\n[guidance]\nwrite = \"auto\"\nreview_depth = \"self\"\n";
     let out = migrate(src).unwrap();
@@ -197,4 +219,37 @@ fn locale_comments_follow_their_values() {
         "{out}"
     );
     assert!(out.contains("# skip these\nallow = [\"x\"]"), "{out}");
+}
+const REMOVED: [&str; 5] = [
+    "ste-practices.inconsistent-wording-for-same-step",
+    "ste-safety.safety-block-missing-consequence",
+    "ste-sentences.vertical-list-item-punctuation",
+    "ste-sentences.vertical-list-lead-in-missing-colon",
+    "ste-words.inconsistent-term-for-same-thing",
+];
+
+#[test]
+fn removed_rules_leave_the_top_level_and_overrides_with_a_note() {
+    for id in REMOVED {
+        let text = format!(
+            "[rules]\n\"{id}\" = \"error\"\n\"prose-format.no-unicode-dash\" = \"warning\"\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"{id}\" = \"off\"\n"
+        );
+        let r = migrate_config(
+            &text,
+            "slopvac.toml",
+            &RenameTable::bundled(),
+            Options::default(),
+        )
+        .unwrap_or_else(|e| panic!("{id}: {e:?}"));
+        assert!(!r.text.contains(id), "{id}: {}", r.text);
+        assert!(
+            r.text
+                .contains("\"core:prose-format.no-unicode-dash\" = \"warning\""),
+            "{id}: {}",
+            r.text
+        );
+        let notes: Vec<_> = r.notes.iter().filter(|n| n.contains(id)).collect();
+        assert_eq!(notes.len(), 2, "{id}: {:?}", r.notes);
+        assert!(notes.iter().all(|n| n.contains("no longer exists in 3.0")));
+    }
 }

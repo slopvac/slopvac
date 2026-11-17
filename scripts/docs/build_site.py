@@ -49,6 +49,7 @@ from mdtext import text as _text
 ROOT = Path(__file__).resolve().parents[2]
 RULES_DIR = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac" / "rules"
 SCHEMAS_DIR = ROOT / "schemas" / "v3"
+REMOVED_RULES_FILE = ROOT / "scripts" / "contract" / "removed-rules.toml"
 DEFAULT_OUT = ROOT / "build" / "site-src"
 # Pack manifests to document. The example plugin pack is the only committed one
 # until the pack loader and the bundled core pack exist.
@@ -178,12 +179,26 @@ def load_categories(rules_dir: Path = RULES_DIR) -> list[dict]:
     return [doc for text in texts for doc in yaml.safe_load_all(text) if doc]
 
 
+def removed_rules() -> frozenset[str]:
+    """The 2.x rules that 3.0 does not ship, as ``<category>.<rule>``."""
+    text = REMOVED_RULES_FILE.read_text(encoding="utf-8")
+    return frozenset(tomllib.loads(text)["rules"])
+
+
 def generate_rules(rules_dir: Path = RULES_DIR) -> Pages:
     # STUB(slopvac-8l4.19.8): reads the Python reference rule YAML; swap for the slopvac-rules loader.
     pages: Pages = {}
     index = ["# Rules", "", "One page per rule, grouped by category.", ""]
+    removed = removed_rules()
     for category in sorted(load_categories(rules_dir), key=lambda c: c["id"]):
-        rules = sorted(category.get("rules", []), key=lambda r: r["id"])
+        rules = sorted(
+            (
+                r
+                for r in category.get("rules", [])
+                if f"{category['id']}.{r['id']}" not in removed
+            ),
+            key=lambda r: r["id"],
+        )
         cat_lines = [
             f"# {_text(category['title'])}",
             "",

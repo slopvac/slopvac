@@ -310,3 +310,26 @@ def test_tiers_are_extracted_for_the_profile_mapping() -> None:
     assert convert.extract_tiers(category) == {
         "c.r": {"strict": "enforced", "normal": "advisory"}
     }
+
+
+def test_no_generated_text_names_a_removed_rule() -> None:
+    removed = sorted(convert.REMOVED_RULES)
+    text = json.dumps(
+        [
+            convert.convert_category(c)
+            for c in convert.load_categories(convert.DEFAULT_RULES_DIR)
+        ]
+    )
+    assert [r for r in removed if r.split(".", 1)[1] in text] == []
+
+
+def test_a_sentence_that_names_a_removed_rule_is_dropped() -> None:
+    removed = sorted(convert.REMOVED_RULES)[0].replace(".", "/")
+    note = f"The half overlaps {removed}, which is mechanical. What is unique here is the key word."
+    assert convert.scrub_removed_rules(note) == "What is unique here is the key word."
+
+
+def test_text_that_names_only_a_removed_rule_fails_conversion() -> None:
+    removed = sorted(convert.REMOVED_RULES)[0].split(".", 1)[1]
+    with pytest.raises(convert.ConversionError):
+        convert.scrub_removed_rules(f"See {removed}.")
