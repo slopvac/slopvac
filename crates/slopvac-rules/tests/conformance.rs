@@ -18,6 +18,30 @@ use slopvac_rules::{Category, Rule, RuleFile, category_schema, rule_file_schema,
 /// from the defect each file names in `cases.toml`.
 const WHY_RULE: &[(&str, &str)] = &[
     ("bad-comparison.json", "unknown variant `eq`"),
+    (
+        "context-tag-trailing-newline.json",
+        "invalid context tag \"code\\n\"",
+    ),
+    (
+        "exception-name-trailing-newline.json",
+        "invalid name: \"quoted\\n\"",
+    ),
+    (
+        "genre-trailing-newline.json",
+        "invalid genre id \"reference\\n\"",
+    ),
+    (
+        "id-trailing-newline.json",
+        "invalid rule id: \"sentence-length\\n\"",
+    ),
+    (
+        "metric-trailing-newline.json",
+        "invalid metric name: \"sentence_words\\n\"",
+    ),
+    (
+        "ste-ref-trailing-newline.json",
+        "invalid STE reference: \"9:GR-2\\n\"",
+    ),
     ("case-without-assertion.json", "a case needs"),
     ("empty-contexts.json", "contexts must set"),
     ("exception-bare-string.json", "invalid type: string"),
@@ -42,6 +66,18 @@ const WHY_RULE: &[(&str, &str)] = &[
 
 const WHY_CATEGORY: &[(&str, &str)] = &[
     ("bad-rule.json", "unknown field `tiers`"),
+    (
+        "genre-trailing-newline.json",
+        "invalid genre id \"reference\\n\"",
+    ),
+    (
+        "id-trailing-newline.json",
+        "invalid category id \"ste-sentences\\n\"",
+    ),
+    (
+        "profile-trailing-newline.json",
+        "invalid profile name: \"strict\\n\"",
+    ),
     ("negative-weight.json", "invalid weight"),
     ("no-schema-version.json", "missing field `schema_version`"),
     ("profile-budget-negative.json", "invalid density"),
