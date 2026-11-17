@@ -134,3 +134,20 @@ fn the_vocabulary_sweep_is_owned_by_a_rule_that_applies_to_the_document() {
             .any(|m| m.contains("sweep"))
     );
 }
+
+#[test]
+fn a_rule_the_genre_excludes_does_not_run_on_the_document() {
+    // `^(a|aa)+$` on 64 a's and a b exhausts the PCRE2 match limit. Run on the consumer
+    // document it would abort the lint, so a rule limited to reference must not run there.
+    let bomb = rule(
+        "bomb",
+        &json!({"kind": "pattern", "pattern": "^(a|aa)+$"}),
+        &json!({"applies_to": {"genres": ["reference"]}}),
+    );
+    let set = ruleset(vec![category("cat", &[bomb])]);
+    let engine = Engine::new(vec![set], per_document()).unwrap();
+    let source = format!("---\ngenre: consumer\n---\n{}b\n", "a".repeat(64));
+    let doc = engine.lint(&Input::markdown("a.md", &source)).unwrap();
+    assert_eq!(doc.genre.id.as_str(), "consumer");
+    assert_eq!(doc.findings.len(), 0);
+}

@@ -1091,6 +1091,15 @@ impl Run<'_> {
             .suppressed(id, exceptions, self.lines.line_of(span.start()))
     }
 
+    /// Whether the document's genre is one the rule applies to. A rule limited to other genres
+    /// does not run, so it cannot fail the document.
+    fn applies(&self, rule: &slopvac_rules::Rule) -> bool {
+        rule.applies_to
+            .as_ref()
+            .and_then(|a| a.genres.as_ref())
+            .is_none_or(|g| g.contains(&self.genre.id))
+    }
+
     fn lexical(&self) -> Result<Vec<Finding>, EngineError> {
         let engine = self.engine;
         if matches!(self.input.kind, Kind::Diagram(_)) {
@@ -1103,6 +1112,9 @@ impl Run<'_> {
             let set = &engine.sets[active.set];
             let loaded = &set.categories()[active.category].rules()[active.rule];
             let rule = loaded.rule();
+            if !self.applies(rule) {
+                continue;
+            }
             let exclusions;
             let skip: &SkipRanges = match (&rule.exclude_blocks, rule.scope) {
                 (Some(kinds), scope) => {
@@ -1250,6 +1262,9 @@ impl Run<'_> {
             let set = &engine.sets[active.set];
             let loaded = &set.categories()[active.category].rules()[active.rule];
             let rule = loaded.rule();
+            if !self.applies(rule) {
+                continue;
+            }
             let Match::Metric(metric) = &rule.match_ else {
                 continue;
             };
