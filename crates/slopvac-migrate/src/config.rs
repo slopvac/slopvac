@@ -130,6 +130,17 @@ fn is_legacy(text: &str, file: &str) -> Result<bool, Error> {
         file: file.to_owned(),
         message: e.message,
     })?;
+    // The version gate leaves a non-integer to the schema, so a value like `"3"` would pass
+    // for migrated. Refuse it here, with its line.
+    if let Some(entry) = root.entry("schema_version")
+        && !matches!(entry.node.value, slopvac_config::tree::Value::Int(_))
+    {
+        return Err(Error::InvalidType {
+            file: file.to_owned(),
+            line: line_of(text, entry.node.span.start),
+            message: "`schema_version` must be an integer".to_owned(),
+        });
+    }
     Ok(matches!(
         slopvac_config::version::check_version(&root, text),
         Err(d) if d.code == slopvac_config::Code::LegacyVersion

@@ -16,17 +16,18 @@ pub(crate) const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
 /// Ceilings on one migrate run, on top of the per-file caps.
 ///
 /// Going over a ceiling stops the run with exit 2 and names the file that crossed it.
+/// The file limit counts every directory entry the walk meets, not only the files it reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Limits {
-    /// Most files one run reads.
+    /// Most directory entries one run walks.
     pub max_files: usize,
     /// Most bytes one run reads in total.
     pub max_bytes: u64,
 }
 
 impl Limits {
-    /// Limits of `max_files` files and `max_bytes` bytes per run.
+    /// Limits of `max_files` entries and `max_bytes` bytes per run.
     #[must_use]
     pub fn new(max_files: usize, max_bytes: u64) -> Self {
         Self {
@@ -49,49 +50,57 @@ pub(crate) enum Kind {
     Document,
 }
 
-/// Reads text files within the per-file caps and the per-run [`Limits`].
+impl Kind {
+    fn cap(self) -> u64 {
+        match self {
+            Self::Config => MAX_CONFIG_BYTES,
+            Self::Document => MAX_DOCUMENT_BYTES,
+        }
+    }
+
+    fn too_large(self, path: &Path) -> Error {
+        let (path, cap) = (path.display().to_string(), self.cap());
+        match self {
+            Self::Config => Error::ConfigTooLarge { path, cap },
+            Self::Document => Error::DocumentTooLarge { path, cap },
+        }
+    }
+}
+
+/// What one run has used so far: walked entries and bytes of text, against its [`Limits`].
 #[derive(Debug)]
-pub(crate) struct Reader {
+pub(crate) struct Budget {
     limits: Limits,
-    files: usize,
+    entries: usize,
     bytes: u64,
 }
 
-impl Reader {
+impl Budget {
     pub(crate) fn new(limits: Limits) -> Self {
         Self {
             limits,
-            files: 0,
+            entries: 0,
             bytes: 0,
         }
     }
 
-    /// Read `path` as UTF-8 text.
-    pub(crate) fn read(&mut self, path: &Path, kind: Kind) -> Result<String, Error> {
-        let shown = path.display().to_string();
-        self.files = self.files.saturating_add(1);
-        if self.files > self.limits.max_files {
+    /// Count one directory entry. Call it before storing the entry.
+    pub(crate) fn charge_entry(&mut self, path: &Path) -> Result<(), Error> {
+        self.entries = self.entries.saturating_add(1);
+        if self.entries > self.limits.max_files {
             return Err(Error::RunLimit {
-                path: shown,
+                path: path.display().to_string(),
                 what: "files",
                 limit: u64::try_from(self.limits.max_files).unwrap_or(u64::MAX),
             });
         }
-        let cap = match kind {
-            Kind::Config => MAX_CONFIG_BYTES,
-            Kind::Document => MAX_DOCUMENT_BYTES,
-        };
-        let file = File::open(path).map_err(|e| Error::io(path, e))?;
-        let bytes = slopvac_fs::read_capped(file, cap).map_err(|e| match e {
-            slopvac_fs::Error::CapExceeded { cap } => match kind {
-                Kind::Config => Error::ConfigTooLarge { path: shown, cap },
-                Kind::Document => Error::DocumentTooLarge { path: shown, cap },
-            },
-            other => Error::io(path, std::io::Error::other(other.to_string())),
-        })?;
+        Ok(())
+    }
+
+    fn charge_bytes(&mut self, path: &Path, len: usize) -> Result<(), Error> {
         self.bytes = self
             .bytes
-            .saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+            .saturating_add(u64::try_from(len).unwrap_or(u64::MAX));
         if self.bytes > self.limits.max_bytes {
             return Err(Error::RunLimit {
                 path: path.display().to_string(),
@@ -99,8 +108,28 @@ impl Reader {
                 limit: self.limits.max_bytes,
             });
         }
+        Ok(())
+    }
+
+    /// Read `path` as UTF-8 text within the cap for `kind` and the run's byte budget.
+    pub(crate) fn read(&mut self, path: &Path, kind: Kind) -> Result<String, Error> {
+        let file = File::open(path).map_err(|e| Error::io(path, e))?;
+        let bytes = slopvac_fs::read_capped(file, kind.cap()).map_err(|e| match e {
+            slopvac_fs::Error::CapExceeded { .. } => kind.too_large(path),
+            source => Error::read(path, source),
+        })?;
+        self.charge_bytes(path, bytes.len())?;
         String::from_utf8(bytes).map_err(|_| Error::NotUtf8 {
             path: path.display().to_string(),
         })
+    }
+
+    /// Check text that is not read from disk, such as a rewritten document, against the
+    /// same cap and budget as a read.
+    pub(crate) fn check_text(&mut self, path: &Path, kind: Kind, text: &str) -> Result<(), Error> {
+        if u64::try_from(text.len()).map_or(true, |len| len > kind.cap()) {
+            return Err(kind.too_large(path));
+        }
+        self.charge_bytes(path, text.len())
     }
 }

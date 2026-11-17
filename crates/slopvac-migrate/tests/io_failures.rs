@@ -1,0 +1,252 @@
+//! The CLI-facing failure, budgeted discovery, capped diagnostics, excluded candidates,
+//! the schema version type and MDX handling.
+
+use std::fs;
+use std::path::Path;
+
+use slopvac_migrate::{
+    CliFailure, Error, Finding, Limits, Linter, NullLinter, Options, Phase, RenameTable, command,
+    execute, plan, plan_with_limits, run,
+};
+
+const STEERING: &str = "<!-- slopvac:begin -->\nnew\n<!-- slopvac:end -->\n";
+const DIRECTIVE: &str =
+    "<!-- slopvac-allow: rule=prose-format.no-unicode-dash reason=x -->\nText\n";
+const UNKNOWN: &str = "<!-- slopvac-allow: rule=no.such-rule reason=x -->\n";
+const INVALID: &str = "<!-- slopvac-allow: rule=a.b,c.d reason=x -->\n\n";
+const REMOVED: &str =
+    "<!-- slopvac-allow: rule=ste-words.inconsistent-term-for-same-thing reason=x -->\n\n";
+
+fn write(root: &Path, name: &str, text: impl AsRef<[u8]>) {
+    let p = root.join(name);
+    fs::create_dir_all(p.parent().unwrap()).unwrap();
+    fs::write(p, text).unwrap();
+}
+
+fn plan_of(root: &Path) -> Result<slopvac_migrate::Plan, slopvac_migrate::Error> {
+    plan(root, &RenameTable::bundled(), Options::default(), STEERING)
+}
+
+fn cli(root: &Path) -> (i32, String, String) {
+    let m = command().get_matches_from(["migrate", root.to_str().unwrap()]);
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run(&m, &NullLinter, STEERING, &mut out, &mut err);
+    (
+        code,
+        String::from_utf8(out).unwrap(),
+        String::from_utf8(err).unwrap(),
+    )
+}
+
+fn exec(root: &Path) -> Result<String, CliFailure> {
+    let m = command().get_matches_from(["migrate", root.to_str().unwrap()]);
+    let mut out = Vec::new();
+    execute(&m, &NullLinter, STEERING, &mut out).map(|()| String::from_utf8(out).unwrap())
+}
+
+#[test]
+fn the_failure_execute_returns_is_escaped_once_and_keeps_the_raw_source() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "docs/a\\b\u{1b}.md", UNKNOWN);
+    let f = exec(dir.path()).unwrap_err();
+    assert_eq!(f.code(), "config-legacy-dropped");
+    let shown = f.to_string();
+    assert!(!shown.contains('\u{1b}'), "{shown:?}");
+    // One backslash in the name becomes two, not four.
+    assert!(shown.contains("docs/a\\\\b\\u{1b}.md"), "{shown:?}");
+    assert!(!shown.contains("a\\\\\\\\b"), "{shown:?}");
+    let raw = std::error::Error::source(&f).unwrap().to_string();
+    assert!(raw.contains("a\\b\u{1b}.md"), "{raw:?}");
+}
+
+#[test]
+fn discovered_entries_count_against_the_file_limit_before_any_read() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..5 {
+        write(dir.path(), &format!("src/f{i}.rs"), "");
+    }
+    let e = plan_with_limits(
+        dir.path(),
+        &RenameTable::bundled(),
+        Options::default(),
+        STEERING,
+        Limits::new(3, u64::MAX),
+    )
+    .unwrap_err();
+    assert_eq!(e.code(), "migrate-run-limit");
+    assert!(e.to_string().contains("/src/f"), "{e}");
+}
+
+#[test]
+fn warnings_are_capped_with_one_suppressed_line() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "a.md", INVALID.repeat(250));
+    let p = plan_of(dir.path()).unwrap();
+    assert_eq!(p.warnings.len(), 101);
+    assert_eq!(p.warnings[100], "150 more warnings suppressed");
+}
+
+#[test]
+fn notes_are_capped_with_one_suppressed_line() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "a.md", REMOVED.repeat(250));
+    let p = plan_of(dir.path()).unwrap();
+    assert_eq!(p.notes.len(), 101);
+    assert_eq!(p.notes[100], "150 more notes suppressed");
+}
+
+#[test]
+fn one_message_is_cut_to_its_length_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let long = "x".repeat(200);
+    write(
+        dir.path(),
+        &format!("{long}/{long}/{long}/a.md"),
+        "<!-- slopvac-allow: rule=a.b,c.d reason=x -->\n",
+    );
+    let p = plan_of(dir.path()).unwrap();
+    assert_eq!(p.warnings.len(), 1);
+    assert_eq!(p.warnings[0].chars().count(), 513, "{:?}", p.warnings[0]);
+    assert!(p.warnings[0].ends_with('…'));
+}
+
+#[cfg(unix)]
+mod excluded {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    fn warns(root: &Path, prefix: &str) -> bool {
+        let w = plan_of(root).unwrap().warnings;
+        w.iter().any(|m| m.starts_with(prefix)) || {
+            eprintln!("{w:?}");
+            false
+        }
+    }
+
+    #[test]
+    fn a_symlinked_document_is_reported_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "real.txt", "x");
+        symlink("real.txt", dir.path().join("link.md")).unwrap();
+        assert!(warns(dir.path(), "link.md: not checked: symbolic link"));
+    }
+
+    #[test]
+    fn a_dangling_symlink_candidate_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        symlink("missing", dir.path().join("slopvac.toml")).unwrap();
+        assert!(warns(
+            dir.path(),
+            "slopvac.toml: not checked: symbolic link"
+        ));
+    }
+
+    #[test]
+    fn a_symlink_cycle_is_reported_and_the_walk_ends() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), "sub/a.txt", "x");
+        symlink("..", dir.path().join("sub/up")).unwrap();
+        assert!(warns(dir.path(), "sub/up: not checked: symbolic link"));
+    }
+
+    #[test]
+    fn a_special_file_with_a_document_name_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let made = std::process::Command::new("mkfifo")
+            .arg(dir.path().join("pipe.md"))
+            .status()
+            .unwrap()
+            .success();
+        assert!(made);
+        assert!(warns(
+            dir.path(),
+            "pipe.md: not checked: not a regular file"
+        ));
+    }
+}
+
+#[test]
+fn a_non_integer_schema_version_is_exit_2_with_its_line() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "slopvac.toml",
+        "profile = \"strict\"\nschema_version = \"3\"\n",
+    );
+    let (code, _, err) = cli(dir.path());
+    assert_eq!(code, 2);
+    assert!(
+        err.starts_with("error[config-invalid-type]: slopvac.toml:2: "),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_non_integer_schema_version_in_pyproject_names_the_pyproject_line() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "pyproject.toml",
+        "[project]\nname = \"x\"\n\n[tool.slopvac]\nschema_version = 3.5\n",
+    );
+    let (code, _, err) = cli(dir.path());
+    assert_eq!(code, 2);
+    assert!(
+        err.starts_with("error[config-invalid-type]: pyproject.toml:5: "),
+        "{err}"
+    );
+}
+
+#[test]
+fn an_exported_string_in_mdx_is_not_rewritten() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "a.mdx",
+        "export const d = \"<!-- slopvac-allow: rule=prose-format.no-unicode-dash reason=x -->\";\n",
+    );
+    assert_eq!(plan_of(dir.path()).unwrap().changes.len(), 0);
+}
+
+#[test]
+fn an_mdx_directive_that_needs_a_rename_is_a_warning_with_its_line() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "a.mdx", format!("# T\n\n{DIRECTIVE}"));
+    let p = plan_of(dir.path()).unwrap();
+    assert_eq!(p.changes.len(), 0);
+    assert_eq!(p.warnings.len(), 1, "{:?}", p.warnings);
+    assert!(
+        p.warnings[0].starts_with("a.mdx:3: MDX is not rewritten"),
+        "{:?}",
+        p.warnings
+    );
+}
+
+struct Hostile;
+
+impl Linter for Hostile {
+    fn lint(
+        &self,
+        _root: &Path,
+        phase: Phase,
+        _overlay: &[(std::path::PathBuf, String)],
+    ) -> Result<Vec<Finding>, Error> {
+        Ok(vec![Finding {
+            rule: "x\u{1b}[31m".into(),
+            count: usize::from(phase == Phase::Before),
+        }])
+    }
+}
+
+#[test]
+fn a_rule_name_from_a_linter_is_escaped_in_the_report() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "a.md", DIRECTIVE);
+    let m = command().get_matches_from(["migrate", dir.path().to_str().unwrap()]);
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = run(&m, &Hostile, STEERING, &mut out, &mut err);
+    let out = String::from_utf8(out).unwrap();
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains('\u{1b}'), "{out:?}");
+    assert!(out.contains("x\\u{1b}[31m"), "{out:?}");
+}

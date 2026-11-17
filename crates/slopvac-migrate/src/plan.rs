@@ -8,8 +8,10 @@ use similar::TextDiff;
 use slopvac_engine::discover::FileKind;
 use toml_edit::{DocumentMut, Item, Value};
 
+use crate::capped::Capped;
 use crate::config::{key_lines, migrate_config};
-use crate::limits::{Kind, Limits, Reader};
+use crate::limits::{Budget, Kind, Limits};
+use crate::walk::{Dir, discover};
 use crate::{Dropped, Error, Options, RenameTable, rewrite_directives, rewrite_steering};
 
 /// Where `apply` keeps the files it replaced, relative to the project root.
@@ -65,14 +67,12 @@ impl Plan {
     }
 }
 
-const SKIP_DIRS: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    ".venv",
-    "venv",
-    BACKUP_DIR,
-];
+/// What planning collects: the edits, and the bounded notes and warnings.
+struct Sink {
+    changes: Vec<Change>,
+    notes: Capped,
+    warnings: Capped,
+}
 
 /// Plan the migration of the project under `root`.
 ///
@@ -102,79 +102,47 @@ pub fn plan_with_limits(
     steering: &str,
     limits: Limits,
 ) -> Result<Plan, Error> {
-    let mut plan = Plan::default();
+    let mut budget = Budget::new(limits);
+    let mut sink = Sink {
+        changes: Vec::new(),
+        notes: Capped::new("notes"),
+        warnings: Capped::new("warnings"),
+    };
     let mut dropped: Vec<Dropped> = Vec::new();
-    let mut dirs = Vec::new();
-    let mut docs = Vec::new();
-    walk(root, root, &mut dirs, &mut docs, &mut plan.warnings)?;
-    let mut reader = Reader::new(limits);
-    for dir in dirs {
+    let tree = discover(root, &mut budget, &mut sink.warnings)?;
+    for dir in &tree.dirs {
         plan_dir(
             root,
-            &dir,
+            dir,
             renames,
             options,
-            &mut reader,
-            &mut plan,
+            &mut budget,
+            &mut sink,
             &mut dropped,
         )?;
     }
-    for doc in docs {
+    for (doc, kind) in &tree.docs {
         plan_document(
             root,
-            &doc,
+            doc,
+            kind,
             renames,
             steering,
-            &mut reader,
-            &mut plan,
+            &mut budget,
+            &mut sink,
             &mut dropped,
         )?;
     }
+    let plan = Plan {
+        changes: sink.changes,
+        notes: sink.notes.finish(),
+        warnings: sink.warnings.finish(),
+    };
     if dropped.is_empty() {
         Ok(plan)
     } else {
         Err(Error::Dropped(dropped))
     }
-}
-
-/// Collect the directories and the Markdown and MDX documents under `dir`. A prose file
-/// migrate cannot rewrite is reported in `warnings`, not skipped silently.
-fn walk(
-    root: &Path,
-    dir: &Path,
-    dirs: &mut Vec<PathBuf>,
-    docs: &mut Vec<PathBuf>,
-    warnings: &mut Vec<String>,
-) -> Result<(), Error> {
-    dirs.push(dir.to_owned());
-    let mut entries: Vec<_> = fs::read_dir(dir)
-        .map_err(|e| Error::io(dir, e))?
-        .collect::<Result<_, _>>()
-        .map_err(|e| Error::io(dir, e))?;
-    entries.sort_by_key(fs::DirEntry::file_name);
-    for entry in entries {
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let kind = entry.file_type().map_err(|e| Error::io(&path, e))?;
-        if kind.is_dir() {
-            if !SKIP_DIRS.contains(&name.as_ref()) {
-                walk(root, &path, dirs, docs, warnings)?;
-            }
-        } else if kind.is_file() {
-            match FileKind::from_file_name(&name) {
-                Some(FileKind::Markdown | FileKind::Mdx) => docs.push(path),
-                Some(kind @ (FileKind::Html | FileKind::Rst | FileKind::Text)) => {
-                    warnings.push(format!(
-                        "{}: not checked: migrate rewrites Markdown and MDX only, not {kind:?} files",
-                        rel(root, &path).display()
-                    ));
-                }
-                _ => {}
-            }
-        }
-    }
-    Ok(())
 }
 
 // Used by `restore` for the backup manifest; the restore path owns its own read hardening.
@@ -188,18 +156,19 @@ fn rel(root: &Path, path: &Path) -> PathBuf {
 
 fn plan_dir(
     root: &Path,
-    dir: &Path,
+    found: &Dir,
     renames: &RenameTable,
     options: Options,
-    reader: &mut Reader,
-    plan: &mut Plan,
+    budget: &mut Budget,
+    plan: &mut Sink,
     dropped: &mut Vec<Dropped>,
 ) -> Result<(), Error> {
+    let dir = &found.path;
     let main_cfg = dir.join("slopvac.toml");
     let dot = dir.join(".slopvac.toml");
     let pyproject = dir.join("pyproject.toml");
-    let py_text = if pyproject.is_file() {
-        Some(reader.read(&pyproject, Kind::Config)?)
+    let py_text = if found.pyproject {
+        Some(budget.read(&pyproject, Kind::Config)?)
     } else {
         None
     };
@@ -207,9 +176,8 @@ fn plan_dir(
         Some(text) => extract_tool_table(text, &rel(root, &pyproject).display().to_string())?,
         None => None,
     };
-    let sources = usize::from(main_cfg.is_file())
-        + usize::from(dot.is_file())
-        + usize::from(py_table.is_some());
+    let sources =
+        usize::from(found.main) + usize::from(found.dot) + usize::from(py_table.is_some());
     if sources > 1 {
         return Err(Error::Conflict(format!(
             "{}: more than one 2.x config source (slopvac.toml, .slopvac.toml, [tool.slopvac]); \
@@ -217,17 +185,17 @@ fn plan_dir(
             rel(root, dir).display()
         )));
     }
-    let (source, origin, old) = if main_cfg.is_file() {
+    let (source, origin, old) = if found.main {
         (
             main_cfg.clone(),
             Origin::InPlace,
-            reader.read(&main_cfg, Kind::Config)?,
+            budget.read(&main_cfg, Kind::Config)?,
         )
-    } else if dot.is_file() {
+    } else if found.dot {
         (
             dot.clone(),
             Origin::Dotfile,
-            reader.read(&dot, Kind::Config)?,
+            budget.read(&dot, Kind::Config)?,
         )
     } else if let (Some((extracted, _)), true) = (&py_table, py_text.is_some()) {
         (pyproject.clone(), Origin::Pyproject, extracted.clone())
@@ -249,14 +217,14 @@ fn plan_dir(
             };
         }
     };
-    plan.notes
-        .extend(rewrite.notes.into_iter().map(|n| format!("{label}: {n}")));
+    for n in rewrite.notes {
+        plan.notes.push(format!("{label}: {n}"));
+    }
     let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
-    plan.notes.extend(
-        dropped_in_pyproject(rewrite.removed_categories, py)
-            .iter()
-            .map(|d| format!("{label}: {}", d.category_removed_notice())),
-    );
+    for d in dropped_in_pyproject(rewrite.removed_categories, py) {
+        plan.notes
+            .push(format!("{label}: {}", d.category_removed_notice()));
+    }
     let target = rel(root, &main_cfg);
     match origin {
         Origin::InPlace => plan.changes.push(Change {
@@ -328,6 +296,20 @@ fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
                 reason,
             }
         }
+        Error::InvalidType {
+            file,
+            line,
+            message,
+        } => {
+            let line_of = py
+                .and_then(|t| key_lines(t).ok())
+                .and_then(|l| l.get("tool.slopvac.schema_version").copied());
+            Error::InvalidType {
+                line: line_of.unwrap_or(line),
+                file,
+                message,
+            }
+        }
         e => e,
     }
 }
@@ -390,32 +372,41 @@ fn split_tool_table(doc: &mut DocumentMut) -> Option<(String, String)> {
 /// Plan the directive and steering rewrite of one document. A directive id with no
 /// rename entry stops the migration (docs/contract/config.md, section 5.2), so it
 /// goes to `dropped` with the other blocking settings.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one planning step; the arguments are its inputs"
+)]
 fn plan_document(
     root: &Path,
     path: &Path,
+    kind: &FileKind,
     renames: &RenameTable,
     steering: &str,
-    reader: &mut Reader,
-    plan: &mut Plan,
+    budget: &mut Budget,
+    plan: &mut Sink,
     dropped: &mut Vec<Dropped>,
 ) -> Result<(), Error> {
-    let old = reader.read(path, Kind::Document)?;
+    let old = budget.read(path, Kind::Document)?;
     let label = rel(root, path);
+    if *kind == FileKind::Mdx {
+        warn_mdx_directives(&label, &old, renames, &mut plan.warnings);
+        return Ok(());
+    }
     let (mut text, found) = rewrite_directives(&old, renames);
-    plan.notes.extend(found.removed.iter().map(|r| {
-        format!(
+    for r in &found.removed {
+        plan.notes.push(format!(
             "{}:{}: removed slopvac-allow rule={}: the rule no longer exists in 3.0",
             label.display(),
             r.line,
             r.id
-        )
-    }));
-    plan.warnings.extend(found.invalid.iter().map(|line| {
-        format!(
+        ));
+    }
+    for line in &found.invalid {
+        plan.warnings.push(format!(
             "{}:{line}: invalid 2.x directive, left as is",
             label.display()
-        )
-    }));
+        ));
+    }
     dropped.extend(found.unknown.into_iter().map(|u| Dropped {
         file: label.display().to_string(),
         key: format!("slopvac-allow rule={}", u.id),
@@ -436,6 +427,22 @@ fn plan_document(
         });
     }
     Ok(())
+}
+
+/// MDX mixes prose with code (ESM blocks, JSX, expressions), so a text rewrite could change
+/// what the page runs. Directives in MDX are left alone; each one that needs a rename is
+/// reported with its line.
+fn warn_mdx_directives(label: &Path, text: &str, renames: &RenameTable, warnings: &mut Capped) {
+    for (index, line) in text.split_inclusive('\n').enumerate() {
+        let (rewritten, _) = rewrite_directives(line, renames);
+        if rewritten != line {
+            warnings.push(format!(
+                "{}:{}: MDX is not rewritten; rename or remove this slopvac-allow directive by hand",
+                label.display(),
+                index + 1
+            ));
+        }
+    }
 }
 
 /// A unified diff of every change in the plan.

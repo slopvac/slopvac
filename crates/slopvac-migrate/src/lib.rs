@@ -6,6 +6,7 @@
 //!
 //! The CLI crate wires [`command`] and [`run`] into the clap tree.
 
+mod capped;
 mod cli;
 mod config;
 mod directives;
@@ -20,10 +21,11 @@ mod preserve_doc;
 mod renames;
 mod report;
 mod steering;
+mod walk;
 
 use std::fmt;
 
-pub use cli::{command, execute, run};
+pub use cli::{CliFailure, command, execute, run};
 pub use config::{Rewrite, migrate_config};
 pub use directives::{Found, RemovedId, UnknownId, rewrite_directives};
 pub use guide::{doc as guide_doc, prime_migrate};
@@ -126,6 +128,25 @@ pub enum Error {
     /// The engine could not lint the project.
     #[error("lint: {0}")]
     Lint(String),
+    /// `schema_version` is not an integer.
+    #[error("{file}:{line}: {message}")]
+    InvalidType {
+        /// The file.
+        file: String,
+        /// One-based line of the value.
+        line: usize,
+        /// What is wrong.
+        message: String,
+    },
+    /// Reading a file failed.
+    #[error("{path}: {source}")]
+    Read {
+        /// The file.
+        path: String,
+        /// The cause.
+        #[source]
+        source: slopvac_fs::Error,
+    },
     /// A document is larger than the document cap.
     #[error("{path}: larger than {cap} bytes")]
     DocumentTooLarge {
@@ -176,6 +197,7 @@ impl Error {
         match self {
             Self::Dropped(_) => "config-legacy-dropped",
             Self::Parse { .. } => "config-invalid-toml",
+            Self::InvalidType { .. } => "config-invalid-type",
             Self::AlreadyMigrated { .. } => "config-already-migrated",
             Self::Conflict(_) => "migrate-config-conflict",
             Self::Unsafe(_) => "migrate-unsafe-path",
@@ -186,7 +208,7 @@ impl Error {
             Self::ConfigTooLarge { .. } => "config-too-large",
             Self::RunLimit { .. } => "migrate-run-limit",
             Self::NotUtf8 { .. } => "migrate-not-utf8",
-            Self::Io { .. } => "migrate-io-failed",
+            Self::Io { .. } | Self::Read { .. } => "migrate-io-failed",
         }
     }
 
@@ -215,6 +237,10 @@ impl Error {
             Self::NotUtf8 { path } => Self::NotUtf8 {
                 path: shown(&path, root),
             },
+            Self::Read { path, source } => Self::Read {
+                path: shown(&path, root),
+                source,
+            },
             other => other,
         }
     }
@@ -227,8 +253,16 @@ impl Error {
             Self::ConfigTooLarge { cap, .. } => Self::ConfigTooLarge { path, cap },
             Self::RunLimit { what, limit, .. } => Self::RunLimit { path, what, limit },
             Self::NotUtf8 { .. } => Self::NotUtf8 { path },
+            Self::Read { source, .. } => Self::Read { path, source },
             Self::Io { source, .. } => Self::Io { path, source },
             other => other,
+        }
+    }
+
+    pub(crate) fn read(path: &std::path::Path, source: slopvac_fs::Error) -> Self {
+        Self::Read {
+            path: path.display().to_string(),
+            source,
         }
     }
 

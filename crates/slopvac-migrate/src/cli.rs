@@ -59,30 +59,65 @@ pub fn run(
     match execute(matches, linter, steering, out) {
         Ok(()) => 0,
         Err(e) => {
-            let _ = writeln!(
-                err,
-                "error[{}]: {}",
-                e.code(),
-                sanitize::terminal(&e.to_string())
-            );
+            let _ = writeln!(err, "error[{}]: {e}", e.code());
             2
         }
     }
 }
 
-/// Run `slopvac migrate` and return the failure for the caller to render. Paths in
-/// the error are relative to the project root.
+// TODO(slopvac-8l4.12.42): sanitize at the binary boundary and delete this wrapper. Until
+// then it escapes once, here, so the binary can print the message as it is.
+/// The failure of [`execute`], for the CLI to print.
+///
+/// Its `Display` is the error message escaped for a terminal. [`source`](std::error::Error::source)
+/// is the raw [`Error`], which library callers should match on.
+#[derive(Debug)]
+pub struct CliFailure {
+    code: &'static str,
+    source: Error,
+}
+
+impl CliFailure {
+    /// The stable error code of the failure.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        self.code
+    }
+}
+
+impl std::fmt::Display for CliFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&sanitize::terminal(&self.source.to_string()))
+    }
+}
+
+impl std::error::Error for CliFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+/// Run `slopvac migrate` and return the failure for the caller to print. Paths in the
+/// failure are relative to the project root.
+///
+/// # Errors
+/// A [`CliFailure`] holding the [`Error`] that stopped the run.
 pub fn execute(
     matches: &ArgMatches,
     linter: &dyn Linter,
     steering: &str,
     out: &mut dyn Write,
-) -> Result<(), Error> {
+) -> Result<(), CliFailure> {
     let root = matches
         .get_one::<PathBuf>("path")
         .cloned()
         .unwrap_or_else(|| PathBuf::from("."));
-    execute_in(matches, linter, steering, out, &root).map_err(|e| e.redacted(&root))
+    execute_in(matches, linter, steering, out, &root)
+        .map_err(|e| e.redacted(&root))
+        .map_err(|source| CliFailure {
+            code: source.code(),
+            source,
+        })
 }
 
 fn execute_in(
