@@ -17,7 +17,10 @@ pub use ids::{
     ApiVersion, ContextTag, Contexts, DuplicateContext, IdError, PackId, RuleId, SchemaVersion,
     Severity,
 };
-pub use origin::{Origin, OriginError, OriginLabel, OriginLocator, SegmentId, SegmentRange};
+pub use origin::{
+    Origin, OriginError, OriginLabel, OriginLocator, Result as OriginResult, SegmentId,
+    SegmentRange,
+};
 pub use report::{
     AiRegister, AiRegisterSummary, AiSignal, CategoryScore, CategorySummary, ConfigLayer,
     ConfigSource, Document, Extent, Finding, FindingError, Fix, FixError, Gate, GateError,

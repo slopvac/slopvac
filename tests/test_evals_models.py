@@ -1075,3 +1075,116 @@ def test_the_shipped_price_list_names_every_model_in_the_roster():
     names = {m["name"] for m in models.load_models(lib.EVALS_DIR / "models.json")}
     assert names <= set(prices["models"])
     assert prices["source"] == "https://aws.amazon.com/bedrock/pricing"
+
+
+def test_recommendations_keep_reviewer_rows_only_with_a_rate_per_model():
+    results = results_with({"t1": [True, False, True], "t2": [True, True, True]})
+    results["runs"] += [
+        {
+            "type": "rewrite",
+            "role": "reviewer",
+            "model": "m",
+            "task": task,
+            "score": {"success": ok, "planted": 1},
+        }
+        for task, ok in (("r1", True), ("r1", True), ("r1", False), ("r2", False))
+    ]
+    out = models.recommendations(results, publish=True)
+    assert out["schema_version"] == 2
+    assert out["status"] == "published"
+    assert out["date"] == "d"
+    assert out["repeats"] == 3
+    # r1 averages 2/3 and r2 is 0, so the rate is 1/3. Author rows are dropped.
+    assert out["rows"] == [
+        {
+            "review_type": "rewrite",
+            "family": "f",
+            "tier": "t",
+            "model": "m",
+            "success_rate": 0.3333,
+            "tasks": 2,
+            "runs": 4,
+        }
+    ]
+
+
+def test_recommendations_publish_nothing_unless_asked():
+    results = results_with({"t1": [True, True, True]})
+    results["runs"].append(
+        {
+            "type": "rewrite",
+            "role": "reviewer",
+            "model": "m",
+            "task": "r1",
+            "score": {"success": True, "planted": 1},
+        }
+    )
+    assert models.recommendations(results) == {
+        "schema_version": 2,
+        "status": "pending-reevaluation",
+        "date": "d",
+        "repeats": 3,
+        "rows": [],
+    }
+
+
+def test_the_committed_recommendations_match_the_committed_results():
+    results = models.load(Path(models.RESULTS_DIR) / "2026-11-14.json")
+    data = lib.EVALS_DIR.parent / "crates/slopvac-agents/data/model-evals.json"
+    expected = json.dumps(models.recommendations(results), indent=1, sort_keys=True)
+    assert data.read_text(encoding="utf-8") == expected + "\n"
+
+
+def recommend_results(tmp_path):
+    results = results_with({"t1": [True, True, True]})
+    results["schema"] = models.RESULTS_SCHEMA
+    results["runs"].append(
+        {
+            "type": "rewrite",
+            "role": "reviewer",
+            "model": "m",
+            "task": "r1",
+            "score": {"success": True, "planted": 1},
+        }
+    )
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps(results))
+    return path
+
+
+def test_recommend_command_prints_a_pending_file_without_the_flag(tmp_path, capsys):
+    path = recommend_results(tmp_path)
+    assert cli.main(["models", "recommend", str(path)]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "schema_version": 2,
+        "status": "pending-reevaluation",
+        "date": "d",
+        "repeats": 3,
+        "rows": [],
+    }
+
+
+def test_recommend_command_publishes_rows_with_the_flag(tmp_path, capsys):
+    path = recommend_results(tmp_path)
+    assert cli.main(["models", "recommend", str(path), "--publish"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "published"
+    assert out["rows"] == [
+        {
+            "review_type": "rewrite",
+            "family": "f",
+            "tier": "t",
+            "model": "m",
+            "success_rate": 1.0,
+            "tasks": 1,
+            "runs": 1,
+        }
+    ]
+
+
+def test_recommend_command_writes_the_file_named_by_out(tmp_path, capsys):
+    path = recommend_results(tmp_path)
+    target = tmp_path / "model-evals.json"
+    assert cli.main(["models", "recommend", str(path), "--out", str(target)]) == 0
+    assert capsys.readouterr().out == ""
+    assert json.loads(target.read_text())["status"] == "pending-reevaluation"
