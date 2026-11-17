@@ -41,7 +41,9 @@ fn preview_prints_the_diff_and_writes_nothing() {
 #[test]
 fn write_migrates_and_restore_undoes_it() {
     let dir = project("profile = \"strict\"\n");
+    let cache = tempfile::tempdir().expect("tempdir");
     slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
         .arg("migrate")
         .arg(dir.path())
         .arg("--write")
@@ -53,6 +55,7 @@ fn write_migrates_and_restore_undoes_it() {
     );
     assert!(!dir.path().join(".slopvac.toml").exists());
     slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
         .arg("migrate")
         .arg(dir.path())
         .arg("--restore")
@@ -170,7 +173,9 @@ fn write_rewrites_a_2x_steering_block_to_the_block_setup_writes() {
     for dir in [&migrated, &reference] {
         fs::write(dir.path().join("AGENTS.md"), text).expect("write");
     }
+    let cache = tempfile::tempdir().expect("tempdir");
     slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
         .arg("migrate")
         .arg(migrated.path())
         .arg("--write")
@@ -204,7 +209,9 @@ fn a_migrated_project_loads_its_blocklist() {
     .expect("blocklist");
     let doc = dir.path().join("doc.md");
     fs::write(&doc, "# Title\n\nManagers synergize the teams on Friday.\n").expect("doc");
+    let cache = tempfile::tempdir().expect("cache");
     slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
         .arg("migrate")
         .arg(dir.path())
         .arg("--write")
@@ -269,7 +276,9 @@ fn an_absolute_blocklist_path_inside_the_project_migrates_from_the_default_root(
     )
     .expect("blocklist");
     // No path argument: the project root is the default `.`.
+    let cache = tempfile::tempdir().expect("cache");
     slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
         .current_dir(&root)
         .args(["migrate", "--write"])
         .assert()

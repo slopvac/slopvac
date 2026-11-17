@@ -22,7 +22,8 @@ fn write(root: &Path, name: &str, text: impl AsRef<[u8]>) {
 fn cli(root: &Path) -> (i32, String, String) {
     let m = command().get_matches_from(["migrate", root.to_str().unwrap()]);
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = run(&m, &NullLinter, STEERING, &mut out, &mut err);
+    let state = tempfile::tempdir().unwrap();
+    let code = run(&m, &NullLinter, STEERING, state.path(), &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),

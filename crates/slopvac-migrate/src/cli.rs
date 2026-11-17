@@ -1,12 +1,13 @@
 //! The `slopvac migrate` command.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Arg, ArgAction, ArgMatches, Command, value_parser};
 use slopvac_sanitize as sanitize;
 
-use crate::plan::{BACKUP_DIR, apply, plan, render_diff, restore};
+use crate::backup::{apply, restore};
+use crate::plan::{BACKUP_DIR, plan, render_diff};
 use crate::{Error, Linter, Options, Phase, RenameTable, compare};
 
 /// The clap definition of `slopvac migrate`.
@@ -44,19 +45,29 @@ pub fn command() -> Command {
                 .conflicts_with_all(["write", "preserve-behavior"])
                 .help("Undo the last --write from the backup"),
         )
+        .arg(
+            Arg::new("force")
+                .long("force")
+                .action(ArgAction::SetTrue)
+                .requires("restore")
+                .help("With --restore, also put back files that changed since the write"),
+        )
 }
 
-/// Run `slopvac migrate`. `steering` is the 3.0 managed block from `slopvac setup`. Writes to `out` and `err`; returns the exit code:
+/// Run `slopvac migrate`. `steering` is the 3.0 managed block from `slopvac setup`.
+/// `state` is the per-user cache directory, where `--write` records the backup that
+/// `--restore` accepts. Writes to `out` and `err`; returns the exit code:
 /// 0 done or nothing to do, 2 incomplete (a setting 3.0 cannot represent, or any
 /// other failure).
 pub fn run(
     matches: &ArgMatches,
     linter: &dyn Linter,
     steering: &str,
+    state: &Path,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> i32 {
-    match execute(matches, linter, steering, out) {
+    match execute(matches, linter, steering, state, out) {
         Ok(()) => 0,
         Err(e) => {
             let _ = writeln!(err, "error[{}]: {e}", e.code());
@@ -98,7 +109,7 @@ impl std::error::Error for CliFailure {
 }
 
 /// Run `slopvac migrate` and return the failure for the caller to print. Paths in the
-/// failure are relative to the project root.
+/// failure are relative to the project root. `state` is as for [`run`].
 ///
 /// # Errors
 /// A [`CliFailure`] holding the [`Error`] that stopped the run.
@@ -106,13 +117,14 @@ pub fn execute(
     matches: &ArgMatches,
     linter: &dyn Linter,
     steering: &str,
+    state: &Path,
     out: &mut dyn Write,
 ) -> Result<(), CliFailure> {
     let root = matches
         .get_one::<PathBuf>("path")
         .cloned()
         .unwrap_or_else(|| PathBuf::from("."));
-    execute_in(matches, linter, steering, out, &root)
+    execute_in(matches, linter, steering, state, out, &root)
         .map_err(|e| e.redacted(&root))
         .map_err(|source| CliFailure {
             code: source.code(),
@@ -124,14 +136,23 @@ fn execute_in(
     matches: &ArgMatches,
     linter: &dyn Linter,
     steering: &str,
+    state: &Path,
     out: &mut dyn Write,
-    root: &std::path::Path,
+    root: &Path,
 ) -> Result<(), Error> {
     let root = root.to_owned();
     let io = |e: std::io::Error| Error::io(&root, e);
     if matches.get_flag("restore") {
-        let n = restore(&root)?;
-        writeln!(out, "Restored {n} files from the backup.").map_err(io)?;
+        let done = restore(&root, state, matches.get_flag("force"))?;
+        for kept in &done.kept {
+            writeln!(
+                out,
+                "kept {}: the migration created it and it changed since",
+                kept.display()
+            )
+            .map_err(io)?;
+        }
+        writeln!(out, "Restored {} files from the backup.", done.restored).map_err(io)?;
         return Ok(());
     }
     let options = Options {
@@ -170,7 +191,7 @@ fn execute_in(
         }
     }
     if matches.get_flag("write") {
-        apply(&root, &plan)?;
+        apply(&root, &plan, state)?;
         writeln!(
             out,
             "Wrote {} files. Originals are in {BACKUP_DIR}; undo with `slopvac migrate --restore`.",

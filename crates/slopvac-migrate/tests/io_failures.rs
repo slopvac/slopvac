@@ -30,7 +30,8 @@ fn plan_of(root: &Path) -> Result<slopvac_migrate::Plan, slopvac_migrate::Error>
 fn cli(root: &Path) -> (i32, String, String) {
     let m = command().get_matches_from(["migrate", root.to_str().unwrap()]);
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = run(&m, &NullLinter, STEERING, &mut out, &mut err);
+    let state = tempfile::tempdir().unwrap();
+    let code = run(&m, &NullLinter, STEERING, state.path(), &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),
@@ -41,7 +42,8 @@ fn cli(root: &Path) -> (i32, String, String) {
 fn exec(root: &Path) -> Result<String, CliFailure> {
     let m = command().get_matches_from(["migrate", root.to_str().unwrap()]);
     let mut out = Vec::new();
-    execute(&m, &NullLinter, STEERING, &mut out).map(|()| String::from_utf8(out).unwrap())
+    let state = tempfile::tempdir().unwrap();
+    execute(&m, &NullLinter, STEERING, state.path(), &mut out).map(|()| String::from_utf8(out).unwrap())
 }
 
 #[test]
@@ -244,7 +246,8 @@ fn a_rule_name_from_a_linter_is_escaped_in_the_report() {
     write(dir.path(), "a.md", DIRECTIVE);
     let m = command().get_matches_from(["migrate", dir.path().to_str().unwrap()]);
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = run(&m, &Hostile, STEERING, &mut out, &mut err);
+    let state = tempfile::tempdir().unwrap();
+    let code = run(&m, &Hostile, STEERING, state.path(), &mut out, &mut err);
     let out = String::from_utf8(out).unwrap();
     assert_eq!(code, 0, "{out}");
     assert!(!out.contains('\u{1b}'), "{out:?}");
