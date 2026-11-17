@@ -916,8 +916,8 @@ def command_ask(
                     used,
                     procs.sum_usage(reports),
                 )
-            detail = procs.strip_usage_lines(proc.stderr)[:300]
-            last = procs.redact(f"model command exited {proc.returncode}: {detail}")
+            detail = procs.redact(procs.strip_usage_lines(proc.stderr))[:300]
+            last = f"model command exited {proc.returncode}: {detail}"
         raise CallFailed(last, used, procs.sum_usage(reports))
 
     return ask

@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from evals import diagrams, models, runner, twins
+from evals import diagrams, models, opencode_model, runner, twins
 
 FAKE_KEY = "AKIAFAKEFAKEFAKE0000"
 FAKE_SECRET = "FAKEsecretFAKEsecretFAKEsecretFAKEsecret00"
@@ -109,3 +109,24 @@ def test_a_successful_twin_is_returned_without_credentials():
 def test_ordinary_model_text_is_stored_unchanged(answer):
     reply = models.command_ask(writes("stdout", answer), attempts=1)("x")
     assert reply.text == answer
+
+
+def crossing_the_boundary(limit: int) -> str:
+    """Filler, then a key whose first 8 characters fall inside `limit`."""
+    return ("x " * limit)[: limit - 8] + FAKE_KEY + " tail"
+
+
+def test_a_credential_cut_by_the_stderr_limit_is_still_redacted():
+    command = writes("stderr", crossing_the_boundary(300), code=3)
+    with pytest.raises(models.CallFailed) as caught:
+        models.command_ask(command, attempts=1)("x")
+    assert FAKE_KEY[:8] not in str(caught.value)
+
+
+def test_a_credential_cut_by_the_error_event_limit_is_still_redacted():
+    event = json.dumps(
+        {"type": "error", "error": {"message": crossing_the_boundary(300)}}
+    )
+    with pytest.raises(opencode_model.ModelCallError) as caught:
+        opencode_model.parse_events(event)
+    assert FAKE_KEY[:8] not in str(caught.value)
