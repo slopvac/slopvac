@@ -558,7 +558,7 @@ impl Linter for Unchecked {
                 level: NoticeLevel::Warning,
                 message: NonEmptyString::new("no RST converter found").unwrap(),
                 path: None,
-                data: Default::default(),
+                data: serde_json::Map::new(),
             }],
         })
     }

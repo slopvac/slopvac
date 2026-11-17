@@ -313,7 +313,7 @@ fn notice(code: &str, level: NoticeLevel, message: String) -> Result<Notice, Eng
         level,
         message: NonEmptyString::new(message).map_err(|e| EngineError::Internal(e.to_string()))?,
         path: None,
-        data: Default::default(),
+        data: serde_json::Map::new(),
     })
 }
 

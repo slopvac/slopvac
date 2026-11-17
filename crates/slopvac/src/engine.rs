@@ -120,7 +120,7 @@ impl Run {
             level: NoticeLevel::Warning,
             message: NonEmptyString::new(error.message.clone()).expect("messages are not empty"),
             path: Some(shown.to_owned()),
-            data: Default::default(),
+            data: serde_json::Map::new(),
         });
         self.incomplete.push(error);
     }
@@ -344,7 +344,7 @@ fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome 
         message: NonEmptyString::new(error.message.clone())
             .unwrap_or_else(|_| NonEmptyString::new("lint failed").expect("not empty")),
         path: None,
-        data: Default::default(),
+        data: serde_json::Map::new(),
     });
     run.incomplete.push(error.clone());
     RunOutcome {

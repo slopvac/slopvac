@@ -451,7 +451,7 @@ fn built_report(p: &Params) -> Report {
                 level: NoticeLevel::Info,
                 message: NonEmptyString::new("n").unwrap(),
                 path: None,
-                data: Default::default(),
+                data: serde_json::Map::new(),
             }],
             ai_register: register,
             prose: summary(density, count),
