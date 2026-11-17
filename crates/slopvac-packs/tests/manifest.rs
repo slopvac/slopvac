@@ -4,6 +4,9 @@
 use rstest::rstest;
 use slopvac_packs::{Manifest, ManifestError, PackKind, PackPath};
 
+const ROOT: &str =
+    "schema_version = 3\nid = \"tiny\"\nversion = \"0.1.0\"\nslopvac_api = 1\nkind = \"data\"\n";
+
 const DATA: &str = r#"
 schema_version = 3
 id = "acme-docs"
@@ -140,13 +143,34 @@ fn a_defect_is_reported_at_its_pointer(
     assert!(e.to_string().contains(message), "{e}");
 }
 
+#[rstest]
+#[case::caret("^1.2")]
+#[case::range(">=3.0, <4")]
+#[case::bare("1")]
+#[case::prerelease("^1.0.0-rc.1")]
+fn a_requirement_in_the_grammar_is_accepted(#[case] version: &str) {
+    let text = format!("{ROOT}[[requires]]\nid = \"core\"\nversion = \"{version}\"\n");
+    assert!(Manifest::parse(&text).is_ok(), "{version}");
+}
+
+#[rstest]
+#[case::wildcard("*")]
+#[case::empty("")]
+#[case::four_parts("1.2.3.4")]
+#[case::trailing_comma(">=1,")]
+#[case::word("latest")]
+#[case::partial_prerelease("1.0-rc")]
+fn a_requirement_outside_the_grammar_is_refused(#[case] version: &str) {
+    let text = format!("{ROOT}[[requires]]\nid = \"core\"\nversion = \"{version}\"\n");
+    let e = Manifest::parse(&text).unwrap_err();
+    assert_eq!(e.pointer(), Some("/requires/0/version"), "{version}");
+}
+
 #[test]
-fn text_from_the_file_is_escaped_once_in_the_message() {
-    let text = "schema_version = 3\nid = \"tiny\"\nversion = \"0.1.0\"\nslopvac_api = 1\nkind = \"data\"\n\"a\\u001b[31mb\" = 1\n";
-    let e = Manifest::parse(text).unwrap_err();
-    let shown = e.to_string();
-    assert!(!shown.contains('\u{1b}'), "{shown:?}");
-    assert!(shown.contains("\\u{1b}"), "{shown}");
+fn a_homepage_with_user_info_is_refused() {
+    let text = format!("{ROOT}homepage = \"https://user:pw@example.com/\"\n");
+    let e = Manifest::parse(&text).unwrap_err();
+    assert_eq!(e.pointer(), Some("/homepage"));
 }
 
 #[test]

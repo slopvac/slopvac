@@ -14,9 +14,6 @@ use toml::{Table, Value};
 /// Largest manifest the reader accepts, in bytes.
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 
-/// Longest excerpt of file text quoted in a message, in characters.
-const MAX_EXCERPT_CHARS: usize = 64;
-
 type Result<T> = std::result::Result<T, ManifestError>;
 
 /// Why a manifest was refused. Text taken from the file is kept raw and escaped once, in
@@ -48,6 +45,15 @@ impl ManifestError {
     }
 }
 
+/// The reason a TOML syntax error gives, without the text that caused it: the parser's own
+/// message can quote the input.
+fn toml_message(e: &toml::de::Error) -> String {
+    e.span().map_or_else(
+        || "not valid TOML".to_owned(),
+        |span| format!("not valid TOML at byte {}", span.start),
+    )
+}
+
 fn pointer_text(pointer: &str) -> String {
     if pointer.is_empty() {
         "/".to_owned()
@@ -60,14 +66,6 @@ fn err(pointer: &str, message: impl Into<String>) -> ManifestError {
     ManifestError::Invalid {
         pointer: pointer.to_owned(),
         message: message.into(),
-    }
-}
-
-/// Quote file text in a message, cut to a fixed length.
-fn excerpt(text: &str) -> String {
-    match text.char_indices().nth(MAX_EXCERPT_CHARS) {
-        Some((cut, _)) => format!("`{}...`", &text[..cut]),
-        None => format!("`{text}`"),
     }
 }
 
@@ -152,6 +150,14 @@ pub struct Requirement {
     pub version: VersionReq,
 }
 
+impl Requirement {
+    /// Require `id` at the versions `version` allows.
+    #[must_use]
+    pub fn new(id: PackId, version: VersionReq) -> Self {
+        Self { id, version }
+    }
+}
+
 /// One hook a plugin may offer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -160,6 +166,17 @@ pub struct HookDecl {
     pub kind: String,
     /// Plugin-local hook id.
     pub id: String,
+}
+
+impl HookDecl {
+    /// Declare a hook of `kind` with the plugin-local `id`.
+    #[must_use]
+    pub fn new(kind: impl Into<String>, id: impl Into<String>) -> Self {
+        Self {
+            kind: kind.into(),
+            id: id.into(),
+        }
+    }
 }
 
 /// The `[plugin]` table: how to run the plugin and its pre-spawn declaration.
@@ -180,6 +197,23 @@ pub struct PluginTable {
     pub features_required: Vec<String>,
     /// Features the plugin may use.
     pub features_optional: Vec<String>,
+}
+
+impl PluginTable {
+    /// A plugin table that runs `command` with no arguments, environment, hooks or features. Set
+    /// the other public fields to fill it in.
+    #[must_use]
+    pub fn new(command: impl Into<String>, network: bool) -> Self {
+        Self {
+            command: command.into(),
+            args: Vec::new(),
+            env: Vec::new(),
+            network,
+            hooks: Vec::new(),
+            features_required: Vec::new(),
+            features_optional: Vec::new(),
+        }
+    }
 }
 
 /// A parsed `slopvac-pack.toml`.
@@ -214,7 +248,7 @@ impl Manifest {
         if u64::try_from(text.len()).map_or(true, |n| n > MAX_MANIFEST_BYTES) {
             return Err(err("", format!("larger than {MAX_MANIFEST_BYTES} bytes")));
         }
-        let root: Value = toml::from_str(text).map_err(|e| err("", e.message()))?;
+        let root: Value = toml::from_str(text).map_err(|e| err("", toml_message(&e)))?;
         parse_root(&root)
     }
 
@@ -238,11 +272,11 @@ impl<'a> Obj<'a> {
         let table = value
             .as_table()
             .ok_or_else(|| err(&pointer, "must be a table"))?;
-        if let Some(key) = table
+        if table
             .keys()
-            .find(|k| !k.starts_with("x-") && !allowed.contains(&k.as_str()))
+            .any(|k| !k.starts_with("x-") && !allowed.contains(&k.as_str()))
         {
-            return Err(err(&pointer, format!("unknown key {}", excerpt(key))));
+            return Err(err(&pointer, "unknown key"));
         }
         Ok(Self { table, pointer })
     }
@@ -341,11 +375,8 @@ fn parse_root(value: &Value) -> Result<Manifest> {
     let kind = match root.string("kind")? {
         "data" => PackKind::Data,
         "plugin" => PackKind::Plugin,
-        other => {
-            return Err(err(
-                "/kind",
-                format!("{} is not a pack kind (`data` or `plugin`)", excerpt(other)),
-            ));
+        _ => {
+            return Err(err("/kind", "not a pack kind (`data` or `plugin`)"));
         }
     };
     let description = root.non_empty("description")?;
@@ -388,7 +419,9 @@ fn parse_root(value: &Value) -> Result<Manifest> {
 }
 
 fn pack_id(s: &str) -> std::result::Result<PackId, String> {
-    PackId::new(s).map_err(|_| format!("{} is not a pack id", excerpt(s)))
+    PackId::new(s).map_err(|_| {
+        "not a pack id (lowercase letters, digits and `-`, starting with a letter)".to_owned()
+    })
 }
 
 /// Semantic version 2.0.0 without build metadata.
@@ -396,12 +429,12 @@ fn parse_version(s: &str) -> std::result::Result<Version, String> {
     if s.contains('+') {
         return Err("a pack version must not carry build metadata".to_owned());
     }
-    Version::parse(s).map_err(|_| format!("{} is not a semantic version", excerpt(s)))
+    Version::parse(s).map_err(|_| "not a semantic version".to_owned())
 }
 
 /// One or more comparators: an optional operator and a version of one to three numeric parts.
 fn parse_requirement(s: &str) -> std::result::Result<VersionReq, String> {
-    let bad = || format!("{} is not a version requirement", excerpt(s));
+    let bad = || "not a version requirement".to_owned();
     for comparator in s.split(',') {
         let c = comparator.trim();
         let c = ["<=", ">=", "<", ">", "=", "^", "~"]
@@ -427,7 +460,7 @@ fn parse_requirement(s: &str) -> std::result::Result<VersionReq, String> {
     VersionReq::parse(s).map_err(|_| bad())
 }
 
-/// A URI with a scheme and no whitespace or control characters.
+/// A URI with a scheme, no whitespace or control characters and no user-info.
 fn check_uri(s: &str) -> std::result::Result<(), String> {
     let mut chars = s.chars();
     let scheme_ok = chars.next().is_some_and(|c| c.is_ascii_alphabetic())
@@ -435,11 +468,16 @@ fn check_uri(s: &str) -> std::result::Result<(), String> {
             .by_ref()
             .find(|c| !(c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-')))
             == Some(':');
-    if scheme_ok && !s.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        Ok(())
-    } else {
-        Err(format!("{} is not a URI", excerpt(s)))
+    if !scheme_ok || s.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err("not a URI".to_owned());
     }
+    // A manifest is committed and printed, so it carries no credentials.
+    let authority = s.split_once("//").map_or("", |(_, rest)| rest);
+    let authority = authority.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.contains('@') {
+        return Err("a URI must not carry user-info (credentials)".to_owned());
+    }
+    Ok(())
 }
 
 fn parse_provides(value: &Value, pointer: String) -> Result<Provides> {
@@ -498,7 +536,7 @@ fn slug(s: &str) -> std::result::Result<String, String> {
     if ok {
         Ok(s.to_owned())
     } else {
-        Err(format!("{} is not a lowercase name", excerpt(s)))
+        Err("not a lowercase name".to_owned())
     }
 }
 
@@ -522,10 +560,7 @@ fn env_name(s: &str) -> std::result::Result<String, String> {
     if ok {
         Ok(s.to_owned())
     } else {
-        Err(format!(
-            "{} is not an environment variable name",
-            excerpt(s)
-        ))
+        Err("not an environment variable name".to_owned())
     }
 }
 
@@ -588,30 +623,4 @@ fn parse_plugin(value: &Value, pointer: String) -> Result<PluginTable> {
         features_required: features.strings("required", feature)?,
         features_optional: features.strings("optional", feature)?,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-
-    use super::*;
-
-    #[rstest]
-    #[case::caret("^1.2")]
-    #[case::range(">=3.0, <4")]
-    #[case::bare("1")]
-    #[case::prerelease("^1.0.0-rc.1")]
-    fn accepts_a_requirement(#[case] text: &str) {
-        assert!(parse_requirement(text).is_ok(), "{text}");
-    }
-
-    #[rstest]
-    #[case::wildcard("*")]
-    #[case::empty("")]
-    #[case::four_parts("1.2.3.4")]
-    #[case::trailing_comma(">=1,")]
-    #[case::word("latest")]
-    fn rejects_a_requirement(#[case] text: &str) {
-        assert!(parse_requirement(text).is_err(), "{text}");
-    }
 }

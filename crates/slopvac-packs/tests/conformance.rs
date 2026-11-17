@@ -41,6 +41,8 @@ fn every_invalid_case_fails_at_its_pointer() {
         toml::from_str(&fs::read_to_string(corpus().join("invalid/cases.toml")).expect("cases"))
             .expect("cases.toml");
     let cases = files("invalid");
+    assert_ne!(cases.len(), 0, "invalid/ holds no cases");
+    assert_ne!(expected.len(), 0, "cases.toml holds no cases");
     assert_eq!(
         cases.len(),
         expected.len(),

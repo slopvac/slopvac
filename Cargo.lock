@@ -2650,8 +2650,11 @@ dependencies = [
 name = "slopvac-packs"
 version = "0.0.0"
 dependencies = [
+ "proptest",
+ "regex",
  "rstest",
  "semver",
+ "serde_json",
  "slopvac-fs",
  "slopvac-model",
  "slopvac-sanitize",
