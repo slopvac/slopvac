@@ -947,3 +947,102 @@ fn a_fatal_error_returns_at_once_although_the_transport_is_blocked() {
         "{result:?}"
     );
 }
+
+/// Prose the swap rule would flag, so a document that is linted anyway shows a finding.
+const FLAGGED: &str = "We utilize it.\n";
+
+/// The `codeAction` result over the whole first line of `uri`.
+fn actions_at(client: &mut Client, uri: &str) -> Value {
+    client.request(
+        "textDocument/codeAction",
+        &json!({
+            "textDocument": {"uri": uri},
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 14}},
+            "context": {"diagnostics": []}
+        }),
+    )
+}
+
+/// The single diagnostic of `published`, asserting there is exactly one.
+fn only_diagnostic(published: &Value) -> &Value {
+    let all = published["diagnostics"].as_array().unwrap();
+    assert_eq!(all.len(), 1, "{all:?}");
+    &all[0]
+}
+
+fn assert_binary_host_diagnostic(published: &Value) {
+    let d = only_diagnostic(published);
+    assert_eq!(d["code"], "binary-host-unchecked");
+    assert_eq!(d["severity"], 2);
+    assert_eq!(d["source"], "slopvac");
+    assert!(
+        d["message"]
+            .as_str()
+            .unwrap()
+            .contains("binary host not linted in the editor; run the CLI")
+    );
+}
+
+#[rstest::rstest]
+#[case::docx("file:///work/a.docx")]
+#[case::docm("file:///work/a.docm")]
+#[case::dotx("file:///work/a.dotx")]
+#[case::dotm("file:///work/a.dotm")]
+#[case::pptx("file:///work/a.pptx")]
+#[case::pptm("file:///work/a.pptm")]
+#[case::potx("file:///work/a.potx")]
+#[case::potm("file:///work/a.potm")]
+#[case::ppsx("file:///work/a.ppsx")]
+#[case::ppsm("file:///work/a.ppsm")]
+#[case::xlsx("file:///work/a.xlsx")]
+#[case::xlsm("file:///work/a.xlsm")]
+#[case::xltx("file:///work/a.xltx")]
+#[case::xltm("file:///work/a.xltm")]
+#[case::odt("file:///work/a.odt")]
+#[case::ott("file:///work/a.ott")]
+#[case::odp("file:///work/a.odp")]
+#[case::otp("file:///work/a.otp")]
+#[case::ods("file:///work/a.ods")]
+#[case::ots("file:///work/a.ots")]
+#[case::drawio_png("file:///work/a.drawio.png")]
+#[case::excalidraw_png("file:///work/a.excalidraw.png")]
+#[case::upper_case("file:///work/A.DOCX")]
+fn opening_a_binary_container_publishes_one_diagnostic_and_offers_no_action(#[case] uri: &str) {
+    let mut client = Client::engine(None);
+    client.open_at(uri, FLAGGED);
+    assert_binary_host_diagnostic(&client.diagnostics());
+    assert_eq!(actions_at(&mut client, uri), json!([]));
+    client.finish().unwrap();
+}
+
+#[rstest::rstest]
+#[case::docx("file:///work/a.docx")]
+#[case::drawio_png("file:///work/a.drawio.png")]
+fn changing_or_saving_a_binary_container_keeps_the_one_diagnostic(#[case] uri: &str) {
+    let mut client = Client::engine(None);
+    client.open_at(uri, "text\n");
+    assert_binary_host_diagnostic(&client.diagnostics());
+    client.notify(
+        "textDocument/didChange",
+        &json!({
+            "textDocument": {"uri": uri, "version": 2},
+            "contentChanges": [{"text": FLAGGED}]
+        }),
+    );
+    assert_binary_host_diagnostic(&client.diagnostics());
+    client.notify(
+        "textDocument/didSave",
+        &json!({"textDocument": {"uri": uri}}),
+    );
+    assert_binary_host_diagnostic(&client.diagnostics());
+    assert_eq!(actions_at(&mut client, uri), json!([]));
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_markdown_file_is_still_linted_next_to_binary_containers() {
+    let mut client = Client::engine(None);
+    let published = client.open(FLAGGED);
+    assert_eq!(only_diagnostic(&published)["code"], "core:cat.swap");
+    client.finish().unwrap();
+}

@@ -8,6 +8,8 @@ use slopvac_model::{BomMode, Finding, Notice, RuleId, Span};
 use slopvac_parse::{BlockKind, parse_markdown};
 use slopvac_rules::RuleSet;
 
+use crate::binary_host::{is_binary_host, unchecked_notice};
+
 /// Why a buffer could not be linted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
@@ -123,6 +125,12 @@ fn kind_of(path: &str) -> Kind {
 
 impl Linter for EngineLinter {
     fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
+        if is_binary_host(path) {
+            return Ok(Linted {
+                findings: Vec::new(),
+                unchecked: unchecked_notice().into_iter().collect(),
+            });
+        }
         let input = Input::new(path, text)
             .with_kind(kind_of(path))
             .with_bom(BomMode::Buffer);

@@ -14,6 +14,7 @@
 //! [`command`] and [`run`] are the `slopvac lsp` subcommand.
 
 mod analysis;
+mod binary_host;
 mod convert;
 mod linter;
 mod server;
