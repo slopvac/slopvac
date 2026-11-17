@@ -209,7 +209,10 @@ python -m evals models plan --models models.json            # count the calls an
 python -m evals models run --models models.json --confirm-calls <N> --max-invocations <M>
 python -m evals models summarize evals/results/models/<date>.json
 python -m evals models cost evals/results/models/<date>.json --prices evals/prices.json
+python -m evals models recommend evals/results/models/<date>.json --out crates/slopvac-agents/data/model-evals.json
 ```
+
+`models recommend` writes the reviewer rows (success rate, tasks and runs per model and review type) that `slopvac-agents` embeds. Regenerate `docs/model-recommendations.md` afterwards with `SLOPVAC_BLESS=1 cargo nextest run -p slopvac-agents --test models`. A test in `tests/test_evals_models.py` fails when the embedded file differs from the committed results.
 
 `models.json` names each model with a `family`, a `tier` and a `command` that reads the prompt on stdin and writes the answer on stdout. The committed `evals/models.json` calls Bedrock models through `python -m evals.opencode_model`, which runs `opencode run` with a bare agent (no tools, one-line prompt) in an empty directory. The adapter resolves the AWS profile with `aws configure export-credentials` (set `AWS_PROFILE` and `AWS_REGION`, or pass `--aws-profile` and `--aws-region`), then starts opencode with an empty `HOME`, its own XDG directories and an allow-listed environment. The adapter re-exports credentials on every attempt. If they have under 10 minutes left, it waits up to 330 seconds for the CLI to hand out fresh ones, inside the same attempt, and then gives up. Your opencode config, plugins, rules and auth never load, and opencode finds no AWS profile files. On a timeout the harness kills the whole process group, including opencode and its children. Nothing in the harness calls a provider itself. `plan` prints the number of calls and a rough input size. `run` refuses to start until `--confirm-calls` equals that number, so the person who pays approves it first. A journal without a ledger is refused, because its spent calls are unknown: start with a fresh `--out` path. Ask the lead before you run a paid provider.
 

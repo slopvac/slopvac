@@ -1040,6 +1040,39 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
     }
 
 
+RECOMMENDATIONS_SCHEMA = 2
+
+
+def recommendations(results: Mapping[str, Any]) -> dict[str, Any]:
+    """Reviewer rows for `crates/slopvac-agents/data/model-evals.json`.
+
+    The agents crate ranks reviewer models per review type from this file. Each
+    row is the `summarize` row for the `reviewer` role without its bootstrap
+    interval, so the output is deterministic. Review types with no reviewer
+    task in the results have no rows.
+    """
+    summary = summarize(results, resamples=1)
+    rows = [
+        {
+            "review_type": r["type"],
+            "family": r["family"],
+            "tier": r["tier"],
+            "model": r["model"],
+            "success_rate": round(r["success_rate"], 4),
+            "tasks": r["tasks"],
+            "runs": r["runs"],
+        }
+        for r in summary["rows"]
+        if r["role"] == "reviewer"
+    ]
+    return {
+        "schema_version": RECOMMENDATIONS_SCHEMA,
+        "date": results["date"],
+        "repeats": results["repeats"],
+        "rows": rows,
+    }
+
+
 # --- token usage and cost ----------------------------------------------------------
 
 PRICES_PATH = lib.EVALS_DIR / "prices.json"

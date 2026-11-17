@@ -136,6 +136,9 @@ def cmd_models(args: argparse.Namespace) -> int:
             summary = models.summarize(models.load(Path(args.results)))
             _emit(summary, args.out)
             return 0
+        if args.models_command == "recommend":
+            _emit(models.recommendations(models.load(Path(args.results))), args.out)
+            return 0
         if args.models_command == "cost":
             report = models.estimate_cost(
                 models.load_usage_records(Path(args.path)),
@@ -435,6 +438,13 @@ def build_parser() -> argparse.ArgumentParser:
     sm.add_argument("results")
     sm.add_argument("--out")
     sm.set_defaults(func=cmd_models)
+    rc = msub.add_parser(
+        "recommend",
+        help="write the reviewer rows that feed the agents crate and the docs",
+    )
+    rc.add_argument("results")
+    rc.add_argument("--out")
+    rc.set_defaults(func=cmd_models)
     cs = msub.add_parser(
         "cost",
         help="tokens and estimated cost per model from a results file or journal",

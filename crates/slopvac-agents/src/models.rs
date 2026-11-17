@@ -1,6 +1,8 @@
 //! Reviewer model recommendations per review type, generated from eval results.
 //!
-//! The eval harness writes a results file. This module turns it into the dated
+//! `python -m evals models recommend` turns an eval results file into
+//! `data/model-evals.json`: one row per reviewer model and review type, with the
+//! success rate over the eval tasks. This module turns that file into the dated
 //! table in `docs/model-recommendations.md` and the "pick the first available"
 //! lines in `slopvac prime review`. Both come from one file, so they cannot
 //! disagree. A test fails when the checked-in table differs from the generated one.
@@ -12,10 +14,11 @@ use serde::Deserialize;
 use crate::error::AgentsError;
 use crate::review::ReviewType;
 
-// STUB(slopvac-8l4.11.10): the file format follows the eval bead's description; the data file holds no runs yet.
-
 /// The embedded eval results.
 pub const EMBEDDED: &str = include_str!("../data/model-evals.json");
+
+/// Version of the file format the eval harness writes.
+const SCHEMA_VERSION: u8 = 2;
 
 /// Fewest repeat runs a result needs to count.
 pub const MIN_REPEATS: u32 = 3;
@@ -28,16 +31,18 @@ const PRIME_LIMIT: usize = 5;
 pub struct Run {
     /// `mechanical`, `update` or `rewrite`.
     pub review_type: String,
-    /// Model family, for example `claude`.
+    /// Model family, for example `anthropic`.
     pub family: String,
     /// Tier within the family, for example `frontier`.
     pub tier: String,
     /// Model name as a harness reports it.
     pub model: String,
-    /// Fact-preservation score from 0 to 1, averaged over the repeats.
-    pub score: f64,
-    /// Repeat runs behind the score.
-    pub repeats: u32,
+    /// Share of reviewer tasks passed, from 0 to 1. Repeats of a task are averaged first.
+    pub success_rate: f64,
+    /// Distinct eval tasks behind the rate.
+    pub tasks: u32,
+    /// Runs behind the rate, repeats included.
+    pub runs: u32,
 }
 
 /// A results file.
@@ -47,8 +52,10 @@ pub struct Evals {
     pub schema_version: u8,
     /// Date of the eval run, `YYYY-MM-DD`.
     pub date: String,
-    /// Results.
-    pub runs: Vec<Run>,
+    /// Repeats of each task in the eval run.
+    pub repeats: u32,
+    /// Reviewer results.
+    pub rows: Vec<Run>,
 }
 
 fn invalid(message: String) -> AgentsError {
@@ -63,29 +70,29 @@ impl Evals {
     pub fn parse(json: &str) -> Result<Self, AgentsError> {
         let evals: Self =
             serde_json::from_str(json).map_err(|e| invalid(format!("model evals: {e}")))?;
-        if evals.schema_version != 1 {
+        if evals.schema_version != SCHEMA_VERSION {
             return Err(invalid(format!(
                 "model evals: schema_version {} is not supported",
                 evals.schema_version
             )));
         }
-        for r in &evals.runs {
+        if evals.repeats < MIN_REPEATS {
+            return Err(invalid(format!(
+                "model evals: {} repeats per task; at least {MIN_REPEATS} are needed",
+                evals.repeats
+            )));
+        }
+        for r in &evals.rows {
             if ReviewType::parse(&r.review_type).is_none() {
                 return Err(invalid(format!(
                     "model evals: unknown review type {:?}",
                     r.review_type
                 )));
             }
-            if !(0.0..=1.0).contains(&r.score) {
+            if !(0.0..=1.0).contains(&r.success_rate) {
                 return Err(invalid(format!(
-                    "model evals: score of {} is outside 0..1",
+                    "model evals: success rate of {} is outside 0..1",
                     r.model
-                )));
-            }
-            if r.repeats < MIN_REPEATS {
-                return Err(invalid(format!(
-                    "model evals: {} has {} repeats; at least {MIN_REPEATS} are needed",
-                    r.model, r.repeats
                 )));
             }
         }
@@ -101,24 +108,40 @@ impl Evals {
     #[must_use]
     pub fn ranked(&self, kind: ReviewType) -> Vec<&Run> {
         let mut runs: Vec<&Run> = self
-            .runs
+            .rows
             .iter()
             .filter(|r| r.review_type == kind.name())
             .collect();
         runs.sort_by(|a, b| {
-            b.score
-                .total_cmp(&a.score)
+            b.success_rate
+                .total_cmp(&a.success_rate)
                 .then_with(|| a.model.cmp(&b.model))
         });
         runs
     }
 }
 
+// STUB(slopvac-8l4.11.11): mechanical and update reviewer rows come from the 15.8 run
 const TYPES: [ReviewType; 3] = [
     ReviewType::Mechanical,
     ReviewType::Update,
     ReviewType::Rewrite,
 ];
+
+/// A sentence naming the review types that have results, when some have none.
+fn coverage(evals: &Evals) -> Option<String> {
+    let covered: Vec<&str> = TYPES
+        .into_iter()
+        .filter(|k| !evals.ranked(*k).is_empty())
+        .map(ReviewType::name)
+        .collect();
+    (!covered.is_empty() && covered.len() < TYPES.len()).then(|| {
+        format!(
+            "Results exist only for the {} reviewer.",
+            covered.join(" and ")
+        )
+    })
+}
 
 /// The generated `docs/model-recommendations.md`.
 #[must_use]
@@ -128,25 +151,31 @@ pub fn markdown(evals: &Evals) -> String {
     );
     out.push_str("# Reviewer model recommendations\n\n");
     let _ = write!(out, "Eval results dated {}. ", evals.date);
+    if let Some(sentence) = coverage(evals) {
+        let _ = write!(out, "{sentence} ");
+    }
     out.push_str("Pick the first available model in a table. The reviewer must differ from the author's model.\n");
     for kind in TYPES {
         let _ = write!(out, "\n## {}\n\n", kind.name());
         let ranked = evals.ranked(kind);
         if ranked.is_empty() {
-            out.push_str("No eval results yet.\n");
+            out.push_str(
+                "No eval results for this review type. Pick a model from a different family than the author's.\n",
+            );
             continue;
         }
-        out.push_str("| Rank | Model | Family | Tier | Score | Runs |\n| --- | --- | --- | --- | --- | --- |\n");
+        out.push_str("| Rank | Model | Family | Tier | Success rate | Tasks | Runs |\n| --- | --- | --- | --- | --- | --- | --- |\n");
         for (i, r) in ranked.iter().enumerate() {
             let _ = writeln!(
                 out,
-                "| {} | `{}` | {} | {} | {:.2} | {} |",
+                "| {} | `{}` | {} | {} | {:.2} | {} | {} |",
                 i + 1,
                 r.model,
                 r.family,
                 r.tier,
-                r.score,
-                r.repeats
+                r.success_rate,
+                r.tasks,
+                r.runs
             );
         }
     }
@@ -178,6 +207,9 @@ pub fn prime_guidance(evals: &Evals, kind: Option<ReviewType>) -> String {
         "Reviewer models from evals dated {}. Pick the first available:\n",
         evals.date
     );
+    if let Some(sentence) = coverage(evals) {
+        let _ = writeln!(out, "{sentence} For other types, pick another family.");
+    }
     for l in lines {
         let _ = writeln!(out, "- {l}");
     }

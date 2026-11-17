@@ -1075,3 +1075,40 @@ def test_the_shipped_price_list_names_every_model_in_the_roster():
     names = {m["name"] for m in models.load_models(lib.EVALS_DIR / "models.json")}
     assert names <= set(prices["models"])
     assert prices["source"] == "https://aws.amazon.com/bedrock/pricing"
+
+
+def test_recommendations_keep_reviewer_rows_only_with_a_rate_per_model():
+    results = results_with({"t1": [True, False, True], "t2": [True, True, True]})
+    results["runs"] += [
+        {
+            "type": "rewrite",
+            "role": "reviewer",
+            "model": "m",
+            "task": task,
+            "score": {"success": ok, "planted": 1},
+        }
+        for task, ok in (("r1", True), ("r1", True), ("r1", False), ("r2", False))
+    ]
+    out = models.recommendations(results)
+    assert out["schema_version"] == 2
+    assert out["date"] == "d"
+    assert out["repeats"] == 3
+    # r1 averages 2/3 and r2 is 0, so the rate is 1/3. Author rows are dropped.
+    assert out["rows"] == [
+        {
+            "review_type": "rewrite",
+            "family": "f",
+            "tier": "t",
+            "model": "m",
+            "success_rate": 0.3333,
+            "tasks": 2,
+            "runs": 4,
+        }
+    ]
+
+
+def test_the_committed_recommendations_match_the_committed_results():
+    results = models.load(Path(models.RESULTS_DIR) / "2026-11-14.json")
+    data = lib.EVALS_DIR.parent / "crates/slopvac-agents/data/model-evals.json"
+    expected = json.dumps(models.recommendations(results), indent=1, sort_keys=True)
+    assert data.read_text(encoding="utf-8") == expected + "\n"

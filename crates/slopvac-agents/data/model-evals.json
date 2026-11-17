@@ -1,5 +1,34 @@
 {
-  "schema_version": 1,
-  "date": "2026-11-14",
-  "runs": []
+ "date": "2026-11-14",
+ "repeats": 3,
+ "rows": [
+  {
+   "family": "anthropic",
+   "model": "claude-haiku-5-5",
+   "review_type": "rewrite",
+   "runs": 58,
+   "success_rate": 0.5167,
+   "tasks": 20,
+   "tier": "fast"
+  },
+  {
+   "family": "anthropic",
+   "model": "claude-sonnet-5-5",
+   "review_type": "rewrite",
+   "runs": 53,
+   "success_rate": 0.5088,
+   "tasks": 19,
+   "tier": "frontier"
+  },
+  {
+   "family": "openai",
+   "model": "gpt-6.1-sol",
+   "review_type": "rewrite",
+   "runs": 58,
+   "success_rate": 0.55,
+   "tasks": 20,
+   "tier": "frontier"
+  }
+ ],
+ "schema_version": 2
 }
