@@ -8,6 +8,10 @@ use slopvac_config::schema::{Shape, config_shape};
 use slopvac_model::{KebabName, NonEmptyString, Notice, NoticeLevel};
 
 /// A setup or steering failure. Each variant has a stable kebab-case code.
+///
+/// Every path a variant carries is relative to the project root, or to the working
+/// directory for a file the user named on the command line. None is joined to the root, so a
+/// caller shows `root.join(path)` and never has to guess whether the root is already in it.
 #[derive(Debug, thiserror::Error)]
 pub enum AgentsError {
     /// The target escapes the project or is not a Markdown file.
@@ -56,6 +60,15 @@ pub enum AgentsError {
     /// `slopvac-text` failed to segment or tokenize.
     #[error("text segmentation failed: {0}")]
     Text(#[from] slopvac_text::TextError),
+    /// A step failed after earlier files were already written.
+    #[error("{source}; already changed: {}", changed.join(", "))]
+    Partial {
+        /// Display paths of the files written before the failure.
+        changed: Vec<String>,
+        /// The failure.
+        #[source]
+        source: Box<AgentsError>,
+    },
     /// An I/O failure.
     #[error("{path}: {source}")]
     Io {
@@ -206,6 +219,7 @@ impl AgentsError {
             Self::NotManaged(_) => "steering-not-managed",
             Self::Usage(_) => "setup-usage",
             Self::Coded { code, .. } | Self::Config { code, .. } => code,
+            Self::Partial { source, .. } => source.code(),
             Self::Text(_) => "claims-text-failed",
             Self::Io { .. } => "setup-io",
         }

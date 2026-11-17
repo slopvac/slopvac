@@ -55,6 +55,17 @@ pub fn state(project: &Project, rel: &Path, expected: Option<&str>) -> State {
     }
 }
 
+/// Fail now if `sync` would refuse the file, so a caller can check every target before it
+/// writes any. Reads only.
+pub(crate) fn preflight(project: &Project, rel: &Path) -> Result<(), AgentsError> {
+    match project.read(rel)? {
+        Some(bytes) if !std::str::from_utf8(&bytes).is_ok_and(has_marker) => {
+            Err(AgentsError::NotManaged(rel.to_path_buf()))
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Write `expected`, or delete the file when `None`. Refuses files setup did
 /// not write. Removal also drops the parent directory when it is empty.
 pub fn sync(project: &Project, rel: &Path, expected: Option<&str>) -> Result<bool, AgentsError> {
@@ -62,14 +73,14 @@ pub fn sync(project: &Project, rel: &Path, expected: Option<&str>) -> Result<boo
     if let Some(bytes) = &before
         && !String::from_utf8(bytes.clone()).is_ok_and(|t| has_marker(&t))
     {
-        return Err(AgentsError::NotManaged(project.display(rel).into()));
+        return Err(AgentsError::NotManaged(rel.to_path_buf()));
     }
     match (expected, before) {
         (Some(e), before) => project.write_atomic(rel, before.as_deref(), e.as_bytes()),
         (None, None) => Ok(false),
         (None, Some(b)) => {
             if project.read(rel)?.as_deref() != Some(b.as_slice()) {
-                return Err(AgentsError::Conflict(project.display(rel).into()));
+                return Err(AgentsError::Conflict(rel.to_path_buf()));
             }
             project.remove_file(rel)?;
             Ok(true)

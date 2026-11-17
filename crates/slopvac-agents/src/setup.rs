@@ -322,24 +322,48 @@ enum Unrequested {
 
 fn install(p: &Plan, unrequested: Unrequested) -> Result<Outcome, AgentsError> {
     let project = &p.project;
+    let skill = p
+        .skill
+        .as_ref()
+        .filter(|_| p.skill_text.is_some() || unrequested == Unrequested::Remove);
+    let agent = p
+        .agent
+        .as_ref()
+        .filter(|_| p.agent_text.is_some() || unrequested == Unrequested::Remove);
+    // Check every target before writing any, so a refusal leaves the project untouched.
+    block::preflight(project, &p.steering, &p.block_text)?;
+    for path in skill.into_iter().chain(agent) {
+        managed::preflight(project, path)?;
+    }
     let preamble = if p.harness.name == "kiro" && !project.exists(&p.steering)? {
         "---\ninclusion: always\n---"
     } else {
         ""
     };
-    let changed = block::update_block(project, &p.steering, &p.block_text, preamble)?;
-    let mut lines = vec![status(project, "updated", changed, &p.steering)];
-    if let Some(s) = &p.skill
-        && (p.skill_text.is_some() || unrequested == Unrequested::Remove)
-    {
-        let changed = managed::sync(project, s, p.skill_text.as_deref())?;
-        lines.push(status(project, "updated", changed, s));
+    let mut lines = Vec::new();
+    let mut changed_files = Vec::new();
+    let mut step = |path: &Path, run: &dyn Fn() -> Result<bool, AgentsError>| match run() {
+        Ok(changed) => {
+            if changed {
+                changed_files.push(path.display().to_string());
+            }
+            lines.push(status(project, "updated", changed, path));
+            Ok(())
+        }
+        Err(source) if changed_files.is_empty() => Err(source),
+        Err(source) => Err(AgentsError::Partial {
+            changed: changed_files.clone(),
+            source: Box::new(source),
+        }),
+    };
+    step(&p.steering, &|| {
+        block::update_block(project, &p.steering, &p.block_text, preamble)
+    })?;
+    if let Some(s) = skill {
+        step(s, &|| managed::sync(project, s, p.skill_text.as_deref()))?;
     }
-    if let Some(a) = &p.agent
-        && (p.agent_text.is_some() || unrequested == Unrequested::Remove)
-    {
-        let changed = managed::sync(project, a, p.agent_text.as_deref())?;
-        lines.push(status(project, "updated", changed, a));
+    if let Some(a) = agent {
+        step(a, &|| managed::sync(project, a, p.agent_text.as_deref()))?;
     }
     Ok(Outcome {
         lines,
