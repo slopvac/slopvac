@@ -2534,6 +2534,7 @@ dependencies = [
  "similar 3.2.1",
  "slopvac-context",
  "slopvac-diagrams",
+ "slopvac-engine",
  "slopvac-fs",
  "slopvac-model",
  "slopvac-parse",

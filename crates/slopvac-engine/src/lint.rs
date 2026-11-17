@@ -892,6 +892,28 @@ struct Candidate<'r> {
     covering: Vec<Range<usize>>,
 }
 
+/// Block visits made while finding the prose near each diagram in this process.
+#[cfg(feature = "test-counters")]
+static NEARBY_BLOCK_VISITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The number of block visits made so far in this process to find nearby prose. A test that
+/// lints a run of diagrams and reads the difference shows whether the lookup does work
+/// proportional to the blocks or to the blocks times the diagrams.
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn nearby_block_visits() -> usize {
+    NEARBY_BLOCK_VISITS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(feature = "test-counters")]
+fn count_block_visit() {
+    NEARBY_BLOCK_VISITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(not(feature = "test-counters"))]
+fn count_block_visit() {}
+
 impl Run<'_> {
     fn finding(&self, c: Candidate<'_>) -> Result<Finding, EngineError> {
         let start = self.index.line_col(c.span.start())?;
@@ -1257,30 +1279,56 @@ impl Run<'_> {
             return Ok(Vec::new());
         }
         let mut diagrams: Vec<(DiagramFormat, Extraction, Vec<NearbyProse<'_>>)> = Vec::new();
-        match self.input.kind {
-            Kind::Diagram(format) => {
-                diagrams.push((format, extract(format, self.input.source, 0), Vec::new()));
-            }
-            _ => {
-                for block in &self.parsed.blocks {
-                    let BlockKind::CodeBlock {
-                        lang: Some(lang),
-                        body,
-                        fenced: true,
-                        ..
-                    } = &block.kind
-                    else {
-                        continue;
-                    };
-                    let Some(format) = DiagramFormat::from_lang(lang) else {
-                        continue;
-                    };
-                    diagrams.push((
-                        format,
-                        extract_fenced(format, self.input.source, body.start()..body.end()),
-                        self.nearby_prose(block.span),
-                    ));
+        if let Kind::Diagram(format) = self.input.kind {
+            diagrams.push((format, extract(format, self.input.source, 0), Vec::new()));
+        } else {
+            // Parsed paragraphs and fences are in source order and do not overlap.
+            // Each cursor visits each paragraph once, even when there are no neighbours.
+            let paragraphs: Vec<_> = self
+                .parsed
+                .blocks
+                .iter()
+                .filter(|b| {
+                    count_block_visit();
+                    matches!(b.kind, BlockKind::Paragraph) && b.projection.is_some()
+                })
+                .collect();
+            let mut preceding = paragraphs.iter().copied().peekable();
+            let mut following = paragraphs.iter().copied().peekable();
+            let mut before = None;
+            for block in &self.parsed.blocks {
+                count_block_visit();
+                let BlockKind::CodeBlock {
+                    lang: Some(lang),
+                    body,
+                    fenced: true,
+                    ..
+                } = &block.kind
+                else {
+                    continue;
+                };
+                let Some(format) = DiagramFormat::from_lang(lang) else {
+                    continue;
+                };
+                while preceding
+                    .peek()
+                    .is_some_and(|p| p.span.end() <= block.span.start())
+                {
+                    count_block_visit();
+                    before = preceding.next();
                 }
+                while following
+                    .peek()
+                    .is_some_and(|p| p.span.start() < block.span.end())
+                {
+                    count_block_visit();
+                    following.next();
+                }
+                diagrams.push((
+                    format,
+                    extract_fenced(format, self.input.source, body.start()..body.end()),
+                    self.nearby_prose([before, following.peek().copied()]),
+                ));
             }
         }
         let mut out = Vec::new();
@@ -1314,21 +1362,13 @@ impl Run<'_> {
     /// Their text is projected prose, so a checker's offsets into it are not source bytes.
     /// Each paragraph gets a base past the end of the source and the paragraphs follow each
     /// other, one byte apart. [`Self::source_span`] maps a hit back through the projection.
-    fn nearby_prose(&self, fence: Span) -> Vec<NearbyProse<'_>> {
-        let paragraph = |b: &&slopvac_parse::Block| {
-            matches!(b.kind, BlockKind::Paragraph) && b.projection.is_some()
-        };
-        let blocks = &self.parsed.blocks;
-        let before = blocks
-            .iter()
-            .rfind(|b| paragraph(b) && b.span.end() <= fence.start());
-        let after = blocks
-            .iter()
-            .filter(paragraph)
-            .find(|b| b.span.start() >= fence.end());
+    fn nearby_prose<'b>(
+        &self,
+        neighbours: [Option<&'b slopvac_parse::Block>; 2],
+    ) -> Vec<NearbyProse<'b>> {
         let mut base = self.input.source.len() + 1;
         let mut out = Vec::new();
-        for block in [before, after].into_iter().flatten() {
+        for block in neighbours.into_iter().flatten() {
             let Some(projection) = &block.projection else {
                 continue;
             };
