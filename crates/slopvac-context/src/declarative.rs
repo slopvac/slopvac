@@ -1,15 +1,17 @@
 //! Declarative taggers from data packs: the `tagger` artifact of
 //! `schemas/v3/tagger.schema.json`, specified in `docs/contract/packs.md`, section 5.
 //!
-//! A tagger sets one context tag on each text unit where a `match` entry matches and no
-//! `unless` entry matches. It reads the text of the unit and nothing else, so its tag span
-//! is the whole unit.
+//! A tagger with `match` sets one context tag on each text unit where a `match` entry
+//! matches and no `unless` entry matches. It reads the text of the unit and nothing else, so
+//! its tag span is the whole unit. A tagger with `when` reads document structure instead
+//! (see `structural.rs`).
 
 use std::ops::Range;
 
 use serde::Deserialize;
 
 use crate::schema::{Extensions, check_schema_version, is_name, present};
+use crate::structural::{Scope, Settings, StructuralTagger, When};
 use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, Tagger};
 
 /// The text unit that receives the tag.
@@ -81,15 +83,21 @@ pub struct TaggerSpec {
     pub description: Option<String>,
     /// The context tag the tagger sets.
     pub tag: String,
-    /// The unit that receives the tag.
-    #[serde(default)]
-    pub unit: Unit,
-    /// The tagger fires when at least one entry matches the unit.
-    #[serde(rename = "match")]
-    pub matches: Vec<Matcher>,
-    /// The tagger stays silent for a unit where any of these entries matches.
-    #[serde(default)]
-    pub unless: Vec<Matcher>,
+    /// The unit that receives the tag. Not with `when`.
+    #[serde(default, deserialize_with = "present")]
+    pub unit: Option<Unit>,
+    /// The tagger fires when at least one entry matches the unit. Not with `when`.
+    #[serde(default, rename = "match", deserialize_with = "present")]
+    pub matches: Option<Vec<Matcher>>,
+    /// The tagger stays silent for a unit where any of these entries matches. Not with `when`.
+    #[serde(default, deserialize_with = "present")]
+    pub unless: Option<Vec<Matcher>>,
+    /// Structural conditions, instead of `match`.
+    #[serde(default, deserialize_with = "present")]
+    pub when: Option<When>,
+    /// With `when`: how far the tag spreads. Defaults to a sentence.
+    #[serde(default, deserialize_with = "present")]
+    pub scope: Option<Scope>,
     /// Confidence in 0..=1.
     #[serde(default = "one")]
     pub confidence: f32,
@@ -134,23 +142,46 @@ impl TaggerSpec {
         {
             return Err(fail("evidence and description need at least one character"));
         }
-        if self.matches.is_empty() {
+        if let Some(when) = &self.when {
+            if self.matches.is_some() || self.unless.is_some() || self.unit.is_some() {
+                return Err(fail("`when` excludes `match`, `unless` and `unit`"));
+            }
+            let structural = when.compile(&Settings {
+                id: &id,
+                tag: &self.tag,
+                confidence: self.confidence,
+                evidence: self.evidence.as_deref(),
+                scope: self.scope.unwrap_or_default(),
+            })?;
+            return Ok(DeclarativeTagger {
+                spec: self,
+                matching: Vec::new(),
+                unless: Vec::new(),
+                structural: Some(structural),
+            });
+        }
+        if self.scope.is_some() {
+            return Err(fail("`scope` needs `when`"));
+        }
+        let entries = self.matches.as_deref().unwrap_or_default();
+        if entries.is_empty() {
             return Err(fail("`match` needs at least one entry"));
         }
-        let matching = self
-            .matches
+        let matching = entries
             .iter()
             .map(|m| m.compile(&id))
             .collect::<Result<Vec<_>, _>>()?;
         let unless = self
             .unless
             .iter()
+            .flatten()
             .map(|m| m.compile(&id))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(DeclarativeTagger {
             spec: self,
             matching,
             unless,
+            structural: None,
         })
     }
 }
@@ -203,6 +234,7 @@ pub struct DeclarativeTagger {
     spec: TaggerSpec,
     matching: Vec<Pattern>,
     unless: Vec<Pattern>,
+    structural: Option<StructuralTagger>,
 }
 
 impl DeclarativeTagger {
@@ -225,6 +257,10 @@ impl DeclarativeTagger {
         Ok(true)
     }
 
+    fn unit(&self) -> Unit {
+        self.spec.unit.unwrap_or_default()
+    }
+
     fn tag_for(&self, span: Range<usize>) -> Tag {
         Tag {
             kind: self.spec.tag.clone(),
@@ -234,13 +270,13 @@ impl DeclarativeTagger {
                 .spec
                 .evidence
                 .clone()
-                .unwrap_or_else(|| format!("{}: {}", self.spec.id, self.spec.unit.as_str())),
+                .unwrap_or_else(|| format!("{}: {}", self.spec.id, self.unit().as_str())),
         }
     }
 
     fn tag_block(&self, doc: &dyn DocumentView, b: &BlockView<'_>) -> Result<Vec<Tag>, Error> {
         let mut out = Vec::new();
-        match self.spec.unit.block_kind() {
+        match self.unit().block_kind() {
             Some(kind) if b.kind == kind => {
                 if self.fires(b.text)? {
                     out.push(self.tag_for(b.span.clone()));
@@ -266,6 +302,9 @@ impl Tagger for DeclarativeTagger {
     }
 
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
+        if let Some(structural) = &self.structural {
+            return structural.tag(doc);
+        }
         let mut out = Vec::new();
         for b in doc.blocks() {
             out.extend(self.tag_block(doc, &b)?);

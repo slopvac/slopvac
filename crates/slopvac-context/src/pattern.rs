@@ -1,10 +1,10 @@
 //! Thin PCRE2 wrapper so tagger code does not touch the crate API directly.
 
-use pcre2::bytes::{Regex, RegexBuilder};
+use slopvac_pcre2::{MatchError, Options, Regex};
 
 use crate::Error;
 
-/// A compiled PCRE2 pattern (UTF mode, JIT when available).
+/// A compiled PCRE2 pattern (UTF mode, interpreter under the `slopvac-pcre2` limits).
 #[derive(Debug, Clone)]
 pub struct Pattern {
     source: String,
@@ -23,12 +23,8 @@ impl Pattern {
     }
 
     fn build(source: &str, caseless: bool) -> Result<Self, Error> {
-        let re = RegexBuilder::new()
-            .utf(true)
-            .caseless(caseless)
-            .jit_if_available(true)
-            .build(source)
-            .map_err(|e| Error::Pattern {
+        let re =
+            Regex::new(source, Options::new().caseless(caseless)).map_err(|e| Error::Pattern {
                 pattern: source.to_string(),
                 message: e.to_string(),
             })?;
@@ -47,20 +43,15 @@ impl Pattern {
     /// True when the pattern matches anywhere in `text`. A PCRE2 execution error, such as a
     /// match or JIT stack limit, is an error and never a miss.
     pub fn is_match(&self, text: &str) -> Result<bool, Error> {
-        self.re
-            .is_match(text.as_bytes())
-            .map_err(|e| self.exec_error(&e))
+        self.re.is_match(text).map_err(|e| self.exec_error(&e))
     }
 
     /// Byte range of the first match.
     pub fn find(&self, text: &str) -> Result<Option<std::ops::Range<usize>>, Error> {
-        self.re
-            .find(text.as_bytes())
-            .map(|m| m.map(|m| m.start()..m.end()))
-            .map_err(|e| self.exec_error(&e))
+        self.re.find(text).map_err(|e| self.exec_error(&e))
     }
 
-    fn exec_error(&self, e: &pcre2::Error) -> Error {
+    fn exec_error(&self, e: &MatchError) -> Error {
         Error::Match {
             pattern: self.source.clone(),
             message: e.to_string(),

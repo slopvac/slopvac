@@ -66,11 +66,12 @@
       - { kind: path, glob: '**/{blog,post,posts,draft,drafts,note,notes,discussion,discussions}/**', weight: 3 }
       - { kind: front-matter, key: status, equals: draft, weight: 3 }
 
-# Declared, never detected: it has no `detect`. The built-in registry declares the
-# `security` context for it, see `builtin_genres`.
+# Declared, never detected: it has no `detect`. Its `contexts` tag every document of the
+# genre as security.
 - schema_version: 3
   id: security
   extends: [reference]
+  contexts: [security]
   description: Security guidance, threat models and policies. Declared, never detected.
 
 - schema_version: 3

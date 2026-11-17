@@ -483,7 +483,12 @@ def test_the_signed_directory_is_the_one_uploaded_to_the_release(workflow):
     upload = steps[
         _host_step_index(workflow, "Upload the artifacts to the draft release")
     ]
-    assert sign["run"].strip() == "python3 scripts/release_signing.py sign artifacts"
+    assert (
+        sign["run"].strip()
+        == 'python3 scripts/release_signing.py sign artifacts --version "${RELEASE_TAG#v}"'
+    )
+    # The plan job validated the tag as vX.Y.Z; the step reads it from the environment.
+    assert sign["env"]["RELEASE_TAG"] == "${{ needs.plan.outputs.tag }}"
     # The glob also takes the .minisig files written next to the artifacts.
     assert 'gh release upload "$RELEASE_TAG" artifacts/*' in upload["run"]
 

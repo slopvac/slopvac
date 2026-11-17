@@ -5,8 +5,11 @@
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
-use slopvac_engine::{Engine, Settings};
-use slopvac_model::{Document, GenreId, GenreResult, GenreSource, NonEmptyString, PackId, RuleId};
+use slopvac_engine::{CategoryDials, Engine, Level, Settings};
+use slopvac_model::{
+    CategoryId, Document, GenreId, GenreResult, GenreSource, NonEmptyString, PackId, RuleId,
+    Severity,
+};
 use slopvac_rules::{CompileOptions, RuleSet};
 
 pub fn id(text: &str) -> RuleId {
@@ -96,43 +99,103 @@ pub fn private_dir(prefix: &str) -> PathBuf {
         .keep()
 }
 
-/// The engine the 2.x parity fixtures were generated for: the core rules with the levels
-/// and category dials that `engine-parity.json` records.
-pub fn parity_engine() -> Engine {
-    use slopvac_engine::{CategoryDials, Level};
-    use slopvac_model::{CategoryId, Severity};
+pub fn root() -> PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
 
-    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let fixture: Value = serde_json::from_str(
-        &std::fs::read_to_string(manifest.join("tests/fixtures/engine-parity.json")).unwrap(),
-    )
-    .unwrap();
-    let core = manifest.join("../slopvac-rules/tests/fixtures/core-v3");
-    let set = RuleSet::load_dir(
+pub fn read_json(path: &std::path::Path) -> Value {
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+fn level(name: &str) -> Level {
+    match name {
+        "error" => Level::On(Severity::Error),
+        "warning" => Level::On(Severity::Warning),
+        "suggestion" => Level::On(Severity::Suggestion),
+        "off" => Level::Off,
+        other => panic!("unknown level {other}"),
+    }
+}
+
+/// The rule that the converted 2.x data still writes as a pattern. Rust runs it as the native
+/// `capitalization` kind, so its findings check that kind against the 2.x pattern.
+pub const TITLE_CASE: &str = "title-case-heading";
+
+fn core_sources() -> Vec<(PathBuf, String)> {
+    let core = root().join("crates/slopvac-rules/tests/fixtures/core-v3");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(core)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .collect();
+    files.sort();
+    let mut swapped = 0;
+    let sources = files
+        .into_iter()
+        .map(|path| {
+            let mut doc = read_json(&path);
+            for rule in doc["rules"].as_array_mut().into_iter().flatten() {
+                if rule["id"] == TITLE_CASE {
+                    rule["match"] = json!({"kind": "capitalization", "style": "sentence"});
+                    swapped += 1;
+                }
+            }
+            (path, doc.to_string())
+        })
+        .collect();
+    assert_eq!(swapped, 1, "{TITLE_CASE} is one rule of the core data");
+    sources
+}
+
+/// The engine for one profile: the category dials and rule levels of `core:legacy-<profile>`
+/// and the thresholds of the profile, both from the profile mapping contract.
+pub fn legacy_engine(profile: &str) -> Engine {
+    let set = RuleSet::from_sources(
         &PackId::new("core").unwrap(),
-        &core,
+        core_sources(),
         &CompileOptions::default(),
     )
     .unwrap_or_else(|e| panic!("{e}"));
-    let s = &fixture["settings"];
-    let mut settings = settings();
-    for (id, level) in s["rule_levels"].as_object().unwrap() {
-        let level = match level.as_str().unwrap() {
-            "error" => Level::On(Severity::Error),
-            "warning" => Level::On(Severity::Warning),
-            "suggestion" => Level::On(Severity::Suggestion),
-            "off" => Level::Off,
-            other => panic!("unknown level {other}"),
-        };
-        settings.rule_levels.insert(RuleId::new(id).unwrap(), level);
-    }
-    for (name, dials) in s["categories"].as_object().unwrap() {
+    let mut settings = Settings::new(
+        NonEmptyString::new(profile).unwrap(),
+        GenreResult {
+            id: GenreId::new("reference").unwrap(),
+            source: GenreSource::Default,
+            reasons: Vec::new(),
+        },
+    );
+    let profiles = root().join("docs/contract/compat/profiles");
+    let style: toml::Table =
+        std::fs::read_to_string(profiles.join(format!("legacy-{profile}.toml")))
+            .unwrap()
+            .parse()
+            .unwrap();
+    for (name, dials) in style["categories"].as_table().unwrap() {
         settings.categories.insert(
             CategoryId::new(name).unwrap(),
             CategoryDials::default()
-                .with_weight(dials["weight"].as_f64())
-                .with_max_per_100_words(dials["budget"].as_f64()),
+                .with_level(Some(level(dials["severity"].as_str().unwrap())))
+                .with_weight(dials.get("weight").and_then(toml::Value::as_float))
+                .with_max_per_100_words(
+                    dials
+                        .get("max_per_100_words")
+                        .and_then(toml::Value::as_float),
+                ),
         );
     }
+    for (id, value) in style["rules"].as_table().unwrap() {
+        settings.rule_levels.insert(
+            RuleId::new(format!("core:{id}")).unwrap(),
+            level(value.as_str().unwrap()),
+        );
+    }
+    let mapping = read_json(&profiles.join("mapping.json"));
+    let t = &mapping["profiles"][profile]["thresholds"];
+    let count = |k: &str| t[k].as_u64().map(|n| usize::try_from(n).unwrap());
+    settings.thresholds.max_errors = count("max_errors");
+    settings.thresholds.max_warnings = count("max_warnings");
+    settings.thresholds.max_unicode_dashes = count("max_unicode_dashes");
+    settings.thresholds.max_total_per_100_words = t["max_total_per_100_words"].as_f64();
+    settings.thresholds.min_score = t["min_score"].as_f64();
     Engine::new(vec![set], settings).unwrap()
 }

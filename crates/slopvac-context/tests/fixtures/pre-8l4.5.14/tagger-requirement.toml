@@ -1,0 +1,15 @@
+schema_version = 3
+id = "requirement"
+tag = "requirement"
+unit = "sentence"
+confidence = 0.9
+evidence = "The sentence states a requirement."
+
+[[match]]
+pattern = '\b(must|shall|is required to)\b'
+
+[[match]]
+words = ["required", "mandatory"]
+
+[[unless]]
+pattern = '^\s*(?i:note):'
