@@ -5,6 +5,11 @@
     revocation_list.py build DIR [--days N] [--now TIME]
     revocation_list.py verify DIR
     revocation_list.py check-newer CANDIDATE CURRENT
+    revocation_list.py fetch-published IMAGE DIR [--first-publication]
+
+``fetch-published`` pulls the published list into DIR. Only a clear "manifest not
+found" means nothing is published, and only ``--first-publication`` accepts that
+(it also fails when a list exists). Every other failure exits 1.
 
 ``check-newer`` stops a push unless the candidate's ``issued`` is strictly later
 than the published list's (CURRENT, which may not exist on the first run).
@@ -38,6 +43,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from collections.abc import Sequence
@@ -176,6 +182,67 @@ def verify(
     return issued
 
 
+# Registry answers that mean the tag has no manifest. Nothing else does: a bare
+# 404 can also come from a layer, and auth, network and 5xx errors never mean absent.
+_MANIFEST_ABSENT = re.compile(
+    r"manifest[_ ]unknown|name[_ ]unknown|^Error: \S+: not found$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _oras(args: list[str]) -> subprocess.CompletedProcess[str]:
+    binary = os.environ.get("ORAS") or "oras"
+    if shutil.which(binary) is None:
+        raise SigningError(f"oras binary not found: {binary}")
+    return subprocess.run(
+        [binary, *args],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def fetch_published(image: str, directory: Path, *, first_publication: bool) -> None:
+    """Pull the published list into ``directory``, or confirm that none exists.
+
+    The manifest is resolved first, apart from its layers. Only a clear
+    "manifest not found" for the tag means absent, and then only
+    ``first_publication`` may go on: ``directory`` is left uncreated. A list that
+    exists fails a first publication. Every other failure raises, so the push
+    stops: an auth or network error, a 5xx, a layer that cannot be fetched, or a
+    manifest that is not JSON.
+    """
+    manifest = _oras(["manifest", "fetch", image])
+    if manifest.returncode != 0:
+        if _MANIFEST_ABSENT.search(manifest.stderr):
+            if first_publication:
+                return
+            raise SigningError(
+                f"nothing is published at {image}; "
+                "run by hand with first_publication to publish the first list"
+            )
+        raise SigningError(
+            f"could not resolve the manifest of {image}: {manifest.stderr.strip()}"
+        )
+    try:
+        document = json.loads(manifest.stdout)
+    except ValueError as err:
+        raise SigningError(f"the manifest of {image} is not JSON") from err
+    if not isinstance(document, dict) or not isinstance(document.get("layers"), list):
+        raise SigningError(f"the manifest of {image} has no layers")
+    if first_publication:
+        raise SigningError(
+            f"a list is already published at {image}; first_publication is only for "
+            "the first run"
+        )
+    pulled = _oras(["pull", image, "--output", str(directory)])
+    if pulled.returncode != 0:
+        raise SigningError(
+            f"could not pull the layers of {image}: {pulled.stderr.strip()}"
+        )
+
+
 def check_newer(candidate: Path, current: Path, pubkey: Path, now: datetime) -> None:
     """Refuse to replace the published list with one that is not strictly newer.
 
@@ -241,11 +308,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     newer = commands.add_parser("check-newer")
     newer.add_argument("candidate", type=Path)
     newer.add_argument("current", type=Path, help="may not exist: nothing published")
+    fetch = commands.add_parser("fetch-published")
+    fetch.add_argument("image")
+    fetch.add_argument("directory", type=Path)
+    fetch.add_argument("--first-publication", action="store_true")
     args = parser.parse_args(argv)
     try:
         now = _parse(args.now) if getattr(args, "now", None) else datetime.now(UTC)
         if args.command == "render":
             sys.stdout.buffer.write(render(now, args.days))
+        elif args.command == "fetch-published":
+            fetch_published(
+                args.image, args.directory, first_publication=args.first_publication
+            )
+            print("fetched the published list" if args.directory.exists() else "none")
         elif args.command == "build":
             build(args.directory, args.pubkey, dict(os.environ), now, args.days)
             print(f"signed and verified {LIST_NAME}")

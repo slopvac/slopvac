@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -356,19 +357,159 @@ def test_push_has_package_write_no_environment_and_depends_on_build_sign(
     assert job["needs"] == "build-sign"
 
 
-def test_push_checks_the_published_list_before_it_pushes(workflow: dict) -> None:
+STUB_ORAS = """\
+#!/usr/bin/env python3
+import os, shutil, sys
+
+mode = os.environ["STUB_MODE"]
+args = sys.argv[1:]
+errors = {
+    "absent": "Error: ghcr.io/slopvac/slopvac-revocations:latest: not found",
+    "auth": "Error response from registry: unauthorized: authentication required",
+    "network": 'Error: Get "https://ghcr.io/v2/": dial tcp: lookup ghcr.io: no such host',
+    "server": "Error: response status code 503: Service Unavailable",
+}
+if args[:2] == ["manifest", "fetch"]:
+    if mode in errors:
+        print(errors[mode], file=sys.stderr)
+        sys.exit(1)
+    print("<html>not a manifest</html>" if mode == "malformed" else '{"layers":[{},{}]}')
+elif args[0] == "pull":
+    if mode == "layer404":
+        print("Error: failed to copy: ghcr.io/x/y@sha256:0: response status code 404: not found", file=sys.stderr)
+        sys.exit(1)
+    shutil.copytree(os.environ["STUB_SRC"], args[args.index("--output") + 1])
+else:
+    sys.exit(2)
+"""
+IMAGE = "ghcr.io/slopvac/slopvac-revocations:latest"
+
+
+@pytest.fixture
+def stub_oras(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """An ``oras`` on PATH that answers as ``STUB_MODE`` says."""
+    bin_dir = tmp_path / "stub-bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "oras"
+    stub.write_text(STUB_ORAS, encoding="utf-8")
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.delenv("ORAS", raising=False)
+
+    def answer(mode: str, src: Path | None = None) -> None:
+        monkeypatch.setenv("STUB_MODE", mode)
+        if src is not None:
+            monkeypatch.setenv("STUB_SRC", str(src))
+
+    return answer
+
+
+def test_an_absent_manifest_is_refused_unless_this_is_the_first_publication(
+    tmp_path: Path, stub_oras
+) -> None:
+    stub_oras("absent")
+    with pytest.raises(lists.SigningError, match="first_publication"):
+        lists.fetch_published(IMAGE, tmp_path / "published", first_publication=False)
+
+
+def test_an_absent_manifest_is_allowed_for_the_first_publication(
+    tmp_path: Path, stub_oras
+) -> None:
+    stub_oras("absent")
+    lists.fetch_published(IMAGE, tmp_path / "published", first_publication=True)
+    assert not (tmp_path / "published").exists()
+
+
+@pytest.mark.parametrize(
+    ("mode", "why"),
+    [
+        ("auth", "could not resolve the manifest"),
+        ("network", "could not resolve the manifest"),
+        ("server", "could not resolve the manifest"),
+        ("malformed", "is not JSON"),
+    ],
+)
+@pytest.mark.parametrize("first_publication", [False, True])
+def test_any_failure_other_than_an_absent_manifest_fails_closed(
+    tmp_path: Path, stub_oras, mode: str, why: str, first_publication: bool
+) -> None:
+    stub_oras(mode, tmp_path)
+    with pytest.raises(lists.SigningError, match=why):
+        lists.fetch_published(
+            IMAGE, tmp_path / "published", first_publication=first_publication
+        )
+
+
+def test_a_layer_that_404s_under_an_existing_manifest_is_not_a_first_run(
+    tmp_path: Path, stub_oras
+) -> None:
+    stub_oras("layer404", tmp_path)
+    with pytest.raises(lists.SigningError, match="could not pull the layers"):
+        lists.fetch_published(IMAGE, tmp_path / "published", first_publication=False)
+
+
+@NEEDS_MINISIGN
+def test_a_published_list_fails_the_first_publication(
+    tmp_path: Path, stub_oras
+) -> None:
+    published = _signed(tmp_path, "published", EARLIER)
+    stub_oras("present", published)
+    with pytest.raises(lists.SigningError, match="already published"):
+        lists.fetch_published(IMAGE, tmp_path / "pulled", first_publication=True)
+
+
+@NEEDS_MINISIGN
+def test_an_older_candidate_is_refused_next_to_a_newer_published_list(
+    tmp_path: Path, stub_oras
+) -> None:
+    published = _signed(tmp_path, "published", LATER)
+    candidate = _signed(tmp_path, "candidate", EARLIER)
+    stub_oras("present", published)
+    pulled = tmp_path / "pulled"
+    lists.fetch_published(IMAGE, pulled, first_publication=False)
+    with pytest.raises(lists.SigningError, match="not newer"):
+        lists.check_newer(candidate, pulled, tmp_path / "throwaway.pub", LATER)
+
+
+@NEEDS_MINISIGN
+def test_a_newer_candidate_replaces_an_older_published_list(
+    tmp_path: Path, stub_oras
+) -> None:
+    published = _signed(tmp_path, "published", EARLIER)
+    candidate = _signed(tmp_path, "candidate", LATER)
+    stub_oras("present", published)
+    pulled = tmp_path / "pulled"
+    lists.fetch_published(IMAGE, pulled, first_publication=False)
+    lists.check_newer(candidate, pulled, tmp_path / "throwaway.pub", LATER)
+
+
+def test_push_fetches_the_published_list_before_it_checks_and_pushes(
+    workflow: dict,
+) -> None:
     runs = [s.get("run", "") for s in workflow["jobs"]["push"]["steps"]]
-    fetch = next(i for i, r in enumerate(runs) if 'oras pull "$IMAGE"' in r)
+    fetch = next(i for i, r in enumerate(runs) if "fetch-published" in r)
     newer = next(i for i, r in enumerate(runs) if "revocation_list.py check-newer" in r)
     push = next(i for i, r in enumerate(runs) if "oras push" in r)
     assert fetch < newer < push
-    # Only a "not found" answer means a first run; anything else fails the job.
-    assert "exit 1" in runs[fetch]
+
+
+def test_first_publication_is_a_manual_boolean_defaulting_to_false(
+    workflow: dict,
+) -> None:
+    option = workflow[True]["workflow_dispatch"]["inputs"]["first_publication"]
+    assert (option["type"], option["default"]) == ("boolean", False)
+    step = next(
+        s
+        for s in workflow["jobs"]["push"]["steps"]
+        if "fetch-published" in s.get("run", "")
+    )
+    assert step["env"] == {"FIRST_PUBLICATION": "${{ inputs.first_publication }}"}
 
 
 def test_build_sign_signs_only_from_main(workflow: dict) -> None:
     condition = workflow["jobs"]["build-sign"]["if"]
     assert "github.ref == 'refs/heads/main'" in condition
+    assert workflow["jobs"]["push"]["if"] == condition
     assert workflow["jobs"]["push"]["needs"] == "build-sign"
 
 

@@ -13,7 +13,13 @@ on:
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:
-
+    inputs:
+      first_publication:
+        description: >-
+          Nothing is published yet. Set it for the very first run only; the run then
+          fails if a list exists. Without it, a missing list fails the run.
+        type: boolean
+        default: false
 permissions: {}
 
 # A second run would sign a list with a later `issued` while the first pushes.
@@ -63,6 +69,8 @@ jobs:
   push:
     name: Push the list to GHCR
     needs: build-sign
+    # Same guard as build-sign, as defence in depth.
+    if: ${{ github.repository == 'slopvac/slopvac' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -95,21 +103,19 @@ jobs:
         run: printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GH_ACTOR" --password-stdin
 
       # A retried older run must not replace a newer list: clients that cached the
-      # newer one refuse the older `issued`. Nothing published yet is allowed; any
-      # other pull failure stops the job.
+      # newer one refuse the older `issued`. The manifest is resolved on its own, and
+      # only a clear "manifest not found" means nothing is published. Every other
+      # failure stops the job. Only a manual run with first_publication may find
+      # nothing published; a scheduled run never bootstraps.
       - name: Fetch the published list
+        env:
+          FIRST_PUBLICATION: ${{ inputs.first_publication }}
         run: |
-          errors="$RUNNER_TEMP/pull.err"
-          if oras pull "$IMAGE" --output "$RUNNER_TEMP/published" 2>"$errors"; then
-            echo "pulled the published list"
-          elif grep -qiE 'not found|name_unknown|manifest_unknown|404' "$errors"; then
-            echo "nothing is published yet"
-            rm -rf "$RUNNER_TEMP/published"
-          else
-            cat "$errors" >&2
-            exit 1
+          args=()
+          if [[ "$FIRST_PUBLICATION" == true ]]; then
+            args+=(--first-publication)
           fi
-
+          python3 scripts/revocation_list.py fetch-published "$IMAGE" "$RUNNER_TEMP/published" "${args[@]}"
       - name: Require a newer list than the published one
         run: python3 scripts/revocation_list.py check-newer "$RUNNER_TEMP/revocations" "$RUNNER_TEMP/published"
 
