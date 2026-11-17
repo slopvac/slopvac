@@ -28,6 +28,24 @@ pub fn read_capped(reader: impl Read, cap: u64) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// Read the file at `path` as UTF-8 text, failing when it holds more than `cap` bytes.
+///
+/// Memory stays bounded by `cap + 1` bytes whatever the file reports as its size.
+///
+/// # Errors
+/// [`Error::CapExceeded`] when the file is larger than `cap`, [`Error::NotUtf8`] when the bytes
+/// are not UTF-8, and [`Error::Io`] when opening or reading fails.
+pub fn read_text_capped(path: &Path, cap: u64) -> Result<String> {
+    let file = std::fs::File::open(path).map_err(|e| Error::io("open", path, &e))?;
+    let bytes = read_capped(file, cap).map_err(|e| match e {
+        Error::Read(source) => Error::io("read", path, &source),
+        other => other,
+    })?;
+    String::from_utf8(bytes).map_err(|_| Error::NotUtf8 {
+        path: path.to_path_buf(),
+    })
+}
+
 /// Options for [`write_atomic`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WriteOptions {
@@ -247,6 +265,44 @@ mod tests {
             read_capped(repeat(b'x'), 1024),
             Err(Error::CapExceeded { .. })
         ));
+    }
+
+    #[test]
+    fn read_text_capped_reads_a_file_at_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        std::fs::write(&path, "héllo").unwrap();
+        // "héllo" is 6 bytes in UTF-8.
+        assert_eq!(read_text_capped(&path, 6).unwrap(), "héllo");
+    }
+
+    #[test]
+    fn read_text_capped_rejects_one_byte_over() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        std::fs::write(&path, "héllo").unwrap();
+        assert!(matches!(
+            read_text_capped(&path, 5),
+            Err(Error::CapExceeded { cap: 5 })
+        ));
+    }
+
+    #[test]
+    fn read_text_capped_refuses_invalid_utf8() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.bin");
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+        let err = read_text_capped(&path, 10).unwrap_err();
+        assert!(matches!(err, Error::NotUtf8 { .. }));
+        assert_eq!(err.path(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn read_text_capped_reports_a_missing_file_with_its_path() {
+        let path = PathBuf::from("/nonexistent-slopvac-dir/a.txt");
+        let err = read_text_capped(&path, 10).unwrap_err();
+        assert!(matches!(&err, Error::Io { op: "open", .. }));
+        assert_eq!(err.path(), Some(path.as_path()));
     }
 
     struct Failing(Option<std::io::Error>);

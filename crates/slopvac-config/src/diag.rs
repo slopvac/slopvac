@@ -12,6 +12,10 @@ use crate::tree::LineIndex;
 pub enum Code {
     /// A file could not be read.
     Io,
+    /// A config file is larger than [`crate::MAX_CONFIG_BYTES`].
+    TooLarge,
+    /// A document is larger than [`crate::MAX_DOCUMENT_BYTES`].
+    DocumentTooLarge,
     /// The file is not valid TOML or YAML.
     Parse,
     /// A key the schema does not define.
@@ -42,6 +46,8 @@ impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
             Code::Io => "config-io",
+            Code::TooLarge => "config-too-large",
+            Code::DocumentTooLarge => "document-too-large",
             Code::Parse => "config-parse",
             Code::UnknownKey => "config-unknown-key",
             Code::InvalidType => "config-invalid-type",

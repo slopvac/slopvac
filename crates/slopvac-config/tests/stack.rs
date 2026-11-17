@@ -50,7 +50,7 @@ fn load_at(fx: &Fixture, rel: &str) -> LoadedConfig {
 fn rejected(err: ConfigError) -> slopvac_config::Rejected {
     match err {
         ConfigError::Rejected(r) => *r,
-        other @ ConfigError::Io { .. } => panic!("expected a rejection, got {other}"),
+        other => panic!("expected a rejection, got {other}"),
     }
 }
 

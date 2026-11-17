@@ -10,6 +10,7 @@ use crate::diag::{Code, Diagnostic};
 use crate::error::{ConfigError, Rejected};
 use crate::flatten::{Origin, flatten};
 use crate::presets::Presets;
+use crate::read::{MAX_CONFIG_BYTES, ReadFailure, read_text};
 use crate::schema::validate_config;
 use crate::source::{Layer, Setting};
 use crate::tree::{Node, Value, parse_toml};
@@ -137,7 +138,7 @@ pub fn load_labeled(
 ) -> Result<LoadedConfig, ConfigError> {
     let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(label, source))?;
     let root = abs.parent().map_or_else(PathBuf::new, Path::to_path_buf);
-    let text = fs::read_to_string(&abs).map_err(|source| ConfigError::io(label, source))?;
+    let text = ConfigError::read_config(&abs, label)?;
     let mut loader = Loader {
         root: &root,
         presets,
@@ -491,15 +492,20 @@ impl Loader<'_> {
             let body = match body {
                 Some(b) => b,
                 None => match &target {
-                    Key::Path(p) => fs::read_to_string(p).map_err(|e| {
-                        fail(
+                    Key::Path(p) => read_text(p, MAX_CONFIG_BYTES).map_err(|e| match e {
+                        ReadFailure::TooLarge(cap) => fail(
+                            Code::TooLarge,
+                            format!("the extended config `{name}` is larger than {cap} bytes"),
+                            Some("split the file or remove unused settings".into()),
+                        ),
+                        ReadFailure::Io(e) => fail(
                             Code::ExtendsMissing,
                             format!(
                                 "cannot read the extended config `{}`: {e}",
                                 safe_display(p, self.root)
                             ),
                             Some("paths are relative to the file that holds the entry".into()),
-                        )
+                        ),
                     })?,
                     Key::Pack(_) => String::new(),
                 },
