@@ -418,3 +418,55 @@ fn add_with_an_invalid_kind_fails_and_leaves_the_file_unchanged() {
     assert_eq!(file(&dir), before);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+fn run_err(dir: &Path, cli_args: &[&str]) -> String {
+    let mut argv = vec!["terms"];
+    argv.extend_from_slice(cli_args);
+    let m = command().try_get_matches_from(argv).unwrap();
+    run(&m, dir, &mut Vec::new()).unwrap_err().to_string()
+}
+
+fn sparse(path: &Path, len: u64) {
+    std::fs::File::create(path).unwrap().set_len(len).unwrap();
+}
+
+#[test]
+fn suggest_refuses_a_document_one_byte_over_the_cap() {
+    let dir = scratch("suggest-cap");
+    sparse(&dir.join("big.md"), slopvac_fs::MAX_DOCUMENT_BYTES + 1);
+    let e = run_err(&dir, &["suggest", "big.md"]);
+    assert!(e.starts_with("[document-too-large] big.md "), "{e}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn import_refuses_a_word_list_one_byte_over_the_cap() {
+    let dir = scratch("import-cap");
+    sparse(
+        &dir.join("accept.txt"),
+        slopvac_terms::MAX_TERMS_FILE_BYTES + 1,
+    );
+    let e = run_err(&dir, &["import", "--from", "vale", "accept.txt"]);
+    assert!(e.starts_with("[terms-file-too-large] accept.txt "), "{e}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn errors_about_the_project_terms_file_carry_no_absolute_path() {
+    let dir = scratch("labels");
+    let root = dir.display().to_string();
+    std::fs::create_dir_all(dir.join(".slopvac")).unwrap();
+    sparse(
+        &dir.join(".slopvac/terms.toml"),
+        slopvac_terms::MAX_TERMS_FILE_BYTES + 1,
+    );
+    for args in [&["list"][..], &["add", "Acme"], &["remove", "Acme"]] {
+        let e = run_err(&dir, args);
+        assert!(e.contains(".slopvac/terms.toml"), "{e}");
+        assert!(!e.contains(&root), "{e}");
+    }
+    std::fs::write(dir.join(".slopvac/terms.toml"), "not toml = = =").unwrap();
+    let e = run_err(&dir, &["list"]);
+    assert!(!e.contains(&root), "{e}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

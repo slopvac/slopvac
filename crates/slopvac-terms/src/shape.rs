@@ -185,7 +185,16 @@ impl TermsFile {
     /// # Errors
     /// As [`TermsFile::parse`], plus read failures.
     pub fn load(path: &std::path::Path) -> Result<Self, TermsError> {
-        let shown = path.display().to_string();
+        Self::load_labeled(path, &path.display().to_string())
+    }
+
+    /// Like [`TermsFile::load`], naming the file `shown` in errors. Pass a label that is
+    /// relative to the project root, so an error never carries an absolute path.
+    ///
+    /// # Errors
+    /// As [`TermsFile::load`].
+    pub fn load_labeled(path: &std::path::Path, shown: &str) -> Result<Self, TermsError> {
+        let shown = shown.to_owned();
         let text = crate::read::read_existing(path, &shown, crate::MAX_TERMS_FILE_BYTES)?;
         Self::parse(&shown, &text)
     }

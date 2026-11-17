@@ -26,7 +26,7 @@ pub use diag::{Code, Diagnostic, SourceFile, render};
 pub use discover::Discovery;
 pub use error::{ConfigError, Rejected};
 pub use load::{LoadedConfig, load, load_labeled};
-pub use presets::{NoPresets, PackFile, Presets};
+pub use presets::{NoPresets, PackFile, PresetFailure, Presets};
 pub use read::{MAX_CONFIG_BYTES, MAX_DOCUMENT_BYTES};
 pub use resolve::{
     Explained, Inputs, LevelFrom, Resolved, ResolvedLevel, core_defaults, describe, render_explain,

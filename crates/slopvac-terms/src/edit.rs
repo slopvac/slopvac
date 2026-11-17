@@ -64,7 +64,16 @@ impl TermsDoc {
     /// # Errors
     /// Read or parse failures.
     pub fn open(path: &Path) -> Result<Self, TermsError> {
-        let shown = path.display().to_string();
+        Self::open_labeled(path, &path.display().to_string())
+    }
+
+    /// Like [`TermsDoc::open`], naming the file `shown` in errors. Pass a label that is
+    /// relative to the project root, so an error never carries an absolute path.
+    ///
+    /// # Errors
+    /// As [`TermsDoc::open`].
+    pub fn open_labeled(path: &Path, shown: &str) -> Result<Self, TermsError> {
+        let shown = shown.to_owned();
         match crate::read::read(path, &shown, crate::MAX_TERMS_FILE_BYTES) {
             Ok(text) => {
                 crate::TermsFile::parse(&shown, &text)?;

@@ -306,6 +306,7 @@ impl Loader<'_> {
         let mut diagnostics = validate_config(&tree, &text);
         if diagnostics.is_empty() {
             check_exclude(&tree, &mut diagnostics);
+            self.check_styles(&tree, &mut diagnostics);
         }
         let blocks = if diagnostics.is_empty() {
             self.blocks(&tree, display, &text, &mut diagnostics)
@@ -344,6 +345,30 @@ impl Loader<'_> {
         match key {
             Key::Path(p) => safe_display(p, self.root),
             Key::Pack(_) => display.to_owned(),
+        }
+    }
+
+    /// Report a `styles` list that the provider cannot load for a reason that must stop the run.
+    fn check_styles(&self, tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
+        let Some(node) = tree.get("styles") else {
+            return;
+        };
+        let Value::Array(items) = &node.value else {
+            return;
+        };
+        let listed: Vec<String> = items
+            .iter()
+            .filter_map(|n| n.as_str().map(str::to_owned))
+            .collect();
+        if let Err(failure) = self.presets.check_styles(&listed) {
+            diagnostics.push(Diagnostic {
+                code: failure.code,
+                message: failure.message,
+                label: "listed here".into(),
+                span: node.span.clone(),
+                help: None,
+                path: vec!["styles".into()],
+            });
         }
     }
 

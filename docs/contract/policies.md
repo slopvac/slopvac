@@ -163,7 +163,7 @@ The span crates index text with 32-bit offsets and size their structures from it
 
 Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`).
 
-The CLI file and stdin reads, the language server and `migrate` document reads, and the `migrate` config read enforce their caps in the change that follows this one. Every other row is enforced.
+The CLI file and stdin reads, the language server and `migrate` document reads, and the `migrate` config read enforce their caps in the change that follows this one. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and the CLI reports it in that change.
 
 Output and protocol caps are separate and already hold: plugin frames 16 MiB, reStructuredText converter output 16 MiB, and fixer edits 1 MiB.
 

@@ -14,6 +14,8 @@ pub enum Code {
     Io,
     /// A config file is larger than [`crate::MAX_CONFIG_BYTES`].
     TooLarge,
+    /// A style file is larger than the style cap.
+    StyleTooLarge,
     /// A document is larger than [`crate::MAX_DOCUMENT_BYTES`].
     DocumentTooLarge,
     /// The file is not valid TOML or YAML.
@@ -47,6 +49,7 @@ impl Code {
         match self {
             Code::Io => "config-io",
             Code::TooLarge => "config-too-large",
+            Code::StyleTooLarge => "style-too-large",
             Code::DocumentTooLarge => "document-too-large",
             Code::Parse => "config-parse",
             Code::UnknownKey => "config-unknown-key",

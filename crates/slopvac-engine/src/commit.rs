@@ -53,6 +53,18 @@ pub enum Refusal {
     Changed,
 }
 
+impl Refusal {
+    /// The stable code of a refusal that has one: `document-too-large` for
+    /// [`Refusal::TooLarge`]. The other refusals have no code yet.
+    #[must_use]
+    pub fn code(self) -> Option<&'static str> {
+        match self {
+            Refusal::TooLarge => Some("document-too-large"),
+            _ => None,
+        }
+    }
+}
+
 /// Where in a write a hook runs, before the step it names.
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,10 +93,32 @@ fn link_or_error(dir: &Dir, name: &OsStr, error: std::io::Error) -> std::io::Res
     }
 }
 
-fn read_all(file: &mut File) -> std::io::Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    Read::take(file, MAX_FILE_BYTES + 1).read_to_end(&mut bytes)?;
-    Ok(bytes)
+/// Read the open file, or `None` when it holds more than [`MAX_FILE_BYTES`]. The size check
+/// on the metadata can be out of date by the time the read happens, so the read enforces the
+/// cap itself.
+fn read_all(file: &mut File) -> std::io::Result<Option<Vec<u8>>> {
+    read_within(file, MAX_FILE_BYTES)
+}
+
+fn read_within(reader: impl Read, cap: u64) -> std::io::Result<Option<Vec<u8>>> {
+    match slopvac_fs::read_capped(reader, cap) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(slopvac_fs::Error::CapExceeded { .. }) => Ok(None),
+        Err(slopvac_fs::Error::Read(source)) => Err(source),
+        Err(e) => Err(std::io::Error::other(e.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod read_tests {
+    use super::read_within;
+
+    #[test]
+    fn a_reader_that_outgrows_the_cap_is_not_returned_as_a_prefix() {
+        // A file that passed the size check and then grew: the reader holds cap + 1 bytes.
+        assert_eq!(read_within(&[7u8; 5][..], 4).unwrap(), None);
+        assert_eq!(read_within(&[7u8; 4][..], 4).unwrap(), Some(vec![7u8; 4]));
+    }
 }
 
 #[cfg(unix)]
@@ -179,7 +213,9 @@ mod other {
         if meta.len() > MAX_FILE_BYTES {
             return Ok(Err(Refusal::TooLarge));
         }
-        let bytes = read_all(&mut file)?;
+        let Some(bytes) = read_all(&mut file)? else {
+            return Ok(Err(Refusal::TooLarge));
+        };
         Ok(Ok((Handle, bytes)))
     }
 }
@@ -289,7 +325,9 @@ mod unix {
             return Ok(Err(Refusal::TooLarge));
         }
         let before = identity(&held);
-        let bytes = read_all(&mut file)?;
+        let Some(bytes) = read_all(&mut file)? else {
+            return Ok(Err(Refusal::TooLarge));
+        };
         Ok(Ok((
             Handle {
                 parent,
@@ -441,7 +479,7 @@ mod unix {
                 return Ok(false);
             }
             self.file.rewind()?;
-            Ok(read_all(&mut self.file)? == original)
+            Ok(read_all(&mut self.file)?.is_some_and(|b| b == original))
         }
 
         /// Whether the temporary name still holds the file we staged: the same file, with
@@ -462,7 +500,7 @@ mod unix {
             if !meta.is_file() || identity(&meta) != *staged {
                 return Ok(false);
             }
-            Ok(read_all(&mut file)? == text.as_bytes())
+            Ok(read_all(&mut file)?.is_some_and(|b| b == text.as_bytes()))
         }
     }
 

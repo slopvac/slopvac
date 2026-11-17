@@ -1132,3 +1132,20 @@ fn an_extended_config_over_the_cap_is_refused_with_its_code() {
     let err = load(&p, &NoPresets).unwrap_err();
     assert_eq!(err.code(), Code::TooLarge);
 }
+
+#[test]
+fn a_legacy_config_file_over_the_cap_is_refused_during_discovery() {
+    let fx = Fixture::new();
+    for name in [".slopvac.toml", "pyproject.toml"] {
+        let dir = name.trim_start_matches('.');
+        git_dir(&fx, dir);
+        sparse(
+            &fx.root().join(dir).join(name),
+            slopvac_config::MAX_CONFIG_BYTES + 1,
+        );
+        let err = Discovery::new(&NoPresets)
+            .nearest(&fx.root().join(dir))
+            .unwrap_err();
+        assert_eq!(err.code(), Code::TooLarge, "{name}");
+    }
+}
