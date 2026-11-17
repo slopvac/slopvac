@@ -23,7 +23,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from . import metrics
+from . import labelling, metrics
 
 BASELINE_SCHEMA = 1
 BASELINE_DIR = Path(__file__).resolve().parent / "baselines"
@@ -103,6 +103,7 @@ def _compare_counts(
     was: Mapping[str, Any],
     now_entry: Mapping[str, Any] | None,
     min_n: int,
+    min_positives: int,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Return (regression, uncertain) for one count metric of one rule."""
     key, hits_key, direction = COUNT_METRICS[name]
@@ -112,6 +113,9 @@ def _compare_counts(
     src = now_entry[key]
     if src["n"] < min_n or was["n"] < min_n:
         return None, {**where, "n": src["n"]}
+    if name == "precision" and was["hits"] < min_positives:
+        # Too few adjudicated true positives to trust the label set.
+        return None, {**where, "n": src["n"], "positives": was["hits"]}
     low, high = _noise_bounds(src, hits_key)
     worse = high < p0 if direction > 0 else low > p0
     if not worse:
@@ -148,6 +152,7 @@ def compare(
     cards: Mapping[str, Mapping[str, Any]],
     *,
     min_n: int = MIN_N,
+    min_positives: int = labelling.MIN_POSITIVES,
 ) -> dict[str, Any]:
     """Compare per-split scorecards with a baseline; return regressions and notes."""
     regressions: list[dict[str, Any]] = []
@@ -168,7 +173,9 @@ def compare(
                 if name not in was or not was[name]["n"]:
                     continue
                 where = {"split": split, "rule": rule, "metric": name}
-                reg, unc = _compare_counts(where, name, was[name], now_entry, min_n)
+                reg, unc = _compare_counts(
+                    where, name, was[name], now_entry, min_n, min_positives
+                )
                 if reg:
                     regressions.append(reg)
                 if unc:
@@ -207,6 +214,7 @@ def markdown(result: Mapping[str, Any], mode: str) -> str:
         lines.append("")
     if result["uncertain"]:
         lines.append(
-            f"{len(result['uncertain'])} rate(s) rest on fewer than {MIN_N} cases and were not gated."
+            f"{len(result['uncertain'])} rate(s) rest on too few cases or, for precision, "
+            f"fewer than {labelling.MIN_POSITIVES} adjudicated true positives and were not gated."
         )
     return "\n".join(lines) + "\n"

@@ -146,6 +146,26 @@ def test_rates_on_few_cases_are_listed_not_gated():
     assert any(u["metric"] == "recall" for u in out["uncertain"])
 
 
+def test_precision_with_too_few_adjudicated_positives_is_listed_not_gated():
+    # 10 true positives among 40 labelled cases: enough cases for MIN_N, but
+    # below the 20 positives the labelling README requires before trusting precision.
+    baseline = {
+        "splits": {
+            "tuning": {
+                "human_words": 0,
+                "rules": {R: {"human_findings": 0, "precision": {"hits": 10, "n": 40}}},
+            }
+        }
+    }
+    card = {
+        "origins": {},
+        "rules": {R: {"human_findings": 0, "precision": {"tp": 2, "n": 40}}},
+    }
+    out = gate.compare(baseline, {"tuning": card})
+    assert out["regressions"] == []
+    assert [(u["rule"], u["metric"]) for u in out["uncertain"]] == [(R, "precision")]
+
+
 def test_a_rule_that_vanished_is_a_regression(base):
     baseline = base[2]
     empty = {s: {"rules": {}, "origins": {}} for s in gate.SPLITS}
