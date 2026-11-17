@@ -8,7 +8,8 @@ use std::cell::Cell;
 use rstest::rstest;
 
 use slopvac_context::{
-    BlockView, DocumentView, PlainDocument, SentenceView, Tagger, TaggerSpec, work,
+    BlockView, DocumentView, EnforcedInvariantTagger, PlainDocument, RequirementTagger,
+    SentenceView, Tagger, TaggerSpec, work,
 };
 
 /// A document that counts the calls a tagger makes on it.
@@ -112,4 +113,55 @@ fn finding_section_bounds_examines_each_block_once(
     assert_eq!(work::take_section_steps(), blocks);
     assert_eq!(doc.blocks_calls.get(), 1);
     assert_eq!(doc.sentences_calls.get(), 0);
+}
+
+/// Positions examined by `tagger` on one paragraph of `text`.
+fn text_steps(tagger: &dyn Tagger, text: &str) -> usize {
+    let doc = Counting::new(&format!("# T\n\n{text}\n"));
+    let _ = work::take_text_steps();
+    tagger.tag(&doc).unwrap();
+    work::take_text_steps()
+}
+
+fn text_taggers() -> [Box<dyn Tagger>; 2] {
+    [
+        Box::new(RequirementTagger::new().unwrap()),
+        Box::new(EnforcedInvariantTagger::new().unwrap()),
+    ]
+}
+
+/// `](` repeated `n` times is `2n` characters and has no `)` to close a link. Cleaning scans
+/// the text for backticks (`2n`), visits each character (`2n`), and looks for the missing `)`
+/// once (`2n - 2` characters after the first `](`).
+#[rstest]
+#[case::fifty(50, 298)]
+#[case::hundred(100, 598)]
+#[case::two_hundred(200, 1198)]
+fn unclosed_link_openers_are_scanned_for_a_closer_once(#[case] n: usize, #[case] steps: usize) {
+    for tagger in text_taggers() {
+        assert_eq!(
+            text_steps(&*tagger, &"](".repeat(n)),
+            steps,
+            "{}",
+            tagger.id()
+        );
+    }
+}
+
+/// Backtick runs of length `k` down to 1, each after an `a`, never find a closing run of
+/// their length. The text has `n = k + k(k+1)/2` bytes and `k` runs. Cleaning reads the bytes
+/// once to find the runs (`n`), decides each run once (`k`), then visits each character (`n`).
+#[rstest]
+#[case::ten(10, 140)]
+#[case::twenty(20, 480)]
+#[case::forty(40, 1760)]
+fn unclosed_backtick_runs_are_matched_in_one_pass(#[case] k: usize, #[case] steps: usize) {
+    let mut text = String::new();
+    for l in (1..=k).rev() {
+        text.push('a');
+        text.push_str(&"`".repeat(l));
+    }
+    for tagger in text_taggers() {
+        assert_eq!(text_steps(&*tagger, &text), steps, "{}", tagger.id());
+    }
 }

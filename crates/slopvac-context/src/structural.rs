@@ -272,27 +272,6 @@ impl StructuralTagger {
     }
 }
 
-/// Count of blocks the section bounds routine has examined on this thread.
-#[doc(hidden)]
-pub mod work {
-    use std::cell::Cell;
-
-    thread_local! {
-        static STEPS: Cell<usize> = const { Cell::new(0) };
-    }
-
-    pub(super) fn step(n: usize) {
-        STEPS.with(|c| c.set(c.get() + n));
-    }
-
-    /// Blocks examined by section bounds since the last call, for tests that bound the work.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn take_section_steps() -> usize {
-        STEPS.with(|c| c.replace(0))
-    }
-}
-
 fn level(b: &BlockView<'_>) -> u8 {
     b.heading_level
         .unwrap_or_else(|| u8::try_from(b.heading_path.len()).unwrap_or(u8::MAX))
@@ -341,7 +320,7 @@ fn sections(blocks: &[BlockView<'_>]) -> (Vec<Range<usize>>, Vec<usize>) {
         extent: None,
     }];
     for b in blocks {
-        work::step(1);
+        crate::work::section(1);
         if b.kind == BlockKind::Heading {
             let l = level(b);
             while open.last().is_some_and(|top| top.level >= l) {
