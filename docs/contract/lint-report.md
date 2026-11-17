@@ -36,6 +36,21 @@ These keys have no 2.x counterpart.
   ([`RuleProvenance`](../../schemas/v3/common.schema.json#/$defs/RuleProvenance)) and
   the optional `origin` (see [Finding origin](#finding-origin)).
 
+## Notice data
+
+A notice may carry `data`, an object of plain JSON values. A notice with no details
+omits it. The schema does not constrain the keys. Each notice code documents its own
+keys, and a consumer must ignore keys it does not know.
+
+`extract-budget` has these keys:
+
+| Key | Meaning |
+| --- | --- |
+| `data.budget` | Name of the cap that stopped extraction, from the plugin-protocol limits table. |
+| `data.limit` | The configured number, in the unit of that cap. |
+
+These keys match the `data` of the plugin-protocol error with the same code.
+
 ## Finding origin
 
 A container document, such as a Word file or a draw.io diagram, is linted as a list of

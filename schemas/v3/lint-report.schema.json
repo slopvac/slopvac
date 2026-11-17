@@ -31,7 +31,8 @@
         "code": {"description": "Stable kebab-case identifier. A code is never reused for a different meaning.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"},
         "level": {"enum": ["info", "warning"]},
         "message": {"type": "string", "minLength": 1},
-        "path": {"description": "File the notice concerns, when it concerns one.", "type": "string"}
+        "path": {"description": "File the notice concerns, when it concerns one.", "type": "string"},
+        "data": {"description": "Details as plain JSON values. Each notice code documents its own keys. Consumers must ignore keys they do not know. Omitted when the notice has none.", "type": "object"}
       },
       "required": ["code", "level", "message"],
       "patternProperties": {"^x-": true},

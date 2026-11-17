@@ -82,6 +82,18 @@ pub struct Notice {
     )]
     #[schemars(transform = absent_not_null)]
     pub path: Option<String>,
+    /// Plain-value details. Each code documents its own keys; omitted when empty.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub data: serde_json::Map<String, Value>,
+}
+
+impl Notice {
+    /// Returns the notice with `data` attached.
+    #[must_use]
+    pub fn with_data(mut self, data: serde_json::Map<String, Value>) -> Self {
+        self.data = data;
+        self
+    }
 }
 
 /// Where a rule came from.
