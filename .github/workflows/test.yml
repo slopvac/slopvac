@@ -191,9 +191,21 @@ jobs:
           cache: false
           env: false
           add_shims_to_path: false
-      # With `env: false` the action exports only the mise binary directory, so add ast-grep's.
+      # With `env: false` the action exports only the mise binary directory. Link just the
+      # ast-grep binary into its own directory, because the install directory also holds `sg`,
+      # which would shadow the system `sg`.
       - name: Put ast-grep on PATH
-        run: mise bin-paths ast-grep >> "$GITHUB_PATH"
+        run: |
+          set -eu
+          dirs="$(mise bin-paths ast-grep)"
+          if [ "$(printf '%s\n' "$dirs" | wc -l)" -ne 1 ] || [ ! -x "$dirs/ast-grep" ]; then
+            echo "expected one ast-grep install directory, got: $dirs" >&2
+            exit 1
+          fi
+          bin="$RUNNER_TEMP/ast-grep-bin"
+          mkdir -p "$bin"
+          ln -s "$dirs/ast-grep" "$bin/ast-grep"
+          echo "$bin" >> "$GITHUB_PATH"
 
       - name: Message registry checks
         run: |
