@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from . import corpuslib as lib
+from . import procs
 
 RESULTS_SCHEMA = 1
 BATCH = 50
@@ -126,17 +127,15 @@ class Engine:
         # was incomplete, for example rules that cannot run on code comments. That
         # still yields findings, so keep them and record the gap per document.
         # Anything else, or exit 2 without a report, is an engine failure.
+        stderr = procs.redact(proc.stderr.strip())[:500]
         try:
             report = json.loads(proc.stdout)
         except json.JSONDecodeError as exc:
             raise EngineError(
-                f"{self.name} exited {proc.returncode} with no report: "
-                f"{proc.stderr.strip()[:500] or exc}"
+                f"{self.name} exited {proc.returncode} with no report: {stderr or exc}"
             ) from exc
         if proc.returncode not in (0, 1, 2) or "documents" not in report:
-            raise EngineError(
-                f"{self.name} exited {proc.returncode}: {proc.stderr.strip()[:500]}"
-            )
+            raise EngineError(f"{self.name} exited {proc.returncode}: {stderr}")
         return report
 
 

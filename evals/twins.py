@@ -80,7 +80,7 @@ def run_provider(command: str, prompt: str, timeout: int) -> str:
         raise RuntimeError(
             f"provider exited {done.returncode}: {procs.redact(done.stderr.strip())[:200]}"
         )
-    return done.stdout
+    return procs.redact_credentials(done.stdout)
 
 
 def cmd_outline(manifest: dict[str, Any], cache: Path) -> int:

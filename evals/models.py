@@ -911,7 +911,11 @@ def command_ask(
                 budget.finish(number, "ok" if ok else "fail", model)
             reports.append(procs.parse_usage_line(proc.stderr))
             if ok:
-                return Reply(proc.stdout, used, procs.sum_usage(reports))
+                return Reply(
+                    procs.redact_credentials(proc.stdout),
+                    used,
+                    procs.sum_usage(reports),
+                )
             detail = procs.strip_usage_lines(proc.stderr)[:300]
             last = procs.redact(f"model command exited {proc.returncode}: {detail}")
         raise CallFailed(last, used, procs.sum_usage(reports))
