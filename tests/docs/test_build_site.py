@@ -136,7 +136,7 @@ FIXTURE_CONFIG = {
             "type": "object",
             "required": ["id"],
             "properties": {"id": {"type": "string", "description": "Use <id>."}},
-        },
+        }
     },
 }
 
@@ -896,7 +896,7 @@ def test_config_reference_shows_type_default_requirement_and_description(
     _run(sources)
     page = _read(sources, "config/index.md")
     assert "| `schema_version` (required) | `3` | none | Version. |" in page
-    assert "| `mode` | one of `a`, `b` | `a` | A \\| mode. |" in page
+    assert '| `mode` | one of `a`, `b` | `a` | A \\| mode. |' in page
     assert "| `packs[].id` (required) | string | none | Use &lt;id&gt;. |" in page
     assert "(config/index.md)" in _read(sources, "index.md")
 
@@ -912,7 +912,9 @@ def test_config_cells_keep_pipes_backticks_and_link_shaped_text_inert(
         "| See \\[docs\\]\\(nowhere.md\\) and \\!\\[i\\]\\(x.png\\) "
         "\\*now\\* \\`code\\`. |"
     )
-    assert build_site.broken_links({"config/index.md": page, "index.md": ""}) == []
+    assert build_site.broken_links(
+        {"config/index.md": page, "index.md": ""}
+    ) == []
 
 
 def test_map_keys_get_a_row_with_the_property_names_metadata(
@@ -952,14 +954,14 @@ def test_real_config_reference_lists_every_schema_key_with_a_type() -> None:
     page = build_site.build(build_site.load_site())["config/index.md"]
     rows = [r for r in page.splitlines() if r.startswith("| `")]
     segments = {
-        part.removesuffix("[]") for row in rows for part in row.split("`")[1].split(".")
+        part.removesuffix("[]")
+        for row in rows
+        for part in row.split("`")[1].split(".")
     }
     assert _json_keys(schema) <= segments
     assert all(r.split(" | ")[1].strip() for r in rows)
     assert "| `network.offline` | boolean | `false` |" in page
-    assert (
-        "| `guidance.level` | one of `brief`, `standard`, `full` | `standard` |" in page
-    )
+    assert '| `guidance.level` | one of `brief`, `standard`, `full` | `standard` |' in page
 
 
 def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
@@ -973,7 +975,6 @@ def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
     (sources["out"] / "cli/lint.md").write_text("edited\n")
     assert _run(sources, "--check") == 1
     assert "cli/lint.md: out of date" in capsys.readouterr().err
-
 
 GUIDE = """\
 ---
