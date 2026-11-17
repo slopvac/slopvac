@@ -43,6 +43,12 @@ A golden file changes only with an approved reason. Record the reason in the pul
 
 Policy deltas are different: each entry in `policy/deltas.toml` needs `reason` and `approved_by`, and a test rejects an entry without them. A delta names its finding by rule id, line and column. A delta that changes a gate also changes the expected exit status, and one that moves a run summary records it in a `run` table.
 
+### Delta modes
+
+A delta applies to the `policy` mode unless it lists other modes in `modes`. The list holds any of `parity`, `preserve` and `policy`. Use a wider list for a change that a 3.0 binary makes under every configuration, such as a rule that a context tag gates. The 2.x reference has no context taggers, so it still reports those findings, and the parity golden keeps them.
+
+The runner applies deltas only when it checks a 3.0 binary. A 2.x reference run (`--flavor 2x`) gets none, in every mode, so the Python reference is checked against the parity golden alone.
+
 ## Run
 
 ```sh
