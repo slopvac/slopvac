@@ -507,15 +507,17 @@ def test_ctrl_c_kills_running_model_commands_and_starts_no_more(tmp_path):
         }
     ]
 
+    signalled: list[float] = []
+
     def interrupt_once_two_commands_run():
         deadline = time.monotonic() + 20
         while len(list(tmp_path.glob("pid-*"))) < 2 and time.monotonic() < deadline:
             time.sleep(0.02)
+        signalled.append(time.monotonic())
         os.kill(os.getpid(), signal.SIGINT)
 
     threading.Thread(target=interrupt_once_two_commands_run, daemon=True).start()
     budget = models.Budget(100)
-    started = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
         models.execute(
             [t for t in tiny_tasks() if t["id"] == "a1"],
@@ -525,7 +527,7 @@ def test_ctrl_c_kills_running_model_commands_and_starts_no_more(tmp_path):
             workers=2,
             budget=budget,
         )
-    assert time.monotonic() - started < 15
+    assert time.monotonic() - signalled[0] < 15
     pids = [int(p.name.removeprefix("pid-")) for p in tmp_path.glob("pid-*")]
     assert len(pids) == 2 and budget.spent == 2
     for pid in pids:
@@ -627,6 +629,7 @@ def test_ctrl_c_during_job_submission_still_kills_started_commands_and_keeps_the
     tmp_path, monkeypatch
 ):
     submitted = []
+    signalled: list[float] = []
 
     class InterruptingPool(models.ThreadPoolExecutor):
         def submit(self, fn, *args, **kwargs):
@@ -638,6 +641,7 @@ def test_ctrl_c_during_job_submission_still_kills_started_commands_and_keeps_the
                     and time.monotonic() < deadline
                 ):
                     time.sleep(0.02)
+                signalled.append(time.monotonic())
                 raise KeyboardInterrupt
             future = super().submit(fn, *args, **kwargs)
             submitted.append(future)
@@ -648,7 +652,6 @@ def test_ctrl_c_during_job_submission_still_kills_started_commands_and_keeps_the
     roster_ = [
         {"name": "slow", "family": "f", "tier": "t", "command": slow_command(tmp_path)}
     ]
-    started = time.monotonic()
     with models.Budget(100, ledger) as budget, pytest.raises(KeyboardInterrupt):
         models.execute(
             [t for t in tiny_tasks() if t["id"] == "a1"],
@@ -658,7 +661,7 @@ def test_ctrl_c_during_job_submission_still_kills_started_commands_and_keeps_the
             workers=2,
             budget=budget,
         )
-    assert time.monotonic() - started < 15
+    assert time.monotonic() - signalled[0] < 15
     pids = [int(p.name.removeprefix("pid-")) for p in tmp_path.glob("pid-*")]
     assert len(pids) == 2
     for pid in pids:
