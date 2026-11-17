@@ -1,0 +1,65 @@
+name: Rust coverage
+
+# Measures line coverage of the Rust workspace with cargo-llvm-cov and nextest
+# and uploads the lcov report as an artifact. It reports only: no threshold
+# gates a pull request, and no third-party service receives the data.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Add the LLVM tools
+        run: rustup component add llvm-tools-preview
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: coverage
+
+      - name: Install cargo-nextest and cargo-llvm-cov
+        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        with:
+          tool: nextest@0.9.152,cargo-llvm-cov@0.9.1
+
+      - name: Run the tests with coverage
+        run: >-
+          cargo llvm-cov nextest --workspace --locked --profile ci --no-tests=pass
+          --lcov --output-path "$RUNNER_TEMP/lcov.info"
+
+      - name: Summarise
+        run: |
+          {
+            echo "## Rust coverage"
+            echo
+            echo '```text'
+            cargo llvm-cov report --summary-only
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload lcov
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-coverage-lcov
+          path: ${{ runner.temp }}/lcov.info

@@ -720,7 +720,7 @@ mod tests {
         fn facts(&self, _: &dyn Env, _: bool, _: Option<bool>, _: Option<&Path>) -> UpdateFacts {
             UpdateFacts {
                 install_method: "homebrew",
-                upgrade_command: Some("brew upgrade srobroek/tap/slopvac".into()),
+                upgrade_command: Some("brew upgrade slopvac/tap/slopvac".into()),
                 disabled_by: None,
                 cached_latest: self.0.clone(),
             }
@@ -845,7 +845,7 @@ mod tests {
         let text = report("3.0.0", Some("3.1.0")).to_text();
         assert!(
             text.contains(
-                "update: 3.1.0 is available. Upgrade with `brew upgrade srobroek/tap/slopvac`."
+                "update: 3.1.0 is available. Upgrade with `brew upgrade slopvac/tap/slopvac`."
             ),
             "{text}"
         );

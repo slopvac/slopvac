@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/tagger.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/tagger.schema.json",
   "title": "slopvac v3 declarative tagger",
   "description": "A context tagger written as data. It marks text units with a context tag that rules can gate on (rule contexts only and skip). It runs without code and is deterministic. A tag carries a span, a confidence and evidence, like the tags a code tagger returns over the plugin protocol. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4. A tagger has either `match` entries, which read the text of one unit, or a `when` object, which reads document structure.",
   "type": "object",
@@ -10,7 +10,7 @@
     },
     "id": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$"
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
     },
     "description": {
       "type": "string",

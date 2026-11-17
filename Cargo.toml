@@ -14,8 +14,8 @@ edition = "2024"
 # slightly older toolchain still build. rust-toolchain.toml pins the dev toolchain.
 rust-version = "1.97"
 license = "Apache-2.0"
-repository = "https://github.com/srobroek/slopvac"
-homepage = "https://github.com/srobroek/slopvac"
+repository = "https://github.com/slopvac/slopvac"
+homepage = "https://github.com/slopvac/slopvac"
 publish = false
 
 [workspace.dependencies]
@@ -91,6 +91,11 @@ thiserror = "2"
 toml = "1"
 toml_edit = "0.25"
 tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+tree-sitter = "0.26"
+tree-sitter-c = "0.24"
+tree-sitter-go = "0.25"
+tree-sitter-java = "0.23"
+tree-sitter-proto = "0.6"
 unicode-normalization = "0.1"
 ureq = { version = "3.5", default-features = false, features = [
   "rustls",

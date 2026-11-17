@@ -20,6 +20,7 @@ pub mod output;
 pub mod redact;
 pub mod rule_catalog;
 mod run;
+pub mod severity;
 pub mod stdin;
 pub mod summary;
 

@@ -3,6 +3,7 @@
 "matcher-neither.toml" = "/match/0"
 "confidence-high.toml" = "/confidence"
 "bad-tag.toml" = "/tag"
+"id-trailing-newline.toml" = "/id"
 "unknown-unit.toml" = "/unit"
 "when-empty.toml" = "/when"
 "when-with-match.toml" = ""

@@ -178,11 +178,10 @@ rules:
         Commit SHAs, PR and issue numbers, ticket ids and "we refactored" narrate how
         the code got here, which a reader of the released artifact cannot act on.
         Change communications exist to carry these references, so the rule is off
-        there. The 3.0 genre tolerances turn it off in change-comms, make it a
-        suggestion in internal docs and keep it a warning in consumer and reference
-        docs. The Python reference expresses only the profile tiers.
-        # STUB(slopvac-8l4.5.13): per-genre tolerances live in the 3.0 genre registry.
-        The ticket-id alternative needs a prefix of three or more characters, so a
+        there. The built-in genre definitions (crates/slopvac-context/src/builtin/genres.yaml)
+        turn it off in change-comms, make it a suggestion in internal docs and keep it
+        a warning in consumer and reference docs. The Python reference expresses only
+        the profile tiers. The ticket-id alternative needs a prefix of three or more characters, so a
         document's own short ids such as the threat ids TM-12 do not match. It skips
         common standard prefixes (UTF, SHA, ISO, RFC,
         CVE and similar) and inline code, which the engine masks before matching.

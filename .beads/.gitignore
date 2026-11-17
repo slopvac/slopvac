@@ -80,3 +80,6 @@ interactions.jsonl
 
 # Added by bd (missing required patterns)
 dolt-server-config.yaml
+
+# Optional JSONL export for viewers and interchange; sync is Dolt (bd dolt push/pull)
+issues.jsonl
