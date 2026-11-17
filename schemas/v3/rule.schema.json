@@ -32,7 +32,7 @@
       "enum": ["heading", "list-item", "code", "code-span", "table", "quote", "front-matter"]
     },
     "ApplyMode": {
-      "description": "Lint input surface.",
+      "description": "Lint input surface, chosen by --mode. Its text context tag is code-comment (lint-report Finding.contexts), a separate label that keeps its singular spelling.",
       "enum": ["prose", "code-comments"]
     },
     "Genre": {
