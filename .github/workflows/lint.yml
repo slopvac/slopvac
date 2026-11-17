@@ -43,6 +43,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -101,6 +103,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@5885714d0a40a14b2535c6ffc051fd8e49aa9665 # v1.27.0
       - name: Install typos
@@ -117,6 +123,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@5885714d0a40a14b2535c6ffc051fd8e49aa9665 # v1.27.0
       - name: Install lychee
@@ -183,7 +193,7 @@ jobs:
           enable-cache: true
       # The Rust hooks run the pinned tools; install-action verifies checksums.
       - name: Install the pinned toolchain
-        run: rustup show active-toolchain || rustup toolchain install
+        run: bash scripts/ci/install-rust-toolchain.sh
       - name: Install Rust hook tools
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:

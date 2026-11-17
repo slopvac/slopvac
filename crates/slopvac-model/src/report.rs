@@ -7,6 +7,7 @@ use thiserror::Error;
 
 use crate::edit::{Edit, EditError, sorted_without_overlap};
 use crate::ids::{Contexts, PackId, RuleId, SchemaVersion, Severity};
+use crate::origin::Origin;
 use crate::span::{LineCol, LineColError, Span};
 use crate::values::{
     CategoryId, Density, GenreId, KebabName, NonEmptyString, Score, present, required_nullable,
@@ -241,11 +242,14 @@ pub enum FindingError {
     /// `span`, `end_line` and `end_column` must all be present or all absent.
     #[error("span, end_line and end_column must all be present or all absent")]
     PartialExtent,
+    /// A binary-host finding (one with an `origin`) cannot carry a `fix`.
+    #[error("a finding with an origin cannot carry a fix")]
+    OriginWithFix,
 }
 
 /// One violation at one position.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(try_from = "FindingWire", into = "FindingWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(try_from = "FindingWire")]
 #[schemars(with = "FindingWire")]
 pub struct Finding {
     /// Qualified rule id.
@@ -272,11 +276,32 @@ pub struct Finding {
     pub fix: Option<Fix>,
     /// Rule provenance.
     pub provenance: Option<RuleProvenance>,
+    /// Segment of a container document that holds the match, if any.
+    pub origin: Option<Origin>,
+}
+
+impl Finding {
+    /// Check the rules that the public fields cannot hold: a finding with an `origin`
+    /// carries no `fix`. Serialization runs the same check.
+    pub fn validate(&self) -> Result<(), FindingError> {
+        if self.origin.is_some() && self.fix.is_some() {
+            Err(FindingError::OriginWithFix)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Serialize for Finding {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.validate().map_err(serde::ser::Error::custom)?;
+        FindingWire::from(self.clone()).serialize(serializer)
+    }
 }
 
 /// Wire shape of [`Finding`].
 #[derive(Serialize, Deserialize, JsonSchema)]
-#[schemars(rename = "Finding", extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "dependentRequired" = {"span": ["end_line", "end_column"], "end_line": ["end_column", "span"], "end_column": ["end_line", "span"]}))]
+#[schemars(rename = "Finding", extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "dependentRequired" = {"span": ["end_line", "end_column"], "end_line": ["end_column", "span"], "end_column": ["end_line", "span"]}, "not" = {"required": ["origin", "fix"]}))]
 struct FindingWire {
     /// Qualified rule id.
     rule_id: RuleId,
@@ -340,11 +365,22 @@ struct FindingWire {
     )]
     #[schemars(transform = absent_not_null)]
     provenance: Option<RuleProvenance>,
+    /// Segment of a container document that holds the match.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[schemars(transform = absent_not_null)]
+    origin: Option<Origin>,
 }
 
 impl TryFrom<FindingWire> for Finding {
     type Error = FindingError;
     fn try_from(w: FindingWire) -> Result<Self, FindingError> {
+        if w.origin.is_some() && w.fix.is_some() {
+            return Err(FindingError::OriginWithFix);
+        }
         let extent = match (w.span, w.end_line, w.end_column) {
             (None, None, None) => None,
             (Some(span), Some(line), Some(column)) => Some(Extent {
@@ -366,6 +402,7 @@ impl TryFrom<FindingWire> for Finding {
             matched_text: w.matched_text,
             fix: w.fix,
             provenance: w.provenance,
+            origin: w.origin,
         })
     }
 }
@@ -388,6 +425,7 @@ impl From<Finding> for FindingWire {
             matched_text: f.matched_text,
             fix: f.fix,
             provenance: f.provenance,
+            origin: f.origin,
         }
     }
 }

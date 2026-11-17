@@ -171,7 +171,7 @@
         "$ref": "#/$defs/SuccessResponse"
       }
     },
-    "Document": {
+    "PluginDocument": {
       "description": "One document in a batch. text is the full UTF-8 source. Every span in a result is a byte range into this text. path is present only when the plugin requested the document-path feature and the host granted it. It is relative to the project root, or <stdin>, or <external>/<file name>. It is never absolute.",
       "type": "object",
       "properties": {
@@ -199,7 +199,7 @@
       "description": "Batch of documents for one request. The host splits a batch to stay under the limits agreed in initialize. Ids are unique within the array.",
       "type": "array",
       "items": {
-        "$ref": "#/$defs/Document"
+        "$ref": "#/$defs/PluginDocument"
       },
       "minItems": 1,
       "uniqueItems": true
@@ -613,7 +613,7 @@
           "items": {
             "allOf": [
               {
-                "$ref": "#/$defs/Document"
+                "$ref": "#/$defs/PluginDocument"
               },
               {
                 "type": "object",
@@ -681,7 +681,7 @@
           "items": {
             "allOf": [
               {
-                "$ref": "#/$defs/Document"
+                "$ref": "#/$defs/PluginDocument"
               },
               {
                 "type": "object",

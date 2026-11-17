@@ -13,7 +13,7 @@
       "type": "array",
       "maxItems": 100000,
       "items": {
-        "$ref": "#/$defs/Entry"
+        "$ref": "#/$defs/PackIndexEntry"
       }
     }
   },
@@ -26,12 +26,12 @@
   },
   "additionalProperties": false,
   "$defs": {
-    "Semver": {
+    "PackIndexSemver": {
       "description": "Semantic version 2.0.0 without build metadata. Major, minor and patch have at most nine digits (at most 999999999), which is the bound the reader enforces. Otherwise the pattern is the Semver def of pack-manifest.schema.json, repeated here until that schema is on main.",
       "type": "string",
       "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
     },
-    "Source": {
+    "PackIndexSource": {
       "description": "Where to fetch the pack: an oci:// reference, an https:// release archive URL, or a git+https:// URL pinned to a full commit hash after @. The URL carries no user-info. http:// and path sources are invalid: a public listing has no project root.",
       "type": "string",
       "maxLength": 2048,
@@ -61,7 +61,7 @@
       },
       "additionalProperties": false
     },
-    "Entry": {
+    "PackIndexEntry": {
       "type": "object",
       "properties": {
         "id": {
@@ -88,7 +88,7 @@
         },
         "version": {
           "description": "Latest listed version.",
-          "$ref": "#/$defs/Semver"
+          "$ref": "#/$defs/PackIndexSemver"
         },
         "kind": {
           "enum": [
@@ -102,7 +102,7 @@
           "maximum": 4294967295
         },
         "source": {
-          "$ref": "#/$defs/Source"
+          "$ref": "#/$defs/PackIndexSource"
         },
         "publisher_key": {
           "$ref": "#/$defs/PublisherKey"

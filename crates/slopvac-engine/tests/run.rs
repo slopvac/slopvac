@@ -51,10 +51,7 @@ fn a_category_level_applies_to_its_rules_and_a_rule_level_beats_it() {
     let mut s = settings();
     s.categories.insert(
         "cat".parse_category(),
-        slopvac_engine::CategoryDials {
-            level: Some(Level::On(Severity::Suggestion)),
-            ..Default::default()
-        },
+        slopvac_engine::CategoryDials::default().with_level(Some(Level::On(Severity::Suggestion))),
     );
     s.rule_levels
         .insert(id("core:cat.keep"), Level::On(Severity::Error));
