@@ -45,16 +45,31 @@ Releases carry minisign signatures next to the GitHub build attestations. The re
 Verify a download:
 
 ```sh
-minisign -Vm slopvac-x86_64-unknown-linux-gnu.tar.xz -p keys/slopvac-release.pub
+minisign -Vm slopvac-x86_64-unknown-linux-gnu.tar.gz -p keys/slopvac-release.pub
 ```
 
-minisign finds `slopvac-x86_64-unknown-linux-gnu.tar.xz.minisig` next to the file. A changed file, or a signature from another key, fails with a non-zero exit. For many files at once, run `python3 scripts/release_signing.py verify <files>`.
+minisign finds `slopvac-x86_64-unknown-linux-gnu.tar.gz.minisig` next to the file. A changed file, or a signature from another key, fails with a non-zero exit. For many files at once, run `python3 scripts/release_signing.py verify <files>`.
+
+Each signature also carries a trusted comment that names the file and the release, for example `slopvac-release file:slopvac-x86_64-unknown-linux-gnu.tar.gz version:3.1.0`. The release version has no `v`, and a candidate keeps its suffix, as in `3.1.0-rc.2`. Minisign prints the comment after it verifies the signature, and the signature covers it. `slopvac self update` requires the comment to match the archive and version it requested, so a signed archive from another release or target does not install. It also installs stable releases only, so a signed candidate does not install either.
+
+When `slopvac self update` refuses or fails, it exits 2, leaves the installed binary unchanged and reports one of these codes:
+
+| Code | When |
+| --- | --- |
+| `self-update-unmanaged` | The binary was not installed by the slopvac shell installer. The message names the upgrade command for a known install method, or the releases page otherwise. |
+| `offline-network-needed` | Offline mode is on. Self update needs the network. |
+| `update-check-failed` | The latest-release lookup failed. |
+| `update-prerelease-refused` | The latest release is a candidate (`X.Y.Z-rc.N`). Self update installs stable releases only. |
+| `update-verification-failed` | The signature does not parse, does not verify against the embedded key, or names another file or version. |
+| `self-update-failed` | The download of the archive or its `.minisig` failed (a missing signature lands here), or extraction or replacement failed, or the platform has no self-update support. |
+
+If the latest release is not newer than the running binary, `slopvac self update` reports that it is up to date and exits 0.
 
 How the workflows sign:
 
 - `scripts/install_minisign.sh` installs a pinned minisign release and checks its sha256 before it runs anything.
-- `scripts/release_signing.py sign` writes the secret from `MINISIGN_SECRET_KEY` to a mode 600 file under `RUNNER_TEMP`, signs every file in the artifact directory, deletes the key file, and verifies each signature against `keys/slopvac-release.pub`. Only the signing step sees the secret. The step never prompts, so an encrypted key fails the job.
-- The `host` job signs in `release.yml`, before it uploads to the unpublished release. In `candidate.yml` the `sign` job signs the archives, checksums and wheels before the PyPI upload, and the `prerelease` job attaches the signatures. A published release holds no unsigned asset.
+- `scripts/release_signing.py sign` writes the secret from `MINISIGN_SECRET_KEY` to a mode 600 file under `RUNNER_TEMP`, signs every file in the artifact directory with the trusted comment for the version in `--version`, deletes the key file, and verifies each signature against `keys/slopvac-release.pub`. Only the signing step sees the secret. The step never prompts, so an encrypted key fails the job.
+- Both workflows pass the version from the validated tag through an environment variable. The `host` job signs in `release.yml`, before it uploads to the unpublished release. In `candidate.yml` the `sign` job signs the archives, checksums and wheels before the PyPI upload, and the `prerelease` job attaches the signatures. A published release holds no unsigned asset.
 - The step fails closed. Without the public key file or the secret, the job stops before it uploads. `candidate.yml` also checks for the key in `validate`. Candidate wheels on PyPI carry no `.minisig`; the signed copies are on the GitHub prerelease. A stable release has no wheels on GitHub, so its wheels have no minisign signature.
 
 To rotate the key, follow [Rotate the key](maintainer-setup.md#rotate-the-key). Releases already published keep verifying against the key that signed them, so keep the old public key under `keys/` with its key id in the file name, and record the change in the release notes.

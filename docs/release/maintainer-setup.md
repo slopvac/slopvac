@@ -59,7 +59,11 @@ The release and candidate workflows sign with this key and check each signature 
 
 ### Where the binary uses the key
 
-The `slopvac-plugins` crate compiles `keys/slopvac-release.pub` in with `include_str!`. `KeyPolicy::compiled()` in `sign.rs` makes it the only key for the first-party namespace `slopvac`. `Revocations::with_compiled_root` in `revoke.rs` makes it the root key that verifies the revocation list. Both return an error if the compiled key does not parse, and first-party verification then refuses. Tests inject other keys through the public fields of `KeyPolicy` and through `Revocations::new`, so no test needs the secret key.
+The `slopvac-plugins` crate compiles `keys/slopvac-release.pub` in with `include_str!`. `KeyPolicy::compiled()` in `sign.rs` makes it the only key for the first-party namespace `slopvac`. `Revocations::with_compiled_root` in `revoke.rs` makes it the root key that verifies the revocation list. Both return an error if the compiled key does not parse, and first-party verification then refuses.
+
+The `slopvac-update` crate includes the same file in `verify.rs`. `ReleaseVerifier` checks the `.minisig` of the archive that `slopvac self update` downloads. It accepts prehashed signatures only. It refuses a missing, tampered, legacy or foreign-key signature before it replaces the binary. It also requires the signed trusted comment to name the requested archive and version, so an older or foreign-target archive that the key signed does not install. `scripts/release_signing.py` writes that comment.
+
+Tests inject other keys through the public fields of `KeyPolicy`, through `Revocations::new` and through `Runtime::verifier`, so no test needs the secret key.
 
 ### How first-party packs are signed
 
@@ -70,6 +74,6 @@ Release CI signs release artifacts with `MINISIGN_SECRET_KEY` in minisign's defa
 The first-party key set is compiled in, so it changes only with a slopvac release. A publisher-key rotation statement (signed by the old and new key) applies to pinned user keys, not to this key.
 
 1. Generate the new minisign key pair. Store the secret key in the Actions secret `MINISIGN_SECRET_KEY` and a backup in 1Password, without printing it.
-2. Replace `keys/slopvac-release.pub` with the new public key, update the key id on this page, and release a binary that embeds it. The embedded-key test in `crates/slopvac-plugins/tests/sign.rs` must change in the same pull request.
+2. Replace `keys/slopvac-release.pub` with the new public key, update the key id on this page, and release a binary that embeds it. The embedded-key tests in `crates/slopvac-plugins/tests/sign.rs` and `crates/slopvac-update/src/verify.rs` must change in the same pull request.
 3. Re-sign the first-party packs and publish a new revocation list with the new key.
 4. If the old key leaked, publish a list that names its key id, signed while the old key is still a root. Binaries that embed the old key keep trusting it until the user upgrades, which is residual risk R8 in the threat model.
