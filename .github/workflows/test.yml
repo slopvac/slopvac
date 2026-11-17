@@ -181,8 +181,8 @@ jobs:
         run: cargo doc --workspace --no-deps --document-private-items --locked
 
       # mise reads the ast-grep pin from mise.toml and verifies the download through its aqua
-      # backend. Only ast-grep's bin directory joins PATH: no shims (an `sg` shim would shadow
-      # the system `sg`), no mise.toml [env], and no cache write.
+      # backend. Only ast-grep's bin directory joins PATH, added below: no shims, no mise.toml
+      # [env] and no cache write.
       - name: Install ast-grep
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
@@ -191,6 +191,9 @@ jobs:
           cache: false
           env: false
           add_shims_to_path: false
+      # With `env: false` the action exports only the mise binary directory, so add ast-grep's.
+      - name: Put ast-grep on PATH
+        run: mise bin-paths ast-grep >> "$GITHUB_PATH"
 
       - name: Message registry checks
         run: |
