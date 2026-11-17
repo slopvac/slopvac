@@ -242,6 +242,7 @@ def build_tasks(
                 "variant": "planted",
                 "doc": doc["id"],
                 "prompt": REVIEW_PROMPT.format(original=original, candidate=candidate),
+                "passage": original + "\n" + candidate,
                 "edits": [
                     {"kind": e["kind"], "sentence": e["original_sentence"]}
                     for e in doc["source"]["edits"]
@@ -416,13 +417,37 @@ def _asserts_change(problem: str) -> bool:
     return CHANGE_RE.search(rest) is not None
 
 
+def _norm(text: str) -> str:
+    """Lowercase, drop markdown code ticks, unify quotes and collapse whitespace."""
+    text = text.replace("`", "").replace("\u2019", "'").replace("\u2018", "'")
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    return " ".join(text.lower().split())
+
+
 def _in_passage(quote: str, passage: str) -> bool:
-    return _hits(quote, passage)
+    """True when the quote appears word for word, in order, in the passage.
+
+    Matching is normalised and contiguous, and the quote must start and end on a
+    token edge, so "3" is not found inside "13". It has no minimum length: a
+    complete fact token such as `--offline` or `63` is a genuine quote.
+    """
+    needle = _norm(quote).strip(" .,;:!?\"'")
+    if not needle:
+        return False
+    pattern = rf"(?<!\w){re.escape(needle)}(?!\w)"
+    return re.search(pattern, _norm(passage)) is not None
 
 
 def _hits(quote: str, sentence: str) -> bool:
+    """True when the quote's words mostly come from `sentence` (edit location).
+
+    This is separate from `_in_passage`. A quote of fewer than MIN_QUOTE_WORDS
+    words locates an edit only when it holds a fact token.
+    """
     q, s = _words(quote), _words(sentence)
-    return len(q) >= MIN_QUOTE_WORDS and len(q & s) / len(q) >= QUOTE_OVERLAP
+    if not q or len(q & s) / len(q) < QUOTE_OVERLAP:
+        return False
+    return len(q) >= MIN_QUOTE_WORDS or any(facts.extract(quote).values())
 
 
 def _mentions(fact: str, text: str) -> bool:
@@ -462,12 +487,15 @@ def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
         )
     else:
         edits = task["edits"]
-        matched = [
-            any(_hits(r["quote"], e["sentence"]) for r in reported) for e in edits
-        ]
+        passage = task["passage"]
+
+        def locates(r: Mapping[str, str], e: Mapping[str, str]) -> bool:
+            return _in_passage(r["quote"], passage) and _hits(r["quote"], e["sentence"])
+
+        matched = [any(locates(r, e) for r in reported) for e in edits]
         edits_total, edits_found = len(edits), sum(matched)
         alarms = len(reported) - sum(
-            1 for r in reported if any(_hits(r["quote"], e["sentence"]) for e in edits)
+            1 for r in reported if any(locates(r, e) for e in edits)
         )
     recall = edits_found / edits_total if edits_total else None
     return {

@@ -89,6 +89,19 @@ def test_task_building_is_deterministic_and_covers_every_type(corpus):
     assert len({t["id"] for t in a}) == len(a)
 
 
+def test_planted_review_tasks_carry_both_texts_a_quote_may_come_from(corpus):
+    manifest, cache = corpus
+    planted = [
+        t
+        for t in models.build_tasks(manifest, cache, per_type=4)
+        if t.get("variant") == "planted"
+    ]
+    assert planted
+    for task in planted:
+        assert all(e["sentence"] in task["passage"] for e in task["edits"])
+        assert task["passage"].count("\n") >= 1
+
+
 def test_update_tasks_carry_the_stated_change_and_it_is_in_the_passage(corpus):
     manifest, cache = corpus
     for task in (
@@ -311,6 +324,62 @@ def test_an_explanation_that_affirms_a_change_counts(problem):
     assert planted_found(problem) == 1
 
 
+SHORT_PASSAGE = "Run the migration with the `--offline` flag first. Retry 3 times."
+
+
+def authored_found(quote, lost, passage=SHORT_PASSAGE):
+    task = {"variant": "authored", "lost": [lost], "passage": passage}
+    answer = json.dumps([{"quote": quote, "problem": f"{lost} was dropped"}])
+    return models.score_review(task, answer)["found"]
+
+
+@pytest.mark.parametrize(
+    ("quote", "lost"),
+    [("--offline", "--offline"), ("3", "3"), ("`--offline`", "--offline")],
+    ids=["flag", "number", "code-span"],
+)
+def test_a_short_genuine_quote_of_a_whole_fact_counts(quote, lost):
+    assert authored_found(quote, lost) == 1
+
+
+@pytest.mark.parametrize(
+    ("quote", "lost", "passage"),
+    [
+        ("flag first the with migration", "flag", SHORT_PASSAGE),
+        ("Retry times 3", "3", SHORT_PASSAGE),
+        ("3", "3", "Retry 13 times."),
+        ("an invented sentence about the --offline flag", "--offline", SHORT_PASSAGE),
+    ],
+    ids=["reordered-words", "reordered-fact", "inside-longer-number", "invented"],
+)
+def test_a_quote_that_is_not_contiguous_in_the_passage_does_not_count(
+    quote, lost, passage
+):
+    assert authored_found(quote, lost, passage) == 0
+
+
+def test_a_planted_quote_of_real_words_in_another_order_is_a_false_alarm():
+    answer = json.dumps(
+        [{"quote": "jobs queue the 63 holds blocks it writers", "problem": "changed"}]
+    )
+    scored = models.score_review(planted_task(), answer)
+    assert (scored["found"], scored["false_alarms"]) == (0, 1)
+
+
+def test_a_planted_quote_found_in_neither_passage_is_a_false_alarm():
+    answer = json.dumps(
+        [{"quote": "The cache evicts entries after an hour", "problem": "changed"}]
+    )
+    scored = models.score_review(planted_task(), answer)
+    assert (scored["found"], scored["false_alarms"]) == (0, 1)
+
+
+def test_a_short_planted_quote_of_the_dropped_flag_locates_the_edit():
+    answer = json.dumps([{"quote": "--offline", "problem": "the flag was dropped"}])
+    scored = models.score_review(planted_task(), answer)
+    assert (scored["found"], scored["false_alarms"]) == (1, 0)
+
+
 @pytest.mark.parametrize(
     "problem",
     [
@@ -403,6 +472,7 @@ def tiny_tasks():
         "genre": "g",
         "prompt": "y" * 800,
         "edits": [{"kind": "n", "sentence": "alpha beta gamma delta"}],
+        "passage": "alpha beta gamma delta\nalpha beta gamma epsilon",
     }
     return [author(1, "update"), author(2, "rewrite"), reviewer]
 
