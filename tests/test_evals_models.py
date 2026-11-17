@@ -706,6 +706,44 @@ def test_every_update_task_passes_when_the_change_is_made_everywhere(update_task
         assert not models.score_author(task, task["source"], NO_FINDINGS)["success"]
 
 
+def update_tasks_for(tmp_path, passage, old):
+    """The update tasks `build_tasks` makes from one rewrite pair editing `old` to 9999."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "parent.txt").write_text(passage + "\n")
+    (docs / "pair.txt").write_text(passage.replace(old, "9999") + "\n")
+    manifest = {
+        "documents": [
+            {
+                "id": "parent",
+                "origin": "human",
+                "format": "text",
+                "genre": "g",
+                "source": {},
+            },
+            {
+                "id": "pair",
+                "origin": "rewrite-pair",
+                "format": "text",
+                "genre": "g",
+                "source": {
+                    "parents": ["parent"],
+                    "edits": [
+                        {
+                            "kind": "number",
+                            "detail": f"{old} -> 9999",
+                            "original_sentence": passage,
+                            "line": 1,
+                        }
+                    ],
+                },
+            },
+        ]
+    }
+    built = models.build_tasks(manifest, tmp_path, per_type=12)
+    return [t for t in built if t["type"] == "update"]
+
+
 @pytest.mark.parametrize(
     ("passage", "old", "eligible"),
     [
@@ -736,9 +774,11 @@ def test_every_update_task_passes_when_the_change_is_made_everywhere(update_task
     ],
 )
 def test_update_tasks_only_change_numbers_that_stand_alone_in_the_passage(
-    passage, old, eligible
+    tmp_path, passage, old, eligible
 ):
-    assert models._stands_alone(passage, old) is eligible
+    tasks = update_tasks_for(tmp_path, passage, old)
+    expected = [[{"kind": "number", "old": old, "new": "9999"}]] if eligible else []
+    assert [t["expected"] for t in tasks] == expected
 
 
 def test_a_bare_issue_reference_in_prose_is_scored_as_a_number_update():
@@ -832,3 +872,206 @@ def test_identical_review_prompts_from_two_source_tasks_stay_independent(tmp_pat
     after = run(models.Journal(path))
     assert asked == []  # the resume asked nothing
     assert reviews(after) == reviews(before)  # each entry went back to its own job
+
+
+# --- token usage and cost ------------------------------------------------------------
+
+
+PRICES = {
+    "source": "https://example.org/prices",
+    "models": {
+        "big": {"input": 2, "output": 10},
+        "small": {"input": 0.1, "output": 0.5},
+    },
+}
+
+
+def cost_cli(tmp_path, capsys, records_path, prices=PRICES):
+    prices_path = tmp_path / "prices.json"
+    prices_path.write_text(json.dumps(prices))
+    code = cli.main(["models", "cost", str(records_path), "--prices", str(prices_path)])
+    return code, json.loads(capsys.readouterr().out)
+
+
+def write_results(tmp_path, runs):
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps({"schema": models.RESULTS_SCHEMA, "runs": runs}))
+    return path
+
+
+def test_cost_prices_input_and_output_per_million_tokens_by_model(tmp_path, capsys):
+    path = write_results(
+        tmp_path,
+        [
+            {"model": "big", "usage": {"input": 1_000_000, "output": 500_000}},
+            {"model": "big", "usage": {"input": 500_000, "output": 0}},
+            {"model": "small", "usage": {"input": 2_000_000, "output": 1_000_000}},
+        ],
+    )
+    code, report = cost_cli(tmp_path, capsys, path)
+    assert code == 0
+    # big: 1.5M in x $2 + 0.5M out x $10 = 3 + 5 = 8. small: 2M x 0.1 + 1M x 0.5 = 0.7.
+    assert report["models"]["big"]["cost_usd"] == 8
+    assert report["models"]["big"]["tokens"] == {"input": 1_500_000, "output": 500_000}
+    assert report["models"]["small"]["cost_usd"] == pytest.approx(0.7)
+    assert report["total_cost_usd"] == pytest.approx(8.7)
+    assert report["complete"] is True
+
+
+def test_reasoning_tokens_are_billed_at_the_output_price(tmp_path, capsys):
+    path = write_results(
+        tmp_path, [{"model": "big", "usage": {"output": 100_000, "reasoning": 300_000}}]
+    )
+    _, report = cost_cli(tmp_path, capsys, path)
+    assert report["models"]["big"]["cost_usd"] == 4  # 0.4M x $10
+
+
+def test_an_invocation_without_usage_marks_the_cost_incomplete(tmp_path, capsys):
+    path = write_results(
+        tmp_path,
+        [
+            {"model": "big", "usage": {"input": 1_000_000}},
+            {"model": "big", "usage": None},
+            {"model": "small"},
+        ],
+    )
+    _, report = cost_cli(tmp_path, capsys, path)
+    assert report["complete"] is False
+    assert report["models"]["big"]["missing_usage"] == 1
+    assert report["models"]["big"]["complete"] is False
+    assert report["models"]["small"]["missing_usage"] == 1
+    assert report["models"]["big"]["cost_usd"] == 2
+
+
+def test_a_model_missing_from_the_price_list_has_no_cost_and_is_incomplete(
+    tmp_path, capsys
+):
+    path = write_results(tmp_path, [{"model": "other", "usage": {"input": 5}}])
+    _, report = cost_cli(tmp_path, capsys, path)
+    assert report["models"]["other"]["cost_usd"] is None
+    assert report["complete"] is False
+
+
+def journal_lines(tmp_path, lines):
+    path = tmp_path / "r.journal.jsonl"
+    path.write_text("".join(json.dumps(line) + "\n" for line in lines))
+    return path
+
+
+def test_cost_counts_every_execution_of_a_resumed_job(tmp_path, capsys):
+    path = journal_lines(
+        tmp_path,
+        [
+            {
+                "job": "a",
+                "model": "big",
+                "error": "boom",
+                "attempts": 3,
+                "usage": {"input": 500_000},
+            },
+            {
+                "job": "a",
+                "model": "big",
+                "error": None,
+                "attempts": 1,
+                "usage": {"input": 1_000_000},
+            },
+            {
+                "job": "b",
+                "model": "small",
+                "error": None,
+                "attempts": 1,
+                "usage": {"output": 2_000_000},
+            },
+        ],
+    )
+    _, report = cost_cli(tmp_path, capsys, path)
+    assert report["models"]["big"]["invocations"] == 2
+    assert report["models"]["big"]["tokens"] == {"input": 1_500_000}
+    # big: 1.5M x $2 = 3. small: 2M x $0.5 = 1.
+    assert report["total_cost_usd"] == pytest.approx(4)
+    assert report["complete"] is True
+
+
+def test_an_earlier_attempt_without_usage_makes_a_resumed_job_incomplete(
+    tmp_path, capsys
+):
+    path = journal_lines(
+        tmp_path,
+        [
+            {"job": "a", "model": "big", "error": "boom", "attempts": 3, "usage": None},
+            {
+                "job": "a",
+                "model": "big",
+                "error": None,
+                "attempts": 1,
+                "usage": {"input": 1_000_000},
+            },
+        ],
+    )
+    _, report = cost_cli(tmp_path, capsys, path)
+    assert report["models"]["big"]["missing_usage"] == 1
+    assert report["complete"] is False
+
+
+def test_results_cost_comes_from_the_executions_section_not_the_rows(tmp_path, capsys):
+    path = tmp_path / "r.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": models.RESULTS_SCHEMA,
+                "runs": [{"model": "big", "usage": {"input": 1_000_000}}],
+                "executions": [
+                    {"job": "a", "model": "big", "usage": {"input": 500_000}},
+                    {"job": "a", "model": "big", "usage": {"input": 1_000_000}},
+                    {"job": "gone", "model": "big", "usage": {"input": 500_000}},
+                ],
+            }
+        )
+    )
+    _, report = cost_cli(tmp_path, capsys, path)
+    assert report["models"]["big"]["invocations"] == 3
+    assert report["models"]["big"]["tokens"] == {"input": 2_000_000}
+    assert report["total_cost_usd"] == pytest.approx(4)
+
+
+def test_cache_tokens_are_reported_but_do_not_change_the_cost(tmp_path, capsys):
+    path = write_results(
+        tmp_path,
+        [
+            {
+                "model": "big",
+                "usage": {
+                    "input": 200_000,
+                    "output": 100_000,
+                    "cache_read": 4_000_000,
+                    "cache_write": 3_000_000,
+                },
+            }
+        ],
+    )
+    _, report = cost_cli(tmp_path, capsys, path)
+    # 0.2M x $2 + 0.1M x $10 = 0.4 + 1.0 = 1.4, whatever the cache holds.
+    assert report["models"]["big"]["cost_usd"] == pytest.approx(1.4)
+    assert report["models"]["big"]["tokens"] == {
+        "input": 200_000,
+        "output": 100_000,
+        "cache_read": 4_000_000,
+        "cache_write": 3_000_000,
+    }
+
+
+def test_cost_on_a_journal_from_before_usage_was_recorded_is_incomplete(
+    tmp_path, capsys
+):
+    path = tmp_path / "old.journal.jsonl"
+    path.write_text('{"job": "a", "answer": "x", "error": null, "attempts": 1}\n')
+    code, report = cost_cli(tmp_path, capsys, path)
+    assert code == 0 and report["complete"] is False
+
+
+def test_the_shipped_price_list_names_every_model_in_the_roster():
+    prices = json.loads((lib.EVALS_DIR / "prices.json").read_text())
+    names = {m["name"] for m in models.load_models(lib.EVALS_DIR / "models.json")}
+    assert names <= set(prices["models"])
+    assert prices["source"] == "https://aws.amazon.com/bedrock/pricing"

@@ -16,6 +16,7 @@ running. Two modes cover this:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import signal
@@ -198,3 +199,62 @@ def redact(text: str) -> str:
         text,
     )
     return re.sub(r"\b[A-Za-z0-9+/_-]{32,}={0,2}", "<redacted>", text)
+
+
+# --- token usage side channel --------------------------------------------------------
+#
+# The adapter keeps stdout for the answer alone. It reports token usage as the
+# LAST stderr line: USAGE_PREFIX, then a JSON object of non-negative integers.
+# Only that last non-empty line counts. The adapter folds every diagnostic onto one
+# line (`one_line`), so error text cannot start a line of its own and pose as usage.
+
+USAGE_PREFIX = "slopvac-usage "
+USAGE_KEYS = ("input", "output", "reasoning", "cache_read", "cache_write")
+
+
+def format_usage_line(usage: Mapping[str, int]) -> str:
+    return USAGE_PREFIX + json.dumps(dict(usage), sort_keys=True)
+
+
+def one_line(text: str) -> str:
+    """Fold every line break and control character to a space."""
+    return re.sub(r"[\x00-\x1f\x7f\u2028\u2029\x85]+", " ", text)
+
+
+def parse_usage_line(stderr: str) -> dict[str, int] | None:
+    """The usage from the last non-empty line of `stderr`, if it is a usage line."""
+    lines = [line for line in stderr.splitlines() if line.strip()]
+    if not lines or not lines[-1].startswith(USAGE_PREFIX):
+        return None
+    try:
+        data = json.loads(lines[-1].removeprefix(USAGE_PREFIX))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    usage = {
+        key: value
+        for key, value in data.items()
+        if key in USAGE_KEYS
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+        and value >= 0
+    }
+    return usage or None
+
+
+def strip_usage_lines(stderr: str) -> str:
+    return "\n".join(
+        line for line in stderr.splitlines() if not line.startswith(USAGE_PREFIX)
+    )
+
+
+def sum_usage(parts: Sequence[Mapping[str, int] | None]) -> dict[str, int] | None:
+    """Add usage over several invocations. One missing report makes the total unknown."""
+    if not parts or any(part is None for part in parts):
+        return None
+    total: dict[str, int] = {}
+    for part in parts:
+        for key, value in part.items():
+            total[key] = total.get(key, 0) + value
+    return total

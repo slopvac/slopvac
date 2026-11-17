@@ -7,6 +7,7 @@ No model and no network. Fake commands are small Python scripts.
 from __future__ import annotations
 
 import datetime as dt
+import io
 import json
 import os
 import stat
@@ -162,10 +163,11 @@ def test_a_second_live_run_on_the_same_ledger_refuses_to_start(tmp_path):
 
 def test_concurrent_launches_cannot_each_spend_the_ceiling(tmp_path, spawn_log):
     ledger = tmp_path / "l.jsonl"
+    release = tmp_path / "release"
     repo = Path(models.lib.EVALS_DIR).parent
     code = textwrap.dedent(
         """\
-        import sys, time
+        import os, sys, time
         from evals import models
         try:
             budget = models.Budget(3, sys.argv[1])
@@ -173,14 +175,16 @@ def test_concurrent_launches_cannot_each_spend_the_ceiling(tmp_path, spawn_log):
             print("refused"); sys.exit(0)
         for _ in range(3):
             budget.reserve()
-        time.sleep(1.5)
+        deadline = time.time() + 60
+        while not os.path.exists(sys.argv[2]) and time.time() < deadline:
+            time.sleep(0.02)
         print("ran")
         """
     )
     env = {**os.environ, "PYTHONPATH": str(repo)}
     procs_ = [
         subprocess.Popen(
-            [sys.executable, "-c", code, str(ledger)],
+            [sys.executable, "-c", code, str(ledger), str(release)],
             cwd=repo,
             env=env,
             stdout=subprocess.PIPE,
@@ -188,6 +192,11 @@ def test_concurrent_launches_cannot_each_spend_the_ceiling(tmp_path, spawn_log):
         )
         for _ in range(4)
     ]
+    # The holder keeps the lock until every other launch has been refused.
+    deadline = time.time() + 60
+    while sum(p.poll() is not None for p in procs_) < 3 and time.time() < deadline:
+        time.sleep(0.02)
+    release.write_text("go")
     outputs = sorted(p.communicate()[0].strip() for p in procs_)
     assert outputs == ["ran", "refused", "refused", "refused"]
     assert ledger.read_text().count("reserve") == 3
@@ -265,8 +274,43 @@ SPAWNS_CHILD = """\
 import os, subprocess, sys, time
 child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
 open(sys.argv[1], "w").write(str(child.pid))
+open(sys.argv[1] + ".ready", "a").write("up\\n")
 time.sleep(60)
 """
+
+
+def lines_in(path):
+    try:
+        return len(Path(path).read_text().split())
+    except FileNotFoundError:
+        return 0
+
+
+@pytest.fixture
+def ready_first(monkeypatch):
+    """Start a run's timeout clock only after the run's processes report ready.
+
+    `arm(*markers)` names files whose word count must reach the number of runs
+    started so far (a pidfile counts as one word, a ready log one word per
+    start). A slow start under load then cannot eat the timeout, while the
+    timeout itself stays as short as the test wants. The wait is bounded.
+    """
+    real = procs._wait_exit_noreap
+    state = {"markers": [], "runs": 0}
+
+    def arm(*markers):
+        state["markers"] = list(markers)
+
+    def wait(pid, timeout):
+        state["runs"] += 1
+        deadline = time.monotonic() + 60
+        while any(lines_in(m) < state["runs"] for m in state["markers"]):
+            assert time.monotonic() < deadline, "the run never reported ready"
+            time.sleep(0.02)
+        return real(pid, timeout)
+
+    monkeypatch.setattr(procs, "_wait_exit_noreap", wait)
+    return arm
 
 
 def alive(pid):
@@ -286,16 +330,20 @@ def wait_dead(pid, seconds=5):
     return False
 
 
-def test_a_timeout_kills_the_wrapper_and_the_child_it_spawned(tmp_path):
+def test_a_timeout_kills_the_wrapper_and_the_child_it_spawned(tmp_path, ready_first):
     pidfile = tmp_path / "child.pid"
+    ready_first(Path(f"{pidfile}.ready"))
     wrapper = script(tmp_path, "wrap.py", SPAWNS_CHILD)
     with pytest.raises(subprocess.TimeoutExpired):
         procs.run_group([sys.executable, str(wrapper), str(pidfile)], timeout=1.5)
     assert wait_dead(int(pidfile.read_text()))
 
 
-def test_the_harness_timeout_reaps_the_whole_tree_and_counts_the_attempts(tmp_path):
+def test_the_harness_timeout_reaps_the_whole_tree_and_counts_the_attempts(
+    tmp_path, ready_first
+):
     pidfile = tmp_path / "child.pid"
+    ready_first(Path(f"{pidfile}.ready"))
     wrapper = script(tmp_path, "wrap.py", SPAWNS_CHILD)
     with models.Budget(5, tmp_path / "l.jsonl") as budget:
         ask = models.command_ask(
@@ -351,6 +399,8 @@ open(plan["log"], "w").write(json.dumps({{
     "home_listing": sorted(os.listdir(os.environ["HOME"])),
 }}))
 print(json.dumps({{"type": "text", "part": {{"text": "fine"}}}}))
+for event in plan.get("events", []):
+    print(json.dumps(event))
 """
 
 FAKE_AWS = """\
@@ -563,10 +613,11 @@ def adapter_env(parent):
 
 
 def test_interrupting_the_real_adapter_kills_opencode_and_its_descendants(
-    fake_opencode, tmp_path
+    fake_opencode, tmp_path, ready_first
 ):
     _, set_plan, parent = fake_opencode
     pids = tree_plan(tmp_path, set_plan)
+    ready_first(*pids.values())
     with pytest.raises(subprocess.TimeoutExpired):
         procs.run_group(
             adapter_command(), input="x", timeout=3, env=adapter_env(parent)
@@ -578,17 +629,20 @@ def test_interrupting_the_real_adapter_kills_opencode_and_its_descendants(
 def test_the_adapter_timeout_kills_opencode_and_everything_below_it(
     fake_opencode, tmp_path
 ):
+    # The adapter's own timer runs in another process, so the test cannot gate it
+    # on readiness. Give it a generous limit instead: opencode hangs for 60s, so
+    # the adapter must still be the one that stops it, well before the harness.
     _, set_plan, parent = fake_opencode
     pids = tree_plan(tmp_path, set_plan)
     started = time.time()
     result = procs.run_group(
-        [*adapter_command(), "--timeout", "2"],
+        [*adapter_command(), "--timeout", "15"],
         input="x",
-        timeout=30,
+        timeout=120,
         env=adapter_env(parent),
     )
     assert result.returncode == 1 and "timed out" in result.stderr
-    assert time.time() - started < 20
+    assert time.time() - started < 50
     assert wait_dead(int(pids["opencode"].read_text()))
     assert wait_dead(int(pids["child"].read_text()))
 
@@ -770,10 +824,11 @@ def test_an_empty_journal_without_a_ledger_is_fine(tmp_path, monkeypatch):
 
 
 def test_cancelling_while_the_credential_helper_hangs_kills_it_and_its_children(
-    fake_opencode, tmp_path
+    fake_opencode, tmp_path, ready_first
 ):
     _, set_plan, parent = fake_opencode
     pids = {"aws": tmp_path / "aws.pid", "child": tmp_path / "aws-child.pid"}
+    ready_first(*pids.values())
     set_plan(
         aws_hang=True,
         aws_pidfile=str(pids["aws"]),
@@ -874,3 +929,416 @@ def test_each_attempt_resolves_credentials_again(fake_opencode, tmp_path):
     for _ in range(2):
         opencode_model.call("m", "x", profile="good", region="r", parent_env=parent)
     assert (tmp_path / "aws.count").read_text() == "2"
+
+
+# --- token usage ---------------------------------------------------------------------------------------
+
+
+def step_finish(**tokens):
+    return {
+        "type": "step_finish",
+        "part": {"type": "step-finish", "cost": 0, "tokens": tokens},
+    }
+
+
+def stream(*events):
+    return "\n".join(json.dumps(e) for e in events)
+
+
+def test_usage_sums_every_step_and_keeps_each_token_kind():
+    events = stream(
+        step_finish(input=100, output=20, reasoning=5, cache={"read": 50, "write": 7}),
+        {"type": "text", "part": {"text": "hi"}},
+        step_finish(input=30, output=4, reasoning=0, cache={"read": 0, "write": 0}),
+    )
+    assert opencode_model.parse_usage(events) == {
+        "input": 130,
+        "output": 24,
+        "reasoning": 5,
+        "cache_read": 50,
+        "cache_write": 7,
+    }
+
+
+def test_usage_lists_only_the_fields_the_stream_reports():
+    assert opencode_model.parse_usage(stream(step_finish(input=3, output=2))) == {
+        "input": 3,
+        "output": 2,
+    }
+
+
+def test_a_stream_without_step_tokens_has_no_usage():
+    events = stream({"type": "text", "part": {"text": "hi"}}, step_finish())
+    assert opencode_model.parse_usage(events) is None
+
+
+def test_the_adapter_keeps_stdout_for_the_answer_and_ends_stderr_with_the_usage(
+    fake_opencode, monkeypatch, capsys
+):
+    _, set_plan, parent = fake_opencode
+    set_plan(events=[step_finish(input=9, output=4, cache={"read": 2, "write": 1})])
+    monkeypatch.setenv("PATH", parent["PATH"])
+    monkeypatch.setenv("HOME", parent["HOME"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO("question"))
+    assert opencode_model.main(["--model", "m"]) == 0
+    out, err = capsys.readouterr()
+    assert out == "fine"
+    assert err.splitlines()[-1] == (
+        'slopvac-usage {"cache_read": 2, "cache_write": 1, "input": 9, "output": 4}'
+    )
+
+
+USAGE_COMMAND = """\
+import sys
+print("answer")
+print('slopvac-usage {"input": 10, "output": 3}', file=sys.stderr)
+"""
+
+
+def test_a_reply_carries_the_usage_the_command_reports(tmp_path):
+    cmd = f"{sys.executable} {script(tmp_path, 'usage.py', USAGE_COMMAND)}"
+    reply = models.command_ask(cmd)("x")
+    assert reply.usage == {"input": 10, "output": 3}
+
+
+def test_a_command_that_reports_nothing_has_no_usage(tmp_path):
+    cmd = f"{sys.executable} -c 'print(1)'"
+    assert models.command_ask(cmd)("x").usage is None
+
+
+def test_usage_adds_up_over_retries_and_a_silent_attempt_makes_it_unknown(tmp_path):
+    counter = tmp_path / "n"
+    counter.write_text("0")
+    body = (
+        "import sys, pathlib\n"
+        f"p = pathlib.Path({str(counter)!r})\n"
+        "n = int(p.read_text()) + 1\n"
+        "p.write_text(str(n))\n"
+        "if n == 1 and {silent}:\n    sys.exit(1)\n"
+        "print('slopvac-usage {{\"input\": 5}}', file=sys.stderr)\n"
+        "if n == 1:\n    sys.exit(1)\n"
+        "print('ok')\n"
+    )
+    loud = script(tmp_path, "loud.py", body.format(silent=False))
+    assert models.command_ask(f"{sys.executable} {loud}")("x").usage == {"input": 10}
+    counter.write_text("0")
+    quiet = script(tmp_path, "quiet.py", body.format(silent=True))
+    assert models.command_ask(f"{sys.executable} {quiet}")("x").usage is None
+
+
+def test_the_usage_line_stays_out_of_a_failure_message(tmp_path):
+    body = (
+        "import sys\n"
+        "print('boom', file=sys.stderr)\n"
+        "print('slopvac-usage {\"input\": 1}', file=sys.stderr)\n"
+        "sys.exit(1)\n"
+    )
+    cmd = f"{sys.executable} {script(tmp_path, 'bad.py', body)}"
+    with pytest.raises(models.CallFailed) as caught:
+        models.command_ask(cmd, attempts=1)("x")
+    assert str(caught.value) == "model command exited 1: boom"
+    assert caught.value.usage == {"input": 1}
+
+
+def test_the_ledger_names_the_model_on_every_reserve_and_finish(tmp_path):
+    cmd = f"{sys.executable} -c 'print(1)'"
+    with models.Budget(5, tmp_path / "l.jsonl") as budget:
+        models.command_ask(cmd, budget=budget, model="claude-haiku-5-5")("x")
+    events = [
+        json.loads(line) for line in (tmp_path / "l.jsonl").read_text().splitlines()
+    ]
+    assert [(e["event"], e["model"]) for e in events] == [
+        ("reserve", "claude-haiku-5-5"),
+        ("finish", "claude-haiku-5-5"),
+    ]
+
+
+def test_a_ledger_from_before_models_were_named_still_resumes(tmp_path):
+    ledger = tmp_path / "l.jsonl"
+    ledger.write_text(
+        '{"event": "reserve", "n": 1}\n'
+        '{"event": "finish", "n": 1, "status": "ok"}\n'
+        '{"event": "reserve", "n": 2}\n'
+    )
+    with models.Budget(3, ledger) as budget:
+        assert (budget.spent, budget.unfinished_at_start) == (2, 1)
+        assert budget.reserve() == 3
+
+
+def test_a_journal_from_before_usage_was_recorded_still_loads(tmp_path):
+    path = tmp_path / "j.jsonl"
+    path.write_text('{"job": "a", "answer": "text", "error": null, "attempts": 2}\n')
+    journal = models.Journal(path)
+    assert journal.done("a")["answer"] == "text" and journal.attempts == 2
+
+
+def test_a_run_journals_the_model_and_usage_and_a_resume_reuses_them(
+    tmp_path, spawn_log
+):
+    body = (
+        COUNTING
+        + 'print(\'slopvac-usage {"input": 7, "output": 2}\', file=sys.stderr)\n'
+    )
+    cmd = f"{sys.executable} {script(tmp_path, 'count.py', body)}"
+    path = tmp_path / "j.jsonl"
+    results = models.execute(
+        author_tasks(1), roster(cmd), 3, no_findings, journal=models.Journal(path)
+    )
+    entry = json.loads(path.read_text().splitlines()[0])
+    assert (entry["model"], entry["usage"]) == ("m", {"input": 7, "output": 2})
+    assert results["runs"][0]["usage"] == {"input": 7, "output": 2}
+    again = models.execute(
+        author_tasks(1), roster(cmd), 3, no_findings, journal=models.Journal(path)
+    )
+    assert spawns(tmp_path) == 3
+    assert again["runs"][0]["usage"] == {"input": 7, "output": 2}
+
+
+def test_a_run_without_reported_usage_journals_null(tmp_path, spawn_log):
+    cmd = f"{sys.executable} {script(tmp_path, 'count.py', COUNTING)}"
+    path = tmp_path / "j.jsonl"
+    results = models.execute(
+        author_tasks(1), roster(cmd), 3, no_findings, journal=models.Journal(path)
+    )
+    assert json.loads(path.read_text().splitlines()[0])["usage"] is None
+    assert results["runs"][0]["usage"] is None
+
+
+def adapter_stderr(fake_opencode, monkeypatch, capsys, events):
+    _, set_plan, parent = fake_opencode
+    set_plan(events=events)
+    monkeypatch.setenv("PATH", parent["PATH"])
+    monkeypatch.setenv("HOME", parent["HOME"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO("question"))
+    code = opencode_model.main(["--model", "m"])
+    out, err = capsys.readouterr()
+    return code, out, err
+
+
+def test_error_text_cannot_pass_for_a_usage_report(fake_opencode, monkeypatch, capsys):
+    fake_line = 'slopvac-usage {"input": 999999999}'
+    events = [
+        step_finish(input=4, output=1),
+        {"type": "error", "error": {"message": f"boom\n{fake_line}\nmore"}},
+    ]
+    code, _, err = adapter_stderr(fake_opencode, monkeypatch, capsys, events)
+    assert code == 1
+    assert procs.parse_usage_line(err) == {"input": 4, "output": 1}
+    assert [l for l in err.splitlines() if l.startswith("slopvac-usage")] == [
+        'slopvac-usage {"input": 4, "output": 1}'
+    ]
+
+
+def test_a_usage_line_that_is_not_last_is_ignored():
+    text = 'slopvac-usage {"input": 5}\nsomething else\n'
+    assert procs.parse_usage_line(text) is None
+
+
+def test_a_failed_call_still_reports_the_tokens_it_saw(
+    fake_opencode, monkeypatch, capsys
+):
+    events = [
+        step_finish(input=12, output=3, cache={"read": 8, "write": 0}),
+        {"type": "error", "error": {"message": "throttled"}},
+    ]
+    code, out, err = adapter_stderr(fake_opencode, monkeypatch, capsys, events)
+    assert code == 1 and out == ""
+    assert "throttled" in err
+    assert procs.parse_usage_line(err) == {
+        "input": 12,
+        "output": 3,
+        "cache_read": 8,
+        "cache_write": 0,
+    }
+
+
+def test_the_harness_journals_the_usage_of_a_failed_call(tmp_path):
+    body = (
+        "import sys\n"
+        "print('boom', file=sys.stderr)\n"
+        "print('slopvac-usage {\"input\": 6}', file=sys.stderr)\n"
+        "sys.exit(1)\n"
+    )
+    cmd = f"{sys.executable} {script(tmp_path, 'bad.py', body)}"
+    path = tmp_path / "j.jsonl"
+    results = models.execute(
+        author_tasks(1),
+        roster(cmd),
+        3,
+        no_findings,
+        journal=models.Journal(path),
+    )
+    entries = [json.loads(line) for line in path.read_text().splitlines()]
+    assert [e["usage"] for e in entries] == [{"input": 18}] * 3
+    assert results["runs"][0]["usage"] == {"input": 18}
+
+
+def test_a_resumed_job_keeps_the_spend_of_its_failed_executions(tmp_path):
+    counter = tmp_path / "n"
+    body = (
+        "import sys, pathlib\n"
+        f"p = pathlib.Path({str(counter)!r})\n"
+        "n = int(p.read_text()) + 1 if p.exists() else 1\n"
+        "p.write_text(str(n))\n"
+        "print('slopvac-usage {\"input\": 5}', file=sys.stderr)\n"
+        "if n <= 3:\n    sys.exit(1)\n"
+        "print('ok')\n"
+    )
+    cmd = f"{sys.executable} {script(tmp_path, 'late.py', body)}"
+    path = tmp_path / "j.jsonl"
+    tasks = author_tasks(1)
+    first = models.execute(
+        tasks, roster(cmd), 3, no_findings, journal=models.Journal(path)
+    )
+    assert first["runs"][0]["error"]
+    again = models.execute(
+        tasks, roster(cmd), 3, no_findings, journal=models.Journal(path)
+    )
+    # Job 0 used three failing attempts of 5 tokens, then succeeded on the resume.
+    job0 = models.job_id("task", "m", tasks[0]["prompt"], 0)
+    mine = [e["usage"] for e in again["executions"] if e["job"] == job0]
+    assert mine == [{"input": 15}, {"input": 5}]
+    assert again["runs"][0]["usage"] == {"input": 5}
+
+
+# --- exhaustion mid-retry, and cost per execution ---------------------------------------
+
+
+def usage_command(tmp_path, name, fail_through, tokens, answer="[]"):
+    """A command that reports `tokens` input every run and fails its first N runs."""
+    counter = tmp_path / f"{name}.n"
+    body = (
+        "import sys, pathlib\n"
+        f"p = pathlib.Path({str(counter)!r})\n"
+        "n = int(p.read_text()) + 1 if p.exists() else 1\n"
+        "p.write_text(str(n))\n"
+        f"print('slopvac-usage {{\"input\": {tokens}}}', file=sys.stderr)\n"
+        f"if n <= {fail_through}:\n    sys.exit(1)\n"
+        f"print({answer!r})\n"
+    )
+    return f"{sys.executable} {script(tmp_path, name + '.py', body)}"
+
+
+def cost_of(path):
+    prices = {
+        "models": {"a": {"input": 1, "output": 1}, "b": {"input": 1, "output": 1}}
+    }
+    return models.estimate_cost(models.load_usage_records(path), prices)
+
+
+def test_spend_of_attempts_made_before_the_ceiling_is_journaled_and_kept(tmp_path):
+    cmd = usage_command(tmp_path, "late", fail_through=2, tokens=5)
+    journal_path, ledger = tmp_path / "j.jsonl", tmp_path / "l.jsonl"
+    with models.Budget(2, ledger) as budget, pytest.raises(models.BudgetExceeded):
+        models.execute(
+            author_tasks(1),
+            roster(cmd),
+            3,
+            no_findings,
+            budget=budget,
+            journal=models.Journal(journal_path),
+        )
+    partial = [json.loads(line) for line in journal_path.read_text().splitlines()]
+    assert [(e["attempts"], e["usage"]) for e in partial] == [(2, {"input": 10})]
+    assert partial[0]["error"]  # so the job is asked again on resume
+    with models.Budget(100, ledger) as budget:  # raise the ceiling and resume
+        results = models.execute(
+            author_tasks(1),
+            roster(cmd),
+            3,
+            no_findings,
+            budget=budget,
+            journal=models.Journal(journal_path),
+        )
+    # 2 failed attempts of 5, then 3 successful runs of 5: 25 tokens in all.
+    assert cost_of(journal_path)["models"]["m"]["tokens"] == {"input": 25}
+    assert [e["usage"] for e in results["executions"]][:2] == [
+        {"input": 10},
+        {"input": 5},
+    ]
+
+
+def test_a_partial_job_without_reported_usage_leaves_the_cost_incomplete(tmp_path):
+    cmd = f"{sys.executable} -c 'import sys; sys.exit(1)'"
+    journal_path = tmp_path / "j.jsonl"
+    with (
+        models.Budget(2, tmp_path / "l.jsonl") as budget,
+        pytest.raises(models.BudgetExceeded),
+    ):
+        models.execute(
+            author_tasks(1),
+            roster(cmd),
+            3,
+            no_findings,
+            budget=budget,
+            journal=models.Journal(journal_path),
+        )
+    report = cost_of(journal_path)
+    assert report["models"]["m"]["missing_usage"] == 1 and report["complete"] is False
+
+
+REWRITE_SOURCE = "Retry 3 times, use `max_retries`."
+
+
+def rewrite_task():
+    return {
+        "id": "rw",
+        "type": "rewrite",
+        "role": "author",
+        "doc": "d",
+        "genre": "g",
+        "prompt": "Rewrite the passage",
+        "source": REWRITE_SOURCE,
+    }
+
+
+def test_a_superseded_review_is_still_charged_and_both_cost_views_agree(tmp_path):
+    # Model a fails job 0 on its first three runs (100 tokens each), so its empty
+    # candidate is reviewed by b. On the resume a answers, the new candidate gets a
+    # new review, and the old review has no row any more.
+    a = usage_command(tmp_path, "a", fail_through=3, tokens=100, answer=REWRITE_SOURCE)
+    b = usage_command(tmp_path, "b", fail_through=0, tokens=7)
+    pair = [
+        {"name": "a", "family": "fa", "tier": "t", "command": a},
+        {"name": "b", "family": "fb", "tier": "t", "command": b},
+    ]
+    journal_path, out = tmp_path / "j.jsonl", tmp_path / "r.json"
+    for _ in range(2):
+        results = models.execute(
+            [rewrite_task()],
+            pair,
+            3,
+            no_findings,
+            journal=models.Journal(journal_path),
+        )
+    models.dump(results, out)
+    # Run 1, a: author job 0 fails 3 times (300), jobs 1 and 2 (200), then reviews of
+    # b's three rewrites (300): 800. b: three author jobs (21) and three reviews of
+    # a's candidates, one of them empty (21): 42.
+    # Resume: a answers job 0 (100) and b reviews the new candidate (7).
+    expected = {"a": {"input": 900}, "b": {"input": 49}}
+    for path in (journal_path, out):
+        report = cost_of(path)
+        assert {m: r["tokens"] for m, r in report["models"].items()} == expected
+        assert report["complete"] is True
+    rows = [r for r in results["runs"] if r["model"] == "b"]
+    assert len(rows) == 6  # 7 executions: the superseded review has no row
+
+
+def test_one_execution_behind_several_rows_is_charged_once(tmp_path, spawn_log):
+    body = COUNTING + "print('slopvac-usage {\"input\": 7}', file=sys.stderr)\n"
+    cmd = f"{sys.executable} {script(tmp_path, 'count.py', body)}"
+    first = author_tasks(1)[0]
+    twin = {**first, "id": "twin"}  # same prompt, so the same job per repeat
+    journal_path, out = tmp_path / "j.jsonl", tmp_path / "r.json"
+    results = models.execute(
+        [first, twin],
+        roster(cmd),
+        3,
+        no_findings,
+        journal=models.Journal(journal_path),
+    )
+    models.dump(results, out)
+    assert len(results["runs"]) == 6 and spawns(tmp_path) == 3
+    for path in (journal_path, out):
+        assert cost_of(path)["models"]["m"]["tokens"] == {"input": 21}

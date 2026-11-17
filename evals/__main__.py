@@ -136,6 +136,13 @@ def cmd_models(args: argparse.Namespace) -> int:
             summary = models.summarize(models.load(Path(args.results)))
             _emit(summary, args.out)
             return 0
+        if args.models_command == "cost":
+            report = models.estimate_cost(
+                models.load_usage_records(Path(args.path)),
+                models.load_prices(Path(args.prices)),
+            )
+            _emit(report, args.out)
+            return 0
         tasks, roster = _model_tasks(args)
         counted = models.plan(tasks, roster, args.repeats)
         if args.models_command == "plan":
@@ -428,6 +435,14 @@ def build_parser() -> argparse.ArgumentParser:
     sm.add_argument("results")
     sm.add_argument("--out")
     sm.set_defaults(func=cmd_models)
+    cs = msub.add_parser(
+        "cost",
+        help="tokens and estimated cost per model from a results file or journal",
+    )
+    cs.add_argument("path", help="a results .json or a .journal.jsonl")
+    cs.add_argument("--prices", default=str(models.PRICES_PATH))
+    cs.add_argument("--out")
+    cs.set_defaults(func=cmd_models)
 
     a = sub.add_parser("ab", help="paired comparison of two stored results")
     a.add_argument("a")

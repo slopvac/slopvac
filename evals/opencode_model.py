@@ -20,6 +20,15 @@ Isolation is by construction, not by trust in the caller's environment:
 - `opencode` stays in the adapter's process group, so the harness's group kill
   reaches it. On its own timeout the adapter kills `opencode` and everything
   below it.
+
+Token usage goes out on a side channel. stdout carries the answer and nothing
+else. After the answer, the adapter writes one final stderr line, `slopvac-usage `
+followed by a JSON object (see `procs.format_usage_line`). Its keys are `input`,
+`output`, `reasoning`, `cache_read` and `cache_write`, each present only when
+opencode reported it. The harness takes that line and drops it from error text.
+opencode reports usage in each `step_finish` event of `--format json`, as
+`part.tokens` = {input, output, reasoning, cache: {read, write}}; the adapter
+sums the steps. With no `step_finish` tokens the line is left out.
 """
 
 from __future__ import annotations
@@ -35,6 +44,7 @@ import tempfile
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import NamedTuple
 
 from . import procs
 
@@ -66,7 +76,9 @@ CREDENTIAL_KEYS = {
 
 
 class ModelCallError(Exception):
-    pass
+    def __init__(self, message: str, usage: dict[str, int] | None = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 def build_config(region: str | None) -> dict:
@@ -200,7 +212,48 @@ def parse_events(stdout: str) -> str:
     return "".join(parts)
 
 
+class Answer(NamedTuple):
+    text: str
+    usage: dict[str, int] | None
+
+
+def parse_usage(stdout: str) -> dict[str, int] | None:
+    """Sum the tokens of every `step_finish` event, keeping the fields that exist."""
+    total: dict[str, int] = {}
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "step_finish":
+            continue
+        part = event.get("part")
+        tokens = part.get("tokens") if isinstance(part, dict) else None
+        if not isinstance(tokens, dict):
+            continue
+        cache = tokens.get("cache")
+        cache = cache if isinstance(cache, dict) else {}
+        fields = {
+            "input": tokens.get("input"),
+            "output": tokens.get("output"),
+            "reasoning": tokens.get("reasoning"),
+            "cache_read": cache.get("read"),
+            "cache_write": cache.get("write"),
+        }
+        for key, value in fields.items():
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                total[key] = total.get(key, 0) + value
+    return total or None
+
+
 def call(
+    model: str, prompt: str, timeout: int = procs.ADAPTER_TIMEOUT, **kwargs
+) -> str:
+    """Ask `model` once and return the answer text. See `run` for the arguments."""
+    return run(model, prompt, timeout, **kwargs).text
+
+
+def run(
     model: str,
     prompt: str,
     timeout: int = procs.ADAPTER_TIMEOUT,
@@ -210,7 +263,7 @@ def call(
     parent_env: Mapping[str, str] | None = None,
     keep: Path | None = None,
     credentials: Mapping[str, str] | None = None,
-) -> str:
+) -> Answer:
     """Ask `model` once. `keep` names a directory to copy the temp project into, for audits."""
     parent = os.environ if parent_env is None else parent_env
     region = region or parent.get("AWS_REGION") or parent.get("AWS_DEFAULT_REGION")
@@ -247,10 +300,16 @@ def call(
                 shutil.copytree(
                     tmp, keep, dirs_exist_ok=True, ignore_dangling_symlinks=True
                 )
-    answer = parse_events(proc.stdout)
+    # Tokens were spent whether or not the call worked, so read them first.
+    usage = parse_usage(proc.stdout)
+    try:
+        answer = parse_events(proc.stdout)
+    except ModelCallError as exc:
+        exc.usage = usage
+        raise
     if proc.returncode != 0 or not answer:
-        raise ModelCallError(f"opencode exited {proc.returncode} with no answer")
-    return answer
+        raise ModelCallError(f"opencode exited {proc.returncode} with no answer", usage)
+    return Answer(answer, usage)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -270,18 +329,23 @@ def main(argv: list[str] | None = None) -> int:
             f"--timeout must be below the harness timeout of {procs.OUTER_TIMEOUT}s"
         )
     try:
-        sys.stdout.write(
-            call(
-                args.model,
-                sys.stdin.read(),
-                args.timeout,
-                region=args.aws_region,
-                profile=args.aws_profile,
-                keep=args.keep_dir,
-            )
+        answer = run(
+            args.model,
+            sys.stdin.read(),
+            args.timeout,
+            region=args.aws_region,
+            profile=args.aws_profile,
+            keep=args.keep_dir,
         )
+        sys.stdout.write(answer.text)
+        sys.stdout.flush()
+        if answer.usage:
+            print(procs.format_usage_line(answer.usage), file=sys.stderr)
     except (ModelCallError, subprocess.TimeoutExpired) as exc:
-        print(f"opencode_model: {procs.redact(str(exc))}", file=sys.stderr)
+        message = procs.one_line(procs.redact(str(exc)))
+        print(f"opencode_model: {message}", file=sys.stderr)
+        if usage := getattr(exc, "usage", None):
+            print(procs.format_usage_line(usage), file=sys.stderr)
         return 1
     return 0
 
