@@ -9,6 +9,7 @@ use slopvac_engine::{Engine, Input, Settings};
 use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString, Notice, NoticeLevel};
 use slopvac_rules::RuleSet;
 
+use crate::limits::{Kind, Limits, Reader};
 use crate::{BACKUP_DIR, Error, Finding, Linter, Phase};
 
 /// Lints the Markdown and MDX documents of a project with the engine.
@@ -113,12 +114,15 @@ impl Linter for EngineLinter {
                 .collect(),
         };
         let mut docs = Vec::new();
+        let mut reader = Reader::new(Limits::default());
         for (file, kind) in found {
             let path = canonical(&file);
             let label = path.strip_prefix(&base).unwrap_or(&path).to_owned();
             let text = match rewritten.get(&path) {
                 Some(text) => (*text).to_owned(),
-                None => fs::read_to_string(&path).map_err(|e| Error::io(&root.join(&label), e))?,
+                None => reader
+                    .read(&path, Kind::Document)
+                    .map_err(|e| e.at(&root.join(&label)))?,
             };
             docs.push((label.display().to_string(), kind, text));
         }

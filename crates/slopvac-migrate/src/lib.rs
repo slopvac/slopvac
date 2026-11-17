@@ -11,6 +11,7 @@ mod config;
 mod directives;
 mod guide;
 mod legacy;
+mod limits;
 mod lint;
 pub mod overlap;
 mod plan;
@@ -26,8 +27,11 @@ pub use cli::{command, execute, run};
 pub use config::{Rewrite, migrate_config};
 pub use directives::{Found, RemovedId, UnknownId, rewrite_directives};
 pub use guide::{doc as guide_doc, prime_migrate};
+pub use limits::Limits;
 pub use lint::EngineLinter;
-pub use plan::{BACKUP_DIR, Change, ChangeKind, Plan, apply, plan, render_diff, restore};
+pub use plan::{
+    BACKUP_DIR, Change, ChangeKind, Plan, apply, plan, plan_with_limits, render_diff, restore,
+};
 pub use renames::RenameTable;
 pub use report::{Finding, Linter, NullLinter, Phase, RuleDelta, compare};
 pub use steering::rewrite_steering;
@@ -122,6 +126,38 @@ pub enum Error {
     /// The engine could not lint the project.
     #[error("lint: {0}")]
     Lint(String),
+    /// A document is larger than the document cap.
+    #[error("{path}: larger than {cap} bytes")]
+    DocumentTooLarge {
+        /// The file.
+        path: String,
+        /// The cap in bytes.
+        cap: u64,
+    },
+    /// A config file is larger than the config cap.
+    #[error("{path}: larger than {cap} bytes")]
+    ConfigTooLarge {
+        /// The file.
+        path: String,
+        /// The cap in bytes.
+        cap: u64,
+    },
+    /// A run read more files or bytes than its limits allow.
+    #[error("{path}: run limit reached: more than {limit} {what} in one run")]
+    RunLimit {
+        /// The file that crossed the limit.
+        path: String,
+        /// What was counted: `files` or `bytes`.
+        what: &'static str,
+        /// The limit.
+        limit: u64,
+    },
+    /// A file is not valid UTF-8.
+    #[error("{path}: not valid UTF-8")]
+    NotUtf8 {
+        /// The file.
+        path: String,
+    },
     /// A filesystem operation failed.
     #[error("{path}: {source}")]
     Io {
@@ -146,6 +182,10 @@ impl Error {
             Self::OverrideOverlap { .. } => "migrate-override-overlap",
             Self::RenameTable(_) => "migrate-rename-table",
             Self::Lint(_) => "migrate-lint-failed",
+            Self::DocumentTooLarge { .. } => "document-too-large",
+            Self::ConfigTooLarge { .. } => "config-too-large",
+            Self::RunLimit { .. } => "migrate-run-limit",
+            Self::NotUtf8 { .. } => "migrate-not-utf8",
             Self::Io { .. } => "migrate-io-failed",
         }
     }
@@ -155,23 +195,39 @@ impl Error {
     #[must_use]
     pub(crate) fn redacted(self, root: &std::path::Path) -> Self {
         match self {
-            Self::Io { path, source } => {
-                let p = std::path::Path::new(&path);
-                let shown = match p.strip_prefix(root) {
-                    Ok(rel) if rel.as_os_str().is_empty() => ".".to_owned(),
-                    Ok(rel) => rel.display().to_string(),
-                    Err(_) => format!(
-                        "<external>/{}",
-                        p.file_name()
-                            .map(|n| n.to_string_lossy())
-                            .unwrap_or_default()
-                    ),
-                };
-                Self::Io {
-                    path: shown,
-                    source,
-                }
-            }
+            Self::Io { path, source } => Self::Io {
+                path: shown(&path, root),
+                source,
+            },
+            Self::DocumentTooLarge { path, cap } => Self::DocumentTooLarge {
+                path: shown(&path, root),
+                cap,
+            },
+            Self::ConfigTooLarge { path, cap } => Self::ConfigTooLarge {
+                path: shown(&path, root),
+                cap,
+            },
+            Self::RunLimit { path, what, limit } => Self::RunLimit {
+                path: shown(&path, root),
+                what,
+                limit,
+            },
+            Self::NotUtf8 { path } => Self::NotUtf8 {
+                path: shown(&path, root),
+            },
+            other => other,
+        }
+    }
+
+    /// The same failure, reported for `shown`.
+    pub(crate) fn at(self, shown: &std::path::Path) -> Self {
+        let path = shown.display().to_string();
+        match self {
+            Self::DocumentTooLarge { cap, .. } => Self::DocumentTooLarge { path, cap },
+            Self::ConfigTooLarge { cap, .. } => Self::ConfigTooLarge { path, cap },
+            Self::RunLimit { what, limit, .. } => Self::RunLimit { path, what, limit },
+            Self::NotUtf8 { .. } => Self::NotUtf8 { path },
+            Self::Io { source, .. } => Self::Io { path, source },
             other => other,
         }
     }
@@ -181,5 +237,20 @@ impl Error {
             path: path.display().to_string(),
             source,
         }
+    }
+}
+
+/// `path` relative to `root`, or `<external>/<file name>` outside it.
+fn shown(path: &str, root: &std::path::Path) -> String {
+    let p = std::path::Path::new(path);
+    match p.strip_prefix(root) {
+        Ok(rel) if rel.as_os_str().is_empty() => ".".to_owned(),
+        Ok(rel) => rel.display().to_string(),
+        Err(_) => format!(
+            "<external>/{}",
+            p.file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default()
+        ),
     }
 }

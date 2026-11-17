@@ -613,7 +613,7 @@ pub(crate) fn key_lines(text: &str) -> Result<HashMap<String, usize>, String> {
     Ok(out)
 }
 
-fn line_of(text: &str, offset: usize) -> usize {
+pub(crate) fn line_of(text: &str, offset: usize) -> usize {
     text[..offset.min(text.len())]
         .bytes()
         .filter(|b| *b == b'\n')

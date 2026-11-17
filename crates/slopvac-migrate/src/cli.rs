@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, ArgMatches, Command, value_parser};
+use slopvac_sanitize as sanitize;
 
 use crate::plan::{BACKUP_DIR, apply, plan, render_diff, restore};
 use crate::{Error, Linter, Options, Phase, RenameTable, compare};
@@ -58,7 +59,12 @@ pub fn run(
     match execute(matches, linter, steering, out) {
         Ok(()) => 0,
         Err(e) => {
-            let _ = writeln!(err, "error[{}]: {e}", e.code());
+            let _ = writeln!(
+                err,
+                "error[{}]: {}",
+                e.code(),
+                sanitize::terminal(&e.to_string())
+            );
             2
         }
     }
@@ -99,15 +105,15 @@ fn execute_in(
     let renames = RenameTable::bundled();
     let plan = plan(&root, &renames, options, steering)?;
     for warning in &plan.warnings {
-        writeln!(out, "warning: {warning}").map_err(io)?;
+        writeln!(out, "warning: {}", sanitize::line(warning)).map_err(io)?;
     }
     if plan.is_empty() {
         writeln!(out, "Nothing to migrate.").map_err(io)?;
         return Ok(());
     }
-    write!(out, "{}", render_diff(&plan)).map_err(io)?;
+    write!(out, "{}", sanitize::terminal(&render_diff(&plan))).map_err(io)?;
     for note in &plan.notes {
-        writeln!(out, "note: {note}").map_err(io)?;
+        writeln!(out, "note: {}", sanitize::line(note)).map_err(io)?;
     }
     let before = linter.lint(&root, Phase::Before, &[])?;
     let after = linter.lint(&root, Phase::After, &plan.overlay(&root))?;
@@ -118,7 +124,14 @@ fn execute_in(
     } else {
         writeln!(out, "Findings by rule (before -> after):").map_err(io)?;
         for r in changed {
-            writeln!(out, "  {}: {} -> {}", r.rule, r.before, r.after).map_err(io)?;
+            writeln!(
+                out,
+                "  {}: {} -> {}",
+                sanitize::line(&r.rule),
+                r.before,
+                r.after
+            )
+            .map_err(io)?;
         }
     }
     if matches.get_flag("write") {

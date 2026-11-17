@@ -5,9 +5,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use similar::TextDiff;
+use slopvac_engine::discover::FileKind;
 use toml_edit::{DocumentMut, Item, Value};
 
 use crate::config::{key_lines, migrate_config};
+use crate::limits::{Kind, Limits, Reader};
 use crate::{Dropped, Error, Options, RenameTable, rewrite_directives, rewrite_steering};
 
 /// Where `apply` keeps the files it replaced, relative to the project root.
@@ -76,22 +78,57 @@ const SKIP_DIRS: &[&str] = &[
 ///
 /// `steering` is the 3.0 managed block, as `slopvac setup` writes it. Reads only. Every unrepresentable setting across all files comes back together in
 /// [`Error::Dropped`].
+///
+/// # Errors
+/// A setting 3.0 cannot represent, or a file that is unreadable, not UTF-8, over its size
+/// cap, a malformed `pyproject.toml`, or over the default per-run [`Limits`].
 pub fn plan(
     root: &Path,
     renames: &RenameTable,
     options: Options,
     steering: &str,
 ) -> Result<Plan, Error> {
+    plan_with_limits(root, renames, options, steering, Limits::default())
+}
+
+/// Like [`plan`], with explicit per-run `limits`.
+///
+/// # Errors
+/// As [`plan`]; reading more files or bytes than `limits` allow is [`Error::RunLimit`].
+pub fn plan_with_limits(
+    root: &Path,
+    renames: &RenameTable,
+    options: Options,
+    steering: &str,
+    limits: Limits,
+) -> Result<Plan, Error> {
     let mut plan = Plan::default();
     let mut dropped: Vec<Dropped> = Vec::new();
     let mut dirs = Vec::new();
     let mut docs = Vec::new();
-    walk(root, &mut dirs, &mut docs)?;
+    walk(root, root, &mut dirs, &mut docs, &mut plan.warnings)?;
+    let mut reader = Reader::new(limits);
     for dir in dirs {
-        plan_dir(root, &dir, renames, options, &mut plan, &mut dropped)?;
+        plan_dir(
+            root,
+            &dir,
+            renames,
+            options,
+            &mut reader,
+            &mut plan,
+            &mut dropped,
+        )?;
     }
     for doc in docs {
-        plan_document(root, &doc, renames, steering, &mut plan, &mut dropped);
+        plan_document(
+            root,
+            &doc,
+            renames,
+            steering,
+            &mut reader,
+            &mut plan,
+            &mut dropped,
+        )?;
     }
     if dropped.is_empty() {
         Ok(plan)
@@ -100,7 +137,15 @@ pub fn plan(
     }
 }
 
-fn walk(dir: &Path, dirs: &mut Vec<PathBuf>, docs: &mut Vec<PathBuf>) -> Result<(), Error> {
+/// Collect the directories and the Markdown and MDX documents under `dir`. A prose file
+/// migrate cannot rewrite is reported in `warnings`, not skipped silently.
+fn walk(
+    root: &Path,
+    dir: &Path,
+    dirs: &mut Vec<PathBuf>,
+    docs: &mut Vec<PathBuf>,
+    warnings: &mut Vec<String>,
+) -> Result<(), Error> {
     dirs.push(dir.to_owned());
     let mut entries: Vec<_> = fs::read_dir(dir)
         .map_err(|e| Error::io(dir, e))?
@@ -114,15 +159,25 @@ fn walk(dir: &Path, dirs: &mut Vec<PathBuf>, docs: &mut Vec<PathBuf>) -> Result<
         let kind = entry.file_type().map_err(|e| Error::io(&path, e))?;
         if kind.is_dir() {
             if !SKIP_DIRS.contains(&name.as_ref()) {
-                walk(&path, dirs, docs)?;
+                walk(root, &path, dirs, docs, warnings)?;
             }
-        } else if kind.is_file() && name.ends_with(".md") {
-            docs.push(path);
+        } else if kind.is_file() {
+            match FileKind::from_file_name(&name) {
+                Some(FileKind::Markdown | FileKind::Mdx) => docs.push(path),
+                Some(kind @ (FileKind::Html | FileKind::Rst | FileKind::Text)) => {
+                    warnings.push(format!(
+                        "{}: not checked: migrate rewrites Markdown and MDX only, not {kind:?} files",
+                        rel(root, &path).display()
+                    ));
+                }
+                _ => {}
+            }
         }
     }
     Ok(())
 }
 
+// Used by `restore` for the backup manifest; the restore path owns its own read hardening.
 fn read(path: &Path) -> Result<String, Error> {
     fs::read_to_string(path).map_err(|e| Error::io(path, e))
 }
@@ -136,6 +191,7 @@ fn plan_dir(
     dir: &Path,
     renames: &RenameTable,
     options: Options,
+    reader: &mut Reader,
     plan: &mut Plan,
     dropped: &mut Vec<Dropped>,
 ) -> Result<(), Error> {
@@ -143,11 +199,14 @@ fn plan_dir(
     let dot = dir.join(".slopvac.toml");
     let pyproject = dir.join("pyproject.toml");
     let py_text = if pyproject.is_file() {
-        Some(read(&pyproject)?)
+        Some(reader.read(&pyproject, Kind::Config)?)
     } else {
         None
     };
-    let py_table = py_text.as_deref().and_then(extract_tool_table);
+    let py_table = match py_text.as_deref() {
+        Some(text) => extract_tool_table(text, &rel(root, &pyproject).display().to_string())?,
+        None => None,
+    };
     let sources = usize::from(main_cfg.is_file())
         + usize::from(dot.is_file())
         + usize::from(py_table.is_some());
@@ -159,9 +218,17 @@ fn plan_dir(
         )));
     }
     let (source, origin, old) = if main_cfg.is_file() {
-        (main_cfg.clone(), Origin::InPlace, read(&main_cfg)?)
+        (
+            main_cfg.clone(),
+            Origin::InPlace,
+            reader.read(&main_cfg, Kind::Config)?,
+        )
     } else if dot.is_file() {
-        (dot.clone(), Origin::Dotfile, read(&dot)?)
+        (
+            dot.clone(),
+            Origin::Dotfile,
+            reader.read(&dot, Kind::Config)?,
+        )
     } else if let (Some((extracted, _)), true) = (&py_table, py_text.is_some()) {
         (pyproject.clone(), Origin::Pyproject, extracted.clone())
     } else {
@@ -281,8 +348,26 @@ fn dropped_in_pyproject(mut dropped: Vec<Dropped>, py: Option<&str>) -> Vec<Drop
 
 /// The `[tool.slopvac]` table as a standalone document, and `pyproject.toml` text
 /// without it. Unrelated content and comments in `pyproject.toml` stay as they are.
-fn extract_tool_table(text: &str) -> Option<(String, String)> {
-    let mut doc: DocumentMut = text.parse().ok()?;
+/// `None` when the file has no `[tool.slopvac]` table.
+///
+/// # Errors
+/// [`Error::Parse`] naming `file` and the line, when the text is not valid TOML.
+fn extract_tool_table(text: &str, file: &str) -> Result<Option<(String, String)>, Error> {
+    let mut doc: DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| Error::Parse {
+            file: file.to_owned(),
+            message: format!(
+                "line {}: {}",
+                e.span()
+                    .map_or(1, |s| crate::config::line_of(text, s.start)),
+                e.message()
+            ),
+        })?;
+    Ok(split_tool_table(&mut doc))
+}
+
+fn split_tool_table(doc: &mut DocumentMut) -> Option<(String, String)> {
     let table = match doc.get("tool")?.get("slopvac")? {
         Item::Table(t) => {
             let mut t = t.clone();
@@ -310,12 +395,11 @@ fn plan_document(
     path: &Path,
     renames: &RenameTable,
     steering: &str,
+    reader: &mut Reader,
     plan: &mut Plan,
     dropped: &mut Vec<Dropped>,
-) {
-    let Ok(old) = fs::read_to_string(path) else {
-        return;
-    };
+) -> Result<(), Error> {
+    let old = reader.read(path, Kind::Document)?;
     let label = rel(root, path);
     let (mut text, found) = rewrite_directives(&old, renames);
     plan.notes.extend(found.removed.iter().map(|r| {
@@ -351,6 +435,7 @@ fn plan_document(
             new: Some(text),
         });
     }
+    Ok(())
 }
 
 /// A unified diff of every change in the plan.
