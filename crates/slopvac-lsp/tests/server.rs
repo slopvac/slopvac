@@ -1046,3 +1046,26 @@ fn a_markdown_file_is_still_linted_next_to_binary_containers() {
     assert_eq!(only_diagnostic(&published)["code"], "core:cat.swap");
     client.finish().unwrap();
 }
+
+#[test]
+fn a_registered_check_adds_nothing_to_a_binary_container() {
+    let server = Server::new(Arc::new(engine_linter())).with_check(Arc::new(Shouting));
+    let mut client = Client::start(server, None);
+    let uri = "file:///work/a.docx";
+    client.open_at(uri, "We utilize NOPE.\n");
+    assert_binary_host_diagnostic(&client.diagnostics());
+    client.notify(
+        "textDocument/didChange",
+        &json!({
+            "textDocument": {"uri": uri, "version": 2},
+            "contentChanges": [{"text": "NOPE again.\n"}]
+        }),
+    );
+    assert_binary_host_diagnostic(&client.diagnostics());
+    client.notify(
+        "textDocument/didSave",
+        &json!({"textDocument": {"uri": uri}}),
+    );
+    assert_binary_host_diagnostic(&client.diagnostics());
+    client.finish().unwrap();
+}
