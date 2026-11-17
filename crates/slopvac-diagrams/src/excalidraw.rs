@@ -4,6 +4,7 @@
 //! text bound to another shape is a node label, and a free text is a text box.
 //! Frame names are groups. Deleted elements are skipped.
 
+use crate::sub;
 use std::collections::HashMap;
 
 use crate::json::{Json, parse};
@@ -43,7 +44,7 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
             continue;
         };
         let id = e.get("id").and_then(Json::as_str).unwrap_or("?");
-        let raw = &src[span.clone()];
+        let raw = sub(src, span.clone());
         fragments.push(Fragment {
             span: base + span.start..base + span.end,
             text: (raw != value).then(|| value.clone()),
@@ -52,7 +53,7 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
         });
     }
     Extraction {
-        diagram: Some("excalidraw".to_string()),
+        diagram: Some("excalidraw".to_owned()),
         fragments,
     }
 }
@@ -84,10 +85,10 @@ mod tests {
         assert_eq!(
             got,
             [
-                (Role::Node, "excalidraw/node[t1]".to_string()),
-                (Role::Edge, "excalidraw/edge[t2]".to_string()),
-                (Role::Text, "excalidraw/text[t3]".to_string()),
-                (Role::Group, "excalidraw/group[f1]".to_string()),
+                (Role::Node, "excalidraw/node[t1]".to_owned()),
+                (Role::Edge, "excalidraw/edge[t2]".to_owned()),
+                (Role::Text, "excalidraw/text[t3]".to_owned()),
+                (Role::Group, "excalidraw/group[f1]".to_owned()),
             ]
         );
     }

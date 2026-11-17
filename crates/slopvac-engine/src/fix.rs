@@ -36,6 +36,8 @@
 //! table a fix must keep the width of the text (ASCII of equal length), because the cells
 //! are not re-padded; any other edit there is refused as protected.
 
+use crate::span_between;
+use crate::sub;
 use std::ops::RangeInclusive;
 
 use frontmatter_spans::detect;
@@ -116,7 +118,7 @@ pub enum FixError {
     },
     /// The file is not UTF-8.
     #[error("{0}: not valid UTF-8")]
-    NotUtf8(String),
+    NotUtf8(String, #[source] std::string::FromUtf8Error),
 }
 
 /// Fix the findings of `doc`, which was linted from `input` by `engine`.
@@ -183,7 +185,7 @@ pub fn fix_document(
         if reason.is_none()
             && cased.iter().any(|e| {
                 overlaps_any(e.span, &tables)
-                    && !same_width(&input.source[e.span.start()..e.span.end()], &e.text)
+                    && !same_width(sub(input.source, e.span.start()..e.span.end()), &e.text)
             })
         {
             reason = Some(SkipReason::Protected);
@@ -232,7 +234,7 @@ fn refusal(
     }
     if let [edit] = fix
         && finding.extent.map(|e| e.span) == Some(edit.span)
-        && source[edit.span.start()..edit.span.end()] != finding.matched_text
+        && sub(source, edit.span.start()..edit.span.end()) != finding.matched_text
     {
         return Some(SkipReason::Stale);
     }
@@ -279,7 +281,7 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
             spans.push(span);
         }
     }
-    let body = Span::new(body_start, input.source.len()).expect("body starts inside the file");
+    let body = span_between(body_start, input.source.len());
     let parsed: Parsed = match input.kind {
         Kind::Markdown => parse_markdown(input.source, body)?,
         Kind::Mdx => parse_mdx(input.source, body)?,

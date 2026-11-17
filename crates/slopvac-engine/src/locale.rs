@@ -16,6 +16,7 @@
 //! the rest of the category. Words the project spells its own way (`terms.allow`, and the
 //! spellings of its terms) neither flag nor trigger a replacement.
 
+use crate::sub;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::path::PathBuf;
@@ -49,6 +50,10 @@ struct Data {
     examples: HashMap<String, Vec<Example>>,
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "the locale data is bundled at build time, and the tests parse it"
+)]
 static TABLE: LazyLock<Data> =
     LazyLock::new(|| serde_json::from_str(DATA).expect("the bundled locale data is valid"));
 
@@ -145,7 +150,10 @@ impl std::error::Error for LocaleError {}
 /// unambiguous: a form this misses is a miss, and a form it invents is a false finding.
 fn inflect(word: &str) -> Vec<String> {
     let mut forms = vec![word.to_owned()];
-    let stem = &word[..word.len() - 1];
+    let Some(stem_len) = word.len().checked_sub(1) else {
+        return forms;
+    };
+    let stem = sub(word, ..stem_len);
     if word.ends_with("ize")
         || word.ends_with("ise")
         || word.ends_with("yze")
@@ -188,7 +196,12 @@ pub fn spelling(locale: Locale, allow: &[String]) -> Option<Spelling> {
     let mut substitutions: Vec<(String, String)> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
     for row in &TABLE.variants {
-        let (target, other) = (&row[side], &row[1 - side]);
+        let [first, second] = row;
+        let (target, other) = match side {
+            0 => (first, second),
+            1 => (second, first),
+            _ => continue,
+        };
         if other == target {
             continue;
         }
@@ -198,8 +211,8 @@ pub fn spelling(locale: Locale, allow: &[String]) -> Option<Spelling> {
             {
                 continue;
             }
-            if let Some(&at) = index.get(&from) {
-                substitutions[at].1 = to;
+            if let Some(slot) = index.get(&from).and_then(|&at| substitutions.get_mut(at)) {
+                slot.1 = to;
             } else {
                 index.insert(from.clone(), substitutions.len());
                 substitutions.push((from, to));
@@ -287,6 +300,11 @@ fn rule_json(spelling: &Spelling) -> Value {
 /// [`LocaleError::Unknown`] for a tag the table does not know, [`LocaleError::MissingCategory`]
 /// when `base` has no `ste-words` category, and [`LocaleError::Load`] when the generated rule
 /// does not load.
+#[expect(
+    clippy::expect_used,
+    clippy::unwrap_in_result,
+    reason = "serializing plain numbers, enums and strings to JSON cannot fail"
+)]
 pub fn spelling_rules(
     pack: &PackId,
     base: &RuleSet,
@@ -311,12 +329,19 @@ pub fn spelling_rules(
         "weight": category.weight().get(),
         "rules": [rule_json(&spelling)],
     });
-    if let Some(budget) = category.max_per_100_words() {
-        doc["max_per_100_words"] = serde_json::to_value(budget).expect("a budget serializes");
-    }
-    if !category.recommended_for().is_empty() {
-        doc["recommended_for"] =
-            serde_json::to_value(category.recommended_for()).expect("genre ids serialize");
+    if let Value::Object(map) = &mut doc {
+        if let Some(budget) = category.max_per_100_words() {
+            map.insert(
+                "max_per_100_words".to_owned(),
+                serde_json::to_value(budget).expect("a budget serializes"),
+            );
+        }
+        if !category.recommended_for().is_empty() {
+            map.insert(
+                "recommended_for".to_owned(),
+                serde_json::to_value(category.recommended_for()).expect("genre ids serialize"),
+            );
+        }
     }
     let file = PathBuf::from(format!("<generated locale {tag}>.json"));
     RuleSet::from_sources(pack, [(file, doc.to_string())], options)
@@ -327,6 +352,11 @@ pub fn spelling_rules(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_empty_word_inflects_to_itself() {
+        assert_eq!(inflect(""), [String::new()]);
+    }
 
     fn pairs(locale: Locale) -> Vec<(String, String)> {
         spelling(locale, &[]).unwrap().substitutions

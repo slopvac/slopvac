@@ -3,8 +3,10 @@
 //! Expected spellings are worked out from the canonical terms (`GitHub`, `JavaScript`), not
 //! from the matcher: a term differs from the canonical spelling in case only.
 
-#![allow(missing_docs, clippy::assert_is_empty)]
-
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
+)]
 mod common;
 
 use common::{matched, places, settings};
@@ -12,6 +14,11 @@ use slopvac_engine::{Engine, Input, TERMS_PACK, terms_rule_set};
 use slopvac_model::{Document, PackId};
 use slopvac_terms::TermSet;
 
+#[expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn engine_with(allowed: &[&str]) -> Engine {
     let set = terms_rule_set(&PackId::new(TERMS_PACK).unwrap()).unwrap_or_else(|e| panic!("{e}"));
     let mut settings = settings();
@@ -19,6 +26,10 @@ fn engine_with(allowed: &[&str]) -> Engine {
     Engine::new(vec![set], settings).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn lint(text: &str) -> Document {
     engine_with(&[])
         .lint(&Input::markdown("a.md", text))
@@ -58,7 +69,7 @@ fn the_canonical_spelling_is_not_a_finding() {
 fn the_rule_examples_flag_bad_text_with_the_good_text_as_its_fix() {
     let set = terms_rule_set(&PackId::new(TERMS_PACK).unwrap()).unwrap();
     let rule = set.rules().next().unwrap();
-    assert!(!rule.rule().examples().is_empty());
+    assert_ne!(rule.rule().examples(), []);
     let engine = engine_with(&[]);
     for example in rule.rule().examples() {
         let bad = format!("{}\n", example.bad);

@@ -2,12 +2,10 @@
 //!
 //! Expected counts are worked out by hand from the metric definitions in the 2.x reference.
 
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
 
 use common::{engine, rule};
@@ -25,8 +23,12 @@ fn metric(name: &str, threshold: f64, comparison: &str, extra: &Value) -> Value 
     )
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn lint(rule: &Value, text: &str) -> Document {
-    engine(&[rule.clone()])
+    engine(std::slice::from_ref(rule))
         .lint(&slopvac_engine::Input::markdown("a.md", text))
         .unwrap()
 }
@@ -261,7 +263,7 @@ fn a_directive_suppresses_a_metric_finding_on_the_line_it_covers() {
 #[test]
 fn a_metric_the_engine_does_not_measure_is_reported_as_not_run() {
     let doc = lint(&gt("syllables_per_word", 2.0), "Anything at all.\n");
-    assert!(doc.findings.is_empty());
+    assert_eq!(doc.findings, []);
     assert_eq!(doc.unchecked.len(), 1);
     assert!(
         doc.unchecked[0]

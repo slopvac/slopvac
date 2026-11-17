@@ -1,5 +1,7 @@
 //! The text units a rule reads, cut from a parsed document by the rule's `scope`.
 
+use crate::span_between;
+use crate::sub;
 use std::cell::OnceCell;
 use std::ops::Range;
 
@@ -70,7 +72,7 @@ pub(crate) fn with_html_prose(
         };
         doc.blocks.push(Block {
             kind: BlockKind::Paragraph,
-            span: Span::new(first, end).expect("a block ends after it starts"),
+            span: span_between(first, end),
             projection: Some(join(prose.iter().filter_map(|b| b.projection.as_ref()))),
             containers: Vec::new(),
         });
@@ -104,17 +106,17 @@ fn split_lines(text: &str) -> impl Iterator<Item = &str> {
             return None;
         }
         let mut end = start;
-        while end < bytes.len() && !matches!(bytes[end], b'\n' | b'\r') {
+        while bytes.get(end).is_some_and(|b| !matches!(b, b'\n' | b'\r')) {
             end += 1;
         }
-        if end < bytes.len() {
-            end += if bytes[end] == b'\r' && bytes.get(end + 1) == Some(&b'\n') {
+        if let Some(&terminator) = bytes.get(end) {
+            end += if terminator == b'\r' && bytes.get(end + 1) == Some(&b'\n') {
                 2
             } else {
                 1
             };
         }
-        let line = &text[start..end];
+        let line = sub(text, start..end);
         start = end;
         Some(line)
     })
@@ -129,7 +131,7 @@ fn split_fences(source: &str, segments: &[Span]) -> (Vec<Span>, Vec<Span>) {
     let mut lines: Vec<(usize, usize, &str)> = Vec::new();
     for segment in segments {
         let mut at = segment.start();
-        for line in split_lines(&source[segment.start()..segment.end()]) {
+        for line in split_lines(sub(source, segment.start()..segment.end())) {
             lines.push((at, at + line.len(), line.trim_end_matches(['\r', '\n'])));
             at += line.len();
         }
@@ -147,26 +149,34 @@ fn split_fences(source: &str, segments: &[Span]) -> (Vec<Span>, Vec<Span>) {
             }
             Some((ch, run, from)) => {
                 if marker.is_some_and(|(c, n)| c == ch && n >= run) {
-                    in_fence[from..=i].fill(true);
+                    if let Some(run) = in_fence.get_mut(from..=i) {
+                        run.fill(true);
+                    }
                     fences.push((from, i));
                     open = None;
                 }
             }
         }
     }
-    if let Some((_, _, from)) = open {
-        in_fence[from..].fill(true);
-        fences.push((from, lines.len() - 1));
+    if let Some((_, _, from)) = open
+        && let Some(last) = lines.len().checked_sub(1)
+    {
+        if let Some(run) = in_fence.get_mut(from..) {
+            run.fill(true);
+        }
+        fences.push((from, last));
     }
-    let span =
-        |start: usize, end: usize| Span::new(start, end).expect("a line ends after it starts");
+    let span = |start: usize, end: usize| span_between(start, end);
     let fence_spans = fences
         .into_iter()
-        .map(|(from, to)| span(lines[from].0, lines[to].0 + lines[to].2.len()))
+        .filter_map(|(from, to)| {
+            let (first, last) = lines.get(from).zip(lines.get(to))?;
+            Some(span(first.0, last.0 + last.2.len()))
+        })
         .collect();
     let mut kept: Vec<Span> = Vec::new();
-    for (i, &(start, end, _)) in lines.iter().enumerate() {
-        if in_fence[i] {
+    for (&(start, end, _), &fenced) in lines.iter().zip(&in_fence) {
+        if fenced {
             continue;
         }
         match kept.last_mut() {
@@ -239,7 +249,10 @@ impl Unit<'_> {
 
     /// The source ranges a match is made of, given in bytes of `text`: one for each run of
     /// source text its tokens cover. Text that reads in the source order has one, the span.
-    #[allow(clippy::single_range_in_vec_init)]
+    #[expect(
+        clippy::single_range_in_vec_init,
+        reason = "the result is the one range of source text"
+    )]
     pub(crate) fn ranges(&self, range: &Range<usize>) -> Vec<Range<usize>> {
         let (start, end) = (self.base + range.start, self.base + range.end);
         match self.map {
@@ -261,7 +274,7 @@ impl Unit<'_> {
         let (start, end) = (self.base + range.start, self.base + range.end);
         match self.map {
             Map::Projected(p) => p.span_for_bytes(start, end),
-            Map::Source => Span::new(start, end).expect("a match ends after it starts"),
+            Map::Source => span_between(start, end),
         }
     }
 }
@@ -364,9 +377,12 @@ impl<'a> Prepared<'a> {
             Scope::Raw => {
                 let lines = Lines::new(self.source);
                 for (number, text) in lines.iter() {
+                    let Some(base) = lines.start(number) else {
+                        continue;
+                    };
                     units.push(Unit {
                         text,
-                        base: lines.start(number),
+                        base,
                         map: Map::Source,
                         sentences: None,
                     });
@@ -408,7 +424,7 @@ impl<'a> Prepared<'a> {
                     }
                     for s in &block.sentences {
                         units.push(Unit {
-                            text: &block.projection.text()[s.start..s.end],
+                            text: sub(block.projection.text(), s.start..s.end),
                             base: s.start,
                             map: Map::Projected(block.projection),
                             sentences: Some(&block.sentences),

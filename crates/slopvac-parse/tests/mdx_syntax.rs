@@ -1,13 +1,21 @@
-#![allow(missing_docs)]
+//! Integration tests for mdx syntax.
 //! MDX syntax spans: which source ranges are code, not prose.
 
 use slopvac_model::Span;
 use slopvac_parse::{mdx_syntax_spans, mdx_syntax_spans_counted};
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn whole(source: &str) -> Span {
     Span::new(0, source.len()).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn covered(source: &str, spans: &[Span], needle: &str) -> bool {
     let at = source.find(needle).unwrap();
     spans

@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use slopvac_pcre2::Regex;
 
 use crate::lexicon::IMPERATIVE_VERBS;
-use crate::pattern::{TextError, find_all, re, re_i, replace_all};
+use crate::pattern::{TextError, find_all, re, re_i, replace_all, sub};
 use crate::pyrules::{lower, py_isspace, py_strip};
 
 pub(crate) const SENTINEL: char = '\0';
@@ -115,7 +115,7 @@ fn collapse(text: &str, patterns: &[&Regex]) -> Result<String, TextError> {
 /// capitalised tokens of the text are not a name, because sentence case explains them.
 fn collapse_proper_names(text: &str) -> Result<String, TextError> {
     replace_all(&PROPER_NAME, text, |start, end| {
-        let matched = &text[start..end];
+        let matched = sub(text, start..end);
         let first = lower(
             matched
                 .split(py_isspace)
@@ -126,7 +126,7 @@ fn collapse_proper_names(text: &str) -> Result<String, TextError> {
             return Ok(matched.to_owned());
         }
         let capitalised = find_all(&CAPITALISED, matched)?.len();
-        if capitalised < 2 || (capitalised == 2 && py_strip(&text[..start]).is_empty()) {
+        if capitalised < 2 || (capitalised == 2 && py_strip(sub(text, ..start)).is_empty()) {
             return Ok(matched.to_owned());
         }
         Ok(format!(" {SENTINEL} "))
@@ -135,10 +135,7 @@ fn collapse_proper_names(text: &str) -> Result<String, TextError> {
 
 /// Remove the leading step number, once.
 pub(crate) fn strip_step_number(text: &str) -> Result<&str, TextError> {
-    Ok(match STEP_NUMBER.find(text)? {
-        Some(m) => &text[m.end..],
-        None => text,
-    })
+    Ok(STEP_NUMBER.find(text)?.map_or(text, |m| sub(text, m.end..)))
 }
 
 /// The canonical token stream for `text`.
@@ -178,7 +175,7 @@ pub(crate) fn stepless_tokens(text: &str) -> Result<Vec<String>, TextError> {
             continue;
         }
         if TOKEN_JOINERS.contains(&c) {
-            let prev = i.checked_sub(1).map(|p| chars[p]);
+            let prev = i.checked_sub(1).and_then(|p| chars.get(p)).copied();
             let next = chars.get(i + 1).copied();
             if !current.is_empty() && prev.is_some_and(is_word) && next.is_some_and(is_word) {
                 current.push(c);

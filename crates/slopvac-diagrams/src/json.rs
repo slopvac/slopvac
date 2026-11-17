@@ -2,6 +2,7 @@
 //!
 //! `serde_json` gives no offsets, and the extractors need them to report spans.
 
+use crate::sub;
 use std::ops::Range;
 
 const MAX_DEPTH: usize = 128;
@@ -19,14 +20,14 @@ impl Json {
     pub(crate) fn get(&self, key: &str) -> Option<&Json> {
         match self {
             Json::Obj(members) => members.iter().find(|(k, _)| k == key).map(|(_, v)| v),
-            _ => None,
+            Json::Bool(_) | Json::Other | Json::Str { .. } | Json::Arr(_) => None,
         }
     }
 
     pub(crate) fn as_str(&self) -> Option<&str> {
         match self {
             Json::Str { value, .. } => Some(value),
-            _ => None,
+            Json::Bool(_) | Json::Other | Json::Arr(_) | Json::Obj(_) => None,
         }
     }
 }
@@ -114,7 +115,7 @@ impl Parser<'_> {
                 {
                     self.pos += 1;
                 }
-                match &self.src[start..self.pos] {
+                match sub(self.src, start..self.pos) {
                     "" => None,
                     "true" => Some(Json::Bool(true)),
                     "false" => Some(Json::Bool(false)),
@@ -133,7 +134,7 @@ impl Parser<'_> {
         let start = self.pos;
         let mut out = String::new();
         loop {
-            let rest = &self.src[self.pos..];
+            let rest = sub(self.src, self.pos..);
             let c = rest.chars().next()?;
             self.pos += c.len_utf8();
             match c {
@@ -160,7 +161,7 @@ impl Parser<'_> {
             b'u' => {
                 let hi = self.hex4()?;
                 if (0xD800..0xDC00).contains(&hi) {
-                    if self.src[self.pos..].starts_with("\\u") {
+                    if sub(self.src, self.pos..).starts_with("\\u") {
                         self.pos += 2;
                         let lo = self.hex4()?;
                         char::from_u32(0x10000 + ((hi - 0xD800) << 10) + lo.checked_sub(0xDC00)?)?
@@ -193,7 +194,7 @@ mod tests {
         let Json::Str { span, value } = v.get("a").unwrap() else {
             panic!()
         };
-        assert_eq!(&src[span.clone()], r"x\ny");
+        assert_eq!(sub(src, span.clone()), r"x\ny");
         assert_eq!(value, "x\ny");
         let Json::Arr(items) = v.get("b").unwrap() else {
             panic!()
@@ -201,7 +202,7 @@ mod tests {
         let Json::Str { span, .. } = &items[0] else {
             panic!()
         };
-        assert_eq!(&src[span.clone()], "é");
+        assert_eq!(sub(src, span.clone()), "é");
     }
 
     #[test]

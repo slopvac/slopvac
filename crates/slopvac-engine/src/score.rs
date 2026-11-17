@@ -79,19 +79,23 @@ fn round(value: f64, places: usize) -> f64 {
     format!("{value:.places$}").parse().unwrap_or(value)
 }
 
-#[allow(clippy::cast_precision_loss)]
 fn per_100(count: usize, words: usize) -> f64 {
-    count as f64 / words as f64 * 100.0
+    crate::count_f64(count) / crate::count_f64(words) * 100.0
 }
 
 fn measurable(words: usize) -> bool {
     words >= MIN_WORDS_FOR_DENSITY
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "a count over words is finite and not negative"
+)]
 fn density(value: f64) -> Density {
     Density::new(round(value, 3)).expect("a count over words is finite and not negative")
 }
 
+#[expect(clippy::expect_used, reason = "a clamped score is valid")]
 fn score(value: f64) -> Score {
     Score::new(round(value, 1).clamp(0.0, 100.0)).expect("a clamped score is valid")
 }
@@ -135,6 +139,10 @@ fn gating_weight(findings: &[&Finding]) -> f64 {
 }
 
 /// A category's score and the weight it carries.
+#[expect(
+    clippy::expect_used,
+    reason = "budgets come from validated settings and are not negative, and a failed gate always has reasons"
+)]
 fn category_result(
     category: &CategoryId,
     items: &[&Finding],
@@ -154,11 +162,10 @@ fn category_result(
     } else {
         0.0
     };
-    #[allow(clippy::cast_precision_loss)]
     let suggestion_density = if measurable {
         per_100(suggestions, words)
     } else {
-        suggestions as f64
+        crate::count_f64(suggestions)
     };
     let base = if measurable {
         score_from_density(gating, info.budget)
@@ -185,9 +192,8 @@ fn category_result(
     )
 }
 
-#[allow(clippy::cast_precision_loss)]
 fn words_f(words: usize) -> f64 {
-    words as f64
+    crate::count_f64(words)
 }
 
 fn weighted_category_score(entries: &[(CategoryScore, f64)]) -> f64 {
@@ -211,11 +217,10 @@ fn whole_document_score(relevant: &[&Finding], words: usize, budget: Option<f64>
     } else {
         score_from_counts(blocking)
     };
-    #[allow(clippy::cast_precision_loss)]
     let suggestion_density = if measurable {
         per_100(suggestions, words)
     } else {
-        suggestions as f64
+        crate::count_f64(suggestions)
     };
     (base - suggestion_penalty(suggestion_density)).max(0.0)
 }
@@ -227,7 +232,6 @@ fn blocking_density(relevant: &[&Finding], words: usize) -> f64 {
     gating_weight(relevant) / words_f(words) * 100.0
 }
 
-#[allow(clippy::too_many_arguments)]
 fn failure_reasons(
     findings: &[Finding],
     gated: &[&Finding],
@@ -320,6 +324,10 @@ fn ai_summary(findings: &[Finding], words: usize, signal: AiSignal) -> AiRegiste
 ///
 /// `categories` lists every category of the rule data, so a category with no finding still
 /// appears. A finding whose category is absent from it counts with weight 1 and no budget.
+#[expect(
+    clippy::expect_used,
+    reason = "budgets come from validated settings and are not negative, and a failed gate always has reasons"
+)]
 #[must_use]
 pub fn score_document(
     findings: &[Finding],

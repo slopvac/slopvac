@@ -4,15 +4,11 @@
 //! "the", a verb follows "we"), and the scope cases state what Vale lints: prose inside
 //! inline HTML, no inline code, hyphenated words whole.
 
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
-
-use std::fmt::Write as _;
 
 use common::{category, matched, places, rule, ruleset, settings};
 use serde_json::{Value, json};
@@ -33,17 +29,26 @@ fn owner() -> Value {
     )
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn list(entries: &[(&str, &str)]) -> Blocklist {
     let mut text = String::new();
     for (word, pos) in entries {
-        let _ = write!(
-            text,
-            "[[entries]]\nword = \"{word}\"\npos = \"{pos}\"\nreason = \"r\"\n"
-        );
+        text.push_str("[[entries]]\nword = \"");
+        text.push_str(word);
+        text.push_str("\"\npos = \"");
+        text.push_str(pos);
+        text.push_str("\"\nreason = \"r\"\n");
     }
     Blocklist::parse("b.toml", "toml", &text).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn engine_with(rules: &[Value], blocklist: &Blocklist) -> Engine {
     Engine::new(
         vec![ruleset(vec![category("ste-words", rules)])],
@@ -54,6 +59,10 @@ fn engine_with(rules: &[Value], blocklist: &Blocklist) -> Engine {
     .unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn lint(entries: &[(&str, &str)], text: &str) -> Document {
     engine_with(&[owner()], &list(entries))
         .lint(&Input::markdown("a.md", text))
@@ -200,13 +209,13 @@ fn a_quotation_exception_keeps_a_quoted_word_out() {
 #[test]
 fn a_blocklist_entry_of_two_letters_or_with_digits_never_matches() {
     let doc = lint(&[("go", "verb"), ("k8s", "noun")], "We go to k8s now.\n");
-    assert!(doc.findings.is_empty());
+    assert_eq!(doc.findings, []);
 }
 
 #[test]
 fn a_part_of_speech_without_a_rule_never_matches() {
     let doc = lint(&[("the", "article")], "The app runs.\n");
-    assert!(doc.findings.is_empty());
+    assert_eq!(doc.findings, []);
 }
 
 #[test]
@@ -219,7 +228,7 @@ fn without_a_blocklist_the_rules_say_why_they_did_not_run() {
     let doc = engine
         .lint(&Input::markdown("a.md", "The deploy failed.\n"))
         .unwrap();
-    assert!(doc.findings.is_empty());
+    assert_eq!(doc.findings, []);
     let [notice] = doc.unchecked.as_slice() else {
         panic!("one notice, got {:?}", doc.unchecked);
     };
@@ -249,7 +258,7 @@ fn a_blocklist_with_nothing_to_tag_says_so() {
 #[test]
 fn a_run_sweep_has_no_notice_when_one_rule_owns_it() {
     let doc = lint(&[("deploy", "noun")], "The deploy failed.\n");
-    assert!(doc.unchecked.is_empty());
+    assert_eq!(doc.unchecked, []);
 }
 
 #[test]
@@ -297,6 +306,10 @@ fn an_adverb_entry_matches_a_wh_adverb_because_the_tag_pattern_is_unanchored() {
     assert_eq!(matched(&doc), ["how"]);
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn lint_with(extra: &Value, entries: &[(&str, &str)], text: &str) -> Document {
     engine_with(&[vocabulary_rule(OWNER, extra)], &list(entries))
         .lint(&Input::markdown("a.md", text))

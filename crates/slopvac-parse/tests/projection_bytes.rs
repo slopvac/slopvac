@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for projection bytes.
 //! `Projection::span_for_bytes` takes a range in bytes of the projected text, which is what a
 //! regex match reports, and returns the source span.
 
@@ -6,6 +6,10 @@ use slopvac_model::Span;
 use slopvac_parse::parse_html;
 
 /// The projected text of the only block, and the source span for a byte range of it.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn span_of(source: &str, word: &str) -> (usize, usize, Span) {
     let doc = parse_html(source, Span::new(0, source.len()).unwrap()).unwrap();
     let projection = doc.blocks[0].projection.as_ref().unwrap();

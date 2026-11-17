@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for blocks.
 //! Block structure of Markdown and MDX. Expected spans are checked by the source text
 //! they cover, which is worked out from the input, not from the parser.
 
@@ -8,14 +8,26 @@ use slopvac_parse::{
     parse_markdown, parse_mdx,
 };
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn whole(source: &str) -> Span {
     Span::new(0, source.len()).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn md(source: &str) -> Document {
     parse_markdown(source, whole(source)).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn mdx(source: &str) -> Document {
     parse_mdx(source, whole(source)).unwrap()
 }
@@ -28,6 +40,14 @@ fn slice(source: &str, span: Span) -> &str {
     &source[span.start()..span.end()]
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 fn admonition(doc: &Document) -> (&Block, &Admonition) {
     doc.blocks
         .iter()
@@ -153,6 +173,10 @@ fn tables_expose_cells_with_row_and_column() {
 // ---- code blocks ----
 
 #[test]
+#[expect(
+    clippy::unreachable,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn fenced_code_exposes_language_and_body_range() {
     let source = "Intro\n\n```rust,ignore title=x\nfn é() {}\nlet y;\n```\n\nOutro\n";
     for doc in [md(source), mdx(source)] {
@@ -179,6 +203,10 @@ fn fenced_code_exposes_language_and_body_range() {
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 #[test]
 fn code_body_range_edge_cases() {
     // (source, body text)
@@ -281,6 +309,10 @@ fn colon_admonition_spellings() {
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 #[test]
 fn nested_colon_admonitions_nest_by_span() {
     let source = ":::: outer\n::: inner\ntext\n:::\n::::\n";
@@ -357,6 +389,10 @@ fn fenced_directive_is_an_admonition_and_other_directives_stay_code() {
     assert_eq!(code, 1);
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the enum is non_exhaustive or defined in another crate, so a wildcard arm is required"
+)]
 #[test]
 fn gfm_alert_and_obsidian_callout() {
     let source = "> [!NOTE]\n> Plain alert.\n\n> [!tip]- Folded title\n> Body.\n\n> not an alert\n";
@@ -408,6 +444,10 @@ fn an_unclosed_container_runs_to_the_last_content_line() {
 
 // ---- projection tokens ----
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn kinds_and_texts(block: &Block) -> Vec<(TokenKind, String)> {
     block
         .projection

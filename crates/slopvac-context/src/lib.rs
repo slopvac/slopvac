@@ -1,5 +1,16 @@
 //! Context taggers, the tag registry and genres.
 
+/// Append formatted text to `out`. A `String` takes any text, so there is no error to report.
+pub(crate) fn append(out: &mut String, args: std::fmt::Arguments<'_>) {
+    out.push_str(&args.to_string());
+}
+
+/// Like [`append`], then a line feed.
+pub(crate) fn append_line(out: &mut String, args: std::fmt::Arguments<'_>) {
+    append(out, args);
+    out.push('\n');
+}
+
 mod builtin;
 mod checklist;
 mod cli;

@@ -4,27 +4,24 @@
 //! the spans Python finds (`fixtures/generate_word_class.py`). Python is the oracle; no
 //! expected value comes from this crate.
 
-#![allow(missing_docs, clippy::cast_possible_truncation)]
-
 use serde_json::Value;
 use slopvac_text::Pattern;
 
-fn fixture() -> Value {
-    serde_json::from_str(include_str!("fixtures/word_class_differential.json")).unwrap()
+fn fixture() -> Result<Value, serde_json::Error> {
+    serde_json::from_str(include_str!("fixtures/word_class_differential.json"))
 }
 
 /// Code point offsets to byte offsets.
-fn bytes(text: &str, at: u64) -> usize {
+fn bytes(text: &str, at: u64) -> Option<usize> {
     text.char_indices()
         .map(|(i, _)| i)
         .chain(std::iter::once(text.len()))
-        .nth(at as usize)
-        .unwrap()
+        .nth(usize::try_from(at).ok()?)
 }
 
 #[test]
 fn generated_patterns_match_python_on_unicode_edge_texts() {
-    let doc = fixture();
+    let doc = fixture().unwrap();
     let texts: Vec<&str> = doc["texts"]
         .as_array()
         .unwrap()
@@ -48,7 +45,8 @@ fn generated_patterns_match_python_on_unicode_edge_texts() {
                         .unwrap()
                         .iter()
                         .map(|s| {
-                            bytes(text, s[0].as_u64().unwrap())..bytes(text, s[1].as_u64().unwrap())
+                            bytes(text, s[0].as_u64().unwrap()).unwrap()
+                                ..bytes(text, s[1].as_u64().unwrap()).unwrap()
                         })
                         .collect()
                 })

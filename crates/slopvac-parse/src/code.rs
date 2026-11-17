@@ -1,15 +1,17 @@
 //! Code block kinds and span trimming, shared by both parsers.
 
+use crate::span_between;
+use crate::sub;
 use slopvac_model::Span;
 
 use crate::BlockKind;
 
 /// `span` without its final line terminator.
 pub(crate) fn trim_terminator(source: &str, span: Span) -> Span {
-    let kept = source[span.start()..span.end()]
+    let kept = sub(source, span.start()..span.end())
         .trim_end_matches(['\n', '\r'])
         .len();
-    Span::new(span.start(), span.start() + kept).expect("kept <= len")
+    span_between(span.start(), span.start() + kept)
 }
 
 /// The block kind of a code block. `info` is `None` for an indented block.
@@ -36,7 +38,7 @@ pub(crate) fn mdast_body(text: &str, start: usize, end: usize, value: &str) -> (
     let bytes = text.as_bytes();
     while pos < end {
         let line_start = pos;
-        while pos < end && bytes[pos] != b'\n' && bytes[pos] != b'\r' {
+        while pos < end && bytes.get(pos).is_some_and(|b| !matches!(b, b'\n' | b'\r')) {
             pos += 1;
         }
         lines.push((line_start, pos));
@@ -47,10 +49,13 @@ pub(crate) fn mdast_body(text: &str, start: usize, end: usize, value: &str) -> (
         }
     }
     let count = lines.len();
-    if count < 2 {
+    // Fewer than two lines: only the opener, so the body is empty.
+    let (Some(&(last_start, last_end)), Some(&(first_start, first_end))) =
+        (lines.last(), lines.get(1))
+    else {
         let at = terminator_end(text, end);
         return (at, at);
-    }
+    };
     let body_lines = if value.is_empty() {
         0..=1
     } else {
@@ -59,10 +64,10 @@ pub(crate) fn mdast_body(text: &str, start: usize, end: usize, value: &str) -> (
     };
     let closed_fits = body_lines.contains(&(count - 2));
     let open_fits = body_lines.contains(&(count - 1));
-    let (last_start, last_end) = lines[count - 1];
     let looks_closing = {
-        let t = text[last_start..last_end].trim_start_matches([' ', '\t', '>']);
-        t.starts_with(['`', '~']) && t.chars().all(|c| c == t.as_bytes()[0] as char || c == ' ')
+        let t = sub(text, last_start..last_end).trim_start_matches([' ', '\t', '>']);
+        let fence = t.chars().next();
+        t.starts_with(['`', '~']) && t.chars().all(|c| Some(c) == fence || c == ' ')
     };
     let closed = match (closed_fits, open_fits) {
         (true, false) => true,
@@ -74,11 +79,10 @@ pub(crate) fn mdast_body(text: &str, start: usize, end: usize, value: &str) -> (
     } else {
         terminator_end(text, end)
     };
-    let (first_start, first_end) = lines[1];
     let first_value = value.split(['\r', '\n']).next().unwrap_or("");
-    let line = &text[first_start..first_end];
+    let line = sub(text, first_start..first_end);
     // The opener sits after a container prefix when its line starts earlier.
-    let opener_line = text[..start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+    let opener_line = sub(text, ..start).rfind(['\n', '\r']).map_or(0, |i| i + 1);
     let in_container = opener_line < start;
     let prefix = if !first_value.is_empty() && line.ends_with(first_value) {
         line.len() - first_value.len()
@@ -97,7 +101,7 @@ pub(crate) fn mdast_body(text: &str, start: usize, end: usize, value: &str) -> (
 
 /// `at` moved past the line terminator that starts there, if any.
 fn terminator_end(text: &str, at: usize) -> usize {
-    let rest = &text[at..];
+    let rest = sub(text, at..);
     if rest.starts_with("\r\n") {
         at + 2
     } else if rest.starts_with(['\n', '\r']) {
@@ -113,7 +117,9 @@ fn line_count(value: &str) -> usize {
     let breaks = bytes
         .iter()
         .enumerate()
-        .filter(|&(i, &b)| b == b'\n' && (i == 0 || bytes[i - 1] != b'\r') || b == b'\r')
+        .filter(|&(i, &b)| {
+            b == b'\n' && i.checked_sub(1).and_then(|p| bytes.get(p)) != Some(&b'\r') || b == b'\r'
+        })
         .count();
     breaks + 1
 }

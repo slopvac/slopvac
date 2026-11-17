@@ -2,6 +2,8 @@
 //! document it holds. Directory walks and explicit targets both use it, so a kind
 //! cannot be listed in one place and missing from the other.
 
+use crate::sub;
+
 /// Prose extensions, matched against the end of the lower-cased file name.
 const PROSE: &[(&str, FileKind)] = &[
     (".md", FileKind::Markdown),
@@ -114,7 +116,10 @@ impl FileKind {
     }
 
     // `lower` is already lower-cased; Path::extension would miss a bare `.toml`.
-    #[allow(clippy::case_sensitive_file_extension_comparisons)]
+    #[expect(
+        clippy::case_sensitive_file_extension_comparisons,
+        reason = "`lower` is already lower-cased, and Path::extension would miss a bare `.toml`"
+    )]
     pub(super) fn comment(name: &str) -> Option<Self> {
         let lower = name.to_lowercase();
         if let Some((_, lang)) = SOURCE_FILENAMES.iter().find(|(n, _)| *n == lower) {
@@ -131,7 +136,7 @@ impl FileKind {
 /// leading dot alone (`.py`) is a hidden file, not an extension.
 fn source_language(lower: &str) -> Option<&'static str> {
     let dot = lower.rfind('.').filter(|&i| i > 0)?;
-    let ext = &lower[dot..];
+    let ext = sub(lower, dot..);
     SOURCE_EXTENSIONS
         .iter()
         .find(|(e, _)| *e == ext)

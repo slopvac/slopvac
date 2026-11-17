@@ -13,6 +13,8 @@
 //! The text itself is a private field of [`Src`] and [`Cur`], so mapping code cannot index,
 //! slice or iterate it without being counted.
 
+use crate::sub;
+
 /// Counters for one mapping run.
 #[derive(Debug, Clone)]
 pub(super) struct Meter {
@@ -100,8 +102,8 @@ impl<'a> Src<'a> {
         let bytes = self.text.as_bytes();
         let mut starts = vec![bom];
         let mut i = bom;
-        while i < bytes.len() {
-            match bytes[i] {
+        while let Some(&current) = bytes.get(i) {
+            match current {
                 b'\n' => starts.push(i + 1),
                 b'\r' => {
                     if bytes.get(i + 1) == Some(&b'\n') {
@@ -117,26 +119,39 @@ impl<'a> Src<'a> {
     }
 
     /// End of the line that ends before `next_start`, without its terminator.
-    pub(super) fn line_end_before(self, next_start: usize) -> usize {
+    ///
+    /// `next_start` follows a line terminator, so it is at least 1. A smaller value gives
+    /// `None`.
+    pub(super) fn line_end_before(self, next_start: usize) -> Option<usize> {
         let bytes = self.text.as_bytes();
-        if next_start >= 2 && bytes[next_start - 2] == b'\r' && bytes[next_start - 1] == b'\n' {
-            next_start - 2
+        let crlf = next_start
+            .checked_sub(2)
+            .and_then(|from| bytes.get(from..next_start))
+            == Some(b"\r\n".as_slice());
+        if crlf {
+            next_start.checked_sub(2)
         } else {
-            next_start - 1
+            next_start.checked_sub(1)
         }
     }
 
     /// The text `a..b`. The bytes are charged: whatever the caller does with the slice is
     /// paid for.
     pub(super) fn slice(self, m: &mut Meter, a: usize, b: usize) -> &'a str {
-        m.charge(b - a);
-        &self.text[a..b]
+        let Some(len) = b.checked_sub(a) else {
+            return "";
+        };
+        m.charge(len);
+        sub(self.text, a..b)
     }
 
     /// Like [`Self::slice`], for a step that must not stop at the budget.
     pub(super) fn slice_free(self, m: &mut Meter, a: usize, b: usize) -> &'a str {
-        m.scan(b - a);
-        &self.text[a..b]
+        let Some(len) = b.checked_sub(a) else {
+            return "";
+        };
+        m.scan(len);
+        sub(self.text, a..b)
     }
 
     /// The character at `at`, if it starts before `hi`.
@@ -144,14 +159,14 @@ impl<'a> Src<'a> {
         if at >= hi {
             return None;
         }
-        let c = self.text[at..].chars().next()?;
+        let c = sub(self.text, at..).chars().next()?;
         m.charge(c.len_utf8());
         Some(c)
     }
 
     /// The character before `at`.
     pub(super) fn before(self, m: &mut Meter, at: usize) -> Option<char> {
-        let c = self.text[..at].chars().next_back()?;
+        let c = sub(self.text, ..at).chars().next_back()?;
         m.charge(c.len_utf8());
         Some(c)
     }
@@ -165,8 +180,11 @@ impl<'a> Src<'a> {
         hi: usize,
         pred: impl Fn(char) -> bool,
     ) -> Option<(usize, char)> {
-        let found = self.text[at..hi].char_indices().find(|&(_, c)| pred(c));
-        m.charge(found.map_or(hi - at, |(off, c)| off + c.len_utf8()));
+        let width = hi.checked_sub(at)?;
+        let found = sub(self.text, at..hi)
+            .char_indices()
+            .find(|&(_, c)| pred(c));
+        m.charge(found.map_or(width, |(off, c)| off + c.len_utf8()));
         found
     }
 
@@ -178,10 +196,13 @@ impl<'a> Src<'a> {
         hi: usize,
         pred: impl Fn(char) -> bool,
     ) -> usize {
-        let run = self.text[at..hi]
+        let Some(width) = hi.checked_sub(at) else {
+            return at;
+        };
+        let run = sub(self.text, at..hi)
             .char_indices()
             .find(|&(_, c)| !pred(c))
-            .map_or(hi - at, |(off, _)| off);
+            .map_or(width, |(off, _)| off);
         m.charge(run);
         at + run
     }
@@ -197,10 +218,11 @@ impl<'a> Src<'a> {
         x1: usize,
     ) -> Option<(usize, usize)> {
         // A spent budget reads nothing, so it counts nothing.
-        if m.exhausted() || !m.charge(x1.min(b - a).saturating_add(1)) {
+        let width = b.checked_sub(a)?;
+        if m.exhausted() || !m.charge(x1.min(width).saturating_add(1)) {
             return None;
         }
-        let line = &self.text[a..b];
+        let line = sub(self.text, a..b);
         let mut from = line.len();
         let mut to = line.len();
         for (i, (byte, _)) in line.char_indices().enumerate() {
@@ -218,7 +240,7 @@ impl<'a> Src<'a> {
     /// The trimmed bounds of `a..b`: where its first and last non-whitespace characters
     /// are, or `None` for a blank range. Counts the whitespace it skips.
     pub(super) fn trimmed(self, m: &mut Meter, a: usize, b: usize) -> Option<(usize, usize)> {
-        let slice = &self.text[a..b];
+        let slice = sub(self.text, a..b);
         let body = slice.trim_start();
         let lead = slice.len() - body.len();
         let tail = body.len() - body.trim_end().len();
@@ -240,7 +262,7 @@ impl<'a> Cur<'a> {
     }
 
     pub(super) fn peek(self, m: &mut Meter) -> Option<char> {
-        let c = self.text[self.at..].chars().next()?;
+        let c = sub(self.text, self.at..).chars().next()?;
         m.charge(c.len_utf8());
         Some(c)
     }
@@ -253,10 +275,26 @@ impl<'a> Cur<'a> {
 
     /// Skip whitespace; true if any was skipped.
     pub(super) fn skip_ws(&mut self, m: &mut Meter) -> bool {
-        let rest = &self.text[self.at..];
+        let rest = sub(self.text, self.at..);
         let run = rest.len() - rest.trim_start().len();
         m.charge(run);
         self.at += run;
         run > 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reversed_bounds_read_nothing_instead_of_panicking() {
+        let src = Src::new("abcdef");
+        let mut m = Meter::new(100);
+        assert_eq!(src.slice(&mut m, 4, 2), "");
+        assert_eq!(src.slice_free(&mut m, 4, 2), "");
+        assert_eq!(src.find(&mut m, 4, 2, char::is_alphabetic), None);
+        assert_eq!(src.skip_while(&mut m, 4, 2, char::is_alphabetic), 4);
+        assert_eq!(src.window(&mut m, 4, 2, 0, 1), None);
     }
 }

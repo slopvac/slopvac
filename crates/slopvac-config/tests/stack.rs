@@ -15,16 +15,28 @@ struct Fixture {
 }
 
 impl Fixture {
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn new() -> Self {
         Self {
             dir: tempfile::tempdir().unwrap(),
         }
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn root(&self) -> PathBuf {
         fs::canonicalize(self.dir.path()).unwrap()
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn write(&self, rel: &str, text: &str) -> PathBuf {
         let path = self.root().join(rel);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -43,10 +55,18 @@ fn inputs(presets: &dyn Presets) -> Inputs<'_> {
     }
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn load_at(fx: &Fixture, rel: &str) -> LoadedConfig {
     load(&fx.root().join(rel), &NoPresets).unwrap()
 }
 
+#[expect(
+    clippy::panic,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn rejected(err: ConfigError) -> slopvac_config::Rejected {
     match err {
         ConfigError::Rejected(r) => *r,
@@ -534,7 +554,7 @@ fn a_pack_config_can_be_extended() {
     assert_eq!(
         r.source(&["thresholds", "max_errors"])
             .and_then(|s| s.file.clone()),
-        Some("pack:acme/base.toml".to_string())
+        Some("pack:acme/base.toml".to_owned())
     );
 }
 
@@ -549,6 +569,10 @@ fn an_unknown_pack_config_is_an_error_at_the_entry() {
     assert_eq!(r.diagnostics[0].code, Code::ExtendsMissing);
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn git_dir(fx: &Fixture, rel: &str) {
     fs::create_dir_all(fx.root().join(rel).join(".git")).unwrap();
 }

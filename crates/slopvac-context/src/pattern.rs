@@ -25,11 +25,11 @@ impl Pattern {
     fn build(source: &str, caseless: bool) -> Result<Self, Error> {
         let re =
             Regex::new(source, Options::new().caseless(caseless)).map_err(|e| Error::Pattern {
-                pattern: source.to_string(),
+                pattern: source.to_owned(),
                 message: e.to_string(),
             })?;
         Ok(Self {
-            source: source.to_string(),
+            source: source.to_owned(),
             re,
         })
     }

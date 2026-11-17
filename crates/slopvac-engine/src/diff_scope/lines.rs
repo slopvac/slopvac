@@ -133,8 +133,8 @@ pub(super) fn to_source_lines(
         if n == 0 {
             break;
         }
-        total += n as u64;
-        walk.feed(&chunk[..n]);
+        total += u64::try_from(n).map_err(std::io::Error::other)?;
+        walk.feed(chunk.get(..n).unwrap_or_default());
     }
     Ok((walk.finish(), total))
 }

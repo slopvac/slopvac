@@ -5,6 +5,7 @@
 //! the XML in another encoding. A fragment from them reports the span of the
 //! whole container and carries the converted text, so it is not fixable.
 
+use crate::sub;
 use std::io::Read;
 use std::ops::Range;
 
@@ -99,7 +100,7 @@ fn extract_png_with(bytes: &[u8], base: usize, budget: &mut Budget) -> Extractio
 
 fn done(fragments: Vec<Fragment>) -> Extraction {
     Extraction {
-        diagram: Some("drawio".to_string()),
+        diagram: Some("drawio".to_owned()),
         fragments,
     }
 }
@@ -197,7 +198,7 @@ fn cells(model: Node<'_, '_>, page: &str, origin: &Origin, out: &mut Vec<Fragmen
         let converted = if style_flag(style, "html") {
             html_to_text(value)
         } else {
-            value.trim().to_string()
+            value.trim().to_owned()
         };
         if converted.is_empty() {
             continue;
@@ -206,7 +207,7 @@ fn cells(model: Node<'_, '_>, page: &str, origin: &Origin, out: &mut Vec<Fragmen
             Origin::Direct(base) => {
                 let r = attr.range_value();
                 let span = base + r.start..base + r.end;
-                let raw = &model.document().input_text()[r];
+                let raw = sub(model.document().input_text(), r);
                 (span, (raw != converted).then_some(converted))
             }
             Origin::Whole(span) => (span.clone(), Some(converted)),
@@ -256,8 +257,8 @@ fn html_to_text_counted(html: &str, work: &mut usize) -> String {
     let last_close = html.rfind('>');
     while let Some(open) = rest.find('<') {
         *work += open + 1;
-        text.push_str(&rest[..open]);
-        let after = &rest[open + 1..];
+        text.push_str(sub(rest, ..open));
+        let after = sub(rest, open + 1..);
         let consumed = html.len() - rest.len() + open + 1;
         let starts_tag = after.starts_with(|c: char| c.is_ascii_alphabetic() || c == '/');
         let close = if starts_tag && last_close.is_some_and(|last| last >= consumed) {
@@ -268,7 +269,9 @@ fn html_to_text_counted(html: &str, work: &mut usize) -> String {
             None
         };
         if let Some(close) = close {
-            let tag = after[..close].trim_start_matches('/').to_ascii_lowercase();
+            let tag = sub(after, ..close)
+                .trim_start_matches('/')
+                .to_ascii_lowercase();
             let name: String = tag
                 .chars()
                 .take_while(char::is_ascii_alphanumeric)
@@ -278,7 +281,7 @@ fn html_to_text_counted(html: &str, work: &mut usize) -> String {
             {
                 text.push('\n');
             }
-            rest = &after[close + 1..];
+            rest = sub(after, close + 1..);
         } else {
             text.push('<');
             rest = after;
@@ -288,7 +291,7 @@ fn html_to_text_counted(html: &str, work: &mut usize) -> String {
     text.push_str(rest);
     let text = decode_entities(&text, work);
     let lines: Vec<&str> = text.lines().map(str::trim).collect();
-    lines.join("\n").trim().to_string()
+    lines.join("\n").trim().to_owned()
 }
 
 fn decode_entities(s: &str, work: &mut usize) -> String {
@@ -296,12 +299,15 @@ fn decode_entities(s: &str, work: &mut usize) -> String {
     let mut rest = s;
     while let Some(amp) = rest.find('&') {
         *work += amp + 1;
-        out.push_str(&rest[..amp]);
-        let after = &rest[amp + 1..];
-        let window = &after.as_bytes()[..after.len().min(9)];
+        out.push_str(sub(rest, ..amp));
+        let after = sub(rest, amp + 1..);
+        let window = after
+            .as_bytes()
+            .get(..after.len().min(9))
+            .unwrap_or_default();
         *work += window.len();
         let decoded = window.iter().position(|&b| b == b';').and_then(|n| {
-            let ch = match &after[..n] {
+            let ch = match sub(after, ..n) {
                 "amp" => '&',
                 "lt" => '<',
                 "gt" => '>',
@@ -321,7 +327,7 @@ fn decode_entities(s: &str, work: &mut usize) -> String {
         });
         if let Some((ch, n)) = decoded {
             out.push(ch);
-            rest = &after[n + 1..];
+            rest = sub(after, n + 1..);
         } else {
             out.push('&');
             rest = after;
@@ -339,7 +345,7 @@ fn inflate_page(payload: &str, budget: &mut Budget) -> Option<String> {
         .take(budget.inflated + 1)
         .read_to_end(&mut inflated)
         .ok()?;
-    let size = inflated.len() as u64;
+    let size = u64::try_from(inflated.len()).ok()?;
     if size > budget.inflated {
         return None;
     }
@@ -350,13 +356,13 @@ fn inflate_page(payload: &str, budget: &mut Budget) -> Option<String> {
 fn percent_decode(bytes: &[u8]) -> Option<String> {
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' {
+    while let Some(&byte) = bytes.get(i) {
+        if byte == b'%' {
             let hex = std::str::from_utf8(bytes.get(i + 1..i + 3)?).ok()?;
             out.push(u8::from_str_radix(hex, 16).ok()?);
             i += 3;
         } else {
-            out.push(bytes[i]);
+            out.push(byte);
             i += 1;
         }
     }
@@ -371,18 +377,19 @@ fn png_mxfile(bytes: &[u8]) -> Option<(Range<usize>, Vec<u8>)> {
     }
     let mut at = SIGNATURE.len();
     while at + 8 <= bytes.len() {
-        let len = u32::from_be_bytes(bytes[at..at + 4].try_into().ok()?) as usize;
-        let kind = &bytes[at + 4..at + 8];
+        let len =
+            usize::try_from(u32::from_be_bytes(bytes.get(at..at + 4)?.try_into().ok()?)).ok()?;
+        let kind = bytes.get(at + 4..at + 8)?;
         let data = at + 8..at.checked_add(8)?.checked_add(len)?;
         if data.end.checked_add(4)? > bytes.len() {
             return None;
         }
         if kind == b"tEXt" {
-            let chunk = &bytes[data.clone()];
+            let chunk = bytes.get(data.clone())?;
             if let Some(nul) = chunk.iter().position(|&b| b == 0)
-                && &chunk[..nul] == b"mxfile"
+                && chunk.get(..nul) == Some(b"mxfile".as_slice())
             {
-                return Some((data, chunk[nul + 1..].to_vec()));
+                return Some((data, chunk.get(nul + 1..)?.to_vec()));
             }
         }
         if kind == b"IEND" {
@@ -395,7 +402,7 @@ fn png_mxfile(bytes: &[u8]) -> Option<(Range<usize>, Vec<u8>)> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Format, Role, extract, extract_bytes};
+    use crate::{Format, Role, extract, extract_bytes, sub};
 
     const COMPRESSED: &str = "jU9bCgMhDDxN/tXcoPbx1UMIBlqIRqJb7O3r1oWWwkI/ApOZTJgB9KlfNJTbVSIx4AnQq0ibKHVPzODMPQIewTkzBtx5R7Vv1ZSglNs/BjcNj8ALTcZLKkq1Uhx8HpnmRW1P3i5UlhxpfWABD9sD0kZ9N4T9DjHAp+BYfvq/AA==";
     const PNG_TEXT: &str = "%3Cmxfile%3E%3Cdiagram%20name%3D%22P%22%3E%3CmxGraphModel%3E%3Croot%3E%3CmxCell%20id%3D%222%22%20value%3D%22In%20a%20PNG%22%20vertex%3D%221%22%20parent%3D%221%22%2F%3E%3C%2Froot%3E%3C%2FmxGraphModel%3E%3C%2Fdiagram%3E%3C%2Fmxfile%3E";
@@ -419,7 +426,7 @@ mod tests {
                     f.role,
                     f.text
                         .clone()
-                        .unwrap_or_else(|| src[f.span.clone()].to_string()),
+                        .unwrap_or_else(|| sub(src, f.span.clone()).to_owned()),
                     f.fixable(),
                 )
             })
@@ -431,11 +438,11 @@ mod tests {
         assert_eq!(
             found(PLAIN),
             [
-                (Role::Node, "API gateway".to_string(), true),
-                (Role::Edge, "Reads & writes".to_string(), false),
-                (Role::Text, "Legend\nblue is new".to_string(), false),
-                (Role::Group, "Backend".to_string(), true),
-                (Role::Node, "Wrapped label".to_string(), true),
+                (Role::Node, "API gateway".to_owned(), true),
+                (Role::Edge, "Reads & writes".to_owned(), false),
+                (Role::Text, "Legend\nblue is new".to_owned(), false),
+                (Role::Group, "Backend".to_owned(), true),
+                (Role::Node, "Wrapped label".to_owned(), true),
             ]
         );
     }
@@ -455,7 +462,7 @@ mod tests {
         assert_eq!(ex.fragments.len(), 1);
         let f = &ex.fragments[0];
         assert_eq!(f.text.as_deref(), Some("Compressed node"));
-        assert_eq!(&src[f.span.clone()], COMPRESSED);
+        assert_eq!(sub(&src, f.span.clone()), COMPRESSED);
         assert!(!f.fixable());
     }
 
@@ -470,7 +477,7 @@ mod tests {
             format!("<svg xmlns=\"http://www.w3.org/2000/svg\" content=\"{escaped}\"><g/></svg>");
         let ex = extract(Format::DrawioSvg, &svg, 0);
         assert_eq!(ex.fragments[0].text.as_deref(), Some("Compressed node"));
-        assert_eq!(&svg[ex.fragments[0].span.clone()], escaped);
+        assert_eq!(sub(&svg, ex.fragments[0].span.clone()), escaped);
     }
 
     #[test]
@@ -562,7 +569,7 @@ mod limit_tests {
     fn inflation_budget_is_shared_across_pages() {
         let page = compressed_page(&model(50));
         let src = file(&[page.clone(), page]);
-        let one_page_inflated = model(50).len() as u64 * 3;
+        let one_page_inflated = u64::try_from(model(50).len()).unwrap() * 3;
         let mut roomy = Budget {
             inflated: one_page_inflated * 2 + 1024,
             nodes: MAX_NODES,

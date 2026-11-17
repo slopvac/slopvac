@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for html reference.
 //! Parity with the Python HTML projection on the documents in `fixtures/html/reference.json`.
 //!
 //! The fixture comes from `slopvac.analyze._parse_html`. See `fixtures/html/divergences.md`
@@ -9,6 +9,10 @@ use slopvac_model::Span;
 use slopvac_parse::parse_html;
 
 /// Words of the projected prose and the source text each one maps to.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn words(source: &str) -> Vec<(String, String)> {
     let doc = parse_html(source, Span::new(0, source.len()).unwrap()).unwrap();
     let mut out = Vec::new();
@@ -33,10 +37,18 @@ fn words(source: &str) -> Vec<(String, String)> {
     out
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn cases() -> Vec<Value> {
     serde_json::from_str(include_str!("fixtures/html/reference.json")).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn pairs(case: &Value) -> Vec<(String, String)> {
     case["words"]
         .as_array()

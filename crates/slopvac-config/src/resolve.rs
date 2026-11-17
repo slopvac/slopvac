@@ -1,7 +1,7 @@
 //! Merge the layers for one file and keep the history of every value.
 
+use crate::{append, append_line};
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::path::Path;
 
 use serde::Serialize;
@@ -379,7 +379,7 @@ pub fn describe(source: &Source) -> String {
         out.push(' ');
         out.push_str(file);
         if let (Some(line), Some(col)) = (source.line, source.column) {
-            let _ = write!(out, ":{line}:{col}");
+            append(&mut out, format_args!(":{line}:{col}"));
         }
     }
     out
@@ -389,14 +389,26 @@ pub fn describe(source: &Source) -> String {
 #[must_use]
 pub fn render_explain(config: &LoadedConfig, explained: &[Explained]) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "config root: {}", config.root.display());
+    append_line(
+        &mut out,
+        format_args!("config root: {}", config.root.display()),
+    );
     for f in &config.files {
-        let _ = writeln!(out, "config file: {} ({})", f.display, f.layer.name());
+        append_line(
+            &mut out,
+            format_args!("config file: {} ({})", f.display, f.layer.name()),
+        );
     }
     for e in explained {
-        let _ = writeln!(out, "{} = {}  [{}]", e.path, e.value, describe(&e.source));
+        append_line(
+            &mut out,
+            format_args!("{} = {}  [{}]", e.path, e.value, describe(&e.source)),
+        );
         for o in e.overridden.iter().rev() {
-            let _ = writeln!(out, "    replaced {}  [{}]", o.value, describe(&o.source));
+            append_line(
+                &mut out,
+                format_args!("    replaced {}  [{}]", o.value, describe(&o.source)),
+            );
         }
     }
     out

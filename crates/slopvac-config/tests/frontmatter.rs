@@ -451,6 +451,10 @@ fn fence_lines_ignore_trailing_unicode_whitespace_as_in_2x() {
 }
 
 /// A negative fixture is only a test of ownership if the block really fails to parse.
+#[expect(
+    clippy::panic,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn assert_malformed(doc: &str) {
     let block = extract(doc).unwrap_or_else(|| panic!("no block in {doc:?}"));
     assert!(

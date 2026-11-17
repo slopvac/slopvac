@@ -8,12 +8,6 @@
 //! It prints the totals and the ratio; it asserts only that both engines find the same
 //! matches, so a drift between them still fails.
 
-#![allow(
-    missing_docs,
-    clippy::cast_precision_loss,
-    clippy::unchecked_time_subtraction
-)]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -21,60 +15,65 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use slopvac_text::Pattern;
 
-fn files(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) {
-    let mut entries: Vec<_> = fs::read_dir(dir)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .collect();
+type Failure = Box<dyn std::error::Error>;
+
+fn files(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) -> Result<(), Failure> {
+    let mut entries = fs::read_dir(dir)?
+        .map(|e| e.map(|e| e.path()))
+        .collect::<Result<Vec<_>, _>>()?;
     entries.sort();
     for path in entries {
         if path.is_dir() {
-            files(&path, ext, out);
+            files(&path, ext, out)?;
         } else if path.extension().is_some_and(|e| e == ext) {
             out.push(path);
         }
     }
+    Ok(())
 }
 
 /// `(pattern, ignore_case)` of every `pattern`-kind rule in the core rule fixtures.
-fn core_patterns(root: &Path) -> Vec<(String, bool)> {
+fn core_patterns(root: &Path) -> Result<Vec<(String, bool)>, Failure> {
     let mut paths = Vec::new();
     files(
         &root.join("../slopvac-rules/tests/fixtures/core-v3"),
         "json",
         &mut paths,
-    );
+    )?;
     let mut out = Vec::new();
     for path in paths {
-        let doc: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        let doc: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
         for rule in doc["rules"].as_array().into_iter().flatten() {
             let m = &rule["match"];
             if m["kind"] == "pattern" {
                 out.push((
-                    m["pattern"].as_str().unwrap().to_owned(),
+                    m["pattern"]
+                        .as_str()
+                        .ok_or("a pattern rule has no pattern")?
+                        .to_owned(),
                     m["ignore_case"].as_bool().unwrap_or(false),
                 ));
             }
         }
     }
-    out
+    Ok(out)
 }
 
 #[test]
 #[ignore = "benchmark; run with --release --ignored --nocapture"]
-fn interpreter_against_jit_on_core_rules_over_the_eval_corpus() {
+fn interpreter_against_jit_on_core_rules_over_the_eval_corpus() -> Result<(), Failure> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let patterns = core_patterns(root);
+    let patterns = core_patterns(root)?;
     let mut corpus_files = Vec::new();
     files(
         &root.join("../../evals/corpus"),
         "corpus",
         &mut corpus_files,
-    );
-    let texts: Vec<String> = corpus_files
+    )?;
+    let texts = corpus_files
         .iter()
-        .map(|p| fs::read_to_string(p).unwrap())
-        .collect();
+        .map(fs::read_to_string)
+        .collect::<Result<Vec<String>, _>>()?;
     let bytes: usize = texts.iter().map(String::len).sum();
 
     let mut totals = [Duration::ZERO; 2];
@@ -102,8 +101,8 @@ fn interpreter_against_jit_on_core_rules_over_the_eval_corpus() {
             totals[mode] += start.elapsed();
         }
         per_pattern.push((
-            totals[0] - before[0],
-            totals[1] - before[1],
+            totals[0].saturating_sub(before[0]),
+            totals[1].saturating_sub(before[1]),
             source.chars().take(70).collect(),
         ));
     }
@@ -115,7 +114,7 @@ fn interpreter_against_jit_on_core_rules_over_the_eval_corpus() {
         "{compiled} of {} core patterns, {} files, {:.1} MiB",
         patterns.len(),
         texts.len(),
-        bytes as f64 / (1024.0 * 1024.0)
+        f64::from(u32::try_from(bytes)?) / (1024.0 * 1024.0)
     );
     println!(
         "interpreter {:?} ({} matches, {} limit hits)",
@@ -130,4 +129,5 @@ fn interpreter_against_jit_on_core_rules_over_the_eval_corpus() {
         totals[0].as_secs_f64() / totals[1].as_secs_f64()
     );
     assert_eq!(matches[0], matches[1], "the engines disagree");
+    Ok(())
 }

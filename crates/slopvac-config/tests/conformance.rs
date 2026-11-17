@@ -13,6 +13,11 @@ fn corpus(kind: &str) -> PathBuf {
         .join(kind)
 }
 
+#[expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn files(dir: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = fs::read_dir(dir)
         .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
@@ -25,6 +30,10 @@ fn files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn cases(dir: &Path) -> BTreeMap<String, String> {
     let text = fs::read_to_string(dir.join("cases.toml")).unwrap();
     let root = parse_toml(&text).unwrap();
@@ -36,6 +45,10 @@ fn cases(dir: &Path) -> BTreeMap<String, String> {
         .collect()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn run(kind: &str, path: &Path) -> Vec<Diagnostic> {
     let text = fs::read_to_string(path).unwrap();
     match kind {
@@ -55,6 +68,10 @@ fn check_valid(kind: &str) {
     }
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn check_invalid(kind: &str) {
     let dir = corpus(kind).join("invalid");
     let expected = cases(&dir);

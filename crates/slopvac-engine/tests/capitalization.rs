@@ -1,12 +1,10 @@
 //! The `capitalization` rule kind, in the sentence-case style: the 2.x `title-case-heading`
 //! logic. Expected results come from the 2.x pattern rule run on the same headings.
 
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
 
 use common::{category, id, places, rule, ruleset, settings};
@@ -22,12 +20,27 @@ fn sentence_rule(allowed: &[&str]) -> Value {
     )
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn engine_with(matcher: &Value, locale_allow: &[&str]) -> Engine {
     let mut s = settings();
     s.allowed_words = locale_allow.iter().map(|w| (*w).to_owned()).collect();
-    Engine::new(vec![ruleset(vec![category("cat", &[matcher.clone()])])], s).unwrap()
+    Engine::new(
+        vec![ruleset(vec![category(
+            "cat",
+            std::slice::from_ref(matcher),
+        )])],
+        s,
+    )
+    .unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn flagged(engine: &Engine, source: &str) -> Vec<String> {
     engine
         .lint(&Input::markdown("a.md", source))
@@ -93,7 +106,7 @@ fn headings_that_are_sentence_case_or_hold_identifiers_pass() {
 #[test]
 fn only_headings_are_read() {
     let e = engine_with(&sentence_rule(&[]), &[]);
-    assert!(flagged(&e, "Configure The Server\n").is_empty());
+    assert_eq!(flagged(&e, "Configure The Server\n"), Vec::<String>::new());
 }
 
 #[test]
@@ -122,14 +135,14 @@ fn allowed_words_of_the_rule_do_not_count_as_capitalised_words() {
     let allowed = engine_with(&sentence_rule(&["Brave", "Search"]), &[]);
     let heading = "# Configure Brave Search\n";
     assert_eq!(flagged(&plain, heading), ["Configure Brave Search"]);
-    assert!(flagged(&allowed, heading).is_empty());
+    assert_eq!(flagged(&allowed, heading), Vec::<String>::new());
 }
 
 #[test]
 fn locale_allow_words_are_exempt_whatever_their_case() {
     let heading = "# Configure Brave Search\n";
     let e = engine_with(&sentence_rule(&[]), &["brave", "SEARCH"]);
-    assert!(flagged(&e, heading).is_empty());
+    assert_eq!(flagged(&e, heading), Vec::<String>::new());
 }
 
 #[test]
@@ -151,7 +164,7 @@ fn raw_rule(allowed: &[&str]) -> Value {
 }
 
 fn raw_flagged(engine: &Engine, lines: &[&str]) -> Vec<String> {
-    let source = lines.join("\n") + "\n";
+    let source = format!("{}\n", lines.join("\n"));
     flagged(engine, &source)
 }
 
@@ -167,7 +180,10 @@ fn backtick_spans_with_spaces_are_one_word() {
 fn an_unclosed_or_glued_backtick_is_not_a_code_span() {
     // Expected from the 2.x regex: neither line matches.
     let e = engine_with(&raw_rule(&[]), &[]);
-    assert!(raw_flagged(&e, &["Foo Bar `Baz", "Foo Bar `a`b"]).is_empty());
+    assert_eq!(
+        raw_flagged(&e, &["Foo Bar `Baz", "Foo Bar `a`b"]),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -205,7 +221,10 @@ fn capitalization_matches_the_2x_regex_on_generated_headings() {
         .collect();
     assert!(cases.iter().filter(|(_, m)| *m).count() > 100);
     let e = engine_with(&raw_rule(&allowed), &[]);
-    let source = cases.iter().map(|(t, _)| *t).collect::<Vec<_>>().join("\n") + "\n";
+    let source = format!(
+        "{}\n",
+        cases.iter().map(|(t, _)| *t).collect::<Vec<_>>().join("\n")
+    );
     let doc = e.lint(&Input::markdown("a.md", &source)).unwrap();
     let got: std::collections::BTreeSet<usize> =
         doc.findings.iter().map(|f| f.start.line() - 1).collect();
@@ -233,7 +252,7 @@ fn styles_other_than_sentence_leave_the_check_incomplete() {
     let doc = engine_with(&title, &[])
         .lint(&Input::markdown("a.md", "# Configure The Server\n"))
         .unwrap();
-    assert!(doc.findings.is_empty());
+    assert_eq!(doc.findings, []);
     assert_eq!(doc.unchecked.len(), 1);
     let n = &doc.unchecked[0];
     assert_eq!(n.code.as_str(), "rule-style-not-implemented");

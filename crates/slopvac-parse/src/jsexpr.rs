@@ -14,6 +14,7 @@
 //! expression so far. The checker remembers how far it scanned, so a long expression costs
 //! one pass and not one pass per brace.
 
+use crate::sub;
 use std::cell::{Cell, RefCell};
 
 use markdown::{MdxExpressionKind, MdxSignal};
@@ -250,7 +251,7 @@ impl ExpressionChecker {
             *scan = Scan::default();
         }
         let done = scan.seen.len();
-        scan.feed(&code[done..]);
+        scan.feed(sub(code, done..));
         if scan.retries >= MAX_RETRIES {
             scan.doubtful = true;
         }
@@ -281,9 +282,10 @@ impl ExpressionChecker {
 
 #[cfg(test)]
 mod tests {
-    use markdown::MdxSignal;
+    use crate::sub;
     use markdown::mdast::Node;
     use markdown::{Constructs, ParseOptions, to_mdast};
+    use markdown::{MdxExpressionParse, MdxSignal};
     use proptest::prelude::*;
 
     use super::{ExpressionChecker, MAX_WORK};
@@ -320,8 +322,11 @@ mod tests {
         let checker = ExpressionChecker::default();
         ParseOptions {
             constructs: Constructs::mdx(),
-            mdx_expression_parse: hooked
-                .then(|| Box::new(move |code: &str, kind: &_| checker.check(code, kind)) as _),
+            mdx_expression_parse: hooked.then(|| {
+                let parse: Box<MdxExpressionParse> =
+                    Box::new(move |code: &str, kind: &_| checker.check(code, kind));
+                parse
+            }),
             ..ParseOptions::mdx()
         }
     }
@@ -376,7 +381,7 @@ mod tests {
         let checker = ExpressionChecker::default();
         let kind = markdown::MdxExpressionKind::Expression;
         for (i, c) in content.char_indices() {
-            if c == '}' && !on_signal(&checker.check(&content[..i], &kind)) {
+            if c == '}' && !on_signal(&checker.check(sub(content, ..i), &kind)) {
                 break;
             }
         }
@@ -410,7 +415,10 @@ mod tests {
                 continue;
             }
             asked += i;
-            if matches!(checker.check(&content[..i], &kind), MdxSignal::Error(..)) {
+            if matches!(
+                checker.check(sub(&content, ..i), &kind),
+                MdxSignal::Error(..)
+            ) {
                 failed = true;
                 break;
             }

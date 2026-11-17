@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 use slopvac_pcre2::Regex;
 
-use crate::pattern::{TextError, find_all, matches_start, re, re_i};
+use crate::pattern::{TextError, find_all, matches_start, re, re_i, sub};
 use crate::pyrules::py_isspace;
 
 /// A clause boundary is where a reader starts holding a second idea. Excluded on purpose:
@@ -67,7 +67,7 @@ pub fn coordinated_items(sentence: &str) -> Result<usize, TextError> {
     let Some(&(start, _)) = find_all(&COORDINATING_CONJUNCTION, sentence)?.first() else {
         return Ok(0);
     };
-    Ok(sentence[..start].matches(',').count() + 2)
+    Ok(sub(sentence, ..start).matches(',').count() + 2)
 }
 
 /// Words that never carry a noun stack even though they sit between nouns: articles,
@@ -410,11 +410,11 @@ fn stack_units(words: &[&str]) -> usize {
 /// The units of a run once a trailing participle or predicate adjective is cut, when a
 /// word of the run carries a noun suffix.
 fn closed_stack(run: &[&str]) -> usize {
-    let mut end = run.len();
-    while end > 0 && (is_participle(run[end - 1]) || is_predicate_adjective(run[end - 1])) {
-        end -= 1;
-    }
-    let trimmed = &run[..end];
+    let end = run
+        .iter()
+        .rposition(|w| !(is_participle(w) || is_predicate_adjective(w)))
+        .map_or(0, |last| last + 1);
+    let trimmed = run.get(..end).unwrap_or_default();
     if trimmed.is_empty() || !trimmed.iter().any(|w| has_noun_suffix(w)) {
         return 0;
     }
@@ -431,9 +431,9 @@ pub fn longest_noun_stack(sentence: &str) -> Result<usize, TextError> {
     let mut run: Vec<&str> = Vec::new();
     let mut previous_end = 0;
     for (start, end) in find_all(&TOKEN, sentence)? {
-        let gap = &sentence[previous_end..start];
+        let gap = sub(sentence, previous_end..start);
         previous_end = end;
-        let token = sentence[start..end].trim_matches('\'');
+        let token = sub(sentence, start..end).trim_matches('\'');
         let broken = !gap.is_empty() && !gap.chars().all(py_isspace);
         let lower = token.to_ascii_lowercase();
         let stackable = !token.is_empty()
@@ -495,23 +495,23 @@ pub fn without_code_and_comments(markup: &str) -> Result<String, TextError> {
     let mut out = String::with_capacity(markup.len());
     let mut last = 0;
     for (start, end) in find_all(&INLINE_CODE, markup)? {
-        out.push_str(&markup[last..start]);
+        out.push_str(sub(markup, last..start));
         out.push(' ');
         last = end;
     }
-    out.push_str(&markup[last..]);
+    out.push_str(sub(markup, last..));
     let mut blanked = String::with_capacity(out.len());
     last = 0;
     for (start, end) in find_all(&HTML_COMMENT, &out)? {
-        blanked.push_str(&out[last..start]);
+        blanked.push_str(sub(&out, last..start));
         blanked.extend(
-            out[start..end]
+            sub(&out, start..end)
                 .chars()
                 .map(|c| if c == '\n' { c } else { ' ' }),
         );
         last = end;
     }
-    blanked.push_str(&out[last..]);
+    blanked.push_str(sub(&out, last..));
     Ok(blanked)
 }
 

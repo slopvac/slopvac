@@ -92,7 +92,7 @@ fn nonblocking(options: &mut OpenOptions) -> std::io::Result<()> {
     use cap_std::fs::OpenOptionsExt;
     // A FIFO swapped in after the check must not block the open.
     let flag = i32::try_from(rustix::fs::OFlags::NONBLOCK.bits())
-        .map_err(|_| std::io::Error::other("O_NONBLOCK does not fit"))?;
+        .map_err(|e| std::io::Error::other(format!("O_NONBLOCK does not fit: {e}")))?;
     options.custom_flags(flag);
     Ok(())
 }
@@ -231,7 +231,10 @@ mod unix {
 
     /// Whether reading an ACL attribute says there is one: a value means yes, no attribute
     /// or no ACL support means no, and a value too big for the buffer means yes.
-    #[cfg_attr(not(any(target_os = "linux", target_os = "android")), allow(dead_code))]
+    #[cfg_attr(
+        all(not(test), not(any(target_os = "linux", target_os = "android"))),
+        expect(dead_code, reason = "only the Linux build reads ACL attributes")
+    )]
     pub(super) fn acl_decision(read: Result<usize, Errno>) -> std::io::Result<bool> {
         match read {
             Ok(len) => Ok(len > 0),
@@ -251,7 +254,10 @@ mod unix {
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the signature matches the other target, where the call can fail"
+    )]
     fn has_acl(_: impl std::os::fd::AsFd, _: &str) -> std::io::Result<bool> {
         Ok(false)
     }
@@ -313,6 +319,10 @@ mod unix {
     impl Drop for Temp {
         fn drop(&mut self) {
             if self.armed {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "cleanup on drop: a leftover temporary file is harmless, and a destructor has no caller to report to"
+                )]
                 let _ = self.parent.remove_file(&self.name);
             }
         }
@@ -380,6 +390,10 @@ mod unix {
             self.parent.rename(&temp.name, &self.parent, &self.name)?;
             temp.armed = false;
             if let Ok(dir) = self.parent.open(".") {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "syncing the directory is best effort after the rename has succeeded"
+                )]
                 let _ = dir.sync_all();
             }
             Ok(None)

@@ -22,6 +22,20 @@ mod projection;
 #[cfg(test)]
 mod work;
 
+/// The span from `start` to `end`, with `end` raised to `start` when it falls short. Callers
+/// pass offsets that already ascend, so the raise does not change anything.
+pub(crate) fn span_between(start: usize, end: usize) -> slopvac_model::Span {
+    slopvac_model::Span::new(start, end.max(start))
+        .unwrap_or_else(|_| slopvac_model::Span::empty(start))
+}
+
+/// The part of `text` in `range`. Offsets in this crate come from the Markdown and HTML
+/// scanners, from searches for ASCII delimiters, and from `char_indices`, so they lie on
+/// character boundaries and the empty fallback does not occur.
+pub(crate) fn sub<I: std::slice::SliceIndex<str, Output = str>>(text: &str, range: I) -> &str {
+    text.get(range).unwrap_or_default()
+}
+
 pub use document::{
     Admonition, AdmonitionSyntax, Block, BlockKind, Container, Document, HtmlBlock, ParseError,
 };

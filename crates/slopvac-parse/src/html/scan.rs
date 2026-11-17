@@ -278,7 +278,7 @@ impl Feeder<'_> {
     }
 
     /// Whether as many `<table>` elements are open as the cap allows.
-    fn too_many_tables(&mut self) -> bool {
+    fn too_many_tables(&self) -> bool {
         if self.depth_bound() < MAX_TABLES {
             return false;
         }
@@ -295,7 +295,11 @@ impl Feeder<'_> {
     /// HTML. The tree builder only says whether the current node is foreign, so this finds the
     /// node on the stack of open elements: the open elements form a chain from the document,
     /// and the end of the chain is the current node.
-    fn enclosing_context(&mut self) -> Vec<Ctx> {
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
+    fn enclosing_context(&self) -> Vec<Ctx> {
         if !self
             .tb
             .adjusted_current_node_present_but_not_in_html_namespace()
@@ -506,11 +510,14 @@ impl Feeder<'_> {
 
     /// Feed a run of decoded characters with their source ranges.
     fn text(&mut self, chars: Vec<(char, PieceKind, std::ops::Range<usize>)>) {
-        if chars.is_empty() || self.dom.exhausted.get() {
+        let (Some(first), Some(last)) = (chars.first(), chars.last()) else {
+            return;
+        };
+        if self.dom.exhausted.get() {
             return;
         }
         self.dom.charge(chars.len());
-        let range = chars[0].2.start..chars[chars.len() - 1].2.end;
+        let range = first.2.start..last.2.end;
         let mut run = String::new();
         let mut ignore_lf = std::mem::take(&mut self.ignore_lf);
         for (decoded, kind, src) in chars {
@@ -863,7 +870,7 @@ fn skip_markup(
     in_cdata: &mut bool,
 ) -> usize {
     loop {
-        let rest = &source[at.min(source.len())..];
+        let rest = source.get(at.min(source.len())..).unwrap_or_default();
         if !raw && !*in_cdata && rest.starts_with(b"</>") {
             at += 3;
         } else if foreign && !*in_cdata && rest.starts_with(b"<![CDATA[") {

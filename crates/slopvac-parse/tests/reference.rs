@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for reference.
 //! Parity with the Python projection on the documents in `fixtures/reference.json`.
 //!
 //! The fixture comes from `slopvac.projection.project`. See `fixtures/divergences.md` for
@@ -9,6 +9,10 @@ use slopvac_model::Span;
 use slopvac_parse::{parse_markdown, parse_mdx};
 
 /// Words of the projected prose and the source text each one maps to.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn words(source: &str, mdx: bool) -> Vec<(String, String)> {
     let body = Span::new(0, source.len()).unwrap();
     let doc = if mdx {
@@ -39,10 +43,18 @@ fn words(source: &str, mdx: bool) -> Vec<(String, String)> {
     out
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn cases() -> Vec<Value> {
     serde_json::from_str(include_str!("fixtures/reference.json")).unwrap()
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn pairs(case: &Value) -> Vec<(String, String)> {
     case["words"]
         .as_array()

@@ -20,6 +20,13 @@ pub use signals::{PACK, ProseBlock, Signal, SignalHit, check_labels, check_prose
 
 use std::ops::Range;
 
+/// The part of `text` in `range`. Every offset in this crate comes from a search for an
+/// ASCII delimiter or from `char_indices`, so it lies on a character boundary and the empty
+/// fallback does not occur.
+pub(crate) fn sub<I: std::slice::SliceIndex<str, Output = str>>(text: &str, range: I) -> &str {
+    text.get(range).unwrap_or_default()
+}
+
 /// What a fragment is in the diagram. Rules use it for exceptions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Role {
@@ -158,8 +165,8 @@ pub(crate) fn lines(src: &str) -> Vec<SourceLine<'_>> {
     let mut out = Vec::new();
     let mut start = 0;
     let mut pos = 0;
-    while pos < bytes.len() {
-        let terminator = match bytes[pos] {
+    while let Some(&byte) = bytes.get(pos) {
+        let terminator = match byte {
             b'\r' if bytes.get(pos + 1) == Some(&b'\n') => 2,
             b'\n' | b'\r' => 1,
             _ => {
@@ -169,7 +176,7 @@ pub(crate) fn lines(src: &str) -> Vec<SourceLine<'_>> {
         };
         out.push(SourceLine {
             start,
-            text: &src[start..pos],
+            text: sub(src, start..pos),
         });
         pos += terminator;
         start = pos;
@@ -177,7 +184,7 @@ pub(crate) fn lines(src: &str) -> Vec<SourceLine<'_>> {
     if start < bytes.len() {
         out.push(SourceLine {
             start,
-            text: &src[start..],
+            text: sub(src, start..),
         });
     }
     out

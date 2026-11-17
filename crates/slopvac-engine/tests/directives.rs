@@ -1,11 +1,9 @@
 //! Inline directives.
 
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
 
 use common::{category, engine, places, ruleset, settings, tokens};
@@ -21,6 +19,10 @@ fn dull() -> serde_json::Value {
     )
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn lint(source: &str) -> Document {
     engine(&[dull()])
         .lint(&Input::markdown("a.md", source))
@@ -41,7 +43,7 @@ fn allow_with_a_listed_reason_suppresses_the_next_block() {
     let doc = lint(&format!(
         "{ALLOW}\nPlease leverage it,\nand leverage it again.\n"
     ));
-    assert!(doc.findings.is_empty());
+    assert_eq!(doc.findings, []);
 }
 
 #[test]
@@ -121,7 +123,7 @@ fn allow_for_a_rule_that_is_off_stays_silent() {
             "<!-- slopvac-allow: rule=core:cat.dull reason=whatever -->\nText.\n",
         ))
         .unwrap();
-    assert!(doc.findings.is_empty());
+    assert_eq!(doc.findings, []);
 }
 
 #[test]

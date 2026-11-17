@@ -37,7 +37,9 @@ pub(super) fn lexical_clean(path: &Path) -> PathBuf {
                     _ => out.push(".."),
                 }
             }
-            other => out.push(other),
+            other @ (Component::Prefix(_) | Component::RootDir | Component::Normal(_)) => {
+                out.push(other);
+            }
         }
     }
     if out.as_os_str().is_empty() {
@@ -57,11 +59,15 @@ pub(super) fn resolve_target(path: &Path) -> PathBuf {
     let Some(last_parent) = components.iter().rposition(|c| *c == Component::ParentDir) else {
         return lexical_clean(path);
     };
-    let prefix: PathBuf = components[..=last_parent].iter().collect();
+    let prefix: PathBuf = components
+        .get(..=last_parent)
+        .unwrap_or_default()
+        .iter()
+        .collect();
     let Ok(mut resolved) = prefix.canonicalize() else {
         return lexical_clean(path);
     };
-    resolved.extend(&components[last_parent + 1..]);
+    resolved.extend(components.get(last_parent + 1..).unwrap_or_default());
     lexical_clean(&resolved)
 }
 
@@ -89,9 +95,9 @@ fn expand(chars: &[char], limit: usize, escapes: bool, out: &mut Vec<String>) ->
     let mut ends = commas;
     ends.push(close);
     for (start, end) in starts.into_iter().zip(ends) {
-        let mut next: Vec<char> = chars[..open].to_vec();
-        next.extend(&chars[start..end]);
-        next.extend(&chars[close + 1..]);
+        let mut next: Vec<char> = chars.get(..open).unwrap_or_default().to_vec();
+        next.extend(chars.get(start..end).unwrap_or_default());
+        next.extend(chars.get(close + 1..).unwrap_or_default());
         if !expand(&next, limit, escapes, out) {
             return false;
         }
@@ -102,8 +108,8 @@ fn expand(chars: &[char], limit: usize, escapes: bool, out: &mut Vec<String>) ->
 /// The first top-level `{...}`: its open and close index and its top-level commas.
 fn first_group(chars: &[char], escapes: bool) -> Option<(usize, usize, Vec<usize>)> {
     let mut i = 0;
-    while i < chars.len() {
-        match chars[i] {
+    while let Some(&current) = chars.get(i) {
+        match current {
             '\\' if escapes => i += 2,
             '[' => i = class_end(chars, i).unwrap_or(i + 1),
             '{' => return group_from(chars, i, escapes),
@@ -117,8 +123,8 @@ fn group_from(chars: &[char], open: usize, escapes: bool) -> Option<(usize, usiz
     let mut depth = 0usize;
     let mut commas = Vec::new();
     let mut i = open;
-    while i < chars.len() {
-        match chars[i] {
+    while let Some(&current) = chars.get(i) {
+        match current {
             '\\' if escapes => i += 1,
             '[' => i = class_end(chars, i).map_or(i, |end| end - 1),
             '{' => depth += 1,

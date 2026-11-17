@@ -47,6 +47,7 @@ mod model;
 mod run;
 pub mod trust;
 
+use crate::span_between;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -214,7 +215,11 @@ impl RstError {
                  interpreter that can import docutils 0.21 or later ({detail}). Set \
                  {OVERRIDE_VARIABLE} to an absolute interpreter path to choose one."
             ),
-            other => format!("RST target(s) not checked ({list}): {other}"),
+            other @ (Self::Spawn { .. }
+            | Self::Timeout { .. }
+            | Self::OutputTooLarge { .. }
+            | Self::Failed { .. }
+            | Self::InvalidOutput { .. }) => format!("RST target(s) not checked ({list}): {other}"),
         }
     }
 
@@ -279,13 +284,8 @@ impl RstAdapter {
                     .to_owned(),
             );
         }
-        let from_env;
-        let search = if let Some(path) = &self.options.search_path {
-            path
-        } else {
-            from_env = std::env::var_os("PATH").unwrap_or_default();
-            &from_env
-        };
+        let from_env = std::env::var_os("PATH").unwrap_or_default();
+        let search = self.options.search_path.as_ref().unwrap_or(&from_env);
         let Discovery {
             interpreter,
             skipped,
@@ -307,7 +307,7 @@ impl RstAdapter {
         };
         let bytes = run::run(
             interpreter,
-            &source.as_bytes()[bom..],
+            source.as_bytes().get(bom..).unwrap_or_default(),
             self.options.timeout,
             self.options.max_output_bytes,
         )?;
@@ -335,7 +335,12 @@ fn describe(skipped: &[Skipped]) -> String {
     for item in skipped {
         let note = match &item.reason {
             SkipReason::NoDocutils => format!("{} has no docutils", item.path.display()),
-            other => format!("skipped {}: {other}", item.path.display()),
+            other @ (SkipReason::EmptyEntry
+            | SkipReason::RelativeEntry
+            | SkipReason::InsideProject(_)
+            | SkipReason::WorldWritable) => {
+                format!("skipped {}: {other}", item.path.display())
+            }
         };
         text.push_str("; ");
         text.push_str(&note);
@@ -353,5 +358,5 @@ pub fn parse_rst(source: &str, options: &RstOptions) -> Result<RstParse, RstErro
 
 /// A span for `start..end`, which callers guarantee ascend.
 pub(crate) fn span(start: usize, end: usize) -> Span {
-    Span::new(start, end).expect("start <= end")
+    span_between(start, end)
 }

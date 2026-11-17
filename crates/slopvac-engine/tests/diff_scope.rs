@@ -5,8 +5,6 @@
 //! Tests return early when `git` is not on `PATH`.
 
 // Lists of exactly one range are the common case under test.
-#![allow(clippy::single_range_in_vec_init)]
-
 use std::ffi::OsStr;
 use std::fs;
 use std::ops::RangeInclusive;
@@ -31,6 +29,10 @@ struct Repo {
 }
 
 impl Repo {
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn new() -> Option<Self> {
         Command::new("git").arg("--version").output().ok()?;
         let dir = tempfile::tempdir().unwrap();
@@ -60,6 +62,10 @@ impl Repo {
         Some(repo)
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn git<S: AsRef<OsStr>>(&self, args: &[S]) -> String {
         let output = Command::new("git")
             .args(args)
@@ -80,6 +86,10 @@ impl Repo {
         self.root.join(name)
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn write(&self, name: &str, content: impl AsRef<[u8]>) {
         let path = self.path(name);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -92,10 +102,18 @@ impl Repo {
         self.git(&["rev-parse", "HEAD"])
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn lines(&self, scope: &DiffScope) -> ChangedLines {
         changed_lines(&self.root, scope).unwrap()
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn ranges(&self, changed: &ChangedLines, name: &str) -> Vec<RangeInclusive<u32>> {
         changed.ranges_for(&self.path(name)).unwrap()
     }
@@ -504,6 +522,10 @@ mod hardening {
     use std::path::Path;
 
     /// A script that records that it ran and, when used as a diff driver, prints nothing.
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn plant(repo: &Repo) -> (PathBuf, PathBuf) {
         let marker = repo.root.parent().unwrap().join("ran");
         let script = repo.root.parent().unwrap().join("evil.sh");
@@ -527,6 +549,10 @@ mod hardening {
         repo.write("doc.md", "one\ntwo\nthree\n");
         repo.write("untracked.md", "u\n");
         // The setup's own git calls are not hardened and may have run the program.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "removing a marker file that may not exist; nothing below depends on the result"
+        )]
         let _ = fs::remove_file(marker);
 
         let committed = repo.lines(&since(&base));
@@ -588,6 +614,10 @@ mod hardening {
 }
 
 /// Build a finding spanning `start_line..=end_line`; a fix is present when `fix` is true.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn finding(start_line: usize, end_line: usize, matched: &str, fix: bool) -> Finding {
     let mut value = serde_json::json!({
         "rule_id": "prose-test:rule",
@@ -615,7 +645,7 @@ fn finding(start_line: usize, end_line: usize, matched: &str, fix: bool) -> Find
 
 #[test]
 fn a_finding_is_kept_when_any_line_of_its_span_is_changed() {
-    let ranges = [5..=6];
+    let ranges: Vec<_> = std::iter::once(5..=6).collect();
     let cases = [
         (4, 4, false),
         (4, 5, true),
@@ -636,7 +666,7 @@ fn a_finding_is_kept_when_any_line_of_its_span_is_changed() {
 fn a_finding_without_a_source_range_is_never_in_scope() {
     let f = finding(5, 5, "", false);
 
-    assert!(!finding_in_scope(&f, &[1..=u32::MAX]));
+    assert!(!finding_in_scope(&f, std::slice::from_ref(&(1..=u32::MAX))));
 }
 
 #[test]
@@ -648,7 +678,7 @@ fn retain_in_scope_drops_findings_outside_the_ranges() {
         finding(2, 3, "bad", false),
     ];
 
-    retain_in_scope(&mut findings, &[2..=2]);
+    retain_in_scope(&mut findings, std::slice::from_ref(&(2..=2)));
 
     let lines: Vec<usize> = findings.iter().map(|f| f.start.line()).collect();
     assert_eq!(lines, vec![2]);
@@ -658,11 +688,11 @@ fn retain_in_scope_drops_findings_outside_the_ranges() {
 #[test]
 fn a_fix_across_an_unchanged_line_is_reported_but_not_fixable() {
     let f = finding(2, 3, "bad\nold", true);
-    let ranges = [2..=2];
+    let ranges: Vec<_> = std::iter::once(2..=2).collect();
 
     assert!(finding_in_scope(&f, &ranges));
     assert!(!finding_fixable(&f, &ranges));
-    assert!(finding_fixable(&f, &[2..=3]));
+    assert!(finding_fixable(&f, std::slice::from_ref(&(2..=3))));
     assert!(finding_fixable(&f, &[2..=2, 3..=3]));
 }
 
@@ -670,7 +700,7 @@ fn a_fix_across_an_unchanged_line_is_reported_but_not_fixable() {
 fn a_finding_without_a_fix_is_not_fixable() {
     let f = finding(2, 2, "bad", false);
 
-    assert!(!finding_fixable(&f, &[1..=9]));
+    assert!(!finding_fixable(&f, std::slice::from_ref(&(1..=9))));
 }
 
 #[test]
@@ -852,6 +882,10 @@ mod runaway {
 
     /// A program that records its pid, starts a background child in its process group and
     /// records that pid, then runs `tail` forever.
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn shim(tail: &str) -> Shim {
         let dir = tempfile::tempdir().unwrap();
         let base = fs::canonicalize(dir.path()).unwrap();
@@ -874,6 +908,10 @@ mod runaway {
         }
     }
 
+    #[expect(
+        clippy::panic,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn read_pid(path: &Path) -> String {
         fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("the stand-in git never started: {e}"))
@@ -883,6 +921,10 @@ mod runaway {
 
     /// Whether `ps` still lists the process. A zombie is listed, so an unreaped child
     /// counts as present.
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn listed(pid: &str) -> bool {
         let out = Command::new("ps")
             .args(["-o", "stat=", "-p", pid])
@@ -893,6 +935,10 @@ mod runaway {
 
     /// Wait until `pid` is gone. Init may need a moment to reap an orphan, so this polls;
     /// it asserts a state, never a duration.
+    #[expect(
+        clippy::panic,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn assert_gone(pid: &str, what: &str) {
         for _ in 0..400 {
             if !listed(pid) {
@@ -903,6 +949,10 @@ mod runaway {
         panic!("{what} (pid {pid}) is still running or unreaped");
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn run(repo: &Repo, shim: &Shim, limits: Limits) -> DiffError {
         let options = Options {
             limits,
@@ -915,6 +965,10 @@ mod runaway {
     /// stand-in has recorded its pids; that attempt proves nothing about the kill. Retry
     /// with a doubled deadline until an attempt timed out after the stand-in was ready.
     /// What is asserted is a state (timed out, readiness recorded), never a duration.
+    #[expect(
+        clippy::panic,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn run_to_a_deadline_after_the_stand_in_is_ready(repo: &Repo) -> Shim {
         let mut timeout = Duration::from_millis(500);
         for _ in 0..8 {

@@ -9,6 +9,7 @@
 //! `(word, pos)` blocklist answers one question. One rule owns the sweep and reports under
 //! its id, as in 2.x. The others stay quiet and a notice says so.
 
+use crate::sub;
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -100,10 +101,10 @@ impl Engine {
             )?);
         } else {
             let id_of = |i: usize| {
-                let active = &rules[i];
-                self.sets[active.set].categories()[active.category].rules()[active.rule]
-                    .id()
-                    .local()
+                rules
+                    .get(i)
+                    .and_then(|a| self.rule_at(a.set, a.category, a.rule))
+                    .map_or("", |r| r.id().local())
             };
             let owner = OWNER_PREFERENCE
                 .iter()
@@ -138,7 +139,7 @@ fn masks(text: &str, source: &str, unit_span: impl Fn(Range<usize>) -> Span) -> 
             let span = unit_span(at..at + 1);
             Mask {
                 range: at..at + 1,
-                stars: source[span.start()..span.end()]
+                stars: sub(source, span.start()..span.end())
                     .trim_matches('`')
                     .chars()
                     .count(),
@@ -168,9 +169,12 @@ impl Run<'_> {
         if matches!(self.input.kind, Kind::Diagram(_)) {
             return Ok(Vec::new());
         }
-        let active = &engine.vocabulary_rules[owner];
-        let set = &engine.sets[active.set];
-        let loaded = &set.categories()[active.category].rules()[active.rule];
+        let Some(active) = engine.vocabulary_rules.get(owner) else {
+            return Ok(Vec::new());
+        };
+        let Some((set, loaded)) = engine.rule_with_set(active) else {
+            return Ok(Vec::new());
+        };
         let rule = loaded.rule();
         let sweep = Sweep {
             active,
@@ -226,7 +230,7 @@ impl Run<'_> {
                 {
                     continue;
                 }
-                let matched = &self.input.source[span.start()..span.end()];
+                let matched = sub(self.input.source, span.start()..span.end());
                 // The preferred owner's message is written for a blocklist. The other
                 // vocabulary rules word clauses a blocklist cannot answer (allowed form,
                 // lemma), so when one of them owns the sweep it says what is known.
@@ -274,7 +278,7 @@ const fn pos_name(pos: Pos) -> &'static str {
 const fn article(pos: Pos) -> &'static str {
     match pos {
         Pos::Adjective | Pos::Adverb | Pos::Article => "an",
-        _ => "a",
+        Pos::Noun | Pos::Verb | Pos::Preposition | Pos::Conjunction | Pos::Pronoun => "a",
     }
 }
 

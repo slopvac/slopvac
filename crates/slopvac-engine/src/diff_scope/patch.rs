@@ -44,7 +44,10 @@ const EXTENDED_HEADERS: [&[u8]; 14] = [
 ];
 
 // Parser state: each flag records a header already seen in the current section.
-#[allow(clippy::struct_excessive_bools)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each flag records a different header seen; they are independent, not a state"
+)]
 #[derive(Default)]
 struct Section {
     open: bool,
@@ -233,10 +236,12 @@ fn decode_path(value: &[u8], prefix: &[u8]) -> Result<Option<PathBuf>, DiffError
         return Ok(None);
     }
     let value = value.strip_suffix(b"\t").unwrap_or(value);
-    let bytes = if value.len() >= 2 && value.starts_with(b"\"") && value.ends_with(b"\"") {
-        unquote(&value[1..value.len() - 1], value)?
-    } else {
-        value.to_vec()
+    let quoted = value
+        .strip_prefix(b"\"")
+        .and_then(|inner| inner.strip_suffix(b"\""));
+    let bytes = match quoted {
+        Some(inner) => unquote(inner, value)?,
+        None => value.to_vec(),
     };
     let relative = bytes.strip_prefix(prefix).ok_or_else(|| {
         malformed(format!(
@@ -250,9 +255,9 @@ fn decode_path(value: &[u8], prefix: &[u8]) -> Result<Option<PathBuf>, DiffError
 fn unquote(body: &[u8], whole: &[u8]) -> Result<Vec<u8>, DiffError> {
     let mut out = Vec::with_capacity(body.len());
     let mut index = 0;
-    while index < body.len() {
-        if body[index] != b'\\' {
-            out.push(body[index]);
+    while let Some(&current) = body.get(index) {
+        if current != b'\\' {
+            out.push(current);
             index += 1;
             continue;
         }
@@ -288,14 +293,19 @@ fn unquote(body: &[u8], whole: &[u8]) -> Result<Vec<u8>, DiffError> {
         let value = octal
             .iter()
             .fold(0u32, |acc, d| acc * 8 + u32::from(d - b'0'));
-        out.push(u8::try_from(value).map_err(|_| malformed("path escape out of range"))?);
+        out.push(
+            u8::try_from(value).map_err(|e| malformed(format!("path escape out of range: {e}")))?,
+        );
         index += 4;
     }
     Ok(out)
 }
 
 #[cfg(unix)]
-#[allow(clippy::unnecessary_wraps)] // Same signature as the non-Unix build, which can fail.
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the signature matches the other target, where the call can fail"
+)]
 pub(super) fn to_path(bytes: &[u8]) -> Result<PathBuf, DiffError> {
     use std::os::unix::ffi::OsStrExt;
     Ok(PathBuf::from(std::ffi::OsStr::from_bytes(bytes)))

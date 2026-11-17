@@ -1,7 +1,8 @@
 //! MDX through markdown-rs.
 
+use crate::sub;
 use markdown::mdast::Node;
-use markdown::{Constructs, MdxSignal, ParseOptions, to_mdast};
+use markdown::{Constructs, MdxExpressionParse, MdxSignal, ParseOptions, to_mdast};
 use slopvac_model::Span;
 
 use crate::align::{ProseBuilder, align};
@@ -29,8 +30,11 @@ fn read(text: &str, with_checker: bool) -> Result<Node, ParseError> {
             gfm_task_list_item: true,
             ..Constructs::mdx()
         },
-        mdx_expression_parse: with_checker
-            .then(|| Box::new(move |code: &str, kind: &_| checker.check(code, kind)) as _),
+        mdx_expression_parse: with_checker.then(|| {
+            let parse: Box<MdxExpressionParse> =
+                Box::new(move |code: &str, kind: &_| checker.check(code, kind));
+            parse
+        }),
         mdx_esm_parse: Some(Box::new(|_| MdxSignal::Ok)),
         ..ParseOptions::mdx()
     };
@@ -68,7 +72,7 @@ fn code_regions(tree: &Node) -> Vec<CodeRegion> {
 /// [`ParseError::Mdx`] when the body is not valid MDX.
 pub fn parse_mdx(source: &str, body: Span) -> Result<Document, ParseError> {
     let body = resolve_body(source, body)?;
-    let text = &source[body.start()..body.end()];
+    let text = sub(source, body.start()..body.end());
     // The first pass reads the unmasked body to find out what is code.
     let regions = code_regions(&parse(text)?);
     let masked = scan(text, body.start(), &regions, false);
@@ -111,7 +115,7 @@ pub fn mdx_syntax_spans_counted(
     body: Span,
 ) -> Result<(Vec<Span>, usize), ParseError> {
     let body = resolve_body(source, body)?;
-    let text = &source[body.start()..body.end()];
+    let text = sub(source, body.start()..body.end());
     let regions = code_regions(&parse(text)?);
     let masked = scan(text, body.start(), &regions, false);
     let tree = parse(&masked.text)?;
@@ -144,13 +148,41 @@ fn collect_syntax(node: &Node, masked: &Masked, out: &mut Vec<Span>, work: &mut 
                 // A closing tag is the last `</` in the node when the opening tag did not
                 // end the node.
                 if open_end < e
-                    && let Some(close) = masked.text[open_end..e].rfind("</")
+                    && let Some(close) = sub(&masked.text, open_end..e).rfind("</")
                 {
                     out.push(masked.span(open_end + close, e));
                 }
             }
         }
-        _ => {}
+        Node::Root(_)
+        | Node::Blockquote(_)
+        | Node::FootnoteDefinition(_)
+        | Node::List(_)
+        | Node::Toml(_)
+        | Node::Yaml(_)
+        | Node::Break(_)
+        | Node::InlineCode(_)
+        | Node::InlineMath(_)
+        | Node::Delete(_)
+        | Node::Emphasis(_)
+        | Node::FootnoteReference(_)
+        | Node::Html(_)
+        | Node::Image(_)
+        | Node::ImageReference(_)
+        | Node::Link(_)
+        | Node::LinkReference(_)
+        | Node::Strong(_)
+        | Node::Text(_)
+        | Node::Code(_)
+        | Node::Math(_)
+        | Node::Heading(_)
+        | Node::Table(_)
+        | Node::ThematicBreak(_)
+        | Node::TableRow(_)
+        | Node::TableCell(_)
+        | Node::ListItem(_)
+        | Node::Definition(_)
+        | Node::Paragraph(_) => {}
     }
     for child in node.children().into_iter().flatten() {
         collect_syntax(child, masked, out, work);
@@ -168,8 +200,8 @@ enum Js {
 
 /// Whether a JavaScript line terminator starts at `i`: LF, CR, U+2028 or U+2029.
 fn line_terminator(bytes: &[u8], i: usize) -> bool {
-    matches!(bytes[i], b'\n' | b'\r')
-        || (bytes[i] == 0xE2
+    matches!(bytes.get(i), Some(b'\n' | b'\r'))
+        || (bytes.get(i) == Some(&0xE2)
             && bytes.get(i + 1) == Some(&0x80)
             && matches!(bytes.get(i + 2), Some(0xA8 | 0xA9)))
 }
@@ -192,7 +224,9 @@ fn jsx_tag_end(text: &str, start: usize, limit: usize, work: &mut usize) -> Opti
     let mut i = start;
     while i < limit {
         *work += 1;
-        let b = bytes[i];
+        let Some(&b) = bytes.get(i) else {
+            break;
+        };
         let next = bytes.get(i + 1).copied();
         if let Some((quote, script)) = string {
             if script && b == b'\\' {
@@ -224,11 +258,11 @@ fn jsx_tag_end(text: &str, start: usize, limit: usize, work: &mut usize) -> Opti
                         return None;
                     }
                     // The terminator is a character of its own, so step over it below.
-                    i += if bytes[i] == 0xE2 { 2 } else { 0 };
+                    i += if bytes.get(i) == Some(&0xE2) { 2 } else { 0 };
                 }
                 (b'/', Some(b'*')) if script => {
                     i += 2;
-                    while i + 1 < limit && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    while i + 1 < limit && bytes.get(i..i + 2) != Some(b"*/".as_slice()) {
                         i += 1;
                         *work += 1;
                     }
@@ -274,6 +308,10 @@ impl Walker<'_> {
         trim_terminator(self.source, self.masked.span(start, end))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the match names every variant of a foreign enum so that a new variant fails to compile; the arms are one line each"
+    )]
     fn block(&mut self, node: &Node) {
         match node {
             Node::Paragraph(_) => self.prose(node, BlockKind::Paragraph, false),
@@ -326,7 +364,35 @@ impl Walker<'_> {
                     });
                 }
             }
-            _ => {
+            Node::Root(_)
+            | Node::Blockquote(_)
+            | Node::FootnoteDefinition(_)
+            | Node::MdxJsxFlowElement(_)
+            | Node::List(_)
+            | Node::MdxjsEsm(_)
+            | Node::Toml(_)
+            | Node::Yaml(_)
+            | Node::Break(_)
+            | Node::InlineCode(_)
+            | Node::InlineMath(_)
+            | Node::Delete(_)
+            | Node::Emphasis(_)
+            | Node::MdxTextExpression(_)
+            | Node::FootnoteReference(_)
+            | Node::Html(_)
+            | Node::Image(_)
+            | Node::ImageReference(_)
+            | Node::MdxJsxTextElement(_)
+            | Node::Link(_)
+            | Node::LinkReference(_)
+            | Node::Strong(_)
+            | Node::Text(_)
+            | Node::Math(_)
+            | Node::ThematicBreak(_)
+            | Node::TableRow(_)
+            | Node::TableCell(_)
+            | Node::ListItem(_)
+            | Node::Definition(_) => {
                 let (lists, containers) = (self.lists.len(), self.containers.len());
                 match node {
                     Node::List(list) => self.lists.push(list.ordered),
@@ -335,7 +401,37 @@ impl Walker<'_> {
                         depth: self.lists.len(),
                     }),
                     Node::Blockquote(_) => self.containers.push(Container::BlockQuote),
-                    _ => {}
+                    Node::Root(_)
+                    | Node::FootnoteDefinition(_)
+                    | Node::MdxJsxFlowElement(_)
+                    | Node::MdxjsEsm(_)
+                    | Node::Toml(_)
+                    | Node::Yaml(_)
+                    | Node::Break(_)
+                    | Node::InlineCode(_)
+                    | Node::InlineMath(_)
+                    | Node::Delete(_)
+                    | Node::Emphasis(_)
+                    | Node::MdxTextExpression(_)
+                    | Node::FootnoteReference(_)
+                    | Node::Html(_)
+                    | Node::Image(_)
+                    | Node::ImageReference(_)
+                    | Node::MdxJsxTextElement(_)
+                    | Node::Link(_)
+                    | Node::LinkReference(_)
+                    | Node::Strong(_)
+                    | Node::Text(_)
+                    | Node::Code(_)
+                    | Node::Math(_)
+                    | Node::MdxFlowExpression(_)
+                    | Node::Heading(_)
+                    | Node::Table(_)
+                    | Node::ThematicBreak(_)
+                    | Node::TableRow(_)
+                    | Node::TableCell(_)
+                    | Node::Definition(_)
+                    | Node::Paragraph(_) => {}
                 }
                 for child in node.children().into_iter().flatten() {
                     self.block(child);
@@ -398,7 +494,30 @@ impl Walker<'_> {
                     self.inline(child, prose);
                 }
             }
-            _ => {}
+            Node::Root(_)
+            | Node::Blockquote(_)
+            | Node::FootnoteDefinition(_)
+            | Node::MdxJsxFlowElement(_)
+            | Node::List(_)
+            | Node::MdxjsEsm(_)
+            | Node::Toml(_)
+            | Node::Yaml(_)
+            | Node::InlineMath(_)
+            | Node::FootnoteReference(_)
+            | Node::Html(_)
+            | Node::Image(_)
+            | Node::ImageReference(_)
+            | Node::Code(_)
+            | Node::Math(_)
+            | Node::MdxFlowExpression(_)
+            | Node::Heading(_)
+            | Node::Table(_)
+            | Node::ThematicBreak(_)
+            | Node::TableRow(_)
+            | Node::TableCell(_)
+            | Node::ListItem(_)
+            | Node::Definition(_)
+            | Node::Paragraph(_) => {}
         }
     }
 }
@@ -412,7 +531,7 @@ fn string_literal(expr: &str) -> Option<String> {
     if !matches!(quote, '"' | '\'' | '`') || !expr.ends_with(quote) || expr.len() < 2 {
         return None;
     }
-    let inner = &expr[1..expr.len() - 1];
+    let inner = sub(expr, 1..expr.len() - 1);
     let plain = !inner.contains([quote, '\\', '\n']) && (quote != '`' || !inner.contains("${"));
     plain.then(|| inner.to_owned())
 }

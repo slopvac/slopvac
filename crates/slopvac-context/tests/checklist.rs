@@ -1,5 +1,4 @@
 //! Checklist filtering: remainders follow their core rule, unused contexts drop rules.
-#![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
     ChecklistRule, ContextGate, checklist, context_hint, effective_gates, rule_allows,
@@ -116,7 +115,7 @@ fn security_hint_lands_only_in_entries_that_ask_for_it() {
         .unwrap();
     assert_eq!(
         entry.hints,
-        vec![context_hint("security").unwrap().to_string()]
+        vec![context_hint("security").unwrap().to_owned()]
     );
     assert!(
         got.iter()

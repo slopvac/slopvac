@@ -4,6 +4,7 @@
 //! component family. Other `@start` types (mindmap, gantt and so on) return no
 //! fragments. Usecase shorthand such as `(Login)` and `:Actor:` is not read.
 
+use crate::sub;
 use crate::{Extraction, Fragment, Role, lines};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -47,11 +48,11 @@ struct Out {
 
 impl Out {
     fn push(&mut self, off: usize, s: &str, range: (usize, usize), role: Role, id: &str) {
-        let t = &s[range.0..range.1];
+        let t = sub(s, range.0..range.1);
         let lead = t.len() - t.trim_start().len();
         let mut a = range.0 + lead;
         let mut b = a + t.trim().len();
-        if b - a >= 2 && s[a..b].starts_with('"') && s[a..b].ends_with('"') {
+        if b - a >= 2 && sub(s, a..b).starts_with('"') && sub(s, a..b).ends_with('"') {
             a += 1;
             b -= 1;
         }
@@ -131,7 +132,7 @@ fn detect(lines: &[(usize, &str)]) -> Kind {
             continue;
         }
         let w = first_word_lower(l);
-        let rest = l[w.len().min(l.len())..].trim();
+        let rest = sub(l, w.len().min(l.len())..).trim();
         match w.as_str() {
             "title" | "header" | "footer" | "caption" => {
                 if rest.is_empty() {
@@ -164,7 +165,7 @@ fn detect(lines: &[(usize, &str)]) -> Kind {
         if BODY_DECLS.contains(&w.as_str()) && l.ends_with('{') {
             skip = Skip::Body;
         }
-        let head = colon_outside_quotes(l).map_or(*l, |k| &l[..k]);
+        let head = colon_outside_quotes(l).map_or(*l, |k| sub(l, ..k));
         if head.contains("[*]") {
             state = true;
         }
@@ -407,7 +408,7 @@ fn line(out: &mut Out, block: &mut Block, at: usize, t: &str) {
     let after = word.len().min(t.len());
     match word.as_str() {
         "title" | "header" | "footer" | "caption" => {
-            let rest = t[after..].trim();
+            let rest = sub(t, after..).trim();
             if rest.is_empty() {
                 *block = match word.as_str() {
                     "header" => Block::Header,
@@ -444,7 +445,7 @@ fn line(out: &mut Out, block: &mut Block, at: usize, t: &str) {
             return;
         }
         "partition" => {
-            let rest = t[after..].trim_end_matches('{').trim_end();
+            let rest = sub(t, after..).trim_end_matches('{').trim_end();
             out.push(at, t, (after, after + rest.len()), Role::Group, "partition");
             return;
         }
@@ -462,20 +463,20 @@ fn line(out: &mut Out, block: &mut Block, at: usize, t: &str) {
     let Some(k) = colon_outside_quotes(t) else {
         return;
     };
-    if is_arrow(&t[..k]) {
+    if is_arrow(sub(t, ..k)) {
         let role = if out.kind == Kind::Sequence {
             Role::Message
         } else {
             Role::Edge
         };
-        out.push(at, t, (k + 1, t.len()), role, t[..k].trim());
+        out.push(at, t, (k + 1, t.len()), role, sub(t, ..k).trim());
     } else {
         let role = match out.kind {
             Kind::State => Role::Node,
             Kind::Class => Role::Member,
-            _ => return,
+            Kind::Sequence | Kind::Activity | Kind::Component => return,
         };
-        out.push(at, t, (k + 1, t.len()), role, t[..k].trim());
+        out.push(at, t, (k + 1, t.len()), role, sub(t, ..k).trim());
     }
 }
 
@@ -483,7 +484,7 @@ fn note(out: &mut Out, block: &mut Block, at: usize, t: &str) {
     if let Some(k) = colon_outside_quotes(t) {
         out.push(at, t, (k + 1, t.len()), Role::Note, "note");
     } else if let Some(a) = t.find('"') {
-        if let Some(n) = t[a + 1..].rfind('"') {
+        if let Some(n) = sub(t, a + 1..).rfind('"') {
             out.push(at, t, (a + 1, a + 1 + n), Role::Note, "note");
         }
     } else {
@@ -492,18 +493,18 @@ fn note(out: &mut Out, block: &mut Block, at: usize, t: &str) {
 }
 
 fn declaration(out: &mut Out, block: &mut Block, at: usize, t: &str, word: &str) {
-    let name = t[word.len()..]
+    let name = sub(t, word.len()..)
         .split_whitespace()
         .next()
         .unwrap_or("")
-        .to_string();
+        .to_owned();
     let role = if CONTAINERS.contains(&word) {
         Role::Group
     } else {
         Role::Node
     };
     if let Some(a) = t.find('"') {
-        if let Some(n) = t[a + 1..].find('"') {
+        if let Some(n) = sub(t, a + 1..).find('"') {
             out.push(at, t, (a + 1, a + 1 + n), role, &name);
         }
     } else if let (Some(a), Some(n)) = (t.find('['), t.find(']'))
@@ -519,9 +520,11 @@ fn declaration(out: &mut Out, block: &mut Block, at: usize, t: &str, word: &str)
 fn parens(out: &mut Out, at: usize, t: &str, cond: bool) {
     let mut rest = 0;
     let mut first = cond;
-    while let Some(a) = t[rest..].find('(') {
+    while let Some(a) = sub(t, rest..).find('(') {
         let open = rest + a;
-        let Some(n) = t[open..].find(')') else { break };
+        let Some(n) = sub(t, open..).find(')') else {
+            break;
+        };
         let role = if first { Role::Node } else { Role::Edge };
         out.push(at, t, (open + 1, open + n), role, "branch");
         first = false;
@@ -531,18 +534,18 @@ fn parens(out: &mut Out, at: usize, t: &str, cond: bool) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Format, Role, extract};
+    use crate::{Format, Role, extract, sub};
 
     fn labels(src: &str) -> Vec<(Role, String)> {
         extract(Format::PlantUml, src, 0)
             .fragments
             .iter()
-            .map(|f| (f.role, src[f.span.clone()].to_string()))
+            .map(|f| (f.role, sub(src, f.span.clone()).to_owned()))
             .collect()
     }
 
     fn r(role: Role, s: &str) -> (Role, String) {
-        (role, s.to_string())
+        (role, s.to_owned())
     }
 
     #[test]
@@ -656,7 +659,7 @@ mod tests {
 
 #[cfg(test)]
 mod line_terminator_tests {
-    use crate::{Format, Role, extract};
+    use crate::{Format, Role, extract, sub};
 
     #[test]
     fn lone_cr_and_crlf_keep_original_offsets() {
@@ -665,7 +668,7 @@ mod line_terminator_tests {
         let got: Vec<_> = ex
             .fragments
             .iter()
-            .map(|f| (f.role, &src[f.span.clone()]))
+            .map(|f| (f.role, sub(src, f.span.clone())))
             .collect();
         assert_eq!(got, [(Role::Message, "one"), (Role::Message, "two")]);
     }
@@ -676,6 +679,10 @@ mod robustness_tests {
     use crate::{Format, Role, extract};
 
     #[test]
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the test only asserts that extraction returns without panicking"
+    )]
     fn short_equals_runs_do_not_panic() {
         for line in ["==", "===", "= =", "====", "==x", "=", "== =="] {
             let src = format!("@startuml\nparticipant A\n{line}\n@enduml\n");

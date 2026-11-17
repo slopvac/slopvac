@@ -3,7 +3,7 @@
 //! [`reference_pages`] returns `(path, markdown)` pairs relative to the docs
 //! site root, like the style reference in `slopvac-styles`.
 
-use std::fmt::Write as _;
+use crate::{append, append_line};
 
 use crate::{
     Budget, CategoryTable, GenreRegistry, GenreSpec, RuleLevel, Scalar, Signal, SignalKind,
@@ -38,13 +38,15 @@ fn signal(s: &Signal) -> String {
         SignalKind::Text => format!("Text matches `{pattern}` (weight {weight})"),
         SignalKind::FrontMatter => {
             let key = s.key.as_deref().unwrap_or_default();
-            match &s.equals {
-                Some(v) => format!(
-                    "Front matter `{key}` equals `{}` (weight {weight})",
-                    scalar(v)
-                ),
-                None => format!("Front matter `{key}` is present (weight {weight})"),
-            }
+            s.equals.as_ref().map_or_else(
+                || format!("Front matter `{key}` is present (weight {weight})"),
+                |v| {
+                    format!(
+                        "Front matter `{key}` equals `{}` (weight {weight})",
+                        scalar(v)
+                    )
+                },
+            )
         }
     }
 }
@@ -59,7 +61,7 @@ fn category(name: &str, t: &CategoryTable) -> String {
     }
     match t.max_per_100_words {
         Some(Budget::Limit(n)) => dials.push(format!("budget {n} findings per 100 words")),
-        Some(Budget::None(_)) => dials.push("no budget".to_string()),
+        Some(Budget::None(_)) => dials.push("no budget".to_owned()),
         None => {}
     }
     if let Some(w) = t.weight {
@@ -76,11 +78,15 @@ fn index(reg: &GenreRegistry) -> String {
          styles. It can also set category settings, rule levels and context tags. A genre can \
          extend other genres and inherit their settings.\n\n",
     );
-    for id in reg.ids() {
-        let spec = reg.spec(id).expect("ids come from the registry");
-        let _ = write!(out, "- [`{id}`]({id}.md)");
+    // Ids come from the registry, so every one has a spec.
+    for (id, spec) in reg
+        .ids()
+        .into_iter()
+        .filter_map(|id| Some((id, reg.spec(id)?)))
+    {
+        append(&mut out, format_args!("- [`{id}`]({id}.md)"));
         if let Some(d) = &spec.description {
-            let _ = write!(out, ": {d}");
+            append(&mut out, format_args!(": {d}"));
         }
         out.push('\n');
     }
@@ -89,42 +95,46 @@ fn index(reg: &GenreRegistry) -> String {
 
 fn list_or(out: &mut String, items: &[String], none: &str) {
     if items.is_empty() {
-        let _ = writeln!(out, "{none}");
+        append_line(out, format_args!("{none}"));
     }
     for i in items {
-        let _ = writeln!(out, "{i}");
+        append_line(out, format_args!("{i}"));
     }
 }
 
-fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
+/// The page of one genre, or `None` when the registry cannot resolve it. A registry
+/// validates every chain when it is built, so that does not happen.
+fn page(reg: &GenreRegistry, spec: &GenreSpec) -> Option<String> {
     let id = &spec.id;
-    let valid = "a registry validates every chain";
     let title = spec.title.as_deref().unwrap_or(id);
     let mut out = format!("# {title}\n\n");
     if let Some(d) = &spec.description {
-        let _ = write!(out, "{d}\n\n");
+        append(&mut out, format_args!("{d}\n\n"));
     }
     if let Some(s) = &spec.surfaces {
-        let _ = write!(out, "Typical documents: {s}\n\n");
+        append(&mut out, format_args!("Typical documents: {s}\n\n"));
     }
     out.push_str("## Settings\n\n");
-    let _ = writeln!(out, "- Id: `{id}`");
+    append_line(&mut out, format_args!("- Id: `{id}`"));
     if spec.extends.is_empty() {
         out.push_str("- Extends: none\n");
     } else {
         let direct: Vec<String> = spec.extends.iter().map(|e| format!("`{e}`")).collect();
-        let _ = writeln!(out, "- Extends: {}", direct.join(", "));
+        append_line(&mut out, format_args!("- Extends: {}", direct.join(", ")));
         let chain: Vec<String> = reg
             .chain(id)
-            .expect(valid)
+            .ok()?
             .iter()
             .map(|s| format!("`{}`", s.id))
             .collect();
-        let _ = writeln!(out, "- Resolved chain, lowest first: {}", chain.join(" → "));
+        append_line(
+            &mut out,
+            format_args!("- Resolved chain, lowest first: {}", chain.join(" → ")),
+        );
     }
-    match reg.profile(id).expect(valid) {
+    match reg.profile(id).ok()? {
         Some(p) => {
-            let _ = writeln!(out, "- Profile: `{}`", p.as_str());
+            append_line(&mut out, format_args!("- Profile: `{}`", p.as_str()));
         }
         None => out.push_str("- Profile: none (the configured profile applies)\n"),
     }
@@ -132,9 +142,9 @@ fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
     match &spec.detect {
         None => out.push_str("None. Config or front matter choose this genre.\n"),
         Some(d) => {
-            let _ = write!(out, "Minimum score: {}\n\n", d.min_score);
+            append(&mut out, format_args!("Minimum score: {}\n\n", d.min_score));
             for s in &d.signals {
-                let _ = writeln!(out, "- {}", signal(s));
+                append_line(&mut out, format_args!("- {}", signal(s)));
             }
         }
     }
@@ -144,7 +154,7 @@ fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
     out.push_str("\n## Category settings\n\n");
     let categories: Vec<String> = reg
         .categories(id)
-        .expect(valid)
+        .ok()?
         .iter()
         .map(|(name, t)| category(name, t))
         .collect();
@@ -156,7 +166,7 @@ fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
     out.push_str("\n## Rule levels\n\n");
     let rules: Vec<String> = reg
         .rules(id)
-        .expect(valid)
+        .ok()?
         .iter()
         .map(|(rule, l)| format!("- `{rule}`: `{}`", level(*l)))
         .collect();
@@ -164,22 +174,28 @@ fn page(reg: &GenreRegistry, spec: &GenreSpec) -> String {
     out.push_str("\n## Context tags\n\n");
     let contexts: Vec<String> = reg
         .contexts(id)
-        .expect(valid)
+        .ok()?
         .iter()
         .map(|c| format!("- `{c}`"))
         .collect();
     list_or(&mut out, &contexts, "This genre sets no context tags.");
-    out
+    Some(out)
 }
 
 /// `genres/index.md` and one `genres/<id>.md` per built-in genre.
 #[must_use]
 pub fn reference_pages() -> Vec<(String, String)> {
-    let reg = builtin_genres().expect("the built-in genres are valid");
-    let mut pages = vec![("genres/index.md".to_string(), index(&reg))];
+    // The tests validate the built-in genres, so the empty fallback does not occur.
+    let Ok(reg) = builtin_genres() else {
+        return Vec::new();
+    };
+    let mut pages = vec![("genres/index.md".to_owned(), index(&reg))];
     for id in reg.ids() {
-        let spec = reg.spec(id).expect("ids come from the registry");
-        pages.push((format!("genres/{id}.md"), page(&reg, spec)));
+        if let Some(spec) = reg.spec(id)
+            && let Some(text) = page(&reg, spec)
+        {
+            pages.push((format!("genres/{id}.md"), text));
+        }
     }
     pages
 }
@@ -200,7 +216,7 @@ mod tests {
         )
         .unwrap();
         let reg = GenreRegistry::new(specs, "base").unwrap();
-        let page = page(&reg, reg.spec("base").unwrap());
+        let page = page(&reg, reg.spec("base").unwrap()).unwrap();
         assert!(page.starts_with("# Base genre\n"));
         assert!(page.contains("Typical documents: READMEs\n"));
         assert!(page.contains("## Styles\n\n- `ste`\n- `google`\n"));

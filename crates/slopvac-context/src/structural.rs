@@ -167,10 +167,11 @@ impl StructuralTagger {
     }
 
     fn block_ok(&self, b: &BlockView<'_>) -> Result<bool, Error> {
-        let kind_ok = match self.spec.when.block_kind {
-            Some(k) => b.kind == k,
-            None => b.kind != BlockKind::CodeBlock,
-        };
+        let kind_ok = self
+            .spec
+            .when
+            .block_kind
+            .map_or_else(|| b.kind != BlockKind::CodeBlock, |k| b.kind == k);
         if !kind_ok {
             return Ok(false);
         }
@@ -271,10 +272,7 @@ fn section_span(blocks: &[BlockView<'_>], i: usize) -> Range<usize> {
     let owner = (0..=i)
         .rev()
         .find(|&j| blocks[j].kind == BlockKind::Heading);
-    let (first, own_level) = match owner {
-        Some(j) => (j, level(&blocks[j])),
-        None => (0, 0),
-    };
+    let (first, own_level) = owner.map_or((0, 0), |j| (j, level(&blocks[j])));
     let last = (i + 1..blocks.len())
         .find(|&k| blocks[k].kind == BlockKind::Heading && level(&blocks[k]) <= own_level.max(1))
         .map_or(blocks.len() - 1, |k| k - 1);

@@ -505,7 +505,7 @@ impl GenreRegistry {
             .collect::<Result<Vec<_>, _>>()?;
         let reg = Self {
             genres,
-            default: default.to_string(),
+            default: default.to_owned(),
             contexts: BTreeMap::new(),
         };
         for g in &reg.genres {
@@ -513,7 +513,7 @@ impl GenreRegistry {
         }
         match reg.get(default) {
             Some(_) => Ok(reg),
-            None => Err(Error::UnknownGenre(default.to_string())),
+            None => Err(Error::UnknownGenre(default.to_owned())),
         }
     }
 
@@ -521,15 +521,15 @@ impl GenreRegistry {
     /// it, carry the tags for the whole document (see `DeclaredContextTagger`).
     pub fn with_contexts(mut self, genre: &str, tags: &[&str]) -> Result<Self, Error> {
         self.get(genre)
-            .ok_or_else(|| Error::UnknownGenre(genre.to_string()))?;
+            .ok_or_else(|| Error::UnknownGenre(genre.to_owned()))?;
         if let Some(t) = tags.iter().find(|t| !is_name(t)) {
             return Err(Error::Parse(format!(
                 "genre `{genre}`: `{t}` is not a context tag (lowercase kebab-case)"
             )));
         }
         self.contexts.insert(
-            genre.to_string(),
-            tags.iter().map(|t| (*t).to_string()).collect(),
+            genre.to_owned(),
+            tags.iter().map(|t| (*t).to_owned()).collect(),
         );
         Ok(self)
     }
@@ -566,7 +566,7 @@ impl GenreRegistry {
     ) -> Result<(), Error> {
         let g = self
             .get(ref_name(id))
-            .ok_or_else(|| Error::UnknownGenre(id.to_string()))?;
+            .ok_or_else(|| Error::UnknownGenre(id.to_owned()))?;
         if path.contains(&g.spec.id) {
             return Err(Error::Parse(format!(
                 "genre `{}` has an `extends` cycle",
@@ -642,12 +642,12 @@ impl GenreRegistry {
         scores.sort_by(|a, b| b.1.total_cmp(&a.1));
         let explicit = |id: &str, signal: &str, detail: String| -> Result<GenreResult, Error> {
             self.get(id)
-                .ok_or_else(|| Error::UnknownGenre(id.to_string()))?;
+                .ok_or_else(|| Error::UnknownGenre(id.to_owned()))?;
             Ok(GenreResult {
-                id: id.to_string(),
+                id: id.to_owned(),
                 source: GenreSource::Explicit,
                 reasons: vec![Reason {
-                    signal: signal.to_string(),
+                    signal: signal.to_owned(),
                     detail,
                 }],
                 scores: scores.clone(),
@@ -687,7 +687,7 @@ impl GenreRegistry {
             id: self.default.clone(),
             source: GenreSource::Default,
             reasons: vec![Reason {
-                signal: "default".to_string(),
+                signal: "default".to_owned(),
                 detail: format!("no genre reached its threshold; using `{}`", self.default),
             }],
             scores,
@@ -757,7 +757,7 @@ impl GenreRegistry {
                 if let Some((signal, detail)) = hit {
                     total += s.weight;
                     reasons.push(Reason {
-                        signal: signal.to_string(),
+                        signal: signal.to_owned(),
                         detail: format!("{detail} (+{})", s.weight),
                     });
                 }

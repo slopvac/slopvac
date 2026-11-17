@@ -12,6 +12,10 @@ use slopvac_diagrams::Format;
 use slopvac_engine::{DIAGRAM_PACK, Engine, Input, Settings, diagram_rule_set};
 use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString, PackId};
 
+#[expect(
+    clippy::expect_used,
+    reason = "example binary: a failure should abort the run"
+)]
 fn settings() -> Settings {
     Settings::new(
         NonEmptyString::new("normal").expect("non-empty"),
@@ -23,6 +27,12 @@ fn settings() -> Settings {
     )
 }
 
+#[expect(
+    clippy::expect_used,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    reason = "example binary reports on the standard streams"
+)]
 fn main() -> ExitCode {
     let pack = PackId::new(DIAGRAM_PACK).expect("pack id");
     let set = match diagram_rule_set(&pack) {

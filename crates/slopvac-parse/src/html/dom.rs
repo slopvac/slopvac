@@ -54,16 +54,20 @@ pub(super) struct Item {
 /// First private-use character the scan hands to the tree builder.
 const ID_BASE: u32 = 0xF_0000;
 /// Number of distinct stand-in characters. Plane 15 minus its last two code points.
-const ID_COUNT: u32 = 0xFFFE;
+const ID_COUNT: u16 = 0xFFFE;
 
 /// The stand-in for the `n`th non-whitespace source character.
+#[expect(
+    clippy::expect_used,
+    reason = "n is reduced modulo ID_COUNT, so the offset fits a u32 and plane 15 holds valid code points"
+)]
 pub(super) fn stand_in(n: usize) -> char {
-    let offset = u32::try_from(n % ID_COUNT as usize).expect("below 65534");
+    let offset = u32::try_from(n % usize::from(ID_COUNT)).expect("below 65534");
     char::from_u32(ID_BASE + offset).expect("plane 15 is valid")
 }
 
 fn is_stand_in(c: char) -> bool {
-    (ID_BASE..ID_BASE + ID_COUNT).contains(&(c as u32))
+    (ID_BASE..ID_BASE + u32::from(ID_COUNT)).contains(&u32::from(c))
 }
 
 /// What an element is, besides its name.
@@ -267,11 +271,15 @@ impl Dom {
         self.stats.set(stats);
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn handle(&self, id: usize) -> Handle {
         let nodes = self.nodes.borrow();
         let name = match &nodes[id].kind {
             Kind::Element(e) => Rc::clone(&e.name),
-            _ => Rc::clone(&self.unnamed),
+            Kind::Root | Kind::Text(_) | Kind::Other => Rc::clone(&self.unnamed),
         };
         Handle { id, name }
     }
@@ -333,6 +341,10 @@ impl Dom {
         out
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn detach(&self, id: usize) {
         let mut nodes = self.nodes.borrow_mut();
         let (parent, prev, next) = (nodes[id].parent, nodes[id].prev, nodes[id].next);
@@ -352,6 +364,10 @@ impl Dom {
     }
 
     /// Link `id` as the last child of `parent`.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn link_last(&self, parent: usize, id: usize) {
         let mut nodes = self.nodes.borrow_mut();
         let last = nodes[parent].last;
@@ -366,6 +382,10 @@ impl Dom {
     }
 
     /// Link `id` just before `sibling`.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn link_before(&self, sibling: usize, id: usize) {
         let mut nodes = self.nodes.borrow_mut();
         let parent = nodes[sibling].parent;
@@ -384,6 +404,10 @@ impl Dom {
         }
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn add_text(&self, segs: Vec<Seg>, place: Place) {
         if segs.is_empty() {
             return;
@@ -414,6 +438,10 @@ impl Dom {
     }
 
     /// Children of a node, in order.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     pub(super) fn children(&self, id: usize) -> Vec<usize> {
         let nodes = self.nodes.borrow();
         let mut out = Vec::new();
@@ -446,7 +474,7 @@ pub(super) fn push_seg(segs: &mut Vec<Seg>, seg: Seg) {
                 last.text.push_str(&seg.text);
                 return;
             }
-            _ => {}
+            PieceKind::Plain | PieceKind::Entity | PieceKind::Opaque => {}
         }
     }
     segs.push(seg);
@@ -523,6 +551,10 @@ impl TreeSink for Sink {
         }
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn append_based_on_parent_node(
         &self,
         element: &Handle,
@@ -541,10 +573,12 @@ impl TreeSink for Sink {
 
     fn get_template_contents(&self, target: &Handle) -> Handle {
         let nodes = self.0.nodes.borrow();
-        let Kind::Element(e) = &nodes[target.id].kind else {
-            unreachable!("only a template asks for contents")
-        };
-        let id = e.template.expect("a template has contents");
+        // Only a template asks for contents. For any other node, answer with the node.
+        let id = match nodes.get(target.id).map(|n| &n.kind) {
+            Some(Kind::Element(e)) => e.template,
+            _ => None,
+        }
+        .unwrap_or(target.id);
         drop(nodes);
         self.0.handle(id)
     }
@@ -589,6 +623,10 @@ impl TreeSink for Sink {
         }
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn is_mathml_annotation_xml_integration_point(&self, handle: &Handle) -> bool {
         matches!(&self.0.nodes.borrow()[handle.id].kind, Kind::Element(e) if e.annotation_xml)
     }

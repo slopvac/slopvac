@@ -93,9 +93,11 @@ impl<'p> Discovery<'p> {
             }
             cur = dir.parent();
         }
-        let mut found = lock(&self.found);
-        for v in visited {
-            found.insert(v, result.clone());
+        {
+            let mut found = lock(&self.found);
+            for v in visited {
+                found.insert(v, result.clone());
+            }
         }
         Ok(result)
     }

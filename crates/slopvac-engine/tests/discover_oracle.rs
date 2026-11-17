@@ -43,6 +43,10 @@ fn excludes() -> impl Strategy<Value = Vec<usize>> {
     prop::collection::vec(0..EXCLUDES.len(), 0..3)
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn build(root: &Path, tree: &[(Vec<usize>, usize)]) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for (dirs, file) in tree {
@@ -71,9 +75,9 @@ fn reference_excluded(patterns: &[&str], rel: &str) -> bool {
         let (dir_only, text) = text.strip_suffix('/').map_or((false, text), |t| (true, t));
         let anchored = text.contains('/');
         let comps: Vec<&str> = text.split('/').collect();
-        let name_matches = |pat: &str, name: &str| match pat.strip_prefix('*') {
-            Some(suffix) => name.ends_with(suffix),
-            None => pat == name,
+        let name_matches = |pat: &str, name: &str| {
+            pat.strip_prefix('*')
+                .map_or_else(|| pat == name, |suffix| name.ends_with(suffix))
         };
         // A pattern matches the path or any ancestor directory; a trailing slash
         // matches directories only, so the final component never counts.
@@ -100,6 +104,10 @@ fn reference_excluded(patterns: &[&str], rel: &str) -> bool {
     excluded
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn rel(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap()
@@ -113,6 +121,10 @@ struct Locked(Vec<PathBuf>);
 
 #[cfg(unix)]
 impl Locked {
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn lock(dirs: Vec<PathBuf>) -> Self {
         use std::os::unix::fs::PermissionsExt;
         for d in &dirs {
@@ -131,6 +143,10 @@ impl Drop for Locked {
     fn drop(&mut self) {
         use std::os::unix::fs::PermissionsExt;
         for d in &self.0 {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "restoring permissions on cleanup is best effort"
+            )]
             let _ = fs::set_permissions(d, fs::Permissions::from_mode(0o755));
         }
     }

@@ -3,10 +3,18 @@
 use slopvac_config::tree::{parse_toml, parse_yaml};
 use slopvac_config::{Code, Diagnostic, validate_config, validate_frontmatter};
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn config(text: &str) -> Vec<Diagnostic> {
     validate_config(&parse_toml(text).unwrap(), text)
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn front_matter(text: &str) -> Vec<Diagnostic> {
     validate_frontmatter(&parse_yaml(text).unwrap(), text)
 }

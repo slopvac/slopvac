@@ -1,8 +1,12 @@
 //! Behaviour of the built-in taggers through the public API.
-#![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{BlockKind, OwnedBlock, PlainDocument, builtin_registry};
 
+#[expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn kinds_for(path: &str, src: &str, needle: &str) -> Vec<String> {
     let doc = PlainDocument::from_markdown(path, src);
     let idx = builtin_registry().unwrap().tag_document(&doc).unwrap();
@@ -160,7 +164,10 @@ fn structural_sections() {
         let kinds = kinds_for("a.md", src, needle);
         assert!(has(&kinds, kind), "{src:?}: {kinds:?}");
     }
-    assert!(kinds_for("a.md", "# T\n\nRun it.\n", "Run it.").is_empty());
+    assert_eq!(
+        kinds_for("a.md", "# T\n\nRun it.\n", "Run it."),
+        Vec::<&str>::new()
+    );
 }
 
 #[test]
@@ -183,7 +190,7 @@ fn admonition_and_quote_blocks() {
         .push(mk(BlockKind::Paragraph, 400..410, Some("Changed in 2.0")));
     let idx = builtin_registry().unwrap().tag_document(&doc).unwrap();
     assert_eq!(idx.kinds_at(&(100..110)), vec!["safety"]);
-    assert!(idx.kinds_at(&(200..210)).is_empty());
+    assert_eq!(idx.kinds_at(&(200..210)), Vec::<&str>::new());
     assert_eq!(idx.kinds_at(&(300..310)), vec!["quote"]);
     assert_eq!(idx.kinds_at(&(400..410)), vec!["change-note"]);
 }
@@ -225,8 +232,8 @@ fn example_admonition_tags_only_example_titles() {
     }
     let idx = builtin_registry().unwrap().tag_document(&doc).unwrap();
     assert_eq!(idx.kinds_at(&(100..110)), vec!["example"]);
-    assert!(idx.kinds_at(&(200..210)).is_empty());
-    assert!(idx.kinds_at(&(300..310)).is_empty());
+    assert_eq!(idx.kinds_at(&(200..210)), Vec::<&str>::new());
+    assert_eq!(idx.kinds_at(&(300..310)), Vec::<&str>::new());
 }
 
 #[test]

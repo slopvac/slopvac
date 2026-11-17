@@ -8,6 +8,7 @@
 //!
 //! Link text stays fixable: the `delta` in `[delta](https://example.com)` is prose.
 
+use crate::sub;
 use std::ops::Range;
 
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
@@ -27,7 +28,7 @@ pub(crate) fn destinations(source: &str, body_start: usize) -> Vec<Span> {
             spans.push(span);
         }
     };
-    let body = &source[body_start..];
+    let body = sub(source, body_start..);
     let mut events = Parser::new_ext(body, OPTIONS).into_offset_iter();
     // Open links: where the last child ends, so the rest of the node is the target part.
     let mut open: Vec<(LinkType, usize)> = Vec::new();
@@ -48,16 +49,31 @@ pub(crate) fn destinations(source: &str, body_start: usize) -> Vec<Span> {
                         | LinkType::Email
                         | LinkType::Collapsed
                         | LinkType::Shortcut => push(shift(&whole)),
-                        _ => push(shift(&target)),
+                        LinkType::Inline
+                        | LinkType::Reference
+                        | LinkType::ReferenceUnknown
+                        | LinkType::CollapsedUnknown
+                        | LinkType::ShortcutUnknown
+                        | LinkType::WikiLink { .. } => push(shift(&target)),
                     }
                 }
             }
             Event::Html(_) | Event::InlineHtml(_) => {
-                for tag in tags(&body[range.clone()]) {
+                for tag in tags(sub(body, range.clone())) {
                     push(range.start + tag.start + body_start..range.start + tag.end + body_start);
                 }
             }
-            _ => {}
+            Event::Start(_)
+            | Event::End(_)
+            | Event::Text(_)
+            | Event::Code(_)
+            | Event::InlineMath(_)
+            | Event::DisplayMath(_)
+            | Event::FootnoteReference(_)
+            | Event::SoftBreak
+            | Event::HardBreak
+            | Event::Rule
+            | Event::TaskListMarker(_) => {}
         }
         if let Some(top) = open.last_mut()
             && !matches!(event, Event::Start(Tag::Link { .. } | Tag::Image { .. }))
@@ -69,7 +85,7 @@ pub(crate) fn destinations(source: &str, body_start: usize) -> Vec<Span> {
         push(def.span.start + body_start..def.span.end + body_start);
     }
     for run in runs(source) {
-        for (from, to) in addresses(&source[run.clone()]) {
+        for (from, to) in addresses(sub(source, run.clone())) {
             push(run.start + from..run.start + to);
         }
     }
@@ -102,8 +118,8 @@ fn tags(html: &str) -> Vec<Range<usize>> {
     let bytes = html.as_bytes();
     let mut found = Vec::new();
     let mut i = 0;
-    while i < bytes.len() {
-        let opens = bytes[i] == b'<'
+    while let Some(&current) = bytes.get(i) {
+        let opens = current == b'<'
             && bytes
                 .get(i + 1)
                 .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'/' || *b == b'!');
@@ -113,8 +129,8 @@ fn tags(html: &str) -> Vec<Range<usize>> {
         }
         let mut quote = None;
         let mut j = i + 1;
-        while j < bytes.len() {
-            match (quote, bytes[j]) {
+        while let Some(&byte) = bytes.get(j) {
+            match (quote, byte) {
                 (None, b'>') => break,
                 (None, q @ (b'"' | b'\'')) => quote = Some(q),
                 (Some(q), b) if b == q => quote = None,
@@ -136,13 +152,13 @@ fn addresses(run: &str) -> Vec<(usize, usize)> {
     const STOP: &[char] = &['[', ']', '(', ')', '<', '>', '"', '\'', ',', ';'];
     let mut found = Vec::new();
     for (at, _) in run.match_indices("://") {
-        let scheme = run[..at]
+        let scheme = sub(run, ..at)
             .rfind(|c: char| !(c.is_ascii_alphanumeric() || "+.-".contains(c)))
             .map_or(0, |i| i + 1);
         found.push((scheme, run.len()));
     }
     for (at, _) in run.match_indices("www.") {
-        if run[..at]
+        if sub(run, ..at)
             .chars()
             .next_back()
             .is_none_or(|c| !c.is_alphanumeric())
@@ -151,16 +167,16 @@ fn addresses(run: &str) -> Vec<(usize, usize)> {
         }
     }
     for (at, _) in run.match_indices('@') {
-        let start = run[..at].rfind(STOP).map_or(0, |i| i + 1);
-        let end = run[at..].find(STOP).map_or(run.len(), |i| at + i);
+        let start = sub(run, ..at).rfind(STOP).map_or(0, |i| i + 1);
+        let end = sub(run, at..).find(STOP).map_or(run.len(), |i| at + i);
         found.push((start, end));
     }
     for (at, _) in run.match_indices('<') {
-        let rest = &run[at + 1..];
+        let rest = sub(run, at + 1..);
         let scheme = rest.find(':').filter(|&i| {
             i > 1
-                && rest[..i].starts_with(|c: char| c.is_ascii_alphabetic())
-                && rest[..i]
+                && sub(rest, ..i).starts_with(|c: char| c.is_ascii_alphabetic())
+                && sub(rest, ..i)
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
         });

@@ -1,5 +1,7 @@
 //! Markdown through pulldown-cmark.
 
+use crate::span_between;
+use crate::sub;
 use std::ops::Range;
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
@@ -23,7 +25,7 @@ pub(crate) fn resolve_body(source: &str, body: Span) -> Result<Span, ParseError>
     } else {
         body.start()
     };
-    Ok(Span::new(skip, body.end()).expect("start was checked against end"))
+    Ok(span_between(skip, body.end()))
 }
 
 /// Sort blocks into source order. Containers come before what they contain.
@@ -51,7 +53,19 @@ fn code_regions(text: &str) -> Vec<CodeRegion> {
                 range,
                 fenced: matches!(kind, CodeBlockKind::Fenced(_)),
             }),
-            _ => None,
+            Event::Start(_)
+            | Event::End(_)
+            | Event::Text(_)
+            | Event::Code(_)
+            | Event::InlineMath(_)
+            | Event::DisplayMath(_)
+            | Event::Html(_)
+            | Event::InlineHtml(_)
+            | Event::FootnoteReference(_)
+            | Event::SoftBreak
+            | Event::HardBreak
+            | Event::Rule
+            | Event::TaskListMarker(_) => None,
         })
         .collect()
 }
@@ -65,7 +79,7 @@ fn code_regions(text: &str) -> Vec<CodeRegion> {
 /// Returns [`ParseError::Body`] when `body` is not a valid span of `source`.
 pub fn parse_markdown(source: &str, body: Span) -> Result<Document, ParseError> {
     let body = resolve_body(source, body)?;
-    let text = &source[body.start()..body.end()];
+    let text = sub(source, body.start()..body.end());
     // The first pass reads the unmasked body to find out what is code.
     let masked = scan(text, body.start(), &code_regions(text), true);
     let mut collector = Collector::new(source, &masked);
@@ -86,11 +100,11 @@ pub fn parse_markdown(source: &str, body: Span) -> Result<Document, ParseError> 
         .filter_map(|mut block| {
             // The last line's terminator is not part of the block.
             let last = block.segments.pop()?;
-            let text = &source[last.start()..last.end()];
+            let text = sub(source, last.start()..last.end());
             let kept = text.trim_end_matches(['\n', '\r']).len();
             block
                 .segments
-                .push(Span::new(last.start(), last.start() + kept).expect("a prefix"));
+                .push(span_between(last.start(), last.start() + kept));
             Some(block)
         })
         .collect();
@@ -164,7 +178,7 @@ impl<'a> Collector<'a> {
     /// An empty body: the start of the line after the opener.
     fn empty_body(&self, range: &Range<usize>) -> Span {
         let text = &self.masked.text;
-        let at = text[range.start..range.end]
+        let at = sub(text, range.start..range.end)
             .find('\n')
             .map_or(range.end, |i| range.start + i + 1);
         self.masked.span(at, at)
@@ -217,6 +231,10 @@ impl<'a> Collector<'a> {
         open.inline = Some(merged);
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the match names every variant of a foreign enum so that a new variant fails to compile; the arms are one line each"
+    )]
     fn event(&mut self, event: &Event<'_>, range: Range<usize>) {
         let prev_end = self.prev_end;
         self.prev_end = if matches!(event, Event::Start(_)) {
@@ -236,7 +254,11 @@ impl<'a> Collector<'a> {
                             // starts at the line terminator.
                             let bytes = self.masked.text.as_bytes();
                             let blank = matches!(&**text, "\n" | "\r\n" | "\r");
-                            let width = if bytes[..range.end].ends_with(b"\r\n") {
+                            let width = if bytes
+                                .get(..range.end)
+                                .unwrap_or_default()
+                                .ends_with(b"\r\n")
+                            {
                                 2
                             } else {
                                 1
@@ -246,7 +268,10 @@ impl<'a> Collector<'a> {
                             } else {
                                 range.start
                             };
-                            if start > 0 && bytes[start - 1] == b'\r' && bytes[start] == b'\n' {
+                            if start > 0
+                                && bytes.get(start - 1) == Some(&b'\r')
+                                && bytes.get(start) == Some(&b'\n')
+                            {
                                 start -= 1;
                             }
                             start..range.end
@@ -259,7 +284,7 @@ impl<'a> Collector<'a> {
                 if self.image_depth == 0 {
                     // The backslash of an escape sits outside the text's range.
                     let start = if range.start > prev_end
-                        && self.masked.text.as_bytes()[range.start - 1] == b'\\'
+                        && self.masked.text.as_bytes().get(range.start - 1) == Some(&b'\\')
                         && text.starts_with(|c: char| c.is_ascii_punctuation())
                     {
                         range.start - 1
@@ -286,11 +311,10 @@ impl<'a> Collector<'a> {
                 // before it. A segment must not start inside the line break.
                 let bytes = self.source.as_bytes();
                 if span.start() > 0
-                    && bytes[span.start() - 1] == b'\r'
-                    && bytes[span.start()] == b'\n'
+                    && bytes.get(span.start() - 1) == Some(&b'\r')
+                    && bytes.get(span.start()) == Some(&b'\n')
                 {
-                    span = Span::new(span.start() - 1, span.end().max(span.start() - 1))
-                        .expect("start does not exceed end");
+                    span = span_between(span.start() - 1, span.end().max(span.start() - 1));
                 }
                 // The lines of one block follow each other, line breaks included. A
                 // container prefix between two lines starts a new segment of the block.
@@ -298,8 +322,7 @@ impl<'a> Collector<'a> {
                     let segments = &mut block.segments;
                     match segments.last_mut() {
                         Some(last) if last.end() == span.start() => {
-                            *last = Span::new(last.start(), span.end().max(last.end()))
-                                .expect("start does not exceed end");
+                            *last = span_between(last.start(), span.end().max(last.end()));
                         }
                         _ => segments.push(span),
                     }
@@ -321,7 +344,13 @@ impl<'a> Collector<'a> {
                 let span = self.masked.span(range.start, range.end);
                 self.prose().prose.push(TokenKind::Collapse, " ", span);
             }
-            _ => {}
+            Event::InlineMath(_)
+            | Event::DisplayMath(_)
+            | Event::Html(_)
+            | Event::FootnoteReference(_)
+            | Event::HardBreak
+            | Event::Rule
+            | Event::TaskListMarker(_) => {}
         }
     }
 
@@ -330,7 +359,7 @@ impl<'a> Collector<'a> {
             Tag::Paragraph => self.start_block(BlockKind::Paragraph, range),
             Tag::Heading { level, .. } => self.start_block(
                 BlockKind::Heading {
-                    level: *level as u8,
+                    level: heading_level(*level),
                 },
                 range,
             ),
@@ -401,7 +430,13 @@ impl<'a> Collector<'a> {
             Tag::Emphasis | Tag::Strong | Tag::Strikethrough | Tag::Link { .. } => {
                 self.inline_range(&range);
             }
-            _ => self.flush(),
+            Tag::FootnoteDefinition(_)
+            | Tag::DefinitionList
+            | Tag::DefinitionListTitle
+            | Tag::DefinitionListDefinition
+            | Tag::Superscript
+            | Tag::Subscript
+            | Tag::MetadataBlock(_) => self.flush(),
         }
     }
 
@@ -441,7 +476,32 @@ impl<'a> Collector<'a> {
             TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough | TagEnd::Link => {
                 self.inline_range(range);
             }
-            _ => self.flush(),
+            TagEnd::Paragraph
+            | TagEnd::Heading(_)
+            | TagEnd::HtmlBlock
+            | TagEnd::FootnoteDefinition
+            | TagEnd::DefinitionList
+            | TagEnd::DefinitionListTitle
+            | TagEnd::DefinitionListDefinition
+            | TagEnd::Table
+            | TagEnd::TableHead
+            | TagEnd::TableRow
+            | TagEnd::Superscript
+            | TagEnd::Subscript
+            | TagEnd::MetadataBlock(_) => self.flush(),
         }
+    }
+}
+
+/// The number of a heading level.
+const fn heading_level(level: pulldown_cmark::HeadingLevel) -> u8 {
+    use pulldown_cmark::HeadingLevel::{H1, H2, H3, H4, H5, H6};
+    match level {
+        H1 => 1,
+        H2 => 2,
+        H3 => 3,
+        H4 => 4,
+        H5 => 5,
+        H6 => 6,
     }
 }

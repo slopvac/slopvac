@@ -1,5 +1,4 @@
 //! Declared contexts: security comes from a genre, never from vocabulary.
-#![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
     DeclaredContextTagger, GenreAssignment, PlainDocument, ResolveOptions, TagRegistry,
@@ -8,6 +7,10 @@ use slopvac_context::{
 
 const SECURITY_TEXT: &str = "# Policy\n\nTokens grant credentials. The sandbox denies secrets and approval escalates privileges.\n";
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn tags_for(doc: &PlainDocument, assignments: &[GenreAssignment]) -> (String, Vec<String>) {
     let genres = builtin_genres().unwrap();
     let result = genres
@@ -33,7 +36,7 @@ fn front_matter_genre_declares_security() {
     let src = format!("---\ngenre: security\n---\n{SECURITY_TEXT}");
     let (genre, kinds) = tags_for(&PlainDocument::from_markdown("a.md", &src), &[]);
     assert_eq!(genre, "security");
-    assert!(kinds.contains(&"security".to_string()), "{kinds:?}");
+    assert!(kinds.contains(&"security".to_owned()), "{kinds:?}");
 }
 
 #[test]
@@ -45,9 +48,9 @@ fn per_path_assignment_declares_security() {
     let doc = PlainDocument::from_markdown("policies/access.md", SECURITY_TEXT);
     let (genre, kinds) = tags_for(&doc, &a);
     assert_eq!(genre, "security");
-    assert!(kinds.contains(&"security".to_string()));
+    assert!(kinds.contains(&"security".to_owned()));
     let elsewhere = PlainDocument::from_markdown("docs/access.md", SECURITY_TEXT);
-    assert!(!tags_for(&elsewhere, &a).1.contains(&"security".to_string()));
+    assert!(!tags_for(&elsewhere, &a).1.contains(&"security".to_owned()));
 }
 
 #[test]
@@ -55,7 +58,7 @@ fn security_vocabulary_alone_never_declares_security() {
     let doc = PlainDocument::from_markdown("docs/security/trust.md", SECURITY_TEXT);
     let (genre, kinds) = tags_for(&doc, &[]);
     assert_eq!(genre, "consumer");
-    assert!(!kinds.contains(&"security".to_string()), "{kinds:?}");
+    assert!(!kinds.contains(&"security".to_owned()), "{kinds:?}");
 }
 
 #[test]
@@ -99,5 +102,5 @@ fn security_span_covers_every_original_byte_including_front_matter() {
     assert_eq!(idx.kinds_at(&(0..1)), vec!["security"]);
     assert_eq!(idx.kinds_at(&last_char), vec!["security"]);
     assert_eq!(idx.kinds_at(&(src.len()..src.len())), vec!["security"]);
-    assert!(idx.kinds_at(&(0..src.len() + 1)).is_empty());
+    assert_eq!(idx.kinds_at(&(0..src.len() + 1)), Vec::<&str>::new());
 }

@@ -5,6 +5,8 @@
 //! one [`Input`] and returns the `slopvac-model` [`Document`] that the report contract
 //! describes. [`Engine::lint_all`] runs many inputs in parallel and keeps their order.
 
+use crate::span_between;
+use crate::sub;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
@@ -223,7 +225,9 @@ fn runs_lexically(kind: MatchKind, m: &Match) -> bool {
         MatchKind::Capitalization => {
             matches!(m, Match::Capitalization(c) if capitalization::runs(c.style))
         }
-        _ => false,
+        MatchKind::Metric | MatchKind::Structure | MatchKind::Vocabulary | MatchKind::Judgement => {
+            false
+        }
     }
 }
 
@@ -271,6 +275,28 @@ fn notice(code: &str, level: NoticeLevel, message: String) -> Result<Notice, Eng
 }
 
 impl Engine {
+    /// The rule set and rule that `active` points at. Actives are built from the loaded sets,
+    /// so the lookup finds them.
+    fn rule_with_set(&self, active: &Active) -> Option<(&Arc<RuleSet>, &LoadedRule)> {
+        let set = self.sets.get(active.set)?;
+        let rule = set
+            .categories()
+            .get(active.category)?
+            .rules()
+            .get(active.rule)?;
+        Some((set, rule))
+    }
+
+    /// The loaded rule at `set`, `category` and `rule`.
+    fn rule_at(&self, set: usize, category: usize, rule: usize) -> Option<&LoadedRule> {
+        self.sets
+            .get(set)?
+            .categories()
+            .get(category)?
+            .rules()
+            .get(rule)
+    }
+
     /// An engine for `sets` under `settings`, with the built-in taggers and detectors and
     /// no diagram checker.
     ///
@@ -367,9 +393,10 @@ impl Engine {
 
     /// Whether `id` is a term-casing rule.
     pub(crate) fn is_term_casing(&self, id: &RuleId) -> bool {
-        self.casing_rules
-            .iter()
-            .any(|a| self.sets[a.set].categories()[a.category].rules()[a.rule].id() == id)
+        self.casing_rules.iter().any(|a| {
+            self.rule_at(a.set, a.category, a.rule)
+                .is_some_and(|r| r.id() == id)
+        })
     }
 
     /// Replace the exception detectors.
@@ -437,7 +464,10 @@ impl Engine {
     }
 
     /// Decide which rules run: level, `applies_to`, and whether the engine runs the kind.
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pass that decides the status of every rule; splitting it would pass its state through many parameters"
+    )]
     fn resolve(&mut self) -> Result<(), EngineError> {
         let mut unrun: std::collections::BTreeMap<&'static str, usize> =
             std::collections::BTreeMap::new();
@@ -567,12 +597,16 @@ impl Engine {
     pub fn unexecuted(&self, rule: &LoadedRule) -> Option<&'static str> {
         let id = rule.id();
         let at = |a: &&crate::lint::Active| {
-            self.sets[a.set].categories()[a.category].rules()[a.rule].id() == id
+            self.rule_at(a.set, a.category, a.rule)
+                .is_some_and(|r| r.id() == id)
         };
         if !self.running.contains(id.as_str()) {
             return Some("the rule is switched off or does not apply under the engine settings");
         }
-        let owner = self.vocabulary.owner.map(|i| &self.vocabulary_rules[i]);
+        let owner = self
+            .vocabulary
+            .owner
+            .and_then(|i| self.vocabulary_rules.get(i));
         let executes = self.active.iter().any(|a| at(&a))
             || self.metrics.iter().any(|a| at(&a))
             || self.casing_rules.iter().any(|a| at(&a))
@@ -592,7 +626,7 @@ impl Engine {
             return None;
         };
         let rule_id = RuleId::new(id).ok()?;
-        self.sets[*set].get(&rule_id)
+        self.sets.get(*set)?.get(&rule_id)
     }
 
     /// Lint many inputs in parallel. Results keep the order of `inputs`.
@@ -606,14 +640,14 @@ impl Engine {
         // Front matter is metadata, not prose: the parser reads only what follows it.
         let front = match input.kind {
             Kind::Diagram(_) | Kind::Rst => None,
-            _ => detect(input.source),
+            Kind::Markdown | Kind::Mdx => detect(input.source),
         };
         let body_start = front.as_ref().map_or(0, |b| b.body_start);
         let front_span = front
             .as_ref()
-            .map(|b| Span::new(0, b.body_start).expect("0 <= body start"))
+            .map(|b| span_between(0, b.body_start))
             .filter(|s| !s.is_empty());
-        let body = Span::new(body_start, input.source.len()).expect("body starts inside the file");
+        let body = span_between(body_start, input.source.len());
         let front_matter = front.and_then(|b| FrontMatter::parse_block(input.source, b).ok());
         let mut extra = Vec::new();
         let parsed = match input.kind {
@@ -627,7 +661,7 @@ impl Engine {
         let prepared = Prepared::new(input.source, &parsed)?;
         let tags = match input.kind {
             Kind::Diagram(_) => TagIndex::default(),
-            _ => tagging::tag(
+            Kind::Markdown | Kind::Mdx | Kind::Rst => tagging::tag(
                 &self.tagger,
                 input.path,
                 input.source,
@@ -639,7 +673,7 @@ impl Engine {
         let lines = Lines::new(input.source);
         let directives = match input.kind {
             Kind::Diagram(_) => Directives::default(),
-            _ => scan(&parsed, &lines, front_span, |id| {
+            Kind::Markdown | Kind::Mdx | Kind::Rst => scan(&parsed, &lines, front_span, |id| {
                 match self.catalog.get(id) {
                     None => Target::Unknown,
                     Some(_) if !self.running.contains(id) => Target::Inactive,
@@ -717,6 +751,7 @@ impl Engine {
         }
     }
 
+    #[expect(clippy::expect_used, reason = "the values are non-empty literals")]
     fn document(
         &self,
         input: &Input<'_>,
@@ -777,10 +812,17 @@ fn kinds_of<'t>(tags: &'t TagIndex, span: Span, covering: &[Range<usize>]) -> Ve
 fn signal_of_rule(loaded: &LoadedRule) -> Option<Signal> {
     match &loaded.rule().match_ {
         Match::Structure(m) => diagrams::signal_of(m),
-        _ => None,
+        Match::Tokens(_)
+        | Match::Pattern(_)
+        | Match::Substitution(_)
+        | Match::Metric(_)
+        | Match::Capitalization(_)
+        | Match::Vocabulary(_)
+        | Match::Judgement(_) => None,
     }
 }
 
+#[expect(clippy::expect_used, reason = "the values are non-empty literals")]
 fn category_of(id: &RuleId) -> CategoryId {
     let local = id.local();
     CategoryId::new(local.split_once('.').map_or(local, |(c, _)| c))
@@ -888,8 +930,9 @@ impl Run<'_> {
         let inline_code = skip::build(self.parsed, &[], None, true);
         let mut out = Vec::new();
         for active in &engine.active {
-            let set = &engine.sets[active.set];
-            let loaded = &set.categories()[active.category].rules()[active.rule];
+            let Some((set, loaded)) = engine.rule_with_set(active) else {
+                continue;
+            };
             let rule = loaded.rule();
             let exclusions;
             let skip: &SkipRanges = match (&rule.exclude_blocks, rule.scope) {
@@ -914,7 +957,13 @@ impl Run<'_> {
                 Match::Capitalization(m) => {
                     Some(SentenceCase::new(m, &engine.settings.allowed_words))
                 }
-                _ => None,
+                Match::Tokens(_)
+                | Match::Pattern(_)
+                | Match::Substitution(_)
+                | Match::Metric(_)
+                | Match::Structure(_)
+                | Match::Vocabulary(_)
+                | Match::Judgement(_) => None,
             };
             for unit in self.prepared.units(rule.scope)? {
                 let ranges = match &sentence_case {
@@ -952,7 +1001,10 @@ impl Run<'_> {
 
     /// [`Self::guarded`] for a match that sits in `extra` context, a tag the context index
     /// does not hold, such as `diagram-label`.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the arguments are the independent inputs of one check; a bundle type would only rename them"
+    )]
     fn guarded_with(
         &self,
         extra: Option<&'static str>,
@@ -978,7 +1030,10 @@ impl Run<'_> {
 
     /// [`Self::guarded`] for text of another parse of the file, with that parse's context
     /// tags and document.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the arguments are the independent inputs of one check; a bundle type would only rename them"
+    )]
     fn guarded_in(
         &self,
         tags: &TagIndex,
@@ -1029,8 +1084,9 @@ impl Run<'_> {
         let inline_code = skip::build(self.parsed, &[], None, true);
         let mut out = Vec::new();
         for active in &engine.metrics {
-            let set = &engine.sets[active.set];
-            let loaded = &set.categories()[active.category].rules()[active.rule];
+            let Some((set, loaded)) = engine.rule_with_set(active) else {
+                continue;
+            };
             let rule = loaded.rule();
             let Match::Metric(metric) = &rule.match_ else {
                 continue;
@@ -1041,14 +1097,11 @@ impl Run<'_> {
                 .iter()
                 .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
                 .collect();
-            let exclusions;
-            let skip: &SkipRanges = match &rule.exclude_blocks {
-                Some(kinds) => {
-                    exclusions = skip::build(self.parsed, kinds, self.front_matter, true);
-                    &exclusions
-                }
-                None => &inline_code,
-            };
+            let exclusions = rule
+                .exclude_blocks
+                .as_ref()
+                .map(|kinds| skip::build(self.parsed, kinds, self.front_matter, true));
+            let skip: &SkipRanges = exclusions.as_ref().unwrap_or(&inline_code);
             for hit in self.subject.measure(metric, rule.text_type)? {
                 // The guards read the measured sentence or paragraph. A document-wide
                 // measurement has no unit to guard.
@@ -1093,7 +1146,10 @@ impl Run<'_> {
     }
 
     /// The finding for one match, or `None` when a filter drops it.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the arguments are the independent inputs of one check; a bundle type would only rename them"
+    )]
     fn candidate<'s>(
         &self,
         active: &Active,
@@ -1117,7 +1173,7 @@ impl Run<'_> {
         if allowlisted(loaded, unit.text, range) {
             return Ok(None);
         }
-        let matched = &unit.text[range.clone()];
+        let matched = sub(unit.text, range.clone());
         let match_all_caps = loaded
             .matcher()
             .is_some_and(slopvac_rules::LexicalMatcher::match_all_caps);
@@ -1133,7 +1189,7 @@ impl Run<'_> {
             return Ok(None);
         }
         // A match that spans masked text (inline code) reports the source text.
-        let source_text = &self.input.source[span.start()..span.end()];
+        let source_text = sub(self.input.source, span.start()..span.end());
         let shown = if matched.contains('\0') {
             source_text
         } else {
@@ -1145,7 +1201,13 @@ impl Run<'_> {
                 .get(loaded)
                 .find(shown)
                 .map(str::to_owned),
-            _ => None,
+            Match::Tokens(_)
+            | Match::Pattern(_)
+            | Match::Metric(_)
+            | Match::Structure(_)
+            | Match::Capitalization(_)
+            | Match::Vocabulary(_)
+            | Match::Judgement(_) => None,
         };
         let fix = match candidate.as_deref() {
             Some(text) if is_single_replacement(text) && source_text == shown => Some(
@@ -1187,7 +1249,7 @@ impl Run<'_> {
             Kind::Diagram(format) => {
                 diagrams.push((extract(format, self.input.source, 0), Vec::new()));
             }
-            _ => {
+            Kind::Markdown | Kind::Mdx | Kind::Rst => {
                 for block in &self.parsed.blocks {
                     let BlockKind::CodeBlock {
                         lang: Some(lang),
@@ -1309,9 +1371,7 @@ impl Run<'_> {
             return Ok(None);
         };
         let span = self.source_span(&hit.span, nearby)?;
-        let loaded = active
-            .at
-            .map(|(s, c, r)| &self.engine.sets[s].categories()[c].rules()[r]);
+        let loaded = active.at.and_then(|(s, c, r)| self.engine.rule_at(s, c, r));
         let rule = loaded.map(LoadedRule::rule);
         let exceptions: Vec<&str> = rule.map_or_else(Vec::new, |r| {
             r.exceptions().iter().map(|e| e.name.as_str()).collect()
@@ -1325,7 +1385,7 @@ impl Run<'_> {
         let matched = hit
             .matched
             .clone()
-            .unwrap_or_else(|| self.input.source[span.start()..span.end()].to_owned());
+            .unwrap_or_else(|| sub(self.input.source, span.start()..span.end()).to_owned());
         if let Some(rule) = rule
             && self.guarded_with(
                 Some(slopvac_diagrams::CONTEXT),
@@ -1382,7 +1442,7 @@ impl Run<'_> {
                     severity: Severity::Error,
                     message: invalid.message.clone(),
                     span: invalid.span,
-                    matched_text: self.input.source[invalid.span.start()..invalid.span.end()]
+                    matched_text: sub(self.input.source, invalid.span.start()..invalid.span.end())
                         .to_owned(),
                     ai_signal: AiSignal::None,
                     fix: None,

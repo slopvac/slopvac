@@ -67,7 +67,13 @@ fn walk(
                     source,
                 });
             }
-            _ => out.push(Setting {
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Str(_)
+            | Value::Datetime(_)
+            | Value::Array(_) => out.push(Setting {
                 path: path.clone(),
                 value: e.node.to_json(),
                 source,

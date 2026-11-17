@@ -126,10 +126,9 @@ pub fn render(source: SourceFile<'_>, diagnostics: &[Diagnostic]) -> String {
 /// becomes an LF of the same length, and the mark is dropped, so line and column match the
 /// contract and every other offset only moves by the mark.
 fn display_text(text: &str) -> (std::borrow::Cow<'_, str>, usize) {
-    let (body, shift) = match text.strip_prefix('\u{feff}') {
-        Some(rest) => (rest, '\u{feff}'.len_utf8()),
-        None => (text, 0),
-    };
+    let (body, shift) = text
+        .strip_prefix('\u{feff}')
+        .map_or((text, 0), |rest| (rest, '\u{feff}'.len_utf8()));
     let bytes = body.as_bytes();
     let has_lone_cr = bytes
         .iter()

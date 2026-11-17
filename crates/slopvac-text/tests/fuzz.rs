@@ -3,8 +3,6 @@
 //!
 //! Set `PROPTEST_CASES` to change the case count (default 512).
 
-#![allow(missing_docs)]
-
 use proptest::prelude::*;
 use slopvac_text::Pattern;
 
@@ -115,16 +113,28 @@ proptest! {
         std::env::var("PROPTEST_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(512)
     ))]
 
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the property is that the call returns without panicking; Ok and Err both pass"
+    )]
     #[test]
     fn arbitrary_text_never_panics_the_compiler(source in ".{0,60}", caseless in any::<bool>()) {
         let _ = Pattern::new(&source, caseless);
     }
 
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the property is that the call returns without panicking; Ok and Err both pass"
+    )]
     #[test]
     fn a_soup_of_pattern_tokens_never_panics_the_compiler(source in soup(), caseless in any::<bool>()) {
         let _ = Pattern::new(&source, caseless);
     }
 
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the property is that the call returns without panicking; Ok and Err both pass"
+    )]
     #[test]
     fn a_compiled_soup_pattern_never_panics_the_matcher(
         source in soup(),

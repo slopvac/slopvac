@@ -112,7 +112,7 @@ pub fn fix_file_hooked(
         Ok(opened) => opened,
         Err(refusal) => return Ok(FileFix::Refused(refusal)),
     };
-    let source = String::from_utf8(bytes).map_err(|_| FixError::NotUtf8(shown.clone()))?;
+    let source = String::from_utf8(bytes).map_err(|e| FixError::NotUtf8(shown.clone(), e))?;
     let input = Input {
         kind,
         ..Input::markdown(&shown, &source)
@@ -164,7 +164,7 @@ fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
         match part {
             Component::Normal(name) => clean.push(name),
             Component::CurDir => {}
-            _ => return None,
+            Component::Prefix(_) | Component::RootDir | Component::ParentDir => return None,
         }
     }
     (clean.components().count() > 0).then_some(clean)

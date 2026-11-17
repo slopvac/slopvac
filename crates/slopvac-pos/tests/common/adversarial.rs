@@ -1,9 +1,8 @@
 //! Adversarial inputs shared by the work-counter test (`src/tokenize.rs`) and
 //! the timing benchmark (`tests/scaling.rs`).
-#![allow(unreachable_pub, missing_docs, dead_code)]
 
 /// Every adversarial input, by name.
-pub const NAMES: [&str; 14] = [
+pub(crate) const NAMES: [&str; 14] = [
     "bang run",
     "prefix run",
     "wrapped word",
@@ -21,8 +20,9 @@ pub const NAMES: [&str; 14] = [
 ];
 
 /// An input of about `n` bytes shaped to stress one pass.
-pub fn adversarial(name: &str, n: usize) -> String {
-    match name {
+/// `None` for a name that is not in [`NAMES`].
+pub(crate) fn adversarial(name: &str, n: usize) -> Option<String> {
+    Some(match name {
         // One chunk of suffix punctuation: every step peels one character.
         "bang run" => "!".repeat(n),
         "prefix run" => "(".repeat(n),
@@ -50,6 +50,6 @@ pub fn adversarial(name: &str, n: usize) -> String {
         "quote pairs" => "\u{201c}x\u{201d} ".repeat(n / 4),
         // Many words, no sentence end: one sentence is tagged as a whole.
         "long sentence" => "ab ".repeat(n / 3),
-        other => panic!("unknown input {other}"),
-    }
+        _ => return None,
+    })
 }

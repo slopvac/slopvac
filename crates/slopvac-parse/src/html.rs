@@ -15,6 +15,8 @@
 mod dom;
 mod scan;
 
+use crate::span_between;
+use crate::sub;
 use std::rc::Rc;
 
 use html5ever::ns;
@@ -152,7 +154,7 @@ pub fn parse_html_budget(
     } else {
         body.start()
     };
-    let text = &source[base..body.end()];
+    let text = sub(source, base..body.end());
     parse_stream(text, Mapper::new(&[(base, text.len())]), per_byte, extra)
 }
 
@@ -203,11 +205,11 @@ pub fn parse_html_segments_stats(
     let map = Mapper::new(&pieces);
     let joined: String;
     let text = if let [only] = segments {
-        &source[only.start()..only.end()]
+        sub(source, only.start()..only.end())
     } else {
         joined = segments
             .iter()
-            .map(|s| &source[s.start()..s.end()])
+            .map(|s| sub(source, s.start()..s.end()))
             .collect();
         &joined
     };
@@ -272,8 +274,15 @@ impl Mapper {
         if offset >= self.total {
             return last.1 + last.2;
         }
-        let i = self.pieces.partition_point(|p| p.0 <= offset) - 1;
-        let (stream, source, _) = self.pieces[i];
+        // The first piece starts at stream offset 0, so some piece starts at or before `offset`.
+        let Some(&(stream, source, _)) = self
+            .pieces
+            .partition_point(|p| p.0 <= offset)
+            .checked_sub(1)
+            .and_then(|i| self.pieces.get(i))
+        else {
+            return last.1 + last.2;
+        };
         source + (offset - stream)
     }
 
@@ -290,14 +299,17 @@ impl Mapper {
     fn span(&self, start: usize, end: usize) -> Span {
         let from = self.start(start);
         let to = if end > start { self.end(end) } else { from };
-        Span::new(from, to).expect("a stream range maps to an ascending source range")
+        span_between(from, to)
     }
 
     /// The end offsets, in the stream, of the segments that end inside `start..end`. Found
     /// by binary search, so the cost is the number of cuts and not the number of segments.
     fn cuts(&self, start: usize, end: usize) -> Vec<usize> {
         let first = self.pieces.partition_point(|p| p.0 + p.2 <= start);
-        let cuts: Vec<usize> = self.pieces[first..]
+        let cuts: Vec<usize> = self
+            .pieces
+            .get(first..)
+            .unwrap_or_default()
             .iter()
             .map(|p| p.0 + p.2)
             .take_while(|&e| e < end)
@@ -394,6 +406,10 @@ impl<'a> Walker<'a> {
     }
 
     /// Push the children of `id` so the first comes off the stack first.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn push_children(dom: &Dom, id: usize, stack: &mut Vec<Step>) {
         let nodes = dom.nodes.borrow();
         let mut at = nodes[id].last;
@@ -403,6 +419,10 @@ impl<'a> Walker<'a> {
         }
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn enter(&mut self, dom: &Dom, id: usize, stack: &mut Vec<Step>) {
         let element = {
             let nodes = dom.nodes.borrow();
@@ -462,6 +482,10 @@ impl<'a> Walker<'a> {
         Self::push_children(dom, id, stack);
     }
 
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn exit(&mut self, dom: &Dom, id: usize) {
         let name = {
             let nodes = dom.nodes.borrow();
@@ -546,6 +570,10 @@ impl<'a> Walker<'a> {
     /// that tag. The tree does not say, so this finds the end tag that follows the
     /// element's content. Only end tags and white space may sit between them. When there
     /// is none, the element ended by implication at the end of its content.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "node ids come from Dom::push and no node is ever removed, so every id indexes the arena"
+    )]
     fn extent(&self, dom: &Dom, id: usize, start: &std::ops::Range<usize>) -> (usize, usize) {
         let mut content = start.end;
         {
@@ -565,7 +593,7 @@ impl<'a> Walker<'a> {
                             content = content.max(e.start.end);
                             stack.push(c);
                         }
-                        _ => {}
+                        Kind::Root | Kind::Other => {}
                     }
                     child = nodes[c].next;
                 }
@@ -580,12 +608,16 @@ impl<'a> Walker<'a> {
         let mut at = content;
         // Nothing between the content and its end tag but end tags, comments and white
         // space, so a few tags are enough. Stopping bounds the work for every element.
-        for tag in tags[first..].iter().take(END_SCAN) {
+        for tag in tags.get(first..).unwrap_or_default().iter().take(END_SCAN) {
             dom.charge(1);
             let mut stats = dom.stats.get();
             stats.end_scan += 1;
             dom.stats.set(stats);
-            let gap = &self.text.as_bytes()[at.min(tag.range.start)..tag.range.start];
+            let gap = self
+                .text
+                .as_bytes()
+                .get(at.min(tag.range.start)..tag.range.start)
+                .unwrap_or_default();
             if !gap.iter().all(|b| is_space(char::from(*b))) {
                 break;
             }
@@ -613,21 +645,21 @@ impl<'a> Walker<'a> {
         let (start, end) = (seg.src.start, seg.src.end);
         self.reorder_check(start);
         if seg.kind == PieceKind::Plain {
-            let slice = &self.text[start..end];
+            let slice = sub(self.text, start..end);
             let mut run: Option<(usize, bool)> = None;
             for (i, c) in slice.char_indices() {
                 let space = is_space(c);
                 match run {
                     Some((_, was)) if was == space => {}
                     Some((from, was)) => {
-                        self.run(&slice[from..i], start + from, start + i, was);
+                        self.run(sub(slice, from..i), start + from, start + i, was);
                         run = Some((i, space));
                     }
                     None => run = Some((i, space)),
                 }
             }
             if let Some((from, was)) = run {
-                self.run(&slice[from..], start + from, end, was);
+                self.run(sub(slice, from..), start + from, end, was);
             }
         } else if seg.text.chars().all(is_space) {
             self.prose.space(start, end);
@@ -783,7 +815,7 @@ impl Prose {
             for cut in cuts.into_iter().chain(std::iter::once(end)) {
                 let src = self.map.span(from, cut);
                 self.projection
-                    .push(kind, &text[offset..offset + (cut - from)], src);
+                    .push(kind, sub(text, offset..offset + (cut - from)), src);
                 offset += cut - from;
                 from = cut;
             }

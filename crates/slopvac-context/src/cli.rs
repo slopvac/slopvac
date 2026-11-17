@@ -2,7 +2,7 @@
 //!
 //! The CLI epic wires [`command`] and [`run`] into the clap tree.
 
-use std::fmt::Write as _;
+use crate::append_line;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
@@ -41,10 +41,13 @@ pub fn render(path: &str, r: &GenreResult) -> String {
     };
     let mut out = format!("{path}: {} ({source})\n", r.id);
     for reason in &r.reasons {
-        let _ = writeln!(out, "  {}: {}", reason.signal, reason.detail);
+        append_line(
+            &mut out,
+            format_args!("  {}: {}", reason.signal, reason.detail),
+        );
     }
     let scores: Vec<String> = r.scores.iter().map(|(id, s)| format!("{id} {s}")).collect();
-    let _ = writeln!(out, "  scores: {}", scores.join(", "));
+    append_line(&mut out, format_args!("  scores: {}", scores.join(", ")));
     out
 }
 
@@ -69,8 +72,8 @@ fn parse_assignments(matches: &ArgMatches) -> Result<Vec<GenreAssignment>, Error
                 .split_once('=')
                 .ok_or_else(|| Error::Parse(format!("`--assign {raw}` needs GLOB=GENRE")))?;
             Ok(GenreAssignment {
-                files: vec![glob.to_string()],
-                genre: genre.to_string(),
+                files: vec![glob.to_owned()],
+                genre: genre.to_owned(),
             })
         })
         .collect()
@@ -84,8 +87,9 @@ fn explain(
     // STUB(slopvac-8l4.5.11): PlainDocument stands in for the real Markdown parser.
     let src = std::fs::read_to_string(path).map_err(|e| Error::Parse(format!("{path}: {e}")))?;
     let doc = PlainDocument::from_markdown(path, &src);
+    let view: &dyn DocumentView = &doc;
     let result = registry.resolve(
-        &doc as &dyn DocumentView,
+        view,
         &ResolveOptions {
             assignments,
             relative_path: None,

@@ -3,12 +3,10 @@
 //! The interpreter is a shell script that prints the driver output that real docutils wrote
 //! for `tests/fixtures/rst/sections.rst.in`, so the test runs without Python.
 #![cfg(unix)]
-#![allow(
-    missing_docs,
-    clippy::assert_is_empty,
-    clippy::cloned_ref_to_slice_refs
+#[expect(
+    dead_code,
+    reason = "each test binary uses the part of the shared helpers it needs"
 )]
-
 mod common;
 
 use std::fs;
@@ -25,6 +23,10 @@ use slopvac_model::NoticeLevel;
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rst");
 
 /// The fake interpreter, written once before any test starts a process.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn interpreter() -> &'static Path {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
     PATH.get_or_init(|| {
@@ -56,6 +58,10 @@ fn with_rst(engine: Engine, options: RstOptions) -> Engine {
     engine.with_rst(options)
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn sections() -> String {
     fs::read_to_string(format!("{FIXTURES}/sections.rst.in")).unwrap()
 }
@@ -84,7 +90,7 @@ fn a_missing_interpreter_makes_the_document_incomplete() {
     options.search_path = Some(empty.path().as_os_str().to_owned());
     let e = with_rst(engine(&[tokens("dull", "installer", &json!({}))]), options);
     let doc = e.lint(&Input::rst("docs/notes.rst", &sections())).unwrap();
-    assert!(doc.findings.is_empty());
+    assert_eq!(doc.findings, []);
     let warnings: Vec<_> = doc
         .unchecked
         .iter()
@@ -110,6 +116,10 @@ fn tables_engine(rules: &[serde_json::Value]) -> Engine {
     engine(rules).with_rst(options)
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn tables() -> String {
     fs::read_to_string(format!("{FIXTURES}/table-repeat.rst.in")).unwrap()
 }
@@ -132,9 +142,13 @@ fn a_rule_that_excludes_tables_is_silent_in_an_rst_table() {
 fn an_engine_without_project_boundaries_runs_nothing_from_the_path() {
     let planted = interpreter().with_file_name("planted");
     let marker = planted.join("ran");
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "removing a marker file that may not exist; nothing below depends on the result"
+    )]
     let _ = fs::remove_file(&marker);
     let mut options = RstOptions::default();
-    options.search_path = Some(planted.clone().into_os_string());
+    options.search_path = Some(planted.into_os_string());
     let e = engine(&[tokens("dull", "installer", &json!({}))]).with_rst(options);
     let doc = e.lint(&Input::rst("a.rst", &sections())).unwrap();
     assert!(
@@ -188,6 +202,10 @@ fn wrap_engine(pattern: &str) -> Engine {
     .with_rst(options)
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn wrap_source() -> String {
     fs::read_to_string(format!("{FIXTURES}/table-wrap.rst.in")).unwrap()
 }
@@ -241,6 +259,10 @@ fn a_requirement_in_a_wrapped_cell_does_not_reach_the_cell_beside_it() {
 }
 
 /// Findings of `token` in the fixture `name` when the rule excludes `block`.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn excluded_findings(name: &str, python: &str, block: &str, token: &str) -> usize {
     let source = fs::read_to_string(format!("{FIXTURES}/{name}.rst.in")).unwrap();
     let mut options = RstOptions::default();
@@ -368,7 +390,7 @@ fn an_rst_fix_edits_prose_through_the_engine_adapter() {
     let report = slopvac_engine::fix_document(&e, &input, &doc, None).unwrap();
     assert_eq!(report.applied, 1);
     assert_eq!(report.text, source.replacen("installer", "tool", 1));
-    assert!(report.skipped.is_empty());
+    assert_eq!(report.skipped, []);
 }
 
 #[test]

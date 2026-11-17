@@ -3,6 +3,7 @@
 //! `tests/fixtures/`; `tools/gen_fixtures.py --check` proves they are current.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::TryFromIntError;
 
 use serde::Deserialize;
 use slopvac_pos::Tagger;
@@ -23,6 +24,11 @@ const CORPUS_EXACT_FLOOR: f64 = 0.99;
 const CORPUS_TOKENS: usize = 17_173;
 const CORPUS_EXACT_MEASURED: usize = 17_169;
 const BLOCKLIST_AGREEMENT_FLOOR: f64 = 0.95;
+
+/// `part / whole` for counts far below 2^32.
+fn ratio(part: usize, whole: usize) -> Result<f64, TryFromIntError> {
+    Ok(f64::from(u32::try_from(part)?) / f64::from(u32::try_from(whole)?))
+}
 
 /// `(line, byte offset in the line)` of a token, both Vale's and ours.
 type Pos = (usize, usize);
@@ -57,13 +63,13 @@ fn our_corpus_tags() -> BTreeMap<Pos, (String, String)> {
 fn vale_corpus_tags() -> Vec<(Pos, String, String)> {
     CORPUS_TSV
         .lines()
-        .map(|row| {
-            let f: Vec<&str> = row.split('\t').collect();
-            (
-                (f[0].parse().unwrap(), f[1].parse().unwrap()),
-                f[2].to_owned(),
-                f[3].to_owned(),
-            )
+        .filter_map(|row| {
+            let mut f = row.split('\t');
+            Some((
+                (f.next()?.parse().ok()?, f.next()?.parse().ok()?),
+                f.next()?.to_owned(),
+                f.next()?.to_owned(),
+            ))
         })
         .collect()
 }
@@ -104,8 +110,7 @@ fn corpus_tags_match_vale_at_least_99_percent() {
         .iter()
         .filter(|(pos, word, tag)| ours.get(pos).is_some_and(|(w, t)| w == word && t == tag))
         .count();
-    #[allow(clippy::cast_precision_loss)]
-    let rate = exact as f64 / vale.len() as f64;
+    let rate = ratio(exact, vale.len()).unwrap();
     eprintln!("corpus exact match: {exact}/{} = {rate:.4}", vale.len());
     assert_eq!(vale.len(), CORPUS_TOKENS, "fixture size changed");
     assert!(
@@ -138,6 +143,10 @@ fn pos_matches(pos: &str, tag: &str) -> bool {
         "verb" => "VB",
         "adjective" => "JJ",
         "adverb" => "RB",
+        #[expect(
+            clippy::panic,
+            reason = "a fixture with an unknown part of speech must stop the test; this helper is not a test fn"
+        )]
         other => panic!("unexpected part of speech {other}"),
     };
     tag.contains(family)
@@ -178,20 +187,27 @@ fn agreement(list: &BTreeMap<&str, BTreeSet<String>>) -> BTreeMap<&'static str, 
         .collect()
 }
 
-fn assert_agreement(label: &str, list: &BTreeMap<&str, BTreeSet<String>>) {
+#[expect(
+    clippy::print_stderr,
+    reason = "reports the measured rate for a run with --nocapture; this helper is not a test fn"
+)]
+fn assert_agreement(
+    label: &str,
+    list: &BTreeMap<&str, BTreeSet<String>>,
+) -> Result<(), TryFromIntError> {
     for (pos, (both, union)) in agreement(list) {
         assert!(
             union > 0,
             "{label} {pos}: the slice has no candidate findings"
         );
-        #[allow(clippy::cast_precision_loss)]
-        let rate = both as f64 / union as f64;
+        let rate = ratio(both, union)?;
         eprintln!("{label} {pos}: {both}/{union} = {rate:.4}");
         assert!(
             rate >= BLOCKLIST_AGREEMENT_FLOOR,
             "{label} {pos}: agreement {rate:.4} is below 95% ({both}/{union})"
         );
     }
+    Ok(())
 }
 
 #[test]
@@ -207,7 +223,7 @@ fn shipped_blocklist_findings_agree_with_vale_per_pos() {
                 .insert(e.word.to_lowercase());
         }
     }
-    assert_agreement("shipped", &list);
+    assert_agreement("shipped", &list).unwrap();
 }
 
 #[test]
@@ -219,5 +235,5 @@ fn stress_blocklist_findings_agree_with_vale_per_pos() {
         .collect();
     let list: BTreeMap<&str, BTreeSet<String>> =
         POSES.iter().map(|&p| (p, words.clone())).collect();
-    assert_agreement("stress", &list);
+    assert_agreement("stress", &list).unwrap();
 }

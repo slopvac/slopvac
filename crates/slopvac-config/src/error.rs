@@ -48,6 +48,10 @@ pub enum ConfigError {
 }
 
 /// A fixed phrase per error kind, so the message does not change with the operating system.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "io::ErrorKind is non_exhaustive, so a wildcard arm is required"
+)]
 pub(crate) fn reason(e: &io::Error) -> &'static str {
     match e.kind() {
         io::ErrorKind::NotFound => "no such file",

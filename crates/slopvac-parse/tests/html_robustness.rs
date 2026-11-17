@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! Integration tests for html robustness.
 //! Adversarial and generated HTML: no panics, valid positions, linear time.
 
 use std::fmt::Write;
@@ -8,10 +8,21 @@ use proptest::prelude::*;
 use slopvac_model::{SourceIndex, Span};
 use slopvac_parse::{Document, ParseError, TokenKind, WORK_BASE, WORK_PER_BYTE, parse_html_budget};
 
+/// Concatenate string parts into one `String`.
+fn cat<const N: usize>(parts: [&str; N]) -> String {
+    parts.concat()
+}
+
 /// A budget no input reaches, for tests of the bounds that the budget sits above.
 const UNLIMITED: usize = 1_000_000;
 
 /// Parse `source` and check every position claim the contract makes.
+#[expect(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn checked(source: &str, body: Span) -> (Document, slopvac_parse::Stats) {
     let (doc, stats) = parse_html_budget(source, body, UNLIMITED, UNLIMITED).unwrap();
     assert_eq!(stats.marker_tags_fed, 0, "{source:?}");
@@ -51,6 +62,10 @@ fn checked(source: &str, body: Span) -> (Document, slopvac_parse::Stats) {
     (doc, stats)
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn whole(source: &str) -> Span {
     Span::new(0, source.len()).unwrap()
 }
@@ -60,7 +75,7 @@ fn huge_input_shapes_stay_within_the_work_bound_and_valid() {
     let n = 200_000;
     let cases: Vec<(&str, String)> = vec![
         ("unclosed inline tags", "<b>x".repeat(n)),
-        ("deep nesting of blocks", "<div>".repeat(n) + "text"),
+        ("deep nesting of blocks", cat([&"<div>".repeat(n), "text"])),
         ("deep nesting of divs and text", "<div>w ".repeat(n)),
         (
             "huge attribute value",
@@ -76,9 +91,9 @@ fn huge_input_shapes_stay_within_the_work_bound_and_valid() {
         ("many entities", "&amp;&#x41;&eacute;".repeat(n)),
         (
             "open code then stray ends",
-            "<code>".repeat(n) + &"</pre>".repeat(n),
+            cat([&"<code>".repeat(n), &"</pre>".repeat(n)]),
         ),
-        ("open pre then text", "<pre>".repeat(n) + "text"),
+        ("open pre then text", cat([&"<pre>".repeat(n), "text"])),
         ("bare CR", "a\r".repeat(n)),
         ("CRLF runs", "a\r\n \r\n".repeat(n)),
         ("lt without tag", "< a ".repeat(n)),
@@ -86,27 +101,30 @@ fn huge_input_shapes_stay_within_the_work_bound_and_valid() {
         ("many comments", "<!-- x -->y".repeat(n)),
         ("many cells", "<table><tr><td>a".repeat(n)),
         ("many br", "a<br>".repeat(n)),
-        ("stray block ends", "</div>".repeat(n) + &"</li>".repeat(n)),
+        (
+            "stray block ends",
+            cat([&"</div>".repeat(n), &"</li>".repeat(n)]),
+        ),
         (
             "open blocks then stray inline ends",
-            "<div>".repeat(n) + &"</b>".repeat(n),
+            cat([&"<div>".repeat(n), &"</b>".repeat(n)]),
         ),
         (
             "open divs, pre, then divs ended",
-            "<div>".repeat(n) + "<pre>" + &"</div>".repeat(n),
+            cat([&"<div>".repeat(n), "<pre>", &"</div>".repeat(n)]),
         ),
         (
             "open divs, code, then divs ended",
-            "<div>".repeat(n) + &"<code>".repeat(n) + &"</div>".repeat(n),
+            cat([&"<div>".repeat(n), &"<code>".repeat(n), &"</div>".repeat(n)]),
         ),
         (
             "pre in div over and over",
-            "<div><pre>".repeat(n) + &"</div>".repeat(n),
+            cat([&"<div><pre>".repeat(n), &"</div>".repeat(n)]),
         ),
-        ("nested svg", "<svg>".repeat(n) + "text"),
+        ("nested svg", cat([&"<svg>".repeat(n), "text"])),
         (
             "svg titles",
-            "<svg><title>".repeat(n) + &"</title>".repeat(n),
+            cat([&"<svg><title>".repeat(n), &"</title>".repeat(n)]),
         ),
         ("svg with breakouts", "<svg><p>x".repeat(n)),
         ("inline ends in svg", "<b><svg></b>".repeat(n)),
@@ -116,7 +134,7 @@ fn huge_input_shapes_stay_within_the_work_bound_and_valid() {
         ("cdata in svg", "<svg><![CDATA[x]]>".repeat(n)),
         (
             "open templates",
-            "<template>".repeat(n) + &"</div>".repeat(n),
+            cat([&"<template>".repeat(n), &"</div>".repeat(n)]),
         ),
     ];
     for (name, source) in cases {
@@ -249,6 +267,10 @@ proptest! {
 
 /// Parse and return the counters. These bound the work the tree builder did, so they hold
 /// the same on a slow machine.
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn stats(source: &str) -> slopvac_parse::Stats {
     let (_, stats) = parse_html_budget(source, whole(source), UNLIMITED, UNLIMITED).unwrap();
     stats
@@ -257,7 +279,7 @@ fn stats(source: &str) -> slopvac_parse::Stats {
 #[test]
 fn nested_svg_and_group_pairs_cost_a_fixed_amount_each() {
     let n = 100_000;
-    let source = "<svg><g>".repeat(n) + "x" + &"</g></svg>".repeat(n);
+    let source = cat([&"<svg><g>".repeat(n), "x", &"</g></svg>".repeat(n)]);
     let tags = 4 * n;
     let stats = stats(&source);
     // Every tag is one token or is dropped for depth, and each costs a fixed number of
@@ -272,7 +294,7 @@ fn nested_svg_and_group_pairs_cost_a_fixed_amount_each() {
 #[test]
 fn nested_tables_cost_a_fixed_amount_each() {
     let n = 100_000;
-    let source = "<table><tr><td>".repeat(n) + "x";
+    let source = cat([&"<table><tr><td>".repeat(n), "x"]);
     let stats = stats(&source);
     assert!(stats.tokens <= 3 * n + 8, "{stats:?}");
     assert!(stats.tree_ops <= 12 * n, "{stats:?}");
@@ -286,7 +308,7 @@ fn counting_the_open_elements_costs_the_cap_per_tag_at_most() {
     // Close one element and open another at the cap, over and over. Each pair makes the
     // parser count the stack once, and a count visits at most the cap plus a few.
     let n = 50_000;
-    let source = "<div>".repeat(600) + &"</div><div>".repeat(n);
+    let source = cat([&"<div>".repeat(600), &"</div><div>".repeat(n)]);
     let stats = stats(&source);
     assert!(stats.traced <= n * 530, "{stats:?}");
     assert!(stats.tree_ops <= 8 * n + 8 * 600, "{stats:?}");
@@ -307,7 +329,11 @@ fn nested_templates_are_skipped_not_nested() {
     // The scan skips a template and everything in it, however deep and however many are
     // open, so none of it reaches the tree builder or its stack.
     let templates = 50_000;
-    let source = "<template>".repeat(templates) + &"<div>".repeat(600) + "text";
+    let source = cat([
+        &"<template>".repeat(templates),
+        &"<div>".repeat(600),
+        "text",
+    ]);
     let stats = stats(&source);
     assert_eq!(stats.marker_tags_fed, 0, "{stats:?}");
     assert!(stats.tokens <= 8, "{stats:?}");
@@ -341,7 +367,7 @@ fn attributes_the_parser_ignores_never_reach_the_tree_builder() {
 #[test]
 fn a_repeated_attribute_costs_a_fixed_amount() {
     let n = 50_000;
-    let attrs: String = " size=1".repeat(n);
+    let attrs = " size=1".repeat(n);
     let stats = stats(&format!("<font{attrs}>x</font>"));
     assert_eq!(stats.attrs_passed, 1, "{stats:?}");
 }
@@ -350,7 +376,7 @@ fn a_repeated_attribute_costs_a_fixed_amount() {
 fn looking_for_an_end_tag_stops_after_a_fixed_number_of_tags() {
     // An unclosed `<code>` followed by a long run of unrelated end tags.
     let n = 100_000;
-    let source = "<code>x".to_owned() + &"</b>".repeat(n);
+    let source = cat(["<code>x", &"</b>".repeat(n)]);
     let stats = stats(&source);
     assert!(stats.end_scan > 0 && stats.end_scan <= 300, "{stats:?}");
 }
@@ -359,7 +385,11 @@ fn looking_for_an_end_tag_stops_after_a_fixed_number_of_tags() {
 fn repeated_adoption_over_a_wide_parent_stays_linear() {
     // A formatting element ends over a block with many children, again and again.
     let n = 20_000;
-    let source = "<b><div>".to_owned() + &"<span>x</span>".repeat(n) + &"</b><b>y".repeat(n);
+    let source = cat([
+        "<b><div>",
+        &"<span>x</span>".repeat(n),
+        &"</b><b>y".repeat(n),
+    ]);
     let stats = stats(&source);
     assert!(stats.tree_ops <= 8 * n, "{stats:?}");
 }
@@ -439,7 +469,7 @@ fn markers_never_reach_the_tree_builder() {
         "<applet><marquee></applet>",
         "<object><b></object>",
     ] {
-        let source = open.repeat(n) + &"<b></b>".repeat(n);
+        let source = cat([&open.repeat(n), &"<b></b>".repeat(n)]);
         let stats = stats(&source);
         assert_eq!(stats.marker_tags_fed, 0, "{open}: {stats:?}");
     }
@@ -501,9 +531,11 @@ fn templates_at_a_foreign_integration_point_never_reach_the_tree_builder() {
     // Inside SVG's `<foreignObject>` HTML rules apply, so a template there is a real one,
     // and with a cell it leaves a marker behind. The scan skips a template in every context.
     let n = 20_000;
-    let source = "<svg><foreignObject>".to_owned()
-        + &"<template><td></template>".repeat(n)
-        + &"<b></b>".repeat(n);
+    let source = cat([
+        "<svg><foreignObject>",
+        &"<template><td></template>".repeat(n),
+        &"<b></b>".repeat(n),
+    ]);
     let stats = stats(&source);
     assert_eq!(stats.marker_tags_fed, 0, "{stats:?}");
 }
@@ -620,9 +652,11 @@ fn self_closed_templates_at_an_integration_point_never_reach_the_tree_builder() 
     // Inside `<foreignObject>` a browser opens an inert template for `<template/>`, and with
     // a cell it leaves a marker. The scan drops the tag without skipping anything.
     let n = 20_000;
-    let source = "<svg><foreignObject>".to_owned()
-        + &"<template/><td></template>".repeat(n)
-        + &"<b></b>".repeat(n);
+    let source = cat([
+        "<svg><foreignObject>",
+        &"<template/><td></template>".repeat(n),
+        &"<b></b>".repeat(n),
+    ]);
     let stats = stats(&source);
     assert_eq!(stats.marker_tags_fed, 0, "{stats:?}");
 }
@@ -729,8 +763,13 @@ fn copying_containers_onto_blocks_counts_against_the_work_budget() {
     // `<blockquote>` and `<figcaption>` are both block elements with names of one length, so
     // the two documents differ only in whether the blocks inside have containers to copy.
     let paragraphs = "<p>x</p>".repeat(400);
-    let wrap =
-        |tag: &str| format!("<{tag}>").repeat(100) + &paragraphs + &format!("</{tag}>").repeat(100);
+    let wrap = |tag: &str| {
+        cat([
+            &format!("<{tag}>").repeat(100),
+            &paragraphs,
+            &format!("</{tag}>").repeat(100),
+        ])
+    };
     let (quoted, plain) = (wrap("blockquote"), wrap("figcaption"));
     let (_, flat) = parse_html_budget(&plain, whole(&plain), 0, UNLIMITED).unwrap();
     // Every one of the 400 paragraphs copies 100 containers.

@@ -3,6 +3,7 @@
 //! The blocks come from the code blocks of `slopvac-parse`, so fences in lists,
 //! block quotes and MDX follow the same rules as the prose engine.
 
+use crate::sub;
 use std::borrow::Cow;
 use std::ops::Range;
 
@@ -43,7 +44,7 @@ pub fn find_mdx_blocks(mdx: &str) -> Result<Vec<DiagramBlock>, ParseError> {
 /// keeps the byte length, so every offset still addresses the original text.
 fn lone_cr_as_lf(source: &str) -> Cow<'_, str> {
     let bytes = source.as_bytes();
-    let lone = |i: usize| bytes[i] == b'\r' && bytes.get(i + 1) != Some(&b'\n');
+    let lone = |i: usize| bytes.get(i) == Some(&b'\r') && bytes.get(i + 1) != Some(&b'\n');
     if !(0..bytes.len()).any(lone) {
         return Cow::Borrowed(source);
     }
@@ -80,7 +81,7 @@ pub fn extract_fenced(format: Format, source: &str, body: Range<usize>) -> Extra
     for (i, line) in text.split_inclusive('\n').enumerate() {
         let skip = if i == 0 { 0 } else { strip.len_in(line) };
         pieces.push((stripped.len(), body.start + line_start + skip));
-        stripped.push_str(&line[skip..]);
+        stripped.push_str(sub(line, skip..));
         line_start += line.len();
     }
     let map = |at: usize| {
@@ -92,8 +93,8 @@ pub fn extract_fenced(format: Format, source: &str, body: Range<usize>) -> Extra
         let (a, b) = (f.span.start, f.span.end);
         let start = map(a);
         let end = if b > a { map(b - 1) + 1 } else { start };
-        if f.text.is_none() && end - start != b - a {
-            f.text = Some(stripped[a..b].to_owned());
+        if f.text.is_none() && end.checked_sub(start) != b.checked_sub(a) {
+            f.text = Some(sub(&stripped, a..b).to_owned());
         }
         f.span = start..end;
     }
@@ -108,8 +109,8 @@ struct Prefix {
 
 impl Prefix {
     fn of_line_before(source: &str, at: usize) -> Self {
-        let line_start = source[..at].rfind(['\n', '\r']).map_or(0, |i| i + 1);
-        let prefix = &source[line_start..at];
+        let line_start = sub(source, ..at).rfind(['\n', '\r']).map_or(0, |i| i + 1);
+        let prefix = sub(source, line_start..at);
         let none = Self {
             quotes: 0,
             indent: 0,
@@ -118,7 +119,7 @@ impl Prefix {
             return none;
         }
         let quotes = prefix.bytes().filter(|&b| b == b'>').count();
-        let tail = prefix.rfind('>').map_or(prefix, |i| &prefix[i + 1..]);
+        let tail = prefix.rfind('>').map_or(prefix, |i| sub(prefix, i + 1..));
         let indent = if quotes > 0 {
             tail.len().saturating_sub(1)
         } else {
@@ -137,7 +138,7 @@ impl Prefix {
         let mut at = 0;
         for _ in 0..self.quotes {
             let mut j = at;
-            while j < b.len() && j < at + 3 && b[j] == b' ' {
+            while j < at + 3 && b.get(j) == Some(&b' ') {
                 j += 1;
             }
             if b.get(j) != Some(&b'>') {
@@ -148,7 +149,9 @@ impl Prefix {
                 at += 1;
             }
         }
-        let spaces = b[at..]
+        let spaces = b
+            .get(at..)
+            .unwrap_or_default()
             .iter()
             .take(self.indent)
             .take_while(|&&c| c == b' ')
@@ -157,10 +160,18 @@ impl Prefix {
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "Span::new(0, n) fails only when 0 > n, which no length is"
+)]
 fn whole(source: &str) -> Span {
     Span::new(0, source.len()).expect("zero never exceeds the length")
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "BlockKind is non_exhaustive in slopvac-parse, so a wildcard is required; any other block holds no diagram"
+)]
 fn diagram_blocks(document: &Document) -> Vec<DiagramBlock> {
     document
         .blocks
@@ -188,7 +199,7 @@ mod tests {
         find_markdown_blocks(md)
             .unwrap()
             .into_iter()
-            .map(|b| (b.format, &md[b.body]))
+            .map(|b| (b.format, sub(md, b.body)))
             .collect()
     }
 
@@ -238,7 +249,7 @@ mod tests {
         let mdx = "x\r\n```mermaid\rA-->B\r```\r\n";
         let blocks = find_mdx_blocks(mdx).unwrap();
         assert_eq!(blocks.len(), 1);
-        assert_eq!(&mdx[blocks[0].body.clone()], "A-->B\r");
+        assert_eq!(sub(mdx, blocks[0].body.clone()), "A-->B\r");
     }
 
     #[test]
@@ -274,7 +285,7 @@ mod tests {
         let got: Vec<_> = find_mdx_blocks(mdx)
             .unwrap()
             .into_iter()
-            .map(|b| &mdx[b.body])
+            .map(|b| sub(mdx, b.body))
             .collect();
         assert_eq!(got, ["A-->B\n", "C-->D\n"]);
     }
@@ -289,7 +300,7 @@ mod tests {
         extract_fenced(block.format, md, block.body.clone())
             .fragments
             .into_iter()
-            .map(|f| (&md[f.span.clone()], f.span))
+            .map(|f| (sub(md, f.span.clone()), f.span))
             .collect()
     }
 

@@ -5,6 +5,10 @@
 
 use std::path::PathBuf;
 
+#[expect(
+    clippy::expect_used,
+    reason = "example binary: a failure should abort the run"
+)]
 fn main() -> std::io::Result<()> {
     let out = PathBuf::from(std::env::args().nth(1).expect("usage: reference <out-dir>"));
     for (path, text) in slopvac_context::reference_pages() {

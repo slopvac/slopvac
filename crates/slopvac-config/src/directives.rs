@@ -13,6 +13,7 @@
 //! A dotted key sets a nested field: `thresholds.min_score=60`, `rules.core:no-dash=off`.
 //! `terms.allow` takes a comma-separated list.
 
+use crate::sub;
 use std::ops::Range;
 use std::path::Path;
 
@@ -94,14 +95,17 @@ pub fn find(doc: &str, file: &str) -> Vec<Directive> {
 fn find_in_code(doc: &str, family: Family) -> Vec<Directive> {
     let mut out = Vec::new();
     for c in comments(doc, family) {
-        let line_start = doc.as_bytes()[..c.marker]
+        let line_start = doc
+            .as_bytes()
+            .get(..c.marker)
+            .unwrap_or_default()
             .iter()
             .rposition(|&b| b == b'\n' || b == b'\r')
             .map_or(0, |p| p + 1);
-        if !doc[line_start..c.marker].trim().is_empty() {
+        if !sub(doc, line_start..c.marker).trim().is_empty() {
             continue;
         }
-        let body = &doc[c.body.clone()];
+        let body = sub(doc, c.body.clone());
         let text = body.trim_start();
         let Some(rest) = text.strip_prefix("slopvac:") else {
             continue;
@@ -158,7 +162,7 @@ impl Literals {
         let body = line.trim_start_matches(' ');
         if let Some((ch, len)) = self.fence {
             let run = body.chars().take_while(|c| *c == ch).count();
-            if run >= len && body[run..].trim().is_empty() {
+            if run >= len && sub(body, run..).trim().is_empty() {
                 self.fence = None;
             }
             return true;
@@ -167,7 +171,7 @@ impl Literals {
             && let Some(ch) = body.chars().next().filter(|c| *c == '`' || *c == '~')
         {
             let run = body.chars().take_while(|c| *c == ch).count();
-            if run >= 3 && !(ch == '`' && body[run..].contains('`')) {
+            if run >= 3 && !(ch == '`' && sub(body, run..).contains('`')) {
                 self.fence = Some((ch, run));
                 return true;
             }
@@ -181,7 +185,7 @@ impl Literals {
         let lower = line.to_ascii_lowercase();
         for tag in RAW_TAGS {
             if let Some(at) = lower.find(&format!("<{tag}"))
-                && !lower[at..].contains(&format!("</{tag}"))
+                && !sub(&lower, at..).contains(&format!("</{tag}"))
             {
                 self.raw_tag = Some(tag);
                 return true;
@@ -223,7 +227,7 @@ impl Literals {
 /// The byte range of the text after `slopvac:` in a directive comment, if `line` is one.
 fn payload_of(line: &str, style: Style) -> Option<Range<usize>> {
     let lead = line.len() - line.trim_start().len();
-    let body = &line[lead..];
+    let body = sub(line, lead..);
     let (opens, closes): (&[&str], &[&str]) = match style {
         Style::Html => (&["<!--"], &["-->"]),
         Style::Rst => (&[".."], &[]),
@@ -231,18 +235,18 @@ fn payload_of(line: &str, style: Style) -> Option<Range<usize>> {
     };
     let open = opens.iter().find(|p| body.starts_with(**p))?;
     let after_open = lead + open.len();
-    let rest = &line[after_open..];
+    let rest = sub(line, after_open..);
     let skipped = rest.len() - rest.trim_start().len();
     let key_at = after_open + skipped;
     let payload_at = key_at + "slopvac:".len();
-    if !line[key_at..].starts_with("slopvac:") {
+    if !sub(line, key_at..).starts_with("slopvac:") {
         return None;
     }
     let mut end = line.trim_end().len();
     for close in closes {
-        if line[..end].ends_with(close) {
+        if sub(line, ..end).ends_with(close) {
             end -= close.len();
-            end = line[..end].trim_end().len();
+            end = sub(line, ..end).trim_end().len();
             break;
         }
     }
@@ -254,23 +258,26 @@ fn payload_of(line: &str, style: Style) -> Option<Range<usize>> {
 
 /// Split `key=value` pairs at white space; a value may be in double quotes.
 fn parse_pairs(doc: &str, payload: Range<usize>) -> Node {
-    let text = &doc[payload.clone()];
+    let text = sub(doc, payload.clone());
     let mut entries: Vec<Entry> = Vec::new();
     let mut i = 0;
     let bytes = text.as_bytes();
-    while i < bytes.len() {
-        if bytes[i].is_ascii_whitespace() {
+    while let Some(&current) = bytes.get(i) {
+        if current.is_ascii_whitespace() {
             i += 1;
             continue;
         }
         let key_start = i;
-        while i < bytes.len() && bytes[i] != b'=' && !bytes[i].is_ascii_whitespace() {
+        while bytes
+            .get(i)
+            .is_some_and(|&b| b != b'=' && !b.is_ascii_whitespace())
+        {
             i += 1;
         }
         let key_end = i;
-        let key = &text[key_start..key_end];
+        let key = sub(text, key_start..key_end);
         let key_span = payload.start + key_start..payload.start + key_end;
-        if i < bytes.len() && bytes[i] == b'=' {
+        if bytes.get(i) == Some(&b'=') {
             i += 1;
             let (value, value_span, next) = read_value(text, i, payload.start);
             i = next;
@@ -294,21 +301,21 @@ fn parse_pairs(doc: &str, payload: Range<usize>) -> Node {
 fn read_value(text: &str, from: usize, base: usize) -> (String, Range<usize>, usize) {
     let bytes = text.as_bytes();
     if bytes.get(from) == Some(&b'"') {
-        let close = text[from + 1..]
+        let close = sub(text, from + 1..)
             .find('"')
             .map_or(text.len(), |p| from + 1 + p);
         let end = (close + 1).min(text.len());
         return (
-            text[from + 1..close].to_owned(),
+            sub(text, from + 1..close).to_owned(),
             base + from..base + end,
             end,
         );
     }
     let mut i = from;
-    while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
+    while bytes.get(i).is_some_and(|b| !b.is_ascii_whitespace()) {
         i += 1;
     }
-    (text[from..i].to_owned(), base + from..base + i, i)
+    (sub(text, from..i).to_owned(), base + from..base + i, i)
 }
 
 fn typed(key: &str, raw: &str, span: &Range<usize>) -> Value {
@@ -323,15 +330,16 @@ fn typed(key: &str, raw: &str, span: &Range<usize>) -> Value {
                 .collect(),
         );
     }
-    if let Ok(i) = raw.parse::<i64>() {
-        Value::Int(i)
-    } else if let Ok(f) = raw.parse::<f64>() {
-        Value::Float(f)
-    } else if raw == "true" || raw == "false" {
-        Value::Bool(raw == "true")
-    } else {
-        Value::Str(raw.to_owned())
-    }
+    raw.parse::<i64>()
+        .map(Value::Int)
+        .or_else(|_| raw.parse::<f64>().map(Value::Float))
+        .unwrap_or_else(|_| {
+            if raw == "true" || raw == "false" {
+                Value::Bool(raw == "true")
+            } else {
+                Value::Str(raw.to_owned())
+            }
+        })
 }
 
 /// Add `dotted.key = value`, creating or extending the nested tables.
@@ -360,37 +368,38 @@ fn insert(
                 key: (*seg).to_owned(),
                 key_span: span,
                 node: Node {
-                    span: value_span.clone(),
+                    span: value_span,
                     value,
                 },
             };
-            match pos {
-                Some(p) => cur[p] = entry,
+            match pos.and_then(|p| cur.get_mut(p)) {
+                Some(slot) => *slot = entry,
                 None => cur.push(entry),
             }
             return;
         }
-        let p = match pos {
-            Some(p) if matches!(cur[p].node.value, Value::Table(_)) => p,
-            _ => {
-                let entry = Entry {
-                    key: (*seg).to_owned(),
-                    key_span: span.clone(),
-                    node: Node {
-                        span,
-                        value: Value::Table(Vec::new()),
-                    },
-                };
-                if let Some(p) = pos {
-                    cur[p] = entry;
-                    p
-                } else {
-                    cur.push(entry);
-                    cur.len() - 1
-                }
+        let table_at = pos.filter(|&p| {
+            cur.get(p)
+                .is_some_and(|e| matches!(e.node.value, Value::Table(_)))
+        });
+        let p = table_at.unwrap_or_else(|| {
+            let entry = Entry {
+                key: (*seg).to_owned(),
+                key_span: span.clone(),
+                node: Node {
+                    span,
+                    value: Value::Table(Vec::new()),
+                },
+            };
+            if let Some((p, slot)) = pos.and_then(|p| cur.get_mut(p).map(|slot| (p, slot))) {
+                *slot = entry;
+                p
+            } else {
+                cur.push(entry);
+                cur.len() - 1
             }
-        };
-        let Value::Table(next) = &mut cur[p].node.value else {
+        });
+        let Some(Value::Table(next)) = cur.get_mut(p).map(|e| &mut e.node.value) else {
             return;
         };
         cur = next;

@@ -3,6 +3,7 @@
 //! Detection and parsing come from the `frontmatter-spans` crate; this module adds the allow
 //! policy and the `slopvac:` mapping.
 
+use crate::sub;
 pub use frontmatter_spans::{Block, Format};
 use frontmatter_spans::{FrontMatter, Limits};
 
@@ -20,8 +21,8 @@ fn lines_with_offsets(text: &str) -> impl Iterator<Item = (usize, &str)> {
     let mut lines = Vec::new();
     let mut start = 0;
     let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
+    while let Some(&current) = bytes.get(i) {
+        match current {
             b'\n' => i += 1,
             b'\r' => {
                 i += if bytes.get(i + 1) == Some(&b'\n') {
@@ -35,11 +36,11 @@ fn lines_with_offsets(text: &str) -> impl Iterator<Item = (usize, &str)> {
                 continue;
             }
         }
-        lines.push((start, &text[start..i]));
+        lines.push((start, sub(text, start..i)));
         start = i;
     }
     if start < bytes.len() {
-        lines.push((start, &text[start..]));
+        lines.push((start, sub(text, start..)));
     }
     lines.into_iter()
 }
@@ -57,7 +58,7 @@ pub fn extract(doc: &str) -> Option<Block> {
     } else {
         0
     };
-    let rest = &doc[start..];
+    let rest = sub(doc, start..);
     let (format, fence) = if rest.starts_with('{') {
         return frontmatter_spans::detect(doc);
     } else if rest.starts_with("---") {
@@ -100,13 +101,13 @@ pub fn parse_block(doc: &str, block: &Block) -> Result<Node, crate::tree::ParseE
             message: e.message,
             span: e.span.map(|s| s.range),
         })?;
-    match first_duplicate(&node) {
-        Some(entry) => Err(crate::tree::ParseError {
+    if let Some(entry) = first_duplicate(&node) {
+        return Err(crate::tree::ParseError {
             message: format!("duplicate key `{}`", entry.key),
             span: Some(entry.key_span.clone()),
-        }),
-        None => Ok(node),
+        });
     }
+    Ok(node)
 }
 
 /// The first entry, in document order, whose key an earlier entry of the same table has.
@@ -124,7 +125,12 @@ fn first_duplicate(node: &Node) -> Option<&Entry> {
             })
         }
         Value::Array(items) => items.iter().find_map(first_duplicate),
-        _ => None,
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::Str(_)
+        | Value::Datetime(_) => None,
     }
 }
 
@@ -228,7 +234,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
     let Some(block) = extract(doc) else {
         return Read::default();
     };
-    let raw = &doc[block.content.clone()];
+    let raw = sub(doc, block.content.clone());
     let (format, content_start) = (block.format, block.content.start);
     // Cheap candidate check: the key `slopvac` can be spelled another way only through an escape,
     // so text with neither the word nor a backslash cannot hold the block and is never parsed.
@@ -343,22 +349,22 @@ fn take_key(s: &str) -> Option<(String, &str)> {
     if let Some(body) = s.strip_prefix('"') {
         let bytes = body.as_bytes();
         let mut j = 0;
-        while j < bytes.len() && bytes[j] != b'"' {
-            j += if bytes[j] == b'\\' { 2 } else { 1 };
+        while bytes.get(j).is_some_and(|&c| c != b'"') {
+            j += if bytes.get(j) == Some(&b'\\') { 2 } else { 1 };
         }
         if j >= bytes.len() {
             return None;
         }
-        return Some((decode_escapes(&body[..j]), &body[j + 1..]));
+        return Some((decode_escapes(sub(body, ..j)), sub(body, j + 1..)));
     }
     if let Some(body) = s.strip_prefix('\'') {
         let end = body.find('\'')?;
-        return Some((body[..end].to_owned(), &body[end + 1..]));
+        return Some((sub(body, ..end).to_owned(), sub(body, end + 1..)));
     }
     let end = s
         .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
         .unwrap_or(s.len());
-    (end > 0).then(|| (s[..end].to_owned(), &s[end..]))
+    (end > 0).then(|| (sub(s, ..end).to_owned(), sub(s, end..)))
 }
 
 /// Keys of the outermost JSON object, found by tracking nesting and strings.
@@ -367,20 +373,20 @@ fn json_top_level_keys(raw: &str) -> Vec<String> {
     let mut keys = Vec::new();
     let mut depth = 0usize;
     let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
+    while let Some(&current) = bytes.get(i) {
+        match current {
             b'{' | b'[' => depth += 1,
             b'}' | b']' => depth = depth.saturating_sub(1),
             b'"' => {
                 let start = i + 1;
                 let mut j = start;
-                while j < bytes.len() && bytes[j] != b'"' {
-                    j += if bytes[j] == b'\\' { 2 } else { 1 };
+                while bytes.get(j).is_some_and(|&c| c != b'"') {
+                    j += if bytes.get(j) == Some(&b'\\') { 2 } else { 1 };
                 }
                 let end = j.min(bytes.len());
                 let after = raw.get(end + 1..).unwrap_or("").trim_start();
                 if depth == 1 && after.starts_with(':') {
-                    keys.push(decode_escapes(&raw[start..end]));
+                    keys.push(decode_escapes(sub(raw, start..end)));
                 }
                 i = end;
             }

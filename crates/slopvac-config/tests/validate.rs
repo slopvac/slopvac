@@ -12,22 +12,38 @@ struct Project {
 }
 
 impl Project {
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
         Self { dir }
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn root(&self) -> PathBuf {
         fs::canonicalize(self.dir.path()).unwrap()
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn write(&self, rel: &str, text: &str) {
         let p = self.root().join(rel);
         fs::create_dir_all(p.parent().unwrap()).unwrap();
         fs::write(p, text).unwrap();
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "test helper outside a test fn: a setup failure should fail the calling test"
+    )]
     fn validate(&self, args: &[&str]) -> (u8, String) {
         let mut line = vec!["validate"];
         line.extend_from_slice(args);

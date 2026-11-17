@@ -9,6 +9,7 @@
 //!
 //! The 2.x rule was one pattern. The grammar below is that pattern read token by token.
 
+use crate::sub;
 use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::LazyLock;
@@ -93,11 +94,19 @@ impl SentenceCase {
 }
 
 /// `[A-Z][A-Za-z0-9]*(?:[-'’][A-Za-z0-9]+)*` as a word.
+#[expect(
+    clippy::expect_used,
+    reason = "the pattern is a literal, and the tests compile it"
+)]
 static NAME: LazyLock<Pattern> = LazyLock::new(|| {
     Pattern::new(r"\b[A-Z][A-Za-z0-9]*(?:[-'’][A-Za-z0-9]+)*\b", false)
         .expect("the name pattern compiles")
 });
 /// A number, with Unicode decimal digits as in the 2.x regex.
+#[expect(
+    clippy::expect_used,
+    reason = "the pattern is a literal, and the tests compile it"
+)]
 static NUMBER: LazyLock<Pattern> = LazyLock::new(|| {
     Pattern::new(r"\A\d+(?:\.\d+)*\z", false).expect("the number pattern compiles")
 });
@@ -123,7 +132,9 @@ fn grammar_tokens(text: &str) -> impl Iterator<Item = Option<&str>> {
         } else {
             0
         };
-        end += rest[end..].find([' ', '\t']).unwrap_or(rest.len() - end);
+        end += sub(rest, end..)
+            .find([' ', '\t'])
+            .unwrap_or(rest.len() - end);
         let (token, tail) = rest.split_at(end);
         rest = tail;
         Some(Some(token))
@@ -179,7 +190,7 @@ fn is_code(word: &str) -> bool {
     word.len() > 2
         && word.starts_with('`')
         && word.ends_with('`')
-        && !word[1..word.len() - 1].contains('`')
+        && !sub(word, 1..word.len() - 1).contains('`')
 }
 
 #[cfg(test)]

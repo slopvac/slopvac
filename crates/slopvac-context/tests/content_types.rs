@@ -1,5 +1,4 @@
 //! Content-type genres: ui-copy, agent-instructions and the Diataxis types.
-#![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
     GenreSource, PlainDocument, Profile, ResolveOptions, RuleLevel, builtin_genres,
@@ -7,6 +6,10 @@ use slopvac_context::{
 
 const HISTORY_RULE: &str = "docs-discipline.history-internal-reference";
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test helper outside a test fn: a setup failure should fail the calling test"
+)]
 fn genre_of(path: &str, src: &str) -> (String, GenreSource) {
     let r = builtin_genres()
         .unwrap()
@@ -56,11 +59,11 @@ fn genres_detect_on_fixtures() {
         let (path, src) = if path.starts_with("---") {
             ("notes.md", format!("{path}{src}# T\n\nBody.\n"))
         } else {
-            (path, src.to_string())
+            (path, src.to_owned())
         };
         assert_eq!(
             genre_of(path, &src),
-            (want.to_string(), GenreSource::Detected),
+            (want.to_owned(), GenreSource::Detected),
             "{path}"
         );
     }
