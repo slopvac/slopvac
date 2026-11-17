@@ -83,7 +83,7 @@ def test_a_case_fails_with_binary_budget_naming_the_budget(case: dict) -> None:
         assert len(exceeded) == 1
         assert exceeded[0] in OUTPUT_BUDGETS
         assert case["expected"] == {
-            "code": "binary-budget",
+            "code": "extract-budget",
             "error": -32010,
             "budget": exceeded[0],
             "limit": APPROVED_BUDGETS[exceeded[0]],

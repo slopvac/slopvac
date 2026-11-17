@@ -1,5 +1,5 @@
 {
-  "description": "Consumer rule for an unknown format id (plugin-protocol.md section 5.5.1). BinaryFormat is marked x-slopvac-extensible, so a later host may send an id that an older plugin does not know. The plugin declines that document with binary-unsupported (-32008) and answers the others; it does not fail the request with invalid-params. A strict schema check of the request reports an error only at unknown_format_pointer, the extensible position. Manifest validation stays strict: a manifest that declares the same id is refused at manifest_pointer.",
+  "description": "Consumer rule for an unknown format id (plugin-protocol.md section 5.5.1). BinaryFormat is marked x-slopvac-extensible, so a later host may send an id that an older plugin does not know. The plugin declines that document with extract-unsupported (-32008) and answers the others; it does not fail the request with invalid-params. A strict schema check of the request reports an error only at unknown_format_pointer, the extensible position. Manifest validation stays strict: a manifest that declares the same id is refused at manifest_pointer.",
   "request": {
     "jsonrpc": "2.0",
     "id": 9,
@@ -35,7 +35,7 @@
           "code": -32008,
           "message": "format vsdx is not supported",
           "data": {
-            "slopvac_code": "binary-unsupported"
+            "slopvac_code": "extract-unsupported"
           }
         }
       }

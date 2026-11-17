@@ -160,7 +160,7 @@ A segment from an extractor keeps the span of the source it came from. When the 
 
 ### 5.5 Binary extraction
 
-The `binary-extractor` kind reads a file that is not UTF-8 text and returns its prose as segments. Bead `slopvac-8l4.2.27` owns the binary extraction contract. Sections 5.5.1 to 5.5.5 hold for every binary extractor, wherever it runs. First-party extractors run inside the host through a native adapter, and plugins run through the wire adapter. Both adapters pass extractor output through one shared validator (`slopvac-8l4.20.1`). A validator failure is `plugin-output-invalid` for a plugin and `builtin-output-invalid` for a first-party extractor (section 10). Below, `plugin-output-invalid` covers both. Section 5.5.6 applies to the wire only. The conformance suite also runs the first-party extractors through the wire adapter.
+The `binary-extractor` kind reads a file that is not UTF-8 text and returns its prose as segments. Bead `slopvac-8l4.2.27` owns the binary extraction contract. Sections 5.5.1 to 5.5.5 hold for every binary extractor, wherever it runs. First-party extractors run inside the host through a native adapter, and plugins run through the wire adapter. Both adapters pass extractor output through one shared validator (`slopvac-8l4.20.1`). The shared validator reports a failure as `plugin-output-invalid` for plugin output and as `extract-output-invalid` for first-party output. Both are host-only codes in section 10 with no numeric code, and the two never share a meaning. Below, `plugin-output-invalid` stands for both. Section 5.5.6 applies to the wire only. The conformance suite also runs the first-party extractors through the wire adapter.
 
 #### 5.5.1 Formats and eligibility
 
@@ -177,9 +177,9 @@ The host sends a file to a binary extractor only under these rules:
 - A `binary-extractor` hook lists the formats it reads in `HookDecl.formats`, both in the manifest and in the `initialize` reply. The list is required for this kind. A reply that lists a format the manifest does not list for the same hook is `plugin-declaration-mismatch` (section 4.3).
 - The host decides the format from the bytes first. A PNG signature means a PNG format. A ZIP local file header with a `[Content_Types].xml` entry means Office Open XML, and a stored `mimetype` entry means OpenDocument. The file name then picks the variant. Discovery and the mapping from names to ids belong to `slopvac-8l4.12`.
 - When the signature and the name disagree, the host sends the file to no extractor. It reports `binary-format-mismatch`, and the run exits 2.
-- When no extractor reads the detected format, the host reports `binary-unsupported`, and the run exits 2.
+- When no extractor reads the detected format, the host reports `extract-unsupported`, and the run exits 2.
 - The host sends a format only to a hook that declared it, and sends each document to one binary extractor only.
-- A plugin or other reader that receives a format id it does not know treats the document as unsupported. It declines that document with `binary-unsupported`, answers the other documents, and does not fail the request. The vectors in [`binary-unknown-format.json`](../../schemas/v3/conformance/plugin-protocol/binary-unknown-format.json) show the rule.
+- A plugin or other reader that receives a format id it does not know treats the document as unsupported. It declines that document with `extract-unsupported`, answers the other documents, and does not fail the request. The vectors in [`binary-unknown-format.json`](../../schemas/v3/conformance/plugin-protocol/binary-unknown-format.json) show the rule.
 - No hook wins a format by default, because load order and pack order carry no intent. When two or more enabled hooks list a format, built-in extractors included, a mapping in the user's config picks one, such as `[formats] pptx = "<pack>:<hook>"`. `slopvac-8l4.2` fixes the key name. Without a mapping, the host sends files of that format to no extractor. It reports `binary-format-ambiguous`, names every hook that claims the format and the config key that resolves it, and the run exits 2.
 - Standard input is never a binary document in 3.0.
 
@@ -227,9 +227,9 @@ Each document ends in exactly one outcome:
 | `extracted` | The file holds prose. | `outcome` `extracted` with one or more segments. | Complete. |
 | `empty` | A valid file of the format with no prose, such as a docx file with no text. | `outcome` `empty`, no segments. | Complete with no findings. |
 | `no-source` | A valid container with no embedded source for the format, such as a PNG without a draw.io chunk. | `outcome` `no-source`, no segments. | Incomplete. The host reports the coded notice `binary-no-source`, which names the document and its locator, so the user can exclude the file. The run exits 2, never 0. |
-| `unsupported` | A file of the format that the extractor cannot read: encrypted, protected by a password, or a variant it does not handle. | Error -32008 `binary-unsupported`. | Exit 2. |
-| `malformed` | Bytes that break the format: a bad CRC, a broken ZIP directory, XML that does not parse, or an embedded payload that does not decode. | Error -32009 `binary-malformed`. | Exit 2. |
-| `budget` | The extractor hit a limit of section 5.5.5 or of its own. | Error -32010 `binary-budget`. | Exit 2. |
+| `unsupported` | A file of the format that the extractor cannot read: encrypted, protected by a password, or a variant it does not handle. | Error -32008 `extract-unsupported`. | Exit 2. |
+| `malformed` | Bytes that break the format: a bad CRC, a broken ZIP directory, XML that does not parse, or an embedded payload that does not decode. | Error -32009 `extract-malformed`. | Exit 2. |
+| `budget` | The extractor hit a limit of section 5.5.5 or of its own. | Error -32010 `extract-budget`. | Exit 2. |
 
 - Extraction is all or nothing. A failed document returns no segments, and v1 has no partial result.
 - A malformed payload in a named format is `malformed`. It is never `empty` or `no-source`, so a broken file never passes as clean.
@@ -247,9 +247,9 @@ These budgets hold for every binary extractor. They are fixed host constants, an
 | Extracted text | 32 MiB (33554432 bytes) of UTF-8 per document, across all segments | `text-bytes` |
 | Request buffers in flight | 64 MiB (67108864 bytes) across all plugins (section 5.5.6) | `in-flight-bytes` |
 
-A breach of any budget is `binary-budget` (-32010). `data.budget` names the budget, and `data.limit` holds its value from the table. Both are named fields in the error data, and a reader never parses them from the message. The schema def [`BinaryBudget`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryBudget) is the one list of names. It carries `x-slopvac-extensible`, so a later release may add a budget, and a reader keeps a name it does not know.
+A breach of any budget is `extract-budget` (-32010). `data.budget` names the budget, and `data.limit` holds its value from the table. Both are named fields in the error data, and a reader never parses them from the message. The schema def [`BinaryBudget`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryBudget) is the one list of names. It carries `x-slopvac-extensible`, so a later release may add a budget, and a reader keeps a name it does not know.
 
-An extractor that reaches an output budget reports `binary-budget` itself. When its output still exceeds a budget, the validator fails that document with `binary-budget`. The schema pattern also bounds `part` and `locator`, but the host checks the budgets first. The vectors in [`binary-caps.json`](../../schemas/v3/conformance/plugin-protocol/binary-caps.json) hold a case at and over each output budget.
+An extractor that reaches an output budget reports `extract-budget` itself. When its output still exceeds a budget, the validator fails that document with `extract-budget`. The schema pattern also bounds `part` and `locator`, but the host checks the budgets first. The vectors in [`binary-caps.json`](../../schemas/v3/conformance/plugin-protocol/binary-caps.json) hold a case at and over each output budget.
 
 The 30 s hook timeout of section 6.3 also applies, and its expiry is `plugin-timeout`. A first-party extractor checks its deadline between parts, so the check is cooperative.
 
@@ -264,7 +264,7 @@ The negotiated `maxMessageBytes` of section 2.2 bounds both directions. v1 has n
 **Requests.** The host builds each request in the order below, so a large file costs no memory before it is admitted (CWE-770). A document that fails step 1, 4 or 5 gets `message-too-large`. The host does not send a failed document, and the run exits 2. All size arithmetic is checked (section 2.2).
 
 1. **Preflight.** The host takes n from the file metadata and serializes the envelope, which is small. It computes 4 × ⌈n / 3⌉ plus the envelope size and compares the sum with `maxMessageBytes`. It reads and encodes nothing before this check passes.
-2. **Reservation.** The host reserves n, plus the base64 length, plus the preflight size from one in-flight budget for binary requests. The budget is 64 MiB (67108864 bytes) across all plugins, and it covers the raw bytes, the base64 text and the JSON frame. A request waits until its reservation fits. A reservation larger than the whole budget fails at once with `binary-budget`, budget `in-flight-bytes`. The host releases the reservation when the frame is written or the request fails.
+2. **Reservation.** The host reserves n, plus the base64 length, plus the preflight size from one in-flight budget for binary requests. The budget is 64 MiB (67108864 bytes) across all plugins, and it covers the raw bytes, the base64 text and the JSON frame. A request waits until its reservation fits. A reservation larger than the whole budget fails at once with `extract-budget`, budget `in-flight-bytes`. The host releases the reservation when the frame is written or the request fails.
 3. **Bounded read.** The host reads at most n + 1 bytes. A file that holds more than n bytes changed after the preflight. The host stops reading and reports `binary-input-changed`. A file that holds fewer bytes is sent with its real length.
 4. **Capped serialization.** The host encodes into a buffer of exactly the base64 length. It serializes into a writer that stops at `maxMessageBytes`, so escaping in other fields cannot grow the frame past the limit.
 5. **Final gate.** The host sends the frame only when its exact serialized size is at most `maxMessageBytes`. The size counts the bytes the host writes, so its serializer choices count too.
@@ -352,9 +352,9 @@ Errors use the JSON-RPC error object. `code` is numeric. `data.slopvac_code` is 
 | -32005 | `request-cancelled` | The plugin stopped a request after a cancel. |
 | -32006 | `document-invalid` | The plugin cannot process this document, for example binary content. |
 | -32007 | `offline` | A provider refused the call because offline mode is on. |
-| -32008 | `binary-unsupported` | A binary extractor cannot read this file: encrypted, protected, or an unhandled variant (section 5.5.4). |
-| -32009 | `binary-malformed` | The bytes break the format, or an embedded payload does not decode. |
-| -32010 | `binary-budget` | A binary extractor hit a limit. |
+| -32008 | `extract-unsupported` | A binary extractor cannot read this file: encrypted, protected, or an unhandled variant (section 5.5.4). |
+| -32009 | `extract-malformed` | The bytes break the format, or an embedded payload does not decode. |
+| -32010 | `extract-budget` | A binary extractor hit a limit. |
 
 The range -32099 to -32000 is the slopvac range. The plugin may add codes from -32050 to -32099 for its own use if it also sets `data.slopvac_code`, and the host treats them as `internal-error`. The host reserves the rest of the range.
 
@@ -375,9 +375,9 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 | `binary-no-source` | A binary extractor found no embedded source in a valid container. |
 | `binary-input-changed` | A binary file grew between the preflight and the read (section 5.5.6). |
 | `binary-format-ambiguous` | Two or more enabled hooks claim a format, and the config maps it to none of them (section 5.5.1). |
-| `builtin-output-invalid` | A first-party extractor's output fails the shared validator. The cause is a slopvac bug, and the message points to the issue tracker. Severity and exit match `plugin-output-invalid`. |
+| `extract-output-invalid` | The host validator rejects the output of a first-party extractor (section 5.5). The cause is a slopvac bug, and the message points to the issue tracker. It is separate from `plugin-output-invalid`, which covers plugin output, and has the same severity and exit. |
 
-A first-party extractor reports `binary-unsupported`, `binary-malformed` and `binary-budget` with the same strings. The host also raises `binary-unsupported` when no extractor reads a format.
+A first-party extractor reports `extract-unsupported`, `extract-malformed` and `extract-budget` with the same strings. The host also raises `extract-unsupported` when no extractor reads a format.
 
 Exit codes stay as policies.md section 3.5 defines them. Any plugin failure makes the affected run exit 2, never 0, and never 1 unless findings fail the gate.
 
@@ -466,14 +466,14 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | H25 | A top-level array, a duplicate key, a nesting depth of 65. | Each is a framing error. |
 | H36 | `binary-extractor/extract` requests built from every `frames` and `preflight` case in `binary-frames.json`. | The host sends exactly the cases marked admissible. Each other document gets `message-too-large`, and the run exits 2. For a case that fails the preflight, the host reads and encodes no byte of the file. |
 | H37 | A binary result entry with both `outcome` and `error`, `extracted` with no segments, `empty` with segments, a span past `byte_length`, a duplicate `part` and `locator`, and a locator with a control or bidirectional character. | `plugin-output-invalid` for each. |
-| H38 | Binary documents that end `empty`, `no-source`, `binary-unsupported`, `binary-malformed` and `binary-budget`. | `empty` is complete with no findings. Each of the others makes the run exit 2, never 0. |
-| H39 | A file whose signature and name disagree, and a format that no extractor lists. | `binary-format-mismatch` and `binary-unsupported`. No extractor gets the file. The run exits 2. |
+| H38 | Binary documents that end `empty`, `no-source`, `extract-unsupported`, `extract-malformed` and `extract-budget`. | `empty` is complete with no findings. Each of the others makes the run exit 2, never 0. |
+| H39 | A file whose signature and name disagree, and a format that no extractor lists. | `binary-format-mismatch` and `extract-unsupported`. No extractor gets the file. The run exits 2. |
 | H40 | A reply whose `binary-extractor` hook lists a format the manifest does not list. | `plugin-declaration-mismatch`, kill, no reuse. |
 | H41 | The first-party extractors, run through the wire adapter. | They pass H36 to H38 and P20 to P23. |
 | H42 | Concurrent binary requests whose reservations exceed the in-flight budget, and a file that grows after the preflight. | The later requests wait, and peak memory for request buffers stays under the budget. The grown file gets `binary-input-changed`, and the run exits 2. |
 | H43 | Two enabled hooks list one format: two plugins, and a plugin with a built-in extractor. Run with and without a config mapping. | Without a mapping, the host reports `binary-format-ambiguous`, names both hooks and the config key, gives no extractor the file, and exits 2. With a mapping, only the mapped hook gets the file. |
 | H44 | A manifest whose `binary-extractor` hook lists a format outside the 3.0 list. | The manifest is refused before spawn. |
-| H45 | Results built from every case in `binary-caps.json`, and a first-party extractor whose output fails the validator. | Over-budget cases fail with `binary-budget`, `data.budget` names the budget, and `data.limit` holds its value. At-budget cases pass. The first-party failure is `builtin-output-invalid`. |
+| H45 | Results built from every case in `binary-caps.json`, and a first-party extractor whose output fails the validator. | Over-budget cases fail with `extract-budget`, `data.budget` names the budget, and `data.limit` holds its value. At-budget cases pass. The first-party failure is `extract-output-invalid`. |
 
 ### 12.2 Plugin
 
@@ -499,9 +499,9 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | P18 | A fixer request with selected findings. | Every edit names a finding index and lies inside that finding's span. |
 | P19 | An initialize reply compared with the manifest. | Hooks, network and features are a subset of the manifest declaration. |
 | P20 | A `binary-extractor/extract` request for each declared format, sent twice. | Each entry has one outcome. Spans lie inside `byte_length`, `part` and `locator` pairs are unique, and both results are equal. |
-| P21 | A corrupt file in a declared format, and a valid container with no embedded source. | `binary-malformed`, and `no-source`. Neither is `empty`. |
+| P21 | A corrupt file in a declared format, and a valid container with no embedded source. | `extract-malformed`, and `no-source`. Neither is `empty`. |
 | P22 | A document whose segments do not fit `maxMessageBytes`. | That document gets `message-too-large`. The reply fits, and no segment is truncated. |
-| P23 | The request in `binary-unknown-format.json`: one known format and one id the plugin does not know. | The plugin declines the unknown document with `binary-unsupported` and answers the other. It does not answer `invalid-params`. |
+| P23 | The request in `binary-unknown-format.json`: one known format and one id the plugin does not know. | The plugin declines the unknown document with `extract-unsupported` and answers the other. It does not answer `invalid-params`. |
 
 ## 13. Owners
 

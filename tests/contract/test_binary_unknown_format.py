@@ -70,7 +70,7 @@ def test_the_reply_declines_the_unknown_document_and_answers_the_rest() -> None:
 
     declined = by_id[VECTOR["declined_document"]]
     assert declined["error"]["code"] == -32008
-    assert declined["error"]["data"]["slopvac_code"] == "binary-unsupported"
+    assert declined["error"]["data"]["slopvac_code"] == "extract-unsupported"
     assert "outcome" not in declined
     others = [r for d, r in by_id.items() if d != VECTOR["declined_document"]]
     assert all("error" not in r for r in others)

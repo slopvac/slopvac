@@ -19,7 +19,7 @@
         "code": -32010,
         "message": "inflated size over the limit",
         "data": {
-          "slopvac_code": "binary-budget"
+          "slopvac_code": "extract-budget"
         }
       }
     }

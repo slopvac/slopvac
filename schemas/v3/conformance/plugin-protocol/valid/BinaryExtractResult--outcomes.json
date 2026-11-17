@@ -15,7 +15,7 @@
         "code": -32009,
         "message": "bad CRC in chunk 4",
         "data": {
-          "slopvac_code": "binary-malformed"
+          "slopvac_code": "extract-malformed"
         }
       }
     },

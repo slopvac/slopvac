@@ -7,7 +7,7 @@
         "code": -32008,
         "message": "encrypted",
         "data": {
-          "slopvac_code": "binary-unsupported"
+          "slopvac_code": "extract-unsupported"
         }
       }
     }

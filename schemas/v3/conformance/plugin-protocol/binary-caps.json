@@ -1,5 +1,5 @@
 {
-  "description": "Budget vectors for binary extractor output (plugin-protocol.md section 5.5.5). The budgets are fixed host constants, not negotiated; their names are the BinaryBudget enum. Each case describes one document result: segments is the segment count, text_bytes_each the UTF-8 length of every segment text, and part_chars and locator_chars the character count of every part and locator. A case within every budget is accepted. A case over a budget fails that document with binary-budget (-32010): data.budget names the budget and data.limit holds its value. in-flight-bytes is the request-side budget of section 5.5.6 and has no output case here; binary-frames.json uses the same value. The shared validator (slopvac-8l4.20.1) builds each result and replays the file; part and locator cases also agree with the schema pattern bound.",
+  "description": "Budget vectors for binary extractor output (plugin-protocol.md section 5.5.5). The budgets are fixed host constants, not negotiated; their names are the BinaryBudget enum. Each case describes one document result: segments is the segment count, text_bytes_each the UTF-8 length of every segment text, and part_chars and locator_chars the character count of every part and locator. A case within every budget is accepted. A case over a budget fails that document with extract-budget (-32010): data.budget names the budget and data.limit holds its value. in-flight-bytes is the request-side budget of section 5.5.6 and has no output case here; binary-frames.json uses the same value. The shared validator (slopvac-8l4.20.1) builds each result and replays the file; part and locator cases also agree with the schema pattern bound.",
   "budgets": {
     "segments": 1000000,
     "part-chars": 1024,
@@ -23,7 +23,7 @@
       "part_chars": 17,
       "locator_chars": 8,
       "expected": {
-        "code": "binary-budget",
+        "code": "extract-budget",
         "error": -32010,
         "budget": "segments",
         "limit": 1000000
@@ -44,7 +44,7 @@
       "part_chars": 17,
       "locator_chars": 8,
       "expected": {
-        "code": "binary-budget",
+        "code": "extract-budget",
         "error": -32010,
         "budget": "text-bytes",
         "limit": 33554432
@@ -65,7 +65,7 @@
       "part_chars": 1025,
       "locator_chars": 8,
       "expected": {
-        "code": "binary-budget",
+        "code": "extract-budget",
         "error": -32010,
         "budget": "part-chars",
         "limit": 1024
@@ -86,7 +86,7 @@
       "part_chars": 17,
       "locator_chars": 1025,
       "expected": {
-        "code": "binary-budget",
+        "code": "extract-budget",
         "error": -32010,
         "budget": "locator-chars",
         "limit": 1024
