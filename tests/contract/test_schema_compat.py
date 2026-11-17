@@ -823,19 +823,26 @@ def test_unreadable_allow_file_is_a_chained_read_error(tmp_path):
     assert isinstance(caught.value.__cause__, UnicodeDecodeError)
 
 
-def test_cli_exits_2_for_unreadable_schema_or_allow_file(tmp_path):
+@pytest.mark.parametrize("unreadable", ["new-schema", "baseline-schema", "allow-file"])
+def test_cli_exits_2_for_an_unreadable_input(tmp_path, unreadable):
     good = write_dir(tmp_path / "good", {FILE: schema()})
     bad = write_dir(tmp_path / "bad", {FILE: schema()})
     (bad / FILE).write_bytes(b"\xff\xfe")
     allow = tmp_path / "allow.toml"
     allow.write_bytes(b"\xff\xfe")
-    base = ["--baseline-dir", str(good), "--repo", str(tmp_path)]
-    assert compat.main([*base, "--schemas-dir", str(bad)]) == 2
-    assert compat.main(["--baseline-dir", str(bad), "--schemas-dir", str(good)]) == 2
-    assert (
-        compat.main([*base, "--schemas-dir", str(good), "--allow-file", str(allow)])
-        == 2
-    )
+    args = {
+        "new-schema": ["--baseline-dir", str(good), "--schemas-dir", str(bad)],
+        "baseline-schema": ["--baseline-dir", str(bad), "--schemas-dir", str(good)],
+        "allow-file": [
+            "--baseline-dir",
+            str(good),
+            "--schemas-dir",
+            str(good),
+            "--allow-file",
+            str(allow),
+        ],
+    }[unreadable]
+    assert compat.main([*args, "--repo", str(tmp_path)]) == 2
 
 
 SCALAR_AS_BOOL = {
@@ -1042,3 +1049,148 @@ def test_cli_exits_2_when_the_corpus_uses_a_deleted_definition(tmp_path):
     new = write_dir(tmp_path / "new", {FILE: schema(**{"$defs": {}})})
     args = ["--baseline-dir", str(old), "--schemas-dir", str(new)]
     assert compat.main(args) == 2
+
+
+# --- references resolve per side and by URI ----------------------------------------
+
+
+def named(name: str, **defs: object) -> dict:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": f"https://example.test/schemas/v3/{name}",
+        "$defs": defs,
+    }
+
+
+def test_ref_retargeted_between_unchanged_files_compares_each_sides_own_leaf(tmp_path):
+    local = {"D": {"$ref": "#/$defs/Leaf"}}
+    a = named("a.schema.json", **local, Leaf={"type": "string"})
+    b = named("b.schema.json", **local, Leaf={"type": "string", "minLength": 5})
+    files = {"a.schema.json": a, "b.schema.json": b}
+    old = {**files, FILE: referrer("a.schema.json#/$defs/D")}
+    new = {**files, FILE: referrer("b.schema.json#/$defs/D")}
+    found = [(f.file, f.pointer, f.kind) for f in run_files(tmp_path, old, new)]
+    assert found == [
+        (
+            FILE,
+            (
+                "/properties/p/$ref(b.schema.json#/$defs/D)"
+                "/$ref(b.schema.json#/$defs/Leaf)/minLength"
+            ),
+            "bound-tightened",
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "https://example.test/schemas/other/common.schema.json#/$defs/D",
+        "../other/common.schema.json#/$defs/D",
+        "https://elsewhere.test/unknown.schema.json#/$defs/D",
+    ],
+    ids=["same-basename-outside-directory", "relative-outside-directory", "unknown"],
+)
+def test_ref_to_an_unregistered_uri_is_unverified(tmp_path, ref):
+    files = {
+        "common.schema.json": common(D={"type": "string"}),
+        FILE: referrer(ref),
+    }
+    found = [(f.pointer, f.kind) for f in run_files(tmp_path, files, files)]
+    assert found == [("/properties/p/$ref", "unverified")]
+
+
+REMOVED_REF_TARGET = {
+    "common.schema.json": common(D={"type": "string", "minLength": 1})
+}
+
+
+@pytest.mark.parametrize(
+    ("inline", "expected"),
+    [
+        (
+            {"type": "string", "minLength": 2},
+            [
+                (
+                    "/properties/p/$ref(common.schema.json#/$defs/D)/minLength",
+                    "bound-tightened",
+                )
+            ],
+        ),
+        ({"type": "string"}, []),
+    ],
+    ids=["inline-narrower-than-target", "inline-wider-than-target"],
+)
+def test_removed_ref_compares_the_old_target_with_the_inline_replacement(
+    tmp_path, inline, expected
+):
+    old = {**REMOVED_REF_TARGET, FILE: referrer("common.schema.json#/$defs/D")}
+    new = {**REMOVED_REF_TARGET, FILE: schema(properties={"p": inline})}
+    assert kinds(run_files(tmp_path, old, new)) == expected
+
+
+# --- baseline loaders --------------------------------------------------------------
+
+
+def commit_repo(repo: Path, files: dict[str, bytes]) -> Path:
+    import subprocess
+
+    for rel, data in files.items():
+        target = repo / "schemas" / "v3" / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@e.test"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "base"], check=True)
+    return repo
+
+
+NOT_VALID_CORPUS = {
+    "conformance/thing/invalid/bad.json": b"\xff\xfe not utf-8",
+    "conformance/thing/valid/nested/deep.json": b"\xff\xfe not utf-8",
+    "conformance/stray.json": b"\xff\xfe not utf-8",
+}
+
+
+@pytest.mark.parametrize("loader", ["directory", "git"])
+def test_only_valid_corpus_files_are_loaded(tmp_path, loader):
+    files = {
+        FILE: json.dumps(schema()).encode(),
+        "conformance/thing/valid/ok.json": b"{}",
+        **NOT_VALID_CORPUS,
+    }
+    if loader == "directory":
+        root = tmp_path / "dir"
+        for rel, data in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_bytes(data)
+        snapshot = compat.snapshot_from_dir(root)
+    else:
+        snapshot = compat.snapshot_from_ref(
+            commit_repo(tmp_path / "repo", files), "HEAD"
+        )
+    assert snapshot.corpus == {"thing/valid/ok.json": "{}"}
+
+
+BAD_BLOBS = {
+    "schema": {FILE: b"\xff\xfe"},
+    "valid-instance": {
+        FILE: json.dumps(schema()).encode(),
+        "conformance/thing/valid/x.json": b"\xff\xfe",
+    },
+}
+
+
+@pytest.mark.parametrize("files", BAD_BLOBS.values(), ids=BAD_BLOBS.keys())
+def test_git_blob_that_is_not_utf8_is_a_chained_read_error(tmp_path, files):
+    repo = commit_repo(tmp_path / "repo", files)
+    with pytest.raises(compat.CompatError) as caught:
+        compat.snapshot_from_ref(repo, "HEAD")
+    assert isinstance(caught.value.__cause__, UnicodeDecodeError)
+
+
+@pytest.mark.parametrize("files", BAD_BLOBS.values(), ids=BAD_BLOBS.keys())
+def test_cli_exits_2_for_a_git_blob_that_is_not_utf8(tmp_path, files):
+    repo = commit_repo(tmp_path / "repo", files)
+    assert compat.main(["--base", "HEAD", "--repo", str(repo)]) == 2

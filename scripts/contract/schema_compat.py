@@ -20,12 +20,16 @@ Limits, all of which fail closed:
 - ``$ref`` is resolved across every file of schemas/v3 on both sides, with a cycle
   guard. A finding reached through a reference names the referrer pointer and the
   definition: ``file:/properties/p/$ref(common.schema.json#/$defs/D)/minLength``.
-  A reference that cannot be resolved is reported as ``unverified``. Only references
-  to a file of schemas/v3 or to a local ``#/`` pointer resolve; anchors do not.
+  Each side resolves against its own documents. A reference is joined to the ``$id``
+  of the document that holds it and must name the ``$id`` of a schema of schemas/v3;
+  a reference to any other URI, including a file of another directory with the same
+  name, is reported as ``unverified``. Local ``#/`` pointers resolve; anchors do not.
 - ``allOf``, ``anyOf``, ``oneOf`` and ``prefixItems`` are compared by position. A
   list whose members all survive in another order is reported as ``list-reordered``
   and needs an allow entry. A new ``anyOf``/``oneOf``, and an appended ``oneOf`` or
-  ``prefixItems`` member, are reported as ``narrowing-possible``.
+  ``prefixItems`` member, are reported as ``narrowing-possible``. An appended ``anyOf``
+  member passes; how output schemas treat appended variants and widened enums is
+  pending policy (slopvac-8l4.2.50).
 - A keyword the check does not model is reported as ``unverified`` when it is
   added, removed or changed. Only the annotations in ``_ANNOTATIONS`` are exempt:
   ``description``, ``title``, ``examples``, ``$comment``, ``deprecated``,
@@ -253,17 +257,29 @@ def _type_satisfied(old_type: str, new_types: set[str]) -> bool:
     return old_type in new_types or (old_type == "integer" and "number" in new_types)
 
 
+def _base_uri(schemas: dict[str, dict], name: str) -> str:
+    """The URI a document is addressed by; a schema without ``$id`` gets a file URI."""
+    declared = schemas[name].get("$id")
+    return declared if isinstance(declared, str) else f"file:///{name}"
+
+
 def _resolve(
     schemas: dict[str, dict], doc: str, ref: object
 ) -> tuple[str, str, Any] | None:
-    """Resolve a ``$ref`` to (file, pointer, subschema), or None if it is not resolvable."""
-    if not isinstance(ref, str):
+    """Resolve a ``$ref`` held by ``doc`` to (file, pointer, subschema).
+
+    The reference is joined to the document's ``$id`` and must then name a registered
+    schema exactly; any other URI is not resolvable and returns None.
+    """
+    if not isinstance(ref, str) or doc not in schemas:
         return None
-    base, _, fragment = ref.partition("#")
-    file = base.rsplit("/", 1)[-1] if base else doc
-    node: Any = schemas.get(file)
-    if node is None or (fragment and not fragment.startswith("/")):
+    joined = urllib.parse.urljoin(_base_uri(schemas, doc), ref)
+    absolute, _, fragment = joined.partition("#")
+    by_uri = {_base_uri(schemas, name): name for name in schemas}
+    file = by_uri.get(absolute)
+    if file is None or (fragment and not fragment.startswith("/")):
         return None
+    node: Any = schemas[file]
     pointer = urllib.parse.unquote(fragment)
     for token in pointer.split("/")[1:]:
         token = token.replace("~1", "/").replace("~0", "~")
@@ -276,15 +292,23 @@ def _resolve(
     return file, pointer, node
 
 
+@dataclass(frozen=True)
+class Docs:
+    """The schema file each side's current subschema lives in; they differ after a hop."""
+
+    old: str
+    new: str
+
+
 class Comparer:
     """Compares schema pairs, resolving every ``$ref`` across all files on both sides."""
 
     def __init__(self, old: dict[str, dict], new: dict[str, dict]) -> None:
         self.old, self.new = old, new
-        self._stack: set[tuple[str, str]] = set()
+        self._stack: set[tuple] = set()
         # Targets cut by the cycle guard during the current computation; a result
         # computed while any cut is open is incomplete and must not be cached.
-        self._cuts: set[tuple[str, str]] = set()
+        self._cuts: set[tuple] = set()
         self._cache: dict[tuple, list[Finding]] = {}
         self._ref_memo: dict[int, bool] = {}
 
@@ -301,12 +325,12 @@ class Comparer:
         return known
 
     def compare(
-        self, file: str, doc: str, ptr: str, old: Any, new: Any
+        self, file: str, doc: Docs, ptr: str, old: Any, new: Any
     ) -> Iterator[Finding]:
         """Yield a finding for each way ``new`` accepts less than ``old``.
 
-        ``file`` is the schema file the finding is reported against; ``doc`` is the
-        file the current subschema lives in, which differs after a ``$ref`` hop.
+        ``file`` is the schema file the finding is reported against; ``doc`` names the
+        file each side's current subschema lives in, which differ after a ``$ref`` hop.
         """
         if old is False or (_same(old, new) and not self._has_ref(old)):
             return
@@ -315,8 +339,13 @@ class Comparer:
             return
         o, n = _as_schema(old), _as_schema(new)
         yield from self._compare_refs(file, doc, ptr, o, n)
+        removed = "$ref" in o and "$ref" not in n
         o = {k: v for k, v in o.items() if k != "$ref"}
         n = {k: v for k, v in n.items() if k != "$ref"}
+        if removed and not set(o) - _ANNOTATIONS:
+            # The old shape lived entirely in the target, which the hop compared with
+            # the inline replacement; the bare siblings would read as additions.
+            return
         yield from _compare_scalars(file, ptr, o, n)
         yield from _compare_unmodelled(file, ptr, o, n)
         yield from _compare_required(file, ptr, o, n)
@@ -327,45 +356,49 @@ class Comparer:
         self,
         file: str,
         ptr: str,
-        target: tuple[str, str],
+        label: tuple[str, str],
+        sides: tuple[tuple[str, str] | None, tuple[str, str] | None],
+        docs: Docs,
         old: Any,
         new: Any,
         key: tuple | None = None,
     ) -> Iterator[Finding]:
         """Compare across a ``$ref``; the stack stops a reference cycle.
 
-        Results are cached per (old target, new target) with pointers relative to the
-        referrer, so a definition used by many referrers is walked once.
+        ``sides`` holds the (old, new) targets, None for a side with no reference, and
+        ``docs`` the files the compared subschemas live in. ``label`` names the target
+        in findings. Results are cached per (old target, new target) with pointers
+        relative to the referrer, so a definition used by many referrers is walked once.
         """
-        if target in self._stack:
-            self._cuts.add(target)
+        if sides in self._stack:
+            self._cuts.add(sides)
             return
-        label = f"/$ref({target[0]}#{target[1]})"
+        name = f"/$ref({label[0]}#{label[1]})"
         if key is not None and key in self._cache:
             for found in self._cache[key]:
-                yield replace(found, file=file, pointer=f"{ptr}{label}{found.pointer}")
+                yield replace(found, file=file, pointer=f"{ptr}{name}{found.pointer}")
             return
         outer_cuts, self._cuts = self._cuts, set()
-        self._stack.add(target)
+        self._stack.add(sides)
         try:
-            inner = list(self.compare("", target[0], "", old, new))
+            inner = list(self.compare("", docs, "", old, new))
         finally:
-            self._stack.discard(target)
-        self._cuts.discard(target)
+            self._stack.discard(sides)
+        self._cuts.discard(sides)
         if key is not None and not self._cuts:
             self._cache[key] = inner
         self._cuts |= outer_cuts
         for found in inner:
-            yield replace(found, file=file, pointer=f"{ptr}{label}{found.pointer}")
+            yield replace(found, file=file, pointer=f"{ptr}{name}{found.pointer}")
 
     def _compare_refs(
-        self, file: str, doc: str, ptr: str, o: dict, n: dict
+        self, file: str, doc: Docs, ptr: str, o: dict, n: dict
     ) -> Iterator[Finding]:
         old_ref, new_ref = o.get("$ref"), n.get("$ref")
         if old_ref is None and new_ref is None:
             return
-        old_t = _resolve(self.old, doc, old_ref) if old_ref is not None else None
-        new_t = _resolve(self.new, doc, new_ref) if new_ref is not None else None
+        old_t = _resolve(self.old, doc.old, old_ref) if old_ref is not None else None
+        new_t = _resolve(self.new, doc.new, new_ref) if new_ref is not None else None
         if (old_ref is not None and old_t is None) or (
             new_ref is not None and new_t is None
         ):
@@ -376,17 +409,28 @@ class Comparer:
         o_rest = {k: v for k, v in o.items() if k != "$ref"}
         n_rest = {k: v for k, v in n.items() if k != "$ref"}
         if old_t and new_t:
-            key = ((old_t[0], old_t[1]), (new_t[0], new_t[1]))
-            yield from self._hop(file, ptr, key[1], old_t[2], new_t[2], key)
+            sides = ((old_t[0], old_t[1]), (new_t[0], new_t[1]))
+            docs = Docs(old_t[0], new_t[0])
+            yield from self._hop(
+                file, ptr, sides[1], sides, docs, old_t[2], new_t[2], sides
+            )
         elif new_t:
             # A reference added: the new target must accept all the old schema accepted.
-            yield from self._hop(file, ptr, (new_t[0], new_t[1]), o_rest, new_t[2])
+            target = (new_t[0], new_t[1])
+            docs = Docs(doc.old, new_t[0])
+            yield from self._hop(
+                file, ptr, target, (None, target), docs, o_rest, new_t[2]
+            )
         elif old_t:
             # A reference removed: what remains must accept all the old target accepted.
-            yield from self._hop(file, ptr, (old_t[0], old_t[1]), old_t[2], n_rest)
+            target = (old_t[0], old_t[1])
+            docs = Docs(old_t[0], doc.new)
+            yield from self._hop(
+                file, ptr, target, (target, None), docs, old_t[2], n_rest
+            )
 
     def _compare_additional(
-        self, file: str, doc: str, ptr: str, o: dict, n: dict
+        self, file: str, doc: Docs, ptr: str, o: dict, n: dict
     ) -> Iterator[Finding]:
         for key in ("additionalProperties", "additionalItems"):
             if key not in n:
@@ -406,7 +450,7 @@ class Comparer:
                 yield from self.compare(file, doc, f"{ptr}/{key}", old, new)
 
     def _compare_children(
-        self, file: str, doc: str, ptr: str, o: dict, n: dict
+        self, file: str, doc: Docs, ptr: str, o: dict, n: dict
     ) -> Iterator[Finding]:
         for key in _SCHEMA_MAPS:
             old_map, new_map = o.get(key, {}), n.get(key, {})
@@ -442,7 +486,7 @@ class Comparer:
             )
 
     def _compare_list(
-        self, file: str, doc: str, ptr: str, key: str, old: list, new: list
+        self, file: str, doc: Docs, ptr: str, key: str, old: list, new: list
     ) -> Iterator[Finding]:
         old_c, new_c = [_canon(m) for m in old], [_canon(m) for m in new]
         if old_c != new_c[: len(old_c)] and not (Counter(old_c) - Counter(new_c)):
@@ -598,7 +642,9 @@ def compare_snapshots(old: dict[str, dict], new: dict[str, dict]) -> list[Findin
                 )
             )
             continue
-        findings.extend(comparer.compare(name, name, "", old_schema, new[name]))
+        findings.extend(
+            comparer.compare(name, Docs(name, name), "", old_schema, new[name])
+        )
     return findings
 
 
