@@ -3345,13 +3345,13 @@ Serve one reader need per page
 <!-- slopvac-disable -->
   > **Not this.** A tutorial page that has a "How to deploy" section with its own steps.
   >
-  > **This.** *(delete it)*
+  > **This.** The tutorial page ends with a link to a separate how-to page that holds the deploy steps.
   >
   > split: the deploy steps belong in a how-to page
 
   > **Not this.** A reference page that ends with a one-line link to the matching how-to.
   >
-  > **This.** *(delete it)*
+  > **This.** A reference page that ends with a one-line link to the matching how-to.
   >
   > preserve: a cross-link is not a second content type
 

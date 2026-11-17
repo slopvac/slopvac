@@ -246,10 +246,10 @@ rules:
     fix: Split the page by content type and link the pages to each other.
     examples:
       - bad: A tutorial page that has a "How to deploy" section with its own steps.
-        good: null
+        good: The tutorial page ends with a link to a separate how-to page that holds the deploy steps.
         note: "split: the deploy steps belong in a how-to page"
       - bad: A reference page that ends with a one-line link to the matching how-to.
-        good: null
+        good: A reference page that ends with a one-line link to the matching how-to.
         note: "preserve: a cross-link is not a second content type"
     ai_signal: none
     ai_signal_source: unmeasured
