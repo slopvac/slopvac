@@ -360,11 +360,20 @@ fn migrate_categories(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<
     restore(t, key, out);
 }
 
+/// The note for a reference to a rule that 3.0 removed.
+fn removed_rule_note(rule: &str, path: &str) -> String {
+    format!("removed {path}: rule {rule} no longer exists in 3.0")
+}
+
 fn migrate_rules(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<'_>) {
     let Some(entries) = drain(t, key) else { return };
     let mut out = Vec::new();
     for (k, item) in entries {
         let kp = join(path, k.get());
+        if cx.renames.is_removed(k.get()) {
+            cx.notes.push(removed_rule_note(k.get(), &kp));
+            continue;
+        }
         let Some(new) = cx.renames.rule(k.get()) else {
             cx.drop_key(&kp, "unknown 2.x rule id; the rename table has no entry");
             continue;

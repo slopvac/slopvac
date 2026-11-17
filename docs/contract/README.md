@@ -29,7 +29,7 @@ match the hand-written text.
 ## Conventions
 
 - Schemas use the JSON Schema 2020-12 dialect.
-- `$id` is `https://srobroek.github.io/slopvac/schemas/v3/<file>`. It never changes.
+- `$id` is `https://slopvac.github.io/slopvac/schemas/v3/<file>`. It never changes.
 - Every root instance carries `schema_version` set to 3. Lint JSON jumps from 1 to 3.
   Minor changes are additive only. `slopvac_api` in pack manifests is a separate version.
 - Shared shapes live in `common.schema.json`. A change to a shared def links the owner

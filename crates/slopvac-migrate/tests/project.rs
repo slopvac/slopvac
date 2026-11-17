@@ -128,6 +128,45 @@ fn documents_get_directive_ids_and_steering_rewritten() {
 }
 
 #[test]
+fn directives_for_removed_rules_are_dropped_with_a_note() {
+    for id in [
+        "ste-practices.inconsistent-wording-for-same-step",
+        "ste-safety.safety-block-missing-consequence",
+        "ste-sentences.vertical-list-item-punctuation",
+        "ste-sentences.vertical-list-lead-in-missing-colon",
+        "ste-words.inconsistent-term-for-same-thing",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "docs/a.md",
+            &format!("<!-- slopvac-allow: rule={id} reason=x -->\nText\n"),
+        );
+        let p = plan_of(dir.path()).unwrap_or_else(|e| panic!("{id}: {e:?}"));
+        apply(dir.path(), &p).unwrap();
+        let a = fs::read_to_string(dir.path().join("docs/a.md")).unwrap();
+        assert_eq!(a, "Text\n", "{id}");
+        assert_eq!(
+            p.notes,
+            vec![format!(
+                "docs/a.md:1: removed slopvac-allow rule={id}: the rule no longer exists in 3.0"
+            )]
+        );
+    }
+}
+#[test]
+fn a_comma_list_directive_is_left_alone_with_a_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let text = "Intro\n<!-- slopvac-allow: rule=ste-sentences.vertical-list-item-punctuation,prose-craft.latinisms reason=x -->\nText\n";
+    write(dir.path(), "docs/a.md", text);
+    let p = plan_of(dir.path()).unwrap();
+    assert_eq!(p.changes.len(), 0);
+    assert_eq!(
+        p.warnings,
+        vec!["docs/a.md:2: invalid 2.x directive, left as is".to_owned()]
+    );
+}
+#[test]
 fn second_run_finds_nothing_to_do() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "slopvac.toml", "profile = \"strict\"\n");

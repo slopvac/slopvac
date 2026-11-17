@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://srobroek.github.io/slopvac/schemas/v3/rule.schema.json",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/rule.schema.json",
   "title": "slopvac v3 rule",
   "description": "One check. The root validates a standalone rule file and requires schema_version. A category file embeds the same shape through $defs/Rule, where schema_version is absent. Semantics are specified in docs/contract/rules.md. Owner: slopvac-8l4.2.3.",
   "$ref": "#/$defs/Rule",
