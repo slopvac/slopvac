@@ -24,6 +24,12 @@ Limits, all of which fail closed:
   of the document that holds it and must name the ``$id`` of a schema of schemas/v3;
   a reference to any other URI, including a file of another directory with the same
   name, is reported as ``unverified``. Local ``#/`` pointers resolve; anchors do not.
+  A schema without a string ``$id``, in the baseline or the new tree, is a read error.
+- Proving that a recursive schema and its inlined expansion accept the same instances
+  is out of scope. A pair of references that recurs unchanged is equal by induction.
+  Where a reference was added or removed and the same target recurs, the comparison
+  stops and the stop point is reported as ``unverified``; the corpus re-validation is
+  the backstop.
 - ``allOf``, ``anyOf``, ``oneOf`` and ``prefixItems`` are compared by position. A
   list whose members all survive in another order is reported as ``list-reordered``
   and needs an allow entry. A new ``anyOf``/``oneOf``, and an appended ``oneOf`` or
@@ -257,14 +263,21 @@ def _type_satisfied(old_type: str, new_types: set[str]) -> bool:
     return old_type in new_types or (old_type == "integer" and "number" in new_types)
 
 
-def _base_uri(schemas: dict[str, dict], name: str) -> str:
-    """The URI a document is addressed by; a schema without ``$id`` gets a file URI."""
-    declared = schemas[name].get("$id")
-    return declared if isinstance(declared, str) else f"file:///{name}"
+def _require_id(name: str, schema: object) -> str:
+    """The ``$id`` of a schema file; a file without one is a read error."""
+    declared = schema.get("$id") if isinstance(schema, dict) else None
+    if not isinstance(declared, str) or not declared:
+        raise CompatError(f"{name}: the schema has no string $id")
+    return declared
+
+
+def _uris(schemas: dict[str, dict]) -> dict[str, str]:
+    """File name to ``$id``; the one mapping for reference and corpus resolution."""
+    return {name: _require_id(name, schema) for name, schema in schemas.items()}
 
 
 def _resolve(
-    schemas: dict[str, dict], doc: str, ref: object
+    schemas: dict[str, dict], uris: dict[str, str], doc: str, ref: object
 ) -> tuple[str, str, Any] | None:
     """Resolve a ``$ref`` held by ``doc`` to (file, pointer, subschema).
 
@@ -273,9 +286,9 @@ def _resolve(
     """
     if not isinstance(ref, str) or doc not in schemas:
         return None
-    joined = urllib.parse.urljoin(_base_uri(schemas, doc), ref)
+    joined = urllib.parse.urljoin(uris[doc], ref)
     absolute, _, fragment = joined.partition("#")
-    by_uri = {_base_uri(schemas, name): name for name in schemas}
+    by_uri = {uri: name for name, uri in uris.items()}
     file = by_uri.get(absolute)
     if file is None or (fragment and not fragment.startswith("/")):
         return None
@@ -305,6 +318,7 @@ class Comparer:
 
     def __init__(self, old: dict[str, dict], new: dict[str, dict]) -> None:
         self.old, self.new = old, new
+        self._old_uris, self._new_uris = _uris(old), _uris(new)
         self._stack: set[tuple] = set()
         # Targets cut by the cycle guard during the current computation; a result
         # computed while any cut is open is incomplete and must not be cached.
@@ -372,6 +386,16 @@ class Comparer:
         """
         if sides in self._stack:
             self._cuts.add(sides)
+            if None in sides:
+                # A reference added or removed against a target already being compared:
+                # the inline side differs each time, so the pair is not a repeat.
+                yield Finding(
+                    file,
+                    f"{ptr}/$ref",
+                    "unverified",
+                    _show(f"{label[0]}#{label[1]}" if sides[0] else None),
+                    _show(f"{label[0]}#{label[1]}" if sides[1] else None),
+                )
             return
         name = f"/$ref({label[0]}#{label[1]})"
         if key is not None and key in self._cache:
@@ -397,8 +421,16 @@ class Comparer:
         old_ref, new_ref = o.get("$ref"), n.get("$ref")
         if old_ref is None and new_ref is None:
             return
-        old_t = _resolve(self.old, doc.old, old_ref) if old_ref is not None else None
-        new_t = _resolve(self.new, doc.new, new_ref) if new_ref is not None else None
+        old_t = (
+            _resolve(self.old, self._old_uris, doc.old, old_ref)
+            if old_ref is not None
+            else None
+        )
+        new_t = (
+            _resolve(self.new, self._new_uris, doc.new, new_ref)
+            if new_ref is not None
+            else None
+        )
         if (old_ref is not None and old_t is None) or (
             new_ref is not None and new_t is None
         ):
@@ -637,9 +669,7 @@ def compare_snapshots(old: dict[str, dict], new: dict[str, dict]) -> list[Findin
     for name, old_schema in sorted(old.items()):
         if name not in new:
             findings.append(
-                Finding(
-                    name, "", "file-removed", old_schema.get("$id", name), "(absent)"
-                )
+                Finding(name, "", "file-removed", old_schema["$id"], "(absent)")
             )
             continue
         findings.extend(
@@ -652,9 +682,8 @@ def compare_snapshots(old: dict[str, dict], new: dict[str, dict]) -> list[Findin
 
 
 def _registry(schemas: dict[str, dict]) -> Registry:
-    resources = [
-        (s.get("$id", name), Resource.from_contents(s)) for name, s in schemas.items()
-    ]
+    uris = _uris(schemas)
+    resources = [(uris[name], Resource.from_contents(s)) for name, s in schemas.items()]
     return Registry().with_resources(resources)
 
 
@@ -767,9 +796,11 @@ def _read(path: Path) -> str:
 
 def _parse_schema(name: str, text: str) -> dict:
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
     except json.JSONDecodeError as exc:
         raise CompatError(f"cannot parse {name}: {exc}") from exc
+    _require_id(name, parsed)
+    return parsed
 
 
 def snapshot_from_dir(directory: Path) -> Snapshot:

@@ -1194,3 +1194,77 @@ def test_git_blob_that_is_not_utf8_is_a_chained_read_error(tmp_path, files):
 def test_cli_exits_2_for_a_git_blob_that_is_not_utf8(tmp_path, files):
     repo = commit_repo(tmp_path / "repo", files)
     assert compat.main(["--base", "HEAD", "--repo", str(repo)]) == 2
+
+
+# --- recursion and required $id -----------------------------------------------------
+
+
+def node_defs() -> dict:
+    return {
+        "Node": {
+            "type": "object",
+            "properties": {
+                "label": {"type": "string", "minLength": 1},
+                "child": {"$ref": "#/$defs/Node"},
+            },
+        }
+    }
+
+
+def test_recursive_ref_replaced_by_two_inline_levels_is_unverified(tmp_path):
+    level2 = {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string", "minLength": 2},
+            "child": {"$ref": "#/$defs/Node"},
+        },
+    }
+    level1 = {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string", "minLength": 1},
+            "child": level2,
+        },
+    }
+    old = schema(properties={"p": {"$ref": "#/$defs/Node"}}, **{"$defs": node_defs()})
+    new = schema(properties={"p": level1}, **{"$defs": node_defs()})
+    assert kinds(run(tmp_path, old, new)) == [
+        (
+            "/properties/p/$ref(thing.schema.json#/$defs/Node)/properties/child/$ref",
+            "unverified",
+        )
+    ]
+
+
+def test_unverified_recursion_stop_is_suppressed_by_an_allow_entry(tmp_path):
+    pointer = "/properties/p/$ref(thing.schema.json#/$defs/Node)/properties/child/$ref"
+    inline = {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string", "minLength": 1},
+            "child": {
+                "type": "object",
+                "properties": {"child": {"$ref": "#/$defs/Node"}},
+            },
+        },
+    }
+    old = schema(properties={"p": {"$ref": "#/$defs/Node"}}, **{"$defs": node_defs()})
+    new = schema(properties={"p": inline}, **{"$defs": node_defs()})
+    allow = entry(pointer=pointer, kind="unverified")
+    assert run(tmp_path, old, new, allow=[allow]) == []
+
+
+def test_unchanged_recursive_ref_still_passes(tmp_path):
+    both = schema(properties={"p": {"$ref": "#/$defs/Node"}}, **{"$defs": node_defs()})
+    assert run(tmp_path, both, both) == []
+
+
+@pytest.mark.parametrize("side", ["new", "baseline"])
+def test_schema_without_id_is_a_read_error(tmp_path, side):
+    with_id = write_dir(tmp_path / "with", {FILE: schema()})
+    without = write_dir(tmp_path / "without", {})
+    (without / FILE).write_text(json.dumps({"type": "object"}), encoding="utf-8")
+    baseline, new = (with_id, without) if side == "new" else (without, with_id)
+    assert (
+        compat.main(["--baseline-dir", str(baseline), "--schemas-dir", str(new)]) == 2
+    )

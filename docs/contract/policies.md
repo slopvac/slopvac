@@ -344,7 +344,8 @@ It then validates every `valid/` instance of the baseline corpus against the new
 
 **Limits.** The check fails closed where it cannot decide. Each case below needs an allow entry.
 
-- A `$ref` resolves across every file in `schemas/v3`, on both sides. A change to a shared definition is reported against each referrer, as `file:/properties/p/$ref(common.schema.json#/$defs/D)/minLength`. A reference that does not resolve is `unverified`.
+- A `$ref` resolves across every file in `schemas/v3`, on both sides. A change to a shared definition is reported against each referrer, as `file:/properties/p/$ref(common.schema.json#/$defs/D)/minLength`. A reference that does not resolve is `unverified`. A schema file without a string `$id` is a read error.
+- Proving that a recursive schema and its inlined expansion accept the same instances is out of scope. When a reference was added or removed and the same target recurs, the check stops at that point and reports `unverified`. The corpus re-validation is the backstop.
 - `allOf`, `anyOf`, `oneOf` and `prefixItems` compare by position. A list that keeps all its members in another order is `list-reordered`. A new `anyOf` or `oneOf`, and an appended `oneOf` or `prefixItems` member, are `narrowing-possible`.
 - A keyword the check does not model is `unverified` when it is added, removed or changed. Only these annotations never count: `description`, `title`, `examples`, `$comment`, `deprecated`, `readOnly` and `writeOnly`. A changed `default` does count, because it changes what consumers see.
 - Each added `required` field is its own finding, located by field name, so one allow entry covers one field.
