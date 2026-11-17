@@ -140,7 +140,6 @@ const PENDING: &[(&str, &str, &str)] = &[
         "slopvac-8l4.2.53",
     ),
     ("style.schema.json", "/$defs/RelPath", "slopvac-8l4.2.54"),
-    ("tagger.schema.json", "/properties/id", "slopvac-8l4.2.51"),
     (
         "terms.schema.json",
         "/$defs/Term/properties/kind",
