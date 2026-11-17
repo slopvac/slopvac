@@ -171,6 +171,17 @@ fn unwired_commands_exit_2_without_naming_anyone() {
 }
 
 #[test]
+fn review_is_an_unwired_command_not_a_usage_error() {
+    slopvac()
+        .args(["review", "doc.md"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[command-not-wired]: `slopvac review` is not available in this build.",
+        ));
+}
+
+#[test]
 fn completions_cover_every_shell() {
     for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
         slopvac()
