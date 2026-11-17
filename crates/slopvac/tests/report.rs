@@ -1,10 +1,11 @@
 //! Installed-binary tests for `lint --format` and `--out` (compat rows
 //! `opt:lint:--format`, `opt:lint:--out`, `behavior:report-out-open`).
 //!
-//! The engine behind the CLI is still STUB(slopvac-8l4.12.12) and finds
-//! nothing, so each test checks the shape of an empty-findings report: that the
-//! output parses in its format and names the document. Content checks per
-//! finding live in `slopvac-report`'s own tests.
+//! The inputs here are clean, so each test checks the shape of an empty-findings report:
+//! that the output parses in its format and names the document. Reports with findings are
+//! checked in `lint_engine.rs`, and content per finding in `slopvac-report`'s own tests.
+
+mod support;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -17,6 +18,7 @@ const TEXT: &str = "one two three\n";
 
 fn slopvac() -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+    cmd.current_dir(support::neutral_dir());
     for var in [
         "SLOPVAC_OFFLINE",
         "SLOPVAC_LOG",

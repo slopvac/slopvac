@@ -199,3 +199,9 @@ pub fn legacy_engine(profile: &str) -> Engine {
     settings.thresholds.min_score = t["min_score"].as_f64();
     Engine::new(vec![set], settings).unwrap()
 }
+
+/// An engine over the one category file `category` with `settings`.
+pub fn engine_with(category: &Value, settings: Settings) -> Engine {
+    let files = vec![(PathBuf::from("cat.json"), category.to_string())];
+    Engine::new(vec![ruleset(files)], settings).unwrap()
+}

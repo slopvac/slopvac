@@ -6,13 +6,14 @@
 pub mod cli;
 pub mod color;
 pub mod doctor;
-pub mod engine_stub;
+pub mod engine;
 pub mod env;
 pub mod errors;
 pub mod exit;
 pub mod generate;
 pub mod init;
 pub mod inspect;
+pub mod lint_settings;
 pub mod logging;
 pub mod offline;
 pub mod output;
@@ -21,6 +22,7 @@ pub mod rule_catalog;
 mod run;
 pub mod severity;
 pub mod stdin;
+pub mod summary;
 
 pub use env::{Env, SystemEnv};
 pub use run::{
