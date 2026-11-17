@@ -1,22 +1,40 @@
 id: derive-without-catalog
 snapshots:
+  "#[derive(\n    Debug,\n    thiserror::Error,\n)]\nenum E { A }\n":
+    labels:
+    - source: |-
+        #[derive(
+            Debug,
+            thiserror::Error,
+        )]
+      style: primary
+      start: 0
+      end: 45
+  "#[derive(Debug)]\n#[derive(\n    Clone,\n    Error,\n)]\nenum E { A }\n":
+    labels:
+    - source: |-
+        #[derive(
+            Clone,
+            Error,
+        )]
+      style: primary
+      start: 17
+      end: 51
   "#[derive(Debug, Error)]\nstruct E;\n":
     labels:
     - source: "#[derive(Debug, Error)]"
       style: primary
       start: 0
       end: 23
-    - source: struct E;
-      style: secondary
-      start: 24
-      end: 33
+  "#[derive(Debug, Error, NotCatalog)]\nenum E { A }\n":
+    labels:
+    - source: "#[derive(Debug, Error, NotCatalog)]"
+      style: primary
+      start: 0
+      end: 35
   "#[derive(Debug, thiserror::Error)]\nenum E { A }\n":
     labels:
     - source: "#[derive(Debug, thiserror::Error)]"
       style: primary
       start: 0
       end: 34
-    - source: enum E { A }
-      style: secondary
-      start: 35
-      end: 47

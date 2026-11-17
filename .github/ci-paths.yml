@@ -45,6 +45,10 @@ rust:
   - 'rustfmt.toml'
   - 'deny.toml'
   - '.config/nextest.toml'
+  # Message-registry checks (ast-grep rules) and the append-only code lock.
+  - 'ast-grep/**'
+  - 'sgconfig.yml'
+  - 'docs/reference/error-codes.lock'
 
 # Reference-engine eval ratchet. Rule data, the Python engine, the eval corpus
 # and the contracts the corpus is scored against.

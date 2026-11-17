@@ -10,4 +10,5 @@ fn the_derive_rejects_bad_catalogs_at_compile_time() {
     cases.compile_fail("tests/ui/missing_field.rs");
     cases.compile_fail("tests/ui/tuple_variant.rs");
     cases.compile_fail("tests/ui/positional_param.rs");
+    cases.compile_fail("tests/ui/raw_placeholder.rs");
 }

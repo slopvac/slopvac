@@ -4,7 +4,9 @@ severity: error
 message: An error type that derives `Error` must also derive `Catalog`.
 note: >-
   Give each variant `#[code("kebab-case")]` and a `#[message("…")]` template, so the code and
-  text live in the registry. Files under tests, benches and examples are exempt.
+  text live in the registry. Files under tests, benches and examples are exempt. The check
+  reads every `#[derive(...)]` on the item, so `#[derive(Error)]` plus a separate
+  `#[derive(Catalog)]` passes.
 files:
   - crates/slopvac-messages/src/**
   - crates/slopvac-messages-derive/src/**
@@ -13,14 +15,22 @@ ignores:
   - "**/benches/**"
   - "**/examples/**"
 rule:
+  # Attributes are siblings of the item, so look along the run of attributes: a derive that
+  # names `Error` as a whole word, with no derive naming `Catalog` anywhere in the same run.
   kind: attribute_item
-  regex: derive\(.*\bError\b
+  regex: (?s)derive\(.*\bError\b
   not:
-    regex: Catalog
-  precedes:
-    stopBy:
-      not:
-        kind: attribute_item
     any:
-      - kind: enum_item
-      - kind: struct_item
+      - precedes:
+          kind: attribute_item
+          regex: (?s)derive\(.*\bCatalog\b
+          stopBy:
+            not:
+              kind: attribute_item
+      - follows:
+          kind: attribute_item
+          regex: (?s)derive\(.*\bCatalog\b
+          stopBy:
+            not:
+              kind: attribute_item
+      - regex: (?s)derive\(.*\bCatalog\b

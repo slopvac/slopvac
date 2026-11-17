@@ -10,6 +10,24 @@ valid:
     #[derive(Debug, Error, Catalog)]
     #[cfg(unix)]
     struct E;
+  - |
+    #[derive(Debug, Error)]
+    #[derive(Catalog)]
+    enum E { A }
+  - |
+    #[derive(Catalog)]
+    #[derive(Debug, thiserror::Error)]
+    enum E { A }
+  - |
+    #[derive(Debug, ErrorKind)]
+    enum E { A }
+  - |
+    #[derive(
+        Debug,
+        thiserror::Error,
+        Catalog,
+    )]
+    enum E { A }
 invalid:
   - |
     #[derive(Debug, thiserror::Error)]
@@ -17,3 +35,19 @@ invalid:
   - |
     #[derive(Debug, Error)]
     struct E;
+  - |
+    #[derive(
+        Debug,
+        thiserror::Error,
+    )]
+    enum E { A }
+  - |
+    #[derive(Debug)]
+    #[derive(
+        Clone,
+        Error,
+    )]
+    enum E { A }
+  - |
+    #[derive(Debug, Error, NotCatalog)]
+    enum E { A }

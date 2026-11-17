@@ -137,3 +137,78 @@ fn kind_follows_the_template_attribute() {
     assert_eq!(Help::Check.entry().kind, Kind::Text);
     assert_eq!(Help::Braces {}.entry().kind, Kind::Notice);
 }
+
+/// A field named with a keyword.
+#[derive(Debug, Catalog)]
+enum Keyword {
+    /// The type is unknown.
+    #[code("unknown-type")]
+    #[message("unknown type {type}")]
+    Unknown { r#type: String },
+}
+
+#[test]
+fn a_keyword_field_is_a_parameter_under_its_plain_name() {
+    let error = Keyword::Unknown {
+        r#type: "page".into(),
+    };
+    assert_eq!(error.to_string(), "unknown type page");
+    assert_eq!(error.entry().params, [Param::new("type", ParamKind::Text)]);
+    assert!(
+        slopvac_messages::to_ftl(Keyword::entries())
+            .contains("unknown-type = unknown type { $type }\n")
+    );
+}
+
+/// Three layers: `Outer` wraps `Middle` wraps an I/O error.
+#[derive(Debug, thiserror::Error, Catalog)]
+enum Outer {
+    /// The run failed while reading.
+    #[code(delegate)]
+    Run(#[from] RunError),
+}
+
+fn read_file() -> Result<(), ReadError> {
+    Err(unreadable())
+}
+
+fn run() -> Result<(), RunError> {
+    read_file()?;
+    Ok(())
+}
+
+fn outer() -> Result<(), Outer> {
+    run()?;
+    Ok(())
+}
+
+#[test]
+fn the_question_mark_converts_through_from_and_keeps_the_message() {
+    let error = run().expect_err("run fails");
+    assert!(matches!(error, RunError::Read(_)));
+    assert_eq!(
+        error.to_string(),
+        "cannot read docs/a.md: permission denied"
+    );
+}
+
+#[test]
+fn source_walks_a_three_level_chain_to_the_io_error() {
+    let error = outer().expect_err("outer fails");
+    let mut chain = Vec::new();
+    let mut current: Option<&dyn std::error::Error> = error.source();
+    while let Some(e) = current {
+        chain.push(e.to_string());
+        current = e.source();
+    }
+    // Outer -> RunError -> ReadError -> io::Error. A delegating variant renders as the
+    // wrapped message, so the first two levels print alike.
+    assert_eq!(
+        chain,
+        [
+            "cannot read docs/a.md: permission denied",
+            "cannot read docs/a.md: permission denied",
+            "denied"
+        ]
+    );
+}

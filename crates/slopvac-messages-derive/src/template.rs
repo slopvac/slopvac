@@ -41,7 +41,12 @@ fn placeholder_name(body: &str) -> Result<String, String> {
             "placeholder `{{{body}}}` has a format spec; parameters are plain values"
         ));
     }
-    let name = body.strip_prefix("r#").unwrap_or(body);
+    if let Some(plain) = body.strip_prefix("r#") {
+        return Err(format!(
+            "placeholder `{{{body}}}` uses the raw spelling; write `{{{plain}}}`, the name a template and a Fluent file use"
+        ));
+    }
+    let name = body;
     let mut chars = name.chars();
     let starts = chars.next().is_some_and(|c| c.is_ascii_alphabetic());
     if !starts || !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
