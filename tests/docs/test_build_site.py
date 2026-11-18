@@ -20,6 +20,7 @@ import build_site
 GENRES_YAML = ROOT / "crates/slopvac-context/src/builtin/genres.yaml"
 REAL_SCHEMAS = ROOT / "schemas" / "v3"
 # The committed schemas use this author-side prefix; the fixture schemas share it.
+CORE_FIXTURES = ROOT / "crates" / "slopvac-rules" / "tests" / "fixtures" / "core-v3"
 OLD_PREFIX = "https://slopvac.github.io/slopvac/schemas/v3/"
 
 DATA_PACK = """\
@@ -84,29 +85,6 @@ CONTRACT = """\
 ## 11. Security
 """
 
-RULES_YAML = """\
-id: demo
-title: Demo <category>
-description: A demo.
-rules:
-  - id: no-foo
-    name: Avoid foo
-    kind: pattern
-    severity: error
-    message: 'foo found: {match} -- use {replacement}'
-    tiers: {strict: enforced, normal: enforced, relaxed: excluded}
-    fix: Delete foo.
-    examples:
-      - bad: Use foo here.
-        good: Use bar here.
-      - bad: Choose SHA-256, not MD5.
-        note: 'preserve: instruction naming a real alternative'
-      - bad: Remove this.
-        good: ''
-        note: The ending is dropped.
-    provenance: {source: "Hand written \u2014 draft", url: 'https://example.test/foo'}
-"""
-
 
 FIXTURE_CONFIG = {
     "description": "Demo config.",
@@ -148,9 +126,6 @@ def _schema(name: str, **extra: object) -> str:
 
 @pytest.fixture
 def sources(tmp_path: Path) -> dict[str, Path]:
-    rules = tmp_path / "rules"
-    rules.mkdir()
-    (rules / "demo.yml").write_text(RULES_YAML)
     schemas = tmp_path / "schemas"
     schemas.mkdir()
     (schemas / "a.schema.json").write_text(
@@ -176,7 +151,6 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         'site_url = "https://docs.example.org/tools/"\napi_version = "v3"\n'
     )
     return {
-        "rules": rules,
         "schemas": schemas,
         "packs": packs,
         "contract": contract,
@@ -190,7 +164,6 @@ def _run(sources: dict[str, Path], *extra: str) -> int:
         [
             "--out", str(sources["out"]),
             "--config", str(sources["config"]),
-            "--rules-dir", str(sources["rules"]),
             "--schemas-dir", str(sources["schemas"]),
             "--packs-dir", str(sources["packs"]),
             "--contract-dir", str(sources["contract"]),
@@ -203,60 +176,96 @@ def _read(sources: dict[str, Path], path: str) -> str:
     return (sources["out"] / path).read_text()
 
 
-def test_build_writes_rule_page_with_required_fields(sources: dict[str, Path]) -> None:
+def _quoted(body: str) -> str:
+    """A rule-data value as the generator writes it: its own lint-disable region."""
+    return f"<!-- slopvac-disable -->\n{body}\n\n<!-- slopvac-enable -->\n"
+
+
+def _fixture_rules() -> dict[str, dict[str, dict]]:
+    """Category id -> rule id -> rule, read straight from the fixture JSON."""
+    found = {}
+    for path in sorted(CORE_FIXTURES.glob("*.json")):
+        category = json.loads(path.read_text())
+        found[category["id"]] = {r["id"]: r for r in category["rules"]}
+    return found
+
+
+def test_rule_pages_match_the_rule_ids_in_the_fixture_data(
+    sources: dict[str, Path],
+) -> None:
     assert _run(sources) == 0
-    page = _read(sources, "rules/demo/no-foo.md")
-    assert page.startswith("# Avoid foo\n")
-    assert "| Severity | error |" in page
-    assert "| Profile `relaxed` | `excluded` |" in page
-    assert "Delete foo." in page
-    assert "<https://example.test/foo>" in page
+    expected = {
+        f"rules/{category}/{rule}.md"
+        for category, rules in _fixture_rules().items()
+        for rule in rules
+    }
+    written = {
+        p.relative_to(sources["out"]).as_posix()
+        for p in (sources["out"] / "rules").rglob("*.md")
+    }
+    indexes = {"rules/index.md"} | {
+        f"rules/{category}/index.md" for category in _fixture_rules()
+    }
+    assert written - indexes == expected
+    assert indexes <= written
 
 
-def test_unicode_dashes_in_catalogue_prose_become_ascii(
+def test_each_category_index_links_each_of_its_rules(sources: dict[str, Path]) -> None:
+    _run(sources)
+    for category, rules in _fixture_rules().items():
+        index = _read(sources, f"rules/{category}/index.md")
+        for rule in rules:
+            assert f"({rule}.md): `{category}.{rule}`" in index
+    root = _read(sources, "rules/index.md")
+    for category, rules in _fixture_rules().items():
+        assert f"({category}/index.md): {len(rules)} rules" in root
+
+
+def test_rule_page_paths_agree_with_the_public_rule_url(
+    sources: dict[str, Path],
+) -> None:
+    site = build_site.load_site(sources["config"])
+    pages = build_site.build(site, sources["schemas"])
+    for category, rules in _fixture_rules().items():
+        for rule in rules:
+            url = build_site.rule_url(category, rule, site)
+            assert url == f"https://docs.example.org/tools/v3/rules/{category}/{rule}/"
+            assert f"rules/{category}/{rule}.md" in pages
+
+
+def test_rule_page_shows_shipped_severity_citation_and_no_profile_rows(
     sources: dict[str, Path],
 ) -> None:
     _run(sources)
-    page = _read(sources, "rules/demo/no-foo.md")
-    assert "Hand written -- draft" in page
-    assert "\u2014" not in page
+    rule = _fixture_rules()["ste-sentences"]["omitted-subject"]
+    page = _read(sources, "rules/ste-sentences/omitted-subject.md")
+    assert f"| Severity | `{rule['severity']}` |" in page
+    assert f"Source:\n\n{_quoted(rule['citation']['source'])}" in page
+    assert f"## Fix\n\n{_quoted(rule['fix'])}" in page
+    assert "Profile `" not in page
+    assert "## Provenance" not in page
 
 
-def test_message_slots_render_as_visible_text_not_html_tags(
-    sources: dict[str, Path],
+def test_structured_exceptions_render_as_bullets(sources: dict[str, Path]) -> None:
+    _run(sources)
+    page = _read(sources, "rules/ste-sentences/omitted-subject.md")
+    exceptions = _fixture_rules()["ste-sentences"]["omitted-subject"]["exceptions"]
+    detector = next(e for e in exceptions if "detector" in e)
+    assert f"- **{detector['name']}**" in page
+    assert f"`detector: {detector['detector']}`" in page
+
+
+@pytest.mark.parametrize(
+    ("preset", "level"), [("ste", "suggestion"), ("google", "warning")]
+)
+def test_rule_page_shows_severity_under_each_style_preset(
+    sources: dict[str, Path], preset: str, level: str
 ) -> None:
+    # Levels worked out from crates/slopvac-styles/presets: ste sets
+    # "ste-sentences.omitted-subject" to suggestion; google leaves it shipped (warning).
     _run(sources)
-    page = _read(sources, "rules/demo/no-foo.md")
-    assert "foo found: &lt;match&gt; -- use &lt;replacement&gt;" in page
-    assert "<match>" not in page
-    assert "Demo &lt;category&gt;" in _read(sources, "rules/demo/index.md")
-
-
-def test_preserved_example_is_kept_as_written_with_its_reason(
-    sources: dict[str, Path],
-) -> None:
-    _run(sources)
-    page = _read(sources, "rules/demo/no-foo.md")
-    assert "### Example 1: flagged" in page
-    assert "### Example 2: kept as written" in page
-    assert "Reason: instruction naming a real alternative" in page
-    kept = page.split("### Example 2")[1].split("### Example 3")[0]
-    assert "Rewrite" not in kept
-
-
-def test_empty_rewrite_and_note_are_rendered(sources: dict[str, Path]) -> None:
-    _run(sources)
-    page = _read(sources, "rules/demo/no-foo.md")
-    assert "Rewrite: delete the text." in page
-    assert "Note: The ending is dropped." in page
-
-
-def test_category_and_root_indexes_link_each_page(sources: dict[str, Path]) -> None:
-    _run(sources)
-    assert "[Avoid foo](no-foo.md): `demo.no-foo`" in _read(
-        sources, "rules/demo/index.md"
-    )
-    assert "(demo/index.md): 1 rules" in _read(sources, "rules/index.md")
+    page = _read(sources, "rules/ste-sentences/omitted-subject.md")
+    assert f"| `{preset}` | `{level}` |" in page
 
 
 def test_protocol_methods_table_lists_requests_and_notifications(
@@ -469,14 +478,6 @@ def test_site_url_without_trailing_slash_fails(sources: dict[str, Path]) -> None
         _run(sources)
 
 
-def test_rule_url_uses_the_configured_site(sources: dict[str, Path]) -> None:
-    site = build_site.load_site(sources["config"])
-    assert (
-        build_site.rule_url("demo", "no-foo", site)
-        == "https://docs.example.org/tools/v3/rules/demo/no-foo/"
-    )
-
-
 def test_check_passes_on_fresh_output_and_changes_nothing(
     sources: dict[str, Path],
 ) -> None:
@@ -492,13 +493,13 @@ def test_check_fails_on_edited_missing_and_obsolete_files(
     sources: dict[str, Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     _run(sources)
-    (sources["out"] / "rules/demo/no-foo.md").write_text("edited\n")
+    (sources["out"] / "rules/orwell/not-un.md").write_text("edited\n")
     (sources["out"] / "styles/index.md").unlink()
     (sources["out"] / "old/page.md").parent.mkdir()
     (sources["out"] / "old/page.md").write_text("gone\n")
     assert _run(sources, "--check") == 1
     err = capsys.readouterr().err
-    assert "rules/demo/no-foo.md: out of date" in err
+    assert "rules/orwell/not-un.md: out of date" in err
     assert "styles/index.md: missing" in err
     assert "old/page.md: obsolete file" in err
     assert (sources["out"] / "old/page.md").exists()
@@ -510,9 +511,7 @@ def test_check_fails_when_nothing_was_generated(sources: dict[str, Path]) -> Non
 
 
 def test_broken_markdown_and_json_links_are_reported(sources: dict[str, Path]) -> None:
-    pages = build_site.build(
-        build_site.load_site(sources["config"]), sources["rules"], sources["schemas"]
-    )
+    pages = build_site.build(build_site.load_site(sources["config"]), sources["schemas"])
     pages["a/index.md"] = (
         "[x](missing.md) [y](../schemas/v3/none.json) [ok](../rules/index.md)"
     )
@@ -522,16 +521,11 @@ def test_broken_markdown_and_json_links_are_reported(sources: dict[str, Path]) -
     ]
 
 
-def test_real_data_builds_clean_with_a_page_per_rule_and_matching_ids() -> None:
+def test_real_data_builds_clean() -> None:
     site = build_site.load_site()
     pages = build_site.build(site)
     assert build_site.broken_links(pages) == []
     assert build_site.schema_id_problems(pages, site) == []
-    expected = sum(len(c.get("rules", [])) for c in build_site.load_categories())
-    rule_pages = [
-        p for p in pages if p.startswith("rules/") and not p.endswith("index.md")
-    ]
-    assert len(rule_pages) == expected
 
 
 @pytest.mark.parametrize("preset", ["ste", "google"])
@@ -576,7 +570,7 @@ def test_a_failing_reference_example_stops_the_build_and_reports_its_stderr(
     finally:
         build_site.rust_reference.cache_clear()
     message = str(failure.value)
-    assert "slopvac-styles" in message
+    assert "slopvac-rules" in message
     assert "boom: no such example xyzzy" in message
 
 
@@ -867,13 +861,15 @@ def test_link_like_text_in_a_code_span_is_not_checked_or_rewritten(
 def test_link_like_text_in_a_rule_example_survives_the_site_rewrite(
     sources: dict[str, Path],
 ) -> None:
-    extra = RULES_YAML.replace("no-foo", "no-link").replace(
-        "Use foo here.", "See [the page](protocol.md) here."
+    # prose-craft.link-text ships a bad example that holds Markdown link syntax.
+    bad = next(
+        e["bad"]
+        for e in _fixture_rules()["prose-craft"]["link-text"]["examples"]
+        if "](" in e["bad"]
     )
-    (sources["rules"] / "link.yml").write_text(extra.replace("id: demo", "id: more"))
     assert _run(sources, "--starlight", str(_site(sources))) == 0
-    page = _starlight_page(sources, "rules/more/no-link.md")
-    assert "```text\nSee [the page](protocol.md) here.\n```" in page
+    page = _starlight_page(sources, "rules/prose-craft/link-text.md")
+    assert f"```text\n{bad}\n```" in page
 
 
 def _json_keys(node: object) -> set[str]:
@@ -975,3 +971,73 @@ def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
     (sources["out"] / "cli/lint.md").write_text("edited\n")
     assert _run(sources, "--check") == 1
     assert "cli/lint.md: out of date" in capsys.readouterr().err
+
+
+def test_example_names_are_unique_across_the_workspace() -> None:
+    # Cargo writes every example binary to target/<profile>/examples, so two crates
+    # with the same example name collide on Windows (cargo#6313).
+    stems = [p.stem for p in sorted(ROOT.glob("crates/*/examples/*.rs"))]
+    assert len(stems) == len(set(stems)), sorted(s for s in stems if stems.count(s) > 1)
+
+
+def test_narration_after_a_quoted_pattern_with_a_lone_backtick_is_not_suppressed(
+    sources: dict[str, Path],
+) -> None:
+    # The shipped pattern can hold a backtick run that the suppression scanner would
+    # carry across lines; the page must still close every disable region.
+    from slopvac.analyze import parse
+    from slopvac.suppression import scan_suppressions
+
+    site = build_site.load_site(sources["config"])
+    pages = build_site.build(site, sources["schemas"])
+    checked = 0
+    for path, text in pages.items():
+        if not (path.startswith("rules/") and "/index" not in path and path.endswith(".md")):
+            continue
+        lines = text.splitlines()
+        _, disabled, _ = scan_suppressions(parse(path, text), {})
+        open_marker = "<!-- slopvac-disable -->"
+        inside = False
+        for number, line in enumerate(lines, 1):
+            if line == open_marker:
+                inside = True
+            elif line == "<!-- slopvac-enable -->":
+                inside = False
+            elif line.strip() and not inside and not line.startswith("```"):
+                assert number not in disabled, f"{path}:{number} is suppressed: {line!r}"
+                checked += 1
+    assert checked > 1000
+
+
+def test_the_contrastive_appositive_page_closes_its_region_after_the_pattern(
+    sources: dict[str, Path],
+) -> None:
+    from slopvac.analyze import parse
+    from slopvac.suppression import scan_suppressions
+
+    path = "rules/ai-tells-structure/contrastive-appositive.md"
+    text = build_site.build(
+        build_site.load_site(sources["config"]), sources["schemas"]
+    )[path]
+    lines = text.splitlines()
+    _, disabled, _ = scan_suppressions(parse(path, text), {})
+    after = lines.index("## Examples") + 1
+    assert after not in disabled
+    pattern_line = next(i for i, l in enumerate(lines, 1) if l.startswith("`") and "(?:" in l)
+    assert pattern_line in disabled
+    assert (lines.index("### Example 1: flagged") + 1) not in disabled
+
+
+def test_category_severity_from_the_ste_preset_reaches_the_built_page(
+    sources: dict[str, Path],
+) -> None:
+    # crates/slopvac-styles/presets/ste.toml sets the whole ste-punctuation category to
+    # "suggestion"; the fixture ships ste-punctuation.semicolon-used as "warning".
+    # google.toml sets that rule to "off" by its own rule entry.
+    shipped = _fixture_rules()["ste-punctuation"]["semicolon-used"]["severity"]
+    assert shipped == "warning"
+    _run(sources)
+    page = _read(sources, "rules/ste-punctuation/semicolon-used.md")
+    assert "| Severity | `warning` |" in page
+    assert "| `ste` | `suggestion` |" in page
+    assert "| `google` | `off` |" in page

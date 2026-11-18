@@ -1,6 +1,6 @@
 //! Write the style reference pages under a directory.
 //!
-//! `cargo run -p slopvac-styles --example reference -- <out-dir>` writes
+//! `cargo run -p slopvac-styles --example styles-reference -- <out-dir>` writes
 //! `styles/index.md` and one page per bundled preset below `<out-dir>`.
 
 use std::path::PathBuf;

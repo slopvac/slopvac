@@ -13,6 +13,7 @@ mod error;
 mod ext;
 mod matcher;
 mod model;
+mod reference;
 mod ruleset;
 mod schema;
 
@@ -20,5 +21,6 @@ pub use error::{LoadError, LoadErrorKind, LoadErrors};
 pub use ext::{UniqueVec, ValueError};
 pub use matcher::{CompileError, CompileOptions, LexicalMatcher};
 pub use model::*;
+pub use reference::{PresetLevels, reference_pages};
 pub use ruleset::{LoadedCategory, LoadedRule, MAX_RULE_FILE_BYTES, RuleSet};
 pub use schema::{category_schema, rule_file_schema, rule_schema};

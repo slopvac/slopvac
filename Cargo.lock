@@ -2700,6 +2700,7 @@ dependencies = [
  "serde_json",
  "slopvac-fs",
  "slopvac-model",
+ "slopvac-styles",
  "slopvac-text",
  "tempfile",
  "thiserror",

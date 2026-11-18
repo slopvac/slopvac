@@ -1,6 +1,6 @@
 //! Write the genre reference pages under a directory.
 //!
-//! `cargo run -p slopvac-context --example reference -- <out-dir>` writes
+//! `cargo run -p slopvac-context --example genres-reference -- <out-dir>` writes
 //! `genres/index.md` and one page per built-in genre below `<out-dir>`.
 
 use std::path::PathBuf;
