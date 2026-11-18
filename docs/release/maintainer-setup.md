@@ -1,6 +1,6 @@
 # Maintainer setup for candidates
 
-The stable release prerequisites live in [distribution](distribution.md#maintainer-setup): the Homebrew tap and App access, the minisign secret and public key, the release-please App, `RULESET_READ_TOKEN`, the `v*` tag ruleset and immutable releases. Candidates also need the signing key. This page lists only what [release candidates](candidates.md) add. A maintainer does these by hand, because no workflow or script in this repository changes repository, PyPI or GitHub settings.
+The stable release prerequisites live in [distribution](distribution.md#maintainer-setup): the Homebrew tap and App access, the minisign secret and public key, the release-please App with Administration: Read-only, the `v*` tag ruleset and immutable releases. Candidates also need the signing key. This page lists only what [release candidates](candidates.md) add. A maintainer does these by hand, because no workflow or script in this repository changes repository, PyPI or GitHub settings.
 
 ## PyPI Trusted Publishing for candidates
 
@@ -30,6 +30,16 @@ In Settings, Environments, `pypi`:
 Create a second ruleset that targets `refs/tags/rc/v*` with the same settings as the `v*` ruleset in [distribution](distribution.md#protect-version-tags): active, with the update, deletion and non-fast-forward rules, and a bypass list that is empty or admin-only.
 
 No workflow checks this ruleset. `scripts/release_ruleset.py` accepts only plain `vX.Y.Z` tags. The stable gate does not rely on it: it needs a passed `candidate.yml` push run for the candidate tag at its current commit, so a moved tag has no passed run until its run passes. The ruleset keeps the tag that testers installed from fixed.
+
+## Pin the tag rulesets
+
+`scripts/release_ruleset.py check` trusts a tag ruleset only while its ID and `updated_at` match `scripts/release_ruleset_pins.json`. After you create or edit a tag ruleset, review it, then run this as a repository admin and commit the result:
+
+```sh
+python3 scripts/release_ruleset.py update-pins --repo slopvac/slopvac
+```
+
+`update-pins` is the only writer of the pin file. It reads the rulesets with your token and refuses to write unless it can see each ruleset's `bypass_actors` and they are empty or admin-only. A token without admin rights therefore cannot update the pins. Review the pin file change like a change to the ruleset itself.
 
 ## Check the setup
 
