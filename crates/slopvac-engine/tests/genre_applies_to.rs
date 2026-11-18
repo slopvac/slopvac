@@ -176,3 +176,45 @@ fn a_metric_the_genre_excludes_is_not_measured_on_the_document() {
     assert_eq!(entries("reference"), (1, 1));
     assert_eq!(entries("consumer"), (0, 0));
 }
+
+/// Lint a document of each genre and return the matcher entries of `kind` and the number of
+/// findings for the reference document and the consumer document.
+fn entries_for(engine: &Engine, kind: MatchKind, body: &str) -> [(usize, usize); 2] {
+    ["reference", "consumer"].map(|genre| {
+        let before = matcher_entries(kind);
+        let source = format!("---\ngenre: {genre}\n---\n{body}");
+        let doc = engine.lint(&Input::markdown("a.md", &source)).unwrap();
+        (matcher_entries(kind) - before, doc.findings.len())
+    })
+}
+
+#[test]
+fn a_term_casing_rule_the_genre_excludes_checks_nothing_on_the_document() {
+    let casing = rule(
+        "casing",
+        &json!({"kind": "vocabulary", "check": "term-casing"}),
+        &json!({"applies_to": {"genres": ["reference"]}}),
+    );
+    let set = ruleset(vec![category("terms", &[casing])]);
+    let engine = Engine::new(vec![set], per_document()).unwrap();
+    let [reference, consumer] =
+        entries_for(&engine, MatchKind::Vocabulary, "Open it on Github today.\n");
+    assert_eq!((reference.0 > 0, reference.1), (true, 1));
+    assert_eq!(consumer, (0, 0));
+}
+
+#[test]
+fn a_diagram_rule_the_genre_excludes_checks_no_diagram_in_the_document() {
+    let run_on = rule(
+        "label-run-on",
+        &json!({"kind": "structure", "check": "diagram-label-run-on"}),
+        &json!({"applies_to": {"genres": ["reference"]}}),
+    );
+    let set = ruleset(vec![category("diagram", &[run_on])]);
+    let engine = Engine::new(vec![set], per_document()).unwrap();
+    let body =
+        "```mermaid\nflowchart TD\n  A[This label has far too many words in it] --> B[End]\n```\n";
+    let [reference, consumer] = entries_for(&engine, MatchKind::Structure, body);
+    assert_eq!((reference.0 > 0, reference.1), (true, 1));
+    assert_eq!(consumer, (0, 0));
+}

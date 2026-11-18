@@ -248,7 +248,8 @@ pub struct Engine {
     tagger: TagRegistry,
     /// The genres a document is matched to, when the settings ask for per-document genres.
     genres: Option<GenreRegistry>,
-    checkers: Vec<Box<dyn DiagramChecker>>,
+    /// The diagram checkers, each with the ids of the rules it reports.
+    checkers: Vec<(Box<dyn DiagramChecker>, Vec<RuleId>)>,
     /// Lexical rules that run.
     active: Vec<Active>,
     /// Vocabulary rules that run. They share one sweep over the word blocklist.
@@ -490,7 +491,9 @@ impl Engine {
     /// Add a checker for diagram rules.
     #[must_use]
     pub fn with_diagram_checker(mut self, checker: Box<dyn DiagramChecker>) -> Self {
+        let mut ids = Vec::new();
         for DiagramRule { id, severity } in checker.rules() {
+            ids.push(id.clone());
             let category = category_of(&id);
             let key = id.as_str().to_owned();
             self.catalog.insert(key.clone(), Catalog::Diagram);
@@ -500,7 +503,7 @@ impl Engine {
                     .insert(id, ActiveDiagram { severity, at: None });
             }
         }
-        self.checkers.push(checker);
+        self.checkers.push((checker, ids));
         self
     }
 
@@ -508,8 +511,9 @@ impl Engine {
     fn add_signal_checker(&mut self) {
         if !self.signal_rules.is_empty() {
             let rules = std::mem::take(&mut self.signal_rules);
+            let ids = rules.iter().map(|(_, rule)| rule.id.clone()).collect();
             self.checkers
-                .push(Box::new(SignalChecker::from_rules(rules)));
+                .push((Box::new(SignalChecker::from_rules(rules)), ids));
         }
     }
 
@@ -1101,6 +1105,16 @@ impl Run<'_> {
             .is_none_or(|g| g.contains(&self.genre.id))
     }
 
+    /// Whether the diagram rule `id` runs and applies to the document's genre. A rule of a
+    /// custom checker has no loaded rule, so no genre limits it.
+    fn diagram_rule_applies(&self, id: &RuleId) -> bool {
+        self.engine.diagram_rules.get(id).is_some_and(|active| {
+            active.at.is_none_or(|(s, c, r)| {
+                self.applies(self.engine.sets[s].categories()[c].rules()[r].rule())
+            })
+        })
+    }
+
     fn lexical(&self) -> Result<Vec<Finding>, EngineError> {
         let engine = self.engine;
         if matches!(self.input.kind, Kind::Diagram(_)) {
@@ -1432,7 +1446,15 @@ impl Run<'_> {
     /// Findings of diagram rules, over diagram files and fenced diagram blocks.
     fn diagrams(&self) -> Result<Vec<Finding>, EngineError> {
         let engine = self.engine;
-        if engine.checkers.is_empty() {
+        // A checker none of whose rules applies to the document's genre does not run. One that
+        // names no rules is not limited by a genre.
+        let checkers: Vec<&dyn DiagramChecker> = engine
+            .checkers
+            .iter()
+            .filter(|(_, ids)| ids.is_empty() || ids.iter().any(|id| self.diagram_rule_applies(id)))
+            .map(|(checker, _)| checker.as_ref())
+            .collect();
+        if checkers.is_empty() {
             return Ok(Vec::new());
         }
         let mut diagrams: Vec<(DiagramFormat, Extraction, Vec<NearbyProse<'_>>)> = Vec::new();
@@ -1503,7 +1525,8 @@ impl Run<'_> {
                 extraction,
                 prose: &prose,
             };
-            for checker in &engine.checkers {
+            for checker in &checkers {
+                matcher_work::entered(MatchKind::Structure);
                 for hit in checker.check(&input) {
                     if let Some(finding) = self.diagram_finding(&hit, nearby)? {
                         out.push(finding);
@@ -1581,6 +1604,9 @@ impl Run<'_> {
         let Some(active) = self.engine.diagram_rules.get(&hit.rule) else {
             return Ok(None);
         };
+        if !self.diagram_rule_applies(&hit.rule) {
+            return Ok(None);
+        }
         let span = self.source_span(&hit.span, nearby)?;
         let loaded = active
             .at
