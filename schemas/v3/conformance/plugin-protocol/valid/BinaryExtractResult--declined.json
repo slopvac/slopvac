@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "error": {
+        "code": -32008,
+        "message": "this extractor does not read this document",
+        "data": {
+          "slopvac_code": "binary-input-declined",
+          "reason": "variant-unsupported"
+        }
+      }
+    },
+    {
+      "document": "d2",
+      "error": {
+        "code": -32008,
+        "message": "this extractor does not read this document",
+        "data": {
+          "slopvac_code": "binary-input-declined",
+          "reason": "unknown-format"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "error": {
+        "code": -32008,
+        "message": "declined",
+        "data": {
+          "slopvac_code": "binary-input-declined"
+        }
+      }
+    }
+  ]
+}

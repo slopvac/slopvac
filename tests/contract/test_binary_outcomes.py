@@ -23,7 +23,12 @@ VECTORS = json.loads(
 CASES = {c["id"]: c for c in VECTORS["cases"]}
 HOST_CASES = {c["id"]: c for c in VECTORS["host_cases"]}
 PROMISES_SOURCE = (".drawio.png", ".excalidraw.png", ".drawio.svg")
-FAILURE_CODES = {"extract-encrypted", "extract-malformed", "extract-budget"}
+FAILURE_CODES = {
+    "binary-input-declined",
+    "binary-encrypted",
+    "extract-malformed",
+    "extract-budget",
+}
 
 
 def _result_validator() -> Draft202012Validator:
@@ -97,9 +102,9 @@ def test_a_named_input_in_an_unread_format_exits_2_without_extraction(
     case = HOST_CASES[case_id]
     assert case["named_explicitly"] is True
     assert case["sent_to_extractor"] is False
+    assert case["unchecked"] == ["binary-format-unsupported"]
+    assert case["format"] == case["path"].rsplit(".", 1)[1]
     assert case["exit"] == 2
-    # The CLI routing bead owns the code, so the vector leaves it open.
-    assert case["unchecked"] == [None]
 
 
 @pytest.mark.parametrize(
@@ -108,7 +113,7 @@ def test_a_named_input_in_an_unread_format_exits_2_without_extraction(
     ids=lambda c: c["id"],
 )
 def test_an_encrypted_container_exits_2_and_is_never_unsupported(case: dict) -> None:
-    assert case["unchecked"] == ["extract-encrypted"]
+    assert case["unchecked"] == ["binary-encrypted"]
     assert case["exit"] == 2
     assert "extract-unsupported" not in json.dumps(case)
 
@@ -118,3 +123,34 @@ def test_validator_failure_code_depends_on_who_produced_the_output(case: dict) -
     expected = {"built-in": "extract-output-invalid", "plugin": "plugin-output-invalid"}
     assert case["code"] == expected[case["source"]]
     assert case["exit"] == 2
+
+
+@pytest.mark.parametrize(
+    ("case_id", "reason"),
+    [
+        ("declined-variant-unsupported", "variant-unsupported"),
+        ("declined-unknown-format", "unknown-format"),
+    ],
+)
+def test_a_declined_document_exits_2_and_names_its_reason(
+    case_id: str, reason: str
+) -> None:
+    case = CASES[case_id]
+    error = case["result"]["error"]
+    assert error["code"] == -32008
+    assert error["data"] == {"slopvac_code": "binary-input-declined", "reason": reason}
+    assert case["unchecked"] == ["binary-input-declined"]
+    assert case["exit"] == 2
+
+
+def test_extract_unsupported_only_ever_marks_a_skipped_part() -> None:
+    every = VECTORS["cases"] + VECTORS["host_cases"]
+    for case in every:
+        error = case.get("result", {}).get("error")
+        if error:
+            assert error["data"]["slopvac_code"] != "extract-unsupported"
+        assert "extract-unsupported" not in case["unchecked"]
+        for notice in case["notices"]:
+            if notice["code"] == "extract-unsupported":
+                assert notice["level"] == "info"
+                assert case["result"]["unsupported"]

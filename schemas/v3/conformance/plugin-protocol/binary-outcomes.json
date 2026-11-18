@@ -1,5 +1,5 @@
 {
-  "description": "How the host reports each binary extraction outcome (plugin-protocol.md section 5.5.4). Each case in cases gives the document path, the wire result entry for that document, the run exit code when no finding fails a gate, the notices the host adds to the root notices of the lint report, and the codes it adds to that document's unchecked list. Content a document skips is an info notice and never unchecked. A no-source result depends on the name: .drawio.png, .excalidraw.png and .drawio.svg promise a source, and every other name does not. host_cases are inputs the host decides without a wire result: sent_to_extractor is false when no extractor gets the file. A null code means that the CLI routing bead slopvac-8l4.20.13 fixes it. validator_cases give the code the shared validator reports when output fails it, by the source of that output. Every listed notice code appears in every output format (host row H46).",
+  "description": "How the host reports each binary extraction outcome (plugin-protocol.md section 5.5.4). Each case in cases gives the document path, the wire result entry for that document, the run exit code when no finding fails a gate, the notices the host adds to the root notices of the lint report, and the codes it adds to that document's unchecked list. Content a document skips is an info notice and never unchecked. A no-source result depends on the name: .drawio.png, .excalidraw.png and .drawio.svg promise a source, and every other name does not. host_cases are inputs the host decides without a wire result: sent_to_extractor is false when no extractor gets the file. format is the detected format that binary-format-unsupported names in data.format. validator_cases give the code the shared validator reports when output fails it, by the source of that output. Every listed notice code appears in every output format (host row H46).",
   "cases": [
     {
       "id": "extracted-with-skipped-part",
@@ -89,6 +89,46 @@
       ]
     },
     {
+      "id": "declined-unknown-format",
+      "path": "docs/drawing.vsdx",
+      "result": {
+        "document": "d1",
+        "error": {
+          "code": -32008,
+          "message": "this extractor does not read this document",
+          "data": {
+            "slopvac_code": "binary-input-declined",
+            "reason": "unknown-format"
+          }
+        }
+      },
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        "binary-input-declined"
+      ]
+    },
+    {
+      "id": "declined-variant-unsupported",
+      "path": "docs/strict.docx",
+      "result": {
+        "document": "d1",
+        "error": {
+          "code": -32008,
+          "message": "this extractor does not read this document",
+          "data": {
+            "slopvac_code": "binary-input-declined",
+            "reason": "variant-unsupported"
+          }
+        }
+      },
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        "binary-input-declined"
+      ]
+    },
+    {
       "id": "encrypted",
       "path": "docs/secret.docx",
       "result": {
@@ -97,14 +137,14 @@
           "code": -32011,
           "message": "encrypted",
           "data": {
-            "slopvac_code": "extract-encrypted"
+            "slopvac_code": "binary-encrypted"
           }
         }
       },
       "exit": 2,
       "notices": [],
       "unchecked": [
-        "extract-encrypted"
+        "binary-encrypted"
       ]
     },
     {
@@ -158,8 +198,9 @@
       "exit": 2,
       "notices": [],
       "unchecked": [
-        null
-      ]
+        "binary-format-unsupported"
+      ],
+      "format": "epub"
     },
     {
       "id": "named-pdf",
@@ -170,8 +211,9 @@
       "exit": 2,
       "notices": [],
       "unchecked": [
-        null
-      ]
+        "binary-format-unsupported"
+      ],
+      "format": "pdf"
     },
     {
       "id": "encrypted-ooxml-package",
@@ -182,7 +224,7 @@
       "exit": 2,
       "notices": [],
       "unchecked": [
-        "extract-encrypted"
+        "binary-encrypted"
       ]
     },
     {

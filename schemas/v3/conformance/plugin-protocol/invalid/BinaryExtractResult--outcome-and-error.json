@@ -5,9 +5,10 @@
       "outcome": "empty",
       "error": {
         "code": -32008,
-        "message": "encrypted",
+        "message": "this extractor does not read this document",
         "data": {
-          "slopvac_code": "extract-unsupported"
+          "slopvac_code": "binary-input-declined",
+          "reason": "variant-unsupported"
         }
       }
     }

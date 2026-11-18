@@ -587,7 +587,7 @@
       ]
     },
     "BinaryFormat": {
-      "description": "Format id of a binary document, from the 3.0 list in docs/contract/plugin-protocol.md section 5.5.1. The enum is extensible (x-slopvac-extensible, bead slopvac-8l4.2.61): a later release may add ids without a new protocol version. A plugin or reader that receives an id it does not know declines that document as extract-unsupported and does not fail the request. Manifest validation applies the list strictly: the host refuses a manifest that declares an id outside its own list.",
+      "description": "Format id of a binary document, from the 3.0 list in docs/contract/plugin-protocol.md section 5.5.1. The enum is extensible (x-slopvac-extensible, bead slopvac-8l4.2.61): a later release may add ids without a new protocol version. A plugin or reader that receives an id it does not know declines that document with binary-input-declined, reason unknown-format, and does not fail the request. Manifest validation applies the list strictly: the host refuses a manifest that declares an id outside its own list.",
       "x-slopvac-extensible": true,
       "enum": [
         "docx",
@@ -735,6 +735,14 @@
         "in-flight-bytes"
       ]
     },
+    "BinaryDeclineReason": {
+      "description": "Why a binary extractor declines a whole document with binary-input-declined (-32008), carried in data.reason. unknown-format: the format id is not one the extractor knows (plugin-protocol.md section 5.5.1). variant-unsupported: the format is one it lists, but this variant is one it does not handle. The enum is extensible (x-slopvac-extensible, bead slopvac-8l4.2.61): a reader keeps a reason it does not know and still treats the document as declined.",
+      "x-slopvac-extensible": true,
+      "enum": [
+        "unknown-format",
+        "variant-unsupported"
+      ]
+    },
     "BinaryExtractParams": {
       "description": "binary-extractor/extract. Extract the prose of each binary document. The host admits a request by a length preflight before it reads or encodes the file, holds it against the in-flight budget, and sends it only when the exact serialized size fits the negotiated maxMessageBytes (plugin-protocol.md section 5.5.6).",
       "type": "object",
@@ -757,7 +765,7 @@
       ]
     },
     "BinaryExtractResult": {
-      "description": "One entry per requested document. Each entry carries exactly one of outcome or error. outcome extracted carries one or more segments in reading order; empty and no-source carry none. An entry with an outcome may list skipped content in unsupported; an entry with an error may not. A document the extractor cannot read at all, an encrypted container, a malformed file and a budget breach travel as a per-document error (extract-unsupported, extract-encrypted, extract-malformed, extract-budget). An extract-budget error names the budget in data.budget and its value in data.limit; a reader never parses either from the message. The reply must fit maxMessageBytes; a document whose segments do not fit gets the error message-too-large instead.",
+      "description": "One entry per requested document. Each entry carries exactly one of outcome or error. outcome extracted carries one or more segments in reading order; empty and no-source carry none. An entry with an outcome may list skipped content in unsupported, which the host reports as extract-unsupported notices; an entry with an error may not. extract-unsupported is never a per-document error. A document the extractor declines, an encrypted container, a malformed file and a budget breach travel as a per-document error: binary-input-declined (-32008) with data.reason, binary-encrypted (-32011), extract-malformed (-32009) and extract-budget (-32010) with data.budget and data.limit. A reader never parses these fields from the message. The reply must fit maxMessageBytes; a document whose segments do not fit gets the error message-too-large instead.",
       "type": "object",
       "properties": {
         "results": {
@@ -916,6 +924,67 @@
                                 "budget",
                                 "limit"
                               ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "data": {
+                              "properties": {
+                                "slopvac_code": {
+                                  "const": "binary-input-declined"
+                                }
+                              },
+                              "required": [
+                                "slopvac_code"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "data"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "data": {
+                              "properties": {
+                                "reason": {
+                                  "$ref": "#/$defs/BinaryDeclineReason"
+                                }
+                              },
+                              "required": [
+                                "reason"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "error": {
+                        "properties": {
+                          "data": {
+                            "properties": {
+                              "slopvac_code": {
+                                "not": {
+                                  "const": "extract-unsupported"
+                                }
+                              }
                             }
                           }
                         }

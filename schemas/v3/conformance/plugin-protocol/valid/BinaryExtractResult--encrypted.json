@@ -6,7 +6,7 @@
         "code": -32011,
         "message": "the document is encrypted",
         "data": {
-          "slopvac_code": "extract-encrypted"
+          "slopvac_code": "binary-encrypted"
         }
       }
     }

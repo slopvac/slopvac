@@ -1,5 +1,5 @@
 {
-  "description": "Consumer rule for an unknown format id (plugin-protocol.md section 5.5.1). BinaryFormat is marked x-slopvac-extensible, so a later host may send an id that an older plugin does not know. The plugin declines that document with extract-unsupported (-32008) and answers the others; it does not fail the request with invalid-params. The host then handles d2 as an input that no enabled extractor reads, so that run exits 2; this vector checks the plugin side only. A strict schema check of the request reports an error only at unknown_format_pointer, the extensible position. Manifest validation stays strict: a manifest that declares the same id is refused at manifest_pointer.",
+  "description": "Consumer rule for an unknown format id (plugin-protocol.md section 5.5.1). BinaryFormat is marked x-slopvac-extensible, so a later host may send an id that an older plugin does not know. The plugin declines that document with binary-input-declined (-32008), data.reason unknown-format, and answers the others; it does not fail the request with invalid-params. A strict schema check of the request reports an error only at unknown_format_pointer, the extensible position. Manifest validation stays strict: a manifest that declares the same id is refused at manifest_pointer. The host adds binary-input-declined to the unchecked list of d2, so that run exits 2; this vector checks the plugin side.",
   "request": {
     "jsonrpc": "2.0",
     "id": 9,
@@ -33,9 +33,10 @@
         "document": "d2",
         "error": {
           "code": -32008,
-          "message": "format vsdx is not supported",
+          "message": "format vsdx is not one this extractor knows",
           "data": {
-            "slopvac_code": "extract-unsupported"
+            "slopvac_code": "binary-input-declined",
+            "reason": "unknown-format"
           }
         }
       }
