@@ -31,7 +31,7 @@ use crate::matching::{
     LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
 };
 use crate::metrics::{self, Subject};
-use crate::prepare::{Prepared, Unit, with_html_prose};
+use crate::prepare::{Prepared, Unit, html_file, with_html_prose};
 use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
@@ -58,6 +58,9 @@ pub enum Kind {
     Mdx,
     /// reStructuredText, read through docutils (see [`crate::rst`]).
     Rst,
+    /// A standalone HTML file (`.html`, `.htm`). The visible text of each line is a paragraph,
+    /// as 2.x reads it; front matter is not read.
+    Html,
     /// A diagram file. Only diagram rules read it.
     Diagram(DiagramFormat),
 }
@@ -140,6 +143,15 @@ impl<'a> Input<'a> {
     pub const fn rst(path: &'a str, source: &'a str) -> Self {
         Self {
             kind: Kind::Rst,
+            ..Self::markdown(path, source)
+        }
+    }
+
+    /// A standalone HTML file read from disk.
+    #[must_use]
+    pub const fn html(path: &'a str, source: &'a str) -> Self {
+        Self {
+            kind: Kind::Html,
             ..Self::markdown(path, source)
         }
     }
@@ -655,7 +667,7 @@ impl Engine {
     pub fn lint(&self, input: &Input<'_>) -> Result<Document, EngineError> {
         // Front matter is metadata, not prose: the parser reads only what follows it.
         let front = match input.kind {
-            Kind::Diagram(_) | Kind::Rst => None,
+            Kind::Diagram(_) | Kind::Rst | Kind::Html => None,
             _ => detect(input.source),
         };
         let body_start = front.as_ref().map_or(0, |b| b.body_start);
@@ -670,6 +682,7 @@ impl Engine {
             Kind::Markdown => parse_markdown(input.source, body)?,
             Kind::Mdx => parse_mdx(input.source, body)?,
             Kind::Rst => self.parse_rst(input, &mut extra)?,
+            Kind::Html => html_file(input.source)?,
             Kind::Diagram(_) => Parsed::default(),
         };
         let index = SourceIndex::new(input.source, input.bom);

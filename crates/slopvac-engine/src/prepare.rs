@@ -1,12 +1,14 @@
 //! The text units a rule reads, cut from a parsed document by the rule's `scope`.
 
 use std::cell::OnceCell;
+use std::collections::BTreeMap;
 use std::ops::Range;
 
 use slopvac_model::SourceIndex;
 use slopvac_model::Span;
 use slopvac_parse::{
-    Block, BlockKind, Document, ParseError, Projection, TokenKind, parse_html_segments,
+    Block, BlockKind, Document, ParseError, Projection, Token, TokenKind, parse_html,
+    parse_html_segments,
 };
 use slopvac_rules::Scope;
 use slopvac_text::{Sentence, TextError, cell_sentence, split_sentences};
@@ -81,6 +83,114 @@ pub(crate) fn with_html_prose(
         .sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
     doc.code_spans.sort_by_key(Span::start);
     Ok(doc)
+}
+
+/// A standalone HTML file read as 2.x reads it (`_parse_html`): the visible text of each source
+/// line is one paragraph of the kind `Paragraph`, whatever elements it came from, so a heading,
+/// list item or table cell is a paragraph too, and a sentence never runs over a line end. Text
+/// of several elements on one line joins into that line's paragraph. Inline code (`<code>`,
+/// `<kbd>`, `<samp>`) joins the code spans and is masked in the prose; `<pre>` stays a code
+/// block; `<script>`, `<style>`, `<noscript>`, `<template>`, `<head>` and `<title>` give
+/// nothing. A Markdown fence in the file is plain text, as in 2.x. A line ends at LF, CRLF or a
+/// lone CR, as everywhere else in the engine.
+///
+/// # Errors
+/// Returns a [`ParseError`] when the file is too large or needs more work than the parse
+/// budget allows.
+pub(crate) fn html_file(source: &str) -> Result<Document, ParseError> {
+    let body = Span::new(0, source.len()).expect("0 <= the length of the file");
+    let mut doc = parse_html(source, body)?;
+    let lines = Lines::new(source);
+    let mut by_line: BTreeMap<usize, Vec<Projection>> = BTreeMap::new();
+    let mut blocks = Vec::new();
+    for mut block in std::mem::take(&mut doc.blocks) {
+        match &block.projection {
+            Some(projection) if !projection.text().is_empty() => {
+                for (line, piece) in line_pieces(source, &lines, projection) {
+                    by_line.entry(line).or_default().push(piece);
+                }
+            }
+            _ => {
+                block.containers.clear();
+                blocks.push(block);
+            }
+        }
+    }
+    for pieces in by_line.into_values() {
+        let projection = join(pieces.iter());
+        let extents = projection.extents();
+        let (Some(first), Some(last)) = (
+            extents.iter().map(|s| s.start()).min(),
+            extents.iter().map(|s| s.end()).max(),
+        ) else {
+            continue;
+        };
+        blocks.push(Block {
+            kind: BlockKind::Paragraph,
+            span: Span::new(first, last).expect("a block ends after it starts"),
+            projection: Some(projection),
+            containers: Vec::new(),
+        });
+    }
+    blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
+    doc.blocks = blocks;
+    Ok(doc)
+}
+
+/// The pieces of `projection` that sit on one source line each, with the line number. A
+/// whitespace run that holds a line end cuts the text, and so does a token that starts on a
+/// later line than the piece (masked code that spans lines). A piece with only masked code
+/// is not text, so it is dropped, as 2.x drops a line without visible text.
+fn line_pieces(
+    source: &str,
+    lines: &Lines<'_>,
+    projection: &Projection,
+) -> Vec<(usize, Projection)> {
+    fn finish(out: &mut Vec<(usize, Projection)>, line: usize, mut tokens: Vec<Token>) {
+        while tokens
+            .last()
+            .is_some_and(|t| matches!(t.kind, TokenKind::Collapse | TokenKind::Wrap))
+        {
+            tokens.pop();
+        }
+        if tokens.iter().all(|t| t.kind == TokenKind::Masked) {
+            return;
+        }
+        let mut piece = Projection::new();
+        for t in &tokens {
+            piece.push_unordered(t.kind, &t.text, t.src);
+        }
+        out.push((line, piece));
+    }
+
+    let mut out = Vec::new();
+    let mut current: Option<(usize, Vec<Token>)> = None;
+    for token in projection.tokens() {
+        let ends_line = token.kind == TokenKind::Collapse
+            && source[token.src.start()..token.src.end()].contains(['\n', '\r']);
+        if ends_line {
+            if let Some((line, tokens)) = current.take() {
+                finish(&mut out, line, tokens);
+            }
+            continue;
+        }
+        let line = lines.line_of(token.src.start());
+        let spills = token.kind != TokenKind::Wrap
+            && current.as_ref().is_some_and(|(open, _)| *open != line);
+        if spills && let Some((open, tokens)) = current.take() {
+            finish(&mut out, open, tokens);
+        }
+        match &mut current {
+            Some((_, tokens)) => tokens.push(token.clone()),
+            // A piece starts at a word.
+            None if matches!(token.kind, TokenKind::Collapse | TokenKind::Wrap) => {}
+            None => current = Some((line, vec![token.clone()])),
+        }
+    }
+    if let Some((line, tokens)) = current {
+        finish(&mut out, line, tokens);
+    }
+    out
 }
 
 /// The fence character and marker length when `line` opens or closes a Markdown fence:
