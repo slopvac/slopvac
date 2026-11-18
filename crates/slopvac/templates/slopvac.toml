@@ -82,18 +82,9 @@ profile = "normal"
 # Plugin id of the model provider.
 # provider = "example"
 
-# A pack or plugin the project depends on.
-# [[packs]]
-# Pack identifier: the namespace of a rule.
-# id = "example"
-# An `oci://` reference, a `git+https://` URL with a commit, or a path
-# relative to the config file.
-# source = "<source>"
-# version = "<version>"
-
-# A pack or plugin the project depends on.
+# A data plugin or code plugin the project depends on.
 # [[plugins]]
-# Pack identifier: the namespace of a rule.
+# Identifier of a plugin, or of the namespace a publisher signs for.
 # id = "example"
 # An `oci://` reference, a `git+https://` URL with a commit, or a path
 # relative to the config file.
