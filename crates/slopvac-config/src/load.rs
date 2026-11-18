@@ -7,7 +7,7 @@ use std::path::{Component, Path, PathBuf};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde_json::Value as Json;
 
-use crate::diag::{Code, Diagnostic};
+use crate::diag::{BudgetData, Code, ConfigBudget, Diagnostic};
 use crate::error::{ConfigError, Rejected};
 use crate::flatten::{Origin, flatten};
 use crate::presets::Presets;
@@ -282,8 +282,24 @@ enum Key {
     Pack(String),
 }
 
-/// A diagnostic code, message and help for an `extends` entry that is refused.
-type Refusal = (Code, String, Option<String>);
+/// An `extends` entry that is refused: the diagnostic code, message, help and any budget detail.
+struct Refusal {
+    code: Code,
+    message: String,
+    help: Option<String>,
+    data: Option<Box<BudgetData>>,
+}
+
+impl Refusal {
+    fn new(code: Code, message: String, help: Option<String>) -> Self {
+        Self {
+            code,
+            message,
+            help,
+            data: None,
+        }
+    }
+}
 
 struct Loader<'a> {
     root: &'a Path,
@@ -326,6 +342,7 @@ impl Loader<'_> {
                     span,
                     help: None,
                     path: Vec::new(),
+                    data: None,
                 };
                 return Err(reject(text, vec![d]));
             }
@@ -398,6 +415,7 @@ impl Loader<'_> {
                 span: node.span.clone(),
                 help: None,
                 path: vec!["styles".into()],
+                data: None,
             });
         }
     }
@@ -442,6 +460,7 @@ impl Loader<'_> {
                         span,
                         help: Some("merge the two blocks".into()),
                         path: vec![table.into(), index.to_string(), "files".into()],
+                        data: None,
                     });
                     continue;
                 }
@@ -456,6 +475,7 @@ impl Loader<'_> {
                             span,
                             help: None,
                             path: vec![table.into(), index.to_string(), "files".into()],
+                            data: None,
                         });
                         continue;
                     }
@@ -483,26 +503,40 @@ impl Loader<'_> {
         out
     }
 
-    /// The refusal for loading `more` files when that passes the file budget.
-    fn files_over_budget(&self, more: usize) -> Option<Refusal> {
-        (self.files.len() + more > MAX_EXTENDS_FILES).then(|| {
-            (
-                Code::BudgetExceeded,
-                format!("the `extends` graph expands to more than {MAX_EXTENDS_FILES} files"),
-                Some("remove entries that extend the same files again".into()),
-            )
-        })
-    }
-
-    /// The refusal for one more level of nesting when that passes the depth limit.
-    fn too_deep(&self) -> Option<Refusal> {
-        (self.stack.len() > MAX_EXTENDS_DEPTH).then(|| {
-            (
-                Code::ExtendsTooDeep,
-                format!("`extends` nests deeper than {MAX_EXTENDS_DEPTH} levels"),
-                Some("flatten the chain".into()),
-            )
-        })
+    /// The refusal for passing `budget` while loading the `extends` entry of the file `key`
+    /// names. The message names only the file, relative to the root, and the limit.
+    fn over_budget(&self, key: &Key, display: &str, budget: ConfigBudget) -> Refusal {
+        let path = match key {
+            Key::Path(p) => slopvac_fs::display_under_root(p, self.root),
+            Key::Pack(_) => display.to_owned(),
+        };
+        let (limit, what, help) = match budget {
+            ConfigBudget::ExtendsDepth => (
+                MAX_EXTENDS_DEPTH as u64,
+                "nests `extends` deeper than {} levels",
+                "flatten the chain",
+            ),
+            ConfigBudget::ExtendsFiles => (
+                MAX_EXTENDS_FILES as u64,
+                "applies more than {} files through `extends`",
+                "remove entries that extend the same files again",
+            ),
+            ConfigBudget::ExtendsBytes => (
+                MAX_EXTENDS_BYTES,
+                "reads more than {} bytes through `extends`",
+                "remove entries or split the files",
+            ),
+        };
+        Refusal {
+            code: Code::BudgetExceeded,
+            message: format!("{path} {}", what.replace("{}", &limit.to_string())),
+            help: Some(help.into()),
+            data: Some(Box::new(BudgetData {
+                budget,
+                limit,
+                path,
+            })),
+        }
     }
 
     /// Read the extended file `target`, which the entry `name` names.
@@ -511,12 +545,12 @@ impl Loader<'_> {
             return Ok(String::new());
         };
         read_text(p, MAX_CONFIG_BYTES).map_err(|e| match e {
-            ReadFailure::TooLarge(cap) => (
+            ReadFailure::TooLarge(cap) => Refusal::new(
                 Code::TooLarge,
                 format!("the extended config `{name}` is larger than {cap} bytes"),
                 Some("split the file or remove unused settings".into()),
             ),
-            ReadFailure::Io(e) => (
+            ReadFailure::Io(e) => Refusal::new(
                 Code::ExtendsMissing,
                 format!(
                     "cannot read the extended config `{}`: {e}",
@@ -544,27 +578,28 @@ impl Loader<'_> {
         for entry in entries {
             let name = entry.as_str().unwrap_or_default();
             let label = self.error_label(key, display);
-            let fail = |code: Code, message: String, help: Option<String>| {
+            let fail = |r: Refusal| {
                 ConfigError::Rejected(Box::new(Rejected {
                     file: label.clone(),
                     text: text.to_owned(),
                     diagnostics: vec![Diagnostic {
-                        code,
-                        message,
+                        code: r.code,
+                        message: r.message,
                         label: "extended here".into(),
                         span: entry.span.clone(),
-                        help,
+                        help: r.help,
                         path: vec!["extends".into()],
+                        data: r.data,
                     }],
                 }))
             };
             let (target, shown, body) = if is_pack_ref(name) {
                 let Some(file) = self.presets.pack_config(name) else {
-                    return Err(fail(
+                    return Err(fail(Refusal::new(
                         Code::ExtendsMissing,
                         format!("no active pack provides the config `{name}`"),
                         None,
-                    ));
+                    )));
                 };
                 (Key::Pack(name.to_owned()), file.display, Some(file.text))
             } else {
@@ -582,40 +617,50 @@ impl Loader<'_> {
                     .map(|(k, d)| self.error_label(k, d))
                     .collect();
                 chain.push(self.error_label(&target, &shown));
-                return Err(fail(
+                return Err(fail(Refusal::new(
                     Code::ExtendsCycle,
                     format!("`extends` loops: {}", chain.join(" -> ")),
                     Some("remove one entry from the loop".into()),
-                ));
+                )));
             }
             if let Some(done) = self.expanded.get(&target) {
-                if let Some((code, message, help)) = self.files_over_budget(done.len()) {
-                    return Err(fail(code, message, help));
+                if self.files.len() + done.len() > MAX_EXTENDS_FILES {
+                    return Err(fail(self.over_budget(
+                        key,
+                        display,
+                        ConfigBudget::ExtendsFiles,
+                    )));
                 }
                 let copy = done.clone();
                 self.files.extend(copy);
                 continue;
             }
-            if let Some((code, message, help)) = self.too_deep() {
-                return Err(fail(code, message, help));
+            if self.stack.len() > MAX_EXTENDS_DEPTH {
+                return Err(fail(self.over_budget(
+                    key,
+                    display,
+                    ConfigBudget::ExtendsDepth,
+                )));
             }
-            if let Some((code, message, help)) = self.files_over_budget(1) {
-                return Err(fail(code, message, help));
+            if self.files.len() >= MAX_EXTENDS_FILES {
+                return Err(fail(self.over_budget(
+                    key,
+                    display,
+                    ConfigBudget::ExtendsFiles,
+                )));
             }
             let body = match body {
                 Some(b) => b,
-                None => self
-                    .read_extended(&target, name)
-                    .map_err(|(code, message, help)| fail(code, message, help))?,
+                None => self.read_extended(&target, name).map_err(fail)?,
             };
             self.reads += 1;
             self.bytes += body.len() as u64;
             if self.bytes > MAX_EXTENDS_BYTES {
-                return Err(fail(
-                    Code::BudgetExceeded,
-                    format!("the `extends` graph reads more than {MAX_EXTENDS_BYTES} bytes"),
-                    Some("remove entries or split the files".into()),
-                ));
+                return Err(fail(self.over_budget(
+                    key,
+                    display,
+                    ConfigBudget::ExtendsBytes,
+                )));
             }
             let start = self.files.len();
             self.load_text(&target, &shown, body, Layer::Extends)?;
@@ -684,6 +729,7 @@ fn check_exclude(tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
                 span: item.span.clone(),
                 help: None,
                 path: vec!["exclude".into(), i.to_string()],
+                data: None,
             });
         }
     }

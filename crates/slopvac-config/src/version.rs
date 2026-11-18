@@ -10,6 +10,10 @@ pub const SUPPORTED: i64 = 3;
 ///
 /// A missing `schema_version` and a version below 3 both mean a 2.x config. Anything that is
 /// not an integer is left to the schema, which reports the wrong type.
+#[expect(
+    clippy::result_large_err,
+    reason = "the diagnostic is the public error type of this function and of its callers"
+)]
 pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
     let path = vec!["schema_version".to_owned()];
     let Some(entry) = root.entry("schema_version") else {
@@ -20,6 +24,7 @@ pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
             span: first_line(text),
             help: Some("run `slopvac migrate` to convert it".into()),
             path,
+            data: None,
         });
     };
     match entry.node.value {
@@ -30,6 +35,7 @@ pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
             span: entry.node.span.clone(),
             help: Some("run `slopvac migrate` to convert it".into()),
             path,
+            data: None,
         }),
         Value::Int(n) if n > SUPPORTED => Err(Diagnostic {
             code: Code::UnsupportedVersion,
@@ -38,6 +44,7 @@ pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
             span: entry.node.span.clone(),
             help: Some("upgrade slopvac".into()),
             path,
+            data: None,
         }),
         _ => Ok(()),
     }

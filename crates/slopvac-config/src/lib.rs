@@ -22,7 +22,7 @@ pub mod tree;
 pub mod validate;
 pub mod version;
 
-pub use diag::{Code, Diagnostic, SourceFile, render};
+pub use diag::{BudgetData, Code, ConfigBudget, Diagnostic, SourceFile, render};
 pub use discover::Discovery;
 pub use error::{ConfigError, Rejected};
 pub use load::{LoadedConfig, load, load_labeled};

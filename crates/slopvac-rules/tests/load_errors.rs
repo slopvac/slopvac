@@ -306,32 +306,71 @@ fn many_names_for_one_rule_file_load_it_once() {
     assert_eq!(set.categories().len(), 1);
 }
 
-#[test]
-fn a_pack_with_too_many_files_is_refused_with_its_code() {
-    let dir = tempfile::tempdir().unwrap();
-    for i in 0..=slopvac_rules::MAX_PACK_FILES {
+fn write_categories(dir: &std::path::Path, count: usize) {
+    for i in 0..count {
         let id = format!("cat{i:04}");
-        std::fs::write(
-            dir.path().join(format!("{id}.json")),
-            one_rule_category(&id),
-        )
-        .unwrap();
+        std::fs::write(dir.join(format!("{id}.json")), one_rule_category(&id)).unwrap();
     }
-    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
-    assert_eq!(e.errors()[0].kind, LoadErrorKind::BudgetExceeded);
-    assert!(e.to_string().contains("[rules-budget-exceeded]"), "{e}");
+}
+
+fn budget_error(e: &LoadErrors) -> (&'static str, u64, &str) {
+    match &e.errors()[0].kind {
+        LoadErrorKind::BudgetExceeded {
+            budget,
+            limit,
+            path,
+        } => (budget.as_str(), *limit, path),
+        other => panic!("expected a budget refusal, got {other:?}"),
+    }
 }
 
 #[test]
-fn a_pack_that_reads_past_the_byte_budget_is_refused_with_its_code() {
+fn a_pack_with_exactly_the_file_limit_loads() {
     let dir = tempfile::tempdir().unwrap();
-    let files = slopvac_rules::MAX_PACK_BYTES / slopvac_rules::MAX_RULE_FILE_BYTES + 1;
-    for i in 0..files {
-        std::fs::File::create(dir.path().join(format!("f{i:02}.yml")))
-            .unwrap()
-            .set_len(slopvac_rules::MAX_RULE_FILE_BYTES)
-            .unwrap();
-    }
+    write_categories(dir.path(), slopvac_rules::MAX_PACK_FILES);
+    let set = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap();
+    assert_eq!(set.categories().len(), slopvac_rules::MAX_PACK_FILES);
+}
+
+#[test]
+fn a_pack_one_file_past_the_limit_is_refused_with_its_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    write_categories(dir.path(), slopvac_rules::MAX_PACK_FILES + 1);
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
-    assert_eq!(e.errors()[0].kind, LoadErrorKind::BudgetExceeded);
+    let (budget, limit, path) = budget_error(&e);
+    assert_eq!(budget, "pack-files");
+    assert_eq!(limit, slopvac_rules::MAX_PACK_FILES as u64);
+    assert!(!path.starts_with('/'), "{path}");
+    assert!(e.to_string().contains("[rules-budget-exceeded]"), "{e}");
+}
+
+/// Sixteen valid category files of exactly the per-file cap, so the pack holds the byte limit.
+fn write_full_pack(dir: &std::path::Path) {
+    let cap = usize::try_from(slopvac_rules::MAX_RULE_FILE_BYTES).unwrap();
+    for i in 0..(slopvac_rules::MAX_PACK_BYTES / slopvac_rules::MAX_RULE_FILE_BYTES) {
+        let id = format!("cat{i:04}");
+        let mut text = one_rule_category(&id);
+        // Trailing whitespace is valid JSON, so the file stays a category.
+        text.push_str(&" ".repeat(cap - text.len()));
+        std::fs::write(dir.join(format!("{id}.json")), text).unwrap();
+    }
+}
+
+#[test]
+fn a_pack_with_exactly_the_byte_limit_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    write_full_pack(dir.path());
+    assert!(RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).is_ok());
+}
+
+#[test]
+fn a_pack_one_byte_past_the_byte_limit_is_refused_with_its_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    write_full_pack(dir.path());
+    // A seventeenth file sorts last and adds one byte.
+    std::fs::write(dir.path().join("zz.json"), " ").unwrap();
+    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
+    let (budget, limit, _) = budget_error(&e);
+    assert_eq!(budget, "pack-bytes");
+    assert_eq!(limit, slopvac_rules::MAX_PACK_BYTES);
 }

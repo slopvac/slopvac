@@ -62,6 +62,7 @@ impl Style {
                     span: e.span.unwrap_or(0..0),
                     help: None,
                     path: Vec::new(),
+                    data: None,
                 }],
             ),
         })?;

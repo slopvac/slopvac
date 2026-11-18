@@ -3,6 +3,36 @@
 use std::fmt;
 use std::path::PathBuf;
 
+/// Which pack budget a load passed. The list can grow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PackBudget {
+    /// Rule and category files, in files: [`MAX_PACK_FILES`](crate::MAX_PACK_FILES).
+    Files,
+    /// Bytes read, in bytes: [`MAX_PACK_BYTES`](crate::MAX_PACK_BYTES).
+    Bytes,
+}
+
+impl PackBudget {
+    /// The `data.budget` text, such as `pack-files`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Files => "pack-files",
+            Self::Bytes => "pack-bytes",
+        }
+    }
+
+    /// The unit of the limit.
+    #[must_use]
+    pub fn unit(self) -> &'static str {
+        match self {
+            Self::Files => "files",
+            Self::Bytes => "bytes",
+        }
+    }
+}
+
 /// What went wrong with one file or rule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -15,7 +45,14 @@ pub enum LoadErrorKind {
     /// The pack directory holds more files, or more bytes in total, than
     /// [`MAX_PACK_FILES`](crate::MAX_PACK_FILES) or [`MAX_PACK_BYTES`](crate::MAX_PACK_BYTES)
     /// allow. Its stable code is `rules-budget-exceeded`.
-    BudgetExceeded,
+    BudgetExceeded {
+        /// The budget that was passed.
+        budget: PackBudget,
+        /// The limit, in the unit of `budget`.
+        limit: u64,
+        /// The pack directory, relative to the root.
+        path: String,
+    },
     /// The file does not parse as a rule or category file.
     Parse(String),
     /// The extension names no supported format (`json`, `yaml`, `yml`, `toml`).
@@ -51,11 +88,11 @@ impl fmt::Display for LoadErrorKind {
             Self::TooLarge(cap) => {
                 write!(f, "[rules-file-too-large] file is larger than {cap} bytes")
             }
-            Self::BudgetExceeded => write!(
+            Self::BudgetExceeded { budget, limit, .. } => write!(
                 f,
-                "[rules-budget-exceeded] the pack is larger than {} files or {} bytes",
-                crate::MAX_PACK_FILES,
-                crate::MAX_PACK_BYTES
+                "[rules-budget-exceeded] the pack passes the limit of {limit} {} ({})",
+                budget.unit(),
+                budget.as_str()
             ),
             Self::Parse(e) => f.write_str(e),
             Self::UnsupportedFormat => {

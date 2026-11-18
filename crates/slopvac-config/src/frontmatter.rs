@@ -251,6 +251,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
                     span: at..at,
                     help: None,
                     path: Vec::new(),
+                    data: None,
                 }],
             };
         }
@@ -311,6 +312,7 @@ pub(crate) fn denied(block: &Node, policy: &Policy, root: &str) -> Vec<Diagnosti
                 e.key
             )),
             path: vec![root.to_owned(), e.key.clone()],
+            data: None,
         })
         .collect()
 }

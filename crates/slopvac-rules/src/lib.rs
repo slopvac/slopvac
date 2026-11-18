@@ -16,7 +16,7 @@ mod model;
 mod ruleset;
 mod schema;
 
-pub use error::{LoadError, LoadErrorKind, LoadErrors};
+pub use error::{LoadError, LoadErrorKind, LoadErrors, PackBudget};
 pub use ext::{UniqueVec, ValueError};
 pub use matcher::{CompileError, CompileOptions, LexicalMatcher};
 pub use model::*;

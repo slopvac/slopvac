@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use slopvac_model::{CategoryId, Density, GenreId, NonEmptyString, PackId, RuleId};
 use slopvac_text::TextError;
 
-use crate::error::{LoadError, LoadErrorKind, LoadErrors};
+use crate::error::{LoadError, LoadErrorKind, LoadErrors, PackBudget};
 use crate::matcher::{CompileOptions, LexicalMatcher, compile};
 use crate::model::{Category, LocalRuleId, MatchKind, ProfileName, Rule, Scope, Weight};
 
@@ -193,15 +193,9 @@ impl RuleSet {
         let mut count = 0_usize;
         // Read one file at a time, so the texts of a large pack are never all in memory.
         let sources = distinct.into_iter().map(move |p| {
-            let budget = |p: &Path| LoadError {
-                file: p.to_path_buf(),
-                line: None,
-                rule: None,
-                kind: LoadErrorKind::BudgetExceeded,
-            };
             count += 1;
             if count > MAX_PACK_FILES {
-                return Err(budget(&p));
+                return Err(over_budget(dir, PackBudget::Files, MAX_PACK_FILES as u64));
             }
             let text =
                 slopvac_fs::read_text_capped(&p, MAX_RULE_FILE_BYTES).map_err(|e| match e {
@@ -220,7 +214,7 @@ impl RuleSet {
                 })?;
             bytes += text.len() as u64;
             if bytes > MAX_PACK_BYTES {
-                return Err(budget(&p));
+                return Err(over_budget(dir, PackBudget::Bytes, MAX_PACK_BYTES));
             }
             Ok((p, text))
         });
@@ -347,6 +341,23 @@ impl RuleSet {
     /// Rules that look at this scope.
     pub fn rules_in_scope(&self, scope: Scope) -> impl Iterator<Item = &LoadedRule> {
         self.rules().filter(move |r| r.rule.scope == scope)
+    }
+}
+
+/// The refusal for a pack directory that passes `budget`. It names the directory relative to the
+/// working directory, or `<external>/<name>` outside it, never an absolute path.
+fn over_budget(dir: &Path, budget: PackBudget, limit: u64) -> LoadError {
+    let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let path = slopvac_fs::display_under_root(dir, &root);
+    LoadError {
+        file: PathBuf::from(&path),
+        line: None,
+        rule: None,
+        kind: LoadErrorKind::BudgetExceeded {
+            budget,
+            limit,
+            path,
+        },
     }
 }
 
