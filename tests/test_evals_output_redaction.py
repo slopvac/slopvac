@@ -170,3 +170,54 @@ def test_a_journaled_answer_with_a_standalone_scheme_is_stored_without_it(
         journal=models.Journal(path),
     )
     assert gone not in path.read_text("utf-8")
+
+
+BODY = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7FAKEFAKEFAKE"
+
+
+def pem(kind: str, complete: bool = True) -> str:
+    block = f"-----BEGIN {kind}-----\n{BODY}\n{BODY}\n"
+    return block + (f"-----END {kind}-----" if complete else "")
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["PRIVATE KEY", "RSA PRIVATE KEY", "OPENSSH PRIVATE KEY", "ENCRYPTED PRIVATE KEY"],
+)
+def test_a_complete_private_key_is_removed_and_the_text_around_it_survives(kind):
+    reply = models.command_ask(
+        writes("stdout", f"Before the key.\n{pem(kind)}\nAfter the key."), attempts=1
+    )("x")
+    assert BODY not in reply.text
+    assert "BEGIN" not in reply.text
+    assert reply.text.startswith("Before the key.\n")
+    assert reply.text.endswith("\nAfter the key.")
+
+
+def test_a_truncated_private_key_is_removed_and_the_text_before_it_survives():
+    reply = models.command_ask(
+        writes("stdout", f"Before the key.\n{pem('PRIVATE KEY', complete=False)}"),
+        attempts=1,
+    )("x")
+    assert BODY not in reply.text
+    assert reply.text.startswith("Before the key.\n")
+
+
+@pytest.mark.parametrize("complete", [True, False], ids=["complete", "truncated"])
+def test_a_private_key_in_a_journaled_answer_is_stored_without_its_body(
+    tmp_path, complete
+):
+    path = tmp_path / "run.journal.jsonl"
+    models.execute(
+        [REVIEW_TASK],
+        ROSTER,
+        3,
+        lambda text: [],
+        ask_for=lambda m: models.command_ask(
+            writes("stdout", f"[] {pem('PRIVATE KEY', complete)}")
+        ),
+        journal=models.Journal(path),
+    )
+    stored = path.read_text("utf-8")
+    assert BODY not in stored
+    assert "BEGIN PRIVATE KEY" not in stored
