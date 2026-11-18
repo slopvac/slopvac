@@ -1785,11 +1785,10 @@ fn project_unknown() -> OciError {
 }
 
 #[rstest::rstest]
-#[case::untrusted_helper(untrusted(), "credential-helper-untrusted")]
-#[case::unknown_project(project_unknown(), "credential-helper-project-unknown")]
+#[case::untrusted_helper(untrusted())]
+#[case::unknown_project(project_unknown())]
 fn a_refused_helper_does_not_stop_a_registry_that_serves_anonymous_tokens(
     #[case] refusal: OciError,
-    #[case] _code: &str,
 ) {
     let body = manifest_json(&Descriptor::for_bytes("x", b"{}"), &[]);
     let server = Server::start(with_auth("reg", None, move |_| manifest_response(&body)));
