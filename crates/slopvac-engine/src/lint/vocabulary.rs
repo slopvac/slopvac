@@ -13,12 +13,13 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use slopvac_model::Span;
-use slopvac_model::{Finding, Notice, NoticeLevel};
+use slopvac_model::{Finding, GenreId, Notice, NoticeLevel};
 use slopvac_pos::{Mask, Tagger};
-use slopvac_rules::{LoadedRule, RuleSet, Scope};
+use slopvac_rules::{LoadedRule, MatchKind, RuleSet, Scope};
 use slopvac_terms::{Blocklist, Pos};
 
 use super::{Active, Candidate, Engine, EngineError, Kind, Run, notice};
+use crate::matcher_work;
 use crate::matching::format_message;
 use crate::skip;
 
@@ -44,29 +45,50 @@ const fn penn(pos: Pos) -> Option<&'static [&'static str]> {
     }
 }
 
-/// The blocklist as the sweep reads it, and what to say about the vocabulary rules.
+/// Who owns the sweep for documents of one genre, and what to say about the vocabulary rules.
 #[derive(Debug, Default)]
-pub(super) struct Vocabulary {
-    /// Listed words, lower case, with the parts of speech they are refused as.
-    words: HashMap<String, Vec<Pos>>,
+pub(super) struct Plan {
     /// The vocabulary rule that owns the sweep, as an index into `vocabulary_rules`.
     pub(super) owner: Option<usize>,
     notices: Vec<Notice>,
 }
 
-impl Vocabulary {
+impl Plan {
     pub(super) fn notices(&self) -> &[Notice] {
         &self.notices
     }
 }
 
+/// The blocklist as the sweep reads it, and a plan per genre.
+#[derive(Debug, Default)]
+pub(super) struct Vocabulary {
+    /// Listed words, lower case, with the parts of speech they are refused as.
+    words: HashMap<String, Vec<Pos>>,
+    /// The plan of each genre that a document can have under per-document genres.
+    plans: HashMap<GenreId, Plan>,
+    /// The plan for any other genre: the run's genre.
+    run: Plan,
+}
+
+impl Vocabulary {
+    /// The plan for documents of `genre`.
+    pub(super) fn plan(&self, genre: &GenreId) -> &Plan {
+        self.plans.get(genre).unwrap_or(&self.run)
+    }
+
+    /// Every plan, the run's and those of single genres.
+    pub(super) fn plans(&self) -> impl Iterator<Item = &Plan> {
+        std::iter::once(&self.run).chain(self.plans.values())
+    }
+}
+
 impl Engine {
-    /// Elect the owner of the sweep and index `blocklist`, replacing any earlier plan.
+    /// Index `blocklist` and elect the owner of the sweep for each genre, replacing any
+    /// earlier plan. Only the rules that apply to a genre can own the sweep for it.
     pub(super) fn plan_vocabulary(&mut self, blocklist: &Blocklist) -> Result<(), EngineError> {
-        let mut plan = Vocabulary::default();
-        let rules = &self.vocabulary_rules;
-        if rules.is_empty() {
-            self.vocabulary = plan;
+        let mut vocabulary = Vocabulary::default();
+        if self.vocabulary_rules.is_empty() {
+            self.vocabulary = vocabulary;
             return Ok(());
         }
         // A word that is not alphabetic, or has fewer than three letters, cannot be tagged
@@ -76,20 +98,49 @@ impl Engine {
                 && entry.word.chars().count() >= 3
                 && penn(entry.pos).is_some();
             if taggable {
-                plan.words
+                vocabulary
+                    .words
                     .entry(entry.word.clone())
                     .or_default()
                     .push(entry.pos);
             }
         }
+        let usable = !vocabulary.words.is_empty();
+        vocabulary.run = self.plan_for(&self.settings.genre.id, blocklist, usable)?;
+        if let Some(registry) = &self.genres {
+            for id in registry.ids() {
+                let Ok(id) = GenreId::new(id) else { continue };
+                let plan = self.plan_for(&id, blocklist, usable)?;
+                vocabulary.plans.insert(id, plan);
+            }
+        }
+        self.vocabulary = vocabulary;
+        Ok(())
+    }
+
+    /// The plan for documents of `genre`. `usable` tells whether the blocklist holds an entry
+    /// that the sweep can match.
+    fn plan_for(
+        &self,
+        genre: &GenreId,
+        blocklist: &Blocklist,
+        usable: bool,
+    ) -> Result<Plan, EngineError> {
+        let mut plan = Plan::default();
+        let rules: Vec<usize> = (0..self.vocabulary_rules.len())
+            .filter(|&i| self.applies_to(&self.vocabulary_rules[i], genre))
+            .collect();
         let count = rules.len();
+        if count == 0 {
+            return Ok(plan);
+        }
         if blocklist.is_empty() {
             plan.notices.push(notice(
                 "vocabulary-no-blocklist",
                 NoticeLevel::Info,
                 format!("{count} active vocabulary rule(s) did not run: no word blocklist is set"),
             )?);
-        } else if plan.words.is_empty() {
+        } else if !usable {
             plan.notices.push(notice(
                 "vocabulary-no-taggable-entries",
                 NoticeLevel::Info,
@@ -100,15 +151,15 @@ impl Engine {
             )?);
         } else {
             let id_of = |i: usize| {
-                let active = &rules[i];
+                let active = &self.vocabulary_rules[i];
                 self.sets[active.set].categories()[active.category].rules()[active.rule]
                     .id()
                     .local()
             };
             let owner = OWNER_PREFERENCE
                 .iter()
-                .find_map(|wanted| (0..count).find(|&i| id_of(i) == *wanted))
-                .unwrap_or(0);
+                .find_map(|wanted| rules.iter().copied().find(|&i| id_of(i) == *wanted))
+                .unwrap_or(rules[0]);
             if count > 1 {
                 plan.notices.push(notice(
                     "vocabulary-sweep-shared",
@@ -123,8 +174,17 @@ impl Engine {
             }
             plan.owner = Some(owner);
         }
-        self.vocabulary = plan;
-        Ok(())
+        Ok(plan)
+    }
+
+    /// Whether the active rule applies to documents of `genre`.
+    fn applies_to(&self, active: &Active, genre: &GenreId) -> bool {
+        self.sets[active.set].categories()[active.category].rules()[active.rule]
+            .rule()
+            .applies_to
+            .as_ref()
+            .and_then(|a| a.genres.as_ref())
+            .is_none_or(|g| g.contains(genre))
     }
 }
 
@@ -162,7 +222,7 @@ impl Run<'_> {
     /// blocks too (`<td>`, `<em>`).
     pub(super) fn vocabulary(&self) -> Result<Vec<Finding>, EngineError> {
         let engine = self.engine;
-        let Some(owner) = engine.vocabulary.owner else {
+        let Some(owner) = engine.vocabulary.plan(&self.genre.id).owner else {
             return Ok(Vec::new());
         };
         if matches!(self.input.kind, Kind::Diagram(_)) {
@@ -200,6 +260,7 @@ impl Run<'_> {
         );
         let tagger = Tagger::english();
         for unit in prepared.units(Scope::Prose)? {
+            matcher_work::entered(MatchKind::Vocabulary);
             let text = unit.text;
             let masks = masks(text, self.input.source, |r| unit.span(&r));
             for token in

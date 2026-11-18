@@ -11,12 +11,12 @@ use std::sync::Arc;
 
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
-use slopvac_context::{TagIndex, TagRegistry};
+use slopvac_context::{GenreRegistry, ResolveOptions, TagIndex, TagRegistry};
 use slopvac_diagrams::{Extraction, Format as DiagramFormat, Signal, extract, extract_fenced};
 use slopvac_model::{
     AiSignal, BomMode, CategoryId, ContextTag, Contexts, Document, Edit, Extent, Finding, Fix,
-    KebabName, LineCol, NonEmptyString, Notice, NoticeLevel, PackId, PositionError, RuleId,
-    RuleProvenance, Severity, SourceIndex, Span,
+    GenreId, GenreReason, GenreResult, GenreSource, KebabName, LineCol, NonEmptyString, Notice,
+    NoticeLevel, PackId, PositionError, RuleId, RuleProvenance, Severity, SourceIndex, Span,
 };
 use slopvac_parse::{BlockKind, Document as Parsed, ParseError, parse_markdown, parse_mdx};
 use slopvac_rules::{LoadedRule, Match, MatchKind, RuleSet, Scope};
@@ -27,6 +27,7 @@ use crate::capitalization::{self, SentenceCase};
 use crate::diagrams::{self, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
 use crate::directives::{Directives, Lines, Target, scan};
 use crate::exceptions::{Detectors, MatchSite, TextOrigin};
+use crate::matcher_work;
 use crate::matching::{
     LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
 };
@@ -211,6 +212,26 @@ struct ActiveDiagram {
     at: Option<(usize, usize, usize)>,
 }
 
+/// An active rule of a kind, style or metric the engine does not run.
+struct NotRun {
+    kind: &'static str,
+    /// The genres the rule is limited to, if any.
+    genres: Option<Vec<GenreId>>,
+}
+
+impl NotRun {
+    fn of(kind: &'static str, rule: &slopvac_rules::Rule) -> Self {
+        Self {
+            kind,
+            genres: rule
+                .applies_to
+                .as_ref()
+                .and_then(|a| a.genres.as_ref())
+                .map(|g| g.iter().cloned().collect()),
+        }
+    }
+}
+
 /// Where a rule id points.
 enum Catalog {
     Loaded(usize),
@@ -225,7 +246,10 @@ pub struct Engine {
     pub(crate) settings: Settings,
     detectors: Detectors,
     tagger: TagRegistry,
-    checkers: Vec<Box<dyn DiagramChecker>>,
+    /// The genres a document is matched to, when the settings ask for per-document genres.
+    genres: Option<GenreRegistry>,
+    /// The diagram checkers, each with the ids of the rules it reports.
+    checkers: Vec<(Box<dyn DiagramChecker>, Vec<RuleId>)>,
     /// Lexical rules that run.
     active: Vec<Active>,
     /// Vocabulary rules that run. They share one sweep over the word blocklist.
@@ -246,8 +270,8 @@ pub struct Engine {
     catalog: HashMap<String, Catalog>,
     /// Ids of rules that run, including the ones that produce no finding here.
     pub(crate) running: HashSet<String>,
-    /// Notices every document carries.
-    notices: Vec<Notice>,
+    /// Active rules the engine cannot run. Each document is told about those that apply to it.
+    not_run: Vec<NotRun>,
     categories: std::collections::BTreeMap<CategoryId, CategoryInfo>,
     /// How RST files are read, and the adapter built from it. The adapter finds its
     /// interpreter on the first file.
@@ -333,12 +357,18 @@ impl Engine {
         sets: Vec<Arc<RuleSet>>,
         mut settings: Settings,
     ) -> Result<Self, EngineError> {
-        // The run's genre sets the genre levels. Levels the caller already filled stay.
         let genres =
             slopvac_context::builtin_genres().map_err(|e| EngineError::Context(e.to_string()))?;
-        settings
-            .apply_genre_levels(&genres)
-            .map_err(|e| EngineError::Internal(e.to_string()))?;
+        // Per-document genres apply their levels to each document's findings. Otherwise the
+        // run's genre sets the genre levels now. Levels the caller already filled stay.
+        let genres = if settings.genre_assignments.is_some() {
+            Some(genres)
+        } else {
+            settings
+                .apply_genre_levels(&genres)
+                .map_err(|e| EngineError::Internal(e.to_string()))?;
+            None
+        };
         let tagger =
             slopvac_context::builtin_registry().map_err(|e| EngineError::Context(e.to_string()))?;
         let mut engine = Self {
@@ -347,6 +377,7 @@ impl Engine {
             settings,
             detectors: Detectors::builtin(),
             tagger,
+            genres,
             checkers: Vec::new(),
             active: Vec::new(),
             vocabulary_rules: Vec::new(),
@@ -358,12 +389,12 @@ impl Engine {
             signal_rules: Vec::new(),
             catalog: HashMap::new(),
             running: HashSet::new(),
-            notices: Vec::new(),
+            not_run: Vec::new(),
             categories: std::collections::BTreeMap::new(),
             rst_options: RstOptions::from_env(),
             rst: RstAdapter::new(RstOptions::from_env()),
         };
-        engine.resolve()?;
+        engine.resolve();
         if !engine.casing_rules.is_empty() {
             engine.terms = TermSet::builtin();
         }
@@ -460,7 +491,9 @@ impl Engine {
     /// Add a checker for diagram rules.
     #[must_use]
     pub fn with_diagram_checker(mut self, checker: Box<dyn DiagramChecker>) -> Self {
+        let mut ids = Vec::new();
         for DiagramRule { id, severity } in checker.rules() {
+            ids.push(id.clone());
             let category = category_of(&id);
             let key = id.as_str().to_owned();
             self.catalog.insert(key.clone(), Catalog::Diagram);
@@ -470,7 +503,7 @@ impl Engine {
                     .insert(id, ActiveDiagram { severity, at: None });
             }
         }
-        self.checkers.push(checker);
+        self.checkers.push((checker, ids));
         self
     }
 
@@ -478,16 +511,15 @@ impl Engine {
     fn add_signal_checker(&mut self) {
         if !self.signal_rules.is_empty() {
             let rules = std::mem::take(&mut self.signal_rules);
+            let ids = rules.iter().map(|(_, rule)| rule.id.clone()).collect();
             self.checkers
-                .push(Box::new(SignalChecker::from_rules(rules)));
+                .push((Box::new(SignalChecker::from_rules(rules)), ids));
         }
     }
 
     /// Decide which rules run: level, `applies_to`, and whether the engine runs the kind.
     #[allow(clippy::too_many_lines)]
-    fn resolve(&mut self) -> Result<(), EngineError> {
-        let mut unrun: std::collections::BTreeMap<&'static str, usize> =
-            std::collections::BTreeMap::new();
+    fn resolve(&mut self) {
         // A rule id defined by several sets belongs to the last one: a set added later, such as
         // the generated locale rule, replaces the same id in an earlier set.
         let mut owner: HashMap<&RuleId, usize> = HashMap::new();
@@ -537,10 +569,11 @@ impl Engine {
                     if let Some(applies) = &rule.applies_to {
                         let mode = self.settings.mode.apply_mode();
                         if applies.modes.as_ref().is_some_and(|m| !m.contains(&mode))
-                            || applies
-                                .genres
-                                .as_ref()
-                                .is_some_and(|g| !g.contains(&self.settings.genre.id))
+                            || (self.genres.is_none()
+                                && applies
+                                    .genres
+                                    .as_ref()
+                                    .is_some_and(|g| !g.contains(&self.settings.genre.id)))
                         {
                             continue;
                         }
@@ -562,7 +595,7 @@ impl Engine {
                             if supported {
                                 self.metrics.push(Active::new(s, c, r, severity));
                             } else {
-                                *unrun.entry("metric").or_default() += 1;
+                                self.not_run.push(NotRun::of("metric", rule));
                             }
                         }
                         MatchKind::Structure => {
@@ -577,7 +610,7 @@ impl Engine {
                                     .insert(id, ActiveDiagram { severity, at });
                                 self.signal_rules.push((signal, rule));
                             } else {
-                                *unrun.entry("structure").or_default() += 1;
+                                self.not_run.push(NotRun::of("structure", rule));
                             }
                         }
                         MatchKind::Vocabulary => {
@@ -591,7 +624,7 @@ impl Engine {
                             list.push(Active::new(s, c, r, severity));
                         }
                         MatchKind::Capitalization => {
-                            *unrun.entry(CAPITALIZATION).or_default() += 1;
+                            self.not_run.push(NotRun::of(CAPITALIZATION, rule));
                         }
                     }
                 }
@@ -603,10 +636,6 @@ impl Engine {
                     .insert(rule.id().as_str().to_owned(), Catalog::Loaded(s));
             }
         }
-        for (kind, count) in unrun {
-            self.notices.push(not_run_notice(kind, count)?);
-        }
-        Ok(())
     }
 
     /// Why the engine does not execute `rule`, or `None` when it does.
@@ -623,11 +652,12 @@ impl Engine {
         if !self.running.contains(id.as_str()) {
             return Some("the rule is switched off or does not apply under the engine settings");
         }
-        let owner = self.vocabulary.owner.map(|i| &self.vocabulary_rules[i]);
+        let owns =
+            |plan: &vocabulary::Plan| plan.owner.is_some_and(|i| at(&&self.vocabulary_rules[i]));
         let executes = self.active.iter().any(|a| at(&a))
             || self.metrics.iter().any(|a| at(&a))
             || self.casing_rules.iter().any(|a| at(&a))
-            || owner.is_some_and(|a| at(&a));
+            || self.vocabulary.plans().any(owns);
         if executes {
             None
         } else if rule.kind() == MatchKind::Vocabulary {
@@ -687,6 +717,7 @@ impl Engine {
             )
             .map_err(|e| EngineError::Context(e.to_string()))?,
         };
+        let genre = self.genre_of(input, &parsed, front_matter.as_ref())?;
         let lines = Lines::new(input.source);
         let directives = match input.kind {
             Kind::Diagram(_) => Directives::default(),
@@ -721,6 +752,7 @@ impl Engine {
             front_matter: front_span,
             subject: &subject,
             index,
+            genre: &genre,
         };
         let mut findings = run.lexical()?;
         findings.extend(run.vocabulary()?);
@@ -729,7 +761,117 @@ impl Engine {
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
-        Ok(self.document(input, &prepared, &tags, findings, extra))
+        self.apply_genre(&genre, &mut findings);
+        // Notices about rules that cannot run come first, then the ones the parse raised.
+        let mut notices = self.not_run_notices(&genre.id)?;
+        notices.extend(extra);
+        Ok(self.document(input, &prepared, &tags, genre, findings, notices))
+    }
+
+    /// The notices about active rules the engine does not run and that apply to a document of
+    /// `genre`.
+    fn not_run_notices(&self, genre: &GenreId) -> Result<Vec<Notice>, EngineError> {
+        let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        for n in &self.not_run {
+            if n.genres.as_ref().is_none_or(|g| g.contains(genre)) {
+                *counts.entry(n.kind).or_default() += 1;
+            }
+        }
+        counts
+            .into_iter()
+            .map(|(kind, count)| not_run_notice(kind, count))
+            .collect()
+    }
+
+    /// The genre of one document: chosen from the document when the settings ask for it,
+    /// else the run's genre.
+    fn genre_of(
+        &self,
+        input: &Input<'_>,
+        parsed: &Parsed,
+        front_matter: Option<&FrontMatter<'_>>,
+    ) -> Result<GenreResult, EngineError> {
+        let (Some(registry), Some(assignments), false) = (
+            &self.genres,
+            &self.settings.genre_assignments,
+            matches!(input.kind, Kind::Diagram(_)),
+        ) else {
+            return Ok(self.settings.genre.clone());
+        };
+        let opts = ResolveOptions {
+            assignments,
+            relative_path: None,
+        };
+        let found = tagging::genre(
+            registry,
+            &opts,
+            input.path,
+            input.source,
+            parsed,
+            front_matter,
+        )
+        .map_err(|e| EngineError::Context(e.to_string()))?;
+        Ok(GenreResult {
+            id: GenreId::new(found.id).map_err(|e| EngineError::Internal(e.to_string()))?,
+            source: match found.source {
+                slopvac_context::GenreSource::Explicit => GenreSource::Explicit,
+                slopvac_context::GenreSource::Detected => GenreSource::Detected,
+                slopvac_context::GenreSource::Default => GenreSource::Default,
+            },
+            reasons: found
+                .reasons
+                .into_iter()
+                .map(|r| {
+                    Ok(GenreReason {
+                        signal: KebabName::new(r.signal)
+                            .map_err(|e| EngineError::Internal(e.to_string()))?,
+                        detail: r.detail,
+                    })
+                })
+                .collect::<Result<_, EngineError>>()?,
+        })
+    }
+
+    /// Give the findings of one document the levels of its genre. A rule or category level
+    /// from the configuration stays above a genre level, as in `level_of`. A rule that
+    /// `applies_to` other genres does not report.
+    fn apply_genre(&self, genre: &GenreResult, findings: &mut Vec<Finding>) {
+        let Some(registry) = &self.genres else {
+            return;
+        };
+        // An unreadable genre key leaves the document at the shipped levels.
+        let levels = crate::settings::genre_levels(registry, genre.id.as_str()).unwrap_or_default();
+        findings.retain_mut(|f| {
+            let loaded = self.loaded(f.rule_id.as_str());
+            if loaded
+                .and_then(|l| l.rule().applies_to.as_ref()?.genres.as_ref())
+                .is_some_and(|g| !g.contains(&genre.id))
+            {
+                return false;
+            }
+            let category = loaded.map_or_else(|| category_of(&f.rule_id), |l| l.category().clone());
+            let explicit = self.settings.rule_levels.contains_key(&f.rule_id)
+                || self
+                    .settings
+                    .categories
+                    .get(&category)
+                    .is_some_and(|d| d.level.is_some());
+            if explicit {
+                return true;
+            }
+            // The profile shifts a genre level as it shifts the shipped one.
+            match levels
+                .get(&f.rule_id)
+                .map(|l| l.shifted(self.settings.severity_shift))
+            {
+                Some(Level::Off) => false,
+                Some(Level::On(severity)) => {
+                    f.severity = severity;
+                    true
+                }
+                None => true,
+            }
+        });
     }
 
     /// Read an RST file. A file that cannot be read is an empty document with a warning
@@ -773,13 +915,13 @@ impl Engine {
         input: &Input<'_>,
         prepared: &Prepared<'_>,
         tags: &TagIndex,
+        genre: GenreResult,
         findings: Vec<Finding>,
         extra: Vec<Notice>,
     ) -> Document {
         let words = prepared.words();
-        let mut unchecked = self.notices.clone();
-        unchecked.extend(extra);
-        unchecked.extend(self.vocabulary.notices().iter().cloned());
+        let mut unchecked = extra;
+        unchecked.extend(self.vocabulary.plan(&genre.id).notices().iter().cloned());
         let scoring = score_document(
             &findings,
             words,
@@ -792,7 +934,7 @@ impl Engine {
                 NonEmptyString::new("<stdin>").expect("a literal is not empty")
             }),
             profile: self.settings.profile.clone(),
-            genre: self.settings.genre.clone(),
+            genre,
             contexts_seen: contexts(tags.kinds_seen()),
             config_sources: self.settings.config_sources.clone(),
             words,
@@ -860,6 +1002,7 @@ struct Run<'a> {
     front_matter: Option<Span>,
     subject: &'a Subject<'a>,
     index: SourceIndex<'a>,
+    genre: &'a GenreResult,
 }
 
 /// A paragraph next to a fenced diagram, and where a checker sees it.
@@ -953,6 +1096,25 @@ impl Run<'_> {
             .suppressed(id, exceptions, self.lines.line_of(span.start()))
     }
 
+    /// Whether the document's genre is one the rule applies to. A rule limited to other genres
+    /// does not run, so it cannot fail the document.
+    fn applies(&self, rule: &slopvac_rules::Rule) -> bool {
+        rule.applies_to
+            .as_ref()
+            .and_then(|a| a.genres.as_ref())
+            .is_none_or(|g| g.contains(&self.genre.id))
+    }
+
+    /// Whether the diagram rule `id` runs and applies to the document's genre. A rule of a
+    /// custom checker has no loaded rule, so no genre limits it.
+    fn diagram_rule_applies(&self, id: &RuleId) -> bool {
+        self.engine.diagram_rules.get(id).is_some_and(|active| {
+            active.at.is_none_or(|(s, c, r)| {
+                self.applies(self.engine.sets[s].categories()[c].rules()[r].rule())
+            })
+        })
+    }
+
     fn lexical(&self) -> Result<Vec<Finding>, EngineError> {
         let engine = self.engine;
         if matches!(self.input.kind, Kind::Diagram(_)) {
@@ -965,6 +1127,9 @@ impl Run<'_> {
             let set = &engine.sets[active.set];
             let loaded = &set.categories()[active.category].rules()[active.rule];
             let rule = loaded.rule();
+            if !self.applies(rule) {
+                continue;
+            }
             let exclusions;
             let skip: &SkipRanges = match (&rule.exclude_blocks, rule.scope) {
                 (Some(kinds), scope) => {
@@ -991,6 +1156,7 @@ impl Run<'_> {
                 _ => None,
             };
             for unit in self.prepared.units(rule.scope)? {
+                matcher_work::entered(loaded.kind());
                 let ranges = match &sentence_case {
                     Some(check) => check.find(unit.text)?.into_iter().collect(),
                     None => loaded.find_all(unit.text)?,
@@ -1112,6 +1278,9 @@ impl Run<'_> {
             let set = &engine.sets[active.set];
             let loaded = &set.categories()[active.category].rules()[active.rule];
             let rule = loaded.rule();
+            if !self.applies(rule) {
+                continue;
+            }
             let Match::Metric(metric) = &rule.match_ else {
                 continue;
             };
@@ -1129,6 +1298,7 @@ impl Run<'_> {
                 }
                 None => &inline_code,
             };
+            matcher_work::entered(MatchKind::Metric);
             for hit in self.subject.measure(metric, rule.text_type)? {
                 // The guards read the measured sentence or paragraph. A document-wide
                 // measurement has no unit to guard.
@@ -1276,7 +1446,15 @@ impl Run<'_> {
     /// Findings of diagram rules, over diagram files and fenced diagram blocks.
     fn diagrams(&self) -> Result<Vec<Finding>, EngineError> {
         let engine = self.engine;
-        if engine.checkers.is_empty() {
+        // A checker none of whose rules applies to the document's genre does not run. One that
+        // names no rules is not limited by a genre.
+        let checkers: Vec<&dyn DiagramChecker> = engine
+            .checkers
+            .iter()
+            .filter(|(_, ids)| ids.is_empty() || ids.iter().any(|id| self.diagram_rule_applies(id)))
+            .map(|(checker, _)| checker.as_ref())
+            .collect();
+        if checkers.is_empty() {
             return Ok(Vec::new());
         }
         let mut diagrams: Vec<(DiagramFormat, Extraction, Vec<NearbyProse<'_>>)> = Vec::new();
@@ -1347,7 +1525,8 @@ impl Run<'_> {
                 extraction,
                 prose: &prose,
             };
-            for checker in &engine.checkers {
+            for checker in &checkers {
+                matcher_work::entered(MatchKind::Structure);
                 for hit in checker.check(&input) {
                     if let Some(finding) = self.diagram_finding(&hit, nearby)? {
                         out.push(finding);
@@ -1425,6 +1604,9 @@ impl Run<'_> {
         let Some(active) = self.engine.diagram_rules.get(&hit.rule) else {
             return Ok(None);
         };
+        if !self.diagram_rule_applies(&hit.rule) {
+            return Ok(None);
+        }
         let span = self.source_span(&hit.span, nearby)?;
         let loaded = active
             .at

@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use slopvac_context::{GenreRegistry, RuleLevel};
+use slopvac_context::{GenreAssignment, GenreRegistry, RuleLevel};
 use slopvac_model::{
     CategoryId, ConfigSource, GenreResult, IdError, NonEmptyString, RuleId, Severity,
 };
@@ -150,6 +150,12 @@ pub struct Settings {
     pub profile: NonEmptyString,
     /// The genre, with the evidence that chose it.
     pub genre: GenreResult,
+    /// `[[genres]]` assignments, in file order. `Some` makes the engine choose a genre for
+    /// each document (front matter, then the last matching assignment, then detection) and
+    /// apply that genre's levels to its findings; [`Settings::genre`] then only describes
+    /// documents that have no prose to inspect, such as diagrams. `None` applies
+    /// [`Settings::genre`] to every document.
+    pub genre_assignments: Option<Vec<GenreAssignment>>,
     /// How the input is read.
     pub mode: Mode,
     /// Levels set for single rules. These win over a category level.
@@ -194,6 +200,7 @@ impl Settings {
         Self {
             profile,
             genre,
+            genre_assignments: None,
             mode: Mode::Prose,
             rule_levels: BTreeMap::new(),
             genre_levels: BTreeMap::new(),
@@ -210,23 +217,37 @@ impl Settings {
     /// pack. A genre the registry does not know adds nothing. A key that is no rule id is
     /// an error.
     pub fn apply_genre_levels(&mut self, registry: &GenreRegistry) -> Result<(), IdError> {
-        let Ok(levels) = registry.rules(self.genre.id.as_str()) else {
-            return Ok(());
-        };
-        for (key, level) in levels {
+        for (id, level) in genre_levels(registry, self.genre.id.as_str())? {
+            self.genre_levels.entry(id).or_insert(level);
+        }
+        Ok(())
+    }
+}
+
+/// The levels the genre chain of `genre` gives single rules. A genre the registry does not
+/// know gives none.
+pub(crate) fn genre_levels(
+    registry: &GenreRegistry,
+    genre: &str,
+) -> Result<BTreeMap<RuleId, Level>, IdError> {
+    let Ok(levels) = registry.rules(genre) else {
+        return Ok(BTreeMap::new());
+    };
+    levels
+        .into_iter()
+        .map(|(key, level)| {
             let qualified = if key.contains(':') {
                 key
             } else {
                 format!("core:{key}")
             };
-            let id = RuleId::new(qualified)?;
-            self.genre_levels.entry(id).or_insert(match level {
+            let level = match level {
                 RuleLevel::Off => Level::Off,
                 RuleLevel::Suggestion => Level::On(Severity::Suggestion),
                 RuleLevel::Warning => Level::On(Severity::Warning),
                 RuleLevel::Error => Level::On(Severity::Error),
-            });
-        }
-        Ok(())
-    }
+            };
+            Ok((RuleId::new(qualified)?, level))
+        })
+        .collect()
 }
