@@ -71,11 +71,15 @@ def workspace_path(raw: str, env: Mapping[str, str]) -> Path:
     return candidate
 
 
+# Dependency bots whose pull requests get annotations, not a suggestion review.
+DEPENDENCY_BOTS = frozenset({"dependabot[bot]", "renovate[bot]"})
+
+
 def choose_reporter(env: Mapping[str, str]) -> tuple[str, bool]:
     """Return ``(reviewdog reporter, suggestions)`` for this event.
 
     ``auto`` tries a pull request review with suggestions only for a pull
-    request from the same repository that Dependabot did not open. The token
+    request from the same repository that Dependabot or Renovate did not open. The token
     may still be read-only, so ``report`` falls back to annotations when the
     review fails. Other pull requests use annotations, which need no write
     token. Outside pull requests the reporter is a check run.
@@ -92,7 +96,7 @@ def choose_reporter(env: Mapping[str, str]) -> tuple[str, bool]:
     same_repo = bool(env.get("HEAD_REPO")) and env.get("HEAD_REPO") == env.get(
         "BASE_REPO"
     )
-    can_write = same_repo and env.get("ACTOR") != "dependabot[bot]"
+    can_write = same_repo and env.get("ACTOR") not in DEPENDENCY_BOTS
     if requested == "annotations" or not can_write:
         return PR_ANNOTATIONS, False
     return REVIEW, True
