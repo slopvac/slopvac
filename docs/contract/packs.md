@@ -84,7 +84,7 @@ The `pos` value is case-sensitive and matches exactly, with no trimming. It load
 - Long forms: `noun`, `verb`, `adjective`, `adverb`, `preposition`, `conjunction`, `pronoun`, `article`.
 - spaCy tags: `NOUN`, `VERB`, `ADJ`, `ADV`, `ADP`, `CCONJ`, `SCONJ`, `PRON`, `DET`.
 
-Any other value, such as `Noun`, ` noun` or `adp`, is invalid.
+Any other value, such as `Noun`, `adp`, or `noun` with a leading space, is invalid.
 
 ## 7. Lockfile
 
