@@ -488,7 +488,7 @@ These tests exist on `main` under `crates/slopvac-plugins/tests/`. The names in 
 | TM-43, TM-44, TM-45, TM-46, TM-47 | `extract.rs` | E1 to E9 |
 | TM-15, TM-16, TM-17, TM-18, H22 | `apply.rs` | O6 to O9 |
 | TM-49, TM-50, TM-51, TM-52, TM-53 (`tm<N>_...`; the `live_` tests need uv and skip without it) | `pyenv.rs` | Y1 to Y6 |
-| TM-5 limits, TM-4 on Linux ((open)) | `limits.rs` | P5, P6 |
+| TM-5 limits, TM-4 on Linux (open) | `limits.rs` | P5, P6 |
 | TM-11 | `sanitize.rs`, `host.rs`, `trust.rs` in `slopvac-plugins` | O1, P15 |
 | TM-11, TM-12, TM-13 (the escaping functions) | `crates/slopvac-sanitize/src/lib.rs` | O1 to O4, P15 |
 

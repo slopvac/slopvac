@@ -168,10 +168,8 @@ fn classify_step(
 ) -> Error {
     match dir.symlink_metadata(name) {
         Ok(meta) if meta.is_symlink() => Error::input(InputKind::Symlink, report, None),
-        // A socket, or a device with no backing, fails to open; it is still not regular.
-        Ok(meta) if leaf && !meta.is_file() && !meta.is_dir() => {
-            Error::input(InputKind::NotRegular, report, None)
-        }
+        // A socket, an unreadable directory or a device with no backing fails to open; none is regular.
+        Ok(meta) if leaf && !meta.is_file() => Error::input(InputKind::NotRegular, report, None),
         // Something that is not a directory sits on the way: nothing can be below it.
         Ok(meta) if !meta.is_dir() && error.kind() == ErrorKind::NotADirectory => {
             Error::input(InputKind::NotFound, report, None)

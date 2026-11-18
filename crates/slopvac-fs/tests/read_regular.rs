@@ -180,3 +180,23 @@ fn plain_reader_needs_a_file_name() {
         );
     }
 }
+
+#[test]
+fn an_unreadable_leaf_directory_is_not_regular_for_both_readers() {
+    if rustix::process::geteuid().is_root() {
+        // Permissions do not apply to root.
+        return;
+    }
+    let t = tree();
+    let locked = t.path().join("locked");
+    std::fs::create_dir(&locked).unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let confined = read_capped_regular_in(&root(&t), Path::new("locked"), 100).unwrap_err();
+    let plain = read_capped_regular(&locked, 100, ReadOptions::new()).unwrap_err();
+    assert_eq!(
+        confined.input_kind(),
+        Some(InputKind::NotRegular),
+        "{confined:?}"
+    );
+    assert_eq!(plain.input_kind(), Some(InputKind::NotRegular), "{plain:?}");
+}
