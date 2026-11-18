@@ -54,10 +54,11 @@ pub struct Dropped {
 }
 
 impl Dropped {
-    /// The setting as a note: the `config-legacy-dropped` code and the line of the
-    /// error form, for a drop that does not stop the migration.
-    pub(crate) fn notice(&self) -> String {
-        format!("config-legacy-dropped: {self}")
+    /// The setting as a notice with the `migrate-category-removed` code, for a
+    /// category that 3.0 no longer has. Unlike a blocking drop, it does not stop the
+    /// migration.
+    pub(crate) fn category_removed_notice(&self) -> String {
+        format!("migrate-category-removed: {self}")
     }
 }
 

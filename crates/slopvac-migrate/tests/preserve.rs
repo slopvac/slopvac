@@ -357,16 +357,16 @@ fn rule_less_categories_are_dropped_with_one_notice_each() {
             let notices: Vec<&String> = rewrite
                 .notes
                 .iter()
-                .filter(|n| n.starts_with("config-legacy-dropped: "))
+                .filter(|n| n.starts_with("migrate-category-removed: "))
                 .collect();
             assert_eq!(
                 notices,
                 [
                     &format!(
-                        "config-legacy-dropped: slopvac.toml:3: `categories.{name}`: category no longer exists in 3.0"
+                        "migrate-category-removed: slopvac.toml:3: `categories.{name}`: category no longer exists in 3.0"
                     ),
                     &format!(
-                        "config-legacy-dropped: slopvac.toml:8: `overrides[0].categories.{name}`: category no longer exists in 3.0"
+                        "migrate-category-removed: slopvac.toml:8: `overrides[0].categories.{name}`: category no longer exists in 3.0"
                     ),
                 ],
                 "{case}"
