@@ -53,7 +53,20 @@ def offending(pairs: Iterable[tuple[str, str]], root: str) -> list[str]:
     return [name for name, commit in pairs if roots_of(commit) != [root]]
 
 
+def require_full_history() -> None:
+    """A shallow clone has artificial roots, so every tag would look foreign."""
+    result = git("rev-parse", "--is-shallow-repository")
+    if result.returncode != 0:
+        raise GitError(result.stderr.strip() or "git rev-parse failed")
+    if result.stdout.strip() == "true":
+        raise GitError(
+            "this repository is a shallow clone, so its roots are not real; "
+            "run `git fetch --unshallow` first"
+        )
+
+
 def all_tags() -> list[tuple[str, str]]:
+    require_full_history()
     result = git("for-each-ref", "--format=%(refname) %(objectname)", TAG_PREFIX)
     if result.returncode != 0:
         raise GitError(result.stderr.strip() or "git for-each-ref failed")
@@ -75,8 +88,9 @@ def delete_hint(bad: list[str], root: str) -> str:
 
 
 def report(bad: list[str], checked: int, root: str, hint: bool) -> None:
+    where = "local tags" if hint else "tags"
     print(
-        f"error: {len(bad)} of {checked} tags are not in slopvac's history "
+        f"error: {len(bad)} of {checked} {where} are not in slopvac's history "
         f"(expected the only root commit to be {root}).",
         file=sys.stderr,
     )
@@ -86,7 +100,8 @@ def report(bad: list[str], checked: int, root: str, hint: bool) -> None:
         print(f"  ... and {len(bad) - LIST_LIMIT} more", file=sys.stderr)
     if hint:
         print(
-            f"Push refused. Delete them locally with:\n  {delete_hint(bad, root)}",
+            "Push refused: these tags exist in this clone, whether or not the push "
+            f"carries them. Delete them locally with:\n  {delete_hint(bad, root)}",
             file=sys.stderr,
         )
 

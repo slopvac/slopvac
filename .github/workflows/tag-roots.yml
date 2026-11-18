@@ -29,8 +29,9 @@ jobs:
           sparse-checkout: scripts/ci/check_tag_roots.py
           sparse-checkout-cone-mode: false
 
-      - name: Fetch tags without trees or blobs
-        run: git fetch --quiet --filter=tree:0 --no-tags origin 'refs/tags/*:refs/tags/*'
+      - name: Complete the history, commits only
+        # The checkout is shallow, which would make every tag look foreign.
+        run: git fetch --quiet --unshallow --filter=tree:0 --no-tags origin 'refs/tags/*:refs/tags/*'
 
       - name: Check that every tag has slopvac's root
         run: python3 scripts/ci/check_tag_roots.py

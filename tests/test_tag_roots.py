@@ -7,11 +7,13 @@ script takes the expected root from --root.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "ci" / "check_tag_roots.py"
@@ -178,15 +180,53 @@ def test_ci_mode_does_not_print_a_delete_command(repo):
     assert "git tag -d" not in run(repo).stderr
 
 
-def test_default_root_is_slopvacs_real_root():
+def test_default_root_is_slopvacs_real_root(repo):
+    """Without --root a fixture repo fails, and the message names slopvac's root."""
+    git(repo["path"], "tag", "v1", repo["tip"])
     result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            f"import runpy; print(runpy.run_path({str(SCRIPT)!r})['ROOT_COMMIT'])",
-        ],
+        [sys.executable, str(SCRIPT)],
+        cwd=repo["path"],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
+        env={k: v for k, v in os.environ.items() if k != "SLOPVAC_ROOT_COMMIT"},
     )
-    assert result.stdout.strip() == "b516adb5ed8789b2b737c5876f75f2fbc809e755"
+    assert result.returncode == 1
+    assert "b516adb5ed8789b2b737c5876f75f2fbc809e755" in result.stderr
+
+
+# --- shallow clones --------------------------------------------------------
+
+
+def workflow_fetch_command() -> list[str]:
+    """The workflow's tag fetch step, split into arguments."""
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "tag-roots.yml").read_text()
+    )
+    steps = workflow["jobs"]["tag-roots"]["steps"]
+    command = next(s["run"] for s in steps if s.get("run", "").startswith("git fetch"))
+    return shlex.split(command)[1:]
+
+
+@pytest.fixture
+def shallow_clone(repo, tmp_path) -> Path:
+    """A depth-1 clone, like actions/checkout's default, with a tag at HEAD."""
+    git(repo["path"], "tag", "v1", repo["tip"])
+    git(repo["path"], "config", "uploadpack.allowFilter", "true")
+    clone = tmp_path / "clone"
+    git(tmp_path, "clone", "-q", "--depth", "1", repo["path"].as_uri(), str(clone))
+    return clone
+
+
+def test_shallow_clone_is_reported_as_incomplete_not_foreign(repo, shallow_clone):
+    result = run({**repo, "path": shallow_clone})
+    assert result.returncode == 2
+    assert "shallow" in result.stderr
+    assert "v1" not in result.stderr
+
+
+def test_workflow_fetch_makes_a_shallow_checkout_checkable(repo, shallow_clone):
+    git(shallow_clone, *workflow_fetch_command())
+    result = run({**repo, "path": shallow_clone})
+    assert result.returncode == 0, result.stderr
+    assert "checked 1 tags: 0 offending" in result.stdout
