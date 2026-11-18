@@ -7,3 +7,80 @@
 # kind = "property-removed"
 # reason = "Why the break is acceptable."
 # approved_by = "reviewer name"
+
+[[allow]]
+file = "pack-manifest.schema.json"
+pointer = "/properties/plugin/$ref(pack-manifest.schema.json#/$defs/Plugin)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "pack-manifest.schema.json"
+pointer = "/properties/plugin/$ref(pack-manifest.schema.json#/$defs/Plugin)/allOf/0/$ref(plugin-protocol.schema.json#/$defs/PluginDeclaration)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "pack-manifest.schema.json"
+pointer = "/$defs/Plugin/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "pack-manifest.schema.json"
+pointer = "/$defs/Plugin/allOf/0/$ref(plugin-protocol.schema.json#/$defs/PluginDeclaration)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/$defs/HookDecl/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/$defs/InitializeResult/properties/capabilities/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/$defs/Call/allOf/12/then/required/id"
+kind = "required-added"
+reason = "The new binary-extractor/extract request must carry id and params. The constraint applies only to that new method's own messages, so no existing message is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/$defs/Call/allOf/12/then/required/params"
+kind = "required-added"
+reason = "The new binary-extractor/extract request must carry id and params. The constraint applies only to that new method's own messages, so no existing message is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/$defs/PluginDeclaration/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/allOf/0/then/$ref(plugin-protocol.schema.json#/$defs/Call)/allOf/12/then/required/id"
+kind = "required-added"
+reason = "The new binary-extractor/extract request must carry id and params. The constraint applies only to that new method's own messages, so no existing message is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/allOf/0/then/$ref(plugin-protocol.schema.json#/$defs/Call)/allOf/12/then/required/params"
+kind = "required-added"
+reason = "The new binary-extractor/extract request must carry id and params. The constraint applies only to that new method's own messages, so no existing message is affected."
+approved_by = "contract owner (8l4.2)"

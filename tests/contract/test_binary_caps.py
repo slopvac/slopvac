@@ -22,12 +22,12 @@ VECTORS = json.loads((CONFORMANCE / "binary-caps.json").read_text("utf-8"))
 # Approved on #514 by the contract owner (slopvac-8l4.2): names, order and values.
 APPROVED_BUDGETS = {
     "segments": 1_000_000,
-    "part-chars": 1024,
-    "locator-chars": 1024,
-    "text-bytes": 32 * 1024 * 1024,
-    "in-flight-bytes": 64 * 1024 * 1024,
+    "part": 1024,
+    "locator": 1024,
+    "text": 32 * 1024 * 1024,
+    "in-flight": 64 * 1024 * 1024,
 }
-OUTPUT_BUDGETS = ("segments", "part-chars", "locator-chars", "text-bytes")
+OUTPUT_BUDGETS = ("segments", "part", "locator", "text")
 
 
 def _schemas() -> list[dict]:
@@ -52,9 +52,9 @@ def _validator(definition: str) -> Draft202012Validator:
 def _measures(case: dict) -> dict[str, int]:
     return {
         "segments": case["segments"],
-        "part-chars": case["part_chars"],
-        "locator-chars": case["locator_chars"],
-        "text-bytes": case["segments"] * case["text_bytes_each"],
+        "part": case["part_chars"],
+        "locator": case["locator_chars"],
+        "text": case["segments"] * case["text_bytes_each"],
     }
 
 
@@ -70,7 +70,7 @@ def test_the_schema_holds_the_one_extensible_list_of_budget_names() -> None:
 
 def test_in_flight_budget_matches_the_frame_vectors() -> None:
     frames = json.loads((CONFORMANCE / "binary-frames.json").read_text("utf-8"))
-    assert frames["in_flight_budget_bytes"] == APPROVED_BUDGETS["in-flight-bytes"]
+    assert frames["in_flight_budget_bytes"] == APPROVED_BUDGETS["in-flight"]
 
 
 @pytest.mark.parametrize("case", VECTORS["cases"], ids=lambda c: c["id"])

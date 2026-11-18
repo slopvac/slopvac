@@ -17,9 +17,11 @@
       ],
       "error": {
         "code": -32010,
-        "message": "inflated size over the limit",
+        "message": "segment budget reached",
         "data": {
-          "slopvac_code": "extract-budget"
+          "slopvac_code": "extract-budget",
+          "budget": "segments",
+          "limit": 1000000
         }
       }
     }

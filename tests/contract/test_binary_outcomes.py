@@ -143,6 +143,13 @@ def test_a_declined_document_exits_2_and_names_its_reason(
     assert case["exit"] == 2
 
 
+def test_a_failure_keeps_the_run_at_exit_2_even_when_a_finding_fails_the_gate() -> None:
+    for run in VECTORS["run_cases"]:
+        assert any(d.get("finding_fails_gate") for d in run["documents"])
+        assert run["unchecked"]
+        assert run["exit"] == 2
+
+
 def test_extract_unsupported_only_ever_marks_a_skipped_part() -> None:
     every = VECTORS["cases"] + VECTORS["host_cases"]
     for case in every:

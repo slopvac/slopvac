@@ -237,7 +237,12 @@ Each document ends in exactly one outcome. The last column gives what the host a
 - Content that the extractor skips inside a document it reads is not an outcome. An embedded object or a part type it does not handle goes in the result's `unsupported` list ([`BinaryUnsupported`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryUnsupported)), next to `extracted` or `empty`. The host adds one `info` notice `extract-unsupported` for each entry to the root `notices`, names the part, and never adds it to `unchecked`. The run exits 0, or 1 when a finding fails a gate. `extract-unsupported` always means a skipped part. It is never a per-document error, and the schema rejects it as one.
 - An encrypted container gets the dedicated code `binary-encrypted`, rather than `extract-malformed` with a detail field. The file is valid, so "malformed" would tell the user to repair a file that is not broken. The remedy is to remove the protection or exclude the file. Consumers branch on the code, never on other data (lint-report.md, section Read a report), so the distinction belongs in the code.
 - `binary-encrypted` keeps the wire number -32011 because a plugin can raise it. The host detects an encrypted Office Open XML package from its signature (section 5.5.1). An encrypted OpenDocument package is an ordinary ZIP. Its `META-INF/manifest.xml` marks the encrypted entries, and only the extractor reads that file.
-- A plugin declines a whole document with the per-document error -32008, not with an outcome value. An outcome means that the extractor read the document. A per-document error already means what the host needs (section 5.3): that document fails, the other documents stand, and the run exits 2. A host that does not know a reason still fails closed. The reasons form the extensible [`BinaryDeclineReason`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryDeclineReason) table, and a reader keeps a reason it does not know.
+- A plugin declines a whole document with the per-document error -32008, not with an outcome value. An outcome means that the extractor read the document. A per-document error already means what the host needs (section 5.3): that document fails, the other documents stand, and the run exits 2. The reasons form the closed [`BinaryDeclineReason`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryDeclineReason) enum. A reason outside it is a protocol violation, and the host reports `plugin-output-invalid`. The host writes its own description for each reason and never shows the plugin's string. A new reason is a contract change.
+
+  | `data.reason` | Host description in the report |
+  |---|---|
+  | `unknown-format` | The extractor does not read this format. |
+  | `variant-unsupported` | The extractor reads this format, but not this variant of it. |
 - Extraction of a failed document is all or nothing. It returns no segments, and v1 has no partial result.
 - A malformed payload in a named format is `malformed`. It is never `empty` or `no-source`, so a broken file never passes as clean.
 - The native adapter returns the same outcomes with the same codes.
@@ -249,13 +254,15 @@ Every machine output format carries each `extract-unsupported` notice with its c
 
 These budgets hold for every binary extractor. They are fixed host constants, and `initialize` does not negotiate them. A later raise is additive. A cut breaks compatibility, and policies.md section 3.6 applies.
 
-| Budget | Value | `data.budget` |
-|---|---|---|
-| Segments | 1,000,000 per document | `segments` |
-| `part` | 1024 characters | `part-chars` |
-| `locator` | 1024 characters | `locator-chars` |
-| Extracted text | 32 MiB (33554432 bytes) of UTF-8 per document, across all segments | `text-bytes` |
-| Request buffers in flight | 64 MiB (67108864 bytes) across all plugins (section 5.5.6) | `in-flight-bytes` |
+| `data.budget` | Budget | Value | Unit of `data.limit` |
+|---|---|---|---|
+| `segments` | Segments | 1,000,000 per document | Count of segments |
+| `part` | Part name | 1024 characters | Unicode code points |
+| `locator` | Locator | 1024 characters | Unicode code points |
+| `text` | Extracted text | 32 MiB (33554432 bytes) of UTF-8 per document, across all segments | UTF-8 bytes of extracted text |
+| `in-flight` | Request buffers in flight | 64 MiB (67108864 bytes) across all plugins (section 5.5.6) | Bytes |
+
+These are the names and units that [lint-report.md](lint-report.md#notice-data) lists for `extract-budget`.
 
 A breach of any budget is `extract-budget` (-32010). `data.budget` names the budget, and `data.limit` holds its value from the table. Both are named fields in the error data, and a reader never parses them from the message. The schema def [`BinaryBudget`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryBudget) is the one list of names. It carries `x-slopvac-extensible`, so a later release may add a budget, and a reader keeps a name it does not know.
 
@@ -274,7 +281,7 @@ The negotiated `maxMessageBytes` of section 2.2 bounds both directions. v1 has n
 **Requests.** The host builds each request in the order below, so a large file costs no memory before it is admitted (CWE-770). A document that fails step 1, 4 or 5 gets `message-too-large`. The host does not send a failed document, and the run exits 2. All size arithmetic is checked (section 2.2).
 
 1. **Preflight.** The host takes n from the file metadata and serializes the envelope, which is small. It computes 4 × ⌈n / 3⌉ plus the envelope size and compares the sum with `maxMessageBytes`. It reads and encodes nothing before this check passes.
-2. **Reservation.** The host reserves n, plus the base64 length, plus the preflight size from one in-flight budget for binary requests. The budget is 64 MiB (67108864 bytes) across all plugins, and it covers the raw bytes, the base64 text and the JSON frame. A request waits until its reservation fits. A reservation larger than the whole budget fails at once with `extract-budget`, budget `in-flight-bytes`. The host releases the reservation when the frame is written or the request fails.
+2. **Reservation.** The host reserves n, plus the base64 length, plus the preflight size from one in-flight budget for binary requests. The budget is 64 MiB (67108864 bytes) across all plugins, and it covers the raw bytes, the base64 text and the JSON frame. A request waits until its reservation fits. A reservation larger than the whole budget fails at once with `extract-budget`, budget `in-flight`. The host releases the reservation when the frame is written or the request fails.
 3. **Bounded read.** The host reads at most n + 1 bytes. A file that holds more than n bytes changed after the preflight. The host stops reading and reports `binary-input-changed`. A file that holds fewer bytes is sent with its real length.
 4. **Capped serialization.** The host encodes into a buffer of exactly the base64 length. It serializes into a writer that stops at `maxMessageBytes`, so escaping in other fields cannot grow the frame past the limit.
 5. **Final gate.** The host sends the frame only when its exact serialized size is at most `maxMessageBytes`. The size counts the bytes the host writes, so its serializer choices count too.
@@ -362,7 +369,7 @@ Errors use the JSON-RPC error object. `code` is numeric. `data.slopvac_code` is 
 | -32005 | `request-cancelled` | The plugin stopped a request after a cancel. |
 | -32006 | `document-invalid` | The plugin cannot process this document, for example binary content. |
 | -32007 | `offline` | A provider refused the call because offline mode is on. |
-| -32008 | `binary-input-declined` | A binary extractor declines this whole document. A plugin sends this number with `data.reason` `unknown-format` or `variant-unsupported` (section 5.5.4). It is the only meaning of -32008. |
+| -32008 | `binary-input-declined` | A binary extractor declines this whole document. This is the only meaning of -32008. `extract-unsupported` is a host notice with no number, and a plugin never sends it as an error. A plugin sends this number with `data.reason` `unknown-format` or `variant-unsupported` (section 5.5.4). |
 | -32009 | `extract-malformed` | The bytes break the format, or an embedded payload does not decode. |
 | -32010 | `extract-budget` | A binary extractor hit a limit. |
 | -32011 | `binary-encrypted` | The container is encrypted or protected by a password. A plugin sends it for an encrypted OpenDocument package, and the host raises it for an encrypted Office Open XML package (section 5.5.4). |
@@ -392,7 +399,7 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 
 Binary extraction has four *shared* codes: `extract-unsupported`, `extract-malformed`, `extract-budget` and `extract-output-invalid`. Plugins, the native adapter and the host use the same strings. `binary-encrypted`, `binary-input-declined` and `binary-format-unsupported` sit outside that family, next to `binary-no-source`, `binary-format-mismatch` and `binary-format-ambiguous`.
 
-Exit codes stay as policies.md section 3.5 defines them. Any plugin failure makes the affected run exit 2, never 0, and never 1 unless findings fail the gate.
+Exit codes stay as policies.md section 3.5 defines them. The run exits 2 whenever any plugin failure remains, even when findings would also fail a gate. Findings never lower an incomplete run to exit 1. The `run_cases` entry `failure-and-failing-finding` in `binary-outcomes.json` shows this.
 
 ## 11. Security
 
@@ -479,7 +486,7 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | H25 | A top-level array, a duplicate key, a nesting depth of 65. | Each is a framing error. |
 | H36 | `binary-extractor/extract` requests built from every `frames` and `preflight` case in `binary-frames.json`. | The host sends exactly the cases marked admissible. Each other document gets `message-too-large`, and the run exits 2. For a case that fails the preflight, the host reads and encodes no byte of the file. |
 | H37 | A binary result entry with both `outcome` and `error`, `extracted` with no segments, `empty` with segments, a span past `byte_length`, a duplicate `part` and `locator`, and a locator with a control or bidirectional character. | `plugin-output-invalid` for each. |
-| H38 | Binary documents built from every case in `binary-outcomes.json`: skipped content, `empty`, `no-source` under a plain and a promising name, `binary-input-declined` for each reason, `binary-encrypted`, `extract-malformed` and `extract-budget`. | Each case adds exactly the listed notices and `unchecked` codes, and the run exits as listed. Skipped content is an `info` notice, never `unchecked`, and exits 0. |
+| H38 | Binary documents built from every case in `binary-outcomes.json`: skipped content, `empty`, `no-source` under a plain and a promising name, `binary-input-declined` for each reason, `binary-encrypted`, `extract-malformed` and `extract-budget`, plus the `run_cases` run with one plugin failure and one finding that fails a gate. | Each case adds exactly the listed notices and `unchecked` codes, and the run exits as listed. Skipped content is an `info` notice, never `unchecked`, and exits 0. The mixed run exits 2, not 1. A `binary-input-declined` reply with a `data.reason` outside the enum is `plugin-output-invalid`, and the host never shows the plugin's string. |
 | H39 | A file whose signature and name disagree, the `host_cases` in `binary-outcomes.json` (an explicitly named EPUB and PDF file, an encrypted Office Open XML package, and SVG files with and without a promising name), and a format that no extractor lists. | `binary-format-mismatch` with exit 2. Each host case adds exactly its listed notices and `unchecked` codes, sends no file to an extractor, and exits as listed: the EPUB, PDF and unlisted files get `binary-format-unsupported` with `data.format`, and exit 2. |
 | H40 | A reply whose `binary-extractor` hook lists a format the manifest does not list. | `plugin-declaration-mismatch`, kill, no reuse. |
 | H41 | The first-party extractors, run through the wire adapter. | They pass H36 to H38 and P20 to P24. |

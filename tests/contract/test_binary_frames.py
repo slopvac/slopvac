@@ -67,6 +67,24 @@ def test_admitted_request_reserves_raw_base64_and_frame(case: dict) -> None:
     assert reservation <= VECTORS["in_flight_budget_bytes"]
 
 
+@pytest.mark.parametrize("case", VECTORS["reservations"], ids=lambda c: c["id"])
+def test_reservation_over_the_in_flight_budget_is_rejected(case: dict) -> None:
+    envelope = _size(_request(case["document_id"], case["byte_length"], ""))
+    preflight = envelope + _base64_length(case["byte_length"])
+    reservation = case["byte_length"] + _base64_length(case["byte_length"]) + preflight
+
+    assert envelope == case["envelope_bytes"]
+    assert preflight <= case["max_message_bytes"]
+    assert reservation == case["reservation_bytes"]
+    assert (reservation > VECTORS["in_flight_budget_bytes"]) is case["rejected"]
+    assert case["error"] == {
+        "code": -32010,
+        "slopvac_code": "extract-budget",
+        "budget": "in-flight",
+        "limit": VECTORS["in_flight_budget_bytes"],
+    }
+
+
 @pytest.mark.parametrize("case", VECTORS["frames"], ids=lambda c: c["id"])
 def test_whole_request_size_decides_admissibility(case: dict) -> None:
     encoded = base64.b64encode(bytes(case["byte_length"])).decode("ascii")

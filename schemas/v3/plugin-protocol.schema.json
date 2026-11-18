@@ -729,15 +729,14 @@
       "x-slopvac-extensible": true,
       "enum": [
         "segments",
-        "part-chars",
-        "locator-chars",
-        "text-bytes",
-        "in-flight-bytes"
+        "part",
+        "locator",
+        "text",
+        "in-flight"
       ]
     },
     "BinaryDeclineReason": {
-      "description": "Why a binary extractor declines a whole document with binary-input-declined (-32008), carried in data.reason. unknown-format: the format id is not one the extractor knows (plugin-protocol.md section 5.5.1). variant-unsupported: the format is one it lists, but this variant is one it does not handle. The enum is extensible (x-slopvac-extensible, bead slopvac-8l4.2.61): a reader keeps a reason it does not know and still treats the document as declined.",
-      "x-slopvac-extensible": true,
+      "description": "Why a binary extractor declines a whole document with binary-input-declined (-32008), carried in data.reason. unknown-format: the format id is not one the extractor knows (plugin-protocol.md section 5.5.1). variant-unsupported: the format is one it lists, but this variant is one it does not handle. The enum is closed: any other value is a protocol violation (plugin-output-invalid). The host renders its own description for each reason and never shows the plugin's string. A new reason is a contract change.",
       "enum": [
         "unknown-format",
         "variant-unsupported"
@@ -1528,29 +1527,6 @@
           "if": {
             "properties": {
               "method": {
-                "const": "binary-extractor/extract"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "id": {
-                "$ref": "#/$defs/RequestId"
-              },
-              "params": {
-                "$ref": "#/$defs/BinaryExtractParams"
-              }
-            },
-            "required": [
-              "id",
-              "params"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "method": {
                 "const": "reporter/render"
               }
             }
@@ -1654,6 +1630,29 @@
               },
               "params": {
                 "$ref": "#/$defs/RecipeParams"
+              }
+            },
+            "required": [
+              "id",
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "binary-extractor/extract"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/RequestId"
+              },
+              "params": {
+                "$ref": "#/$defs/BinaryExtractParams"
               }
             },
             "required": [

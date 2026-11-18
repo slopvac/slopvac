@@ -97,5 +97,7 @@
 "BinaryExtractResult--error-with-unsupported.json" = "/results/0"
 "BinaryExtractResult--unsupported-without-part.json" = "/results/0/unsupported/0"
 "BinaryExtractResult--unsupported-part-trailing-lf.json" = "/results/0/unsupported/0/part"
+"BinaryExtractResult--unsupported-locator-trailing-lf.json" = "/results/0/unsupported/0/locator"
 "BinaryExtractResult--declined-without-reason.json" = "/results/0/error/data"
+"BinaryExtractResult--declined-unknown-reason.json" = "/results/0/error/data/reason"
 "BinaryExtractResult--unsupported-as-error.json" = "/results/0/error/data/slopvac_code"
