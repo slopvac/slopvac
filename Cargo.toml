@@ -14,8 +14,8 @@ edition = "2024"
 # slightly older toolchain still build. rust-toolchain.toml pins the dev toolchain.
 rust-version = "1.97"
 license = "Apache-2.0"
-repository = "https://github.com/srobroek/slopvac"
-homepage = "https://github.com/srobroek/slopvac"
+repository = "https://github.com/slopvac/slopvac"
+homepage = "https://github.com/slopvac/slopvac"
 publish = false
 
 [workspace.dependencies]
@@ -26,6 +26,7 @@ cap-std = "4"
 caseless = "0.2"
 clap = { version = "4.6", features = ["derive"] }
 crossbeam-channel = "0.5"
+etcetera = "0.11"
 flate2 = "1.1"
 frontmatter-spans = { path = "crates/frontmatter-spans" }
 globset = "0.4"
@@ -68,6 +69,7 @@ slopvac-config = { path = "crates/slopvac-config" }
 slopvac-context = { path = "crates/slopvac-context" }
 slopvac-diagrams = { path = "crates/slopvac-diagrams" }
 slopvac-engine = { path = "crates/slopvac-engine" }
+slopvac-fs = { path = "crates/slopvac-fs" }
 slopvac-lsp = { path = "crates/slopvac-lsp" }
 slopvac-migrate = { path = "crates/slopvac-migrate" }
 slopvac-model = { path = "crates/slopvac-model" }
@@ -90,6 +92,11 @@ thiserror = "2"
 toml = "1"
 toml_edit = "0.25"
 tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+tree-sitter = "0.26"
+tree-sitter-c = "0.24"
+tree-sitter-go = "0.25"
+tree-sitter-java = "0.23"
+tree-sitter-proto = "0.6"
 unicode-normalization = "0.1"
 ureq = { version = "3.5", default-features = false, features = [
   "rustls",

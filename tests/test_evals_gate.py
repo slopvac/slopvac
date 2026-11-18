@@ -146,6 +146,94 @@ def test_rates_on_few_cases_are_listed_not_gated():
     assert any(u["metric"] == "recall" for u in out["uncertain"])
 
 
+def precision_baseline(hits, n=40):
+    return {
+        "splits": {
+            "tuning": {
+                "human_words": 0,
+                "rules": {
+                    R: {"human_findings": 0, "precision": {"hits": hits, "n": n}}
+                },
+            }
+        }
+    }
+
+
+def precision_card(tp, n=40, llm=0):
+    return {
+        "origins": {},
+        "rules": {
+            R: {
+                "human_findings": 0,
+                "llm_findings": llm,
+                "precision": {"tp": tp, "n": n},
+            }
+        },
+    }
+
+
+def tp_labels(count):
+    return [{"rule": R, "label": "tp"}] * count
+
+
+def test_label_coverage_not_detected_positives_decides_whether_precision_is_gated():
+    # Only 10 positives were detected in the baseline, but 20 are adjudicated:
+    # the label set is adequate, so a fall from 10/40 to 2/40 is a regression.
+    out = gate.compare(
+        precision_baseline(hits=10),
+        {"tuning": precision_card(tp=2)},
+        labels=tp_labels(20),
+    )
+    assert [(r["rule"], r["metric"]) for r in out["regressions"]] == [(R, "precision")]
+    assert out["passed"] is False
+
+
+def test_precision_with_fewer_than_20_adjudicated_positives_is_not_gated():
+    # 30 detections in the baseline, but only 19 adjudicated positives.
+    out = gate.compare(
+        precision_baseline(hits=30),
+        {"tuning": precision_card(tp=2)},
+        labels=tp_labels(19),
+    )
+    assert out["regressions"] == []
+    assert [(u["rule"], u["metric"]) for u in out["uncertain"]] == [(R, "precision")]
+
+
+def test_unlabelled_findings_on_llm_text_are_reported_as_inadequate_coverage():
+    out = gate.compare(
+        precision_baseline(hits=30),
+        {"tuning": precision_card(tp=30, llm=5)},
+        labels=tp_labels(3),
+    )
+    assert out["inadequate_coverage"] == [
+        {"rule": R, "positives": 3, "llm_findings": 5}
+    ]
+    assert "inadequate" in gate.markdown(out, "report").lower()
+
+
+def test_a_rule_with_adequate_labels_has_no_inadequate_coverage():
+    out = gate.compare(
+        precision_baseline(hits=30),
+        {"tuning": precision_card(tp=30, llm=5)},
+        labels=tp_labels(20),
+    )
+    assert out["inadequate_coverage"] == []
+
+
+def test_with_no_labels_precision_is_not_measured_and_the_gate_does_not_pass():
+    out = gate.compare(precision_baseline(hits=30), {"tuning": precision_card(tp=30)})
+    assert out["regressions"] == []
+    assert out["precision"] == "not measured"
+    assert out["passed"] is False
+    assert "precision not measured" in gate.markdown(out, "enforce").lower()
+
+
+def test_a_baseline_without_precision_still_passes_with_no_labels(base):
+    manifest, results, baseline = base
+    out = gate.compare(baseline, cards(manifest, results))
+    assert out["passed"] is True
+
+
 def test_a_rule_that_vanished_is_a_regression(base):
     baseline = base[2]
     empty = {s: {"rules": {}, "origins": {}} for s in gate.SPLITS}
@@ -313,7 +401,7 @@ def labelled_run(base_data, tmp_path, monkeypatch, bad_share):
 
 
 def test_precision_is_gated_through_the_cli(tmp_path, monkeypatch, capsys):
-    res, good, worse = labelled_run(None, tmp_path, monkeypatch, bad_share=0.75)
+    res, good, worse = labelled_run(None, tmp_path, monkeypatch, bad_share=0.5)
     baseline = tmp_path / "base.json"
     assert (
         cli.main(["baseline", str(res), "--labels", str(good), "--out", str(baseline)])

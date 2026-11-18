@@ -1,9 +1,7 @@
 # Slopvac 3.0 contract
 
 This directory holds the specs for the 3.0 contract. The schemas live in `schemas/v3/`.
-The schemas and a conformance corpus are the lasting golden. At cutover, schemas
-generated from the Rust types must accept and reject the same corpus. They need not
-match the hand-written text.
+The schemas in schemas/v3 are generated from the Rust types by slopvac-schemas. CI regenerates them and fails on any difference. The conformance corpus is hand-written, and both the Python and Rust implementations must accept and reject it exactly as cases.toml says.
 
 ## Layout
 
@@ -29,7 +27,7 @@ match the hand-written text.
 ## Conventions
 
 - Schemas use the JSON Schema 2020-12 dialect.
-- `$id` is `https://srobroek.github.io/slopvac/schemas/v3/<file>`. It never changes.
+- `$id` is `https://slopvac.github.io/slopvac/schemas/v3/<file>`. It never changes.
 - Every root instance carries `schema_version` set to 3. Lint JSON jumps from 1 to 3.
   Minor changes are additive only. `slopvac_api` in pack manifests is a separate version.
 - Shared shapes live in `common.schema.json`. A change to a shared def links the owner

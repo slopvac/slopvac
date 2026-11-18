@@ -1,6 +1,12 @@
 //! Text analysis shared by the engine: word counting, sentence splitting and the
 //! procedural/descriptive classifier. A port of the Python reference
 //! (`packages/slopvac-lint/src/slopvac/analyze.py`); offsets are UTF-8 bytes.
+//!
+//! # Input size
+//!
+//! The crate does not cap its input. The caller must pass at most
+//! 64 MiB (`slopvac_fs::MAX_DOCUMENT_BYTES`) of text, and each slopvac entry point enforces
+//! that cap before it calls in. The caps are listed in `docs/contract/policies.md`.
 
 mod classify;
 mod lexicon;
@@ -18,5 +24,5 @@ pub use measure::{
     longest_noun_stack, plain_words, suffix_counts, without_code_and_comments,
 };
 pub use pattern::{Pattern, PatternError, TextError};
-pub use sentences::{Sentence, split_sentences};
+pub use sentences::{Sentence, cell_sentence, split_sentences};
 pub use tokens::{count_words, tokens};

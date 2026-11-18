@@ -104,7 +104,9 @@ def _machine_output(arguments: tuple[str, ...] | list[str]) -> bool:
     """
     formats = [nxt for cur, nxt in pairwise(arguments) if cur == "--format"]
     formats += [arg.partition("=")[2] for arg in arguments if arg.startswith("--format=")]
-    to_file = any(arg in ("--out", "--open") or arg.startswith("--out=") for arg in arguments)
+    to_file = any(
+        arg in ("--out", "--open") or arg.startswith("--out=") for arg in arguments
+    )
     return to_file or any(fmt != "text" for fmt in formats)
 
 
@@ -189,7 +191,9 @@ def doctor(binary: str | None, config_path: Path | None, output_format: str) -> 
     if output_format == "text":
         discovered = config_path or find_config(Path.cwd())
         try:
-            config = load_config(discovered, root=discovered.parent if discovered else None)
+            config = load_config(
+                discovered, root=discovered.parent if discovered else None
+            )
         except ConfigError as exc:
             click.echo(f"config error: {exc}", err=True)
             raise SystemExit(EXIT_ERROR) from None
@@ -227,10 +231,19 @@ def doctor(binary: str | None, config_path: Path | None, output_format: str) -> 
     if not report["ok"]:
         raise SystemExit(EXIT_ERROR)
 
+
 @main.command()
 @click.argument("targets", nargs=-1, required=False)
-@click.option("--stdin", "stdin_input", is_flag=True, help="Read one UTF-8 document from standard input.")
-@click.option("--language", help="Input format: markdown, mdx, rst, html, text, or a source language in code-comments.")
+@click.option(
+    "--stdin",
+    "stdin_input",
+    is_flag=True,
+    help="Read one UTF-8 document from standard input.",
+)
+@click.option(
+    "--language",
+    help="Input format: markdown, mdx, rst, html, text, or a source language in code-comments.",
+)
 @click.option(
     "--profile",
     type=click.Choice([p.value for p in Profile]),
@@ -367,7 +380,10 @@ def lint(
         fix=fix,
         open_report=open_report,
     )
-    with _staged_stdin(targets, stdin_input, language, code_comments) as (inputs, stdin_path):
+    with _staged_stdin(targets, stdin_input, language, code_comments) as (
+        inputs,
+        stdin_path,
+    ):
         _note_output(output_format, out_path, open_report)
         console = _console(no_color)
         scope = None
@@ -474,7 +490,9 @@ def _resolve_input_options(
     }
     for option, given in rejected.items():
         if given:
-            reason = " because stdin has no file to write back to" if option == "--fix" else ""
+            reason = (
+                " because stdin has no file to write back to" if option == "--fix" else ""
+            )
             raise click.UsageError(f"{option} is not supported with --stdin{reason}.")
     # The pipeline lets an explicit --mode win over --comments, so the language
     # check follows the same rule.
@@ -482,7 +500,9 @@ def _resolve_input_options(
     if mode is None:
         mode = Mode.CODE_COMMENTS.value if comments else Mode.PROSE.value
     if code_comments and language is None:
-        raise click.UsageError("--language is required with --stdin --mode code-comments.")
+        raise click.UsageError(
+            "--language is required with --stdin --mode code-comments."
+        )
     language = language or "markdown"
     valid_languages = _stdin_languages(code_comments)
     if language not in valid_languages:
@@ -513,10 +533,15 @@ def _staged_stdin(
     try:
         raw.decode("utf-8")
     except UnicodeDecodeError as exc:
-        click.echo(f"incomplete check: stdin is not valid UTF-8 (byte {exc.start}).", err=True)
+        click.echo(
+            f"incomplete check: stdin is not valid UTF-8 (byte {exc.start}).", err=True
+        )
         raise SystemExit(EXIT_ERROR) from None
     with TemporaryDirectory(prefix="slopvac-stdin-") as directory:
-        staged = Path(directory) / f"stdin{_stdin_suffix(language or 'markdown', code_comments)}"
+        staged = (
+            Path(directory)
+            / f"stdin{_stdin_suffix(language or 'markdown', code_comments)}"
+        )
         staged.write_bytes(raw)
         yield (str(staged),), staged
 
@@ -783,7 +808,7 @@ def list_rules(
                     ],
                     "rules": [
                         {
-                            **rule.model_dump(mode="json"),
+                            **rule.model_dump(mode="json", exclude={"contexts"}),
                             "rule_id": rule.qualified_id,
                             "tier": rule.tier_for(profile).value,
                             "effective_severity": effective(rule),
@@ -876,7 +901,7 @@ def explain(
     # the closed list is reported as meta.invalid-suppression rather than honoured.
     if output_format == "json":
         payload = {
-            **rule.model_dump(mode="json"),
+            **rule.model_dump(mode="json", exclude={"contexts"}),
             "id": rule.qualified_id,
             "tiers": {name: tier.value for name, tier in rule.tiers.items()},
             "tier": profile_tier,
@@ -900,9 +925,7 @@ def explain(
         console.print(f"\n[bold]Fix[/]: {rule.fix}")
     if rule.judgement_question:
         console.print(f"\n[bold]Decide by asking[/]: {rule.judgement_question}")
-        console.print(
-            "Lint never reports this rule; `slopvac prime review` applies it."
-        )
+        console.print("Lint never reports this rule; `slopvac prime review` applies it.")
     if rule.exceptions:
         console.print("\n[bold]Named exceptions[/] (a suppression must cite one):")
         for name in rule.exceptions:
@@ -1032,7 +1055,9 @@ def _install_harness(
 
     try:
         target, changed = install_steering(root, harness)
-        console.print(f"{'updated' if changed else 'kept'} {target} with slopvac steering")
+        console.print(
+            f"{'updated' if changed else 'kept'} {target} with slopvac steering"
+        )
         stub = skill_path(root, harness) if skills else None
         if stub is None:
             return
@@ -1055,7 +1080,9 @@ def _install_harness(
     help="Read [guidance] from this file. Default: the nearest slopvac config.",
 )
 @_rules_dir_option
-def prime(topic: str | None, config_path: Path | None, rules_dir: tuple[Path, ...]) -> None:
+def prime(
+    topic: str | None, config_path: Path | None, rules_dir: tuple[Path, ...]
+) -> None:
     """Print current guidance for agents.
 
     With no TOPIC, print how to use every command, the genres and profiles, and
@@ -1107,8 +1134,7 @@ def onboard() -> None:
 @click.option(
     "--check",
     is_flag=True,
-    help="Report whether the managed block and skill are current without "
-    "changing files.",
+    help="Report whether the managed block and skill are current without changing files.",
 )
 @click.option(
     "--root",

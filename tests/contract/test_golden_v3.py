@@ -216,7 +216,7 @@ def test_staged_files_keep_their_real_extension(captured):
 # --- replay and runner -----------------------------------------------------
 
 
-@pytest.mark.parametrize("mode", ["parity", "policy"])
+@pytest.mark.parametrize("mode", ["parity"])
 def test_the_python_reference_matches_its_golden(mode):
     assert golden.compare(mode, REFERENCE, flavor="2x") == []
 
@@ -506,10 +506,113 @@ def test_a_run_delta_patches_the_run_summary_and_exit_status():
     }
 
 
+def _mode_deltas(monkeypatch, *deltas):
+    monkeypatch.setattr(golden, "load_deltas", lambda: list(deltas))
+
+
+@pytest.mark.parametrize(
+    ("mode", "applies"),
+    [("parity", False), ("preserve", False), ("policy", True)],
+)
+def test_a_delta_without_modes_applies_to_policy_only(monkeypatch, mode, applies):
+    _mode_deltas(monkeypatch, _delta())
+    assert bool(golden.deltas_for(mode, "3x")) is applies
+
+
+@pytest.mark.parametrize(
+    ("mode", "applies"),
+    [("parity", True), ("preserve", False), ("policy", True)],
+)
+def test_a_delta_applies_to_the_modes_it_lists(monkeypatch, mode, applies):
+    _mode_deltas(monkeypatch, _delta(modes=["parity", "policy"]))
+    assert bool(golden.deltas_for(mode, "3x")) is applies
+
+
+@pytest.mark.parametrize("mode", ["parity", "preserve", "policy"])
+def test_the_2x_reference_never_gets_a_delta(monkeypatch, mode):
+    _mode_deltas(monkeypatch, _delta(modes=["parity", "preserve", "policy"]))
+    assert golden.deltas_for(mode, "2x") == []
+
+
+# --- flavor isolation through compare ---------------------------------------
+
+
+def _parity_binary(monkeypatch, deltas):
+    """A fake binary that reports exactly the parity golden, plus fixed deltas."""
+    inputs = golden.load_inputs()
+    profile = "normal"
+    source = next(
+        e["id"]
+        for e in inputs
+        if json.loads(golden.golden_path(profile, e["id"]).read_text("utf-8"))[
+            "document"
+        ]["findings"]
+    )
+    parity = {
+        e["id"]: json.loads(golden.golden_path(profile, e["id"]).read_text("utf-8"))
+        for e in inputs
+    }
+    runs = json.loads(golden.runs_path(profile).read_text("utf-8"))
+    extra = json.loads(json.dumps(parity[source]["document"]["findings"][0]))
+    extra["column"] += 1000
+    delta = {
+        "input": source,
+        "profile": profile,
+        "kind": "added",
+        "finding": extra,
+        "reason": "r",
+        "approved_by": "a",
+        "run": {"group": next(iter(runs)), "summary": {"score": -1.0}},
+        **deltas,
+    }
+    monkeypatch.setattr(golden, "load_deltas", lambda: [delta])
+    monkeypatch.setattr(
+        golden,
+        "run_binary",
+        lambda command, mode, prof, ins, flavor="3x": (parity, runs),
+    )
+
+
+def _compare(mode, flavor):
+    return golden.compare(mode, "unused", only_profile="normal", flavor=flavor)
+
+
+@pytest.mark.parametrize("mode", ["parity", "preserve", "policy"])
+def test_the_2x_reference_is_compared_without_deltas_in_every_mode(
+    monkeypatch, mode
+):
+    _parity_binary(monkeypatch, {"modes": ["parity", "preserve", "policy"]})
+    assert _compare(mode, "2x") == []
+
+
+@pytest.mark.parametrize(
+    ("modes", "mode", "reported"),
+    [
+        (None, "policy", True),
+        (None, "parity", False),
+        (["parity"], "parity", True),
+        (["parity"], "policy", False),
+        (["parity", "preserve", "policy"], "preserve", True),
+    ],
+)
+def test_a_3x_candidate_is_compared_with_the_deltas_of_its_mode(
+    monkeypatch, modes, mode, reported
+):
+    _parity_binary(monkeypatch, {"modes": modes} if modes else {})
+    problems = _compare(mode, "3x")
+    # A parity-only candidate differs from the delta-adjusted expectation in the
+    # document (the added finding) and in the run summary (the patched score).
+    assert bool(problems) is reported
+    if reported:
+        assert any("differs in" in p and "/normal/" in p for p in problems)
+        assert any("summary differs in ['score']" in p for p in problems)
+
+
 def test_every_recorded_delta_has_a_reason_and_an_approver():
     for delta in golden.load_deltas():
         assert delta["reason"].strip()
         assert delta["approved_by"].strip()
+        assert set(delta.get("modes", ["policy"])) <= {"parity", "preserve", "policy"}
 
 
 def test_vale_is_resolved_on_the_path_a_run_uses(tmp_path, monkeypatch):

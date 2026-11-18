@@ -69,7 +69,7 @@ impl InstallMethod {
             Self::Wheel(WheelTool::Uvx) => "uvx slopvac@latest",
             Self::Wheel(WheelTool::Pip) => "python -m pip install --upgrade slopvac",
             Self::Wheel(WheelTool::UvPip) => "uv pip install --upgrade slopvac",
-            Self::Homebrew => "brew upgrade srobroek/tap/slopvac",
+            Self::Homebrew => "brew upgrade slopvac/tap/slopvac",
             Self::Mise => "mise upgrade slopvac",
             Self::Cargo => "cargo install --locked --force slopvac",
             Self::Unknown => return None,
@@ -310,7 +310,7 @@ mod tests {
             "install_layout": "flat",
             "install_prefix": prefix,
             "provider": {"source": "cargo-dist", "version": "0.34.0"},
-            "source": {"app_name": app, "name": app, "owner": "srobroek", "release_type": "github"},
+            "source": {"app_name": app, "name": app, "owner": "slopvac", "release_type": "github"},
             "version": "3.0.0",
         });
         std::fs::write(dir.join("slopvac-receipt.json"), json.to_string()).unwrap();
@@ -655,7 +655,7 @@ mod tests {
             ),
             (
                 InstallMethod::Homebrew,
-                Some("brew upgrade srobroek/tap/slopvac"),
+                Some("brew upgrade slopvac/tap/slopvac"),
             ),
             (InstallMethod::Mise, Some("mise upgrade slopvac")),
             (

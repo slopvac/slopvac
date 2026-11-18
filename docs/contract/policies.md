@@ -143,6 +143,32 @@ Owners: `slopvac-8l4.12.1` for the logging setup, `slopvac-8l4.12.9` for stdin.
 
 Owners: `slopvac-8l4.9.3`, `slopvac-8l4.9.4`.
 
+### 1.9 Input size caps
+
+**3.0 requirement.** Every entry point that reads text enforces a size cap before it hands the text to a parser, an index or a matcher. An input over its cap is refused whole. Slopvac never truncates it. The run is incomplete and exits 2, and the error or notice carries the stable code from the table.
+
+The span crates index text with 32-bit offsets and size their structures from its length, and they do not cap their input. Their documentation states the 64 MiB limit as a rule for callers. Memory per read stays bounded by the cap plus one byte, because the reader stops at the cap.
+
+| Entry point | Cap | Code | Why this value |
+|---|---|---|---|
+| Document: CLI file lint, `validate` documents, `cases --coverage` corpus files, `fix` | 64 MiB | `document-too-large` | The largest size every span crate accepts. A real document is a few hundred KiB. |
+| Document from stdin | 64 MiB | `document-too-large` | Same as a file. |
+| Document in the language server (`didOpen`, `didChange`), per document | 64 MiB | `document-too-large` | Same as a file. The server drops the document and publishes the notice instead of findings. |
+| Document read for `migrate` | 64 MiB | `document-too-large` | Same as a file. |
+| Changed file read for `--diff` scoping | 64 MiB | `document-too-large` | Uses the same constant as the lint read. |
+| Config file (`slopvac.toml`, each `extends` file, a 2.x config read by `migrate`) | 1 MiB | `config-too-large` | A real config is under 10 KiB. The shipped data files stay under 32 KiB. |
+| Rule or category file in a pack | 2 MiB | `rules-file-too-large` | The largest shipped rule file is about 130 KiB. 2 MiB leaves more than a tenfold margin. |
+| Style file | 1 MiB | `style-too-large` | The built-in styles are a few KiB. |
+| Terms file | 1 MiB | `terms-file-too-large` | The built-in terms file is about 30 KiB. |
+
+Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`).
+
+The CLI file and stdin reads, the language server and `migrate` document reads, and the `migrate` config read enforce their caps in the change that follows this one. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and the CLI reports it in that change.
+
+Output and protocol caps are separate and already hold: plugin frames 16 MiB, reStructuredText converter output 16 MiB, and fixer edits 1 MiB.
+
+Owner: `slopvac-8l4.21.8`.
+
 ## 2. Accessibility
 
 ### 2.1 Plain and no-color output
@@ -235,10 +261,10 @@ The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/commo
 
 - `SchemaVersion` is a positive integer. It counts breaking changes to one artifact's shape and has no minor or patch part.
 - Every root instance of a versioned artifact carries `schema_version` with the constant 3. Lint JSON jumps from 1 to 3 so that all artifacts share one number at first. The migration guide states this jump. A later breaking change raises only the number of the artifact it affects, so numbers can diverge after 3.0.
-- Changes within one `schema_version` are additive only.
+- Changes within one `schema_version` are additive only. Section 3.9 describes the check that enforces this.
   - Allowed: a new optional field, a new optional section, and a new value of an output-only enum that the schema marks as extensible.
   - Not allowed: removing or renaming a field, changing a type, tightening a constraint, or giving a field a new meaning.
-- A schema's `$id` never changes within a version. The published URL has the form `https://srobroek.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
+- A schema's `$id` never changes within a version. The published URL has the form `https://slopvac.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
 - `ApiVersion` is a positive integer for the pack and plugin extension API. The first pack manifest declares `slopvac_api = 1`. It names the host capabilities a pack needs. `schema_version` names the shape of one file. The two are independent.
 - The binary version is independent of both. A release that adds optional fields keeps `schema_version`. `slopvac --version --json` lists the binary version, each supported `schema_version`, and each supported `slopvac_api`.
 - A config file without `schema_version` is a 2.x config and is rejected (section 3.7). Any other 3.0 artifact without a version is an error.
@@ -323,6 +349,39 @@ Owners: `slopvac-8l4.4.5` for the version check, `slopvac-8l4.2.5` for the mappi
 - An SDK in another language builds on the published JSON Schemas.
 
 Owners: `slopvac-8l4.9.7`, `slopvac-8l4.19.1`.
+
+### 3.9 Schema source
+
+**Generation.** The files in `schemas/v3/` are generated from the Rust types by the `slopvac-schemas` crate. CI regenerates them and fails on any difference. Edit the Rust types, never the generated files. The conformance corpus under `schemas/v3/conformance/` is hand-written and stays the referee: the Python and Rust implementations must accept and reject it exactly as each `cases.toml` says. Each artifact moves to generation in its own change.
+
+**Additive-only check.** `scripts/contract/schema_compat.py` compares `schemas/v3/*.schema.json` with a baseline and enforces section 3.2. It fails on these changes:
+
+- a removed file, or a changed `$id`
+- a removed property or `$defs` entry, at any depth
+- a new `required` entry
+- a narrowed `type`, `enum` or `const`
+- a raised `min*` bound or a lowered `max*` bound
+- a changed `pattern`
+- `additionalProperties` that is newly `false`, or newly a narrower schema
+
+It then validates every `valid/` instance of the baseline corpus against the new schema and fails on any rejection. Added optional properties, widened enums, new `$defs` entries and new files pass. Each finding prints as `file:json-pointer: kind: old -> new`. The `kind` is a stable kebab-case code. A code is never reused and never changes meaning (see section 3.5 and `docs/engineering.md`). Exit code 0 means compatible, 1 means a breaking finding, and 2 means a usage or read error, which is never a pass.
+
+**Baseline.** Before the first 3.0 release candidate, the baseline is the pull request's merge-base with `origin/main` (`--base <git-ref>`). This catches accidental breaks in each change. At the release candidate, a snapshot is committed under `schemas/v3/baseline/` and replaces the ref (`--baseline-dir`).
+
+**Limits.** The check fails closed where it cannot decide. Each case below needs an allow entry.
+
+- A `$ref` resolves across every file in `schemas/v3`, on both sides. A change to a shared definition is reported against each referrer, as `file:/properties/p/$ref(common.schema.json#/$defs/D)/minLength`. A reference that does not resolve is `unverified`. A schema file without a string `$id` is a read error.
+- Proving that a recursive schema and its inlined expansion accept the same instances is out of scope. When a reference was added or removed and the same target recurs, the check stops at that point and reports `unverified`. The corpus re-validation is the backstop.
+- `allOf`, `anyOf`, `oneOf` and `prefixItems` compare by position. A list that keeps all its members in another order is `list-reordered`. A new `anyOf` or `oneOf`, and an appended `oneOf` or `prefixItems` member, are `narrowing-possible`.
+- A keyword the check does not model is `unverified` when it is added, removed or changed. Only these annotations never count: `description`, `title`, `examples`, `$comment`, `deprecated`, `readOnly` and `writeOnly`. A changed `default` does count, because it changes what consumers see.
+- Each added `required` field is its own finding, located by field name, so one allow entry covers one field.
+- The check compares `enum` and `const` as JSON values: a Boolean is not a number.
+- If the corpus needs a definition that the new schema deleted, the check exits 2.
+- A merge-queue entry uses the base commit that the queue built it on as its baseline.
+
+**Allow-file.** `schemas/v3/compat-allow.toml` is the path for a reviewed breaking change. Each `[[allow]]` entry names the `file`, `pointer` and `kind` of one finding, a `reason`, and the reviewer in `approved_by`. A matching entry suppresses that finding. An entry that matches no finding fails the check, so stale entries cannot pile up. The file starts empty.
+
+Owner: `slopvac-8l4.2.50`.
 
 ## 4. Conformance tests
 

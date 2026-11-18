@@ -564,3 +564,42 @@ fn blocklist_schema_version_must_be_an_integer_in_every_format() {
         assert!(e.to_string().contains("slopvac migrate"), "{e}");
     }
 }
+
+#[test]
+fn a_terms_file_one_byte_over_the_cap_is_refused_with_its_code() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("terms.toml");
+    std::fs::File::create(&path)
+        .unwrap()
+        .set_len(slopvac_terms::MAX_TERMS_FILE_BYTES + 1)
+        .unwrap();
+    for err in [
+        slopvac_terms::TermsFile::load(&path).unwrap_err(),
+        slopvac_terms::Blocklist::load(&path).unwrap_err(),
+        slopvac_terms::TermsDoc::open(&path)
+            .map(|_| ())
+            .unwrap_err(),
+    ] {
+        assert!(
+            err.to_string().starts_with("[terms-file-too-large] "),
+            "{err}"
+        );
+    }
+}
+
+#[test]
+fn a_document_one_byte_over_the_cap_is_refused_by_the_casing_check() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::File::create(dir.path().join("big.md"))
+        .unwrap()
+        .set_len(slopvac_fs::MAX_DOCUMENT_BYTES + 1)
+        .unwrap();
+    let m = slopvac_terms::cli::command()
+        .try_get_matches_from(["terms", "check", "big.md"])
+        .unwrap();
+    let err = slopvac_terms::cli::run(&m, dir.path(), &mut Vec::new()).unwrap_err();
+    assert!(
+        err.to_string().starts_with("[document-too-large] "),
+        "{err}"
+    );
+}

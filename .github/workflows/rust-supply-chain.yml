@@ -24,6 +24,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
       - name: Install cargo-deny
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:
@@ -45,6 +48,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
       - name: Install cargo-deny
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:
@@ -62,6 +68,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
 
       - name: Install tools
         uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4

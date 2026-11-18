@@ -37,9 +37,7 @@ pub trait Linter {
     ) -> Result<Vec<Finding>, Error>;
 }
 
-/// A linter that finds nothing.
-// STUB(slopvac-8l4.16.7): stands in for the engine until it can lint a 2.x config and
-// a migrated tree. The report then shows no findings on either side.
+/// A linter that finds nothing, for runs that test the plan and not the findings.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NullLinter;
 

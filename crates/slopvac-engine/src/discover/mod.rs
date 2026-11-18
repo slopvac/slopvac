@@ -70,6 +70,7 @@ pub enum Selection {
 
 /// Discovery settings supplied by the caller.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct Options {
     /// Which file kinds to select.
     pub selection: Selection,
@@ -79,6 +80,29 @@ pub struct Options {
     /// explicitly or found by a walk or glob, as `Config.is_excluded` did in 2.x.
     /// An excluded explicit file is reported in [`Discovery::skipped`].
     pub excludes: Option<Excludes>,
+}
+
+impl Options {
+    /// The same options with another selection.
+    #[must_use]
+    pub fn with_selection(mut self, selection: Selection) -> Self {
+        self.selection = selection;
+        self
+    }
+
+    /// The same options with `.gitignore` handling on or off.
+    #[must_use]
+    pub fn with_use_gitignore(mut self, use_gitignore: bool) -> Self {
+        self.use_gitignore = use_gitignore;
+        self
+    }
+
+    /// The same options with config `exclude` patterns.
+    #[must_use]
+    pub fn with_excludes(mut self, excludes: Option<Excludes>) -> Self {
+        self.excludes = excludes;
+        self
+    }
 }
 
 /// A file chosen for linting.

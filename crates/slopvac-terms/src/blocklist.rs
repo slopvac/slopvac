@@ -137,11 +137,17 @@ impl Blocklist {
     /// # Errors
     /// Unreadable or malformed files and invalid entries.
     pub fn load(path: &Path) -> Result<Self, TermsError> {
-        let shown = path.display().to_string();
-        let text = std::fs::read_to_string(path).map_err(|e| TermsError::Io {
-            path: shown.clone(),
-            message: e.to_string(),
-        })?;
+        Self::load_labeled(path, &path.display().to_string())
+    }
+
+    /// Like [`Blocklist::load`], naming the file `shown` in errors. Pass a label that is
+    /// relative to the project root, so an error never carries an absolute path.
+    ///
+    /// # Errors
+    /// As [`Blocklist::load`].
+    pub fn load_labeled(path: &Path, shown: &str) -> Result<Self, TermsError> {
+        let shown = shown.to_owned();
+        let text = crate::read::read_existing(path, &shown, crate::MAX_TERMS_FILE_BYTES)?;
         let suffix = path
             .extension()
             .and_then(|e| e.to_str())

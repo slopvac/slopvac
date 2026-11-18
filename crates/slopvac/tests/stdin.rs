@@ -1,14 +1,17 @@
 //! Installed-binary tests for `lint --stdin` (compat rows `behavior:stdin-*`,
 //! `opt:lint:--stdin`, `opt:lint:--language`; policies.md 1.7).
 //!
-//! The engine behind the CLI is still STUB(slopvac-8l4.12.12), so these tests
-//! cover input handling, option checks and name redaction, not findings.
+//! These tests cover input handling, option checks and name redaction. Findings are checked
+//! in `lint_engine.rs`.
+
+mod support;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn slopvac() -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+    cmd.current_dir(support::neutral_dir());
     for var in [
         "SLOPVAC_OFFLINE",
         "SLOPVAC_LOG",
@@ -41,8 +44,8 @@ fn empty_stdin_is_accepted() {
 }
 
 #[test]
-fn every_prose_language_is_accepted() {
-    for language in ["markdown", "mdx", "text", "html", "rst"] {
+fn markdown_and_mdx_languages_are_linted() {
+    for language in ["markdown", "mdx"] {
         stdin_lint(&["--language", language])
             .write_stdin("words\n")
             .assert()
@@ -51,11 +54,35 @@ fn every_prose_language_is_accepted() {
 }
 
 #[test]
-fn code_comments_mode_accepts_a_source_language() {
-    stdin_lint(&["--mode", "code-comments", "--language", "python"])
-        .write_stdin("# a comment\nx = 1\n")
-        .assert()
-        .code(0);
+fn rst_is_accepted_and_checked_when_a_converter_exists() {
+    // Without docutils the run is incomplete (exit 2) but never a usage error.
+    let out = stdin_lint(&["--language", "rst"])
+        .write_stdin("words\n")
+        .output()
+        .expect("run");
+    assert!(matches!(out.status.code(), Some(0 | 2)), "{out:?}");
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("error[usage]"));
+}
+
+// STUB(slopvac-8l4.12.28): the engine has no parser for plain text, HTML or comment mode yet,
+// so these inputs are accepted by the options and then reported as unsupported (exit 2),
+// never skipped silently.
+#[test]
+fn inputs_without_an_engine_parser_are_an_incomplete_run() {
+    let cases: [&[&str]; 3] = [
+        &["--language", "text"],
+        &["--language", "html"],
+        &["--mode", "code-comments", "--language", "python"],
+    ];
+    for args in cases {
+        stdin_lint(args)
+            .write_stdin("words\n")
+            .assert()
+            .code(2)
+            .stderr(predicate::str::starts_with(
+                "error[input-unsupported]: <stdin>",
+            ));
+    }
 }
 
 #[test]

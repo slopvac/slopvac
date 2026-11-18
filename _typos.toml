@@ -63,6 +63,9 @@ Sclar = "Sclar"
 nonsignificant = "nonsignificant"
 MUC = "MUC"
 
+# OpenDocument Format acronym, used in the binary-inputs design and the office extractors.
+ODF = "ODF"
+
 # Product name (Azure Kubernetes Service) in the bundled terms list,
 # crates/slopvac-terms/data/builtin.toml.
 AKS = "AKS"

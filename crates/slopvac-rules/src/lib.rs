@@ -20,5 +20,5 @@ pub use error::{LoadError, LoadErrorKind, LoadErrors};
 pub use ext::{UniqueVec, ValueError};
 pub use matcher::{CompileError, CompileOptions, LexicalMatcher};
 pub use model::*;
-pub use ruleset::{LoadedCategory, LoadedRule, RuleSet};
+pub use ruleset::{LoadedCategory, LoadedRule, MAX_RULE_FILE_BYTES, RuleSet};
 pub use schema::{category_schema, rule_file_schema, rule_schema};

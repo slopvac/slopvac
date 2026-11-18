@@ -1,0 +1,9 @@
+# Reviewed exceptions to the additive-only schema check (docs/contract/policies.md, section 3.9).
+# Each entry suppresses one finding and must match one, or the check fails.
+#
+# [[allow]]
+# file = "rule.schema.json"
+# pointer = "/$defs/Rule/properties/old_field"
+# kind = "property-removed"
+# reason = "Why the break is acceptable."
+# approved_by = "reviewer name"

@@ -7,7 +7,7 @@ Slopvac ships hooks for pre-commit and prek, and the same command works in lefth
 Put `slopvac` on `PATH` before the first commit. Any install method works:
 
 ```sh
-brew install srobroek/tap/slopvac
+brew install slopvac/tap/slopvac
 uv tool install slopvac
 ```
 
@@ -17,7 +17,7 @@ The shell installer attached to each GitHub release also works.
 
 ```yaml
 repos:
-  - repo: https://github.com/srobroek/slopvac
+  - repo: https://github.com/slopvac/slopvac
     rev: v3.0.0
     hooks:
       - id: slopvac
@@ -28,17 +28,21 @@ prek reads the same file, so `prek run` and `pre-commit run` behave the same.
 | Hook id | Command |
 | --- | --- |
 | `slopvac` | `slopvac lint <files>` |
-| `slopvac-strict` | `slopvac lint --style core:legacy-strict <files>` |
-
-<!-- STUB(slopvac-8l4.13.13): --style is a placeholder until the CLI exposes its style-selection option. -->
 
 The hook has no pinned tool version. The `rev` selects the hook definition, and the binary on `PATH` selects the rules. Pin the binary version in your tool manager, for example with `mise`.
 
-`--profile` is removed in 3.0. The `slopvac-strict` hook applies the bundled `core:legacy-strict` style, the 3.0 counterpart of the 2.x strict profile. The `--style` option is pending in the 3.0 CLI, so the hook command will change to the final option before release. Scope the hook with `files:` so it runs only on reference material:
+`--profile` is removed in 3.0, and the CLI has no per-command style option. The `slopvac-strict` hook is removed with it. To keep the 2.x strict gate, add both keys to `slopvac.toml`: `profile = "strict"` sets the thresholds (density 1.5, minimum score 85), and `styles = ["core:legacy-strict"]` sets the 2.x category and rule levels. The style alone leaves the `normal` thresholds (density 3.0, minimum score 70). `slopvac migrate --preserve-behavior` writes both keys from the profile in your 2.x config, which is `normal` when the config sets none. A profile and a style apply to the whole run, so to gate only reference material, keep a second config file with both keys and pass it to the `slopvac` hook with `args` and `files`:
+
+```toml
+schema_version = 3
+profile = "strict"
+styles = ["core:legacy-strict"]
+```
 
 ```yaml
-- id: slopvac-strict
+- id: slopvac
   files: ^docs/reference/
+  args: [--config, slopvac-strict.toml]
 ```
 
 ## lefthook

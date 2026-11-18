@@ -24,4 +24,4 @@ pub mod policy;
 pub mod verify;
 
 /// GitHub repository that publishes releases.
-pub const REPO: &str = "srobroek/slopvac";
+pub const REPO: &str = "slopvac/slopvac";

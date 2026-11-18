@@ -44,6 +44,7 @@ impl Mode {
 
 /// Dials for one category, from the resolved configuration.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[non_exhaustive]
 pub struct CategoryDials {
     /// The level every rule of the category reports at, unless a rule has its own.
     pub level: Option<Level>,
@@ -51,10 +52,44 @@ pub struct CategoryDials {
     pub weight: Option<f64>,
     /// The density budget. `None` keeps the budget the rule data gives for the profile.
     pub max_per_100_words: Option<f64>,
+    /// The config cleared the budget with `"none"`: the category has no budget, and the
+    /// budget in the rule data does not apply. Wins over `max_per_100_words`.
+    pub budget_cleared: bool,
+}
+
+impl CategoryDials {
+    /// The same dials with a category level.
+    #[must_use]
+    pub const fn with_level(mut self, level: Option<Level>) -> Self {
+        self.level = level;
+        self
+    }
+
+    /// The same dials with a score weight.
+    #[must_use]
+    pub const fn with_weight(mut self, weight: Option<f64>) -> Self {
+        self.weight = weight;
+        self
+    }
+
+    /// The same dials with a density budget.
+    #[must_use]
+    pub const fn with_max_per_100_words(mut self, budget: Option<f64>) -> Self {
+        self.max_per_100_words = budget;
+        self
+    }
+
+    /// The same dials with the budget cleared or not.
+    #[must_use]
+    pub const fn with_budget_cleared(mut self, cleared: bool) -> Self {
+        self.budget_cleared = cleared;
+        self
+    }
 }
 
 /// The limits that fail a document's gate. An absent limit never fails.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[non_exhaustive]
 pub struct Thresholds {
     /// Most errors a document may carry.
     pub max_errors: Option<usize>,
@@ -68,8 +103,48 @@ pub struct Thresholds {
     pub min_score: Option<f64>,
 }
 
+impl Thresholds {
+    /// The same limits with a cap on errors.
+    #[must_use]
+    pub const fn with_max_errors(mut self, limit: Option<usize>) -> Self {
+        self.max_errors = limit;
+        self
+    }
+
+    /// The same limits with a cap on warnings.
+    #[must_use]
+    pub const fn with_max_warnings(mut self, limit: Option<usize>) -> Self {
+        self.max_warnings = limit;
+        self
+    }
+
+    /// The same limits with a cap on Unicode dash findings.
+    #[must_use]
+    pub const fn with_max_unicode_dashes(mut self, limit: Option<usize>) -> Self {
+        self.max_unicode_dashes = limit;
+        self
+    }
+
+    /// The same limits with a cap on weighted findings per 100 words.
+    #[must_use]
+    pub const fn with_max_total_per_100_words(mut self, limit: Option<f64>) -> Self {
+        self.max_total_per_100_words = limit;
+        self
+    }
+
+    /// The same limits with a lowest acceptable score.
+    #[must_use]
+    pub const fn with_min_score(mut self, limit: Option<f64>) -> Self {
+        self.min_score = limit;
+        self
+    }
+}
+
 /// The settings one run applies to every document.
+///
+/// Start from [`Settings::new`] and assign the fields you change.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Settings {
     /// The profile name, such as `normal`. It selects a category budget in the rule data.
     pub profile: NonEmptyString,
@@ -82,6 +157,10 @@ pub struct Settings {
     /// Levels the genre chain gives single rules. They sit below `rule_levels` and the
     /// `categories` levels: explicit configuration beats a genre default.
     pub genre_levels: BTreeMap<RuleId, Level>,
+    /// The profile's `severity_shift`. It moves the levels that come from the genre chain and
+    /// from rule definitions along suggestion, warning, error. A level in `rule_levels` or in
+    /// a category is final, and `off` stays off.
+    pub severity_shift: i64,
     /// Dials per category.
     pub categories: BTreeMap<CategoryId, CategoryDials>,
     /// The gate limits.
@@ -91,6 +170,21 @@ pub struct Settings {
     /// Words that capitalization rules exempt, such as the `[locale] allow` words and project
     /// terms. Case is ignored.
     pub allowed_words: Vec<String>,
+}
+
+impl Level {
+    /// The level moved `shift` steps along suggestion, warning, error, clamped. `off` stays off.
+    #[must_use]
+    pub fn shifted(self, shift: i64) -> Self {
+        const RANKS: [Severity; 3] = [Severity::Suggestion, Severity::Warning, Severity::Error];
+        let Self::On(severity) = self else {
+            return self;
+        };
+        let at = RANKS.iter().position(|r| *r == severity).unwrap_or(0);
+        let top = i64::try_from(RANKS.len() - 1).unwrap_or(0);
+        let to = (i64::try_from(at).unwrap_or(0) + shift).clamp(0, top);
+        Self::On(RANKS[usize::try_from(to).unwrap_or(0)])
+    }
 }
 
 impl Settings {
@@ -103,6 +197,7 @@ impl Settings {
             mode: Mode::Prose,
             rule_levels: BTreeMap::new(),
             genre_levels: BTreeMap::new(),
+            severity_shift: 0,
             categories: BTreeMap::new(),
             thresholds: Thresholds::default(),
             config_sources: Vec::new(),

@@ -50,7 +50,7 @@ fn load_at(fx: &Fixture, rel: &str) -> LoadedConfig {
 fn rejected(err: ConfigError) -> slopvac_config::Rejected {
     match err {
         ConfigError::Rejected(r) => *r,
-        other @ ConfigError::Io { .. } => panic!("expected a rejection, got {other}"),
+        other => panic!("expected a rejection, got {other}"),
     }
 }
 
@@ -875,6 +875,176 @@ fn level_precedence_follows_the_profile_contract() {
     }
 }
 
+/// A rule or category may be written qualified (`core:r`) or bare (`r`). The layer that wrote
+/// the entry decides, not the spelling of its key.
+#[test]
+fn level_by_any_key_follows_layers_not_spelling() {
+    use slopvac_config::LevelFrom::{Category, Rule};
+    type Want = Option<(&'static str, slopvac_config::LevelFrom)>;
+    let cases: Vec<(&str, &str, &str, Want)> = vec![
+        (
+            "a project bare rule key beats an extended qualified one",
+            "[rules]\n\"core:r\" = \"error\"\n",
+            "[rules]\nr = \"suggestion\"\n",
+            Some(("suggestion", Rule)),
+        ),
+        (
+            "a project qualified rule key beats an extended bare one",
+            "[rules]\nr = \"error\"\n",
+            "[rules]\n\"core:r\" = \"suggestion\"\n",
+            Some(("suggestion", Rule)),
+        ),
+        (
+            "a qualified category key is read",
+            "",
+            "[categories]\n\"core:cat\" = \"warning\"\n",
+            Some(("warning", Category)),
+        ),
+        (
+            "a project bare category key beats an extended qualified one",
+            "[categories]\n\"core:cat\" = \"error\"\n",
+            "[categories]\ncat = \"suggestion\"\n",
+            Some(("suggestion", Category)),
+        ),
+        (
+            "a project category beats an extended rule entry",
+            "[rules]\nr = \"error\"\n",
+            "[categories]\n\"core:cat\" = \"suggestion\"\n",
+            Some(("suggestion", Category)),
+        ),
+        (
+            "a rule entry at off holds against a category entry in the same file",
+            "",
+            "[rules]\nr = \"off\"\n[categories]\n\"core:cat\" = \"error\"\n",
+            Some(("off", Rule)),
+        ),
+    ];
+    for (name, base, project, want) in cases {
+        let fx = Fixture::new();
+        fx.write("base.toml", &format!("schema_version = 3\n\n{base}"));
+        fx.write(
+            "slopvac.toml",
+            &format!("schema_version = 3\nextends = [\"base.toml\"]\n\n{project}"),
+        );
+        let cfg = load(&fx.root().join("slopvac.toml"), &NoPresets).unwrap();
+        let r = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
+        let got = r
+            .level_by_any(&["core:r", "r"], &["core:cat", "cat"])
+            .map(|l| (l.level, l.from));
+        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+    }
+}
+
+/// When one layer writes the same rule or category under both spellings, the spelling listed
+/// first in the call wins; and a category floor set under one spelling holds against a level
+/// set under the other until a higher layer sets `off` under either.
+#[test]
+fn level_by_any_breaks_ties_and_merges_floors_across_spellings() {
+    use slopvac_config::LevelFrom::{Category, Rule};
+    type Want = Option<(&'static str, slopvac_config::LevelFrom)>;
+    type Keys = (&'static [&'static str], &'static [&'static str]);
+    let qualified_first: Keys = (&["core:r", "r"], &["core:cat", "cat"]);
+    let bare_first: Keys = (&["r", "core:r"], &["cat", "core:cat"]);
+    let cases: Vec<(&str, &str, &str, Keys, Want)> = vec![
+        (
+            "same file, rules: the first listed spelling wins (qualified)",
+            "",
+            "[rules]\nr = \"error\"\n\"core:r\" = \"suggestion\"\n",
+            qualified_first,
+            Some(("suggestion", Rule)),
+        ),
+        (
+            "same file, rules: the first listed spelling wins (bare)",
+            "",
+            "[rules]\nr = \"error\"\n\"core:r\" = \"suggestion\"\n",
+            bare_first,
+            Some(("error", Rule)),
+        ),
+        (
+            "same file, categories: the first listed spelling wins",
+            "",
+            "[categories]\ncat = \"error\"\n\"core:cat\" = \"warning\"\n",
+            qualified_first,
+            Some(("warning", Category)),
+        ),
+        (
+            "a floor under the qualified spelling lifts a level set under the bare one",
+            "[categories.\"core:cat\"]\nminimum_severity = \"error\"\n",
+            "[categories]\ncat = \"suggestion\"\n",
+            qualified_first,
+            Some(("error", Category)),
+        ),
+        (
+            "a floor under the bare spelling lifts a level set under the qualified one",
+            "[categories.cat]\nminimum_severity = \"warning\"\n",
+            "[categories]\n\"core:cat\" = \"suggestion\"\n",
+            qualified_first,
+            Some(("warning", Category)),
+        ),
+        (
+            "off under the other spelling in a higher layer clears the floor",
+            "[categories.cat]\nminimum_severity = \"error\"\n",
+            "[categories.\"core:cat\"]\nseverity = \"suggestion\"\nminimum_severity = \"off\"\n",
+            qualified_first,
+            Some(("suggestion", Category)),
+        ),
+        (
+            "off in a lower layer does not cancel a floor from a higher one",
+            "[categories.\"core:cat\"]\nminimum_severity = \"off\"\n",
+            "[categories.cat]\nseverity = \"suggestion\"\nminimum_severity = \"warning\"\n",
+            qualified_first,
+            Some(("warning", Category)),
+        ),
+    ];
+    for (name, base, project, (rules, categories), want) in cases {
+        let fx = Fixture::new();
+        fx.write("base.toml", &format!("schema_version = 3\n\n{base}"));
+        fx.write(
+            "slopvac.toml",
+            &format!("schema_version = 3\nextends = [\"base.toml\"]\n\n{project}"),
+        );
+        let cfg = load(&fx.root().join("slopvac.toml"), &NoPresets).unwrap();
+        let r = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
+        let got = r.level_by_any(rules, categories).map(|l| (l.level, l.from));
+        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+    }
+}
+
+#[test]
+fn a_missing_extends_target_is_named_without_the_directories_above_the_root() {
+    let fx = Fixture::new();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_file = outside.path().join("my base.toml");
+    let inside_file = fx.root().join("sub dir").join("gone.toml");
+    for (target, want) in [
+        (outside_file.as_path(), "`<external>/my base.toml`"),
+        (inside_file.as_path(), "`sub dir/gone.toml`"),
+    ] {
+        fx.write(
+            "slopvac.toml",
+            &format!(
+                "schema_version = 3\nextends = [{:?}]\n",
+                target.display().to_string()
+            ),
+        );
+        let err = load(&fx.root().join("slopvac.toml"), &NoPresets).unwrap_err();
+        let diagnostic = &rejected(err).diagnostics[0];
+        assert_eq!(diagnostic.code, Code::ExtendsMissing);
+        assert!(
+            diagnostic
+                .message
+                .starts_with(&format!("cannot read the extended config {want}")),
+            "{}",
+            diagnostic.message
+        );
+        assert!(
+            !diagnostic
+                .message
+                .contains(outside.path().to_str().unwrap())
+        );
+    }
+}
+
 #[test]
 fn a_read_failure_renders_with_its_code() {
     let err = load(Path::new("missing/slopvac.toml"), &NoPresets).unwrap_err();
@@ -916,4 +1086,66 @@ fn an_extends_path_in_plain_drive_form_shows_relative_to_a_verbatim_root() {
         r.source(&["locale"]),
         Some(&src(Layer::Extends, "../shared/base.toml", 2, 1))
     );
+}
+
+/// A sparse file of `len` bytes, so a test crosses a cap without writing the bytes.
+fn sparse(path: &Path, len: u64) {
+    let file = fs::File::create(path).unwrap();
+    file.set_len(len).unwrap();
+}
+
+#[test]
+fn a_config_one_byte_over_the_cap_is_refused_with_its_code() {
+    let fx = Fixture::new();
+    let p = fx.root().join("slopvac.toml");
+    sparse(&p, slopvac_config::MAX_CONFIG_BYTES + 1);
+    let err = load(&p, &NoPresets).unwrap_err();
+    assert_eq!(err.code(), Code::TooLarge);
+    assert_eq!(err.exit_code(), 2);
+    assert!(
+        err.render().starts_with("error[config-too-large]: "),
+        "{}",
+        err.render()
+    );
+}
+
+#[test]
+fn a_config_exactly_at_the_cap_is_read() {
+    let fx = Fixture::new();
+    let p = fx.write("slopvac.toml", "schema_version = 3\n");
+    let pad = "#".repeat(usize::try_from(slopvac_config::MAX_CONFIG_BYTES).unwrap() - 19);
+    fs::write(&p, format!("schema_version = 3\n{pad}")).unwrap();
+    assert!(load(&p, &NoPresets).is_ok());
+}
+
+#[test]
+fn an_extended_config_over_the_cap_is_refused_with_its_code() {
+    let fx = Fixture::new();
+    sparse(
+        &fx.root().join("big.toml"),
+        slopvac_config::MAX_CONFIG_BYTES + 1,
+    );
+    let p = fx.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"big.toml\"]\n",
+    );
+    let err = load(&p, &NoPresets).unwrap_err();
+    assert_eq!(err.code(), Code::TooLarge);
+}
+
+#[test]
+fn a_legacy_config_file_over_the_cap_is_refused_during_discovery() {
+    let fx = Fixture::new();
+    for name in [".slopvac.toml", "pyproject.toml"] {
+        let dir = name.trim_start_matches('.');
+        git_dir(&fx, dir);
+        sparse(
+            &fx.root().join(dir).join(name),
+            slopvac_config::MAX_CONFIG_BYTES + 1,
+        );
+        let err = Discovery::new(&NoPresets)
+            .nearest(&fx.root().join(dir))
+            .unwrap_err();
+        assert_eq!(err.code(), Code::TooLarge, "{name}");
+    }
 }

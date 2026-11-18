@@ -28,7 +28,7 @@ impl fmt::Display for Target {
 pub struct Reference {
     /// Registry host with optional port, for example `ghcr.io`.
     pub registry: String,
-    /// Repository path, for example `srobroek/slopvac-packs/core`.
+    /// Repository path, for example `slopvac/slopvac-packs/core`.
     pub repository: String,
     /// Tag or digest. A digest wins when both are present.
     pub target: Target,
@@ -62,7 +62,7 @@ fn valid_repository(s: &str) -> bool {
         })
 }
 
-fn valid_tag(s: &str) -> bool {
+pub(crate) fn valid_tag(s: &str) -> bool {
     let mut bytes = s.bytes();
     s.len() <= 128
         && bytes
@@ -142,10 +142,10 @@ mod tests {
 
     #[test]
     fn parses_tag_digest_and_port_forms() {
-        let r = Reference::parse("ghcr.io/srobroek/packs/core:1.2.3").unwrap();
+        let r = Reference::parse("ghcr.io/slopvac/packs/core:1.2.3").unwrap();
         assert_eq!(
             (r.registry.as_str(), r.repository.as_str()),
-            ("ghcr.io", "srobroek/packs/core")
+            ("ghcr.io", "slopvac/packs/core")
         );
         assert_eq!(r.target, Target::Tag("1.2.3".into()));
         let r = Reference::parse(

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use slopvac_model::{Edit, Finding, Notice, NoticeLevel, RuleId, Severity, Span};
 
+use crate::binary_host::is_binary_host;
 use crate::linter::{Check, Linter, Problem};
 
 /// One diagnostic-worthy item: a finding, a check problem or a failure notice.
@@ -131,7 +132,8 @@ pub(crate) fn analyze(
             .collect(),
         Err(e) => vec![Item::incomplete(&e.0)],
     };
-    for check in checks {
+    // A binary container is not text: its checks would read bytes as prose.
+    for check in checks.iter().filter(|_| !is_binary_host(path)) {
         items.extend(check.check(path, text).into_iter().map(Item::from_problem));
     }
     Analysis {

@@ -813,10 +813,7 @@ fn a_whole_file_range_survives_a_lone_cr() {
 }
 
 fn options(limits: Limits) -> Options {
-    Options {
-        limits,
-        ..Options::default()
-    }
+    Options::default().with_limits(limits)
 }
 
 #[test]
@@ -824,10 +821,7 @@ fn output_over_the_cap_is_an_incomplete_error() {
     let repo = repo!();
     repo.write("doc.md", "x\n");
     repo.commit("base");
-    let limits = Limits {
-        max_stdout: 8,
-        ..Limits::default()
-    };
+    let limits = Limits::default().with_max_stdout(8);
 
     let err =
         changed_lines_with(&repo.root, &DiffScope::WorkingTree, &options(limits)).unwrap_err();
@@ -904,10 +898,9 @@ mod runaway {
     }
 
     fn run(repo: &Repo, shim: &Shim, limits: Limits) -> DiffError {
-        let options = Options {
-            limits,
-            program: shim.program.clone().into_os_string(),
-        };
+        let options = Options::default()
+            .with_limits(limits)
+            .with_program(shim.program.clone());
         changed_lines_with(&repo.root, &DiffScope::WorkingTree, &options).unwrap_err()
     }
 
@@ -919,10 +912,7 @@ mod runaway {
         let mut timeout = Duration::from_millis(500);
         for _ in 0..8 {
             let shim = shim("sleep 600");
-            let limits = Limits {
-                timeout,
-                ..Limits::default()
-            };
+            let limits = Limits::default().with_timeout(timeout);
             let err = run(repo, &shim, limits);
             assert!(matches!(err, DiffError::TimedOut(_)), "{err}");
             if shim.pid.exists() {
@@ -950,18 +940,14 @@ mod runaway {
         let repo = repo!();
         for tail in ["true", "false", "head -c 30000 /dev/zero"] {
             let shim = shim(tail);
-            let limits = Limits {
-                max_stdout: 1024,
-                ..Limits::default()
-            };
+            let limits = Limits::default().with_max_stdout(1024);
 
             let result = changed_lines_with(
                 &repo.root,
                 &DiffScope::WorkingTree,
-                &Options {
-                    limits,
-                    program: shim.program.clone().into_os_string(),
-                },
+                &Options::default()
+                    .with_limits(limits)
+                    .with_program(shim.program.clone()),
             );
 
             assert!(result.is_err(), "{tail}");
@@ -978,10 +964,7 @@ mod runaway {
         let repo = repo!();
         for _ in 0..10 {
             let shim = shim("head -c 300000 /dev/zero");
-            let limits = Limits {
-                max_stdout: 1024,
-                ..Limits::default()
-            };
+            let limits = Limits::default().with_max_stdout(1024);
 
             let err = run(&repo, &shim, limits);
 
@@ -995,10 +978,7 @@ mod runaway {
     fn output_over_the_cap_kills_and_reaps_git_and_its_children() {
         let repo = repo!();
         let shim = shim("yes");
-        let limits = Limits {
-            max_stdout: 1024,
-            ..Limits::default()
-        };
+        let limits = Limits::default().with_max_stdout(1024);
 
         let err = run(&repo, &shim, limits);
 
@@ -1015,10 +995,7 @@ fn a_changed_file_over_the_read_cap_is_an_error_but_membership_needs_no_read() {
     let base = repo.commit("base");
     repo.write("doc.md", "a\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n");
     repo.commit("grow");
-    let limits = Limits {
-        max_file: 16,
-        ..Limits::default()
-    };
+    let limits = Limits::default().with_max_file(16);
 
     let changed = changed_lines_with(&repo.root, &since(&base), &options(limits)).unwrap();
 
@@ -1029,6 +1006,10 @@ fn a_changed_file_over_the_read_cap_is_an_error_but_membership_needs_no_read() {
         matches!(err, DiffError::FileTooLarge { limit: 16, .. }),
         "{err}"
     );
+    assert!(
+        err.to_string().starts_with("[document-too-large] "),
+        "{err}"
+    );
 }
 
 #[test]
@@ -1037,10 +1018,7 @@ fn a_whole_file_answer_does_not_read_an_oversized_untracked_file() {
     repo.write("anchor.md", "x\n");
     repo.commit("base");
     repo.write("new.md", "0123456789012345678901234567890123456789\n");
-    let limits = Limits {
-        max_file: 8,
-        ..Limits::default()
-    };
+    let limits = Limits::default().with_max_file(8);
 
     let changed =
         changed_lines_with(&repo.root, &DiffScope::WorkingTree, &options(limits)).unwrap();

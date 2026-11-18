@@ -8,8 +8,8 @@
   </picture>
 </p>
 
-[![CI](https://github.com/srobroek/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/srobroek/slopvac/actions/workflows/test.yml)
-[![Security](https://github.com/srobroek/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/srobroek/slopvac/actions/workflows/security.yml)
+[![CI](https://github.com/slopvac/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/slopvac/slopvac/actions/workflows/test.yml)
+[![Security](https://github.com/slopvac/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/slopvac/slopvac/actions/workflows/security.yml)
 [![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)
 
 ---
@@ -211,14 +211,13 @@ checklist. The agent's own model runs the review.
 
 ```yaml
 repos:
-  - repo: https://github.com/srobroek/slopvac
+  - repo: https://github.com/slopvac/slopvac
     rev: v2.18.1 # x-release-please-version
     hooks:
       - id: slopvac
 ```
 
-The hook runs the `slopvac` binary on your `PATH`. Use `slopvac-strict` for the
-bundled `core:legacy-strict` style. The `--style` option is pending in the 3.0 CLI, so the hook command will change to the final option before release. Setup for prek, lefthook, and hk is in [docs/hooks.md](docs/hooks.md).
+The hook runs the `slopvac` binary on your `PATH`. Set the style in `slopvac.toml`; the 3.0 CLI has no `--profile` or `--style` option. Setup for prek, lefthook, and hk is in [docs/hooks.md](docs/hooks.md).
 
 ### GitHub Actions
 
@@ -226,7 +225,7 @@ Add these steps to a workflow job:
 
 ```yaml
 - uses: actions/checkout@v7
-- uses: srobroek/slopvac@v2.18.1 # x-release-please-version
+- uses: slopvac/slopvac@v2.18.1 # x-release-please-version
   with:
     paths: README.md docs/
     profile: normal
@@ -275,7 +274,7 @@ hosted [Jev](https://www.typesafeai.org/jev) and local/open models such as
 [Kev](https://github.com/jaredpalmer/kev), plus the
 [SemIf](https://github.com/theoleecj/semif) direct-logit scoring approach.
 The design appears in
-[issue #162](https://github.com/srobroek/slopvac/issues/162).
+[issue #162](https://github.com/slopvac/slopvac/issues/162).
 
 The proposed layer would run **after** Slopvac parses the document and generates candidate spans. It has two uses:
 
@@ -310,7 +309,7 @@ Exact source locations remain host-authoritative. The semantic layer remains sep
 
 ## Contributing and security
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidance. Use [SECURITY.md](SECURITY.md) to report vulnerabilities in private. File bugs, rule findings, and proposals with an [issue form](https://github.com/srobroek/slopvac/issues/new/choose). Do not post security reports as issues.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidance. Use [SECURITY.md](SECURITY.md) to report vulnerabilities in private. File bugs, rule findings, and proposals with an [issue form](https://github.com/slopvac/slopvac/issues/new/choose). Do not post security reports as issues.
 
 ## License
 

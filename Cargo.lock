@@ -687,6 +687,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "etcetera"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de48cc4d1c1d97a20fd819def54b890cadde72ed3ad0c614822a0a433361be96"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "fancy-regex"
 version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2269,6 +2279,8 @@ version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
+ "foldhash",
+ "indexmap",
  "itoa",
  "memchr",
  "serde",
@@ -2407,6 +2419,8 @@ dependencies = [
  "serde",
  "serde_json",
  "slopvac-agents",
+ "slopvac-config",
+ "slopvac-engine",
  "slopvac-lsp",
  "slopvac-migrate",
  "slopvac-model",
@@ -2440,6 +2454,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "slopvac-comments"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+ "toml",
+ "tree-sitter",
+ "tree-sitter-c",
+ "tree-sitter-go",
+ "tree-sitter-java",
+ "tree-sitter-proto",
+]
+
+[[package]]
 name = "slopvac-config"
 version = "0.0.0"
 dependencies = [
@@ -2451,6 +2478,7 @@ dependencies = [
  "saphyr",
  "serde",
  "serde_json",
+ "slopvac-fs",
  "strsim",
  "tempfile",
  "thiserror",
@@ -2480,6 +2508,7 @@ dependencies = [
  "base64",
  "flate2",
  "roxmltree",
+ "rstest",
  "slopvac-model",
  "slopvac-parse",
 ]
@@ -2498,12 +2527,15 @@ dependencies = [
  "proptest",
  "pulldown-cmark",
  "rayon",
+ "rstest",
  "rustix",
  "serde",
  "serde_json",
  "similar 3.2.1",
  "slopvac-context",
  "slopvac-diagrams",
+ "slopvac-engine",
+ "slopvac-fs",
  "slopvac-model",
  "slopvac-parse",
  "slopvac-pos",
@@ -2516,6 +2548,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "slopvac-fs"
+version = "0.0.0"
+dependencies = [
+ "cap-fs-ext",
+ "cap-std",
+ "etcetera",
+ "proptest",
+ "rustix",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "slopvac-lsp"
 version = "0.0.0"
 dependencies = [
@@ -2524,6 +2569,7 @@ dependencies = [
  "frontmatter-spans",
  "lsp-server",
  "lsp-types",
+ "rstest",
  "serde",
  "serde_json",
  "slopvac-engine",
@@ -2542,6 +2588,10 @@ dependencies = [
  "serde_json",
  "similar 3.2.1",
  "slopvac-agents",
+ "slopvac-config",
+ "slopvac-engine",
+ "slopvac-model",
+ "slopvac-rules",
  "tempfile",
  "thiserror",
  "toml",
@@ -2554,6 +2604,7 @@ version = "0.0.0"
 dependencies = [
  "jsonschema",
  "proptest",
+ "rstest",
  "schemars",
  "serde",
  "serde_json",
@@ -2645,6 +2696,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "slopvac-fs",
  "slopvac-model",
  "slopvac-text",
  "tempfile",
@@ -2664,6 +2716,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slopvac-config",
+ "slopvac-fs",
  "tempfile",
  "thiserror",
 ]
@@ -2676,6 +2729,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "slopvac-fs",
  "tempfile",
  "thiserror",
  "toml",
@@ -2746,6 +2800,12 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "string_cache"
@@ -2993,6 +3053,66 @@ dependencies = [
  "sharded-slab",
  "thread_local",
  "tracing-core",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.26.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17ebdd3a5a7e28a1890b876fdbd0c3c0fe0a6336cffaa104f11b9f720c9daa29"
+dependencies = [
+ "cc",
+ "regex",
+ "regex-syntax",
+ "serde_json",
+ "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-c"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9b2eb57a55fed6b00812912e730b7a275cf4fe98bfd6a5d76263d4438371728"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-go"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8560a4d2f835cc0d4d2c2e03cbd0dde2f6114b43bc491164238d333e28b16ea"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-java"
+version = "0.23.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0aa6cbcdc8c679b214e616fd3300da67da0e492e066df01bcf5a5921a71e90d6"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0af592be68c579aa78a16846bd19422978c3c52e438523d45ff5d1bff1f9d4a"
+
+[[package]]
+name = "tree-sitter-proto"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c93b6f1ed20de442e900eb636f2176af6063953dfaa9f76bf168dd3b490a3a1"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
 ]
 
 [[package]]

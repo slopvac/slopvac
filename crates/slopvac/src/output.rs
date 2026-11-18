@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use clap::{ArgMatches, parser::ValueSource};
 use slopvac_report::{Format, render};
 
-use crate::engine_stub::RunOutcome;
+use crate::engine::RunOutcome;
 use crate::errors::CliError;
 
 /// Shows a written report to the user.
