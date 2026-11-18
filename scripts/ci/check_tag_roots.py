@@ -5,10 +5,10 @@ Slopvac has one root commit. A tag whose commit has any other root, or more than
 one root, comes from an unrelated history. Two modes share the same check:
 
 * default: check every tag in the repository in the current directory;
-* --pre-push: check only the pushed tags, with no network access. It reads git's
-  pre-push lines from stdin. prek consumes those lines and passes one ref in
-  PRE_COMMIT_REMOTE_BRANCH and PRE_COMMIT_TO_REF instead, so the check falls back
-  to that ref when stdin carries none.
+* --pre-push: the same check, run before a push with no network access, with a
+  message that says how to delete the offending tags locally. It ignores which
+  refs the push carries, because prek does not forward them: a foreign tag in the
+  clone is refused whatever is being pushed.
 
 Exit 0 when every checked tag passes, 1 when a tag fails, 2 when git fails.
 """
@@ -17,15 +17,16 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import subprocess
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 
 # The one place the root is recorded. SLOPVAC_ROOT_COMMIT overrides it for tests.
 ROOT_COMMIT = "b516adb5ed8789b2b737c5876f75f2fbc809e755"
-ZERO_SHA = "0" * 40
 TAG_PREFIX = "refs/tags/"
 LIST_LIMIT = 50
+HINT_LIMIT = 10
 
 
 class GitError(RuntimeError):
@@ -62,30 +63,18 @@ def all_tags() -> list[tuple[str, str]]:
     ]
 
 
-def pushed_tags(lines: Iterable[str]) -> list[tuple[str, str]]:
-    """Tag refs from pre-push lines; deletions and other refs are skipped."""
-    pairs = []
-    for line in lines:
-        fields = line.split()
-        if len(fields) != 4:
-            continue
-        _local_ref, local_sha, remote_ref, _remote_sha = fields
-        if local_sha == ZERO_SHA or not remote_ref.startswith(TAG_PREFIX):
-            continue
-        pairs.append((remote_ref.removeprefix(TAG_PREFIX), local_sha))
-    return pairs
+def delete_hint(bad: list[str], root: str) -> str:
+    """A command that deletes the offending tags from the local clone only."""
+    if len(bad) <= HINT_LIMIT:
+        return "git tag -d " + " ".join(shlex.quote(name) for name in bad)
+    return (
+        "git for-each-ref --format='%(refname:short)' refs/tags | "
+        'while read -r t; do [ "$(git rev-list --max-parents=0 "$t^{commit}")" = '
+        f'"{root}" ] || echo "$t"; done | xargs git tag -d'
+    )
 
 
-def prek_tag(environ: Mapping[str, str]) -> list[tuple[str, str]]:
-    """The one pushed ref prek exposes through its environment, if it is a tag."""
-    ref = environ.get("PRE_COMMIT_REMOTE_BRANCH", "")
-    sha = environ.get("PRE_COMMIT_TO_REF", "")
-    if not ref.startswith(TAG_PREFIX) or not sha or sha == ZERO_SHA:
-        return []
-    return [(ref.removeprefix(TAG_PREFIX), sha)]
-
-
-def report(bad: list[str], checked: int, root: str) -> None:
+def report(bad: list[str], checked: int, root: str, hint: bool) -> None:
     print(
         f"error: {len(bad)} of {checked} tags are not in slopvac's history "
         f"(expected the only root commit to be {root}).",
@@ -95,6 +84,11 @@ def report(bad: list[str], checked: int, root: str) -> None:
         print(f"  {name}", file=sys.stderr)
     if len(bad) > LIST_LIMIT:
         print(f"  ... and {len(bad) - LIST_LIMIT} more", file=sys.stderr)
+    if hint:
+        print(
+            f"Push refused. Delete them locally with:\n  {delete_hint(bad, root)}",
+            file=sys.stderr,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -102,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--pre-push",
         action="store_true",
-        help="read pre-push lines from stdin instead of scanning every tag",
+        help="pre-push mode: same check, with a hint for deleting local tags",
     )
     parser.add_argument(
         "--root",
@@ -111,17 +105,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        if args.pre_push:
-            lines = [] if sys.stdin.isatty() else sys.stdin.read().splitlines()
-            pairs = pushed_tags(lines) or prek_tag(os.environ)
-        else:
-            pairs = all_tags()
+        pairs = all_tags()
         bad = offending(pairs, args.root)
     except GitError as err:
         print(f"error: {err}", file=sys.stderr)
         return 2
     if bad:
-        report(bad, len(pairs), args.root)
+        report(bad, len(pairs), args.root, args.pre_push)
         return 1
     print(f"checked {len(pairs)} tags: 0 offending")
     return 0
