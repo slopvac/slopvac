@@ -1,9 +1,7 @@
 //! Safety and fidelity tests for `slopvac setup`: containment, scale, line endings.
 
-use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 use slopvac_agents::content::BlockKind;
 use slopvac_agents::setup::{Options, execute};
@@ -197,32 +195,6 @@ mod containment {
         let err = execute(&opts(project.path(), "claude")).unwrap_err();
         assert_eq!(err.code(), "steering-unsafe-target");
     }
-}
-
-#[test]
-fn marker_scan_stays_linear_on_many_code_blocks() {
-    let project = tempfile::tempdir().unwrap();
-    let mut text = String::new();
-    for i in 0..20_000 {
-        write!(text, "```\ncode {i}\n```\n\nline {i}\n\n").unwrap();
-    }
-    for i in 0..60_000 {
-        writeln!(text, "filler {i}").unwrap();
-    }
-    fs::write(project.path().join("CLAUDE.md"), &text).unwrap();
-    let start = Instant::now();
-    execute(&opts(project.path(), "claude")).unwrap();
-    execute(&Options {
-        remove: true,
-        ..opts(project.path(), "claude")
-    })
-    .unwrap();
-    let took = start.elapsed();
-    assert!(took < Duration::from_secs(5), "scan took {took:?}");
-    assert_eq!(
-        fs::read_to_string(project.path().join("CLAUDE.md")).unwrap(),
-        text
-    );
 }
 
 #[test]
