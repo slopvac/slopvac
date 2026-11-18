@@ -33,3 +33,20 @@ fn a_heading_pattern_that_hits_the_match_limit_is_an_error_for_a_block_it_could_
     ));
     assert!(t.tag(&doc).is_err());
 }
+
+#[test]
+fn a_matching_ancestor_heading_spares_a_descendant_heading_that_hits_the_match_limit() {
+    // `aaaa` matches the pattern. The 64 `a`s and a `b` beneath it would hit the match limit,
+    // but the walk stops at the first matching heading and never reaches that one.
+    let src = format!("# aaaa\n\n## {}b\n\nText.\n", "a".repeat(64));
+    let doc = PlainDocument::from_markdown("a.md", &src);
+    let t = tagger(&format!(
+        "  block_kind: paragraph\n  heading_path: '{CATASTROPHIC}'\n"
+    ));
+    let tags = t.tag(&doc).unwrap();
+    let got: Vec<(&str, &str)> = tags
+        .iter()
+        .map(|tag| (&src[tag.span.clone()], tag.evidence.as_str()))
+        .collect();
+    assert_eq!(got, [("Text.", "t: block")]);
+}
