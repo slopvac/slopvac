@@ -689,6 +689,10 @@ class Journal:
         entry = self._entries.get(job)
         return entry if entry and not entry.get("error") else None
 
+    def has(self, job: str) -> bool:
+        """Whether the job ran at all, failed or not (it was spent either way)."""
+        return job in self._entries
+
     def record(
         self,
         job: str,
@@ -960,7 +964,7 @@ def frozen_candidates(
     for task, author, repeat, answer in found:
         review_task = authored_review_task(task, answer)
         done.append(review_job_id(review_task, author["name"], only_model, repeat))
-    overlap = sum(1 for job in done if candidates.done(job))
+    overlap = sum(1 for job in done if candidates.has(job))
     if overlap:
         raise ModelEvalError(
             f"{overlap} jobs of {only_model} already ran in {candidates.path}; "

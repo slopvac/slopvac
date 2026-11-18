@@ -480,6 +480,82 @@ def test_a_selection_the_frozen_journal_already_ran_is_refused_before_any_call(
     assert not (tmp_path / "y.ledger.jsonl").exists()
 
 
+def failing_c(model):
+    if model["name"] != "c":
+        return fake_ask(model)
+
+    def ask(prompt):
+        raise models.CallFailed("boom", 1)
+
+    return ask
+
+
+@pytest.fixture
+def frozen_with_failed_c(tmp_path):
+    """An earlier run in which every call of model c failed."""
+    path = tmp_path / "failed-c.journal.jsonl"
+    models.execute(
+        tiny_tasks(),
+        roster("a", "b", "c"),
+        3,
+        NO_FINDINGS,
+        ask_for=failing_c,
+        journal=models.Journal(path),
+    )
+    return path
+
+
+@pytest.mark.parametrize("command", ["plan", "run"])
+def test_failed_calls_in_the_frozen_journal_still_count_as_already_run(
+    command, frozen_with_failed_c, tmp_path, monkeypatch, capsys
+):
+    out = tmp_path / "z.json"
+    assert add_c_run(monkeypatch, frozen_with_failed_c, out, command=command) == 2
+    assert "15 jobs of c already ran" in capsys.readouterr().err
+    assert not (tmp_path / "z.ledger.jsonl").exists()
+
+
+def test_execute_makes_no_call_for_a_model_whose_frozen_calls_all_failed(
+    frozen_with_failed_c,
+):
+    calls: list[str] = []
+    with pytest.raises(models.ModelEvalError, match="15 jobs of c already ran"):
+        models.execute(
+            tiny_tasks(),
+            roster("a", "b", "c"),
+            3,
+            NO_FINDINGS,
+            ask_for=counting_ask(calls),
+            only_model="c",
+            candidates=models.Journal(frozen_with_failed_c),
+        )
+    assert calls == []
+
+
+def test_resume_on_the_runs_own_journal_still_retries_failed_jobs(tmp_path):
+    journal = tmp_path / "own.journal.jsonl"
+    first = models.execute(
+        tiny_tasks(),
+        roster("a", "b", "c"),
+        3,
+        NO_FINDINGS,
+        ask_for=failing_c,
+        journal=models.Journal(journal),
+    )
+    assert first["failed_calls"] > 0
+    calls: list[str] = []
+    second = models.execute(
+        tiny_tasks(),
+        roster("a", "b", "c"),
+        3,
+        NO_FINDINGS,
+        ask_for=counting_ask(calls),
+        journal=models.Journal(journal),
+    )
+    assert second["failed_calls"] == 0
+    assert calls.count("c") >= 9  # c's own failed answers were asked again
+
+
 def test_execute_makes_no_call_for_a_selection_the_frozen_journal_ran(frozen_with_c):
     calls: list[str] = []
     with pytest.raises(models.ModelEvalError, match="15 jobs of c already ran"):
