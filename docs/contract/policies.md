@@ -24,11 +24,11 @@ Paragraphs and bullets labeled **2.x behavior** describe `packages/slopvac-lint`
 |---|---|---|---|
 | Update check | A detached process asks `https://pypi.org/pypi/slopvac/json` for the latest version and caches the result for 24 hours (`update_notice.py`). Any command except `prime` may start it. Machine-readable output or a report file prevents it (`cli.py`). It runs only when stderr is a TTY. | Check the registry that matches the install method (`update-informer`). Only `lint`, `doctor`, `prime`, and `self update` may start it. Cache the result for 24 hours. Show it in `prime`, in JSON `notices`, and in `--version --json`, so agents see it. | `slopvac-8l4.12.4` |
 | `self update` | None. | Runs only for installs from the slopvac installer. It downloads the release archive, verifies the minisign signature, and then replaces the binary. | `slopvac-8l4.12.4`, `slopvac-8l4.13.3` |
-| OCI pack and plugin fetch | None. 2.x has no packs. | `plugins sync`, `plugins update`, and `pack publish` pull or push OCI artifacts. The client is hand-written on `ureq`. Initial support covers the documented GHCR flows (anonymous and basic tokens). `docker_credential` helpers extend this to other registries within the tested scope of the owning bead. | `slopvac-8l4.9.2`, `slopvac-8l4.9.3`, `slopvac-8l4.9.9` |
-| Release-archive packs | None. | `plugins sync` downloads a pack or plugin archive over HTTPS and checks the digest that the lockfile pins. | `slopvac-8l4.9.3` |
-| Git packs | None. | A pack pinned to a git commit clones during `plugins sync` only. | `slopvac-8l4.9.3` |
+| OCI plugin fetch | None. 2.x has no plugins. | `plugins sync`, `plugins update`, and `plugins publish` pull or push OCI artifacts. The client is hand-written on `ureq`. Initial support covers the documented GHCR flows (anonymous and basic tokens). `docker_credential` helpers extend this to other registries within the tested scope of the owning bead. | `slopvac-8l4.9.2`, `slopvac-8l4.9.3`, `slopvac-8l4.9.9` |
+| Release-archive plugins | None. | `plugins sync` downloads a plugin archive over HTTPS and checks the digest that the lockfile pins. | `slopvac-8l4.9.3` |
+| Git plugins | None. | A plugin pinned to a git commit clones during `plugins sync` only. | `slopvac-8l4.9.3` |
 | Outdated check | None. | `plugins outdated` lists newer digests and versions from the pinned sources. | `slopvac-8l4.9.3` |
-| Pack index search | None. | `packs search` reads the published index over HTTPS. | `slopvac-8l4.9.8` |
+| Plugin index search | None. | `plugins search` reads the published index over HTTPS. | `slopvac-8l4.9.8` |
 | Issue submission | `prime report` prints a workflow that tells an agent to run `gh issue create` after the user approves the exact post (`guidance.py`). The `gh` program connects. | `slopvac report` reads a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token` and posts the issue. Without a token it opens a prefilled issue-form URL. Both paths need the consent step in section 1.5. | `slopvac-8l4.12.6` |
 | Model-provider hooks | None. | A plugin that implements the model-provider hook may contact a model service. Slopvac core does not. Consent rules apply (section 1.5). | `slopvac-8l4.9.6`, `slopvac-8l4.11.3` |
 | LSP server | None. | `slopvac lsp` talks to the editor over stdio and opens no connection. | `slopvac-8l4.12.7` |
@@ -60,9 +60,9 @@ Offline is sticky. If any source sets it, no other source can unset it, and no f
 In offline mode:
 
 - A command that needs the network exits 2 with the code `offline-network-needed` and the message `offline: <command> needs the network`. It does not retry or fall back.
-- Packs that the lockfile pins and that sit in the local cache load normally.
-- A pack missing from the cache exits 2 with the code `offline-pack-missing`. The message names the pack and the digest.
-- `plugins sync` succeeds from the cache alone. It verifies digests against `.slopvac/packs.lock` and reports each missing pack.
+- Plugins that the lockfile pins and that sit in the local cache load normally.
+- A plugin missing from the cache exits 2 with the code `offline-pack-missing`. The message names the plugin and the digest.
+- `plugins sync` succeeds from the cache alone. It verifies digests against `.slopvac/packs.lock` and reports each missing plugin.
 
 These opt-outs apply to the update check only:
 
@@ -80,7 +80,7 @@ Owners: `slopvac-8l4.12.1` for the global flag and environment, `slopvac-8l4.4.2
 - In CI the update check stays off.
 - No code path prompts, in CI or anywhere else.
 - `plugins sync` in CI runs from the lockfile. It fails with exit 2 when the lockfile is missing or a digest differs, and it leaves the lockfile as it found it.
-- A GitHub Action run that needs packs runs `plugins sync` as a separate, named step. The lint step runs with `--offline`.
+- A GitHub Action run that needs plugins runs `plugins sync` as a separate, named step. The lint step runs with `--offline`.
 
 Owners: `slopvac-8l4.9.3` for lockfile behavior, `slopvac-8l4.13.6` for the Action.
 
@@ -112,6 +112,8 @@ Owners: `slopvac-8l4.12.6`, `slopvac-8l4.9.6`, `slopvac-8l4.11.3`.
 - CI has one explicit exception: the `SLOPVAC_TRUST` environment variable, which `slopvac-8l4.9.4` defines. A person writes it into the CI configuration, and it names what to trust. It is configuration, not a prompt, and no tool sets it on its own.
 - OCI artifacts carry minisign signatures as manifest layers. Slopvac verifies the signature before extraction, and a missing or invalid signature makes `sync` fail with exit 2.
 - Release archives verify against the release signature (`self update`).
+- The binary compiles in two keys. The release key signs release archives and the revocation list, and it is the revocation root. The plugins key signs first-party plugins in the `slopvac` namespace and the first-party plugin index. The release key can revoke the plugins key ([packs.md](packs.md), section 10).
+- The namespace `slopvac` verifies against the compiled plugins key only, and no user pin applies to it. `core` is reserved for the built-in plugin and fails closed ([packs.md](packs.md), section 9).
 - Local folders and git commits carry no signature. A git pin names a commit, and the trust hash covers the content.
 
 Owners: `slopvac-8l4.9.4`, `slopvac-8l4.9.5`, `slopvac-8l4.9.11`.
@@ -129,7 +131,7 @@ Owners: `slopvac-8l4.9.4`, `slopvac-8l4.9.5`, `slopvac-8l4.9.11`.
 - Logs never contain document text, finding text, matched spans, front matter values, or terms.
 - Logs record document paths relative to the project root. A path outside the root appears as `<external>/<file name>`. Stdin appears as `<stdin>` everywhere, including logs, panics, and error chains.
 - Logs never contain tokens, `Authorization` headers, or URL credentials. Before it logs a URL, slopvac strips the user-info part.
-- Rule IDs, pack IDs, digests, durations, and counts may appear in logs.
+- Rule IDs, plugin IDs, digests, durations, and counts may appear in logs.
 - Panic and error output follow the same rules.
 - `SLOPVAC_LOG=trace` lifts none of these rules.
 
@@ -157,13 +159,13 @@ The span crates index text with 32-bit offsets and size their structures from it
 | Document read for `migrate` | 64 MiB | `document-too-large` | Same as a file. |
 | Changed file read for `--diff` scoping | 64 MiB | `document-too-large` | Uses the same constant as the lint read. |
 | Config file (`slopvac.toml`, each `extends` file, a 2.x config read by `migrate`) | 1 MiB | `config-too-large` | A real config is under 10 KiB. The shipped data files stay under 32 KiB. |
-| Rule or category file in a pack | 2 MiB | `rules-file-too-large` | The largest shipped rule file is about 130 KiB. 2 MiB leaves more than a tenfold margin. |
+| Rule or category file in a plugin | 2 MiB | `rules-file-too-large` | The largest shipped rule file is about 130 KiB. 2 MiB leaves more than a tenfold margin. |
 | Style file | 1 MiB | `style-too-large` | The built-in styles are a few KiB. |
 | Update-check policy read (`slopvac.toml`, read before argument parsing) | 1 MiB | `update-policy-too-large` | Same value as the config file. The read covers two keys, and a real file is under 10 KiB. |
 | House-style detection read (`.vale.ini`, `STYLE.md`, `_STYLE.md`, `CONTRIBUTING.md`) | 1 MiB | `style-detect-file-too-large` | A real style note is a few KiB. Detection skips a larger file and does not fail. The code is emitted as an info notice that names the file. The notice is not wired yet. |
 | Terms file | 1 MiB | `terms-file-too-large` | The built-in terms file is about 30 KiB. |
 
-A per-file cap does not bound the work of many files. Two aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the config file or pack directory at which it tripped, relative to the root, or `<external>/<file name>` outside it. The list of `data.budget` values can grow. A message names only that path and the limit.
+A per-file cap does not bound the work of many files. Two aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the config file or plugin directory at which it tripped, relative to the root, or `<external>/<file name>` outside it. The list of `data.budget` values can grow. A message names only that path and the limit.
 
 | Entry point | Budget (`data.budget`) | Limit | Unit | Code | Why this value |
 |---|---|---|---|---|---|
@@ -171,9 +173,9 @@ A per-file cap does not bound the work of many files. Two aggregate budgets boun
 | `extends` graph, files applied | `extends-files` | 256 | files | `config-budget-exceeded` | A real graph has fewer than ten files. A file that more than one file extends counts once for each time it applies, because it applies each time. |
 | `extends` graph, bytes read | `extends-bytes` | 8 MiB | bytes | `config-budget-exceeded` | A real graph is under 100 KiB. Eight files at the 1 MiB cap fit. |
 | `extends` graph, bytes of config applied | `extends-applied-bytes` | 64 MiB | bytes | `config-budget-exceeded` | A real graph applies under 100 KiB. A file that more than one file extends counts its size once for each time it applies, so 64 MiB stops a small graph from repeating a large file hundreds of times. |
-| Pack directory, rule and category files | `pack-files` | 256 | files | `rules-budget-exceeded` | The shipped pack has 23 files. |
-| Pack directory, entries of any kind | `pack-entries` | 1024 | entries | `rules-budget-exceeded` | Bounds directory scanning before the loader resolves any file. |
-| Pack directory, bytes read | `pack-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The shipped pack is about 450 KiB. |
+| Plugin directory, rule and category files | `pack-files` | 256 | files | `rules-budget-exceeded` | The built-in core has 23 files. |
+| Plugin directory, entries of any kind | `pack-entries` | 1024 | entries | `rules-budget-exceeded` | Bounds directory scanning before the loader resolves any file. |
+| Plugin directory, bytes read | `pack-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The built-in core is about 450 KiB. |
 
 How the budgets apply:
 
@@ -182,7 +184,7 @@ How the budgets apply:
 - An extended file whose ancestor is still waiting to apply counts against the file budget. The loader checks the depth of a reused subtree at each place it applies again, and checks every budget before it adds an application.
 - An `extends` cycle is not a budget. It keeps `config-extends-cycle`, and the loader checks for a cycle before it checks the depth.
 - A rule file reached by more than one name, such as a symlink, loads once under the first name in file-name order, and the file budget counts it once.
-- The pack loader reads and compiles one file at a time.
+- The plugin loader reads and compiles one file at a time.
 
 Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-update` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`, plus a private cap in house-style detection).
 
@@ -272,7 +274,7 @@ Owners: `slopvac-8l4.12.1` for CLI messages, `slopvac-8l4.4.7` for config diagno
 | Config file | `schema_version` (integer) | `slopvac.toml` root | `config` | `slopvac-8l4.2.5` |
 | Front matter block | `v` | `slopvac:` key | `frontmatter` | `slopvac-8l4.2.5` |
 | Rule, category, style, genre, and terms files | `schema_version` (integer) | File root | One per artifact | `slopvac-8l4.2.3`, `slopvac-8l4.2.4` |
-| Pack manifest | `slopvac_api` (integer) | `slopvac-pack.toml` | `pack-manifest` | `slopvac-8l4.2.4` |
+| Plugin manifest | `slopvac_api` (integer) | `slopvac-pack.toml` | `pack-manifest` | `slopvac-8l4.2.4` |
 | Lockfile | `schema_version` (integer) | `.slopvac/packs.lock` | `packs-lock` | `slopvac-8l4.2.4` |
 | Plugin protocol | `protocolVersion` (integer) | `initialize` request and response | `plugin-protocol` | `slopvac-8l4.2.6` |
 
@@ -290,7 +292,7 @@ The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/commo
   - Allowed: a new optional field, a new optional section, and a new value of an output-only enum that the schema marks as extensible.
   - Not allowed: removing or renaming a field, changing a type, tightening a constraint, or giving a field a new meaning.
 - A schema's `$id` never changes within a version. The published URL has the form `https://slopvac.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
-- `ApiVersion` is a positive integer for the pack and plugin extension API. The first pack manifest declares `slopvac_api = 1`. It names the host capabilities a pack needs. `schema_version` names the shape of one file. The two are independent.
+- `ApiVersion` is a positive integer for the plugin extension API. The first plugin manifest declares `slopvac_api = 1`. It names the host capabilities a plugin needs. `schema_version` names the shape of one file. The two are independent.
 - The binary version is independent of both. A release that adds optional fields keeps `schema_version`. `slopvac --version --json` lists the binary version, each supported `schema_version`, and each supported `slopvac_api`.
 - A config file without `schema_version` is a 2.x config and is rejected (section 3.7). Any other 3.0 artifact without a version is an error.
 - A version higher than the binary supports is an error. The message names the file, the version found, and the versions supported. It also prints the upgrade command for the install method, built as `upgrade_hint` builds it in 2.x.
@@ -303,7 +305,7 @@ The rule depends on who wrote the file.
 
 | Reader | Writer | Unknown field | Reason |
 |---|---|---|---|
-| Slopvac | A user (config, front matter, rules, packs) | Error with file, line, and column, plus the nearest valid key | A misspelled key would silently disable a setting. 2.x already forbids unknown keys. |
+| Slopvac | A user (config, front matter, rules, plugins) | Error with file, line, and column, plus the nearest valid key | A misspelled key would silently disable a setting. 2.x already forbids unknown keys. |
 | Slopvac | A plugin (protocol messages) | Ignored, logged at debug level | A plugin can be newer than the host within one API version. |
 | A consumer of slopvac output | Slopvac | The consumer must ignore it | Additive changes do not bump `schema_version`. |
 | A plugin | Slopvac (protocol messages) | The plugin must ignore it | Same reason. |
@@ -322,7 +324,7 @@ The plugin protocol follows LSP. The `initialize` request carries the host's `pr
 - The host calls only the hooks that the plugin declared.
 - If the host lacks a required feature, the load stops with an error that names the feature. The host skips an optional feature it lacks.
 - Both sides ignore unknown capability names (section 3.3).
-- A data pack has no handshake. The host compares `slopvac_api` with the range it supports. It loads the pack only if the value is in range.
+- A data plugin has no handshake. The host compares `slopvac_api` with the range it supports. It loads the plugin only if the value is in range.
 
 The plugin protocol bead defines the message shapes.
 
@@ -352,7 +354,7 @@ Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnos
 
 - Minor and patch releases of 3.x make additive changes only (section 3.2). A removal or rename needs a major version.
 - Warning periods, deprecated aliases, and flags that emit old output formats do not exist. Slopvac 3.0 rejects removed flags, options, hooks, and rule IDs with an error and exit 2.
-- Pack `slopvac_api` and plugin `protocolVersion` follow the same rule. The host loads a pack or plugin whose version it supports, as section 3.4 describes. A pack or plugin outside that range stays unloaded, and the error names both versions. No grace period applies.
+- Plugin `slopvac_api` and code plugin `protocolVersion` follow the same rule. The host loads a plugin whose versions it supports, as section 3.4 describes. A plugin outside that range stays unloaded, and the error names both versions. No grace period applies.
 
 Owners: `slopvac-8l4.12.1`, `slopvac-8l4.9.1`.
 
@@ -419,7 +421,7 @@ The 3.0 binary must pass these tests. Each runs the installed binary with an iso
 | ID | Test | Owner |
 |---|---|---|
 | N1 | With the update check disabled, `lint`, `validate`, `rules`, `explain`, `prime`, `reference`, and `claims` each finish under a network sandbox that fails any connection. | `slopvac-8l4.12.1` |
-| N2 | `--offline`, `SLOPVAC_OFFLINE=1`, and `[network] offline = true` each make `plugins sync` exit 2 with the code `offline-pack-missing` when the cache lacks a pack. A command with no network path exits 2 with `offline-network-needed`. | `slopvac-8l4.9.3` |
+| N2 | `--offline`, `SLOPVAC_OFFLINE=1`, and `[network] offline = true` each make `plugins sync` exit 2 with the code `offline-pack-missing` when the cache lacks a plugin. A command with no network path exits 2 with `offline-network-needed`. | `slopvac-8l4.9.3` |
 | N3 | `SLOPVAC_OFFLINE=1` with `[network] offline = false` in the config stays offline. The CLI help lists no flag that turns offline mode off. | `slopvac-8l4.12.1` |
 | N4 | With a populated cache and a lockfile, `plugins sync --offline` succeeds and verifies digests. | `slopvac-8l4.9.3` |
 | N5 | No update check starts under `CI`, `NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK`, `DO_NOT_TRACK`, `update_check = false`, or `--offline`. The test extends the 2.x test `test_environment_suppression_prevents_refresh_and_notice`. | `slopvac-8l4.12.4` |
@@ -445,7 +447,7 @@ The 3.0 binary must pass these tests. Each runs the installed binary with an iso
 | V2 | An artifact with a `schema_version` above the supported range fails with the code, the versions, and the upgrade command. | `slopvac-8l4.4.5` |
 | V3 | A user-written file with an unknown key fails with file, line, and column, and an `x-` key passes. A plugin message with an unknown field is ignored. | `slopvac-8l4.2.5`, `slopvac-8l4.2.6` |
 | V4 | A handshake with no common protocol version, a missing required feature, or an unknown capability produces the behavior in section 3.4. | `slopvac-8l4.9.6` |
-| V5 | A pack with an unsupported `slopvac_api` stays unloaded, and the error names both versions. | `slopvac-8l4.9.1` |
+| V5 | A plugin with an unsupported `slopvac_api` stays unloaded, and the error names both versions. | `slopvac-8l4.9.1` |
 | V6 | Every error code in the generated docs is unique and kebab-case, and a later release keeps every code of the earlier one. | `slopvac-8l4.19.1` |
 | V7 | A config without `schema_version`, or with a 2.x value, exits 2 with `config-legacy-version` and a pointer to `slopvac migrate`, and lints nothing. | `slopvac-8l4.4.5` |
 | V8 | Each removed 2.x flag, option, and hook fails with an error and exit 2. No 2.x JSON format flag exists. | `slopvac-8l4.2.9` |
@@ -464,5 +466,4 @@ The Python 2.x tests that cover current behavior sit in `packages/slopvac-lint/t
 
 - `slopvac-8l4.12.6` adds the preview and `--submit` behavior from section 1.5.
 - `slopvac-8l4.13.6` is the Action bead. Its description lists reviewdog, SARIF, and CodeClimate, so it needs the `plugins sync` step and the `--offline` lint step from section 1.4.
-- `slopvac-8l4.9.8` is named "Pack index and slopvac packs search". The plan lists `search` under `plugins`, so the plan or the bead needs one name for the command.
 - `slopvac-8l4.12.4` confirms which commands may start the update check (section 1.2).
