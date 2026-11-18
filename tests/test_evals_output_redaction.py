@@ -66,19 +66,22 @@ def test_a_successful_model_answer_is_returned_without_credentials():
     assert reply.text.startswith("Answer.")
 
 
+REVIEW_TASK = {
+    "id": "p1",
+    "type": "rewrite",
+    "role": "reviewer",
+    "variant": "planted",
+    "doc": "d",
+    "genre": "g",
+    "prompt": "review",
+    "edits": [{"kind": "n", "sentence": "alpha beta gamma delta"}],
+    "passage": "alpha beta gamma delta\nalpha beta gamma epsilon",
+}
+ROSTER = [{"name": "m", "family": "f", "tier": "t", "command": "unused"}]
+
+
 def test_a_successful_model_answer_is_journaled_without_credentials(tmp_path):
-    task = {
-        "id": "p1",
-        "type": "rewrite",
-        "role": "reviewer",
-        "variant": "planted",
-        "doc": "d",
-        "genre": "g",
-        "prompt": "review",
-        "edits": [{"kind": "n", "sentence": "alpha beta gamma delta"}],
-        "passage": "alpha beta gamma delta\nalpha beta gamma epsilon",
-    }
-    roster = [{"name": "m", "family": "f", "tier": "t", "command": "unused"}]
+    task, roster = REVIEW_TASK, ROSTER
     journal = models.Journal(tmp_path / "run.journal.jsonl")
     out = models.execute(
         [task],
@@ -131,3 +134,39 @@ def test_a_credential_cut_by_the_error_event_limit_is_still_redacted():
     with pytest.raises(opencode_model.ModelCallError) as caught:
         opencode_model.parse_events(event)
     assert FAKE_KEY[:8] not in str(caught.value)
+
+
+SCHEME_LEAKS = [
+    ("Sent Bearer abc123def now", "abc123def"),
+    ("Basic dXNlcjpwYXNz rejected", "dXNlcjpwYXNz"),
+    ('{"password": "ab\\"cd-SECRETTAIL\\"ef"}', "SECRETTAIL"),
+]
+
+
+@pytest.mark.parametrize(("leak", "gone"), SCHEME_LEAKS)
+def test_a_model_answer_with_a_standalone_scheme_is_stored_without_it(leak, gone):
+    reply = models.command_ask(writes("stdout", f"Answer. {leak}"), attempts=1)("x")
+    assert gone not in reply.text
+    assert reply.text.startswith("Answer.")
+
+
+@pytest.mark.parametrize(("leak", "gone"), SCHEME_LEAKS)
+def test_a_twin_with_a_standalone_scheme_is_returned_without_it(leak, gone):
+    text = twins.run_provider(writes("stdout", f"A twin. {leak}"), "prompt", 30)
+    assert gone not in text
+
+
+@pytest.mark.parametrize(("leak", "gone"), SCHEME_LEAKS)
+def test_a_journaled_answer_with_a_standalone_scheme_is_stored_without_it(
+    tmp_path, leak, gone
+):
+    path = tmp_path / "run.journal.jsonl"
+    models.execute(
+        [REVIEW_TASK],
+        ROSTER,
+        3,
+        lambda text: [],
+        ask_for=lambda m: models.command_ask(writes("stdout", f"[] {leak}")),
+        journal=models.Journal(path),
+    )
+    assert gone not in path.read_text("utf-8")

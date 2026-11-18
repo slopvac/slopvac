@@ -715,6 +715,38 @@ def test_redaction_removes_short_and_quoted_structured_credentials(raw, gone):
     assert gone not in procs.redact_credentials(raw)
 
 
+STANDALONE_SECRETS = [
+    ("Sent Bearer abc123def to the server", "abc123def"),
+    ("curl -H 'Bearer x7'", "x7"),
+    ("Basic dXNlcjpwYXNz was rejected", "dXNlcjpwYXNz"),
+    ("Authorization: token ghp_abcd1234", "ghp_abcd1234"),
+    ("pushed with token ghp_ab12cd34ef today", "ghp_ab12cd34ef"),
+    ('{"password": "ab\\"cd-SECRETTAIL\\"ef"}', "SECRETTAIL"),
+    ("{'token': 'it\\'s-SECRETTAIL'}", "SECRETTAIL"),
+    ('{"secret": "a\\\\\\"SECRETTAIL"}', "SECRETTAIL"),
+]
+
+
+@pytest.mark.parametrize(("raw", "gone"), STANDALONE_SECRETS)
+def test_redaction_removes_standalone_schemes_and_escaped_quote_values(raw, gone):
+    assert gone not in procs.redact_credentials(raw)
+    assert gone not in procs.redact(raw)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A bearer of news arrived.",
+        "Basic usage needs no token.",
+        "Basic authentication is optional here.",
+        "Check token 63 against the budget.",
+        "The token budget is explicit.",
+    ],
+)
+def test_prose_that_names_a_scheme_is_not_redacted(text):
+    assert procs.redact_credentials(text) == text
+
+
 @pytest.mark.parametrize(
     "text",
     [
