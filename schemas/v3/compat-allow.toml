@@ -7,17 +7,3 @@
 # kind = "property-removed"
 # reason = "Why the break is acceptable."
 # approved_by = "reviewer name"
-
-[[allow]]
-file = "blocklist.schema.json"
-pointer = "/properties/entries/items/$ref(blocklist.schema.json#/$defs/BlocklistEntry)/properties/pos/enum"
-kind = "enum-narrowed"
-reason = "blocklist POS set matches the 2.x accepted set exactly (8l4.2.36)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "blocklist.schema.json"
-pointer = "/$defs/BlocklistEntry/properties/pos/enum"
-kind = "enum-narrowed"
-reason = "blocklist POS set matches the 2.x accepted set exactly (8l4.2.36)"
-approved_by = "contract owner (8l4.2)"
