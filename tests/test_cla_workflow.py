@@ -35,8 +35,11 @@ def tokens(expr: str) -> list[str]:
     return out
 
 
-def evaluate(expr: str, ctx: dict) -> bool:
-    """A small evaluator for the GitHub expression subset the job filter uses."""
+def evaluate_value(expr: str, ctx: dict):
+    """A small evaluator for the GitHub expression subset the workflow uses.
+
+    `&&` and `||` return an operand, as GitHub does, not a boolean.
+    """
     toks = tokens(expr)
     pos = 0
 
@@ -94,7 +97,7 @@ def evaluate(expr: str, ctx: dict) -> bool:
         while peek() == "&&":
             take()
             right = comparison()
-            value = value and right
+            value = right if value else value
         return value
 
     def disjunction():
@@ -102,15 +105,32 @@ def evaluate(expr: str, ctx: dict) -> bool:
         while peek() == "||":
             take()
             right = conjunction()
-            value = value or right
+            value = value if value else right
         return value
 
     result = disjunction()
     assert pos == len(toks), f"trailing tokens {toks[pos:]}"
-    return bool(result)
+    return result
+
+
+def evaluate(expr: str, ctx: dict) -> bool:
+    return bool(evaluate_value(expr, ctx))
+
+
+def render(template: str, ctx: dict) -> str:
+    """Render each `${{ }}` part of a template; a null renders as empty."""
+
+    def part(match):
+        value = evaluate_value(match.group(1), ctx)
+        return "" if value is None else str(value)
+
+    return re.sub(r"\$\{\{(.*?)\}\}", part, template)
 
 
 JOB_IF = CLA["jobs"]["CLA"]["if"]
+STEPS = {s.get("name") or s.get("id"): s for s in CLA["jobs"]["CLA"]["steps"]}
+TOKEN_STEP = STEPS["Generate app token"]
+ACTION_STEP = STEPS["CLA Assistant"]
 
 
 def comment(body: str, on_pr: bool = True) -> dict:
@@ -135,7 +155,12 @@ def comment(body: str, on_pr: bool = True) -> dict:
     ],
 )
 def test_every_comment_the_action_accepts_starts_the_job(body):
-    assert evaluate(JOB_IF, comment(body))
+    ctx = comment(body)
+    assert evaluate(JOB_IF, ctx)
+    # The token step runs when it has no `if`; the action step also needs the token.
+    assert "if" not in TOKEN_STEP or evaluate(TOKEN_STEP["if"], ctx)
+    ctx["steps"] = {"app-token": {"outcome": "success"}}
+    assert evaluate(ACTION_STEP["if"], ctx)
 
 
 @pytest.mark.parametrize(
@@ -228,9 +253,26 @@ def test_the_re_check_runs_after_the_action_fails_but_not_after_a_cancel():
     assert not evaluate(RECHECK["if"], ctx)
 
 
-def test_comment_runs_queue_apart_from_pull_request_runs():
-    group = CLA["jobs"]["CLA"]["concurrency"]["group"]
-    assert "github.event_name" in group
+def test_comment_runs_queue_apart_from_pull_request_runs_and_revocations():
+    template = CLA["jobs"]["CLA"]["concurrency"]["group"]
+
+    def group(event_name, event):
+        github = {"workflow": "CLA", "event_name": event_name, "event": event}
+        return render(template, {"github": github})
+
+    issue = {"issue": {"number": 7, "pull_request": {"url": "x"}}}
+    deleted = group(
+        "issue_comment", {**issue, "action": "deleted", "comment": {"body": PHRASE}}
+    )
+    recheck = group(
+        "issue_comment", {**issue, "action": "created", "comment": {"body": "recheck"}}
+    )
+    pr_event = group(
+        "pull_request_target", {"action": "opened", "pull_request": {"number": 7}}
+    )
+    assert deleted != recheck
+    assert pr_event != recheck
+    assert all(g.endswith("-7") for g in (deleted, recheck, pr_event))
 
 
 FAKE_GH = """#!/bin/sh
@@ -238,14 +280,21 @@ FAKE_GH = """#!/bin/sh
 echo "$*" >> "$GH_LOG"
 case "$*" in
   "pr view 7 --repo slopvac/slopvac --json headRefOid --jq .headRefOid") echo abc123 ;;
-  api*) printf '%s' "$RUNS" | jq -r "$(echo "$*" | sed -n "s/.*--jq //p")" ;;
+  api*)
+    # The workflow must filter by SHA and page through all runs.
+    case "$*" in *head_sha=abc123*) ;; *) echo "missing head_sha: $*" >&2; exit 1 ;; esac
+    { printf '%s\n' "$PAGE1"
+      case "$*" in *--paginate*) printf '%s\n' "$PAGE2" ;; esac
+    } | jq -r "$(echo "$*" | sed -n "s/.*--jq //p")" ;;
   "run rerun "*) ;;
   *) echo "unexpected gh call: $*" >&2; exit 1 ;;
 esac
 """
 
 
-def run_recheck(tmp_path, runs: list[dict]) -> list[str]:
+def run_recheck(
+    tmp_path, page1: list[dict], page2: list[dict] | None = None
+) -> list[str]:
     import json
     import os
     import subprocess
@@ -260,7 +309,8 @@ def run_recheck(tmp_path, runs: list[dict]) -> list[str]:
         **os.environ,
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "GH_LOG": str(log),
-        "RUNS": json.dumps({"workflow_runs": runs}),
+        "PAGE1": json.dumps({"workflow_runs": page1}),
+        "PAGE2": json.dumps({"workflow_runs": page2 or []}),
         "REPO": "slopvac/slopvac",
         "PR": "7",
     }
@@ -269,13 +319,12 @@ def run_recheck(tmp_path, runs: list[dict]) -> list[str]:
 
 
 def test_the_re_check_re_runs_this_pull_requests_run(tmp_path):
-    # A newer run for the same SHA and branch belongs to another fork's PR.
+    # Page 1 holds only another fork's PR on the same SHA and branch; this
+    # pull request's run is on page 2.
     code, calls = run_recheck(
         tmp_path,
-        [
-            {"id": 11, "display_title": "CLA #8", "head_branch": "feature/x"},
-            {"id": 22, "display_title": "CLA #7", "head_branch": "feature/x"},
-        ],
+        [{"id": 11, "display_title": "CLA #8", "head_branch": "feature/x"}],
+        [{"id": 22, "display_title": "CLA #7", "head_branch": "feature/x"}],
     )
     assert code == 0
     assert calls[-1] == "run rerun 22 --repo slopvac/slopvac"
