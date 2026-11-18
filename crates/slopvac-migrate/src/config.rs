@@ -105,13 +105,28 @@ pub fn migrate_config(
     }
     if cx.dropped.is_empty() {
         doc.insert("schema_version", value(3));
+        let text = doc.to_string();
+        check_loads(&text, file)?;
         Ok(Rewrite {
-            text: doc.to_string(),
+            text,
             notes: cx.notes,
         })
     } else {
         Err(Error::Dropped(cx.dropped))
     }
+}
+
+/// Load the migrated text through the 3.0 config loader, so `migrate` never writes a
+/// config that 3.0 refuses. Packs are not consulted: a style name is only checked for
+/// its shape.
+fn check_loads(text: &str, file: &str) -> Result<(), Error> {
+    slopvac_config::validate_text(
+        text,
+        file,
+        std::path::Path::new("."),
+        &slopvac_config::NoPresets,
+    )
+    .map_err(|e| Error::InvalidOutput(e.to_string()))
 }
 
 /// Whether the migration chain starts at the 2.x to 3.0 step for this text.

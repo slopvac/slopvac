@@ -3708,6 +3708,353 @@
    },
    "input": "profile = \"normal\"\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"relaxed\"\n"
   },
+  "profile-override-around-an-earlier-category-block": {
+   "expected": {
+    "overrides": [
+     {
+      "categories": {
+       "core:ai-residue": {
+        "max_per_100_words": 0.0,
+        "severity": "error",
+        "weight": 1.5
+       },
+       "core:ai-tells-agentic": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ai-tells-content-shape": {
+        "max_per_100_words": 1.0,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:ai-tells-figurative": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ai-tells-formatting": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ai-tells-register": {
+        "max_per_100_words": 1.5,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:ai-tells-structure": {
+        "max_per_100_words": 1.5,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:docs-discipline": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:meta": {
+        "max_per_100_words": 0.0,
+        "severity": "error",
+        "weight": 1.0
+       },
+       "core:orwell": {
+        "max_per_100_words": 2.0,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:orwell-voice": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:prose-agency": {
+        "max_per_100_words": 2.0,
+        "severity": "suggestion",
+        "weight": 0.5
+       },
+       "core:prose-craft": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:prose-density": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:prose-discipline": {
+        "max_per_100_words": 2.0,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:prose-format": {
+        "max_per_100_words": 2.0,
+        "severity": "suggestion",
+        "weight": 0.3
+       },
+       "core:prose-inclusive": {
+        "max_per_100_words": 0.0,
+        "severity": "error",
+        "weight": 1.0
+       },
+       "core:prose-inflation": {
+        "max_per_100_words": 1.5,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:prose-promotion": {
+        "max_per_100_words": 1.0,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:prose-scope": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-descriptive": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-nouns": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-practices": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-procedural": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-punctuation": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-safety": {
+        "max_per_100_words": 0.0,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:ste-sentences": {
+        "max_per_100_words": 2.5,
+        "severity": "suggestion",
+        "weight": 0.8
+       },
+       "core:ste-verbs": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-vocabulary": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-words": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       }
+      },
+      "files": [
+       "docs/**"
+      ],
+      "rules": {
+       "core:ai-tells-agentic.formulaic-universal-heading": "off",
+       "core:ai-tells-content-shape.adjective-per-noun-spray": "off",
+       "core:ai-tells-content-shape.durable-vocabulary-habits": "off",
+       "core:ai-tells-content-shape.elegant-variation": "suggestion",
+       "core:ai-tells-content-shape.epigram-closer-remainder": "off",
+       "core:ai-tells-content-shape.fabricated-citations-remainder": "error",
+       "core:ai-tells-content-shape.one-point-dilution": "suggestion",
+       "core:ai-tells-content-shape.over-writing-remainder": "off",
+       "core:ai-tells-content-shape.padded-symmetry": "suggestion",
+       "core:ai-tells-content-shape.superficial-ing-analysis": "suggestion",
+       "core:ai-tells-content-shape.textbook-connector-runs": "off",
+       "core:ai-tells-content-shape.unasked-for-rationale": "off",
+       "core:ai-tells-content-shape.vaporware-description": "error",
+       "core:ai-tells-figurative.colloquial-assessment": "off",
+       "core:ai-tells-figurative.figurative-casts": "off",
+       "core:ai-tells-figurative.figurative-draws": "off",
+       "core:ai-tells-figurative.figurative-falls": "off",
+       "core:ai-tells-figurative.figurative-lends": "off",
+       "core:ai-tells-figurative.figurative-loud": "off",
+       "core:ai-tells-figurative.figurative-rides": "off",
+       "core:ai-tells-figurative.figurative-runs": "off",
+       "core:ai-tells-figurative.figurative-sits": "off",
+       "core:ai-tells-figurative.figurative-strikes": "off",
+       "core:ai-tells-figurative.figurative-wins": "off",
+       "core:ai-tells-figurative.resonate-overuse": "off",
+       "core:ai-tells-formatting.bold-spray": "off",
+       "core:ai-tells-formatting.em-dash-density": "off",
+       "core:ai-tells-formatting.inline-header-list": "off",
+       "core:ai-tells-formatting.table-wrapping-one-sentence": "suggestion",
+       "core:ai-tells-formatting.title-case-heading": "off",
+       "core:ai-tells-register.anthropomorphised-justification-core": "suggestion",
+       "core:ai-tells-register.anthropomorphised-justification-remainder": "off",
+       "core:ai-tells-register.corporate-analytic-filler-core": "suggestion",
+       "core:ai-tells-register.disclaimed-claim-core": "suggestion",
+       "core:ai-tells-register.disclaimed-claim-remainder": "off",
+       "core:ai-tells-register.false-agency-remainder": "error",
+       "core:ai-tells-register.faux-candor-core": "suggestion",
+       "core:ai-tells-register.faux-candor-remainder": "off",
+       "core:ai-tells-register.figurative-verb-verdict-core": "suggestion",
+       "core:ai-tells-register.figurative-verb-verdict-remainder": "suggestion",
+       "core:ai-tells-register.hedged-symmetry": "suggestion",
+       "core:ai-tells-register.intensifier-tics-core": "suggestion",
+       "core:ai-tells-register.intensifier-tics-remainder": "off",
+       "core:ai-tells-register.organic-consequence-remainder": "suggestion",
+       "core:ai-tells-register.over-formatting-reflex": "suggestion",
+       "core:ai-tells-register.urgency-inflation-remainder": "off",
+       "core:ai-tells-structure.absolute-assertion-core": "suggestion",
+       "core:ai-tells-structure.absolute-assertion-remainder": "off",
+       "core:ai-tells-structure.analogy-stack-authority": "off",
+       "core:ai-tells-structure.anaphora-abuse": "off",
+       "core:ai-tells-structure.audience-straddle-core": "suggestion",
+       "core:ai-tells-structure.audience-straddle-remainder": "off",
+       "core:ai-tells-structure.cataphoric-lead-in-core": "off",
+       "core:ai-tells-structure.cataphoric-lead-in-remainder": "off",
+       "core:ai-tells-structure.contrastive-appositive": "off",
+       "core:ai-tells-structure.contrastive-inversion-frames": "suggestion",
+       "core:ai-tells-structure.contrastive-inversion-remainder": "off",
+       "core:ai-tells-structure.definitional-negation-pair": "suggestion",
+       "core:ai-tells-structure.false-range": "off",
+       "core:ai-tells-structure.false-suspense-frames": "suggestion",
+       "core:ai-tells-structure.false-suspense-remainder": "off",
+       "core:ai-tells-structure.fragment-question-pivot": "off",
+       "core:ai-tells-structure.heading-echo": "suggestion",
+       "core:ai-tells-structure.hollow-acknowledgment": "suggestion",
+       "core:ai-tells-structure.invented-concept-label": "off",
+       "core:ai-tells-structure.listicle-in-a-trench-coat": "off",
+       "core:ai-tells-structure.meta-narration-frames": "suggestion",
+       "core:ai-tells-structure.meta-narration-remainder": "off",
+       "core:ai-tells-structure.negative-guarantee-core": "suggestion",
+       "core:ai-tells-structure.negative-inventory-core": "suggestion",
+       "core:ai-tells-structure.negative-inventory-remainder": "off",
+       "core:ai-tells-structure.rhetorical-question-transition": "off",
+       "core:ai-tells-structure.staccato-negative-parallel-frames": "off",
+       "core:ai-tells-structure.staccato-negative-parallel-remainder": "off",
+       "core:ai-tells-structure.summary-closer-frames": "suggestion",
+       "core:ai-tells-structure.summary-closer-remainder": "off",
+       "core:ai-tells-structure.think-of-it-as-core": "off",
+       "core:ai-tells-structure.think-of-it-as-remainder": "off",
+       "core:ai-tells-structure.tricolon-abuse-core": "off",
+       "core:ai-tells-structure.tricolon-abuse-remainder": "off",
+       "core:ai-tells-structure.vague-attribution-remainder": "suggestion",
+       "core:docs-discipline.history-internal-reference": "off",
+       "core:docs-discipline.history-narration": "off",
+       "core:docs-discipline.internal-refs": "off",
+       "core:docs-discipline.no-longer-change": "off",
+       "core:orwell.compound-preposition": "off",
+       "core:orwell.concrete-floor": "suggestion",
+       "core:orwell.not-un": "off",
+       "core:orwell.stale-figure": "suggestion",
+       "core:orwell.unsupported-evaluative": "suggestion",
+       "core:prose-craft.command-prompt": "off",
+       "core:prose-craft.directional-ref": "off",
+       "core:prose-craft.first-person-plural": "off",
+       "core:prose-craft.future-tense": "off",
+       "core:prose-craft.gerund-heading": "off",
+       "core:prose-craft.latinisms": "off",
+       "core:prose-craft.negative-requirement": "off",
+       "core:prose-craft.plural-abbreviation": "off",
+       "core:prose-craft.politeness": "off",
+       "core:prose-craft.self-reference": "off",
+       "core:prose-craft.spacing": "off",
+       "core:prose-craft.unclear-antecedent": "off",
+       "core:prose-craft.versions": "off",
+       "core:prose-discipline.bare-quantifier-with-figure-available": "suggestion",
+       "core:prose-discipline.bidirectional-hedge": "suggestion",
+       "core:prose-discipline.competing-actor-terms": "suggestion",
+       "core:prose-discipline.frozen-verb": "suggestion",
+       "core:prose-discipline.hedged-hedge": "suggestion",
+       "core:prose-discipline.hedged-into-uselessness": "suggestion",
+       "core:prose-discipline.marketing-lexicon": "suggestion",
+       "core:prose-discipline.marketing-register": "suggestion",
+       "core:prose-discipline.negative-guarantee-remainder": "off",
+       "core:prose-discipline.no-longer-change-remainder": "off",
+       "core:prose-discipline.overloaded-sentence": "suggestion",
+       "core:prose-discipline.phrasal-verb": "suggestion",
+       "core:prose-discipline.run-on": "suggestion",
+       "core:prose-format.prose-block": "suggestion",
+       "core:prose-inclusive.ableist": "off",
+       "core:prose-inclusive.device-assumption": "off",
+       "core:prose-inclusive.exclusive": "off",
+       "core:prose-inflation.apologizing": "off",
+       "core:prose-inflation.borderline-hype": "off",
+       "core:prose-inflation.hedge-stack": "suggestion",
+       "core:prose-inflation.intensifier": "suggestion",
+       "core:prose-inflation.nominalized-verb": "suggestion",
+       "core:prose-inflation.vague-quantifier": "off",
+       "core:prose-promotion.promotional-adjective-noun": "off",
+       "core:prose-promotion.promotional-verbs": "off",
+       "core:prose-scope.code-change-prose-scope": "suggestion",
+       "core:prose-scope.epigram": "off",
+       "core:prose-scope.formulaic-subject-verb-slogan": "off",
+       "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.rejected-alternative": "off",
+       "core:ste-descriptive.information-not-gradual": "off",
+       "core:ste-descriptive.missing-key-word-structure": "off",
+       "core:ste-descriptive.paragraph-has-multiple-topics": "suggestion",
+       "core:ste-descriptive.paragraph-without-related-information": "off",
+       "core:ste-nouns.long-domain-term-without-short-form": "off",
+       "core:ste-nouns.multiword-noun-too-long": "off",
+       "core:ste-practices.ambiguous-preposition-with": "off",
+       "core:ste-practices.false-friend-term": "off",
+       "core:ste-practices.gendered-or-exclusionary-language": "off",
+       "core:ste-practices.latin-abbreviation": "off",
+       "core:ste-practices.omitted-conjunction-that": "off",
+       "core:ste-practices.possessive-form-unclear": "off",
+       "core:ste-practices.unclear-demonstrative-this": "off",
+       "core:ste-practices.unclear-pronoun": "off",
+       "core:ste-practices.word-sense-incorrect": "off",
+       "core:ste-practices.word-swap-insufficient": "suggestion",
+       "core:ste-procedural.condition-after-command": "off",
+       "core:ste-punctuation.hyphen-missing-in-compound-modifier": "off",
+       "core:ste-punctuation.parentheses-misuse": "off",
+       "core:ste-safety.risk-level-word-missing-or-wrong": "error",
+       "core:ste-sentences.missing-article-or-determiner": "off",
+       "core:ste-sentences.missing-connector-between-related-sentences": "off",
+       "core:ste-sentences.omitted-subject": "suggestion",
+       "core:ste-sentences.sentence-not-short-or-clear": "suggestion",
+       "core:ste-verbs.auxiliary-stacking": "off",
+       "core:ste-verbs.complex-tense": "off",
+       "core:ste-verbs.gerund-outside-noun-use": "off",
+       "core:ste-verbs.nominalized-action": "off",
+       "core:ste-verbs.passive-voice": "off",
+       "core:ste-verbs.past-participle-not-adjectival": "off",
+       "core:ste-verbs.verb-form-not-listed": "off",
+       "core:ste-words.domain-noun-category-membership": "off",
+       "core:ste-words.domain-noun-not-organization-approved": "off",
+       "core:ste-words.domain-noun-too-long-or-unclear": "off",
+       "core:ste-words.domain-verb-category-membership": "off",
+       "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.unapproved-word-not-a-domain-noun": "off",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "off",
+       "core:ste-words.word-outside-controlled-vocabulary": "off",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "off",
+       "core:ste-words.word-used-outside-permitted-sense": "off"
+      }
+     },
+     {
+      "categories": {
+       "core:prose-craft": {
+        "severity": "warning"
+       }
+      },
+      "files": [
+       "docs/api/**"
+      ],
+      "rules": {
+       "core:prose-craft.latinisms": "off"
+      }
+     },
+     {
+      "files": [
+       "docs/**"
+      ],
+      "profile": "relaxed"
+     }
+    ],
+    "profile": "strict",
+    "styles": [
+     "core:legacy-strict"
+    ]
+   },
+   "input": "profile = \"strict\"\n[[overrides]]\nfiles = [\"docs/api/**\"]\ncategories = { \"prose-craft\" = \"warning\" }\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"relaxed\"\n"
+  },
   "profile-override-clears-a-budget-with-none": {
    "expected": {
     "overrides": [
@@ -4057,6 +4404,353 @@
     ]
    },
    "input": "profile = \"normal\"\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"strict\"\n"
+  },
+  "profile-override-inside-an-earlier-category-block": {
+   "expected": {
+    "overrides": [
+     {
+      "categories": {
+       "core:ai-residue": {
+        "max_per_100_words": 0.0,
+        "severity": "error",
+        "weight": 1.5
+       },
+       "core:ai-tells-agentic": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ai-tells-content-shape": {
+        "max_per_100_words": 1.0,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:ai-tells-figurative": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ai-tells-formatting": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ai-tells-register": {
+        "max_per_100_words": 1.5,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:ai-tells-structure": {
+        "max_per_100_words": 1.5,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:docs-discipline": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:meta": {
+        "max_per_100_words": 0.0,
+        "severity": "error",
+        "weight": 1.0
+       },
+       "core:orwell": {
+        "max_per_100_words": 2.0,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:orwell-voice": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:prose-agency": {
+        "max_per_100_words": 2.0,
+        "severity": "suggestion",
+        "weight": 0.5
+       },
+       "core:prose-craft": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:prose-density": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:prose-discipline": {
+        "max_per_100_words": 2.0,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:prose-format": {
+        "max_per_100_words": 2.0,
+        "severity": "suggestion",
+        "weight": 0.3
+       },
+       "core:prose-inclusive": {
+        "max_per_100_words": 0.0,
+        "severity": "error",
+        "weight": 1.0
+       },
+       "core:prose-inflation": {
+        "max_per_100_words": 1.5,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:prose-promotion": {
+        "max_per_100_words": 1.0,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:prose-scope": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-descriptive": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-nouns": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-practices": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-procedural": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-punctuation": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-safety": {
+        "max_per_100_words": 0.0,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:ste-sentences": {
+        "max_per_100_words": 2.5,
+        "severity": "suggestion",
+        "weight": 0.8
+       },
+       "core:ste-verbs": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-vocabulary": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       },
+       "core:ste-words": {
+        "max_per_100_words": "none",
+        "severity": "off"
+       }
+      },
+      "files": [
+       "docs/api"
+      ],
+      "rules": {
+       "core:ai-tells-agentic.formulaic-universal-heading": "off",
+       "core:ai-tells-content-shape.adjective-per-noun-spray": "off",
+       "core:ai-tells-content-shape.durable-vocabulary-habits": "off",
+       "core:ai-tells-content-shape.elegant-variation": "suggestion",
+       "core:ai-tells-content-shape.epigram-closer-remainder": "off",
+       "core:ai-tells-content-shape.fabricated-citations-remainder": "error",
+       "core:ai-tells-content-shape.one-point-dilution": "suggestion",
+       "core:ai-tells-content-shape.over-writing-remainder": "off",
+       "core:ai-tells-content-shape.padded-symmetry": "suggestion",
+       "core:ai-tells-content-shape.superficial-ing-analysis": "suggestion",
+       "core:ai-tells-content-shape.textbook-connector-runs": "off",
+       "core:ai-tells-content-shape.unasked-for-rationale": "off",
+       "core:ai-tells-content-shape.vaporware-description": "error",
+       "core:ai-tells-figurative.colloquial-assessment": "off",
+       "core:ai-tells-figurative.figurative-casts": "off",
+       "core:ai-tells-figurative.figurative-draws": "off",
+       "core:ai-tells-figurative.figurative-falls": "off",
+       "core:ai-tells-figurative.figurative-lends": "off",
+       "core:ai-tells-figurative.figurative-loud": "off",
+       "core:ai-tells-figurative.figurative-rides": "off",
+       "core:ai-tells-figurative.figurative-runs": "off",
+       "core:ai-tells-figurative.figurative-sits": "off",
+       "core:ai-tells-figurative.figurative-strikes": "off",
+       "core:ai-tells-figurative.figurative-wins": "off",
+       "core:ai-tells-figurative.resonate-overuse": "off",
+       "core:ai-tells-formatting.bold-spray": "off",
+       "core:ai-tells-formatting.em-dash-density": "off",
+       "core:ai-tells-formatting.inline-header-list": "off",
+       "core:ai-tells-formatting.table-wrapping-one-sentence": "suggestion",
+       "core:ai-tells-formatting.title-case-heading": "off",
+       "core:ai-tells-register.anthropomorphised-justification-core": "suggestion",
+       "core:ai-tells-register.anthropomorphised-justification-remainder": "off",
+       "core:ai-tells-register.corporate-analytic-filler-core": "suggestion",
+       "core:ai-tells-register.disclaimed-claim-core": "suggestion",
+       "core:ai-tells-register.disclaimed-claim-remainder": "off",
+       "core:ai-tells-register.false-agency-remainder": "error",
+       "core:ai-tells-register.faux-candor-core": "suggestion",
+       "core:ai-tells-register.faux-candor-remainder": "off",
+       "core:ai-tells-register.figurative-verb-verdict-core": "suggestion",
+       "core:ai-tells-register.figurative-verb-verdict-remainder": "suggestion",
+       "core:ai-tells-register.hedged-symmetry": "suggestion",
+       "core:ai-tells-register.intensifier-tics-core": "suggestion",
+       "core:ai-tells-register.intensifier-tics-remainder": "off",
+       "core:ai-tells-register.organic-consequence-remainder": "suggestion",
+       "core:ai-tells-register.over-formatting-reflex": "suggestion",
+       "core:ai-tells-register.urgency-inflation-remainder": "off",
+       "core:ai-tells-structure.absolute-assertion-core": "suggestion",
+       "core:ai-tells-structure.absolute-assertion-remainder": "off",
+       "core:ai-tells-structure.analogy-stack-authority": "off",
+       "core:ai-tells-structure.anaphora-abuse": "off",
+       "core:ai-tells-structure.audience-straddle-core": "suggestion",
+       "core:ai-tells-structure.audience-straddle-remainder": "off",
+       "core:ai-tells-structure.cataphoric-lead-in-core": "off",
+       "core:ai-tells-structure.cataphoric-lead-in-remainder": "off",
+       "core:ai-tells-structure.contrastive-appositive": "off",
+       "core:ai-tells-structure.contrastive-inversion-frames": "suggestion",
+       "core:ai-tells-structure.contrastive-inversion-remainder": "off",
+       "core:ai-tells-structure.definitional-negation-pair": "suggestion",
+       "core:ai-tells-structure.false-range": "off",
+       "core:ai-tells-structure.false-suspense-frames": "suggestion",
+       "core:ai-tells-structure.false-suspense-remainder": "off",
+       "core:ai-tells-structure.fragment-question-pivot": "off",
+       "core:ai-tells-structure.heading-echo": "suggestion",
+       "core:ai-tells-structure.hollow-acknowledgment": "suggestion",
+       "core:ai-tells-structure.invented-concept-label": "off",
+       "core:ai-tells-structure.listicle-in-a-trench-coat": "off",
+       "core:ai-tells-structure.meta-narration-frames": "suggestion",
+       "core:ai-tells-structure.meta-narration-remainder": "off",
+       "core:ai-tells-structure.negative-guarantee-core": "suggestion",
+       "core:ai-tells-structure.negative-inventory-core": "suggestion",
+       "core:ai-tells-structure.negative-inventory-remainder": "off",
+       "core:ai-tells-structure.rhetorical-question-transition": "off",
+       "core:ai-tells-structure.staccato-negative-parallel-frames": "off",
+       "core:ai-tells-structure.staccato-negative-parallel-remainder": "off",
+       "core:ai-tells-structure.summary-closer-frames": "suggestion",
+       "core:ai-tells-structure.summary-closer-remainder": "off",
+       "core:ai-tells-structure.think-of-it-as-core": "off",
+       "core:ai-tells-structure.think-of-it-as-remainder": "off",
+       "core:ai-tells-structure.tricolon-abuse-core": "off",
+       "core:ai-tells-structure.tricolon-abuse-remainder": "off",
+       "core:ai-tells-structure.vague-attribution-remainder": "suggestion",
+       "core:docs-discipline.history-internal-reference": "off",
+       "core:docs-discipline.history-narration": "off",
+       "core:docs-discipline.internal-refs": "off",
+       "core:docs-discipline.no-longer-change": "off",
+       "core:orwell.compound-preposition": "off",
+       "core:orwell.concrete-floor": "suggestion",
+       "core:orwell.not-un": "off",
+       "core:orwell.stale-figure": "suggestion",
+       "core:orwell.unsupported-evaluative": "suggestion",
+       "core:prose-craft.command-prompt": "off",
+       "core:prose-craft.directional-ref": "off",
+       "core:prose-craft.first-person-plural": "off",
+       "core:prose-craft.future-tense": "off",
+       "core:prose-craft.gerund-heading": "off",
+       "core:prose-craft.latinisms": "off",
+       "core:prose-craft.negative-requirement": "off",
+       "core:prose-craft.plural-abbreviation": "off",
+       "core:prose-craft.politeness": "off",
+       "core:prose-craft.self-reference": "off",
+       "core:prose-craft.spacing": "off",
+       "core:prose-craft.unclear-antecedent": "off",
+       "core:prose-craft.versions": "off",
+       "core:prose-discipline.bare-quantifier-with-figure-available": "suggestion",
+       "core:prose-discipline.bidirectional-hedge": "suggestion",
+       "core:prose-discipline.competing-actor-terms": "suggestion",
+       "core:prose-discipline.frozen-verb": "suggestion",
+       "core:prose-discipline.hedged-hedge": "suggestion",
+       "core:prose-discipline.hedged-into-uselessness": "suggestion",
+       "core:prose-discipline.marketing-lexicon": "suggestion",
+       "core:prose-discipline.marketing-register": "suggestion",
+       "core:prose-discipline.negative-guarantee-remainder": "off",
+       "core:prose-discipline.no-longer-change-remainder": "off",
+       "core:prose-discipline.overloaded-sentence": "suggestion",
+       "core:prose-discipline.phrasal-verb": "suggestion",
+       "core:prose-discipline.run-on": "suggestion",
+       "core:prose-format.prose-block": "suggestion",
+       "core:prose-inclusive.ableist": "off",
+       "core:prose-inclusive.device-assumption": "off",
+       "core:prose-inclusive.exclusive": "off",
+       "core:prose-inflation.apologizing": "off",
+       "core:prose-inflation.borderline-hype": "off",
+       "core:prose-inflation.hedge-stack": "suggestion",
+       "core:prose-inflation.intensifier": "suggestion",
+       "core:prose-inflation.nominalized-verb": "suggestion",
+       "core:prose-inflation.vague-quantifier": "off",
+       "core:prose-promotion.promotional-adjective-noun": "off",
+       "core:prose-promotion.promotional-verbs": "off",
+       "core:prose-scope.code-change-prose-scope": "suggestion",
+       "core:prose-scope.epigram": "off",
+       "core:prose-scope.formulaic-subject-verb-slogan": "off",
+       "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.rejected-alternative": "off",
+       "core:ste-descriptive.information-not-gradual": "off",
+       "core:ste-descriptive.missing-key-word-structure": "off",
+       "core:ste-descriptive.paragraph-has-multiple-topics": "suggestion",
+       "core:ste-descriptive.paragraph-without-related-information": "off",
+       "core:ste-nouns.long-domain-term-without-short-form": "off",
+       "core:ste-nouns.multiword-noun-too-long": "off",
+       "core:ste-practices.ambiguous-preposition-with": "off",
+       "core:ste-practices.false-friend-term": "off",
+       "core:ste-practices.gendered-or-exclusionary-language": "off",
+       "core:ste-practices.latin-abbreviation": "off",
+       "core:ste-practices.omitted-conjunction-that": "off",
+       "core:ste-practices.possessive-form-unclear": "off",
+       "core:ste-practices.unclear-demonstrative-this": "off",
+       "core:ste-practices.unclear-pronoun": "off",
+       "core:ste-practices.word-sense-incorrect": "off",
+       "core:ste-practices.word-swap-insufficient": "suggestion",
+       "core:ste-procedural.condition-after-command": "off",
+       "core:ste-punctuation.hyphen-missing-in-compound-modifier": "off",
+       "core:ste-punctuation.parentheses-misuse": "off",
+       "core:ste-safety.risk-level-word-missing-or-wrong": "error",
+       "core:ste-sentences.missing-article-or-determiner": "off",
+       "core:ste-sentences.missing-connector-between-related-sentences": "off",
+       "core:ste-sentences.omitted-subject": "suggestion",
+       "core:ste-sentences.sentence-not-short-or-clear": "suggestion",
+       "core:ste-verbs.auxiliary-stacking": "off",
+       "core:ste-verbs.complex-tense": "off",
+       "core:ste-verbs.gerund-outside-noun-use": "off",
+       "core:ste-verbs.nominalized-action": "off",
+       "core:ste-verbs.passive-voice": "off",
+       "core:ste-verbs.past-participle-not-adjectival": "off",
+       "core:ste-verbs.verb-form-not-listed": "off",
+       "core:ste-words.domain-noun-category-membership": "off",
+       "core:ste-words.domain-noun-not-organization-approved": "off",
+       "core:ste-words.domain-noun-too-long-or-unclear": "off",
+       "core:ste-words.domain-verb-category-membership": "off",
+       "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.unapproved-word-not-a-domain-noun": "off",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "off",
+       "core:ste-words.word-outside-controlled-vocabulary": "off",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "off",
+       "core:ste-words.word-used-outside-permitted-sense": "off"
+      }
+     },
+     {
+      "categories": {
+       "core:prose-craft": {
+        "severity": "warning"
+       }
+      },
+      "files": [
+       "docs/**"
+      ],
+      "rules": {
+       "core:prose-craft.latinisms": "off"
+      }
+     },
+     {
+      "files": [
+       "docs/api"
+      ],
+      "profile": "relaxed"
+     }
+    ],
+    "profile": "strict",
+    "styles": [
+     "core:legacy-strict"
+    ]
+   },
+   "input": "profile = \"strict\"\n[[overrides]]\nfiles = [\"docs/**\"]\ncategories = { \"prose-craft\" = \"warning\" }\n[[overrides]]\nfiles = [\"docs/api\"]\nprofile = \"relaxed\"\n"
   },
   "profile-override-keeps-top-authored-category": {
    "expected": {
@@ -7175,6 +7869,1772 @@
     ]
    },
    "input": "profile = \"normal\"\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"relaxed\"\n[[overrides]]\nfiles = [\"docs/api/**\"]\nprofile = \"strict\"\n"
+  }
+ },
+ "measured_2x": {
+  "base": {
+   "normal": {
+    "dials": {
+     "ai-residue": {
+      "budget": 0.0,
+      "weight": 1.5
+     },
+     "ai-tells-agentic": {
+      "budget": 0.6,
+      "weight": 1.5
+     },
+     "ai-tells-content-shape": {
+      "budget": 0.4,
+      "weight": 1.5
+     },
+     "ai-tells-figurative": {
+      "budget": 0.8,
+      "weight": 1.0
+     },
+     "ai-tells-formatting": {
+      "budget": 1.0,
+      "weight": 0.8
+     },
+     "ai-tells-register": {
+      "budget": 0.6,
+      "weight": 1.5
+     },
+     "ai-tells-structure": {
+      "budget": 0.6,
+      "weight": 1.5
+     },
+     "docs-discipline": {
+      "budget": 0.5,
+      "weight": 1.0
+     },
+     "meta": {
+      "budget": 0.0,
+      "weight": 1.0
+     },
+     "orwell": {
+      "budget": 0.8,
+      "weight": 1.5
+     },
+     "orwell-voice": {
+      "budget": 0.5,
+      "weight": 1.0
+     },
+     "prose-agency": {
+      "budget": 0.8,
+      "weight": 1.0
+     },
+     "prose-craft": {
+      "budget": 1.5,
+      "weight": 0.8
+     },
+     "prose-density": {
+      "budget": 1.0,
+      "weight": 0.5
+     },
+     "prose-discipline": {
+      "budget": 0.8,
+      "weight": 1.5
+     },
+     "prose-format": {
+      "budget": 0.4,
+      "weight": 0.8
+     },
+     "prose-inclusive": {
+      "budget": 0.0,
+      "weight": 1.0
+     },
+     "prose-inflation": {
+      "budget": 0.6,
+      "weight": 1.5
+     },
+     "prose-promotion": {
+      "budget": 0.4,
+      "weight": 1.2
+     },
+     "prose-scope": {
+      "budget": 0.6,
+      "weight": 1.0
+     },
+     "ste-descriptive": {
+      "budget": 1.0,
+      "weight": 0.8
+     },
+     "ste-nouns": {
+      "budget": 1.0,
+      "weight": 0.8
+     },
+     "ste-practices": {
+      "budget": 1.5,
+      "weight": 0.5
+     },
+     "ste-procedural": {
+      "budget": 1.0,
+      "weight": 0.8
+     },
+     "ste-punctuation": {
+      "budget": 1.5,
+      "weight": 0.5
+     },
+     "ste-safety": {
+      "budget": 0.0,
+      "weight": 1.2
+     },
+     "ste-sentences": {
+      "budget": 1.5,
+      "weight": 1.0
+     },
+     "ste-verbs": {
+      "budget": 1.0,
+      "weight": 0.8
+     },
+     "ste-vocabulary": "off",
+     "ste-words": {
+      "budget": 1.5,
+      "weight": 0.8
+     }
+    },
+    "levels": {
+     "ai-residue.chat-leakage": "error",
+     "ai-tells-agentic.formulaic-universal-heading": "warning",
+     "ai-tells-content-shape.adjective-per-noun-spray": "suggestion",
+     "ai-tells-content-shape.durable-vocabulary-habits": "suggestion",
+     "ai-tells-content-shape.elegant-variation": "error",
+     "ai-tells-content-shape.epigram-closer-remainder": "suggestion",
+     "ai-tells-content-shape.fabricated-citations-core": "error",
+     "ai-tells-content-shape.fabricated-citations-remainder": "error",
+     "ai-tells-content-shape.fake-specificity": "error",
+     "ai-tells-content-shape.one-point-dilution": "error",
+     "ai-tells-content-shape.over-writing-remainder": "error",
+     "ai-tells-content-shape.padded-symmetry": "error",
+     "ai-tells-content-shape.superficial-ing-analysis": "error",
+     "ai-tells-content-shape.textbook-connector-runs": "suggestion",
+     "ai-tells-content-shape.unasked-for-rationale": "error",
+     "ai-tells-content-shape.vaporware-description": "error",
+     "ai-tells-figurative.colloquial-assessment": "warning",
+     "ai-tells-figurative.figurative-casts": "warning",
+     "ai-tells-figurative.figurative-draws": "warning",
+     "ai-tells-figurative.figurative-falls": "warning",
+     "ai-tells-figurative.figurative-lends": "warning",
+     "ai-tells-figurative.figurative-loud": "warning",
+     "ai-tells-figurative.figurative-rides": "warning",
+     "ai-tells-figurative.figurative-runs": "warning",
+     "ai-tells-figurative.figurative-sits": "warning",
+     "ai-tells-figurative.figurative-strikes": "warning",
+     "ai-tells-figurative.figurative-wins": "warning",
+     "ai-tells-figurative.resonate-overuse": "warning",
+     "ai-tells-formatting.bold-spray": "suggestion",
+     "ai-tells-formatting.cross-reference-signposting": "warning",
+     "ai-tells-formatting.em-dash-density": "suggestion",
+     "ai-tells-formatting.emoji-list-markers": "warning",
+     "ai-tells-formatting.heading-hierarchy": "warning",
+     "ai-tells-formatting.inline-header-list": "suggestion",
+     "ai-tells-formatting.italicised-copula": "warning",
+     "ai-tells-formatting.table-wrapping-one-sentence": "error",
+     "ai-tells-formatting.title-case-heading": "suggestion",
+     "ai-tells-register.anthropomorphised-justification-core": "error",
+     "ai-tells-register.anthropomorphised-justification-remainder": "suggestion",
+     "ai-tells-register.corporate-analytic-filler-core": "error",
+     "ai-tells-register.disclaimed-claim-core": "error",
+     "ai-tells-register.disclaimed-claim-remainder": "suggestion",
+     "ai-tells-register.false-agency-remainder": "error",
+     "ai-tells-register.faux-candor-core": "error",
+     "ai-tells-register.faux-candor-remainder": "suggestion",
+     "ai-tells-register.figurative-verb-verdict-core": "error",
+     "ai-tells-register.figurative-verb-verdict-remainder": "error",
+     "ai-tells-register.hedged-symmetry": "error",
+     "ai-tells-register.intensifier-tics-core": "error",
+     "ai-tells-register.intensifier-tics-remainder": "suggestion",
+     "ai-tells-register.organic-consequence-core": "error",
+     "ai-tells-register.organic-consequence-remainder": "error",
+     "ai-tells-register.over-formatting-reflex": "error",
+     "ai-tells-register.sycophantic-meta-residue": "error",
+     "ai-tells-register.urgency-inflation-core": "error",
+     "ai-tells-register.urgency-inflation-remainder": "suggestion",
+     "ai-tells-structure.absolute-assertion-core": "error",
+     "ai-tells-structure.absolute-assertion-remainder": "suggestion",
+     "ai-tells-structure.analogy-stack-authority": "suggestion",
+     "ai-tells-structure.anaphora-abuse": "suggestion",
+     "ai-tells-structure.audience-straddle-core": "error",
+     "ai-tells-structure.audience-straddle-remainder": "suggestion",
+     "ai-tells-structure.cataphoric-lead-in-core": "suggestion",
+     "ai-tells-structure.cataphoric-lead-in-remainder": "suggestion",
+     "ai-tells-structure.contrastive-appositive": "suggestion",
+     "ai-tells-structure.contrastive-inversion-frames": "error",
+     "ai-tells-structure.contrastive-inversion-remainder": "suggestion",
+     "ai-tells-structure.definitional-negation-pair": "warning",
+     "ai-tells-structure.false-range": "suggestion",
+     "ai-tells-structure.false-suspense-frames": "error",
+     "ai-tells-structure.false-suspense-remainder": "suggestion",
+     "ai-tells-structure.fragment-question-pivot": "suggestion",
+     "ai-tells-structure.heading-echo": "error",
+     "ai-tells-structure.hollow-acknowledgment": "error",
+     "ai-tells-structure.invented-concept-label": "suggestion",
+     "ai-tells-structure.listicle-in-a-trench-coat": "suggestion",
+     "ai-tells-structure.meta-narration-frames": "error",
+     "ai-tells-structure.meta-narration-remainder": "suggestion",
+     "ai-tells-structure.negative-guarantee-core": "warning",
+     "ai-tells-structure.negative-inventory-core": "error",
+     "ai-tells-structure.negative-inventory-remainder": "suggestion",
+     "ai-tells-structure.rhetorical-question-transition": "suggestion",
+     "ai-tells-structure.staccato-negative-parallel-frames": "suggestion",
+     "ai-tells-structure.staccato-negative-parallel-remainder": "suggestion",
+     "ai-tells-structure.summary-closer-frames": "error",
+     "ai-tells-structure.summary-closer-remainder": "suggestion",
+     "ai-tells-structure.think-of-it-as-core": "suggestion",
+     "ai-tells-structure.think-of-it-as-remainder": "suggestion",
+     "ai-tells-structure.tricolon-abuse-core": "suggestion",
+     "ai-tells-structure.tricolon-abuse-remainder": "suggestion",
+     "ai-tells-structure.vague-attribution-core": "error",
+     "ai-tells-structure.vague-attribution-remainder": "error",
+     "docs-discipline.history-internal-reference": "warning",
+     "docs-discipline.history-narration": "warning",
+     "docs-discipline.internal-refs": "warning",
+     "docs-discipline.no-longer-change": "warning",
+     "docs-discipline.status-language": "warning",
+     "orwell.compound-preposition": "warning",
+     "orwell.concrete-floor": "error",
+     "orwell.not-un": "error",
+     "orwell.stale-figure": "error",
+     "orwell.unsupported-evaluative": "error",
+     "prose-agency.agentless-passive": "warning",
+     "prose-agency.anthropomorphism": "warning",
+     "prose-agency.false-agency": "warning",
+     "prose-agency.narrator-distance": "warning",
+     "prose-agency.unattributed-recommendation": "warning",
+     "prose-craft.acronym-periods": "warning",
+     "prose-craft.ambiguity": "warning",
+     "prose-craft.articles": "warning",
+     "prose-craft.command-prompt": "off",
+     "prose-craft.conflict-markers": "warning",
+     "prose-craft.dead-opener": "warning",
+     "prose-craft.directional-ref": "suggestion",
+     "prose-craft.first-person-plural": "suggestion",
+     "prose-craft.future-tense": "suggestion",
+     "prose-craft.gerund-heading": "warning",
+     "prose-craft.hyphens": "warning",
+     "prose-craft.latinisms": "off",
+     "prose-craft.link-text": "warning",
+     "prose-craft.misnomer": "warning",
+     "prose-craft.negative-requirement": "warning",
+     "prose-craft.optional-plural": "warning",
+     "prose-craft.ordinals": "warning",
+     "prose-craft.plural-abbreviation": "suggestion",
+     "prose-craft.politeness": "suggestion",
+     "prose-craft.redundancy": "warning",
+     "prose-craft.relative-date": "warning",
+     "prose-craft.self-reference": "suggestion",
+     "prose-craft.sentence-length": "warning",
+     "prose-craft.spacing": "suggestion",
+     "prose-craft.unclear-antecedent": "suggestion",
+     "prose-craft.versions": "suggestion",
+     "prose-craft.wordiness": "warning",
+     "prose-discipline.bare-quantifier-with-figure-available": "error",
+     "prose-discipline.bidirectional-hedge": "error",
+     "prose-discipline.competing-actor-terms": "error",
+     "prose-discipline.frozen-verb": "error",
+     "prose-discipline.hedged-hedge": "error",
+     "prose-discipline.hedged-into-uselessness": "error",
+     "prose-discipline.marketing-lexicon": "error",
+     "prose-discipline.marketing-register": "error",
+     "prose-discipline.negative-guarantee-remainder": "suggestion",
+     "prose-discipline.no-longer-change-remainder": "suggestion",
+     "prose-discipline.overloaded-sentence": "error",
+     "prose-discipline.phrasal-verb": "error",
+     "prose-discipline.run-on": "error",
+     "prose-format.emoji-heading": "error",
+     "prose-format.no-unicode-dash": "error",
+     "prose-format.prose-block": "suggestion",
+     "prose-inclusive.ableist": "off",
+     "prose-inclusive.device-assumption": "off",
+     "prose-inclusive.exclusive": "off",
+     "prose-inflation.additive-hedge": "error",
+     "prose-inflation.apologizing": "error",
+     "prose-inflation.borderline-hype": "suggestion",
+     "prose-inflation.business-jargon": "error",
+     "prose-inflation.document-preamble": "error",
+     "prose-inflation.hedge-stack": "error",
+     "prose-inflation.intensifier": "error",
+     "prose-inflation.nominalized-verb": "error",
+     "prose-inflation.slop-lexicon": "error",
+     "prose-inflation.uncomparables": "error",
+     "prose-inflation.vague-declarative": "error",
+     "prose-inflation.vague-quantifier": "suggestion",
+     "prose-promotion.promotional-adjective-noun": "error",
+     "prose-promotion.promotional-puffery": "error",
+     "prose-promotion.promotional-verbs": "error",
+     "prose-promotion.strategy-buzzwords": "error",
+     "prose-scope.code-change-prose-scope": "error",
+     "prose-scope.epigram": "suggestion",
+     "prose-scope.formulaic-subject-verb-slogan": "warning",
+     "prose-scope.implementation-leak": "warning",
+     "prose-scope.rejected-alternative": "warning",
+     "prose-scope.unrequested-reassurance": "warning",
+     "ste-descriptive.information-not-gradual": "suggestion",
+     "ste-descriptive.missing-key-word-structure": "suggestion",
+     "ste-descriptive.paragraph-has-multiple-topics": "error",
+     "ste-descriptive.paragraph-too-many-sentences": "warning",
+     "ste-descriptive.paragraph-without-related-information": "suggestion",
+     "ste-descriptive.sentence-too-long-descriptive": "warning",
+     "ste-nouns.long-domain-term-without-short-form": "suggestion",
+     "ste-nouns.multiword-noun-too-long": "suggestion",
+     "ste-practices.ambiguous-preposition-with": "suggestion",
+     "ste-practices.false-friend-term": "suggestion",
+     "ste-practices.gendered-or-exclusionary-language": "off",
+     "ste-practices.inconsistent-wording-for-same-step": "suggestion",
+     "ste-practices.latin-abbreviation": "off",
+     "ste-practices.omitted-conjunction-that": "suggestion",
+     "ste-practices.phrasal-verb": "suggestion",
+     "ste-practices.possessive-form-unclear": "suggestion",
+     "ste-practices.unclear-demonstrative-this": "off",
+     "ste-practices.unclear-pronoun": "off",
+     "ste-practices.word-sense-incorrect": "suggestion",
+     "ste-practices.word-swap-insufficient": "error",
+     "ste-procedural.condition-after-command": "suggestion",
+     "ste-procedural.instruction-not-imperative": "warning",
+     "ste-procedural.multiple-instructions-per-sentence": "warning",
+     "ste-procedural.note-gives-instruction": "warning",
+     "ste-procedural.sentence-too-long-procedural": "warning",
+     "ste-punctuation.colon-terminates-sentence-for-count": "suggestion",
+     "ste-punctuation.hyphen-group-too-long": "suggestion",
+     "ste-punctuation.hyphen-missing-in-compound-modifier": "suggestion",
+     "ste-punctuation.parentheses-misuse": "suggestion",
+     "ste-punctuation.semicolon-used": "suggestion",
+     "ste-safety.risk-level-word-missing-or-wrong": "error",
+     "ste-safety.safety-block-does-not-start-with-command": "error",
+     "ste-safety.safety-block-missing-consequence": "error",
+     "ste-sentences.complex-text-not-in-vertical-list": "warning",
+     "ste-sentences.missing-article-or-determiner": "suggestion",
+     "ste-sentences.missing-connector-between-related-sentences": "suggestion",
+     "ste-sentences.omitted-subject": "suggestion",
+     "ste-sentences.sentence-not-short-or-clear": "error",
+     "ste-sentences.vertical-list-item-punctuation": "suggestion",
+     "ste-sentences.vertical-list-lead-in-missing-colon": "warning",
+     "ste-verbs.auxiliary-stacking": "suggestion",
+     "ste-verbs.complex-tense": "suggestion",
+     "ste-verbs.gerund-outside-noun-use": "suggestion",
+     "ste-verbs.nominalized-action": "suggestion",
+     "ste-verbs.passive-voice": "suggestion",
+     "ste-verbs.past-participle-not-adjectival": "suggestion",
+     "ste-verbs.verb-form-not-listed": "suggestion",
+     "ste-words.approved-word-substitution": "warning",
+     "ste-words.domain-noun-category-membership": "suggestion",
+     "ste-words.domain-noun-not-organization-approved": "suggestion",
+     "ste-words.domain-noun-too-long-or-unclear": "suggestion",
+     "ste-words.domain-verb-category-membership": "suggestion",
+     "ste-words.inconsistent-term-for-same-thing": "warning",
+     "ste-words.noun-used-as-verb": "warning",
+     "ste-words.obligation-word-substitution": "suggestion",
+     "ste-words.slang-or-jargon-term": "warning",
+     "ste-words.unapproved-word-not-a-domain-noun": "suggestion",
+     "ste-words.verb-or-adjective-form-not-permitted": "suggestion",
+     "ste-words.verb-used-as-noun": "warning",
+     "ste-words.word-outside-controlled-vocabulary": "suggestion",
+     "ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+     "ste-words.word-used-outside-permitted-sense": "suggestion"
+    }
+   },
+   "relaxed": {
+    "dials": {
+     "ai-residue": {
+      "budget": 0.0,
+      "weight": 1.5
+     },
+     "ai-tells-agentic": "off",
+     "ai-tells-content-shape": {
+      "budget": 1.0,
+      "weight": 1.0
+     },
+     "ai-tells-figurative": "off",
+     "ai-tells-formatting": "off",
+     "ai-tells-register": {
+      "budget": 1.5,
+      "weight": 1.0
+     },
+     "ai-tells-structure": {
+      "budget": 1.5,
+      "weight": 1.0
+     },
+     "docs-discipline": "off",
+     "meta": {
+      "budget": 0.0,
+      "weight": 1.0
+     },
+     "orwell": {
+      "budget": 2.0,
+      "weight": 1.0
+     },
+     "orwell-voice": "off",
+     "prose-agency": {
+      "budget": 2.0,
+      "weight": 0.5
+     },
+     "prose-craft": "off",
+     "prose-density": "off",
+     "prose-discipline": {
+      "budget": 2.0,
+      "weight": 1.0
+     },
+     "prose-format": {
+      "budget": 2.0,
+      "weight": 0.3
+     },
+     "prose-inclusive": {
+      "budget": 0.0,
+      "weight": 1.0
+     },
+     "prose-inflation": {
+      "budget": 1.5,
+      "weight": 1.0
+     },
+     "prose-promotion": {
+      "budget": 1.0,
+      "weight": 1.0
+     },
+     "prose-scope": "off",
+     "ste-descriptive": "off",
+     "ste-nouns": "off",
+     "ste-practices": "off",
+     "ste-procedural": "off",
+     "ste-punctuation": "off",
+     "ste-safety": {
+      "budget": 0.0,
+      "weight": 1.0
+     },
+     "ste-sentences": {
+      "budget": 2.5,
+      "weight": 0.8
+     },
+     "ste-verbs": "off",
+     "ste-vocabulary": "off",
+     "ste-words": "off"
+    },
+    "levels": {
+     "ai-residue.chat-leakage": "error",
+     "ai-tells-agentic.formulaic-universal-heading": "off",
+     "ai-tells-content-shape.adjective-per-noun-spray": "off",
+     "ai-tells-content-shape.durable-vocabulary-habits": "off",
+     "ai-tells-content-shape.elegant-variation": "suggestion",
+     "ai-tells-content-shape.epigram-closer-remainder": "off",
+     "ai-tells-content-shape.fabricated-citations-core": "warning",
+     "ai-tells-content-shape.fabricated-citations-remainder": "error",
+     "ai-tells-content-shape.fake-specificity": "warning",
+     "ai-tells-content-shape.one-point-dilution": "suggestion",
+     "ai-tells-content-shape.over-writing-remainder": "off",
+     "ai-tells-content-shape.padded-symmetry": "suggestion",
+     "ai-tells-content-shape.superficial-ing-analysis": "suggestion",
+     "ai-tells-content-shape.textbook-connector-runs": "off",
+     "ai-tells-content-shape.unasked-for-rationale": "off",
+     "ai-tells-content-shape.vaporware-description": "error",
+     "ai-tells-figurative.colloquial-assessment": "off",
+     "ai-tells-figurative.figurative-casts": "off",
+     "ai-tells-figurative.figurative-draws": "off",
+     "ai-tells-figurative.figurative-falls": "off",
+     "ai-tells-figurative.figurative-lends": "off",
+     "ai-tells-figurative.figurative-loud": "off",
+     "ai-tells-figurative.figurative-rides": "off",
+     "ai-tells-figurative.figurative-runs": "off",
+     "ai-tells-figurative.figurative-sits": "off",
+     "ai-tells-figurative.figurative-strikes": "off",
+     "ai-tells-figurative.figurative-wins": "off",
+     "ai-tells-figurative.resonate-overuse": "off",
+     "ai-tells-formatting.bold-spray": "off",
+     "ai-tells-formatting.cross-reference-signposting": "off",
+     "ai-tells-formatting.em-dash-density": "off",
+     "ai-tells-formatting.emoji-list-markers": "off",
+     "ai-tells-formatting.heading-hierarchy": "off",
+     "ai-tells-formatting.inline-header-list": "off",
+     "ai-tells-formatting.italicised-copula": "off",
+     "ai-tells-formatting.table-wrapping-one-sentence": "suggestion",
+     "ai-tells-formatting.title-case-heading": "off",
+     "ai-tells-register.anthropomorphised-justification-core": "suggestion",
+     "ai-tells-register.anthropomorphised-justification-remainder": "off",
+     "ai-tells-register.corporate-analytic-filler-core": "suggestion",
+     "ai-tells-register.disclaimed-claim-core": "suggestion",
+     "ai-tells-register.disclaimed-claim-remainder": "off",
+     "ai-tells-register.false-agency-remainder": "error",
+     "ai-tells-register.faux-candor-core": "suggestion",
+     "ai-tells-register.faux-candor-remainder": "off",
+     "ai-tells-register.figurative-verb-verdict-core": "suggestion",
+     "ai-tells-register.figurative-verb-verdict-remainder": "suggestion",
+     "ai-tells-register.hedged-symmetry": "suggestion",
+     "ai-tells-register.intensifier-tics-core": "suggestion",
+     "ai-tells-register.intensifier-tics-remainder": "off",
+     "ai-tells-register.organic-consequence-core": "warning",
+     "ai-tells-register.organic-consequence-remainder": "suggestion",
+     "ai-tells-register.over-formatting-reflex": "suggestion",
+     "ai-tells-register.sycophantic-meta-residue": "warning",
+     "ai-tells-register.urgency-inflation-core": "warning",
+     "ai-tells-register.urgency-inflation-remainder": "off",
+     "ai-tells-structure.absolute-assertion-core": "suggestion",
+     "ai-tells-structure.absolute-assertion-remainder": "off",
+     "ai-tells-structure.analogy-stack-authority": "off",
+     "ai-tells-structure.anaphora-abuse": "off",
+     "ai-tells-structure.audience-straddle-core": "suggestion",
+     "ai-tells-structure.audience-straddle-remainder": "off",
+     "ai-tells-structure.cataphoric-lead-in-core": "off",
+     "ai-tells-structure.cataphoric-lead-in-remainder": "off",
+     "ai-tells-structure.contrastive-appositive": "off",
+     "ai-tells-structure.contrastive-inversion-frames": "suggestion",
+     "ai-tells-structure.contrastive-inversion-remainder": "off",
+     "ai-tells-structure.definitional-negation-pair": "suggestion",
+     "ai-tells-structure.false-range": "off",
+     "ai-tells-structure.false-suspense-frames": "suggestion",
+     "ai-tells-structure.false-suspense-remainder": "off",
+     "ai-tells-structure.fragment-question-pivot": "off",
+     "ai-tells-structure.heading-echo": "suggestion",
+     "ai-tells-structure.hollow-acknowledgment": "suggestion",
+     "ai-tells-structure.invented-concept-label": "off",
+     "ai-tells-structure.listicle-in-a-trench-coat": "off",
+     "ai-tells-structure.meta-narration-frames": "suggestion",
+     "ai-tells-structure.meta-narration-remainder": "off",
+     "ai-tells-structure.negative-guarantee-core": "suggestion",
+     "ai-tells-structure.negative-inventory-core": "suggestion",
+     "ai-tells-structure.negative-inventory-remainder": "off",
+     "ai-tells-structure.rhetorical-question-transition": "off",
+     "ai-tells-structure.staccato-negative-parallel-frames": "off",
+     "ai-tells-structure.staccato-negative-parallel-remainder": "off",
+     "ai-tells-structure.summary-closer-frames": "suggestion",
+     "ai-tells-structure.summary-closer-remainder": "off",
+     "ai-tells-structure.think-of-it-as-core": "off",
+     "ai-tells-structure.think-of-it-as-remainder": "off",
+     "ai-tells-structure.tricolon-abuse-core": "off",
+     "ai-tells-structure.tricolon-abuse-remainder": "off",
+     "ai-tells-structure.vague-attribution-core": "warning",
+     "ai-tells-structure.vague-attribution-remainder": "suggestion",
+     "docs-discipline.history-internal-reference": "off",
+     "docs-discipline.history-narration": "off",
+     "docs-discipline.internal-refs": "off",
+     "docs-discipline.no-longer-change": "off",
+     "docs-discipline.status-language": "off",
+     "orwell.compound-preposition": "off",
+     "orwell.concrete-floor": "suggestion",
+     "orwell.not-un": "off",
+     "orwell.stale-figure": "suggestion",
+     "orwell.unsupported-evaluative": "suggestion",
+     "prose-agency.agentless-passive": "suggestion",
+     "prose-agency.anthropomorphism": "suggestion",
+     "prose-agency.false-agency": "suggestion",
+     "prose-agency.narrator-distance": "suggestion",
+     "prose-agency.unattributed-recommendation": "suggestion",
+     "prose-craft.acronym-periods": "off",
+     "prose-craft.ambiguity": "off",
+     "prose-craft.articles": "off",
+     "prose-craft.command-prompt": "off",
+     "prose-craft.conflict-markers": "off",
+     "prose-craft.dead-opener": "off",
+     "prose-craft.directional-ref": "off",
+     "prose-craft.first-person-plural": "off",
+     "prose-craft.future-tense": "off",
+     "prose-craft.gerund-heading": "off",
+     "prose-craft.hyphens": "off",
+     "prose-craft.latinisms": "off",
+     "prose-craft.link-text": "off",
+     "prose-craft.misnomer": "off",
+     "prose-craft.negative-requirement": "off",
+     "prose-craft.optional-plural": "off",
+     "prose-craft.ordinals": "off",
+     "prose-craft.plural-abbreviation": "off",
+     "prose-craft.politeness": "off",
+     "prose-craft.redundancy": "off",
+     "prose-craft.relative-date": "off",
+     "prose-craft.self-reference": "off",
+     "prose-craft.sentence-length": "off",
+     "prose-craft.spacing": "off",
+     "prose-craft.unclear-antecedent": "off",
+     "prose-craft.versions": "off",
+     "prose-craft.wordiness": "off",
+     "prose-discipline.bare-quantifier-with-figure-available": "suggestion",
+     "prose-discipline.bidirectional-hedge": "suggestion",
+     "prose-discipline.competing-actor-terms": "suggestion",
+     "prose-discipline.frozen-verb": "suggestion",
+     "prose-discipline.hedged-hedge": "suggestion",
+     "prose-discipline.hedged-into-uselessness": "suggestion",
+     "prose-discipline.marketing-lexicon": "suggestion",
+     "prose-discipline.marketing-register": "suggestion",
+     "prose-discipline.negative-guarantee-remainder": "off",
+     "prose-discipline.no-longer-change-remainder": "off",
+     "prose-discipline.overloaded-sentence": "suggestion",
+     "prose-discipline.phrasal-verb": "suggestion",
+     "prose-discipline.run-on": "suggestion",
+     "prose-format.emoji-heading": "suggestion",
+     "prose-format.no-unicode-dash": "suggestion",
+     "prose-format.prose-block": "suggestion",
+     "prose-inclusive.ableist": "off",
+     "prose-inclusive.device-assumption": "off",
+     "prose-inclusive.exclusive": "off",
+     "prose-inflation.additive-hedge": "warning",
+     "prose-inflation.apologizing": "off",
+     "prose-inflation.borderline-hype": "off",
+     "prose-inflation.business-jargon": "warning",
+     "prose-inflation.document-preamble": "warning",
+     "prose-inflation.hedge-stack": "suggestion",
+     "prose-inflation.intensifier": "suggestion",
+     "prose-inflation.nominalized-verb": "suggestion",
+     "prose-inflation.slop-lexicon": "warning",
+     "prose-inflation.uncomparables": "warning",
+     "prose-inflation.vague-declarative": "warning",
+     "prose-inflation.vague-quantifier": "off",
+     "prose-promotion.promotional-adjective-noun": "off",
+     "prose-promotion.promotional-puffery": "warning",
+     "prose-promotion.promotional-verbs": "off",
+     "prose-promotion.strategy-buzzwords": "warning",
+     "prose-scope.code-change-prose-scope": "suggestion",
+     "prose-scope.epigram": "off",
+     "prose-scope.formulaic-subject-verb-slogan": "off",
+     "prose-scope.implementation-leak": "off",
+     "prose-scope.rejected-alternative": "off",
+     "prose-scope.unrequested-reassurance": "off",
+     "ste-descriptive.information-not-gradual": "off",
+     "ste-descriptive.missing-key-word-structure": "off",
+     "ste-descriptive.paragraph-has-multiple-topics": "suggestion",
+     "ste-descriptive.paragraph-too-many-sentences": "off",
+     "ste-descriptive.paragraph-without-related-information": "off",
+     "ste-descriptive.sentence-too-long-descriptive": "off",
+     "ste-nouns.long-domain-term-without-short-form": "off",
+     "ste-nouns.multiword-noun-too-long": "off",
+     "ste-practices.ambiguous-preposition-with": "off",
+     "ste-practices.false-friend-term": "off",
+     "ste-practices.gendered-or-exclusionary-language": "off",
+     "ste-practices.inconsistent-wording-for-same-step": "off",
+     "ste-practices.latin-abbreviation": "off",
+     "ste-practices.omitted-conjunction-that": "off",
+     "ste-practices.phrasal-verb": "off",
+     "ste-practices.possessive-form-unclear": "off",
+     "ste-practices.unclear-demonstrative-this": "off",
+     "ste-practices.unclear-pronoun": "off",
+     "ste-practices.word-sense-incorrect": "off",
+     "ste-practices.word-swap-insufficient": "suggestion",
+     "ste-procedural.condition-after-command": "off",
+     "ste-procedural.instruction-not-imperative": "off",
+     "ste-procedural.multiple-instructions-per-sentence": "off",
+     "ste-procedural.note-gives-instruction": "off",
+     "ste-procedural.sentence-too-long-procedural": "off",
+     "ste-punctuation.colon-terminates-sentence-for-count": "off",
+     "ste-punctuation.hyphen-group-too-long": "off",
+     "ste-punctuation.hyphen-missing-in-compound-modifier": "off",
+     "ste-punctuation.parentheses-misuse": "off",
+     "ste-punctuation.semicolon-used": "off",
+     "ste-safety.risk-level-word-missing-or-wrong": "error",
+     "ste-safety.safety-block-does-not-start-with-command": "warning",
+     "ste-safety.safety-block-missing-consequence": "warning",
+     "ste-sentences.complex-text-not-in-vertical-list": "suggestion",
+     "ste-sentences.missing-article-or-determiner": "off",
+     "ste-sentences.missing-connector-between-related-sentences": "off",
+     "ste-sentences.omitted-subject": "suggestion",
+     "ste-sentences.sentence-not-short-or-clear": "suggestion",
+     "ste-sentences.vertical-list-item-punctuation": "off",
+     "ste-sentences.vertical-list-lead-in-missing-colon": "suggestion",
+     "ste-verbs.auxiliary-stacking": "off",
+     "ste-verbs.complex-tense": "off",
+     "ste-verbs.gerund-outside-noun-use": "off",
+     "ste-verbs.nominalized-action": "off",
+     "ste-verbs.passive-voice": "off",
+     "ste-verbs.past-participle-not-adjectival": "off",
+     "ste-verbs.verb-form-not-listed": "off",
+     "ste-words.approved-word-substitution": "off",
+     "ste-words.domain-noun-category-membership": "off",
+     "ste-words.domain-noun-not-organization-approved": "off",
+     "ste-words.domain-noun-too-long-or-unclear": "off",
+     "ste-words.domain-verb-category-membership": "off",
+     "ste-words.inconsistent-term-for-same-thing": "off",
+     "ste-words.noun-used-as-verb": "off",
+     "ste-words.obligation-word-substitution": "off",
+     "ste-words.slang-or-jargon-term": "off",
+     "ste-words.unapproved-word-not-a-domain-noun": "off",
+     "ste-words.verb-or-adjective-form-not-permitted": "off",
+     "ste-words.verb-used-as-noun": "off",
+     "ste-words.word-outside-controlled-vocabulary": "off",
+     "ste-words.word-used-in-wrong-part-of-speech": "off",
+     "ste-words.word-used-outside-permitted-sense": "off"
+    }
+   },
+   "strict": {
+    "dials": {
+     "ai-residue": {
+      "budget": 0.0,
+      "weight": 1.5
+     },
+     "ai-tells-agentic": {
+      "budget": 0.3,
+      "weight": 1.5
+     },
+     "ai-tells-content-shape": {
+      "budget": 0.2,
+      "weight": 1.5
+     },
+     "ai-tells-figurative": {
+      "budget": 0.4,
+      "weight": 1.0
+     },
+     "ai-tells-formatting": {
+      "budget": 0.5,
+      "weight": 0.8
+     },
+     "ai-tells-register": {
+      "budget": 0.3,
+      "weight": 1.5
+     },
+     "ai-tells-structure": {
+      "budget": 0.3,
+      "weight": 1.5
+     },
+     "docs-discipline": {
+      "budget": 0.2,
+      "weight": 1.2
+     },
+     "meta": {
+      "budget": 0.0,
+      "weight": 1.0
+     },
+     "orwell": {
+      "budget": 0.4,
+      "weight": 1.5
+     },
+     "orwell-voice": {
+      "budget": null,
+      "weight": 0.5
+     },
+     "prose-agency": {
+      "budget": 0.4,
+      "weight": 1.2
+     },
+     "prose-craft": {
+      "budget": 0.8,
+      "weight": 1.0
+     },
+     "prose-density": {
+      "budget": 0.5,
+      "weight": 0.8
+     },
+     "prose-discipline": {
+      "budget": 0.4,
+      "weight": 1.5
+     },
+     "prose-format": {
+      "budget": 0.2,
+      "weight": 0.8
+     },
+     "prose-inclusive": {
+      "budget": 0.0,
+      "weight": 1.0
+     },
+     "prose-inflation": {
+      "budget": 0.3,
+      "weight": 1.5
+     },
+     "prose-promotion": {
+      "budget": 0.2,
+      "weight": 1.2
+     },
+     "prose-scope": {
+      "budget": 0.3,
+      "weight": 1.0
+     },
+     "ste-descriptive": {
+      "budget": 0.4,
+      "weight": 1.0
+     },
+     "ste-nouns": {
+      "budget": 0.3,
+      "weight": 1.0
+     },
+     "ste-practices": {
+      "budget": 0.5,
+      "weight": 0.8
+     },
+     "ste-procedural": {
+      "budget": 0.4,
+      "weight": 1.2
+     },
+     "ste-punctuation": {
+      "budget": 0.5,
+      "weight": 0.8
+     },
+     "ste-safety": {
+      "budget": 0.0,
+      "weight": 1.5
+     },
+     "ste-sentences": {
+      "budget": 0.5,
+      "weight": 1.5
+     },
+     "ste-verbs": {
+      "budget": 0.4,
+      "weight": 1.2
+     },
+     "ste-vocabulary": {
+      "budget": 2.0,
+      "weight": 0.8
+     },
+     "ste-words": {
+      "budget": 0.5,
+      "weight": 1.2
+     }
+    },
+    "levels": {
+     "ai-residue.chat-leakage": "error",
+     "ai-tells-agentic.formulaic-universal-heading": "warning",
+     "ai-tells-content-shape.adjective-per-noun-spray": "error",
+     "ai-tells-content-shape.durable-vocabulary-habits": "error",
+     "ai-tells-content-shape.elegant-variation": "error",
+     "ai-tells-content-shape.epigram-closer-remainder": "error",
+     "ai-tells-content-shape.fabricated-citations-core": "error",
+     "ai-tells-content-shape.fabricated-citations-remainder": "error",
+     "ai-tells-content-shape.fake-specificity": "error",
+     "ai-tells-content-shape.one-point-dilution": "error",
+     "ai-tells-content-shape.over-writing-remainder": "error",
+     "ai-tells-content-shape.padded-symmetry": "error",
+     "ai-tells-content-shape.superficial-ing-analysis": "error",
+     "ai-tells-content-shape.textbook-connector-runs": "error",
+     "ai-tells-content-shape.unasked-for-rationale": "error",
+     "ai-tells-content-shape.vaporware-description": "error",
+     "ai-tells-figurative.colloquial-assessment": "warning",
+     "ai-tells-figurative.figurative-casts": "warning",
+     "ai-tells-figurative.figurative-draws": "warning",
+     "ai-tells-figurative.figurative-falls": "warning",
+     "ai-tells-figurative.figurative-lends": "warning",
+     "ai-tells-figurative.figurative-loud": "warning",
+     "ai-tells-figurative.figurative-rides": "warning",
+     "ai-tells-figurative.figurative-runs": "warning",
+     "ai-tells-figurative.figurative-sits": "warning",
+     "ai-tells-figurative.figurative-strikes": "warning",
+     "ai-tells-figurative.figurative-wins": "warning",
+     "ai-tells-figurative.resonate-overuse": "warning",
+     "ai-tells-formatting.bold-spray": "warning",
+     "ai-tells-formatting.cross-reference-signposting": "warning",
+     "ai-tells-formatting.em-dash-density": "warning",
+     "ai-tells-formatting.emoji-list-markers": "warning",
+     "ai-tells-formatting.heading-hierarchy": "warning",
+     "ai-tells-formatting.inline-header-list": "warning",
+     "ai-tells-formatting.italicised-copula": "warning",
+     "ai-tells-formatting.table-wrapping-one-sentence": "error",
+     "ai-tells-formatting.title-case-heading": "suggestion",
+     "ai-tells-register.anthropomorphised-justification-core": "error",
+     "ai-tells-register.anthropomorphised-justification-remainder": "error",
+     "ai-tells-register.corporate-analytic-filler-core": "error",
+     "ai-tells-register.disclaimed-claim-core": "error",
+     "ai-tells-register.disclaimed-claim-remainder": "error",
+     "ai-tells-register.false-agency-remainder": "error",
+     "ai-tells-register.faux-candor-core": "error",
+     "ai-tells-register.faux-candor-remainder": "error",
+     "ai-tells-register.figurative-verb-verdict-core": "error",
+     "ai-tells-register.figurative-verb-verdict-remainder": "error",
+     "ai-tells-register.hedged-symmetry": "error",
+     "ai-tells-register.intensifier-tics-core": "error",
+     "ai-tells-register.intensifier-tics-remainder": "error",
+     "ai-tells-register.organic-consequence-core": "error",
+     "ai-tells-register.organic-consequence-remainder": "error",
+     "ai-tells-register.over-formatting-reflex": "error",
+     "ai-tells-register.sycophantic-meta-residue": "error",
+     "ai-tells-register.urgency-inflation-core": "error",
+     "ai-tells-register.urgency-inflation-remainder": "error",
+     "ai-tells-structure.absolute-assertion-core": "error",
+     "ai-tells-structure.absolute-assertion-remainder": "error",
+     "ai-tells-structure.analogy-stack-authority": "error",
+     "ai-tells-structure.anaphora-abuse": "error",
+     "ai-tells-structure.audience-straddle-core": "error",
+     "ai-tells-structure.audience-straddle-remainder": "error",
+     "ai-tells-structure.cataphoric-lead-in-core": "error",
+     "ai-tells-structure.cataphoric-lead-in-remainder": "error",
+     "ai-tells-structure.contrastive-appositive": "warning",
+     "ai-tells-structure.contrastive-inversion-frames": "error",
+     "ai-tells-structure.contrastive-inversion-remainder": "error",
+     "ai-tells-structure.definitional-negation-pair": "warning",
+     "ai-tells-structure.false-range": "error",
+     "ai-tells-structure.false-suspense-frames": "error",
+     "ai-tells-structure.false-suspense-remainder": "error",
+     "ai-tells-structure.fragment-question-pivot": "error",
+     "ai-tells-structure.heading-echo": "error",
+     "ai-tells-structure.hollow-acknowledgment": "error",
+     "ai-tells-structure.invented-concept-label": "error",
+     "ai-tells-structure.listicle-in-a-trench-coat": "error",
+     "ai-tells-structure.meta-narration-frames": "error",
+     "ai-tells-structure.meta-narration-remainder": "error",
+     "ai-tells-structure.negative-guarantee-core": "warning",
+     "ai-tells-structure.negative-inventory-core": "error",
+     "ai-tells-structure.negative-inventory-remainder": "error",
+     "ai-tells-structure.rhetorical-question-transition": "error",
+     "ai-tells-structure.staccato-negative-parallel-frames": "error",
+     "ai-tells-structure.staccato-negative-parallel-remainder": "error",
+     "ai-tells-structure.summary-closer-frames": "error",
+     "ai-tells-structure.summary-closer-remainder": "error",
+     "ai-tells-structure.think-of-it-as-core": "error",
+     "ai-tells-structure.think-of-it-as-remainder": "error",
+     "ai-tells-structure.tricolon-abuse-core": "suggestion",
+     "ai-tells-structure.tricolon-abuse-remainder": "error",
+     "ai-tells-structure.vague-attribution-core": "error",
+     "ai-tells-structure.vague-attribution-remainder": "error",
+     "docs-discipline.history-internal-reference": "error",
+     "docs-discipline.history-narration": "error",
+     "docs-discipline.internal-refs": "error",
+     "docs-discipline.no-longer-change": "error",
+     "docs-discipline.status-language": "error",
+     "orwell.compound-preposition": "error",
+     "orwell.concrete-floor": "error",
+     "orwell.not-un": "error",
+     "orwell.stale-figure": "error",
+     "orwell.unsupported-evaluative": "error",
+     "prose-agency.agentless-passive": "error",
+     "prose-agency.anthropomorphism": "error",
+     "prose-agency.false-agency": "error",
+     "prose-agency.narrator-distance": "error",
+     "prose-agency.unattributed-recommendation": "error",
+     "prose-craft.acronym-periods": "warning",
+     "prose-craft.ambiguity": "warning",
+     "prose-craft.articles": "warning",
+     "prose-craft.command-prompt": "suggestion",
+     "prose-craft.conflict-markers": "warning",
+     "prose-craft.dead-opener": "warning",
+     "prose-craft.directional-ref": "warning",
+     "prose-craft.first-person-plural": "warning",
+     "prose-craft.future-tense": "warning",
+     "prose-craft.gerund-heading": "warning",
+     "prose-craft.hyphens": "warning",
+     "prose-craft.latinisms": "off",
+     "prose-craft.link-text": "warning",
+     "prose-craft.misnomer": "warning",
+     "prose-craft.negative-requirement": "warning",
+     "prose-craft.optional-plural": "warning",
+     "prose-craft.ordinals": "warning",
+     "prose-craft.plural-abbreviation": "suggestion",
+     "prose-craft.politeness": "warning",
+     "prose-craft.redundancy": "warning",
+     "prose-craft.relative-date": "warning",
+     "prose-craft.self-reference": "warning",
+     "prose-craft.sentence-length": "warning",
+     "prose-craft.spacing": "warning",
+     "prose-craft.unclear-antecedent": "warning",
+     "prose-craft.versions": "warning",
+     "prose-craft.wordiness": "warning",
+     "prose-discipline.bare-quantifier-with-figure-available": "error",
+     "prose-discipline.bidirectional-hedge": "error",
+     "prose-discipline.competing-actor-terms": "error",
+     "prose-discipline.frozen-verb": "error",
+     "prose-discipline.hedged-hedge": "error",
+     "prose-discipline.hedged-into-uselessness": "error",
+     "prose-discipline.marketing-lexicon": "error",
+     "prose-discipline.marketing-register": "error",
+     "prose-discipline.negative-guarantee-remainder": "error",
+     "prose-discipline.no-longer-change-remainder": "error",
+     "prose-discipline.overloaded-sentence": "error",
+     "prose-discipline.phrasal-verb": "error",
+     "prose-discipline.run-on": "error",
+     "prose-format.emoji-heading": "error",
+     "prose-format.no-unicode-dash": "error",
+     "prose-format.prose-block": "error",
+     "prose-inclusive.ableist": "off",
+     "prose-inclusive.device-assumption": "off",
+     "prose-inclusive.exclusive": "off",
+     "prose-inflation.additive-hedge": "error",
+     "prose-inflation.apologizing": "error",
+     "prose-inflation.borderline-hype": "error",
+     "prose-inflation.business-jargon": "error",
+     "prose-inflation.document-preamble": "error",
+     "prose-inflation.hedge-stack": "error",
+     "prose-inflation.intensifier": "error",
+     "prose-inflation.nominalized-verb": "error",
+     "prose-inflation.slop-lexicon": "error",
+     "prose-inflation.uncomparables": "error",
+     "prose-inflation.vague-declarative": "error",
+     "prose-inflation.vague-quantifier": "error",
+     "prose-promotion.promotional-adjective-noun": "error",
+     "prose-promotion.promotional-puffery": "error",
+     "prose-promotion.promotional-verbs": "error",
+     "prose-promotion.strategy-buzzwords": "error",
+     "prose-scope.code-change-prose-scope": "error",
+     "prose-scope.epigram": "error",
+     "prose-scope.formulaic-subject-verb-slogan": "error",
+     "prose-scope.implementation-leak": "error",
+     "prose-scope.rejected-alternative": "error",
+     "prose-scope.unrequested-reassurance": "error",
+     "ste-descriptive.information-not-gradual": "error",
+     "ste-descriptive.missing-key-word-structure": "error",
+     "ste-descriptive.paragraph-has-multiple-topics": "error",
+     "ste-descriptive.paragraph-too-many-sentences": "error",
+     "ste-descriptive.paragraph-without-related-information": "suggestion",
+     "ste-descriptive.sentence-too-long-descriptive": "error",
+     "ste-nouns.long-domain-term-without-short-form": "error",
+     "ste-nouns.multiword-noun-too-long": "error",
+     "ste-practices.ambiguous-preposition-with": "suggestion",
+     "ste-practices.false-friend-term": "warning",
+     "ste-practices.gendered-or-exclusionary-language": "off",
+     "ste-practices.inconsistent-wording-for-same-step": "warning",
+     "ste-practices.latin-abbreviation": "off",
+     "ste-practices.omitted-conjunction-that": "warning",
+     "ste-practices.phrasal-verb": "warning",
+     "ste-practices.possessive-form-unclear": "suggestion",
+     "ste-practices.unclear-demonstrative-this": "suggestion",
+     "ste-practices.unclear-pronoun": "off",
+     "ste-practices.word-sense-incorrect": "error",
+     "ste-practices.word-swap-insufficient": "error",
+     "ste-procedural.condition-after-command": "error",
+     "ste-procedural.instruction-not-imperative": "error",
+     "ste-procedural.multiple-instructions-per-sentence": "error",
+     "ste-procedural.note-gives-instruction": "error",
+     "ste-procedural.sentence-too-long-procedural": "error",
+     "ste-punctuation.colon-terminates-sentence-for-count": "warning",
+     "ste-punctuation.hyphen-group-too-long": "warning",
+     "ste-punctuation.hyphen-missing-in-compound-modifier": "warning",
+     "ste-punctuation.parentheses-misuse": "suggestion",
+     "ste-punctuation.semicolon-used": "warning",
+     "ste-safety.risk-level-word-missing-or-wrong": "error",
+     "ste-safety.safety-block-does-not-start-with-command": "error",
+     "ste-safety.safety-block-missing-consequence": "error",
+     "ste-sentences.complex-text-not-in-vertical-list": "error",
+     "ste-sentences.missing-article-or-determiner": "error",
+     "ste-sentences.missing-connector-between-related-sentences": "error",
+     "ste-sentences.omitted-subject": "error",
+     "ste-sentences.sentence-not-short-or-clear": "error",
+     "ste-sentences.vertical-list-item-punctuation": "error",
+     "ste-sentences.vertical-list-lead-in-missing-colon": "error",
+     "ste-verbs.auxiliary-stacking": "error",
+     "ste-verbs.complex-tense": "error",
+     "ste-verbs.gerund-outside-noun-use": "error",
+     "ste-verbs.nominalized-action": "error",
+     "ste-verbs.passive-voice": "error",
+     "ste-verbs.past-participle-not-adjectival": "error",
+     "ste-verbs.verb-form-not-listed": "error",
+     "ste-words.approved-word-substitution": "error",
+     "ste-words.domain-noun-category-membership": "error",
+     "ste-words.domain-noun-not-organization-approved": "error",
+     "ste-words.domain-noun-too-long-or-unclear": "suggestion",
+     "ste-words.domain-verb-category-membership": "error",
+     "ste-words.inconsistent-term-for-same-thing": "error",
+     "ste-words.noun-used-as-verb": "error",
+     "ste-words.obligation-word-substitution": "error",
+     "ste-words.slang-or-jargon-term": "error",
+     "ste-words.unapproved-word-not-a-domain-noun": "error",
+     "ste-words.verb-or-adjective-form-not-permitted": "error",
+     "ste-words.verb-used-as-noun": "error",
+     "ste-words.word-outside-controlled-vocabulary": "error",
+     "ste-words.word-used-in-wrong-part-of-speech": "error",
+     "ste-words.word-used-outside-permitted-sense": "error"
+    }
+   }
+  },
+  "files": {
+   "authored-budget-survives-a-switch": {
+    "c.md": {
+     "dials": {
+      "orwell-voice": {
+       "budget": 2.0,
+       "weight": 1.0
+      }
+     },
+     "levels": {},
+     "profile": "normal"
+    },
+    "docs/a.md": {
+     "dials": {
+      "orwell-voice": {
+       "budget": 2.0,
+       "weight": 0.5
+      }
+     },
+     "levels": {},
+     "profile": "strict"
+    }
+   },
+   "authored-category-floor-only": {
+    "a.md": {
+     "dials": {},
+     "levels": {
+      "ste-verbs.auxiliary-stacking": "warning",
+      "ste-verbs.complex-tense": "warning",
+      "ste-verbs.nominalized-action": "warning",
+      "ste-verbs.passive-voice": "warning",
+      "ste-verbs.verb-form-not-listed": "warning"
+     },
+     "profile": "normal"
+    }
+   },
+   "authored-category-off": {
+    "a.md": {
+     "dials": {
+      "prose-inflation": "off"
+     },
+     "levels": {
+      "prose-inflation.additive-hedge": "off",
+      "prose-inflation.apologizing": "off",
+      "prose-inflation.borderline-hype": "off",
+      "prose-inflation.business-jargon": "off",
+      "prose-inflation.document-preamble": "off",
+      "prose-inflation.hedge-stack": "off",
+      "prose-inflation.intensifier": "off",
+      "prose-inflation.nominalized-verb": "off",
+      "prose-inflation.slop-lexicon": "off",
+      "prose-inflation.uncomparables": "off",
+      "prose-inflation.vague-declarative": "off",
+      "prose-inflation.vague-quantifier": "off"
+     },
+     "profile": "strict"
+    }
+   },
+   "authored-category-revives-off": {
+    "a.md": {
+     "dials": {
+      "prose-craft": {
+       "budget": null,
+       "weight": 0.8
+      }
+     },
+     "levels": {
+      "prose-craft.acronym-periods": "warning",
+      "prose-craft.ambiguity": "warning",
+      "prose-craft.articles": "warning",
+      "prose-craft.conflict-markers": "warning",
+      "prose-craft.dead-opener": "warning",
+      "prose-craft.directional-ref": "warning",
+      "prose-craft.hyphens": "warning",
+      "prose-craft.link-text": "warning",
+      "prose-craft.misnomer": "warning",
+      "prose-craft.optional-plural": "warning",
+      "prose-craft.ordinals": "warning",
+      "prose-craft.plural-abbreviation": "warning",
+      "prose-craft.redundancy": "warning",
+      "prose-craft.relative-date": "warning",
+      "prose-craft.self-reference": "warning",
+      "prose-craft.sentence-length": "warning",
+      "prose-craft.spacing": "warning",
+      "prose-craft.unclear-antecedent": "warning",
+      "prose-craft.versions": "warning",
+      "prose-craft.wordiness": "warning"
+     },
+     "profile": "relaxed"
+    }
+   },
+   "authored-category-severity": {
+    "a.md": {
+     "dials": {},
+     "levels": {
+      "prose-craft.acronym-periods": "error",
+      "prose-craft.ambiguity": "error",
+      "prose-craft.articles": "error",
+      "prose-craft.conflict-markers": "error",
+      "prose-craft.dead-opener": "error",
+      "prose-craft.directional-ref": "error",
+      "prose-craft.first-person-plural": "error",
+      "prose-craft.future-tense": "error",
+      "prose-craft.gerund-heading": "error",
+      "prose-craft.hyphens": "error",
+      "prose-craft.link-text": "error",
+      "prose-craft.misnomer": "error",
+      "prose-craft.negative-requirement": "error",
+      "prose-craft.optional-plural": "error",
+      "prose-craft.ordinals": "error",
+      "prose-craft.plural-abbreviation": "error",
+      "prose-craft.politeness": "error",
+      "prose-craft.redundancy": "error",
+      "prose-craft.relative-date": "error",
+      "prose-craft.self-reference": "error",
+      "prose-craft.sentence-length": "error",
+      "prose-craft.spacing": "error",
+      "prose-craft.unclear-antecedent": "error",
+      "prose-craft.versions": "error",
+      "prose-craft.wordiness": "error"
+     },
+     "profile": "normal"
+    }
+   },
+   "authored-category-without-severity-in-override": {
+    "a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    },
+    "docs/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    }
+   },
+   "authored-rule": {
+    "a.md": {
+     "dials": {},
+     "levels": {
+      "prose-craft.spacing": "error"
+     },
+     "profile": "normal"
+    }
+   },
+   "budget-cleared-after-an-earlier-switch": {
+    "c.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    },
+    "docs/api/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    },
+    "docs/b.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "normal"
+    }
+   },
+   "budget-restored-by-the-reverse-switch": {
+    "c.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    },
+    "docs/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "normal"
+    }
+   },
+   "dropped-entry-takes-the-profile-default-at-the-top": {
+    "a.md": {
+     "dials": {
+      "prose-craft": "off"
+     },
+     "levels": {
+      "prose-craft.acronym-periods": "off",
+      "prose-craft.ambiguity": "off",
+      "prose-craft.articles": "off",
+      "prose-craft.command-prompt": "off",
+      "prose-craft.conflict-markers": "off",
+      "prose-craft.dead-opener": "off",
+      "prose-craft.directional-ref": "off",
+      "prose-craft.first-person-plural": "off",
+      "prose-craft.future-tense": "off",
+      "prose-craft.gerund-heading": "off",
+      "prose-craft.hyphens": "off",
+      "prose-craft.link-text": "off",
+      "prose-craft.misnomer": "off",
+      "prose-craft.negative-requirement": "off",
+      "prose-craft.optional-plural": "off",
+      "prose-craft.ordinals": "off",
+      "prose-craft.plural-abbreviation": "off",
+      "prose-craft.politeness": "off",
+      "prose-craft.redundancy": "off",
+      "prose-craft.relative-date": "off",
+      "prose-craft.self-reference": "off",
+      "prose-craft.sentence-length": "off",
+      "prose-craft.spacing": "off",
+      "prose-craft.unclear-antecedent": "off",
+      "prose-craft.versions": "off",
+      "prose-craft.wordiness": "off"
+     },
+     "profile": "strict"
+    }
+   },
+   "dropped-entry-takes-the-profile-default-in-an-override": {
+    "a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    },
+    "docs/a.md": {
+     "dials": {
+      "prose-craft": "off"
+     },
+     "levels": {
+      "prose-craft.acronym-periods": "off",
+      "prose-craft.ambiguity": "off",
+      "prose-craft.articles": "off",
+      "prose-craft.command-prompt": "off",
+      "prose-craft.conflict-markers": "off",
+      "prose-craft.dead-opener": "off",
+      "prose-craft.directional-ref": "off",
+      "prose-craft.first-person-plural": "off",
+      "prose-craft.future-tense": "off",
+      "prose-craft.gerund-heading": "off",
+      "prose-craft.hyphens": "off",
+      "prose-craft.link-text": "off",
+      "prose-craft.misnomer": "off",
+      "prose-craft.negative-requirement": "off",
+      "prose-craft.optional-plural": "off",
+      "prose-craft.ordinals": "off",
+      "prose-craft.plural-abbreviation": "off",
+      "prose-craft.politeness": "off",
+      "prose-craft.redundancy": "off",
+      "prose-craft.relative-date": "off",
+      "prose-craft.self-reference": "off",
+      "prose-craft.sentence-length": "off",
+      "prose-craft.spacing": "off",
+      "prose-craft.unclear-antecedent": "off",
+      "prose-craft.versions": "off",
+      "prose-craft.wordiness": "off"
+     },
+     "profile": "strict"
+    }
+   },
+   "ignored-rule-entry-is-dropped": {
+    "a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    }
+   },
+   "judgement-entries-are-ignored": {
+    "a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "normal"
+    },
+    "docs/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "normal"
+    }
+   },
+   "later-block-rule-ignored-after-a-switch-to-relaxed": {
+    "c.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    },
+    "docs/api/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    },
+    "docs/b.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    }
+   },
+   "later-block-rule-ignored-by-an-earlier-profile-switch": {
+    "c.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    },
+    "docs/api/a.md": {
+     "dials": {},
+     "levels": {
+      "orwell.not-un": "warning"
+     },
+     "profile": "strict"
+    },
+    "docs/b.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    }
+   },
+   "later-block-rule-revived-by-an-earlier-category": {
+    "c.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    },
+    "docs/api/a.md": {
+     "dials": {
+      "prose-craft": {
+       "budget": null,
+       "weight": 0.8
+      }
+     },
+     "levels": {
+      "prose-craft.acronym-periods": "warning",
+      "prose-craft.ambiguity": "warning",
+      "prose-craft.articles": "warning",
+      "prose-craft.conflict-markers": "warning",
+      "prose-craft.dead-opener": "warning",
+      "prose-craft.directional-ref": "warning",
+      "prose-craft.hyphens": "warning",
+      "prose-craft.link-text": "warning",
+      "prose-craft.misnomer": "warning",
+      "prose-craft.optional-plural": "warning",
+      "prose-craft.ordinals": "warning",
+      "prose-craft.plural-abbreviation": "warning",
+      "prose-craft.redundancy": "warning",
+      "prose-craft.relative-date": "warning",
+      "prose-craft.self-reference": "warning",
+      "prose-craft.sentence-length": "warning",
+      "prose-craft.spacing": "error",
+      "prose-craft.unclear-antecedent": "warning",
+      "prose-craft.versions": "warning",
+      "prose-craft.wordiness": "warning"
+     },
+     "profile": "relaxed"
+    },
+    "docs/b.md": {
+     "dials": {
+      "prose-craft": {
+       "budget": null,
+       "weight": 0.8
+      }
+     },
+     "levels": {
+      "prose-craft.acronym-periods": "warning",
+      "prose-craft.ambiguity": "warning",
+      "prose-craft.articles": "warning",
+      "prose-craft.conflict-markers": "warning",
+      "prose-craft.dead-opener": "warning",
+      "prose-craft.directional-ref": "warning",
+      "prose-craft.hyphens": "warning",
+      "prose-craft.link-text": "warning",
+      "prose-craft.misnomer": "warning",
+      "prose-craft.optional-plural": "warning",
+      "prose-craft.ordinals": "warning",
+      "prose-craft.plural-abbreviation": "warning",
+      "prose-craft.redundancy": "warning",
+      "prose-craft.relative-date": "warning",
+      "prose-craft.self-reference": "warning",
+      "prose-craft.sentence-length": "warning",
+      "prose-craft.spacing": "warning",
+      "prose-craft.unclear-antecedent": "warning",
+      "prose-craft.versions": "warning",
+      "prose-craft.wordiness": "warning"
+     },
+     "profile": "relaxed"
+    }
+   },
+   "literal-path-also-matches-its-descendants": {
+    "docs/api": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    },
+    "docs/api/a.md": {
+     "dials": {},
+     "levels": {
+      "orwell.not-un": "warning"
+     },
+     "profile": "strict"
+    },
+    "docs/b.md": {
+     "dials": {},
+     "levels": {
+      "orwell.not-un": "warning"
+     },
+     "profile": "strict"
+    }
+   },
+   "override-authors-category": {
+    "docs/a.md": {
+     "dials": {},
+     "levels": {
+      "prose-craft.acronym-periods": "error",
+      "prose-craft.ambiguity": "error",
+      "prose-craft.articles": "error",
+      "prose-craft.conflict-markers": "error",
+      "prose-craft.dead-opener": "error",
+      "prose-craft.directional-ref": "error",
+      "prose-craft.first-person-plural": "error",
+      "prose-craft.future-tense": "error",
+      "prose-craft.gerund-heading": "error",
+      "prose-craft.hyphens": "error",
+      "prose-craft.link-text": "error",
+      "prose-craft.misnomer": "error",
+      "prose-craft.negative-requirement": "error",
+      "prose-craft.optional-plural": "error",
+      "prose-craft.ordinals": "error",
+      "prose-craft.plural-abbreviation": "error",
+      "prose-craft.politeness": "error",
+      "prose-craft.redundancy": "error",
+      "prose-craft.relative-date": "error",
+      "prose-craft.self-reference": "error",
+      "prose-craft.sentence-length": "error",
+      "prose-craft.spacing": "error",
+      "prose-craft.unclear-antecedent": "error",
+      "prose-craft.versions": "error",
+      "prose-craft.wordiness": "error"
+     },
+     "profile": "normal"
+    },
+    "src/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "normal"
+    }
+   },
+   "override-revives-category-and-rule": {
+    "a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    },
+    "docs/a.md": {
+     "dials": {
+      "prose-craft": {
+       "budget": null,
+       "weight": 0.8
+      }
+     },
+     "levels": {
+      "prose-craft.acronym-periods": "warning",
+      "prose-craft.ambiguity": "warning",
+      "prose-craft.articles": "warning",
+      "prose-craft.conflict-markers": "warning",
+      "prose-craft.dead-opener": "warning",
+      "prose-craft.directional-ref": "warning",
+      "prose-craft.hyphens": "warning",
+      "prose-craft.link-text": "warning",
+      "prose-craft.misnomer": "warning",
+      "prose-craft.optional-plural": "warning",
+      "prose-craft.ordinals": "warning",
+      "prose-craft.plural-abbreviation": "warning",
+      "prose-craft.redundancy": "warning",
+      "prose-craft.relative-date": "warning",
+      "prose-craft.self-reference": "warning",
+      "prose-craft.sentence-length": "warning",
+      "prose-craft.spacing": "error",
+      "prose-craft.unclear-antecedent": "warning",
+      "prose-craft.versions": "warning",
+      "prose-craft.wordiness": "warning"
+     },
+     "profile": "relaxed"
+    }
+   },
+   "profile-override": {
+    "docs/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    },
+    "src/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "normal"
+    }
+   },
+   "profile-override-around-an-earlier-category-block": {
+    "a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    },
+    "docs/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    },
+    "docs/api/x.md": {
+     "dials": {
+      "prose-craft": {
+       "budget": null,
+       "weight": 0.8
+      }
+     },
+     "levels": {
+      "prose-craft.acronym-periods": "warning",
+      "prose-craft.ambiguity": "warning",
+      "prose-craft.articles": "warning",
+      "prose-craft.conflict-markers": "warning",
+      "prose-craft.dead-opener": "warning",
+      "prose-craft.directional-ref": "warning",
+      "prose-craft.hyphens": "warning",
+      "prose-craft.link-text": "warning",
+      "prose-craft.misnomer": "warning",
+      "prose-craft.optional-plural": "warning",
+      "prose-craft.ordinals": "warning",
+      "prose-craft.plural-abbreviation": "warning",
+      "prose-craft.redundancy": "warning",
+      "prose-craft.relative-date": "warning",
+      "prose-craft.self-reference": "warning",
+      "prose-craft.sentence-length": "warning",
+      "prose-craft.spacing": "warning",
+      "prose-craft.unclear-antecedent": "warning",
+      "prose-craft.versions": "warning",
+      "prose-craft.wordiness": "warning"
+     },
+     "profile": "relaxed"
+    }
+   },
+   "profile-override-clears-a-budget-with-none": {
+    "a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "normal"
+    },
+    "docs/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    }
+   },
+   "profile-override-inside-an-earlier-category-block": {
+    "a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    },
+    "docs/a.md": {
+     "dials": {},
+     "levels": {
+      "prose-craft.command-prompt": "warning",
+      "prose-craft.plural-abbreviation": "warning"
+     },
+     "profile": "strict"
+    },
+    "docs/api/x.md": {
+     "dials": {
+      "prose-craft": {
+       "budget": null,
+       "weight": 0.8
+      }
+     },
+     "levels": {
+      "prose-craft.acronym-periods": "warning",
+      "prose-craft.ambiguity": "warning",
+      "prose-craft.articles": "warning",
+      "prose-craft.conflict-markers": "warning",
+      "prose-craft.dead-opener": "warning",
+      "prose-craft.directional-ref": "warning",
+      "prose-craft.hyphens": "warning",
+      "prose-craft.link-text": "warning",
+      "prose-craft.misnomer": "warning",
+      "prose-craft.optional-plural": "warning",
+      "prose-craft.ordinals": "warning",
+      "prose-craft.plural-abbreviation": "warning",
+      "prose-craft.redundancy": "warning",
+      "prose-craft.relative-date": "warning",
+      "prose-craft.self-reference": "warning",
+      "prose-craft.sentence-length": "warning",
+      "prose-craft.spacing": "warning",
+      "prose-craft.unclear-antecedent": "warning",
+      "prose-craft.versions": "warning",
+      "prose-craft.wordiness": "warning"
+     },
+     "profile": "relaxed"
+    }
+   },
+   "profile-override-keeps-top-authored-category": {
+    "docs/a.md": {
+     "dials": {
+      "prose-craft": {
+       "budget": null,
+       "weight": 3.0
+      }
+     },
+     "levels": {
+      "prose-craft.acronym-periods": "warning",
+      "prose-craft.ambiguity": "warning",
+      "prose-craft.articles": "warning",
+      "prose-craft.conflict-markers": "warning",
+      "prose-craft.dead-opener": "warning",
+      "prose-craft.directional-ref": "warning",
+      "prose-craft.hyphens": "warning",
+      "prose-craft.link-text": "warning",
+      "prose-craft.misnomer": "warning",
+      "prose-craft.optional-plural": "warning",
+      "prose-craft.ordinals": "warning",
+      "prose-craft.plural-abbreviation": "warning",
+      "prose-craft.redundancy": "warning",
+      "prose-craft.relative-date": "warning",
+      "prose-craft.self-reference": "warning",
+      "prose-craft.sentence-length": "warning",
+      "prose-craft.spacing": "warning",
+      "prose-craft.unclear-antecedent": "warning",
+      "prose-craft.versions": "warning",
+      "prose-craft.wordiness": "warning"
+     },
+     "profile": "relaxed"
+    },
+    "src/a.md": {
+     "dials": {
+      "prose-craft": {
+       "budget": 1.5,
+       "weight": 3.0
+      }
+     },
+     "levels": {
+      "prose-craft.directional-ref": "warning",
+      "prose-craft.first-person-plural": "warning",
+      "prose-craft.future-tense": "warning",
+      "prose-craft.plural-abbreviation": "warning",
+      "prose-craft.politeness": "warning",
+      "prose-craft.self-reference": "warning",
+      "prose-craft.spacing": "warning",
+      "prose-craft.unclear-antecedent": "warning",
+      "prose-craft.versions": "warning"
+     },
+     "profile": "normal"
+    }
+   },
+   "profile-override-keeps-top-authored-rule": {
+    "docs/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    }
+   },
+   "profile-override-with-own-category": {
+    "docs/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    }
+   },
+   "rule-default-survives-authored-category": {
+    "a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "normal"
+    }
+   },
+   "top-rule-ignored-at-baseline-valid-in-override": {
+    "a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    },
+    "docs/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    }
+   },
+   "top-rule-ignored-only-in-a-nested-scope": {
+    "c.md": {
+     "dials": {},
+     "levels": {
+      "orwell.not-un": "warning"
+     },
+     "profile": "strict"
+    },
+    "docs/api/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    },
+    "docs/b.md": {
+     "dials": {},
+     "levels": {
+      "orwell.not-un": "warning"
+     },
+     "profile": "normal"
+    }
+   },
+   "top-rule-valid-at-baseline-ignored-in-override": {
+    "a.md": {
+     "dials": {},
+     "levels": {
+      "orwell.not-un": "warning"
+     },
+     "profile": "strict"
+    },
+    "docs/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    }
+   },
+   "two-profile-overrides": {
+    "c.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "normal"
+    },
+    "docs/api/a.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "strict"
+    },
+    "docs/b.md": {
+     "dials": {},
+     "levels": {},
+     "profile": "relaxed"
+    }
+   }
   }
  },
  "regions": {

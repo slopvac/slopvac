@@ -177,6 +177,24 @@ fn a_2x_config_migrates_to_one_the_version_gate_accepts() {
 }
 
 #[test]
+fn a_result_the_3_0_loader_refuses_stops_the_migration_with_its_code() {
+    // 2.x read both blocks; 3.0 refuses two override blocks with the same files.
+    let text = "[[overrides]]\nfiles = [\"docs/**\"]\nthresholds = { max_errors = 1 }\n\n\
+                [[overrides]]\nfiles = [\"docs/**\"]\nlocale = { default = \"en-GB\" }\n";
+    for preserve_behavior in [false, true] {
+        let err = migrate_config(
+            text,
+            "slopvac.toml",
+            &RenameTable::bundled(),
+            Options { preserve_behavior },
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "migrate-output-invalid", "{err}");
+        assert!(err.to_string().contains("config-duplicate-scope"), "{err}");
+    }
+}
+
+#[test]
 fn guidance_and_thresholds_copy() {
     let src = "[thresholds]\nmax_errors = 2\nmin_score = 80.0\n[guidance]\nwrite = \"auto\"\nreview_depth = \"self\"\n";
     let out = migrate(src).unwrap();

@@ -14,7 +14,7 @@ use toml_edit::{
 };
 
 use crate::legacy::{Dials, Layer, Legacy, PROFILES, Scalar, read_dials};
-use crate::preserve::{Block2, Block3, Config2, DropReason, Expanded, expand};
+use crate::preserve::{Block2, Block3, Config2, DropReason, Expanded, Out, Patched, expand};
 use crate::{Dropped, Error, RenameTable};
 
 /// The pack that ships the legacy styles (docs/contract/profiles.md, E1).
@@ -222,87 +222,288 @@ fn write(doc: &mut DocumentMut, config: &Config2, expanded: &Expanded, ctx: &mut
         first_override.map(|p| p - 1),
         ctx,
     );
-    let inline = !matches!(doc.get("overrides"), Some(Item::ArrayOfTables(_)) | None);
+    note_layout(expanded, ctx);
     match doc.get_mut("overrides") {
         Some(Item::ArrayOfTables(aot)) => {
-            for (i, (t, layer)) in aot.iter_mut().zip(&expanded.blocks).enumerate() {
-                patch_layer(t, &format!("overrides[{i}]"), layer, None, ctx);
+            let originals: Vec<Table> = aot.iter().cloned().collect();
+            let views: Vec<&dyn TableLike> =
+                originals.iter().map(|t| t as &dyn TableLike).collect();
+            let mut pool = Vec::new();
+            for t in &originals {
+                positions(t, &mut pool);
             }
+            pool.sort_unstable();
+            let mut rebuilt = ArrayOfTables::new();
+            for out in &expanded.overrides {
+                rebuilt.push(match out {
+                    Out::Original(b) => {
+                        let mut t = originals[b.index].clone();
+                        patch_block(&mut t, b, false, &views, ctx);
+                        t
+                    }
+                    Out::Guard(g) => block_table(g, GUARD_COMMENT, ctx),
+                });
+            }
+            // Moved blocks take the document positions in their new order, so they
+            // render in it.
+            let mut next = pool.into_iter();
+            for t in rebuilt.iter_mut() {
+                reposition(t, &mut next);
+            }
+            *aot = rebuilt;
         }
         Some(item) => {
-            if let Some(arr) = item.as_array_mut() {
-                let tables = arr.iter_mut().filter_map(Value::as_inline_table_mut);
-                for (i, (t, layer)) in tables.zip(&expanded.blocks).enumerate() {
-                    patch_inline_layer(t, &format!("overrides[{i}]"), layer, ctx);
+            let Some(arr) = item.as_array_mut() else {
+                return;
+            };
+            let originals: Vec<InlineTable> = arr
+                .iter()
+                .filter_map(Value::as_inline_table)
+                .cloned()
+                .collect();
+            let views: Vec<&dyn TableLike> =
+                originals.iter().map(|t| t as &dyn TableLike).collect();
+            let mut values = Vec::new();
+            for out in &expanded.overrides {
+                values.push(match out {
+                    Out::Original(b) => {
+                        let mut t = originals[b.index].clone();
+                        patch_block(&mut t, b, true, &views, ctx);
+                        (Value::InlineTable(t), true)
+                    }
+                    Out::Guard(g) => (
+                        Value::InlineTable(block_table(g, GUARD_COMMENT, ctx).into_inline_table()),
+                        false,
+                    ),
+                });
+            }
+            arr.clear();
+            for (v, formatted) in values {
+                if formatted {
+                    arr.push_formatted(v);
+                } else {
+                    arr.push(v);
                 }
             }
         }
         None => {}
     }
-    if expanded.switches.is_empty() && expanded.guards.is_empty() {
-        return;
-    }
-    let switches: Vec<Table> = expanded
-        .switches
-        .iter()
-        .map(|b| {
-            block_table(
-                b,
-                "Added by `slopvac migrate --preserve-behavior`: switch these files to the 2.x\n# profile that the block below with the same files selects.",
-                ctx,
-            )
-        })
-        .collect();
-    let guards: Vec<Table> = expanded
-        .guards
-        .iter()
-        .map(|b| {
-            block_table(
-                b,
-                "Added by `slopvac migrate --preserve-behavior`: 2.x ignored these rule entries\n# for these files.",
-                ctx,
-            )
-        })
-        .collect();
-    if !switches.is_empty() {
-        ctx.notes.push(format!(
-            "added {} before the others that switch files to another 2.x profile",
-            override_blocks(switches.len())
-        ));
-    }
-    if !guards.is_empty() {
-        ctx.notes.push(format!(
-            "added {} after the others that turn off rule entries 2.x ignored",
-            override_blocks(guards.len())
-        ));
-    }
-    if inline {
-        if let Some(arr) = doc.get_mut("overrides").and_then(Item::as_array_mut) {
-            for (i, t) in switches.into_iter().enumerate() {
-                arr.insert(i, t.into_inline_table());
+}
+
+const GUARD_COMMENT: &str = "Added by `slopvac migrate --preserve-behavior`: 2.x ignored these rule entries\n# for these files.";
+
+fn note_layout(expanded: &Expanded, ctx: &mut Ctx<'_>) {
+    let list = |blocks: &[usize]| {
+        blocks
+            .iter()
+            .map(|j| format!("overrides[{j}]"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut guards = 0;
+    for out in &expanded.overrides {
+        let b = match out {
+            Out::Original(b) => b,
+            Out::Guard(_) => {
+                guards += 1;
+                continue;
             }
-            for t in guards {
-                arr.push(t.into_inline_table());
+        };
+        let at = format!("overrides[{}]", b.index);
+        if let Some(profile) = &b.switch {
+            ctx.notes.push(format!(
+                "merged the switch to the 2.x {profile} profile into {at}"
+            ));
+            if !b.restated.is_empty() {
+                ctx.notes.push(format!(
+                    "restated in {at} the categories and rules of {}, which also match its files",
+                    list(&b.restated)
+                ));
             }
         }
-        return;
+        if b.guarded > 0 {
+            ctx.notes.push(format!(
+                "turned off {} in {at} that 2.x ignored for its files",
+                rule_entries(b.guarded)
+            ));
+        }
+        if let Some(after) = b.moved_after {
+            ctx.notes.push(format!(
+                "moved {at} after overrides[{after}], which holds its files and switches them to another 2.x profile; it gives up the settings of {} that won in 2.x",
+                list(&b.yields_to)
+            ));
+        }
     }
-    let Some(Item::ArrayOfTables(aot)) = doc.get_mut("overrides") else {
+    if guards > 0 {
+        ctx.notes.push(format!(
+            "added {} after the others that turn off rule entries 2.x ignored",
+            override_blocks(guards)
+        ));
+    }
+}
+
+/// Collect the document positions of `t` and of the tables inside it.
+fn positions(t: &Table, out: &mut Vec<isize>) {
+    out.extend(t.position());
+    for (_, item) in t.iter() {
+        match item {
+            Item::Table(sub) => positions(sub, out),
+            Item::ArrayOfTables(aot) => aot.iter().for_each(|sub| positions(sub, out)),
+            _ => {}
+        }
+    }
+}
+
+/// Give `t` and the tables inside it that have a position the next ones from `next`.
+fn reposition(t: &mut Table, next: &mut impl Iterator<Item = isize>) {
+    if t.position().is_some() {
+        t.set_position(next.next());
+    }
+    for (_, item) in t.iter_mut() {
+        match item {
+            Item::Table(sub) => reposition(sub, next),
+            Item::ArrayOfTables(aot) => aot.iter_mut().for_each(|sub| reposition(sub, next)),
+            _ => {}
+        }
+    }
+}
+
+/// An empty sub-table in the form of its block.
+fn sub_table(inline: bool) -> Item {
+    if inline {
+        Item::Value(Value::InlineTable(InlineTable::new()))
+    } else {
+        Item::Table(Table::new())
+    }
+}
+
+/// Make an original block hold `b.layer`, keeping the comments of the entries that stay,
+/// and drop the other settings that a block it now sits above sets.
+fn patch_block(
+    t: &mut dyn TableLike,
+    b: &Patched,
+    inline: bool,
+    originals: &[&dyn TableLike],
+    ctx: &mut Ctx<'_>,
+) {
+    let prefix = format!("overrides[{}]", b.index);
+    let cats: BTreeMap<String, Dials> = b
+        .layer
+        .categories
+        .iter()
+        .map(|(name, d)| (ctx.category(name), d.clone()))
+        .collect();
+    reconcile_categories(t, &cats, inline);
+    let wanted = wanted_rules(&b.layer, ctx);
+    if !t.contains_key("rules") && !wanted.is_empty() {
+        t.insert("rules", sub_table(inline));
+    }
+    if let Some(rules) = t.get_mut("rules").and_then(Item::as_table_like_mut) {
+        let plain = b.switch.is_none() && b.moved_after.is_none() && b.guarded == 0;
+        reconcile_rules(rules, &wanted, &prefix, plain, ctx);
+        if rules.is_empty() && !plain {
+            t.remove("rules");
+        }
+    }
+    for &k in &b.yields_to {
+        for (key, item) in originals[k].iter() {
+            if !matches!(key, "files" | "categories" | "rules") {
+                remove_leaves(t, key, item);
+            }
+        }
+    }
+}
+
+/// Remove from `t` every leaf of `over` at `key`.
+fn remove_leaves(t: &mut dyn TableLike, key: &str, over: &Item) {
+    let Some(mine) = t.get_mut(key) else {
         return;
     };
-    let mut rebuilt = ArrayOfTables::new();
-    for mut t in switches {
-        // Sort in front of the first original block and after a new top-level table.
-        t.set_position(first_override);
-        rebuilt.push(t);
+    match (mine.as_table_like_mut(), over.as_table_like()) {
+        (Some(mine), Some(theirs)) => {
+            for (k, v) in theirs.iter() {
+                remove_leaves(mine, k, v);
+            }
+            if mine.is_empty() {
+                t.remove(key);
+            }
+        }
+        _ => {
+            t.remove(key);
+        }
     }
-    for t in aot.iter() {
-        rebuilt.push(t.clone());
+}
+
+/// Replace a value, keeping the comments and spacing around it.
+fn set_value(current: &mut Value, new: Value) {
+    let decor = current.decor().clone();
+    *current = new;
+    *current.decor_mut() = decor;
+}
+
+/// Make the `categories` of a block hold exactly `wanted` (3.0 names).
+fn reconcile_categories(t: &mut dyn TableLike, wanted: &BTreeMap<String, Dials>, inline: bool) {
+    if !t.contains_key("categories") {
+        if wanted.is_empty() {
+            return;
+        }
+        t.insert("categories", sub_table(inline));
     }
-    for t in guards {
-        rebuilt.push(t);
+    let Some(cats) = t.get_mut("categories").and_then(Item::as_table_like_mut) else {
+        return;
+    };
+    let existing: Vec<String> = cats.iter().map(|(k, _)| k.to_owned()).collect();
+    for key in &existing {
+        if !wanted.contains_key(key) {
+            cats.remove(key);
+        }
     }
-    *aot = rebuilt;
+    for (name, d) in wanted {
+        match cats.get_mut(name) {
+            None => {
+                cats.insert(name, Item::Value(dials_value(d)));
+            }
+            Some(item) => {
+                if read_dials(item).as_ref() == Some(d) {
+                    continue;
+                }
+                if let Some(table) = item.as_table_like_mut() {
+                    reconcile_dials(table, d);
+                } else if let Some(current) = item.as_value_mut() {
+                    set_value(current, dials_value(d));
+                } else {
+                    *item = Item::Value(dials_value(d));
+                }
+            }
+        }
+    }
+    if cats.is_empty() {
+        t.remove("categories");
+    }
+}
+
+fn reconcile_dials(t: &mut dyn TableLike, d: &Dials) {
+    let existing: Vec<String> = t.iter().map(|(k, _)| k.to_owned()).collect();
+    for key in &existing {
+        if !d.contains_key(key) {
+            t.remove(key);
+        }
+    }
+    for key in DIAL_ORDER {
+        let Some(v) = d.get(key) else {
+            continue;
+        };
+        match t.get_mut(key) {
+            Some(item) if Scalar::from_item(item).as_ref() == Some(v) => {}
+            Some(item) => match item.as_value_mut() {
+                Some(current) => set_value(current, v.to_value()),
+                None => *item = Item::Value(v.to_value()),
+            },
+            None => {
+                t.insert(key, Item::Value(v.to_value()));
+            }
+        }
+    }
 }
 
 /// The document position of the first `[[overrides]]` table. New tables placed
@@ -311,6 +512,14 @@ fn first_override_position(doc: &DocumentMut) -> Option<isize> {
     match doc.get("overrides") {
         Some(Item::ArrayOfTables(aot)) => aot.iter().filter_map(Table::position).min(),
         _ => None,
+    }
+}
+
+fn rule_entries(n: usize) -> String {
+    if n == 1 {
+        "1 rule entry".to_owned()
+    } else {
+        format!("{n} rule entries")
     }
 }
 
@@ -359,21 +568,7 @@ fn patch_layer(
         t.insert("rules", Item::Table(table));
     }
     if let Some(rules) = t.get_mut("rules").and_then(Item::as_table_like_mut) {
-        reconcile_rules(rules, &wanted, prefix, ctx);
-    }
-}
-
-fn patch_inline_layer(t: &mut InlineTable, prefix: &str, layer: &Layer, ctx: &mut Ctx<'_>) {
-    patch_severity(t, layer, ctx);
-    let wanted = wanted_rules(layer, ctx);
-    if !t.contains_key("rules") {
-        if wanted.is_empty() {
-            return;
-        }
-        t.insert("rules", Value::InlineTable(InlineTable::new()));
-    }
-    if let Some(rules) = t.get_mut("rules").and_then(Value::as_inline_table_mut) {
-        reconcile_rules(rules, &wanted, prefix, ctx);
+        reconcile_rules(rules, &wanted, prefix, true, ctx);
     }
 }
 
@@ -408,6 +603,7 @@ fn reconcile_rules(
     rules: &mut dyn TableLike,
     wanted: &BTreeMap<String, String>,
     prefix: &str,
+    plain: bool,
     ctx: &mut Ctx<'_>,
 ) {
     let existing: Vec<String> = rules.iter().map(|(k, _)| k.to_owned()).collect();
@@ -433,14 +629,18 @@ fn reconcile_rules(
                 } else {
                     format!("{prefix}.rules.{key}")
                 };
-                ctx.notes.push(format!(
-                    "set {at} to \"{level}\": the 2.x profile default replaces an entry 2.x ignored"
-                ));
+                ctx.notes.push(if plain {
+                    format!(
+                        "set {at} to \"{level}\": the 2.x profile default replaces an entry 2.x ignored"
+                    )
+                } else {
+                    format!("set {at} to \"{level}\", the level 2.x applied")
+                });
             }
             Some(_) => {}
         }
     }
-    if added > 0 {
+    if added > 0 && plain {
         let at = if prefix.is_empty() {
             "the top level".to_owned()
         } else {

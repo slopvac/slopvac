@@ -94,6 +94,10 @@ pub(crate) struct Legacy {
     pub(crate) rules: BTreeMap<String, RuleInfo>,
     /// Categories that some legacy style gives a budget.
     pub(crate) budgeted: BTreeSet<String>,
+    /// Categories that some legacy style gives a weight.
+    pub(crate) weighted: BTreeSet<String>,
+    /// Each category's own weight, which 2.x scored with where no profile set one.
+    pub(crate) weights: BTreeMap<String, f64>,
 }
 
 fn profile_index(profile: &str) -> usize {
@@ -190,17 +194,33 @@ impl Legacy {
                 (qid.to_owned(), info)
             })
             .collect();
-        let budgeted = styles
+        let with_dial = |dial: &str| -> BTreeSet<String> {
+            styles
+                .iter()
+                .flat_map(|s| s.categories.iter())
+                .filter(|(_, d)| d.contains_key(dial))
+                .map(|(name, _)| name.clone())
+                .collect()
+        };
+        let budgeted = with_dial("max_per_100_words");
+        let weighted = with_dial("weight");
+        let weights = cat
+            .get("weights")
+            .and_then(Item::as_table_like)
+            .expect("catalogue has weights")
             .iter()
-            .flat_map(|s| s.categories.iter())
-            .filter(|(_, d)| d.contains_key("max_per_100_words"))
-            .map(|(name, _)| name.clone())
+            .map(|(name, v)| {
+                let w = v.as_float().expect("a catalogue weight is a float");
+                (name.to_owned(), w)
+            })
             .collect();
         Self {
             styles,
             defaults,
             rules,
             budgeted,
+            weighted,
+            weights,
         }
     }
 

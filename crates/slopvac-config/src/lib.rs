@@ -25,7 +25,7 @@ pub mod version;
 pub use diag::{Code, Diagnostic, SourceFile, render};
 pub use discover::Discovery;
 pub use error::{ConfigError, Rejected};
-pub use load::{LoadedConfig, load, load_labeled};
+pub use load::{LoadedConfig, load, load_labeled, validate_text};
 pub use presets::{NoPresets, PackFile, PresetFailure, Presets};
 pub use read::{MAX_CONFIG_BYTES, MAX_DOCUMENT_BYTES};
 pub use resolve::{

@@ -109,6 +109,9 @@ pub enum Error {
     /// The rename table is malformed.
     #[error("rename table: {0}")]
     RenameTable(String),
+    /// The 3.0 config that the migration produced does not load. Nothing is written.
+    #[error("{0}; the migrated config does not load in 3.0, so nothing is written")]
+    InvalidOutput(String),
     /// The engine could not lint the project.
     #[error("lint: {0}")]
     Lint(String),
@@ -135,6 +138,7 @@ impl Error {
             Self::Unsafe(_) => "migrate-unsafe-path",
             Self::OverrideOverlap { .. } => "migrate-override-overlap",
             Self::RenameTable(_) => "migrate-rename-table",
+            Self::InvalidOutput(_) => "migrate-output-invalid",
             Self::Lint(_) => "migrate-lint-failed",
             Self::Io { .. } => "migrate-io-failed",
         }

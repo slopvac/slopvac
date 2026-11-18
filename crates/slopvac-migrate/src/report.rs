@@ -8,7 +8,7 @@ use crate::{Error, RenameTable};
 /// Which side of the migration a lint run covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
-    /// The 2.x project as it is.
+    /// The project as it is on disk, linted by the 3.0 engine.
     Before,
     /// The project with the migrated files.
     After,

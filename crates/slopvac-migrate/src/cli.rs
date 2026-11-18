@@ -113,10 +113,19 @@ fn execute_in(
     let after = linter.lint(&root, Phase::After, &plan.overlay(&root))?;
     let rows = compare(&before, &after, &renames);
     let changed: Vec<_> = rows.iter().filter(|r| r.changed()).collect();
+    // Both sides run the 3.0 engine; it is not a comparison with 2.x.
     if changed.is_empty() {
-        writeln!(out, "Findings: no per-rule change.").map_err(io)?;
+        writeln!(
+            out,
+            "Findings of the 3.0 engine on your files before and after migration: no per-rule change."
+        )
+        .map_err(io)?;
     } else {
-        writeln!(out, "Findings by rule (before -> after):").map_err(io)?;
+        writeln!(
+            out,
+            "Findings of the 3.0 engine on your files before and after migration, by rule (before -> after):"
+        )
+        .map_err(io)?;
         for r in changed {
             writeln!(out, "  {}: {} -> {}", r.rule, r.before, r.after).map_err(io)?;
         }

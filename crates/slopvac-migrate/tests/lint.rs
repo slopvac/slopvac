@@ -70,16 +70,32 @@ fn before_and_after_counts_come_from_the_engine() {
         .lint(dir.path(), Phase::After, &p.overlay(dir.path()))
         .unwrap();
 
-    // Before, the 2.x id has no pack: the directive is reported and suppresses nothing.
+    // 2.x accepted the bare id, so the before side reads it as its 3.0 id: it suppresses
+    // the paragraph below it and is no invalid suppression.
+    assert_eq!(counts(&before), [("core:orwell.stale-figure", 1)]);
+    // After, the qualified id suppresses the paragraph below it and no other.
+    assert_eq!(counts(&after), [("core:orwell.stale-figure", 1)]);
+}
+
+#[test]
+fn a_directive_2x_rejected_is_an_invalid_suppression_before_migration() {
+    let dir = tempfile::tempdir().unwrap();
+    // 2.x took one id per directive, so it rejected a comma list.
+    write(
+        dir.path(),
+        "doc.md",
+        "<!-- slopvac-allow: rule=orwell.stale-figure,orwell.stale-figure reason=dead-metaphor -->\nPlease leverage it.\n",
+    );
+
+    let before = linter().lint(dir.path(), Phase::Before, &[]).unwrap();
+
     assert_eq!(
         counts(&before),
         [
             ("core:meta.invalid-suppression", 1),
-            ("core:orwell.stale-figure", 2)
+            ("core:orwell.stale-figure", 1)
         ]
     );
-    // After, the qualified id suppresses the paragraph below it and no other.
-    assert_eq!(counts(&after), [("core:orwell.stale-figure", 1)]);
 }
 
 #[test]

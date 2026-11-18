@@ -160,6 +160,29 @@ pub fn load_labeled(
     })
 }
 
+/// Check config `text` the way [`load`] checks the file `display` in the project at
+/// `root`, without reading that file from disk, and return what [`load`] would refuse.
+/// Use it to check text before it is written, such as the output of a migration.
+pub fn validate_text(
+    text: &str,
+    display: &str,
+    root: &Path,
+    presets: &dyn Presets,
+) -> Result<(), ConfigError> {
+    let mut loader = Loader {
+        root,
+        presets,
+        stack: Vec::new(),
+        files: Vec::new(),
+    };
+    loader.load_text(
+        &Key::Path(normalise_join(root, display)),
+        display,
+        text.to_owned(),
+        Layer::Project,
+    )
+}
+
 fn build_exclude(files: &[ConfigFile], root: &Path) -> Gitignore {
     let patterns = files
         .iter()

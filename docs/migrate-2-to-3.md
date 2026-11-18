@@ -22,7 +22,7 @@ Look for:
 slopvac migrate
 ```
 
-The command prints a diff of every file it would change and exits 0. It writes nothing. It lints the project before and after, and lists the rules whose finding counts change.
+The command prints a diff of every file it would change and exits 0. It writes nothing. It runs the 3.0 engine on your files before and after migration, and lists the rules whose finding counts change. On the before side, each `slopvac-allow` rule id that 2.x accepted counts as its 3.0 id. The comparison does not run 2.x, so it does not show that 2.x results stay the same.
 
 ## 3. Resolve blockers
 
@@ -53,7 +53,9 @@ The command copies each file it replaces to `.slopvac-migrate-backup` and then r
 
 The command stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml` and `[tool.slopvac]`. 2.x read only one of them. Remove the ones you do not use and run again.
 
-To keep the 2.x gates, add `--preserve-behavior`. It selects the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Other patterns fail with `migrate-override-overlap`.
+To keep the 2.x gates, add `--preserve-behavior`. It selects the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Other patterns fail with `migrate-override-overlap`. An override that sets a profile gets that profile's levels, and an earlier override inside its files moves after it.
+
+Before it writes, the command loads each new config the way 3.0 does. If 3.0 refuses a config, the command exits 2 with `migrate-output-invalid` and writes nothing. For example, 3.0 refuses two overrides with the same `files`.
 
 ## 5. Verify and undo
 

@@ -9,15 +9,22 @@ use slopvac_engine::{Engine, Input, Settings};
 use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString, Notice, NoticeLevel};
 use slopvac_rules::RuleSet;
 
-use crate::{BACKUP_DIR, Error, Finding, Linter, Phase};
+use crate::{BACKUP_DIR, Error, Finding, Linter, Phase, RenameTable, rewrite_directives};
 
 /// Lints the Markdown and MDX documents of a project with the engine.
 ///
-/// `Before` reads every document from disk. `After` reads a document from the overlay
-/// when the plan rewrites it. Files under [`BACKUP_DIR`] are never linted. A document
-/// the engine cannot read, or one it could not check in full, fails the lint.
+/// Both sides run the 3.0 engine, so the comparison shows how the 3.0 engine sees
+/// the files before and after migration. It does not run 2.x. `Before` reads every
+/// document from disk and reads each `slopvac-allow` id through the rename table, in
+/// memory only: a directive that 2.x accepted then suppresses on that side as it did
+/// in 2.x, and does not count as an invalid suppression. A directive 2.x rejected,
+/// such as a comma list or an unknown id, stays as written. `After` reads a document
+/// from the overlay when the plan rewrites it. Files under [`BACKUP_DIR`] are never
+/// linted. A document the engine cannot read, or one it could not check in full, fails
+/// the lint.
 pub struct EngineLinter {
     engine: Engine,
+    renames: RenameTable,
 }
 
 impl EngineLinter {
@@ -37,7 +44,10 @@ impl EngineLinter {
             },
         );
         let engine = Engine::new(sets, settings).map_err(|e| Error::Lint(e.to_string()))?;
-        Ok(Self { engine })
+        Ok(Self {
+            engine,
+            renames: RenameTable::bundled(),
+        })
     }
 }
 
@@ -116,9 +126,16 @@ impl Linter for EngineLinter {
         for (file, kind) in found {
             let path = canonical(&file);
             let label = path.strip_prefix(&base).unwrap_or(&path).to_owned();
-            let text = match rewritten.get(&path) {
-                Some(text) => (*text).to_owned(),
-                None => fs::read_to_string(&path).map_err(|e| Error::io(&root.join(&label), e))?,
+            let text = match (rewritten.get(&path), phase) {
+                (Some(text), _) => (*text).to_owned(),
+                (None, phase) => {
+                    let text =
+                        fs::read_to_string(&path).map_err(|e| Error::io(&root.join(&label), e))?;
+                    match phase {
+                        Phase::Before => rewrite_directives(&text, &self.renames).0,
+                        Phase::After => text,
+                    }
+                }
             };
             docs.push((label.display().to_string(), kind, text));
         }
