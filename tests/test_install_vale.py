@@ -7,8 +7,10 @@ test touches the network or waits for a real backoff.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import importlib.util
 import io
+import platform
 import sys
 import tarfile
 from pathlib import Path
@@ -27,6 +29,7 @@ sys.modules["install_vale"] = install_vale
 SPEC.loader.exec_module(install_vale)
 
 VERSION = "9.9.9"
+ASSET = f"vale_{VERSION}_Linux_64-bit.tar.gz"
 FAKE_VALE = b"#!/bin/sh\necho vale version 9.9.9\n"
 
 
@@ -48,27 +51,47 @@ class _Response(io.BytesIO):
         self.close()
 
 
+class _BrokenResponse(_Response):
+    """A response whose body fails part-way, like a dropped connection."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__(b"partial")
+        self.error = error
+
+    def read(self, size: int | None = -1) -> bytes:
+        raise self.error
+
+
+class MidRead:
+    """Fault marker: open succeeds, then reading the body raises ``error``."""
+
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+
 class FakeNetwork:
     """Serve scripted responses per URL suffix and record every request."""
 
     def __init__(self, archive: bytes, checksum: str | None = None) -> None:
         self.archive = archive
         self.checksum = checksum or hashlib.sha256(archive).hexdigest()
-        self.faults: dict[str, list[BaseException]] = {}
+        self.faults: dict[str, list[BaseException | MidRead]] = {}
         self.requests: list[str] = []
 
-    def fail(self, suffix: str, *errors: BaseException) -> None:
+    def fail(self, suffix: str, *errors: BaseException | MidRead) -> None:
         self.faults[suffix] = list(errors)
 
     def __call__(self, url: str, timeout: float = 0) -> _Response:
         self.requests.append(url)
         for suffix, errors in self.faults.items():
             if url.endswith(suffix) and errors:
-                raise errors.pop(0)
+                fault = errors.pop(0)
+                if isinstance(fault, MidRead):
+                    return _BrokenResponse(fault.error)
+                raise fault
         if url.endswith(".tar.gz"):
             return _Response(self.archive)
-        asset = install_vale._asset_name(VERSION)
-        return _Response(f"{self.checksum}  {asset}\n".encode())
+        return _Response(f"{self.checksum}  {ASSET}\n".encode())
 
 
 def _http(code: int) -> HTTPError:
@@ -79,7 +102,8 @@ def _http(code: int) -> HTTPError:
 def network(monkeypatch: pytest.MonkeyPatch) -> FakeNetwork:
     fake = FakeNetwork(_archive())
     monkeypatch.setattr(install_vale, "urlopen", fake)
-    monkeypatch.setattr(install_vale, "_asset_name", lambda v: f"vale_{v}_test.tar.gz")
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(platform, "machine", lambda: "x86_64")
     sleeps: list[float] = []
     monkeypatch.setattr(install_vale.time, "sleep", sleeps.append)
     fake.sleeps = sleeps  # type: ignore[attr-defined]
@@ -94,7 +118,7 @@ def test_retries_a_server_error_then_succeeds(network: FakeNetwork, tmp_path: Pa
     assert binary.read_bytes() == FAKE_VALE
     assert "9.9.9" in version
     assert [u for u in network.requests if u.endswith(".tar.gz")] == [
-        f"{install_vale.RELEASE_BASE}/v{VERSION}/vale_{VERSION}_test.tar.gz"
+        f"{install_vale.RELEASE_BASE}/v{VERSION}/{ASSET}"
     ] * 2
     assert network.sleeps == [2.0]  # type: ignore[attr-defined]
 
@@ -139,7 +163,52 @@ def test_gives_up_after_three_attempts(network: FakeNetwork, tmp_path: Path):
         install_vale.install(VERSION, tmp_path / "bin")
 
     assert len(network.requests) == 3
+    assert network.sleeps == [2.0, 4.0]  # type: ignore[attr-defined]
     assert not (tmp_path / "bin" / "vale").exists()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        http.client.IncompleteRead(b"par", 100),
+        ConnectionResetError("reset by peer"),
+    ],
+    ids=["incomplete-read", "connection-reset"],
+)
+def test_retries_a_body_that_fails_mid_read(
+    network: FakeNetwork, tmp_path: Path, error: BaseException
+):
+    network.fail(".tar.gz", MidRead(error))
+    destination = tmp_path / "download.tar.gz"
+
+    install_vale._download(
+        f"{install_vale.RELEASE_BASE}/v{VERSION}/{ASSET}", destination
+    )
+
+    assert destination.read_bytes() == network.archive
+    assert sum(u.endswith(".tar.gz") for u in network.requests) == 2
+
+
+def test_installs_the_good_bytes_after_a_mid_read_failure(
+    network: FakeNetwork, tmp_path: Path
+):
+    network.fail(".tar.gz", MidRead(http.client.IncompleteRead(b"par", 100)))
+
+    binary, _ = install_vale.install(VERSION, tmp_path / "bin")
+
+    assert binary.read_bytes() == FAKE_VALE
+
+
+def test_local_write_failure_is_not_retried(network: FakeNetwork, tmp_path: Path):
+    destination = tmp_path / "missing-directory" / "download.tar.gz"
+
+    with pytest.raises(install_vale.InstallError, match="could not write"):
+        install_vale._download(
+            f"{install_vale.RELEASE_BASE}/v{VERSION}/{ASSET}", destination
+        )
+
+    assert len(network.requests) == 1
+    assert network.sleeps == []  # type: ignore[attr-defined]
 
 
 def test_checksum_mismatch_fails_without_retry(network: FakeNetwork, tmp_path: Path):
@@ -167,7 +236,7 @@ def test_cached_archive_is_still_verified(network: FakeNetwork, tmp_path: Path):
     cache = tmp_path / "cache"
     install_vale.install(VERSION, tmp_path / "first", cache)
     tampered = _archive() + b"tampered"
-    (cache / f"vale_{VERSION}_test.tar.gz").write_bytes(tampered)
+    (cache / f"{ASSET}").write_bytes(tampered)
     network.requests.clear()
 
     with pytest.raises(install_vale.InstallError, match="checksum mismatch"):

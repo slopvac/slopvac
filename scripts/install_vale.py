@@ -9,12 +9,13 @@ import http.client
 import os
 import platform
 import shutil
+import ssl
 import subprocess
 import tarfile
 import tempfile
 import time
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 RELEASE_BASE = "https://github.com/vale-cli/vale/releases/download"
@@ -51,26 +52,29 @@ def _asset_name(version: str) -> str:
 
 
 def _transient(exc: BaseException) -> bool:
-    """Return whether a download failure is worth another attempt.
+    """Return whether a network failure is worth another attempt.
 
-    Server errors (5xx), refused or dropped connections and timeouts are
-    transient. Any 4xx answer is final.
+    Server errors (5xx), refused or dropped connections, truncated bodies and
+    timeouts are transient. Any 4xx answer and any TLS certificate failure is
+    final.
     """
     if isinstance(exc, HTTPError):
         return exc.code >= 500
-    return isinstance(exc, (OSError, http.client.HTTPException))
+    if isinstance(exc, URLError):
+        return not isinstance(exc.reason, ssl.SSLCertVerificationError)
+    return isinstance(exc, (TimeoutError, ConnectionError, http.client.HTTPException))
 
 
-def _download(url: str, destination: Path) -> None:
+def _fetch(url: str) -> bytes:
+    """Return the body of ``url``, retrying transient network failures.
+
+    The whole body is read before it is returned, so a failure mid-read retries
+    from the start and never leaves a partial file.
+    """
     for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
         try:
-            with (
-                urlopen(url, timeout=60) as response,
-                destination.open("wb") as output,
-            ):
-                while chunk := response.read(1024 * 1024):
-                    output.write(chunk)
-            return
+            with urlopen(url, timeout=60) as response:
+                return response.read()
         except (OSError, http.client.HTTPException) as exc:
             if not _transient(exc):
                 raise InstallError(f"download failed for {url}: {exc}") from exc
@@ -79,6 +83,15 @@ def _download(url: str, destination: Path) -> None:
                     f"download failed for {url} after {attempt} attempts: {exc}"
                 ) from exc
             time.sleep(BACKOFF_SECONDS * 2 ** (attempt - 1))
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def _download(url: str, destination: Path) -> None:
+    body = _fetch(url)
+    try:
+        destination.write_bytes(body)
+    except OSError as exc:
+        raise InstallError(f"could not write {destination}: {exc}") from exc
 
 
 def _checksum(checksums: Path, archive_name: str) -> str:
