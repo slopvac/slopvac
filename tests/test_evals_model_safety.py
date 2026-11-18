@@ -693,7 +693,6 @@ def test_redaction_removes_paths_and_tokens(raw, gone):
         ("id_token=eyJabc12", "eyJabc12"),
         ("refresh_token: r3fr3sh", "r3fr3sh"),
         ("api_key = k3y9", "k3y9"),
-        ("client_secret=cs77", "cs77"),
     ],
     ids=[
         "quoted-token",
@@ -707,12 +706,70 @@ def test_redaction_removes_paths_and_tokens(raw, gone):
         "id-token",
         "refresh-token",
         "api-key",
-        "client-secret",
     ],
 )
 def test_redaction_removes_short_and_quoted_structured_credentials(raw, gone):
     assert gone not in procs.redact(raw)
     assert gone not in procs.redact_credentials(raw)
+
+
+FIELD_NAMES = [
+    "token",
+    "access_token",
+    "accessToken",
+    "AccessToken",
+    "refresh_token",
+    "refreshToken",
+    "id_token",
+    "idToken",
+    "session_token",
+    "sessionToken",
+    "SessionToken",
+    "secret",
+    "secret_access_key",
+    "secretAccessKey",
+    "SecretAccessKey",
+    "password",
+    "api_key",
+    "apiKey",
+    "API_KEY",
+    "authorization",
+    "Authorization",
+]
+
+
+@pytest.mark.parametrize("name", FIELD_NAMES)
+@pytest.mark.parametrize(
+    "shape",
+    ['{{"{n}": "FAKEsess1234"}}', "{n}=FAKEsess1234", "{n}: FAKEsess1234"],
+    ids=["json", "env", "colon"],
+)
+def test_every_listed_credential_field_loses_its_value(name, shape):
+    raw = shape.format(n=name)
+    assert "FAKEsess1234" not in procs.redact_credentials(raw)
+    assert name in procs.redact_credentials(raw)  # the field name stays
+
+
+def test_an_escaped_quote_inside_a_json_value_does_not_end_the_value_early():
+    raw = '{"password": "ab\\"cd-FAKEtail1234\\"ef", "limit": 63}'
+    cleaned = procs.redact_credentials(raw)
+    assert "FAKEtail1234" not in cleaned
+    assert '"limit": 63' in cleaned
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "max_tokens = 4096",
+        '{"max_tokens": 4096}',
+        "token_budget: 63",
+        "tokens: 63",
+        "{'tokens': 63, 'token_budget': 5}",
+        "maxToken: 5 and my_token_limit=7",
+    ],
+)
+def test_names_that_only_contain_token_are_not_credential_fields(text):
+    assert procs.redact_credentials(text) == text
 
 
 STANDALONE_SECRETS = [

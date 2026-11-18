@@ -208,14 +208,15 @@ def _feed(proc: subprocess.Popen, text: str) -> None:
         pass
 
 
-_CREDENTIAL_WORD = (
-    r"(?:token|secret|password|passwd|api[_-]?key|secret[_-]?(?:access[_-]?)?key"
-    r"|access[_-]?key|private[_-]?key|client[_-]?secret|authorization|credentials?)"
+# A fixed list of credential field names, matched case-insensitively. Snake, kebab,
+# camel and Pascal case all fit one pattern (`access_token`, `accessToken`,
+# `AccessToken`), and an `aws` prefix is allowed. The name must be the whole field,
+# so `max_tokens`, `token_budget` and `tokens` are ordinary settings, not secrets.
+_CREDENTIAL_WORDS = (
+    r"(?:(?:access|refresh|id|session)[_-]?token|token"
+    r"|secret[_-]?access[_-]?key|secret|password|api[_-]?key|authorization)"
 )
-# A name is dash, dot or underscore separated words that end in a credential word
-# (`access_token`, `AWS_SECRET_ACCESS_KEY`). The word must end the name, so
-# `max_tokens` and `token_budget` are ordinary settings, not secrets.
-CREDENTIAL_NAME = rf"(?:[A-Za-z0-9]+[_.-])*{_CREDENTIAL_WORD}(?![A-Za-z0-9_-])"
+CREDENTIAL_NAME = rf"(?:aws[_-]?)?{_CREDENTIAL_WORDS}(?![A-Za-z0-9_-])"
 # `name = value` or `"name": "value"`, with the quotes and spacing of JSON, env files
 # and headers. The value is a quoted string, an auth scheme and its token, or a bare
 # run up to a delimiter, however short.

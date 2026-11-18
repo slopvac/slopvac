@@ -302,3 +302,31 @@ def test_adapter_answers_are_returned_without_credentials():
 def test_ordinary_adapter_answers_are_unchanged():
     stream = json.dumps({"type": "text", "part": {"text": "Set max_tokens = 4096."}})
     assert opencode_model.parse_events(stream) == "Set max_tokens = 4096."
+
+
+CAMEL_JSON = (
+    '{"sessionToken": "FAKEsess1234", "accessToken": "FAKEacc5678", '
+    '"refreshToken": "FAKErefr9012", "SessionToken": "FAKEcap3456", "limit": 63}'
+)
+CAMEL_VALUES = ["FAKEsess1234", "FAKEacc5678", "FAKErefr9012", "FAKEcap3456"]
+
+
+def test_camel_case_token_fields_in_adapter_json_lose_their_values():
+    stream = json.dumps({"type": "text", "part": {"text": f"Creds: {CAMEL_JSON}"}})
+    text = opencode_model.parse_events(stream)
+    assert not any(v in text for v in CAMEL_VALUES)
+    assert '"limit": 63' in text
+
+
+def test_camel_case_token_fields_in_a_journaled_answer_lose_their_values(tmp_path):
+    path = tmp_path / "run.journal.jsonl"
+    models.execute(
+        [REVIEW_TASK],
+        ROSTER,
+        3,
+        lambda text: [],
+        ask_for=lambda m: models.command_ask(writes("stdout", f"[] {CAMEL_JSON}")),
+        journal=models.Journal(path),
+    )
+    stored = path.read_text("utf-8")
+    assert not any(v in stored for v in CAMEL_VALUES)
