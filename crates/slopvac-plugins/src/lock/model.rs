@@ -202,13 +202,13 @@ impl FromStr for NotBefore {
     }
 }
 
-/// What a pack is: data only, or data plus a plugin command.
+/// What a plugin is: a data plugin, or a code plugin that also runs a command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PackKind {
-    /// Rules, styles, genres, terms and taggers. No code.
+    /// A data plugin: rules, styles, genres, terms and taggers. No code.
     Data,
-    /// Adds a command for the host to run.
-    Plugin,
+    /// A code plugin: adds a command for the host to run as a subprocess.
+    Code,
 }
 
 impl PackKind {
@@ -217,7 +217,7 @@ impl PackKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Data => "data",
-            Self::Plugin => "plugin",
+            Self::Code => "code",
         }
     }
 }
@@ -228,8 +228,8 @@ impl FromStr for PackKind {
     fn from_str(s: &str) -> Result<Self, ValueError> {
         match s {
             "data" => Ok(Self::Data),
-            "plugin" => Ok(Self::Plugin),
-            _ => bad(format!("`{s}` is not a pack kind (`data` or `plugin`)")),
+            "code" => Ok(Self::Code),
+            _ => bad(format!("`{s}` is not a plugin kind (`data` or `code`)")),
         }
     }
 }

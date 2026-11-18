@@ -201,6 +201,10 @@ pub fn plugins_key() -> Result<Option<PublicKey>, SignError> {
     PLUGINS_KEY_FILE.map(PublicKey::from_pub_file).transpose()
 }
 
+/// The id and namespace of the built-in plugin. The binary compiles it in, so
+/// no lock entry or index entry may use it, and a reader refuses one that does.
+pub const RESERVED_ID: &str = "core";
+
 /// The compiled first-party release key. It signs first-party packs and the
 /// revocation list.
 ///

@@ -115,8 +115,15 @@ fn pack(table: &Table, pointer: String) -> Result<LockedPack, LockError> {
         .and_then(|n| u64::try_from(n).ok())
         .filter(|&n| n >= 1)
         .ok_or_else(|| err(&obj.at("slopvac_api"), "must be an integer of at least 1"))?;
+    let id = obj.parsed::<PackId>("id")?;
+    if id.as_str() == crate::sign::RESERVED_ID {
+        return Err(err(
+            &obj.at("id"),
+            format!("`{id}` is reserved for the built-in plugin and is never locked"),
+        ));
+    }
     Ok(LockedPack {
-        id: obj.parsed::<PackId>("id")?,
+        id,
         kind: obj.parsed::<PackKind>("kind")?,
         version,
         slopvac_api,

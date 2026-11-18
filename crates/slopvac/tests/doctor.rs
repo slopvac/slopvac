@@ -433,7 +433,7 @@ fn the_lockfile_lists_each_pack_with_its_state() {
     let tagger = items.iter().find(|p| p["id"] == "acme-tagger").unwrap();
     assert_eq!(
         *tagger,
-        json!({"id": "acme-tagger", "version": "0.3.1", "kind": "plugin", "state": "not-installed"})
+        json!({"id": "acme-tagger", "version": "0.3.1", "kind": "code", "state": "not-installed"})
     );
 }
 

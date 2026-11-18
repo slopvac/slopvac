@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use rstest::rstest;
 use semver::Version;
 use slopvac_plugins::index::{
     Index, IndexEntry, Listing, MAX_DESCRIPTION_CHARS, MAX_ENTRIES, MAX_INDEX_BYTES, PackKind,
@@ -129,7 +130,7 @@ fn build_uses_the_id_as_name_when_the_manifest_gives_none() {
 #[test]
 fn output_round_trips_and_has_a_fixed_shape() {
     let mut plugin = listing("beta", "bridge", "Bridge", "Runs linters.");
-    plugin.kind = PackKind::Plugin;
+    plugin.kind = PackKind::Code;
     plugin.version = Version::parse("0.3.1-rc.1").unwrap();
     plugin.slopvac_api = 2;
     plugin.source = format!(
@@ -148,7 +149,7 @@ fn output_round_trips_and_has_a_fixed_shape() {
       "name": "Bridge",
       "description": "Runs linters.",
       "version": "0.3.1-rc.1",
-      "kind": "plugin",
+      "kind": "code",
       "slopvac_api": 2,
       "source": "git+https://github.com/beta/bridge@0123456789012345678901234567890123456789",
       "publisher_key": {
@@ -473,17 +474,25 @@ fn rendered_hits_say_that_every_identity_claim_is_unverified() {
 }
 
 #[test]
-fn a_reserved_namespace_is_flagged_as_a_claim_not_shown_as_an_identity() {
-    for reserved in ["core", "slopvac"] {
-        let index = build_index([listing(reserved, "evil", "E", "d")]).unwrap();
-        let text = search(&index, "evil", 1).remove(0).render();
-        assert!(
-            text.contains(&format!(
-                "claims first-party namespace `{reserved}`; not verified"
-            )),
-            "{text}"
-        );
-    }
+fn the_first_party_namespace_is_flagged_as_a_claim_not_shown_as_an_identity() {
+    let index = build_index([listing("slopvac", "evil", "E", "d")]).unwrap();
+    let text = search(&index, "evil", 1).remove(0).render();
+    assert!(
+        text.contains("claims first-party namespace `slopvac`; not verified"),
+        "{text}"
+    );
+}
+
+#[rstest]
+#[case::namespace("core", "evil", "/packs/0/namespace")]
+#[case::id("acme", "core", "/packs/0/id")]
+fn the_built_in_core_is_never_listed(
+    #[case] namespace: &str,
+    #[case] id: &str,
+    #[case] pointer: &str,
+) {
+    let err = build_index([listing(namespace, id, "E", "d")]).unwrap_err();
+    assert_eq!(err.pointer, pointer);
 }
 
 #[test]

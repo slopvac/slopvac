@@ -432,7 +432,7 @@ fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> P
                     version: pack.version.to_string(),
                     kind: match pack.kind {
                         PackKind::Data => "data",
-                        PackKind::Plugin => "plugin",
+                        PackKind::Code => "code",
                     },
                     state: pack_state(&s.state),
                 })

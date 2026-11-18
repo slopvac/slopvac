@@ -300,11 +300,11 @@ impl<'de> Visitor<'de> for EntrySeed<'_> {
             })?,
             kind: match kind_text.as_str() {
                 "data" => PackKind::Data,
-                "plugin" => PackKind::Plugin,
+                "code" => PackKind::Code,
                 other => {
                     return Err(ctx.fail(
                         &format!("{at}/kind"),
-                        format!("`{other}` is not a pack kind (`data` or `plugin`)"),
+                        format!("`{other}` is not a plugin kind (`data` or `code`)"),
                     ));
                 }
             },

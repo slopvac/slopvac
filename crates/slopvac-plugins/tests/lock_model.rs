@@ -66,7 +66,7 @@ not_before = \"2026-11-01T00:00:00Z\"
 
 [[packs]]
 id = \"acme-tagger\"
-kind = \"plugin\"
+kind = \"code\"
 version = \"0.3.1\"
 slopvac_api = 1
 source = \"git+https://github.com/acme/tagger@0123456789abcdef0123456789abcdef01234567\"
@@ -212,8 +212,8 @@ fn rejects_what_the_contract_rejects() {
             "/packs/0/id",
         ),
         (
-            "unknown kind",
-            with_entry_lines("").replace("\"data\"", "\"code\""),
+            "retired kind",
+            with_entry_lines("").replace("\"data\"", "\"plugin\""),
             "/packs/0/kind",
         ),
         (
