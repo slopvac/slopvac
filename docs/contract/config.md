@@ -45,7 +45,16 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 
 ### 1.3 Project-wide tables
 
-`guidance`, `network`, `review`, `packs`, `plugins`, `styles`, `extends`, `frontmatter`, `mode` and `exclude` apply to the whole run or to file selection. They are not part of the `Settings` patch. An `[[overrides]]` or `[[genres]]` block that names one is an error, and so is a front matter field of that name. 2.x already rejected `guidance` in an override (`Override._reject_guidance`). 3.0 extends the rule to the other tables.
+`guidance`, `network`, `review`, `plugins`, `styles`, `extends`, `frontmatter`, `mode` and `exclude` apply to the whole run or to file selection. They are not part of the `Settings` patch. An `[[overrides]]` or `[[genres]]` block that names one is an error, and so is a front matter field of that name. 2.x already rejected `guidance` in an override (`Override._reject_guidance`). 3.0 extends the rule to the other tables.
+
+### 1.3.1 Plugins
+
+`[[plugins]]` lists every data plugin and code plugin that the project uses, in one array. Each entry has `id`, `source` and an optional `version` requirement. The config does not state the kind: the plugin manifest declares it, and the lockfile records it (packs.md, section 2).
+
+- Each `id` appears once. A repeated id is an error at the second entry.
+- `core` is reserved for the built-in plugin, which the binary compiles in. An entry with the id `core` is an error.
+- A listed code plugin starts only after `slopvac plugins trust` records its content hash. A code plugin that is not trusted never starts. The run reports it with the code `plugin-untrusted` and exits 2.
+- A separate `[[packs]]` array is an unknown key.
 
 ### 1.4 Provenance
 
@@ -72,7 +81,7 @@ Every resolved value carries a `ConfigSource` (`common.schema.json#/$defs/Config
 6. `--config <path>` skips discovery and applies that one file to every file in the run. Its directory is the root for globs.
 7. Input from `--stdin` uses the nearest config of the working directory.
 8. A config pattern in `exclude`, `files` or a negated form matches the path relative to the directory of the nearest config. A file outside that directory matches no override. The 2.x fallback to the bare file name is removed.
-9. Path values for files (`terms.files`, `terms.blocklists`, a local `packs` source, `extends`) are relative to the file that holds the value.
+9. Path values for files (`terms.files`, `terms.blocklists`, a local `plugins` source, `extends`) are relative to the file that holds the value.
 10. The walk finds only `slopvac.toml`. A `.slopvac.toml` file or a `[tool.slopvac]` table that the walk meets is a 2.x config and is rejected (section 5).
 
 Resolution is cached per directory, so a run over many files reads each config once.
@@ -187,8 +196,8 @@ The `minimum_severity` row has one 2.x quirk. `CategorySettings` declares the fi
 The conformance corpus is the lasting golden. Generated schemas must accept and reject the same files.
 
 - `schemas/v3/conformance/config/valid/` holds TOML configs: a minimal one, one that uses every table, and one in the shape `migrate` writes.
-- `schemas/v3/conformance/config/invalid/` holds one defect per file. Each is mapped to a JSON pointer in `cases.toml`. The cases cover a missing or old `schema_version`, a 2.x `[vale]` table, unknown keys, bad levels, the 2.x table form of a rule, a `guidance` table inside an override, and an unqualified pack id.
+- `schemas/v3/conformance/config/invalid/` holds one defect per file. Each is mapped to a JSON pointer in `cases.toml`. The cases cover a missing or old `schema_version`, a 2.x `[vale]` table, unknown keys, bad levels, the 2.x table form of a rule, a `guidance` table inside an override, an invalid plugin id, the reserved id `core`, and the retired `[[packs]]` array.
 - `schemas/v3/conformance/frontmatter/` holds YAML front matter, including a document with other keys, a document with no `slopvac:` key, and an `x-` key inside the block.
 - `schemas/v3/conformance/common/` holds `ConfigSource` instances for each layer shape.
 
-A schema checks form only. These behaviors need the resolver and have their own tests there: ambiguous rule names, duplicate scopes, `extends` cycles, denied front matter fields, and sticky offline mode.
+A schema checks form only. These behaviors need the resolver and have their own tests there: ambiguous rule names, duplicate scopes, `extends` cycles, denied front matter fields, and sticky offline mode. A repeated plugin id is an error that JSON Schema cannot express, so the config validator checks it and its tests cover it.

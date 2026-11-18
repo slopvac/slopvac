@@ -2,7 +2,7 @@
 
 Status: contract for 3.0. Bead `slopvac-8l4.2.6`. Plan: [slopvac-3.md](../design/slopvac-3.md). Decision: [0001-slopvac-3-architecture.md](../design/0001-slopvac-3-architecture.md), decisions 8 and 9. Policies: [policies.md](policies.md).
 
-A code plugin is a separate program. The host starts it as a subprocess and speaks JSON-RPC 2.0 to it over the plugin's standard input and output. This document fixes the wire format, the lifecycle, and the hooks. The schema is [`plugin-protocol.schema.json`](../../schemas/v3/plugin-protocol.schema.json). It holds the message shapes and their field descriptions. This document does not repeat them.
+A code plugin is a separate program, and its manifest declares `kind = "code"` ([packs.md](packs.md), section 2). The host starts it as a subprocess and speaks JSON-RPC 2.0 to it over the plugin's standard input and output. This document fixes the wire format, the lifecycle, and the hooks. The schema is [`plugin-protocol.schema.json`](../../schemas/v3/plugin-protocol.schema.json). It holds the message shapes and their field descriptions. This document does not repeat them.
 
 2.x has no plugin API. Its only subprocess is Vale, which `vale.py` starts with a timeout and which 3.0 removes (`slopvac-8l4.16.4`). Every statement below is a 3.0 requirement.
 
@@ -11,7 +11,7 @@ A code plugin is a separate program. The host starts it as a subprocess and spea
 ## 1. Constraints from the plan
 
 - The host uses no async runtime. It runs one reader thread per plugin, joined to the work threads by `crossbeam-channel`, and enforces deadlines with `recv_deadline` or `select!`. The spike in `slopvac-8l4.2.17` ran this design with three children, one of which hung, in 49 lines.
-- The host starts a plugin only after `slopvac plugins trust` has recorded the content hash of the plugin. Nothing in this protocol records or implies trust.
+- The host starts a plugin only after `slopvac plugins trust` has recorded the content hash of the plugin. Nothing in this protocol records or implies trust. A code plugin that `slopvac.toml` lists under `[[plugins]]` without trust never starts, and the run reports it with `plugin-untrusted` (section 10) and exits 2.
 - A plugin that may open connections declares it in its trusted manifest (section 4.3). The host spawns it only when offline mode is off, and policies.md sections 1.5 and 1.6 apply.
 - The unknown-field rule of policies.md section 3.3 applies in both directions (section 9).
 
@@ -105,7 +105,7 @@ A version is a major version in the sense of policies.md section 3.6. A change w
 
 Anything that decides whether the host may start the plugin comes from the plugin manifest, never from the `initialize` reply. The reply arrives after the process runs, so a decision based on it would come too late.
 
-- The manifest embeds a [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration). It states `network`, every hook the plugin may offer, and the features it may require or request. The pack manifest schema (`slopvac-8l4.2.4`) must reference this def. The host reads the declaration from the same bytes that it hashes.
+- The manifest embeds a [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration). It states `network`, every hook the plugin may offer, and the features it may require or request. The plugin manifest schema (`pack-manifest`) references this def. The host reads the declaration from the same bytes that it hashes.
 - The manifest is part of the content hash that `slopvac plugins trust` records. A change to the declaration changes the hash and revokes trust.
 - Before spawn the host checks: trust for the hash, `network` against offline mode (`--offline`, `SLOPVAC_OFFLINE`, `[network] offline`, and the `offline` state at the call site), and the declared hook kinds against the hooks the command needs. A plugin with `network: true` does not spawn in offline mode. The host prints `offline: <plugin> needs the network` and exits 2 when the user asked for the operation.
 - The host also decides from the declaration which features it can grant. It does not spawn a plugin whose declared required feature it lacks.
@@ -245,6 +245,7 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 |---|---|
 | `plugin-untrusted` | The content hash has no recorded trust. The message prints the `slopvac plugins trust` command. |
 | `plugin-hash-mismatch` | The installed bytes differ from the hash that trust recorded. |
+| `plugin-not-code` | `slopvac plugins trust` or `untrust` named a data plugin, which runs no code and needs no trust. |
 | `plugin-timeout` | A timer in section 6.3 expired. |
 | `plugin-exited` | The process ended with requests pending. |
 | `plugin-protocol-violation` | A framing error, a limit breach or a duplicate key. |
@@ -375,4 +376,4 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | Span and edit semantics | `slopvac-8l4.2.11` |
 | Threat model and review | `slopvac-8l4.9.11` |
 | Config keys for timeouts and the provider | `slopvac-8l4.4.2` |
-| Pack manifest embeds `PluginDeclaration` | `slopvac-8l4.2.4` |
+| Plugin manifest embeds `PluginDeclaration` | `slopvac-8l4.2.4` |
