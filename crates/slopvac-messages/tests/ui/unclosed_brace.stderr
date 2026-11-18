@@ -1,0 +1,5 @@
+error: unclosed `{` in the template
+ --> tests/ui/unclosed_brace.rs:8:15
+  |
+8 |     #[message("cannot read {path")]
+  |               ^^^^^^^^^^^^^^^^^^^

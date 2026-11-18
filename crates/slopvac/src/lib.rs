@@ -15,6 +15,7 @@ pub mod init;
 pub mod inspect;
 pub mod lint_settings;
 pub mod logging;
+pub mod messages;
 pub mod offline;
 pub mod output;
 pub mod owners;

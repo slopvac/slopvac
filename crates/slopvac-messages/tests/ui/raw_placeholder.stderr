@@ -1,0 +1,5 @@
+error: placeholder `{r#type}` uses the raw spelling; write `{type}`, the name a template and a Fluent file use
+ --> tests/ui/raw_placeholder.rs:8:15
+  |
+8 |     #[message("unknown {r#type}")]
+  |               ^^^^^^^^^^^^^^^^^^

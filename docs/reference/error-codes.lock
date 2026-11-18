@@ -1,0 +1,3 @@
+# Append-only list of every message code that has shipped, one `code kind` per line.
+# Add a line when you add a code. Never edit or delete one: move a removed code to
+# RETIRED in crates/slopvac/src/messages.rs and keep its line here.

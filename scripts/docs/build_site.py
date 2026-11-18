@@ -269,6 +269,10 @@ def generate_cli() -> Pages:
     return rust_reference("slopvac", "cli-reference")
 
 
+def generate_error_codes() -> Pages:
+    return rust_reference("slopvac")
+
+
 class _ConfigSchema:
     """Walks ``config.schema.json`` into one row per key path."""
 
@@ -401,6 +405,7 @@ SECTIONS = (
     ("Pack manifest", "plugins/manifest.md"),
     ("Packs", "plugins/packs/index.md"),
     ("Command line", "cli/index.md"),
+    ("Error codes", "reference/error-codes.md"),
     ("Configuration", "config/index.md"),
     ("Schemas", "schemas/index.md"),
 )
@@ -431,6 +436,7 @@ def build(
         generate_genres(),
         plugin_pages.generate_packs(schemas, packs_dir),
         generate_cli(),
+        generate_error_codes(),
         generate_config(schemas_dir),
         {"index.md": index_page()},
     )

@@ -36,6 +36,7 @@ slopvac-context.workspace = true
 slopvac-engine.workspace = true
 slopvac-fs.workspace = true
 slopvac-lsp.workspace = true
+slopvac-messages.workspace = true
 slopvac-migrate.workspace = true
 slopvac-model.workspace = true
 slopvac-plugins.workspace = true

@@ -1,0 +1,5 @@
+error: `1st-error` is not a valid Fluent message id; use ASCII letters, digits and `-`, starting with a letter
+ --> tests/ui/non_fluent_id.rs:7:12
+  |
+7 |     #[code("1st-error")]
+  |            ^^^^^^^^^^^
