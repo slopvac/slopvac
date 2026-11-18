@@ -130,3 +130,13 @@ pub fn core() -> Result<RuleSet, CliError> {
     RuleSet::from_sources(&pack, sources, &CompileOptions::default())
         .map_err(|err| CliError::new("rules-unavailable", err.to_string()))
 }
+
+/// Load the diagram rules, which check the text inside diagrams.
+///
+/// # Errors
+/// `rules-unavailable` when the embedded pack fails to load.
+pub fn diagrams() -> Result<RuleSet, CliError> {
+    let pack = PackId::new(slopvac_engine::DIAGRAM_PACK).expect("the diagram pack id is valid");
+    slopvac_engine::diagram_rule_set(&pack)
+        .map_err(|err| CliError::new("rules-unavailable", err.to_string()))
+}

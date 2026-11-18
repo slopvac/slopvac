@@ -869,3 +869,50 @@ fn the_legacy_style_alone_requires_a_score_of_70() {
         "{reasons:?}"
     );
 }
+
+/// A label of nine words, over the run-on limit of the diagram rules.
+const LONG_LABEL: &str = "This label has far too many words in it";
+
+#[test]
+fn a_long_label_in_a_fenced_diagram_is_a_finding_at_its_place_in_the_host_file() {
+    let text = format!(
+        "# Title\n\nText.\n\n```mermaid\nflowchart TD\n  A[{LONG_LABEL}] --> B[End]\n```\n"
+    );
+    let (_dir, path) = project("page.md", &text, None);
+    let report = json_report(&path, &[]);
+    let finding = &report["documents"][0]["findings"][0];
+    assert_eq!(finding["rule_id"], "diagrams:diagram.label-run-on");
+    assert_eq!(finding["line"], 7);
+    assert_eq!(finding["column"], 5);
+}
+
+#[rstest::rstest]
+#[case::mermaid("flow.mmd", format!("flowchart TD\n  A[{LONG_LABEL}] --> B[End]\n"))]
+#[case::plantuml("seq.puml", format!("@startuml\nparticipant \"{LONG_LABEL}\" as P\n@enduml\n"))]
+#[case::drawio(
+    "board.drawio",
+    format!("<mxfile><diagram><mxGraphModel><root><mxCell id=\"2\" value=\"{LONG_LABEL}\" vertex=\"1\"/></root></mxGraphModel></diagram></mxfile>")
+)]
+fn an_explicit_diagram_file_is_checked_for_label_findings(
+    #[case] name: &str,
+    #[case] text: String,
+) {
+    let (_dir, path) = project(name, &text, None);
+    let report = json_report(&path, &[]);
+    assert_eq!(
+        rule_ids(&report),
+        ["diagrams:diagram.label-run-on"],
+        "{report}"
+    );
+}
+
+#[test]
+fn a_png_diagram_target_is_an_unsupported_input_and_an_incomplete_run() {
+    let (_dir, path) = project("board.drawio.png", "not read", None);
+    slopvac()
+        .arg("lint")
+        .arg(&path)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[input-unsupported]"));
+}

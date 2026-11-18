@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
+use slopvac_diagrams::Format as DiagramFormat;
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{Engine, Input, Kind};
 use slopvac_model::{
@@ -92,6 +93,9 @@ pub trait Linter {
 /// The linter backed by `slopvac-engine`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EngineLinter;
+
+/// A file to lint, or the notice code and reason it cannot be.
+type Candidate = (PathBuf, Result<Kind, (&'static str, String)>);
 
 /// One input that is ready to lint.
 struct Item {
@@ -473,20 +477,34 @@ fn collect_targets(
                 continue;
             }
         };
+        let mut candidates: Vec<Candidate> = Vec::new();
         for skipped in found.skipped {
-            let shown = redact::shown_path(&skipped.path, &request.root);
-            run.skip(
-                "input-unsupported",
-                &shown,
-                format!("{shown}: {}", skipped.reason),
-            );
+            // A diagram file named on the command line is a target the user wants checked.
+            // Discovery does not classify it, so the engine reads it by its format.
+            let diagram = (selection == Selection::Prose)
+                .then(|| DiagramFormat::from_path(&skipped.path.to_string_lossy()))
+                .flatten();
+            match diagram {
+                // A PNG holds no text the engine reads, so it stays an unsupported input.
+                Some(format) if format != DiagramFormat::DrawioPng => {
+                    candidates.push((skipped.path, Ok(Kind::Diagram(format))));
+                }
+                _ => {
+                    candidates.push((skipped.path, Err(("input-unsupported", skipped.reason))));
+                }
+            }
         }
         for file in found.files {
-            let canonical = std::fs::canonicalize(&file.path).unwrap_or_else(|_| file.path.clone());
+            let kind =
+                kind_of_file(&file.kind).map_err(|why| ("input-unsupported", why.to_owned()));
+            candidates.push((file.path, kind));
+        }
+        for (path, kind) in candidates {
+            let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             if !seen.insert(canonical.clone()) {
                 continue;
             }
-            let shown = redact::shown_path(&file.path, &request.root);
+            let shown = redact::shown_path(&path, &request.root);
             let config = config_for(configs, &request.root, &canonical)?;
             // Exclusions apply first, whether the config was found or named with `--config`,
             // so an excluded file is never read, parsed or reported.
@@ -495,14 +513,14 @@ fn collect_targets(
             {
                 continue;
             }
-            let kind = match kind_of_file(&file.kind) {
+            let kind = match kind {
                 Ok(kind) => kind,
-                Err(why) => {
-                    run.skip("input-unsupported", &shown, format!("{shown}: {why}"));
+                Err((code, why)) => {
+                    run.skip(code, &shown, format!("{shown}: {why}"));
                     continue;
                 }
             };
-            let bytes = match std::fs::read(&file.path) {
+            let bytes = match std::fs::read(&path) {
                 Ok(bytes) => bytes,
                 Err(err) => {
                     run.skip(
@@ -637,7 +655,13 @@ fn lint_items(
             Ok(set) => set,
             Err(err) => return failed(request, run, &err),
         };
-        let engine = match Engine::new(vec![set], settings) {
+        // The diagram rules check the labels in diagram files and in fenced diagrams. Without
+        // them a diagram would pass with its text unread.
+        let diagrams = match rule_catalog::diagrams() {
+            Ok(set) => set,
+            Err(err) => return failed(request, run, &err),
+        };
+        let engine = match Engine::new(vec![set, diagrams], settings) {
             Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
             Err(err) => {
                 return failed(
