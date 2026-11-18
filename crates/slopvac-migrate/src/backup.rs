@@ -238,9 +238,9 @@ fn read_entry(parent: &Dir, name: &OsStr, rel: &Path) -> Result<Option<Seen>, Er
         return Err(refused(rel, "has more than one hard link"));
     }
     let bytes =
-        slopvac_fs::read_capped(file, slopvac_engine::MAX_FILE_BYTES).map_err(|e| match e {
+        slopvac_fs::read_capped(file, slopvac_fs::MAX_DOCUMENT_BYTES).map_err(|e| match e {
             slopvac_fs::Error::CapExceeded { .. } => refused(rel, "is too large to migrate"),
-            slopvac_fs::Error::Read(source) => io(source),
+            slopvac_fs::Error::Read { source, .. } => io(source),
             other => io(std::io::Error::other(other.to_string())),
         })?;
     Ok(Some(Seen {
@@ -639,10 +639,9 @@ impl Store {
             &self.dir,
             &self.name,
             record.render().as_bytes(),
-            WriteOptions {
-                new_file_mode: Some(BACKUP_FILE_MODE),
-                create_parents: true,
-            },
+            WriteOptions::new()
+                .new_file_mode(BACKUP_FILE_MODE)
+                .create_parents(true),
         )
         .map_err(|e| match e {
             slopvac_fs::Error::Io { source, .. } => Error::io(&self.shown, source),
