@@ -151,7 +151,7 @@ jobs:
           emit "$MB" "$HEAD"
       - name: Scan pull request diff
         if: github.event_name == 'pull_request'
-        uses: trufflesecurity/trufflehog@ea68ca03c865c5f324e86e849ced20ed3cf9dbbb # v3.99.8
+        uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # v3.99.9
         with:
           path: ./
           base: ${{ steps.range.outputs.base }}
@@ -162,7 +162,7 @@ jobs:
       # action would scan the whole history.
       - name: Scan merge queue entry
         if: github.event_name == 'merge_group'
-        uses: trufflesecurity/trufflehog@ea68ca03c865c5f324e86e849ced20ed3cf9dbbb # v3.99.8
+        uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # v3.99.9
         with:
           path: ./
           base: ${{ steps.range.outputs.base }}
@@ -175,7 +175,7 @@ jobs:
           github.event_name != 'merge_group' &&
           github.event_name != 'schedule' &&
           github.event_name != 'workflow_dispatch'
-        uses: trufflesecurity/trufflehog@ea68ca03c865c5f324e86e849ced20ed3cf9dbbb # v3.99.8
+        uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # v3.99.9
         with:
           path: ./
           base: ${{ steps.range.outputs.base }}
@@ -184,7 +184,7 @@ jobs:
           extra_args: --results=verified
       - name: Scan full tree
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        uses: trufflesecurity/trufflehog@ea68ca03c865c5f324e86e849ced20ed3cf9dbbb # v3.99.8
+        uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # v3.99.9
         with:
           path: ./
           version: 3.99.8
