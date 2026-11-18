@@ -95,13 +95,34 @@ The project stays under Apache-2.0. The laws of the Netherlands govern the agree
 
 ### Sign the CLA
 
-When you open your first pull request, the `CLA` check asks you to sign. Post a comment that contains exactly this text and nothing else:
+An unsigned pull request fails the `CLA` check. The check names each person who must sign. To sign, post a comment on the pull request. The comment holds exactly this text and nothing else:
 
 ```text
-I have read the CLA Document and I hereby sign the CLA
+I have read the slopvac CLA version harmony-icla-1.2-opt1-v2 and I hereby sign it.
 ```
 
-You sign once. After that, the check passes on that pull request and on every later one. To run the check again, comment `recheck`.
+Blank lines around the text don't matter. Extra words, a quote or a code block invalidate the comment.
+
+You sign once for each version of the agreement. The signature counts on every pull request that you open. A new version needs a new signature.
+
+If you edit or delete the comment, the signature ends. After that, the check fails on your open pull requests.
+
+### Who must sign
+
+These people must sign:
+
+- The person who opens the pull request.
+- The author of each commit.
+- The committer of each commit.
+- Each co-author in a `Co-authored-by` trailer that uses a GitHub `noreply` address.
+
+Only these people can sign on the pull request. GitHub supplies their identities from its account data. Names and emails in a commit prove nothing.
+
+The email of each author and committer must link to a GitHub account. If an email has no link, the check fails and names the commit. Add that email to your GitHub account settings. Or rewrite the commit with an email that GitHub links to you.
+
+The check can't verify a `Co-authored-by` email that is not a `noreply` address. It lists that email as a warning and skips it.
+
+GitHub lists at most 250 commits for a pull request. A pull request with 250 commits or more fails, because the check can't see all of them. Split it.
 
 ### Contributions from your employer
 
@@ -109,16 +130,32 @@ If you created the contribution as part of your job, your employer must approve 
 
 ### Bots
 
-These bot accounts don't sign:
+These accounts don't sign:
 
 - `dependabot[bot]`
 - `renovate[bot]`
 - `github-actions[bot]`
 - `sjorsr-release-bot[bot]`, the release bot
+- `srobroek`, the maintainer
+- `web-flow`, the committer GitHub sets on commits made in the web interface
 
-### Unsigned pull requests
+The list gives each account name in full and has no wildcard.
 
-The `CLA` check runs on every pull request and covers every author of every commit in it. Maintainers merge a pull request only after the check passes.
+### Which check decides
+
+The CLA GitHub App posts the `CLA` check as a check run. A workflow job can't supply it, because a pull request can edit the workflows that it triggers.
+
+On a pull request, the check covers that pull request. It runs again after these events:
+
+- A push to the pull request.
+- Reopening the pull request.
+- A change to a signature.
+
+Every open pull request with the same head commit gets the same result. This includes pull requests from forks.
+
+In the merge queue, the check covers the whole merge group. It passes when each pull request in the group has a passing `CLA` check run for the current agreement version. It fails when anything is unclear. Examples are an unreadable queue and a pull request with no check run.
+
+Maintainers merge a pull request only after the `CLA` check passes.
 
 ## Commits and pull requests
 
