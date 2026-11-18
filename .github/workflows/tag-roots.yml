@@ -1,0 +1,36 @@
+name: Tag roots
+
+# Fails when a tag on the remote points outside slopvac's history (its commit has a
+# different root). Runs after pushes to main and weekly. It is not a pull request
+# check and not a required one. The fetch is commit-only (tree:0), so it stays small.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  tag-roots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci/check_tag_roots.py
+          sparse-checkout-cone-mode: false
+
+      - name: Fetch tags without trees or blobs
+        run: git fetch --quiet --filter=tree:0 --no-tags origin 'refs/tags/*:refs/tags/*'
+
+      - name: Check that every tag has slopvac's root
+        run: python3 scripts/ci/check_tag_roots.py
