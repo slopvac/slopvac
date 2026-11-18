@@ -79,6 +79,11 @@ struct View<'a> {
     title: Option<&'a str>,
     front_matter: Option<&'a FrontMatter<'a>>,
     entries: Vec<Entry<'a>>,
+    /// The blocks as taggers read them, built once.
+    views: Vec<BlockView<'a>>,
+    /// Entries turned into blocks, for the test that checks they are built once.
+    #[cfg(test)]
+    built: Cell<usize>,
     by_span: BTreeMap<(usize, usize), usize>,
 }
 
@@ -151,10 +156,36 @@ impl<'a> View<'a> {
             .enumerate()
             .map(|(i, e)| ((e.span.start, e.span.end), i))
             .collect();
+        #[cfg(test)]
+        let built = Cell::new(0);
+        let views = entries
+            .iter()
+            .map(|e| {
+                #[cfg(test)]
+                built.set(built.get() + 1);
+                BlockView {
+                    kind: e.kind,
+                    span: e.span.clone(),
+                    text: e.text,
+                    heading_path: e.heading_path.clone(),
+                    heading_level: e.heading_level,
+                    admonition_title: e.admonition_title,
+                }
+            })
+            .collect();
+        // A later entry with the same span owns it.
+        let owners = entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| ((e.span.start, e.span.end), i))
+            .collect();
         Self {
             path,
             visits: Cell::new(0),
-            owners: RefCell::new(HashMap::new()),
+            owners: RefCell::new(owners),
+            views,
+            #[cfg(test)]
+            built,
             source_len: source.len(),
             title,
             front_matter,
@@ -263,23 +294,7 @@ impl DocumentView for View<'_> {
     }
 
     fn blocks(&self) -> Vec<BlockView<'_>> {
-        let mut owners = self.owners.borrow_mut();
-        self.entries
-            .iter()
-            .enumerate()
-            .map(|(i, e)| {
-                owners.insert((e.span.start, e.span.end), i);
-                e
-            })
-            .map(|e| BlockView {
-                kind: e.kind,
-                span: e.span.clone(),
-                text: e.text,
-                heading_path: e.heading_path.clone(),
-                heading_level: e.heading_level,
-                admonition_title: e.admonition_title,
-            })
-            .collect()
+        self.views.clone()
     }
 
     fn sentences<'a>(&self, block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
@@ -444,6 +459,16 @@ mod tests {
                 view.visits.get()
             );
         }
+    }
+
+    #[test]
+    fn asking_for_the_blocks_again_builds_none_again() {
+        let doc = row_of_fallback_cells(50);
+        let view = View::new("t.rst", "", &doc, None);
+        for _ in 0..4 {
+            assert_eq!(view.blocks().len(), 50);
+        }
+        assert_eq!(view.built.get(), 50);
     }
 
     /// The code of `split_interleaved` and of `sentences` as they were before the sentence
