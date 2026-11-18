@@ -11,6 +11,7 @@ import http.client
 import importlib.util
 import io
 import platform
+import ssl
 import sys
 import tarfile
 from pathlib import Path
@@ -179,36 +180,43 @@ def test_retries_a_body_that_fails_mid_read(
     network: FakeNetwork, tmp_path: Path, error: BaseException
 ):
     network.fail(".tar.gz", MidRead(error))
-    destination = tmp_path / "download.tar.gz"
+    cache = tmp_path / "cache"
 
-    install_vale._download(
-        f"{install_vale.RELEASE_BASE}/v{VERSION}/{ASSET}", destination
-    )
+    binary, _ = install_vale.install(VERSION, tmp_path / "bin", cache)
 
-    assert destination.read_bytes() == network.archive
+    assert binary.read_bytes() == FAKE_VALE
+    assert (cache / ASSET).read_bytes() == network.archive
     assert sum(u.endswith(".tar.gz") for u in network.requests) == 2
 
 
-def test_installs_the_good_bytes_after_a_mid_read_failure(
-    network: FakeNetwork, tmp_path: Path
+def test_local_write_failure_is_not_retried(
+    network: FakeNetwork, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    network.fail(".tar.gz", MidRead(http.client.IncompleteRead(b"par", 100)))
+    def deny(self: Path, data: bytes) -> int:
+        raise PermissionError(13, "Permission denied", str(self))
 
-    binary, _ = install_vale.install(VERSION, tmp_path / "bin")
-
-    assert binary.read_bytes() == FAKE_VALE
-
-
-def test_local_write_failure_is_not_retried(network: FakeNetwork, tmp_path: Path):
-    destination = tmp_path / "missing-directory" / "download.tar.gz"
+    monkeypatch.setattr(Path, "write_bytes", deny)
 
     with pytest.raises(install_vale.InstallError, match="could not write"):
-        install_vale._download(
-            f"{install_vale.RELEASE_BASE}/v{VERSION}/{ASSET}", destination
-        )
+        install_vale.install(VERSION, tmp_path / "bin")
 
     assert len(network.requests) == 1
     assert network.sleeps == []  # type: ignore[attr-defined]
+    assert not (tmp_path / "bin" / "vale").exists()
+
+
+def test_tls_certificate_failure_is_not_retried(network: FakeNetwork, tmp_path: Path):
+    network.fail(
+        ".tar.gz",
+        URLError(ssl.SSLCertVerificationError("certificate verify failed")),
+    )
+
+    with pytest.raises(install_vale.InstallError, match="download failed"):
+        install_vale.install(VERSION, tmp_path / "bin")
+
+    assert len(network.requests) == 1
+    assert network.sleeps == []  # type: ignore[attr-defined]
+    assert not (tmp_path / "bin" / "vale").exists()
 
 
 def test_checksum_mismatch_fails_without_retry(network: FakeNetwork, tmp_path: Path):
