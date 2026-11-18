@@ -66,7 +66,7 @@ jobs:
         with:
           path-to-signatures: signatures/v1/cla.json
           path-to-document: https://github.com/slopvac/slopvac/blob/main/CLA.md
-          cla-version: apache-icla-2.2-v1
+          cla-version: harmony-icla-1.2-opt1-v1
           branch: main # must not be protected
           allowlist: dependabot[bot],sjorsr-release-bot[bot],github-actions[bot],renovate[bot]
           remote-organization-name: slopvac

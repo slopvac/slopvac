@@ -84,11 +84,13 @@ Plain installs and `slopvac@latest` stay on the latest stable release. The packa
 
 ## Contributor license agreement
 
-Contributions to slopvac need a signed [Contributor License Agreement](CLA.md) (CLA). It is based on the Apache Individual CLA. You keep the copyright in your contribution. You grant Sjors Robroek a license to use, sublicense and distribute it, and a patent license. The license lets the project change its license later without asking every past contributor.
+Contributions to slopvac need a signed [Contributor License Agreement](CLA.md) (CLA). It is the Individual Contributor Non-Exclusive License Agreement from the Contributor Agreements 1.2 templates (Harmony), with the traditional patent license. You keep the copyright in your contribution. You grant Sjors Robroek a non-exclusive license to use, sublicense and distribute it, and a patent license.
+
+Sjors Robroek may license contributions only under licenses that the Free Software Foundation lists as free and the Open Source Initiative approves. The project stays under Apache-2.0. The laws of the Netherlands govern the agreement.
 
 ### Sign the CLA
 
-When you open your first pull request, the `CLA` check asks you to sign. Post this comment on the pull request:
+When you open your first pull request, the `CLA` check asks you to sign. Post a comment that contains exactly this text and nothing else:
 
 ```text
 I have read the CLA Document and I hereby sign the CLA
@@ -98,7 +100,7 @@ You sign once. After that, the check passes on that pull request and on every la
 
 ### Contributions from your employer
 
-If your employer has rights to work that you create, get its permission before you contribute, as section 4 of the CLA describes. The project has no corporate CLA yet. If your employer needs one, open an issue.
+If you created the contribution as part of your job, your employer must approve the agreement first. The "How to use this Contributor Agreement" section of the CLA says so. The project has no entity agreement yet. If your employer needs one, open an issue.
 
 ### Bots
 

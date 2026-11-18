@@ -1,27 +1,105 @@
-# Individual Contributor License Agreement
+# Contributor Agreement
 
-Based on the Apache Software Foundation Individual Contributor License Agreement V2.2.
+## Individual Contributor Non-Exclusive License Agreement
 
-Thank you for your interest in slopvac. To clarify the intellectual property license granted with Contributions from any person or entity, Sjors Robroek must have on file a signed Contributor License Agreement ("CLA") from each Contributor, indicating agreement with the license terms below. This agreement is for your protection as a Contributor as well as the protection of Sjors Robroek and its users. It does not change your rights to use your own Contributions for any other purpose.
+## (including the Traditional Patent License OPTION)
 
-You accept and agree to the following terms and conditions for Your Contributions (present and future) that you submit to Sjors Robroek. In return, Sjors Robroek shall not use Your Contributions in a way that is contrary to the public benefit or inconsistent with its nonprofit status and bylaws in effect at the time of the Contribution. Except for the license granted herein to Sjors Robroek and recipients of software distributed by Sjors Robroek, You reserve all right, title, and interest in and to Your Contributions.
+Thank you for your interest in contributing to Sjors Robroek's slopvac ("We" or "Us").
 
-1. Definitions.
+The purpose of this contributor agreement ("Agreement") is to clarify and document the rights granted by contributors to Us. To make this document effective, please follow the instructions at https://github.com/slopvac/slopvac/blob/main/CONTRIBUTING.md#contributor-license-agreement.
 
-   "You" (or "Your") shall mean the copyright owner or legal entity authorized by the copyright owner that is making this Agreement with Sjors Robroek. For legal entities, the entity making a Contribution and all other entities that control, are controlled by, or are under common control with that entity are considered to be a single Contributor. For the purposes of this definition, "control" means (i) the power, direct or indirect, to cause the direction or management of such entity, whether by contract or otherwise, or (ii) ownership of fifty percent (50%) or more of the outstanding shares, or (iii) beneficial ownership of such entity.
+### How to use this Contributor Agreement
 
-   "Contribution" shall mean any original work of authorship, including any modifications or additions to an existing work, that is intentionally submitted by You to Sjors Robroek for inclusion in, or documentation of, any of the products owned or managed by Sjors Robroek (the "Work"). For the purposes of this definition, "submitted" means any form of electronic, verbal, or written communication sent to Sjors Robroek or its representatives, including but not limited to communication on electronic mailing lists, source code control systems, and issue tracking systems that are managed by, or on behalf of, Sjors Robroek for the purpose of discussing and improving the Work, but excluding communication that is conspicuously marked or otherwise designated in writing by You as "Not a Contribution."
+If You are an employee and have created the Contribution as part of your employment, You need to have Your employer approve this Agreement. If You do not own the Copyright in Your Contribution, any other author of the Contribution should also sign this. In any event, please contact Us at https://github.com/slopvac/slopvac/blob/main/CONTRIBUTING.md#contributor-license-agreement.
 
-2. Grant of Copyright License. Subject to the terms and conditions of this Agreement, You hereby grant to Sjors Robroek and to recipients of software distributed by Sjors Robroek a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly display, publicly perform, sublicense, and distribute Your Contributions and such derivative works.
+### Definitions
 
-3. Grant of Patent License. Subject to the terms and conditions of this Agreement, You hereby grant to Sjors Robroek and to recipients of software distributed by Sjors Robroek a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable (except as stated in this section) patent license to make, have made, use, offer to sell, sell, import, and otherwise transfer the Work, where such license applies only to those patent claims licensable by You that are necessarily infringed by Your Contribution(s) alone or by combination of Your Contribution(s) with the Work to which such Contribution(s) was submitted. If any entity institutes patent litigation against You or any other entity (including a cross-claim or counterclaim in a lawsuit) alleging that your Contribution, or the Work to which you have contributed, constitutes direct or contributory patent infringement, then any patent licenses granted to that entity under this Agreement for that Contribution or Work shall terminate as of the date such litigation is filed.
+**"You"** means the individual Copyright owner who Submits a Contribution to Us; or
 
-4. You represent that you are legally entitled to grant the above license. If your employer(s) has rights to intellectual property that you create that includes your Contributions, you represent that you have received permission to make Contributions on behalf of that employer, that your employer has waived such rights for your Contributions to Sjors Robroek, or that your employer has executed a separate Corporate CLA with Sjors Robroek.
+if the Copyright in the Contribution is held by a Legal Entity and the Contribution is being Submitted to Us on behalf of such Legal Entity, "You" means such Legal Entity.
 
-5. You represent that each of Your Contributions is Your original creation (see section 7 for submissions on behalf of others). You represent that Your Contribution submissions include complete details of any third-party license or other restriction (including, but not limited to, related patents and trademarks) of which you are personally aware and which are associated with any part of Your Contributions.
+**"Legal Entity"** means an entity that is not a natural person.
 
-6. You are not expected to provide support for Your Contributions, except to the extent You desire to provide support. You may provide support for free, for a fee, or not at all. Unless required by applicable law or agreed to in writing, You provide Your Contributions on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied, including, without limitation, any warranties or conditions of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A PARTICULAR PURPOSE.
+**"Affiliate"** means any other Legal Entity that controls, is controlled by, or under common control with that Legal Entity.
 
-7. Should You wish to submit work that is not Your original creation, You may submit it to Sjors Robroek separately from any Contribution, identifying the complete details of its source and of any license or other restriction (including, but not limited to, related patents, trademarks, and license agreements) of which you are personally aware, and conspicuously marking the work as "Submitted on behalf of a third-party: [named here]".
+**"Contribution"** means any original work of authorship, including any original modifications or additions to an existing work of authorship, Submitted for inclusion into Material by You to Us, in which you own the Copyright.
 
-8. You agree to notify Sjors Robroek of any facts or circumstances of which you become aware that would make these representations inaccurate in any respect.
+**"Copyright"** means all rights protecting works of authorship, including copyright, moral and neighboring rights, as appropriate, for the full term of their existence.
+
+**"Material"** means the software and/or documentation of slopvac that we make available to third parties.
+
+**"Submit"** means any act by which a Contribution is transferred to Us by You by means of tangible or intangible media, including but not limited to electronic mailing lists, source code control systems, and issue tracking systems, but excluding any transfer that is conspicuously marked or otherwise designated in writing by You as "Not a Contribution."
+
+**"Documentation"** means any non-software portion of a Contribution.
+
+### License grant
+
+#### Copyright license to Us
+
+Subject to the terms and conditions of this Agreement, You hereby grant to Us a worldwide, royalty-free, NON-exclusive, perpetual and irrevocable (except as stated in Section "Term") license, with the right to transfer an unlimited number of non-exclusive licenses or to grant sublicenses to third parties, under the Copyright covering the Contribution to use the Contribution by all means, including, but not limited to:
+
+* publish the Contribution,
+* modify the Contribution,
+* prepare derivative works based upon or containing the Contribution and/or to combine the Contribution with other Materials,
+* reproduce the Contribution in original or modified form,
+* distribute, to make the Contribution available to the public, display and publicly perform the Contribution in original or modified form.
+
+#### Moral rights
+
+Moral Rights remain unaffected to the extent they are recognized and not waivable by applicable law. Notwithstanding, You may add your name to the attribution mechanism customary used in the Materials you Contribute to, such as the header of the source code files of Your Contribution, and We will respect this attribution when using Your Contribution.
+
+### Patents
+
+#### Patent license
+
+Subject to the terms and conditions of this Agreement You hereby grant to Us and to recipients of Materials distributed by Us a worldwide, royalty-free, non-exclusive, perpetual and irrevocable (except as stated in Subsection "Revocation of patent license") patent license, with the right to transfer an unlimited number of non-exclusive licenses or to grant sublicenses to third parties, to make, have made, use, sell, offer for sale, import and otherwise transfer the Contribution and the Contribution in combination with any Material (and portions of such combination). This license applies to all patents owned or controlled by You, whether already acquired or hereafter acquired, that would be infringed by making, having made, using, selling, offering for sale, importing or otherwise transferring of Your Contribution(s) alone or by combination of Your Contribution(s) with any Material.
+
+#### Revocation of patent license
+
+You reserve the right to revoke the patent license stated in Subsection "Patent license" if We make any infringement claim that is targeted at your Contribution and not asserted for a Defensive Purpose. An assertion of claims of the Patents shall be considered for a "Defensive Purpose" if the claims are asserted against an entity that has filed, maintained, threatened, or voluntarily participated in a patent infringement lawsuit against Us or any of Our licensees.
+
+### License obligations by Us
+
+We may, but are under no obligation to, include the Contribution You Submitted to Us into the Material.
+
+We agree to (sub)license the Contribution or any Materials containing, based on or derived from your Contribution under the terms of any licenses that qualify as \[Free Software\](https://www.gnu.org/philosophy/free-sw.html) as defined by the Free Software Foundation and at the same time qualify as \[Open Source\](https://opensource.org/osd) as defined by the Open Source Initiative. For clarification, should we make available any Material under a non-free or non-open license, we must make a version of such Material available under a free and open license too.
+
+We agree to license patents owned or controlled by You only to the extent necessary to (sub)license Your Contribution(s) and the combination of Your Contribution(s) with the Material under the terms of any licenses the Free Software Foundation classifies as Free Software licenses and which are approved by the Open Source Initiative as Open Source licenses..
+
+### Disclaimer
+
+\*\*We acknowledge that you provide the Contribution "as is".\*\* \*\*More particularly, You disclaim all express or implied warranties including, without limitation, any implied warranty of satisfactory quality, fitness for a particular purpose and non-infringement. To the extent that any such warranties cannot be disclaimed, such warranty is limited in duration and extent to the minimum period and extent permitted by law.\*\*
+
+### Consequential damage waiver
+
+\*\*To the maximum extent permitted by applicable law, in no event will You or We be liable for any loss of profits, loss of anticipated savings, loss of data, indirect, special, incidental, consequential and exemplary damages arising out of this Agreement regardless of the legal or equitable theory (contract, tort or otherwise) upon which the claim is based.\*\*
+
+### Approximation of disclaimer and damage waiver
+
+\*\*If the disclaimer and damage waiver mentioned in Subsection "Disclaimer of warranty" and Section "Consequential damage waiver" cannot be given legal effect under applicable local law, reviewing courts shall apply local law that most closely approximates an absolute waiver of all civil or contractual liability in connection with the Contribution.\*\*
+
+### Term
+
+This Agreement shall come into effect upon Your acceptance of the terms and conditions.
+
+This Agreement shall apply for the term of the copyright and patents licensed here. However, You shall have the right to terminate the Agreement if We do not fulfill the obligations as set forth in Section "License obligations by Us". Such termination must be made in writing.
+
+In the event of a termination of this Agreement Sections "Disclaimer", "Term" and "Miscellaneous" shall survive such termination and shall remain in full force thereafter. For the avoidance of doubt, Free and Open Source Software (sub)licenses that have already been granted for Contributions at the date of the termination shall remain in full force after the termination of this Agreement.
+
+### Miscellaneous
+
+This Agreement and all disputes, claims, actions, suits or other proceedings arising out of this agreement or relating in any way to it shall be governed by the laws of the Netherlands excluding its private international law provisions.
+
+This Agreement sets out the entire agreement between You and Us for Your Contributions to Us and overrides all other agreements or understandings.
+
+In case of Your death, this agreement shall continue with Your heirs. In case of more than one heir, all heirs must exercise their rights through a commonly authorized person.
+
+If any provision of this Agreement is found void and unenforceable, such provision will be replaced to the extent possible with a provision that comes closest to the meaning of the original provision and that is enforceable. The terms and conditions set forth in this Agreement shall apply notwithstanding any failure of essential purpose of this Agreement or any limited remedy to the maximum extent possible under law.
+
+You agree to notify Us of any facts or circumstances of which you become aware that would make Your representations under this Agreement inaccurate in any respect.
+
+#### Recreate this Contributor License Agreement
+
+[https://contributoragreements.org/ca-cla-chooser/?beneficiary-name=Sjors+Robroek&project-name=slopvac&project-website=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac&project-email=&process-url=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac%2Fblob%2Fmain%2FCONTRIBUTING.md%23contributor-license-agreement&project-jurisdiction=the+Netherlands&fsfe-compliance=non-fsfe-compliance&agreement-exclusivity=non-exclusive&outbound-option=fsfe&outboundlist=&outboundlist-custom=&license-policy-location=&medialist=None&patent-option=Traditional&your-name=&your-date=&your-title=&your-address=&your-patents=&pos=apply&action=](https://contributoragreements.org/ca-cla-chooser/?beneficiary-name=Sjors+Robroek&project-name=slopvac&project-website=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac&project-email=&process-url=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac%2Fblob%2Fmain%2FCONTRIBUTING.md%23contributor-license-agreement&project-jurisdiction=the+Netherlands&fsfe-compliance=non-fsfe-compliance&agreement-exclusivity=non-exclusive&outbound-option=fsfe&outboundlist=&outboundlist-custom=&license-policy-location=&medialist=None&patent-option=Traditional&your-name=&your-date=&your-title=&your-address=&your-patents=&pos=apply&action=)
+
+Based on the Contributor Agreements 1.2 template from contributoragreements.org, licensed under CC BY-SA 4.0.
