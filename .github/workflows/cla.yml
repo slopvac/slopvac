@@ -1,4 +1,7 @@
 name: CLA
+# The run name carries the pull request number, so the re-check below can find this
+# pull request's own run. Numbers come from GitHub, not from user text.
+run-name: "CLA #${{ github.event.pull_request.number || github.event.issue.number || github.ref_name }}"
 # Contributor License Agreement check, run by CLA Assistant Lite. Signatures live in
 # slopvac/cla-signers and are written with a GitHub App token.
 on:
@@ -87,15 +90,16 @@ jobs:
           PR: ${{ github.event.issue.number }}
         run: |
           head=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
-          branch=$(gh pr view "$PR" --repo "$REPO" --json headRefName --jq .headRefName)
-          # Match the head SHA and branch: fork PR runs carry no pull_requests list.
-          run=$(BRANCH="$branch" gh api "repos/$REPO/actions/workflows/cla.yml/runs?event=pull_request_target&head_sha=$head&per_page=20" \
-            --jq '[.workflow_runs[] | select(.head_branch == env.BRANCH)][0].id // empty')
-          if [ -n "$run" ]; then
-            gh run rerun "$run" --repo "$REPO"
-          else
-            echo "No pull_request_target CLA run for $head"
+          # Fork PR runs carry no pull_requests list, so match the run name, which
+          # holds this pull request's number, and the head SHA. Page through all runs
+          # for the SHA, so newer runs from other pull requests cannot hide this one.
+          run=$(TITLE="CLA #$PR" gh api --paginate "repos/$REPO/actions/workflows/cla.yml/runs?event=pull_request_target&head_sha=$head&per_page=100" \
+            --jq '.workflow_runs[] | select(.display_title == env.TITLE) | .id' | head -n 1)
+          if [ -z "$run" ]; then
+            echo "::error::No CLA run for pull request #$PR at $head, so its earlier result was not re-checked"
+            exit 1
           fi
+          gh run rerun "$run" --repo "$REPO"
 
   CLA-merge-queue:
     name: CLA

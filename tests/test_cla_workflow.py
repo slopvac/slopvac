@@ -238,7 +238,6 @@ FAKE_GH = """#!/bin/sh
 echo "$*" >> "$GH_LOG"
 case "$*" in
   "pr view 7 --repo slopvac/slopvac --json headRefOid --jq .headRefOid") echo abc123 ;;
-  "pr view 7 --repo slopvac/slopvac --json headRefName --jq .headRefName") echo feature/x ;;
   api*) printf '%s' "$RUNS" | jq -r "$(echo "$*" | sed -n "s/.*--jq //p")" ;;
   "run rerun "*) ;;
   *) echo "unexpected gh call: $*" >&2; exit 1 ;;
@@ -265,21 +264,29 @@ def run_recheck(tmp_path, runs: list[dict]) -> list[str]:
         "REPO": "slopvac/slopvac",
         "PR": "7",
     }
-    subprocess.run(["bash", "-e", "-c", RECHECK["run"]], env=env, check=True)
-    return log.read_text().splitlines()
+    done = subprocess.run(["bash", "-e", "-c", RECHECK["run"]], env=env, check=False)
+    return done.returncode, log.read_text().splitlines()
 
 
-def test_the_re_check_re_runs_the_run_for_the_pull_request_branch(tmp_path):
-    calls = run_recheck(
+def test_the_re_check_re_runs_this_pull_requests_run(tmp_path):
+    # A newer run for the same SHA and branch belongs to another fork's PR.
+    code, calls = run_recheck(
         tmp_path,
         [
-            {"id": 11, "head_branch": "other"},
-            {"id": 22, "head_branch": "feature/x"},
+            {"id": 11, "display_title": "CLA #8", "head_branch": "feature/x"},
+            {"id": 22, "display_title": "CLA #7", "head_branch": "feature/x"},
         ],
     )
+    assert code == 0
     assert calls[-1] == "run rerun 22 --repo slopvac/slopvac"
 
 
-def test_the_re_check_re_runs_nothing_without_a_matching_run(tmp_path):
-    calls = run_recheck(tmp_path, [{"id": 11, "head_branch": "other"}])
+def test_the_re_check_fails_loudly_without_this_pull_requests_run(tmp_path):
+    code, calls = run_recheck(tmp_path, [{"id": 11, "display_title": "CLA #8"}])
+    assert code != 0
     assert not any(c.startswith("run rerun") for c in calls)
+
+
+def test_the_run_name_carries_the_pull_request_number():
+    assert "github.event.pull_request.number" in CLA["run-name"]
+    assert "github.event.issue.number" in CLA["run-name"]
