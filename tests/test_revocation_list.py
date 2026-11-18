@@ -582,8 +582,49 @@ def test_a_published_list_from_an_unlisted_key_is_not_replaced(
 def test_a_candidate_signed_by_a_previous_key_is_refused(tmp_path: Path) -> None:
     published = _signed(tmp_path, "published", EARLIER)
     candidate = _signed(tmp_path, "candidate", LATER, key_name="old")
+    # The previous key is trusted for the published list, and still not for the candidate.
+    (tmp_path / "slopvac-release-AAAAAAAAAAAAAAAA.pub").write_text(
+        (tmp_path / "old.pub").read_text()
+    )
     with pytest.raises(lists.SigningError, match="signature check failed"):
         lists.check_newer(candidate, published, tmp_path / "throwaway.pub", LATER)
+
+
+def _non_utf8_signature(tmp_path: Path) -> Path:
+    """A published list that is canonical but whose signature is not UTF-8."""
+    published = _signed(tmp_path, "published", LATER)
+    (published / "revocations.json.minisig").write_bytes(b"\xff\xfe\x80 not utf-8\n")
+    return published
+
+
+@NEEDS_MINISIGN
+def test_a_non_utf8_published_signature_is_refused_by_default(
+    tmp_path: Path, stub_oras
+) -> None:
+    published = _non_utf8_signature(tmp_path)
+    candidate = _signed(tmp_path, "candidate", LATER)
+    stub_oras("present", published)
+    pulled = tmp_path / "pulled"
+    lists.fetch_published(IMAGE, pulled, first_publication=False)
+    with pytest.raises(lists.SigningError, match="does not verify"):
+        lists.check_newer(candidate, pulled, tmp_path / "throwaway.pub", LATER)
+
+
+@NEEDS_MINISIGN
+def test_a_non_utf8_published_signature_is_replaced_by_a_first_publication(
+    tmp_path: Path, stub_oras, capsys: pytest.CaptureFixture[str]
+) -> None:
+    published = _non_utf8_signature(tmp_path)
+    candidate = _signed(tmp_path, "candidate", LATER)
+    stub_oras("present", published)
+    pulled = tmp_path / "pulled"
+    lists.fetch_published(IMAGE, pulled, first_publication=True)
+    lists.check_newer(
+        candidate, pulled, tmp_path / "throwaway.pub", LATER, first_publication=True
+    )
+    out = capsys.readouterr().out
+    assert out.startswith("::warning::replacing an existing list that failed")
+    assert "not a minisign signature" in out
 
 
 @NEEDS_MINISIGN

@@ -16,8 +16,9 @@ on:
     inputs:
       first_publication:
         description: >-
-          Nothing is published yet. Set it for the very first run only; the run then
-          fails if a list exists. Without it, a missing list fails the run.
+          For the very first run, or to recover from a published list that fails
+          verification (the run logs a warning and replaces it). The run fails if
+          the published list verifies. Without it, a missing list fails the run.
         type: boolean
         default: false
 permissions: {}

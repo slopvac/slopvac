@@ -93,7 +93,7 @@ The `revocations` environment is separate from `release` on purpose. This schedu
 
 ### First run
 
-1. Run the `Revocation list` workflow by hand on `main` (`workflow_dispatch`) with `first_publication` set to true, and approve the `revocations` environment if it asks. This is the only run that may find nothing published. It fails if a list already exists. Leave the option off for every later manual run.
+1. Run the `Revocation list` workflow by hand on `main` (`workflow_dispatch`) with `first_publication` set to true, and approve the `revocations` environment if it asks. This is the only kind of run that may find nothing published, and the only one that may replace a published list that fails verification (see below). It fails if the published list verifies. Leave the option off for every later manual run.
 2. Open the new `slopvac-revocations` package under the `slopvac` organisation's packages. Packages in an organisation start private. Change its visibility to public, and link it to the `slopvac/slopvac` repository so the workflow keeps write access. While it is private, users cannot pull the list anonymously and every online sync fails.
 3. Check the result without a login: `oras manifest fetch ghcr.io/slopvac/slopvac-revocations:latest` must show the artifact type `application/vnd.slopvac.revocations.v1` and two layers, the list and then its signature.
 

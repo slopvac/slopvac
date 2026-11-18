@@ -158,8 +158,10 @@ def check_list(data: bytes, now: datetime, *, require_fresh: bool = True) -> dat
 
 
 def check_prehashed(signature: Path) -> None:
-    lines = signature.read_text(encoding="utf-8").splitlines()
+    # A signature that is not UTF-8 is a verification failure, not a crash. A read
+    # error (OSError) is not caught: that is a filesystem fault and must fail closed.
     try:
+        lines = signature.read_bytes().decode("utf-8").splitlines()
         raw = base64.b64decode(lines[1], validate=True)
     except (IndexError, ValueError) as err:
         raise SigningError(f"{signature.name} is not a minisign signature") from err
