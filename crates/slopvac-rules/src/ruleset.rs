@@ -181,21 +181,30 @@ impl RuleSet {
         let mut bytes = 0_u64;
         // Read one file at a time, so the texts of a large pack are never all in memory.
         let sources = distinct.into_iter().map(move |p| {
-            let text =
-                slopvac_fs::read_text_capped(&p, MAX_RULE_FILE_BYTES).map_err(|e| match e {
-                    slopvac_fs::Error::CapExceeded { cap } => LoadError {
-                        file: p.clone(),
-                        line: None,
-                        rule: None,
-                        kind: LoadErrorKind::TooLarge(cap),
-                    },
-                    other => LoadError {
-                        file: p.clone(),
-                        line: None,
-                        rule: None,
-                        kind: LoadErrorKind::Read(other.to_string()),
-                    },
-                })?;
+            let read_error = |message: String| LoadError {
+                file: p.clone(),
+                line: None,
+                rule: None,
+                kind: LoadErrorKind::Read(message),
+            };
+            // The reader refuses a symlink, and a symlinked pack file is supported, so
+            // resolve the link first. A FIFO or device then fails as not regular, without
+            // blocking.
+            let resolved = fs::canonicalize(&p).map_err(|e| read_error(e.to_string()))?;
+            let text = slopvac_fs::read_capped_regular_to_string(
+                &resolved,
+                MAX_RULE_FILE_BYTES,
+                slopvac_fs::ReadOptions::new(),
+            )
+            .map_err(|e| match e.input_kind() {
+                Some(slopvac_fs::InputKind::TooLarge) => LoadError {
+                    file: p.clone(),
+                    line: None,
+                    rule: None,
+                    kind: LoadErrorKind::TooLarge(MAX_RULE_FILE_BYTES),
+                },
+                _ => read_error(e.to_string()),
+            })?;
             bytes += text.len() as u64;
             if bytes > MAX_PACK_BYTES {
                 return Err(over_budget(dir, PackBudget::Bytes, MAX_PACK_BYTES));

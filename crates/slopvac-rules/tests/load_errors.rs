@@ -430,3 +430,57 @@ fn a_pack_with_exactly_the_entry_limit_of_unrelated_entries_still_loads() {
     let set = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap();
     assert_eq!(set.categories().len(), 1);
 }
+
+/// Run `f` on a worker thread. When it has not returned after five seconds, open the FIFO's
+/// write end so a blocked reader wakes, join the worker, then fail.
+fn within_timeout<T: Send + 'static>(
+    fifo: &std::path::Path,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    let got = rx.recv_timeout(std::time::Duration::from_secs(5));
+    if got.is_err() {
+        drop(std::fs::OpenOptions::new().write(true).open(fifo));
+    }
+    worker.join().unwrap();
+    got.expect("the read blocked on a FIFO")
+}
+
+fn load_pack_dir(dir: PathBuf) -> Result<RuleSet, LoadErrors> {
+    RuleSet::load_dir(&pack(), &dir, &CompileOptions::default())
+}
+
+#[test]
+fn a_fifo_pack_file_is_refused_as_a_read_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let fifo = dir.path().join("cat.json");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let path = dir.path().to_path_buf();
+    let e = within_timeout(&fifo, move || load_pack_dir(path).unwrap_err());
+    let first = &e.errors()[0];
+    assert!(
+        matches!(&first.kind, LoadErrorKind::Read(m) if m.contains("not a regular file")),
+        "{first:?}"
+    );
+}
+
+#[test]
+fn a_symlinked_pack_file_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = tempfile::tempdir().unwrap();
+    std::fs::write(real.path().join("real.txt"), category("cat", &[])).unwrap();
+    let link = dir.path().join("cat.json");
+    std::os::unix::fs::symlink(real.path().join("real.txt"), &link).unwrap();
+    let path = dir.path().to_path_buf();
+    let set = within_timeout(&link, move || load_pack_dir(path));
+    assert!(set.is_ok(), "{:?}", set.err());
+}
