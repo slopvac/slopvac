@@ -52,6 +52,8 @@ rules:
 
   - id: history-narration
     exceptions: [quotation, versioned-change-note]
+    contexts:
+      skip: [change-note]
     name: Keep deltas out of a doc body
     kind: pattern
     severity: error
