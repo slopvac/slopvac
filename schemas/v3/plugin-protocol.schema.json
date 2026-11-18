@@ -703,6 +703,27 @@
         "role"
       ]
     },
+    "BinaryUnsupported": {
+      "description": "Content that a binary extractor skipped inside a document it reads, such as an embedded object or a part type it does not handle. part names the container member and locator, when present, the place inside it; both follow the BinarySegment rules. media_type is the content type the container declares for it, when it declares one. The host reports each entry as an info notice extract-unsupported in the root notices of the lint report, and the run still exits 0 (plugin-protocol.md section 5.5.4). Entries count against the segments budget.",
+      "type": "object",
+      "properties": {
+        "part": {
+          "type": "string",
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])"
+        },
+        "locator": {
+          "type": "string",
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "part"
+      ]
+    },
     "BinaryBudget": {
       "description": "The budget an extract-budget error names in data.budget. This def is the one list of allowed values; docs/contract/plugin-protocol.md section 5.5.5 gives each value its limit, which an extract-budget error carries in data.limit in the unit of that table. The enum is extensible (x-slopvac-extensible, bead slopvac-8l4.2.61): a reader keeps a value it does not know.",
       "x-slopvac-extensible": true,
@@ -736,7 +757,7 @@
       ]
     },
     "BinaryExtractResult": {
-      "description": "One entry per requested document. Each entry carries exactly one of outcome or error. outcome extracted carries one or more segments in reading order; empty and no-source carry none. The unsupported, malformed and budget outcomes travel as a per-document error (extract-unsupported, extract-malformed, extract-budget). A extract-budget error names the budget in data.budget and its value in data.limit; a reader never parses either from the message. The reply must fit maxMessageBytes; a document whose segments do not fit gets the error message-too-large instead.",
+      "description": "One entry per requested document. Each entry carries exactly one of outcome or error. outcome extracted carries one or more segments in reading order; empty and no-source carry none. An entry with an outcome may list skipped content in unsupported; an entry with an error may not. A document the extractor cannot read at all, an encrypted container, a malformed file and a budget breach travel as a per-document error (extract-unsupported, extract-encrypted, extract-malformed, extract-budget). An extract-budget error names the budget in data.budget and its value in data.limit; a reader never parses either from the message. The reply must fit maxMessageBytes; a document whose segments do not fit gets the error message-too-large instead.",
       "type": "object",
       "properties": {
         "results": {
@@ -761,6 +782,13 @@
                     "items": {
                       "$ref": "#/$defs/BinarySegment"
                     }
+                  },
+                  "unsupported": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/BinaryUnsupported"
+                    },
+                    "minItems": 1
                   }
                 },
                 "oneOf": [
@@ -788,6 +816,11 @@
                         {
                           "required": [
                             "segments"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "unsupported"
                           ]
                         }
                       ]

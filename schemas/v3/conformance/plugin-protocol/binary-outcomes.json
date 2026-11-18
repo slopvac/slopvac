@@ -1,0 +1,151 @@
+{
+  "description": "How the host reports each binary extraction outcome (plugin-protocol.md section 5.5.4). Each case gives the document path, the wire result entry for that document, the run exit code when no finding fails a gate, the notices the host adds to the root notices of the lint report, and the codes it adds to that document's unchecked list. Content a document skips is an info notice and never unchecked. A no-source result depends on the name: .drawio.png and .excalidraw.png promise a source, and every other name does not. Every listed notice code appears in every output format (host row H46).",
+  "cases": [
+    {
+      "id": "extracted-with-skipped-part",
+      "path": "docs/guide.docx",
+      "result": {
+        "document": "d1",
+        "outcome": "extracted",
+        "segments": [
+          {
+            "part": "word/document.xml",
+            "locator": "w:p[@w14:paraId=3F2A0B1C]",
+            "span": {
+              "start": 0,
+              "end": 8
+            },
+            "text": "We must never fail.",
+            "context": "prose",
+            "role": "body"
+          }
+        ],
+        "unsupported": [
+          {
+            "part": "word/embeddings/oleObject1.bin"
+          }
+        ]
+      },
+      "exit": 0,
+      "notices": [
+        {
+          "code": "extract-unsupported",
+          "level": "info"
+        }
+      ],
+      "unchecked": []
+    },
+    {
+      "id": "empty",
+      "path": "docs/blank.docx",
+      "result": {
+        "document": "d1",
+        "outcome": "empty"
+      },
+      "exit": 0,
+      "notices": [],
+      "unchecked": []
+    },
+    {
+      "id": "no-source-plain-png",
+      "path": "img/figure.png",
+      "result": {
+        "document": "d1",
+        "outcome": "no-source"
+      },
+      "exit": 0,
+      "notices": [
+        {
+          "code": "binary-no-source",
+          "level": "info"
+        }
+      ],
+      "unchecked": []
+    },
+    {
+      "id": "no-source-drawio-png",
+      "path": "img/flow.drawio.png",
+      "result": {
+        "document": "d1",
+        "outcome": "no-source"
+      },
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        "binary-no-source"
+      ]
+    },
+    {
+      "id": "no-source-excalidraw-png",
+      "path": "img/sketch.excalidraw.png",
+      "result": {
+        "document": "d1",
+        "outcome": "no-source"
+      },
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        "binary-no-source"
+      ]
+    },
+    {
+      "id": "encrypted",
+      "path": "docs/secret.docx",
+      "result": {
+        "document": "d1",
+        "error": {
+          "code": -32011,
+          "message": "encrypted",
+          "data": {
+            "slopvac_code": "extract-encrypted"
+          }
+        }
+      },
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        "extract-encrypted"
+      ]
+    },
+    {
+      "id": "malformed",
+      "path": "docs/broken.docx",
+      "result": {
+        "document": "d1",
+        "error": {
+          "code": -32009,
+          "message": "bad CRC",
+          "data": {
+            "slopvac_code": "extract-malformed"
+          }
+        }
+      },
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        "extract-malformed"
+      ]
+    },
+    {
+      "id": "budget",
+      "path": "docs/huge.xlsx",
+      "result": {
+        "document": "d1",
+        "error": {
+          "code": -32010,
+          "message": "segment budget reached",
+          "data": {
+            "slopvac_code": "extract-budget",
+            "budget": "segments",
+            "limit": 1000000
+          }
+        }
+      },
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        "extract-budget"
+      ]
+    }
+  ]
+}

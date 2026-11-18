@@ -11,6 +11,11 @@ went, and the rules a consumer relies on. Field descriptions live in the schema.
 - Consumers must branch on `notices[].code` and `unchecked[].code`, never on the message
   text. A code keeps its meaning for the whole 3.x line. Codes are kebab-case.
 - `slopvac_version` names the tool build. It does not signal a schema change.
+- Binary extraction adds root notices. Skipped content inside a binary document is an
+  `info` notice `extract-unsupported`, never an `unchecked` entry, and it does not change the
+  exit code. Every output format carries it, and the language server shows it as an
+  Information diagnostic. [plugin-protocol.md section 5.5.4](plugin-protocol.md#554-outcomes)
+  defines it and the other binary codes.
 - The schema is strict, because it is the producer contract. Slopvac writes only reports
   that validate, and its own tests check that. A consumer must ignore unknown fields, as
   [the field policy](policies.md) requires, so a later 3.x release can add keys. Keys that

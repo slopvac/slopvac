@@ -176,10 +176,11 @@ The host sends a file to a binary extractor only under these rules:
 
 - A `binary-extractor` hook lists the formats it reads in `HookDecl.formats`, both in the manifest and in the `initialize` reply. The list is required for this kind. A reply that lists a format the manifest does not list for the same hook is `plugin-declaration-mismatch` (section 4.3).
 - The host decides the format from the bytes first. A PNG signature means a PNG format. A ZIP local file header with a `[Content_Types].xml` entry means Office Open XML, and a stored `mimetype` entry means OpenDocument. The file name then picks the variant. Discovery and the mapping from names to ids belong to `slopvac-8l4.12`.
-- When the signature and the name disagree, the host sends the file to no extractor. It reports `binary-format-mismatch`, and the run exits 2.
-- When no extractor reads the detected format, the host reports `extract-unsupported`, and the run exits 2.
+- An encrypted Office Open XML package is an OLE compound file, not a ZIP. When a file with an Office Open XML name starts with the compound file signature `D0 CF 11 E0 A1 B1 1A E1`, the host sends it to no extractor and reports `extract-encrypted` (section 5.5.4).
+- When the signature and the name disagree in any other way, the host sends the file to no extractor. It reports `binary-format-mismatch`, and the run exits 2.
+- Discovery selects only files of the listed formats, so it skips EPUB, PDF and every other format slopvac does not read. When the user names such a file explicitly, or names a file of a listed format that no enabled extractor reads, the host sends it to no extractor and the run exits 2. The CLI routing bead `slopvac-8l4.20.13` owns that case and its code. This contract fixes only the exit.
 - The host sends a format only to a hook that declared it, and sends each document to one binary extractor only.
-- A plugin or other reader that receives a format id it does not know treats the document as unsupported. It declines that document with `extract-unsupported`, answers the other documents, and does not fail the request. The vectors in [`binary-unknown-format.json`](../../schemas/v3/conformance/plugin-protocol/binary-unknown-format.json) show the rule.
+- A plugin or other reader that receives a format id it does not know treats the document as unsupported. It declines that document with the per-document error `extract-unsupported`, answers the other documents, and does not fail the request. The host then handles the document as an input that no enabled extractor reads, as in the rule above. The vectors in [`binary-unknown-format.json`](../../schemas/v3/conformance/plugin-protocol/binary-unknown-format.json) show the rule.
 - No hook wins a format by default, because load order and pack order carry no intent. When two or more enabled hooks list a format, built-in extractors included, a mapping in the user's config picks one, such as `[formats] pptx = "<pack>:<hook>"`. `slopvac-8l4.2` fixes the key name. Without a mapping, the host sends files of that format to no extractor. It reports `binary-format-ambiguous`, names every hook that claims the format and the config key that resolves it, and the run exits 2.
 - Standard input is never a binary document in 3.0.
 
@@ -220,20 +221,26 @@ The 3.0 roles are `body`, `heading`, `list-item`, `table-cell`, `caption`, `text
 
 #### 5.5.4 Outcomes
 
-Each document ends in exactly one outcome:
+Each document ends in exactly one outcome. The last column gives what the host adds to the lint report: a notice in the root `notices`, or an entry in the document's `unchecked`. A run whose documents add nothing to `unchecked` exits 0, or 1 when a finding fails a gate.
 
-| Outcome | Meaning | Wire form | Run |
+| Outcome | Meaning | Wire form | Report and exit |
 |---|---|---|---|
 | `extracted` | The file holds prose. | `outcome` `extracted` with one or more segments. | Complete. |
 | `empty` | A valid file of the format with no prose, such as a docx file with no text. | `outcome` `empty`, no segments. | Complete with no findings. |
-| `no-source` | A valid container with no embedded source for the format, such as a PNG without a draw.io chunk. | `outcome` `no-source`, no segments. | Incomplete. The host reports the coded notice `binary-no-source`, which names the document and its locator, so the user can exclude the file. The run exits 2, never 0. |
-| `unsupported` | A file of the format that the extractor cannot read: encrypted, protected by a password, or a variant it does not handle. | Error -32008 `extract-unsupported`. | Exit 2. |
-| `malformed` | Bytes that break the format: a bad CRC, a broken ZIP directory, XML that does not parse, or an embedded payload that does not decode. | Error -32009 `extract-malformed`. | Exit 2. |
-| `budget` | The extractor hit a limit of section 5.5.5 or of its own. | Error -32010 `extract-budget`. | Exit 2. |
+| `no-source` | A valid container with no embedded source for the format, such as a PNG without a draw.io chunk. | `outcome` `no-source`, no segments. | The host decides from the name. `.drawio.png` and `.excalidraw.png` promise a source, so the host adds `binary-no-source` to `unchecked`, and the run exits 2. Every other name, such as an explicitly included plain `.png`, promises none: the host adds an `info` notice `binary-no-source`, and the run exits 0. |
+| `unsupported` | The extractor reads none of the document: a format id it does not know, or a variant it does not handle. | Error -32008 `extract-unsupported`. | The host handles the document as an input that no enabled extractor reads (section 5.5.1). The run exits 2. |
+| `encrypted` | The container is encrypted or protected by a password. | Error -32011 `extract-encrypted`. | `extract-encrypted` in `unchecked`. The run exits 2. |
+| `malformed` | Bytes that break the format: a bad CRC, a broken ZIP directory, XML that does not parse, or an embedded payload that does not decode. | Error -32009 `extract-malformed`. | `extract-malformed` in `unchecked`. The run exits 2. |
+| `budget` | The extractor hit a limit of section 5.5.5 or of its own. | Error -32010 `extract-budget`. | `extract-budget` in `unchecked`. The run exits 2. |
 
-- Extraction is all or nothing. A failed document returns no segments, and v1 has no partial result.
+- Content that the extractor skips inside a document it reads is not an outcome. An embedded object or a part type it does not handle goes in the result's `unsupported` list ([`BinaryUnsupported`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryUnsupported)), next to `extracted` or `empty`. The host adds one `info` notice `extract-unsupported` for each entry to the root `notices`, names the part, and never adds it to `unchecked`. The run exits 0, or 1 when a finding fails a gate.
+- An encrypted container gets the dedicated code `extract-encrypted`, rather than `extract-malformed` with a detail field. The file is valid, so "malformed" would tell the user to repair a file that is not broken. The remedy is to remove the protection or exclude the file. Consumers branch on the code, never on other data (lint-report.md, section Read a report), so the distinction belongs in the code.
+- Extraction of a failed document is all or nothing. It returns no segments, and v1 has no partial result.
 - A malformed payload in a named format is `malformed`. It is never `empty` or `no-source`, so a broken file never passes as clean.
-- The native adapter returns the same six outcomes with the same codes.
+- The native adapter returns the same outcomes with the same codes.
+- The vectors in [`binary-outcomes.json`](../../schemas/v3/conformance/plugin-protocol/binary-outcomes.json) give the report and the exit for each outcome.
+
+Every machine output format carries each `extract-unsupported` notice with its code, its `info` level and its path: JSON (root `notices`), SARIF, rdjsonl, codeclimate, junit, checkstyle, markdown and html. Each format maps the notice to its own lowest severity or informational form. The language server publishes it as a diagnostic with severity Information on the document it concerns. The notice never changes the exit code. Host row H46 checks every format.
 
 #### 5.5.5 Limits
 
@@ -352,9 +359,10 @@ Errors use the JSON-RPC error object. `code` is numeric. `data.slopvac_code` is 
 | -32005 | `request-cancelled` | The plugin stopped a request after a cancel. |
 | -32006 | `document-invalid` | The plugin cannot process this document, for example binary content. |
 | -32007 | `offline` | A provider refused the call because offline mode is on. |
-| -32008 | `extract-unsupported` | A binary extractor cannot read this file: encrypted, protected, or an unhandled variant (section 5.5.4). |
+| -32008 | `extract-unsupported` | A binary extractor reads none of this document. The cause is an unknown format id or a variant it does not handle (section 5.5.4). As an `info` host notice, the code marks skipped content in a document the extractor read. |
 | -32009 | `extract-malformed` | The bytes break the format, or an embedded payload does not decode. |
 | -32010 | `extract-budget` | A binary extractor hit a limit. |
+| -32011 | `extract-encrypted` | The container is encrypted or protected by a password (section 5.5.4). |
 
 The range -32099 to -32000 is the slopvac range. The plugin may add codes from -32050 to -32099 for its own use if it also sets `data.slopvac_code`, and the host treats them as `internal-error`. The host reserves the rest of the range.
 
@@ -372,12 +380,12 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 | `plugin-declaration-mismatch` | The reply disagrees with the hashed manifest (section 4.3). |
 | `request-id-exhausted` | The request counter reached 2^53-1. |
 | `binary-format-mismatch` | The signature and the name of a file disagree about its format (section 5.5.1). |
-| `binary-no-source` | A binary extractor found no embedded source in a valid container. |
+| `binary-no-source` | A binary extractor found no embedded source in a valid container. The level depends on the name (section 5.5.4). |
 | `binary-input-changed` | A binary file grew between the preflight and the read (section 5.5.6). |
 | `binary-format-ambiguous` | Two or more enabled hooks claim a format, and the config maps it to none of them (section 5.5.1). |
 | `extract-output-invalid` | The host validator rejects the output of a first-party extractor (section 5.5). The cause is a slopvac bug, and the message points to the issue tracker. It is separate from `plugin-output-invalid`, which covers plugin output, and has the same severity and exit. |
 
-A first-party extractor reports `extract-unsupported`, `extract-malformed` and `extract-budget` with the same strings. The host also raises `extract-unsupported` when no extractor reads a format.
+A first-party extractor reports `extract-unsupported`, `extract-encrypted`, `extract-malformed` and `extract-budget` with the same strings. The host also raises `extract-encrypted` for an encrypted Office Open XML package that it detects itself (section 5.5.1).
 
 Exit codes stay as policies.md section 3.5 defines them. Any plugin failure makes the affected run exit 2, never 0, and never 1 unless findings fail the gate.
 
@@ -466,14 +474,15 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | H25 | A top-level array, a duplicate key, a nesting depth of 65. | Each is a framing error. |
 | H36 | `binary-extractor/extract` requests built from every `frames` and `preflight` case in `binary-frames.json`. | The host sends exactly the cases marked admissible. Each other document gets `message-too-large`, and the run exits 2. For a case that fails the preflight, the host reads and encodes no byte of the file. |
 | H37 | A binary result entry with both `outcome` and `error`, `extracted` with no segments, `empty` with segments, a span past `byte_length`, a duplicate `part` and `locator`, and a locator with a control or bidirectional character. | `plugin-output-invalid` for each. |
-| H38 | Binary documents that end `empty`, `no-source`, `extract-unsupported`, `extract-malformed` and `extract-budget`. | `empty` is complete with no findings. Each of the others makes the run exit 2, never 0. |
-| H39 | A file whose signature and name disagree, and a format that no extractor lists. | `binary-format-mismatch` and `extract-unsupported`. No extractor gets the file. The run exits 2. |
+| H38 | Binary documents built from every case in `binary-outcomes.json`: skipped content, `empty`, `no-source` under a plain and a promising name, `extract-encrypted`, `extract-malformed` and `extract-budget`. | Each case adds exactly the listed notices and `unchecked` codes, and the run exits as listed. Skipped content is an `info` notice, never `unchecked`, and exits 0. |
+| H39 | A file whose signature and name disagree, an encrypted Office Open XML package, an explicitly named EPUB file, and a format that no extractor lists. | `binary-format-mismatch`, `extract-encrypted`, and the `slopvac-8l4.20.13` code for the last two. No extractor gets any of the files. The run exits 2. |
 | H40 | A reply whose `binary-extractor` hook lists a format the manifest does not list. | `plugin-declaration-mismatch`, kill, no reuse. |
-| H41 | The first-party extractors, run through the wire adapter. | They pass H36 to H38 and P20 to P23. |
+| H41 | The first-party extractors, run through the wire adapter. | They pass H36 to H38 and P20 to P24. |
 | H42 | Concurrent binary requests whose reservations exceed the in-flight budget, and a file that grows after the preflight. | The later requests wait, and peak memory for request buffers stays under the budget. The grown file gets `binary-input-changed`, and the run exits 2. |
 | H43 | Two enabled hooks list one format: two plugins, and a plugin with a built-in extractor. Run with and without a config mapping. | Without a mapping, the host reports `binary-format-ambiguous`, names both hooks and the config key, gives no extractor the file, and exits 2. With a mapping, only the mapped hook gets the file. |
 | H44 | A manifest whose `binary-extractor` hook lists a format outside the 3.0 list. | The manifest is refused before spawn. |
 | H45 | Results built from every case in `binary-caps.json`, and a first-party extractor whose output fails the validator. | Over-budget cases fail with `extract-budget`, `data.budget` names the budget, and `data.limit` holds its value. At-budget cases pass. The first-party failure is `extract-output-invalid`. |
+| H46 | A run whose only documents are a docx file with one skipped embedded object, rendered in every output format, and the same file opened in the language server. | JSON, SARIF, rdjsonl, codeclimate, junit, checkstyle, markdown and html each carry the `extract-unsupported` notice with its code, `info` level and path. The language server publishes one Information diagnostic. The run exits 0. |
 
 ### 12.2 Plugin
 
@@ -499,9 +508,10 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | P18 | A fixer request with selected findings. | Every edit names a finding index and lies inside that finding's span. |
 | P19 | An initialize reply compared with the manifest. | Hooks, network and features are a subset of the manifest declaration. |
 | P20 | A `binary-extractor/extract` request for each declared format, sent twice. | Each entry has one outcome. Spans lie inside `byte_length`, `part` and `locator` pairs are unique, and both results are equal. |
-| P21 | A corrupt file in a declared format, and a valid container with no embedded source. | `extract-malformed`, and `no-source`. Neither is `empty`. |
+| P21 | A corrupt file in a declared format, an encrypted container, and a valid container with no embedded source. | `extract-malformed`, `extract-encrypted`, and `no-source`. None is `empty`, and none is `extract-unsupported`. |
 | P22 | A document whose segments do not fit `maxMessageBytes`. | That document gets `message-too-large`. The reply fits, and no segment is truncated. |
 | P23 | The request in `binary-unknown-format.json`: one known format and one id the plugin does not know. | The plugin declines the unknown document with `extract-unsupported` and answers the other. It does not answer `invalid-params`. |
+| P24 | A file in a declared format with an embedded object the plugin does not read. | The result is `extracted` or `empty` with the object in `unsupported`. It is not an error. |
 
 ## 13. Owners
 
