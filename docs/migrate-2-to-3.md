@@ -34,9 +34,9 @@ Common causes:
 - A rule or category name that is not in the rename table.
 - A key 3.0 does not know, or a `guidance` table inside an override.
 
-Edit the file, then run the preview again.
+Edit the file and preview again.
 
-A 2.x category that owns no rule (`meta`, `orwell-voice`, `prose-density` or `ste-vocabulary`) is dropped with a `migrate-category-removed` line. The exit code stays 0.
+A 2.x category with no rules is dropped with `migrate-category-removed`; migrate exits 0.
 
 ## 4. Apply
 
