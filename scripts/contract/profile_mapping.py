@@ -41,6 +41,7 @@ JUDGEMENT_LEVEL = {"enforced": "error", "advisory": "suggestion", "excluded": "o
 def engine_states(profile: str, config=None, path: str = "doc.md"):
     """Ground truth: the 2.x engine's state per rule, with the resolved config.
 
+    The catalogue includes the generated spelling rule for the default locale.
     Checked rules come from ``is_active`` and ``severity_for``. A judgement rule
     never fires, so its review level comes from its tier: enforced blocks the
     review verdict (``error``), advisory reports (``suggestion``), excluded skips
@@ -49,9 +50,13 @@ def engine_states(profile: str, config=None, path: str = "doc.md"):
     from slopvac.config import Config, resolve_for
     from slopvac.engine import Engine
     from slopvac.enums import Profile
-    from slopvac.rules import load_ruleset
+    from slopvac.locale import DEFAULT_LOCALE
+    from slopvac.rules import inject_locale_rule, load_ruleset
 
     ruleset = load_ruleset()
+    # `ste-words.spelling` is generated per run from the locale, not shipped as YAML,
+    # so `load_ruleset` alone leaves it out of the catalogue.
+    inject_locale_rule(ruleset, DEFAULT_LOCALE)
     config = config or Config(profile=Profile(profile))
     resolved = resolve_for(config, Path(path))
     engine = Engine(ruleset.rules, resolved)
@@ -77,7 +82,11 @@ def build_style(profile: str) -> dict:
     for rule in ruleset.all_rules:
         if rule.category not in resolved.categories:
             raise SystemExit(f"{profile}: category {rule.category} has no profile entry")
-    for name in sorted(resolved.categories):
+    # 2.x profile tables also name categories that no rule belongs to (`meta`,
+    # `orwell-voice`, `prose-density`, `ste-vocabulary`). Nothing in them can report,
+    # and 3.0 rejects a style category that no pack defines.
+    with_rules = {rule.category for rule in ruleset.all_rules}
+    for name in sorted(resolved.categories.keys() & with_rules):
         settings = resolved.categories[name]
         dials: dict = {"severity": settings.severity.value}
         if settings.max_per_100_words is not None:

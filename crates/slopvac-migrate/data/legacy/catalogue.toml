@@ -268,6 +268,7 @@
 "ste-words.noun-used-as-verb" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-words.obligation-word-substitution" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ste-words.slang-or-jargon-term" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
+"ste-words.spelling" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
 "ste-words.unapproved-word-not-a-domain-noun" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ste-words.verb-or-adjective-form-not-permitted" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ste-words.verb-used-as-noun" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
