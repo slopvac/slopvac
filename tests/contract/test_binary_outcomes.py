@@ -21,7 +21,8 @@ VECTORS = json.loads(
     (SCHEMAS / "conformance/plugin-protocol/binary-outcomes.json").read_text("utf-8")
 )
 CASES = {c["id"]: c for c in VECTORS["cases"]}
-PROMISES_SOURCE = (".drawio.png", ".excalidraw.png")
+HOST_CASES = {c["id"]: c for c in VECTORS["host_cases"]}
+PROMISES_SOURCE = (".drawio.png", ".excalidraw.png", ".drawio.svg")
 FAILURE_CODES = {"extract-encrypted", "extract-malformed", "extract-budget"}
 
 
@@ -46,7 +47,9 @@ def test_each_result_entry_is_valid_on_the_wire(case: dict) -> None:
     assert list(_result_validator().iter_errors(reply)) == []
 
 
-@pytest.mark.parametrize("case", VECTORS["cases"], ids=lambda c: c["id"])
+@pytest.mark.parametrize(
+    "case", VECTORS["cases"] + VECTORS["host_cases"], ids=lambda c: c["id"]
+)
 def test_exit_is_2_exactly_when_something_is_unchecked(case: dict) -> None:
     assert (case["exit"] == 2) is bool(case["unchecked"])
     assert case["exit"] in (0, 2)
@@ -62,7 +65,8 @@ def test_skipped_content_is_an_info_notice_and_never_unchecked() -> None:
 
 @pytest.mark.parametrize(
     "case",
-    [c for c in VECTORS["cases"] if c["result"].get("outcome") == "no-source"],
+    [c for c in VECTORS["cases"] if c["result"].get("outcome") == "no-source"]
+    + [c for c in VECTORS["host_cases"] if "binary-no-source" in str(c)],
     ids=lambda c: c["id"],
 )
 def test_no_source_depends_on_whether_the_name_promises_a_source(case: dict) -> None:
@@ -83,4 +87,34 @@ def test_a_failed_document_is_unchecked_under_its_error_code(case: dict) -> None
     code = case["result"]["error"]["data"]["slopvac_code"]
     assert code in FAILURE_CODES
     assert case["unchecked"] == [code]
+    assert case["exit"] == 2
+
+
+@pytest.mark.parametrize("case_id", ["named-epub", "named-pdf"])
+def test_a_named_input_in_an_unread_format_exits_2_without_extraction(
+    case_id: str,
+) -> None:
+    case = HOST_CASES[case_id]
+    assert case["named_explicitly"] is True
+    assert case["sent_to_extractor"] is False
+    assert case["exit"] == 2
+    # The CLI routing bead owns the code, so the vector leaves it open.
+    assert case["unchecked"] == [None]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [CASES["encrypted"], HOST_CASES["encrypted-ooxml-package"]],
+    ids=lambda c: c["id"],
+)
+def test_an_encrypted_container_exits_2_and_is_never_unsupported(case: dict) -> None:
+    assert case["unchecked"] == ["extract-encrypted"]
+    assert case["exit"] == 2
+    assert "extract-unsupported" not in json.dumps(case)
+
+
+@pytest.mark.parametrize("case", VECTORS["validator_cases"], ids=lambda c: c["id"])
+def test_validator_failure_code_depends_on_who_produced_the_output(case: dict) -> None:
+    expected = {"built-in": "extract-output-invalid", "plugin": "plugin-output-invalid"}
+    assert case["code"] == expected[case["source"]]
     assert case["exit"] == 2

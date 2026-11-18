@@ -1,5 +1,5 @@
 {
-  "description": "How the host reports each binary extraction outcome (plugin-protocol.md section 5.5.4). Each case gives the document path, the wire result entry for that document, the run exit code when no finding fails a gate, the notices the host adds to the root notices of the lint report, and the codes it adds to that document's unchecked list. Content a document skips is an info notice and never unchecked. A no-source result depends on the name: .drawio.png and .excalidraw.png promise a source, and every other name does not. Every listed notice code appears in every output format (host row H46).",
+  "description": "How the host reports each binary extraction outcome (plugin-protocol.md section 5.5.4). Each case in cases gives the document path, the wire result entry for that document, the run exit code when no finding fails a gate, the notices the host adds to the root notices of the lint report, and the codes it adds to that document's unchecked list. Content a document skips is an info notice and never unchecked. A no-source result depends on the name: .drawio.png, .excalidraw.png and .drawio.svg promise a source, and every other name does not. host_cases are inputs the host decides without a wire result: sent_to_extractor is false when no extractor gets the file. A null code means that the CLI routing bead slopvac-8l4.20.13 fixes it. validator_cases give the code the shared validator reports when output fails it, by the source of that output. Every listed notice code appears in every output format (host row H46).",
   "cases": [
     {
       "id": "extracted-with-skipped-part",
@@ -146,6 +146,85 @@
       "unchecked": [
         "extract-budget"
       ]
+    }
+  ],
+  "host_cases": [
+    {
+      "id": "named-epub",
+      "path": "book/manual.epub",
+      "signature": "zip",
+      "named_explicitly": true,
+      "sent_to_extractor": false,
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        null
+      ]
+    },
+    {
+      "id": "named-pdf",
+      "path": "docs/spec.pdf",
+      "signature": "pdf",
+      "named_explicitly": true,
+      "sent_to_extractor": false,
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        null
+      ]
+    },
+    {
+      "id": "encrypted-ooxml-package",
+      "path": "docs/secret.docx",
+      "signature": "ole-compound-file",
+      "named_explicitly": false,
+      "sent_to_extractor": false,
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        "extract-encrypted"
+      ]
+    },
+    {
+      "id": "no-source-drawio-svg",
+      "path": "img/flow.drawio.svg",
+      "signature": "svg",
+      "named_explicitly": false,
+      "sent_to_extractor": false,
+      "exit": 2,
+      "notices": [],
+      "unchecked": [
+        "binary-no-source"
+      ]
+    },
+    {
+      "id": "no-source-plain-svg",
+      "path": "img/logo.svg",
+      "signature": "svg",
+      "named_explicitly": true,
+      "sent_to_extractor": false,
+      "exit": 0,
+      "notices": [
+        {
+          "code": "binary-no-source",
+          "level": "info"
+        }
+      ],
+      "unchecked": []
+    }
+  ],
+  "validator_cases": [
+    {
+      "id": "built-in-output-invalid",
+      "source": "built-in",
+      "code": "extract-output-invalid",
+      "exit": 2
+    },
+    {
+      "id": "plugin-output-invalid",
+      "source": "plugin",
+      "code": "plugin-output-invalid",
+      "exit": 2
     }
   ]
 }
