@@ -45,7 +45,7 @@ schema_version = 3
 id = "plug"
 version = "0.1.0"
 slopvac_api = 1
-kind = "plugin"
+kind = "code"
 description = "A | plugin."
 
 [plugin]
@@ -380,7 +380,7 @@ def test_pack_page_renders_a_plugin_pack_declaration(
 def test_packs_index_links_every_pack_page(sources: dict[str, Path]) -> None:
     assert _run(sources) == 0
     index = _read(sources, "plugins/packs/index.md")
-    assert "| [plug](plug/index.md) | 0.1.0 | plugin | A \\| plugin. |" in index
+    assert "| [plug](plug/index.md) | 0.1.0 | code | A \\| plugin. |" in index
     assert (
         "| [style-pack](style-pack/index.md) | 1.2.0 | data | Styles and terms. |"
         in index
@@ -391,7 +391,7 @@ def test_manifest_that_breaks_the_schema_stops_the_build(
     sources: dict[str, Path],
 ) -> None:
     path = sources["packs"] / "plug" / "slopvac-pack.toml"
-    path.write_text(PLUGIN_PACK.replace('kind = "plugin"', 'kind = "data"'))
+    path.write_text(PLUGIN_PACK.replace('kind = "code"', 'kind = "data"'))
     with pytest.raises(SystemExit, match="plug.*slopvac-pack.toml.*does not match"):
         _run(sources)
 
@@ -653,7 +653,7 @@ schema_version = 3
 id = "hostile"
 version = "1.0.0"
 slopvac_api = 1
-kind = "plugin"
+kind = "code"
 description = "Use <script>alert(1)</script> or [click](javascript:alert(1)) | now"
 license = "MIT`<img src=x onerror=alert(1)>"
 homepage = "https://example.test/docs"
