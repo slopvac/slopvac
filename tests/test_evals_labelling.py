@@ -107,8 +107,8 @@ def test_judge_asks_both_orders_and_resumes(tmp_path, monkeypatch):
     path.write_text(DOC_TEXT)
     monkeypatch.setattr(lab.runner, "text_path", lambda doc, cache: path)
     kw = {
-        "family": "f",
-        "model": "m",
+        "family": "anthropic",
+        "model": "claude-test",
         "manifest": manifest(),
         "notes": {},
         "cache": tmp_path,
@@ -334,9 +334,9 @@ def test_an_interrupted_judge_run_keeps_finished_judgments_and_resumes_without_r
                 str(d),
                 "judge",
                 "--family",
-                "x",
+                "anthropic",
                 "--model",
-                "m",
+                "claude-test",
                 "--provider-cmd",
                 "ignored",
                 "--rules-dir",
@@ -345,8 +345,312 @@ def test_an_interrupted_judge_run_keeps_finished_judgments_and_resumes_without_r
         )
 
     assert run(4) == 2  # 3 items x 2 orders = 6 calls; the 5th call crashes
-    saved = lab.read_jsonl(d / "judgments" / "x.jsonl")
+    saved = lab.read_jsonl(d / "judgments" / "anthropic.jsonl")
     assert len(saved) == 4
     assert run(99) == 0
     assert len(asked) == 6  # the 4 finished calls were not repeated
-    assert len(lab.read_jsonl(d / "judgments" / "x.jsonl")) == 6
+    assert len(lab.read_jsonl(d / "judgments" / "anthropic.jsonl")) == 6
+
+
+# --- provenance, resume keys and the spot-check ------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("model", "family"),
+    [
+        ("claude-sonnet-4", "anthropic"),
+        ("us.anthropic.claude-sonnet-4-v1:0", "anthropic"),
+        ("gpt-5", "openai"),
+        ("o3-mini", "openai"),
+        ("gemini-2.5-pro", "google"),
+        ("llama-3-70b", "meta"),
+        ("mystery-model", None),
+        ("claude-vs-gpt", None),  # two families named: no single identity
+    ],
+)
+def test_model_family_is_read_from_the_model_id(model, family):
+    assert lab.model_family(model) == family
+
+
+@pytest.mark.parametrize("model", ["gpt-5", "mystery-model"])
+def test_judge_refuses_a_family_the_model_id_does_not_confirm(
+    tmp_path, monkeypatch, model
+):
+    path = tmp_path / "d.txt"
+    path.write_text(DOC_TEXT)
+    monkeypatch.setattr(lab.runner, "text_path", lambda doc, cache: path)
+    asked = []
+    with pytest.raises(lab.runner.EngineError, match="anthropic"):
+        lab.judge_items(
+            [ITEM],
+            lambda prompt: asked.append(prompt) or "A",
+            family="anthropic",
+            model=model,
+            manifest=manifest(),
+            notes={},
+            cache=tmp_path,
+        )
+    assert asked == []
+
+
+def judge_cli(
+    d,
+    tmp_path,
+    monkeypatch,
+    asked,
+    *,
+    model="claude-test",
+    family="anthropic",
+    answer=lambda prompt: "A",
+):
+    monkeypatch.setattr(
+        cli.labelling,
+        "command_asker",
+        lambda command: lambda prompt: asked.append(prompt) or answer(prompt),
+    )
+    return cli.main(
+        [
+            "label",
+            "--dir",
+            str(d),
+            "judge",
+            "--family",
+            family,
+            "--model",
+            model,
+            "--provider-cmd",
+            "ignored",
+            "--rules-dir",
+            str(tmp_path),
+        ]
+    )
+
+
+@pytest.fixture
+def judge_env(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli.lib, "load_manifest", manifest)
+    path = tmp_path / "d.txt"
+    path.write_text(DOC_TEXT)
+    monkeypatch.setattr(lab.runner, "text_path", lambda doc, cache: path)
+    d = tmp_path / "labels"
+    lab.write_jsonl(
+        d / "items.jsonl", [{**ITEM, "id": "i0", "line": 5, "split": "tuning"}]
+    )
+    return d
+
+
+def test_cli_judge_exits_2_and_writes_nothing_on_a_family_mismatch(
+    judge_env, tmp_path, monkeypatch
+):
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked, model="gpt-5") == 2
+    assert asked == []
+    assert not (judge_env / "judgments").exists()
+
+
+def test_a_judgment_by_another_model_is_not_reused_on_resume(
+    judge_env, tmp_path, monkeypatch
+):
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 0
+    assert len(asked) == 2
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 0
+    assert len(asked) == 2  # same model: nothing new to ask
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked, model="claude-other") == 0
+    assert len(asked) == 4  # other model: both orders asked again
+
+
+def test_a_judgment_under_another_prompt_version_is_not_reused_on_resume(
+    judge_env, tmp_path, monkeypatch
+):
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 0
+    monkeypatch.setattr(lab, "PROMPT_VERSION", "2")
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 0
+    assert len(asked) == 4
+
+
+def write_judgments(d, family, model, ids, **extra):
+    rows = [
+        {
+            "item": i,
+            "family": family,
+            "model": model,
+            "order": o,
+            "prompt_version": lab.PROMPT_VERSION,
+            "verdict": "tp",
+            **extra,
+        }
+        for i in ids
+        for o in lab.ORDERS
+    ]
+    lab.write_jsonl(d / "judgments" / f"{family}.jsonl", rows)
+
+
+def merge_cli(d):
+    return cli.main(["label", "--dir", str(d), "merge", "--date", "2026-11-17"])
+
+
+def test_merge_ignores_checkpoints_without_model_or_prompt_version(tmp_path):
+    d = tmp_path / "labels"
+    lab.write_jsonl(d / "items.jsonl", items("a"))
+    write_judgments(d, "anthropic", "claude-test", ["a"])
+    old = [
+        {"item": "a", "family": "openai", "order": o, "verdict": "tp"}
+        for o in lab.ORDERS
+    ]
+    lab.write_jsonl(d / "judgments" / "openai.jsonl", old)
+    assert merge_cli(d) == 0
+    assert lab.read_jsonl(d / "labels.jsonl") == []
+    assert [r["item"] for r in lab.read_jsonl(d / "disputes.jsonl")] == ["a"]
+
+
+def test_merge_ignores_judgments_from_an_older_prompt_version(tmp_path):
+    d = tmp_path / "labels"
+    lab.write_jsonl(d / "items.jsonl", items("a"))
+    write_judgments(d, "anthropic", "claude-test", ["a"])
+    write_judgments(d, "openai", "gpt-5", ["a"], prompt_version="0")
+    assert merge_cli(d) == 0
+    assert lab.read_jsonl(d / "labels.jsonl") == []
+
+
+def test_merge_counts_only_the_newest_model_of_a_family(tmp_path):
+    d = tmp_path / "labels"
+    lab.write_jsonl(d / "items.jsonl", items("a"))
+    write_judgments(d, "openai", "gpt-5", ["a"])
+    write_judgments(d, "anthropic", "claude-old", ["a"])
+    path = d / "judgments" / "anthropic.jsonl"
+    old = [{**r, "verdict": "fp"} for r in lab.read_jsonl(path)]
+    new = [{**r, "model": "claude-new"} for r in lab.read_jsonl(path)]
+    lab.write_jsonl(path, [*old, *new])  # claude-new was appended later
+    assert merge_cli(d) == 0
+    assert [(r["item"], r["label"]) for r in lab.read_jsonl(d / "labels.jsonl")] == [
+        ("a", "tp")
+    ]
+
+
+def test_merge_exits_2_when_a_recorded_family_contradicts_its_model(tmp_path):
+    d = tmp_path / "labels"
+    lab.write_jsonl(d / "items.jsonl", items("a"))
+    write_judgments(d, "openai", "claude-test", ["a"])
+    assert merge_cli(d) == 2
+    assert not (d / "labels.jsonl").exists()
+
+
+def auto_labelled(tmp_path, n=20):
+    d = tmp_path / "labels"
+    ids = [f"i{k}" for k in range(n)]
+    lab.write_jsonl(d / "items.jsonl", items(*ids))
+    write_judgments(d, "anthropic", "claude-test", ids)
+    write_judgments(d, "openai", "gpt-5", ids)
+    return d
+
+
+def resolve_cli(d, item):
+    return cli.main(
+        ["label", "--dir", str(d), "resolve", item, "tp"]
+        + ["--reviewer", "me", "--reason", "checked", "--date", "2026-11-17"]
+    )
+
+
+def test_merge_refuses_automatic_labels_until_the_spot_check_is_recorded(tmp_path):
+    d = auto_labelled(tmp_path)  # 20 automatic labels, 10% -> 2 to re-check
+    assert merge_cli(d) == 2
+    assert not (d / "labels.jsonl").exists()
+    spot = json.loads((d / "spot-check.json").read_text())
+    assert len(spot) == 2
+    assert resolve_cli(d, spot[0]) == 0
+    assert merge_cli(d) == 2  # one of two recorded
+    assert resolve_cli(d, spot[1]) == 0
+    assert merge_cli(d) == 0
+    labels = lab.read_jsonl(d / "labels.jsonl")
+    assert len(labels) == 20
+    assert {r["item"] for r in labels if r["source"] == "human"} == set(spot)
+
+
+def test_a_fully_human_label_set_needs_no_spot_check(tmp_path):
+    from evals import scoring
+
+    d = tmp_path / "labels"
+    lab.write_jsonl(d / "items.jsonl", items("a", "b", "c"))
+    assert resolve_cli(d, "a") == 0
+    assert resolve_cli(d, "b") == 0
+    assert merge_cli(d) == 0
+    got = scoring.load_verdicts(d / "labels.jsonl")
+    assert got == {("d", R, 1): "tp", ("d", R, 2): "tp"}
+    assert json.loads((d / "spot-check.json").read_text()) == []
+
+
+def test_hand_judged_scorer_rows_score_without_a_spot_check(tmp_path):
+    from evals import scoring
+
+    path = tmp_path / "labels.jsonl"
+    lab.write_jsonl(
+        path,
+        [
+            {"doc": "h1", "rule": R, "line": 2, "label": "tp"}
+            | {"reviewer": "me", "reason": "clear", "date": "2026-11-17"},
+            {"doc": "h1", "rule": R, "line": 3, "label": "fp"}
+            | {"reviewer": "me", "reason": "fine here", "date": "2026-11-17"},
+        ],
+    )
+    card = scoring.score(
+        manifest(), results(), labels=scoring.load_verdicts(path), resamples=10
+    )
+    assert card["rules"][R]["precision"]["n"] == 2
+
+
+def test_exact_model_ids_reach_judgments_labels_and_the_export(
+    judge_env, tmp_path, monkeypatch
+):
+    from evals import scoring
+
+    def says_tp(prompt):  # picks the "rule is right" option in either order
+        return "A" if "A) The flagged text is a genuine" in prompt else "B"
+
+    ids = {
+        "anthropic": "amazon-bedrock/global.anthropic.claude-sonnet-5-5",
+        "openai": "openai/gpt-5.1-codex",
+    }
+    for family, model in ids.items():
+        assert (
+            judge_cli(
+                judge_env,
+                tmp_path,
+                monkeypatch,
+                [],
+                model=model,
+                family=family,
+                answer=says_tp,
+            )
+            == 0
+        )
+        rows = lab.read_jsonl(judge_env / "judgments" / f"{family}.jsonl")
+        assert {r["model"] for r in rows} == {model}
+    assert merge_cli(judge_env) == 0
+    (label,) = lab.read_jsonl(judge_env / "labels.jsonl")
+    assert label["source"] == "judges"
+    assert label["models"] == ids
+    # The export stays readable by the scorer.
+    assert scoring.load_verdicts(judge_env / "labels.jsonl") == {("h1", R, 5): "tp"}
+
+
+def test_sample_dry_run_counts_per_rule_and_writes_nothing(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(cli.lib, "load_manifest", manifest)
+    res = tmp_path / "r.json"
+    res.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "corpus": {"manifest_sha256": cli.runner.manifest_digest(manifest())},
+                **results(),
+            }
+        )
+    )
+    d = tmp_path / "labels"
+    args = ["label", "--dir", str(d), "sample", str(res), "--per-rule", "2"]
+    assert cli.main([*args, "--dry-run"]) == 0
+    assert capsys.readouterr().out == f"{R}\t2\ntotal\t2\n"
+    assert not d.exists()

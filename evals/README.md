@@ -137,6 +137,15 @@ How a label forms:
 
 A judge command reads the prompt on stdin and writes the answer on stdout. Ask the lead before you run a paid provider.
 
+Judge provenance:
+
+- **Exact model id.** Pass `--model` exactly as the harness reports it, for example `amazon-bedrock/global.anthropic.claude-sonnet-5-5`. Each judgment records that string, and each automatic label in `labels.jsonl` carries a `models` object that maps family to id. No step shortens it.
+- **Dry count.** `label sample --dry-run` prints the new item count per rule and the total, writes nothing, and calls no model.
+- **Family check.** The two-family rule only holds if each family is real. `--family` is a claim, and the model id is the evidence. `judge` and `merge` read the vendor out of the model id (for example `claude`, `gpt`, `gemini`, `llama`). They exit 2 when the id names a different vendor, several vendors, or none that the table knows. `merge` repeats the check on the recorded rows, so an edited judgment file cannot slip through.
+- **Resume keys.** A judgment counts as done only for the same item, option order, model and prompt version. A run with another model or prompt version asks every question again and appends to the same file.
+- **Old checkpoints.** Rows without a model or prompt version, or with another prompt version, are unusable. `merge` ignores them and prints how many. Nothing migrates them, because their model is unknown. Run `judge` again. When a family holds rows from several models, `merge` uses only the model of the newest row.
+- **Spot-check.** `merge` writes `spot-check.json` first. If any listed item has no human verdict, it exits 2 and writes no labels, disputes, stats or revisions. Record each with `label resolve`, then merge again. The sample covers every item on which both judges agreed, so it does not change when a human resolves an item. A label set made only of human verdicts, such as the hand-judged sets under `evals/labels/rule-accuracy/`, has no automatic labels and needs no spot-check. `score` and `gate` never check it.
+
 A rule needs 20 adjudicated true positives before the precision gate trusts it. The gate counts the adjudicated labels passed with `--labels`, not the positives the engine detects. It lists the precision of a rule below that count as uncertain and never fails it. It reports a rule with findings on LLM text and too few labels as inadequate coverage. With no labels the gate reports "precision not measured" and does not pass when the baseline holds precision. `stats.json` lists the count per rule.
 
 ## Ratchet

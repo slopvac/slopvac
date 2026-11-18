@@ -12,6 +12,7 @@ import dataclasses
 import json
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 
 from . import ab as ab_mod
@@ -256,6 +257,12 @@ def cmd_label_sample(args: argparse.Namespace) -> int:
         per_rule=args.per_rule,
         existing=[i["id"] for i in existing],
     )
+    if args.dry_run:
+        per_rule = Counter(i["rule"] for i in new)
+        for rule in sorted(per_rule):
+            print(f"{rule}\t{per_rule[rule]}")
+        print(f"total\t{len(new)}")
+        return 0
     labelling.write_jsonl(p["items"], [*existing, *new])
     print(f"{len(new)} new items, {len(existing) + len(new)} total")
     return 0
@@ -264,7 +271,7 @@ def cmd_label_sample(args: argparse.Namespace) -> int:
 def cmd_label_judge(args: argparse.Namespace) -> int:
     p = _paths(args)
     out = p["judgments"] / f"{args.family}.jsonl"
-    done = {(r["item"], r["order"]) for r in labelling.read_jsonl(out)}
+    done = labelling.completed(labelling.read_jsonl(out), args.model)
     try:
         rows = labelling.judge_items(
             labelling.read_jsonl(p["items"]),
@@ -286,15 +293,39 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
 
 def cmd_label_merge(args: argparse.Namespace) -> int:
     p = _paths(args)
-    judgments = [
-        r
-        for f in sorted(p["judgments"].glob("*.jsonl"))
-        for r in labelling.read_jsonl(f)
-    ]
+    try:
+        judgments, ignored = labelling.usable_judgments(
+            [
+                r
+                for f in sorted(p["judgments"].glob("*.jsonl"))
+                for r in labelling.read_jsonl(f)
+            ]
+        )
+    except runner.EngineError as exc:
+        print(f"evals label merge: {exc}", file=sys.stderr)
+        return 2
+    if ignored:
+        print(
+            f"evals label merge: ignored {ignored} judgments without a model, "
+            "from another prompt version or from an older model",
+            file=sys.stderr,
+        )
     previous = {r["item"]: r["label"] for r in labelling.read_jsonl(p["labels"])}
     merged = labelling.merge(
         labelling.read_jsonl(p["items"]), judgments, labelling.read_jsonl(p["human"])
     )
+    p["spot"].parent.mkdir(parents=True, exist_ok=True)
+    p["spot"].write_text(
+        json.dumps(merged["spot_check"], indent=1) + "\n", encoding="utf-8"
+    )
+    if merged["spot_pending"]:
+        print(
+            f"evals label merge: {len(merged['spot_pending'])} of "
+            f"{len(merged['spot_check'])} spot-check items have no human verdict; "
+            f"record them with `label resolve` (see {p['spot']}), then merge again",
+            file=sys.stderr,
+        )
+        return 2
     labelling.write_jsonl(p["labels"], merged["labels"])
     labelling.write_jsonl(p["disputes"], merged["disputes"])
     labelling.append_jsonl(
@@ -305,9 +336,6 @@ def cmd_label_merge(args: argparse.Namespace) -> int:
             args.date or labelling.today(),
             labelling.read_jsonl(p["human"]),
         ),
-    )
-    p["spot"].write_text(
-        json.dumps(merged["spot_check"], indent=1) + "\n", encoding="utf-8"
     )
     p["stats"].write_text(
         json.dumps(merged["stats"], indent=1, sort_keys=True) + "\n", encoding="utf-8"
@@ -379,6 +407,11 @@ def build_parser() -> argparse.ArgumentParser:
     ls = lsub.add_parser("sample", help="pick findings to label")
     ls.add_argument("results")
     ls.add_argument("--per-rule", type=int, default=40)
+    ls.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the new item count per rule and in total; write nothing",
+    )
     ls.set_defaults(func=cmd_label_sample)
 
     lj = lsub.add_parser("judge", help="ask one model family about every pending item")
