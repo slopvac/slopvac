@@ -134,11 +134,17 @@ def check_list(data: bytes, now: datetime, *, require_fresh: bool = True) -> dat
         raise SigningError(f"the list is larger than {MAX_LIST_BYTES} bytes")
     try:
         document = json.loads(data)
-    except ValueError as err:
+    except (ValueError, RecursionError) as err:
+        # ValueError covers a bad encoding; RecursionError is JSON nested too deeply.
         raise SigningError(f"the list is not JSON: {err}") from err
     if not isinstance(document, dict) or set(document) != _FIELDS:
         raise SigningError(f"the list must have exactly the fields {sorted(_FIELDS)}")
-    if canonical(document) != data:
+    try:
+        recoded = canonical(document)
+    except (UnicodeEncodeError, RecursionError) as err:
+        # An escaped lone surrogate cannot be encoded as UTF-8.
+        raise SigningError(f"the list cannot be encoded canonically: {err}") from err
+    if recoded != data:
         raise SigningError("the list is not canonical JSON")
     # `type(..) is int` rejects true (a bool) and 1.0 (a float), which compare equal to 1.
     if type(document["schema_version"]) is not int or document["schema_version"] != 1:

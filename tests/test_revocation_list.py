@@ -590,6 +590,66 @@ def test_a_candidate_signed_by_a_previous_key_is_refused(tmp_path: Path) -> None
         lists.check_newer(candidate, published, tmp_path / "throwaway.pub", LATER)
 
 
+def _malformed_list(kind: str) -> bytes:
+    good = lists.render(LATER).decode()
+    if kind == "deeply-nested":
+        return good.replace(
+            '"keys":[]', '"keys":' + "[" * 100_000 + "]" * 100_000
+        ).encode()
+    if kind == "lone-surrogate":
+        return good.replace('"revocations"', '"\\ud800"').encode()
+    raise AssertionError(kind)
+
+
+MALFORMED = ["deeply-nested", "lone-surrogate"]
+
+
+@pytest.mark.parametrize("kind", MALFORMED)
+def test_a_malformed_list_is_a_verification_error_not_a_crash(kind: str) -> None:
+    data = _malformed_list(kind)
+    assert len(data) < lists.MAX_LIST_BYTES
+    with pytest.raises(lists.SigningError):
+        lists.check_list(data, NOW)
+
+
+def _published_with(tmp_path: Path, kind: str) -> Path:
+    published = _signed(tmp_path, "published", LATER)
+    (published / "revocations.json").write_bytes(_malformed_list(kind))
+    return published
+
+
+@NEEDS_MINISIGN
+@pytest.mark.parametrize("kind", MALFORMED)
+def test_a_malformed_published_list_is_refused_by_default(
+    tmp_path: Path, stub_oras, kind: str
+) -> None:
+    published = _published_with(tmp_path, kind)
+    candidate = _signed(tmp_path, "candidate", LATER)
+    stub_oras("present", published)
+    pulled = tmp_path / "pulled"
+    lists.fetch_published(IMAGE, pulled, first_publication=False)
+    with pytest.raises(lists.SigningError, match="does not verify"):
+        lists.check_newer(candidate, pulled, tmp_path / "throwaway.pub", LATER)
+
+
+@NEEDS_MINISIGN
+@pytest.mark.parametrize("kind", MALFORMED)
+def test_a_malformed_published_list_is_replaced_by_a_first_publication(
+    tmp_path: Path, stub_oras, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    published = _published_with(tmp_path, kind)
+    candidate = _signed(tmp_path, "candidate", LATER)
+    stub_oras("present", published)
+    pulled = tmp_path / "pulled"
+    lists.fetch_published(IMAGE, pulled, first_publication=True)
+    lists.check_newer(
+        candidate, pulled, tmp_path / "throwaway.pub", LATER, first_publication=True
+    )
+    out = capsys.readouterr().out
+    assert out.startswith("::warning::replacing an existing list that failed")
+    assert out.count("\n") == 1
+
+
 def _non_utf8_signature(tmp_path: Path) -> Path:
     """A published list that is canonical but whose signature is not UTF-8."""
     published = _signed(tmp_path, "published", LATER)
