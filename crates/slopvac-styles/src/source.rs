@@ -95,8 +95,10 @@ impl StyleSource for DirSource {
             return Err(StyleError::InvalidName(name.to_owned()));
         }
         let path = self.0.join(format!("{name}.toml"));
+        // The reader refuses a symlink; resolve one first so a linked style still loads.
+        let resolved = std::fs::canonicalize(&path).unwrap_or(path);
         match slopvac_fs::read_capped_regular_to_string(
-            &path,
+            &resolved,
             MAX_STYLE_BYTES,
             slopvac_fs::ReadOptions::new(),
         ) {

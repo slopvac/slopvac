@@ -28,8 +28,11 @@ pub(crate) fn scrub(e: &std::io::Error) -> String {
 /// Read `path` as UTF-8 text of at most `cap` bytes. `shown` names the file in errors. A file
 /// over `cap` fails with [`TermsError::TooLarge`].
 pub(crate) fn read(path: &Path, shown: &str, cap: u64) -> Result<String, ReadFailure> {
-    slopvac_fs::read_capped_regular_to_string(path, cap, slopvac_fs::ReadOptions::new()).map_err(
-        |e| match e {
+    // The reader refuses a symlink, but a symlinked terms file is supported. Resolve the link
+    // first; a link to a FIFO or device then fails as not regular, without blocking.
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    slopvac_fs::read_capped_regular_to_string(&resolved, cap, slopvac_fs::ReadOptions::new())
+        .map_err(|e| match e {
             slopvac_fs::Error::Input {
                 kind: slopvac_fs::InputKind::TooLarge,
                 ..
@@ -57,8 +60,7 @@ pub(crate) fn read(path: &Path, shown: &str, cap: u64) -> Result<String, ReadFai
                 path: shown.to_owned(),
                 message: other.to_string(),
             }),
-        },
-    )
+        })
 }
 
 /// Like [`read`], with a missing file reported as an I/O error that names `shown`.
