@@ -50,6 +50,8 @@ rstest.workspace = true
 slopvac-engine = { path = ".", features = ["test-counters"] }
 # The work-counter tests count the indexes a lint builds.
 slopvac-model = { workspace = true, features = ["test-counters"] }
+# The tagging work test counts the tokens visited to map sentences to source.
+slopvac-parse = { workspace = true, features = ["test-counters"] }
 toml.workspace = true
 
 [lints]

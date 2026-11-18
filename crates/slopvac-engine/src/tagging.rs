@@ -4,7 +4,7 @@
 //! a `slopvac-parse` document to it. Block text is the projected prose and block spans are
 //! source bytes, so a tag span is a source range that a finding span can sit inside.
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 
@@ -13,7 +13,7 @@ use slopvac_context::{
     BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, GenreRegistry,
     GenreResult, ResolveOptions, SentenceView, Tag, TagIndex, TagRegistry,
 };
-use slopvac_parse::{BlockKind, Container, Document, Projection};
+use slopvac_parse::{BlockKind, ByteMapper, Container, Document, Projection};
 
 struct Entry<'a> {
     kind: ViewKind,
@@ -23,6 +23,8 @@ struct Entry<'a> {
     heading_level: Option<u8>,
     admonition_title: Option<&'a str>,
     projection: Option<&'a Projection>,
+    /// The index that maps sentence offsets to source, built when a tagger first asks.
+    mapper: OnceCell<ByteMapper<'a>>,
 }
 
 /// A parsed document as the taggers read it.
@@ -100,6 +102,7 @@ impl<'a> View<'a> {
                 heading_level: level,
                 admonition_title: admonitions.iter().rev().find_map(|(_, t)| *t),
                 projection,
+                mapper: OnceCell::new(),
             });
         }
         let by_span = entries
@@ -247,6 +250,9 @@ impl DocumentView for View<'_> {
         else {
             return split;
         };
+        let mapper = self.entries[owner]
+            .mapper
+            .get_or_init(|| ByteMapper::new(projection));
         let mut owners = self.owners.borrow_mut();
         // The splitter assumes the text sits at the block span. Map each sentence through
         // the projection so its span is a source range.
@@ -254,7 +260,7 @@ impl DocumentView for View<'_> {
             .into_iter()
             .map(|s| {
                 let from = s.span.start - block.span.start;
-                let span = projection.span_for_bytes(from, from + s.text.len());
+                let span = mapper.span(from, from + s.text.len());
                 owners.insert((span.start(), span.end()), owner);
                 SentenceView {
                     span: span.start()..span.end(),
@@ -292,6 +298,7 @@ pub(crate) fn genre(
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use slopvac_parse::{Block, TokenKind};
 
     use super::*;
@@ -340,5 +347,98 @@ mod tests {
             "{} steps for {count} entries",
             view.visits.get()
         );
+    }
+
+    /// Spans of the sentences of `block`, each mapped by the old per-sentence scan.
+    fn oracle_sentence_spans(view: &View<'_>, block: &BlockView<'_>) -> Vec<Range<usize>> {
+        let projection = view.entries[view.by_span[&(block.span.start, block.span.end)]]
+            .projection
+            .unwrap();
+        slopvac_context::split_sentences(block)
+            .into_iter()
+            .map(|s| {
+                let from = s.span.start - block.span.start;
+                let span = projection.span_for_bytes(from, from + s.text.len());
+                span.start()..span.end()
+            })
+            .collect()
+    }
+
+    fn token_kind() -> impl Strategy<Value = TokenKind> {
+        prop_oneof![
+            Just(TokenKind::Identity),
+            Just(TokenKind::Entity),
+            Just(TokenKind::Opaque),
+            Just(TokenKind::Collapse),
+            Just(TokenKind::Masked),
+            Just(TokenKind::Wrap),
+        ]
+    }
+
+    /// A projection of prose pieces whose source ranges ascend, with bridges between some.
+    fn prose_projection() -> impl Strategy<Value = Projection> {
+        let piece = (
+            token_kind(),
+            prop_oneof![
+                Just("Go on. "),
+                Just("é. "),
+                Just("Hi! "),
+                Just("x "),
+                Just("😀 ok? ")
+            ],
+            0usize..6,
+            any::<bool>(),
+        );
+        (0usize..50, prop::collection::vec(piece, 1..10)).prop_map(|(base, pieces)| {
+            let mut p = Projection::new();
+            let mut at = base;
+            for (kind, text, len, bridge) in pieces {
+                let src = slopvac_model::Span::new(at, at + len).unwrap();
+                at += len;
+                if bridge {
+                    p.push_bridge(kind, text, src);
+                } else {
+                    p.push(kind, text, src);
+                }
+            }
+            p
+        })
+    }
+
+    fn cells(projections: Vec<Projection>, spans: &[(usize, usize)]) -> Document {
+        let blocks = projections
+            .into_iter()
+            .zip(spans.iter().cycle())
+            .enumerate()
+            // Each block starts at its own offset, so no two share a span: a shared span
+            // names the last block that has it, which is a different case.
+            .map(|(i, (projection, &(_, len)))| Block {
+                kind: BlockKind::TableCell { row: 0, column: 0 },
+                span: slopvac_model::Span::new(i, i + len).unwrap(),
+                projection: Some(projection),
+                containers: Vec::new(),
+            })
+            .collect();
+        Document {
+            blocks,
+            code_spans: Vec::new(),
+            html_blocks: Vec::new(),
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn sentences_map_to_the_spans_the_per_sentence_scan_gave(
+            projections in prop::collection::vec(prose_projection(), 1..4),
+            spans in prop::collection::vec((0usize..40, 100usize..200), 1..4),
+        ) {
+            let doc = cells(projections, &spans);
+            let view = View::new("t.rst", "", &doc, None);
+            for block in view.blocks() {
+                let got: Vec<_> = view.sentences(&block).into_iter().map(|s| s.span).collect();
+                prop_assert_eq!(got, oracle_sentence_spans(&view, &block));
+            }
+        }
+
     }
 }

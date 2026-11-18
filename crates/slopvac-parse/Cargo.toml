@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# Counts the projection tokens visited to map text to source, for tests that check the
+# mapping is linear. Off in ordinary builds, which then carry no shared atomic.
+test-counters = []
+
 [dependencies]
 html5ever = { workspace = true }
 html5gum = { workspace = true }
