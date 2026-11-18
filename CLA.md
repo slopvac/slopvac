@@ -1,3 +1,5 @@
+<!-- slopvac-disable -->
+
 # Contributor Agreement
 
 ## Individual Contributor Non-Exclusive License Agreement
@@ -14,13 +16,7 @@ If You are an employee and have created the Contribution as part of your employm
 
 ### Definitions
 
-**"You"** means the individual Copyright owner who Submits a Contribution to Us; or
-
-if the Copyright in the Contribution is held by a Legal Entity and the Contribution is being Submitted to Us on behalf of such Legal Entity, "You" means such Legal Entity.
-
-**"Legal Entity"** means an entity that is not a natural person.
-
-**"Affiliate"** means any other Legal Entity that controls, is controlled by, or under common control with that Legal Entity.
+**"You"** means the individual Copyright owner who Submits a Contribution to Us.
 
 **"Contribution"** means any original work of authorship, including any original modifications or additions to an existing work of authorship, Submitted for inclusion into Material by You to Us, in which you own the Copyright.
 
@@ -62,9 +58,9 @@ You reserve the right to revoke the patent license stated in Subsection "Patent 
 
 We may, but are under no obligation to, include the Contribution You Submitted to Us into the Material.
 
-We agree to (sub)license the Contribution or any Materials containing, based on or derived from your Contribution under the terms of any licenses that qualify as \[Free Software\](https://www.gnu.org/philosophy/free-sw.html) as defined by the Free Software Foundation and at the same time qualify as \[Open Source\](https://opensource.org/osd) as defined by the Open Source Initiative. For clarification, should we make available any Material under a non-free or non-open license, we must make a version of such Material available under a free and open license too.
+We agree to (sub)license the Contribution or any Materials containing, based on or derived from your Contribution under the terms of any licenses that qualify as [Free Software](https://www.gnu.org/philosophy/free-sw.html) as defined by the Free Software Foundation and at the same time qualify as [Open Source](https://opensource.org/osd) as defined by the Open Source Initiative. For clarification, should we make available any Material under a non-free or non-open license, we must make a version of such Material available under a free and open license too.
 
-We agree to license patents owned or controlled by You only to the extent necessary to (sub)license Your Contribution(s) and the combination of Your Contribution(s) with the Material under the terms of any licenses the Free Software Foundation classifies as Free Software licenses and which are approved by the Open Source Initiative as Open Source licenses..
+We agree to license patents owned or controlled by You only to the extent necessary to (sub)license Your Contribution(s) and the combination of Your Contribution(s) with the Material under the terms of any licenses the Free Software Foundation classifies as Free Software licenses and which are approved by the Open Source Initiative as Open Source licenses.
 
 ### Disclaimer
 
@@ -76,7 +72,7 @@ We agree to license patents owned or controlled by You only to the extent necess
 
 ### Approximation of disclaimer and damage waiver
 
-\*\*If the disclaimer and damage waiver mentioned in Subsection "Disclaimer of warranty" and Section "Consequential damage waiver" cannot be given legal effect under applicable local law, reviewing courts shall apply local law that most closely approximates an absolute waiver of all civil or contractual liability in connection with the Contribution.\*\*
+\*\*If the disclaimer and damage waiver mentioned in Section "Disclaimer" and Section "Consequential damage waiver" cannot be given legal effect under applicable local law, reviewing courts shall apply local law that most closely approximates an absolute waiver of all civil or contractual liability in connection with the Contribution.\*\*
 
 ### Term
 
@@ -84,7 +80,7 @@ This Agreement shall come into effect upon Your acceptance of the terms and cond
 
 This Agreement shall apply for the term of the copyright and patents licensed here. However, You shall have the right to terminate the Agreement if We do not fulfill the obligations as set forth in Section "License obligations by Us". Such termination must be made in writing.
 
-In the event of a termination of this Agreement Sections "Disclaimer", "Term" and "Miscellaneous" shall survive such termination and shall remain in full force thereafter. For the avoidance of doubt, Free and Open Source Software (sub)licenses that have already been granted for Contributions at the date of the termination shall remain in full force after the termination of this Agreement.
+In the event of a termination of this Agreement Sections "Disclaimer", "Consequential damage waiver", "Approximation of disclaimer and damage waiver", "Term" and "Miscellaneous" shall survive such termination and shall remain in full force thereafter. For the avoidance of doubt, Free and Open Source Software (sub)licenses that have already been granted for Contributions at the date of the termination shall remain in full force after the termination of this Agreement.
 
 ### Miscellaneous
 
@@ -102,4 +98,20 @@ You agree to notify Us of any facts or circumstances of which you become aware t
 
 [https://contributoragreements.org/ca-cla-chooser/?beneficiary-name=Sjors+Robroek&project-name=slopvac&project-website=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac&project-email=&process-url=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac%2Fblob%2Fmain%2FCONTRIBUTING.md%23contributor-license-agreement&project-jurisdiction=the+Netherlands&fsfe-compliance=non-fsfe-compliance&agreement-exclusivity=non-exclusive&outbound-option=fsfe&outboundlist=&outboundlist-custom=&license-policy-location=&medialist=None&patent-option=Traditional&your-name=&your-date=&your-title=&your-address=&your-patents=&pos=apply&action=](https://contributoragreements.org/ca-cla-chooser/?beneficiary-name=Sjors+Robroek&project-name=slopvac&project-website=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac&project-email=&process-url=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac%2Fblob%2Fmain%2FCONTRIBUTING.md%23contributor-license-agreement&project-jurisdiction=the+Netherlands&fsfe-compliance=non-fsfe-compliance&agreement-exclusivity=non-exclusive&outbound-option=fsfe&outboundlist=&outboundlist-custom=&license-policy-location=&medialist=None&patent-option=Traditional&your-name=&your-date=&your-title=&your-address=&your-patents=&pos=apply&action=)
 
+<!-- slopvac-enable -->
+
 Based on the Contributor Agreements 1.2 template from contributoragreements.org, licensed under CC BY-SA 4.0.
+
+CC BY-SA 4.0 licenses this file too.
+
+Modified from the template:
+
+1. The contact sentence points to the CONTRIBUTING CLA section. The generator had no email for it.
+2. The generator's signature blocks for "You" and "Us" are gone. Signing works by pull request comment.
+3. One link to recreate the agreement remains. The duplicate links are gone.
+4. The attribution line above replaces the generator's last line.
+5. Markdown links replace the escaped brackets in the outbound Option 1 clause.
+6. A single full stop replaces the double full stop at the end of the second paragraph of the section "License obligations by Us".
+7. The section "Approximation of disclaimer and damage waiver" refers to Section "Disclaimer", the heading that exists. The generator referred to a subsection "Disclaimer of warranty".
+8. The survival list in the section "Term" also names the sections "Consequential damage waiver" and "Approximation of disclaimer and damage waiver". The generator dropped them, but the template lists them as Sections 6 and 7.
+9. The definition of "You" drops the Legal Entity clause, and the unused definitions of "Legal Entity" and "Affiliate" are gone. This agreement covers individuals only.
