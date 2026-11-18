@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import re
 import sys
 import tomllib
 from pathlib import Path
@@ -109,9 +108,66 @@ def test_pin_matches_the_reference_in_use():
     assert golden.verify_pin() == []
 
 
-def test_pin_records_the_reference_commit():
+def test_pin_records_no_commit():
     recorded = tomllib.loads(golden.PIN_TOML.read_text("utf-8"))
-    assert re.fullmatch(r"[0-9a-f]{40}", recorded["python_commit"])
+    assert set(recorded) == {"slopvac_version", "python_src_sha256", "vale"}
+
+
+def test_verify_pin_runs_no_subprocess(monkeypatch):
+    def refuse(*args, **kwargs):
+        raise AssertionError("a subprocess ran")
+
+    recorded = tomllib.loads(golden.PIN_TOML.read_text("utf-8"))
+    monkeypatch.setattr(golden, "vale_version", lambda: recorded["vale"])
+    monkeypatch.setattr(golden.subprocess, "run", refuse)
+    assert golden.verify_pin() == []
+
+
+def _tree(root, files):
+    for name, text in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return root
+
+
+SOURCES = {"a.py": "x = 1\n", "rules/r.yml": "k: v\n", "rules/a-b.yml": "k: w\n"}
+
+
+def test_source_hash_ignores_creation_order(tmp_path):
+    forward = _tree(tmp_path / "f", SOURCES)
+    backward = _tree(tmp_path / "b", dict(reversed(SOURCES.items())))
+    assert golden.reference_tree_hash(forward) == golden.reference_tree_hash(backward)
+
+
+def test_source_hash_ignores_files_outside_the_reference_set(tmp_path):
+    base = golden.reference_tree_hash(_tree(tmp_path / "a", SOURCES))
+    extra = _tree(
+        tmp_path / "b",
+        {**SOURCES, "notes.md": "n", "__pycache__/a.py": "junk", ".git": "gitdir"},
+    )
+    assert golden.reference_tree_hash(extra) == base
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"a.py": "x = 2\n"},
+        {"rules/r.yml": "k: other\n"},
+        {"new.json": "{}"},
+    ],
+    ids=["source-edit", "rule-data-edit", "added-file"],
+)
+def test_source_hash_changes_with_a_reference_file(tmp_path, change):
+    base = golden.reference_tree_hash(_tree(tmp_path / "a", SOURCES))
+    changed = golden.reference_tree_hash(_tree(tmp_path / "b", {**SOURCES, **change}))
+    assert changed != base
+
+
+def test_source_hash_changes_when_a_file_moves(tmp_path):
+    base = golden.reference_tree_hash(_tree(tmp_path / "a", {"a.py": "x"}))
+    moved = golden.reference_tree_hash(_tree(tmp_path / "b", {"sub/a.py": "x"}))
+    assert moved != base
 
 
 def test_verify_pin_names_a_source_hash_mismatch(monkeypatch):
