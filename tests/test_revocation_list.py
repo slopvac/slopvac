@@ -414,12 +414,14 @@ import os, shutil, sys
 mode = os.environ["STUB_MODE"]
 args = sys.argv[1:]
 errors = {
-    "absent": "Error: ghcr.io/slopvac/slopvac-revocations:latest: not found",
     "auth": "Error response from registry: unauthorized: authentication required",
     "network": 'Error: Get "https://ghcr.io/v2/": dial tcp: lookup ghcr.io: no such host',
     "server": "Error: response status code 503: Service Unavailable",
 }
 if args[:2] == ["manifest", "fetch"]:
+    if mode == "stderr-file":
+        sys.stderr.write(open(os.environ["STUB_STDERR_FILE"], encoding="utf-8").read())
+        sys.exit(1)
     if mode in errors:
         print(errors[mode], file=sys.stderr)
         sys.exit(1)
@@ -433,6 +435,12 @@ else:
     sys.exit(2)
 """
 IMAGE = "ghcr.io/slopvac/slopvac-revocations:latest"
+REAL_NOT_FOUND = ROOT / "tests" / "fixtures" / "oras_manifest_fetch_not_found.stderr"
+
+
+def _real_not_found() -> str:
+    lines = REAL_NOT_FOUND.read_text(encoding="utf-8").splitlines(keepends=True)
+    return "".join(line for line in lines if not line.startswith("#"))
 
 
 @pytest.fixture
@@ -446,8 +454,14 @@ def stub_oras(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.delenv("ORAS", raising=False)
 
-    def answer(mode: str, src: Path | None = None) -> None:
-        monkeypatch.setenv("STUB_MODE", mode)
+    def answer(
+        mode: str, src: Path | None = None, *, stderr: str | None = None
+    ) -> None:
+        monkeypatch.setenv("STUB_MODE", "stderr-file" if stderr is not None else mode)
+        if stderr is not None:
+            text = tmp_path / "stub-stderr.txt"
+            text.write_text(stderr, encoding="utf-8")
+            monkeypatch.setenv("STUB_STDERR_FILE", str(text))
         if src is not None:
             monkeypatch.setenv("STUB_SRC", str(src))
 
@@ -457,7 +471,7 @@ def stub_oras(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def test_an_absent_manifest_is_refused_unless_this_is_the_first_publication(
     tmp_path: Path, stub_oras
 ) -> None:
-    stub_oras("absent")
+    stub_oras("", stderr=_real_not_found())
     with pytest.raises(lists.SigningError, match="first_publication"):
         lists.fetch_published(IMAGE, tmp_path / "published", first_publication=False)
 
@@ -465,9 +479,44 @@ def test_an_absent_manifest_is_refused_unless_this_is_the_first_publication(
 def test_an_absent_manifest_is_allowed_for_the_first_publication(
     tmp_path: Path, stub_oras
 ) -> None:
-    stub_oras("absent")
+    stub_oras("", stderr=_real_not_found())
     lists.fetch_published(IMAGE, tmp_path / "published", first_publication=True)
     assert not (tmp_path / "published").exists()
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "Error response from registry: MANIFEST_UNKNOWN: manifest unknown\n",
+        "Error response from registry: NAME_UNKNOWN: repository name not known\n",
+    ],
+)
+def test_the_registry_codes_for_an_unknown_manifest_or_name_mean_absent(
+    tmp_path: Path, stub_oras, stderr: str
+) -> None:
+    stub_oras("", stderr=stderr)
+    lists.fetch_published(IMAGE, tmp_path / "published", first_publication=True)
+    assert not (tmp_path / "published").exists()
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        _real_not_found().replace("slopvac-revocations:latest", "other-list:latest"),
+        'Error: could not pull "ghcr.io/slopvac/slopvac-revocations:latest": '
+        "not found while refreshing a token\n",
+        "Error: not found\n" + _real_not_found().strip() + " (retry later)\n",
+        "Error response from registry: unauthorized: 401 not found\n",
+        'Error response from registry: 403 Forbidden: "' + IMAGE + '": denied\n',
+    ],
+    ids=["other-ref", "not-found-elsewhere", "trailing-text", "auth-401", "auth-403"],
+)
+def test_a_not_found_that_is_not_for_the_requested_ref_fails_closed(
+    tmp_path: Path, stub_oras, stderr: str
+) -> None:
+    stub_oras("", stderr=stderr)
+    with pytest.raises(lists.SigningError, match="could not resolve the manifest"):
+        lists.fetch_published(IMAGE, tmp_path / "published", first_publication=True)
 
 
 @pytest.mark.parametrize(
