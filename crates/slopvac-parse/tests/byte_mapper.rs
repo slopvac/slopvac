@@ -113,6 +113,17 @@ fn case() -> impl Strategy<Value = (Projection, usize, usize)> {
 proptest! {
     #[test]
     fn the_mapper_returns_the_span_of_the_code_it_replaces((p, start, end) in case()) {
-        prop_assert_eq!(ByteMapper::new(&p).span(start, end), oracle(&p, start, end));
+        prop_assert_eq!(ByteMapper::new(&p).span(start, end), Some(oracle(&p, start, end)));
     }
+}
+
+#[test]
+fn a_range_that_is_not_on_the_text_maps_to_nothing() {
+    let mut p = Projection::new();
+    p.push(TokenKind::Identity, "é.", Span::new(0, 3).unwrap());
+    let mapper = ByteMapper::new(&p);
+    // Byte 1 is inside "é", and byte 4 is past the end of the 3-byte text.
+    assert_eq!(mapper.span(1, 3), None);
+    assert_eq!(mapper.span(0, 4), None);
+    assert_eq!(mapper.span(0, 3), Some(Span::new(0, 3).unwrap()));
 }

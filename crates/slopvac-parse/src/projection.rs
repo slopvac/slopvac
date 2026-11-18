@@ -279,15 +279,14 @@ impl<'a> ByteMapper<'a> {
 
     /// Map a projected range, in bytes of [`Projection::text`], to a source span.
     ///
-    /// # Panics
-    /// Panics if an offset is not on a character boundary of the projected text.
+    /// Returns `None` when an offset is past the text or not on a character boundary of it,
+    /// which means the range was taken from other text than this projection's.
     #[must_use]
-    pub fn span(&self, start: usize, end: usize) -> Span {
+    pub fn span(&self, start: usize, end: usize) -> Option<Span> {
         let projection = self.projection;
-        assert!(
-            projection.text.is_char_boundary(start) && projection.text.is_char_boundary(end),
-            "offsets must sit on character boundaries"
-        );
+        if !(projection.text.is_char_boundary(start) && projection.text.is_char_boundary(end)) {
+            return None;
+        }
         // The first token that ends after `start`. It also holds the point at `start`.
         let first = self.ends.partition_point(|&e| e <= start);
         let mut lo = usize::MAX;
@@ -325,12 +324,12 @@ impl<'a> ByteMapper<'a> {
             t0 = t1;
         }
         if found {
-            return Span::new(lo, hi).expect("lo <= hi: both come from valid token spans");
+            return Some(Span::new(lo, hi).expect("lo <= hi: both come from valid token spans"));
         }
         let at = point_at_start
             .or_else(|| projection.tokens.last().map(|t| t.src.end()))
             .unwrap_or(0);
-        Span::empty(at)
+        Some(Span::empty(at))
     }
 }
 

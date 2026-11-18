@@ -73,7 +73,10 @@ struct View<'a> {
     entries: Vec<Entry<'a>>,
     /// The blocks as taggers read them, built once.
     views: Vec<BlockView<'a>>,
-    by_span: BTreeMap<(usize, usize), usize>,
+    /// The entry that reads each non-empty text, by the address and length of the text.
+    by_text: HashMap<(usize, usize), usize>,
+    /// Set when a sentence offset did not lie on the text of its block.
+    unmapped: Cell<bool>,
 }
 
 impl<'a> View<'a> {
@@ -141,10 +144,11 @@ impl<'a> View<'a> {
                 },
             ));
         }
-        let by_span = entries
+        let by_text = entries
             .iter()
             .enumerate()
-            .map(|(i, e)| ((e.span.start, e.span.end), i))
+            .filter(|(_, e)| !e.text.is_empty())
+            .map(|(i, e)| ((e.text.as_ptr().addr(), e.text.len()), i))
             .collect();
         let views = entries.iter().map(Entry::view).collect();
         // A later entry with the same span owns it.
@@ -162,7 +166,8 @@ impl<'a> View<'a> {
             title,
             front_matter,
             entries,
-            by_span,
+            by_text,
+            unmapped: Cell::new(false),
         }
     }
 }
@@ -271,9 +276,11 @@ impl DocumentView for View<'_> {
 
     fn sentences<'a>(&self, block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
         let split = slopvac_context::split_sentences(block);
+        // The entry is found by the text it reads, not by its span: cells that fell back to
+        // line precision share the span of their row.
         let Some((owner, projection)) = self
-            .by_span
-            .get(&(block.span.start, block.span.end))
+            .by_text
+            .get(&(block.text.as_ptr().addr(), block.text.len()))
             .and_then(|&i| self.entries[i].projection.map(|p| (i, p)))
         else {
             return split;
@@ -284,19 +291,32 @@ impl DocumentView for View<'_> {
         let mut owners = self.owners.borrow_mut();
         // The splitter assumes the text sits at the block span. Map each sentence through
         // the projection so its span is a source range.
-        split
-            .into_iter()
-            .map(|s| {
-                let from = s.span.start - block.span.start;
-                let span = mapper.span(from, from + s.text.len());
-                owners.insert((span.start(), span.end()), owner);
-                SentenceView {
-                    span: span.start()..span.end(),
-                    text: s.text,
-                }
-            })
-            .collect()
+        let mut located = Vec::with_capacity(split.len());
+        for s in &split {
+            let from = s.span.start - block.span.start;
+            let Some(span) = mapper.span(from, from + s.text.len()) else {
+                self.unmapped.set(true);
+                return split;
+            };
+            owners.insert((span.start(), span.end()), owner);
+            located.push(SentenceView {
+                span: span.start()..span.end(),
+                text: s.text,
+            });
+        }
+        located
     }
+}
+
+/// Why tagging a document stopped.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum TagError {
+    /// A tagger failed.
+    #[error(transparent)]
+    Tagger(#[from] ContextError),
+    /// The sentences of a block do not lie on the text the block was projected from.
+    #[error("the sentences of a block do not map onto its projected text")]
+    Unmapped,
 }
 
 /// Run every tagger over `doc`.
@@ -306,9 +326,12 @@ pub(crate) fn tag(
     source: &str,
     doc: &Document,
     front_matter: Option<&FrontMatter<'_>>,
-) -> Result<TagIndex, ContextError> {
+) -> Result<TagIndex, TagError> {
     let view = View::new(path, source, doc, front_matter);
     let index = registry.tag_document(&view)?;
+    if view.unmapped.get() {
+        return Err(TagError::Unmapped);
+    }
     Ok(view.split_interleaved(index))
 }
 
@@ -491,7 +514,8 @@ mod tests {
 
     /// Spans of the sentences of `block`, each mapped by the old per-sentence scan.
     fn oracle_sentence_spans(view: &View<'_>, block: &BlockView<'_>) -> Vec<Range<usize>> {
-        let projection = view.entries[view.by_span[&(block.span.start, block.span.end)]]
+        let projection = view.entries
+            [view.by_text[&(block.text.as_ptr().addr(), block.text.len())]]
             .projection
             .unwrap();
         slopvac_context::split_sentences(block)
