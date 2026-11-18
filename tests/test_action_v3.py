@@ -526,6 +526,13 @@ def test_a_sloppy_document_fails_the_gate_with_the_json_summary(reports):
     assert outputs["passed"] == "false"
 
 
+@pytest.mark.parametrize("document", ["slop.md", "clean.md"])
+def test_the_action_forwards_the_score_of_the_json_summary(real_run, document):
+    _, outputs = real_run(document, FAIL_ON_FINDINGS="false")
+    report = json.loads(Path(outputs["json-file"]).read_text(encoding="utf-8"))
+    assert float(outputs["score"]) == report["summary"]["score"]
+
+
 def test_a_clean_document_passes_the_gate(real_run):
     code, outputs = real_run("clean.md")
     assert (code, outputs["passed"]) == (0, "true")

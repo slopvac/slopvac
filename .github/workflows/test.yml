@@ -45,6 +45,7 @@ jobs:
       evals: ${{ steps.filter.outputs.evals }}
       docs-site: ${{ steps.filter.outputs.docs-site }}
       action: ${{ steps.filter.outputs.action }}
+      action-v3: ${{ steps.filter.outputs.action-v3 }}
       docs: ${{ steps.filter.outputs.docs }}
       ci: ${{ steps.filter.outputs.ci }}
       config: ${{ steps.filter.outputs.config }}
@@ -409,6 +410,9 @@ jobs:
       needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # The Action and fork-review tests run this binary. They fail in CI when it is missing.
+      SLOPVAC_BIN: ${{ github.workspace }}/target/debug/slopvac
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -417,6 +421,15 @@ jobs:
 
       - name: Install the pinned toolchain
         run: bash scripts/ci/install-rust-toolchain.sh
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: pytest
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build the slopvac binary
+        run: cargo build --locked -p slopvac
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -595,6 +608,16 @@ jobs:
     permissions:
       contents: read
 
+  action-v3:
+    name: Action 3.0 contract
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs['action-v3'] == 'true'
+    uses: ./.github/workflows/action-v3-test.yml
+    permissions:
+      contents: read
+
   lint:
     name: Relevant lint suites
     needs: changes
@@ -682,6 +705,7 @@ jobs:
       - lint-package
       - cli-e2e
       - action-contract
+      - action-v3
       - lint
       - markdown-audit
       - security
@@ -698,6 +722,7 @@ jobs:
           PACKAGE: ${{ needs.changes.outputs.package }}
           RUST: ${{ needs.changes.outputs.rust }}
           ACTION: ${{ needs.changes.outputs.action }}
+          ACTION_V3: ${{ needs.changes.outputs['action-v3'] }}
           LINT: ${{ needs.changes.outputs.lint }}
           DOCS: ${{ needs.changes.outputs.docs }}
           SECRETS: ${{ needs.changes.outputs.secrets }}
@@ -731,6 +756,7 @@ jobs:
           package = os.environ["PACKAGE"] == "true"
           rust = os.environ["RUST"] == "true"
           action = os.environ["ACTION"] == "true"
+          action_v3 = os.environ["ACTION_V3"] == "true"
           lint = os.environ["LINT"] == "true"
           docs = os.environ["DOCS"] == "true"
           secrets = os.environ["SECRETS"] == "true"
@@ -749,6 +775,7 @@ jobs:
               "lint-package": force_all or package,
               "cli-e2e": force_all or package or docs,
               "action-contract": force_all or action,
+              "action-v3": force_all or action_v3,
               "lint": force_all or lint,
               "markdown-audit": force_all or docs,
               "security": force_all or secrets or code or dependencies or filesystem,

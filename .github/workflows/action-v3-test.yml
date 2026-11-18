@@ -2,26 +2,16 @@ name: Action 3.0 contract
 
 # Builds the slopvac binary from this checkout once, runs the 3.0 composite
 # action (action-v3/) with it against a sloppy document, and checks the reports
-# it feeds to reviewdog, code scanning and the Code Climate artifact. The
-# pytest step runs the same binary through tests/test_action_v3.py and
-# tests/test_fork_review.py. A fork pull request cannot be simulated here: the
-# event is whatever triggered this run. The tests cover the fork path with the
-# reporter choice and the fork-review artifact check.
+# it feeds to reviewdog, code scanning and the Code Climate artifact. test.yml
+# calls it as the `action-v3` job, routed by the `action-v3` class in
+# .github/ci-paths.yml, so a change to the renderers runs it too. The pytest
+# suites that run the same binary are in test.yml's `Full test suite` job. A
+# fork pull request cannot be simulated here: the event is whatever triggered
+# the run. The pytest suites cover the fork path with the reporter choice and
+# the fork-review artifact check.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-    paths:
-      - "action-v3/**"
-      - "scripts/action_v3.py"
-      - "scripts/action_entry.py"
-      - "scripts/fork_review.py"
-      - "scripts/ci/install-rust-toolchain.sh"
-      - "tests/conftest.py"
-      - "tests/test_action_v3.py"
-      - "tests/test_fork_review.py"
-      - ".github/action-fixtures/**"
-      - ".github/workflows/action-v3-test.yml"
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -29,18 +19,14 @@ permissions:
 
 jobs:
   action:
-    if: github.event.pull_request.draft != true
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       SLOPVAC_BIN: ${{ github.workspace }}/target/debug/slopvac
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       # rust-toolchain.toml pins the toolchain; the helper recovers from a partial install.
       - name: Install the pinned toolchain
@@ -53,9 +39,6 @@ jobs:
 
       - name: Build the slopvac binary
         run: cargo build --locked -p slopvac
-
-      - name: Run the real-binary tests
-        run: uv run --extra dev pytest tests/test_action_v3.py tests/test_fork_review.py
 
       - name: Run the action, blocking
         id: blocking
