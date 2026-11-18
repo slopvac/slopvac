@@ -161,7 +161,7 @@ The span crates index text with 32-bit offsets and size their structures from it
 | Style file | 1 MiB | `style-too-large` | The built-in styles are a few KiB. |
 | Terms file | 1 MiB | `terms-file-too-large` | The built-in terms file is about 30 KiB. |
 
-A per-file cap does not bound the work of many files. Two aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the place where it tripped. For `config-budget-exceeded` that is the config file, relative to the root. For `rules-budget-exceeded` it is the pack directory as a display path, never absolute: relative to the working directory, or `<external>/<name>` outside it. The list of `data.budget` values can grow. A message names only that path and the limit.
+A per-file cap does not bound the work of many files. Two aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the config file or pack directory at which it tripped, relative to the root, or `<external>/<file name>` outside it. The list of `data.budget` values can grow. A message names only that path and the limit.
 
 | Entry point | Budget (`data.budget`) | Limit | Unit | Code | Why this value |
 |---|---|---|---|---|---|
