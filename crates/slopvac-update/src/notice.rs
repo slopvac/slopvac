@@ -140,7 +140,7 @@ impl Cache {
     /// The cached entry, or `None` when missing or unreadable.
     #[must_use]
     pub fn read(&self) -> Option<Entry> {
-        serde_json::from_slice(&std::fs::read(&self.path).ok()?).ok()
+        serde_json::from_slice(&crate::bounded::read_regular(&self.path, MAX_CACHE_BYTES)?).ok()
     }
 
     /// Store an entry. The caller may ignore the error.
@@ -180,6 +180,9 @@ impl Cache {
         &self.path
     }
 }
+
+/// Largest cache file read. A real entry is a few dozen bytes.
+const MAX_CACHE_BYTES: u64 = 64 * 1024;
 
 /// How often a rename that Windows refuses for a moment is retried.
 const PERSIST_RETRIES: u32 = 20;
@@ -669,6 +672,40 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
         assert_eq!(calls, 1);
         assert!(dir_is_empty(dir.path()), "the temp file is cleaned up");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_cache_reads_as_missing_without_blocking() {
+        let (dir, cache) = cache();
+        std::fs::create_dir_all(dir.path().join("c")).unwrap();
+        let status = std::process::Command::new("mkfifo")
+            .arg(cache.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(cache.read().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_cache_that_links_to_an_endless_device_reads_as_missing() {
+        let (dir, cache) = cache();
+        std::fs::create_dir_all(dir.path().join("c")).unwrap();
+        std::os::unix::fs::symlink("/dev/zero", cache.path()).unwrap();
+        assert!(cache.read().is_none());
+    }
+
+    #[test]
+    fn an_oversize_cache_reads_as_missing() {
+        let (dir, cache) = cache();
+        std::fs::create_dir_all(dir.path().join("c")).unwrap();
+        let big = format!(
+            "{{\"checked_at\":1,\"latest\":\"9.9.9\",\"pad\":\"{}\"}}",
+            "x".repeat(usize::try_from(MAX_CACHE_BYTES).unwrap())
+        );
+        std::fs::write(cache.path(), big).unwrap();
+        assert!(cache.read().is_none());
     }
 
     /// Fail the rename `failures` times with `PermissionDenied`, then do the real rename.

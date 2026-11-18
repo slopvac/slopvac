@@ -6,6 +6,7 @@
 
 pub mod read;
 pub mod stubs;
+pub mod update;
 
 use std::path::{Path, PathBuf};
 
