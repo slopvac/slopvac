@@ -281,8 +281,9 @@ def test_protocol_hook_points_pair_each_kind_with_its_method_and_types(
         "| `tagger` | `tagger/tag` | [`TagParams`](#tagparams) "
         "| [`TagResult`](#tagresult) | Run the named tagger over each document. |"
     ) in page
+    assert "| `binary-extractor` | `binary-extractor/extract` |" in page
     kinds = page.split("## Hook points")[1].split("## Capabilities")[0]
-    assert kinds.count("\n| `") == 7
+    assert kinds.count("\n| `") == 8
 
 
 def test_protocol_capabilities_show_declaration_offer_and_reply_fields(
