@@ -64,6 +64,7 @@ impl Extents {
 struct View<'a> {
     path: &'a str,
     /// Steps taken by `split_interleaved`, for the tests that bound its work.
+    #[cfg(feature = "test-counters")]
     visits: Cell<usize>,
     /// The entry that produced each span handed to a tagger as a block or a sentence.
     owners: RefCell<HashMap<(usize, usize), usize>>,
@@ -159,6 +160,7 @@ impl<'a> View<'a> {
             .collect();
         Self {
             path,
+            #[cfg(feature = "test-counters")]
             visits: Cell::new(0),
             owners: RefCell::new(owners),
             views,
@@ -184,6 +186,20 @@ impl View<'_> {
     /// The work is `O(n log n)` in the number of entries and `O(1)` for each tag: a sweep
     /// over the entries sorted by start finds those that overlap another, and the owner of a
     /// tag is the entry whose sentence or block produced its span.
+    /// Count one step of `split_interleaved`.
+    #[cfg(feature = "test-counters")]
+    fn visit(&self) {
+        self.visits.set(self.visits.get() + 1);
+    }
+
+    #[cfg(not(feature = "test-counters"))]
+    #[expect(
+        clippy::unused_self,
+        reason = "matches the counting variant, which the tests build"
+    )]
+    #[inline(always)]
+    fn visit(&self) {}
+
     fn split_interleaved(&self, index: TagIndex) -> TagIndex {
         let mut order: Vec<usize> = (0..self.entries.len())
             .filter(|&i| self.entries[i].projection.is_some())
@@ -194,7 +210,7 @@ impl View<'_> {
         let mut marked = vec![false; self.entries.len()];
         let mut latest_end = 0;
         for (k, &i) in order.iter().enumerate() {
-            self.visits.set(self.visits.get() + 1);
+            self.visit();
             let span = &self.entries[i].span;
             if span.start < span.end {
                 let earlier = latest_end > span.start;
@@ -212,7 +228,7 @@ impl View<'_> {
         let mut extents: BTreeMap<usize, Extents> = BTreeMap::new();
         let mut tags = Vec::with_capacity(index.tags().len());
         for (group, tag) in index.tags().iter().enumerate() {
-            self.visits.set(self.visits.get() + 1);
+            self.visit();
             let owner = owners
                 .get(&(tag.span.start, tag.span.end))
                 .copied()
@@ -230,7 +246,7 @@ impl View<'_> {
             let mut pieces = Vec::new();
             for span in extents
                 .into_iter()
-                .flat_map(|e| e.overlapping(&tag.span, || self.visits.set(self.visits.get() + 1)))
+                .flat_map(|e| e.overlapping(&tag.span, || self.visit()))
             {
                 pieces.push((
                     Tag {
@@ -377,6 +393,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-counters")]
     fn splitting_interleaved_tags_takes_a_fixed_number_of_steps_for_each_entry() {
         let count = 20_000;
         let doc = row_of_fallback_cells(count);
@@ -429,6 +446,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-counters")]
     fn splitting_interleaved_tags_visits_only_the_extents_a_tag_meets() {
         for lines in [1_000, 2_000, 4_000] {
             let source = "a. ".repeat(lines);
