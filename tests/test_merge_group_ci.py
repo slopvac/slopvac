@@ -507,6 +507,10 @@ NOT_DRAFT_IDS = ["ready", "queue", "main", "tag"]
 def pull_request_workflows() -> dict[str, dict]:
     found = {}
     for path in sorted(WORKFLOWS.glob("*.yml")):
+        # cla.yml only starts the CLA checker and has no gate of its own: the CLA check run
+        # is posted for drafts too, so it must not wait for a draft to turn ready.
+        if path.name == "cla.yml":
+            continue
         workflow = load(path.name)
         triggers = workflow["on"]
         if "pull_request" in (

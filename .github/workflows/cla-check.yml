@@ -4,7 +4,7 @@ name: CLA check
 # (branch, sha, repository) is untrusted: scripts/cla_check.py reads it from the event file, treats
 # it only as a lookup key, and posts the result as a check run named "CLA" through the CLA app.
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers] default branch only, run data is a lookup key
     workflows: [CLA]
     types: [completed]
 

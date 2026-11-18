@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("cla_check", ROOT / "scripts" / "cla_check.py")
+SPEC = importlib.util.spec_from_file_location(
+    "cla_check", ROOT / "scripts" / "cla_check.py"
+)
 assert SPEC is not None and SPEC.loader is not None
 cla = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = cla
@@ -29,7 +31,11 @@ class ConfigTests(unittest.TestCase):
 
     def test_signatures_live_in_the_separate_repository(self) -> None:
         self.assertEqual(
-            (self.config.signatures_repo, self.config.signatures_branch, self.config.signatures_path),
+            (
+                self.config.signatures_repo,
+                self.config.signatures_branch,
+                self.config.signatures_path,
+            ),
             ("slopvac/cla-signers", "main", "signatures/v1/cla.json"),
         )
 
@@ -39,8 +45,14 @@ class ConfigTests(unittest.TestCase):
     def test_allowlist_is_explicit_with_no_wildcard(self) -> None:
         self.assertEqual(
             self.config.allowlist,
-            ("dependabot[bot]", "renovate[bot]", "github-actions[bot]", "sjorsr-release-bot[bot]",
-             "srobroek", "web-flow"),
+            (
+                "dependabot[bot]",
+                "renovate[bot]",
+                "github-actions[bot]",
+                "sjorsr-release-bot[bot]",
+                "srobroek",
+                "web-flow",
+            ),
         )
         self.assertFalse(any("*" in login for login in self.config.allowlist))
 
@@ -72,6 +84,7 @@ class ConfigTests(unittest.TestCase):
 
 def load(path: Path) -> tuple[str, dict[str, Any]]:
     import yaml
+
     text = path.read_text(encoding="utf-8")
     return text, yaml.safe_load(text)
 
@@ -83,7 +96,9 @@ def steps_of(doc: dict[str, Any]) -> list[dict[str, Any]]:
 class AllWorkflowsTests(unittest.TestCase):
     def test_the_cla_workflows_do_not_use_pull_request_target(self) -> None:
         for path in [TRIGGER, CHECK, SIGN]:
-            self.assertNotIn("pull_request_target", path.read_text(encoding="utf-8"), path.name)
+            self.assertNotIn(
+                "pull_request_target", path.read_text(encoding="utf-8"), path.name
+            )
 
     def test_cla_actions_are_pinned_by_full_sha(self) -> None:
         for path in [TRIGGER, CHECK, SIGN]:
@@ -96,12 +111,19 @@ class AllWorkflowsTests(unittest.TestCase):
             for step in steps_of(doc):
                 self.assertNotIn("${{", step.get("run", ""), path.name)
 
-    def test_untrusted_event_data_reaches_scripts_only_through_the_event_file_or_env(self) -> None:
+    def test_untrusted_event_data_reaches_scripts_only_through_the_event_file_or_env(
+        self,
+    ) -> None:
         # Only repository identity and the default branch may appear in an expression; anything
         # from the pull request, the comment or the triggering run is read by the script.
-        allowed = {"github.event.repository.default_branch", "github.event.repository.name"}
+        allowed = {
+            "github.event.repository.default_branch",
+            "github.event.repository.name",
+        }
         for path in [TRIGGER, CHECK, SIGN]:
-            for expression in re.findall(r"\$\{\{\s*(.*?)\s*\}\}", path.read_text(encoding="utf-8")):
+            for expression in re.findall(
+                r"\$\{\{\s*(.*?)\s*\}\}", path.read_text(encoding="utf-8")
+            ):
                 for ref in re.findall(r"github\.event\.[\w.]+", expression):
                     self.assertIn(ref, allowed, f"{path.name}: {expression}")
 
@@ -110,7 +132,11 @@ class AllWorkflowsTests(unittest.TestCase):
             _, doc = load(path)
             for step in steps_of(doc):
                 for value in step.get("env", {}).values():
-                    self.assertRegex(str(value), r"^\$\{\{ steps\.\w+\.outputs\.token \}\}$", path.name)
+                    self.assertRegex(
+                        str(value),
+                        r"^\$\{\{ steps\.\w+\.outputs\.token \}\}$",
+                        path.name,
+                    )
 
     def test_the_check_run_name_is_cla_everywhere(self) -> None:
         self.assertEqual(cla.CHECK_NAME, "CLA")
@@ -120,8 +146,15 @@ class AllWorkflowsTests(unittest.TestCase):
     def test_no_cla_workflow_checks_out_pr_code(self) -> None:
         for path in [TRIGGER, CHECK, SIGN]:
             text = path.read_text(encoding="utf-8")
-            for bad in ["pull_request.head", "head.sha", "head.ref", "refs/pull/", "github.head_ref",
-                        "merge_commit_sha", "github.event.workflow_run"]:
+            for bad in [
+                "pull_request.head",
+                "head.sha",
+                "head.ref",
+                "refs/pull/",
+                "github.head_ref",
+                "merge_commit_sha",
+                "github.event.workflow_run",
+            ]:
                 self.assertNotIn(bad, text, f"{path.name}: {bad}")
 
 
@@ -133,7 +166,9 @@ class TriggerWorkflowTests(unittest.TestCase):
     def test_triggers_are_pull_request_and_merge_group_only(self) -> None:
         on = self.doc[True]  # PyYAML reads the bare key `on` as True
         self.assertEqual(set(on), {"pull_request", "merge_group"})
-        self.assertEqual(on["pull_request"]["types"], ["opened", "synchronize", "reopened"])
+        self.assertEqual(
+            on["pull_request"]["types"], ["opened", "synchronize", "reopened"]
+        )
 
     def test_workflow_is_named_cla_so_the_checker_can_follow_it(self) -> None:
         self.assertEqual(self.doc["name"], "CLA")
@@ -166,22 +201,36 @@ class CheckWorkflowTests(unittest.TestCase):
         self.assertEqual(on["workflow_run"]["types"], ["completed"])
 
     def test_it_checks_out_the_default_branch_only_without_credentials(self) -> None:
-        checkouts = [s for s in steps_of(self.doc) if str(s.get("uses", "")).startswith("actions/checkout@")]
+        checkouts = [
+            s
+            for s in steps_of(self.doc)
+            if str(s.get("uses", "")).startswith("actions/checkout@")
+        ]
         self.assertEqual(len(checkouts), 1)
-        self.assertEqual(checkouts[0]["with"]["ref"], "${{ github.event.repository.default_branch }}")
+        self.assertEqual(
+            checkouts[0]["with"]["ref"], "${{ github.event.repository.default_branch }}"
+        )
         self.assertIs(checkouts[0]["with"]["persist-credentials"], False)
 
     def test_permissions_are_read_only_and_the_token_can_write_checks(self) -> None:
         self.assertEqual(self.doc["permissions"], {"contents": "read"})
-        mint = next(s for s in steps_of(self.doc)
-                    if str(s.get("uses", "")).startswith("actions/create-github-app-token@"))
+        mint = next(
+            s
+            for s in steps_of(self.doc)
+            if str(s.get("uses", "")).startswith("actions/create-github-app-token@")
+        )
         self.assertEqual(mint["with"]["client-id"], "${{ secrets.CLA_APP_CLIENT_ID }}")
-        self.assertEqual(mint["with"]["private-key"], "${{ secrets.CLA_APP_PRIVATE_KEY }}")
+        self.assertEqual(
+            mint["with"]["private-key"], "${{ secrets.CLA_APP_PRIVATE_KEY }}"
+        )
         self.assertEqual(mint["with"]["permission-checks"], "write")
         self.assertEqual(mint["with"]["permission-pull-requests"], "read")
         self.assertEqual(mint["with"]["permission-contents"], "read")
         perms = {k for k in mint["with"] if k.startswith("permission-")}
-        self.assertEqual(perms, {"permission-checks", "permission-pull-requests", "permission-contents"})
+        self.assertEqual(
+            perms,
+            {"permission-checks", "permission-pull-requests", "permission-contents"},
+        )
 
     def test_the_script_gets_its_token_from_the_mint_step(self) -> None:
         run = next(s for s in steps_of(self.doc) if "run" in s)
@@ -209,24 +258,39 @@ class SignWorkflowTests(unittest.TestCase):
         for step in steps_of(self.doc):
             if str(step.get("uses", "")).startswith("actions/checkout"):
                 self.assertIs(step["with"]["persist-credentials"], False)
-                self.assertEqual(step["with"]["ref"], "${{ github.event.repository.default_branch }}")
+                self.assertEqual(
+                    step["with"]["ref"], "${{ github.event.repository.default_branch }}"
+                )
 
     def test_app_tokens_use_secrets_and_the_client_id_input(self) -> None:
-        mints = [s for s in steps_of(self.doc) if str(s.get("uses", "")).startswith("actions/create-github-app-token@")]
+        mints = [
+            s
+            for s in steps_of(self.doc)
+            if str(s.get("uses", "")).startswith("actions/create-github-app-token@")
+        ]
         self.assertEqual(len(mints), 2)
         for step in mints:
-            self.assertEqual(step["with"]["client-id"], "${{ secrets.CLA_APP_CLIENT_ID }}")
-            self.assertEqual(step["with"]["private-key"], "${{ secrets.CLA_APP_PRIVATE_KEY }}")
+            self.assertEqual(
+                step["with"]["client-id"], "${{ secrets.CLA_APP_CLIENT_ID }}"
+            )
+            self.assertEqual(
+                step["with"]["private-key"], "${{ secrets.CLA_APP_PRIVATE_KEY }}"
+            )
             self.assertNotIn("app-id", step["with"])
 
     def test_signatures_token_is_scoped_to_the_signatures_repo(self) -> None:
         step = next(s for s in steps_of(self.doc) if s.get("id") == "signatures")
         self.assertEqual(step["with"]["owner"], "slopvac")
         self.assertEqual(step["with"]["repositories"], "cla-signers")
-        self.assertEqual({k for k in step["with"] if k.startswith("permission-")}, {"permission-contents"})
+        self.assertEqual(
+            {k for k in step["with"] if k.startswith("permission-")},
+            {"permission-contents"},
+        )
         self.assertEqual(step["with"]["permission-contents"], "write")
 
     def test_repo_token_writes_checks_and_nothing_else(self) -> None:
         step = next(s for s in steps_of(self.doc) if s.get("id") == "repo")
         perms = {k: v for k, v in step["with"].items() if k.startswith("permission-")}
-        self.assertEqual(perms, {"permission-checks": "write", "permission-pull-requests": "read"})
+        self.assertEqual(
+            perms, {"permission-checks": "write", "permission-pull-requests": "read"}
+        )

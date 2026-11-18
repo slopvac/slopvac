@@ -4,7 +4,7 @@ name: CLA sign
 # the signing phrase records a signature; editing it away or deleting it removes the signature. Either
 # way the job then posts a fresh "CLA" check run for each affected pull request.
 on:
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers] default branch only, exact-text comments
     types: [created, edited, deleted]
 
 permissions:
