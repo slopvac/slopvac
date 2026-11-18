@@ -6,6 +6,10 @@ We will circle back on the low-hanging fruit.
 
 The maintainers will return to the two open bugs.
 
+The team architected the platform last year.
+
+The AWS Well-Architected Framework guides the review.
+
 The tradeoffs are significant.
 
 The lockfile adds 40 KB and removes one network round trip.

@@ -956,11 +956,11 @@
         {
           "category": "prose-inflation",
           "errors": 0,
-          "findings": 28,
-          "per_100_words": 0.182,
+          "findings": 29,
+          "per_100_words": 0.189,
           "score": 97.4,
           "suggestions": 11,
-          "warnings": 17
+          "warnings": 18
         },
         {
           "category": "prose-promotion",
@@ -1064,19 +1064,19 @@
       ],
       "documents": 47,
       "errors": 3,
-      "findings": 208,
+      "findings": 209,
       "passed": false,
-      "per_100_words": 1.353,
+      "per_100_words": 1.359,
       "prose": {
         "errors": 3,
-        "findings": 135,
-        "per_100_words": 0.878,
-        "warnings": 25
+        "findings": 136,
+        "per_100_words": 0.884,
+        "warnings": 26
       },
-      "score": 96.9,
+      "score": 96.8,
       "suggestions": 171,
-      "warnings": 34,
-      "words": 15371
+      "warnings": 35,
+      "words": 15382
     }
   },
   "prose:mdx": {
