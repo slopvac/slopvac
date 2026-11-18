@@ -218,17 +218,31 @@ _CREDENTIAL_WORDS = (
 )
 CREDENTIAL_NAME = rf"(?:aws[_-]?)?{_CREDENTIAL_WORDS}(?![A-Za-z0-9_-])"
 # `name = value` or `"name": "value"`, with the quotes and spacing of JSON, env files
-# and headers. The value is a quoted string, an auth scheme and its token, or a bare
-# run up to a delimiter, however short.
+# and headers. Only the value is replaced; the name, the separator and the quotes
+# stay, so the shape of the text (and its word count) does not change. The value is
+# a quoted string (escaped quotes included, or cut off by the end of the line), an
+# auth scheme and its token, or a bare run up to a delimiter, however short.
 STRUCTURED_RE = re.compile(
-    rf"""(?ix)(["']?)(?<![A-Za-z0-9_])({CREDENTIAL_NAME})\1\s*[:=]\s*
-    (?:"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'
-    |(?:bearer|basic|token)\s+[^\s,;&}}\]"']+|[^\s,;&}}\]"']+)"""
+    rf"""(?ix)
+    (?P<head>(?P<q>["']?)(?<![A-Za-z0-9_]){CREDENTIAL_NAME}(?P=q)\s*[:=]\s*)
+    (?P<val>"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'
+        |"[^\n]*|'[^\n]*
+        |(?P<scheme>(?:bearer|basic|token)\s+)[^\s,;&}}\]"']+
+        |[^\s,;&}}\]"']+)"""
 )
 PEM_RE = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)",
     re.DOTALL,
 )
+_PLACEHOLDER = "<redacted>"
+
+
+def _replace_value(match: re.Match[str]) -> str:
+    value = match["val"]
+    if value[0] in "\"'":
+        closed = len(value) > 1 and value[-1] == value[0]
+        return match["head"] + value[0] + _PLACEHOLDER + (value[0] if closed else "")
+    return match["head"] + (match["scheme"] or "") + _PLACEHOLDER
 
 
 def redact_credentials(text: str) -> str:
@@ -239,7 +253,7 @@ def redact_credentials(text: str) -> str:
     """
     text = PEM_RE.sub("<private-key>", text)
     text = re.sub(r"\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b", "<key>", text)
-    return STRUCTURED_RE.sub(r"\1\2\1=<redacted>", text)
+    return STRUCTURED_RE.sub(_replace_value, text)
 
 
 def redact(text: str) -> str:

@@ -60,10 +60,10 @@ def test_diagram_engine_errors_do_not_echo_credentials_from_stderr():
     assert "engine exited 4" in str(caught.value)
 
 
-def test_a_successful_model_answer_is_returned_without_credentials():
+def test_a_successful_model_answer_is_not_rewritten_in_memory():
+    """The scorer reads the answer as written; only what is stored is redacted."""
     reply = models.command_ask(writes("stdout", f"Answer. {LEAK}"), attempts=1)("x")
-    assert_clean(reply.text)
-    assert reply.text.startswith("Answer.")
+    assert reply.text == f"Answer. {LEAK}"
 
 
 REVIEW_TASK = {
@@ -145,13 +145,6 @@ SCHEME_LEAKS = [
 
 
 @pytest.mark.parametrize(("leak", "gone"), SCHEME_LEAKS)
-def test_a_model_answer_with_a_standalone_scheme_is_stored_without_it(leak, gone):
-    reply = models.command_ask(writes("stdout", f"Answer. {leak}"), attempts=1)("x")
-    assert gone not in reply.text
-    assert reply.text.startswith("Answer.")
-
-
-@pytest.mark.parametrize(("leak", "gone"), SCHEME_LEAKS)
 def test_a_twin_with_a_standalone_scheme_is_returned_without_it(leak, gone):
     text = twins.run_provider(writes("stdout", f"A twin. {leak}"), "prompt", 30)
     assert gone not in text
@@ -181,27 +174,32 @@ def pem(kind: str, complete: bool = True) -> str:
     return block + (f"-----END {kind}-----" if complete else "")
 
 
+def stored_answer(tmp_path, text: str) -> str:
+    path = tmp_path / "pem.journal.jsonl"
+    models.Journal(path).record("job", text, None, 1)
+    return json.loads(path.read_text("utf-8"))["answer"]
+
+
 @pytest.mark.parametrize(
     "kind",
     ["PRIVATE KEY", "RSA PRIVATE KEY", "OPENSSH PRIVATE KEY", "ENCRYPTED PRIVATE KEY"],
 )
-def test_a_complete_private_key_is_removed_and_the_text_around_it_survives(kind):
-    reply = models.command_ask(
-        writes("stdout", f"Before the key.\n{pem(kind)}\nAfter the key."), attempts=1
-    )("x")
-    assert BODY not in reply.text
-    assert "BEGIN" not in reply.text
-    assert reply.text.startswith("Before the key.\n")
-    assert reply.text.endswith("\nAfter the key.")
+def test_a_complete_private_key_is_removed_and_the_text_around_it_survives(
+    tmp_path, kind
+):
+    stored = stored_answer(tmp_path, f"Before the key.\n{pem(kind)}\nAfter the key.")
+    assert BODY not in stored
+    assert "BEGIN" not in stored
+    assert stored.startswith("Before the key.\n")
+    assert stored.endswith("\nAfter the key.")
 
 
-def test_a_truncated_private_key_is_removed_and_the_text_before_it_survives():
-    reply = models.command_ask(
-        writes("stdout", f"Before the key.\n{pem('PRIVATE KEY', complete=False)}"),
-        attempts=1,
-    )("x")
-    assert BODY not in reply.text
-    assert reply.text.startswith("Before the key.\n")
+def test_a_truncated_private_key_is_removed_and_the_text_before_it_survives(tmp_path):
+    stored = stored_answer(
+        tmp_path, f"Before the key.\n{pem('PRIVATE KEY', complete=False)}"
+    )
+    assert BODY not in stored
+    assert stored.startswith("Before the key.\n")
 
 
 @pytest.mark.parametrize("complete", [True, False], ids=["complete", "truncated"])

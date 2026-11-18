@@ -42,6 +42,7 @@ import threading
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Any, NamedTuple, Self
 
@@ -759,6 +760,13 @@ class Journal:
     when answers are reused, but `executions` lists every line, because each one is
     spend. A job that failed is asked again on resume, and its earlier attempts
     still count against the budget.
+
+    The stored answer is a redacted copy: credential patterns are removed, and the
+    line says `credential_suspected: true` when that changed anything. The score
+    comes from the original answer, so it is kept as a separate `kind: "score"`
+    line (job, scorer version, score). A replay reuses a score of the current
+    scorer version instead of rescoring the redacted copy. Score lines are not
+    executions and carry no spend.
     """
 
     def __init__(self, path: Path) -> None:
@@ -766,12 +774,17 @@ class Journal:
         self._lock = threading.Lock()
         self._entries: dict[str, dict[str, Any]] = {}
         self._lines: list[dict[str, Any]] = []
+        self._scores: dict[str, dict[str, Any]] = {}
         self._attempts = 0
         if path.is_file():
             for line in path.read_text("utf-8").splitlines():
                 if line:
                     entry = json.loads(line)
+                    if entry.get("kind") == "score":
+                        self._scores[entry["job"]] = entry
+                        continue
                     self._entries[entry["job"]] = entry
+                    self._scores.pop(entry["job"], None)
                     self._lines.append(entry)
                     self._attempts += entry["attempts"]
 
@@ -810,22 +823,50 @@ class Journal:
         model: str | None = None,
         usage: Mapping[str, int] | None = None,
     ) -> None:
+        stored = procs.redact_credentials(answer)
         entry = {
             "job": job,
             "model": model,
-            "answer": answer,
+            "answer": stored,
             "error": error,
             "attempts": attempts,
             "usage": dict(usage) if usage else None,
         }
+        if stored != answer:
+            entry["credential_suspected"] = True
+        self._append(entry)
+        with self._lock:
+            self._entries[job] = entry
+            self._lines.append(entry)
+            self._scores.pop(job, None)
+
+    def score_for(self, job: str, scorer_version: str) -> dict[str, Any] | None:
+        """The score stored for `job` by the same scorer version, or None."""
+        stored = self._scores.get(job)
+        if stored and stored.get("scorer_version") == scorer_version:
+            return stored["score"]
+        return None
+
+    def attach_score(
+        self, job: str, scorer_version: str, score: Mapping[str, Any]
+    ) -> None:
+        line = {
+            "kind": "score",
+            "job": job,
+            "scorer_version": scorer_version,
+            "score": dict(score),
+        }
+        self._append(line)
+        with self._lock:
+            self._scores[job] = line
+
+    def _append(self, line: Mapping[str, Any]) -> None:
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(entry, sort_keys=True) + "\n")
+                fh.write(json.dumps(line, sort_keys=True) + "\n")
                 fh.flush()
                 os.fsync(fh.fileno())
-            self._entries[job] = entry
-            self._lines.append(entry)
 
 
 def unjournaled(
@@ -916,11 +957,7 @@ def command_ask(
                 budget.finish(number, "ok" if ok else "fail", model)
             reports.append(procs.parse_usage_line(proc.stderr))
             if ok:
-                return Reply(
-                    procs.redact_credentials(proc.stdout),
-                    used,
-                    procs.sum_usage(reports),
-                )
+                return Reply(proc.stdout, used, procs.sum_usage(reports))
             detail = procs.redact(procs.strip_usage_lines(proc.stderr))[:300]
             last = f"model command exited {proc.returncode}: {detail}"
         raise CallFailed(last, used, procs.sum_usage(reports))
@@ -1090,6 +1127,30 @@ def frozen_candidates(
     return found
 
 
+def score_authored_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
+    """Score a review of another model's rewrite, noting how many facts it lost."""
+    return score_review(task, answer) | {"lost_facts": len(task["lost"])}
+
+
+def _scored(
+    journal: Journal | None,
+    job: str,
+    error: str | None,
+    compute: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    """The score of a job: the stored one of this scorer version, else computed.
+
+    A fresh score comes from the original answer and is stored with the job, so a
+    replay does not rescore the redacted copy. A failed call stores nothing.
+    """
+    if journal and (kept := journal.score_for(job, SCORER_VERSION)) is not None:
+        return kept
+    result = compute()
+    if journal and not error:
+        journal.attach_score(job, SCORER_VERSION, result)
+    return result
+
+
 def execute(
     tasks: Sequence[Mapping[str, Any]],
     models: Sequence[Mapping[str, Any]],
@@ -1140,11 +1201,14 @@ def execute(
         if only_model is None or model["name"] == only_model
     ]
 
+    def task_job(model: Mapping[str, Any], task: Mapping[str, Any], repeat: int) -> str:
+        return job_id("task", model["name"], task["prompt"], repeat)
+
     def run_first(job: tuple[Any, Any, int]) -> tuple[str, str | None, Any]:
         model, task, repeat = job
         return _safe(
             asks[model["name"]],
-            job_id("task", model["name"], task["prompt"], repeat),
+            task_job(model, task, repeat),
             task["prompt"],
             journal,
             model["name"],
@@ -1156,20 +1220,28 @@ def execute(
     for (model, task, repeat), (answer, error, usage) in zip(
         first, answers, strict=True
     ):
-        row = _row(task, model, repeat, answer, usage)
+        # Score the answer as the model wrote it. Everything stored or derived from
+        # it (the row hash, the journal, the review prompt) uses the redacted copy.
+        stored = procs.redact_credentials(answer)
+        row = _row(task, model, repeat, stored, usage)
         if error:
             row["error"] = error
+        job = task_job(model, task, repeat)
         if task["role"] == "author":
             try:
-                row["score"] = score_author(task, answer, lint)
+                row["score"] = _scored(
+                    journal, job, error, partial(score_author, task, answer, lint)
+                )
             except LintIncomplete as exc:
                 # Neither a pass nor a fail: the summary leaves the run out.
                 row["score"] = None
                 row["unscored"] = str(exc)
             if task["type"] == "rewrite":
-                rewrite_outputs.append((task, model, repeat, answer))
+                rewrite_outputs.append((task, model, repeat, stored))
         else:
-            row["score"] = score_review(task, answer)
+            row["score"] = _scored(
+                journal, job, error, partial(score_review, task, answer)
+            )
         runs.append(row)
     rewrite_outputs.extend(frozen)
     second = []
@@ -1195,15 +1267,18 @@ def execute(
     for (review_task, author, reviewer, repeat), (reply, error, usage) in zip(
         second, replies, strict=True
     ):
-        row = _row(review_task, reviewer, repeat, reply, usage)
+        row = _row(
+            review_task, reviewer, repeat, procs.redact_credentials(reply), usage
+        )
         row["task"] = f"{review_task['id']}:{author['name']}"
         row["author_model"] = author["name"]
         row["author_family"] = author["family"]
         if error:
             row["error"] = error
-        row["score"] = score_review(review_task, reply) | {
-            "lost_facts": len(review_task["lost"])
-        }
+        job = review_job_id(review_task, author["name"], reviewer["name"], repeat)
+        row["score"] = _scored(
+            journal, job, error, partial(score_authored_review, review_task, reply)
+        )
         runs.append(row)
     return {
         "schema": RESULTS_SCHEMA,
@@ -1456,7 +1531,11 @@ def load_usage_records(path: Path) -> list[tuple[str, dict[str, int] | None]]:
     reservations that never reached the journal (an interrupted call).
     """
     if path.suffix == ".jsonl":
-        entries = [json.loads(x) for x in path.read_text("utf-8").splitlines() if x]
+        entries = [
+            e
+            for e in (json.loads(x) for x in path.read_text("utf-8").splitlines() if x)
+            if e.get("kind") != "score"
+        ]
         stem = path.name.removesuffix(".journal.jsonl")
         ledger = path.with_name(stem + ".ledger.jsonl")
         if path.name.endswith(".journal.jsonl") and ledger.is_file():
