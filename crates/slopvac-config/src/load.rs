@@ -1,16 +1,21 @@
 //! Read a `slopvac.toml` and the configs it extends into an ordered list of files.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde_json::Value as Json;
 
-use crate::diag::{Code, Diagnostic};
+use crate::diag::{BudgetData, Code, ConfigBudget, Diagnostic};
 use crate::error::{ConfigError, Rejected};
 use crate::flatten::{Origin, flatten};
 use crate::presets::Presets;
-use crate::read::{MAX_CONFIG_BYTES, ReadFailure, read_text};
+use crate::read::{
+    MAX_CONFIG_BYTES, MAX_EXTENDS_APPLIED_BYTES, MAX_EXTENDS_BYTES, MAX_EXTENDS_DEPTH,
+    MAX_EXTENDS_FILES, ReadFailure, read_text,
+};
 use crate::schema::validate_config;
 use crate::source::{Layer, Setting};
 use crate::tree::{Node, Value, parse_toml};
@@ -83,7 +88,7 @@ pub struct LoadedConfig {
     /// Directory of the nearest config. Globs in every file match from here.
     pub root: PathBuf,
     /// Extended files first, in the order they apply, and the project config last.
-    pub files: Vec<ConfigFile>,
+    pub files: Vec<Arc<ConfigFile>>,
     exclude: Gitignore,
 }
 
@@ -136,6 +141,15 @@ pub fn load_labeled(
     label: &str,
     presets: &dyn Presets,
 ) -> Result<LoadedConfig, ConfigError> {
+    load_counted(path, label, presets).map(|(config, _)| config)
+}
+
+/// As [`load_labeled`], also returning how many files were read.
+fn load_counted(
+    path: &Path,
+    label: &str,
+    presets: &dyn Presets,
+) -> Result<(LoadedConfig, usize), ConfigError> {
     let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(label, source))?;
     let root = abs.parent().map_or_else(PathBuf::new, Path::to_path_buf);
     let text = ConfigError::read_config(&abs, label)?;
@@ -144,6 +158,11 @@ pub fn load_labeled(
         presets,
         stack: Vec::new(),
         files: Vec::new(),
+        expanded: HashMap::new(),
+        applied_bytes: 0,
+        deepest: 0,
+        bytes: text.len() as u64,
+        reads: 1,
     };
     loader.load_text(
         &Key::Path(abs.clone()),
@@ -152,18 +171,22 @@ pub fn load_labeled(
         Layer::Project,
     )?;
     let exclude = build_exclude(&loader.files, &root);
-    let files = loader.files;
-    Ok(LoadedConfig {
-        root,
-        files,
-        exclude,
-    })
+    let reads = loader.reads;
+    let files = loader.files.into_iter().map(|a| a.file).collect();
+    Ok((
+        LoadedConfig {
+            root,
+            files,
+            exclude,
+        },
+        reads,
+    ))
 }
 
-fn build_exclude(files: &[ConfigFile], root: &Path) -> Gitignore {
+fn build_exclude(files: &[Applied], root: &Path) -> Gitignore {
     let patterns = files
         .iter()
-        .flat_map(|f| f.settings.iter())
+        .flat_map(|a| a.file.settings.iter())
         .rfind(|s| s.path == ["exclude"])
         .map_or_else(
             || {
@@ -256,17 +279,65 @@ fn relative_display(file: &Path, root: &Path) -> String {
     parts.join("/")
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Key {
     Path(PathBuf),
     Pack(String),
+}
+
+/// One application of a parsed config file. The file is shared, so an application beyond the
+/// first copies a pointer and not the settings.
+#[derive(Clone)]
+struct Applied {
+    file: Arc<ConfigFile>,
+    /// Bytes of the file's text, for the applied-bytes budget.
+    bytes: u64,
+}
+
+/// What an extended file expanded to, kept so a later reference copies pointers only.
+#[derive(Clone)]
+struct Expansion {
+    /// The applications in order, the file's own last.
+    files: Vec<Applied>,
+    /// Levels the subtree spans, the file itself included: a file with no `extends` is 1.
+    height: usize,
+}
+
+/// An `extends` entry that is refused: the diagnostic code, message, help and any budget detail.
+struct Refusal {
+    code: Code,
+    message: String,
+    help: Option<String>,
+    data: Option<Box<BudgetData>>,
+}
+
+impl Refusal {
+    fn new(code: Code, message: String, help: Option<String>) -> Self {
+        Self {
+            code,
+            message,
+            help,
+            data: None,
+        }
+    }
 }
 
 struct Loader<'a> {
     root: &'a Path,
     presets: &'a dyn Presets,
     stack: Vec<(Key, String)>,
-    files: Vec<ConfigFile>,
+    files: Vec<Applied>,
+    /// For each extended file already loaded, the files it expanded to, in apply order. A file
+    /// that several others extend is read and parsed once and its expansion is copied after that.
+    expanded: HashMap<Key, Expansion>,
+    /// The deepest level reached so far in the subtree being loaded.
+    deepest: usize,
+    /// Bytes of text of the extended files applied or reserved so far, one count per application.
+    applied_bytes: u64,
+    /// Bytes read so far from distinct reads.
+    bytes: u64,
+    /// Files read so far.
+    reads: usize,
 }
 
 impl Loader<'_> {
@@ -296,6 +367,7 @@ impl Loader<'_> {
                     span,
                     help: None,
                     path: Vec::new(),
+                    data: None,
                 };
                 return Err(reject(text, vec![d]));
             }
@@ -329,11 +401,14 @@ impl Loader<'_> {
             },
             &["schema_version", "extends", "overrides", "genres"],
         );
-        self.files.push(ConfigFile {
-            display: display.to_owned(),
-            layer,
-            settings,
-            blocks,
+        self.files.push(Applied {
+            file: Arc::new(ConfigFile {
+                display: display.to_owned(),
+                layer,
+                settings,
+                blocks,
+            }),
+            bytes: text.len() as u64,
         });
         Ok(())
     }
@@ -368,6 +443,7 @@ impl Loader<'_> {
                 span: node.span.clone(),
                 help: None,
                 path: vec!["styles".into()],
+                data: None,
             });
         }
     }
@@ -412,6 +488,7 @@ impl Loader<'_> {
                         span,
                         help: Some("merge the two blocks".into()),
                         path: vec![table.into(), index.to_string(), "files".into()],
+                        data: None,
                     });
                     continue;
                 }
@@ -426,6 +503,7 @@ impl Loader<'_> {
                             span,
                             help: None,
                             path: vec![table.into(), index.to_string(), "files".into()],
+                            data: None,
                         });
                         continue;
                     }
@@ -453,6 +531,134 @@ impl Loader<'_> {
         out
     }
 
+    /// The refusal for passing `budget` while loading the `extends` entry of the file `key`
+    /// names. The message names only the file, relative to the root, and the limit.
+    fn over_budget(&self, key: &Key, display: &str, budget: ConfigBudget) -> Refusal {
+        let path = match key {
+            Key::Path(p) => slopvac_fs::display_under_root(p, self.root),
+            Key::Pack(_) => display.to_owned(),
+        };
+        let (limit, what, help) = match budget {
+            ConfigBudget::ExtendsDepth => (
+                MAX_EXTENDS_DEPTH as u64,
+                "nests `extends` deeper than {} levels",
+                "flatten the chain",
+            ),
+            ConfigBudget::ExtendsFiles => (
+                MAX_EXTENDS_FILES as u64,
+                "applies more than {} files through `extends`",
+                "remove entries that extend the same files again",
+            ),
+            ConfigBudget::ExtendsBytes => (
+                MAX_EXTENDS_BYTES,
+                "reads more than {} bytes through `extends`",
+                "remove entries or split the files",
+            ),
+            ConfigBudget::ExtendsAppliedBytes => (
+                MAX_EXTENDS_APPLIED_BYTES,
+                "applies more than {} bytes of config through `extends`",
+                "remove entries that extend the same large files again",
+            ),
+        };
+        Refusal {
+            code: Code::BudgetExceeded,
+            message: format!("{path} {}", what.replace("{}", &limit.to_string())),
+            help: Some(help.into()),
+            data: Some(Box::new(BudgetData {
+                budget,
+                limit,
+                path,
+            })),
+        }
+    }
+
+    /// Extended files on the stack that have not been applied yet, so each is still to come.
+    fn pending(&self) -> usize {
+        self.stack.len().saturating_sub(1)
+    }
+
+    /// Refuse a file that is not cached when it nests too deep or would pass the file budget.
+    fn check_fresh(&self, key: &Key, display: &str) -> Result<(), Refusal> {
+        if self.stack.len() > MAX_EXTENDS_DEPTH {
+            return Err(self.over_budget(key, display, ConfigBudget::ExtendsDepth));
+        }
+        if self.files.len() + self.pending() + 1 > MAX_EXTENDS_FILES {
+            return Err(self.over_budget(key, display, ConfigBudget::ExtendsFiles));
+        }
+        Ok(())
+    }
+
+    /// Apply the cached expansion of `target`, if there is one. The depth, file and byte
+    /// budgets are checked before any application is added. Returns whether it applied.
+    fn apply_cached(&mut self, target: &Key, key: &Key, display: &str) -> Result<bool, Refusal> {
+        let Some(done) = self.expanded.get(target).cloned() else {
+            return Ok(false);
+        };
+        let deepest = self.stack.len() + done.height - 1;
+        if deepest > MAX_EXTENDS_DEPTH {
+            return Err(self.over_budget(key, display, ConfigBudget::ExtendsDepth));
+        }
+        if self.files.len() + self.pending() + done.files.len() > MAX_EXTENDS_FILES {
+            return Err(self.over_budget(key, display, ConfigBudget::ExtendsFiles));
+        }
+        let bytes: u64 = done.files.iter().map(|a| a.bytes).sum();
+        if !self.reserve_applied(bytes) {
+            return Err(self.over_applied(key, display));
+        }
+        self.deepest = self.deepest.max(deepest);
+        self.files.extend(done.files);
+        Ok(true)
+    }
+
+    /// Load an extended file that is not cached, and cache its expansion.
+    fn load_fresh(&mut self, target: Key, shown: &str, body: String) -> Result<(), ConfigError> {
+        let level = self.stack.len();
+        let outer = std::mem::replace(&mut self.deepest, level);
+        let start = self.files.len();
+        self.load_text(&target, shown, body, Layer::Extends)?;
+        let height = self.deepest - level + 1;
+        self.deepest = self.deepest.max(outer);
+        let files = self.files[start..].to_vec();
+        self.expanded.insert(target, Expansion { files, height });
+        Ok(())
+    }
+
+    /// Count `bytes` more applied text, or return false when that passes the applied-bytes budget.
+    fn reserve_applied(&mut self, bytes: u64) -> bool {
+        let total = self.applied_bytes.saturating_add(bytes);
+        if total > MAX_EXTENDS_APPLIED_BYTES {
+            return false;
+        }
+        self.applied_bytes = total;
+        true
+    }
+
+    fn over_applied(&self, key: &Key, display: &str) -> Refusal {
+        self.over_budget(key, display, ConfigBudget::ExtendsAppliedBytes)
+    }
+
+    /// Read the extended file `target`, which the entry `name` names.
+    fn read_extended(&self, target: &Key, name: &str) -> Result<String, Refusal> {
+        let Key::Path(p) = target else {
+            return Ok(String::new());
+        };
+        read_text(p, MAX_CONFIG_BYTES).map_err(|e| match e {
+            ReadFailure::TooLarge(cap) => Refusal::new(
+                Code::TooLarge,
+                format!("the extended config `{name}` is larger than {cap} bytes"),
+                Some("split the file or remove unused settings".into()),
+            ),
+            ReadFailure::Io(e) => Refusal::new(
+                Code::ExtendsMissing,
+                format!(
+                    "cannot read the extended config `{}`: {e}",
+                    safe_display(p, self.root)
+                ),
+                Some("paths are relative to the file that holds the entry".into()),
+            ),
+        })
+    }
+
     fn extend(
         &mut self,
         tree: &Node,
@@ -470,27 +676,28 @@ impl Loader<'_> {
         for entry in entries {
             let name = entry.as_str().unwrap_or_default();
             let label = self.error_label(key, display);
-            let fail = |code: Code, message: String, help: Option<String>| {
+            let fail = |r: Refusal| {
                 ConfigError::Rejected(Box::new(Rejected {
                     file: label.clone(),
                     text: text.to_owned(),
                     diagnostics: vec![Diagnostic {
-                        code,
-                        message,
+                        code: r.code,
+                        message: r.message,
                         label: "extended here".into(),
                         span: entry.span.clone(),
-                        help,
+                        help: r.help,
                         path: vec!["extends".into()],
+                        data: r.data,
                     }],
                 }))
             };
             let (target, shown, body) = if is_pack_ref(name) {
                 let Some(file) = self.presets.pack_config(name) else {
-                    return Err(fail(
+                    return Err(fail(Refusal::new(
                         Code::ExtendsMissing,
                         format!("no active pack provides the config `{name}`"),
                         None,
-                    ));
+                    )));
                 };
                 (Key::Pack(name.to_owned()), file.display, Some(file.text))
             } else {
@@ -508,34 +715,34 @@ impl Loader<'_> {
                     .map(|(k, d)| self.error_label(k, d))
                     .collect();
                 chain.push(self.error_label(&target, &shown));
-                return Err(fail(
+                return Err(fail(Refusal::new(
                     Code::ExtendsCycle,
                     format!("`extends` loops: {}", chain.join(" -> ")),
                     Some("remove one entry from the loop".into()),
-                ));
+                )));
             }
+            if self.apply_cached(&target, key, display).map_err(fail)? {
+                continue;
+            }
+            self.check_fresh(key, display).map_err(fail)?;
             let body = match body {
                 Some(b) => b,
-                None => match &target {
-                    Key::Path(p) => read_text(p, MAX_CONFIG_BYTES).map_err(|e| match e {
-                        ReadFailure::TooLarge(cap) => fail(
-                            Code::TooLarge,
-                            format!("the extended config `{name}` is larger than {cap} bytes"),
-                            Some("split the file or remove unused settings".into()),
-                        ),
-                        ReadFailure::Io(e) => fail(
-                            Code::ExtendsMissing,
-                            format!(
-                                "cannot read the extended config `{}`: {e}",
-                                safe_display(p, self.root)
-                            ),
-                            Some("paths are relative to the file that holds the entry".into()),
-                        ),
-                    })?,
-                    Key::Pack(_) => String::new(),
-                },
+                None => self.read_extended(&target, name).map_err(fail)?,
             };
-            self.load_text(&target, &shown, body, Layer::Extends)?;
+            self.reads += 1;
+            self.bytes += body.len() as u64;
+            if self.bytes > MAX_EXTENDS_BYTES {
+                return Err(fail(self.over_budget(
+                    key,
+                    display,
+                    ConfigBudget::ExtendsBytes,
+                )));
+            }
+            // Reserve the file's bytes before it loads, so its own `extends` entries see them.
+            if !self.reserve_applied(body.len() as u64) {
+                return Err(fail(self.over_applied(key, display)));
+            }
+            self.load_fresh(target, &shown, body)?;
         }
         Ok(())
     }
@@ -600,6 +807,7 @@ fn check_exclude(tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
                 span: item.span.clone(),
                 help: None,
                 path: vec!["exclude".into(), i.to_string()],
+                data: None,
             });
         }
     }
@@ -608,6 +816,27 @@ fn check_exclude(tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::presets::NoPresets;
+
+    #[test]
+    fn a_file_extended_many_times_is_read_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        for i in 0..6 {
+            let next = format!("d{}.toml", i + 1);
+            fs::write(
+                root.join(format!("d{i}.toml")),
+                format!("schema_version = 3\nextends = [\"{next}\", \"{next}\"]\n"),
+            )
+            .unwrap();
+        }
+        fs::write(root.join("d6.toml"), "schema_version = 3\n").unwrap();
+        let path = root.join("d0.toml");
+        let (config, reads) = load_counted(&path, "d0.toml", &NoPresets).unwrap();
+        // 7 files in the graph, 126 applications below the root.
+        assert_eq!(reads, 7);
+        assert_eq!(config.files.len(), 127);
+    }
 
     #[test]
     fn a_file_sharing_no_prefix_with_the_root_shows_as_external() {
