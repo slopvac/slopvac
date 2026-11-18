@@ -1,0 +1,22 @@
+{
+  "_comment": "A pin update needs the same review as a workflow change. Review the generated diff for the named job before updating its pin.",
+  "jobs": {
+    "announce": "8fd45a31e913bc3c9ea616fe7eda7c3d110b2b6edbd5330fa4e5e8555cae1c53",
+    "build-global-artifacts": "562ef33393ece284a4819450a2e3105b34a2f56bf31ddcf6930f75185d2c9603",
+    "build-local-artifacts": "8c2207e956e271ab8da69daa3f131a19e952a520f32e7bd2d4a15e8908f0e11c",
+    "custom-release-provenance": "2da912ec56871db4448bc4a84c64a3baa75e99d1fa812c7f48ad2c42cfa3fe41",
+    "host": "41a6b19e3bffd3fec27a9fc541d929c8ea862e9d74d3edf9f1eec757d047e69c",
+    "plan": "0bf83d172582fc5ba3df1fb889f265ed29576fefb350a23abc1d84b6a4e460fe",
+    "publish-homebrew-formula": "4d460a45a1058378200f89a878caa22cf91c897c5f6ce56a35203c4328e6d8c8",
+    "publish-legacy-release": "f6e7483aed717165d516df86ac190fd34304ca77a89eeb3056f7f8787d9c7b88",
+    "route": "4b0d2358b81f0d9ba0f852f5f4b8ee2a59a32d21bf17bb0a8f2c1f6614ce8237",
+    "sign": "f260ca882b0b27cf4cb66ab46effbd65b6d0e9c1d9b3afc2e4110c5d55865ff8"
+  },
+  "workflow": {
+    "_jobs_header": "2012b182a308b22cd153966064559bd30abe875313792b4e218e73cacb6e00c6",
+    "_preamble": "33c1b0d00d1dcc099f4bb224316b8bf8a52668089e935bd5273f1059cc57f9e8",
+    "name": "12eef9030d0c7029010c4635689f58328d109e6a85ed1a9245b20f3955b7db39",
+    "on": "0e4f687865c1c2cb80b1216d75abc622a7cd58081ddd33e26d3eb8226385bdc9",
+    "permissions": "57df8823e70e3e60bb962fb5b29bb202875368266a9ade97e2fe5c39e8cfb430"
+  }
+}

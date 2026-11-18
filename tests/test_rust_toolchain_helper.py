@@ -163,6 +163,7 @@ _NO_RUST_GROUPS = {
         ("release-smoke.yml", "shell-installer"),
         ("release-smoke.yml", "homebrew"),
         ("release.yml", "plan"),
+        ("release.yml", "sign"),
         ("release.yml", "host"),
         ("release.yml", "publish-homebrew-formula"),
         ("release.yml", "announce"),

@@ -133,6 +133,17 @@ A git tag name can hold `$(...)` or backticks, and the generated workflow pastes
 
 `dist-workspace.toml` sets `allow-dirty = ["ci"]` so dist accepts the hardened file. The script fails if a dist upgrade changes the template, and `tests/test_patch_release_workflow.py` hardens dist's raw output, `tests/fixtures/release.generated.yml`, and requires the result to equal the committed workflow byte for byte. After changing `dist-workspace.toml` or upgrading dist, run `scripts/dist_generate.sh --save-raw tests/fixtures/release.generated.yml` and commit both files.
 
+### Pinned jobs
+
+`scripts/release_workflow_pins.json` holds a sha256 for every job in `release.yml` and for each workflow-level block (`name`, `on` and `permissions`). Generation fails when a job changes, appears, disappears or gets a new name. It also fails when one of those blocks changes. The error names the job or block. The pins exist because no pattern list can recognize every way a shell step hides a command, so every change to the workflow needs a person to read it.
+
+When a pin fails:
+
+1. Run `git diff .github/workflows/release.yml`. The generator writes the hardened file before it checks the pins, so the diff shows the change.
+2. Read the diff for each job the error names. Treat it as you would any change to a release workflow.
+3. Run `scripts/dist_generate.sh --update-pins`. This rewrites the pin file. No other command writes it.
+4. Commit the workflow and the pin file together. After a dist upgrade, add the raw fixture.
+
 ## Publish order and recovery
 
 Each release of major 3 and later publishes in this order: build, upload to the unpublished release, provenance and tag checks, publish with attestations, then the Homebrew formula. The formula points at the release assets, so it must come last, and a push to the tap cannot be undone by the workflow. If the formula job fails, rerun that job. If a published release is bad, delete the GitHub release and the tag, then revert the commit in `slopvac/homebrew-tap` by hand. With immutable releases enabled, GitHub keeps a deleted release's tag name reserved, so the fix ships as a new version.
