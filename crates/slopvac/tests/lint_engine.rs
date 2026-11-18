@@ -916,3 +916,62 @@ fn a_png_diagram_target_is_an_unsupported_input_and_an_incomplete_run() {
         .code(2)
         .stderr(predicate::str::contains("error[input-unsupported]"));
 }
+
+const DIAGRAM_RULE: &str = "diagrams:diagram.label-run-on";
+
+#[test]
+fn a_config_can_turn_a_diagram_rule_off() {
+    let text = format!(
+        "# Title\n\nText.\n\n```mermaid\nflowchart TD\n  A[{LONG_LABEL}] --> B[End]\n```\n"
+    );
+    let config = format!("schema_version = 3\n\n[rules]\n\"{DIAGRAM_RULE}\" = \"off\"\n");
+    let (_dir, path) = project("page.md", &text, Some(&config));
+    let report = json_report(&path, &[]);
+    assert!(rule_ids(&report).is_empty(), "{report}");
+}
+
+#[test]
+fn a_config_can_name_a_diagram_category() {
+    let text = format!(
+        "# Title\n\nText.\n\n```mermaid\nflowchart TD\n  A[{LONG_LABEL}] --> B[End]\n```\n"
+    );
+    let config = "schema_version = 3\n\n[categories]\ndiagram = \"off\"\n";
+    let (_dir, path) = project("page.md", &text, Some(config));
+    let report = json_report(&path, &[]);
+    assert!(rule_ids(&report).is_empty(), "{report}");
+}
+
+#[test]
+fn rules_lists_the_diagram_rules_with_the_configured_severity() {
+    let (dir, _path) = project(
+        "page.md",
+        CLEAN,
+        Some(&format!(
+            "schema_version = 3\n\n[rules]\n\"{DIAGRAM_RULE}\" = \"error\"\n"
+        )),
+    );
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["rules", "--format", "json"])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(0));
+    let listed: Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    let rule = listed["rules"]
+        .as_array()
+        .expect("rules")
+        .iter()
+        .find(|r| r["id"] == DIAGRAM_RULE)
+        .expect("the diagram rule is listed");
+    assert_eq!(rule["category"], "diagram");
+    assert_eq!(rule["effective_severity"], "error");
+}
+
+#[test]
+fn explain_finds_a_diagram_rule() {
+    slopvac()
+        .args(["explain", DIAGRAM_RULE])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(DIAGRAM_RULE));
+}

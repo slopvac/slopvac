@@ -22,7 +22,7 @@ use slopvac_styles::{BuiltinSource, StylePresets};
 use crate::errors::CliError;
 use crate::lint_settings::{self, Overrides};
 use crate::redact;
-use crate::rule_catalog;
+use crate::rule_catalog::Catalog;
 use crate::stdin::StdinPlan;
 use crate::summary::summarize;
 
@@ -269,7 +269,7 @@ impl Linter for EngineLinter {
                 }
             }
         }
-        let rules = match rule_catalog::core() {
+        let rules = match Catalog::load() {
             Ok(rules) => rules,
             Err(err) => return failed(request, run, &err),
         };
@@ -289,7 +289,7 @@ impl Linter for EngineLinter {
 fn validate_configs(
     request: &LintRequest,
     configs: &Configs<'_>,
-    rules: &slopvac_rules::RuleSet,
+    rules: &Catalog,
 ) -> Result<(), CliError> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if request.stdin.is_some() {
@@ -584,7 +584,7 @@ type Groups = BTreeMap<String, (slopvac_engine::Settings, Vec<usize>)>;
 fn group_by_settings(
     request: &LintRequest,
     items: &[Item],
-    rules: &slopvac_rules::RuleSet,
+    rules: &Catalog,
 ) -> Result<Groups, CliError> {
     let mut groups = Groups::new();
     let none = LoadedConfig::without_files(request.root.clone());
@@ -636,12 +636,7 @@ fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
     roots
 }
 
-fn lint_items(
-    request: &LintRequest,
-    items: Vec<Item>,
-    rules: slopvac_rules::RuleSet,
-    mut run: Run,
-) -> RunOutcome {
+fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: Run) -> RunOutcome {
     let groups = match group_by_settings(request, &items, &rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
@@ -650,18 +645,14 @@ fn lint_items(
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
     let mut spare = Some(rules);
     for (settings, indexes) in groups.into_values() {
-        // The engine owns its rule set, and a set does not clone: reload it for later groups.
-        let set = match spare.take().map_or_else(rule_catalog::core, Ok) {
-            Ok(set) => set,
+        // The engine owns its rule sets, and a set does not clone: reload them for later
+        // groups. They include the diagram rules, which check the labels in diagram files and in
+        // fenced diagrams. Without them a diagram would pass with its text unread.
+        let sets = match spare.take().map_or_else(Catalog::load, Ok) {
+            Ok(catalog) => catalog.into_sets(),
             Err(err) => return failed(request, run, &err),
         };
-        // The diagram rules check the labels in diagram files and in fenced diagrams. Without
-        // them a diagram would pass with its text unread.
-        let diagrams = match rule_catalog::diagrams() {
-            Ok(set) => set,
-            Err(err) => return failed(request, run, &err),
-        };
-        let engine = match Engine::new(vec![set, diagrams], settings) {
+        let engine = match Engine::new(sets, settings) {
             Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
             Err(err) => {
                 return failed(
@@ -721,10 +712,8 @@ fn lint_items(
 ///
 /// # Errors
 /// The config error, or `rules-unavailable`.
-pub fn project_settings(
-    root: &Path,
-) -> Result<(slopvac_rules::RuleSet, slopvac_engine::Settings), CliError> {
-    let rules = rule_catalog::core()?;
+pub fn project_settings(root: &Path) -> Result<(Catalog, slopvac_engine::Settings), CliError> {
+    let rules = Catalog::load()?;
     let presets = StylePresets(BuiltinSource);
     let discovery = Discovery::new(&presets);
     let found = discovery

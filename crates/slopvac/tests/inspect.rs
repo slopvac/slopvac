@@ -45,11 +45,12 @@ fn json(args: &[&str]) -> Value {
 const CHAT_LEAKAGE: &str = "core:ai-residue.chat-leakage";
 
 #[test]
-fn rules_lists_every_core_rule_with_a_count_line() {
+fn rules_lists_every_core_and_diagram_rule_with_a_count_line() {
+    // 237 core rules in 26 categories, and the 8 rules of the diagram category.
     let text = stdout(&["rules"]);
-    assert_eq!(text.lines().count(), 238, "237 rules and the count line");
+    assert_eq!(text.lines().count(), 246, "245 rules and the count line");
     assert!(
-        text.ends_with("237 rule(s) in 26 category(ies)\n"),
+        text.ends_with("245 rule(s) in 27 category(ies)\n"),
         "{text}"
     );
 }
@@ -87,14 +88,16 @@ fn category_may_repeat() {
 
 #[test]
 fn kind_filter_counts_match_the_data() {
+    // 68 core judgement rules and the 3 judgement rules of the diagram pack.
     let v = json(&["rules", "--kind", "judgement", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 68);
+    assert_eq!(v["rules"].as_array().unwrap().len(), 71);
 }
 
 #[test]
 fn genre_keeps_only_rules_in_categories_recommended_for_it() {
+    // 232 core rules and the 8 rules of the diagram pack, which suits `consumer`.
     let v = json(&["rules", "--genre", "consumer", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 232);
+    assert_eq!(v["rules"].as_array().unwrap().len(), 240);
 }
 
 #[test]
@@ -107,7 +110,7 @@ fn a_genre_no_category_recommends_lists_nothing() {
 fn rules_json_has_pack_categories_and_linked_rules() {
     let v = json(&["rules", "--format", "json"]);
     assert_eq!(v["pack"], "core");
-    assert_eq!(v["categories"].as_array().unwrap().len(), 26);
+    assert_eq!(v["categories"].as_array().unwrap().len(), 27);
     let rule = &v["rules"][0];
     assert_eq!(rule["id"], CHAT_LEAKAGE);
     assert_eq!(rule["category"], "ai-residue");
