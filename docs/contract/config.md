@@ -47,7 +47,7 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 
 `guidance`, `network`, `review`, `plugins`, `styles`, `extends`, `frontmatter`, `mode` and `exclude` apply to the whole run or to file selection. They are not part of the `Settings` patch. An `[[overrides]]` or `[[genres]]` block that names one is an error, and so is a front matter field of that name. 2.x already rejected `guidance` in an override (`Override._reject_guidance`). 3.0 extends the rule to the other tables.
 
-### 1.3.1 Plugins
+#### 1.3.1 Plugins
 
 `[[plugins]]` lists every data plugin and code plugin that the project uses, in one array. Each entry has `id`, `source` and an optional `version` requirement. The config does not state the kind: the plugin manifest declares it, and the lockfile records it (plugins.md, section 2).
 
