@@ -1161,8 +1161,30 @@
     },
     "normal/issue-256": {
       "document": {
+        "categories": {
+          "docs-discipline": {
+            "budget": 0.5,
+            "category": "docs-discipline",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          }
+        },
         "paragraphs": 2,
+        "prose": {
+          "errors": 0,
+          "findings": 0,
+          "per_100_words": 0.0,
+          "warnings": 0
+        },
+        "score": 100.0,
         "sentences": 4,
+        "total_findings": 0,
         "words": 33
       },
       "exit": 2,
@@ -2344,12 +2366,12 @@
             "budget": 1.0,
             "category": "ste-procedural",
             "errors": 0,
-            "findings": 5,
+            "findings": 4,
             "gating_per_100_words": 0.014,
             "over_budget": false,
-            "per_100_words": 0.138,
-            "score": 99.3,
-            "suggestions": 4,
+            "per_100_words": 0.11,
+            "score": 99.4,
+            "suggestions": 3,
             "warnings": 1
           },
           "ste-words": {
@@ -2365,16 +2387,16 @@
             "warnings": 4
           }
         },
-        "per_100_words": 3.645,
+        "per_100_words": 3.618,
         "prose": {
           "errors": 0,
-          "findings": 124,
-          "per_100_words": 3.424,
+          "findings": 123,
+          "per_100_words": 3.397,
           "warnings": 46
         },
-        "score": 87.3,
-        "suggestions": 80,
-        "total_findings": 132,
+        "score": 87.4,
+        "suggestions": 79,
+        "total_findings": 131,
         "warnings": 52
       },
       "exit": 2,
@@ -2787,20 +2809,6 @@
         {
           "ai_signal": "none",
           "category": "ste-procedural",
-          "column": 11,
-          "end_column": null,
-          "end_line": null,
-          "line": 281,
-          "matched_text": "Use `yolo` if the main agent must run them unattended.",
-          "message": "The condition follows the command (\"Use `yolo` if the main agent must run them unattended.\"). Put the condition first.",
-          "replacement": null,
-          "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "suggestion",
-          "span": null
-        },
-        {
-          "ai_signal": "none",
-          "category": "ste-procedural",
           "column": 69,
           "end_column": 18,
           "end_line": 38,
@@ -3130,14 +3138,6 @@
           "column": 1,
           "line": 42,
           "matched_text": "Pass ***************** when you start *******, *******, *******, or *********.",
-          "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "suggestion"
-        },
-        {
-          "category": "ste-procedural",
-          "column": 11,
-          "line": 281,
-          "matched_text": "Use **** if the main agent must run them unattended.",
           "rule_id": "core:ste-procedural.condition-after-command",
           "severity": "suggestion"
         },
@@ -5356,7 +5356,7 @@
           "message": "The condition follows the command (\"Choose `auto` when you want the checker to block findings.\"). Put the condition first.",
           "replacement": null,
           "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "error",
+          "severity": "suggestion",
           "span": null
         }
       ],
@@ -5367,7 +5367,7 @@
           "line": 13,
           "matched_text": "Choose **** when you want the checker to block findings.",
           "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "error"
+          "severity": "suggestion"
         }
       ],
       "unchecked": [
@@ -5384,8 +5384,35 @@
     },
     "strict/issue-256": {
       "document": {
+        "categories": {
+          "docs-discipline": {
+            "budget": 0.2,
+            "category": "docs-discipline",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          }
+        },
+        "errors": 0,
+        "gate": {
+          "passed": true,
+          "reasons": []
+        },
         "paragraphs": 2,
+        "prose": {
+          "errors": 0,
+          "findings": 0,
+          "per_100_words": 0.0,
+          "warnings": 0
+        },
+        "score": 100.0,
         "sentences": 4,
+        "total_findings": 0,
         "words": 33
       },
       "exit": 2,
@@ -5603,22 +5630,22 @@
           "ste-procedural": {
             "budget": 0.4,
             "category": "ste-procedural",
-            "errors": 1,
+            "errors": 0,
             "findings": 1,
-            "gating_per_100_words": 0.372,
+            "gating_per_100_words": -0.0,
             "over_budget": false,
             "per_100_words": 0.372,
-            "score": 72.1,
-            "suggestions": 0,
+            "score": 99.1,
+            "suggestions": 1,
             "warnings": 0
           }
         },
-        "errors": 33,
+        "errors": 32,
         "gate": {
           "passed": false,
           "reasons": [
-            "33 error(s), limit 0",
-            "13.57 severity-weighted findings per 100 words, budget 1.5",
+            "32 error(s), limit 0",
+            "13.20 severity-weighted findings per 100 words, budget 1.5",
             "score 0.0, minimum 85.0",
             "prose-discipline at 5.95 severity-weighted findings per 100 words, budget 0.4",
             "prose-inflation at 1.11 severity-weighted findings per 100 words, budget 0.3",
@@ -5629,7 +5656,7 @@
         },
         "per_100_words": 15.242,
         "prose": {
-          "errors": 33,
+          "errors": 32,
           "findings": 41,
           "per_100_words": 15.242,
           "warnings": 7
@@ -5955,26 +5982,26 @@
           "ste-procedural": {
             "budget": 0.4,
             "category": "ste-procedural",
-            "errors": 7,
+            "errors": 5,
             "findings": 7,
-            "gating_per_100_words": 2.622,
+            "gating_per_100_words": 1.873,
             "over_budget": true,
             "per_100_words": 2.622,
             "score": 0.0,
-            "suggestions": 0,
+            "suggestions": 2,
             "warnings": 0
           }
         },
-        "errors": 28,
+        "errors": 26,
         "gate": {
           "passed": false,
           "reasons": [
-            "28 error(s), limit 0",
-            "11.80 severity-weighted findings per 100 words, budget 1.5",
+            "26 error(s), limit 0",
+            "11.05 severity-weighted findings per 100 words, budget 1.5",
             "score 0.0, minimum 85.0",
             "prose-craft at 1.31 severity-weighted findings per 100 words, budget 0.8",
             "prose-inflation at 0.75 severity-weighted findings per 100 words, budget 0.3",
-            "ste-procedural at 2.62 severity-weighted findings per 100 words, budget 0.4",
+            "ste-procedural at 1.87 severity-weighted findings per 100 words, budget 0.4",
             "ste-sentences at 1.87 severity-weighted findings per 100 words, budget 0.5",
             "ste-verbs at 0.75 severity-weighted findings per 100 words, budget 0.4",
             "ste-words at 4.12 severity-weighted findings per 100 words, budget 0.5"
@@ -5982,7 +6009,7 @@
         },
         "per_100_words": 13.109,
         "prose": {
-          "errors": 28,
+          "errors": 26,
           "findings": 35,
           "per_100_words": 13.109,
           "warnings": 7
@@ -6611,13 +6638,13 @@
           "ste-procedural": {
             "budget": 0.4,
             "category": "ste-procedural",
-            "errors": 5,
-            "findings": 5,
-            "gating_per_100_words": 0.138,
+            "errors": 1,
+            "findings": 4,
+            "gating_per_100_words": 0.028,
             "over_budget": false,
-            "per_100_words": 0.138,
-            "score": 89.6,
-            "suggestions": 0,
+            "per_100_words": 0.11,
+            "score": 97.7,
+            "suggestions": 3,
             "warnings": 0
           },
           "ste-words": {
@@ -6633,26 +6660,26 @@
             "warnings": 0
           }
         },
-        "errors": 78,
+        "errors": 74,
         "gate": {
           "passed": false,
           "reasons": [
-            "78 error(s), limit 0",
-            "2.90 severity-weighted findings per 100 words, budget 1.5",
-            "score 48.2, minimum 85.0",
+            "74 error(s), limit 0",
+            "2.79 severity-weighted findings per 100 words, budget 1.5",
+            "score 49.7, minimum 85.0",
             "ste-descriptive at 0.47 severity-weighted findings per 100 words, budget 0.4",
             "ste-verbs at 0.69 severity-weighted findings per 100 words, budget 0.4"
           ]
         },
-        "per_100_words": 3.645,
+        "per_100_words": 3.618,
         "prose": {
-          "errors": 76,
-          "findings": 124,
-          "per_100_words": 3.424,
+          "errors": 72,
+          "findings": 123,
+          "per_100_words": 3.397,
           "warnings": 48
         },
-        "score": 48.2,
-        "total_findings": 132,
+        "score": 49.7,
+        "total_findings": 131,
         "warnings": 54
       },
       "exit": 2,
@@ -7059,21 +7086,7 @@
           "message": "The condition follows the command (\"Pass `--permission-mode` when you start `mecated`, `mecatui`, `mecak8s`, or\n`mecatequi`.\"). Put the condition first.",
           "replacement": null,
           "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "error",
-          "span": null
-        },
-        {
-          "ai_signal": "none",
-          "category": "ste-procedural",
-          "column": 11,
-          "end_column": null,
-          "end_line": null,
-          "line": 281,
-          "matched_text": "Use `yolo` if the main agent must run them unattended.",
-          "message": "The condition follows the command (\"Use `yolo` if the main agent must run them unattended.\"). Put the condition first.",
-          "replacement": null,
-          "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "error",
+          "severity": "suggestion",
           "span": null
         },
         {
@@ -7087,7 +7100,7 @@
           "message": "The condition follows the command (\"For headless servers and one-shot jobs, configure the permissions required by the workload before it starts.\"). Put the condition first.",
           "replacement": null,
           "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "error",
+          "severity": "suggestion",
           "span": {
             "end": 1615,
             "start": 1507
@@ -7104,7 +7117,7 @@
           "message": "The condition follows the command (\"Choose\n`auto` when you want the checker to block findings.\"). Put the condition first.",
           "replacement": null,
           "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "error",
+          "severity": "suggestion",
           "span": null
         },
         {
@@ -7409,15 +7422,7 @@
           "line": 42,
           "matched_text": "Pass ***************** when you start *******, *******, *******, or *********.",
           "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "error"
-        },
-        {
-          "category": "ste-procedural",
-          "column": 11,
-          "line": 281,
-          "matched_text": "Use **** if the main agent must run them unattended.",
-          "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "error"
+          "severity": "suggestion"
         },
         {
           "category": "ste-procedural",
@@ -7441,7 +7446,7 @@
           "line": 36,
           "matched_text": "For headless\nservers and one-shot jobs, configure the permissions required by the workload\nbefore it starts.",
           "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "error"
+          "severity": "suggestion"
         },
         {
           "category": "ste-procedural",
@@ -7457,7 +7462,7 @@
           "line": 212,
           "matched_text": "Choose **** when you want the checker to block findings.",
           "rule_id": "core:ste-procedural.condition-after-command",
-          "severity": "error"
+          "severity": "suggestion"
         },
         {
           "category": "ste-sentences",

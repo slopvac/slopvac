@@ -291,3 +291,229 @@ document = { total_findings = 1, warnings = 0, score = 97.5, categories = [
   { category = "ste-verbs", findings = 0, errors = 0, warnings = 0, suggestions = 0, per_100_words = 0.0, gating_per_100_words = 0.0, budget = 1.0, score = 100.0, over_budget = false },
   { category = "ste-words", findings = 0, errors = 0, warnings = 0, suggestions = 0, per_100_words = 0.0, gating_per_100_words = 0.0, budget = 1.5, score = 100.0, over_budget = false },
 ], prose = { findings = 1, errors = 0, warnings = 0, per_100_words = 0.0 } }
+
+# --- slopvac-8l4.6.5: condition-after-command skips the change-note context.
+# Each delta lists the document aggregates that the removed finding moves, with full values.
+# The run table sits on the issue-256 delta of each profile and holds the full values of the
+# prose:markdown group summary, which sums every markdown input.
+
+[[delta]]
+input = "issue-256"
+profile = "normal"
+kind = "removed"
+rule_id = "core:ste-procedural.condition-after-command"
+line = 7
+column = 66
+reason = "The change-note context gates the rule."
+approved_by = "pending-review"
+modes = ["parity", "preserve", "policy"]
+document = { "categories" = [
+  { "budget" = 0.0, "category" = "ai-residue", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.6, "category" = "ai-tells-agentic", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "ai-tells-content-shape", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.8, "category" = "ai-tells-figurative", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.0, "category" = "ai-tells-formatting", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.6, "category" = "ai-tells-register", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.6, "category" = "ai-tells-structure", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "docs-discipline", "errors" = 0, "findings" = 1, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 90.0, "suggestions" = 0, "warnings" = 1 },
+  { "budget" = 0.8, "category" = "orwell", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.8, "category" = "prose-agency", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.5, "category" = "prose-craft", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.8, "category" = "prose-discipline", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "prose-format", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.0, "category" = "prose-inclusive", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.6, "category" = "prose-inflation", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "prose-promotion", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.6, "category" = "prose-scope", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.0, "category" = "ste-descriptive", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.0, "category" = "ste-nouns", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.5, "category" = "ste-practices", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.0, "category" = "ste-procedural", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.5, "category" = "ste-punctuation", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.0, "category" = "ste-safety", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.5, "category" = "ste-sentences", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.0, "category" = "ste-verbs", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.5, "category" = "ste-words", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+], "prose" = { "errors" = 0, "findings" = 1, "per_100_words" = 0.0, "warnings" = 1 }, "score" = 90.0, "suggestions" = 0, "total_findings" = 1 }
+run = { group = "prose:markdown", summary = { "categories" = [
+  { "category" = "ai-residue", "errors" = 3, "findings" = 3, "per_100_words" = 0.019, "score" = 98.7, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ai-tells-agentic", "errors" = 0, "findings" = 3, "per_100_words" = 0.019, "score" = 99.4, "suggestions" = 0, "warnings" = 3 },
+  { "category" = "ai-tells-content-shape", "errors" = 6, "findings" = 13, "per_100_words" = 0.084, "score" = 97.3, "suggestions" = 7, "warnings" = 0 },
+  { "category" = "ai-tells-figurative", "errors" = 0, "findings" = 18, "per_100_words" = 0.117, "score" = 97.9, "suggestions" = 0, "warnings" = 18 },
+  { "category" = "ai-tells-formatting", "errors" = 0, "findings" = 25, "per_100_words" = 0.162, "score" = 97.6, "suggestions" = 20, "warnings" = 5 },
+  { "category" = "ai-tells-register", "errors" = 14, "findings" = 14, "per_100_words" = 0.091, "score" = 97.9, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ai-tells-structure", "errors" = 24, "findings" = 70, "per_100_words" = 0.454, "score" = 95.8, "suggestions" = 17, "warnings" = 29 },
+  { "category" = "docs-discipline", "errors" = 0, "findings" = 36, "per_100_words" = 0.233, "score" = 94.4, "suggestions" = 0, "warnings" = 36 },
+  { "category" = "orwell", "errors" = 11, "findings" = 16, "per_100_words" = 0.104, "score" = 95.9, "suggestions" = 0, "warnings" = 5 },
+  { "category" = "prose-agency", "errors" = 0, "findings" = 17, "per_100_words" = 0.11, "score" = 97.8, "suggestions" = 0, "warnings" = 17 },
+  { "category" = "prose-craft", "errors" = 0, "findings" = 146, "per_100_words" = 0.946, "score" = 94.3, "suggestions" = 93, "warnings" = 53 },
+  { "category" = "prose-discipline", "errors" = 24, "findings" = 24, "per_100_words" = 0.155, "score" = 95.4, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-format", "errors" = 6, "findings" = 6, "per_100_words" = 0.039, "score" = 97.0, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-inclusive", "errors" = 0, "findings" = 0, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-inflation", "errors" = 29, "findings" = 42, "per_100_words" = 0.272, "score" = 92.2, "suggestions" = 13, "warnings" = 0 },
+  { "category" = "prose-promotion", "errors" = 11, "findings" = 11, "per_100_words" = 0.071, "score" = 97.9, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-scope", "errors" = 0, "findings" = 14, "per_100_words" = 0.091, "score" = 96.5, "suggestions" = 2, "warnings" = 12 },
+  { "category" = "ste-descriptive", "errors" = 0, "findings" = 45, "per_100_words" = 0.292, "score" = 97.0, "suggestions" = 0, "warnings" = 45 },
+  { "category" = "ste-nouns", "errors" = 0, "findings" = 19, "per_100_words" = 0.123, "score" = 99.7, "suggestions" = 19, "warnings" = 0 },
+  { "category" = "ste-practices", "errors" = 0, "findings" = 29, "per_100_words" = 0.188, "score" = 99.5, "suggestions" = 29, "warnings" = 0 },
+  { "category" = "ste-procedural", "errors" = 0, "findings" = 71, "per_100_words" = 0.46, "score" = 95.6, "suggestions" = 31, "warnings" = 40 },
+  { "category" = "ste-punctuation", "errors" = 0, "findings" = 94, "per_100_words" = 0.609, "score" = 99.0, "suggestions" = 94, "warnings" = 0 },
+  { "category" = "ste-safety", "errors" = 2, "findings" = 2, "per_100_words" = 0.013, "score" = 97.9, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ste-sentences", "errors" = 0, "findings" = 80, "per_100_words" = 0.518, "score" = 98.2, "suggestions" = 43, "warnings" = 37 },
+  { "category" = "ste-verbs", "errors" = 0, "findings" = 159, "per_100_words" = 1.03, "score" = 97.4, "suggestions" = 159, "warnings" = 0 },
+  { "category" = "ste-words", "errors" = 0, "findings" = 54, "per_100_words" = 0.35, "score" = 97.0, "suggestions" = 15, "warnings" = 39 },
+], "findings" = 1011, "per_100_words" = 6.55, "prose" = { "errors" = 86, "findings" = 868, "per_100_words" = 5.624, "warnings" = 284 }, "suggestions" = 542 } }
+
+[[delta]]
+input = "issue-256"
+profile = "strict"
+kind = "removed"
+rule_id = "core:ste-procedural.condition-after-command"
+line = 7
+column = 66
+reason = "The change-note context gates the rule."
+approved_by = "pending-review"
+modes = ["parity", "preserve", "policy"]
+document = { "categories" = [
+  { "budget" = 0.0, "category" = "ai-residue", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "ai-tells-agentic", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.2, "category" = "ai-tells-content-shape", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "ai-tells-figurative", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "ai-tells-formatting", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "ai-tells-register", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "ai-tells-structure", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.2, "category" = "docs-discipline", "errors" = 1, "findings" = 1, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 80.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "orwell", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "prose-agency", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.8, "category" = "prose-craft", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "prose-discipline", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.2, "category" = "prose-format", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.0, "category" = "prose-inclusive", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "prose-inflation", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.2, "category" = "prose-promotion", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "prose-scope", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "ste-descriptive", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "ste-nouns", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "ste-practices", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "ste-procedural", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "ste-punctuation", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.0, "category" = "ste-safety", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "ste-sentences", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "ste-verbs", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "ste-words", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+], "gate" = { "passed" = false, "reasons" = [
+  "1 error(s), limit 0",
+  "score 80.0, minimum 85.0",
+] }, "prose" = { "errors" = 1, "findings" = 1, "per_100_words" = 0.0, "warnings" = 0 }, "score" = 80.0, "suggestions" = 0, "total_findings" = 1 }
+run = { group = "prose:markdown", summary = { "categories" = [
+  { "category" = "ai-residue", "errors" = 3, "findings" = 3, "per_100_words" = 0.019, "score" = 98.7, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ai-tells-agentic", "errors" = 0, "findings" = 3, "per_100_words" = 0.019, "score" = 99.4, "suggestions" = 0, "warnings" = 3 },
+  { "category" = "ai-tells-content-shape", "errors" = 13, "findings" = 13, "per_100_words" = 0.084, "score" = 96.9, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ai-tells-figurative", "errors" = 0, "findings" = 18, "per_100_words" = 0.117, "score" = 97.9, "suggestions" = 0, "warnings" = 18 },
+  { "category" = "ai-tells-formatting", "errors" = 0, "findings" = 25, "per_100_words" = 0.162, "score" = 95.6, "suggestions" = 17, "warnings" = 8 },
+  { "category" = "ai-tells-register", "errors" = 14, "findings" = 14, "per_100_words" = 0.091, "score" = 97.9, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ai-tells-structure", "errors" = 32, "findings" = 70, "per_100_words" = 0.454, "score" = 91.9, "suggestions" = 3, "warnings" = 35 },
+  { "category" = "docs-discipline", "errors" = 36, "findings" = 36, "per_100_words" = 0.233, "score" = 88.4, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "orwell", "errors" = 16, "findings" = 16, "per_100_words" = 0.104, "score" = 93.5, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-agency", "errors" = 17, "findings" = 17, "per_100_words" = 0.11, "score" = 97.7, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-craft", "errors" = 0, "findings" = 148, "per_100_words" = 0.959, "score" = 82.2, "suggestions" = 3, "warnings" = 145 },
+  { "category" = "prose-discipline", "errors" = 24, "findings" = 24, "per_100_words" = 0.155, "score" = 93.3, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-format", "errors" = 6, "findings" = 6, "per_100_words" = 0.039, "score" = 97.0, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-inclusive", "errors" = 0, "findings" = 0, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-inflation", "errors" = 42, "findings" = 42, "per_100_words" = 0.272, "score" = 81.9, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-promotion", "errors" = 11, "findings" = 11, "per_100_words" = 0.071, "score" = 97.9, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "prose-scope", "errors" = 14, "findings" = 14, "per_100_words" = 0.091, "score" = 93.2, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ste-descriptive", "errors" = 45, "findings" = 45, "per_100_words" = 0.292, "score" = 86.6, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ste-nouns", "errors" = 19, "findings" = 19, "per_100_words" = 0.123, "score" = 94.6, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ste-practices", "errors" = 0, "findings" = 41, "per_100_words" = 0.266, "score" = 94.9, "suggestions" = 14, "warnings" = 27 },
+  { "category" = "ste-procedural", "errors" = 40, "findings" = 71, "per_100_words" = 0.46, "score" = 84.8, "suggestions" = 31, "warnings" = 0 },
+  { "category" = "ste-punctuation", "errors" = 0, "findings" = 94, "per_100_words" = 0.609, "score" = 89.5, "suggestions" = 0, "warnings" = 94 },
+  { "category" = "ste-safety", "errors" = 2, "findings" = 2, "per_100_words" = 0.013, "score" = 97.9, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ste-sentences", "errors" = 80, "findings" = 80, "per_100_words" = 0.518, "score" = 79.5, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ste-verbs", "errors" = 159, "findings" = 159, "per_100_words" = 1.03, "score" = 53.9, "suggestions" = 0, "warnings" = 0 },
+  { "category" = "ste-words", "errors" = 54, "findings" = 54, "per_100_words" = 0.35, "score" = 85.2, "suggestions" = 0, "warnings" = 0 },
+], "findings" = 1025, "per_100_words" = 6.641, "prose" = { "errors" = 568, "findings" = 882, "per_100_words" = 5.714, "warnings" = 266 }, "suggestions" = 68 } }
+
+[[delta]]
+input = "stacklok-before"
+profile = "normal"
+kind = "removed"
+rule_id = "core:ste-procedural.condition-after-command"
+line = 281
+column = 11
+reason = "The change-note context gates the rule."
+approved_by = "pending-review"
+modes = ["parity", "preserve", "policy"]
+document = { "categories" = [
+  { "budget" = 0.0, "category" = "ai-residue", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.6, "category" = "ai-tells-agentic", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "ai-tells-content-shape", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.8, "category" = "ai-tells-figurative", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.0, "category" = "ai-tells-formatting", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.6, "category" = "ai-tells-register", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.6, "category" = "ai-tells-structure", "errors" = 0, "findings" = 8, "gating_per_100_words" = 0.083, "over_budget" = false, "per_100_words" = 0.221, "score" = 95.7, "suggestions" = 2, "warnings" = 6 },
+  { "budget" = 0.5, "category" = "docs-discipline", "errors" = 0, "findings" = 4, "gating_per_100_words" = 0.055, "over_budget" = false, "per_100_words" = 0.11, "score" = 96.7, "suggestions" = 0, "warnings" = 4 },
+  { "budget" = 0.8, "category" = "orwell", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.8, "category" = "prose-agency", "errors" = 0, "findings" = 1, "gating_per_100_words" = 0.014, "over_budget" = false, "per_100_words" = 0.028, "score" = 99.5, "suggestions" = 0, "warnings" = 1 },
+  { "budget" = 1.5, "category" = "prose-craft", "errors" = 0, "findings" = 6, "gating_per_100_words" = 0.055, "over_budget" = false, "per_100_words" = 0.166, "score" = 98.8, "suggestions" = 2, "warnings" = 4 },
+  { "budget" = 0.8, "category" = "prose-discipline", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "prose-format", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.0, "category" = "prose-inclusive", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.6, "category" = "prose-inflation", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "prose-promotion", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.6, "category" = "prose-scope", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.0, "category" = "ste-descriptive", "errors" = 0, "findings" = 17, "gating_per_100_words" = 0.235, "over_budget" = false, "per_100_words" = 0.469, "score" = 93.0, "suggestions" = 0, "warnings" = 17 },
+  { "budget" = 1.0, "category" = "ste-nouns", "errors" = 0, "findings" = 7, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.193, "score" = 99.5, "suggestions" = 7, "warnings" = 0 },
+  { "budget" = 1.5, "category" = "ste-practices", "errors" = 0, "findings" = 3, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.083, "score" = 99.8, "suggestions" = 3, "warnings" = 0 },
+  { "budget" = 1.0, "category" = "ste-procedural", "errors" = 0, "findings" = 7, "gating_per_100_words" = 0.055, "over_budget" = false, "per_100_words" = 0.193, "score" = 98.1, "suggestions" = 3, "warnings" = 4 },
+  { "budget" = 1.5, "category" = "ste-punctuation", "errors" = 0, "findings" = 35, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.967, "score" = 97.6, "suggestions" = 35, "warnings" = 0 },
+  { "budget" = 0.0, "category" = "ste-safety", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 1.5, "category" = "ste-sentences", "errors" = 0, "findings" = 14, "gating_per_100_words" = 0.193, "over_budget" = false, "per_100_words" = 0.387, "score" = 96.1, "suggestions" = 0, "warnings" = 14 },
+  { "budget" = 1.0, "category" = "ste-verbs", "errors" = 0, "findings" = 25, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.69, "score" = 98.3, "suggestions" = 25, "warnings" = 0 },
+  { "budget" = 1.5, "category" = "ste-words", "errors" = 0, "findings" = 8, "gating_per_100_words" = 0.097, "over_budget" = false, "per_100_words" = 0.221, "score" = 98.0, "suggestions" = 1, "warnings" = 7 },
+], "per_100_words" = 3.728, "prose" = { "errors" = 0, "findings" = 127, "per_100_words" = 3.507, "warnings" = 51 }, "suggestions" = 78, "total_findings" = 135 }
+
+[[delta]]
+input = "stacklok-before"
+profile = "strict"
+kind = "removed"
+rule_id = "core:ste-procedural.condition-after-command"
+line = 281
+column = 11
+reason = "The change-note context gates the rule."
+approved_by = "pending-review"
+modes = ["parity", "preserve", "policy"]
+document = { "categories" = [
+  { "budget" = 0.0, "category" = "ai-residue", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "ai-tells-agentic", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.2, "category" = "ai-tells-content-shape", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "ai-tells-figurative", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "ai-tells-formatting", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "ai-tells-register", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "ai-tells-structure", "errors" = 2, "findings" = 8, "gating_per_100_words" = 0.138, "over_budget" = false, "per_100_words" = 0.221, "score" = 86.2, "suggestions" = 0, "warnings" = 6 },
+  { "budget" = 0.2, "category" = "docs-discipline", "errors" = 4, "findings" = 4, "gating_per_100_words" = 0.11, "over_budget" = false, "per_100_words" = 0.11, "score" = 83.4, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "orwell", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "prose-agency", "errors" = 1, "findings" = 1, "gating_per_100_words" = 0.028, "over_budget" = false, "per_100_words" = 0.028, "score" = 97.9, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.8, "category" = "prose-craft", "errors" = 0, "findings" = 6, "gating_per_100_words" = 0.083, "over_budget" = false, "per_100_words" = 0.166, "score" = 96.9, "suggestions" = 0, "warnings" = 6 },
+  { "budget" = 0.4, "category" = "prose-discipline", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.2, "category" = "prose-format", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.0, "category" = "prose-inclusive", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "prose-inflation", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.2, "category" = "prose-promotion", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "prose-scope", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "ste-descriptive", "errors" = 17, "findings" = 17, "gating_per_100_words" = 0.469, "over_budget" = true, "per_100_words" = 0.469, "score" = 65.9, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.3, "category" = "ste-nouns", "errors" = 7, "findings" = 7, "gating_per_100_words" = 0.193, "over_budget" = false, "per_100_words" = 0.193, "score" = 80.7, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "ste-practices", "errors" = 0, "findings" = 3, "gating_per_100_words" = 0.041, "over_budget" = false, "per_100_words" = 0.083, "score" = 97.5, "suggestions" = 0, "warnings" = 3 },
+  { "budget" = 0.4, "category" = "ste-procedural", "errors" = 4, "findings" = 7, "gating_per_100_words" = 0.11, "over_budget" = false, "per_100_words" = 0.193, "score" = 91.5, "suggestions" = 3, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "ste-punctuation", "errors" = 0, "findings" = 35, "gating_per_100_words" = 0.483, "over_budget" = false, "per_100_words" = 0.967, "score" = 71.0, "suggestions" = 0, "warnings" = 35 },
+  { "budget" = 0.0, "category" = "ste-safety", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "ste-sentences", "errors" = 14, "findings" = 14, "gating_per_100_words" = 0.387, "over_budget" = false, "per_100_words" = 0.387, "score" = 76.8, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.4, "category" = "ste-verbs", "errors" = 25, "findings" = 25, "gating_per_100_words" = 0.69, "over_budget" = true, "per_100_words" = 0.69, "score" = 53.1, "suggestions" = 0, "warnings" = 0 },
+  { "budget" = 0.5, "category" = "ste-words", "errors" = 8, "findings" = 8, "gating_per_100_words" = 0.221, "over_budget" = false, "per_100_words" = 0.221, "score" = 86.7, "suggestions" = 0, "warnings" = 0 },
+], "gate" = { "passed" = false, "reasons" = [
+  "82 error(s), limit 0",
+  "2.95 severity-weighted findings per 100 words, budget 1.5",
+  "score 47.2, minimum 85.0",
+  "ste-descriptive at 0.47 severity-weighted findings per 100 words, budget 0.4",
+  "ste-verbs at 0.69 severity-weighted findings per 100 words, budget 0.4",
+] }, "per_100_words" = 3.728, "prose" = { "errors" = 80, "findings" = 127, "per_100_words" = 3.507, "warnings" = 44 }, "score" = 47.2, "suggestions" = 3, "total_findings" = 135 }
