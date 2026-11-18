@@ -533,3 +533,19 @@ mod unix {
         assert_eq!(read(&secret), DOC);
     }
 }
+
+#[rstest::rstest]
+#[case::outside_root(Refusal::OutsideRoot, "fix-outside-root")]
+#[case::symlink(Refusal::Symlink, "fix-symlink")]
+#[case::not_regular(Refusal::NotRegular, "fix-not-regular")]
+#[case::hardlinked(Refusal::Hardlinked, "fix-hardlinked")]
+#[case::not_owner(Refusal::NotOwner, "fix-not-owner")]
+#[case::too_large(Refusal::TooLarge, "document-too-large")]
+#[case::unsafe_directory(Refusal::UnsafeDirectory, "fix-unsafe-directory")]
+#[case::group_mismatch(Refusal::GroupMismatch, "fix-group-mismatch")]
+#[case::acl_present(Refusal::AclPresent, "fix-acl-present")]
+#[case::unsupported_platform(Refusal::UnsupportedPlatform, "fix-unsupported-platform")]
+#[case::changed(Refusal::Changed, "fix-changed")]
+fn each_refusal_has_its_stable_code(#[case] refusal: Refusal, #[case] code: &str) {
+    assert_eq!(refusal.code(), code);
+}

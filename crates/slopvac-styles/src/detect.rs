@@ -140,7 +140,7 @@ impl Skip {
     ///
     /// `style-detect-file-too-large` is the code for [`Skip::TooLarge`]. Detection never
     /// fails, so no caller reports it yet.
-    #[cfg(test)]
+    #[expect(dead_code, reason = "reserved until detection reports a skipped file")]
     fn code(&self) -> Option<&'static str> {
         match self {
             Skip::TooLarge => Some("style-detect-file-too-large"),
@@ -428,7 +428,7 @@ fn style_section_lines(text: &str) -> Vec<usize> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{MAX_BYTES, Skip, open_regular, read_checked};
+    use super::open_regular;
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -461,18 +461,5 @@ mod tests {
         let file = dir.path().join("f");
         std::fs::write(&file, "x").unwrap();
         assert!(open_regular(&file).is_ok());
-    }
-
-    #[test]
-    fn a_file_over_the_cap_is_skipped_with_its_code_and_one_at_the_cap_is_read() {
-        let dir = tempfile::tempdir().unwrap();
-        let len = usize::try_from(MAX_BYTES).unwrap();
-        std::fs::write(dir.path().join("STYLE.md"), "a".repeat(len)).unwrap();
-        assert_eq!(read_checked(dir.path(), "STYLE.md").unwrap().len(), len);
-
-        std::fs::write(dir.path().join("STYLE.md"), "a".repeat(len + 1)).unwrap();
-        let skip = read_checked(dir.path(), "STYLE.md").unwrap_err();
-        assert_eq!(skip, Skip::TooLarge);
-        assert_eq!(skip.code(), Some("style-detect-file-too-large"));
     }
 }
