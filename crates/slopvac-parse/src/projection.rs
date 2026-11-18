@@ -198,6 +198,7 @@ impl Projection {
         let mut point_at_start = None;
         let mut cursor = 0;
         for token in &self.tokens {
+            crate::counters::count_scan(1 + token.text.len());
             let len = token.text.chars().count();
             let (t0, t1) = (cursor, cursor + len);
             cursor = t1;
@@ -238,8 +239,97 @@ impl Projection {
     /// Panics if an offset is not on a character boundary of the projected text.
     #[must_use]
     pub fn span_for_bytes(&self, start: usize, end: usize) -> Span {
-        let cp = |b: usize| self.text[..b].chars().count();
+        let cp = |b: usize| {
+            crate::counters::count_scan(b);
+            self.text[..b].chars().count()
+        };
         self.span_for_range(cp(start), cp(end))
+    }
+}
+
+/// Maps ranges of projected bytes to source spans, one lookup at a time.
+///
+/// [`Projection::span_for_bytes`] counts the characters before each offset and walks every
+/// token, so mapping the many sentences of one block that way costs the block's size for each
+/// sentence. This index records where each token ends once, so a lookup finds its first
+/// token by binary search and walks only the tokens in the range. It returns the span that
+/// [`Projection::span_for_bytes`] returns.
+#[derive(Debug)]
+pub struct ByteMapper<'a> {
+    projection: &'a Projection,
+    /// The byte offset in the projected text where each token ends.
+    ends: Vec<usize>,
+}
+
+impl<'a> ByteMapper<'a> {
+    /// Index `projection`.
+    #[must_use]
+    pub fn new(projection: &'a Projection) -> Self {
+        let mut at = 0;
+        let ends = projection
+            .tokens
+            .iter()
+            .map(|t| {
+                at += t.text.len();
+                at
+            })
+            .collect();
+        Self { projection, ends }
+    }
+
+    /// Map a projected range, in bytes of [`Projection::text`], to a source span.
+    ///
+    /// Returns `None` when an offset is past the text or not on a character boundary of it,
+    /// which means the range was taken from other text than this projection's.
+    #[must_use]
+    pub fn span(&self, start: usize, end: usize) -> Option<Span> {
+        let projection = self.projection;
+        if !(projection.text.is_char_boundary(start) && projection.text.is_char_boundary(end)) {
+            return None;
+        }
+        // The first token that ends after `start`. It also holds the point at `start`.
+        let first = self.ends.partition_point(|&e| e <= start);
+        let mut lo = usize::MAX;
+        let mut hi = 0;
+        let mut found = false;
+        let mut point_at_start = None;
+        let mut t0 = first
+            .checked_sub(1)
+            .map_or(0, |previous| self.ends[previous]);
+        for (token, &t1) in projection.tokens[first..].iter().zip(&self.ends[first..]) {
+            if t0 >= end && point_at_start.is_some() {
+                break;
+            }
+            crate::counters::count_scan(1);
+            if point_at_start.is_none() {
+                point_at_start = Some(match token.kind {
+                    TokenKind::Identity => token.src.start() + (start - t0),
+                    _ => token.src.start(),
+                });
+            }
+            let (from, to) = (start.max(t0), end.min(t1));
+            if from < to && token.kind.is_real() {
+                let (first_byte, last_byte) = if token.kind == TokenKind::Identity {
+                    (
+                        token.src.start() + (from - t0),
+                        token.src.start() + (to - t0),
+                    )
+                } else {
+                    (token.src.start(), token.src.end())
+                };
+                lo = lo.min(first_byte);
+                hi = hi.max(last_byte);
+                found = true;
+            }
+            t0 = t1;
+        }
+        if found {
+            return Some(Span::new(lo, hi).expect("lo <= hi: both come from valid token spans"));
+        }
+        let at = point_at_start
+            .or_else(|| projection.tokens.last().map(|t| t.src.end()))
+            .unwrap_or(0);
+        Some(Span::empty(at))
     }
 }
 
