@@ -157,6 +157,55 @@
       "note": "an unescaped \\u or \\U escape, read from the start"
     },
     {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\u0041",
+      "python": true,
+      "rust": true,
+      "note": "Pcre2Pattern guard: a match means the pattern is rejected; \\u at the start"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\\\u",
+      "python": false,
+      "rust": false,
+      "note": "Pcre2Pattern guard: accepted; an escaped backslash, then a literal u"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\\\\\u",
+      "python": true,
+      "rust": true,
+      "note": "Pcre2Pattern guard: rejected; an escaped backslash, then \\u"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\\\\\\\u",
+      "python": false,
+      "rust": false,
+      "note": "Pcre2Pattern guard: accepted; two escaped backslashes, then a literal u"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "a\\U0001F600",
+      "python": true,
+      "rust": true,
+      "note": "Pcre2Pattern guard: rejected; \\U after a literal"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\x{41}",
+      "python": false,
+      "rust": false,
+      "note": "Pcre2Pattern guard: accepted; the braced hex escape PCRE2 takes instead of \\u"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\n\\u",
+      "python": true,
+      "rust": true,
+      "note": "Pcre2Pattern guard: rejected; [^\\\\] crosses the newline, so \\u after it is found"
+    },
+    {
       "pattern": "^[a-z][a-z0-9-]*$",
       "input": "core",
       "python": true,
