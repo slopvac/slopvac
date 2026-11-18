@@ -499,18 +499,31 @@ def load_deltas() -> list[dict]:
     return tomllib.loads(DELTAS_TOML.read_text(encoding="utf-8")).get("delta", [])
 
 
-def expected(mode: str, profile: str, input_id: str) -> dict:
+DEFAULT_DELTA_MODES = ["policy"]
+
+
+def deltas_for(mode: str, flavor: str) -> list[dict]:
+    """The reviewed deltas that move the expectation for ``mode``.
+
+    A delta lists the modes it applies to in ``modes`` (default ``["policy"]``).
+    The 2.x reference never gets a delta: it produces the parity output by
+    definition, and a delta describes how a 3.0 binary differs from it.
+    """
+    if flavor == "2x":
+        return []
+    return [
+        d for d in load_deltas() if mode in d.get("modes", DEFAULT_DELTA_MODES)
+    ]
+
+
+def expected(mode: str, profile: str, input_id: str, flavor: str = "3x") -> dict:
     base = json.loads(golden_path(profile, input_id).read_text(encoding="utf-8"))
-    if mode != "policy":
-        return base
-    return apply_deltas(base, profile, input_id, load_deltas())
+    return apply_deltas(base, profile, input_id, deltas_for(mode, flavor))
 
 
-def expected_runs(mode: str, profile: str) -> dict:
+def expected_runs(mode: str, profile: str, flavor: str = "3x") -> dict:
     base = json.loads(runs_path(profile).read_text(encoding="utf-8"))
-    if mode != "policy":
-        return base
-    return apply_run_deltas(base, profile, load_deltas())
+    return apply_run_deltas(base, profile, deltas_for(mode, flavor))
 
 
 def apply_deltas(base: dict, profile: str, input_id: str, deltas: list[dict]) -> dict:
@@ -698,14 +711,14 @@ def compare(
             continue
         results, runs = run_binary(command, mode, profile, inputs, flavor)
         for entry in inputs:
-            want = expected(mode, profile, entry["id"])
+            want = expected(mode, profile, entry["id"], flavor)
             got = mask_unverified(want, results.get(entry["id"]))
             if got != want:
                 problems.append(
                     f"{mode}/{profile}/{entry['id']}: {describe(want, got)}"
                 )
         problems += describe_runs(
-            f"{mode}/{profile}", expected_runs(mode, profile), runs
+            f"{mode}/{profile}", expected_runs(mode, profile, flavor), runs
         )
     return problems
 

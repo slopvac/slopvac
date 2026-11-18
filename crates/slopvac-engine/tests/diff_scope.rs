@@ -1006,6 +1006,10 @@ fn a_changed_file_over_the_read_cap_is_an_error_but_membership_needs_no_read() {
         matches!(err, DiffError::FileTooLarge { limit: 16, .. }),
         "{err}"
     );
+    assert!(
+        err.to_string().starts_with("[document-too-large] "),
+        "{err}"
+    );
 }
 
 #[test]

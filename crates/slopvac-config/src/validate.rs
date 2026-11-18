@@ -19,6 +19,7 @@ use crate::error::ConfigError;
 use crate::frontmatter::{self, Policy};
 use crate::load::LoadedConfig;
 use crate::presets::Presets;
+use crate::read::{MAX_DOCUMENT_BYTES, ReadFailure, read_text};
 
 /// The JSON Schema of the `slopvac:` front-matter block, for editors.
 pub const FRONTMATTER_SCHEMA: &str = include_str!("../../../schemas/v3/frontmatter.schema.json");
@@ -137,9 +138,9 @@ fn config_problem(e: &ConfigError) -> Problem {
             code: r.diagnostics.first().map(|d| d.code),
             rendered: r.render(),
         },
-        ConfigError::Io { path, .. } => Problem {
+        ConfigError::Io { path, .. } | ConfigError::TooLarge { path, .. } => Problem {
             file: path.clone(),
-            code: Some(Code::Io),
+            code: Some(e.code()),
             rendered: e.render(),
         },
     }
@@ -197,11 +198,16 @@ fn collect(paths: &[PathBuf], cwd: &Path, report: &mut Report) -> Vec<PathBuf> {
 
 /// Record a path that could not be read. The check is incomplete.
 fn unreadable(report: &mut Report, file: &str, message: &str) {
+    unreadable_with(report, file, Code::Io, message);
+}
+
+/// Record a path that could not be read, under `code`. The check is incomplete.
+fn unreadable_with(report: &mut Report, file: &str, code: Code, message: &str) {
     report.incomplete = true;
     report.problems.push(Problem {
         file: file.to_owned(),
-        code: Some(Code::Io),
-        rendered: format!("error[{}]: {message}", Code::Io.as_str()),
+        code: Some(code),
+        rendered: format!("error[{}]: {message}", code.as_str()),
     });
 }
 
@@ -220,9 +226,14 @@ fn check_document(file: &Path, cwd: &Path, config: Option<&LoadedConfig>, report
     {
         return;
     }
-    let text = match fs::read_to_string(file) {
+    let text = match read_text(file, MAX_DOCUMENT_BYTES) {
         Ok(t) => t,
-        Err(e) => {
+        Err(ReadFailure::TooLarge(cap)) => {
+            let message = format!("{shown} is larger than {cap} bytes");
+            unreadable_with(report, &shown, Code::DocumentTooLarge, &message);
+            return;
+        }
+        Err(ReadFailure::Io(e)) => {
             let message = format!("cannot read {shown}: {}", crate::error::reason(&e));
             unreadable(report, &shown, &message);
             return;

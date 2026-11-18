@@ -28,6 +28,26 @@ pub struct Sentence {
     pub text_type: TextType,
 }
 
+/// A table cell as one sentence, unsplit, or none when it has no word-like text.
+///
+/// The reference makes one sentence of each cell, whatever punctuation it holds, so a cell
+/// of two sentences counts as one sentence of the words of both. `start` and `end` cover
+/// the trimmed text.
+pub fn cell_sentence(text: &str) -> Result<Option<Sentence>, TextError> {
+    let part = py_strip(text);
+    if part.is_empty() || !WORDLIKE.is_match(part)? {
+        return Ok(None);
+    }
+    let leading = text.len() - py_lstrip(text).len();
+    Ok(Some(Sentence {
+        text: part.to_owned(),
+        start: leading,
+        end: leading + part.len(),
+        word_count: count_words(part)?,
+        text_type: classify_text_type(part)?,
+    }))
+}
+
 static LIST_MARKER: LazyLock<Regex> = LazyLock::new(|| re(r"^(?:[-*+]|\d+[.)]|[A-Za-z][.)])\s+"));
 static COLON_END: LazyLock<Regex> = LazyLock::new(|| re(r":\s*\z"));
 /// The reference tests `(?<![A-Za-z.])(?:[A-Za-z]\.){2,}\z` on the prefix ending at each
@@ -348,6 +368,18 @@ fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cell_with_two_sentences_is_one_sentence() {
+        let cell = cell_sentence(" Stops it. Then waits. ").unwrap().unwrap();
+        assert_eq!(cell.text, "Stops it. Then waits.");
+        assert_eq!((cell.start, cell.end, cell.word_count), (1, 22, 4));
+    }
+
+    #[test]
+    fn a_cell_without_words_is_no_sentence() {
+        assert_eq!(cell_sentence("  ---  ").unwrap(), None);
+    }
 
     fn shapes() -> Vec<(&'static str, String)> {
         let n = 3000;

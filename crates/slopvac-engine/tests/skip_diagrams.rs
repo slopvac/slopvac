@@ -655,3 +655,46 @@ fn the_ai_signal_of_a_diagram_rule_reaches_the_finding_and_the_summary() {
     assert_eq!(doc.ai_register.strong.warnings, 1);
     assert_eq!(doc.prose.findings, 0);
 }
+
+/// A component whose label holds a literal backslash and `n`, written `\n`. Only `PlantUML` renders
+/// that escape as a line break, so the label is a two-word name plus a four-word gloss.
+const ESCAPED_BREAK_LABEL: &str = r"Order Service\nhandles checkout and refunds";
+
+fn one_gloss_finding(doc: &slopvac_model::Document, line: usize, column: usize) {
+    assert_eq!(doc.findings.len(), 1, "{:?}", doc.findings);
+    let f = &doc.findings[0];
+    assert_eq!(f.rule_id, id("diagrams:diagram.label-title-plus-gloss"));
+    assert_eq!(f.matched_text, ESCAPED_BREAK_LABEL);
+    assert_eq!((f.start.line(), f.start.column()), (line, column));
+}
+
+#[test]
+fn an_escaped_break_in_a_puml_file_is_a_title_plus_gloss_label() {
+    let source = format!("@startuml\ncomponent [{ESCAPED_BREAK_LABEL}] as W\n@enduml\n");
+    let doc = diagram_engine(settings())
+        .lint(&Input::diagram("c.puml", &source, Format::PlantUml))
+        .unwrap();
+    // Line 2 is `component [Order ...`: the label starts after 11 bytes, so at column 12.
+    one_gloss_finding(&doc, 2, 12);
+}
+
+#[test]
+fn an_escaped_break_in_a_fenced_plantuml_block_is_a_title_plus_gloss_label() {
+    let source = format!(
+        "Intro text.\n\n```plantuml\n@startuml\ncomponent [{ESCAPED_BREAK_LABEL}] as W\n@enduml\n```\n"
+    );
+    let doc = diagram_engine(settings())
+        .lint(&Input::markdown("a.md", &source))
+        .unwrap();
+    // Line 5 is the component line, so the label sits at column 12 as in the standalone file.
+    one_gloss_finding(&doc, 5, 12);
+}
+
+#[test]
+fn an_escaped_break_in_a_mermaid_label_is_not_a_break() {
+    let source = format!("flowchart TD\n  A[{ESCAPED_BREAK_LABEL}] --> B[End]\n");
+    let doc = diagram_engine(settings())
+        .lint(&Input::diagram("flow.mmd", &source, Format::Mermaid))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 0, "{:?}", doc.findings);
+}

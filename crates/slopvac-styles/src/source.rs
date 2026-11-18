@@ -3,6 +3,10 @@ use std::path::PathBuf;
 
 use crate::{Style, StyleError};
 
+/// The most bytes of one style file. The built-in styles are a few KiB, so 1 MiB leaves a wide
+/// margin.
+pub const MAX_STYLE_BYTES: u64 = 1024 * 1024;
+
 /// Where styles come from. Packs implement this once they exist.
 pub trait StyleSource {
     /// Load one style by name.
@@ -91,9 +95,15 @@ impl StyleSource for DirSource {
             return Err(StyleError::InvalidName(name.to_owned()));
         }
         let path = self.0.join(format!("{name}.toml"));
-        match std::fs::read_to_string(&path) {
+        match slopvac_fs::read_text_capped(&path, MAX_STYLE_BYTES) {
             Ok(text) => Style::parse(name, &text),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(slopvac_fs::Error::CapExceeded { cap }) => Err(StyleError::TooLarge {
+                style: name.to_owned(),
+                cap,
+            }),
+            Err(slopvac_fs::Error::Io { source, .. })
+                if source.kind() == std::io::ErrorKind::NotFound =>
+            {
                 Err(StyleError::NotFound(name.to_owned()))
             }
             Err(e) => Err(StyleError::Io {

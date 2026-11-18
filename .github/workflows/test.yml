@@ -55,7 +55,7 @@ jobs:
       dependencies: ${{ steps.filter.outputs.dependencies }}
       filesystem: ${{ steps.filter.outputs.filesystem }}
       secrets: ${{ steps.filter.outputs.secrets }}
-      force_all: ${{ steps.bootstrap.outputs.force_all }}
+      force_all: ${{ steps.force.outputs.force_all }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -74,6 +74,21 @@ jobs:
               - '.github/ci-paths.yml'
               - '.github/workflows/test.yml'
 
+      # The merge queue and pushes to main are the authoritative backstop, so they
+      # run every suite whatever the diff touched. Only pull requests route by diff.
+      - name: Run every suite on the queue and main
+        id: force
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ROUTING_CHANGED: ${{ steps.bootstrap.outputs.force_all }}
+        run: |
+          set -euo pipefail
+          force_all=false
+          if [ "$ROUTING_CHANGED" = "true" ] || [ "$EVENT_NAME" = "merge_group" ] || [ "$EVENT_NAME" = "push" ]; then
+            force_all=true
+          fi
+          echo "force_all=$force_all" >> "$GITHUB_OUTPUT"
+
       - name: Classify changed files
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -83,7 +98,7 @@ jobs:
       - name: Report classification
         env:
           MATCHED: ${{ steps.filter.outputs.changes }}
-          FORCE_ALL: ${{ steps.bootstrap.outputs.force_all }}
+          FORCE_ALL: ${{ steps.force.outputs.force_all }}
         run: |
           set -euo pipefail
           echo "Matched CI classes: $MATCHED"
@@ -196,14 +211,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Pull requests test linux-x64 only. The merge queue and pushes to main run
-        # every leg, so a platform break cannot reach main. Each event gets a
+        # Pull requests test linux-x64 only. Pushes to main run every leg, so a
+        # platform break cannot go unseen. The merge queue runs every leg except
+        # macos-arm64: GitHub often cannot acquire a hosted arm64 macOS runner, which
+        # ejects the merge group. See bead slopvac-8l4.14.36; revisit once arm64
+        # not-acquired cancellations on main are zero for 7 days. Each event gets a
         # complete list: GitHub turns an `include` entry that matches no
         # combination into a new one, so legs cannot be filtered out of one list.
         # Native Windows CI returns with 3.x epic slopvac-8l4.18.8 (3.0 supports Windows via WSL).
         include: >-
           ${{ fromJSON(github.event_name == 'pull_request'
           && '[{"name": "linux-x64", "os": "ubuntu-latest"}]'
+          || github.event_name == 'merge_group'
+          && '[{"name": "linux-x64", "os": "ubuntu-latest"},
+          {"name": "linux-arm64", "os": "ubuntu-24.04-arm"},
+          {"name": "linux-x64-musl", "os": "ubuntu-latest",
+          "target": "x86_64-unknown-linux-musl", "musl": true},
+          {"name": "linux-arm64-musl", "os": "ubuntu-24.04-arm",
+          "target": "aarch64-unknown-linux-musl", "musl": true},
+          {"name": "macos-x64", "os": "macos-15-intel"}]'
           || '[{"name": "linux-x64", "os": "ubuntu-latest"},
           {"name": "linux-arm64", "os": "ubuntu-24.04-arm"},
           {"name": "linux-x64-musl", "os": "ubuntu-latest",
@@ -383,8 +409,34 @@ jobs:
         # docutils is pinned for the RST sample of the golden suite (tests/golden/v3).
         run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]" "docutils==0.23"
 
+      - name: Install the hook runners
+        # tests/test_pre_commit_hooks.py runs the published hook through both.
+        run: python3 -m pip install --quiet pre-commit==4.7.0 prek==0.5.11
+
       - name: Run every discovered pytest suite
         run: python3 -m pytest
+
+      # Needs history for the baseline, so this step alone fetches in full. A pull
+      # request compares with its merge-base; a merge-queue entry compares with the
+      # base commit the queue built it on.
+      - name: Schema additive-only check
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = merge_group ]; then
+            git fetch --no-tags --unshallow origin || git fetch --no-tags origin
+            base="$QUEUE_BASE_SHA"
+          else
+            git fetch --no-tags --unshallow origin "$BASE_REF" \
+              || git fetch --no-tags origin "$BASE_REF"
+            base="$(git merge-base "origin/$BASE_REF" HEAD)"
+          fi
+          git cat-file -e "$base^{commit}"
+          python3 scripts/contract/schema_compat.py --base "$base"
 
   # Exercise the published package across every Python version claimed in
   # project metadata. This is intentionally separate from the full-suite job.

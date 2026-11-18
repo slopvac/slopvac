@@ -4,7 +4,7 @@
 # policy mode equals the parity mode until the engine beads add STE, context and
 # terms behavior and a maintainer reviews each change.
 #
-# Entry shape (every key but `finding`, `set`, `document` and `run` is required):
+# Entry shape (every key but `modes`, `finding`, `set`, `document` and `run` is required):
 #
 #   [[delta]]
 #   input = "stacklok-after"        # id from inputs.toml
@@ -15,6 +15,7 @@
 #   column = 4                      # a rule can match twice on one line
 #   reason = "The requirement context exempts agentless passive."
 #   approved_by = "alias"
+#   modes = ["policy"]              # optional; parity | preserve | policy, default ["policy"]
 #   set = { severity = "suggestion" }   # kind = changed
 #   finding = { ... }                   # kind = added
 #   document = { score = 71.2 }         # document-level values the delta moves

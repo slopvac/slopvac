@@ -42,6 +42,12 @@ pub enum Error {
         /// The path as the caller passed it. Not part of the Display text.
         path: PathBuf,
     },
+    /// A file read by path did not hold valid UTF-8. Read the path with [`Error::path`].
+    #[error("not valid UTF-8")]
+    NotUtf8 {
+        /// The path that was read. Not part of the Display text.
+        path: PathBuf,
+    },
     /// Reading from a reader failed.
     #[error("read failed")]
     Read(#[source] io::Error),
@@ -55,7 +61,9 @@ impl Error {
     #[must_use]
     pub fn path(&self) -> Option<&Path> {
         match self {
-            Self::Io { path, .. } | Self::UnsafeTarget { path, .. } => Some(path),
+            Self::Io { path, .. } | Self::UnsafeTarget { path, .. } | Self::NotUtf8 { path } => {
+                Some(path)
+            }
             _ => None,
         }
     }
@@ -88,6 +96,7 @@ impl std::fmt::Debug for Error {
                 .debug_struct("UnsafeTarget")
                 .field("reason", reason)
                 .finish_non_exhaustive(),
+            Self::NotUtf8 { .. } => f.write_str("NotUtf8"),
             Self::Read(source) => f
                 .debug_struct("Read")
                 .field("kind", &source.kind())

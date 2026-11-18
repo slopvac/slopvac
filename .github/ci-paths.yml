@@ -33,6 +33,7 @@ code:
   - 'crates/slopvac-migrate/data/**'
   - 'crates/slopvac-migrate/tests/fixtures/**'
   - 'evals/**'
+  - 'crates/slopvac-agents/data/model-evals.json'
 
 # Rust workspace under crates/. Build, format, lint and test run across three
 # operating systems.

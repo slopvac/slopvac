@@ -133,7 +133,7 @@ impl Default for Limits {
             max_stdout: 256 * 1024 * 1024,
             max_stderr: 1024 * 1024,
             timeout: Duration::from_secs(120),
-            max_file: 64 * 1024 * 1024,
+            max_file: crate::MAX_FILE_BYTES,
         }
     }
 }

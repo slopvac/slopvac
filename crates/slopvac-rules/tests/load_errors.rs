@@ -271,3 +271,19 @@ fn substitution_keys_keep_their_2x_meaning_through_the_loader() {
         .collect();
     assert_eq!(found, ["i.e.", "e.g.", "whitelist"]);
 }
+
+#[test]
+fn a_rule_file_one_byte_over_the_cap_is_refused_with_its_code() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big.yml");
+    std::fs::File::create(&path)
+        .unwrap()
+        .set_len(slopvac_rules::MAX_RULE_FILE_BYTES + 1)
+        .unwrap();
+    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
+    assert_eq!(
+        e.errors()[0].kind,
+        LoadErrorKind::TooLarge(slopvac_rules::MAX_RULE_FILE_BYTES)
+    );
+    assert!(e.to_string().contains("[rules-file-too-large]"), "{e}");
+}
