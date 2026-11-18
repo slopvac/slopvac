@@ -6,6 +6,7 @@
 
 mod manifest;
 mod name;
+mod pack_id;
 mod provenance;
 mod registry;
 
@@ -13,5 +14,6 @@ pub use manifest::{
     HookDecl, Manifest, ManifestError, PackKind, PackPath, PluginTable, Provides, Requirement,
 };
 pub use name::{NameError, QualifiedName};
+pub use pack_id::{PackIdError, from_lock_id, to_lock_id};
 pub use provenance::{Provenance, Source};
-pub use registry::{Entry, Registry, RegistryError};
+pub use registry::{Entry, Reference, Registry, RegistryError};

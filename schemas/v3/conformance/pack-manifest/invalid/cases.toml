@@ -17,3 +17,6 @@
 "provides-drive-letter.toml" = "/provides/styles/0"
 "provides-backslash.toml" = "/provides/styles/0"
 "blocklists-traversal.toml" = "/provides/blocklists/0"
+"requires-prerelease-partial.toml" = "/requires/0/version"
+"requires-prerelease-major-only.toml" = "/requires/0/version"
+"requires-trailing-newline.toml" = "/requires/0/version"

@@ -21,13 +21,20 @@ pub enum RegistryError {
         /// The supplier that tried to register it again.
         second: Box<Provenance>,
     },
-    /// A bare name is claimed by more than one pack.
-    #[error("`{name}` is ambiguous: {}; use a qualified name", claims_text(.claims))]
+    /// A bare name is claimed by more than one pack. The stable code is `pack-name-ambiguous`.
+    #[error(
+        "{}{}: `{name}` is ambiguous: {}; use a qualified name",
+        AMBIGUOUS_CODE,
+        at_text(.at.as_ref()),
+        claims_text(.claims)
+    )]
     Ambiguous {
         /// The bare name.
         name: String,
         /// Every claim, in qualified-name order.
         claims: Vec<(QualifiedName, Provenance)>,
+        /// Where the bare name was written, when the caller knows.
+        at: Option<Reference>,
     },
     /// No item has this name.
     #[error("no item named `{}`", slopvac_sanitize::line(.0))]
@@ -35,6 +42,55 @@ pub enum RegistryError {
     /// The text is neither a bare name nor a qualified name.
     #[error(transparent)]
     Name(#[from] NameError),
+}
+
+/// The stable code of an ambiguous bare name.
+const AMBIGUOUS_CODE: &str = "pack-name-ambiguous";
+
+/// Where a name was written: a file and a one-based line and column.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Reference {
+    /// The file, as the caller names it.
+    pub file: String,
+    /// One-based line.
+    pub line: u32,
+    /// One-based column.
+    pub column: u32,
+}
+
+impl Reference {
+    /// A reference at `file`, `line` and `column`.
+    #[must_use]
+    pub fn new(file: impl Into<String>, line: u32, column: u32) -> Self {
+        Self {
+            file: file.into(),
+            line,
+            column,
+        }
+    }
+}
+
+fn at_text(at: Option<&Reference>) -> String {
+    at.map_or_else(String::new, |r| {
+        format!(
+            " at {}:{}:{}",
+            slopvac_sanitize::line(&r.file),
+            r.line,
+            r.column
+        )
+    })
+}
+
+impl RegistryError {
+    /// The stable code of this error, for the variants that have one.
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::Ambiguous { .. } => Some(AMBIGUOUS_CODE),
+            _ => None,
+        }
+    }
 }
 
 fn claims_text(claims: &[(QualifiedName, Provenance)]) -> String {
@@ -100,6 +156,15 @@ impl<T> Registry<T> {
     /// Resolve user text: a qualified name (`pack:name`) looks up exactly, and a bare name must
     /// be claimed by one pack.
     pub fn resolve(&self, text: &str) -> Result<&Entry<T>> {
+        self.resolve_inner(text, None)
+    }
+
+    /// Like [`Registry::resolve`], for a name written at `at`: an ambiguity error points there.
+    pub fn resolve_at(&self, text: &str, at: &Reference) -> Result<&Entry<T>> {
+        self.resolve_inner(text, Some(at))
+    }
+
+    fn resolve_inner(&self, text: &str, at: Option<&Reference>) -> Result<&Entry<T>> {
         if text.contains(':') {
             let name: QualifiedName = text.parse()?;
             return self
@@ -121,6 +186,7 @@ impl<T> Registry<T> {
                     .chain(claims)
                     .map(|(q, e)| (q.clone(), e.provenance.clone()))
                     .collect(),
+                at: at.cloned(),
             }),
         }
     }

@@ -432,16 +432,21 @@ fn parse_version(s: &str) -> std::result::Result<Version, String> {
     Version::parse(s).map_err(|_| "not a semantic version".to_owned())
 }
 
-/// One or more comparators: an optional operator and a version of one to three numeric parts.
+/// One or more comparators: an optional operator and a version of one to three numeric parts. A
+/// pre-release follows a full `MAJOR.MINOR.PATCH` only. Spaces are allowed after an operator and
+/// around a comma, and nowhere else.
 fn parse_requirement(s: &str) -> std::result::Result<VersionReq, String> {
     let bad = || "not a version requirement".to_owned();
+    if s.starts_with(' ') || s.ends_with(' ') {
+        return Err(bad());
+    }
     for comparator in s.split(',') {
-        let c = comparator.trim();
+        let c = comparator.trim_matches(' ');
         let c = ["<=", ">=", "<", ">", "=", "^", "~"]
             .iter()
             .find_map(|op| c.strip_prefix(op))
             .unwrap_or(c)
-            .trim_start();
+            .trim_start_matches(' ');
         let (numbers, pre) = match c.split_once('-') {
             Some((n, p)) => (n, Some(p)),
             None => (c, None),
@@ -449,7 +454,8 @@ fn parse_requirement(s: &str) -> std::result::Result<VersionReq, String> {
         let parts: Vec<&str> = numbers.split('.').collect();
         let numeric = |p: &&str| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit());
         let pre_ok = pre.is_none_or(|p| {
-            !p.is_empty()
+            parts.len() == 3
+                && !p.is_empty()
                 && p.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
         });

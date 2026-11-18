@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 use slopvac_model::{PackId, RuleProvenance};
-use slopvac_packs::{Provenance, QualifiedName, Registry, RegistryError, Source};
+use slopvac_packs::{Provenance, QualifiedName, Reference, Registry, RegistryError, Source};
 
 fn prov(pack: &str, version: &str, source: Source, file: &str) -> Provenance {
     Provenance::new(
@@ -81,7 +81,7 @@ fn resolve_finds_one_entry(#[case] text: &str, #[case] want: u32) {
 #[test]
 fn a_bare_name_claimed_by_two_packs_is_ambiguous_and_names_both() {
     let err = registry().resolve("howto").unwrap_err();
-    let RegistryError::Ambiguous { name, claims } = &err else {
+    let RegistryError::Ambiguous { name, claims, .. } = &err else {
         panic!("{err:?}");
     };
     assert_eq!(name, "howto");
@@ -135,4 +135,49 @@ fn provenance_converts_to_the_report_shape() {
     assert_eq!(r.pack.as_str(), "acme");
     assert_eq!(r.version.as_deref(), Some("1.2.0"));
     assert_eq!(r.source.as_deref(), Some("rules/a.yml"));
+}
+
+fn pack_vs_pack() -> Registry<u32> {
+    let mut r = Registry::new();
+    r.insert(
+        q("acme:memo"),
+        1,
+        prov("acme", "1.0.0", Source::Pack, "g/memo.toml"),
+    )
+    .unwrap();
+    r.insert(
+        q("zed:memo"),
+        2,
+        prov("zed", "2.0.0", Source::Pack, "genres/memo.toml"),
+    )
+    .unwrap();
+    r
+}
+
+#[rstest]
+#[case::core_vs_pack(registry(), "howto", &["acme:howto", "core:howto"])]
+#[case::pack_vs_pack(pack_vs_pack(), "memo", &["acme:memo", "zed:memo"])]
+fn an_ambiguous_bare_name_has_a_stable_code_names_both_ids_and_points_at_the_reference(
+    #[case] r: Registry<u32>,
+    #[case] bare: &str,
+    #[case] ids: &[&str],
+) {
+    let at = Reference::new("docs/config.toml", 7, 12);
+    let err = r.resolve_at(bare, &at).unwrap_err();
+    assert_eq!(err.code(), Some("pack-name-ambiguous"));
+    let shown = err.to_string();
+    assert!(
+        shown.starts_with("pack-name-ambiguous at docs/config.toml:7:12: "),
+        "{shown}"
+    );
+    for id in ids {
+        assert!(shown.contains(&format!("`{id}`")), "{shown}");
+    }
+}
+
+#[test]
+fn a_reference_path_is_escaped_in_the_message() {
+    let at = Reference::new("a\u{1b}[2Jb.toml", 1, 1);
+    let err = registry().resolve_at("howto", &at).unwrap_err();
+    assert!(!err.to_string().contains('\u{1b}'));
 }

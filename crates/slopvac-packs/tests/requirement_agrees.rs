@@ -60,6 +60,12 @@ const PROBES: &[&str] = &[
     "1.0-rc",
     "1-rc",
     "1\n",
+    " 1",
+    "1 ",
+    ">= 1.2",
+    "^1 , <2",
+    ">=1.0.0-beta, <2",
+    "1.0\n",
     "",
     "*",
     "1.2.3.4",
@@ -77,7 +83,6 @@ fn parser_accepts(version: &str) -> bool {
 }
 
 #[test]
-#[ignore = "waits for the contract VersionReq PR"]
 fn the_parser_accepts_exactly_what_the_schema_pattern_matches() {
     let pattern = schema_pattern();
     let mut disagreements = Vec::new();

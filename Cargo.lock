@@ -2657,6 +2657,7 @@ dependencies = [
  "serde_json",
  "slopvac-fs",
  "slopvac-model",
+ "slopvac-plugins",
  "slopvac-sanitize",
  "thiserror",
  "toml",

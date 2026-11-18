@@ -94,9 +94,9 @@
       "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
     },
     "VersionReq": {
-      "description": "Version requirement: comma-separated comparators, each an optional operator (^ ~ = > >= < <=) and a version with one to three numeric parts.",
+      "description": "Version requirement: comma-separated comparators, each an optional operator (^ ~ = > >= < <=) and a version with one to three numeric parts. A pre-release suffix is allowed only after a full MAJOR.MINOR.PATCH, so 1.0.0-rc.1 is valid and 1.0-rc is not. Spaces are allowed after an operator and around a comma, and nowhere else: no leading or trailing space, no newline.",
       "type": "string",
-      "pattern": "^\\s*(\\^|~|=|>=|<=|>|<)?\\s*[0-9]+(\\.[0-9]+){0,2}(-[0-9A-Za-z.-]+)?(\\s*,\\s*(\\^|~|=|>=|<=|>|<)?\\s*[0-9]+(\\.[0-9]+){0,2}(-[0-9A-Za-z.-]+)?)*\\s*$"
+      "pattern": "^((\\^|~|=|>=|<=|>|<) *)?[0-9]+(\\.[0-9]+(\\.[0-9]+(-[0-9A-Za-z.-]+)?)?)?( *, *((\\^|~|=|>=|<=|>|<) *)?[0-9]+(\\.[0-9]+(\\.[0-9]+(-[0-9A-Za-z.-]+)?)?)?)*(?![\\s\\S])"
     },
     "PackPath": {
       "description": "A path inside the pack: relative, with forward slashes, and no .. segment. A glob is allowed.",

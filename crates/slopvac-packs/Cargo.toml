@@ -12,6 +12,7 @@ publish.workspace = true
 semver.workspace = true
 slopvac-fs.workspace = true
 slopvac-model.workspace = true
+slopvac-plugins.workspace = true
 slopvac-sanitize.workspace = true
 thiserror.workspace = true
 toml.workspace = true
