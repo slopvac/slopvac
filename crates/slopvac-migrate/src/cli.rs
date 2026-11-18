@@ -147,8 +147,8 @@ fn execute_in(
         for kept in &done.kept {
             writeln!(
                 out,
-                "kept {}: the migration created it and it changed since",
-                kept.display()
+                "kept {}: it changed after the migration, so the restore left it as it is",
+                slopvac_sanitize::line(&kept.display().to_string())
             )
             .map_err(io)?;
         }

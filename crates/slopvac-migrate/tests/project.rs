@@ -348,35 +348,37 @@ fn cli_exits_2_and_names_each_dropped_setting() {
     assert!(err.contains("slopvac.toml:3: `vale.enabled`"), "{err}");
 }
 
-fn backup_with(dir: &Path, manifest: &str) {
-    let b = dir.join(slopvac_migrate::BACKUP_DIR);
-    fs::create_dir_all(&b).unwrap();
-    fs::write(b.join("manifest.txt"), manifest).unwrap();
-}
-
 #[test]
-fn restore_rejects_paths_that_leave_the_project() {
+fn apply_rejects_paths_that_leave_the_project() {
     let outer = tempfile::tempdir().unwrap();
     let root = outer.path().join("proj");
     fs::create_dir_all(&root).unwrap();
     fs::write(outer.path().join("victim.txt"), "keep").unwrap();
-    let abs = format!("C {}\n", outer.path().join("victim.txt").display());
-    for manifest in [
-        "C ../victim.txt\n",
-        abs.as_str(),
-        "M ../victim.txt\n",
-        "C a/../../victim.txt\n",
+    let abs = outer.path().join("victim.txt");
+    for path in [
+        Path::new("../victim.txt"),
+        abs.as_path(),
+        Path::new("a/../../victim.txt"),
     ] {
-        backup_with(&root, manifest);
+        let p = slopvac_migrate::Plan {
+            changes: vec![slopvac_migrate::Change {
+                path: path.to_owned(),
+                kind: slopvac_migrate::ChangeKind::Write,
+                old: Some("keep".into()),
+                new: Some("gone".into()),
+            }],
+            ..slopvac_migrate::Plan::default()
+        };
         assert!(
-            matches!(restore(&root, cache().path(), false), Err(Error::Unsafe(_))),
-            "{manifest}"
+            matches!(apply(&root, &p, cache().path()), Err(Error::Unsafe(_))),
+            "{}",
+            path.display()
         );
         assert_eq!(
             fs::read_to_string(outer.path().join("victim.txt")).unwrap(),
             "keep"
         );
-        fs::remove_dir_all(root.join(slopvac_migrate::BACKUP_DIR)).unwrap();
+        assert!(!root.join(slopvac_migrate::BACKUP_DIR).exists());
     }
 }
 
@@ -386,25 +388,25 @@ fn restore_rejects_a_symlinked_directory() {
     let outer = tempfile::tempdir().unwrap();
     let root = outer.path().join("proj");
     let elsewhere = outer.path().join("elsewhere");
-    fs::create_dir_all(&root).unwrap();
-    fs::create_dir_all(&elsewhere).unwrap();
-    fs::write(elsewhere.join("victim.txt"), "keep").unwrap();
-    std::os::unix::fs::symlink(&elsewhere, root.join("link")).unwrap();
-    backup_with(&root, "C link/victim.txt\n");
+    write(
+        &root,
+        "docs/a.md",
+        "<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n",
+    );
+    let cache = cache();
+    apply(&root, &plan_of(&root).unwrap(), cache.path()).unwrap();
+    // The migrated directory moves out of the project and a link to it takes its place.
+    fs::rename(root.join("docs"), &elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, root.join("docs")).unwrap();
+    let migrated = fs::read_to_string(elsewhere.join("a.md")).unwrap();
     assert!(matches!(
-        restore(&root, cache().path(), false),
+        restore(&root, cache.path(), true),
         Err(Error::Unsafe(_))
     ));
-    assert!(elsewhere.join("victim.txt").exists());
-}
-
-#[test]
-fn restore_checks_every_entry_before_touching_any_file() {
-    let dir = tempfile::tempdir().unwrap();
-    write(dir.path(), "made.toml", "new");
-    backup_with(dir.path(), "C made.toml\nC ../escape\n");
-    assert!(restore(dir.path(), cache().path(), false).is_err());
-    assert!(dir.path().join("made.toml").exists());
+    assert_eq!(
+        fs::read_to_string(elsewhere.join("a.md")).unwrap(),
+        migrated
+    );
 }
 
 #[test]
