@@ -124,13 +124,54 @@ def test_records_without_provenance_stay_valid():
     assert _validate(doc=doc) == []
 
 
-def test_provenance_does_not_change_the_manifest_digest():
+def _digest_after(mutate):
     from evals import runner
 
-    stripped = copy.deepcopy(MANIFEST)
-    for d in stripped["documents"]:
-        d.pop("provenance", None)
-    assert runner.manifest_digest(stripped) == runner.manifest_digest(MANIFEST)
+    manifest = copy.deepcopy(MANIFEST)
+    doc = next(d for d in manifest["documents"] if "provenance" in d)
+    mutate(manifest, doc)
+    return runner.manifest_digest(manifest)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda m, d: d.update(license="GPL-3.0-only"),
+        lambda m, d: d.update(date="2021-01-01"),
+        lambda m, d: d["provenance"].update(date_source="pull_request.created_at"),
+        lambda m, d: d["provenance"].update(license_revision="c" * 40),
+        lambda m, d: d["provenance"].update(license_basis="sources.toml override"),
+        lambda m, d: d["provenance"].pop("date_source"),
+    ],
+    ids=[
+        "license",
+        "date",
+        "date_source",
+        "license_revision",
+        "license_basis",
+        "provenance_removed",
+    ],
+)
+def test_material_provenance_changes_the_corpus_digest(mutate):
+    from evals import runner
+
+    assert _digest_after(mutate) != runner.manifest_digest(MANIFEST)
+
+
+def test_a_new_public_check_date_does_not_change_the_corpus_digest():
+    from evals import runner
+
+    def recheck(manifest, _doc):
+        repo = next(iter(manifest["repos"].values()))
+        repo["public"] = True
+        repo["public_checked_at"] = "2026-11-17"
+
+    def recheck_later(manifest, _doc):
+        recheck(manifest, _doc)
+        next(iter(manifest["repos"].values()))["public_checked_at"] = "2026-12-01"
+
+    assert _digest_after(recheck) == _digest_after(recheck_later)
+    assert _digest_after(recheck) != runner.manifest_digest(MANIFEST)  # `public` counts
 
 
 def test_every_upstream_human_date_names_its_source():

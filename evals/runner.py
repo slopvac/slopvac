@@ -284,20 +284,26 @@ def run_engine(
     }
 
 
-def manifest_digest(manifest: Mapping[str, Any]) -> str:
-    """Digest of what scoring depends on; per-document `provenance` is excluded.
+# Fields that record when something was checked, not what was found. A later
+# re-check must not invalidate results. Every other field, including the
+# licence, date and per-document `provenance`, is part of corpus identity.
+BOOKKEEPING_REPO_FIELDS = ("public_checked_at",)
 
-    Provenance records where a licence or date came from. Adding or correcting
-    it must not invalidate recorded results or the committed baseline.
+
+def manifest_digest(manifest: Mapping[str, Any]) -> str:
+    """Corpus identity: the manifest minus re-check dates.
+
+    Licence, date, licence revision, licence basis and date source all count,
+    so the gate rejects a baseline recorded against different evidence.
     """
-    scored = {
+    identity = {
         **manifest,
-        "documents": [
-            {k: v for k, v in d.items() if k != "provenance"}
-            for d in manifest.get("documents", [])
-        ],
+        "repos": {
+            name: {k: v for k, v in repo.items() if k not in BOOKKEEPING_REPO_FIELDS}
+            for name, repo in manifest.get("repos", {}).items()
+        },
     }
-    return lib.sha256_text(json.dumps(scored, sort_keys=True, separators=(",", ":")))
+    return lib.sha256_text(json.dumps(identity, sort_keys=True, separators=(",", ":")))
 
 
 def check_corpus(results: Mapping[str, Any], manifest: Mapping[str, Any]) -> None:

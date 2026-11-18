@@ -21,7 +21,7 @@ The repository commits each document with a permissive licence and at most 32 Ki
 
 ## Provenance
 
-A record may carry an optional `provenance` object. It does not enter the manifest digest that results and the baseline use.
+A record may carry an optional `provenance` object. It is part of the manifest digest that results and the baseline use, so changing a licence revision, licence basis or date source invalidates them. The digest leaves out `public_checked_at`, which only says when a check ran.
 
 - `date_source` says where `date` comes from. `commit.committer.date` is the committer date of the commit that the record pins: the content revision for files and JSON fields, or the commit itself for commit messages. `pull_request.created_at` is the day the pull request was opened. A pull request has no pinned revision, because the text is the title and body that the API returned at curation time, so a later edit of the body is not excluded by the date.
 - `license_revision` is the commit at which the licence was read. For files it must equal `source.commit`. Curation asks the licence API at that commit and never falls back to the licence at the branch head. A repository with no licence at that commit has no licence unless `sources.toml` sets one, and then `license_basis` says so.
