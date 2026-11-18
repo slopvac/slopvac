@@ -24,6 +24,7 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 jsonschema = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
 # Turns the counters on for this crate's own tests, so a plain `cargo nextest run` sees them.
