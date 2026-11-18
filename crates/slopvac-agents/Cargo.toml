@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# Deterministic work measurements for tests; release builds leave this off.
+test-counters = []
+
 [dependencies]
 cap-std.workspace = true
 clap.workspace = true
@@ -21,6 +25,8 @@ slopvac-text.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+# Enable counters for integration tests without changing the default features.
+slopvac-agents = { path = ".", features = ["test-counters"] }
 tempfile.workspace = true
 
 [lints]

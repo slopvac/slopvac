@@ -2450,6 +2450,7 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "slopvac-agents",
  "slopvac-config",
  "slopvac-migrate",
  "slopvac-text",
