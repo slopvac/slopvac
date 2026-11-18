@@ -120,8 +120,8 @@ pub(crate) fn html_file(source: &str) -> Result<Document, ParseError> {
         let projection = join(pieces.iter());
         let extents = projection.extents();
         let (Some(first), Some(last)) = (
-            extents.iter().map(|s| s.start()).min(),
-            extents.iter().map(|s| s.end()).max(),
+            extents.iter().map(Span::start).min(),
+            extents.iter().map(Span::end).max(),
         ) else {
             continue;
         };
