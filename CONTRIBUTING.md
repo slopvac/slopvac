@@ -86,7 +86,12 @@ Plain installs and `slopvac@latest` stay on the latest stable release. The packa
 
 Contributions to slopvac need a signed [Contributor License Agreement](CLA.md) (CLA). It is the Individual Contributor Non-Exclusive License Agreement from the Contributor Agreements 1.2 templates (Harmony), with the traditional patent license. You keep the copyright in your contribution. You grant Sjors Robroek a non-exclusive license to use, sublicense and distribute it, and a patent license.
 
-Sjors Robroek may license contributions only under licenses that the Free Software Foundation lists as free and the Open Source Initiative approves. The project stays under Apache-2.0. The laws of the Netherlands govern the agreement.
+In return, Sjors Robroek takes on two duties:
+
+- License your contribution under licenses that the Free Software Foundation classifies as free and the Open Source Initiative approves.
+- Offer material under a free and open license too, when it also has a license that is not free or not open.
+
+The project stays under Apache-2.0. The laws of the Netherlands govern the agreement.
 
 ### Sign the CLA
 
