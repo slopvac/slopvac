@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import datetime
 import hashlib
 import json
 import random
@@ -67,6 +68,7 @@ def pin_repo(
     """
     if repo in repos:
         return repos[repo]
+    public = public_check(repo)
     params: dict[str, Any] = {"per_page": 1}
     if not latest:
         params["until"] = CUTOFF_ISO
@@ -75,14 +77,9 @@ def pin_repo(
         raise RuntimeError(f"{repo}: no commit before {CUTOFF_ISO}")
     sha = commits[0]["sha"]
     date = commits[0]["commit"]["committer"]["date"][:10]
-    try:
-        info = api(f"repos/{repo}/license", ref=sha)
-    except lib.FetchError:
-        info = api(f"repos/{repo}/license")
-    licence = spdx_or_none(info["license"]["spdx_id"])
-    content = base64.b64decode(info["content"]).decode("utf-8", "replace")
+    licence, content = license_at(repo, sha)
     copyright_line = None
-    for line in content.splitlines():
+    for line in (content or "").splitlines():
         if re.match(r"\s*(copyright|\(c\))", line, re.IGNORECASE) and len(line) < 200:
             copyright_line = line.strip()
             break
@@ -91,9 +88,45 @@ def pin_repo(
         "commit": sha,
         "commit_date": date,
         "license": licence,
+        "license_revision": sha,
         "copyright": copyright_line or f"The {repo} authors",
+        **public,
     }
     return repos[repo]
+
+
+def today() -> str:
+    return datetime.datetime.now(datetime.UTC).date().isoformat()
+
+
+def public_check(repo: str) -> dict[str, Any]:
+    """Check at curation time that `repo` is public; raise before anything is read."""
+    return lib.public_record(repo, api(f"repos/{repo}"), today())
+
+
+def license_at(repo: str, sha: str) -> tuple[str | None, str | None]:
+    """Return the SPDX id and licence text at commit `sha`, never at HEAD.
+
+    A repository with no licence file at that commit gives (None, None); the
+    caller must then supply a licence in `sources.toml` or drop the source.
+    """
+    try:
+        info = api(f"repos/{repo}/license", ref=sha)
+    except lib.FetchError:
+        return None, None
+    content = base64.b64decode(info["content"]).decode("utf-8", "replace")
+    return spdx_or_none(info["license"]["spdx_id"]), content
+
+
+def provenance(spec: dict[str, Any], revision: str, date_source: str) -> dict[str, str]:
+    """The per-document record of where the licence and date came from."""
+    return {
+        "date_source": date_source,
+        "license_revision": revision,
+        "license_basis": "sources.toml override"
+        if spec.get("license")
+        else "github license API at the revision",
+    }
 
 
 def make_doc(
@@ -107,6 +140,7 @@ def make_doc(
     source: dict[str, Any],
     text: str,
     date: str,
+    prov: dict[str, str],
 ) -> dict[str, Any]:
     if licence is None:
         raise RuntimeError(f"{repo}: no SPDX licence; set license in sources.toml")
@@ -120,6 +154,7 @@ def make_doc(
         "format": fmt,
         "license": licence,
         "date": date,
+        "provenance": prov,
         "source": source,
         "sha256": lib.sha256_text(text),
         "bytes": size,
@@ -221,6 +256,7 @@ def curate_files(spec: dict[str, Any], repos: dict[str, Any]) -> Curated:
             source=source,
             text=text,
             date=info["commit_date"],
+            prov=provenance(spec, info["license_revision"], "commit.committer.date"),
         )
         out.append((doc, text))
     return out
@@ -228,7 +264,7 @@ def curate_files(spec: dict[str, Any], repos: dict[str, Any]) -> Curated:
 
 def curate_commits(spec: dict[str, Any], repos: dict[str, Any]) -> Curated:
     repo = spec["repo"]
-    info = pin_repo(repo, repos)
+    pin_repo(repo, repos)
     pool: list[dict[str, Any]] = []
     for page in range(1, spec.get("pages", 4) + 1):
         batch = api(f"repos/{repo}/commits", until=CUTOFF_ISO, per_page=100, page=page)
@@ -258,16 +294,18 @@ def curate_commits(spec: dict[str, Any], repos: dict[str, Any]) -> Curated:
             "url": f"{API}/repos/{repo}/git/commits/{item['sha']}",
             "html_url": f"https://github.com/{repo}/commit/{item['sha']}",
         }
+        licence, _ = license_at(repo, item["sha"])  # at the document's own commit
         doc = make_doc(
             genre="commits",
             origin="human",
             fmt="commit-message",
             repo=repo,
-            licence=spec.get("license") or info["license"],
+            licence=spec.get("license") or licence,
             key=item["sha"][:12],
             source=source,
             text=text,
             date=item["commit"]["committer"]["date"][:10],
+            prov=provenance(spec, item["sha"], "commit.committer.date"),
         )
         out.append((doc, text))
     return out
@@ -313,6 +351,7 @@ def curate_prs(spec: dict[str, Any], repos: dict[str, Any]) -> Curated:
             source=source,
             text=text,
             date=item["created_at"][:10],
+            prov=provenance(spec, info["license_revision"], "pull_request.created_at"),
         )
         out.append((doc, text))
     return out
@@ -356,6 +395,9 @@ def curate_stated_llm(spec: dict[str, Any], repos: dict[str, Any]) -> Curated:
                 source=source,
                 text=text,
                 date=info["commit_date"],
+                prov=provenance(
+                    spec, info["license_revision"], "commit.committer.date"
+                ),
             )
             out.append((doc, text))
     return out
@@ -368,19 +410,20 @@ def curate_diagrams(spec: dict[str, Any], repos: dict[str, Any]) -> Curated:
     ]
     candidates.sort()
     random.Random(f"{SEED}|diagrams|{spec['kind']}").shuffle(candidates)
-    repo_meta: dict[str, tuple[str | None, bool]] = {}
+    repo_meta: dict[str, tuple[bool, dict[str, Any] | None]] = {}
 
     def probe(cand: list[str]) -> tuple[dict[str, Any], str] | None:
         _, repo, path = cand
         try:
             if repo not in repo_meta:
                 meta = api(f"repos/{repo}")
-                repo_meta[repo] = (
-                    spdx_or_none((meta.get("license") or {}).get("spdx_id")),
-                    meta["fork"],
-                )
-            licence, fork = repo_meta[repo]
-            if fork or licence not in lib.PERMISSIVE:
+                try:
+                    public = lib.public_record(repo, meta, today())
+                except lib.NotPublicError:
+                    public = None
+                repo_meta[repo] = (meta["fork"], public)
+            fork, public = repo_meta[repo]
+            if fork or public is None:
                 return None
             commits = api(
                 f"repos/{repo}/commits", path=path, until=CUTOFF_ISO, per_page=1
@@ -389,6 +432,9 @@ def curate_diagrams(spec: dict[str, Any], repos: dict[str, Any]) -> Curated:
                 return None
             sha = commits[0]["sha"]
             date = commits[0]["commit"]["committer"]["date"][:10]
+            licence, _ = license_at(repo, sha)  # at the content revision
+            if licence not in lib.PERMISSIVE:
+                return None
             url = lib.raw_url(repo, sha, path)
             text = lib.normalise(lib.http_get(url).decode("utf-8"))
         except (lib.FetchError, UnicodeDecodeError, KeyError, OSError):
@@ -417,6 +463,7 @@ def curate_diagrams(spec: dict[str, Any], repos: dict[str, Any]) -> Curated:
             source=source,
             text=text,
             date=date,
+            prov=provenance({}, sha, "commit.committer.date"),
         )
         return doc, text
 
@@ -440,6 +487,7 @@ def curate_diagrams(spec: dict[str, Any], repos: dict[str, Any]) -> Curated:
                     "url": f"https://github.com/{repo}",
                     "license": doc["license"],
                     "copyright": f"The {repo} authors",
+                    **(repo_meta[repo][1] or {}),
                 },
             )
             out.append((doc, text))

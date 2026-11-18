@@ -19,6 +19,15 @@ Human genres: product, reference, tutorials, changelogs, readmes, decision recor
 
 The repository commits each document with a permissive licence and at most 32 KiB under `corpus/` with the suffix `.corpus`, so prose gates skip them. `NOTICE` credits each repository. Other documents, such as GPL and AGPL text, stay out of the repository and are downloaded to a cache.
 
+## Provenance
+
+A record may carry an optional `provenance` object. It is part of the manifest digest that results and the baseline use, so changing a licence revision, licence basis or date source invalidates them. The digest leaves out `public_checked_at`, which only says when a check ran.
+
+- `date_source` says where `date` comes from. `commit.committer.date` is the committer date of the commit that the record pins: the content revision for files and JSON fields, or the commit itself for commit messages. `pull_request.created_at` is the day the pull request was opened. A pull request has no pinned revision, because the text is the title and body that the API returned at curation time, so a later edit of the body is not excluded by the date.
+- `license_revision` is the commit at which the licence was read. For files it must equal `source.commit`. Curation asks the licence API at that commit and never falls back to the licence at the branch head. A repository with no licence at that commit has no licence unless `sources.toml` sets one, and then `license_basis` says so.
+
+A repository entry may carry `public` and `public_checked_at`. Curation checks that the repository is public before it reads any commit or file, and refuses the source otherwise. The check date goes into the manifest. Records written before these fields existed stay valid. Curating again fills in `license_revision`, `license_basis` and the public check, because only the GitHub API can answer them.
+
 ## Fetch
 
 ```sh
