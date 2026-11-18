@@ -7,3 +7,7 @@
 "wrong-table.toml" = ""
 "whitespace-word.toml" = "/entries/0/word"
 "no-pos.toml" = "/entries/0"
+"pos-capitalised.toml" = "/entries/0/pos"
+"pos-leading-space.toml" = "/entries/0/pos"
+"pos-lowercase-adp.toml" = "/entries/0/pos"
+"pos-trailing-newline.toml" = "/entries/0/pos"

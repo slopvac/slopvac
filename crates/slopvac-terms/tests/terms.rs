@@ -1,5 +1,6 @@
 //! Behavior of the casing check, term files and blocklists through the public API.
 
+use rstest::rstest;
 use slopvac_terms::{Blocklist, Pos, TermEntry, TermSet, TermsError, TermsFile};
 
 fn term(t: &str) -> TermEntry {
@@ -214,6 +215,58 @@ fn blocklist_loads_toml_and_looks_up_by_word_and_pos() {
     assert_eq!(e.reason, "Use `use`.");
     assert_eq!(e.replacement.as_deref(), Some("use"));
     assert!(b.lookup("utilize", Pos::Noun).is_none());
+}
+
+fn pos_blocklist(pos: &str) -> String {
+    format!("schema_version = 3\n[[entries]]\nword = \"w\"\npos = \"{pos}\"\nreason = \"r\"\n")
+}
+
+#[rstest]
+#[case::n("n", Pos::Noun)]
+#[case::noun("noun", Pos::Noun)]
+#[case::v("v", Pos::Verb)]
+#[case::verb("verb", Pos::Verb)]
+#[case::adj("adj", Pos::Adjective)]
+#[case::adjective("adjective", Pos::Adjective)]
+#[case::adv("adv", Pos::Adverb)]
+#[case::adverb("adverb", Pos::Adverb)]
+#[case::prep("prep", Pos::Preposition)]
+#[case::preposition("preposition", Pos::Preposition)]
+#[case::conj("conj", Pos::Conjunction)]
+#[case::conjunction("conjunction", Pos::Conjunction)]
+#[case::pron("pron", Pos::Pronoun)]
+#[case::pronoun("pronoun", Pos::Pronoun)]
+#[case::art("art", Pos::Article)]
+#[case::article("article", Pos::Article)]
+#[case::spacy_noun("NOUN", Pos::Noun)]
+#[case::spacy_verb("VERB", Pos::Verb)]
+#[case::spacy_adj("ADJ", Pos::Adjective)]
+#[case::spacy_adv("ADV", Pos::Adverb)]
+#[case::spacy_adp("ADP", Pos::Preposition)]
+#[case::spacy_cconj("CCONJ", Pos::Conjunction)]
+#[case::spacy_sconj("SCONJ", Pos::Conjunction)]
+#[case::spacy_pron("PRON", Pos::Pronoun)]
+#[case::spacy_det("DET", Pos::Article)]
+fn blocklist_accepts_each_listed_pos_as_its_long_form(#[case] raw: &str, #[case] long: Pos) {
+    let b = Blocklist::parse("b.toml", "toml", &pos_blocklist(raw)).unwrap();
+    assert!(b.lookup("w", long).is_some());
+    assert_eq!(b.len(), 1);
+}
+
+#[rstest]
+#[case::capitalised("Noun")]
+#[case::leading_space(" noun")]
+#[case::trailing_space("noun ")]
+#[case::trailing_newline("noun\\n")]
+#[case::lowercase_spacy_tag("adp")]
+#[case::mixed_case_spacy_tag("Det")]
+#[case::empty("")]
+fn blocklist_rejects_a_pos_outside_the_listed_set(#[case] raw: &str) {
+    let error = Blocklist::parse("b.toml", "toml", &pos_blocklist(raw)).unwrap_err();
+    assert!(
+        error.to_string().contains("unrecognized `pos`"),
+        "{raw:?}: {error}"
+    );
 }
 
 #[test]
