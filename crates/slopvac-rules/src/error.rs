@@ -50,7 +50,8 @@ pub enum LoadErrorKind {
         budget: PackBudget,
         /// The limit, in the unit of `budget`.
         limit: u64,
-        /// The pack directory, relative to the root.
+        /// The pack directory as a display path, never absolute: relative to the working directory,
+        /// or `<external>/<name>` outside it.
         path: String,
     },
     /// The file does not parse as a rule or category file.

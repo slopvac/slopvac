@@ -374,3 +374,22 @@ fn a_pack_one_byte_past_the_byte_limit_is_refused_with_its_budget() {
     assert_eq!(budget, "pack-bytes");
     assert_eq!(limit, slopvac_rules::MAX_PACK_BYTES);
 }
+
+#[test]
+fn a_budget_refusal_for_a_pack_outside_the_working_directory_shows_no_absolute_path() {
+    // The temporary directory is absolute and outside the working directory of the test.
+    let dir = tempfile::tempdir().unwrap();
+    write_categories(dir.path(), slopvac_rules::MAX_PACK_FILES + 1);
+    let name = dir.path().file_name().unwrap().to_str().unwrap().to_owned();
+    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
+    let (_, _, path) = budget_error(&e);
+    assert_eq!(path, format!("<external>/{name}"));
+    let absolute = dir.path().to_str().unwrap();
+    for shown in [e.to_string(), format!("{e:?}")] {
+        assert!(shown.contains(&format!("<external>/{name}")), "{shown}");
+        assert!(
+            !shown.contains(absolute),
+            "an absolute path leaked: {shown}"
+        );
+    }
+}

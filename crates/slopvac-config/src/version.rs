@@ -12,7 +12,7 @@ pub const SUPPORTED: i64 = 3;
 /// not an integer is left to the schema, which reports the wrong type.
 #[expect(
     clippy::result_large_err,
-    reason = "the diagnostic is the public error type of this function and of its callers"
+    reason = "the boxed `data` field on `Diagnostic` brings it to 128 bytes, and it is the public error type of this function and of its callers"
 )]
 pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
     let path = vec!["schema_version".to_owned()];
