@@ -11,6 +11,7 @@ mod enabled {
     thread_local! {
         static SECTION: Cell<usize> = const { Cell::new(0) };
         static TEXT: Cell<usize> = const { Cell::new(0) };
+        static HEADING: Cell<usize> = const { Cell::new(0) };
     }
 
     pub(crate) fn section(n: usize) {
@@ -19,6 +20,16 @@ mod enabled {
 
     pub(crate) fn text(n: usize) {
         TEXT.with(|c| c.set(c.get() + n));
+    }
+
+    pub(crate) fn heading(n: usize) {
+        HEADING.with(|c| c.set(c.get() + n));
+    }
+
+    /// Bytes of heading text matched against a heading pattern since the last call.
+    #[must_use]
+    pub fn take_heading_steps() -> usize {
+        HEADING.with(|c| c.replace(0))
     }
 
     /// Blocks examined to find section bounds since the last call.
@@ -35,9 +46,9 @@ mod enabled {
 }
 
 #[cfg(feature = "work-counters")]
-pub(crate) use enabled::{section, text};
+pub(crate) use enabled::{heading, section, text};
 #[cfg(feature = "work-counters")]
-pub use enabled::{take_section_steps, take_text_steps};
+pub use enabled::{take_heading_steps, take_section_steps, take_text_steps};
 
 #[cfg(not(feature = "work-counters"))]
 #[inline(always)]
@@ -46,3 +57,7 @@ pub(crate) fn section(_n: usize) {}
 #[cfg(not(feature = "work-counters"))]
 #[inline(always)]
 pub(crate) fn text(_n: usize) {}
+
+#[cfg(not(feature = "work-counters"))]
+#[inline(always)]
+pub(crate) fn heading(_n: usize) {}

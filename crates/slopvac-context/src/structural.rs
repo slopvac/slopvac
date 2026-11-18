@@ -172,25 +172,39 @@ impl StructuralTagger {
         Ok(true)
     }
 
-    fn block_ok(&self, b: &BlockView<'_>) -> Result<bool, Error> {
+    /// Whether any heading above `b` matches the heading pattern, given the verdicts so far.
+    ///
+    /// `verdicts` holds one entry per heading in the current path, outermost first. Blocks
+    /// come in document order and a block's heading path changes only at a heading block, so
+    /// a heading is matched when the walk reaches it and its verdict serves every block below
+    /// it. Each heading text is matched once, whatever the number of blocks under it and
+    /// however the view stores the path. Call this for every block, in order, even when the
+    /// block is later skipped.
+    fn heading_ok(&self, b: &BlockView<'_>, verdicts: &mut Vec<bool>) -> Result<bool, Error> {
+        let Some(p) = &self.heading else {
+            return Ok(true);
+        };
+        // A heading block ends its own path, so its last entry is the one to compute anew.
+        let keep = if b.kind == BlockKind::Heading {
+            b.heading_path.len().saturating_sub(1)
+        } else {
+            b.heading_path.len()
+        };
+        verdicts.truncate(keep);
+        for h in b.heading_path.iter().skip(verdicts.len()) {
+            crate::work::heading(h.len());
+            verdicts.push(p.is_match(h)?);
+        }
+        Ok(verdicts.iter().any(|&v| v))
+    }
+
+    fn block_ok(&self, b: &BlockView<'_>, heading_ok: bool) -> Result<bool, Error> {
         let kind_ok = match self.block_kind {
             Some(k) => b.kind == k,
             None => b.kind != BlockKind::CodeBlock,
         };
-        if !kind_ok {
+        if !kind_ok || !heading_ok {
             return Ok(false);
-        }
-        if let Some(p) = &self.heading {
-            let mut any = false;
-            for h in &b.heading_path {
-                if p.is_match(h)? {
-                    any = true;
-                    break;
-                }
-            }
-            if !any {
-                return Ok(false);
-            }
         }
         if let Some(p) = &self.admonition {
             match b.admonition_title {
@@ -227,8 +241,10 @@ impl StructuralTagger {
         let mut out = Vec::new();
         let mut bounds = None;
         let mut emitted: Vec<bool> = Vec::new();
+        let mut verdicts = Vec::new();
         for (i, b) in blocks.iter().enumerate() {
-            if !self.block_ok(b)? {
+            let heading_ok = self.heading_ok(b, &mut verdicts)?;
+            if !self.block_ok(b, heading_ok)? {
                 continue;
             }
             let hits: Vec<Range<usize>> = match &self.sentence {

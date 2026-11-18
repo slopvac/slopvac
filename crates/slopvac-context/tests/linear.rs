@@ -9,7 +9,7 @@ use rstest::rstest;
 
 use slopvac_context::{
     BlockView, DocumentView, EnforcedInvariantTagger, PlainDocument, RequirementTagger,
-    SentenceView, Tagger, TaggerSpec, take_section_steps, take_text_steps,
+    SentenceView, Tagger, TaggerSpec, take_heading_steps, take_section_steps, take_text_steps,
 };
 
 /// A document that counts the calls a tagger makes on it.
@@ -182,4 +182,41 @@ fn unclosed_backtick_runs_take_linear_steps() {
             );
         }
     }
+}
+
+/// A heading is matched against the heading pattern once, however many blocks sit under it.
+/// The bound is two bytes per heading byte, so one pass over the heading plus slack passes.
+#[test]
+fn a_long_heading_is_matched_once_for_all_its_blocks() {
+    assert_linear("heading match", 2, 64, |blocks| {
+        let heading = "setup ".repeat(blocks / 8);
+        let src = format!("# {heading}\n\n{}", "Paragraph.\n\n".repeat(blocks));
+        let doc = Counting::new(&src);
+        let _ = take_heading_steps();
+        section_tagger().tag(&doc).unwrap();
+        (heading.len(), take_heading_steps())
+    });
+}
+
+/// Which blocks sit under a matching heading follows the heading path as it changes. A
+/// heading block is under itself, so the matching heading is tagged too.
+#[rstest]
+#[case::sibling_heading_ends_the_match("# Setup\n\nA.\n\n# Other\n\nB.\n", &["Setup", "A."])]
+#[case::subheading_keeps_the_match("# Setup\n\nA.\n\n## Sub\n\nB.\n", &["Setup", "A.", "Sub", "B."])]
+#[case::match_only_on_the_outer_heading(
+    "# Other\n\n## Setup\n\nA.\n\n## Next\n\nB.\n\n# Last\n\nC.\n",
+    &["Setup", "A."]
+)]
+fn blocks_match_while_a_matching_heading_is_above_them(#[case] src: &str, #[case] want: &[&str]) {
+    let yaml =
+        "schema_version: 3\nid: t\ntag: k\nscope: paragraph\nwhen:\n  heading_path: 'setup'\n";
+    let tagger = TaggerSpec::from_yaml(yaml).unwrap().compile().unwrap();
+    let doc = PlainDocument::from_markdown("a.md", src);
+    let got: Vec<&str> = tagger
+        .tag(&doc)
+        .unwrap()
+        .iter()
+        .map(|t| src[t.span.clone()].trim())
+        .collect();
+    assert_eq!(got, want);
 }
