@@ -45,7 +45,7 @@ Earlier releases fixed allow-all for the whole process with `--posture`.
 
 - **Sessions created without a mode** start in the server's default mode. Previously, a gRPC session created without a mode started in `default`.
 
-<!-- fires: unversioned earlier-releases text in a body section -->
+<!-- fires: "previously" in a body section, next to earlier-releases wording -->
 # Permission modes
 
 ## Sessions
