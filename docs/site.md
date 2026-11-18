@@ -32,7 +32,7 @@ Run `just docs` to write the Markdown source tree to `build/site-src`. Nothing g
 
 Run `just docs-check` locally after `just docs` to check that `build/site-src` matches a fresh build. It builds the tree in memory, compares paths and contents, and reports each missing, changed, or obsolete file. It changes nothing. It is a local consistency check, not protection against drift in committed output, because no generated output is committed. Both commands fail on a broken link or a schema with the wrong `$id`.
 
-Run `just docs-site` to build the Starlight site in `site/dist` and copy the rustdoc output to `site/dist/api`. It needs Node from `mise.toml`. Dependabot watches `site/package.json`.
+Run `just docs-site` to build the Starlight site in `site/dist` and copy the rustdoc output to `site/dist/api`. It needs Node from `mise.toml`. Renovate watches `site/package.json`.
 
 GitHub Pages publishes the site from `.github/workflows/docs-deploy.yml` on pushes to `main`. It calls `.github/workflows/docs-site.yml`, which also runs from `test.yml` on pull requests when the `docs-site` path class matches. A pull request builds everything and deploys nothing. The build steps are:
 
