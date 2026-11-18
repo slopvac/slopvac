@@ -5,12 +5,14 @@ Slopvac has one root commit. A tag whose commit has any other root, or more than
 one root, comes from an unrelated history. Two modes share the same check:
 
 * default: check every tag in the repository in the current directory;
-* --pre-push: the same check, run before a push with no network access, with a
-  message that names --delete-foreign-local-tags to remove the offenders locally. It ignores which
-  refs the push carries, because prek does not forward them: a foreign tag in the
-  clone is refused whatever is being pushed;
-* --delete-foreign-local-tags: delete the offending tags from this clone by full
-  refname, with no shell involved.
+* --pre-push: the same check, run before a push with no network access. It ignores
+  which refs the push carries, because prek does not forward them: a foreign tag in
+  the clone is refused whatever is being pushed.
+
+A tag that is a symbolic ref is foreign and is never followed. Offending tags are
+listed as plain full ref names, one per line, with control characters replaced.
+The script never changes the repository; CONTRIBUTING.md explains how to remove
+a foreign tag by hand.
 
 Exit 0 when every checked tag passes, 1 when a tag fails, 2 when git fails.
 """
@@ -22,12 +24,10 @@ import os
 import subprocess
 import sys
 from collections.abc import Iterable
-from pathlib import Path
 
 # The one place the root is recorded. SLOPVAC_ROOT_COMMIT overrides it for tests.
 ROOT_COMMIT = "b516adb5ed8789b2b737c5876f75f2fbc809e755"
 TAG_PREFIX = "refs/tags/"
-DELETE_FLAG = "--delete-foreign-local-tags"
 LIST_LIMIT = 50
 
 
@@ -50,11 +50,14 @@ def roots_of(commit: str) -> list[str] | None:
     return result.stdout.split()
 
 
-def offending(pairs: Iterable[tuple[str, str]], root: str) -> list[str]:
+def offending(tags: Iterable[tuple[str, str, bool]], root: str) -> list[str]:
     """Full refnames of tags whose commit does not have `root` as its only root."""
     cache: dict[str, list[str] | None] = {}
     bad = []
-    for ref, sha in pairs:
+    for ref, sha, symbolic in tags:
+        if symbolic:
+            bad.append(ref)
+            continue
         if sha not in cache:
             cache[sha] = roots_of(sha)
         if cache[sha] != [root]:
@@ -74,44 +77,76 @@ def require_full_history() -> None:
         )
 
 
-def all_tags() -> list[tuple[str, str]]:
+def parse_records(output: bytes) -> list[tuple[str, str, bool]]:
+    """Parse `refname NUL objectname NUL symref NUL LF` records.
+
+    Only NUL separates fields. Ref names may hold Unicode spaces and line
+    separators, so no Unicode-aware split is safe. Names decode with
+    surrogateescape, which keeps them exact.
+    """
+    fields = output.split(b"\0")
+    if fields.pop() not in (b"", b"\n") or len(fields) % 3:
+        raise GitError("unexpected git for-each-ref output")
+    tags = []
+    for i in range(0, len(fields), 3):
+        ref, sha, symref = fields[i : i + 3]
+        ref = ref.removeprefix(b"\n").decode("utf-8", "surrogateescape")
+        if not ref.startswith(TAG_PREFIX) or not sha:
+            raise GitError("unexpected git for-each-ref record")
+        tags.append((ref, sha.decode("ascii", "replace"), bool(symref)))
+    return tags
+
+
+def all_tags() -> list[tuple[str, str, bool]]:
+    """Every tag ref as (full refname, object id, is a symbolic ref)."""
     require_full_history()
-    result = git("for-each-ref", "--format=%(refname) %(objectname)", TAG_PREFIX)
+    result = subprocess.run(
+        [
+            "git",
+            "for-each-ref",
+            "--format=%(refname)%00%(objectname)%00%(symref)%00",
+            TAG_PREFIX,
+        ],
+        capture_output=True,
+        check=False,
+    )
     if result.returncode != 0:
-        raise GitError(result.stderr.strip() or "git for-each-ref failed")
-    return [
-        (ref, sha) for ref, sha in (line.split() for line in result.stdout.splitlines())
-    ]
+        message = result.stderr.decode("utf-8", "replace").strip()
+        raise GitError(message or "git for-each-ref failed")
+    return parse_records(result.stdout)
 
 
-def delete_refs(refs: list[str]) -> None:
-    """Delete each ref by its full name. No shell and no name splitting is involved."""
-    for ref in refs:
-        if not ref.startswith(TAG_PREFIX):
-            raise GitError(f"refusing to delete a ref outside {TAG_PREFIX}: {ref}")
-        result = git("update-ref", "-d", ref)
-        if result.returncode != 0:
-            raise GitError(result.stderr.strip() or f"could not delete {ref}")
+def printable(text: str) -> str:
+    """Escape every non-printable character, so a name cannot drive a terminal.
+
+    Applied only where names are printed; the names themselves stay exact.
+    """
+    return "".join(c if c.isprintable() else escape(c) for c in text)
 
 
-def report(bad: list[str], checked: int, root: str, hint: bool) -> None:
-    where = "local tags" if hint else "tags"
+def escape(char: str) -> str:
+    code = ord(char)
+    return f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}"
+
+
+def report(bad: list[str], checked: int, root: str, local: bool) -> None:
+    where = "local tags" if local else "tags"
     print(
         f"error: {len(bad)} of {checked} {where} are not in slopvac's history "
         f"(expected the only root commit to be {root}).",
         file=sys.stderr,
     )
-    for ref in bad[:LIST_LIMIT]:
-        print(f"  {ref.removeprefix(TAG_PREFIX)}", file=sys.stderr)
-    if len(bad) > LIST_LIMIT:
-        print(f"  ... and {len(bad) - LIST_LIMIT} more", file=sys.stderr)
-    if hint:
+    if local:
         print(
-            "Push refused: these tags exist in this clone, whether or not the push "
-            "carries them. Delete exactly these local tags with:\n"
-            f"  python3 {Path(__file__).as_posix()} {DELETE_FLAG}",
+            "Push refused. These local tags are outside slopvac's history, whether or "
+            "not the push carries them; CONTRIBUTING.md explains how to remove them "
+            "by hand.",
             file=sys.stderr,
         )
+    for ref in bad[:LIST_LIMIT]:
+        print(printable(ref), file=sys.stderr)
+    if len(bad) > LIST_LIMIT:
+        print(f"... and {len(bad) - LIST_LIMIT} more", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -119,33 +154,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--pre-push",
         action="store_true",
-        help="pre-push mode: same check, with a hint for deleting local tags",
+        help="pre-push mode: same check, with a message for local tags",
     )
     parser.add_argument(
         "--root",
         default=os.environ.get("SLOPVAC_ROOT_COMMIT", ROOT_COMMIT),
         help="expected root commit (default: SLOPVAC_ROOT_COMMIT or slopvac's root)",
     )
-    parser.add_argument(
-        DELETE_FLAG,
-        action="store_true",
-        help="delete the foreign tags from this clone, by full refname, then exit",
-    )
     args = parser.parse_args(argv)
     try:
-        pairs = all_tags()
-        bad = offending(pairs, args.root)
-        if args.delete_foreign_local_tags:
-            delete_refs(bad)
-            print(f"deleted {len(bad)} local tags")
-            return 0
+        tags = all_tags()
+        bad = offending(tags, args.root)
     except GitError as err:
         print(f"error: {err}", file=sys.stderr)
         return 2
     if bad:
-        report(bad, len(pairs), args.root, args.pre_push)
+        report(bad, len(tags), args.root, args.pre_push)
         return 1
-    print(f"checked {len(pairs)} tags: 0 offending")
+    print(f"checked {len(tags)} tags: 0 offending")
     return 0
 
 

@@ -83,8 +83,8 @@ def test_tag_on_an_unrelated_history_fails_and_is_named(repo):
     result = run(repo)
     assert result.returncode == 1
     assert "1 of 2 tags" in result.stderr
-    assert "  pi-v9" in result.stderr
-    assert "  v1" not in result.stderr
+    assert "refs/tags/pi-v9" in result.stderr.splitlines()
+    assert "refs/tags/v1" not in result.stderr.splitlines()
 
 
 def test_annotated_tag_is_peeled_to_its_commit(repo):
@@ -93,7 +93,7 @@ def test_annotated_tag_is_peeled_to_its_commit(repo):
     result = run(repo)
     assert result.returncode == 1
     assert "1 of 2 tags" in result.stderr
-    assert "  v2" in result.stderr
+    assert "refs/tags/v2" in result.stderr.splitlines()
 
 
 @pytest.mark.parametrize("mode", [[], ["--pre-push"]], ids=["ci", "hook"])
@@ -104,7 +104,7 @@ def test_commit_with_two_roots_fails(repo, mode):
     git(repo["path"], "tag", "v1")
     result = run(repo, *mode)
     assert result.returncode == 1
-    assert "  v1" in result.stderr
+    assert "refs/tags/v1" in result.stderr.splitlines()
 
 
 def test_failure_list_is_capped_at_fifty_names(repo):
@@ -112,7 +112,7 @@ def test_failure_list_is_capped_at_fifty_names(repo):
         git(repo["path"], "tag", f"t{i:02}", repo["foreign"])
     result = run(repo)
     assert "52 of 52 tags" in result.stderr
-    assert result.stderr.count("\n  t") == 50
+    assert result.stderr.count("\nrefs/tags/t") == 50
     assert "... and 2 more" in result.stderr
 
 
@@ -136,15 +136,15 @@ def test_hook_refuses_when_the_second_of_two_tags_is_foreign(repo):
     git(repo["path"], "tag", "v2", repo["foreign"])
     result = run(repo, "--pre-push")
     assert result.returncode == 1
-    assert "  v2" in result.stderr
-    assert "  v1" not in result.stderr
+    assert "refs/tags/v2" in result.stderr.splitlines()
+    assert "refs/tags/v1" not in result.stderr.splitlines()
 
 
 def test_hook_checks_local_tags_whatever_the_push_carries(repo):
     git(repo["path"], "tag", "old-foreign", repo["foreign"])
     result = run(repo, "--pre-push", stdin="refs/heads/main abc refs/heads/main def\n")
     assert result.returncode == 1
-    assert "  old-foreign" in result.stderr
+    assert "refs/tags/old-foreign" in result.stderr.splitlines()
 
 
 def test_hook_passes_with_only_good_tags_and_no_new_commits(repo):
@@ -159,56 +159,67 @@ def test_hook_passes_without_tags(repo):
     assert run(repo, "--pre-push").returncode == 0
 
 
-def test_hook_names_the_delete_flag(repo):
+def test_hook_points_at_contributing_and_lists_full_ref_names(repo):
     git(repo["path"], "tag", "pi-v1", repo["foreign"])
     result = run(repo, "--pre-push")
-    assert "--delete-foreign-local-tags" in result.stderr
     assert "local tags" in result.stderr
+    assert "CONTRIBUTING.md" in result.stderr
+    assert "\nrefs/tags/pi-v1\n" in result.stderr
 
 
-def test_ci_mode_does_not_print_a_delete_command(repo):
+def test_ci_mode_lists_full_ref_names_without_the_local_message(repo):
     git(repo["path"], "tag", "pi-v1", repo["foreign"])
-    assert "--delete-foreign-local-tags" not in run(repo).stderr
-
-
-def tag_names(path: Path) -> set[str]:
-    return set(git(path, "for-each-ref", "--format=%(refname)", "refs/tags").split())
+    result = run(repo)
+    assert "\nrefs/tags/pi-v1\n" in result.stderr
+    assert "CONTRIBUTING.md" not in result.stderr
 
 
 # Names that a shell, xargs or git's short-name rules would mangle.
 AWKWARD = ["pi-v1", "t'00'", "-x", "x-", 'q"1"', "v1", "$(id)", "a;b", "t00.x"]
 
 
-@pytest.mark.parametrize("count", [2, 12], ids=["few", "many"])
-def test_delete_flag_removes_exactly_the_foreign_tags(repo, count):
+@pytest.mark.parametrize("mode", [[], ["--pre-push"]], ids=["ci", "hook"])
+def test_awkward_names_are_listed_as_plain_full_ref_lines(repo, mode):
     path = repo["path"]
     git(path, "branch", "v1", repo["tip"])
-    good = ["t00", "pi", "x", "q1", "a", "-y"]
-    for name in good:
-        git(path, "update-ref", f"refs/tags/{name}", repo["tip"])
-    git(path, "tag", "-a", "-m", "x", "annotated-good", repo["root"])
-    foreign = [*AWKWARD, *(f"f{i}" for i in range(count))][: max(count, len(AWKWARD))]
-    for name in foreign:
+    git(path, "update-ref", "refs/tags/t00", repo["tip"])
+    for name in AWKWARD:
         git(path, "update-ref", f"refs/tags/{name}", repo["foreign"])
-    result = run(repo, "--delete-foreign-local-tags")
-    assert result.returncode == 0, result.stderr
-    assert tag_names(path) == {f"refs/tags/{n}" for n in [*good, "annotated-good"]}
-    assert git(path, "rev-parse", "refs/heads/v1") == repo["tip"]
+    result = run(repo, *mode)
+    assert result.returncode == 1
+    lines = result.stderr.splitlines()
+    for name in AWKWARD:
+        assert f"refs/tags/{name}" in lines
+    assert "refs/tags/t00" not in lines
 
 
-def test_delete_flag_leaves_a_clean_repo_alone(repo):
-    git(repo["path"], "tag", "v1", repo["tip"])
-    result = run(repo, "--delete-foreign-local-tags")
-    assert result.returncode == 0
-    assert tag_names(repo["path"]) == {"refs/tags/v1"}
+@pytest.mark.parametrize("mode", [[], ["--pre-push"]], ids=["ci", "hook"])
+def test_symbolic_tag_is_foreign_and_not_followed(repo, mode):
+    path = repo["path"]
+    git(path, "tag", "good", repo["tip"])
+    git(path, "symbolic-ref", "refs/tags/s", "refs/heads/main")
+    result = run(repo, *mode)
+    assert result.returncode == 1
+    assert "refs/tags/s" in result.stderr.splitlines()
+    assert "refs/tags/good" not in result.stderr.splitlines()
+    assert git(path, "rev-parse", "refs/heads/main") == repo["tip"]
 
 
-def test_listed_names_are_full_tag_names_even_when_a_branch_shares_one(repo):
-    git(repo["path"], "branch", "v1", repo["tip"])
-    git(repo["path"], "update-ref", "refs/tags/v1", repo["foreign"])
-    result = run(repo, "--pre-push")
-    assert "  v1\n" in result.stderr
-    assert "tags/v1" not in result.stderr
+@pytest.mark.parametrize("mode", [[], ["--pre-push"]], ids=["ci", "hook"])
+def test_unicode_separators_in_a_name_cannot_fabricate_records(repo, mode):
+    """U+2028, U+0085 and U+00A0 are legal in refnames and split Python text."""
+    path = repo["path"]
+    git(path, "tag", "good", repo["tip"])
+    name = "a\u2028refs/tags/good\u0085b\u00a0c"
+    git(path, "update-ref", f"refs/tags/{name}", repo["foreign"])
+    result = run(repo, *mode)
+    assert result.returncode == 1
+    assert "1 of 2 " in result.stderr
+    lines = result.stderr.splitlines()
+    assert "refs/tags/a\\u2028refs/tags/good\\u0085b\\u00a0c" in lines
+    assert "refs/tags/good" not in lines
+    for raw in ("\u2028", "\u0085", "\u00a0"):
+        assert raw not in result.stderr
 
 
 def test_default_root_is_slopvacs_real_root(repo):

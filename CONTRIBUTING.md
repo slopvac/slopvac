@@ -57,7 +57,7 @@ Rust test conventions are in [`docs/testing-rust.md`](docs/testing-rust.md). Ins
 
 Rust CI runs rustfmt, clippy, rustdoc, nextest and doctests. A supply-chain job runs `cargo deny` for licences, bans and sources, `cargo shear` for unused dependencies, `cargo sort` for manifest order and `typos`. Advisories run nightly and report on pull requests without blocking them. `mise install` pins the tools. `prek run --all-files` runs the same checks locally.
 
-A separate workflow, `tag-roots.yml`, runs after pushes to main and weekly, and fails when any remote tag points at a commit outside this repository's history. To catch a stray tag before it leaves your machine, run `prek install -t pre-push`. The hook then refuses any push while a local tag has a different root commit, and it prints the command that deletes those tags.
+A separate workflow, `tag-roots.yml`, runs after pushes to main and weekly, and fails when any remote tag points at a commit outside this repository's history. To catch a stray tag before it leaves your machine, run `prek install -t pre-push`. The hook then refuses any push while a local tag has a different root commit, and it lists those tags by full ref name. Remove each listed tag by hand with `git tag -d <name>`, or with `git update-ref --no-deref -d <ref>` when the tag is a symbolic ref.
 
 Licences: `deny.toml` allows permissive licences only. The CC BY-SA 4.0 part-of-speech model covers the model file, so add a per-crate exception for the crate that embeds it. Never add CC BY-SA to the global allow list.
 
