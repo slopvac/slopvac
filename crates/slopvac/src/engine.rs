@@ -503,7 +503,7 @@ fn collect_targets(
                 }
             };
             let read = std::fs::File::open(&file.path)
-                .map_err(slopvac_fs::Error::Read)
+                .map_err(|e| slopvac_fs::Error::read(&e))
                 .and_then(|f| slopvac_fs::read_capped(f, slopvac_fs::MAX_DOCUMENT_BYTES));
             let bytes = match read {
                 Ok(bytes) => bytes,

@@ -136,7 +136,7 @@ fn read_in(
     clear_nonblocking(&file).map_err(|e| Error::input(InputKind::Io, report, Some(&e)))?;
     read_capped(file, cap).map_err(|e| match e {
         Error::CapExceeded { .. } => Error::input(InputKind::TooLarge, report, None),
-        Error::Read(source) => Error::input(InputKind::Io, report, Some(&source)),
+        Error::Read { source } => Error::input(InputKind::Io, report, Some(&source)),
         other => other,
     })
 }

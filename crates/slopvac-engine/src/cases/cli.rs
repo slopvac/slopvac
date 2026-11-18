@@ -114,12 +114,11 @@ pub fn run(matches: &ArgMatches, out: &mut dyn Write) -> Result<i32, CasesError>
                             path: (*p).clone(),
                             cap,
                         },
-                        slopvac_fs::Error::Io { source, .. } | slopvac_fs::Error::Read(source) => {
-                            CasesError::Io {
-                                path: (*p).clone(),
-                                source,
-                            }
-                        }
+                        slopvac_fs::Error::Io { source, .. }
+                        | slopvac_fs::Error::Read { source, .. } => CasesError::Io {
+                            path: (*p).clone(),
+                            source,
+                        },
                         other => CasesError::Io {
                             path: (*p).clone(),
                             source: std::io::Error::new(

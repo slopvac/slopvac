@@ -164,7 +164,7 @@ fn read_all(file: &mut File) -> std::io::Result<Option<Vec<u8>>> {
     match slopvac_fs::read_capped(file, max_bytes()) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(slopvac_fs::Error::CapExceeded { .. }) => Ok(None),
-        Err(slopvac_fs::Error::Read(source)) => Err(source),
+        Err(slopvac_fs::Error::Read { source, .. }) => Err(source),
         Err(e) => Err(std::io::Error::other(e.to_string())),
     }
 }

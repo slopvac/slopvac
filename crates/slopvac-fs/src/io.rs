@@ -51,7 +51,7 @@ pub fn read_capped(reader: impl Read, cap: u64) -> Result<Vec<u8>> {
 pub fn read_text_capped(path: &Path, cap: u64) -> Result<String> {
     let file = std::fs::File::open(path).map_err(|e| Error::io(Op::Open, path, &e))?;
     let bytes = read_capped(file, cap).map_err(|e| match e {
-        Error::Read(source) => Error::io(Op::ReadFile, path, &source),
+        Error::Read { source } => Error::io(Op::ReadFile, path, &source),
         other => other,
     })?;
     String::from_utf8(bytes).map_err(|_| Error::NotUtf8 {
@@ -419,7 +419,7 @@ mod tests {
         );
         let err = read_capped(Failing(Some(cause)), 8).unwrap_err();
         assert!(!chain(&err).contains("/secret"), "{}", chain(&err));
-        let Error::Read(source) = err else {
+        let Error::Read { source } = err else {
             panic!("expected Error::Read")
         };
         assert_eq!(source.kind(), std::io::ErrorKind::PermissionDenied);
@@ -430,7 +430,7 @@ mod tests {
     fn read_error_from_an_os_code_keeps_the_code() {
         // 2 is ENOENT on every Unix.
         let err = read_capped(Failing(Some(std::io::Error::from_raw_os_error(2))), 8).unwrap_err();
-        let Error::Read(source) = err else {
+        let Error::Read { source } = err else {
             panic!("expected Error::Read")
         };
         assert_eq!(source.raw_os_error(), Some(2));

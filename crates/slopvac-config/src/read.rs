@@ -26,7 +26,7 @@ pub(crate) enum ReadFailure {
 pub(crate) fn read_text(path: &Path, cap: u64) -> Result<String, ReadFailure> {
     slopvac_fs::read_text_capped(path, cap).map_err(|e| match e {
         slopvac_fs::Error::CapExceeded { cap } => ReadFailure::TooLarge(cap),
-        slopvac_fs::Error::Io { source, .. } | slopvac_fs::Error::Read(source) => {
+        slopvac_fs::Error::Io { source, .. } | slopvac_fs::Error::Read { source, .. } => {
             ReadFailure::Io(source)
         }
         slopvac_fs::Error::NotUtf8 { .. } => {

@@ -75,8 +75,15 @@ pub enum Error {
         source: Option<io::Error>,
     },
     /// Reading from a reader failed.
+    ///
+    /// The source holds the OS code or kind only. Build one with [`Error::read`].
     #[error("read failed")]
-    Read(#[source] io::Error),
+    #[non_exhaustive]
+    Read {
+        /// The I/O error, scrubbed to its kind and raw OS code.
+        #[source]
+        source: io::Error,
+    },
 }
 
 /// The operation an [`Error::Io`] failed in.
@@ -257,8 +264,21 @@ impl Error {
         }
     }
 
-    pub(crate) fn read(source: &io::Error) -> Self {
-        Self::Read(scrub(source))
+    /// Wrap a reader failure. The I/O error is scrubbed to its kind and raw OS code, so its
+    /// message and any inner error, which may name a path, never reach the source chain.
+    ///
+    /// Other crates cannot build [`Error::Read`] directly, so an unscrubbed source cannot
+    /// enter the chain:
+    ///
+    /// ```compile_fail
+    /// let io = std::io::Error::other("/secret/path");
+    /// let _ = slopvac_fs::Error::Read { source: io };
+    /// ```
+    #[must_use]
+    pub fn read(source: &io::Error) -> Self {
+        Self::Read {
+            source: scrub(source),
+        }
     }
 }
 
@@ -287,7 +307,7 @@ impl std::fmt::Debug for Error {
                 .field("reason", &reason.as_str())
                 .finish_non_exhaustive(),
             Self::NotUtf8 { .. } => f.write_str("NotUtf8"),
-            Self::Read(source) => f
+            Self::Read { source } => f
                 .debug_struct("Read")
                 .field("kind", &source.kind())
                 .field("os_code", &source.raw_os_error())

@@ -41,7 +41,7 @@ pub(crate) fn read(path: &Path, shown: &str, cap: u64) -> Result<String, ReadFai
         slopvac_fs::Error::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound => {
             ReadFailure::Missing(scrub(&source))
         }
-        slopvac_fs::Error::Io { source, .. } | slopvac_fs::Error::Read(source) => {
+        slopvac_fs::Error::Io { source, .. } | slopvac_fs::Error::Read { source, .. } => {
             ReadFailure::Error(TermsError::Io {
                 path: shown.to_owned(),
                 message: scrub(&source),
