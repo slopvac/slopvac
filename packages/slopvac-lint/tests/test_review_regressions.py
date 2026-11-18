@@ -422,13 +422,14 @@ def test_history_internal_reference_severity_by_profile(profile, expected):
     "text,expected",
     [
         ("The AWS Well-Architected Framework guides the review.", False),
-        ("We ran a well-architected review.", False),
+        ("We ran a well-architected review.", True),
+        ("We shipped a well-architected solution.", True),
         ("The Well Architected tool lists risks.", False),
         ("We architected the platform last year.", True),
         ("Teams keep architecting around the limit.", True),
     ],
 )
-def test_business_jargon_spares_well_architected(text, expected):
+def test_business_jargon_spares_only_the_well_architected_name(text, expected):
     engine = Engine(load_ruleset().rules, resolve_for(Config(), Path("note.md")))
     findings = engine.run(parse("note.md", text))
     assert (
