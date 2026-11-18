@@ -4,7 +4,7 @@
 //! a `slopvac-parse` document to it. Block text is the projected prose and block spans are
 //! source bytes, so a tag span is a source range that a finding span can sit inside.
 
-use std::cell::{Cell, OnceCell, RefCell};
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 
@@ -13,19 +13,11 @@ use slopvac_context::{
     BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, GenreRegistry,
     GenreResult, ResolveOptions, SentenceView, Tag, TagIndex, TagRegistry,
 };
-use slopvac_parse::{BlockKind, ByteMapper, Container, Document, Projection};
+use slopvac_parse::{BlockKind, ByteMapper, Container, Document};
 
-struct Entry<'a> {
-    kind: ViewKind,
-    span: std::ops::Range<usize>,
-    text: &'a str,
-    heading_path: Vec<&'a str>,
-    heading_level: Option<u8>,
-    admonition_title: Option<&'a str>,
-    projection: Option<&'a Projection>,
-    /// The index that maps sentence offsets to source, built when a tagger first asks.
-    mapper: OnceCell<ByteMapper<'a>>,
-}
+mod entry;
+
+use entry::{Context, Entry};
 
 /// The source ranges of one entry, sorted by start, for finding those a tag meets.
 struct Extents {
@@ -81,9 +73,6 @@ struct View<'a> {
     entries: Vec<Entry<'a>>,
     /// The blocks as taggers read them, built once.
     views: Vec<BlockView<'a>>,
-    /// Entries turned into blocks, for the test that checks they are built once.
-    #[cfg(test)]
-    built: Cell<usize>,
     by_span: BTreeMap<(usize, usize), usize>,
 }
 
@@ -140,39 +129,24 @@ impl<'a> View<'a> {
                 BlockKind::CodeBlock { body, .. } => body.start()..body.end(),
                 _ => block.span.start()..block.span.end(),
             };
-            entries.push(Entry {
+            entries.push(Entry::new(
                 kind,
                 span,
                 text,
-                heading_path: headings.iter().map(|(_, t)| *t).collect(),
-                heading_level: level,
-                admonition_title: admonitions.iter().rev().find_map(|(_, t)| *t),
-                projection,
-                mapper: OnceCell::new(),
-            });
+                Context {
+                    heading_path: headings.iter().map(|(_, t)| *t).collect(),
+                    heading_level: level,
+                    admonition_title: admonitions.iter().rev().find_map(|(_, t)| *t),
+                    projection,
+                },
+            ));
         }
         let by_span = entries
             .iter()
             .enumerate()
             .map(|(i, e)| ((e.span.start, e.span.end), i))
             .collect();
-        #[cfg(test)]
-        let built = Cell::new(0);
-        let views = entries
-            .iter()
-            .map(|e| {
-                #[cfg(test)]
-                built.set(built.get() + 1);
-                BlockView {
-                    kind: e.kind,
-                    span: e.span.clone(),
-                    text: e.text,
-                    heading_path: e.heading_path.clone(),
-                    heading_level: e.heading_level,
-                    admonition_title: e.admonition_title,
-                }
-            })
-            .collect();
+        let views = entries.iter().map(Entry::view).collect();
         // A later entry with the same span owns it.
         let owners = entries
             .iter()
@@ -184,8 +158,6 @@ impl<'a> View<'a> {
             visits: Cell::new(0),
             owners: RefCell::new(owners),
             views,
-            #[cfg(test)]
-            built,
             source_len: source.len(),
             title,
             front_matter,
@@ -355,7 +327,7 @@ pub(crate) fn genre(
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
-    use slopvac_parse::{Block, TokenKind};
+    use slopvac_parse::{Block, Projection, TokenKind};
 
     use super::*;
 
@@ -462,13 +434,15 @@ mod tests {
     }
 
     #[test]
-    fn asking_for_the_blocks_again_builds_none_again() {
-        let doc = row_of_fallback_cells(50);
-        let view = View::new("t.rst", "", &doc, None);
-        for _ in 0..4 {
-            assert_eq!(view.blocks().len(), 50);
-        }
-        assert_eq!(view.built.get(), 50);
+    fn every_tagger_reads_blocks_built_once() {
+        let count = 50;
+        let doc = row_of_fallback_cells(count);
+        let registry = slopvac_context::builtin_registry().unwrap();
+        let _ = entry::counted::take_built();
+        tag(&registry, "t.rst", "", &doc, None).unwrap();
+        // The built-in taggers each ask for the blocks. A rebuild per tagger would multiply
+        // the count by the number of taggers.
+        assert_eq!(entry::counted::take_built(), count);
     }
 
     /// The code of `split_interleaved` and of `sentences` as they were before the sentence
