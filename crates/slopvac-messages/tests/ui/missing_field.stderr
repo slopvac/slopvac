@@ -1,0 +1,5 @@
+error: the template uses `{path}` but this variant has no parameter field `path`
+ --> tests/ui/missing_field.rs:8:15
+  |
+8 |     #[message("cannot read {path}")]
+  |               ^^^^^^^^^^^^^^^^^^^^

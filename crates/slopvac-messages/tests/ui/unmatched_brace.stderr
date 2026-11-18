@@ -1,0 +1,5 @@
+error: unmatched `}` in the template; write `}}` for a brace
+ --> tests/ui/unmatched_brace.rs:8:15
+  |
+8 |     #[message("cannot read path}")]
+  |               ^^^^^^^^^^^^^^^^^^^

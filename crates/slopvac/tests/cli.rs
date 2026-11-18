@@ -165,12 +165,25 @@ fn logging_emits_on_stderr_and_leaves_stdout_unchanged() {
 }
 
 #[test]
-fn unwired_commands_exit_2_naming_the_owner() {
+fn unwired_commands_exit_2_without_naming_anyone() {
     slopvac()
         .arg("packs")
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("not available in this build yet"));
+        .stderr(predicate::str::contains(
+            "is not available in this build yet.",
+        ));
+}
+
+#[test]
+fn review_is_an_unwired_command_not_a_usage_error() {
+    slopvac()
+        .args(["review", "doc.md"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[command-not-wired]: `slopvac review` is not available in this build yet.",
+        ));
 }
 
 #[test]

@@ -316,7 +316,7 @@ jobs:
    contents: read
   uses: ./.github/workflows/release-provenance.yml
   secrets:
-   RULESET_READ_TOKEN: ${{ secrets.RULESET_READ_TOKEN }}
+   RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
  pypi:
   name: Publish to PyPI

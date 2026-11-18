@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use flate2::Compression;
@@ -1177,6 +1177,131 @@ fn the_listing_budget_is_shared_across_repositories() {
         lock.get(&pack_id("style")).unwrap().version,
         version("1.2.0")
     );
+}
+
+/// A registry whose answer to every request is written by `serve`. It counts
+/// the requests per path.
+fn scripted_registry(
+    serve: impl Fn(&mut std::net::TcpStream) + Send + Sync + 'static,
+) -> (u16, Arc<Mutex<Vec<String>>>) {
+    use std::io::Read as _;
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = Arc::clone(&seen);
+    let serve = Arc::new(serve);
+    std::thread::spawn(move || {
+        for mut conn in listener.incoming().flatten() {
+            let (log, serve) = (Arc::clone(&log), Arc::clone(&serve));
+            std::thread::spawn(move || {
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if conn.read(&mut byte).unwrap_or(0) == 0 {
+                        return;
+                    }
+                    head.push(byte[0]);
+                }
+                let text = String::from_utf8_lossy(&head).into_owned();
+                log.lock()
+                    .unwrap()
+                    .push(text.split(' ').nth(1).unwrap_or_default().to_owned());
+                serve(&mut conn);
+            });
+        }
+    });
+    (port, seen)
+}
+
+/// A small chunked tag list followed by an endless trailer.
+fn serve_trailer_flood(conn: &mut std::net::TcpStream) {
+    let body = br#"{"tags":["1.2.0","1.3.0"]}"#;
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n",
+        body.len()
+    );
+    let batch = format!("X-Flood: {}\r\n", "a".repeat(1000)).repeat(64);
+    let mut ok = conn.write_all(reply.as_bytes()).is_ok()
+        && conn.write_all(body).is_ok()
+        && conn.write_all(b"\r\n0\r\n").is_ok();
+    for _ in 0..(64 << 20) / batch.len() {
+        if !ok {
+            return;
+        }
+        ok = conn.write_all(batch.as_bytes()).is_ok();
+    }
+}
+
+/// A redirect without a `Location`, padded with 60 KiB of headers.
+fn serve_padded_redirect(conn: &mut std::net::TcpStream) {
+    let pad = format!("X-Pad: {}\r\n", "a".repeat(1000)).repeat(60);
+    let reply = format!("HTTP/1.1 302 Found\r\nContent-Length: 0\r\n{pad}\r\n");
+    let _ = conn.write_all(reply.as_bytes());
+}
+
+/// Two repositories on a registry whose first listing is padded. The first
+/// listing alone uses up `budget`, so the second is refused without a request.
+fn assert_one_listing_uses_up_the_budget(
+    serve: impl Fn(&mut std::net::TcpStream) + Send + Sync + 'static,
+    budget: u64,
+) {
+    let key = Key::new();
+    let (style, other) = two_packs(&key);
+    let (port, seen) = scripted_registry(serve);
+    let reg = format!("127.0.0.1:{port}");
+    let env = Env::new();
+    let before = env.write_lock(&[
+        entry("style", &reg, &style[0], true),
+        entry("other", &reg, &other[0], true),
+    ]);
+    let c = client();
+    let revocations = env.revocations();
+    let pol = policy(&[&key]);
+
+    // Repositories are listed in name order: `other` first.
+    let report = Updater::new(Network::Online(&c), &pol, &revocations)
+        .with_listing_budget(budget)
+        .update(
+            env.dir.path(),
+            &ranges(&[("style", "^1.2"), ("other", "^1.0")]),
+            &[],
+        )
+        .unwrap();
+
+    assert_eq!(report.exit_code(), 2);
+    assert!(
+        report
+            .packs
+            .iter()
+            .all(|p| matches!(p.outcome, Outcome::Refused(_))),
+        "{report:?}"
+    );
+    let paths = seen.lock().unwrap().clone();
+    assert_eq!(
+        paths.iter().filter(|p| p.contains("/acme/other/")).count(),
+        1,
+        "{paths:?}"
+    );
+    assert!(
+        !paths.iter().any(|p| p.contains("/acme/style/")),
+        "the second repository was listed: {paths:?}"
+    );
+    assert_eq!(fs::read_to_string(env.lock_path()).unwrap(), before);
+}
+
+#[test]
+fn trailer_bytes_of_one_listing_use_up_the_budget_for_the_next_repository() {
+    // The decoded tag list is 27 bytes, far under the 1 MiB budget. Its trailer
+    // is not: the raw bytes cut off at the cap use the whole budget.
+    assert_one_listing_uses_up_the_budget(serve_trailer_flood, 1 << 20);
+}
+
+#[test]
+fn bytes_of_a_refused_redirect_use_up_the_budget_for_the_next_repository() {
+    // The redirect has no body and is refused, but its 60 KiB of headers were
+    // read: more than the 40 KiB budget.
+    assert_one_listing_uses_up_the_budget(serve_padded_redirect, 40 << 10);
 }
 
 #[test]

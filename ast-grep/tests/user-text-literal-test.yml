@@ -1,0 +1,24 @@
+id: user-text-literal
+valid:
+  - 'fn f() { println!("{}", value); }'
+  - 'fn f() { println!("ok"); }'
+  - 'fn f() { tracing::info!("loaded the config"); }'
+  - 'fn f() { panic!("never reached here"); }'
+  - 'fn f() { cmd.arg("--flag"); }'
+  - 'fn f() { cmd.help(HELP.as_static()); }'
+  - |
+    #[cfg(test)]
+    mod tests {
+        fn f() { println!("some test output"); }
+    }
+invalid:
+  - 'fn f() { println!("cannot read the file"); }'
+  - 'fn f() { eprintln!("warning: {} is stale", name); }'
+  - 'fn f() { write!(out, "found {} problems", n)?; }'
+  - 'fn f() { let s = format!("cannot read {}", name); }'
+  - 'fn f() { Command::new("x").help("Print the report"); }'
+  - 'fn f() { Command::new("x").about("Lint prose"); }'
+  - |
+    mod tests {
+        fn f() { println!("not marked as test code"); }
+    }

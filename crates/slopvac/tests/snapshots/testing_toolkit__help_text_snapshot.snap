@@ -17,18 +17,19 @@ Commands:
   self         Manage this installation.
   lsp          Run the language server on standard input and output.
   migrate      Migrate a 2.x project to 3.0: config, inline directives and steering blocks
+  terms        Manage project terms
+  genre        Print the genre of each file, with scores and the reasons for the choice
+  validate     Check config, front matter and inline directives without linting
+  setup        Install or remove project-local steering for a harness
+  prime        Print guidance for agents, one topic at a time
   completions  Print a shell completion script.
   man          Write man pages.
-  terms        Check and list the project terms.
-  genre        Show or detect the document genre.
-  validate     Validate configuration, packs and front matter.
   plugins      Manage plugins and packs: sync, trust, update.
   packs        List installed rule packs.
-  setup        Install slopvac guidance into agent harnesses.
-  prime        Print guidance for agents, by topic.
   onboard      Print the agent onboarding text.
   reference    Generate or check the rules reference.
   report       Preview or submit an issue report.
+  review       Run the prose reviewer on files.
   help         Print this message or the help of the given subcommand(s)
 
 Options:

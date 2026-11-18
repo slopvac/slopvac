@@ -1,0 +1,50 @@
+id: user-text-literal
+language: rust
+severity: error
+message: Put user-facing text in the crate's message catalog, not in a literal at the call site.
+note: >-
+  Add a variant with `#[derive(Catalog)]` in the crate's `messages.rs` and render it. Tests,
+  benches, examples, `cfg(test)` modules, `tracing` events and `panic!` are exempt. For a
+  machine-format writer, add `// ast-grep-ignore: user-text-literal` above the call.
+# The rule applies only to crates that adopted the registry. Add a crate's glob here when
+# it migrates; the last step widens this to every crate.
+files:
+  - crates/slopvac-messages/src/**
+ignores:
+  # Audit output is for contributors reading a failing test, not for users.
+  - crates/slopvac-messages/src/audit.rs
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/examples/**"
+rule:
+  any:
+    - all:
+        - kind: macro_invocation
+        - has:
+            field: macro
+            regex: ^(print|println|eprint|eprintln|write|writeln|format)$
+        - has:
+            kind: string_literal
+            regex: '[A-Za-z]{2,}[:,.]? +[A-Za-z{]'
+            stopBy: end
+    - all:
+        - kind: call_expression
+        - has:
+            field: function
+            kind: field_expression
+            has:
+              field: field
+              regex: ^(help|about|long_about|long_help|before_help|after_help)$
+        - has:
+            field: arguments
+            has:
+              kind: string_literal
+              regex: '[A-Za-z]{2,}[:,.]? +[A-Za-z{]'
+  not:
+    inside:
+      kind: mod_item
+      follows:
+        kind: attribute_item
+        regex: cfg\(test\)
+        stopBy: neighbor
+      stopBy: end

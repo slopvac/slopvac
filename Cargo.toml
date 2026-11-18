@@ -45,14 +45,20 @@ minisign = { version = "0.10", default-features = false }
 minisign-verify = "0.3"
 # Pinned: 0.2.10 vendors PCRE2 10.46; the rules need >= 10.43 (slopvac-8l4.3.20).
 pcre2-sys = "=0.2.10"
+proc-macro2 = "1"
 proptest = "1.12.0"
 pulldown-cmark = { version = "0.13", default-features = false }
+quote = "1"
 rayon = "1.11"
 roxmltree = "0.21"
 rstest = "0.28"
 rustix = { version = "1", default-features = false, features = [
   "std",
   "process",
+] }
+rustls = { version = "0.23", default-features = false, features = [
+  "ring",
+  "std",
 ] }
 saphyr = "0.3"
 # The event parser behind saphyr, pinned to the version saphyr 0.3 uses.
@@ -71,6 +77,8 @@ slopvac-diagrams = { path = "crates/slopvac-diagrams" }
 slopvac-engine = { path = "crates/slopvac-engine" }
 slopvac-fs = { path = "crates/slopvac-fs" }
 slopvac-lsp = { path = "crates/slopvac-lsp" }
+slopvac-messages = { path = "crates/slopvac-messages" }
+slopvac-messages-derive = { path = "crates/slopvac-messages-derive" }
 slopvac-migrate = { path = "crates/slopvac-migrate" }
 slopvac-model = { path = "crates/slopvac-model" }
 slopvac-parse = { path = "crates/slopvac-parse" }
@@ -86,6 +94,7 @@ slopvac-text = { path = "crates/slopvac-text" }
 slopvac-update = { path = "crates/slopvac-update" }
 snapbox = "1.2"
 strsim = "0.11.1"
+syn = "2"
 tar = { version = "0.4", default-features = false }
 tempfile = "3"
 thiserror = "2"
@@ -97,8 +106,11 @@ tree-sitter-c = "0.24"
 tree-sitter-go = "0.25"
 tree-sitter-java = "0.23"
 tree-sitter-proto = "0.6"
+trybuild = "1"
 unicode-normalization = "0.1"
-ureq = { version = "3.5", default-features = false, features = [
+# Pinned exactly: the connector chain in `oci/http.rs` uses ureq's `unversioned`
+# transport API, which has no semver promise.
+ureq = { version = "=3.5.2", default-features = false, features = [
   "rustls",
   "platform-verifier",
 ] }
