@@ -423,7 +423,8 @@ def test_history_internal_reference_severity_by_profile(profile, expected):
     [
         ("The AWS Well-Architected Framework guides the review.", False),
         ("We ran a well-architected review.", True),
-        ("We shipped a well-architected solution.", True),
+        ("Well-architected systems scale.", True),
+        ("Well-Architecting the platform took months.", True),
         ("The Well Architected tool lists risks.", False),
         ("We architected the platform last year.", True),
         ("Teams keep architecting around the limit.", True),
