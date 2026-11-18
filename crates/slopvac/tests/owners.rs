@@ -461,3 +461,58 @@ fn a_config_path_that_contains_a_colon_and_space_is_redacted_whole() {
         assert!(!err.contains(leaked), "{leaked} leaked: {err}");
     }
 }
+
+#[test]
+fn prime_with_an_oversize_config_names_the_file_and_the_cap_without_its_directories() {
+    let work = tempfile::tempdir().unwrap();
+    let outside = external();
+    let big = outside.path().join("big dir").join("slopvac.toml");
+    fs::create_dir_all(big.parent().unwrap()).unwrap();
+    fs::write(
+        &big,
+        format!("schema_version = 3\n# {}\n", "x".repeat(1024 * 1024 + 1)),
+    )
+    .unwrap();
+    let out = slopvac(work.path())
+        .args(["prime", "--config"])
+        .arg(&big)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.starts_with(
+            "error[config-too-large]: <external>/slopvac.toml is larger than 1048576 bytes"
+        ),
+        "{err}"
+    );
+    assert_clean(&err, &outside);
+    assert!(!err.contains("big dir"), "{err}");
+}
+
+#[test]
+fn terms_with_an_oversize_file_names_it_without_its_directories() {
+    let work = tempfile::tempdir().unwrap();
+    let outside = external();
+    let big = outside.path().join("big dir").join("terms.toml");
+    fs::create_dir_all(big.parent().unwrap()).unwrap();
+    fs::write(
+        &big,
+        format!("schema_version = 3\n# {}\n", "x".repeat(1024 * 1024 + 1)),
+    )
+    .unwrap();
+    let out = slopvac(work.path())
+        .args(["terms", "list", "--files"])
+        .arg(&big)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(err.starts_with("error[terms-file-too-large]: "), "{err}");
+    assert!(
+        err.contains("<external>/terms.toml is larger than"),
+        "{err}"
+    );
+    assert_clean(&err, &outside);
+    assert!(!err.contains("big dir"), "{err}");
+}

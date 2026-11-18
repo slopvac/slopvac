@@ -76,7 +76,7 @@ impl Guidance {
 
 fn config_error(e: &ConfigError) -> AgentsError {
     let paths = match e {
-        ConfigError::Io { path, .. } => vec![path.clone()],
+        ConfigError::Io { path, .. } | ConfigError::TooLarge { path, .. } => vec![path.clone()],
         ConfigError::Rejected(_) => Vec::new(),
     };
     AgentsError::Config {

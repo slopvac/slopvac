@@ -41,6 +41,7 @@ fn shown(path: &str) -> String {
 fn terms_error(err: &TermsError) -> CliError {
     let (code, path) = match err {
         TermsError::Io { path, .. } => ("terms-io", path),
+        TermsError::TooLarge { code, path, .. } => (*code, path),
         TermsError::Parse { path, .. } => ("terms-parse", path),
         TermsError::MissingSchemaVersion { path } => ("terms-missing-schema-version", path),
         TermsError::SchemaVersion { path, .. } => ("terms-schema-version", path),
