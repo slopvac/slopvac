@@ -76,9 +76,8 @@ fn each_line_of_a_wrapped_cell_is_checked_as_the_requirement_it_is() {
     assert_eq!(places(&doc), want);
 }
 
-/// Steps per line of the wrapped cell that splitting the tags may take. Each of the four
-/// sentence taggers tags every line once, and each tag meets its own extent.
-const STEPS_PER_LINE: usize = 24;
+/// Steps per line of the wrapped cell that splitting the tags may take. The count is about two.
+const STEPS_PER_LINE: usize = 8;
 
 #[test]
 fn splitting_the_tags_of_a_wrapped_cell_takes_steps_in_proportion_to_its_lines() {
