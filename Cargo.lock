@@ -2563,6 +2563,7 @@ dependencies = [
  "cap-std",
  "etcetera",
  "proptest",
+ "rstest",
  "rustix",
  "tempfile",
  "thiserror",
