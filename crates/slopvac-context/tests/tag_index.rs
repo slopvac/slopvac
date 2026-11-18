@@ -145,9 +145,9 @@ fn probes(n: usize) -> usize {
 }
 
 /// `n` sentence tags in a document-wide section: one lookup for each sentence, as a document
-/// with a finding in each sentence makes. Two kinds are present, and a lookup probes each
-/// kind once, so a lookup costs at most `2 * probes(n)` steps. An index that scanned every
-/// tag would cost `n` steps a lookup and fail the bound at the larger sizes.
+/// with a finding in each sentence makes. A lookup is one binary search and one walk from a
+/// leaf to the root of the tree, so it costs a few times `probes(n)` steps. An index that
+/// scanned every tag would cost `n` steps a lookup and fail the bound at the larger sizes.
 #[test]
 fn one_lookup_for_each_sentence_takes_n_log_n_steps() {
     for n in [1_000, 2_000, 4_000, 8_000] {
@@ -162,7 +162,7 @@ fn one_lookup_for_each_sentence_takes_n_log_n_steps() {
             );
         }
         let used = take_lookup_steps();
-        let bound = 2 * probes(n + 1) * n;
+        let bound = 4 * probes(n + 1) * n;
         assert!(used > 0, "no work counted at size {n}");
         assert!(used <= bound, "{used} steps for {n} lookups, bound {bound}");
     }
@@ -222,6 +222,46 @@ fn lookups_in_one_tag_of_many_pieces_take_n_log_n_steps() {
         let used = take_lookup_steps();
         // Per lookup: the multi-piece search, the path to one piece, and a search of the
         // pieces for each of two ranges.
+        let bound = 6 * probes(n) * n;
+        assert!(used > 0, "no work counted at size {n}");
+        assert!(used <= bound, "{used} steps for {n} lookups, bound {bound}");
+    }
+}
+
+/// `n` sentence tags that each have a kind of their own, and a lookup for each sentence. The
+/// number of kinds has no upper limit, so a lookup may not cost a step for each kind.
+#[test]
+fn lookups_do_not_cost_a_step_for_each_kind() {
+    for n in [1_000, 2_000, 4_000, 8_000] {
+        let tags: Vec<Tag> = (0..n)
+            .map(|i| tag(&format!("k{i:05}"), i * 10..i * 10 + 9))
+            .collect();
+        let index = TagIndex::from_tags(tags);
+        let _ = take_lookup_steps();
+        for i in 0..n {
+            let kinds = index.kinds_at(&(i * 10 + 2..i * 10 + 5));
+            assert_eq!(kinds, [format!("k{i:05}")]);
+        }
+        let used = take_lookup_steps();
+        let bound = 6 * probes(n) * n;
+        assert!(used > 0, "no work counted at size {n}");
+        assert!(used <= bound, "{used} steps for {n} lookups, bound {bound}");
+    }
+}
+
+/// `n` tags of one kind whose spans overlap and slide: `i..n + i`. Every tag holds the middle
+/// of the document, and the answer is the one kind. A lookup may not cost a step for each tag
+/// that holds the span.
+#[test]
+fn lookups_do_not_cost_a_step_for_each_tag_of_a_kind() {
+    for n in [1_000, 2_000, 4_000, 8_000] {
+        let tags: Vec<Tag> = (0..n).map(|i| tag("slide", i..n + i)).collect();
+        let index = TagIndex::from_tags(tags);
+        let _ = take_lookup_steps();
+        for _ in 0..n {
+            assert_eq!(index.kinds_at(&(n / 2..n / 2 + 1)), ["slide"]);
+        }
+        let used = take_lookup_steps();
         let bound = 6 * probes(n) * n;
         assert!(used > 0, "no work counted at size {n}");
         assert!(used <= bound, "{used} steps for {n} lookups, bound {bound}");
