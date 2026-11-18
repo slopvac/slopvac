@@ -783,18 +783,47 @@ fn a_fifo_coverage_file_is_refused_without_blocking() {
     );
     let pack = dir.path().to_str().unwrap().to_owned();
     let corpus = fifo.to_str().unwrap().to_owned();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let worker = std::thread::spawn(move || {
+    let probe = fifo.clone();
+    let result = common::within_timeout(&probe, move || {
         let m = slopvac_engine::cases::cli::command()
             .try_get_matches_from(["cases", &pack, "--coverage", &corpus])
             .unwrap();
-        let _ = tx.send(slopvac_engine::cases::cli::run(&m, &mut Vec::new()));
+        slopvac_engine::cases::cli::run(&m, &mut Vec::new())
     });
-    let got = rx.recv_timeout(std::time::Duration::from_secs(5));
-    if got.is_err() {
-        drop(std::fs::OpenOptions::new().write(true).open(&fifo));
-    }
-    worker.join().unwrap();
-    let err = got.expect("the read blocked on a FIFO").unwrap_err();
+    let err = result.unwrap_err();
     assert!(err.to_string().contains("not a regular file"), "{err}");
+}
+
+/// A link to a regular corpus file is read through the link.
+#[test]
+fn a_symlinked_coverage_file_is_read() {
+    let dir = pack_dir(1);
+    let real = dir.path().join("real.txt");
+    std::fs::write(&real, "no match here").unwrap();
+    let link = dir.path().join("doc.md");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let (code, out) = cli(&[
+        dir.path().to_str().unwrap(),
+        "--coverage",
+        link.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{out}");
+}
+
+/// A dangling link is a missing file, as before.
+#[test]
+fn a_dangling_coverage_link_is_a_not_found_error() {
+    let dir = pack_dir(1);
+    let link = dir.path().join("doc.md");
+    std::os::unix::fs::symlink(dir.path().join("gone.md"), &link).unwrap();
+    let m = slopvac_engine::cases::cli::command()
+        .try_get_matches_from([
+            "cases",
+            dir.path().to_str().unwrap(),
+            "--coverage",
+            link.to_str().unwrap(),
+        ])
+        .unwrap();
+    let err = slopvac_engine::cases::cli::run(&m, &mut Vec::new()).unwrap_err();
+    assert!(err.to_string().contains("No such file"), "{err}");
 }

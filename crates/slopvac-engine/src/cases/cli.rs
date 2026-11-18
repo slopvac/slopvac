@@ -4,7 +4,7 @@
 //! mounts them (as `pack test`); nothing here owns `main`.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString, PackId, RuleId};
@@ -109,8 +109,14 @@ pub fn run(matches: &ArgMatches, out: &mut dyn Write) -> Result<i32, CasesError>
             .iter()
             .map(|p| {
                 let shown = (*p).clone();
+                // The reader refuses a symlink, but a linked corpus file is supported. Resolve
+                // the link first; a missing file or a dangling link is a not-found error.
+                let resolved = std::fs::canonicalize(p).map_err(|source| CasesError::Io {
+                    path: shown.clone(),
+                    source,
+                })?;
                 slopvac_fs::read_capped_regular_to_string(
-                    Path::new(p),
+                    &resolved,
                     crate::MAX_FILE_BYTES,
                     slopvac_fs::ReadOptions::new(),
                 )

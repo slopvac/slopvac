@@ -1,5 +1,7 @@
 //! Layer order, merge rules, provenance and discovery, through the public interface.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -1466,21 +1468,6 @@ fn repeating_a_large_file_two_hundred_times_is_refused_without_applying_it() {
     assert_eq!(data.budget, ConfigBudget::ExtendsAppliedBytes);
 }
 
-/// Run `f` on a worker thread. When it has not returned after five seconds, open the FIFO's
-/// write end so a blocked reader wakes, join the worker, then fail.
-fn within_timeout<T: Send + 'static>(fifo: &Path, f: impl FnOnce() -> T + Send + 'static) -> T {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let worker = std::thread::spawn(move || {
-        let _ = tx.send(f());
-    });
-    let got = rx.recv_timeout(std::time::Duration::from_secs(5));
-    if got.is_err() {
-        drop(fs::OpenOptions::new().write(true).open(fifo));
-    }
-    worker.join().unwrap();
-    got.expect("the read blocked on a FIFO")
-}
-
 fn mkfifo(path: &Path) {
     let made = std::process::Command::new("mkfifo")
         .arg(path)
@@ -1495,7 +1482,7 @@ fn a_fifo_config_is_refused_with_config_io() {
     let fifo = fx.root().join("slopvac.toml");
     mkfifo(&fifo);
     let path = fifo.clone();
-    let err = within_timeout(&fifo, move || load(&path, &NoPresets).unwrap_err());
+    let err = common::within_timeout(&fifo, move || load(&path, &NoPresets).unwrap_err());
     assert_eq!(err.code(), Code::Io);
     assert!(
         err.render().starts_with("error[config-io]"),
@@ -1513,7 +1500,7 @@ fn a_fifo_extends_target_is_refused_at_the_entry() {
         "slopvac.toml",
         "schema_version = 3\nextends = [\"pipe.toml\"]\n",
     );
-    let err = within_timeout(&fifo, move || load(&p, &NoPresets).unwrap_err());
+    let err = common::within_timeout(&fifo, move || load(&p, &NoPresets).unwrap_err());
     let r = rejected(err);
     assert_eq!(r.diagnostics[0].code, Code::ExtendsMissing);
     assert!(
@@ -1538,7 +1525,7 @@ fn symlinked_configs_still_load() {
     );
     std::os::unix::fs::symlink(&p, root.join("link.toml")).unwrap();
     let probe = root.join("link.toml");
-    let loaded = within_timeout(&probe.clone(), move || load(&probe, &NoPresets));
+    let loaded = common::within_timeout(&probe.clone(), move || load(&probe, &NoPresets));
     assert!(loaded.is_ok(), "{:?}", loaded.err().map(|e| e.render()));
 }
 

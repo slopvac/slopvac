@@ -1,5 +1,7 @@
 //! Styles as layer 2 of the config stack: values keep the preset and line that set them.
 
+mod common;
+
 use std::path::Path;
 
 use serde_json::json;
@@ -186,16 +188,9 @@ fn a_fifo_style_fails_the_config_load_instead_of_vanishing() {
     let path = project.path().join("slopvac.toml");
     std::fs::write(&path, "schema_version = 3\nstyles = [\"pipe\"]\n").unwrap();
     let source = DirSource::new(styles.path());
-    let (tx, rx) = std::sync::mpsc::channel();
-    let worker = std::thread::spawn(move || {
-        let _ = tx.send(load(&path, &StylePresets(source)));
-    });
-    let got = rx.recv_timeout(std::time::Duration::from_secs(5));
-    if got.is_err() {
-        drop(std::fs::OpenOptions::new().write(true).open(&fifo));
-    }
-    worker.join().unwrap();
-    let err = got.expect("the load blocked on a FIFO").unwrap_err();
+    let probe = fifo.clone();
+    let result = common::within_timeout(&probe, move || load(&path, &StylePresets(source)));
+    let err = result.unwrap_err();
     assert_eq!(err.code(), slopvac_config::Code::Io);
     assert!(
         err.render().contains("not a regular file"),
