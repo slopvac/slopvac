@@ -154,7 +154,7 @@ impl Spatial {
             }
         }
         for node in &mut nodes {
-            node.sort_by(|a, b| b.0.cmp(&a.0));
+            node.sort_by_key(|&(end, _)| std::cmp::Reverse(end));
         }
         Self {
             starts: kept.iter().map(|t| t.0).collect(),
