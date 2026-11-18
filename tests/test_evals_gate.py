@@ -228,6 +228,17 @@ def test_with_no_labels_precision_is_not_measured_and_the_gate_does_not_pass():
     assert "precision not measured" in gate.markdown(out, "enforce").lower()
 
 
+def test_a_non_precision_regression_without_labels_does_not_blame_labels(base):
+    manifest, results, _ = base
+    out = regress(
+        manifest,
+        results,
+        lambda d: [d[k].update(findings=[]) for k in d if k.startswith("s")],
+    )
+    assert out["passed"] is False
+    assert "precision not measured" not in gate.markdown(out, "enforce").lower()
+
+
 def test_a_baseline_without_precision_still_passes_with_no_labels(base):
     manifest, results, baseline = base
     out = gate.compare(baseline, cards(manifest, results))
