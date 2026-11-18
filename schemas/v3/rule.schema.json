@@ -138,8 +138,20 @@
               "type": "integer"
             },
             {
-              "$ref": "#/$defs/WantRange",
-              "description": "Between `min` and `max` findings, inclusive."
+              "additionalProperties": false,
+              "description": "Between `min` and `max` findings, inclusive.",
+              "minProperties": 1,
+              "properties": {
+                "max": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "min": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
             }
           ]
         }
@@ -539,8 +551,7 @@
           "$ref": "common.schema.json#/$defs/SchemaVersion"
         },
         "scope": {
-          "$ref": "#/$defs/Scope",
-          "default": "prose"
+          "$ref": "#/$defs/Scope"
         },
         "severity": {
           "$ref": "common.schema.json#/$defs/Severity",
@@ -548,8 +559,7 @@
           "description": "The shipped level. A category cap or a profile shift can lower it, never a rule. Disabling a rule is configuration, so there is no off level."
         },
         "text_type": {
-          "$ref": "#/$defs/TextType",
-          "default": "any"
+          "$ref": "#/$defs/TextType"
         }
       },
       "required": [
@@ -701,22 +711,6 @@
         "kind",
         "check"
       ],
-      "type": "object"
-    },
-    "WantRange": {
-      "additionalProperties": false,
-      "description": "An inclusive finding-count range with at least one bound.",
-      "minProperties": 1,
-      "properties": {
-        "max": {
-          "minimum": 0,
-          "type": "integer"
-        },
-        "min": {
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
       "type": "object"
     }
   },

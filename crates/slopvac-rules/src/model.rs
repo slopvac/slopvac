@@ -757,7 +757,7 @@ pub enum Want {
 /// An inclusive finding-count range with at least one bound.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(try_from = "WantRangeFields")]
-#[schemars(rename = "WantRange")]
+#[schemars(rename = "WantRange", inline)]
 #[schemars(extend("additionalProperties" = false, "minProperties" = 1))]
 pub struct WantRange {
     /// The lower bound.
@@ -975,6 +975,13 @@ fn judgement_constraints() -> serde_json::Value {
     )
 }
 
+/// The default of `scope` and `text_type` is stated once, on the definition each refers to.
+fn definition_default(schema: &mut schemars::Schema) {
+    if schema.get("$ref").is_some() {
+        schema.remove("default");
+    }
+}
+
 fn default_ai_signal() -> AiSignal {
     AiSignal::None
 }
@@ -1081,9 +1088,10 @@ struct RuleFields {
     #[schemars(extend("default" = "warning"))]
     severity: Option<Severity>,
     #[serde(default)]
+    #[schemars(transform = definition_default)]
     scope: Scope,
     #[serde(default = "default_text_type")]
-    #[schemars(with = "TextTypeSchema")]
+    #[schemars(with = "TextTypeSchema", transform = definition_default)]
     text_type: slopvac_text::TextType,
     #[serde(rename = "match")]
     match_: Match,
