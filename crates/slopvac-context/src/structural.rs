@@ -172,18 +172,18 @@ impl StructuralTagger {
         Ok(true)
     }
 
-    /// Whether any heading above `b` matches the heading pattern, given the verdicts so far.
+    /// Follow the heading path to block `b`.
     ///
     /// `verdicts` holds one entry per heading in the current path, outermost first. Blocks
     /// come in document order and a block's heading path changes only at a heading block, so
-    /// a heading is matched when the walk reaches it and its verdict serves every block below
-    /// it. Each heading text is matched once, whatever the number of blocks under it and
-    /// however the view stores the path. Call this for every block, in order, even when the
-    /// block is later skipped.
-    fn heading_ok(&self, b: &BlockView<'_>, verdicts: &mut Vec<bool>) -> Result<bool, Error> {
-        let Some(p) = &self.heading else {
-            return Ok(true);
-        };
+    /// the entries below the point where the path changed stay valid. A new entry starts
+    /// unknown: the heading pattern runs on a heading only when a block that could be tagged
+    /// needs the verdict, and then the verdict serves every block below it. Call this for
+    /// every block, in order, even when the block is later skipped.
+    fn enter(&self, b: &BlockView<'_>, verdicts: &mut Vec<Option<bool>>) {
+        if self.heading.is_none() {
+            return;
+        }
         // A heading block ends its own path, so its last entry is the one to compute anew.
         let keep = if b.kind == BlockKind::Heading {
             b.heading_path.len().saturating_sub(1)
@@ -191,19 +191,38 @@ impl StructuralTagger {
             b.heading_path.len()
         };
         verdicts.truncate(keep);
-        for h in b.heading_path.iter().skip(verdicts.len()) {
-            crate::work::heading(h.len());
-            verdicts.push(p.is_match(h)?);
-        }
-        Ok(verdicts.iter().any(|&v| v))
+        verdicts.resize(b.heading_path.len(), None);
     }
 
-    fn block_ok(&self, b: &BlockView<'_>, heading_ok: bool) -> Result<bool, Error> {
+    /// Whether any heading above `b` matches the heading pattern. Headings are tried
+    /// outermost first and the walk stops at the first match, so an error from a heading
+    /// below a matching one never surfaces.
+    fn heading_ok(&self, b: &BlockView<'_>, verdicts: &mut [Option<bool>]) -> Result<bool, Error> {
+        let Some(p) = &self.heading else {
+            return Ok(true);
+        };
+        for (h, slot) in b.heading_path.iter().zip(verdicts.iter_mut()) {
+            let hit = if let Some(hit) = *slot {
+                hit
+            } else {
+                crate::work::heading(h.len());
+                let hit = p.is_match(h)?;
+                *slot = Some(hit);
+                hit
+            };
+            if hit {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn block_ok(&self, b: &BlockView<'_>, verdicts: &mut [Option<bool>]) -> Result<bool, Error> {
         let kind_ok = match self.block_kind {
             Some(k) => b.kind == k,
             None => b.kind != BlockKind::CodeBlock,
         };
-        if !kind_ok || !heading_ok {
+        if !kind_ok || !self.heading_ok(b, verdicts)? {
             return Ok(false);
         }
         if let Some(p) = &self.admonition {
@@ -243,8 +262,8 @@ impl StructuralTagger {
         let mut emitted: Vec<bool> = Vec::new();
         let mut verdicts = Vec::new();
         for (i, b) in blocks.iter().enumerate() {
-            let heading_ok = self.heading_ok(b, &mut verdicts)?;
-            if !self.block_ok(b, heading_ok)? {
+            self.enter(b, &mut verdicts);
+            if !self.block_ok(b, &mut verdicts)? {
                 continue;
             }
             let hits: Vec<Range<usize>> = match &self.sentence {
