@@ -60,8 +60,6 @@ const ENV_PREFIX: &str = "SLOPVAC_PLUGIN_ENV_";
 pub enum Launcher {
     /// The running executable, which must call [`intercept`] first thing in
     /// `main`. Production uses this.
-    // STUB(slopvac-8l4.9.24): the `slopvac` binary does not call `intercept`
-    // yet, so a plugin it starts this way fails to start.
     #[default]
     CurrentExe,
     /// Another program that calls [`intercept`], such as this package's
