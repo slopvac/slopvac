@@ -673,5 +673,8 @@ def test_readme_rule_totals_match_the_yaml_text():
     root = Path(__file__).parents[3]
     for path in (root / "README.md", root / "packages" / "slopvac-lint" / "README.md"):
         text = " ".join(path.read_text(encoding="utf-8").split())
-        assert f"{checked} checked rules" in text, path
-        assert f"{judgement} judgment rules" in text, path
+        claims = re.findall(r"\b(\d+) (checked|judg(?:e)?ment) rules\b", text)
+        assert claims, f"{path} states no rule count"
+        expected = {"checked": checked, "judgment": judgement, "judgement": judgement}
+        for number, kind in claims:
+            assert int(number) == expected[kind], f"{path}: {number} {kind} rules"
