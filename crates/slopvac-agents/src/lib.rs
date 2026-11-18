@@ -16,3 +16,7 @@ pub mod review;
 pub mod setup;
 
 pub use error::AgentsError;
+
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use block::marker_scan_steps;

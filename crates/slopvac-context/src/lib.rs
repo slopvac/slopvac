@@ -13,6 +13,7 @@ mod schema;
 mod structural;
 mod tag;
 mod view;
+mod work;
 
 pub use builtin::{
     EnforcedInvariantTagger, ListLeadInTagger, RequirementTagger, builtin_genres, builtin_registry,
@@ -34,6 +35,9 @@ pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger};
 pub use view::{
     BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, split_sentences,
 };
+#[cfg(feature = "work-counters")]
+#[doc(hidden)]
+pub use work::{take_admonition_steps, take_heading_steps, take_section_steps, take_text_steps};
 
 pub use pattern::MAX_PATTERN_BYTES;
 

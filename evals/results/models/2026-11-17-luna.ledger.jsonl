@@ -1,0 +1,696 @@
+{"event": "reserve", "model": "gpt-6-luna", "n": 1}
+{"event": "reserve", "model": "gpt-6-luna", "n": 2}
+{"event": "reserve", "model": "gpt-6-luna", "n": 3}
+{"event": "reserve", "model": "gpt-6-luna", "n": 4}
+{"event": "reserve", "model": "gpt-6-luna", "n": 5}
+{"event": "reserve", "model": "gpt-6-luna", "n": 6}
+{"event": "finish", "model": "gpt-6-luna", "n": 2, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 7}
+{"event": "finish", "model": "gpt-6-luna", "n": 1, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 8}
+{"event": "finish", "model": "gpt-6-luna", "n": 3, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 9}
+{"event": "finish", "model": "gpt-6-luna", "n": 4, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 10}
+{"event": "finish", "model": "gpt-6-luna", "n": 5, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 11}
+{"event": "finish", "model": "gpt-6-luna", "n": 6, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 12}
+{"event": "finish", "model": "gpt-6-luna", "n": 7, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 13}
+{"event": "finish", "model": "gpt-6-luna", "n": 8, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 14}
+{"event": "finish", "model": "gpt-6-luna", "n": 9, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 15}
+{"event": "finish", "model": "gpt-6-luna", "n": 10, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 16}
+{"event": "finish", "model": "gpt-6-luna", "n": 11, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 17}
+{"event": "finish", "model": "gpt-6-luna", "n": 12, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 18}
+{"event": "finish", "model": "gpt-6-luna", "n": 13, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 19}
+{"event": "finish", "model": "gpt-6-luna", "n": 14, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 20}
+{"event": "finish", "model": "gpt-6-luna", "n": 15, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 21}
+{"event": "finish", "model": "gpt-6-luna", "n": 16, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 22}
+{"event": "finish", "model": "gpt-6-luna", "n": 17, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 23}
+{"event": "finish", "model": "gpt-6-luna", "n": 18, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 24}
+{"event": "finish", "model": "gpt-6-luna", "n": 19, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 25}
+{"event": "finish", "model": "gpt-6-luna", "n": 20, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 26}
+{"event": "finish", "model": "gpt-6-luna", "n": 21, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 27}
+{"event": "finish", "model": "gpt-6-luna", "n": 24, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 28}
+{"event": "finish", "model": "gpt-6-luna", "n": 22, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 29}
+{"event": "finish", "model": "gpt-6-luna", "n": 23, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 30}
+{"event": "finish", "model": "gpt-6-luna", "n": 25, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 31}
+{"event": "finish", "model": "gpt-6-luna", "n": 26, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 32}
+{"event": "finish", "model": "gpt-6-luna", "n": 27, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 33}
+{"event": "finish", "model": "gpt-6-luna", "n": 28, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 34}
+{"event": "finish", "model": "gpt-6-luna", "n": 29, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 35}
+{"event": "finish", "model": "gpt-6-luna", "n": 30, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 36}
+{"event": "finish", "model": "gpt-6-luna", "n": 31, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 37}
+{"event": "finish", "model": "gpt-6-luna", "n": 32, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 38}
+{"event": "finish", "model": "gpt-6-luna", "n": 33, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 39}
+{"event": "finish", "model": "gpt-6-luna", "n": 34, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 37, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 40}
+{"event": "reserve", "model": "gpt-6-luna", "n": 41}
+{"event": "finish", "model": "gpt-6-luna", "n": 36, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 42}
+{"event": "finish", "model": "gpt-6-luna", "n": 35, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 43}
+{"event": "finish", "model": "gpt-6-luna", "n": 39, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 44}
+{"event": "finish", "model": "gpt-6-luna", "n": 38, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 45}
+{"event": "finish", "model": "gpt-6-luna", "n": 42, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 46}
+{"event": "finish", "model": "gpt-6-luna", "n": 43, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 47}
+{"event": "finish", "model": "gpt-6-luna", "n": 45, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 48}
+{"event": "finish", "model": "gpt-6-luna", "n": 46, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 49}
+{"event": "finish", "model": "gpt-6-luna", "n": 47, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 50}
+{"event": "finish", "model": "gpt-6-luna", "n": 48, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 51}
+{"event": "finish", "model": "gpt-6-luna", "n": 41, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 52}
+{"event": "finish", "model": "gpt-6-luna", "n": 49, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 53}
+{"event": "finish", "model": "gpt-6-luna", "n": 50, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 54}
+{"event": "finish", "model": "gpt-6-luna", "n": 51, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 55}
+{"event": "finish", "model": "gpt-6-luna", "n": 40, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 56}
+{"event": "finish", "model": "gpt-6-luna", "n": 52, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 57}
+{"event": "finish", "model": "gpt-6-luna", "n": 44, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 58}
+{"event": "finish", "model": "gpt-6-luna", "n": 53, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 59}
+{"event": "finish", "model": "gpt-6-luna", "n": 54, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 60}
+{"event": "finish", "model": "gpt-6-luna", "n": 55, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 61}
+{"event": "finish", "model": "gpt-6-luna", "n": 56, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 62}
+{"event": "finish", "model": "gpt-6-luna", "n": 57, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 63}
+{"event": "finish", "model": "gpt-6-luna", "n": 58, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 64}
+{"event": "finish", "model": "gpt-6-luna", "n": 59, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 65}
+{"event": "finish", "model": "gpt-6-luna", "n": 60, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 66}
+{"event": "finish", "model": "gpt-6-luna", "n": 61, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 67}
+{"event": "finish", "model": "gpt-6-luna", "n": 62, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 68}
+{"event": "finish", "model": "gpt-6-luna", "n": 63, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 69}
+{"event": "finish", "model": "gpt-6-luna", "n": 64, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 70}
+{"event": "finish", "model": "gpt-6-luna", "n": 66, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 71}
+{"event": "finish", "model": "gpt-6-luna", "n": 65, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 72}
+{"event": "finish", "model": "gpt-6-luna", "n": 67, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 73}
+{"event": "finish", "model": "gpt-6-luna", "n": 68, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 74}
+{"event": "finish", "model": "gpt-6-luna", "n": 69, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 75}
+{"event": "finish", "model": "gpt-6-luna", "n": 70, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 76}
+{"event": "finish", "model": "gpt-6-luna", "n": 71, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 77}
+{"event": "finish", "model": "gpt-6-luna", "n": 72, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 78}
+{"event": "finish", "model": "gpt-6-luna", "n": 73, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 79}
+{"event": "finish", "model": "gpt-6-luna", "n": 74, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 80}
+{"event": "finish", "model": "gpt-6-luna", "n": 75, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 81}
+{"event": "finish", "model": "gpt-6-luna", "n": 76, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 82}
+{"event": "finish", "model": "gpt-6-luna", "n": 77, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 83}
+{"event": "finish", "model": "gpt-6-luna", "n": 78, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 84}
+{"event": "finish", "model": "gpt-6-luna", "n": 79, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 85}
+{"event": "finish", "model": "gpt-6-luna", "n": 80, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 86}
+{"event": "finish", "model": "gpt-6-luna", "n": 81, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 87}
+{"event": "finish", "model": "gpt-6-luna", "n": 82, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 88}
+{"event": "finish", "model": "gpt-6-luna", "n": 83, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 89}
+{"event": "finish", "model": "gpt-6-luna", "n": 84, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 90}
+{"event": "finish", "model": "gpt-6-luna", "n": 85, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 91}
+{"event": "finish", "model": "gpt-6-luna", "n": 86, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 92}
+{"event": "finish", "model": "gpt-6-luna", "n": 87, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 93}
+{"event": "finish", "model": "gpt-6-luna", "n": 88, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 94}
+{"event": "finish", "model": "gpt-6-luna", "n": 89, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 95}
+{"event": "finish", "model": "gpt-6-luna", "n": 90, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 96}
+{"event": "finish", "model": "gpt-6-luna", "n": 91, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 97}
+{"event": "finish", "model": "gpt-6-luna", "n": 94, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 98}
+{"event": "finish", "model": "gpt-6-luna", "n": 92, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 99}
+{"event": "finish", "model": "gpt-6-luna", "n": 95, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 100}
+{"event": "finish", "model": "gpt-6-luna", "n": 93, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 101}
+{"event": "finish", "model": "gpt-6-luna", "n": 96, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 102}
+{"event": "finish", "model": "gpt-6-luna", "n": 97, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 103}
+{"event": "finish", "model": "gpt-6-luna", "n": 98, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 104}
+{"event": "finish", "model": "gpt-6-luna", "n": 99, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 105}
+{"event": "finish", "model": "gpt-6-luna", "n": 103, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 106}
+{"event": "finish", "model": "gpt-6-luna", "n": 101, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 107}
+{"event": "finish", "model": "gpt-6-luna", "n": 102, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 108}
+{"event": "finish", "model": "gpt-6-luna", "n": 104, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 109}
+{"event": "finish", "model": "gpt-6-luna", "n": 100, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 110}
+{"event": "finish", "model": "gpt-6-luna", "n": 105, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 111}
+{"event": "finish", "model": "gpt-6-luna", "n": 106, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 112}
+{"event": "finish", "model": "gpt-6-luna", "n": 107, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 113}
+{"event": "finish", "model": "gpt-6-luna", "n": 108, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 114}
+{"event": "finish", "model": "gpt-6-luna", "n": 109, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 115}
+{"event": "finish", "model": "gpt-6-luna", "n": 110, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 116}
+{"event": "finish", "model": "gpt-6-luna", "n": 111, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 117}
+{"event": "finish", "model": "gpt-6-luna", "n": 112, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 118}
+{"event": "finish", "model": "gpt-6-luna", "n": 114, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 119}
+{"event": "finish", "model": "gpt-6-luna", "n": 113, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 120}
+{"event": "finish", "model": "gpt-6-luna", "n": 118, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 121}
+{"event": "finish", "model": "gpt-6-luna", "n": 120, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 122}
+{"event": "finish", "model": "gpt-6-luna", "n": 119, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 123}
+{"event": "finish", "model": "gpt-6-luna", "n": 115, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 124}
+{"event": "finish", "model": "gpt-6-luna", "n": 116, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 125}
+{"event": "finish", "model": "gpt-6-luna", "n": 117, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 126}
+{"event": "finish", "model": "gpt-6-luna", "n": 121, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 127}
+{"event": "finish", "model": "gpt-6-luna", "n": 123, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 128}
+{"event": "finish", "model": "gpt-6-luna", "n": 122, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 129}
+{"event": "finish", "model": "gpt-6-luna", "n": 126, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 130}
+{"event": "finish", "model": "gpt-6-luna", "n": 124, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 131}
+{"event": "finish", "model": "gpt-6-luna", "n": 125, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 132}
+{"event": "finish", "model": "gpt-6-luna", "n": 127, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 128, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 129, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 131, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 132, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 130, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 133}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 134}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 135}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 136}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 137}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 138}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 133, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 139}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 135, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 140}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 138, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 141}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 134, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 142}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 137, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 143}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 136, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 144}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 139, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 145}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 140, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 146}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 141, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 147}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 144, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 148}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 143, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 149}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 142, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 150}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 145, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 151}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 148, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 152}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 146, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 153}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 147, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 154}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 150, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 155}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 149, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 156}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 151, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 157}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 154, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 158}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 156, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 159}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 155, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 160}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 153, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 161}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 152, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 162}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 157, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 163}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 162, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 164}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 159, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 165}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 160, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 166}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 161, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 167}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 158, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 168}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 163, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 169}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 164, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 170}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 165, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 171}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 166, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 172}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 167, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 173}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 168, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 174}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 169, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 175}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 171, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 176}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 172, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 177}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 174, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 178}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 170, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 179}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 173, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 180}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 175, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 181}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 176, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 182}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 177, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 183}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 178, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 184}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 180, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 185}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 179, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 186}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 181, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 187}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 183, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 188}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 182, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 189}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 184, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 190}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 186, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 191}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 185, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 192}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 187, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 193}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 188, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 194}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 189, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 195}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 190, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 196}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 192, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 197}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 193, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 198}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 191, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 199}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 194, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 200}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 195, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 201}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 196, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 202}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 198, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 203}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 197, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 204}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 201, "status": "ok"}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 199, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 205}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 206}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 202, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 207}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 200, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 208}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 203, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 209}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 204, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 210}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 207, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 211}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 205, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 212}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 208, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 213}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 206, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 214}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 210, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 215}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 209, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 216}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 213, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 217}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 212, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 218}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 211, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 219}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 214, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 220}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 216, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 221}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 215, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 222}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 219, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 223}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 217, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 224}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 218, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 225}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 220, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 226}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 221, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 227}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 222, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 228}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 225, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 229}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 223, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 230}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 224, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 231}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 226, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 232}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 228, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 233}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 227, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 234}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 231, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 235}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 229, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 236}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 230, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 237}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 232, "status": "ok"}
+{"event": "reserve", "model": "claude-sonnet-5-5", "n": 238}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 234, "status": "ok"}
+{"event": "reserve", "model": "claude-haiku-5-5", "n": 239}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 233, "status": "ok"}
+{"event": "reserve", "model": "gpt-6.1-sol", "n": 240}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 237, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 241}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 235, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 242}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 236, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 243}
+{"event": "finish", "model": "claude-sonnet-5-5", "n": 238, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 244}
+{"event": "finish", "model": "gpt-6.1-sol", "n": 240, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 245}
+{"event": "finish", "model": "claude-haiku-5-5", "n": 239, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 246}
+{"event": "finish", "model": "gpt-6-luna", "n": 242, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 247}
+{"event": "finish", "model": "gpt-6-luna", "n": 243, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 248}
+{"event": "finish", "model": "gpt-6-luna", "n": 241, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 249}
+{"event": "finish", "model": "gpt-6-luna", "n": 244, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 250}
+{"event": "finish", "model": "gpt-6-luna", "n": 245, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 251}
+{"event": "finish", "model": "gpt-6-luna", "n": 246, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 252}
+{"event": "finish", "model": "gpt-6-luna", "n": 247, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 253}
+{"event": "finish", "model": "gpt-6-luna", "n": 250, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 254}
+{"event": "finish", "model": "gpt-6-luna", "n": 251, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 255}
+{"event": "finish", "model": "gpt-6-luna", "n": 248, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 256}
+{"event": "finish", "model": "gpt-6-luna", "n": 252, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 257}
+{"event": "finish", "model": "gpt-6-luna", "n": 249, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 258}
+{"event": "finish", "model": "gpt-6-luna", "n": 253, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 259}
+{"event": "finish", "model": "gpt-6-luna", "n": 254, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 260}
+{"event": "finish", "model": "gpt-6-luna", "n": 255, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 261}
+{"event": "finish", "model": "gpt-6-luna", "n": 257, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 262}
+{"event": "finish", "model": "gpt-6-luna", "n": 256, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 263}
+{"event": "finish", "model": "gpt-6-luna", "n": 258, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 264}
+{"event": "finish", "model": "gpt-6-luna", "n": 260, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 265}
+{"event": "finish", "model": "gpt-6-luna", "n": 259, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 266}
+{"event": "finish", "model": "gpt-6-luna", "n": 261, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 267}
+{"event": "finish", "model": "gpt-6-luna", "n": 263, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 268}
+{"event": "finish", "model": "gpt-6-luna", "n": 262, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 269}
+{"event": "finish", "model": "gpt-6-luna", "n": 266, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 270}
+{"event": "finish", "model": "gpt-6-luna", "n": 265, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 271}
+{"event": "finish", "model": "gpt-6-luna", "n": 264, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 272}
+{"event": "finish", "model": "gpt-6-luna", "n": 267, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 273}
+{"event": "finish", "model": "gpt-6-luna", "n": 268, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 274}
+{"event": "finish", "model": "gpt-6-luna", "n": 271, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 275}
+{"event": "finish", "model": "gpt-6-luna", "n": 272, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 276}
+{"event": "finish", "model": "gpt-6-luna", "n": 273, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 277}
+{"event": "finish", "model": "gpt-6-luna", "n": 270, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 278}
+{"event": "finish", "model": "gpt-6-luna", "n": 269, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 279}
+{"event": "finish", "model": "gpt-6-luna", "n": 274, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 280}
+{"event": "finish", "model": "gpt-6-luna", "n": 276, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 281}
+{"event": "finish", "model": "gpt-6-luna", "n": 275, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 282}
+{"event": "finish", "model": "gpt-6-luna", "n": 280, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 283}
+{"event": "finish", "model": "gpt-6-luna", "n": 279, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 284}
+{"event": "finish", "model": "gpt-6-luna", "n": 278, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 285}
+{"event": "finish", "model": "gpt-6-luna", "n": 281, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 286}
+{"event": "finish", "model": "gpt-6-luna", "n": 277, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 287}
+{"event": "finish", "model": "gpt-6-luna", "n": 282, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 288}
+{"event": "finish", "model": "gpt-6-luna", "n": 283, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 289}
+{"event": "finish", "model": "gpt-6-luna", "n": 286, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 290}
+{"event": "finish", "model": "gpt-6-luna", "n": 287, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 291}
+{"event": "finish", "model": "gpt-6-luna", "n": 284, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 292}
+{"event": "finish", "model": "gpt-6-luna", "n": 288, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 293}
+{"event": "finish", "model": "gpt-6-luna", "n": 289, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 294}
+{"event": "finish", "model": "gpt-6-luna", "n": 285, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 295}
+{"event": "finish", "model": "gpt-6-luna", "n": 290, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 296}
+{"event": "finish", "model": "gpt-6-luna", "n": 291, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 297}
+{"event": "finish", "model": "gpt-6-luna", "n": 292, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 298}
+{"event": "finish", "model": "gpt-6-luna", "n": 293, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 299}
+{"event": "finish", "model": "gpt-6-luna", "n": 294, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 300}
+{"event": "finish", "model": "gpt-6-luna", "n": 295, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 301}
+{"event": "finish", "model": "gpt-6-luna", "n": 296, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 302}
+{"event": "finish", "model": "gpt-6-luna", "n": 297, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 303}
+{"event": "finish", "model": "gpt-6-luna", "n": 298, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 304}
+{"event": "finish", "model": "gpt-6-luna", "n": 301, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 305}
+{"event": "finish", "model": "gpt-6-luna", "n": 300, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 306}
+{"event": "finish", "model": "gpt-6-luna", "n": 299, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 307}
+{"event": "finish", "model": "gpt-6-luna", "n": 302, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 308}
+{"event": "finish", "model": "gpt-6-luna", "n": 303, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 309}
+{"event": "finish", "model": "gpt-6-luna", "n": 305, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 310}
+{"event": "finish", "model": "gpt-6-luna", "n": 304, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 311}
+{"event": "finish", "model": "gpt-6-luna", "n": 307, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 312}
+{"event": "finish", "model": "gpt-6-luna", "n": 308, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 313}
+{"event": "finish", "model": "gpt-6-luna", "n": 309, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 314}
+{"event": "finish", "model": "gpt-6-luna", "n": 306, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 315}
+{"event": "finish", "model": "gpt-6-luna", "n": 310, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 316}
+{"event": "finish", "model": "gpt-6-luna", "n": 312, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 317}
+{"event": "finish", "model": "gpt-6-luna", "n": 311, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 318}
+{"event": "finish", "model": "gpt-6-luna", "n": 313, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 319}
+{"event": "finish", "model": "gpt-6-luna", "n": 314, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 320}
+{"event": "finish", "model": "gpt-6-luna", "n": 316, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 321}
+{"event": "finish", "model": "gpt-6-luna", "n": 315, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 322}
+{"event": "finish", "model": "gpt-6-luna", "n": 317, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 323}
+{"event": "finish", "model": "gpt-6-luna", "n": 318, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 324}
+{"event": "finish", "model": "gpt-6-luna", "n": 319, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 325}
+{"event": "finish", "model": "gpt-6-luna", "n": 320, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 326}
+{"event": "finish", "model": "gpt-6-luna", "n": 323, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 327}
+{"event": "finish", "model": "gpt-6-luna", "n": 322, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 328}
+{"event": "finish", "model": "gpt-6-luna", "n": 324, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 329}
+{"event": "finish", "model": "gpt-6-luna", "n": 321, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 330}
+{"event": "finish", "model": "gpt-6-luna", "n": 325, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 331}
+{"event": "finish", "model": "gpt-6-luna", "n": 326, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 332}
+{"event": "finish", "model": "gpt-6-luna", "n": 327, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 333}
+{"event": "finish", "model": "gpt-6-luna", "n": 328, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 334}
+{"event": "finish", "model": "gpt-6-luna", "n": 329, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 335}
+{"event": "finish", "model": "gpt-6-luna", "n": 330, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 336}
+{"event": "finish", "model": "gpt-6-luna", "n": 331, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 337}
+{"event": "finish", "model": "gpt-6-luna", "n": 332, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 338}
+{"event": "finish", "model": "gpt-6-luna", "n": 333, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 339}
+{"event": "finish", "model": "gpt-6-luna", "n": 334, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 340}
+{"event": "finish", "model": "gpt-6-luna", "n": 335, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 341}
+{"event": "finish", "model": "gpt-6-luna", "n": 336, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 342}
+{"event": "finish", "model": "gpt-6-luna", "n": 338, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 343}
+{"event": "finish", "model": "gpt-6-luna", "n": 337, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 344}
+{"event": "finish", "model": "gpt-6-luna", "n": 339, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 345}
+{"event": "finish", "model": "gpt-6-luna", "n": 344, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 346}
+{"event": "finish", "model": "gpt-6-luna", "n": 343, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 347}
+{"event": "finish", "model": "gpt-6-luna", "n": 345, "status": "ok"}
+{"event": "reserve", "model": "gpt-6-luna", "n": 348}
+{"event": "finish", "model": "gpt-6-luna", "n": 341, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 342, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 340, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 346, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 347, "status": "ok"}
+{"event": "finish", "model": "gpt-6-luna", "n": 348, "status": "ok"}

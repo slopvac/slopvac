@@ -1,0 +1,159 @@
+name: Revocation list
+
+# Signs an empty first-party revocation list and publishes it to GHCR (bead
+# slopvac-8l4.13.48). The CLI fetches ghcr.io/slopvac/slopvac-revocations:latest on
+# every online sync and fails with exit 2 when the list is missing, unsigned or past
+# its `expires`. A list is valid for 30 days, so a weekly run keeps one in force.
+#
+# Two jobs. `build-sign` is the only one that reads the signing key. `push` holds
+# `packages: write` and no secret. Never add a pull_request trigger: this workflow
+# signs with the release key.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      first_publication:
+        description: >-
+          For the very first run, or to recover from a published list that fails
+          verification (the run logs a warning and replaces it). The run fails if
+          the published list verifies. Without it, a missing list fails the run.
+        type: boolean
+        default: false
+permissions: {}
+
+# A second run would sign a list with a later `issued` while the first pushes.
+concurrency:
+  group: revocations
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/slopvac/slopvac-revocations:latest
+  ARTIFACT_TYPE: application/vnd.slopvac.revocations.v1
+  MEDIA_LIST: application/vnd.slopvac.revocations.v1+json
+  MEDIA_SIGNATURE: application/vnd.slopvac.signature.minisig.v1
+
+jobs:
+  build-sign:
+    name: Build and sign the list
+    if: ${{ github.repository == 'slopvac/slopvac' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Defence in depth only. The `if` above keeps a v* tag or a branch from signing;
+    # the environment's deployment rule (main only) is the real control.
+    # The environment holds the key. Change its name on the next line only.
+    environment: revocations
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install minisign
+        run: bash scripts/install_minisign.sh
+
+      - name: Build, sign and verify the list
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: python3 scripts/revocation_list.py build "$RUNNER_TEMP/revocations"
+
+      - name: Upload the list and its signature
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: revocations
+          path: ${{ runner.temp }}/revocations/
+          if-no-files-found: error
+          retention-days: 7
+
+  push:
+    name: Push the list to GHCR
+    needs: build-sign
+    # Same guard as build-sign, as defence in depth.
+    if: ${{ github.repository == 'slopvac/slopvac' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the list and its signature
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: revocations
+          path: ${{ runner.temp }}/revocations
+
+      - name: Install minisign
+        run: bash scripts/install_minisign.sh
+
+      - name: Install oras
+        run: bash scripts/install_oras.sh
+
+      - name: Verify against the committed public key
+        run: python3 scripts/revocation_list.py verify "$RUNNER_TEMP/revocations"
+
+      - name: Log in to GHCR
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GH_ACTOR" --password-stdin
+
+      # A retried older run must not replace a newer list: clients that cached the
+      # newer one refuse the older `issued`. The manifest is resolved on its own, and
+      # only a clear "manifest not found" means nothing is published. Every other
+      # failure stops the job. Only a manual run with first_publication may find
+      # nothing published, or replace a published list that fails verification (it
+      # logs a warning); it never replaces one that verifies. A scheduled run never
+      # bootstraps or recovers.
+      - name: Fetch the published list
+        env:
+          FIRST_PUBLICATION: ${{ inputs.first_publication }}
+        run: |
+          args=()
+          if [[ "$FIRST_PUBLICATION" == true ]]; then
+            args+=(--first-publication)
+          fi
+          python3 scripts/revocation_list.py fetch-published "$IMAGE" "$RUNNER_TEMP/published" "${args[@]}"
+
+      - name: Require a newer list than the published one
+        env:
+          FIRST_PUBLICATION: ${{ inputs.first_publication }}
+        run: |
+          args=()
+          if [[ "$FIRST_PUBLICATION" == true ]]; then
+            args+=(--first-publication)
+          fi
+          python3 scripts/revocation_list.py check-newer \
+            "$RUNNER_TEMP/revocations" "$RUNNER_TEMP/published" "${args[@]}"
+
+      - name: Push
+        env:
+          REPO: ${{ github.repository }}
+        working-directory: ${{ runner.temp }}/revocations
+        run: |
+          # The list comes first, its signature second: the CLI accepts only these two layers.
+          oras push "$IMAGE" \
+            --artifact-type "$ARTIFACT_TYPE" \
+            --annotation "org.opencontainers.image.source=https://github.com/${REPO}" \
+            "revocations.json:${MEDIA_LIST}" \
+            "revocations.json.minisig:${MEDIA_SIGNATURE}"
+
+      - name: Check what the registry serves
+        env:
+          PULLED: ${{ runner.temp }}/pulled
+        run: |
+          oras pull "$IMAGE" --output "$PULLED"
+          python3 scripts/revocation_list.py verify "$PULLED"
+          oras manifest fetch "$IMAGE" | python3 -c '
+          import json, os, sys
+          manifest = json.load(sys.stdin)
+          layers = [layer["mediaType"] for layer in manifest["layers"]]
+          want = [os.environ["MEDIA_LIST"], os.environ["MEDIA_SIGNATURE"]]
+          assert manifest["artifactType"] == os.environ["ARTIFACT_TYPE"], manifest
+          assert layers == want, layers
+          '

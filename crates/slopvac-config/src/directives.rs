@@ -438,6 +438,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
                 span: d.payload.clone(),
                 help: None,
                 path: vec!["directive".into()],
+                data: None,
             });
         }
     }

@@ -54,6 +54,7 @@ mod file;
 mod fix;
 mod lint;
 pub mod locale;
+mod matcher_work;
 mod matching;
 mod metrics;
 mod prepare;
@@ -77,6 +78,9 @@ pub use fix::{FixError, FixReport, SkipReason, Skipped, fix_document, unified_di
 #[doc(hidden)]
 pub use lint::nearby_block_visits;
 pub use lint::{Engine, EngineError, Input, Kind};
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use matcher_work::matcher_entries;
 pub use score::{CategoryInfo, Scoring, score_document};
 pub use settings::{CategoryDials, Level, Mode, Settings, Thresholds};
 pub use skip::{SkipRanges, skip_ranges};

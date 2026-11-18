@@ -152,7 +152,13 @@ def score(
                     cell[1] += 1
 
     rules: dict[str, Any] = {}
-    names = set(pooled) | set(control) | set(human_hits) | set(llm_hits) | set(precision_cells)
+    names = (
+        set(pooled)
+        | set(control)
+        | set(human_hits)
+        | set(llm_hits)
+        | set(precision_cells)
+    )
     for rule in sorted(names):
         entry: dict[str, Any] = {}
         if rule in pooled:

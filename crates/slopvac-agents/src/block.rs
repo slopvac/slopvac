@@ -96,7 +96,11 @@ fn section(text: &str, shown: &str) -> Result<Option<(usize, usize)>, AgentsErro
     let mut cursor = 0;
     let mut found: Vec<(&str, usize, usize)> = Vec::new();
     for span in line_spans(text) {
-        while cursor < fenced.len() && fenced[cursor].end <= span.start {
+        count_marker_scan_step();
+        while cursor < fenced.len() && {
+            count_marker_scan_step();
+            fenced[cursor].end <= span.start
+        } {
             cursor += 1;
         }
         let inside = cursor < fenced.len() && fenced[cursor].start <= span.start;
@@ -117,6 +121,26 @@ fn section(text: &str, shown: &str) -> Result<Option<(usize, usize)>, AgentsErro
         _ => Err(AgentsError::MalformedMarkers(shown.into())),
     }
 }
+
+#[cfg(feature = "test-counters")]
+static MARKER_SCAN_STEPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Line inspections and code-block range visits made by marker scans in this process.
+/// Read the difference around setup calls in an otherwise idle test process.
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn marker_scan_steps() -> usize {
+    MARKER_SCAN_STEPS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(feature = "test-counters")]
+fn count_marker_scan_step() {
+    MARKER_SCAN_STEPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(not(feature = "test-counters"))]
+fn count_marker_scan_step() {}
 
 /// The line terminator that ends `text`, if it ends with one. The separator before
 /// a new block copies it, so a lone CR after LF lines cannot merge into a CRLF.

@@ -32,6 +32,10 @@ jobs:
 
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
+          # sha256 is the digest of the extracted mise executable (linux-x64), equal to the
+          # mise-v2026.11.9-linux-x64 entry in the release's SHASUMS256.txt. Bump both together.
+          version: 2026.11.9
+          sha256: f13f3e5ec88807e0161669b3aa07a91d84478cdf1e95b5b92b63f85a25d42395
           install: false
           cache: false
 

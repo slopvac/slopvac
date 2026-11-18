@@ -87,9 +87,8 @@ A path in the report is relative to the working directory, or `<external>/<file 
 
 ## 4. Build status
 
-Three inputs come from local stand-ins until the beads that own them land:
+Two inputs come from local stand-ins until the beads that own them land:
 
-- The install method is always `unknown`, and doctor starts no update refresh. `slopvac-8l4.12.22` swaps in `slopvac-update`.
 - Configuration discovery handles one `slopvac.toml` and ignores `extends`. `slopvac-8l4.12.23` swaps in the config layer.
 - The directory locations come from the environment. `slopvac-8l4.12.24` swaps in the shared resolver.
 

@@ -184,6 +184,12 @@ fn plan_dir(
     };
     plan.notes
         .extend(rewrite.notes.into_iter().map(|n| format!("{label}: {n}")));
+    let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
+    plan.notes.extend(
+        dropped_in_pyproject(rewrite.removed_categories, py)
+            .iter()
+            .map(|d| format!("{label}: {}", d.category_removed_notice())),
+    );
     let target = rel(root, &main_cfg);
     match origin {
         Origin::InPlace => plan.changes.push(Change {
@@ -237,34 +243,40 @@ enum Origin {
 /// Point the lines of a config error at `pyproject.toml` when the config came from
 /// its `[tool.slopvac]` table. `py` is the `pyproject.toml` text in that case.
 fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
-    let Some(lines) = py.and_then(|t| key_lines(t).ok()) else {
-        return e;
-    };
-    let line_of = |key: &str| lines.get(&format!("tool.slopvac.{key}")).copied();
     match e {
-        Error::Dropped(d) => Error::Dropped(
-            d.into_iter()
-                .map(|mut x| {
-                    if let Some(l) = line_of(&x.key) {
-                        x.line = l;
-                    }
-                    x
-                })
-                .collect(),
-        ),
+        Error::Dropped(d) => Error::Dropped(dropped_in_pyproject(d, py)),
         Error::OverrideOverlap {
             file,
             line,
             block,
             reason,
-        } => Error::OverrideOverlap {
-            line: line_of(&format!("overrides[{block}]")).unwrap_or(line),
-            file,
-            block,
-            reason,
-        },
+        } => {
+            let line_of = py
+                .and_then(|t| key_lines(t).ok())
+                .and_then(|l| l.get(&format!("tool.slopvac.overrides[{block}]")).copied());
+            Error::OverrideOverlap {
+                line: line_of.unwrap_or(line),
+                file,
+                block,
+                reason,
+            }
+        }
         e => e,
     }
+}
+
+/// Point the lines of dropped settings at `pyproject.toml`, as `pyproject_lines` does
+/// for errors. `py` is `None` when the config did not come from that table.
+fn dropped_in_pyproject(mut dropped: Vec<Dropped>, py: Option<&str>) -> Vec<Dropped> {
+    let Some(lines) = py.and_then(|t| key_lines(t).ok()) else {
+        return dropped;
+    };
+    for x in &mut dropped {
+        if let Some(l) = lines.get(&format!("tool.slopvac.{}", x.key)) {
+            x.line = *l;
+        }
+    }
+    dropped
 }
 
 /// The `[tool.slopvac]` table as a standalone document, and `pyproject.toml` text

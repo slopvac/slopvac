@@ -4,6 +4,7 @@
 mod common;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::*;
@@ -13,8 +14,8 @@ use slopvac_plugins::hooks::{
     Rendered, Segment, Span,
 };
 use slopvac_plugins::{
-    BudgetCaps, HookKind, HostConfig, Plugin, PluginError, PluginSpec, ReadHook, RunBudget,
-    SpawnGate,
+    BudgetCaps, DrainHook, HookKind, HostConfig, Plugin, PluginError, PluginSpec, ReadHook,
+    RunBudget, SpawnGate,
 };
 
 #[test]
@@ -814,7 +815,8 @@ fn h34_a_cancelled_request_id_is_not_reused() {
 fn standard_output_ending_before_the_exit_does_not_spoil_a_clean_shutdown() {
     // The fixture closes standard output, then exits only after the host has
     // closed standard input, so the reader sees end of stream first.
-    assert!(start("eof-before-exit").shutdown().clean());
+    let out = start("eof-before-exit").shutdown();
+    assert!(out.clean(), "{out:?}");
 }
 
 /// plugin-protocol.md section 3: after `shutdown` and `exit` a plugin exits with status 0.
@@ -1291,20 +1293,19 @@ fn tm2b_a_cap_crossing_charge_that_lands_during_the_drain_is_reported() {
         ..BudgetCaps::default()
     });
     c.stderr_read_hook = Some(hold_final_stderr_read(release));
-    let dir = scratch("tm2b-drain");
-    let pidfile = dir.join("pid");
-    let spec = spec_with("stderr-after-exit", &json!({}), Some(&pidfile), decl());
-    let p = Plugin::start(&spec, &c, &Allow).unwrap();
-    // Release once the leader is gone, with margin on both sides of the
-    // 500 ms drain wait that the shutdown is in by then.
-    let releaser = std::thread::spawn(move || {
-        let pid = pids_n(&pidfile, 1);
-        assert!(wait_gone(&pid), "the plugin never left");
-        std::thread::sleep(Duration::from_millis(100));
+    // The shutdown has reaped the leader and is entering the drain: release
+    // the held read, and start the drain wait only once the run budget shows
+    // the crossing charge.
+    let budget = Arc::clone(&c.budget);
+    c.drain_hook = Some(DrainHook::new(move || {
         release_tx.send(()).unwrap();
-    });
+        let end = Instant::now() + NO_HANG;
+        while budget.breach().is_none() && Instant::now() < end {
+            std::thread::yield_now();
+        }
+    }));
+    let p = Plugin::start(&spec("stderr-after-exit"), &c, &Allow).unwrap();
     let out = p.shutdown();
-    releaser.join().unwrap();
     assert!(
         out.acknowledged && out.left,
         "the exit was voluntary: {out:?}"

@@ -45,20 +45,10 @@ severity = "warning"
 max_per_100_words = 0.5
 weight = 1.0
 
-[categories.meta]
-severity = "error"
-max_per_100_words = 0.0
-weight = 1.0
-
 [categories.orwell]
 severity = "error"
 max_per_100_words = 0.8
 weight = 1.5
-
-[categories.orwell-voice]
-severity = "error"
-max_per_100_words = 0.5
-weight = 1.0
 
 [categories.prose-agency]
 severity = "warning"
@@ -69,11 +59,6 @@ weight = 1.0
 severity = "warning"
 max_per_100_words = 1.5
 weight = 0.8
-
-[categories.prose-density]
-severity = "suggestion"
-max_per_100_words = 1.0
-weight = 0.5
 
 [categories.prose-discipline]
 severity = "error"
@@ -144,9 +129,6 @@ weight = 1.0
 severity = "warning"
 max_per_100_words = 1.0
 weight = 0.8
-
-[categories.ste-vocabulary]
-severity = "off"
 
 [categories.ste-words]
 severity = "warning"

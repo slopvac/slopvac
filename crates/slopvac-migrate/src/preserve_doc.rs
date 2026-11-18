@@ -159,7 +159,9 @@ fn read_layer(t: &dyn TableLike, prefix: &str, legacy: &Legacy, ctx: &mut Ctx<'_
     if let Some(cats) = t.get("categories").and_then(Item::as_table_like) {
         for (name, item) in cats.iter() {
             let path = join(&join(prefix, "categories"), name);
-            if !legacy.style(DEFAULT_PROFILE).categories.contains_key(name) {
+            if ctx.renames.is_removed_category(name) {
+                // Dropped with a note by the plain migration; nothing to expand.
+            } else if ctx.renames.category(name).is_none() {
                 ctx.drop_key(&path, "unknown 2.x category; 2.x rejected it");
             } else if let Some(d) = read_dials(item) {
                 layer.categories.insert(name.to_owned(), d);

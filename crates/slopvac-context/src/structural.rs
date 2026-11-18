@@ -5,6 +5,7 @@
 //! heading path, an admonition title, front matter, the file path or the block kind, and
 //! it may tag a whole section or document.
 
+use std::collections::HashMap;
 use std::ops::Range;
 
 use serde::Deserialize;
@@ -172,29 +173,88 @@ impl StructuralTagger {
         Ok(true)
     }
 
-    fn block_ok(&self, b: &BlockView<'_>) -> Result<bool, Error> {
+    /// Follow the heading path to block `b`.
+    ///
+    /// `verdicts` holds one entry per heading in the current path, outermost first. Blocks
+    /// come in document order and a block's heading path changes only at a heading block, so
+    /// the entries below the point where the path changed stay valid. A new entry starts
+    /// unknown: the heading pattern runs on a heading only when a block that could be tagged
+    /// needs the verdict, and then the verdict serves every block below it. Call this for
+    /// every block, in order, even when the block is later skipped.
+    fn enter(&self, b: &BlockView<'_>, verdicts: &mut Vec<Option<bool>>) {
+        if self.heading.is_none() {
+            return;
+        }
+        // A heading block ends its own path, so its last entry is the one to compute anew.
+        let keep = if b.kind == BlockKind::Heading {
+            b.heading_path.len().saturating_sub(1)
+        } else {
+            b.heading_path.len()
+        };
+        verdicts.truncate(keep);
+        verdicts.resize(b.heading_path.len(), None);
+    }
+
+    /// Whether any heading above `b` matches the heading pattern. Headings are tried
+    /// outermost first and the walk stops at the first match, so an error from a heading
+    /// below a matching one never surfaces.
+    fn heading_ok(&self, b: &BlockView<'_>, verdicts: &mut [Option<bool>]) -> Result<bool, Error> {
+        let Some(p) = &self.heading else {
+            return Ok(true);
+        };
+        for (h, slot) in b.heading_path.iter().zip(verdicts.iter_mut()) {
+            let hit = if let Some(hit) = *slot {
+                hit
+            } else {
+                crate::work::heading(h.len());
+                let hit = p.is_match(h)?;
+                *slot = Some(hit);
+                hit
+            };
+            if hit {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Whether the admonition pattern matches `title`, remembered per title.
+    ///
+    /// A view that reports many blocks under one admonition lends them all the same title, so
+    /// the title's address and length identify it, and the pattern runs once per title instead
+    /// of once per block. The key is only compared, never read through. A title that is equal
+    /// text at another address gets its own entry, which costs a repeat match and nothing more.
+    fn admonition_ok(
+        p: &Pattern,
+        title: &str,
+        seen: &mut HashMap<(usize, usize), bool>,
+    ) -> Result<bool, Error> {
+        let key = (title.as_ptr().addr(), title.len());
+        if let Some(&hit) = seen.get(&key) {
+            return Ok(hit);
+        }
+        crate::work::admonition(title.len());
+        let hit = p.is_match(title)?;
+        seen.insert(key, hit);
+        Ok(hit)
+    }
+
+    fn block_ok(
+        &self,
+        b: &BlockView<'_>,
+        verdicts: &mut [Option<bool>],
+        titles: &mut HashMap<(usize, usize), bool>,
+    ) -> Result<bool, Error> {
         let kind_ok = match self.block_kind {
             Some(k) => b.kind == k,
             None => b.kind != BlockKind::CodeBlock,
         };
-        if !kind_ok {
+        if !kind_ok || !self.heading_ok(b, verdicts)? {
             return Ok(false);
-        }
-        if let Some(p) = &self.heading {
-            let mut any = false;
-            for h in &b.heading_path {
-                if p.is_match(h)? {
-                    any = true;
-                    break;
-                }
-            }
-            if !any {
-                return Ok(false);
-            }
         }
         if let Some(p) = &self.admonition {
             match b.admonition_title {
-                Some(t) if p.is_match(t)? => {}
+                Some(t) if Self::admonition_ok(p, t, titles)? => {}
                 _ => return Ok(false),
             }
         }
@@ -225,8 +285,13 @@ impl StructuralTagger {
         }
         let blocks = doc.blocks();
         let mut out = Vec::new();
+        let mut bounds = None;
+        let mut emitted: Vec<bool> = Vec::new();
+        let mut verdicts = Vec::new();
+        let mut titles = HashMap::new();
         for (i, b) in blocks.iter().enumerate() {
-            if !self.block_ok(b)? {
+            self.enter(b, &mut verdicts);
+            if !self.block_ok(b, &mut verdicts, &mut titles)? {
                 continue;
             }
             let hits: Vec<Range<usize>> = match &self.sentence {
@@ -249,7 +314,20 @@ impl StructuralTagger {
                     out.extend(hits.into_iter().map(|s| self.tag_for(s, "sentence")));
                 }
                 Scope::Paragraph => out.push(self.tag_for(b.span.clone(), "block")),
-                Scope::Section => out.push(self.tag_for(section_span(&blocks, i), "section")),
+                Scope::Section => {
+                    let (spans, owner_of) = bounds.get_or_insert_with(|| {
+                        let (spans, owner_of) = sections(&blocks);
+                        emitted = vec![false; spans.len()];
+                        (spans, owner_of)
+                    });
+                    if let Some(&id) = owner_of.get(i)
+                        && let Some(done) = emitted.get_mut(id)
+                        && !std::mem::replace(done, true)
+                        && let Some(span) = spans.get(id)
+                    {
+                        out.push(self.tag_for(span.clone(), "section"));
+                    }
+                }
                 Scope::Document => return Ok(vec![self.tag_for(whole, "document")]),
             }
         }
@@ -262,23 +340,72 @@ fn level(b: &BlockView<'_>) -> u8 {
         .unwrap_or_else(|| u8::try_from(b.heading_path.len()).unwrap_or(u8::MAX))
 }
 
-/// The section of block `i`: from its nearest heading up to the next heading of the same
+/// The section of every block: from its nearest heading up to the next heading of the same
 /// or a shallower level. Text before the first heading forms a section of its own.
-fn section_span(blocks: &[BlockView<'_>], i: usize) -> Range<usize> {
-    let owner = (0..=i)
-        .rev()
-        .find(|&j| blocks[j].kind == BlockKind::Heading);
-    let (first, own_level) = match owner {
-        Some(j) => (j, level(&blocks[j])),
-        None => (0, 0),
-    };
-    let last = (i + 1..blocks.len())
-        .find(|&k| blocks[k].kind == BlockKind::Heading && level(&blocks[k]) <= own_level.max(1))
-        .map_or(blocks.len() - 1, |k| k - 1);
-    // Blocks that read out of source order (the cells of a wrapped table) can end after
-    // the last block does, so the section runs to the furthest end among its blocks.
-    let members = &blocks[first..=last];
-    let start = members.iter().map(|b| b.span.start).min().unwrap_or(0);
-    let end = members.iter().map(|b| b.span.end).max().unwrap_or(0);
-    start..end
+///
+/// Returns the distinct section spans and, for each block, the index of its section. A
+/// section's span runs to the furthest end among its blocks, because blocks that read out of
+/// source order (the cells of a wrapped table) can end after the last block does. One pass
+/// with a stack of open sections: a block lands in the innermost one, and a closing section
+/// folds its extent into the one that encloses it.
+fn sections(blocks: &[BlockView<'_>]) -> (Vec<Range<usize>>, Vec<usize>) {
+    struct Open {
+        /// Effective level: the next heading at this level or shallower closes it.
+        level: u8,
+        id: usize,
+        extent: Option<Range<usize>>,
+    }
+    fn widen(extent: &mut Option<Range<usize>>, with: &Range<usize>) {
+        *extent = Some(match extent.take() {
+            Some(e) => e.start.min(with.start)..e.end.max(with.end),
+            None => with.clone(),
+        });
+    }
+    // Close the innermost section: record its span and fold it into the enclosing one.
+    fn close(open: &mut Vec<Open>, spans: &mut [Range<usize>]) {
+        let Some(done) = open.pop() else { return };
+        let Some(extent) = done.extent else { return };
+        if let Some(slot) = spans.get_mut(done.id) {
+            slot.clone_from(&extent);
+        }
+        if let Some(parent) = open.last_mut() {
+            widen(&mut parent.extent, &extent);
+        }
+    }
+    // Section 0 is the text before the first heading.
+    let mut spans: Vec<Range<usize>> = Vec::new();
+    spans.push(0..0);
+    let mut owner_of = Vec::with_capacity(blocks.len());
+    // The text before the first heading closes at the first heading of level 1 or less.
+    let mut open = vec![Open {
+        level: 1,
+        id: 0,
+        extent: None,
+    }];
+    for b in blocks {
+        crate::work::section(1);
+        if b.kind == BlockKind::Heading {
+            let l = level(b);
+            while open.last().is_some_and(|top| top.level >= l) {
+                close(&mut open, &mut spans);
+            }
+            open.push(Open {
+                level: l.max(1),
+                id: spans.len(),
+                extent: None,
+            });
+            spans.push(0..0);
+        }
+        // `open` is never empty here: a heading was just pushed, and a non-heading finds
+        // the section it was pushed to, or the prelude, which only a heading closes.
+        if let Some(top) = open.last_mut() {
+            widen(&mut top.extent, &b.span);
+            owner_of.push(top.id);
+        }
+    }
+    // Sections still open at the end of the document close there.
+    while !open.is_empty() {
+        close(&mut open, &mut spans);
+    }
+    (spans, owner_of)
 }

@@ -506,6 +506,7 @@ impl Ctx<'_> {
             span,
             help,
             path: path.to_vec(),
+            data: None,
         });
     }
 

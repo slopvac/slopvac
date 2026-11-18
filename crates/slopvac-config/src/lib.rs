@@ -22,12 +22,15 @@ pub mod tree;
 pub mod validate;
 pub mod version;
 
-pub use diag::{Code, Diagnostic, SourceFile, render};
+pub use diag::{BudgetData, Code, ConfigBudget, Diagnostic, SourceFile, render};
 pub use discover::Discovery;
 pub use error::{ConfigError, Rejected};
 pub use load::{LoadedConfig, load, load_labeled};
 pub use presets::{NoPresets, PackFile, PresetFailure, Presets};
-pub use read::{MAX_CONFIG_BYTES, MAX_DOCUMENT_BYTES};
+pub use read::{
+    MAX_CONFIG_BYTES, MAX_DOCUMENT_BYTES, MAX_EXTENDS_APPLIED_BYTES, MAX_EXTENDS_BYTES,
+    MAX_EXTENDS_DEPTH, MAX_EXTENDS_FILES,
+};
 pub use resolve::{
     Explained, Inputs, LevelFrom, Resolved, ResolvedLevel, core_defaults, describe, render_explain,
 };

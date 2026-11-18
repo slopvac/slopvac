@@ -53,6 +53,16 @@ pub struct Dropped {
     pub reason: String,
 }
 
+impl Dropped {
+    /// The setting as a notice with the `migrate-category-removed` code, for a
+    /// category that 3.0 no longer has. Unlike a blocking drop, it does not stop the
+    /// migration.
+    #[must_use]
+    pub fn category_removed_notice(&self) -> String {
+        format!("migrate-category-removed: {self}")
+    }
+}
+
 impl fmt::Display for Dropped {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

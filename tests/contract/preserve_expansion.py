@@ -227,6 +227,8 @@ def expand(config2: dict, ruleset) -> dict:
     def authored(cats: dict, profile: str) -> dict:
         out = {}
         for name, value in cats.items():
+            if name not in styles[profile]["categories"]:
+                continue  # no rule belongs to it, so 2.x never read it
             d = dials(value)
             if "severity" not in d:
                 d["severity"] = styles[profile]["categories"][name]["severity"]

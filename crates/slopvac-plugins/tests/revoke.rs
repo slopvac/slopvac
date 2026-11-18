@@ -1129,3 +1129,33 @@ fn the_revocation_root_defaults_to_the_compiled_release_key() {
     let ids: Vec<String> = revocations.roots().iter().map(PublicKey::key_id).collect();
     assert_eq!(ids, ["D9914BDB4570AC6D"]);
 }
+
+// ---- The publisher script ----
+
+/// The list `scripts/revocation_list.py render` prints at `now`, for `days` days.
+fn rendered_by_the_publisher(now: &str, days: u32) -> Vec<u8> {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/revocation_list.py");
+    let out = std::process::Command::new("python3")
+        .arg(script)
+        .args(["render", "--now", now, "--days", &days.to_string()])
+        .output()
+        .expect("python3 runs the publisher script");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    out.stdout
+}
+
+#[test]
+fn the_verifier_accepts_the_list_the_publisher_script_renders() {
+    let bytes = rendered_by_the_publisher("2026-11-17T05:17:42Z", 30);
+    let root = Root::new();
+    let minisig = root.sign(&bytes);
+    let list = RevocationList::verify(&bytes, &minisig, &[root.public()]).unwrap();
+    assert_eq!(list.issued(), Some("2026-11-17T05:17:42Z"));
+    assert_eq!(list.expires(), Some("2026-12-17T05:17:42Z"));
+    assert!(!list.revokes_key(OLD_KEY_ID));
+    assert!(!list.revokes_digest(REVOKED_DIGEST));
+}

@@ -10,8 +10,8 @@ use std::ops::Range;
 
 use frontmatter_spans::FrontMatter;
 use slopvac_context::{
-    BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, SentenceView, Tag,
-    TagIndex, TagRegistry,
+    BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, GenreRegistry,
+    GenreResult, ResolveOptions, SentenceView, Tag, TagIndex, TagRegistry,
 };
 use slopvac_parse::{BlockKind, Container, Document, Projection};
 
@@ -276,6 +276,18 @@ pub(crate) fn tag(
     let view = View::new(path, source, doc, front_matter);
     let index = registry.tag_document(&view)?;
     Ok(view.split_interleaved(index))
+}
+
+/// Choose the genre of `doc`: front matter, then an assignment from `opts`, then detection.
+pub(crate) fn genre(
+    registry: &GenreRegistry,
+    opts: &ResolveOptions<'_>,
+    path: &str,
+    source: &str,
+    doc: &Document,
+    front_matter: Option<&FrontMatter<'_>>,
+) -> Result<GenreResult, ContextError> {
+    registry.resolve(&View::new(path, source, doc, front_matter), opts)
 }
 
 #[cfg(test)]

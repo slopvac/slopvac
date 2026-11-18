@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::Path;
 
+use rstest::rstest;
+
 use slopvac_migrate::{
     Error, Finding, Linter, NullLinter, Options, Phase, RenameTable, apply, command, plan,
     render_diff, restore, run,
@@ -87,6 +89,35 @@ fn pyproject_overlap_error_reports_the_pyproject_line() {
         }) => assert_eq!((file.as_str(), line, block), ("pyproject.toml", 7, 0)),
         other => panic!("{other:?}"),
     }
+}
+
+#[rstest]
+#[case::plain(false)]
+#[case::preserve_behavior(true)]
+fn pyproject_removed_category_notices_report_the_pyproject_lines(#[case] preserve_behavior: bool) {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "pyproject.toml",
+        "[project]\nname = \"x\"\n\n[tool.slopvac]\nprofile = \"normal\"\n\
+         [tool.slopvac.categories]\norwell-voice = \"off\"\n\n\
+         [[tool.slopvac.overrides]]\nfiles = [\"docs/**\"]\n\
+         [tool.slopvac.overrides.categories]\norwell-voice = \"error\"\n",
+    );
+    let options = Options { preserve_behavior };
+    let p = plan(dir.path(), &RenameTable::bundled(), options, STEERING).unwrap();
+    let notices: Vec<&String> = p
+        .notes
+        .iter()
+        .filter(|n| n.contains("migrate-category-removed"))
+        .collect();
+    assert_eq!(
+        notices,
+        [
+            "pyproject.toml: migrate-category-removed: pyproject.toml:7: `categories.orwell-voice`: category no longer exists in 3.0",
+            "pyproject.toml: migrate-category-removed: pyproject.toml:12: `overrides[0].categories.orwell-voice`: category no longer exists in 3.0",
+        ]
+    );
 }
 
 #[test]

@@ -422,20 +422,19 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Cache Vale download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vale-cache
+          key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
       - name: Install Vale
-        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin"
+        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
       - name: Add Vale to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install minisign
         # The release signing tests run the real binary; the script checks its sha256.
         run: bash scripts/install_minisign.sh
-
-      - name: Install ast-grep
-        run: |
-          set -euo pipefail
-          python3 -m pip install --quiet ast-grep-cli==0.45.3
-          ast-grep --version
 
       - name: Install package and test dependencies
         # docutils is pinned for the RST sample of the golden suite (tests/golden/v3).
@@ -512,8 +511,13 @@ jobs:
         working-directory: packages/slopvac-lint
         run: uv pip install --system -e ".[dev]"
 
+      - name: Cache Vale download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vale-cache
+          key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
       - name: Install Vale
-        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin"
+        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
       - name: Add Vale to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 

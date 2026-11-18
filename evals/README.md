@@ -19,6 +19,15 @@ Human genres: product, reference, tutorials, changelogs, readmes, decision recor
 
 The repository commits each document with a permissive licence and at most 32 KiB under `corpus/` with the suffix `.corpus`, so prose gates skip them. `NOTICE` credits each repository. Other documents, such as GPL and AGPL text, stay out of the repository and are downloaded to a cache.
 
+## Provenance
+
+A record may carry an optional `provenance` object. It is part of the manifest digest that results and the baseline use, so changing a licence revision, licence basis or date source invalidates them. The digest leaves out `public_checked_at`, which only says when a check ran.
+
+- `date_source` says where `date` comes from. `commit.committer.date` is the committer date of the commit that the record pins: the content revision for files and JSON fields, or the commit itself for commit messages. `pull_request.created_at` is the day the pull request was opened. A pull request has no pinned revision, because the text is the title and body that the API returned at curation time, so a later edit of the body is not excluded by the date.
+- `license_revision` is the commit at which the licence was read. For files it must equal `source.commit`. Curation asks the licence API at that commit and never falls back to the licence at the branch head. A repository with no licence at that commit has no licence unless `sources.toml` sets one, and then `license_basis` says so.
+
+A repository entry may carry `public` and `public_checked_at`. Curation checks that the repository is public before it reads any commit or file, and refuses the source otherwise. The check date goes into the manifest. Records written before these fields existed stay valid. Curating again fills in `license_revision`, `license_basis` and the public check, because only the GitHub API can answer them.
+
 ## Fetch
 
 ```sh
@@ -137,6 +146,15 @@ How a label forms:
 
 A judge command reads the prompt on stdin and writes the answer on stdout. Ask the lead before you run a paid provider.
 
+Judge provenance:
+
+- **Exact model id.** Pass `--model` exactly as the harness reports it, for example `amazon-bedrock/global.anthropic.claude-sonnet-5-5`. Each judgment records that string, and each automatic label in `labels.jsonl` carries a `models` object that maps family to id. No step shortens it.
+- **Dry count.** `label sample --dry-run` prints the new item count per rule and the total, writes nothing, and calls no model.
+- **Family check.** The two-family rule only holds if each family is real. `--family` is a claim, and the model id is the evidence. `judge` and `merge` read the vendor out of the model id (for example `claude`, `gpt`, `gemini`, `llama`). They exit 2 when the id names a different vendor, several vendors, or none that the table knows. `merge` repeats the check on the recorded rows, so an edited judgment file cannot slip through.
+- **Resume keys.** A judgment counts as done only for the same item, option order, model and prompt version. A run with another model or prompt version asks every question again and appends to the same file.
+- **Old checkpoints.** Rows without a model or prompt version, or with another prompt version, are unusable. `merge` ignores them and prints how many. Nothing migrates them, because their model is unknown. Run `judge` again. When a family holds rows from several models, `merge` uses only the model of the newest row.
+- **Spot-check.** `merge` writes `spot-check.json` first. If any listed item has no human verdict, it exits 2 and writes no labels, disputes, stats or revisions. Record each with `label resolve`, then merge again. The sample covers every item on which both judges agreed, so it does not change when a human resolves an item. A label set made only of human verdicts, such as the hand-judged sets under `evals/labels/rule-accuracy/`, has no automatic labels and needs no spot-check. `score` and `gate` never check it.
+
 A rule needs 20 adjudicated true positives before the precision gate trusts it. The gate counts the adjudicated labels passed with `--labels`, not the positives the engine detects. It lists the precision of a rule below that count as uncertain and never fails it. It reports a rule with findings on LLM text and too few labels as inadequate coverage. With no labels the gate reports "precision not measured" and does not pass when the baseline holds precision. `stats.json` lists the count per rule.
 
 ## Ratchet
@@ -209,12 +227,14 @@ Model runs need Python 3.13 or later on macOS. The harness waits for a model com
 ```sh
 python -m evals models plan --models models.json            # count the calls and input size
 python -m evals models run --models models.json --confirm-calls <N> --max-invocations <M>
-python -m evals models summarize evals/results/models/<date>.json
+python -m evals models summarize evals/results/models/<date>.json [<more>.json ...]
 python -m evals models cost evals/results/models/<date>.json --prices evals/prices.json
 python -m evals models recommend evals/results/models/<date>.json --out crates/slopvac-agents/data/model-evals.json
 ```
 
 `models recommend` writes the file that `slopvac-agents` embeds. Without `--publish` the file has status `pending-reevaluation` and no rows, so a results file whose scorer is under review publishes no ranking. With `--publish` it writes the reviewer rows (success rate, tasks and runs per model and review type) with status `published`. Regenerate `docs/model-recommendations.md` afterwards with `SLOPVAC_BLESS=1 cargo nextest run -p slopvac-agents --test models`. A test in `tests/test_evals_models.py` fails when the embedded file differs from the generator output.
+
+To add one model to an earlier run, append it to `models.json` and pass `--only-model <name>` and `--candidates-from <earlier journal>` to `plan` and `run`, with a fresh `--out`. The run makes only the calls that model adds: its answers, the other models' reviews of its rewrites, and its reviews of their rewrites. Earlier results keep only output hashes, so the other models' rewrites come from the earlier run's journal. That keeps the reviewed pool the same one the earlier reviewers saw. The harness only reads that journal, and a missing candidate stops the run before any call. `summarize` takes several results files of one task set, such as the earlier run and the new one, and ranks all models together. It refuses files with a different task-set hash, prompt version or repeat count, and files that share a run, or that carry different scorer versions (a file without a `scorer_version` counts as legacy). The run also refuses a frozen journal that is the output, journal, ledger or lock, and a model the frozen journal already ran. Ranking pending rescore (slopvac-8l4.15.25).
 
 `models.json` names each model with a `family`, a `tier` and a `command` that reads the prompt on stdin and writes the answer on stdout. The committed `evals/models.json` calls Bedrock models through `python -m evals.opencode_model`, which runs `opencode run` with a bare agent (no tools, one-line prompt) in an empty directory. The adapter resolves the AWS profile with `aws configure export-credentials` (set `AWS_PROFILE` and `AWS_REGION`, or pass `--aws-profile` and `--aws-region`), then starts opencode with an empty `HOME`, its own XDG directories and an allow-listed environment. The adapter re-exports credentials on every attempt. If they have under 10 minutes left, it waits up to 330 seconds for the CLI to hand out fresh ones, inside the same attempt, and then gives up. Your opencode config, plugins, rules and auth never load, and opencode finds no AWS profile files. On a timeout the harness kills the whole process group, including opencode and its children. Nothing in the harness calls a provider itself. `plan` prints the number of calls and a rough input size. `run` refuses to start until `--confirm-calls` equals that number, so the person who pays approves it first. A journal without a ledger is refused, because its spent calls are unknown: start with a fresh `--out` path. Ask the lead before you run a paid provider.
 
@@ -236,6 +256,6 @@ Tasks come from the corpus:
 
 The reviewer is always a different model from the author. Every task repeats at least three times. The summary averages repeats within a task, then resamples tasks for a 95% interval, and ranks models per review type and role.
 
-Fact preservation is lexical: `evals/facts.py` compares numbers, code spans, identifiers and polarity words (must, not, never, only) between the source and the output.
+Fact preservation is lexical: `evals/facts.py` compares numbers, code spans, identifiers and polarity words (must, not, never, only) between the source and the output. Treat it as a lexical retention smoke check, not proof that meaning survived. Treat the reviewer scores as detection by quotation: a reviewer counts as finding an edit when it quotes the edited words, whatever its explanation says.
 
 The results file records the date, the prompt version, the task-set hash, the models and one row per run with an output hash. The model text itself is not stored.
