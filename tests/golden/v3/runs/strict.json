@@ -822,7 +822,7 @@
         "weak": {
           "errors": 47,
           "findings": 131,
-          "per_100_words": 0.852,
+          "per_100_words": 0.849,
           "warnings": 64
         }
       },
@@ -831,7 +831,7 @@
           "category": "ai-residue",
           "errors": 3,
           "findings": 3,
-          "per_100_words": 0.02,
+          "per_100_words": 0.019,
           "score": 98.7,
           "suggestions": 0,
           "warnings": 0
@@ -840,7 +840,7 @@
           "category": "ai-tells-agentic",
           "errors": 0,
           "findings": 3,
-          "per_100_words": 0.02,
+          "per_100_words": 0.019,
           "score": 99.4,
           "suggestions": 0,
           "warnings": 3
@@ -849,7 +849,7 @@
           "category": "ai-tells-content-shape",
           "errors": 13,
           "findings": 13,
-          "per_100_words": 0.085,
+          "per_100_words": 0.084,
           "score": 96.9,
           "suggestions": 0,
           "warnings": 0
@@ -867,7 +867,7 @@
           "category": "ai-tells-formatting",
           "errors": 0,
           "findings": 25,
-          "per_100_words": 0.163,
+          "per_100_words": 0.162,
           "score": 95.6,
           "suggestions": 17,
           "warnings": 8
@@ -885,7 +885,7 @@
           "category": "ai-tells-structure",
           "errors": 32,
           "findings": 70,
-          "per_100_words": 0.455,
+          "per_100_words": 0.454,
           "score": 91.9,
           "suggestions": 3,
           "warnings": 35
@@ -894,7 +894,7 @@
           "category": "docs-discipline",
           "errors": 36,
           "findings": 36,
-          "per_100_words": 0.234,
+          "per_100_words": 0.233,
           "score": 88.4,
           "suggestions": 0,
           "warnings": 0
@@ -912,7 +912,7 @@
           "category": "prose-agency",
           "errors": 17,
           "findings": 17,
-          "per_100_words": 0.111,
+          "per_100_words": 0.11,
           "score": 97.7,
           "suggestions": 0,
           "warnings": 0
@@ -921,7 +921,7 @@
           "category": "prose-craft",
           "errors": 0,
           "findings": 148,
-          "per_100_words": 0.963,
+          "per_100_words": 0.959,
           "score": 82.2,
           "suggestions": 3,
           "warnings": 145
@@ -930,7 +930,7 @@
           "category": "prose-discipline",
           "errors": 24,
           "findings": 24,
-          "per_100_words": 0.156,
+          "per_100_words": 0.155,
           "score": 93.3,
           "suggestions": 0,
           "warnings": 0
@@ -957,7 +957,7 @@
           "category": "prose-inflation",
           "errors": 42,
           "findings": 42,
-          "per_100_words": 0.273,
+          "per_100_words": 0.272,
           "score": 81.9,
           "suggestions": 0,
           "warnings": 0
@@ -966,7 +966,7 @@
           "category": "prose-promotion",
           "errors": 11,
           "findings": 11,
-          "per_100_words": 0.072,
+          "per_100_words": 0.071,
           "score": 97.9,
           "suggestions": 0,
           "warnings": 0
@@ -984,7 +984,7 @@
           "category": "ste-descriptive",
           "errors": 45,
           "findings": 45,
-          "per_100_words": 0.293,
+          "per_100_words": 0.292,
           "score": 86.6,
           "suggestions": 0,
           "warnings": 0
@@ -993,7 +993,7 @@
           "category": "ste-nouns",
           "errors": 19,
           "findings": 19,
-          "per_100_words": 0.124,
+          "per_100_words": 0.123,
           "score": 94.6,
           "suggestions": 0,
           "warnings": 0
@@ -1002,25 +1002,25 @@
           "category": "ste-practices",
           "errors": 0,
           "findings": 41,
-          "per_100_words": 0.267,
+          "per_100_words": 0.266,
           "score": 94.9,
           "suggestions": 14,
           "warnings": 27
         },
         {
           "category": "ste-procedural",
-          "errors": 76,
-          "findings": 76,
-          "per_100_words": 0.494,
-          "score": 77.0,
-          "suggestions": 0,
+          "errors": 40,
+          "findings": 73,
+          "per_100_words": 0.473,
+          "score": 84.7,
+          "suggestions": 33,
           "warnings": 0
         },
         {
           "category": "ste-punctuation",
           "errors": 0,
           "findings": 94,
-          "per_100_words": 0.612,
+          "per_100_words": 0.609,
           "score": 89.5,
           "suggestions": 0,
           "warnings": 94
@@ -1038,17 +1038,17 @@
           "category": "ste-sentences",
           "errors": 80,
           "findings": 80,
-          "per_100_words": 0.52,
-          "score": 79.3,
+          "per_100_words": 0.518,
+          "score": 79.5,
           "suggestions": 0,
           "warnings": 0
         },
         {
           "category": "ste-verbs",
-          "errors": 157,
-          "findings": 157,
-          "per_100_words": 1.021,
-          "score": 54.5,
+          "errors": 159,
+          "findings": 159,
+          "per_100_words": 1.03,
+          "score": 53.9,
           "suggestions": 0,
           "warnings": 0
         },
@@ -1056,27 +1056,27 @@
           "category": "ste-words",
           "errors": 54,
           "findings": 54,
-          "per_100_words": 0.351,
-          "score": 85.1,
+          "per_100_words": 0.35,
+          "score": 85.2,
           "suggestions": 0,
           "warnings": 0
         }
       ],
       "documents": 47,
-      "errors": 661,
-      "findings": 1028,
+      "errors": 627,
+      "findings": 1027,
       "passed": false,
-      "per_100_words": 6.688,
+      "per_100_words": 6.654,
       "prose": {
-        "errors": 602,
-        "findings": 885,
-        "per_100_words": 5.758,
+        "errors": 568,
+        "findings": 884,
+        "per_100_words": 5.727,
         "warnings": 266
       },
-      "score": 31.4,
-      "suggestions": 37,
+      "score": 32.7,
+      "suggestions": 70,
       "warnings": 330,
-      "words": 15371
+      "words": 15435
     }
   },
   "prose:mdx": {

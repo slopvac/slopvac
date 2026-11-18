@@ -258,13 +258,13 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 1,
+        "errors": 0,
         "findings": 1,
         "gating_per_100_words": 0.0,
         "over_budget": false,
         "per_100_words": 0.0,
-        "score": 80.0,
-        "suggestions": 0,
+        "score": 97.5,
+        "suggestions": 1,
         "warnings": 0
       },
       {
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 2,
+    "errors": 1,
     "findings": [
       {
         "ai_signal": "none",
@@ -358,7 +358,7 @@
         "message": "The condition follows the command (\"Pass an explicit mode if your client depends on that.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 235,
           "start": 182
@@ -368,8 +368,8 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "2 error(s), limit 0",
-        "score 60.0, minimum 85.0"
+        "1 error(s), limit 0",
+        "score 77.5, minimum 85.0"
       ]
     },
     "paragraphs": 4,
@@ -377,14 +377,14 @@
     "per_100_words": 0.0,
     "profile": "strict",
     "prose": {
-      "errors": 2,
+      "errors": 1,
       "findings": 2,
       "per_100_words": 0.0,
       "warnings": 0
     },
-    "score": 60.0,
+    "score": 77.5,
     "sentences": 5,
-    "suggestions": 0,
+    "suggestions": 1,
     "total_findings": 2,
     "unchecked": [],
     "warnings": 0,

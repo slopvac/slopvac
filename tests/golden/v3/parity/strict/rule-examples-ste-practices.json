@@ -258,13 +258,13 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 8,
-        "findings": 8,
-        "gating_per_100_words": 2.273,
-        "over_budget": true,
-        "per_100_words": 2.273,
-        "score": 0.0,
-        "suggestions": 0,
+        "errors": 1,
+        "findings": 7,
+        "gating_per_100_words": 0.284,
+        "over_budget": false,
+        "per_100_words": 1.989,
+        "score": 74.4,
+        "suggestions": 6,
         "warnings": 0
       },
       {
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 13,
+    "errors": 6,
     "findings": [
       {
         "ai_signal": "none",
@@ -358,7 +358,7 @@
         "message": "The condition follows the command (\"Set up the client before you spin up the worker pool.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 53,
           "start": 0
@@ -409,7 +409,7 @@
         "message": "The condition follows the command (\"Configure the client before you start the worker pool.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 109,
           "start": 55
@@ -460,7 +460,7 @@
         "message": "The condition follows the command (\"Make sure the migration completed before you restart the worker.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 442,
           "start": 378
@@ -477,7 +477,7 @@
         "message": "The condition follows the command (\"Make sure that the migration completed before you restart the worker.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 513,
           "start": 444
@@ -742,23 +742,6 @@
         "ai_signal": "none",
         "category": "ste-procedural",
         "column": 1,
-        "end_column": 44,
-        "end_line": 61,
-        "line": 61,
-        "matched_text": "Discard the temporary files after each run.",
-        "message": "The condition follows the command (\"Discard the temporary files after each run.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
-        "span": {
-          "end": 1718,
-          "start": 1675
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
         "end_column": 65,
         "end_line": 67,
         "line": 67,
@@ -766,7 +749,7 @@
         "message": "The condition follows the command (\"Add the service account to the whitelist before he runs the job.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 1978,
           "start": 1914
@@ -783,7 +766,7 @@
         "message": "The condition follows the command (\"Add the service account to the allowlist before the operator runs the job.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 2054,
           "start": 1980
@@ -827,28 +810,27 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "13 error(s), limit 0",
-        "5.40 severity-weighted findings per 100 words, budget 1.5",
-        "score 6.5, minimum 85.0",
+        "6 error(s), limit 0",
+        "3.41 severity-weighted findings per 100 words, budget 1.5",
+        "score 33.2, minimum 85.0",
         "ste-practices at 1.42 severity-weighted findings per 100 words, budget 0.5",
-        "ste-procedural at 2.27 severity-weighted findings per 100 words, budget 0.4",
         "ste-sentences at 1.14 severity-weighted findings per 100 words, budget 0.5"
       ]
     },
     "paragraphs": 36,
     "path": "rule-examples-ste-practices.md",
-    "per_100_words": 8.239,
+    "per_100_words": 7.955,
     "profile": "strict",
     "prose": {
-      "errors": 13,
-      "findings": 29,
-      "per_100_words": 8.239,
+      "errors": 6,
+      "findings": 28,
+      "per_100_words": 7.955,
       "warnings": 12
     },
-    "score": 6.5,
+    "score": 33.2,
     "sentences": 46,
-    "suggestions": 4,
-    "total_findings": 29,
+    "suggestions": 10,
+    "total_findings": 28,
     "unchecked": [],
     "warnings": 12,
     "words": 352

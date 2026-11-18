@@ -208,6 +208,7 @@ weight = 1.2
 "ste-practices.latin-abbreviation" = "off"
 "ste-practices.gendered-or-exclusionary-language" = "off"
 "ste-practices.possessive-form-unclear" = "suggestion"
+"ste-procedural.condition-after-command" = "suggestion"
 "ste-punctuation.parentheses-misuse" = "suggestion"
 "ste-safety.risk-level-word-missing-or-wrong" = "error"
 "ste-sentences.sentence-not-short-or-clear" = "error"

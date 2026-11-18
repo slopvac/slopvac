@@ -232,7 +232,7 @@
 "ste-practices.unclear-pronoun" = { kind = "checked", strict = "advisory", normal = "advisory", relaxed = "advisory" }
 "ste-practices.word-sense-incorrect" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "ste-practices.word-swap-insufficient" = { kind = "judgement", strict = "enforced", normal = "enforced", relaxed = "advisory" }
-"ste-procedural.condition-after-command" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "advisory" }
+"ste-procedural.condition-after-command" = { kind = "checked", strict = "advisory", normal = "advisory", relaxed = "advisory" }
 "ste-procedural.instruction-not-imperative" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-procedural.multiple-instructions-per-sentence" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-procedural.note-gives-instruction" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "enforced" }
