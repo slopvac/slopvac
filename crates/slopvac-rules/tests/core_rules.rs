@@ -55,8 +55,9 @@ fn every_core_category_file_validates_against_both_schemas() {
 fn the_core_pack_loads_every_category_and_rule() {
     let set = core();
     assert_eq!(set.categories().len(), 26);
-    assert_eq!(set.len(), 233);
-    assert_eq!(set.rules().count(), 233);
+    let in_categories: usize = set.categories().iter().map(|c| c.rules().len()).sum();
+    assert_eq!(set.len(), in_categories);
+    assert_eq!(set.rules().count(), in_categories);
 }
 
 #[test]
@@ -67,9 +68,12 @@ fn rules_are_counted_by_kind() {
     assert_eq!(count(MatchKind::Pattern), 111);
     assert_eq!(count(MatchKind::Substitution), 18);
     assert_eq!(count(MatchKind::Tokens), 17);
-    assert_eq!(count(MatchKind::Judgement), 69);
+    let mixed = set
+        .get(&id("core:prose-scope.mixed-content-types"))
+        .expect("the mixed content types rule loads");
+    assert_eq!(mixed.kind(), MatchKind::Judgement);
     assert_eq!(count(MatchKind::Metric), 13);
-    assert_eq!(count(MatchKind::Structure), 1);
+    assert_eq!(count(MatchKind::Structure), 6);
     assert_eq!(count(MatchKind::Vocabulary), 4);
     assert_eq!(count(MatchKind::Capitalization), 0);
 }

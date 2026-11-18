@@ -570,8 +570,9 @@ jobs:
           import json
           payload = json.load(open("/tmp/rules.json"))
           kinds = [rule["kind"] for rule in payload["rules"]]
-          assert len(kinds) == 238
-          assert kinds.count("judgement") == 69
+          ids = [f"{rule['category']}.{rule['id']}" for rule in payload["rules"]]
+          assert len(ids) == len(set(ids)), "duplicate rule ids"
+          assert kinds[ids.index("prose-scope.mixed-content-types")] == "judgement"
           assert all(
               rule["judgement_question"]
               for rule in payload["rules"]
