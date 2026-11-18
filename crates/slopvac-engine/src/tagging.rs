@@ -27,6 +27,47 @@ struct Entry<'a> {
     mapper: OnceCell<ByteMapper<'a>>,
 }
 
+/// The source ranges of one entry, sorted by start, for finding those a tag meets.
+struct Extents {
+    /// The ranges, sorted by start.
+    runs: Vec<Range<usize>>,
+    /// For each run, the largest end among it and the runs before it.
+    reach: Vec<usize>,
+}
+
+impl Extents {
+    fn new(mut runs: Vec<Range<usize>>) -> Self {
+        runs.sort_by_key(|r| (r.start, r.end));
+        let reach = runs
+            .iter()
+            .scan(0, |top, r| {
+                *top = (*top).max(r.end);
+                Some(*top)
+            })
+            .collect();
+        Self { runs, reach }
+    }
+
+    /// The runs that overlap `span`, found without visiting the runs that end before it or
+    /// start after it. `visit` is called for each run looked at.
+    fn overlapping<'e>(
+        &'e self,
+        span: &'e Range<usize>,
+        mut visit: impl FnMut() + 'e,
+    ) -> impl Iterator<Item = Range<usize>> + 'e {
+        let first = self.reach.partition_point(|&end| end <= span.start);
+        self.runs[first..]
+            .iter()
+            .take_while(|r| r.start < span.end)
+            .inspect(move |_| visit())
+            .filter_map(|r| {
+                let from = r.start.max(span.start);
+                let to = r.end.min(span.end);
+                (from < to).then_some(from..to)
+            })
+    }
+}
+
 /// A parsed document as the taggers read it.
 struct View<'a> {
     path: &'a str,
@@ -160,7 +201,7 @@ impl View<'_> {
             return index;
         }
         let owners = self.owners.borrow();
-        let mut extents: BTreeMap<usize, Vec<Range<usize>>> = BTreeMap::new();
+        let mut extents: BTreeMap<usize, Extents> = BTreeMap::new();
         let mut tags = Vec::with_capacity(index.tags().len());
         for (group, tag) in index.tags().iter().enumerate() {
             self.visits.set(self.visits.get() + 1);
@@ -168,28 +209,28 @@ impl View<'_> {
                 .get(&(tag.span.start, tag.span.end))
                 .copied()
                 .filter(|&i| marked[i]);
-            let runs = owner.map(|i| {
+            let extents = owner.map(|i| {
                 extents.entry(i).or_insert_with(|| {
-                    self.entries[i]
-                        .projection
-                        .map(|p| p.extents().iter().map(|s| s.start()..s.end()).collect())
-                        .unwrap_or_default()
+                    Extents::new(
+                        self.entries[i]
+                            .projection
+                            .map(|p| p.extents().iter().map(|s| s.start()..s.end()).collect())
+                            .unwrap_or_default(),
+                    )
                 })
             });
             let mut pieces = Vec::new();
-            for run in runs.into_iter().flatten() {
-                self.visits.set(self.visits.get() + 1);
-                let from = run.start.max(tag.span.start);
-                let to = run.end.min(tag.span.end);
-                if from < to {
-                    pieces.push((
-                        Tag {
-                            span: from..to,
-                            ..tag.clone()
-                        },
-                        group,
-                    ));
-                }
+            for span in extents
+                .into_iter()
+                .flat_map(|e| e.overlapping(&tag.span, || self.visits.set(self.visits.get() + 1)))
+            {
+                pieces.push((
+                    Tag {
+                        span,
+                        ..tag.clone()
+                    },
+                    group,
+                ));
             }
             if pieces.is_empty() {
                 tags.push((tag.clone(), group));
@@ -349,6 +390,106 @@ mod tests {
         );
     }
 
+    /// A cell that wraps over `lines` lines, each a sentence on its own extent, and a cell
+    /// beside it that overlaps it.
+    fn wrapped_cell(lines: usize) -> Document {
+        let whole = slopvac_model::Span::new(0, 10 * lines).unwrap();
+        let mut wrapped = Projection::new();
+        for line in 0..lines {
+            let at = 10 * line;
+            let word = slopvac_model::Span::new(at, at + 2).unwrap();
+            let gap = slopvac_model::Span::new(at + 2, at + 10).unwrap();
+            wrapped.push(TokenKind::Identity, "a.", word);
+            wrapped.push_bridge(TokenKind::Collapse, " ", gap);
+        }
+        let beside = slopvac_model::Span::new(5, 8).unwrap();
+        let mut other = Projection::new();
+        other.push(TokenKind::Opaque, "x", beside);
+        let cell = |span, projection| Block {
+            kind: BlockKind::TableCell { row: 0, column: 0 },
+            span,
+            projection: Some(projection),
+            containers: Vec::new(),
+        };
+        Document {
+            blocks: vec![cell(whole, wrapped), cell(beside, other)],
+            code_spans: Vec::new(),
+            html_blocks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn splitting_interleaved_tags_visits_only_the_extents_a_tag_meets() {
+        for lines in [1_000, 2_000, 4_000] {
+            let source = "a. ".repeat(lines);
+            let doc = wrapped_cell(lines);
+            let view = View::new("t.rst", &source, &doc, None);
+            let blocks = view.blocks();
+            let tags: Vec<Tag> = view
+                .sentences(&blocks[0])
+                .into_iter()
+                .map(|s| Tag {
+                    kind: "requirement".to_owned(),
+                    span: s.span,
+                    confidence: 1.0,
+                    evidence: String::new(),
+                })
+                .collect();
+            assert_eq!(tags.len(), lines);
+            let split = view.split_interleaved(TagIndex::from_tags(tags));
+            assert_eq!(split.tags().len(), lines);
+            assert!(
+                view.visits.get() <= 8 * lines,
+                "{} steps for {lines} sentences on {lines} extents",
+                view.visits.get()
+            );
+        }
+    }
+
+    /// The code of `split_interleaved` and of `sentences` as they were before the sentence
+    /// index and the sorted extents, kept as the oracle for the differential tests.
+    impl View<'_> {
+        fn split_interleaved_oracle(&self, index: &TagIndex, marked: &[bool]) -> TagIndex {
+            let owners = self.owners.borrow();
+            let mut extents: BTreeMap<usize, Vec<Range<usize>>> = BTreeMap::new();
+            let mut tags = Vec::with_capacity(index.tags().len());
+            for (group, tag) in index.tags().iter().enumerate() {
+                let owner = owners
+                    .get(&(tag.span.start, tag.span.end))
+                    .copied()
+                    .filter(|&i| marked[i]);
+                let runs = owner.map(|i| {
+                    extents.entry(i).or_insert_with(|| {
+                        self.entries[i]
+                            .projection
+                            .map(|p| p.extents().iter().map(|s| s.start()..s.end()).collect())
+                            .unwrap_or_default()
+                    })
+                });
+                let mut pieces = Vec::new();
+                for run in runs.into_iter().flatten() {
+                    let from = run.start.max(tag.span.start);
+                    let to = run.end.min(tag.span.end);
+                    if from < to {
+                        pieces.push((
+                            Tag {
+                                span: from..to,
+                                ..tag.clone()
+                            },
+                            group,
+                        ));
+                    }
+                }
+                if pieces.is_empty() {
+                    tags.push((tag.clone(), group));
+                } else {
+                    tags.extend(pieces);
+                }
+            }
+            TagIndex::from_pieces(tags)
+        }
+    }
+
     /// Spans of the sentences of `block`, each mapped by the old per-sentence scan.
     fn oracle_sentence_spans(view: &View<'_>, block: &BlockView<'_>) -> Vec<Range<usize>> {
         let projection = view.entries[view.by_span[&(block.span.start, block.span.end)]]
@@ -440,5 +581,43 @@ mod tests {
             }
         }
 
+        #[test]
+        fn split_tags_equal_those_of_the_scan_over_every_extent(
+            projections in prop::collection::vec(prose_projection(), 1..5),
+            spans in prop::collection::vec((0usize..40, 100usize..200), 1..5),
+            wanted in prop::collection::vec((0usize..8, 0usize..2, 0usize..240, 0usize..240), 1..12),
+        ) {
+            let doc = cells(projections, &spans);
+            let view = View::new("t.rst", "", &doc, None);
+            let blocks = view.blocks();
+            // A tag on a block's own span, so it has an owner, or on any range.
+            let tags: Vec<Tag> = wanted
+                .into_iter()
+                .map(|(pick, own, a, b)| Tag {
+                    kind: ["a", "b"][own].to_owned(),
+                    span: if pick < blocks.len() { blocks[pick].span.clone() } else { a.min(b)..a.max(b) },
+                    confidence: 1.0,
+                    evidence: String::new(),
+                })
+                .collect();
+            let index = TagIndex::from_tags(tags);
+            // An entry is split when its span meets the span of another entry.
+            let marked: Vec<bool> = (0..view.entries.len())
+                .map(|i| {
+                    let a = &view.entries[i].span;
+                    (0..view.entries.len()).any(|j| {
+                        let b = &view.entries[j].span;
+                        j != i && b.start < a.end && a.start < b.end
+                    })
+                })
+                .collect();
+            let want = view.split_interleaved_oracle(&index, &marked);
+            let got = view.split_interleaved(index);
+            prop_assert_eq!(got.tags(), want.tags());
+            let ranges: Vec<Range<usize>> = want.tags().iter().map(|t| t.span.clone()).collect();
+            for pair in ranges.windows(2) {
+                prop_assert_eq!(got.kinds_covering(pair), want.kinds_covering(pair));
+            }
+        }
     }
 }
