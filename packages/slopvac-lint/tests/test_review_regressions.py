@@ -416,3 +416,21 @@ def test_history_internal_reference_severity_by_profile(profile, expected):
     findings = engine.run(parse("note.md", "Timeouts apply to every call, see PR 482."))
     severities = [f.severity for f in findings if f.rule_id == rule_id]
     assert severities == ([] if expected is None else [expected])
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("The AWS Well-Architected Framework guides the review.", False),
+        ("We ran a well-architected review.", False),
+        ("The Well Architected tool lists risks.", False),
+        ("We architected the platform last year.", True),
+        ("Teams keep architecting around the limit.", True),
+    ],
+)
+def test_business_jargon_spares_well_architected(text, expected):
+    engine = Engine(load_ruleset().rules, resolve_for(Config(), Path("note.md")))
+    findings = engine.run(parse("note.md", text))
+    assert (
+        any(f.rule_id.endswith(".business-jargon") for f in findings) == expected
+    )
