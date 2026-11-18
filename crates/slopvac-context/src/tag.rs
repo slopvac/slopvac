@@ -1,6 +1,6 @@
 //! Tags, the tagger trait, the registry and the context gate.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::Range;
 
 use crate::{DocumentView, Error, work};
@@ -70,8 +70,8 @@ pub struct TagIndex {
     tags: Vec<Tag>,
     /// The group of each tag. Tags of one group are the pieces of one tag.
     groups: Vec<usize>,
-    /// For a group of several pieces, the indexes of its tags.
-    members: std::collections::HashMap<usize, Vec<usize>>,
+    /// For a group of several pieces, its pieces.
+    members: HashMap<usize, Pieces>,
     /// Per kind, over every tag: answers [`Self::kinds_at`].
     all: Vec<KindRuns>,
     /// Per kind, over the tags of a single piece: answers the single-piece part of
@@ -122,6 +122,35 @@ impl KindRuns {
             }
         }
         kinds
+    }
+}
+
+/// The pieces of one tag in start order, with the greatest end among the pieces up to each.
+#[derive(Debug, Clone)]
+struct Pieces {
+    starts: Vec<usize>,
+    max_end: Vec<usize>,
+}
+
+impl Pieces {
+    /// The pieces at `ids` in `tags`. `ids` are in start order.
+    fn build(tags: &[Tag], ids: &[usize]) -> Self {
+        let mut max_end = Vec::with_capacity(ids.len());
+        let mut top = 0;
+        for &i in ids {
+            top = top.max(tags[i].span.end);
+            max_end.push(top);
+        }
+        Self {
+            starts: ids.iter().map(|&i| tags[i].span.start).collect(),
+            max_end,
+        }
+    }
+
+    /// Whether one piece contains `range`.
+    fn covers(&self, range: &Range<usize>) -> bool {
+        let upto = starts_up_to(&self.starts, range.start);
+        upto > 0 && self.max_end[upto - 1] >= range.end
     }
 }
 
@@ -224,12 +253,15 @@ impl TagIndex {
         // group keeps all its members.
         pieces.dedup_by(|(a, ga), (b, gb)| a.kind == b.kind && a.span == b.span && ga == gb);
         let (tags, groups): (Vec<Tag>, Vec<usize>) = pieces.into_iter().unzip();
-        let mut members: std::collections::HashMap<usize, Vec<usize>> =
-            std::collections::HashMap::new();
+        let mut by_group: HashMap<usize, Vec<usize>> = HashMap::new();
         for (i, &g) in groups.iter().enumerate() {
-            members.entry(g).or_default().push(i);
+            by_group.entry(g).or_default().push(i);
         }
-        members.retain(|_, m| m.len() > 1);
+        let members: HashMap<usize, Pieces> = by_group
+            .into_iter()
+            .filter(|(_, m)| m.len() > 1)
+            .map(|(g, m)| (g, Pieces::build(&tags, &m)))
+            .collect();
         let all = KindRuns::build(tags.iter());
         let single = KindRuns::build(
             tags.iter()
@@ -263,7 +295,6 @@ impl TagIndex {
         let Some(first) = ranges.first() else {
             return Vec::new();
         };
-        let covers = |t: &Tag, r: &Range<usize>| t.span.start <= r.start && r.end <= t.span.end;
         // A tag of one piece covers every range when it covers the least start to the
         // greatest end.
         let from = ranges.iter().map(|r| r.start).min().unwrap_or(first.start);
@@ -277,14 +308,11 @@ impl TagIndex {
                 if set.contains(kind) {
                     return;
                 }
-                let pieces = self
+                let covered = self
                     .members
                     .get(&self.groups[i])
-                    .map_or(&[][..], Vec::as_slice);
-                if ranges
-                    .iter()
-                    .all(|r| pieces.iter().any(|&m| covers(&self.tags[m], r)))
-                {
+                    .is_some_and(|p| ranges.iter().all(|r| p.covers(r)));
+                if covered {
                     set.insert(kind);
                 }
             });

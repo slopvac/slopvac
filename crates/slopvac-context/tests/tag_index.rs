@@ -199,3 +199,31 @@ fn one_covering_lookup_for_each_split_tag_takes_n_log_n_steps() {
         assert!(used <= bound, "{used} steps for {n} lookups, bound {bound}");
     }
 }
+
+/// One tag of `n` pieces, as a long wrapped sentence makes, and a lookup for each piece whose
+/// ranges lie in that piece and in the last one. Deciding whether the tag covers the ranges
+/// must not read all the pieces for each range.
+#[test]
+fn lookups_in_one_tag_of_many_pieces_take_n_log_n_steps() {
+    for n in [1_000, 2_000, 4_000, 8_000] {
+        let pieces: Vec<(Tag, usize)> = (0..n)
+            .map(|i| (tag("cell", i * 10..i * 10 + 5), 0))
+            .collect();
+        let index = TagIndex::from_pieces(pieces);
+        let last = (n - 1) * 10 + 1;
+        let _ = take_lookup_steps();
+        for i in 0..n {
+            let at = i * 10 + 1;
+            assert_eq!(
+                index.kinds_covering(&[at..at + 1, last..last + 1]),
+                ["cell"]
+            );
+        }
+        let used = take_lookup_steps();
+        // Per lookup: the multi-piece search, the path to one piece, and a search of the
+        // pieces for each of two ranges.
+        let bound = 6 * probes(n) * n;
+        assert!(used > 0, "no work counted at size {n}");
+        assert!(used <= bound, "{used} steps for {n} lookups, bound {bound}");
+    }
+}
