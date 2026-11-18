@@ -213,9 +213,8 @@ def renames_toml(
         "rules = [",
         *(f"  {_q(name)}," for name in sorted(REMOVED_RULES)),
         "]",
-        "categories = [",
-        *(f"  {_q(name)}," for name in rule_less),
-        "]",
+        # taplo keeps a short array on one line, so the generator writes it that way too.
+        "categories = [" + ", ".join(_q(name) for name in rule_less) + "]",
     ]
     return "\n".join(lines) + "\n"
 

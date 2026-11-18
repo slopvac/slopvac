@@ -276,9 +276,4 @@ rules = [
   "ste-sentences.vertical-list-lead-in-missing-colon",
   "ste-words.inconsistent-term-for-same-thing",
 ]
-categories = [
-  "meta",
-  "orwell-voice",
-  "prose-density",
-  "ste-vocabulary",
-]
+categories = ["meta", "orwell-voice", "prose-density", "ste-vocabulary"]
