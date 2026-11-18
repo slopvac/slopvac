@@ -1241,8 +1241,8 @@ fn a_diamond_chain_past_the_file_limit_is_refused_by_expansion_not_by_distinct_f
 
 /// A graph whose files add up to `MAX_EXTENDS_BYTES + extra` bytes, each file within the per-file cap.
 fn byte_graph(fx: &Fixture, extra: usize) -> PathBuf {
-    let cap = slopvac_config::MAX_CONFIG_BYTES as usize;
-    let files = slopvac_config::MAX_EXTENDS_BYTES as usize / cap;
+    let cap = usize::try_from(slopvac_config::MAX_CONFIG_BYTES).unwrap();
+    let files = usize::try_from(slopvac_config::MAX_EXTENDS_BYTES).unwrap() / cap;
     // The project config counts too, so the last file takes what is left of the total.
     let root_len = format!(
         "schema_version = 3\nextends = [{}]\n",
@@ -1284,13 +1284,13 @@ fn a_file_extended_from_many_places_counts_once_in_bytes() {
     // Nine applications of one 1 MiB file would be 9 MiB if each counted, past the 8 MiB limit.
     fx.write(
         "big.toml",
-        &padded(slopvac_config::MAX_CONFIG_BYTES as usize),
+        &padded(usize::try_from(slopvac_config::MAX_CONFIG_BYTES).unwrap()),
     );
     let root = fx.write(
         "slopvac.toml",
         &format!(
             "schema_version = 3\nextends = [{}]\n",
-            vec!["\"big.toml\""; 9].join(", ")
+            ["\"big.toml\""; 9].join(", ")
         ),
     );
     let cfg = load(&root, &NoPresets).unwrap();
