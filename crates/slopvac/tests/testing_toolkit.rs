@@ -6,6 +6,7 @@
 use proptest::prelude::*;
 use rstest::rstest;
 use snapbox::cmd::{Command, cargo_bin};
+use std::time::{Duration, Instant};
 
 /// The binary under test, with the ambient colour and logging settings cleared so
 /// a developer's or CI's `FORCE_COLOR` cannot change the output.
@@ -50,13 +51,49 @@ fn help_text_snapshot() {
     insta::assert_snapshot!(help.replace("\r\n", "\n").replace("slopvac.exe", "slopvac"));
 }
 
+/// Longest a generated command line may run before the case fails.
+const CASE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Run `cmd` with empty stdin under `timeout` and judge the exit: only codes 0 and 2
+/// pass. snapbox kills a child that outlives the timeout, which leaves no exit code,
+/// so a hang and a signal death both come back as `Err`.
+fn clean_exit(cmd: Command, timeout: Duration) -> Result<(), String> {
+    let output = cmd
+        .stdin("")
+        .timeout(timeout)
+        .output()
+        .map_err(|e| format!("binary did not run: {e}"))?;
+    match output.status.code() {
+        Some(0 | 2) => Ok(()),
+        code => Err(format!(
+            "exit code was {code:?} (no code: killed by the {timeout:?} timeout or a signal)"
+        )),
+    }
+}
+
 proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
     /// proptest: state an invariant over generated input. Arbitrary words must
-    /// make the CLI exit cleanly (0 or 2), never crash or hang.
+    /// make the CLI exit cleanly (0 or 2), never crash or hang. Each case spawns
+    /// the binary, so the case count stays low.
     #[test]
     fn arbitrary_arguments_never_crash(args in proptest::collection::vec("[a-zA-Z0-9_./-]{0,12}", 0..4)) {
-        let output = slopvac().args(&args).output().expect("binary runs");
-        let code = output.status.code();
-        prop_assert!(matches!(code, Some(0 | 2)), "exit code was {code:?}");
+        let verdict = clean_exit(slopvac().args(&args), CASE_TIMEOUT);
+        prop_assert!(verdict.is_ok(), "{}", verdict.unwrap_err());
     }
+}
+
+/// A command that outlives the timeout fails the verdict, and quickly.
+#[cfg(unix)]
+#[test]
+fn hanging_command_fails_the_case_within_the_bound() {
+    let start = Instant::now();
+    let verdict = clean_exit(Command::new("sleep").arg("30"), Duration::from_secs(1));
+    assert!(verdict.is_err(), "a hang must not count as a clean exit");
+    assert!(
+        start.elapsed() < Duration::from_secs(10),
+        "timeout did not stop the child: {:?}",
+        start.elapsed()
+    );
 }
