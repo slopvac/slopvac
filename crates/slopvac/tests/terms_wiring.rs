@@ -130,6 +130,80 @@ fn an_unreadable_terms_file_exits_2_without_its_directories() {
     assert!(!stderr.contains(&sentinel), "{stderr}");
 }
 
+/// A refused terms file or blocklist reports the entry number and the kind of failure, and
+/// never the words in the file: the message reaches stderr, reports and the language server.
+#[rstest::rstest]
+#[case::blocklist_unknown_pos(
+    "blocklists",
+    "words.toml",
+    "schema_version = 3\n\n[[entries]]\nword = \"SENTINELWORD\"\npos = \"wizard\"\nreason = \"r\"\n",
+    "entry 1 has an unrecognized part of speech"
+)]
+#[case::blocklist_no_reason(
+    "blocklists",
+    "words.toml",
+    "schema_version = 3\n\n[[entries]]\nword = \"ok\"\npos = \"verb\"\nreason = \"r\"\n\n[[entries]]\nword = \"SENTINELWORD\"\npos = \"verb\"\nreason = \" \"\n",
+    "entry 2 has no reason"
+)]
+#[case::blocklist_duplicate(
+    "blocklists",
+    "words.toml",
+    "schema_version = 3\n\n[[entries]]\nword = \"SENTINELWORD\"\npos = \"verb\"\nreason = \"r\"\n\n[[entries]]\nword = \"SENTINELWORD\"\npos = \"verb\"\nreason = \"r\"\n",
+    "entry 2 is a duplicate"
+)]
+#[case::blocklist_unknown_key(
+    "blocklists",
+    "words.toml",
+    "schema_version = 3\nentries = []\nSENTINELKEY = 1\n",
+    "has an unknown key"
+)]
+#[case::blocklist_syntax(
+    "blocklists",
+    "words.toml",
+    "schema_version = 3\n[[entries]]\nword = SENTINELSYNTAX\n",
+    "is malformed"
+)]
+#[case::terms_duplicate(
+    "files",
+    "terms.toml",
+    "schema_version = 3\n\n[[terms]]\nterm = \"SENTINELTERM\"\n\n[[terms]]\nterm = \"SENTINELTERM\"\n",
+    "entry 2 is a duplicate"
+)]
+#[case::terms_conflicting_casing(
+    "files",
+    "terms.toml",
+    "schema_version = 3\n\n[[terms]]\nterm = \"SENTINELTERM\"\nignore_case = true\ncase_sensitive = true\n",
+    "entry 1 sets both casing modes"
+)]
+fn a_refused_terms_input_is_described_without_its_words(
+    #[case] key: &str,
+    #[case] name: &str,
+    #[case] text: &str,
+    #[case] expected: &str,
+) {
+    let config = format!("schema_version = 3\n\n[terms]\n{key} = [\"{name}\"]\n");
+    let (_dir, path) = project(&config, &[(name, text)], MISCASED);
+    let out = slopvac().arg("lint").arg(&path).output().expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.starts_with("error[terms-invalid]"), "{stderr}");
+    assert!(stderr.contains(expected), "{stderr}");
+    assert!(!stderr.contains("SENTINEL"), "{stderr}");
+}
+
+#[test]
+fn a_terms_file_outside_the_project_shows_as_external_even_when_missing() {
+    let config =
+        "schema_version = 3\n\n[terms]\nfiles = [\"../SENTINELDIR/nested/../terms.toml\"]\n";
+    let (_dir, path) = project(config, &[], MISCASED);
+    let out = slopvac().arg("lint").arg(&path).output().expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("<external>/terms.toml"), "{stderr}");
+    assert!(!stderr.contains("SENTINELDIR"), "{stderr}");
+    assert!(!stderr.contains(".."), "{stderr}");
+}
+
 #[test]
 fn the_term_casing_rule_can_be_turned_off_by_its_id() {
     let config = "schema_version = 3\n\n[terms]\nfiles = [\"terms.toml\"]\n\n[rules]\n\"terms:terms.casing\" = \"off\"\n";

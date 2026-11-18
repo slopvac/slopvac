@@ -22,7 +22,7 @@ use crate::errors::CliError;
 use crate::lint_settings::{self, Overrides};
 use crate::lint_terms::{self, TermInputs};
 use crate::redact;
-use crate::rule_catalog;
+use crate::rule_catalog::Catalog;
 use crate::stdin::StdinPlan;
 use crate::summary::summarize;
 
@@ -267,7 +267,7 @@ impl Linter for EngineLinter {
                 }
             }
         }
-        let rules = match rule_catalog::core() {
+        let rules = match Catalog::load() {
             Ok(rules) => rules,
             Err(err) => return failed(request, run, &err),
         };
@@ -287,7 +287,7 @@ impl Linter for EngineLinter {
 fn validate_configs(
     request: &LintRequest,
     configs: &Configs<'_>,
-    rules: &slopvac_rules::RuleSet,
+    rules: &Catalog,
 ) -> Result<(), CliError> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if request.stdin.is_some() {
@@ -576,7 +576,7 @@ type Groups = BTreeMap<String, (slopvac_engine::Settings, TermInputs, Vec<usize>
 fn group_by_settings(
     request: &LintRequest,
     items: &[Item],
-    rules: &slopvac_rules::RuleSet,
+    rules: &Catalog,
 ) -> Result<Groups, CliError> {
     let mut groups = Groups::new();
     let none = LoadedConfig::without_files(request.root.clone());
@@ -629,12 +629,7 @@ fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
     roots
 }
 
-fn lint_items(
-    request: &LintRequest,
-    items: Vec<Item>,
-    rules: slopvac_rules::RuleSet,
-    mut run: Run,
-) -> RunOutcome {
+fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: Run) -> RunOutcome {
     let groups = match group_by_settings(request, &items, &rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
@@ -643,13 +638,9 @@ fn lint_items(
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
     let mut spare = Some(rules);
     for (settings, terms, indexes) in groups.into_values() {
-        // The engine owns its rule set, and a set does not clone: reload it for later groups.
-        let set = match spare.take().map_or_else(rule_catalog::core, Ok) {
-            Ok(set) => set,
-            Err(err) => return failed(request, run, &err),
-        };
-        let sets = match lint_terms::rule_sets(set) {
-            Ok(sets) => sets,
+        // The engine owns its rule sets, and a set does not clone: reload them for later groups.
+        let sets = match spare.take().map_or_else(Catalog::load, Ok) {
+            Ok(catalog) => catalog.into_sets(),
             Err(err) => return failed(request, run, &err),
         };
         let engine = match lint_terms::build_engine(sets, settings, &terms, &request.root) {
@@ -708,7 +699,7 @@ fn lint_items(
 /// # Errors
 /// The config error, `terms-invalid`, or `rules-unavailable`.
 pub fn project_linter(root: &Path) -> Result<slopvac_lsp::EngineLinter, CliError> {
-    let core = rule_catalog::core()?;
+    let core = Catalog::load()?;
     let presets = StylePresets(BuiltinSource);
     let discovery = Discovery::new(&presets);
     let found = discovery
@@ -727,7 +718,7 @@ pub fn project_linter(root: &Path) -> Result<slopvac_lsp::EngineLinter, CliError
         &Overrides::default(),
     )?;
     let terms = lint_terms::inputs(&resolved, &config.root);
-    let sets = lint_terms::rule_sets(core)?;
+    let sets = core.into_sets();
     let reasons = slopvac_lsp::exception_names(&sets);
     let engine = lint_terms::build_engine(sets, settings, &terms, root)?;
     Ok(slopvac_lsp::EngineLinter::from_engine(engine, reasons))

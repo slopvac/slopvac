@@ -7,17 +7,15 @@
 //! the CLI builds, for `lint` and for the language server, goes through [`build_engine`].
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use serde_json::Value as Json;
 use slopvac_config::Resolved;
 use slopvac_engine::{Engine, Settings, TERMS_PACK, terms_rule_set};
 use slopvac_model::PackId;
 use slopvac_rules::RuleSet;
-use slopvac_terms::{Blocklist, TermsFile};
+use slopvac_terms::{Blocklist, TermsError, TermsFile};
 
 use crate::errors::CliError;
-use crate::redact;
 
 /// The files that feed an engine's term checks.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -28,13 +26,13 @@ pub struct TermInputs {
     pub blocklists: Vec<PathBuf>,
 }
 
-/// The term-casing rule pack, for name checks against the catalogue.
-pub fn casing_pack() -> &'static RuleSet {
-    static PACK: OnceLock<RuleSet> = OnceLock::new();
-    PACK.get_or_init(|| {
-        terms_rule_set(&PackId::new(TERMS_PACK).expect("the terms pack id is valid"))
-            .expect("the shipped terms pack loads")
-    })
+/// The term-casing rule pack.
+///
+/// # Errors
+/// `engine-unavailable` when the shipped term pack does not load.
+pub fn casing_rule_set() -> Result<RuleSet, CliError> {
+    terms_rule_set(&PackId::new(TERMS_PACK).expect("the terms pack id is valid"))
+        .map_err(|e| CliError::new("engine-unavailable", e.to_string()))
 }
 
 fn paths_at(resolved: &Resolved, key: &str, root: &Path) -> Vec<PathBuf> {
@@ -68,26 +66,30 @@ pub fn inputs(resolved: &Resolved, root: &Path) -> TermInputs {
     }
 }
 
-/// Fill the message of a terms error with a path that is safe to show.
-fn failed(path: &Path, what: &str, message: &str, cwd: &Path) -> CliError {
-    let shown = redact::shown_path(path, cwd);
-    CliError::new(
-        "terms-invalid",
-        format!(
-            "{shown}: {what}: {}",
-            message.replace(&path.display().to_string(), &shown)
-        ),
-    )
-}
-
-/// The rule sets an engine runs: the core rules and the term-casing pack.
-///
-/// # Errors
-/// `engine-unavailable` when the shipped term pack does not load.
-pub fn rule_sets(core: RuleSet) -> Result<Vec<RuleSet>, CliError> {
-    let terms = terms_rule_set(&PackId::new(TERMS_PACK).expect("the terms pack id is valid"))
-        .map_err(|e| CliError::new("engine-unavailable", e.to_string()))?;
-    Ok(vec![core, terms])
+/// A terms error as a message that holds no word, term or key from the file, and a path that is
+/// safe to show. The file's text never reaches stderr, a report or the language server: only
+/// the entry number and the kind of failure do.
+fn failed(path: &Path, what: &str, error: &TermsError, cwd: &Path) -> CliError {
+    let shown = slopvac_fs::display_under_root(path, cwd);
+    let detail = match error {
+        TermsError::Io { .. } => "cannot be read".to_owned(),
+        TermsError::TooLarge { cap, .. } => format!("is larger than {cap} bytes"),
+        TermsError::Parse { .. } => "is malformed".to_owned(),
+        TermsError::MissingSchemaVersion { .. } => {
+            "has no `schema_version`; set `schema_version = 3`".to_owned()
+        }
+        TermsError::SchemaVersion { .. } => {
+            "has an unsupported `schema_version`; set `schema_version = 3`".to_owned()
+        }
+        TermsError::UnknownKey { .. } => "has an unknown key".to_owned(),
+        TermsError::Entry {
+            number: Some(number),
+            problem,
+            ..
+        } => format!("entry {number} {}", problem.describe()),
+        TermsError::Entry { problem, .. } => format!("has an entry that {}", problem.describe()),
+    };
+    CliError::new("terms-invalid", format!("{shown}: {what}: {detail}"))
 }
 
 /// Build the engine for `sets` and `settings` with the project's terms and blocklists.
@@ -102,13 +104,12 @@ pub fn build_engine(
     cwd: &Path,
 ) -> Result<Engine, CliError> {
     for file in &terms.files {
-        TermsFile::load(file)
-            .map_err(|e| failed(file, "cannot load the terms file", &e.to_string(), cwd))?;
+        TermsFile::load(file).map_err(|e| failed(file, "cannot load the terms file", &e, cwd))?;
     }
     let mut blocklist = Blocklist::default();
     for file in &terms.blocklists {
         let loaded = Blocklist::load(file)
-            .map_err(|e| failed(file, "cannot load the blocklist", &e.to_string(), cwd))?;
+            .map_err(|e| failed(file, "cannot load the blocklist", &e, cwd))?;
         blocklist.merge(loaded);
     }
     let unavailable =

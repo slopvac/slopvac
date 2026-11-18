@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
-use crate::TermsError;
+use crate::{EntryProblem, TermsError};
 
 /// One term.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,35 +34,46 @@ impl TermEntry {
     /// # Errors
     /// [`TermsError::Entry`] naming the first problem.
     pub(crate) fn validate(&self, path: &str) -> Result<(), TermsError> {
-        let err = |message: String| TermsError::Entry {
+        let err = |problem: EntryProblem, message: String| TermsError::Entry {
             path: path.to_owned(),
             message,
+            number: None,
+            problem,
         };
         if self.term.trim().is_empty() {
-            return Err(err("term is empty".to_owned()));
+            return Err(err(EntryProblem::MissingWord, "term is empty".to_owned()));
         }
         if self.ignore_case && self.case_sensitive {
-            return Err(err(format!(
-                "term `{}` sets both ignore_case and case_sensitive",
-                self.term
-            )));
+            return Err(err(
+                EntryProblem::ConflictingCasing,
+                format!(
+                    "term `{}` sets both ignore_case and case_sensitive",
+                    self.term
+                ),
+            ));
         }
         if let Some(kind) = self.kind.as_deref().filter(|k| !is_kebab_label(k)) {
-            return Err(err(format!(
-                "term `{}` has kind {kind:?}; use a kebab-case label such as `product`",
-                self.term
-            )));
+            return Err(err(
+                EntryProblem::BadKind,
+                format!(
+                    "term `{}` has kind {kind:?}; use a kebab-case label such as `product`",
+                    self.term
+                ),
+            ));
         }
         let mut variants = BTreeSet::new();
         for v in &self.variants {
             if v.is_empty() {
-                return Err(err(format!("term `{}` has an empty variant", self.term)));
+                return Err(err(
+                    EntryProblem::BadVariant,
+                    format!("term `{}` has an empty variant", self.term),
+                ));
             }
             if !variants.insert(v.as_str()) {
-                return Err(err(format!(
-                    "term `{}` lists variant `{v}` twice",
-                    self.term
-                )));
+                return Err(err(
+                    EntryProblem::BadVariant,
+                    format!("term `{}` lists variant `{v}` twice", self.term),
+                ));
             }
         }
         Ok(())
@@ -135,9 +146,11 @@ impl TermsFile {
                 found: raw.schema_version.to_string(),
             });
         }
-        let entry_err = |message: String| TermsError::Entry {
+        let entry_err = |problem: EntryProblem, number: usize, message: String| TermsError::Entry {
             path: path.to_owned(),
             message,
+            number: Some(number),
+            problem,
         };
         let unknown = |key: &str| TermsError::UnknownKey {
             path: path.to_owned(),
@@ -166,11 +179,19 @@ impl TermsFile {
                 case_sensitive: t.case_sensitive,
             };
             if entry.term.trim().is_empty() {
-                return Err(entry_err(format!("term {} is empty", i + 1)));
+                return Err(entry_err(
+                    EntryProblem::MissingWord,
+                    i + 1,
+                    format!("term {} is empty", i + 1),
+                ));
             }
-            entry.validate(path)?;
+            entry.validate(path).map_err(|e| e.at_entry(i + 1))?;
             if !seen.insert(entry.term.clone()) {
-                return Err(entry_err(format!("duplicate term `{}`", entry.term)));
+                return Err(entry_err(
+                    EntryProblem::Duplicate,
+                    i + 1,
+                    format!("duplicate term `{}`", entry.term),
+                ));
             }
             terms.push(entry);
         }
