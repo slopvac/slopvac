@@ -484,39 +484,65 @@ def test_an_absent_manifest_is_allowed_for_the_first_publication(
     assert not (tmp_path / "published").exists()
 
 
-@pytest.mark.parametrize(
-    "stderr",
-    [
-        "Error response from registry: MANIFEST_UNKNOWN: manifest unknown\n",
-        "Error response from registry: NAME_UNKNOWN: repository name not known\n",
-    ],
-)
-def test_the_registry_codes_for_an_unknown_manifest_or_name_mean_absent(
-    tmp_path: Path, stub_oras, stderr: str
-) -> None:
-    stub_oras("", stderr=stderr)
-    lists.fetch_published(IMAGE, tmp_path / "published", first_publication=True)
-    assert not (tmp_path / "published").exists()
+def _not_found_for(image: str) -> str:
+    return _real_not_found().replace(IMAGE, image)
+
+
+_AUTH = "Error response from registry: unauthorized: authentication required\n"
+_5XX = "Error response from registry: 503 Service Unavailable\n"
+_DIGEST = "ghcr.io/slopvac/slopvac-revocations@sha256:" + "0" * 64
+_DOTTED = "ghcr.io/a/b:latest"
 
 
 @pytest.mark.parametrize(
-    "stderr",
+    ("image", "stderr"),
     [
-        _real_not_found().replace("slopvac-revocations:latest", "other-list:latest"),
-        'Error: could not pull "ghcr.io/slopvac/slopvac-revocations:latest": '
-        "not found while refreshing a token\n",
-        "Error: not found\n" + _real_not_found().strip() + " (retry later)\n",
-        "Error response from registry: unauthorized: 401 not found\n",
-        'Error response from registry: 403 Forbidden: "' + IMAGE + '": denied\n',
+        pytest.param(IMAGE, _not_found_for("ghcr.io/slopvac/other:latest"), id="other-ref"),
+        pytest.param(IMAGE, _not_found_for(IMAGE + "2"), id="stderr-longer-tag"),
+        pytest.param(IMAGE + "2", _not_found_for(IMAGE), id="requested-longer-tag"),
+        pytest.param(IMAGE, _not_found_for(_DIGEST), id="stderr-digest"),
+        pytest.param(_DIGEST, _not_found_for(IMAGE), id="requested-digest"),
+        pytest.param(_DOTTED, _not_found_for("ghcrxio/a/b:latest"), id="dot-against-x"),
+        pytest.param(
+            IMAGE,
+            "Error response from registry: MANIFEST_UNKNOWN: manifest unknown\n",
+            id="manifest-unknown-code",
+        ),
+        pytest.param(
+            IMAGE,
+            "Error response from registry: NAME_UNKNOWN: repository not known\n",
+            id="name-unknown-code",
+        ),
+        pytest.param(IMAGE, f"Error: {IMAGE}: not found\n", id="old-short-form"),
+        pytest.param(IMAGE, _real_not_found().strip() + " (retry)\n", id="trailing-text"),
+        pytest.param(IMAGE, "Error: " + _real_not_found(), id="leading-text"),
+        pytest.param(IMAGE, _AUTH, id="auth"),
+        pytest.param(
+            IMAGE, "Error response from registry: 403 not found\n", id="403-not-found"
+        ),
+        pytest.param(IMAGE, _5XX, id="5xx"),
+        pytest.param(IMAGE, _AUTH + _real_not_found(), id="auth-then-not-found"),
+        pytest.param(IMAGE, _real_not_found() + _AUTH, id="not-found-then-auth"),
+        pytest.param(IMAGE, _5XX + _real_not_found(), id="5xx-then-not-found"),
+        pytest.param(IMAGE, _real_not_found() + _5XX, id="not-found-then-5xx"),
+        pytest.param(IMAGE, _real_not_found() * 2, id="duplicated"),
+        pytest.param(IMAGE, "\n" + _real_not_found(), id="leading-blank-line"),
+        pytest.param(
+            IMAGE,
+            "body: " + _real_not_found().strip() + "\nmore body\n",
+            id="embedded-in-error-body",
+        ),
     ],
-    ids=["other-ref", "not-found-elsewhere", "trailing-text", "auth-401", "auth-403"],
 )
-def test_a_not_found_that_is_not_for_the_requested_ref_fails_closed(
-    tmp_path: Path, stub_oras, stderr: str
+@pytest.mark.parametrize("first_publication", [False, True])
+def test_only_orass_whole_not_found_for_the_requested_ref_is_absent(
+    tmp_path: Path, stub_oras, image: str, stderr: str, first_publication: bool
 ) -> None:
     stub_oras("", stderr=stderr)
     with pytest.raises(lists.SigningError, match="could not resolve the manifest"):
-        lists.fetch_published(IMAGE, tmp_path / "published", first_publication=True)
+        lists.fetch_published(
+            image, tmp_path / "published", first_publication=first_publication
+        )
 
 
 @pytest.mark.parametrize(
