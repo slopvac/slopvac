@@ -300,6 +300,420 @@ def test_execute_runs_every_task_per_model_and_reviews_other_models_rewrites():
     assert len(out["runs"]) == out["planned_calls"]
 
 
+def counting_ask(calls):
+    def make(model):
+        inner = fake_ask(model)
+
+        def ask(prompt):
+            calls.append(model["name"])
+            return inner(prompt)
+
+        return ask
+
+    return make
+
+
+def row_keys(out):
+    return {(r["task"], r["model"], r["repeat"]) for r in out["runs"]}
+
+
+def test_plan_for_one_model_counts_only_the_calls_it_adds():
+    # Model "c" among 3, 3 repeats, tasks: update, rewrite, planted review.
+    # Own answers 3x3=9; "c" is reviewed on its rewrite by 2 models (3x2=6) and
+    # reviews the 2 others' rewrites from the earlier journal (6). The others
+    # make no author calls: 9 + 6 + 6 = 21.
+    counted = models.plan(tiny_tasks(), roster("a", "b", "c"), 3, only_model="c")
+    assert counted["total_calls"] == 21
+    assert counted["authored_review_calls"] == 12
+    assert list(counted["per_model"]) == ["c"]
+
+
+def test_plan_rejects_an_only_model_outside_the_roster():
+    with pytest.raises(models.ModelEvalError, match="not in the models file"):
+        models.plan(tiny_tasks(), roster("a", "b"), 3, only_model="z")
+
+
+def test_only_model_reuses_the_earlier_rewrites_and_joins_the_earlier_run(tmp_path):
+    tasks = tiny_tasks()
+    path = tmp_path / "earlier.journal.jsonl"
+    earlier = models.execute(
+        tasks,
+        roster("a", "b"),
+        3,
+        NO_FINDINGS,
+        ask_for=fake_ask,
+        date="2026-11-14",
+        journal=models.Journal(path),
+    )
+    before = path.read_bytes()
+    calls: list[str] = []
+    added = models.execute(
+        tasks,
+        roster("a", "b", "c"),
+        3,
+        NO_FINDINGS,
+        ask_for=counting_ask(calls),
+        date="2026-11-17",
+        only_model="c",
+        candidates=models.Journal(path),
+    )
+    assert len(calls) == added["planned_calls"] == 21
+    # c answers 9 tasks and reviews 6 rewrites; a and b review c's rewrite 3 times each.
+    assert {m: calls.count(m) for m in "abc"} == {"a": 3, "b": 3, "c": 15}
+    assert len(added["runs"]) == 21
+    assert all("c" in (r["model"], r.get("author_model")) for r in added["runs"])
+    assert path.read_bytes() == before
+    full = models.execute(
+        tasks, roster("a", "b", "c"), 3, NO_FINDINGS, ask_for=fake_ask, date="d"
+    )
+    merged = models.merge_results(earlier, added)
+    assert row_keys(merged) == row_keys(full)
+    assert merged["date"] == "2026-11-17"
+    assert [m["name"] for m in merged["models"]] == ["a", "b", "c"]
+
+
+def test_a_missing_candidate_stops_the_run_before_any_call(tmp_path):
+    calls: list[str] = []
+    with pytest.raises(models.ModelEvalError, match="missing.*no call was made"):
+        models.execute(
+            tiny_tasks(),
+            roster("a", "b", "c"),
+            3,
+            NO_FINDINGS,
+            ask_for=counting_ask(calls),
+            only_model="c",
+            candidates=models.Journal(tmp_path / "empty.journal.jsonl"),
+        )
+    assert calls == []
+
+
+def test_only_model_needs_a_candidates_journal_and_the_reverse(tmp_path):
+    with pytest.raises(models.ModelEvalError, match="go together"):
+        models.execute(
+            tiny_tasks(),
+            roster("a", "b"),
+            3,
+            NO_FINDINGS,
+            ask_for=fake_ask,
+            only_model="b",
+        )
+
+
+@pytest.fixture
+def frozen(tmp_path):
+    """A finished earlier run of a and b: its journal, as --candidates-from reads it."""
+    path = tmp_path / "earlier.journal.jsonl"
+    models.execute(
+        tiny_tasks(),
+        roster("a", "b"),
+        3,
+        NO_FINDINGS,
+        ask_for=fake_ask,
+        journal=models.Journal(path),
+    )
+    return path
+
+
+def add_c_run(monkeypatch, candidates, out, *, command="run"):
+    """Drive `models run` for the new model c through the CLI; return its exit code."""
+    monkeypatch.setattr(
+        cli, "_model_tasks", lambda args: (tiny_tasks(), roster("a", "b", "c"))
+    )
+    argv = ["models", command, "--models", "unused"]
+    argv += ["--only-model", "c", "--candidates-from", str(candidates)]
+    if command == "run":
+        argv += ["--confirm-calls", "21", "--max-invocations", "30", "--out", str(out)]
+    return cli.main(argv)
+
+
+@pytest.mark.parametrize(
+    "alias",
+    ["out", "journal", "ledger", "lock", "hard link to the journal"],
+)
+def test_the_frozen_journal_is_never_a_writable_destination(
+    alias, frozen, tmp_path, monkeypatch, capsys
+):
+    out = tmp_path / "x.json"
+    if alias == "hard link to the journal":
+        out = tmp_path / "other.json"
+        os.link(frozen, tmp_path / "other.journal.jsonl")
+        candidates = frozen
+    else:
+        candidates = {
+            "out": out,
+            "journal": tmp_path / "x.journal.jsonl",
+            "ledger": tmp_path / "x.ledger.jsonl",
+            "lock": tmp_path / "x.ledger.jsonl.lock",
+        }[alias]
+        candidates.write_bytes(frozen.read_bytes())
+    before = candidates.read_bytes()
+    assert add_c_run(monkeypatch, candidates, out) == 2
+    assert "read-only" in capsys.readouterr().err
+    assert candidates.read_bytes() == before
+    assert not (tmp_path / "x.ledger.jsonl").exists() or alias == "ledger"
+
+
+@pytest.fixture
+def frozen_with_c(tmp_path):
+    """A finished earlier run that already includes model c."""
+    path = tmp_path / "with-c.journal.jsonl"
+    models.execute(
+        tiny_tasks(),
+        roster("a", "b", "c"),
+        3,
+        NO_FINDINGS,
+        ask_for=fake_ask,
+        journal=models.Journal(path),
+    )
+    return path
+
+
+@pytest.mark.parametrize("command", ["plan", "run"])
+def test_a_selection_the_frozen_journal_already_ran_is_refused_before_any_call(
+    command, frozen_with_c, tmp_path, monkeypatch, capsys
+):
+    # c ran 9 answers (3 tasks x 3 repeats) and reviewed 2 authors x 3 repeats = 6.
+    assert (
+        add_c_run(monkeypatch, frozen_with_c, tmp_path / "y.json", command=command) == 2
+    )
+    assert "15 jobs of c already ran" in capsys.readouterr().err
+    assert not (tmp_path / "y.ledger.jsonl").exists()
+
+
+def failing_c(model):
+    if model["name"] != "c":
+        return fake_ask(model)
+
+    def ask(prompt):
+        raise models.CallFailed("boom", 1)
+
+    return ask
+
+
+@pytest.fixture
+def frozen_with_failed_c(tmp_path):
+    """An earlier run in which every call of model c failed."""
+    path = tmp_path / "failed-c.journal.jsonl"
+    models.execute(
+        tiny_tasks(),
+        roster("a", "b", "c"),
+        3,
+        NO_FINDINGS,
+        ask_for=failing_c,
+        journal=models.Journal(path),
+    )
+    return path
+
+
+@pytest.mark.parametrize("command", ["plan", "run"])
+def test_failed_calls_in_the_frozen_journal_still_count_as_already_run(
+    command, frozen_with_failed_c, tmp_path, monkeypatch, capsys
+):
+    out = tmp_path / "z.json"
+    assert add_c_run(monkeypatch, frozen_with_failed_c, out, command=command) == 2
+    assert "15 jobs of c already ran" in capsys.readouterr().err
+    assert not (tmp_path / "z.ledger.jsonl").exists()
+
+
+def test_execute_makes_no_call_for_a_model_whose_frozen_calls_all_failed(
+    frozen_with_failed_c,
+):
+    calls: list[str] = []
+    with pytest.raises(models.ModelEvalError, match="15 jobs of c already ran"):
+        models.execute(
+            tiny_tasks(),
+            roster("a", "b", "c"),
+            3,
+            NO_FINDINGS,
+            ask_for=counting_ask(calls),
+            only_model="c",
+            candidates=models.Journal(frozen_with_failed_c),
+        )
+    assert calls == []
+
+
+def test_resume_on_the_runs_own_journal_still_retries_failed_jobs(tmp_path):
+    journal = tmp_path / "own.journal.jsonl"
+    first = models.execute(
+        tiny_tasks(),
+        roster("a", "b", "c"),
+        3,
+        NO_FINDINGS,
+        ask_for=failing_c,
+        journal=models.Journal(journal),
+    )
+    assert first["failed_calls"] > 0
+    calls: list[str] = []
+    second = models.execute(
+        tiny_tasks(),
+        roster("a", "b", "c"),
+        3,
+        NO_FINDINGS,
+        ask_for=counting_ask(calls),
+        journal=models.Journal(journal),
+    )
+    assert second["failed_calls"] == 0
+    assert calls.count("c") >= 9  # c's own failed answers were asked again
+
+
+def test_execute_makes_no_call_for_a_selection_the_frozen_journal_ran(frozen_with_c):
+    calls: list[str] = []
+    with pytest.raises(models.ModelEvalError, match="15 jobs of c already ran"):
+        models.execute(
+            tiny_tasks(),
+            roster("a", "b", "c"),
+            3,
+            NO_FINDINGS,
+            ask_for=counting_ask(calls),
+            only_model="c",
+            candidates=models.Journal(frozen_with_c),
+        )
+    assert calls == []
+
+
+def test_execute_refuses_a_journal_that_is_also_the_candidates(frozen):
+    calls: list[str] = []
+    with pytest.raises(models.ModelEvalError, match="read-only"):
+        models.execute(
+            tiny_tasks(),
+            roster("a", "b", "c"),
+            3,
+            NO_FINDINGS,
+            ask_for=counting_ask(calls),
+            only_model="c",
+            candidates=models.Journal(frozen),
+            journal=models.Journal(frozen),
+        )
+    assert calls == []
+
+
+def results_file(model, *, scorer=None, run_scorer=None, **fields):
+    """A small results file for one model, built apart from `execute`."""
+    run = {
+        "task": "t1",
+        "type": "rewrite",
+        "role": "author",
+        "variant": None,
+        "model": model,
+        "repeat": 0,
+        "score": {"success": True},
+    }
+    if run_scorer is not None:
+        run["scorer_version"] = run_scorer
+    doc = {
+        "schema": models.RESULTS_SCHEMA,
+        "date": "2026-11-17",
+        "prompt_version": "1",
+        "tasks_sha256": "h",
+        "repeats": 3,
+        "models": [{"name": model, "family": "f", "tier": "t"}],
+        "runs": [run],
+    }
+    if scorer is not None:
+        doc["scorer_version"] = scorer
+    return doc | fields
+
+
+def test_a_join_of_two_scorer_versions_is_refused():
+    with pytest.raises(models.ModelEvalError, match="scorer versions differ"):
+        models.merge_results(
+            results_file("a", scorer="2"), results_file("b", scorer="3")
+        )
+
+
+def test_legacy_results_without_a_scorer_version_join_only_each_other():
+    models.merge_results(results_file("a"), results_file("b"))
+    with pytest.raises(models.ModelEvalError, match="legacy"):
+        models.merge_results(results_file("a"), results_file("b", scorer="2"))
+
+
+def test_a_run_row_with_another_scorer_version_than_its_file_is_refused():
+    with pytest.raises(models.ModelEvalError, match="disagrees with its file header"):
+        models.merge_results(
+            results_file("a", scorer="2"), results_file("b", scorer="2", run_scorer="1")
+        )
+
+
+def test_a_row_without_its_own_version_takes_the_file_headers():
+    a = results_file("a", scorer="2")  # the row has no scorer_version field
+    b = results_file("b", scorer="2", run_scorer="2")
+    assert (
+        models.summarize(models.merge_results(a, b), resamples=5)["scorer_version"]
+        == "2"
+    )
+    with pytest.raises(models.ModelEvalError, match="scorer versions differ"):
+        models.merge_results(a, results_file("c", scorer="3", run_scorer="3"))
+
+
+def test_a_file_without_a_header_is_legacy_and_its_rows_cannot_claim_a_version():
+    assert "scorer_version" not in models.summarize(results_file("a"), resamples=5)
+    with pytest.raises(models.ModelEvalError, match="legacy"):
+        models.summarize(results_file("a", run_scorer="2"), resamples=5)
+
+
+def test_a_row_that_disagrees_with_its_header_fails_even_in_a_single_file(
+    tmp_path, capsys
+):
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps(results_file("a", scorer="2", run_scorer="1")))
+    assert cli.main(["models", "summarize", str(path)]) == 2
+    assert "disagrees with its file header" in capsys.readouterr().err
+
+
+def test_the_joined_summary_carries_the_shared_scorer_version():
+    joined = models.merge_results(
+        results_file("a", scorer="2"), results_file("b", scorer="2")
+    )
+    assert models.summarize(joined, resamples=5)["scorer_version"] == "2"
+    legacy = models.merge_results(results_file("a"), results_file("b"))
+    assert "scorer_version" not in models.summarize(legacy, resamples=5)
+
+
+def test_summarize_exits_2_for_a_join_across_scorer_versions(tmp_path, capsys):
+    paths = []
+    for name, version in (("a", "2"), ("b", "3")):
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(results_file(name, scorer=version)))
+        paths.append(str(path))
+    assert cli.main(["models", "summarize", *paths]) == 2
+    assert "scorer versions differ" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("field", "other", "message"),
+    [
+        ("schema", models.RESULTS_SCHEMA + 1, "schema differs"),
+        ("prompt_version", "2", "prompt_version differs"),
+        ("repeats", 5, "repeats differs"),
+        ("tasks_sha256", "other-task-set", "tasks_sha256 differs"),
+    ],
+)
+def test_a_join_refuses_files_that_differ_in_one_comparability_field(
+    field, other, message
+):
+    with pytest.raises(models.ModelEvalError, match=message):
+        models.merge_results(results_file("a"), results_file("b", **{field: other}))
+
+
+@pytest.mark.parametrize("field", ["family", "tier"])
+def test_a_join_refuses_a_model_whose_metadata_differs_between_files(field):
+    changed = results_file("a")
+    changed["models"] = [{"name": "a", "family": "f", "tier": "t", field: "other"}]
+    changed["runs"][0]["repeat"] = 1  # no shared run, so only the model differs
+    with pytest.raises(models.ModelEvalError, match="model 'a' differs"):
+        models.merge_results(results_file("a"), changed)
+
+
+def test_merge_refuses_results_from_another_task_set_or_with_a_repeated_run():
+    out = models.execute(
+        tiny_tasks(), roster("a", "b"), 3, NO_FINDINGS, ask_for=fake_ask, date="d"
+    )
+    with pytest.raises(models.ModelEvalError, match="tasks_sha256 differs"):
+        models.merge_results(out, out | {"tasks_sha256": "other"})
+    with pytest.raises(models.ModelEvalError, match="duplicate run"):
+        models.merge_results(out, out)
+
+
 def test_summary_ranks_models_by_success_per_task():
     tasks = [t for t in tiny_tasks() if t["id"] != "a1"]
     out = models.execute(

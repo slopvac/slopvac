@@ -218,12 +218,14 @@ Model runs need Python 3.13 or later on macOS. The harness waits for a model com
 ```sh
 python -m evals models plan --models models.json            # count the calls and input size
 python -m evals models run --models models.json --confirm-calls <N> --max-invocations <M>
-python -m evals models summarize evals/results/models/<date>.json
+python -m evals models summarize evals/results/models/<date>.json [<more>.json ...]
 python -m evals models cost evals/results/models/<date>.json --prices evals/prices.json
 python -m evals models recommend evals/results/models/<date>.json --out crates/slopvac-agents/data/model-evals.json
 ```
 
 `models recommend` writes the file that `slopvac-agents` embeds. Without `--publish` the file has status `pending-reevaluation` and no rows, so a results file whose scorer is under review publishes no ranking. With `--publish` it writes the reviewer rows (success rate, tasks and runs per model and review type) with status `published`. Regenerate `docs/model-recommendations.md` afterwards with `SLOPVAC_BLESS=1 cargo nextest run -p slopvac-agents --test models`. A test in `tests/test_evals_models.py` fails when the embedded file differs from the generator output.
+
+To add one model to an earlier run, append it to `models.json` and pass `--only-model <name>` and `--candidates-from <earlier journal>` to `plan` and `run`, with a fresh `--out`. The run makes only the calls that model adds: its answers, the other models' reviews of its rewrites, and its reviews of their rewrites. Earlier results keep only output hashes, so the other models' rewrites come from the earlier run's journal. That keeps the reviewed pool the same one the earlier reviewers saw. The harness only reads that journal, and a missing candidate stops the run before any call. `summarize` takes several results files of one task set, such as the earlier run and the new one, and ranks all models together. It refuses files with a different task-set hash, prompt version or repeat count, and files that share a run, or that carry different scorer versions (a file without a `scorer_version` counts as legacy). The run also refuses a frozen journal that is the output, journal, ledger or lock, and a model the frozen journal already ran. Ranking pending rescore (slopvac-8l4.15.25).
 
 `models.json` names each model with a `family`, a `tier` and a `command` that reads the prompt on stdin and writes the answer on stdout. The committed `evals/models.json` calls Bedrock models through `python -m evals.opencode_model`, which runs `opencode run` with a bare agent (no tools, one-line prompt) in an empty directory. The adapter resolves the AWS profile with `aws configure export-credentials` (set `AWS_PROFILE` and `AWS_REGION`, or pass `--aws-profile` and `--aws-region`), then starts opencode with an empty `HOME`, its own XDG directories and an allow-listed environment. The adapter re-exports credentials on every attempt. If they have under 10 minutes left, it waits up to 330 seconds for the CLI to hand out fresh ones, inside the same attempt, and then gives up. Your opencode config, plugins, rules and auth never load, and opencode finds no AWS profile files. On a timeout the harness kills the whole process group, including opencode and its children. Nothing in the harness calls a provider itself. `plan` prints the number of calls and a rough input size. `run` refuses to start until `--confirm-calls` equals that number, so the person who pays approves it first. A journal without a ledger is refused, because its spent calls are unknown: start with a fresh `--out` path. Ask the lead before you run a paid provider.
 
@@ -245,6 +247,6 @@ Tasks come from the corpus:
 
 The reviewer is always a different model from the author. Every task repeats at least three times. The summary averages repeats within a task, then resamples tasks for a 95% interval, and ranks models per review type and role.
 
-Fact preservation is lexical: `evals/facts.py` compares numbers, code spans, identifiers and polarity words (must, not, never, only) between the source and the output.
+Fact preservation is lexical: `evals/facts.py` compares numbers, code spans, identifiers and polarity words (must, not, never, only) between the source and the output. Treat it as a lexical retention smoke check, not proof that meaning survived. Treat the reviewer scores as detection by quotation: a reviewer counts as finding an edit when it quotes the edited words, whatever its explanation says.
 
 The results file records the date, the prompt version, the task-set hash, the models and one row per run with an output hash. The model text itself is not stored.

@@ -135,7 +135,10 @@ def _model_tasks(args: argparse.Namespace) -> tuple[list[dict], list[dict]]:
 def cmd_models(args: argparse.Namespace) -> int:
     try:
         if args.models_command == "summarize":
-            summary = models.summarize(models.load(Path(args.results)))
+            docs = [models.load(Path(path)) for path in args.results]
+            summary = models.summarize(
+                models.merge_results(*docs) if len(docs) > 1 else docs[0]
+            )
             _emit(summary, args.out)
             return 0
         if args.models_command == "recommend":
@@ -150,7 +153,17 @@ def cmd_models(args: argparse.Namespace) -> int:
             _emit(report, args.out)
             return 0
         tasks, roster = _model_tasks(args)
-        counted = models.plan(tasks, roster, args.repeats)
+        if bool(args.only_model) != bool(args.candidates_from):
+            raise models.ModelEvalError(
+                "--only-model and --candidates-from go together"
+            )
+        candidates = (
+            models.Journal(Path(args.candidates_from)) if args.candidates_from else None
+        )
+        counted = models.plan(tasks, roster, args.repeats, args.only_model)
+        models.frozen_candidates(  # fail before any call if a candidate is missing
+            tasks, roster, args.repeats, args.only_model, candidates
+        )
         if args.models_command == "plan":
             _emit(counted, None)
             return 0
@@ -165,6 +178,14 @@ def cmd_models(args: argparse.Namespace) -> int:
         out = Path(args.out) if args.out else models.default_output(models.today())
         journal_path = out.with_suffix(".journal.jsonl")
         ledger_path = out.with_suffix(".ledger.jsonl")
+        if args.candidates_from:
+            models.reject_aliases(
+                Path(args.candidates_from),
+                out=out,
+                journal=journal_path,
+                ledger=ledger_path,
+                lock=Path(str(ledger_path) + ".lock"),
+            )
         if (
             journal_path.is_file()
             and journal_path.stat().st_size
@@ -187,6 +208,8 @@ def cmd_models(args: argparse.Namespace) -> int:
                     workers=args.workers,
                     budget=budget,
                     journal=journal,
+                    only_model=args.only_model,
+                    candidates=candidates,
                 )
         except models.BudgetExceeded as exc:
             print(
@@ -428,6 +451,15 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--repeats", type=int, default=models.MIN_REPEATS)
         sp.add_argument("--per-type", type=int, default=12)
         sp.add_argument("--cache")
+        sp.add_argument(
+            "--only-model",
+            help="run only the jobs this model adds to an earlier run",
+        )
+        sp.add_argument(
+            "--candidates-from",
+            help="journal of the earlier run, read-only; supplies the other "
+            "models' rewrites for --only-model",
+        )
         sp.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
         sp.set_defaults(func=cmd_models)
     run_parser = msub.choices["run"]
@@ -442,7 +474,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--out")
     sm = msub.add_parser("summarize", help="summarise a results file")
-    sm.add_argument("results")
+    sm.add_argument(
+        "results", nargs="+", help="results files of one task set, joined in order"
+    )
     sm.add_argument("--out")
     sm.set_defaults(func=cmd_models)
     rc = msub.add_parser(
