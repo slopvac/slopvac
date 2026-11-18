@@ -141,6 +141,11 @@ def usable_judgments(
         r for r in rows if r.get("model") and r.get("prompt_version") == PROMPT_VERSION
     ]
     for r in fresh:
+        if not isinstance(r.get("model"), str) or not isinstance(r.get("family"), str):
+            raise runner.EngineError(
+                "a recorded judgment has a family or model that is not text: "
+                f"family={r.get('family')!r}, model={r.get('model')!r}"
+            )
         check_identity(r["family"], r["model"])
     newest = {r["family"]: r["model"] for r in fresh}
     usable = [r for r in fresh if r["model"] == newest[r["family"]]]

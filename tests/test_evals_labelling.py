@@ -551,6 +551,25 @@ def test_older_model_judgments_never_label_items_the_newest_model_skipped(
     assert "ignored 6 judgments" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"model": 123},
+        {"model": ["claude-test"]},
+        {"family": None},
+        {"family": ["anthropic"]},
+    ],
+)
+def test_merge_exits_2_on_mistyped_provenance_fields(tmp_path, bad):
+    d = tmp_path / "labels"
+    lab.write_jsonl(d / "items.jsonl", items("a"))
+    write_judgments(d, "anthropic", "claude-test", ["a"])
+    path = d / "judgments" / "anthropic.jsonl"
+    lab.write_jsonl(path, [{**r, **bad} for r in lab.read_jsonl(path)])
+    assert merge_cli(d) == 2
+    assert not (d / "labels.jsonl").exists()
+
+
 def test_merge_exits_2_when_a_recorded_family_contradicts_its_model(tmp_path):
     d = tmp_path / "labels"
     lab.write_jsonl(d / "items.jsonl", items("a"))
