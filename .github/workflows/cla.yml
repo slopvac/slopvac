@@ -48,14 +48,15 @@ jobs:
 
       - name: CLA Assistant
         if: steps.app-token.outcome == 'success'
-        # STUB(slopvac-8l4.13.27): repin to the hardened slopvac fork release
-        uses: slopvac/cla-github-action@0d27e5a16278d4adb6b0c4b92f08ad27b0a21dc8 # v3.2.0 (upstream)
+        # The slopvac fork of iainmcgin/cla-github-action v3.2.0, hardened in fork PRs #1 to #6.
+        uses: slopvac/cla-github-action@24f90b8e956ba16ae1b98ba0de48ba07739476af # master after #5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PERSONAL_ACCESS_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           path-to-signatures: signatures/v1/cla.json
           path-to-document: https://github.com/slopvac/slopvac/blob/main/CLA.md
+          cla-version: apache-icla-2.2-v1
           branch: main # must not be protected
           allowlist: dependabot[bot],sjorsr-release-bot[bot],github-actions[bot],renovate[bot]
           remote-organization-name: slopvac
