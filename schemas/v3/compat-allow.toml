@@ -12,1083 +12,1083 @@
 file = "category.schema.json"
 pointer = "/properties/id/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/max_per_100_words/propertyNames/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/recommended_for/items/$ref(rule.schema.json#/$defs/Genre)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/id/$ref(rule.schema.json#/$defs/LocalRuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/placeholders/propertyNames/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/3/$ref(rule.schema.json#/$defs/MetricMatch)/properties/metric/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/4/$ref(rule.schema.json#/$defs/StructureMatch)/properties/check/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/6/$ref(rule.schema.json#/$defs/VocabularyMatch)/properties/check/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/only/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/skip/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/applies_to/$ref(rule.schema.json#/$defs/AppliesTo)/properties/genres/items/$ref(rule.schema.json#/$defs/Genre)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/name/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/detector/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "common.schema.json"
 pointer = "/$defs/PackId/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "common.schema.json"
 pointer = "/$defs/RuleId/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "common.schema.json"
 pointer = "/$defs/RuleProvenance/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "common.schema.json"
 pointer = "/$defs/ContextTag/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "config.schema.json"
 pointer = "/properties/packs/items/$ref(config.schema.json#/$defs/Source)/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "config.schema.json"
 pointer = "/properties/plugins/items/$ref(config.schema.json#/$defs/Source)/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "config.schema.json"
 pointer = "/properties/review/$ref(config.schema.json#/$defs/Review)/properties/provider/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "config.schema.json"
 pointer = "/$defs/Source/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "config.schema.json"
 pointer = "/$defs/Review/properties/provider/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "genre.schema.json"
 pointer = "/properties/id/$ref(rule.schema.json#/$defs/Genre)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "genre.schema.json"
 pointer = "/properties/contexts/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/summary/$ref(lint-report.schema.json#/$defs/RunSummary)/properties/categories/items/$ref(lint-report.schema.json#/$defs/CategorySummary)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/genre/$ref(lint-report.schema.json#/$defs/GenreResult)/properties/id/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/genre/$ref(lint-report.schema.json#/$defs/GenreResult)/properties/reasons/items/$ref(lint-report.schema.json#/$defs/GenreReason)/properties/signal/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/contexts_seen/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/rule_id/$ref(common.schema.json#/$defs/RuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/contexts/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/provenance/$ref(common.schema.json#/$defs/RuleProvenance)/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/locator/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/label/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/segment/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/categories/items/$ref(lint-report.schema.json#/$defs/CategoryScore)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/properties/code/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/properties/notices/items/$ref(lint-report.schema.json#/$defs/Notice)/properties/code/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/CategoryId/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Notice/properties/code/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/CategorySummary/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/RunSummary/properties/categories/items/$ref(lint-report.schema.json#/$defs/CategorySummary)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/GenreReason/properties/signal/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/GenreResult/properties/id/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/GenreResult/properties/reasons/items/$ref(lint-report.schema.json#/$defs/GenreReason)/properties/signal/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/CategoryScore/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Origin/properties/locator/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Origin/properties/label/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Origin/properties/segment/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Finding/properties/rule_id/$ref(common.schema.json#/$defs/RuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Finding/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Finding/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Finding/properties/contexts/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Finding/properties/provenance/$ref(common.schema.json#/$defs/RuleProvenance)/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Finding/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/locator/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Finding/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/label/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Finding/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/segment/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/genre/$ref(lint-report.schema.json#/$defs/GenreResult)/properties/id/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/genre/$ref(lint-report.schema.json#/$defs/GenreResult)/properties/reasons/items/$ref(lint-report.schema.json#/$defs/GenreReason)/properties/signal/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/contexts_seen/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/rule_id/$ref(common.schema.json#/$defs/RuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/contexts/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/provenance/$ref(common.schema.json#/$defs/RuleProvenance)/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/locator/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/label/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/segment/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/categories/items/$ref(lint-report.schema.json#/$defs/CategoryScore)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "lint-report.schema.json"
 pointer = "/$defs/Document/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/properties/code/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "pack-index.schema.json"
 pointer = "/properties/packs/items/$ref(pack-index.schema.json#/$defs/PackIndexEntry)/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "pack-index.schema.json"
 pointer = "/properties/packs/items/$ref(pack-index.schema.json#/$defs/PackIndexEntry)/properties/namespace/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "pack-index.schema.json"
 pointer = "/$defs/PackIndexEntry/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "pack-index.schema.json"
 pointer = "/$defs/PackIndexEntry/properties/namespace/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "pack-manifest.schema.json"
 pointer = "/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "pack-manifest.schema.json"
 pointer = "/properties/requires/items/$ref(pack-manifest.schema.json#/$defs/Requirement)/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "pack-manifest.schema.json"
 pointer = "/$defs/Requirement/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "packs-lock.schema.json"
 pointer = "/properties/packs/items/$ref(packs-lock.schema.json#/$defs/Locked)/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "packs-lock.schema.json"
 pointer = "/properties/packs/items/$ref(packs-lock.schema.json#/$defs/Locked)/properties/requires/items/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "packs-lock.schema.json"
 pointer = "/$defs/Locked/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "packs-lock.schema.json"
 pointer = "/$defs/Locked/properties/requires/items/$ref(common.schema.json#/$defs/PackId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/$defs/PluginFinding/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/$defs/Tag/properties/kind/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/$defs/TagResult/properties/results/items/allOf/1/properties/tags/items/$ref(plugin-protocol.schema.json#/$defs/Tag)/properties/kind/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/$defs/Segment/properties/context/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/$defs/ExtractResult/properties/results/items/allOf/1/properties/segments/items/$ref(plugin-protocol.schema.json#/$defs/Segment)/properties/context/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/$defs/FixParams/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/$defs/ScoreParams/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/$defs/Call/allOf/8/then/properties/params/$ref(plugin-protocol.schema.json#/$defs/FixParams)/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/$defs/Call/allOf/9/then/properties/params/$ref(plugin-protocol.schema.json#/$defs/ScoreParams)/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/allOf/0/then/$ref(plugin-protocol.schema.json#/$defs/Call)/allOf/8/then/properties/params/$ref(plugin-protocol.schema.json#/$defs/FixParams)/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-protocol.schema.json"
 pointer = "/allOf/0/then/$ref(plugin-protocol.schema.json#/$defs/Call)/allOf/9/then/properties/params/$ref(plugin-protocol.schema.json#/$defs/ScoreParams)/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/id/$ref(rule.schema.json#/$defs/LocalRuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/placeholders/propertyNames/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/3/$ref(rule.schema.json#/$defs/MetricMatch)/properties/metric/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/4/$ref(rule.schema.json#/$defs/StructureMatch)/properties/check/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/6/$ref(rule.schema.json#/$defs/VocabularyMatch)/properties/check/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/only/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/skip/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/applies_to/$ref(rule.schema.json#/$defs/AppliesTo)/properties/genres/items/$ref(rule.schema.json#/$defs/Genre)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/name/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/detector/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/LocalRuleId/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Pcre2Pattern/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Genre/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/PatternMatch/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/PatternMatch/properties/placeholders/propertyNames/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/SubstitutionMatch/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/MetricMatch/properties/metric/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/StructureMatch/properties/check/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/VocabularyMatch/properties/check/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Match/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Match/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/placeholders/propertyNames/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Match/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Match/oneOf/3/$ref(rule.schema.json#/$defs/MetricMatch)/properties/metric/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Match/oneOf/4/$ref(rule.schema.json#/$defs/StructureMatch)/properties/check/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Match/oneOf/6/$ref(rule.schema.json#/$defs/VocabularyMatch)/properties/check/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Contexts/properties/only/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Contexts/properties/skip/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/AppliesTo/properties/genres/items/$ref(rule.schema.json#/$defs/Genre)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Exception/properties/name/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Exception/properties/detector/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Citation/properties/ste_ref/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/id/$ref(rule.schema.json#/$defs/LocalRuleId)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/placeholders/propertyNames/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/3/$ref(rule.schema.json#/$defs/MetricMatch)/properties/metric/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/4/$ref(rule.schema.json#/$defs/StructureMatch)/properties/check/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/6/$ref(rule.schema.json#/$defs/VocabularyMatch)/properties/check/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/only/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/skip/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/applies_to/$ref(rule.schema.json#/$defs/AppliesTo)/properties/genres/items/$ref(rule.schema.json#/$defs/Genre)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/name/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/detector/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/properties/tag/$ref(common.schema.json#/$defs/ContextTag)/pattern"
 kind = "pattern-changed"
-reason = "Portable end anchor: a terminal $ became (?![\\s\\S]) and \\d became [0-9], so Python jsonschema and the Rust jsonschema crate reject a trailing newline alike."
-approved_by = "contract owner, end-anchor decision on slopvac-8l4.2.58"
+reason = "portable end anchor (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/heading_path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/admonition_title/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/front_matter/$ref(tagger.schema.json#/$defs/FrontMatterCondition)/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/sentence/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/$defs/When/properties/heading_path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/$defs/When/properties/admonition_title/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/$defs/When/properties/front_matter/$ref(tagger.schema.json#/$defs/FrontMatterCondition)/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/$defs/When/properties/path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/$defs/When/properties/sentence/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/$defs/FrontMatterCondition/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "Pcre2Pattern escape check rewritten without lookbehind, outside the portable regex subset; it rejects the same \\u and \\U escapes (vectors in conformance/patterns)."
-approved_by = "pending contract review, slopvac-8l4.2.49"
+reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
+approved_by = "contract owner (8l4.2)"

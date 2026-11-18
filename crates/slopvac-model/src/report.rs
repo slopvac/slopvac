@@ -2,13 +2,13 @@ use std::num::NonZeroUsize;
 
 use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use thiserror::Error;
 
 use crate::edit::{Edit, EditError, sorted_without_overlap};
 use crate::ids::{Contexts, PackId, RuleId, SchemaVersion, Severity};
 use crate::origin::Origin;
-use crate::schema::{absent_not_null, dependent_required, if_then, x_extensions};
+use crate::schema::{absent_not_null, dependent_required, if_then, open_object, x_extensions};
 use crate::span::{LineCol, LineColError, Span};
 use crate::values::{
     CategoryId, Density, GenreId, KebabName, NonEmptyString, Score, present, required_nullable,
@@ -78,6 +78,7 @@ pub struct Notice {
     /// array. Each notice code documents its own keys. Consumers must ignore keys they do
     /// not know. Omitted when the notice has none.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    #[schemars(transform = open_object)]
     pub data: serde_json::Map<String, Value>,
 }
 
