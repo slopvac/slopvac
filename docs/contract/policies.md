@@ -161,6 +161,18 @@ The span crates index text with 32-bit offsets and size their structures from it
 | Style file | 1 MiB | `style-too-large` | The built-in styles are a few KiB. |
 | Terms file | 1 MiB | `terms-file-too-large` | The built-in terms file is about 30 KiB. |
 
+A per-file cap does not bound the work of many files. Two aggregate budgets bound it, and the same error rules apply: the input is refused whole and the run is incomplete.
+
+| Entry point | Budget | Code | Why this value |
+|---|---|---|---|
+| `extends` nesting, from the nearest config down | 32 levels | `config-extends-too-deep` | A real chain is two or three levels. |
+| `extends` graph, files applied | 256 | `config-budget-exceeded` | A real graph has fewer than ten files. A file that several others extend counts once for each time it applies, because it applies each time. |
+| `extends` graph, bytes read | 8 MiB | `config-budget-exceeded` | A real graph is under 100 KiB. Eight files at the 1 MiB cap fit. |
+| Pack directory, rule and category files | 256 | `rules-budget-exceeded` | The shipped pack has 23 files. |
+| Pack directory, bytes read | 32 MiB | `rules-budget-exceeded` | The shipped pack is about 450 KiB. |
+
+A config file that several others extend is read and parsed once, and its result is reused at every place it applies, so the order of settings and their provenance do not change. The byte budget counts each read once. A rule file reached by several names, such as symlinks, loads once under the first name in file-name order, and the file budget counts it once. The pack loader reads and compiles one file at a time. The constants live in `slopvac-config` (`MAX_EXTENDS_DEPTH`, `MAX_EXTENDS_FILES`, `MAX_EXTENDS_BYTES`) and `slopvac-rules` (`MAX_PACK_FILES`, `MAX_PACK_BYTES`).
+
 Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`).
 
 The CLI file and stdin reads, the language server and `migrate` document reads, and the `migrate` config read enforce their caps in the change that follows this one. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and the CLI reports it in that change.

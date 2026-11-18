@@ -287,3 +287,51 @@ fn a_rule_file_one_byte_over_the_cap_is_refused_with_its_code() {
     );
     assert!(e.to_string().contains("[rules-file-too-large]"), "{e}");
 }
+
+fn one_rule_category(id: &str) -> String {
+    let rule = tokens_rule("r", "foo", &json!([{"bad": "a foo b", "good": "a bar b"}]));
+    category(id, &[rule])
+}
+
+#[cfg(unix)]
+#[test]
+fn many_names_for_one_rule_file_load_it_once() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.json"), one_rule_category("cat")).unwrap();
+    // 300 aliases is past the file budget, so only deduplication lets the pack load.
+    for i in 0..300 {
+        std::os::unix::fs::symlink("a.json", dir.path().join(format!("alias{i:03}.json"))).unwrap();
+    }
+    let set = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap();
+    assert_eq!(set.categories().len(), 1);
+}
+
+#[test]
+fn a_pack_with_too_many_files_is_refused_with_its_code() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..=slopvac_rules::MAX_PACK_FILES {
+        let id = format!("cat{i:04}");
+        std::fs::write(
+            dir.path().join(format!("{id}.json")),
+            one_rule_category(&id),
+        )
+        .unwrap();
+    }
+    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
+    assert_eq!(e.errors()[0].kind, LoadErrorKind::BudgetExceeded);
+    assert!(e.to_string().contains("[rules-budget-exceeded]"), "{e}");
+}
+
+#[test]
+fn a_pack_that_reads_past_the_byte_budget_is_refused_with_its_code() {
+    let dir = tempfile::tempdir().unwrap();
+    let files = slopvac_rules::MAX_PACK_BYTES / slopvac_rules::MAX_RULE_FILE_BYTES + 1;
+    for i in 0..files {
+        std::fs::File::create(dir.path().join(format!("f{i:02}.yml")))
+            .unwrap()
+            .set_len(slopvac_rules::MAX_RULE_FILE_BYTES)
+            .unwrap();
+    }
+    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
+    assert_eq!(e.errors()[0].kind, LoadErrorKind::BudgetExceeded);
+}

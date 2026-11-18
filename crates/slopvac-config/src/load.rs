@@ -1,5 +1,6 @@
 //! Read a `slopvac.toml` and the configs it extends into an ordered list of files.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -10,7 +11,10 @@ use crate::diag::{Code, Diagnostic};
 use crate::error::{ConfigError, Rejected};
 use crate::flatten::{Origin, flatten};
 use crate::presets::Presets;
-use crate::read::{MAX_CONFIG_BYTES, ReadFailure, read_text};
+use crate::read::{
+    MAX_CONFIG_BYTES, MAX_EXTENDS_BYTES, MAX_EXTENDS_DEPTH, MAX_EXTENDS_FILES, ReadFailure,
+    read_text,
+};
 use crate::schema::validate_config;
 use crate::source::{Layer, Setting};
 use crate::tree::{Node, Value, parse_toml};
@@ -136,6 +140,15 @@ pub fn load_labeled(
     label: &str,
     presets: &dyn Presets,
 ) -> Result<LoadedConfig, ConfigError> {
+    load_counted(path, label, presets).map(|(config, _)| config)
+}
+
+/// As [`load_labeled`], also returning how many files were read.
+fn load_counted(
+    path: &Path,
+    label: &str,
+    presets: &dyn Presets,
+) -> Result<(LoadedConfig, usize), ConfigError> {
     let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(label, source))?;
     let root = abs.parent().map_or_else(PathBuf::new, Path::to_path_buf);
     let text = ConfigError::read_config(&abs, label)?;
@@ -144,6 +157,9 @@ pub fn load_labeled(
         presets,
         stack: Vec::new(),
         files: Vec::new(),
+        expanded: HashMap::new(),
+        bytes: text.len() as u64,
+        reads: 1,
     };
     loader.load_text(
         &Key::Path(abs.clone()),
@@ -152,12 +168,16 @@ pub fn load_labeled(
         Layer::Project,
     )?;
     let exclude = build_exclude(&loader.files, &root);
+    let reads = loader.reads;
     let files = loader.files;
-    Ok(LoadedConfig {
-        root,
-        files,
-        exclude,
-    })
+    Ok((
+        LoadedConfig {
+            root,
+            files,
+            exclude,
+        },
+        reads,
+    ))
 }
 
 fn build_exclude(files: &[ConfigFile], root: &Path) -> Gitignore {
@@ -256,17 +276,27 @@ fn relative_display(file: &Path, root: &Path) -> String {
     parts.join("/")
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Key {
     Path(PathBuf),
     Pack(String),
 }
+
+/// A diagnostic code, message and help for an `extends` entry that is refused.
+type Refusal = (Code, String, Option<String>);
 
 struct Loader<'a> {
     root: &'a Path,
     presets: &'a dyn Presets,
     stack: Vec<(Key, String)>,
     files: Vec<ConfigFile>,
+    /// For each extended file already loaded, the files it expanded to, in apply order. A file
+    /// that several others extend is read and parsed once and its expansion is copied after that.
+    expanded: HashMap<Key, Vec<ConfigFile>>,
+    /// Bytes read so far from distinct reads.
+    bytes: u64,
+    /// Files read so far.
+    reads: usize,
 }
 
 impl Loader<'_> {
@@ -453,6 +483,50 @@ impl Loader<'_> {
         out
     }
 
+    /// The refusal for loading `more` files when that passes the file budget.
+    fn files_over_budget(&self, more: usize) -> Option<Refusal> {
+        (self.files.len() + more > MAX_EXTENDS_FILES).then(|| {
+            (
+                Code::BudgetExceeded,
+                format!("the `extends` graph expands to more than {MAX_EXTENDS_FILES} files"),
+                Some("remove entries that extend the same files again".into()),
+            )
+        })
+    }
+
+    /// The refusal for one more level of nesting when that passes the depth limit.
+    fn too_deep(&self) -> Option<Refusal> {
+        (self.stack.len() > MAX_EXTENDS_DEPTH).then(|| {
+            (
+                Code::ExtendsTooDeep,
+                format!("`extends` nests deeper than {MAX_EXTENDS_DEPTH} levels"),
+                Some("flatten the chain".into()),
+            )
+        })
+    }
+
+    /// Read the extended file `target`, which the entry `name` names.
+    fn read_extended(&self, target: &Key, name: &str) -> Result<String, Refusal> {
+        let Key::Path(p) = target else {
+            return Ok(String::new());
+        };
+        read_text(p, MAX_CONFIG_BYTES).map_err(|e| match e {
+            ReadFailure::TooLarge(cap) => (
+                Code::TooLarge,
+                format!("the extended config `{name}` is larger than {cap} bytes"),
+                Some("split the file or remove unused settings".into()),
+            ),
+            ReadFailure::Io(e) => (
+                Code::ExtendsMissing,
+                format!(
+                    "cannot read the extended config `{}`: {e}",
+                    safe_display(p, self.root)
+                ),
+                Some("paths are relative to the file that holds the entry".into()),
+            ),
+        })
+    }
+
     fn extend(
         &mut self,
         tree: &Node,
@@ -514,28 +588,38 @@ impl Loader<'_> {
                     Some("remove one entry from the loop".into()),
                 ));
             }
+            if let Some(done) = self.expanded.get(&target) {
+                if let Some((code, message, help)) = self.files_over_budget(done.len()) {
+                    return Err(fail(code, message, help));
+                }
+                let copy = done.clone();
+                self.files.extend(copy);
+                continue;
+            }
+            if let Some((code, message, help)) = self.too_deep() {
+                return Err(fail(code, message, help));
+            }
+            if let Some((code, message, help)) = self.files_over_budget(1) {
+                return Err(fail(code, message, help));
+            }
             let body = match body {
                 Some(b) => b,
-                None => match &target {
-                    Key::Path(p) => read_text(p, MAX_CONFIG_BYTES).map_err(|e| match e {
-                        ReadFailure::TooLarge(cap) => fail(
-                            Code::TooLarge,
-                            format!("the extended config `{name}` is larger than {cap} bytes"),
-                            Some("split the file or remove unused settings".into()),
-                        ),
-                        ReadFailure::Io(e) => fail(
-                            Code::ExtendsMissing,
-                            format!(
-                                "cannot read the extended config `{}`: {e}",
-                                safe_display(p, self.root)
-                            ),
-                            Some("paths are relative to the file that holds the entry".into()),
-                        ),
-                    })?,
-                    Key::Pack(_) => String::new(),
-                },
+                None => self
+                    .read_extended(&target, name)
+                    .map_err(|(code, message, help)| fail(code, message, help))?,
             };
+            self.reads += 1;
+            self.bytes += body.len() as u64;
+            if self.bytes > MAX_EXTENDS_BYTES {
+                return Err(fail(
+                    Code::BudgetExceeded,
+                    format!("the `extends` graph reads more than {MAX_EXTENDS_BYTES} bytes"),
+                    Some("remove entries or split the files".into()),
+                ));
+            }
+            let start = self.files.len();
             self.load_text(&target, &shown, body, Layer::Extends)?;
+            self.expanded.insert(target, self.files[start..].to_vec());
         }
         Ok(())
     }
@@ -608,6 +692,27 @@ fn check_exclude(tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::presets::NoPresets;
+
+    #[test]
+    fn a_file_extended_many_times_is_read_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        for i in 0..6 {
+            let next = format!("d{}.toml", i + 1);
+            fs::write(
+                root.join(format!("d{i}.toml")),
+                format!("schema_version = 3\nextends = [\"{next}\", \"{next}\"]\n"),
+            )
+            .unwrap();
+        }
+        fs::write(root.join("d6.toml"), "schema_version = 3\n").unwrap();
+        let path = root.join("d0.toml");
+        let (config, reads) = load_counted(&path, "d0.toml", &NoPresets).unwrap();
+        // 7 files in the graph, 126 applications below the root.
+        assert_eq!(reads, 7);
+        assert_eq!(config.files.len(), 127);
+    }
 
     #[test]
     fn a_file_sharing_no_prefix_with_the_root_shows_as_external() {

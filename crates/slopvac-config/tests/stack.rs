@@ -1149,3 +1149,95 @@ fn a_legacy_config_file_over_the_cap_is_refused_during_discovery() {
         assert_eq!(err.code(), Code::TooLarge, "{name}");
     }
 }
+
+/// Write `levels + 1` files where `d<i>.toml` extends `d<i+1>.toml` twice, so the graph has
+/// `levels + 1` files and expands to `2^(levels + 1) - 2` applications below the root.
+fn diamond_chain(fx: &Fixture, levels: usize) {
+    for i in 0..levels {
+        let next = format!("d{}.toml", i + 1);
+        fx.write(
+            &format!("d{i}.toml"),
+            &format!("schema_version = 3\nextends = [\"{next}\", \"{next}\"]\n"),
+        );
+    }
+    fx.write(
+        &format!("d{levels}.toml"),
+        "schema_version = 3\n[thresholds]\nmax_warnings = 7\n",
+    );
+}
+
+#[test]
+fn a_diamond_chain_expands_in_full_and_keeps_every_application_in_order() {
+    let fx = Fixture::new();
+    diamond_chain(&fx, 5);
+    let cfg = load_at(&fx, "d0.toml");
+    // 2 + 4 + 8 + 16 + 32 applications below the root, the leaf twice per parent, plus the root.
+    assert_eq!(cfg.files.len(), 2 + 4 + 8 + 16 + 32 + 1);
+    let shown: Vec<&str> = cfg.files.iter().map(|f| f.display.as_str()).collect();
+    assert_eq!(&shown[..3], ["d5.toml", "d5.toml", "d4.toml"]);
+    assert_eq!(shown.last(), Some(&"d0.toml"));
+    assert_eq!(
+        cfg.project_value(&["thresholds", "max_warnings"]),
+        Some(json!(7))
+    );
+}
+
+#[test]
+fn an_extends_graph_that_expands_past_the_file_budget_is_refused_with_its_code() {
+    let fx = Fixture::new();
+    diamond_chain(&fx, 9);
+    let err = load(&fx.root().join("d0.toml"), &NoPresets).unwrap_err();
+    assert_eq!(err.code(), Code::BudgetExceeded);
+    assert_eq!(err.code().as_str(), "config-budget-exceeded");
+}
+
+#[test]
+fn an_extends_graph_that_reads_past_the_byte_budget_is_refused_with_its_code() {
+    let fx = Fixture::new();
+    // Ten distinct files just under the per-file cap: each is valid, together they are over budget.
+    let padding = format!("# {}\n", "x".repeat(900 * 1024));
+    let mut names = Vec::new();
+    for i in 0..10 {
+        fx.write(
+            &format!("f{i}.toml"),
+            &format!("schema_version = 3\n{padding}"),
+        );
+        names.push(format!("\"f{i}.toml\""));
+    }
+    let root = fx.write(
+        "slopvac.toml",
+        &format!("schema_version = 3\nextends = [{}]\n", names.join(", ")),
+    );
+    let err = load(&root, &NoPresets).unwrap_err();
+    assert_eq!(err.code(), Code::BudgetExceeded);
+}
+
+#[test]
+fn an_extends_chain_deeper_than_the_limit_is_refused_with_its_code() {
+    let fx = Fixture::new();
+    let depth = slopvac_config::MAX_EXTENDS_DEPTH + 1;
+    for i in 0..depth {
+        fx.write(
+            &format!("c{i}.toml"),
+            &format!("schema_version = 3\nextends = [\"c{}.toml\"]\n", i + 1),
+        );
+    }
+    fx.write(&format!("c{depth}.toml"), "schema_version = 3\n");
+    let err = load(&fx.root().join("c0.toml"), &NoPresets).unwrap_err();
+    assert_eq!(err.code(), Code::ExtendsTooDeep);
+    assert_eq!(err.code().as_str(), "config-extends-too-deep");
+}
+
+#[test]
+fn an_extends_chain_at_the_depth_limit_still_loads() {
+    let fx = Fixture::new();
+    let depth = slopvac_config::MAX_EXTENDS_DEPTH;
+    for i in 0..depth {
+        fx.write(
+            &format!("c{i}.toml"),
+            &format!("schema_version = 3\nextends = [\"c{}.toml\"]\n", i + 1),
+        );
+    }
+    fx.write(&format!("c{depth}.toml"), "schema_version = 3\n");
+    assert_eq!(load_at(&fx, "c0.toml").files.len(), depth + 1);
+}

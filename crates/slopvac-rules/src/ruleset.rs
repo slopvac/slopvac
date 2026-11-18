@@ -17,6 +17,14 @@ use crate::model::{Category, LocalRuleId, MatchKind, ProfileName, Rule, Scope, W
 /// 2 MiB leaves more than a tenfold margin for a pack.
 pub const MAX_RULE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 
+/// The most rule or category files one pack directory may load, after files that are the same
+/// file under several names count once. The shipped pack has 23, so 256 leaves a wide margin.
+pub const MAX_PACK_FILES: usize = 256;
+
+/// The most bytes read in total from the files of one pack directory. The shipped pack is about
+/// 450 KiB, so 32 MiB leaves a wide margin and still holds the pack in memory at once.
+pub const MAX_PACK_BYTES: u64 = 32 * 1024 * 1024;
+
 /// A rule with its compiled matcher and where it came from.
 #[derive(Debug)]
 pub struct LoadedRule {
@@ -172,28 +180,51 @@ impl RuleSet {
             .collect::<Result<_, _>>()?;
         files.retain(|p| Format::of(p).is_some());
         files.sort();
-        let sources = files
-            .into_iter()
-            .map(|p| {
-                let text =
-                    slopvac_fs::read_text_capped(&p, MAX_RULE_FILE_BYTES).map_err(|e| match e {
-                        slopvac_fs::Error::CapExceeded { cap } => LoadError {
-                            file: p.clone(),
-                            line: None,
-                            rule: None,
-                            kind: LoadErrorKind::TooLarge(cap),
-                        },
-                        other => LoadError {
-                            file: p.clone(),
-                            line: None,
-                            rule: None,
-                            kind: LoadErrorKind::Read(other.to_string()),
-                        },
-                    })?;
-                Ok((p, text))
-            })
-            .collect::<Result<Vec<_>, LoadError>>()?;
-        Self::from_sources(pack, sources, options)
+        // A file reached by several names is read once, under the first name in file-name order.
+        let mut identities: HashSet<PathBuf> = HashSet::new();
+        let mut distinct = Vec::new();
+        for p in files {
+            let id = fs::canonicalize(&p).map_err(|e| read_error(&p, &e))?;
+            if identities.insert(id) {
+                distinct.push(p);
+            }
+        }
+        let mut bytes = 0_u64;
+        let mut count = 0_usize;
+        // Read one file at a time, so the texts of a large pack are never all in memory.
+        let sources = distinct.into_iter().map(move |p| {
+            let budget = |p: &Path| LoadError {
+                file: p.to_path_buf(),
+                line: None,
+                rule: None,
+                kind: LoadErrorKind::BudgetExceeded,
+            };
+            count += 1;
+            if count > MAX_PACK_FILES {
+                return Err(budget(&p));
+            }
+            let text =
+                slopvac_fs::read_text_capped(&p, MAX_RULE_FILE_BYTES).map_err(|e| match e {
+                    slopvac_fs::Error::CapExceeded { cap } => LoadError {
+                        file: p.clone(),
+                        line: None,
+                        rule: None,
+                        kind: LoadErrorKind::TooLarge(cap),
+                    },
+                    other => LoadError {
+                        file: p.clone(),
+                        line: None,
+                        rule: None,
+                        kind: LoadErrorKind::Read(other.to_string()),
+                    },
+                })?;
+            bytes += text.len() as u64;
+            if bytes > MAX_PACK_BYTES {
+                return Err(budget(&p));
+            }
+            Ok((p, text))
+        });
+        Self::build(pack, sources, options)
     }
 
     /// Load category files already read into memory. The extension of each path selects the
@@ -206,10 +237,20 @@ impl RuleSet {
         sources: impl IntoIterator<Item = (PathBuf, String)>,
         options: &CompileOptions,
     ) -> Result<Self, LoadErrors> {
+        Self::build(pack, sources.into_iter().map(Ok), options)
+    }
+
+    /// Compile sources one at a time. A source that fails to arrive stops the load at once.
+    fn build(
+        pack: &PackId,
+        sources: impl IntoIterator<Item = Result<(PathBuf, String), LoadError>>,
+        options: &CompileOptions,
+    ) -> Result<Self, LoadErrors> {
         let mut errors = Vec::new();
         let mut categories: Vec<LoadedCategory> = Vec::new();
         let mut seen: HashSet<CategoryId> = HashSet::new();
-        for (file, text) in sources {
+        for source in sources {
+            let (file, text) = source?;
             let mut category = match parse::<Category>(&file, &text) {
                 Ok(c) => c,
                 Err(e) => {

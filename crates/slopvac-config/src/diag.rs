@@ -34,6 +34,10 @@ pub enum Code {
     UnsupportedVersion,
     /// An `extends` chain that loops back on itself.
     ExtendsCycle,
+    /// An `extends` chain nested deeper than [`crate::MAX_EXTENDS_DEPTH`].
+    ExtendsTooDeep,
+    /// An `extends` graph that exceeds the file or byte budget.
+    BudgetExceeded,
     /// An `extends` entry that names no readable config.
     ExtendsMissing,
     /// Two `[[overrides]]` or `[[genres]]` blocks with the same `files` set.
@@ -59,6 +63,8 @@ impl Code {
             Code::LegacyVersion => "config-legacy-version",
             Code::UnsupportedVersion => "config-unsupported-version",
             Code::ExtendsCycle => "config-extends-cycle",
+            Code::ExtendsTooDeep => "config-extends-too-deep",
+            Code::BudgetExceeded => "config-budget-exceeded",
             Code::ExtendsMissing => "config-extends-missing",
             Code::DuplicateScope => "config-duplicate-scope",
             Code::FrontmatterFieldDenied => "config-frontmatter-field-denied",

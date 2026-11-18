@@ -12,6 +12,10 @@ pub enum LoadErrorKind {
     /// The file is larger than [`MAX_RULE_FILE_BYTES`](crate::MAX_RULE_FILE_BYTES), the given
     /// number of bytes. Its stable code is `rules-file-too-large`.
     TooLarge(u64),
+    /// The pack directory holds more files, or more bytes in total, than
+    /// [`MAX_PACK_FILES`](crate::MAX_PACK_FILES) or [`MAX_PACK_BYTES`](crate::MAX_PACK_BYTES)
+    /// allow. Its stable code is `rules-budget-exceeded`.
+    BudgetExceeded,
     /// The file does not parse as a rule or category file.
     Parse(String),
     /// The extension names no supported format (`json`, `yaml`, `yml`, `toml`).
@@ -47,6 +51,12 @@ impl fmt::Display for LoadErrorKind {
             Self::TooLarge(cap) => {
                 write!(f, "[rules-file-too-large] file is larger than {cap} bytes")
             }
+            Self::BudgetExceeded => write!(
+                f,
+                "[rules-budget-exceeded] the pack is larger than {} files or {} bytes",
+                crate::MAX_PACK_FILES,
+                crate::MAX_PACK_BYTES
+            ),
             Self::Parse(e) => f.write_str(e),
             Self::UnsupportedFormat => {
                 f.write_str("unsupported file type (expected json, yaml, yml or toml)")
