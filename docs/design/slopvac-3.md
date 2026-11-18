@@ -51,7 +51,7 @@ No 2.18.x or 2.19 release ships. The epic "Fixes rolled into 3.0" holds the fixe
 
 **Repository hygiene, to do now.**
 
-- Dependabot only: remove `renovate.json`. Auto-merge patch updates and security updates with `dependabot/fetch-metadata` and the release app token. A weekly workflow checks the mise and Vale pins.
+- Renovate for version and security updates, with Dependabot raising alerts only (decision 28 in [0001](0001-slopvac-3-architecture.md) supersedes the earlier Dependabot-only plan). Once the CI gate passes, Renovate auto-merges minor, patch and digest updates.
 - Triage the open PRs. Close #245, #246, and #191 without merging: 3.0 removes Vale and ships a Rust binary.
 - Adopt reviewdog in this repository, with a read-only lint job and a separate reporting job. Until 3.0 adds rdjsonl, reviewdog reads the 2.x SARIF output.
 
@@ -163,7 +163,7 @@ From lowest priority to highest: core defaults, styles, the genre chain, `extend
 
 - Tests: nextest, `cargo test --doc`, insta, and snapbox or trycmd.
 - Lints: clippy with workspace lints, and rustfmt.
-- Hygiene: cargo-deny, cargo-shear, typos, cargo-sort, Swatinem/rust-cache, and Dependabot for cargo.
+- Hygiene: cargo-deny, cargo-shear, typos, cargo-sort, Swatinem/rust-cache, and Renovate for cargo.
 - Hooks: prek.
 - Added later: cargo-llvm-cov, cargo-mutants on the diff, fuzzing of parsers, CodeQL, gungraun benchmarks, and an MSRV check.
 

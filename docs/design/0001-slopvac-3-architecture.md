@@ -1,6 +1,6 @@
 # 0001. Slopvac 3.0 architecture
 
-- Status: accepted, 2026-11-14. Every decision holds for 3.0, and no item is open. Decision 26 (2026-11-16) amends decisions 12 and 24 and the PCRE2 build note in the consequences. Decision 27 (2026-11-16) adds binary container inputs.
+- Status: accepted, 2026-11-14. Every decision holds for 3.0, and no item is open. Decision 26 (2026-11-16) amends decisions 12 and 24 and the PCRE2 build note in the consequences. Decision 27 (2026-11-16) adds binary container inputs. Decision 28 (2026-11-18) supersedes decision 13.
 - Deciders: slopvac maintainers
 - Tracking: bead `slopvac-8l4.2.1`, epic `slopvac-8l4`
 - Detail: [Slopvac 3.0 plan](slopvac-3.md)
@@ -124,6 +124,8 @@ cargo-dist builds archives and installers and feeds a Homebrew tap (`slopvac/hom
 ### 13. Dependabot only
 
 Remove Renovate and use Dependabot for cargo and workflow updates. Patch and security updates merge automatically through `dependabot/fetch-metadata`. This landed for 2.x in [#260](https://github.com/slopvac/slopvac/pull/260), together with a weekly check of the mise and Vale pins. The Vale pin check ends when Vale is removed.
+
+Superseded 2026-11-18 by decision 28: the repository moves to Renovate.
 
 ### 14. reviewdog for PR reporting
 
@@ -304,6 +306,16 @@ Decided 2026-11-16. 3.0 lints text inside Office and OpenDocument containers and
 - Evidence: a crate survey (`zip` has no read-side bomb guards; `roxmltree` can disable the DTD) and an adversarial review whose revisions are all adopted. No spike measured extraction speed. The PlantUML PNG value encoding is unverified.
 - Rejected: bundled subprocess plugins for first-party formats (a spawn plus base64 per file, in return for crash and memory isolation and host-enforced deadlines that the in-process extractors give up), sniffing every PNG, and a container byte offset as the finding position.
 - Tracking: epic `slopvac-8l4.20`, bead `slopvac-8l4.2.31`. Detail: [Binary container inputs](binary-inputs.md).
+
+### 28. Renovate for dependency updates
+
+Decided 2026-11-18. Supersedes decision 13. Renovate opens the version-update and security-update pull requests for cargo, workflows, mise tools and the site packages. Dependabot only raises alerts, and its version updates and automated security fixes stay off.
+
+- Auto-merge: minor, patch, digest and lock file updates merge once the CI gate passes. Majors and 0.x versions never do.
+- Removed: `.github/dependabot.yml` and the `dependabot/fetch-metadata` auto-merge workflow.
+- Config: `.github/renovate.json5`.
+
+- Rejected: keeping decision 13. One tool owns both the version and the security update PRs, and Renovate groups and schedules them in one config.
 
 ## Consequences
 
