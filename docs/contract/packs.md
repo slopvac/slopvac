@@ -116,14 +116,14 @@ Any other value, such as `Noun`, `adp`, or `noun` with a leading space, is inval
 | `plugins sync` | Installs what the lockfile pins and verifies each digest (section 7). |
 | `plugins status` | Reports each locked plugin with its kind, install state and revocation state, and the trust state of each code plugin. |
 | `plugins outdated` | Lists newer versions and digests from the pinned sources. |
-| `plugins update` | Moves the lock to the newest versions that the config allows. It never records trust. |
+| `plugins update` | Moves the lock to the newest versions that the config allows. Only `plugins trust` records trust. |
 | `plugins trust <id>`, `plugins untrust <id>` | Records or removes trust for the content hash of a code plugin. |
 | `plugins pin <namespace> <fingerprint> [--registry <host>]` | Pins a publisher key for one namespace on one registry host. |
 | `plugins rotate <namespace> [--registry <host>]` | Accepts a key rotation for a pinned key and replaces the pin (threat-model.md, section 5.3). |
 | `plugins new`, `validate`, `test`, `build`, `publish` | Author a plugin: create its files, check them against their schemas, run its tests, build the artifact and push it. |
 
-- `plugins trust` and `plugins untrust` apply to code plugins only. A data plugin runs no code, so it needs no trust, and either command on a data plugin exits 2 with the code `plugin-not-code`.
-- A code plugin that the config lists but that has no trust never starts. The run reports it with its trust code (`plugin-untrusted`, or `plugin-hash-mismatch` for changed files) and exits 2 (plugin-protocol.md, section 10).
+- `plugins trust` and `plugins untrust` apply to code plugins only. A data plugin has no executable content and needs no trust, so either command on a data plugin exits 2 with the code `plugin-not-code`.
+- A code plugin that the config lists starts only after `plugins trust` records its hash. Until then the run reports it with its trust code (`plugin-untrusted`, or `plugin-hash-mismatch` for changed files) and exits 2 (plugin-protocol.md, section 10).
 - `--registry` names the registry host, such as `ghcr.io`, and defaults to `ghcr.io`. A pin binds a key to the pair of registry host and namespace, and only to that pair.
 - `plugins pin` and `plugins rotate` refuse the namespaces `slopvac` and `core` with exit 2 (section 9).
 - No command in the group prompts. Only `plugins trust` records trust, and only `plugins pin` and `plugins rotate` change a key pin.

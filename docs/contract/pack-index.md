@@ -29,7 +29,7 @@ The query is lowercased and split into tokens at every character that is not a l
 
 Each token scores its best field: the whole `id` gives 100, the start of the `id` 60, elsewhere in the `id` 40, the `name` 30 and the `description` 10. The scores add up. A query whose tokens, joined by `-`, spell the `id` adds 50. Results sort by score, highest first, then by `namespace` and `id`.
 
-A result shows the namespace, id, version, kind, API, name, description, source and the publisher key with its fingerprint. Every one of these values is a claim by the index, and the result says so in an `unverified` line that names the pinning command. An entry in the first-party namespace `slopvac` gets a further line, `claims first-party namespace; not verified`. The index never confers a verified first-party identity: only the plugins key compiled into the binary verifies the `slopvac` namespace (packs.md, section 10).
+A result shows the namespace, id, version, kind, API, name, description, source and the publisher key with its fingerprint. Every one of these values is a claim by the index, and the result says so in an `unverified` line that names the pinning command. An entry in the first-party namespace `slopvac` gets a further line, `claims first-party namespace; not verified`. Only the plugins key compiled into the binary verifies the `slopvac` namespace (packs.md, section 10), so a first-party identity comes from that signature check and not from the index.
 
 ## 4. Untrusted input
 

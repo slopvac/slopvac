@@ -196,7 +196,7 @@ The `minimum_severity` row has one 2.x quirk. `CategorySettings` declares the fi
 The conformance corpus is the lasting golden. Generated schemas must accept and reject the same files.
 
 - `schemas/v3/conformance/config/valid/` holds TOML configs: a minimal one, one that uses every table, and one in the shape `migrate` writes.
-- `schemas/v3/conformance/config/invalid/` holds one defect per file. Each is mapped to a JSON pointer in `cases.toml`. The cases cover a missing or old `schema_version`, a 2.x `[vale]` table, unknown keys, bad levels, the 2.x table form of a rule, a `guidance` table inside an override, an invalid plugin id, the reserved id `core`, and the retired `[[packs]]` array.
+- `schemas/v3/conformance/config/invalid/` holds one defect per file. Each is mapped to a JSON pointer in `cases.toml`. The cases cover a missing or old `schema_version`, a 2.x `[vale]` table, unknown keys, bad levels, the 2.x table form of a rule and a `guidance` table inside an override. Further cases cover an invalid plugin id, the reserved id `core` and the retired `[[packs]]` array.
 - `schemas/v3/conformance/frontmatter/` holds YAML front matter, including a document with other keys, a document with no `slopvac:` key, and an `x-` key inside the block.
 - `schemas/v3/conformance/common/` holds `ConfigSource` instances for each layer shape.
 
