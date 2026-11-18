@@ -30,7 +30,14 @@ pub(crate) fn scrub(e: &std::io::Error) -> String {
 pub(crate) fn read(path: &Path, shown: &str, cap: u64) -> Result<String, ReadFailure> {
     // The reader refuses a symlink, but a symlinked terms file is supported. Resolve the link
     // first; a link to a FIFO or device then fails as not regular, without blocking.
-    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    // A missing file or a dangling link is "missing", as it was before this read.
+    let resolved = match std::fs::canonicalize(path) {
+        Ok(resolved) => resolved,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ReadFailure::Missing(scrub(&e)));
+        }
+        Err(_) => path.to_path_buf(),
+    };
     slopvac_fs::read_capped_regular_to_string(&resolved, cap, slopvac_fs::ReadOptions::new())
         .map_err(|e| match e {
             slopvac_fs::Error::Input {

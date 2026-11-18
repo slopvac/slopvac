@@ -447,6 +447,31 @@ fn collect_stdin(
     Ok(())
 }
 
+/// Read a document found on disk. A symlink was resolved by the caller, so `path` names the
+/// target. The read refuses a FIFO or device there instead of blocking on it. On a failure the
+/// run records a skip and the result is `None`.
+fn read_document(path: &Path, shown: &str, run: &mut Run) -> Option<Vec<u8>> {
+    match slopvac_fs::read_capped_regular(
+        path,
+        slopvac_fs::MAX_DOCUMENT_BYTES,
+        slopvac_fs::ReadOptions::new(),
+    ) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.input_kind() == Some(slopvac_fs::InputKind::TooLarge) => {
+            run.skip(
+                "document-too-large",
+                shown,
+                format!("{shown}: larger than the 64 MiB document limit"),
+            );
+            None
+        }
+        Err(_) => {
+            run.skip("input-unreadable", shown, format!("{shown}: cannot read"));
+            None
+        }
+    }
+}
+
 fn collect_targets(
     request: &LintRequest,
     configs: &Configs<'_>,
@@ -504,27 +529,8 @@ fn collect_targets(
                     continue;
                 }
             };
-            // A symlink was resolved above, so `canonical` names the target. The read
-            // refuses a FIFO or device there instead of blocking on it.
-            let read = slopvac_fs::read_capped_regular(
-                &canonical,
-                slopvac_fs::MAX_DOCUMENT_BYTES,
-                slopvac_fs::ReadOptions::new(),
-            );
-            let bytes = match read {
-                Ok(bytes) => bytes,
-                Err(e) if e.input_kind() == Some(slopvac_fs::InputKind::TooLarge) => {
-                    run.skip(
-                        "document-too-large",
-                        &shown,
-                        format!("{shown}: larger than the 64 MiB document limit"),
-                    );
-                    continue;
-                }
-                Err(_) => {
-                    run.skip("input-unreadable", &shown, format!("{shown}: cannot read"));
-                    continue;
-                }
+            let Some(bytes) = read_document(&canonical, &shown, run) else {
+                continue;
             };
             let Ok(text) = String::from_utf8(bytes) else {
                 run.skip(
@@ -741,4 +747,54 @@ fn config_files(config: &LoadedConfig) -> Vec<(String, bool)> {
         .iter()
         .map(|f| (f.display.clone(), f.layer == slopvac_config::Layer::Extends))
         .collect()
+}
+
+#[cfg(test)]
+mod read_tests {
+    use super::*;
+
+    /// Discovery filters out a FIFO, but a file can change between discovery and the read.
+    /// This is the read that follows discovery, so it is tested on its own.
+    #[test]
+    fn a_fifo_is_skipped_as_unreadable_without_blocking() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("pipe.md");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let mut run = Run::default();
+            let bytes = read_document(&fifo, "pipe.md", &mut run);
+            let codes: Vec<String> = run.notices.iter().map(|n| n.code.to_string()).collect();
+            let _ = tx.send((bytes, codes));
+        });
+        let got = rx.recv_timeout(std::time::Duration::from_secs(5));
+        if got.is_err() {
+            // Unblock the reader so the worker can end, then fail.
+            drop(
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(dir.path().join("pipe.md")),
+            );
+        }
+        worker.join().unwrap();
+        let (bytes, codes) = got.expect("the read blocked on a FIFO");
+        assert_eq!(bytes, None);
+        assert_eq!(codes, ["input-unreadable"]);
+    }
+
+    #[test]
+    fn a_regular_file_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.md");
+        std::fs::write(&file, "hi").unwrap();
+        let mut run = Run::default();
+        assert_eq!(read_document(&file, "a.md", &mut run), Some(b"hi".to_vec()));
+        assert_eq!(run.notices.len(), 0);
+    }
 }

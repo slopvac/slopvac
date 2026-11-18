@@ -1,18 +1,24 @@
 //! A FIFO at a style path is refused at once. It must not block the run.
 
+use std::path::Path;
 use std::sync::mpsc;
 use std::time::Duration;
 
 use slopvac_styles::{DirSource, StyleError, StyleSource};
 
-/// Run `f` on a thread and fail the test when it has not returned after five seconds.
-fn within_timeout<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+/// Run `f` on a worker thread. When it has not returned after five seconds, open the FIFO's
+/// write end so a blocked reader wakes, join the worker, then fail.
+fn within_timeout<T: Send + 'static>(fifo: &Path, f: impl FnOnce() -> T + Send + 'static) -> T {
     let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
+    let worker = std::thread::spawn(move || {
         let _ = tx.send(f());
     });
-    rx.recv_timeout(Duration::from_secs(5))
-        .expect("the read blocked on a FIFO")
+    let got = rx.recv_timeout(Duration::from_secs(5));
+    if got.is_err() {
+        drop(std::fs::OpenOptions::new().write(true).open(fifo));
+    }
+    worker.join().unwrap();
+    got.expect("the read blocked on a FIFO")
 }
 
 #[test]
@@ -24,7 +30,8 @@ fn a_fifo_style_is_refused() {
         .expect("mkfifo runs");
     assert!(made.success());
     let source = DirSource::new(dir.path());
-    let err = within_timeout(move || source.load("loud").unwrap_err());
+    let fifo = dir.path().join("loud.toml");
+    let err = within_timeout(&fifo, move || source.load("loud").unwrap_err());
     match err {
         StyleError::Io { style, message } => {
             assert_eq!(style, "loud");
@@ -43,6 +50,34 @@ fn a_regular_style_still_loads() {
     )
     .unwrap();
     let source = DirSource::new(dir.path());
-    let style = within_timeout(move || source.load("calm"));
+    let probe = dir.path().join("calm.toml");
+    let style = within_timeout(&probe, move || source.load("calm"));
+    assert!(style.is_ok(), "{style:?}");
+}
+
+/// A link to nothing is an unknown style, as before.
+#[test]
+fn a_dangling_symlink_style_is_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let link = dir.path().join("calm.toml");
+    std::os::unix::fs::symlink(dir.path().join("gone.toml"), &link).unwrap();
+    let source = DirSource::new(dir.path());
+    let err = within_timeout(&link, move || source.load("calm").unwrap_err());
+    assert!(
+        matches!(err, StyleError::NotFound(ref n) if n == "calm"),
+        "{err:?}"
+    );
+}
+
+/// A link to a regular file loads the style behind it.
+#[test]
+fn a_symlinked_style_loads_through_the_link() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("real.txt");
+    std::fs::write(&real, "schema_version = 3\ndescription = \"Calm\"\n").unwrap();
+    let link = dir.path().join("calm.toml");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let source = DirSource::new(dir.path());
+    let style = within_timeout(&link, move || source.load("calm"));
     assert!(style.is_ok(), "{style:?}");
 }

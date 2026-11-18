@@ -769,3 +769,32 @@ fn a_corpus_file_one_byte_over_the_document_cap_is_refused_with_its_code() {
         "{err}"
     );
 }
+
+#[test]
+fn a_fifo_coverage_file_is_refused_without_blocking() {
+    let dir = pack_dir(1);
+    let fifo = dir.path().join("pipe.md");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let pack = dir.path().to_str().unwrap().to_owned();
+    let corpus = fifo.to_str().unwrap().to_owned();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let m = slopvac_engine::cases::cli::command()
+            .try_get_matches_from(["cases", &pack, "--coverage", &corpus])
+            .unwrap();
+        let _ = tx.send(slopvac_engine::cases::cli::run(&m, &mut Vec::new()));
+    });
+    let got = rx.recv_timeout(std::time::Duration::from_secs(5));
+    if got.is_err() {
+        drop(std::fs::OpenOptions::new().write(true).open(&fifo));
+    }
+    worker.join().unwrap();
+    let err = got.expect("the read blocked on a FIFO").unwrap_err();
+    assert!(err.to_string().contains("not a regular file"), "{err}");
+}

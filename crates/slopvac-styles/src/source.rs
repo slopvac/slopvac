@@ -96,7 +96,14 @@ impl StyleSource for DirSource {
         }
         let path = self.0.join(format!("{name}.toml"));
         // The reader refuses a symlink; resolve one first so a linked style still loads.
-        let resolved = std::fs::canonicalize(&path).unwrap_or(path);
+        // A missing file or a dangling link is an unknown style, as it was before this read.
+        let resolved = match std::fs::canonicalize(&path) {
+            Ok(resolved) => resolved,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(StyleError::NotFound(name.to_owned()));
+            }
+            Err(_) => path,
+        };
         match slopvac_fs::read_capped_regular_to_string(
             &resolved,
             MAX_STYLE_BYTES,

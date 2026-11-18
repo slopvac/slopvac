@@ -168,3 +168,38 @@ fn an_oversized_style_file_fails_the_config_load_with_its_code() {
     assert_eq!(err.code(), slopvac_config::Code::StyleTooLarge);
     assert!(err.render().contains("style-too-large"), "{}", err.render());
 }
+
+#[test]
+fn a_fifo_style_fails_the_config_load_instead_of_vanishing() {
+    use slopvac_styles::DirSource;
+
+    let styles = tempfile::tempdir().unwrap();
+    let fifo = styles.path().join("pipe.toml");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let project = tempfile::tempdir().unwrap();
+    let path = project.path().join("slopvac.toml");
+    std::fs::write(&path, "schema_version = 3\nstyles = [\"pipe\"]\n").unwrap();
+    let source = DirSource::new(styles.path());
+    let (tx, rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let _ = tx.send(load(&path, &StylePresets(source)));
+    });
+    let got = rx.recv_timeout(std::time::Duration::from_secs(5));
+    if got.is_err() {
+        drop(std::fs::OpenOptions::new().write(true).open(&fifo));
+    }
+    worker.join().unwrap();
+    let err = got.expect("the load blocked on a FIFO").unwrap_err();
+    assert_eq!(err.code(), slopvac_config::Code::Io);
+    assert!(
+        err.render().contains("not a regular file"),
+        "{}",
+        err.render()
+    );
+}
