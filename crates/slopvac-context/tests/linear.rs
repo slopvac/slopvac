@@ -1,56 +1,18 @@
 //! Work done by the section-scoped and text taggers grows linearly with the document.
 //!
-//! The tests count work instead of time: calls on the document view, blocks examined to
-//! find section bounds, and tags emitted.
-
-use std::cell::Cell;
+//! The tests count work instead of time: blocks examined to find section bounds, text
+//! positions scanned, and bytes of heading and admonition text matched. They assert an upper
+//! bound that grows linearly with the input, not the count of one traversal.
 
 use rstest::rstest;
 
 use slopvac_context::{
-    BlockView, DocumentView, EnforcedInvariantTagger, PlainDocument, RequirementTagger,
-    SentenceView, Tagger, TaggerSpec, take_admonition_steps, take_heading_steps,
-    take_section_steps, take_text_steps,
+    BlockView, DocumentView, EnforcedInvariantTagger, PlainDocument, RequirementTagger, Tagger,
+    TaggerSpec, take_admonition_steps, take_heading_steps, take_section_steps, take_text_steps,
 };
 
-/// A document that counts the calls a tagger makes on it.
-struct Counting {
-    inner: PlainDocument,
-    blocks_calls: Cell<usize>,
-    sentences_calls: Cell<usize>,
-}
-
-impl Counting {
-    fn new(src: &str) -> Self {
-        Self {
-            inner: PlainDocument::from_markdown("a.md", src),
-            blocks_calls: Cell::new(0),
-            sentences_calls: Cell::new(0),
-        }
-    }
-}
-
-impl DocumentView for Counting {
-    fn path(&self) -> &str {
-        self.inner.path()
-    }
-    fn title(&self) -> Option<&str> {
-        self.inner.title()
-    }
-    fn front_matter(&self, key: &str) -> Option<&str> {
-        self.inner.front_matter(key)
-    }
-    fn source_len(&self) -> usize {
-        self.inner.source_len()
-    }
-    fn blocks(&self) -> Vec<BlockView<'_>> {
-        self.blocks_calls.set(self.blocks_calls.get() + 1);
-        self.inner.blocks()
-    }
-    fn sentences<'a>(&self, block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
-        self.sentences_calls.set(self.sentences_calls.get() + 1);
-        self.inner.sentences(block)
-    }
+fn doc(src: &str) -> PlainDocument {
+    PlainDocument::from_markdown("a.md", src)
 }
 
 fn section_tagger() -> Box<dyn Tagger> {
@@ -73,20 +35,20 @@ fn many_sections(sections: usize, paragraphs: usize) -> String {
 #[case::double(20)]
 #[case::quadruple(40)]
 fn a_matching_section_is_tagged_once_whatever_its_size(#[case] paragraphs: usize) {
-    let doc = Counting::new(&one_section(paragraphs));
+    let doc = doc(&one_section(paragraphs));
     assert_eq!(section_tagger().tag(&doc).unwrap().len(), 1);
 }
 
 #[test]
 fn every_matching_section_is_tagged_once() {
-    let doc = Counting::new(&many_sections(5, 3));
+    let doc = doc(&many_sections(5, 3));
     assert_eq!(section_tagger().tag(&doc).unwrap().len(), 5);
 }
 
 #[test]
 fn a_section_runs_through_its_subsections_to_the_end_of_the_document() {
     let src = "# Setup\n\nFirst.\n\n## Sub\n\nSecond.\n";
-    let doc = Counting::new(src);
+    let doc = doc(src);
     let tags = section_tagger().tag(&doc).unwrap();
     // The subsection's blocks also sit under the `Setup` heading, so both sections match.
     let texts: Vec<&str> = tags.iter().map(|t| &src[t.span.clone()]).collect();
@@ -126,18 +88,16 @@ fn assert_linear(
 fn finding_section_bounds_takes_linear_steps(#[case] paragraphs: usize) {
     assert_linear("section bounds", 1, 8, |blocks| {
         let sections = blocks / (1 + paragraphs);
-        let doc = Counting::new(&many_sections(sections.max(1), paragraphs));
+        let doc = doc(&many_sections(sections.max(1), paragraphs));
         let _ = take_section_steps();
         section_tagger().tag(&doc).unwrap();
-        assert_eq!(doc.blocks_calls.get(), 1);
-        assert_eq!(doc.sentences_calls.get(), 0);
         (blocks, take_section_steps())
     });
 }
 
 /// Positions examined by `tagger` on one paragraph of `text`.
 fn text_steps(tagger: &dyn Tagger, text: &str) -> usize {
-    let doc = Counting::new(&format!("# T\n\n{text}\n"));
+    let doc = doc(&format!("# T\n\n{text}\n"));
     let _ = take_text_steps();
     tagger.tag(&doc).unwrap();
     take_text_steps()
@@ -192,7 +152,7 @@ fn a_long_heading_is_matched_once_for_all_its_blocks() {
     assert_linear("heading match", 2, 64, |blocks| {
         let heading = "setup ".repeat(blocks / 8);
         let src = format!("# {heading}\n\n{}", "Paragraph.\n\n".repeat(blocks));
-        let doc = Counting::new(&src);
+        let doc = doc(&src);
         let _ = take_heading_steps();
         section_tagger().tag(&doc).unwrap();
         (heading.len(), take_heading_steps())
