@@ -2752,6 +2752,7 @@ dependencies = [
  "similar 3.2.1",
  "slopvac-model",
  "slopvac-rules",
+ "snapbox",
  "tempfile",
  "thiserror",
 ]

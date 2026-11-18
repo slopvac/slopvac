@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -32,17 +31,22 @@ pub struct Generated {
 pub struct Drift {
     /// File name inside `schemas/v3`.
     pub file: &'static str,
-    /// A unified diff from the committed text to the generated text. A missing file diffs
-    /// from empty.
+    /// A unified diff from the committed text to the generated text.
     pub diff: String,
 }
 
-/// Generate every artifact in memory.
+/// Generate every artifact in [`ARTIFACTS`] in memory.
 pub fn generate() -> Result<Vec<Generated>> {
+    generate_from(ARTIFACTS)
+}
+
+/// Generate the given artifacts in memory, in order. Each artifact may import only the files
+/// listed before it.
+pub fn generate_from(artifacts: &[Artifact]) -> Result<Vec<Generated>> {
     let mut done: Vec<(&'static str, Value)> = Vec::new();
     let mut publisher: BTreeMap<String, &'static str> = BTreeMap::new();
-    for artifact in ARTIFACTS {
-        let schema = build(artifact, &done)?;
+    for artifact in artifacts {
+        let schema = build(artifact, artifacts, &done)?;
         for def in schema
             .get("$defs")
             .and_then(Value::as_object)
@@ -68,7 +72,11 @@ pub fn generate() -> Result<Vec<Generated>> {
         .collect())
 }
 
-fn build(artifact: &Artifact, done: &[(&'static str, Value)]) -> Result<Value> {
+fn build(
+    artifact: &Artifact,
+    artifacts: &[Artifact],
+    done: &[(&'static str, Value)],
+) -> Result<Value> {
     let mut schema = (artifact.build)();
     let Some(object) = schema.as_object_mut() else {
         return Err(Error::NotAnObject {
@@ -96,7 +104,7 @@ fn build(artifact: &Artifact, done: &[(&'static str, Value)]) -> Result<Value> {
     let mut inline: Vec<&str> = artifact.inline.to_vec();
     let local = |def: &str| schema.get("$defs").and_then(|defs| defs.get(def)).is_some();
     for import in artifact.imports {
-        if let Some(owner) = ARTIFACTS.iter().find(|a| a.file == *import) {
+        if let Some(owner) = artifacts.iter().find(|a| a.file == *import) {
             inline.extend(owner.inline.iter().filter(|def| local(def)));
         }
     }
@@ -116,16 +124,16 @@ pub fn write(root: &Path) -> Result<Vec<Generated>> {
 }
 
 /// Compare every generated file with the one committed under `root/schemas/v3`; the result
-/// lists the files that differ.
+/// lists the files that differ. A committed file that is missing or cannot be read is an
+/// error, not a difference: the comparison did not run.
 pub fn check(root: &Path) -> Result<Vec<Drift>> {
     let mut drift = Vec::new();
     for file in generate()? {
         let path = schema_path(root, file.file);
-        let committed = match fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(source) if source.kind() == ErrorKind::NotFound => String::new(),
-            Err(source) => return Err(Error::Io { path, source }),
-        };
+        let committed = fs::read_to_string(&path).map_err(|source| Error::Io {
+            path: path.clone(),
+            source,
+        })?;
         if committed != file.text {
             let name = format!("{SCHEMA_DIR}/{}", file.file);
             let diff = TextDiff::from_lines(&committed, &file.text)

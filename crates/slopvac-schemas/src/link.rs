@@ -388,36 +388,6 @@ mod tests {
     }
 
     #[test]
-    fn an_inlined_def_is_written_in_place_with_the_reference_siblings_winning() {
-        let mut schema = json!({
-            "properties": {"a": {"$ref": "#/$defs/Id", "description": "A."}},
-            "$defs": {
-                "Id": {"type": "string", "description": "Id."},
-                "Other": {"items": {"$ref": "#/$defs/Id"}},
-            },
-        });
-        inline_defs("x.schema.json", &mut schema, &["Id"]).unwrap();
-        assert_eq!(
-            schema,
-            json!({
-                "properties": {"a": {"type": "string", "description": "A."}},
-                "$defs": {"Other": {"items": {"type": "string", "description": "Id."}}},
-            })
-        );
-    }
-
-    #[rstest::rstest]
-    #[case::not_generated(json!({"$defs": {}}), "UnknownInline")]
-    #[case::pointer_inside(
-        json!({"$ref": "#/$defs/Id/properties/n", "$defs": {"Id": {"properties": {"n": {}}}}}),
-        "InlinePointer"
-    )]
-    fn inlining_fails_on(#[case] mut schema: Value, #[case] want: &str) {
-        let err = inline_defs("x.schema.json", &mut schema, &["Id"]).unwrap_err();
-        assert!(format!("{err:?}").starts_with(want), "{err:?}");
-    }
-
-    #[test]
     fn instance_values_that_look_like_references_are_left_alone() {
         let mut schema = json!({"const": {"$ref": "#/$defs/Span"}});
         link_shared_defs(

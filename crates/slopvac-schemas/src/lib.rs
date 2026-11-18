@@ -14,5 +14,5 @@ mod link;
 pub use artifacts::{ARTIFACTS, Artifact};
 pub use canonical::to_canonical_json;
 pub use error::{Error, Result};
-pub use files::{Drift, Generated, check, generate, write};
+pub use files::{Drift, Generated, check, generate, generate_from, write};
 pub use link::link_shared_defs;

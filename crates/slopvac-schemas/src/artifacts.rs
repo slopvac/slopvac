@@ -24,7 +24,7 @@ pub struct Artifact {
     /// `schemas/v3`.
     pub inline: &'static [&'static str],
     /// Build the schema: a root type's schema with its `$defs`, or `$defs` alone.
-    pub(crate) build: fn() -> Value,
+    pub build: fn() -> Value,
 }
 
 /// Every generated file, each listed after the files it imports.

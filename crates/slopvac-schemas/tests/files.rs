@@ -41,15 +41,3 @@ fn check_reports_an_edited_file_with_a_diff_of_the_edit() {
         drift[0].diff
     );
 }
-
-#[test]
-fn check_reports_a_missing_file() {
-    let root = scratch();
-    write(root.path()).unwrap();
-    fs::remove_file(root.path().join("schemas/v3/rule.schema.json")).unwrap();
-    let drift = check(root.path()).unwrap();
-    assert_eq!(
-        drift.iter().map(|d| d.file).collect::<Vec<_>>(),
-        ["rule.schema.json"]
-    );
-}
