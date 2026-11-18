@@ -16,8 +16,8 @@ Two files come out of ``slopvac.locale`` (2.x), and neither is edited by hand:
   list), and the findings of ``engine.Engine.run`` over a frozen corpus with the generated
   rule alone switched on.
 
-The golden suite (slopvac-8l4.2.7) has no locale input, so this fixture stays the reference
-for the generated spelling rule until slopvac-8l4.3.44 wires that rule into the golden runs.
+The golden runs (slopvac-8l4.2.7) cover the default locale (en-US, no ``locale.allow``) only,
+so this fixture stays the reference for the other locales and for allowed words.
 
 ``--check`` recomputes both files and fails when they differ.
 """

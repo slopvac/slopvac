@@ -150,12 +150,21 @@ fn core_sources() -> Vec<(PathBuf, String)> {
 /// The engine for one profile: the category dials and rule levels of `core:legacy-<profile>`
 /// and the thresholds of the profile, both from the profile mapping contract.
 pub fn legacy_engine(profile: &str) -> Engine {
-    let set = RuleSet::from_sources(
+    Engine::new(vec![core_set()], legacy_settings(profile)).unwrap()
+}
+
+/// The core data with the title-case swap, as the engine reads it.
+pub fn core_set() -> RuleSet {
+    RuleSet::from_sources(
         &PackId::new("core").unwrap(),
         core_sources(),
         &CompileOptions::default(),
     )
-    .unwrap_or_else(|e| panic!("{e}"));
+    .unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// The settings of `core:legacy-<profile>` and the profile thresholds.
+pub fn legacy_settings(profile: &str) -> Settings {
     let mut settings = Settings::new(
         NonEmptyString::new(profile).unwrap(),
         GenreResult {
@@ -197,7 +206,7 @@ pub fn legacy_engine(profile: &str) -> Engine {
     settings.thresholds.max_unicode_dashes = count("max_unicode_dashes");
     settings.thresholds.max_total_per_100_words = t["max_total_per_100_words"].as_f64();
     settings.thresholds.min_score = t["min_score"].as_f64();
-    Engine::new(vec![set], settings).unwrap()
+    settings
 }
 
 /// An engine over the one category file `category` with `settings`.
