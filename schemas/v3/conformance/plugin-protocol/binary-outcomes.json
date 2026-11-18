@@ -1,5 +1,5 @@
 {
-  "description": "How the host reports each binary extraction outcome (plugin-protocol.md section 5.5.4). Each case in cases gives the document path, the wire result entry for that document, the run exit code (no finding fails a gate in these cases), the notices the host adds to the root notices of the lint report, and the codes it adds to that document's unchecked list. Content a document skips is an info notice and never unchecked. A no-source result depends on the name: .drawio.png, .excalidraw.png and .drawio.svg promise a source, and every other name does not. host_cases are inputs the host decides without a wire result: sent_to_extractor is false when no extractor gets the file. format is the detected format that binary-format-unsupported names in data.format. validator_cases give the code the shared validator reports when output fails it, by the source of that output. Every listed notice code appears in every output format (host row H46). run_cases are runs of several documents where a finding fails a gate: an incomplete run still exits 2.",
+  "description": "How the host reports each binary extraction outcome (plugin-protocol.md section 5.5.4). Each case in cases gives the document path, the wire result entry for that document, the run exit code (no finding fails a gate in these cases), the notices the host adds to the root notices of the lint report, and the codes it adds to that document's unchecked list. Content a document skips is an info notice and never unchecked. A no-source result depends on the name: .drawio.png, .excalidraw.png and .drawio.svg promise a source, and every other name does not. host_cases are inputs the host decides without a wire result: sent_to_extractor is false when no extractor gets the file. format is the detected format that input-unsupported names in data.format. validator_cases give the code the shared validator reports when output fails it, by the source of that output. Every listed notice code appears in every output format (host row H46). run_cases are runs of several documents where a finding fails a gate: an incomplete run still exits 2.",
   "cases": [
     {
       "id": "extracted-with-skipped-part",
@@ -198,7 +198,7 @@
       "exit": 2,
       "notices": [],
       "unchecked": [
-        "binary-format-unsupported"
+        "input-unsupported"
       ],
       "format": "epub"
     },
@@ -211,7 +211,7 @@
       "exit": 2,
       "notices": [],
       "unchecked": [
-        "binary-format-unsupported"
+        "input-unsupported"
       ],
       "format": "pdf"
     },

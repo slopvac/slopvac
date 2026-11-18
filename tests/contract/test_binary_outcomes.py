@@ -102,7 +102,7 @@ def test_a_named_input_in_an_unread_format_exits_2_without_extraction(
     case = HOST_CASES[case_id]
     assert case["named_explicitly"] is True
     assert case["sent_to_extractor"] is False
-    assert case["unchecked"] == ["binary-format-unsupported"]
+    assert case["unchecked"] == ["input-unsupported"]
     assert case["format"] == case["path"].rsplit(".", 1)[1]
     assert case["exit"] == 2
 
