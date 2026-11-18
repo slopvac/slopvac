@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location(
@@ -95,3 +96,63 @@ def test_a_dropped_closing_keyword_is_a_difference() -> None:
     assert [d[0] for d in equivalence.compare(old, new, "report")] == [
         "/additionalProperties"
     ]
+
+
+# Each pair validates `instance` differently, but a merge that ignores keyword scope gives
+# both the same normal form.
+@pytest.mark.parametrize(
+    ("old_schema", "new_schema", "instance"),
+    [
+        pytest.param(
+            {"allOf": [{"if": {"type": "integer"}}, {"then": {"maximum": 0}}]},
+            {"if": {"type": "integer"}, "then": {"maximum": 0}},
+            5,
+            id="if-then-split",
+        ),
+        pytest.param(
+            {"allOf": [{"if": {"type": "integer"}}, {"else": {"type": "integer"}}]},
+            {"if": {"type": "integer"}, "else": {"type": "integer"}},
+            "a",
+            id="if-else-split",
+        ),
+        pytest.param(
+            {"allOf": [{"prefixItems": [True]}, {"items": False}]},
+            {"prefixItems": [True], "items": False},
+            [1],
+            id="prefix-items-split",
+        ),
+        pytest.param(
+            {"allOf": [{"contains": {"type": "integer"}}, {"minContains": 2}]},
+            {"contains": {"type": "integer"}, "minContains": 2},
+            [1],
+            id="min-contains-split",
+        ),
+        pytest.param(
+            {"allOf": [{"contains": {"type": "integer"}}, {"maxContains": 1}]},
+            {"contains": {"type": "integer"}, "maxContains": 1},
+            [1, 2],
+            id="max-contains-split",
+        ),
+        pytest.param(
+            {"unevaluatedProperties": False, "allOf": [{"properties": {"a": True}}]},
+            {"allOf": [{"unevaluatedProperties": False}, {"properties": {"a": True}}]},
+            {"a": 1},
+            id="unevaluated-properties-moved-into-a-member",
+        ),
+        pytest.param(
+            {"unevaluatedItems": False, "allOf": [{"prefixItems": [True]}]},
+            {"allOf": [{"unevaluatedItems": False}, {"prefixItems": [True]}]},
+            [1],
+            id="unevaluated-items-moved-into-a-member",
+        ),
+    ],
+)
+def test_a_split_that_changes_keyword_scope_is_a_difference(
+    old_schema: dict, new_schema: dict, instance: object
+) -> None:
+    before = Draft202012Validator(old_schema).is_valid(instance)
+    after = Draft202012Validator(new_schema).is_valid(instance)
+    assert before is not after, "the pair must validate the instance differently"
+    old = side(report=old_schema)
+    new = side(report=new_schema)
+    assert equivalence.compare(old, new, "report") != []

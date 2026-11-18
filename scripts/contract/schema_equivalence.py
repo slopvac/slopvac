@@ -15,8 +15,12 @@ The normal form:
 * every `$ref`, local or to another file of the same side, is replaced by its target;
 * annotations are dropped: `title`, `description`, `$comment`, `examples`, `default`,
   `deprecated`, `readOnly`, `writeOnly`, `$schema`, `$id` and the `$defs` table;
-* `allOf` members and `$ref` siblings are flattened into one conjunction and merged where
-  the merge cannot change meaning;
+* `allOf` members and `$ref` siblings are flattened into one conjunction and merged only
+  where the merge cannot change meaning. Parts that share a keyword, or that both hold
+  keywords which read each other (`if`/`then`/`else`, the `properties` family,
+  `prefixItems`/`items`, `contains` and its bounds), stay apart. A part holding
+  `unevaluatedProperties`, `unevaluatedItems` or `dependentSchemas` is never merged, and an
+  object holding an `unevaluated*` keyword keeps its other parts inside it;
 * `{}` is `true`; `type` is a sorted list; `required` and `enum` are sorted sets;
   `anyOf` and `oneOf` members are sorted; an integral float is an integer.
 
@@ -74,11 +78,22 @@ MAP = frozenset({"properties", "patternProperties", "dependentSchemas"})
 LIST = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
 UNORDERED_LISTS = frozenset({"anyOf", "oneOf"})
 SET_VALUES = frozenset({"required", "enum"})
-# Keywords that only mean something next to their siblings, so parts holding them are not
-# merged with parts that hold the others.
-OBJECT_SHAPE = frozenset(
-    {"properties", "patternProperties", "additionalProperties", "unevaluatedProperties"}
+# Groups of keywords that read each other when they sit in one schema object. Two parts that
+# both hold keywords of one group stay apart: merging `{"if": A}` with `{"then": B}` would
+# make a conditional that neither part had.
+INTERACTING = (
+    frozenset({"if", "then", "else"}),
+    frozenset({"properties", "patternProperties", "additionalProperties"}),
+    frozenset({"prefixItems", "items"}),
+    frozenset({"contains", "minContains", "maxContains"}),
 )
+# Keywords that see what every in-place subschema of their object evaluated. An object that
+# holds one keeps its other parts inside it, and a part that holds one is never merged, so
+# no keyword moves into or out of its scope.
+SCOPED = frozenset({"unevaluatedProperties", "unevaluatedItems"})
+# Parts holding these are never merged. `dependentSchemas` is kept apart too, because its
+# subschemas feed the scoped keywords.
+UNMERGED = SCOPED | {"dependentSchemas"}
 
 
 class Side:
@@ -147,15 +162,21 @@ def _instance(value: object) -> object:
     return _number(value)
 
 
+def _mergeable(target: dict, part: dict) -> bool:
+    """Whether two conjunction parts can become one schema object with no change of
+    meaning: no shared keyword but `required`, no interacting pair, no scoped keyword."""
+    a, b = set(target), set(part)
+    if (a & b) - {"required"} or (a | b) & UNMERGED:
+        return False
+    return not any(a & group and b & group for group in INTERACTING)
+
+
 def _merge(parts: list[dict]) -> list[dict]:
     """Merge conjunction parts whose keywords cannot interact."""
     merged: list[dict] = []
     for part in parts:
         for target in merged:
-            shared = set(target) & set(part)
-            if shared - {"required"}:
-                continue
-            if (set(target) & OBJECT_SHAPE) and (set(part) & OBJECT_SHAPE):
+            if not _mergeable(target, part):
                 continue
             if "required" in part:
                 target["required"] = sorted(
@@ -180,18 +201,23 @@ class Normalizer:
             return False
         if not isinstance(node, dict):
             raise TypeError(f"not a schema: {node!r}")
-        parts = self._parts(node, base, stack)
-        if any(p is False for p in parts):
+        own, others = self._parts(node, base, stack)
+        if any(p is False for p in others):
             return False
-        parts = [p for p in parts if p is not True]
+        others = [p for p in others if p is not True]
+        parts = ([own] if own else []) + others
         if not parts:
             return True
+        if set(own) & SCOPED and others:
+            # A scoped keyword sees what every other part evaluated: keep them inside.
+            return {**own, "allOf": sorted(_merge(others), key=_key)}
         merged = _merge(parts)
         if len(merged) == 1:
             return merged[0]
         return {"allOf": sorted(merged, key=_key)}
 
-    def _parts(self, node: dict, base: str, stack: tuple) -> list:
+    def _parts(self, node: dict, base: str, stack: tuple) -> tuple[dict, list]:
+        """The node's own keywords, and the in-place subschemas (`$ref`, `allOf`) beside them."""
         parts: list = []
         own: dict = {}
         for key, value in node.items():
@@ -235,9 +261,7 @@ class Normalizer:
                 flat.extend(part["allOf"])
             else:
                 flat.append(part)
-        if own:
-            flat.insert(0, own)
-        return flat
+        return own, flat
 
 
 def _annotations(node: object, pointer: str, out: dict[str, object]) -> None:
