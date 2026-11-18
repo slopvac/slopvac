@@ -109,7 +109,7 @@
 "action:output:json" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Path to the report; the JSON uses schema version 3." }
 "action:output:sarif" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
 "hook:slopvac" = { disposition = "preserve", owner = "slopvac-8l4.13.8", note = "Hook ID stays; entry runs the 3.0 binary." }
-"hook:slopvac-strict" = { disposition = "preserve", owner = "slopvac-8l4.13.8", note = "Hook ID stays." }
+"hook:slopvac-strict" = { disposition = "remove", owner = "slopvac-8l4.13.34", note = "The 3.0 CLI has no style or profile option, so the hook ID is removed; set a style in slopvac.toml and scope the slopvac hook with `files:`." }
 "hook:slopvac-no-vale" = { disposition = "remove", owner = "slopvac-8l4.13.8", note = "Vale is gone; the hook ID is removed." }
 
 # Behaviour rows exist only here.

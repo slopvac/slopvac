@@ -321,12 +321,19 @@ def test_pull_requests_test_rust_on_linux_x64_only():
     ]
 
 
-@pytest.mark.parametrize("context", [MERGE_GROUP, PUSH_MAIN], ids=["queue", "main"])
-def test_queue_and_main_test_every_rust_leg(context):
+@pytest.mark.parametrize(
+    ("context", "expected"),
+    [
+        (PUSH_MAIN, set(EVERY_RUST_LEG)),
+        (MERGE_GROUP, set(EVERY_RUST_LEG) - {"macos-arm64"}),
+    ],
+    ids=["main", "queue"],
+)
+def test_rust_legs_per_event(context, expected):
     legs = matrix_axis("rust", "include", context)
     by_name = {leg["name"]: (leg["os"], leg.get("target")) for leg in legs}
-    assert by_name == EVERY_RUST_LEG
-    assert len(legs) == len(EVERY_RUST_LEG)
+    assert by_name == {n: EVERY_RUST_LEG[n] for n in expected}
+    assert len(legs) == len(expected)
     assert all(leg.get("musl", False) == ("target" in leg) for leg in legs)
 
 
@@ -893,3 +900,64 @@ def test_reviewdog_rejects_an_artifact_naming_another_pull_request(tmp_path, cla
     proc, written = run_validation(tmp_path, [claim], "7", pull(draft=False))
     assert proc.returncode != 0
     assert written == ""
+
+
+# --- schema additive-only check ------------------------------------------------
+
+SCHEMA_STEP = next(
+    s
+    for s in load("test.yml")["jobs"]["test"]["steps"]
+    if s.get("name") == "Schema additive-only check"
+)
+
+
+@pytest.mark.parametrize(
+    ("context", "runs"),
+    [(PULL_REQUEST, True), (MERGE_GROUP, True), (PUSH_MAIN, False)],
+    ids=["pull_request", "merge_group", "push"],
+)
+def test_schema_check_runs_on_pull_request_and_merge_group_only(context, runs):
+    assert condition(SCHEMA_STEP["if"], ctx(context)) is runs
+
+
+def run_schema_step(tmp_path: Path, context: dict) -> tuple[list[str], list[str]]:
+    """Run the step's script with stub ``git`` and ``python3``; return both call logs."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    git = bin_dir / "git"
+    git.write_text(
+        f'#!/bin/sh\necho "git $*" >> "{calls}"\n'
+        'if [ "$1" = merge-base ]; then echo MERGEBASE; fi\n'
+    )
+    git.chmod(0o755)
+    python = bin_dir / "python3"
+    python.write_text(f'#!/bin/sh\necho "python3 $*" >> "{calls}"\n')
+    python.chmod(0o755)
+    env = {
+        key: evaluate(value, ctx(context)) for key, value in SCHEMA_STEP["env"].items()
+    }
+    done = subprocess.run(
+        ["bash", "-c", SCHEMA_STEP["run"]],
+        env={**os.environ, **env, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    lines = calls.read_text().splitlines()
+    return [x for x in lines if x.startswith("git")], [
+        x for x in lines if x.startswith("python3")
+    ]
+
+
+def test_schema_check_compares_a_queue_entry_with_the_group_base(tmp_path):
+    _, python = run_schema_step(tmp_path, MERGE_GROUP)
+    assert python == [f"python3 scripts/contract/schema_compat.py --base {'b' * 40}"]
+
+
+def test_schema_check_compares_a_pull_request_with_its_merge_base(tmp_path):
+    pull = {**PULL_REQUEST, "base_ref": "main"}
+    git, python = run_schema_step(tmp_path, pull)
+    assert "git merge-base origin/main HEAD" in git
+    assert python == ["python3 scripts/contract/schema_compat.py --base MERGEBASE"]

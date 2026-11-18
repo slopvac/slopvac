@@ -144,7 +144,7 @@ fn read(path: &Path) -> Result<String, ConfigError> {
     let label = path
         .file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-    fs::read_to_string(path).map_err(|source| ConfigError::io(label, source))
+    ConfigError::read_config(path, &label)
 }
 
 fn legacy(file: &str, text: String, span: std::ops::Range<usize>, message: &str) -> ConfigError {

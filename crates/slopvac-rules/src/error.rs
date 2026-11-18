@@ -9,6 +9,9 @@ use std::path::PathBuf;
 pub enum LoadErrorKind {
     /// The file or directory could not be read.
     Read(String),
+    /// The file is larger than [`MAX_RULE_FILE_BYTES`](crate::MAX_RULE_FILE_BYTES), the given
+    /// number of bytes. Its stable code is `rules-file-too-large`.
+    TooLarge(u64),
     /// The file does not parse as a rule or category file.
     Parse(String),
     /// The extension names no supported format (`json`, `yaml`, `yml`, `toml`).
@@ -41,6 +44,9 @@ impl fmt::Display for LoadErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Read(e) => write!(f, "cannot read: {e}"),
+            Self::TooLarge(cap) => {
+                write!(f, "[rules-file-too-large] file is larger than {cap} bytes")
+            }
             Self::Parse(e) => f.write_str(e),
             Self::UnsupportedFormat => {
                 f.write_str("unsupported file type (expected json, yaml, yml or toml)")

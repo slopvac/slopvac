@@ -131,3 +131,40 @@ fn a_child_category_level_beats_its_parents_rule_level() {
     assert_eq!(level.level, "error");
     assert_eq!(level.source.file.as_deref(), Some("preset:child"));
 }
+
+#[test]
+fn a_style_file_one_byte_over_the_cap_is_refused_with_its_code() {
+    use slopvac_styles::{DirSource, MAX_STYLE_BYTES, StyleError, StyleSource};
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::File::create(dir.path().join("big.toml"))
+        .unwrap()
+        .set_len(MAX_STYLE_BYTES + 1)
+        .unwrap();
+    let err = DirSource::new(dir.path()).load("big").unwrap_err();
+    assert_eq!(
+        err,
+        StyleError::TooLarge {
+            style: "big".into(),
+            cap: MAX_STYLE_BYTES
+        }
+    );
+    assert!(err.to_string().starts_with("[style-too-large]"), "{err}");
+}
+
+#[test]
+fn an_oversized_style_file_fails_the_config_load_with_its_code() {
+    use slopvac_styles::{DirSource, MAX_STYLE_BYTES};
+
+    let styles = tempfile::tempdir().unwrap();
+    std::fs::File::create(styles.path().join("big.toml"))
+        .unwrap()
+        .set_len(MAX_STYLE_BYTES + 1)
+        .unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let path = project.path().join("slopvac.toml");
+    std::fs::write(&path, "schema_version = 3\nstyles = [\"big\"]\n").unwrap();
+    let err = load(&path, &StylePresets(DirSource::new(styles.path()))).unwrap_err();
+    assert_eq!(err.code(), slopvac_config::Code::StyleTooLarge);
+    assert!(err.render().contains("style-too-large"), "{}", err.render());
+}

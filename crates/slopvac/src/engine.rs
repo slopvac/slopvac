@@ -213,7 +213,7 @@ fn describe_rejected(rejected: &slopvac_config::Rejected, root: &Path) -> String
 fn config_error(err: &ConfigError, root: &Path) -> CliError {
     let mut message = match err {
         ConfigError::Rejected(rejected) => describe_rejected(rejected, root),
-        ConfigError::Io { path, .. } => {
+        ConfigError::Io { path, .. } | ConfigError::TooLarge { path, .. } => {
             // The path is the label the caller gave, which may be absolute.
             err.to_string()
                 .replace(path.as_str(), &redact::shown_path(Path::new(path), root))

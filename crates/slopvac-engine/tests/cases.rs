@@ -729,3 +729,26 @@ fn coverage_report_over_the_eval_corpus() {
     assert!(docs.len() > 100, "the committed eval corpus is missing");
     core_coverage_report(&docs.iter().collect::<Vec<_>>(), "core-rule-coverage.txt");
 }
+
+#[test]
+fn a_corpus_file_one_byte_over_the_document_cap_is_refused_with_its_code() {
+    let dir = pack_dir(1);
+    let doc = dir.path().join("big.md");
+    std::fs::File::create(&doc)
+        .unwrap()
+        .set_len(slopvac_engine::MAX_FILE_BYTES + 1)
+        .unwrap();
+    let m = slopvac_engine::cases::cli::command()
+        .try_get_matches_from([
+            "cases",
+            dir.path().to_str().unwrap(),
+            "--coverage",
+            doc.to_str().unwrap(),
+        ])
+        .unwrap();
+    let err = slopvac_engine::cases::cli::run(&m, &mut Vec::new()).unwrap_err();
+    assert!(
+        err.to_string().starts_with("[document-too-large] "),
+        "{err}"
+    );
+}

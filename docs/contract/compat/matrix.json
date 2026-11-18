@@ -838,10 +838,10 @@
       "source": ".pre-commit-hooks.yaml",
       "summary": "slopvac lint --profile strict",
       "detail": {},
-      "disposition": "preserve",
-      "note": "Hook ID stays.",
-      "owner": "slopvac-8l4.13.8",
-      "test": "pending"
+      "disposition": "remove",
+      "note": "The 3.0 CLI has no style or profile option, so the hook ID is removed; set a style in slopvac.toml and scope the slopvac hook with `files:`.",
+      "owner": "slopvac-8l4.13.34",
+      "test": "n/a"
     },
     {
       "id": "opt:cache:--all",
