@@ -109,9 +109,9 @@ mod tests {
 
     #[test]
     fn skips_fenced_and_indented_code() {
-        assert!(starts(&format!("```\n{M}\n```\n")).is_empty());
-        assert!(starts(&format!("para\n\n    {M}\n")).is_empty());
-        assert!(starts(&format!("para\n\n\t{M}\n")).is_empty());
+        assert_eq!(starts(&format!("```\n{M}\n```\n")), Vec::<usize>::new());
+        assert_eq!(starts(&format!("para\n\n    {M}\n")), Vec::<usize>::new());
+        assert_eq!(starts(&format!("para\n\n\t{M}\n")), Vec::<usize>::new());
     }
 
     #[test]
