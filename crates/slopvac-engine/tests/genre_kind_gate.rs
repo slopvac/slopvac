@@ -1,9 +1,9 @@
 //! A rule a document's genre excludes does no matcher work on that document, whatever its
 //! kind. Work is counted as matcher entries per rule kind (`test-counters`), not timed.
 //!
-//! `fixtures` is an exhaustive `match` on `MatchKind`: a new kind does not compile until it
-//! has a fixture here, and a kind whose rules run a matcher before checking the genre fails
-//! the test below, named by its kind.
+//! `fixtures` and `next` are exhaustive `match`es on `MatchKind`: a new kind does not compile
+//! until it has a fixture and a place in the chain of kinds. A kind whose rules run a matcher
+//! before checking the genre fails the test below, named by its kind.
 
 #![allow(missing_docs)]
 
@@ -104,31 +104,26 @@ fn fixtures(kind: MatchKind) -> Vec<Fixture> {
     }
 }
 
-/// A distinct number for each kind. The exhaustive `match` makes a new kind fail to compile
-/// until it is numbered, and `every_kind_is_listed` then fails until the list has it.
-const fn ordinal(kind: MatchKind) -> usize {
+/// The kind after `kind` in a chain through every kind, starting from `None` and ending in
+/// `None`. The `match` has no wildcard arm, so a new kind does not compile until it is in
+/// the chain, and `all_kinds` then reaches it.
+const fn next(kind: Option<MatchKind>) -> Option<MatchKind> {
     match kind {
-        MatchKind::Tokens => 0,
-        MatchKind::Pattern => 1,
-        MatchKind::Substitution => 2,
-        MatchKind::Metric => 3,
-        MatchKind::Structure => 4,
-        MatchKind::Capitalization => 5,
-        MatchKind::Vocabulary => 6,
-        MatchKind::Judgement => 7,
+        None => Some(MatchKind::Tokens),
+        Some(MatchKind::Tokens) => Some(MatchKind::Pattern),
+        Some(MatchKind::Pattern) => Some(MatchKind::Substitution),
+        Some(MatchKind::Substitution) => Some(MatchKind::Metric),
+        Some(MatchKind::Metric) => Some(MatchKind::Structure),
+        Some(MatchKind::Structure) => Some(MatchKind::Capitalization),
+        Some(MatchKind::Capitalization) => Some(MatchKind::Vocabulary),
+        Some(MatchKind::Vocabulary) => Some(MatchKind::Judgement),
+        Some(MatchKind::Judgement) => None,
     }
 }
 
-const ALL: [MatchKind; 8] = [
-    MatchKind::Tokens,
-    MatchKind::Pattern,
-    MatchKind::Substitution,
-    MatchKind::Metric,
-    MatchKind::Structure,
-    MatchKind::Capitalization,
-    MatchKind::Vocabulary,
-    MatchKind::Judgement,
-];
+fn all_kinds() -> impl Iterator<Item = MatchKind> {
+    std::iter::successors(next(None), |k| next(Some(*k)))
+}
 
 fn per_document() -> Settings {
     let mut settings = Settings::new(
@@ -152,16 +147,9 @@ fn entries(engine: &Engine, kind: MatchKind, genre: &str, body: &str) -> usize {
 }
 
 #[test]
-fn every_kind_is_listed() {
-    let mut ordinals: Vec<usize> = ALL.iter().map(|k| ordinal(*k)).collect();
-    ordinals.sort_unstable();
-    assert_eq!(ordinals, (0..ALL.len()).collect::<Vec<_>>());
-}
-
-#[test]
 fn a_rule_the_genre_excludes_does_no_matcher_work_for_any_kind() {
     let mut wrong = Vec::new();
-    for kind in ALL {
+    for kind in all_kinds() {
         for (n, f) in fixtures(kind).into_iter().enumerate() {
             let mut limited = f.rule.clone();
             limited["applies_to"] = json!({"genres": ["reference"]});
