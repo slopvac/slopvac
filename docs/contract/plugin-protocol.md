@@ -160,7 +160,7 @@ A segment from an extractor keeps the span of the source it came from. When the 
 
 ### 5.5 Binary extraction
 
-The `binary-extractor` kind reads a file that is not UTF-8 text and returns its prose as segments. Bead `slopvac-8l4.2.27` owns the binary extraction contract. Sections 5.5.1 to 5.5.5 hold for every binary extractor, wherever it runs. First-party extractors run inside the host through a native adapter, and plugins run through the wire adapter. Both adapters pass extractor output through one shared validator (`slopvac-8l4.20.1`). The shared validator reports a failure as `extract-output-invalid` for the output of a first-party (built-in) extractor only. Output from a third-party plugin keeps `plugin-output-invalid`. Both are host-only codes in section 10 with no numeric code, and the two never share a meaning. Below, `plugin-output-invalid` stands for both. Section 5.5.6 applies to the wire only. The conformance suite also runs the first-party extractors through the wire adapter.
+The `binary-extractor` kind reads a file that is not UTF-8 text and returns its prose as segments. This contract covers binary extraction. Sections 5.5.1 to 5.5.5 hold for every binary extractor, wherever it runs. First-party extractors run inside the host through a native adapter, and plugins run through the wire adapter. Both adapters pass extractor output through one shared validator. The shared validator reports a failure as `extract-output-invalid` for the output of a first-party (built-in) extractor only. Output from a third-party plugin keeps `plugin-output-invalid`. Both are host-only codes in section 10 with no numeric code, and the two never share a meaning. Below, `plugin-output-invalid` stands for both. Section 5.5.6 applies to the wire only. The conformance suite also runs the first-party extractors through the wire adapter.
 
 #### 5.5.1 Formats and eligibility
 
@@ -181,7 +181,7 @@ The host sends a file to a binary extractor only under these rules:
 - Discovery selects only files of the listed formats, so it skips EPUB, PDF and every other format slopvac does not read. When the user names such a file explicitly, or names a file of a listed format that no enabled extractor reads, the host sends it to no extractor. It reports `input-unsupported`, `data.format` names the detected format, such as `epub`, `pdf` or a listed id, and the run exits 2. Routing and discovery stay with the CLI (`slopvac-8l4.20.13`).
 - The host sends a format only to a hook that declared it, and sends each document to one binary extractor only.
 - A plugin or other reader that receives a format id it does not know treats the document as unsupported. It declines that document with the per-document error -32008 `binary-input-declined` and `data.reason` `unknown-format`, answers the other documents, and does not fail the request. The host adds `binary-input-declined` to that document's `unchecked`, and the run exits 2. The vectors in [`binary-unknown-format.json`](../../schemas/v3/conformance/plugin-protocol/binary-unknown-format.json) show the rule.
-- No hook wins a format by default, because load order and pack order carry no intent. When two or more enabled hooks list a format, built-in extractors included, a mapping in the user's config picks one, such as `[formats] pptx = "<pack>:<hook>"`. `slopvac-8l4.2` fixes the key name. Without a mapping, the host sends files of that format to no extractor. It reports `binary-format-ambiguous`, names every hook that claims the format and the config key that resolves it, and the run exits 2.
+- No hook wins a format by default, because load order and pack order carry no intent. When two or more enabled hooks list a format, built-in extractors included, a mapping in the user's config picks one, such as `[formats] pptx = "<pack>:<hook>"`. The config contract fixes the key name. Without a mapping, the host sends files of that format to no extractor. It reports `binary-format-ambiguous`, names every hook that claims the format and the config key that resolves it, and the run exits 2.
 - Standard input is never a binary document in 3.0.
 
 #### 5.5.2 Request
@@ -208,7 +208,7 @@ The span is a [`BinarySpan`](../../schemas/v3/plugin-protocol.schema.json#/$defs
 - The common `Span` is closed and requires character boundaries. A binary span indexes raw bytes, so it has no boundary rule, and it is an open object like every protocol message (section 9).
 - `start` is at most `end`, and `end` is at most `byte_length`. The host checks both bounds, and a breach is `plugin-output-invalid`.
 - The span is the smallest range the extractor can name that holds the source. For a stored entry, that is the bytes of the text. For a deflated entry or a compressed chunk, it is the whole compressed data. Two or more segments may share one span, and spans may overlap.
-- The span is provenance only. Matching, contexts, exclusions, fingerprints and rendered positions use byte offsets into `text`. A finding shows the locator and a line and column inside the segment, never a position in the container. Positions belong to `slopvac-8l4.2.28`, and the finding's `origin` belongs to `slopvac-8l4.2.29`.
+- The span is provenance only. Matching, contexts, exclusions, fingerprints and rendered positions use byte offsets into `text`. A finding shows the locator and a line and column inside the segment, never a position in the container. Positions follow the positions contract, and the finding's `origin` follows the lint-report contract.
 
 Identity and order follow these rules:
 
@@ -270,7 +270,7 @@ An extractor that reaches an output budget reports `extract-budget` itself. When
 
 The 30 s hook timeout of section 6.3 also applies, and its expiry is `plugin-timeout`. A first-party extractor checks its deadline between parts, so the check is cooperative.
 
-Plugin output also counts against the whole-run plugin budget (`slopvac-8l4.9.33`). Every host read of a binary file has a bound. The wire adapter reads under section 5.5.6, and the native adapter reads at most its input limit plus one byte. The first-party input limit of 256 MiB and the limits for ZIP containers, XML and PNG chunks belong to the threat model (`slopvac-8l4.2.30`).
+Plugin output also counts against the whole-run plugin budget. Every host read of a binary file has a bound. The wire adapter reads under section 5.5.6, and the native adapter reads at most its input limit plus one byte. The first-party input limit of 256 MiB and the limits for ZIP containers, XML and PNG chunks belong to the threat model.
 
 #### 5.5.6 Frames on the wire
 
@@ -347,7 +347,7 @@ Only recipes return paths. Each is relative to the project root with the same re
 - A reader ignores a field it does not know, in every message and at every depth. It may log the field at debug level.
 - A key with the prefix `x-` is ignored everywhere. Its meaning stays undefined. A plugin or host may use one for private data.
 - The schema leaves `additionalProperties` open on every protocol message. This differs from user-written files, where an unknown key is an error (policies.md section 3.3).
-- A reader ignores an enum value it does not know only where the schema marks the enum as extensible. In v1 those are hook kinds, feature names, segment roles, binary format ids and binary budget names (section 5.5). The schema marks an extensible enum with `x-slopvac-extensible: true` (bead `slopvac-8l4.2.61`), and `BinaryFormat` and `BinaryBudget` carry it. Closed enums such as `task`, `action` and `severity` stay closed, so a new value needs a new protocol version.
+- A reader ignores an enum value it does not know only where the schema marks the enum as extensible. In v1 those are hook kinds, feature names, segment roles, binary format ids and binary budget names (section 5.5). The schema marks an extensible enum with `x-slopvac-extensible: true`, and `BinaryFormat` and `BinaryBudget` carry it. Closed enums such as `task`, `action` and `severity` stay closed, so a new value needs a new protocol version.
 - A required field that is missing or has the wrong type makes the message invalid, however lenient the rest of the rules are.
 - Additive changes within version 1 are: a new optional field, a new hook kind, a new feature, a new optional notification. Everything else needs version 2.
 
@@ -538,6 +538,6 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | Threat model and review | `slopvac-8l4.9.11` |
 | Config keys for timeouts and the provider | `slopvac-8l4.4.2` |
 | Pack manifest embeds `PluginDeclaration` | `slopvac-8l4.2.4` |
-| Binary extraction contract (section 5.5) | `slopvac-8l4.2.27` |
-| Shared binary extraction types and validator | `slopvac-8l4.20.1` |
-| Wire adapter for `binary-extractor/extract`, and the Python SDK `binary-extractor` decorator | `slopvac-8l4.20.3` |
+| Binary extraction contract (section 5.5) | This document |
+| Shared binary extraction types and validator | The shared extraction crate |
+| Wire adapter for `binary-extractor/extract`, and the Python SDK `binary-extractor` decorator | The wire adapter and the Python SDK |

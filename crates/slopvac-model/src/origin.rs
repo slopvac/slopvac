@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Longest locator, in code points.
-const LOCATOR_MAX_CHARS: usize = 512;
+const LOCATOR_MAX_CHARS: usize = 3072;
 /// Longest label, in code points.
 const LABEL_MAX_CHARS: usize = 256;
 /// Longest segment id, in characters.
@@ -210,7 +210,7 @@ checked_string!(
     json_schema!({
         "type": "string",
         "minLength": 1,
-        "maxLength": 512,
+        "maxLength": 3072,
         "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])"
     })
 );

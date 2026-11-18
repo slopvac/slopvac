@@ -179,7 +179,7 @@
       "description": "Where a finding sits in a container document such as a Word file or a diagram: the extracted text segment that holds the match. Present only for findings in extracted segments, and never together with `fix`. See docs/contract/lint-report.md for escaping, uniqueness, length and stability.",
       "type": "object",
       "properties": {
-        "locator": {"description": "Percent-escaped locator, unique per segment within the document. Opaque: a consumer compares it byte for byte and never parses it.", "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])"},
+        "locator": {"description": "Percent-escaped locator, unique per segment within the document. Opaque: a consumer compares it byte for byte and never parses it.", "type": "string", "minLength": 1, "maxLength": 3072, "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])"},
         "label": {"description": "Display name of the segment. Never an identity.", "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])"},
         "segment": {"description": "Segment id, unique within the document.", "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])"},
         "range": {"$ref": "#/$defs/SegmentRange"}
