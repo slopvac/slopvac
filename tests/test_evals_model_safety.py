@@ -690,6 +690,10 @@ def test_redaction_removes_paths_and_tokens(raw, gone):
         ("Authorization: Bearer shorttok", "shorttok"),
         ("{'password': 'pw1'}", "pw1"),
         ("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI", "wJalrXUtnFEMI"),
+        ("id_token=eyJabc12", "eyJabc12"),
+        ("refresh_token: r3fr3sh", "r3fr3sh"),
+        ("api_key = k3y9", "k3y9"),
+        ("client_secret=cs77", "cs77"),
     ],
     ids=[
         "quoted-token",
@@ -700,6 +704,10 @@ def test_redaction_removes_paths_and_tokens(raw, gone):
         "short-bearer",
         "single-quotes",
         "secret-access-key",
+        "id-token",
+        "refresh-token",
+        "api-key",
+        "client-secret",
     ],
 )
 def test_redaction_removes_short_and_quoted_structured_credentials(raw, gone):
@@ -710,6 +718,12 @@ def test_redaction_removes_short_and_quoted_structured_credentials(raw, gone):
 @pytest.mark.parametrize(
     "text",
     [
+        "max_tokens = 4096",
+        '{"max_tokens": 4096, "temperature": 0}',
+        "Set max_tokens: 4096 and the token budget to 63.",
+        "token_budget: 63",
+        "tokens: 63",
+        "completion_tokens=1200 prompt_tokens=88",
         "Rewrite the paragraph so the token budget is explicit.",
         "The password policy requires 12 characters; see /Users/docs/policy.md.",
         "Use `max_retries` 3 times, then fail. Secret sauce is optional.",

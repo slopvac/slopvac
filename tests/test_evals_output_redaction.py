@@ -102,6 +102,7 @@ def test_a_successful_twin_is_returned_without_credentials():
     "answer",
     [
         "Cache 40 items now. Use `max_retries` 3 times.",
+        "Set max_tokens = 4096 and a token budget of 63.",
         "The token budget is 63.\nSecret sauce stays optional.",
         "See /Users/docs/policy.md for a 40-character-long-identifier-name-here.",
     ],

@@ -208,15 +208,19 @@ def _feed(proc: subprocess.Popen, text: str) -> None:
         pass
 
 
-CREDENTIAL_NAME = (
-    r"[A-Za-z0-9_.-]*?(?:secret|token|password|passwd|api[_-]?key|access[_-]?key"
-    r"|authorization|credential)[A-Za-z0-9_.-]*"
+_CREDENTIAL_WORD = (
+    r"(?:token|secret|password|passwd|api[_-]?key|secret[_-]?(?:access[_-]?)?key"
+    r"|access[_-]?key|private[_-]?key|client[_-]?secret|authorization|credentials?)"
 )
+# A name is dash, dot or underscore separated words that end in a credential word
+# (`access_token`, `AWS_SECRET_ACCESS_KEY`). The word must end the name, so
+# `max_tokens` and `token_budget` are ordinary settings, not secrets.
+CREDENTIAL_NAME = rf"(?:[A-Za-z0-9]+[_.-])*{_CREDENTIAL_WORD}(?![A-Za-z0-9_-])"
 # `name = value` or `"name": "value"`, with the quotes and spacing of JSON, env files
 # and headers. The value is a quoted string, an auth scheme and its token, or a bare
 # run up to a delimiter, however short.
 STRUCTURED_RE = re.compile(
-    rf"""(?ix)(["']?)\b({CREDENTIAL_NAME})\1\s*[:=]\s*
+    rf"""(?ix)(["']?)(?<![A-Za-z0-9_])({CREDENTIAL_NAME})\1\s*[:=]\s*
     (?:"[^"\n]*"|'[^'\n]*'|(?:bearer|basic)\s+[^\s,;&}}\]"']+|[^\s,;&}}\]"']+)"""
 )
 PEM_RE = re.compile(
