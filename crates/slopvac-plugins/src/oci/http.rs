@@ -1,12 +1,21 @@
 //! Redirect-aware HTTP on top of `ureq`.
 
+use std::fmt;
+use std::io;
 use std::net::IpAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use ureq::config::Config;
 use ureq::http::{Request, Response, Uri};
-use ureq::tls::{RootCerts, TlsConfig};
-use ureq::{Agent, Body};
+use ureq::tls::{Certificate, RootCerts, TlsConfig};
+use ureq::unversioned::resolver::DefaultResolver;
+use ureq::unversioned::transport::{
+    Buffers, ConnectProxyConnector, ConnectionDetails, Connector, Either, NextTimeout,
+    RustlsConnector, TcpConnector, Transport as WireIo,
+};
+use ureq::{Agent, Body, Proxy};
 
 use super::{MAX_REDIRECTS, OciError, redact_url};
 
@@ -28,14 +37,217 @@ impl Default for Timeouts {
     }
 }
 
+/// Raw bytes one hop of an exchange may take besides the body: response
+/// headers (ureq limits them to 64 KiB), a TLS handshake with a certificate
+/// chain, session tickets and a proxy's `CONNECT` reply.
+const HOP_ALLOWANCE: u64 = 192 << 10;
+
+/// Raw bytes allowed on the socket for a response body of at most `body_max`
+/// bytes: the body, TLS record and chunk framing at one part in 64 (records and
+/// chunks of 4 KiB or more stay below it), and the allowance of the first hop.
+/// Each redirect followed adds [`HOP_ALLOWANCE`] ([`WireMeter::allow_hop`]).
+fn wire_cap(body_max: u64) -> u64 {
+    body_max
+        .saturating_add(body_max / 64)
+        .saturating_add(HOP_ALLOWANCE)
+}
+
+/// Bytes received from one registry exchange, below TLS and any proxy.
+///
+/// Body limits count decoded bytes only. This counts every byte read from the
+/// TCP socket, so TLS records and handshakes, status lines, headers, chunk
+/// framing and trailers count too, and a read that fails still has its bytes
+/// charged. A response that passes the cap stops the connection.
+///
+/// [`Transport::send`] stores the meter in the response extensions as an
+/// `Arc<WireMeter>`, so callers can charge [`WireMeter::used`] to a budget
+/// shared by several responses.
+#[derive(Debug)]
+pub(crate) struct WireMeter {
+    used: AtomicU64,
+    cap: AtomicU64,
+}
+
+impl WireMeter {
+    fn new(cap: u64) -> Self {
+        Self {
+            used: AtomicU64::new(0),
+            cap: AtomicU64::new(cap),
+        }
+    }
+
+    /// Raw bytes read so far, failed reads included.
+    pub(crate) fn used(&self) -> u64 {
+        self.used.load(Ordering::Relaxed)
+    }
+
+    fn charge(&self, n: u64) {
+        self.used.fetch_add(n, Ordering::Relaxed);
+    }
+
+    fn cap(&self) -> u64 {
+        self.cap.load(Ordering::Relaxed)
+    }
+
+    /// Room for the connection and headers of one more redirect hop.
+    fn allow_hop(&self) {
+        self.cap.fetch_add(HOP_ALLOWANCE, Ordering::Relaxed);
+    }
+
+    fn exceeded(&self) -> bool {
+        self.used() > self.cap()
+    }
+}
+
+/// Raw bytes read so far for the exchange that produced `resp`, headers,
+/// handshakes and trailers included, and the bytes of every redirect hop and
+/// failed read. Zero for a response that did not come from [`Transport::send`].
+pub(crate) fn wire_bytes_used<T>(resp: &Response<T>) -> u64 {
+    resp.extensions()
+        .get::<Arc<WireMeter>>()
+        .map_or(0, |m| m.used())
+}
+
+/// The I/O error a [`WireMeter`] raises past its cap.
+#[derive(Debug)]
+struct WireLimit {
+    limit: u64,
+}
+
+impl fmt::Display for WireLimit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "response exceeds {} bytes on the wire", self.limit)
+    }
+}
+
+impl std::error::Error for WireLimit {}
+
+/// The [`OciError`] for a failed read of `url`: [`OciError::TooLarge`] when the
+/// wire cap stopped it, otherwise a network error.
+pub(crate) fn read_error(url: &str, e: &io::Error) -> OciError {
+    if let Some(WireLimit { limit }) = e.get_ref().and_then(|i| i.downcast_ref::<WireLimit>()) {
+        return OciError::TooLarge {
+            what: "response".into(),
+            limit: *limit,
+        };
+    }
+    OciError::Network {
+        url: url.to_owned(),
+        message: e.to_string(),
+    }
+}
+
+/// [`TcpConnector`] that meters the socket it opens.
+///
+/// The `CONNECT` proxy connector runs the whole chain again for its own leg and
+/// hands the result down as `chained`. That leg is already metered, and so is
+/// every byte of the tunnel it carries, so a chained transport passes through
+/// and each socket is metered once.
+struct MeterTcp {
+    tcp: TcpConnector,
+    meter: Arc<WireMeter>,
+}
+
+impl fmt::Debug for MeterTcp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MeterTcp").finish_non_exhaustive()
+    }
+}
+
+impl<In: WireIo> Connector<In> for MeterTcp {
+    type Out = Either<In, Metered>;
+
+    fn connect(
+        &self,
+        details: &ConnectionDetails<'_>,
+        chained: Option<In>,
+    ) -> Result<Option<Self::Out>, ureq::Error> {
+        if chained.is_some() {
+            return Ok(chained.map(Either::A));
+        }
+        Ok(self
+            .tcp
+            .connect(details, None::<In>)?
+            .map(|opened| match opened {
+                Either::A(other) => Either::A(other),
+                Either::B(socket) => Either::B(Metered {
+                    inner: Box::new(socket),
+                    meter: Arc::clone(&self.meter),
+                }),
+            }))
+    }
+}
+
+#[derive(Debug)]
+struct Metered {
+    inner: Box<dyn WireIo>,
+    meter: Arc<WireMeter>,
+}
+
+impl Metered {
+    fn check(&self) -> Result<(), ureq::Error> {
+        if self.meter.exceeded() {
+            let limit = self.meter.cap();
+            return Err(ureq::Error::Io(io::Error::other(WireLimit { limit })));
+        }
+        Ok(())
+    }
+}
+
+impl WireIo for Metered {
+    fn buffers(&mut self) -> &mut dyn Buffers {
+        self.inner.buffers()
+    }
+
+    fn transmit_output(&mut self, amount: usize, timeout: NextTimeout) -> Result<(), ureq::Error> {
+        self.inner.transmit_output(amount, timeout)
+    }
+
+    fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {
+        self.check()?;
+        // The decoder consumes input only between reads, so the growth of the
+        // unconsumed input is exactly what this read added.
+        let before = self.inner.buffers().input().len();
+        let progress = self.inner.await_input(timeout);
+        let after = self.inner.buffers().input().len();
+        self.meter.charge(after.saturating_sub(before) as u64);
+        let progress = progress?;
+        self.check()?;
+        Ok(progress)
+    }
+
+    fn is_open(&mut self) -> bool {
+        self.inner.is_open()
+    }
+
+    fn is_tls(&self) -> bool {
+        self.inner.is_tls()
+    }
+}
+
+/// Settings only tests use: a trusted root for a local HTTPS registry and a
+/// `CONNECT` proxy. Production transports use the platform roots and the
+/// proxy settings of the environment.
+#[derive(Clone, Default)]
+pub(crate) struct TestNet {
+    /// DER certificate to trust instead of the platform roots.
+    pub root: Option<Vec<u8>>,
+    /// Proxy URL, such as `http://127.0.0.1:3128`.
+    pub proxy: Option<String>,
+}
+
 pub(crate) struct Transport {
-    agent: Agent,
+    config: Config,
     allow_loopback_http: bool,
 }
 
+#[derive(Clone)]
 pub(crate) struct Req<'a> {
     pub method: &'static str,
     pub url: String,
+    /// Most decoded body bytes the caller will read; the raw bytes of the
+    /// exchange are capped relative to it.
+    pub max_body: u64,
     pub headers: Vec<(&'static str, String)>,
     /// Full `Authorization` header value, sent only to the first host.
     pub authorization: Option<String>,
@@ -169,11 +381,29 @@ pub(crate) fn resolve(base: &str, reference: &str) -> Option<String> {
 impl Transport {
     /// `allow_loopback_http` is set only by the test-only client constructor;
     /// production transports refuse every `http://` URL, redirects included.
+    #[cfg(test)]
     pub(crate) fn new(allow_loopback_http: bool, timeouts: Timeouts) -> Self {
-        let tls = TlsConfig::builder()
-            .root_certs(RootCerts::PlatformVerifier)
-            .build();
-        let config = Config::builder()
+        Self::with_test_net(allow_loopback_http, timeouts, &TestNet::default())
+    }
+
+    /// A transport with the test settings of `net`.
+    pub(crate) fn with_test_net(
+        allow_loopback_http: bool,
+        timeouts: Timeouts,
+        net: &TestNet,
+    ) -> Self {
+        let roots = net
+            .root
+            .as_ref()
+            .map_or(RootCerts::PlatformVerifier, |der| {
+                RootCerts::new_with_certs(&[Certificate::from_der(der).to_owned()])
+            });
+        let tls = TlsConfig::builder().root_certs(roots).build();
+        let mut builder = Config::builder();
+        if let Some(proxy) = &net.proxy {
+            builder = builder.proxy(Some(Proxy::new(proxy).expect("a proxy URL")));
+        }
+        let config = builder
             .http_status_as_error(false)
             .max_redirects(0)
             .max_redirects_will_error(false)
@@ -186,7 +416,7 @@ impl Transport {
             .user_agent(concat!("slopvac/", env!("CARGO_PKG_VERSION")))
             .build();
         Self {
-            agent: config.into(),
+            config,
             allow_loopback_http,
         }
     }
@@ -207,6 +437,22 @@ impl Transport {
         let mut url = req.url.clone();
         let mut auth = req.authorization.clone();
         let mut hops = 0;
+        // One meter and one agent per exchange: the wire cap is per response,
+        // and a pooled connection would carry it into the next request. The
+        // price is a new connection, and a TLS handshake, for every request.
+        let meter = Arc::new(WireMeter::new(wire_cap(req.max_body)));
+        let agent = Agent::with_parts(
+            self.config.clone(),
+            // The default chain minus SOCKS (not built), with the socket metered
+            // below TLS and below a `CONNECT` proxy.
+            ().chain(ConnectProxyConnector::default())
+                .chain(MeterTcp {
+                    tcp: TcpConnector::default(),
+                    meter: Arc::clone(&meter),
+                })
+                .chain(RustlsConnector::default()),
+            DefaultResolver::default(),
+        );
         loop {
             if !url_allowed(&url, self.allow_loopback_http) {
                 return Err(OciError::InsecureUrl(redact_url(&url)));
@@ -221,10 +467,14 @@ impl Transport {
             let request = b
                 .body(req.body.map(<[u8]>::to_vec).unwrap_or_default())
                 .map_err(|e| OciError::Invalid(format!("request for {}: {e}", redact_url(&url))))?;
-            let resp = self.agent.run(request).map_err(|e| OciError::Network {
-                url: redact_url(&url),
-                message: e.to_string(),
+            let mut resp = agent.run(request).map_err(|e| match e {
+                ureq::Error::Io(e) => read_error(&redact_url(&url), &e),
+                e => OciError::Network {
+                    url: redact_url(&url),
+                    message: e.to_string(),
+                },
             })?;
+            resp.extensions_mut().insert(Arc::clone(&meter));
             let status = resp.status().as_u16();
             if !matches!(status, 301 | 302 | 303 | 307 | 308) {
                 return Ok(resp);
@@ -232,11 +482,13 @@ impl Transport {
             let bad = |why: &str| OciError::BadRedirect {
                 url: redact_url(&url),
                 why: why.to_owned(),
+                wire_bytes: meter.used(),
             };
             if !matches!(req.method, "GET" | "HEAD") {
                 return Err(bad("redirect on a request that is not GET or HEAD"));
             }
             hops += 1;
+            meter.allow_hop();
             if hops > MAX_REDIRECTS {
                 return Err(bad("more than 5 redirects"));
             }

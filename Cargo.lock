@@ -2653,6 +2653,7 @@ dependencies = [
  "minisign",
  "minisign-verify",
  "rustix",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
