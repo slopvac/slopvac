@@ -25,6 +25,8 @@ mod walk;
 
 use std::fmt;
 
+use slopvac_config::Code;
+
 pub use cli::{CliFailure, command, execute, run};
 pub use config::{Rewrite, migrate_config};
 pub use directives::{Found, RemovedId, UnknownId, rewrite_directives};
@@ -204,8 +206,8 @@ impl Error {
             Self::OverrideOverlap { .. } => "migrate-override-overlap",
             Self::RenameTable(_) => "migrate-rename-table",
             Self::Lint(_) => "migrate-lint-failed",
-            Self::DocumentTooLarge { .. } => "document-too-large",
-            Self::ConfigTooLarge { .. } => "config-too-large",
+            Self::DocumentTooLarge { .. } => Code::DocumentTooLarge.as_str(),
+            Self::ConfigTooLarge { .. } => Code::TooLarge.as_str(),
             Self::RunLimit { .. } => "migrate-run-limit",
             Self::NotUtf8 { .. } => "migrate-not-utf8",
             Self::Io { .. } | Self::Read { .. } => "migrate-io-failed",

@@ -3,15 +3,9 @@
 use std::fs::File;
 use std::path::Path;
 
+use slopvac_config::{MAX_CONFIG_BYTES, MAX_DOCUMENT_BYTES};
+
 use crate::Error;
-
-// TODO(8l4.21.8): replace with slopvac_config re-export from #533
-/// Largest config file migrate reads: 1 MiB (`config-too-large`).
-pub(crate) const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
-
-// TODO(8l4.21.8): replace with slopvac_config re-export from #533
-/// Largest document migrate reads: 64 MiB (`document-too-large`).
-pub(crate) const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Ceilings on one migrate run, on top of the per-file caps.
 ///
