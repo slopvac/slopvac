@@ -436,12 +436,6 @@ jobs:
         # The release signing tests run the real binary; the script checks its sha256.
         run: bash scripts/install_minisign.sh
 
-      - name: Install ast-grep
-        run: |
-          set -euo pipefail
-          python3 -m pip install --quiet ast-grep-cli==0.45.3
-          ast-grep --version
-
       - name: Install package and test dependencies
         # docutils is pinned for the RST sample of the golden suite (tests/golden/v3).
         run: python3 -m pip install --quiet -e "./packages/slopvac-lint[dev]" "docutils==0.23"
