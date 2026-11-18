@@ -17,3 +17,5 @@
 "nb-april-31.toml" = "/packs/0/signature/not_before"
 "nb-hour-24.toml" = "/packs/0/signature/not_before"
 "nb-minute-60.toml" = "/packs/0/signature/not_before"
+"kind-plugin-retired.toml" = "/packs/0/kind"
+"id-core.toml" = "/packs/0/id"

@@ -27,7 +27,7 @@ const TABLES: [&str; 8] = [
     "review",
 ];
 /// Arrays of tables.
-const ARRAYS: [&str; 4] = ["packs", "plugins", "genres", "overrides"];
+const ARRAYS: [&str; 3] = ["plugins", "genres", "overrides"];
 /// Keys the template sets for real.
 const ACTIVE: [(&str, &str); 2] = [("schema_version", "3"), ("profile", "\"normal\"")];
 /// Names tried, in order, for a string with a `pattern`. The first one that matches wins.

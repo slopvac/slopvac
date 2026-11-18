@@ -21,7 +21,7 @@
       "name": "Acme style",
       "description": "House style for Acme docs.",
       "version": "0.3.1-rc.1",
-      "kind": "plugin",
+      "kind": "code",
       "slopvac_api": 2,
       "source": "git+https://github.com/beta/lint-bridge@0123456789abcdef0123456789abcdef01234567",
       "publisher_key": {

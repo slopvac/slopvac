@@ -16,7 +16,7 @@
     "lockfile": {"file": ".slopvac/packs.lock", "status": "ok", "error": null},
     "items": [
       {"id": "acme.style", "version": "1.2.0", "kind": "data", "state": "recorded"},
-      {"id": "acme.tagger", "version": "0.4.1", "kind": "plugin", "state": "tampered"}
+      {"id": "acme.tagger", "version": "0.4.1", "kind": "code", "state": "tampered"}
     ]
   },
   "trust": {

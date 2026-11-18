@@ -9,3 +9,4 @@
 "update-disabled-by-unknown.json" = "/update/disabled_by"
 "offline-source-repeated.json" = "/offline/sources"
 "directory-missing-source.json" = "/directories/cache"
+"pack-kind-plugin-retired.json" = "/packs/items/1/kind"

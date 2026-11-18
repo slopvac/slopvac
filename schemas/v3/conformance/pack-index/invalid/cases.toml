@@ -25,3 +25,6 @@
 "source-too-long.json" = "/packs/0/source"
 "api-over-u32.json" = "/packs/0/slopvac_api"
 "version-number-too-large.json" = "/packs/0/version"
+"kind-plugin-retired.json" = "/packs/0/kind"
+"namespace-core.json" = "/packs/0/namespace"
+"id-core.json" = "/packs/0/id"

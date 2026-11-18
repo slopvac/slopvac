@@ -2,7 +2,7 @@ schema_version = 3
 id = "ok-x"
 version = "0.3.1"
 slopvac_api = 1
-kind = "plugin"
+kind = "code"
 
 [plugin]
 command = "bin/x"

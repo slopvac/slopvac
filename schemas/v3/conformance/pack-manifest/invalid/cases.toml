@@ -17,3 +17,5 @@
 "provides-drive-letter.toml" = "/provides/styles/0"
 "provides-backslash.toml" = "/provides/styles/0"
 "blocklists-traversal.toml" = "/provides/blocklists/0"
+"kind-plugin-retired.toml" = "/kind"
+"id-core.toml" = "/id"

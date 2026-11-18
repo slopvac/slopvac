@@ -56,6 +56,8 @@ pub enum Shape {
         min_items: usize,
         /// Whether items must differ.
         unique: bool,
+        /// A key of table items that must differ between items, such as `id`.
+        unique_key: Option<&'static str>,
     },
     /// A closed table.
     Table(TableShape),
@@ -93,7 +95,6 @@ const PROJECT_WIDE: &[&str] = &[
     "guidance",
     "network",
     "review",
-    "packs",
     "plugins",
     "styles",
     "extends",
@@ -134,6 +135,7 @@ fn list(item: Shape) -> Shape {
         item: Box::new(item),
         min_items: 0,
         unique: false,
+        unique_key: None,
     }
 }
 
@@ -169,6 +171,20 @@ fn pack_id() -> Shape {
     Shape::Pattern {
         name: "pack id (lowercase letters, digits and hyphens)",
         check: is_pack_id,
+    }
+}
+
+/// The id of the built-in plugin. It is compiled into the binary, so no config entry may name it.
+const BUILT_IN_PLUGIN: &str = "core";
+
+fn is_plugin_id(s: &str) -> bool {
+    is_pack_id(s) && s != BUILT_IN_PLUGIN
+}
+
+fn plugin_id() -> Shape {
+    Shape::Pattern {
+        name: "plugin id (lowercase letters, digits and hyphens; `core` is reserved for the built-in plugin)",
+        check: is_plugin_id,
     }
 }
 
@@ -302,13 +318,14 @@ fn files() -> Shape {
         item: Box::new(Shape::NonEmptyStr),
         min_items: 1,
         unique: false,
+        unique_key: None,
     }
 }
 
 fn source() -> Shape {
     table(
         vec![
-            ("id", pack_id()),
+            ("id", plugin_id()),
             ("source", Shape::NonEmptyStr),
             ("version", Shape::NonEmptyStr),
         ],
@@ -331,8 +348,15 @@ pub fn config_shape() -> Shape {
             ("extends", strings()),
             ("styles", list(reference())),
             ("exclude", strings()),
-            ("packs", list(source())),
-            ("plugins", list(source())),
+            (
+                "plugins",
+                Shape::List {
+                    item: Box::new(source()),
+                    min_items: 0,
+                    unique: false,
+                    unique_key: Some("id"),
+                },
+            ),
             (
                 "genres",
                 list(scoped("a genre block", genre_fields, &["genre", "files"])),
@@ -348,6 +372,7 @@ pub fn config_shape() -> Shape {
                                 item: Box::new(choice(SETTINGS_KEYS)),
                                 min_items: 0,
                                 unique: true,
+                                unique_key: None,
                             },
                         ),
                     ],
@@ -420,6 +445,7 @@ pub fn style_shape() -> Shape {
                     item: Box::new(reference()),
                     min_items: 0,
                     unique: true,
+                    unique_key: None,
                 },
             ),
             (
@@ -428,6 +454,7 @@ pub fn style_shape() -> Shape {
                     item: Box::new(reference()),
                     min_items: 0,
                     unique: true,
+                    unique_key: None,
                 },
             ),
             ("categories", keyed(category_settings())),
@@ -624,7 +651,8 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
             item,
             min_items,
             unique,
-        } => check_list(ctx, node, item, *min_items, *unique, path),
+            unique_key,
+        } => check_list(ctx, node, item, *min_items, (*unique, *unique_key), path),
         Shape::Table(t) => check_table(ctx, node, t, path),
         Shape::Map {
             key,
@@ -741,7 +769,7 @@ fn check_list(
     node: &Node,
     item: &Shape,
     min_items: usize,
-    unique: bool,
+    (unique, unique_key): (bool, Option<&'static str>),
     path: &[String],
 ) {
     let Value::Array(items) = &node.value else {
@@ -768,6 +796,27 @@ fn check_list(
                 None,
             );
         }
+        if let Some(key) = unique_key {
+            check_unique_key(ctx, &items[..i], it, key, &child(path, &i.to_string()));
+        }
+    }
+}
+
+/// Flags `item` when an earlier item holds the same string under `key`.
+fn check_unique_key(ctx: &mut Ctx<'_>, earlier: &[Node], item: &Node, key: &str, path: &[String]) {
+    let Some(value) = item.get(key) else { return };
+    let Some(text) = value.as_str() else { return };
+    if earlier
+        .iter()
+        .any(|prev| prev.get(key).and_then(Node::as_str) == Some(text))
+    {
+        ctx.value_error(
+            value,
+            &child(path, key),
+            format!("`{text}` is listed more than once; each `{key}` appears once"),
+            "repeated",
+            Some(format!("remove the repeated `{key}`, or merge the entries")),
+        );
     }
 }
 

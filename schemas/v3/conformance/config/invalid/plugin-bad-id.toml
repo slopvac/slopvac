@@ -1,5 +1,5 @@
 schema_version = 3
 
-[[packs]]
+[[plugins]]
 id = "Acme"
 source = "oci://ghcr.io/acme/p"

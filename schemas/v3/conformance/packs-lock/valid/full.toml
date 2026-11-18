@@ -15,7 +15,7 @@ not_before = "2026-11-01T00:00:00Z"
 
 [[packs]]
 id = "acme-tagger"
-kind = "plugin"
+kind = "code"
 version = "0.3.1"
 slopvac_api = 1
 source = "git+https://github.com/acme/tagger@0123456789abcdef0123456789abcdef01234567"
