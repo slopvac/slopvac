@@ -2754,6 +2754,7 @@ name = "slopvac-terms"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "rstest",
  "serde",
  "serde-saphyr",
  "serde_json",

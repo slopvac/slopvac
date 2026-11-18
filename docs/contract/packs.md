@@ -76,7 +76,15 @@ Casing has three modes:
 
 The two flags cannot combine. The project file `.slopvac/terms.toml` and the terms files from packs and styles merge. A term from the project file wins over a pack term with the same text.
 
-A blocklist file holds an `entries` list (`[[entries]]` in TOML) with `word`, `pos`, `reason` and an optional `replacement`. The loader trims `word` and folds it to lowercase, loads short forms of `pos` as their long form, and rejects a repeated word and part-of-speech pair. An entry with no reason is invalid. A style or config names blocklists under `terms.blocklists`.
+A blocklist file holds an `entries` list (`[[entries]]` in TOML) with `word`, `pos`, `reason` and an optional `replacement`. The loader trims `word` and folds it to lowercase. It rejects a repeated word and part-of-speech pair. An entry with no reason is invalid. A style or config names blocklists under `terms.blocklists`.
+
+The `pos` value is case-sensitive and matches exactly, with no trimming. It loads as its long form. These values are valid:
+
+- Short forms: `n`, `v`, `adj`, `adv`, `prep`, `conj`, `pron`, `art`.
+- Long forms: `noun`, `verb`, `adjective`, `adverb`, `preposition`, `conjunction`, `pronoun`, `article`.
+- spaCy tags: `NOUN`, `VERB`, `ADJ`, `ADV`, `ADP`, `CCONJ`, `SCONJ`, `PRON`, `DET`.
+
+Any other value, such as `Noun`, ` noun` or `adp`, is invalid.
 
 ## 7. Lockfile
 

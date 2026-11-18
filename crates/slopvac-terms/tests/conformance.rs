@@ -115,7 +115,7 @@ fn valid_terms_files_load_with_the_terms_they_declare() {
 /// Each invalid blocklist file and the part of the diagnostic that names its
 /// fault. `invalid/cases.toml` gives a JSON pointer per file; the loader reports
 /// the entry number and field in words, so the table pins the reason instead.
-const BLOCKLIST_REASONS: [(&str, &str); 9] = [
+const BLOCKLIST_REASONS: [(&str, &str); 13] = [
     ("no-version.toml", "missing `schema_version`"),
     ("wrong-table.toml", "no `entries` array; it defines `words`"),
     ("unknown-key.toml", "unknown key `entries[1].severity`"),
@@ -123,6 +123,10 @@ const BLOCKLIST_REASONS: [(&str, &str); 9] = [
     ("whitespace-word.toml", "entry 1 has no `word`"),
     ("no-pos.toml", "unrecognized `pos`"),
     ("bad-pos.toml", "unrecognized `pos`"),
+    ("pos-capitalised.toml", "unrecognized `pos`"),
+    ("pos-leading-space.toml", "unrecognized `pos`"),
+    ("pos-lowercase-adp.toml", "unrecognized `pos`"),
+    ("pos-trailing-newline.toml", "unrecognized `pos`"),
     ("no-reason.toml", "has no `reason`"),
     ("blank-reason.toml", "has no `reason`"),
 ];
