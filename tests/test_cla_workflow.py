@@ -22,7 +22,7 @@ CLA = yaml.load(
 )
 PHRASE = "I have read the CLA Document and I hereby sign the CLA"
 
-TOKEN = re.compile(r"\s*(\|\||&&|==|!=|\(|\)|,|'(?:[^']|'')*'|[A-Za-z_][\w.\-]*)")
+TOKEN = re.compile(r"\s*(\|\||&&|==|!=|!|\(|\)|,|'(?:[^']|'')*'|[A-Za-z_][\w.\-]*)")
 
 
 def tokens(expr: str) -> list[str]:
@@ -60,6 +60,12 @@ def evaluate(expr: str, ctx: dict) -> bool:
 
     def primary():
         tok = take()
+        if tok == "!":
+            return not primary()
+        if tok == "cancelled":
+            take("(")
+            take(")")
+            return ctx.get("cancelled", False)
         if tok == "(":
             value = disjunction()
             take(")")
@@ -196,6 +202,13 @@ def test_editing_an_unrelated_comment_does_not_start_the_job():
     assert not evaluate(JOB_IF, edit("LGTM, thanks", "LGTM"))
 
 
+RECHECK = next(
+    s
+    for s in CLA["jobs"]["CLA"]["steps"]
+    if s.get("name") == "Re-check the pull request after a sign comment changed"
+)
+
+
 def test_edits_and_deletions_re_run_the_pull_request_check():
     steps = {s.get("name"): s for s in CLA["jobs"]["CLA"]["steps"]}
     recheck = steps["Re-check the pull request after a sign comment changed"]
@@ -204,3 +217,69 @@ def test_edits_and_deletions_re_run_the_pull_request_check():
         ctx["github"]["event"]["action"] = action
         assert evaluate(recheck["if"], ctx) is expected, action
     assert set(CLA["on"]["issue_comment"]["types"]) == {"created", "edited", "deleted"}
+
+
+def test_the_re_check_runs_after_the_action_fails_but_not_after_a_cancel():
+    ctx = comment(PHRASE)
+    ctx["github"]["event"]["action"] = "deleted"
+    # A withdrawn signature fails the action; the re-check must still run.
+    assert evaluate(RECHECK["if"], ctx)
+    ctx["cancelled"] = True
+    assert not evaluate(RECHECK["if"], ctx)
+
+
+def test_comment_runs_queue_apart_from_pull_request_runs():
+    group = CLA["jobs"]["CLA"]["concurrency"]["group"]
+    assert "github.event_name" in group
+
+
+FAKE_GH = """#!/bin/sh
+# A stand-in for gh: answers the three calls the re-check step makes.
+echo "$*" >> "$GH_LOG"
+case "$*" in
+  "pr view 7 --repo slopvac/slopvac --json headRefOid --jq .headRefOid") echo abc123 ;;
+  "pr view 7 --repo slopvac/slopvac --json headRefName --jq .headRefName") echo feature/x ;;
+  api*) printf '%s' "$RUNS" | jq -r "$(echo "$*" | sed -n "s/.*--jq //p")" ;;
+  "run rerun "*) ;;
+  *) echo "unexpected gh call: $*" >&2; exit 1 ;;
+esac
+"""
+
+
+def run_recheck(tmp_path, runs: list[dict]) -> list[str]:
+    import json
+    import os
+    import subprocess
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text(FAKE_GH)
+    gh.chmod(0o755)
+    log = tmp_path / "gh.log"
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "GH_LOG": str(log),
+        "RUNS": json.dumps({"workflow_runs": runs}),
+        "REPO": "slopvac/slopvac",
+        "PR": "7",
+    }
+    subprocess.run(["bash", "-e", "-c", RECHECK["run"]], env=env, check=True)
+    return log.read_text().splitlines()
+
+
+def test_the_re_check_re_runs_the_run_for_the_pull_request_branch(tmp_path):
+    calls = run_recheck(
+        tmp_path,
+        [
+            {"id": 11, "head_branch": "other"},
+            {"id": 22, "head_branch": "feature/x"},
+        ],
+    )
+    assert calls[-1] == "run rerun 22 --repo slopvac/slopvac"
+
+
+def test_the_re_check_re_runs_nothing_without_a_matching_run(tmp_path):
+    calls = run_recheck(tmp_path, [{"id": 11, "head_branch": "other"}])
+    assert not any(c.startswith("run rerun") for c in calls)
