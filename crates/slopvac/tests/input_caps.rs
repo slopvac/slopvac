@@ -47,3 +47,21 @@ fn file_over_the_cap_is_refused() {
         .stderr(predicate::str::contains("document-too-large"))
         .stderr(predicate::str::contains("big.md"));
 }
+
+#[test]
+fn fifo_document_is_skipped_as_unreadable_without_blocking() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let made = std::process::Command::new("mkfifo")
+        .arg(dir.path().join("pipe.md"))
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success());
+    slopvac()
+        .current_dir(dir.path())
+        .timeout(std::time::Duration::from_secs(20))
+        .args(["lint", "pipe.md"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("input-unreadable"))
+        .stderr(predicate::str::contains("pipe.md"));
+}

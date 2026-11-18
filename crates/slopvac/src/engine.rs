@@ -504,12 +504,16 @@ fn collect_targets(
                     continue;
                 }
             };
-            let read = std::fs::File::open(&file.path)
-                .map_err(|e| slopvac_fs::Error::read(&e))
-                .and_then(|f| slopvac_fs::read_capped(f, slopvac_fs::MAX_DOCUMENT_BYTES));
+            // A symlink was resolved above, so `canonical` names the target. The read
+            // refuses a FIFO or device there instead of blocking on it.
+            let read = slopvac_fs::read_capped_regular(
+                &canonical,
+                slopvac_fs::MAX_DOCUMENT_BYTES,
+                slopvac_fs::ReadOptions::new(),
+            );
             let bytes = match read {
                 Ok(bytes) => bytes,
-                Err(slopvac_fs::Error::CapExceeded { .. }) => {
+                Err(e) if e.input_kind() == Some(slopvac_fs::InputKind::TooLarge) => {
                     run.skip(
                         "document-too-large",
                         &shown,

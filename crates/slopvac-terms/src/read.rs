@@ -28,30 +28,37 @@ pub(crate) fn scrub(e: &std::io::Error) -> String {
 /// Read `path` as UTF-8 text of at most `cap` bytes. `shown` names the file in errors. A file
 /// over `cap` fails with [`TermsError::TooLarge`].
 pub(crate) fn read(path: &Path, shown: &str, cap: u64) -> Result<String, ReadFailure> {
-    slopvac_fs::read_text_capped(path, cap).map_err(|e| match e {
-        slopvac_fs::Error::CapExceeded { cap } => ReadFailure::Error(TermsError::TooLarge {
-            code: if cap == slopvac_fs::MAX_DOCUMENT_BYTES {
-                "document-too-large"
-            } else {
-                "terms-file-too-large"
-            },
-            path: shown.to_owned(),
-            cap,
-        }),
-        slopvac_fs::Error::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound => {
-            ReadFailure::Missing(scrub(&source))
-        }
-        slopvac_fs::Error::Io { source, .. } | slopvac_fs::Error::Read { source, .. } => {
-            ReadFailure::Error(TermsError::Io {
+    slopvac_fs::read_capped_regular_to_string(path, cap, slopvac_fs::ReadOptions::new()).map_err(
+        |e| match e {
+            slopvac_fs::Error::Input {
+                kind: slopvac_fs::InputKind::TooLarge,
+                ..
+            } => ReadFailure::Error(TermsError::TooLarge {
+                code: if cap == slopvac_fs::MAX_DOCUMENT_BYTES {
+                    "document-too-large"
+                } else {
+                    "terms-file-too-large"
+                },
+                path: shown.to_owned(),
+                cap,
+            }),
+            slopvac_fs::Error::Input {
+                kind: slopvac_fs::InputKind::NotFound,
+                ..
+            } => ReadFailure::Missing(scrub(&std::io::ErrorKind::NotFound.into())),
+            slopvac_fs::Error::Input {
+                source: Some(source),
+                ..
+            } => ReadFailure::Error(TermsError::Io {
                 path: shown.to_owned(),
                 message: scrub(&source),
-            })
-        }
-        other => ReadFailure::Error(TermsError::Io {
-            path: shown.to_owned(),
-            message: other.to_string(),
-        }),
-    })
+            }),
+            other => ReadFailure::Error(TermsError::Io {
+                path: shown.to_owned(),
+                message: other.to_string(),
+            }),
+        },
+    )
 }
 
 /// Like [`read`], with a missing file reported as an I/O error that names `shown`.
