@@ -1,4 +1,4 @@
-# Slopvac 3.0 threat model: plugins, trust, OCI and packs
+# Slopvac 3.0 threat model: plugins, trust, OCI and signing keys
 
 Status: contract for 3.0. Bead `slopvac-8l4.9.11`. Plan: [slopvac-3.md](../design/slopvac-3.md). Decision: [0001-slopvac-3-architecture.md](../design/0001-slopvac-3-architecture.md), decisions 8 and 9. Related contracts: [plugin-protocol.md](plugin-protocol.md) and [policies.md](policies.md).
 
@@ -84,8 +84,8 @@ This includes a process that writes to a destination directory, its parent or a 
 | Flow | From, to | Data |
 |---|---|---|
 | F1 | Registry to OCI client | Auth challenge, token, manifest, blobs, redirects to a CDN host. |
-| F2 | OCI client to registry | Credentials, push of layers and manifest (`pack publish`). |
-| F3 | Index to `packs search` and key lookup | Pack names, descriptions, publisher keys. A job rebuilds it automatically. |
+| F2 | OCI client to registry | Credentials, push of layers and manifest (`plugins publish`). |
+| F3 | Index to `plugins search` and key lookup | Plugin names, descriptions, publisher keys. A job rebuilds it automatically. |
 | F4 | Release host to `plugins sync` | An archive, checked against the lockfile digest. |
 | F5 | Git remote to `plugins sync` | A clone at a pinned commit. |
 | F6 | Host to plugin and back | Framed JSON-RPC over three pipes (plugin-protocol.md). |
@@ -105,7 +105,7 @@ A minisign signature covers one byte string, the **signed statement**. A layer c
 
 Layout in the OCI artifact (implemented in `crates/slopvac-plugins/src/sign.rs`):
 
-- The artifact is an OCI manifest with an `artifactType` for the pack kind, one config blob and the content layers. Two further layers carry the signature, and the verifier finds each by media type:
+- The artifact is an OCI manifest with an `artifactType` for the plugin kind, one config blob and the content layers. Two further layers carry the signature, and the verifier finds each by media type:
   - `application/vnd.slopvac.signature.statement.v1+json` holds the canonical statement;
   - `application/vnd.slopvac.signature.minisig.v1` holds the `.minisig` text, at most 4 KiB.
 - An artifact has exactly one layer of each type. A missing layer is `MissingSignature` and a repeated one is `DuplicateSignature`. The statement does not list the two signature layers, because the digest of the statement layer depends on the statement.
@@ -117,7 +117,7 @@ What is signed. The signed bytes are the canonical statement, byte for byte, and
 - The verifier parses it strictly (duplicate keys fail), encodes it again and requires equal bytes, so the signed bytes cannot differ from the parsed value. Unknown fields fail.
 - Its fields are:
   - `schema_version`, always 1;
-  - `id`, the pack id from its manifest, and `namespace`, the owner segment of the repository the artifact is published under (both lowercase names);
+  - `id`, the plugin id from its manifest, and `namespace`, the owner segment of the repository the artifact is published under (both lowercase names, and neither of them `core`);
   - `version`, a semantic version without build metadata;
   - `artifactType`;
   - `config`, the digest of the config blob;
@@ -144,20 +144,21 @@ What the signature does not cover: the registry tag (a tag is mutable and only t
 The pack index is rebuilt by a job. Whoever controls that job, or a pull request that the job accepts, controls the index. If the index were the only place that binds a pack to a key, an index compromise would let an attacker publish a validly signed artifact under any name. So the index is not an authority for keys.
 
 - Two sources supply keys, and nothing else does:
-  1. Keys compiled into the slopvac binary, for the first-party namespaces. A first-party namespace with no compiled key fails closed (`slopvac-8l4.9.16`).
-  2. Keys that the user pinned in the trust store for one namespace, by an explicit command that prints the fingerprint. The first pin binds the namespace to the key. A key pinned for one namespace signs only that namespace.
+  1. Keys compiled into the slopvac binary. The compiled plugins key is the only key for the first-party namespace `slopvac`, on every registry. Without a usable compiled plugins key, that namespace fails closed.
+  2. Keys that the user pinned in the trust store for one pair of registry host and namespace, with `slopvac plugins pin`, which prints the fingerprint. The first pin binds the pair to the key. A key pinned for one pair signs only that pair. `plugins pin` refuses the namespaces `slopvac` and `core`.
+- The binary compiles in two keys, and each has one job. The **release key** (`keys/slopvac-release.pub`) signs release archives and the revocation list, and it is the revocation root. It signs no plugin. The **plugins key** signs first-party plugins and the first-party plugin index. It signs no binary and no revocation list. The release key can revoke the plugins key (section 5.3). This split replaces a single first-party key that signed everything.
 - The lockfile supplies no keys. It records the key id and `notBefore` of the signature that `sync` verified, so a later change shows up as `SignatureDiffersFromLock` (section 5.1).
-- The index may display a key and its fingerprint. A first install shows the fingerprint and exits 2 until the user runs the pinning command (`slopvac plugins trust --key <fingerprint>` or the data-pack equivalent). No flag, `--yes` or environment variable pins a key on its own. `SLOPVAC_TRUST` names content hashes only and cannot pin a key. A fingerprint or a name in it is an error.
+- The index may display a key and its fingerprint. A first install shows the fingerprint and exits 2 until the user runs `slopvac plugins pin <namespace> <fingerprint>`, for data plugins and code plugins alike. No flag, `--yes` or environment variable pins a key on its own. `SLOPVAC_TRUST` names content hashes only and cannot pin a key. A fingerprint or a name in it is an error.
 - A pinned key that differs from the index is a hard failure with exit 2. A pin stays in force whatever the index lists.
-- A pack namespace binds to a key set at first pin. A pack that claims the first-party namespace must verify against a compiled key.
+- A namespace binds to a key at first pin, per registry host. A plugin that claims the namespace `slopvac` must verify against the compiled plugins key. The id and namespace `core` belong to the built-in plugin, which is compiled in and never published. Any claim of `core` fails closed: a statement, lock entry, index entry, config entry or pin that names it is refused with exit 2.
 - A key id inside a statement selects among the keys the policy already holds. It adds none.
 
 ### 5.3 Rotation and revocation
 
-- **Rotation.** A publisher announces a new key with a rotation statement signed by the old key and by the new key. The statement names the pack namespace, both key ids, the whole new public key and a `notBefore` time. The host accepts a rotation only for a pinned key and shows the new fingerprint. The user confirms with the pinning command. The rotation replaces the pin, so the old key signs nothing after it. Lock entries signed by the old key then fail `sync` until the publisher signs new releases and the user runs `update`. The first-party compiled set changes only with a slopvac release.
-- **Compromised key.** The publisher cannot sign its own revocation if the key is lost, so a revocation is a statement signed by the first-party root key. It lists key ids and artifact manifest digests. The host caches the signed list, fetches it during `sync`, `update` and `outdated`, and checks it at every plugin spawn from the cache.
+- **Rotation.** A publisher announces a new key with a rotation statement signed by the old key and by the new key. The statement names the namespace, both key ids, the whole new public key and a `notBefore` time. The host accepts a rotation only for a pinned key and shows the new fingerprint. The user confirms with `slopvac plugins rotate`. The rotation replaces the pin, so the old key signs nothing after it. Lock entries signed by the old key then fail `sync` until the publisher signs new releases and the user runs `update`. The first-party compiled set changes only with a slopvac release.
+- **Compromised key.** The publisher cannot sign its own revocation if the key is lost, so a revocation is a statement signed by the release key, the revocation root. The list verifies against the release key only, and the plugins key never signs one. It lists key ids and artifact manifest digests. A listed key id may be that of the compiled plugins key. Then no first-party plugin and no first-party index verifies, and both fail closed until a slopvac release ships a new plugins key. The list cannot revoke the release key itself. Replacing the release key takes a new slopvac release (R8). The host caches the signed list, fetches it during `sync`, `update` and `outdated`, and checks it at every plugin spawn from the cache.
 - **Effect.** A revoked key or digest fails `sync` with exit 2 and refuses to spawn. Trust records for a revoked digest are inert and `plugins status` flags them.
-- **Freshness.** Each list carries a signed `expires` at most 30 days after its `issued` time, so the root signs a new list at least every 30 days. An online command fails with exit 2 and keeps its cache when it cannot fetch the list, or when the served list has expired, because an expired list is a replayed old one. To run on the cache, the user must go offline explicitly.
+- **Freshness.** Each list carries a signed `expires` at most 30 days after its `issued` time, so the release key signs a new list at least every 30 days. An online command fails with exit 2 and keeps its cache when it cannot fetch the list, or when the served list has expired, because an expired list is a replayed old one. To run on the cache, the user must go offline explicitly.
 - **Offline.** An offline run uses the cached list. A cached list past its `expires` prints a notice and does not block. A machine that never fetched a list runs with a notice too. The user chose this window (`slopvac-8l4.9.15`). The window is a residual risk (R3).
 - **Rollback.** A statement carries `version` and `notBefore`, and the lockfile holds both as a floor. The verifier refuses an earlier version and, independently, an earlier `notBefore`, unless the caller passes the explicit downgrade flag. A new statement with the same version and an older `notBefore` is refused. A malformed floor time fails closed. The lockfile also fixes the exact `keyId` and `notBefore`, so `sync` rejects any other valid signature for the same digest. The implemented test is `tm25_an_older_version_or_older_not_before_is_refused_without_the_downgrade_flag` in `crates/slopvac-plugins/tests/sign.rs`.
 
@@ -165,7 +166,7 @@ Formats (implemented in `crates/slopvac-plugins/src/sign.rs` and `crates/slopvac
 
 - Both documents are canonical JSON as in section 5.1, parsed strictly, and signed in the prehashed minisign mode. A `type` field keeps one signed document from passing as another.
 - A rotation statement holds `schema_version` (1), `type` (`rotation`), `namespace`, `oldKeyId`, `newKeyId`, `newKey` and `notBefore`, at most 4 KiB. `newKey` is the base64 line of the new `minisign.pub`. A minisign key id is unsigned metadata that any key can claim, so the host compares the offered new key with `newKey` byte for byte. The old key and the new key each sign it, in two `.minisig` texts. A key pin records the `notBefore` of the rotation that set it. A later rotation must carry a later `notBefore`. A rotation from or to a revoked key is refused, because a stolen key can sign a rotation to the thief's key.
-- The revocation list holds `schema_version` (1), `type` (`revocations`), `issued`, `expires`, `keys` (key ids) and `digests` (manifest digests), at most 1 MiB. Each array is sorted and has no repeats. A fetched list with an earlier `issued` than the cached one is a rollback and fails the command. A fetched list with the same `issued` but different content is an equivocation, which fails the command and keeps the cache. The identical list refreshes normally.
+- The revocation list holds `schema_version` (1), `type` (`revocations`), `issued`, `expires`, `keys` (key ids, which may include the compiled plugins key) and `digests` (manifest digests), at most 1 MiB. Each array is sorted and has no repeats. A fetched list with an earlier `issued` than the cached one is a rollback and fails the command. A fetched list with the same `issued` but different content is an equivocation, which fails the command and keeps the cache. The identical list refreshes normally.
 - The list is an OCI artifact of type `application/vnd.slopvac.revocations.v1` at `ghcr.io/slopvac/slopvac-revocations:latest`. It has exactly two layers, the list (`application/vnd.slopvac.revocations.v1+json`) and its `.minisig` (`application/vnd.slopvac.signature.minisig.v1`). A signed empty list must be published there before the CLI ships.
 - The cache is one private file in the per-user state directory. It holds the signed list, its signature and the unsigned fetch time. Every read verifies the signature again, so an edit to the signed list fails closed with exit 2 until an online run replaces it. An edit to the fetch time goes undetected. The time is only displayed, and freshness depends on the signed `expires` alone. A refresh re-reads, compares and replaces the cache under a per-user lock, so two refreshes cannot commit a newer list and then an older one.
 - The spawn gate reads and verifies the cache at every spawn. A list cached after the gate was built still stops the next spawn, and a cache that fails verification refuses every spawn.
@@ -179,9 +180,9 @@ Trust records one **trust hash**. It must cover everything that can execute or c
 - for a Python plugin, the interpreter identity (version and build) and the locked, hash-pinned dependency set plus the file listing of the managed environment (section 6.6). The interpreter slot holds the version, the build and the path, size and sha256 of each interpreter executable. The environment slot holds a digest of the lock, the interpreter request and every entry of the environment: path, type, size, executable bit, sha256 and link target. Modification times are not in the hash;
 - the manifest digest and the publisher key id.
 
-Any change to any of these changes the trust hash and revokes trust (plugin-protocol.md section 4.3). `plugins update` shows the old and new declaration side by side. A data pack has no code. It still has a digest in the lockfile, because its rules decide the lint verdict (T1, A7).
+Any change to any of these changes the trust hash and revokes trust (plugin-protocol.md section 4.3). `plugins update` shows the old and new declaration side by side. A data plugin has no code, needs no trust, and `plugins trust` refuses it. It still has a digest in the lockfile, because its rules decide the lint verdict (T1, A7).
 
-Trust is stored per user, outside the project. A trust file inside a project is never read. Trust records the hash, the pack id, the source, the key fingerprint, the declaration summary and the time. `SLOPVAC_TRUST` names hashes only, never a name or a tag.
+Trust is stored per user, outside the project. A trust file inside a project is never read. Trust records the hash, the plugin id, the source, the key fingerprint, the declaration summary and the time. `SLOPVAC_TRUST` names hashes only, never a name or a tag.
 
 ### 5.5 Limits set by this model
 
@@ -267,16 +268,17 @@ Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is
 |---|---|---|---|---|---|---|---|
 | K1 | An attacker substitutes a key in the auto-rebuilt index so a hostile artifact verifies. | S, T | CWE-345, CWE-347 | M/H | The index is not an authority (section 5.2). A first install pins a key only through an explicit command that shows the fingerprint. A pinned key never changes from the index. | `slopvac-8l4.9.5`, `slopvac-8l4.9.8` | TM-22 (substituted index key: sync exits 2, nothing extracted) |
 | K2 | A layer or the manifest is swapped while the signature still verifies (signature covers the wrong bytes). | T | CWE-347, CWE-345 | M/H | The statement lists every other layer digest and the config digest. Any extra, missing or reordered layer, or a mismatched annotation, invalidates the artifact (section 5.1). | `slopvac-8l4.9.5` | TM-23 (add a layer, drop a layer, edit an annotation, swap the config: each fails) |
-| K3 | A pack claims a first-party or foreign namespace to trade on its name. | S | CWE-290 | M/M | The namespace binds to a key set. First-party names verify against compiled keys only. | `slopvac-8l4.9.1`, `slopvac-8l4.9.5` | TM-24 |
+| K3 | A plugin claims a first-party, reserved or foreign namespace to trade on its name. | S | CWE-290 | M/M | The namespace binds to a key per registry host. `slopvac` verifies against the compiled plugins key only and is never pinnable. `core` fails closed everywhere. | `slopvac-8l4.9.1`, `slopvac-8l4.9.5` | TM-24 |
 | K4 | A signed but old artifact replays (rollback) to bring back a flaw. | T | CWE-494 | M/M | The statement holds `version` and `notBefore`. `verify` refuses an earlier version and, separately, an earlier `notBefore` than the lockfile floor, and `sync` requires the lock's exact `keyId` and `notBefore`. The lockfile pins the manifest digest. | `slopvac-8l4.9.3`, `slopvac-8l4.9.5` | TM-25 |
-| K5 | A compromised publisher key signs a hostile update. | S, E | CWE-321 | L/H | Revocation list signed by the first-party root (section 5.3). Rotation needs an old-key statement. Trust still needs the user's command for each new hash. | `slopvac-8l4.9.15` | TM-26 (a revoked key or digest fails sync and refuses to spawn) |
-| K6 | A revocation list is withheld, stale or forged. | T, D | CWE-299 | M/M | The list is signed by the root key and cached with its time. Online commands fetch it. A stale offline cache warns. A forged list fails verification. | `slopvac-8l4.9.15` | TM-27 (forged and stale lists) |
+| K5 | A compromised publisher key signs a hostile update. | S, E | CWE-321 | L/H | Revocation list signed by the release key (section 5.3). Rotation needs an old-key statement. Trust still needs the user's command for each new hash. | `slopvac-8l4.9.15` | TM-26 (a revoked key or digest fails sync and refuses to spawn) |
+| K6 | A revocation list is withheld, stale or forged. | T, D | CWE-299 | M/M | The list is signed by the release key and cached with its time. Online commands fetch it. A stale offline cache warns. A forged list fails verification. | `slopvac-8l4.9.15` | TM-27 (forged and stale lists) |
 | K7 | The trust store is tampered with or is read from the project. | T, E | CWE-732, CWE-807 | M/H | The store lives in the per-user state directory, mode 0600, written atomically under a lock. A project file named like the store is ignored. | `slopvac-8l4.9.4` | TM-28 (a trust file in the project grants nothing) |
 | K8 | A tool, agent or flag records trust. | E | CWE-358 | M/H | Only `plugins trust` and `SLOPVAC_TRUST` write trust. `sync`, `update` and `--yes` never do. No prompt exists. | `slopvac-8l4.9.4` | N8 |
 | K9 | A hostile pull request edits CI configuration to set `SLOPVAC_TRUST` for its own plugin. | E | CWE-829 | M/H | `SLOPVAC_TRUST` names hashes. Docs tell projects to protect workflow files with code owners. Slopvac cannot enforce review (R5). | `slopvac-8l4.9.4`, `slopvac-8l4.13.6` | TM-29 (the variable names a hash that differs from the plugin on disk: no spawn) |
-| K10 | A signature on a data pack is skipped because it has no code. | E | CWE-345 | M/M | Data packs are signed and verified like plugins. Their rules decide verdicts and run regexes. | `slopvac-8l4.9.5`, `slopvac-8l4.9.1` | TM-30 |
+| K10 | A signature on a data plugin is skipped because it has no code. | E | CWE-345 | M/M | Data plugins are signed and verified like code plugins. Their rules decide verdicts and run regexes. | `slopvac-8l4.9.5`, `slopvac-8l4.9.1` | TM-30 |
 | K11 | Local folders and git commits carry no signature. | S | CWE-494 | M/M | A git pin names a full commit hash, and the trust hash covers the content. A local folder is hashed at each run. A moving branch name is refused. | `slopvac-8l4.9.3`, `slopvac-8l4.9.4` | TM-31 |
 | K12 | Signing releases or `self update` lets an attacker substitute the binary. | T, E | CWE-494 | L/H | Verify the minisign signature on the archive before replacement. Keys compiled into the binary. | `slopvac-8l4.13.3`, `slopvac-8l4.12.4` | TM-32 (a tampered archive is refused) |
+| K13 | The plugins key leaks, and the thief signs hostile first-party plugins or a hostile first-party index. | S, T | CWE-321 | L/H | The plugins key is separate from the release key, so it cannot sign a binary or a revocation list. The release key revokes it through the revocation list, and the `slopvac` namespace then fails closed until a release ships a new plugins key. Code plugins still need `plugins trust` for each new hash. | Release process | TM-60 |
 
 ### 6.4 OCI client, credentials and network sources
 
@@ -293,8 +295,8 @@ Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is
 | N9 | A release archive is fetched over HTTP, or its digest is not checked. | T | CWE-494, CWE-319 | M/H | HTTPS only. The digest comes from the lockfile and is checked before extraction. A first fetch without a digest fails `sync` unless the user adds the digest. | `slopvac-8l4.9.3` | TM-39 |
 | N10 | A git pin executes code on clone: hooks, `core.fsmonitor`, submodules, `ext::` or `file::` transports, filters, LFS. | E | CWE-94, CWE-78 | M/H | Clone in a scratch directory with `protocol.allow=never` except `https` (and `ssh` by explicit config), `GIT_CONFIG_NOSYSTEM`, no templates, `core.hooksPath=/dev/null`, no submodule update, no filters. Check out only the pinned full hash, then hash the content. | `slopvac-8l4.9.3` | TM-40 (a repository with hooks, a submodule and a filter runs nothing) |
 | N11 | The index serves oversized or hostile text, or tampered key data. | T, D | CWE-770, CWE-150 | M/M | 32 MiB limit. Descriptions pass the sanitiser (O1) before display. Key data is display only (section 5.2). | `slopvac-8l4.9.8` | TM-41 |
-| N12 | Typosquatting and namespace confusion. | S | CWE-1357 | M/M | Namespaced registries. `plugins trust` shows pack id, source and key fingerprint. Search results show the publisher key fingerprint. | `slopvac-8l4.9.1`, `slopvac-8l4.9.8` | TM-24 |
-| N13 | Publishing leaks the token, or pushes to the wrong repository. | I | CWE-522 | L/M | `pack publish` shows the destination and requires `write:packages` credentials from the environment or the helper. | `slopvac-8l4.9.9` | TM-42 |
+| N12 | Typosquatting and namespace confusion. | S | CWE-1357 | M/M | Namespaced registries. `plugins trust` shows plugin id, source and key fingerprint. Search results show the publisher key fingerprint. | `slopvac-8l4.9.1`, `slopvac-8l4.9.8` | TM-24 |
+| N13 | Publishing leaks the token, or pushes to the wrong repository. | I | CWE-522 | L/M | `plugins publish` shows the destination and requires `write:packages` credentials from the environment or the helper. | `slopvac-8l4.9.9` | TM-42 |
 
 ### 6.5 Archive extraction and the cache
 
@@ -357,13 +359,13 @@ The spawn check misses an edit that keeps the size and restores the modification
 - uv writes install times into the environment, so a rebuilt environment gets a new trust hash and the user must trust the plugin again.
 - The build passes no proxy variables to uv, so an interpreter download through a proxy fails. The user can then install the interpreter with `uv python install` and build offline.
 
-### 6.7 Data packs and regular expressions
+### 6.7 Data plugins and regular expressions
 
 | ID | Threat | STRIDE | CWE | L/I | Mitigation | Owner | Test |
 |---|---|---|---|---|---|---|---|
 | X1 | A pack ships a pattern with catastrophic backtracking that hangs or exhausts a run. | D | CWE-1333, CWE-400 | M/M | Set PCRE2 match, depth and heap limits and a JIT stack cap on every compile, at the values `slopvac-8l4.3.20` fixes. Matching has no global state that a pack can raise. | `slopvac-8l4.3.20`, `slopvac-8l4.3.7` | TM-54 (a nested-quantifier pattern against a hostile document ends at the limit) |
 | X2 | A limit hit is read as no match, so a pack silently passes bad text or a pack hides a finding. | T, R | CWE-755, CWE-703 | M/H | A limit error is a distinct, reported failure: the rule is incomplete, the run exits 2, and the diagnostic names the rule and document. Never "no match". | `slopvac-8l4.3.7` | TM-55 (limit hit gives exit 2 and a diagnostic) |
-| X3 | An oversized pattern, alternations of thousands of branches or many rules slow compilation. | D | CWE-770 | M/M | Pattern length 4,096 bytes. Total rules and compiled size capped per pack and per run. Compilation of an invalid or over-limit pattern fails the pack. | `slopvac-8l4.3.20`, `slopvac-8l4.9.1` | TM-56 |
+| X3 | An oversized pattern, alternations of thousands of branches or many rules slow compilation. | D | CWE-770 | M/M | Pattern length 4,096 bytes. Total rules and compiled size capped per plugin and per run. Compilation of an invalid or over-limit pattern fails the plugin. | `slopvac-8l4.3.20`, `slopvac-8l4.9.1` | TM-56 |
 | X4 | Pattern options change engine behavior: verbs such as `(*LIMIT_MATCH=)`, callouts, `\K` abuse, recursion. | T, D | CWE-1333 | L/M | Compile with the pack API's fixed flags. A pattern verb may only lower a limit. Callouts are not available (no callback is set). | `slopvac-8l4.3.20` | TM-57 |
 | X5 | A 100 MiB document makes a safe pattern slow. | D | CWE-400 | M/M | Per-document byte cap and per-rule time accounting. The run reports the slow rule, exits 2 at the cap. | `slopvac-8l4.3.20` | TM-58 |
 | X6 | A hostile pack shapes verdicts: severity, suppression or ignore rules that hide real findings. | T | CWE-807 | M/H | Project config, not a pack, decides which packs load. Pack-provided suppression stays within the pack's own rules. `--explain-config` shows provenance. | `slopvac-8l4.9.1`, `slopvac-8l4.4.2` | TM-59 (a pack cannot suppress another pack's rule) |
@@ -435,7 +437,7 @@ The TM tests are proposed. They run in the Rust test suites of the owning bead, 
 | TM-21 | A provider returns text that looks like edits or a plan. | It cannot reach `fixer/fix`, `recipe/plan` or the verdict. Reports mark it untrusted. |
 | TM-22 | The index lists a new key for a pinned pack, and for a new pack. | Exit 2. The new pack waits for the explicit pin. Nothing extracted. |
 | TM-23 | Valid signature; then add a layer, remove a layer, reorder layers, change an annotation, swap the config. | Each fails verification. |
-| TM-24 | A pack claims the first-party namespace under a different key. | Rejected. |
+| TM-24 | A plugin claims the namespace `slopvac` under a key other than the compiled plugins key, and a pin for `slopvac` or `core` is attempted. | Rejected, exit 2. |
 | TM-25 | Offer an earlier version, and separately the same version with an older `notBefore`. | Each is a `Rollback` error without the downgrade flag. |
 | TM-26 | A revocation list names a key and a digest. | `sync` exits 2. The plugin does not spawn. `status` flags the trust record. |
 | TM-27 | A forged list, and a stale cache offline. | The forged list is rejected. The stale cache prints a notice and runs. |
@@ -453,7 +455,7 @@ The TM tests are proposed. They run in the Rust test suites of the owning bead, 
 | TM-39 | A release archive over HTTP, and with a wrong digest. | Refused before extraction. |
 | TM-40 | A git repository with hooks, a submodule, a filter and a `file::` URL. | No code runs. The URL is refused. |
 | TM-41 | An index with hostile text, an oversized body and a changed key. | Sanitised, refused, ignored. |
-| TM-42 | `pack publish` with no write scope. | Clear failure, no secrets printed. |
+| TM-42 | `plugins publish` with no write scope. | Clear failure, no secrets printed. |
 | TM-43 | A corpus of archives: `..`, absolute, drive letter, NUL, symlink, hardlink, device, FIFO, duplicate, case collision, setuid mode, overlong path, depth 33. | Each fails. The tree holds nothing outside staging, no links and no special modes. |
 | TM-44 | A 1 GiB bomb, a ratio bomb and 100,000 entries. | Stopped at the limits with bounded disk and memory. |
 | TM-45 | Kill the process during extraction. | The next run finds no entry and no staging leftovers. |
@@ -467,10 +469,12 @@ The TM tests are proposed. They run in the Rust test suites of the owning bead, 
 | TM-53 | A `python` earlier on `PATH` than the managed one. | The managed interpreter runs. |
 | TM-54 | A nested-quantifier pattern against `aaaa...` text. | Stops at the limit. |
 | TM-55 | A limit hit in a normal run. | Exit 2, a diagnostic naming the rule. Never a pass. |
-| TM-56 | A pack with 4,097-byte pattern and one with excessive rules. | The pack is refused. |
+| TM-56 | A plugin with a 4,097-byte pattern and one with excessive rules. | The plugin is refused. |
 | TM-57 | Patterns with verbs that raise limits and with callouts. | Limits stay. Callouts do nothing. |
 | TM-58 | A document over the byte cap. | Reported at the cap, exit 2. |
-| TM-59 | A pack that tries to suppress another pack's rules. | Ignored, with a diagnostic. |
+| TM-59 | A plugin that tries to suppress another plugin's rules. | Ignored, with a diagnostic. |
+| TM-60 | A revocation list, signed by the release key, that names the plugins key id. | Every first-party plugin and the first-party index fail verification with exit 2. A list signed by the plugins key is refused. |
+| TM-61 | `core` as a statement id or namespace, a lock id, an index id or namespace, or a config plugin id. | Refused with exit 2. |
 
 ### 7.4 Implemented tests
 
@@ -508,7 +512,7 @@ Every work item of this model has a bead.
 | Archive extraction | `slopvac-8l4.9.3`, `crates/slopvac-plugins/src/extract.rs` | merged | E1 to E7 |
 | Whole-run output budget | `slopvac-8l4.9.33` | open | P3 |
 
-Other beads that this model depends on: `slopvac-8l4.9.16` (compiled first-party key), `slopvac-8l4.9.19` (credential values in the public trust hash), `slopvac-8l4.9.27` (pinned-commit git fetch), `slopvac-8l4.9.28` (executable set of a plugin pack), `slopvac-8l4.9.29` (escaping in error messages) and `slopvac-8l4.3.20` (PCRE2 limits).
+Other beads that this model depends on: `slopvac-8l4.9.16` (compiled first-party key), `slopvac-8l4.9.19` (credential values in the public trust hash), `slopvac-8l4.9.27` (pinned-commit git fetch), `slopvac-8l4.9.28` (executable set of a code plugin), `slopvac-8l4.9.29` (escaping in error messages) and `slopvac-8l4.3.20` (PCRE2 limits).
 
 ## 9. Residual risks
 
@@ -523,11 +527,11 @@ A residual risk stays after all controls above. The release notes and `slopvac p
 | R5 | `SLOPVAC_TRUST` in CI trusts whatever the workflow names. A pull request that changes the workflow can name its own hash. | Review of CI configuration is the project's job. | High in an unprotected repository. |
 | R6 | A local process of the same user can write the trust store, cache or environments, and can swap files between check and use, or swap a destination, its parent or a temporary file during a `slopvac-fs` write. | The user's rights equal the attacker's. The design only raises the cost. | High, but needs prior local compromise. |
 | R7 | The first key pin is trust on first use. A user who confirms a hostile fingerprint trusts it. | The user has to decide somewhere. The fingerprint display and the namespace binding reduce the risk. | Medium. |
-| R8 | The first-party root key is a single point of trust. Replacing a lost key takes a new slopvac release. | A compiled key changes only with a release. | High, with low likelihood. |
+| R8 | The release key is the single root of trust. Replacing a lost or leaked release key takes a new slopvac release. A leaked plugins key is revocable by the release key (K13). | A compiled key changes only with a release. | High, with low likelihood. |
 | R9 | Prompt injection cannot be solved at the host. The host only cuts the paths from provider output to edits and verdicts. | Model behavior is outside slopvac. | Medium. |
 | R10 | A signed pack can contain misleading or harmful rules. A signature identifies a publisher and does not judge content. | Review of content is outside the supply chain. | Low to medium. |
 | R11 | **Release freshness is unauthenticated.** `slopvac self update` and the update notice read the latest version from unsigned registry JSON: the GitHub releases API, or the PyPI JSON for wheel installs. An attacker who controls that answer (T2) can freeze or delay upgrades, or name an older signed release that is still newer than the running one. The attacker cannot install anything below the running version or anything the release key did not sign: the update pipeline refuses a version that is not newer than the running one or is a prerelease (`crates/slopvac-update/src/pipeline.rs`), and the minisign check against the compiled-in `keys/slopvac-release.pub` binds the archive to the exact asset and version (`crates/slopvac-update/src/verify.rs`). | A signed, expiring release manifest needs release-pipeline work that 3.0 does not include. Follow-up: `slopvac-8l4.13.46`. | Medium. A user can stay on a version with a known flaw while an attacker withholds the fix, and nothing in the client shows it. |
-| R12 | **A repository writer can overwrite the published revocation list.** A writer can dispatch a modified branch of `revocations.yml`, which holds `packages: write`, and overwrite `ghcr.io/slopvac/slopvac-revocations:latest`. The writer can deny service but cannot forge a list: clients verify against the compiled-in first-party key (K6), so an invalid list fails verification and online syncs exit 2 until a maintainer publishes a valid list. The signing key is separate: it lives in the `revocations` environment, which deploys from `main` only. | GitHub grants package write access to workflows from any branch of the repository, and the registry cannot require a signature on push. Limiting write access to the repository is the project's job. | Medium. Online syncs fail until a valid list is pushed, and the failure is visible. |
+| R12 | **A repository writer can overwrite the published revocation list.** A writer can dispatch a modified branch of `revocations.yml`, which holds `packages: write`, and overwrite `ghcr.io/slopvac/slopvac-revocations:latest`. The writer can deny service but cannot forge a list: clients verify against the compiled-in release key (K6), so an invalid list fails verification and online syncs exit 2 until a maintainer publishes a valid list. The signing key is separate: it lives in the `revocations` environment, which deploys from `main` only. | GitHub grants package write access to workflows from any branch of the repository, and the registry cannot require a signature on push. Limiting write access to the repository is the project's job. | Medium. Online syncs fail until a valid list is pushed, and the failure is visible. |
 
 ## 10. Review sign-off
 
