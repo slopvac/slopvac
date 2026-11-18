@@ -421,7 +421,24 @@ fn a_setup_error_under_an_external_path_prints_no_absolute_path() {
         !stderr.contains(&target.path().display().to_string()),
         "{stderr}"
     );
-    assert!(stderr.contains("<external>"), "{stderr}");
+    assert!(stderr.contains("in <external>/AGENTS.md;"), "{stderr}");
+}
+
+#[test]
+fn a_setup_error_under_the_run_root_names_the_path_relative_to_it() {
+    let work = tempfile::tempdir().unwrap();
+    // The process reports its working directory with symlinks resolved (macOS `/var`).
+    let root = work.path().canonicalize().unwrap();
+    fs::write(work.path().join("AGENTS.md"), "<!-- slopvac:begin -->\n").unwrap();
+    let out = slopvac(work.path())
+        .args(["init", "--path"])
+        .arg(root.join("slopvac.toml"))
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr.contains("in AGENTS.md;"), "{stderr}");
+    assert!(!stderr.contains(&root.display().to_string()), "{stderr}");
 }
 
 /// Run `slopvac init --skip-agents [extra]` in `dir` under the given umask.

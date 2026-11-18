@@ -56,11 +56,17 @@ fn terms_error(err: &TermsError) -> CliError {
     CliError::new(code, redact::redact_root(&message, &cwd()))
 }
 
-/// Name an owner's error from its fields, with every path shown through `shown_path`.
-fn agents_error(err: &AgentsError) -> CliError {
+/// Name an owner's error from its fields. Every path the owner reports is relative to the
+/// project `root`; it is joined to `root` and shown through `shown_path`, so it reads relative
+/// to the run root or as `<external>/<file name>` outside it (policies.md, 1.7).
+pub(crate) fn agents_error(err: &AgentsError, root: &Path) -> CliError {
+    CliError::new(err.code(), agents_message(err, root))
+}
+
+fn agents_message(err: &AgentsError, root: &Path) -> String {
     let cwd = cwd();
-    let path = |p: &Path| redact::shown_path(p, &cwd);
-    let message = match err {
+    let path = |p: &Path| redact::shown_path(&root.join(p), &cwd);
+    match err {
         AgentsError::UnsafeTarget(target) => {
             format!("unsafe steering target: {}", path(Path::new(target)))
         }
@@ -68,6 +74,20 @@ fn agents_error(err: &AgentsError) -> CliError {
             "malformed or ambiguous slopvac markers in {}; repair the begin/end pair first",
             path(p)
         ),
+        AgentsError::UnclosedFence(p) => format!(
+            "{} has an unterminated code fence that would hide the slopvac block; close the fence first",
+            path(p)
+        ),
+        AgentsError::Partial { changed, source } => format!(
+            "{}; already changed: {}",
+            agents_message(source, root),
+            changed
+                .iter()
+                .map(|c| path(Path::new(c)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        AgentsError::Text(e) => format!("text segmentation failed: {e}"),
         AgentsError::NotUtf8(p) => format!("steering must be UTF-8: {}", path(p)),
         AgentsError::Conflict(p) => format!("file changed during setup; retry: {}", path(p)),
         AgentsError::NotManaged(p) => format!(
@@ -90,8 +110,7 @@ fn agents_error(err: &AgentsError) -> CliError {
             }
             redact::redact_absolute(&body, &cwd)
         }
-    };
-    CliError::new(err.code(), message)
+    }
 }
 
 /// `slopvac terms`.
@@ -129,11 +148,11 @@ pub fn validate(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
 
 /// `slopvac setup`.
 pub fn setup(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let outcome = setup::run(m).map_err(|e| agents_error(&e))?;
     let root = m
         .get_one::<PathBuf>("root")
         .cloned()
         .unwrap_or_else(|| PathBuf::from("."));
+    let outcome = setup::run(m).map_err(|e| agents_error(&e, &root))?;
     for line in &outcome.lines {
         write(out, &format!("{}\n", redact::redact_root(line, &root)))?;
     }
@@ -142,7 +161,7 @@ pub fn setup(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
 
 /// `slopvac prime`.
 pub fn prime(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let text = prime::run(m, &cli::command(), &cwd()).map_err(|e| agents_error(&e))?;
+    let text = prime::run(m, &cli::command(), &cwd()).map_err(|e| agents_error(&e, &cwd()))?;
     write(out, &text)?;
     Ok(exit::PASS)
 }
