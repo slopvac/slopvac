@@ -13,6 +13,7 @@ mod enabled {
         static TEXT: Cell<usize> = const { Cell::new(0) };
         static HEADING: Cell<usize> = const { Cell::new(0) };
         static ADMONITION: Cell<usize> = const { Cell::new(0) };
+        static LOOKUP: Cell<usize> = const { Cell::new(0) };
     }
 
     pub(crate) fn section(n: usize) {
@@ -29,6 +30,17 @@ mod enabled {
 
     pub(crate) fn admonition(n: usize) {
         ADMONITION.with(|c| c.set(c.get() + n));
+    }
+
+    pub(crate) fn lookup(n: usize) {
+        LOOKUP.with(|c| c.set(c.get() + n));
+    }
+
+    /// Index steps taken to answer context lookups since the last call: binary-search
+    /// probes and tree nodes visited.
+    #[must_use]
+    pub fn take_lookup_steps() -> usize {
+        LOOKUP.with(|c| c.replace(0))
     }
 
     /// Bytes of admonition title matched against an admonition pattern since the last call.
@@ -57,9 +69,12 @@ mod enabled {
 }
 
 #[cfg(feature = "work-counters")]
-pub(crate) use enabled::{admonition, heading, section, text};
+pub(crate) use enabled::{admonition, heading, lookup, section, text};
 #[cfg(feature = "work-counters")]
-pub use enabled::{take_admonition_steps, take_heading_steps, take_section_steps, take_text_steps};
+pub use enabled::{
+    take_admonition_steps, take_heading_steps, take_lookup_steps, take_section_steps,
+    take_text_steps,
+};
 
 #[cfg(not(feature = "work-counters"))]
 #[inline(always)]
@@ -76,3 +91,7 @@ pub(crate) fn heading(_n: usize) {}
 #[cfg(not(feature = "work-counters"))]
 #[inline(always)]
 pub(crate) fn admonition(_n: usize) {}
+
+#[cfg(not(feature = "work-counters"))]
+#[inline(always)]
+pub(crate) fn lookup(_n: usize) {}

@@ -1,9 +1,9 @@
 //! Tags, the tagger trait, the registry and the context gate.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
-use crate::{DocumentView, Error};
+use crate::{DocumentView, Error, work};
 
 /// A context tag over a byte span.
 #[derive(Debug, Clone, PartialEq)]
@@ -72,6 +72,126 @@ pub struct TagIndex {
     groups: Vec<usize>,
     /// For a group of several pieces, the indexes of its tags.
     members: std::collections::HashMap<usize, Vec<usize>>,
+    /// Per kind, over every tag: answers [`Self::kinds_at`].
+    all: Vec<KindRuns>,
+    /// Per kind, over the tags of a single piece: answers the single-piece part of
+    /// [`Self::kinds_covering`].
+    single: Vec<KindRuns>,
+    /// The tags of several pieces, for the part of [`Self::kinds_covering`] that needs them.
+    multi: Stab,
+}
+
+/// The tags of one kind in start order, with the greatest end among the tags up to each one.
+/// A span lies inside a tag of this kind when the greatest end among the tags that start at
+/// or before the span's start reaches the span's end.
+#[derive(Debug, Clone)]
+struct KindRuns {
+    kind: String,
+    starts: Vec<usize>,
+    max_end: Vec<usize>,
+}
+
+impl KindRuns {
+    /// One entry for each kind among `tags`, sorted by kind. `tags` are in start order.
+    fn build<'t>(tags: impl Iterator<Item = &'t Tag>) -> Vec<Self> {
+        let mut by_kind: BTreeMap<&str, Self> = BTreeMap::new();
+        for t in tags {
+            let runs = by_kind.entry(t.kind.as_str()).or_insert_with(|| Self {
+                kind: t.kind.clone(),
+                starts: Vec::new(),
+                max_end: Vec::new(),
+            });
+            let end = runs
+                .max_end
+                .last()
+                .map_or(t.span.end, |&m| m.max(t.span.end));
+            runs.starts.push(t.span.start);
+            runs.max_end.push(end);
+        }
+        by_kind.into_values().collect()
+    }
+
+    /// Kinds with a tag that contains `start..end`, sorted and unique. The work is one binary
+    /// search for each kind.
+    fn kinds_containing(runs: &[Self], start: usize, end: usize) -> Vec<&str> {
+        let mut kinds = Vec::new();
+        for r in runs {
+            work::lookup(search_steps(r.starts.len()));
+            let upto = r.starts.partition_point(|&s| s <= start);
+            if upto > 0 && r.max_end[upto - 1] >= end {
+                kinds.push(r.kind.as_str());
+            }
+        }
+        kinds
+    }
+}
+
+/// Probes of a binary search over `len` entries.
+fn search_steps(len: usize) -> usize {
+    1 + len.checked_ilog2().map_or(0, |l| l as usize)
+}
+
+/// A segment tree over tags in start order that holds the greatest end of each node, so a
+/// query visits only the tags that contain a span, plus the path to each.
+#[derive(Debug, Default, Clone)]
+struct Stab {
+    /// Indexes into the tags, in start order.
+    ids: Vec<usize>,
+    starts: Vec<usize>,
+    /// Leaves from `leaves`, then the nodes above, as in a heap.
+    tree: Vec<usize>,
+    leaves: usize,
+}
+
+impl Stab {
+    fn build(tags: &[Tag], ids: Vec<usize>) -> Self {
+        let leaves = ids.len().next_power_of_two();
+        let mut tree = vec![0; 2 * leaves];
+        for (j, &i) in ids.iter().enumerate() {
+            tree[leaves + j] = tags[i].span.end;
+        }
+        for n in (1..leaves).rev() {
+            tree[n] = tree[2 * n].max(tree[2 * n + 1]);
+        }
+        let starts = ids.iter().map(|&i| tags[i].span.start).collect();
+        Self {
+            ids,
+            starts,
+            tree,
+            leaves,
+        }
+    }
+
+    /// Call `f` with the index of each tag that contains `start..end`.
+    fn containing(&self, start: usize, end: usize, f: &mut impl FnMut(usize)) {
+        work::lookup(search_steps(self.starts.len()));
+        let upto = self.starts.partition_point(|&s| s <= start);
+        if upto > 0 {
+            self.visit(1, 0, self.leaves, upto, end, f);
+        }
+    }
+
+    fn visit(
+        &self,
+        node: usize,
+        lo: usize,
+        hi: usize,
+        upto: usize,
+        end: usize,
+        f: &mut impl FnMut(usize),
+    ) {
+        if lo >= upto || self.tree[node] < end {
+            return;
+        }
+        work::lookup(1);
+        if hi - lo == 1 {
+            f(self.ids[lo]);
+            return;
+        }
+        let mid = lo + (hi - lo) / 2;
+        self.visit(2 * node, lo, mid, upto, end, f);
+        self.visit(2 * node + 1, mid, hi, upto, end, f);
+    }
 }
 
 impl TagIndex {
@@ -105,10 +225,28 @@ impl TagIndex {
             members.entry(g).or_default().push(i);
         }
         members.retain(|_, m| m.len() > 1);
+        let all = KindRuns::build(tags.iter());
+        let single = KindRuns::build(
+            tags.iter()
+                .enumerate()
+                .filter(|(i, _)| !members.contains_key(&groups[*i]))
+                .map(|(_, t)| t),
+        );
+        let multi_ids = (0..tags.len())
+            .filter(|&i| members.contains_key(&groups[i]))
+            .collect();
+        let multi = if members.is_empty() {
+            Stab::default()
+        } else {
+            Stab::build(&tags, multi_ids)
+        };
         Self {
             tags,
             groups,
             members,
+            all,
+            single,
+            multi,
         }
     }
 
@@ -121,22 +259,30 @@ impl TagIndex {
             return Vec::new();
         };
         let covers = |t: &Tag, r: &Range<usize>| t.span.start <= r.start && r.end <= t.span.end;
-        let mut set = BTreeSet::new();
-        for (i, tag) in self.tags.iter().enumerate() {
-            if !covers(tag, first) {
-                continue;
-            }
-            let own = [i];
-            let pieces = self
-                .members
-                .get(&self.groups[i])
-                .map_or(&own[..], Vec::as_slice);
-            if ranges
-                .iter()
-                .all(|r| pieces.iter().any(|&m| covers(&self.tags[m], r)))
-            {
-                set.insert(tag.kind.as_str());
-            }
+        // A tag of one piece covers every range when it covers the least start to the
+        // greatest end.
+        let from = ranges.iter().map(|r| r.start).min().unwrap_or(first.start);
+        let to = ranges.iter().map(|r| r.end).max().unwrap_or(first.end);
+        let mut set: BTreeSet<&str> = KindRuns::kinds_containing(&self.single, from, to)
+            .into_iter()
+            .collect();
+        if !self.multi.ids.is_empty() {
+            self.multi.containing(first.start, first.end, &mut |i| {
+                let kind = self.tags[i].kind.as_str();
+                if set.contains(kind) {
+                    return;
+                }
+                let pieces = self
+                    .members
+                    .get(&self.groups[i])
+                    .map_or(&[][..], Vec::as_slice);
+                if ranges
+                    .iter()
+                    .all(|r| pieces.iter().any(|&m| covers(&self.tags[m], r)))
+                {
+                    set.insert(kind);
+                }
+            });
         }
         set.into_iter().collect()
     }
@@ -150,13 +296,7 @@ impl TagIndex {
     /// Kinds of the tags whose span contains `span`, sorted and unique.
     #[must_use]
     pub fn kinds_at(&self, span: &Range<usize>) -> Vec<&str> {
-        let set: BTreeSet<&str> = self
-            .tags
-            .iter()
-            .filter(|t| t.span.start <= span.start && span.end <= t.span.end)
-            .map(|t| t.kind.as_str())
-            .collect();
-        set.into_iter().collect()
+        KindRuns::kinds_containing(&self.all, span.start, span.end)
     }
 
     /// Kinds present anywhere in the document, sorted and unique.

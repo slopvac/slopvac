@@ -37,7 +37,10 @@ pub use view::{
 };
 #[cfg(feature = "work-counters")]
 #[doc(hidden)]
-pub use work::{take_admonition_steps, take_heading_steps, take_section_steps, take_text_steps};
+pub use work::{
+    take_admonition_steps, take_heading_steps, take_lookup_steps, take_section_steps,
+    take_text_steps,
+};
 
 pub use pattern::MAX_PATTERN_BYTES;
 
