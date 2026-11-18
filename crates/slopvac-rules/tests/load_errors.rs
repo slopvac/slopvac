@@ -449,8 +449,8 @@ fn within_timeout<T: Send + 'static>(
     got.expect("the read blocked on a FIFO")
 }
 
-fn load_pack_dir(dir: PathBuf) -> Result<RuleSet, LoadErrors> {
-    RuleSet::load_dir(&pack(), &dir, &CompileOptions::default())
+fn load_pack_dir(dir: &std::path::Path) -> Result<RuleSet, LoadErrors> {
+    RuleSet::load_dir(&pack(), dir, &CompileOptions::default())
 }
 
 #[test]
@@ -465,7 +465,7 @@ fn a_fifo_pack_file_is_refused_as_a_read_failure() {
             .success()
     );
     let path = dir.path().to_path_buf();
-    let e = within_timeout(&fifo, move || load_pack_dir(path).unwrap_err());
+    let e = within_timeout(&fifo, move || load_pack_dir(&path).unwrap_err());
     let first = &e.errors()[0];
     assert!(
         matches!(&first.kind, LoadErrorKind::Read(m) if m.contains("not a regular file")),
@@ -481,6 +481,6 @@ fn a_symlinked_pack_file_still_loads() {
     let link = dir.path().join("cat.json");
     std::os::unix::fs::symlink(real.path().join("real.txt"), &link).unwrap();
     let path = dir.path().to_path_buf();
-    let set = within_timeout(&link, move || load_pack_dir(path));
+    let set = within_timeout(&link, move || load_pack_dir(&path));
     assert!(set.is_ok(), "{:?}", set.err());
 }
