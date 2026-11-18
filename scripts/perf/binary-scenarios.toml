@@ -19,35 +19,74 @@ args = ["--version"]
 
 [[scenario]]
 name = "startup rules json"
-args = ["rules", "--config", "{root}/scripts/perf/fixtures/slopvac.toml", "--format", "json"]
+args = [
+  "rules",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "--format",
+  "json",
+]
 
 [[scenario]]
 name = "startup rules judgement json"
-args = ["rules", "--config", "{root}/scripts/perf/fixtures/slopvac.toml", "--kind", "judgement", "--format", "json"]
+args = [
+  "rules",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "--kind",
+  "judgement",
+  "--format",
+  "json",
+]
 
 [[scenario]]
 name = "startup explain"
-args = ["explain", "--config", "{root}/scripts/perf/fixtures/slopvac.toml", "core:ai-residue.chat-leakage"]
+args = [
+  "explain",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "core:ai-residue.chat-leakage",
+]
 
 [[scenario]]
 name = "lint fixture warm"
-args = ["lint", "--config", "{root}/scripts/perf/fixtures/slopvac.toml", "{root}/scripts/perf/fixtures/clean.md"]
+args = [
+  "lint",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "{root}/scripts/perf/fixtures/clean.md",
+]
 accept_exits = [0, 1]
 
 [[scenario]]
 name = "lint fixture cold"
-args = ["lint", "--config", "{root}/scripts/perf/fixtures/slopvac.toml", "{root}/scripts/perf/fixtures/clean.md"]
+args = [
+  "lint",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "{root}/scripts/perf/fixtures/clean.md",
+]
 accept_exits = [0, 1]
 cold = true
 
 [[scenario]]
 name = "lint README warm"
-args = ["lint", "--config", "{root}/scripts/perf/fixtures/slopvac.toml", "{root}/scripts/perf/fixtures/readme.md"]
+args = [
+  "lint",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "{root}/scripts/perf/fixtures/readme.md",
+]
 accept_exits = [0, 1]
 
 [[scenario]]
 name = "lint README cold"
-args = ["lint", "--config", "{root}/scripts/perf/fixtures/slopvac.toml", "{root}/scripts/perf/fixtures/readme.md"]
+args = [
+  "lint",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "{root}/scripts/perf/fixtures/readme.md",
+]
 accept_exits = [0, 1]
 cold = true
 
