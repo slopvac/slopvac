@@ -16,7 +16,7 @@ use crate::{Error, Finding, Linter, Phase};
 /// Lints the Markdown and MDX documents of a project with the engine.
 ///
 /// `Before` reads every document from disk. `After` reads a document from the overlay
-/// when the plan rewrites it. Files under [`BACKUP_DIR`] are never linted. A document
+/// when the plan rewrites it. Files under [`crate::BACKUP_DIR`] are never linted. A document
 /// the engine cannot read, or one it could not check in full, fails the lint.
 pub struct EngineLinter {
     engine: Engine,

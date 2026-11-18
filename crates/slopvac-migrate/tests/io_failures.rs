@@ -250,3 +250,100 @@ fn a_rule_name_from_a_linter_is_escaped_in_the_report() {
     assert!(!out.contains('\u{1b}'), "{out:?}");
     assert!(out.contains("x\\u{1b}[31m"), "{out:?}");
 }
+
+#[test]
+fn a_multiline_mdx_directive_is_reported_at_its_start_line() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "a.mdx",
+        "# T\n\n<!--\nslopvac-allow: rule=prose-format.no-unicode-dash\nreason=x -->\n",
+    );
+    let p = plan_of(dir.path()).unwrap();
+    assert_eq!(p.changes.len(), 0);
+    assert_eq!(p.warnings.len(), 1, "{:?}", p.warnings);
+    assert!(
+        p.warnings[0].starts_with("a.mdx:3: MDX is not rewritten"),
+        "{:?}",
+        p.warnings
+    );
+}
+
+#[test]
+fn mdx_directives_that_no_rewrite_would_change_are_still_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "a.mdx",
+        "<!-- slopvac-allow: rule=no.such-rule reason=x -->\n\n<!-- slopvac-allow: rule=a.b,c.d reason=x -->\n",
+    );
+    let p = plan_of(dir.path()).unwrap();
+    assert_eq!(p.warnings.len(), 2, "{:?}", p.warnings);
+    assert!(
+        p.warnings[0].starts_with("a.mdx:1: MDX is not rewritten"),
+        "{:?}",
+        p.warnings
+    );
+    assert!(
+        p.warnings[1].starts_with("a.mdx:3: MDX is not rewritten"),
+        "{:?}",
+        p.warnings
+    );
+}
+
+fn dropped_of(root: &Path) -> Vec<slopvac_migrate::Dropped> {
+    match plan_of(root) {
+        Err(Error::Dropped(d)) => d,
+        other => panic!("expected Dropped, got {other:?}"),
+    }
+}
+
+#[test]
+fn blocking_records_are_capped_with_a_suppressed_count() {
+    let dir = tempfile::tempdir().unwrap();
+    let one = "<!-- slopvac-allow: rule=no.such-rule reason=x -->\n\n";
+    write(dir.path(), "a.md", one.repeat(250));
+    let d = dropped_of(dir.path());
+    assert_eq!(d.len(), 101);
+    assert_eq!(d[100].reason, "150 more blocking settings suppressed");
+    assert_eq!(d[0].line, 1);
+    let (code, _, err) = cli(dir.path());
+    assert_eq!(code, 2);
+    assert!(err.starts_with("error[config-legacy-dropped]: "), "{err}");
+    assert!(
+        err.trim_end()
+            .ends_with("150 more blocking settings suppressed"),
+        "{err}"
+    );
+}
+
+#[test]
+fn each_blocking_field_is_cut_to_its_length_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let id = format!("no.{}", "x".repeat(2000));
+    write(
+        dir.path(),
+        "a.md",
+        format!("<!-- slopvac-allow: rule={id} reason=x -->\n"),
+    );
+    let d = dropped_of(dir.path());
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].key.chars().count(), 513);
+    assert!(d[0].key.ends_with('…'));
+}
+
+#[test]
+fn a_read_failure_keeps_its_filesystem_and_io_source_chain() {
+    use std::error::Error as _;
+    let io = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+    let e = Error::Read {
+        path: "a.md".into(),
+        source: slopvac_fs::Error::read(&io),
+    };
+    let fs_error = e.source().expect("the filesystem error");
+    let io_error = fs_error.source().expect("the io error");
+    let io_error = io_error
+        .downcast_ref::<std::io::Error>()
+        .expect("an io error");
+    assert_eq!(io_error.kind(), std::io::ErrorKind::PermissionDenied);
+}

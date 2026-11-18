@@ -2,7 +2,7 @@
 
 Slopvac 3.0 has no 2.x compatibility mode. A 2.x config makes every command that reads config exit 2 with `config-legacy-version`. `slopvac migrate` is the only path.
 
-One step exists: 2.x to 3.0. A config with no `schema_version`, or with `schema_version = 2`, starts at that step. `slopvac migrate` reports a config with `schema_version = 3` as already migrated.
+A config with no `schema_version`, or with `schema_version = 2`, needs migrating. One with `schema_version = 3` is reported as already migrated.
 
 ## 1. Find the 2.x surfaces
 
@@ -12,7 +12,6 @@ Look for:
 - A `[tool.slopvac]` table in `pyproject.toml`.
 - `slopvac-allow` comments whose `rule=` value has no pack prefix, such as `rule=prose-format.no-unicode-dash`.
 - Steering blocks between `<!-- slopvac:begin -->` and `<!-- slopvac:end -->` in agent instruction files.
-- Scripts, CI jobs and hooks that use a removed surface (section 6).
 
 ## 2. Preview
 
@@ -24,9 +23,9 @@ The command prints a diff of every file it would change, lists the rules whose f
 
 ## 3. Resolve blockers
 
-Some 2.x settings have no 3.0 equivalent. The command stops with exit 2 and prints one `config-legacy-dropped` line for each, with the file, line, key and reason. It lists all of them in one run and writes nothing when it stops.
+Some 2.x settings have no 3.0 equivalent. The command stops with exit 2 and prints one `config-legacy-dropped` line for each, with the file, line, key and reason. It writes nothing.
 
-Common causes:
+Causes:
 
 - `[vale]` with `enabled = true`, or with `binary`, `config` or `styles` and no `enabled = false`. Delete the table or set `enabled = false`.
 - A rule or category name that is not in the rename table.
@@ -39,10 +38,11 @@ A 2.x category with no rules is dropped with `migrate-category-removed`; migrate
 These failures also exit 2 and write nothing:
 
 - `document-too-large`: a document is over 64 MiB. Split it.
-- `config-too-large`: a config file is over 1 MiB. Shorten it.
-- `migrate-run-limit`: the run read too many files or bytes. Use a smaller directory.
+- `config-too-large`: a config is over 1 MiB. Shorten it.
+- `migrate-run-limit`: too many files or bytes. Use a smaller directory.
 - `migrate-not-utf8`: a file is not UTF-8. Convert it.
-- `config-invalid-toml`: a config or `pyproject.toml` is not valid TOML. The message gives the line.
+- `config-invalid-toml`: a config is not valid TOML. The message gives the line.
+- `config-invalid-type`: `schema_version` is not an integer. Fix it.
 - `migrate-lint-failed`: the lint could not finish. Fix the file named.
 
 ## 4. Apply
@@ -54,13 +54,13 @@ slopvac migrate --write
 The command copies each file it replaces to `.slopvac-migrate-backup`, then rewrites it. Config comments and key order stay. It does the following:
 
 - Moves `.slopvac.toml` and `[tool.slopvac]` into `slopvac.toml`, and adds `schema_version = 3`.
-- Renames categories and rules to their 3.0 names, and writes a rule that had only a `severity` as a bare level.
+- Renames categories and rules to their 3.0 names. A rule with only a `severity` becomes a bare level.
 - Moves `locale.default` to `locale`, `locale.allow` to `terms.allow`, and `vocabulary.path` to `terms.blocklists`.
 - Deletes a `[vale]` table that has `enabled = false`.
 - Qualifies the rule id in each `slopvac-allow` comment. Comments in code fences and code spans stay.
 - Replaces each steering block with the 3.0 text.
 
-The command stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml` and `[tool.slopvac]`. 2.x read only one of them. Remove the unused ones.
+The command stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml` and `[tool.slopvac]`. Remove the unused ones.
 
 To keep the 2.x gates, add `--preserve-behavior`. It selects the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Other patterns fail with `migrate-override-overlap`.
 
@@ -68,9 +68,7 @@ To keep the 2.x gates, add `--preserve-behavior`. It selects the `core:legacy-<p
 
 Run `slopvac lint` and compare it with the preview report.
 
-To undo a write, run `slopvac migrate --restore`. It restores the backed-up files, removes the files the write created, and deletes the backup directory. To keep the migration, delete `.slopvac-migrate-backup`.
-
-A second `slopvac migrate` finds nothing to change.
+To undo a write, run `slopvac migrate --restore`. It restores the backed-up files, removes the files the write created, and deletes the backup. To keep the migration, delete `.slopvac-migrate-backup`. A second `slopvac migrate` finds nothing to change.
 
 ## 6. Removed in 3.0
 

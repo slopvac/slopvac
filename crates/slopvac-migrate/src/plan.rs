@@ -8,7 +8,7 @@ use similar::TextDiff;
 use slopvac_engine::discover::FileKind;
 use toml_edit::{DocumentMut, Item, Value};
 
-use crate::capped::Capped;
+use crate::capped::{Blockers, Capped};
 use crate::config::{key_lines, migrate_config};
 use crate::limits::{Budget, Kind, Limits};
 use crate::walk::{Dir, discover};
@@ -108,7 +108,7 @@ pub fn plan_with_limits(
         notes: Capped::new("notes"),
         warnings: Capped::new("warnings"),
     };
-    let mut dropped: Vec<Dropped> = Vec::new();
+    let mut dropped = Blockers::default();
     let tree = discover(root, &mut budget, &mut sink.warnings)?;
     for dir in &tree.dirs {
         plan_dir(
@@ -138,6 +138,7 @@ pub fn plan_with_limits(
         notes: sink.notes.finish(),
         warnings: sink.warnings.finish(),
     };
+    let dropped = dropped.finish();
     if dropped.is_empty() {
         Ok(plan)
     } else {
@@ -161,7 +162,7 @@ fn plan_dir(
     options: Options,
     budget: &mut Budget,
     plan: &mut Sink,
-    dropped: &mut Vec<Dropped>,
+    dropped: &mut Blockers,
 ) -> Result<(), Error> {
     let dir = &found.path;
     let main_cfg = dir.join("slopvac.toml");
@@ -384,7 +385,7 @@ fn plan_document(
     steering: &str,
     budget: &mut Budget,
     plan: &mut Sink,
-    dropped: &mut Vec<Dropped>,
+    dropped: &mut Blockers,
 ) -> Result<(), Error> {
     let old = budget.read(path, Kind::Document)?;
     let label = rel(root, path);
@@ -430,18 +431,26 @@ fn plan_document(
 }
 
 /// MDX mixes prose with code (ESM blocks, JSX, expressions), so a text rewrite could change
-/// what the page runs. Directives in MDX are left alone; each one that needs a rename is
-/// reported with its line.
+/// what the page runs. Directives in MDX are left alone. Every 2.x directive the parser
+/// finds is reported at the line where it starts, whether a rewrite would have changed it
+/// or not.
 fn warn_mdx_directives(label: &Path, text: &str, renames: &RenameTable, warnings: &mut Capped) {
-    for (index, line) in text.split_inclusive('\n').enumerate() {
-        let (rewritten, _) = rewrite_directives(line, renames);
-        if rewritten != line {
-            warnings.push(format!(
-                "{}:{}: MDX is not rewritten; rename or remove this slopvac-allow directive by hand",
-                label.display(),
-                index + 1
-            ));
-        }
+    let (_, found) = rewrite_directives(text, renames);
+    let mut lines: Vec<usize> = found
+        .renamed
+        .iter()
+        .chain(&found.invalid)
+        .copied()
+        .chain(found.removed.iter().map(|r| r.line))
+        .chain(found.unknown.iter().map(|u| u.line))
+        .collect();
+    lines.sort_unstable();
+    lines.dedup();
+    for line in lines {
+        warnings.push(format!(
+            "{}:{line}: MDX is not rewritten; rename or remove this slopvac-allow directive by hand",
+            label.display(),
+        ));
     }
 }
 

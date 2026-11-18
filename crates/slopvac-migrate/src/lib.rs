@@ -49,6 +49,9 @@ pub struct Options {
 }
 
 /// A 2.x setting that 3.0 cannot represent (`config-legacy-dropped`).
+///
+/// A run keeps a bounded number of these. When it left some out, the last record has an
+/// empty `key` and a `reason` that counts them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dropped {
     /// The file that holds the setting.
@@ -73,6 +76,10 @@ impl Dropped {
 
 impl fmt::Display for Dropped {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The closing record of a capped list has no key; it only counts the rest.
+        if self.key.is_empty() {
+            return f.write_str(&self.reason);
+        }
         write!(
             f,
             "{}:{}: `{}`: {}",
