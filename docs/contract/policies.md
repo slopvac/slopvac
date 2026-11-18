@@ -145,7 +145,7 @@ Owners: `slopvac-8l4.9.3`, `slopvac-8l4.9.4`.
 
 ### 1.9 Input size caps
 
-**3.0 requirement.** Every entry point that reads text enforces a size cap before it hands the text to a parser, an index or a matcher. An input over its cap is refused whole. Slopvac never truncates it. The run is incomplete and exits 2, and the error or notice carries the stable code from the table.
+**3.0 requirement.** Every entry point that reads text enforces a size cap before it hands the text to a parser, an index or a matcher. An input over its cap is refused whole, and its text never reaches a parser. The run is incomplete and exits 2, and the error or notice carries the stable code from the table.
 
 The span crates index text with 32-bit offsets and size their structures from its length, and they do not cap their input. Their documentation states the 64 MiB limit as a rule for callers. Memory per read stays bounded by the cap plus one byte, because the reader stops at the cap.
 
@@ -166,12 +166,12 @@ A per-file cap does not bound the work of many files. Two aggregate budgets boun
 | Entry point | Budget | Code | Why this value |
 |---|---|---|---|
 | `extends` nesting, from the nearest config down | 32 levels | `config-extends-too-deep` | A real chain is two or three levels. |
-| `extends` graph, files applied | 256 | `config-budget-exceeded` | A real graph has fewer than ten files. A file that several others extend counts once for each time it applies, because it applies each time. |
+| `extends` graph, files applied | 256 | `config-budget-exceeded` | A real graph has fewer than ten files. A file that more than one file extends counts once for each time it applies, because it applies each time. |
 | `extends` graph, bytes read | 8 MiB | `config-budget-exceeded` | A real graph is under 100 KiB. Eight files at the 1 MiB cap fit. |
 | Pack directory, rule and category files | 256 | `rules-budget-exceeded` | The shipped pack has 23 files. |
 | Pack directory, bytes read | 32 MiB | `rules-budget-exceeded` | The shipped pack is about 450 KiB. |
 
-A config file that several others extend is read and parsed once, and its result is reused at every place it applies, so the order of settings and their provenance do not change. The byte budget counts each read once. A rule file reached by several names, such as symlinks, loads once under the first name in file-name order, and the file budget counts it once. The pack loader reads and compiles one file at a time. The constants live in `slopvac-config` (`MAX_EXTENDS_DEPTH`, `MAX_EXTENDS_FILES`, `MAX_EXTENDS_BYTES`) and `slopvac-rules` (`MAX_PACK_FILES`, `MAX_PACK_BYTES`).
+A config file that more than one file extends is read and parsed once, and its result is reused at every place it applies, so the order of settings and their provenance do not change. The byte budget counts each read once. A rule file reached by more than one name, such as a symlink, loads once under the first name in file-name order, and the file budget counts it once. The pack loader reads and compiles one file at a time. The constants live in `slopvac-config` (`MAX_EXTENDS_DEPTH`, `MAX_EXTENDS_FILES`, `MAX_EXTENDS_BYTES`) and `slopvac-rules` (`MAX_PACK_FILES`, `MAX_PACK_BYTES`).
 
 Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`).
 
