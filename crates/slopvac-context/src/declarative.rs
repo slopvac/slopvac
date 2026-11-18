@@ -100,7 +100,7 @@ pub struct TaggerSpec {
     pub scope: Option<Scope>,
     /// Confidence in 0..=1.
     #[serde(default = "one")]
-    pub confidence: f32,
+    pub confidence: f64,
     /// Short text that explains the tag in reports.
     #[serde(default, deserialize_with = "present")]
     pub evidence: Option<String>,
@@ -108,19 +108,29 @@ pub struct TaggerSpec {
     _extensions: Extensions,
 }
 
-fn one() -> f32 {
+fn one() -> f64 {
     1.0
+}
+
+/// A confidence that `compile` checked to lie in 0..=1. The tag type stores single
+/// precision, and rounding a value in that range stays in range.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the value is checked to lie in 0..=1, where f32 rounds and never overflows"
+)]
+fn to_f32(confidence: f64) -> f32 {
+    confidence as f32
 }
 
 impl TaggerSpec {
     /// Parse one tagger from YAML.
     pub fn from_yaml(text: &str) -> Result<Self, Error> {
-        serde_saphyr::from_str(text).map_err(|e| Error::Parse(e.to_string()))
+        serde_saphyr::from_str(text).map_err(Error::Yaml)
     }
 
     /// Parse a YAML list of taggers.
     pub fn list_from_yaml(text: &str) -> Result<Vec<Self>, Error> {
-        serde_saphyr::from_str(text).map_err(|e| Error::Parse(e.to_string()))
+        serde_saphyr::from_str(text).map_err(Error::Yaml)
     }
 
     /// Check the rules that the schema states and compile the patterns.
@@ -149,7 +159,7 @@ impl TaggerSpec {
             let structural = when.compile(&Settings {
                 id: &id,
                 tag: &self.tag,
-                confidence: self.confidence,
+                confidence: to_f32(self.confidence),
                 evidence: self.evidence.as_deref(),
                 scope: self.scope.unwrap_or_default(),
             })?;
@@ -265,7 +275,7 @@ impl DeclarativeTagger {
         Tag {
             kind: self.spec.tag.clone(),
             span,
-            confidence: self.spec.confidence,
+            confidence: to_f32(self.spec.confidence),
             evidence: self
                 .spec
                 .evidence
