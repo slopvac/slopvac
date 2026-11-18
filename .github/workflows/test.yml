@@ -413,6 +413,7 @@ jobs:
     env:
       # The Action and fork-review tests run this binary. They fail in CI when it is missing.
       SLOPVAC_BIN: ${{ github.workspace }}/target/debug/slopvac
+      SLOPVAC_REQUIRE_BIN: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

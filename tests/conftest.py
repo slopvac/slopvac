@@ -2,7 +2,7 @@
 
 Build it with ``cargo build -p slopvac``. The tests find it through
 ``SLOPVAC_BIN`` or ``target/{release,debug}/slopvac``. Without one they skip on
-a developer machine. In CI (``CI`` or ``GITHUB_ACTIONS`` set) a missing binary
+a developer machine. With ``SLOPVAC_REQUIRE_BIN=1`` (set in CI) a missing binary
 fails the run, so the real-binary tests cannot skip there unnoticed. A
 ``SLOPVAC_BIN`` that points nowhere always fails.
 """
@@ -21,12 +21,12 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / ".github" / "action-fixtures"
 
 
-def in_ci(env: Mapping[str, str]) -> bool:
-    return bool(env.get("CI") or env.get("GITHUB_ACTIONS"))
+def binary_required(env: Mapping[str, str]) -> bool:
+    return env.get("SLOPVAC_REQUIRE_BIN") == "1"
 
 
 def locate_binary(env: Mapping[str, str], root: Path) -> Path | None:
-    """Return the built binary, ``None`` outside CI when there is none."""
+    """Return the built binary, ``None`` when there is none and it is not required."""
     declared = env.get("SLOPVAC_BIN")
     if declared:
         if not Path(declared).is_file():
@@ -34,10 +34,10 @@ def locate_binary(env: Mapping[str, str], root: Path) -> Path | None:
         return Path(declared)
     built = (root / "target" / profile / "slopvac" for profile in ("release", "debug"))
     found = next((path for path in built if path.is_file()), None)
-    if found is None and in_ci(env):
+    if found is None and binary_required(env):
         pytest.fail(
-            "no built slopvac binary in CI; build it with `cargo build -p slopvac` "
-            "and set SLOPVAC_BIN"
+            "no built slopvac binary and SLOPVAC_REQUIRE_BIN=1; "
+            "build it with `cargo build -p slopvac` and set SLOPVAC_BIN"
         )
     return found
 
@@ -48,7 +48,8 @@ def slopvac_binary() -> Path:
     if found is None:
         pytest.skip(
             "no built slopvac binary, so the real-binary tests do not run; "
-            "run `cargo build -p slopvac` first. CI fails here instead of skipping"
+            "run `cargo build -p slopvac` first. "
+            "SLOPVAC_REQUIRE_BIN=1 fails here instead of skipping"
         )
     return found
 

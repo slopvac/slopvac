@@ -1,4 +1,4 @@
-"""The real-binary fixtures fail in CI instead of skipping."""
+"""The real-binary fixtures fail instead of skipping when the binary is required."""
 
 from __future__ import annotations
 
@@ -22,17 +22,16 @@ def make_binary(root: Path, profile: str) -> Path:
     return binary
 
 
-@pytest.mark.parametrize("env", [{"CI": "true"}, {"GITHUB_ACTIONS": "true"}])
-def test_a_missing_binary_fails_in_ci(tmp_path, env):
-    with pytest.raises(pytest.fail.Exception, match="no built slopvac binary in CI"):
-        conftest.locate_binary(env, tmp_path)
+def test_a_missing_binary_fails_when_required(tmp_path):
+    with pytest.raises(pytest.fail.Exception, match="SLOPVAC_REQUIRE_BIN=1"):
+        conftest.locate_binary({"SLOPVAC_REQUIRE_BIN": "1"}, tmp_path)
 
 
-def test_a_missing_binary_is_left_to_the_caller_to_skip_outside_ci(tmp_path):
+def test_a_missing_binary_is_left_to_the_caller_to_skip_when_not_required(tmp_path):
     assert conftest.locate_binary({}, tmp_path) is None
 
 
-@pytest.mark.parametrize("env", [{}, {"CI": "true"}])
+@pytest.mark.parametrize("env", [{}, {"SLOPVAC_REQUIRE_BIN": "1"}])
 def test_a_declared_path_that_is_not_a_file_always_fails(tmp_path, env):
     env = {**env, "SLOPVAC_BIN": str(tmp_path / "nowhere")}
     with pytest.raises(pytest.fail.Exception, match="is not a file"):
@@ -49,4 +48,4 @@ def test_the_declared_binary_wins_over_the_target_directory(tmp_path):
 def test_the_release_build_is_preferred_to_the_debug_build(tmp_path):
     make_binary(tmp_path, "debug")
     release = make_binary(tmp_path, "release")
-    assert conftest.locate_binary({"CI": "true"}, tmp_path) == release
+    assert conftest.locate_binary({"SLOPVAC_REQUIRE_BIN": "1"}, tmp_path) == release

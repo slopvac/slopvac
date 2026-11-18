@@ -21,6 +21,7 @@ code:
   - 'packages/slopvac-plugin/**'
   - 'tests/**'
   # The tests run the built slopvac binary, so a change to its sources reruns them.
+  - 'action-v3/**'
   - 'crates/**'
   - 'Cargo.toml'
   - 'Cargo.lock'

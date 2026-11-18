@@ -294,6 +294,14 @@ def test_a_change_to_the_binary_sources_runs_the_real_binary_suites(path):
     assert evaluate(JOBS["action-v3"]["if"], outputs) is True
 
 
+def test_a_change_to_the_action_alone_runs_its_contract_tests():
+    # tests/test_action_v3.py reads action-v3/action.yml, so the full suite must run.
+    outputs = classes_of(["action-v3/action.yml"])
+    assert {"code", "action-v3"} <= outputs
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+    assert evaluate(JOBS["action-v3"]["if"], outputs) is True
+
+
 @pytest.mark.parametrize("path", ["README.md", "docs/design/x.md"])
 def test_prose_only_changes_skip_the_action_v3_job(path):
     assert evaluate(JOBS["action-v3"]["if"], classes_of([path])) is False
