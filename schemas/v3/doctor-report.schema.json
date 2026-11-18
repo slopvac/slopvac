@@ -2,14 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://slopvac.github.io/slopvac/schemas/v3/doctor-report.schema.json",
   "title": "slopvac v3 doctor report",
-  "description": "The document that `slopvac doctor --format json` prints. It reports the binary, update state, configuration sources, locked packs, plugin trust and the per-user directories. Doctor reads local files only and never changes them. Paths are relative to the working directory, or `<external>/<name>` outside it (policies.md, section 1.7). Unknown keys are errors, and keys that start with `x-` are ignored. Semantics are specified in docs/contract/doctor.md. Owner: slopvac-8l4.12.5.",
+  "description": "The document that `slopvac doctor --format json` prints. It reports the binary, update state, configuration sources, locked plugins, plugin trust and the per-user directories. Doctor reads local files only and never changes them. Paths are relative to the working directory, or `<external>/<name>` outside it (policies.md, section 1.7). Unknown keys are errors, and keys that start with `x-` are ignored. Semantics are specified in docs/contract/doctor.md. Owner: slopvac-8l4.12.5.",
   "type": "object",
   "properties": {
     "schema_version": {
       "$ref": "common.schema.json#/$defs/SchemaVersion"
     },
     "ok": {
-      "description": "True when nothing needs attention: configuration is valid, the lockfile parses, no pack is tampered and the trust store is readable. The exit code is 0 when true and 2 when false. An available update, a missing lockfile or an empty trust store do not make it false.",
+      "description": "True when nothing needs attention: configuration is valid, the lockfile parses, no plugin is tampered and the trust store is readable. The exit code is 0 when true and 2 when false. An available update, a missing lockfile or an empty trust store do not make it false.",
       "type": "boolean"
     },
     "slopvac": {
@@ -220,7 +220,7 @@
           "minLength": 1
         },
         "kind": {
-          "enum": ["data", "plugin"]
+          "enum": ["data", "code"]
         },
         "state": {
           "description": "`recorded`: installed and intact. `in-place`: a project directory that matches the lock. `changed`: a project directory that differs from the lock. `tampered`: installed but differs from its record. `not-installed`: absent from the store.",
@@ -243,7 +243,7 @@
               "$ref": "#/$defs/Path"
             },
             "status": {
-              "description": "`absent` is not an error: a project need not use packs.",
+              "description": "`absent` is not an error: a project need not use plugins.",
               "enum": ["absent", "ok", "invalid", "unreadable"]
             },
             "error": {
@@ -260,7 +260,7 @@
           "additionalProperties": false
         },
         "items": {
-          "description": "One entry per locked pack, sorted by id. Empty unless the lockfile status is `ok`.",
+          "description": "One entry per locked plugin, sorted by id. Empty unless the lockfile status is `ok`.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Pack"
@@ -277,7 +277,7 @@
       "type": "object",
       "properties": {
         "namespace": {
-          "description": "The pinned namespace, in the pack id pattern. Doctor reports a store that holds any other text as unreadable.",
+          "description": "The pinned namespace, in the plugin id pattern. Doctor reports a store that holds any other text as unreadable.",
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,63}$"
         },

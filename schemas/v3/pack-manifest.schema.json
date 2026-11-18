@@ -2,15 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://slopvac.github.io/slopvac/schemas/v3/pack-manifest.schema.json",
   "title": "slopvac v3 pack manifest",
-  "description": "The slopvac-pack.toml file at the root of a pack. A data pack holds rules, styles, genres, terms, taggers and prime snippets, and no code. A plugin pack adds one [plugin] table with the command to run and the embedded plugin declaration. The manifest is part of the content hash that `slopvac plugins trust` records. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
+  "description": "The slopvac-pack.toml file at the root of a plugin. A data plugin holds rules, styles, genres, terms, taggers and prime snippets, and no code. A code plugin adds one [plugin] table with the command to run and the embedded plugin declaration. The manifest of a code plugin is part of the content hash that `slopvac plugins trust` records. Semantics are specified in docs/contract/packs.md. Owner: slopvac-8l4.2.4.",
   "type": "object",
   "properties": {
     "schema_version": {
       "$ref": "common.schema.json#/$defs/SchemaVersion"
     },
     "id": {
-      "description": "Pack id. It prefixes every rule id the pack provides.",
-      "$ref": "common.schema.json#/$defs/PackId"
+      "description": "Plugin id. It prefixes every rule id the plugin provides. `core` is reserved for the built-in plugin.",
+      "$ref": "common.schema.json#/$defs/PluginId"
     },
     "version": {
       "$ref": "#/$defs/Semver"
@@ -20,10 +20,10 @@
       "$ref": "common.schema.json#/$defs/ApiVersion"
     },
     "kind": {
-      "description": "data holds declarative files only and forbids a plugin table. plugin requires the plugin table. Either kind may provide data files.",
+      "description": "data: a data plugin, which holds declarative files only and forbids a plugin table. code: a code plugin, which requires the plugin table and runs as a subprocess. Either kind may provide data files.",
       "enum": [
         "data",
-        "plugin"
+        "code"
       ]
     },
     "description": {
@@ -65,7 +65,7 @@
       "if": {
         "properties": {
           "kind": {
-            "const": "plugin"
+            "const": "code"
           }
         }
       },
