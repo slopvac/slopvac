@@ -54,16 +54,7 @@ keys, and a consumer must ignore keys it does not know.
 | `data.budget` | Name of the cap that stopped extraction. |
 | `data.limit` | The integer limit, in the unit of that cap. |
 
-`data.budget` takes one of these values:
-
-| Value | Unit of `data.limit` |
-| --- | --- |
-| `segments` | Count of segments. |
-| `part` | Unicode code points. |
-| `locator` | Unicode code points. |
-| `text` | UTF-8 bytes of extracted text. |
-| `in-flight` | Bytes. |
-| `frame` | Bytes, the negotiated `maxMessageBytes`. |
+`data.budget` takes one of the names in the [`BinaryBudget`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryBudget) table of the plugin protocol (plugin-protocol.md), which gives the unit of `data.limit` for each name.
 
 The list of budget names can grow in a later 3.x release, so a consumer must handle a
 name it does not know. The plugin protocol's error `data` for the same code uses the

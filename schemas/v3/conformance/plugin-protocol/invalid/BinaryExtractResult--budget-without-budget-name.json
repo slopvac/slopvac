@@ -6,7 +6,8 @@
         "code": -32010,
         "message": "budget segments=1000000 reached",
         "data": {
-          "slopvac_code": "extract-budget"
+          "slopvac_code": "extract-budget",
+          "limit": 1000000
         }
       }
     }

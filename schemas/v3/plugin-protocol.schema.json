@@ -883,6 +883,25 @@
                   {
                     "if": {
                       "properties": {
+                        "outcome": {
+                          "const": "no-source"
+                        }
+                      },
+                      "required": [
+                        "outcome"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "unsupported": {
+                          "maxItems": 0
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
                         "error": {
                           "properties": {
                             "data": {
