@@ -103,8 +103,13 @@ pub fn build_engine(
     terms: &TermInputs,
     cwd: &Path,
 ) -> Result<Engine, CliError> {
+    // Each file is read once, and the engine gets the entries that passed validation. A second
+    // read by the engine could fail with a message that holds the file's text.
+    let mut entries = Vec::new();
     for file in &terms.files {
-        TermsFile::load(file).map_err(|e| failed(file, "cannot load the terms file", &e, cwd))?;
+        let loaded = TermsFile::load(file)
+            .map_err(|e| failed(file, "cannot load the terms file", &e, cwd))?;
+        entries.extend(loaded.terms);
     }
     let mut blocklist = Blocklist::default();
     for file in &terms.blocklists {
@@ -116,10 +121,13 @@ pub fn build_engine(
         |e: slopvac_engine::EngineError| CliError::new("engine-unavailable", e.to_string());
     let mut engine = Engine::new(sets, settings).map_err(unavailable)?;
     if !terms.files.is_empty() {
-        engine = engine.with_term_files(&terms.files).map_err(unavailable)?;
+        engine = engine.with_term_entries(entries);
     }
     if !blocklist.is_empty() {
-        engine = engine.with_blocklist(&blocklist).map_err(unavailable)?;
+        // The engine's message can quote a word of the blocklist, so it is not forwarded.
+        engine = engine.with_blocklist(&blocklist).map_err(|_| {
+            CliError::new("engine-unavailable", "a blocklist entry cannot be compiled")
+        })?;
     }
     Ok(engine)
 }

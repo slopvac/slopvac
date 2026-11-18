@@ -794,6 +794,35 @@ fn an_extends_cycle_through_an_external_file_hides_its_directories() {
 const TERM_CASING: &str = "terms:terms.casing";
 
 #[test]
+fn a_terms_only_listing_names_the_terms_pack() {
+    let v = json(&["rules", "--category", "terms", "--format", "json"]);
+    assert_eq!(v["pack"], "terms");
+    assert_eq!(v["packs"], serde_json::json!(["terms"]));
+    let rules = v["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0]["pack"], "terms");
+}
+
+#[test]
+fn a_mixed_listing_names_every_pack_and_each_entry_its_own() {
+    let v = json(&["rules", "--format", "json"]);
+    assert_eq!(v["packs"], serde_json::json!(["core", "terms"]));
+    let pack_of = |list: &str, id: &str| {
+        v[list]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == id)
+            .unwrap_or_else(|| panic!("{id} is listed"))["pack"]
+            .clone()
+    };
+    assert_eq!(pack_of("rules", CHAT_LEAKAGE), "core");
+    assert_eq!(pack_of("rules", TERM_CASING), "terms");
+    assert_eq!(pack_of("categories", "ai-residue"), "core");
+    assert_eq!(pack_of("categories", "terms"), "terms");
+}
+
+#[test]
 fn rules_lists_the_term_casing_rule() {
     let v = json(&["rules", "--format", "json"]);
     let rule = v["rules"]

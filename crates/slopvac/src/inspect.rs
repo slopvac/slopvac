@@ -234,6 +234,7 @@ fn rule_json(category: &LoadedCategory, rule: &LoadedRule, sev: &Severities) -> 
     if let Value::Object(map) = &mut value {
         map.insert("id".into(), json!(rule.id().as_str()));
         map.insert("category".into(), json!(category.id().as_str()));
+        map.insert("pack".into(), json!(rule.id().pack()));
         map.insert("kind".into(), json!(kind_name(rule.kind())));
         let eff = effective(sev, rule);
         map.insert("effective_severity".into(), json!(eff.level));
@@ -257,6 +258,7 @@ fn rules_json(
         .map(|c| {
             json!({
                 "id": c.id().as_str(),
+                "pack": c.rules().first().map_or("core", |r| r.id().pack()),
                 "title": c.title().as_str(),
                 "description": c.description().as_str(),
                 "weight": c.weight(),
@@ -265,7 +267,21 @@ fn rules_json(
         })
         .collect();
     let rules: Vec<Value> = picked.iter().map(|(c, r)| rule_json(c, r, sev)).collect();
-    let payload = json!({"pack": "core", "categories": categories, "rules": rules});
+    // The packs that own the listed rules, in catalogue order. `pack` stays for readers of the
+    // first release and names the first of them; `packs` and the `pack` of each entry are the
+    // complete answer.
+    let mut packs: Vec<&str> = Vec::new();
+    for (_, rule) in picked {
+        if !packs.contains(&rule.id().pack()) {
+            packs.push(rule.id().pack());
+        }
+    }
+    let payload = json!({
+        "pack": packs.first().copied().unwrap_or("core"),
+        "packs": packs,
+        "categories": categories,
+        "rules": rules,
+    });
     pretty(&payload)
 }
 

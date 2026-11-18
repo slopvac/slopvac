@@ -205,6 +205,78 @@ fn a_terms_file_outside_the_project_shows_as_external_even_when_missing() {
 }
 
 #[test]
+fn projects_with_the_same_settings_and_different_terms_files_stay_apart() {
+    // Both projects have the same config text, so their settings are equal; only the terms
+    // files differ. One run must lint each document against its own project's terms.
+    let config = "schema_version = 3\n\n[terms]\nfiles = [\"terms.toml\"]\n";
+    let doc = "# Title\n\nThe team deploys zorblax and quuxify on Friday.\n";
+    let dir = tempfile::tempdir().expect("tempdir");
+    for (project, term) in [("a", "Zorblax"), ("b", "Quuxify")] {
+        let root = dir.path().join(project);
+        fs::create_dir_all(&root).expect("project");
+        fs::write(root.join("slopvac.toml"), config).expect("config");
+        fs::write(
+            root.join("terms.toml"),
+            format!("schema_version = 3\n\n[[terms]]\nterm = \"{term}\"\n"),
+        )
+        .expect("terms");
+        fs::write(root.join("doc.md"), doc).expect("doc");
+    }
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--format", "json", "a/doc.md", "b/doc.md"])
+        .output()
+        .expect("run");
+    let report: Value = serde_json::from_slice(&out.stdout).expect("json report");
+    let matched = |path: &str| -> Vec<String> {
+        report["documents"]
+            .as_array()
+            .expect("documents")
+            .iter()
+            .find(|d| d["path"] == path)
+            .expect("document")["findings"]
+            .as_array()
+            .expect("findings")
+            .iter()
+            .map(|f| f["matched_text"].as_str().expect("matched").to_owned())
+            .collect()
+    };
+    assert_eq!(matched("a/doc.md"), ["zorblax"]);
+    assert_eq!(matched("b/doc.md"), ["quuxify"]);
+}
+
+#[test]
+fn a_category_qualified_with_the_wrong_pack_is_a_config_error() {
+    // `orwell` is a core category; the `terms` pack has no such category.
+    let config = "schema_version = 3\n\n[categories]\n\"terms:orwell\" = \"off\"\n";
+    let (_dir, path) = project(config, &[], MISCASED);
+    slopvac()
+        .arg("lint")
+        .arg(&path)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[config-unknown-category]"));
+}
+
+#[test]
+fn disabling_a_category_with_the_wrong_pack_does_not_disable_the_core_category() {
+    let (_dir, path) = project("schema_version = 3\n", &[], MISCASED);
+    slopvac()
+        .args(["lint", "--disable", "terms:orwell"])
+        .arg(&path)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("unknown category or rule"));
+}
+
+#[test]
+fn a_category_qualified_with_its_own_pack_still_resolves() {
+    let config = "schema_version = 3\n\n[categories]\n\"core:orwell\" = \"off\"\n";
+    let (_dir, path) = project(config, &[], MISCASED);
+    slopvac().arg("lint").arg(&path).assert().code(0);
+}
+
+#[test]
 fn the_term_casing_rule_can_be_turned_off_by_its_id() {
     let config = "schema_version = 3\n\n[terms]\nfiles = [\"terms.toml\"]\n\n[rules]\n\"terms:terms.casing\" = \"off\"\n";
     let (_dir, path) = project(config, &[("terms.toml", TERMS_FILE)], MISCASED);

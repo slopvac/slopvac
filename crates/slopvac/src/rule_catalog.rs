@@ -185,19 +185,20 @@ impl Catalog {
         self.sets.iter().find_map(|s| s.get(id))
     }
 
-    /// `key` without a leading pack id, when the pack is one of the catalogue.
-    fn strip_pack<'a>(&self, key: &'a str) -> &'a str {
-        match key.split_once(':') {
-            Some((pack, rest)) if self.sets.iter().any(|s| s.pack().as_str() == pack) => rest,
-            _ => key,
-        }
-    }
-
-    /// The category a config or command-line key names, bare or qualified by a known pack.
+    /// The category a config or command-line key names, bare or qualified. A qualified key
+    /// names a category of that pack only: `terms:orwell` is not core's `orwell`.
     #[must_use]
     pub fn category_named(&self, key: &str) -> Option<&LoadedCategory> {
-        let bare = self.strip_pack(key);
-        self.categories().find(|c| c.id().as_str() == bare)
+        match key.split_once(':') {
+            Some((pack, name)) => self
+                .sets
+                .iter()
+                .find(|s| s.pack().as_str() == pack)?
+                .categories()
+                .iter()
+                .find(|c| c.id().as_str() == name),
+            None => self.categories().find(|c| c.id().as_str() == key),
+        }
     }
 
     /// The rule a config or command-line key names, bare or qualified. A bare key reads as
