@@ -112,9 +112,10 @@ def _validate(doc_changes=None, repo_changes=None, doc=None):
     doc = copy.deepcopy(
         doc or next(d for d in HUMAN_UPSTREAM if "commit" in d["source"])
     )
+    repo_name = doc["source"]["repo"]
     doc.update(doc_changes or {})
     repos = copy.deepcopy(MANIFEST["repos"])
-    repos[doc["source"]["repo"]].update(repo_changes or {})
+    repos[repo_name].update(repo_changes or {})
     return lib.validate_manifest({"schema": 1, "repos": repos, "documents": [doc]})
 
 
@@ -231,3 +232,26 @@ def test_a_recorded_public_check_is_accepted():
         _validate(repo_changes={"public": True, "public_checked_at": "2026-11-17"})
         == []
     )
+
+
+@pytest.mark.parametrize(
+    ("doc_changes", "fragment"),
+    [
+        ({"provenance": "commit.committer.date"}, "provenance must be an object"),
+        ({"provenance": ["date_source"]}, "provenance must be an object"),
+        (
+            {"provenance": {"license_revision": "a" * 40}, "source": "not-an-object"},
+            "missing or mistyped 'source'",
+        ),
+        ({"provenance": {"date_source": ["x"]}}, "date_source"),
+    ],
+    ids=["string", "list", "source-not-object", "unhashable-date-source"],
+)
+def test_wrong_shapes_give_diagnostics_not_exceptions(doc_changes, fragment):
+    errors = _validate(doc_changes)
+    assert any(fragment in e for e in errors)
+
+
+def test_a_repository_entry_that_is_not_an_object_gives_a_diagnostic():
+    manifest = {"schema": 1, "repos": {"o/r": "public"}, "documents": []}
+    assert any("o/r" in e for e in lib.validate_manifest(manifest))

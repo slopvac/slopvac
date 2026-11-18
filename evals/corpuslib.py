@@ -180,6 +180,8 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
 def _validate_repo(name: str, repo: dict[str, Any]) -> list[str]:
     """`public` and `public_checked_at` are optional, but travel together."""
     errors: list[str] = []
+    if not isinstance(repo, dict):
+        return [f"{name}: repos entry must be an object"]
     if "public" in repo and repo["public"] is not True:
         errors.append(f"{name}: repository is not public")
     if "public" in repo or "public_checked_at" in repo:
@@ -189,11 +191,22 @@ def _validate_repo(name: str, repo: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _source_commit(doc: dict[str, Any], default: str) -> str:
+    """The pinned commit, or `default` when the source is absent or mistyped.
+
+    A mistyped `source` is reported by its own check.
+    """
+    source = doc.get("source")
+    return source.get("commit", default) if isinstance(source, dict) else default
+
+
 def _validate_provenance(ident: str, doc: dict[str, Any]) -> list[str]:
     """`provenance` is optional so records from before it existed stay valid."""
     prov = doc.get("provenance")
     if prov is None:
         return []
+    if not isinstance(prov, dict):
+        return [f"{ident}: provenance must be an object"]
     errors: list[str] = []
     if "date_source" in prov and prov["date_source"] not in DATE_SOURCES:
         errors.append(f"{ident}: date_source must be one of {DATE_SOURCES}")
@@ -201,7 +214,7 @@ def _validate_provenance(ident: str, doc: dict[str, Any]) -> list[str]:
         revision = prov["license_revision"]
         if not (isinstance(revision, str) and COMMIT_RE.match(revision)):
             errors.append(f"{ident}: license_revision must be a 40-digit commit id")
-        elif revision != doc.get("source", {}).get("commit", revision):
+        elif revision != _source_commit(doc, revision):
             errors.append(f"{ident}: licence must be read at the content revision")
     return errors
 
