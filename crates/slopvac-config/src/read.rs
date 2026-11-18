@@ -10,6 +10,11 @@ use std::path::Path;
 /// shipped rule file is about 130 KiB, so 1 MiB leaves a wide margin for a config.
 pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
+// Budget names in `docs/contract/policies.md` section 1.9 and their constants:
+// `extends-depth` is `MAX_EXTENDS_DEPTH`, `extends-files` is `MAX_EXTENDS_FILES`,
+// `extends-bytes` is `MAX_EXTENDS_BYTES` and `extends-applied-bytes` is
+// `MAX_EXTENDS_APPLIED_BYTES`.
+
 /// The deepest `extends` nesting: the nearest config extends a file that extends a file, and
 /// so on. A real chain is two or three levels, so 32 leaves a wide margin.
 pub const MAX_EXTENDS_DEPTH: usize = 32;

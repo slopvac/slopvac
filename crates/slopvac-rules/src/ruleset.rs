@@ -17,6 +17,10 @@ use crate::model::{Category, LocalRuleId, MatchKind, ProfileName, Rule, Scope, W
 /// 2 MiB leaves more than a tenfold margin for a pack.
 pub const MAX_RULE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 
+// Budget names in `docs/contract/policies.md` section 1.9 and their constants:
+// `pack-files` is `MAX_PACK_FILES`, `pack-bytes` is `MAX_PACK_BYTES` and `pack-entries` is
+// `MAX_PACK_ENTRIES`.
+
 /// The most rule or category files one pack directory may load, after files that are the same
 /// file under several names count once. The shipped pack has 23, so 256 leaves a wide margin.
 pub const MAX_PACK_FILES: usize = 256;
@@ -337,14 +341,18 @@ fn pack_files(dir: &Path) -> Result<Vec<PathBuf>, LoadError> {
         rule: None,
         kind: LoadErrorKind::Read(e.to_string()),
     };
-    let too_many = || over_budget(dir, PackBudget::Files, MAX_PACK_FILES as u64);
+    let too_many_files = || over_budget(dir, PackBudget::Files, MAX_PACK_FILES as u64);
     let mut files: Vec<PathBuf> = Vec::new();
     for (seen, entry) in fs::read_dir(dir)
         .map_err(|e| read_error(dir, &e))?
         .enumerate()
     {
         if seen >= MAX_PACK_ENTRIES {
-            return Err(too_many());
+            return Err(over_budget(
+                dir,
+                PackBudget::Entries,
+                MAX_PACK_ENTRIES as u64,
+            ));
         }
         let path = entry.map_err(|e| read_error(dir, &e))?.path();
         if Format::of(&path).is_some() {
@@ -358,7 +366,7 @@ fn pack_files(dir: &Path) -> Result<Vec<PathBuf>, LoadError> {
         let id = fs::canonicalize(&p).map_err(|e| read_error(&p, &e))?;
         if identities.insert(id) {
             if distinct.len() >= MAX_PACK_FILES {
-                return Err(too_many());
+                return Err(too_many_files());
             }
             distinct.push(p);
         }

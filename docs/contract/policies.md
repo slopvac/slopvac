@@ -169,7 +169,8 @@ A per-file cap does not bound the work of many files. Two aggregate budgets boun
 | `extends` graph, files applied | `extends-files` | 256 | files | `config-budget-exceeded` | A real graph has fewer than ten files. A file that more than one file extends counts once for each time it applies, because it applies each time. |
 | `extends` graph, bytes read | `extends-bytes` | 8 MiB | bytes | `config-budget-exceeded` | A real graph is under 100 KiB. Eight files at the 1 MiB cap fit. |
 | `extends` graph, bytes of config applied | `extends-applied-bytes` | 64 MiB | bytes | `config-budget-exceeded` | A real graph applies under 100 KiB. A file that more than one file extends counts its size once for each time it applies, so 64 MiB stops a small graph from repeating a large file hundreds of times. |
-| Pack directory, rule and category files | `pack-files` | 256 | files | `rules-budget-exceeded` | The shipped pack has 23 files. A directory with more than 1024 entries of any kind trips this budget too, before the loader sorts or resolves any of them. |
+| Pack directory, rule and category files | `pack-files` | 256 | files | `rules-budget-exceeded` | The shipped pack has 23 files. |
+| Pack directory, entries of any kind | `pack-entries` | 1024 | entries | `rules-budget-exceeded` | Bounds directory scanning before the loader resolves any file. |
 | Pack directory, bytes read | `pack-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The shipped pack is about 450 KiB. |
 
 How the budgets apply:
@@ -180,8 +181,6 @@ How the budgets apply:
 - An `extends` cycle is not a budget. It keeps `config-extends-cycle`, and the loader checks for a cycle before it checks the depth.
 - A rule file reached by more than one name, such as a symlink, loads once under the first name in file-name order, and the file budget counts it once.
 - The pack loader reads and compiles one file at a time.
-
-The constants live in `slopvac-config` (`MAX_EXTENDS_DEPTH`, `MAX_EXTENDS_FILES`, `MAX_EXTENDS_BYTES`, `MAX_EXTENDS_APPLIED_BYTES`) and `slopvac-rules` (`MAX_PACK_FILES`, `MAX_PACK_BYTES`, `MAX_PACK_ENTRIES`).
 
 Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`).
 

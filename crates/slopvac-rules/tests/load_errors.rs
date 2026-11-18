@@ -396,7 +396,7 @@ fn a_budget_refusal_for_a_pack_outside_the_working_directory_shows_no_absolute_p
 
 #[cfg(unix)]
 #[test]
-fn a_flood_of_aliases_past_the_entry_limit_is_refused_as_too_many_files() {
+fn a_flood_of_aliases_past_the_entry_limit_is_refused_as_too_many_entries() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.json"), one_rule_category("cat")).unwrap();
     for i in 0..slopvac_rules::MAX_PACK_ENTRIES {
@@ -404,8 +404,8 @@ fn a_flood_of_aliases_past_the_entry_limit_is_refused_as_too_many_files() {
     }
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
     let (budget, limit, _) = budget_error(&e);
-    assert_eq!(budget, "pack-files");
-    assert_eq!(limit, slopvac_rules::MAX_PACK_FILES as u64);
+    assert_eq!(budget, "pack-entries");
+    assert_eq!(limit, slopvac_rules::MAX_PACK_ENTRIES as u64);
 }
 
 #[test]
@@ -415,7 +415,9 @@ fn a_flood_of_unrelated_entries_past_the_entry_limit_is_refused() {
         std::fs::write(dir.path().join(format!("note{i:05}.txt")), "").unwrap();
     }
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
-    assert_eq!(budget_error(&e).0, "pack-files");
+    let (budget, limit, _) = budget_error(&e);
+    assert_eq!(budget, "pack-entries");
+    assert_eq!(limit, 1024);
 }
 
 #[test]

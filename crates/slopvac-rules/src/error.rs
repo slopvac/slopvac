@@ -7,9 +7,10 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PackBudget {
-    /// Rule and category files, in files: [`MAX_PACK_FILES`](crate::MAX_PACK_FILES). A directory
-    /// with more than [`MAX_PACK_ENTRIES`](crate::MAX_PACK_ENTRIES) entries trips it too.
+    /// Rule and category files, in files: [`MAX_PACK_FILES`](crate::MAX_PACK_FILES).
     Files,
+    /// Directory entries of any kind, in entries: [`MAX_PACK_ENTRIES`](crate::MAX_PACK_ENTRIES).
+    Entries,
     /// Bytes read, in bytes: [`MAX_PACK_BYTES`](crate::MAX_PACK_BYTES).
     Bytes,
 }
@@ -20,6 +21,7 @@ impl PackBudget {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Files => "pack-files",
+            Self::Entries => "pack-entries",
             Self::Bytes => "pack-bytes",
         }
     }
@@ -29,6 +31,7 @@ impl PackBudget {
     pub fn unit(self) -> &'static str {
         match self {
             Self::Files => "files",
+            Self::Entries => "entries",
             Self::Bytes => "bytes",
         }
     }
