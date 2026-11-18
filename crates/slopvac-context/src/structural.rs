@@ -5,6 +5,7 @@
 //! heading path, an admonition title, front matter, the file path or the block kind, and
 //! it may tag a whole section or document.
 
+use std::collections::HashMap;
 use std::ops::Range;
 
 use serde::Deserialize;
@@ -217,7 +218,33 @@ impl StructuralTagger {
         Ok(false)
     }
 
-    fn block_ok(&self, b: &BlockView<'_>, verdicts: &mut [Option<bool>]) -> Result<bool, Error> {
+    /// Whether the admonition pattern matches `title`, remembered per title.
+    ///
+    /// A view that reports many blocks under one admonition lends them all the same title, so
+    /// the title's address and length identify it, and the pattern runs once per title instead
+    /// of once per block. The key is only compared, never read through. A title that is equal
+    /// text at another address gets its own entry, which costs a repeat match and nothing more.
+    fn admonition_ok(
+        p: &Pattern,
+        title: &str,
+        seen: &mut HashMap<(usize, usize), bool>,
+    ) -> Result<bool, Error> {
+        let key = (title.as_ptr().addr(), title.len());
+        if let Some(&hit) = seen.get(&key) {
+            return Ok(hit);
+        }
+        crate::work::admonition(title.len());
+        let hit = p.is_match(title)?;
+        seen.insert(key, hit);
+        Ok(hit)
+    }
+
+    fn block_ok(
+        &self,
+        b: &BlockView<'_>,
+        verdicts: &mut [Option<bool>],
+        titles: &mut HashMap<(usize, usize), bool>,
+    ) -> Result<bool, Error> {
         let kind_ok = match self.block_kind {
             Some(k) => b.kind == k,
             None => b.kind != BlockKind::CodeBlock,
@@ -227,7 +254,7 @@ impl StructuralTagger {
         }
         if let Some(p) = &self.admonition {
             match b.admonition_title {
-                Some(t) if p.is_match(t)? => {}
+                Some(t) if Self::admonition_ok(p, t, titles)? => {}
                 _ => return Ok(false),
             }
         }
@@ -261,9 +288,10 @@ impl StructuralTagger {
         let mut bounds = None;
         let mut emitted: Vec<bool> = Vec::new();
         let mut verdicts = Vec::new();
+        let mut titles = HashMap::new();
         for (i, b) in blocks.iter().enumerate() {
             self.enter(b, &mut verdicts);
-            if !self.block_ok(b, &mut verdicts)? {
+            if !self.block_ok(b, &mut verdicts, &mut titles)? {
                 continue;
             }
             let hits: Vec<Range<usize>> = match &self.sentence {

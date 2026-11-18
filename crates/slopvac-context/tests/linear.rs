@@ -9,7 +9,8 @@ use rstest::rstest;
 
 use slopvac_context::{
     BlockView, DocumentView, EnforcedInvariantTagger, PlainDocument, RequirementTagger,
-    SentenceView, Tagger, TaggerSpec, take_heading_steps, take_section_steps, take_text_steps,
+    SentenceView, Tagger, TaggerSpec, take_admonition_steps, take_heading_steps,
+    take_section_steps, take_text_steps,
 };
 
 /// A document that counts the calls a tagger makes on it.
@@ -219,4 +220,50 @@ fn blocks_match_while_a_matching_heading_is_above_them(#[case] src: &str, #[case
         .map(|t| src[t.span.clone()].trim())
         .collect();
     assert_eq!(got, want);
+}
+
+/// A document whose paragraphs all sit under one admonition, as the engine reports them: every
+/// block borrows the same title.
+struct Admonished {
+    inner: PlainDocument,
+    title: String,
+}
+
+impl DocumentView for Admonished {
+    fn path(&self) -> &str {
+        self.inner.path()
+    }
+    fn title(&self) -> Option<&str> {
+        self.inner.title()
+    }
+    fn front_matter(&self, key: &str) -> Option<&str> {
+        self.inner.front_matter(key)
+    }
+    fn source_len(&self) -> usize {
+        self.inner.source_len()
+    }
+    fn blocks(&self) -> Vec<BlockView<'_>> {
+        let mut blocks = self.inner.blocks();
+        for b in &mut blocks {
+            b.admonition_title = Some(&self.title);
+        }
+        blocks
+    }
+}
+
+/// A title is matched against the admonition pattern once, however many blocks sit under it.
+#[test]
+fn a_long_admonition_title_is_matched_once_for_all_its_blocks() {
+    let yaml =
+        "schema_version: 3\nid: t\ntag: k\nscope: paragraph\nwhen:\n  admonition_title: 'danger'\n";
+    let tagger = TaggerSpec::from_yaml(yaml).unwrap().compile().unwrap();
+    assert_linear("admonition match", 2, 64, |blocks| {
+        let doc = Admonished {
+            inner: PlainDocument::from_markdown("a.md", &"Paragraph.\n\n".repeat(blocks)),
+            title: "calm ".repeat(blocks / 8),
+        };
+        let _ = take_admonition_steps();
+        assert_eq!(tagger.tag(&doc).unwrap().len(), 0);
+        (doc.title.len(), take_admonition_steps())
+    });
 }
