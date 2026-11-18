@@ -52,14 +52,23 @@ pub fn reviewer_agents(root: &Path) -> Result<Vec<ReviewerAgent>, AgentsError> {
     Ok(found)
 }
 
+/// The front matter fields this module reads.
+#[derive(serde::Deserialize)]
+struct FrontMatter {
+    model: Option<String>,
+}
+
+/// Read `model:` from the YAML front matter. A file whose front matter does not parse
+/// has no readable model, so it reads as unset.
 fn front_matter_model(text: &str) -> Option<String> {
     let mut lines = text.lines();
     if lines.next()? != "---" {
         return None;
     }
-    lines
-        .take_while(|l| *l != "---")
-        .find_map(|l| l.strip_prefix("model:"))
-        .map(|v| v.trim().trim_matches('"').to_owned())
-        .filter(|v| !v.is_empty() && v != INHERIT)
+    let yaml: Vec<&str> = lines.take_while(|l| *l != "---").collect();
+    let front: FrontMatter = serde_saphyr::from_str(&yaml.join("\n")).ok()?;
+    front
+        .model
+        .map(|m| m.trim().to_owned())
+        .filter(|m| !m.is_empty() && m != INHERIT)
 }

@@ -3,13 +3,14 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Arg, ArgAction, ArgMatches, Command, builder::PossibleValuesParser};
+use slopvac_model::{Notice, NoticeLevel};
 
 use crate::block::{self, State};
 use crate::content::{self, BlockKind};
-use crate::error::{AgentsError, Notice};
+use crate::error::{AgentsError, notice};
 use crate::fsx::Project;
 use crate::guidance::Guidance;
-use crate::harness::{self, Harness};
+use crate::harness::{self, AgentFormat, Harness};
 use crate::managed;
 
 /// Exit code: pass.
@@ -206,20 +207,29 @@ fn plan(opts: &Options) -> Result<Plan, AgentsError> {
     })
 }
 
-fn notices(p: &Plan) -> Vec<Notice> {
+fn notices(p: &Plan) -> Result<Vec<Notice>, AgentsError> {
     if !p.reviewer_model_unset {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    vec![Notice {
-        code: "setup-reviewer-model-unset",
-        message: "no reviewer model is set, so the reviewer agent inherits the harness model, \
-                  which is probably the author's. Pass --reviewer-model with a model from a \
-                  different family than the author's."
-            .into(),
-    }]
+    let picks = match p.harness.agent_format() {
+        Some(AgentFormat::Claude) => {
+            "Claude Code uses CLAUDE_CODE_SUBAGENT_MODEL when it is set and the main \
+             conversation's model otherwise"
+        }
+        _ => "OpenCode uses the parent session's model",
+    };
+    Ok(vec![notice(
+        "setup-reviewer-model-unset",
+        NoticeLevel::Warning,
+        format!(
+            "no reviewer model is set, so the harness picks it: {picks}. That can be the \
+             author's model. Pass --reviewer-model with a model from a different family \
+             than the author's."
+        ),
+    )?])
 }
 
-fn check(p: &Plan) -> Outcome {
+fn check(p: &Plan) -> Result<Outcome, AgentsError> {
     let mut states = vec![(
         block::block_state(&p.project, &p.steering, &p.block_text),
         &p.steering,
@@ -244,11 +254,11 @@ fn check(p: &Plan) -> Outcome {
         .iter()
         .map(|(s, path)| format!("{} {}", s.word(), p.project.display(path)))
         .collect();
-    Outcome {
+    Ok(Outcome {
         lines,
         exit,
-        notices: notices(p),
-    }
+        notices: notices(p)?,
+    })
 }
 
 fn skill_in_use_elsewhere(p: &Plan) -> bool {
@@ -334,7 +344,7 @@ fn install(p: &Plan, unrequested: Unrequested) -> Result<Outcome, AgentsError> {
     Ok(Outcome {
         lines,
         exit: EXIT_OK,
-        notices: notices(p),
+        notices: notices(p)?,
     })
 }
 
@@ -353,7 +363,7 @@ pub fn execute(opts: &Options) -> Result<Outcome, AgentsError> {
     }
     let p = plan(opts)?;
     if opts.check {
-        Ok(check(&p))
+        check(&p)
     } else if opts.remove {
         remove(&p)
     } else {

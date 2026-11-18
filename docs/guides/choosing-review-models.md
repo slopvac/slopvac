@@ -56,11 +56,16 @@ Source: <https://opencode.ai/docs/agents>.
   4. The model of the main conversation.
 - With `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`, Claude Code ignores the `model` field. A forced model can silently make the reviewer the author's model, so check your settings files for it.
 
-Source: <https://code.claude.com/docs/en/sub-agents#choose-a-model>.
+Source: <https://code.claude.com/docs/en/sub-agents#choose-a-model>. The full page is <https://code.claude.com/docs/en/sub-agents>.
 
 ## The unset-model warning
 
-Without `--reviewer-model`, or with `--reviewer-model inherit`, the reviewer agent inherits the model of the session. Setup then does the following:
+Without `--reviewer-model`, or with `--reviewer-model inherit`, the reviewer agent has no model of its own, so the harness picks one:
+
+- OpenCode uses the model of the parent session.
+- Claude Code uses `CLAUDE_CODE_SUBAGENT_MODEL` when it is set, and the model of the main conversation otherwise.
+
+Either way, the reviewer can be the author's model. Setup then does the following:
 
 - It writes a commented line, `# model: <a model from a different family than the author's>`, in the agent file. The line has no effect until you replace it with a `model:` line.
 - It reports the warning `setup-reviewer-model-unset` and exits 0.

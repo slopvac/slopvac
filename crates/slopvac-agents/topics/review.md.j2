@@ -48,8 +48,8 @@ Run `slopvac prime review --type <type>` for the steps of one type.
 
 - The reviewer model must differ from the author's. `slopvac review --reviewer-model <model>` rejects a match.
 - A model provider is a plugin. It runs only after `slopvac plugins trust` and a `[review] provider` entry.
-- `slopvac review --dry-run` prints the exact text a provider would get and calls nothing. Offline mode blocks every provider.
-- `mechanical` calls no provider. `update` sends changed passages with their originals, added sentences and dropped sentences. `rewrite` sends the original and the revised document.
+- `slopvac review --dry-run` prints the text a provider would get and calls nothing. Offline mode blocks every provider.
+- `mechanical` calls no provider. `update` sends changed passages with originals, plus added and dropped sentences. `rewrite` sends both documents.
 {% if level != "minimal" %}
 
 ## Verdict

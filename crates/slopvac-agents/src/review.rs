@@ -9,8 +9,10 @@ use std::path::PathBuf;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use serde::Serialize;
 
+use slopvac_model::{Notice, NoticeLevel};
+
 use crate::claims::{self, Report};
-use crate::error::{AgentsError, Notice};
+use crate::error::{AgentsError, notice};
 
 // STUB(slopvac-8l4.11.8): `ReviewEnv` is filled by the caller; config and the provider hook replace it.
 // The `[review] author_model` and `[review] model` lookups sit behind the same seam.
@@ -500,21 +502,28 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
         matches.get_flag("scope-approved"),
     )?;
     let uses_provider = review_type != ReviewType::Mechanical;
-    let author = matches
-        .get_one::<String>("author-model")
-        .cloned()
-        .or_else(|| env.author_model.clone());
-    let reviewer = matches
-        .get_one::<String>("reviewer-model")
-        .cloned()
-        .or_else(|| env.reviewer_model.clone())
-        .or_else(|| env.provider.map(|p| p.model().to_owned()));
+    // A mechanical review calls no reviewer, so the models and their rule do not apply.
+    let (author, reviewer) = if uses_provider {
+        (
+            matches
+                .get_one::<String>("author-model")
+                .cloned()
+                .or_else(|| env.author_model.clone()),
+            matches
+                .get_one::<String>("reviewer-model")
+                .cloned()
+                .or_else(|| env.reviewer_model.clone())
+                .or_else(|| env.provider.map(|p| p.model().to_owned())),
+        )
+    } else {
+        (None, None)
+    };
     let checked = match (&author, &reviewer) {
         (Some(a), Some(r)) => check_reviewer_model(Some(a), r)?,
         _ => false,
     };
     let notices = if uses_provider {
-        unchecked_notice(author.is_some(), reviewer.is_some())
+        unchecked_notice(author.is_some(), reviewer.is_some())?
             .into_iter()
             .collect()
     } else {
@@ -543,20 +552,25 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
 }
 
 /// The notice for a run whose "different model" rule could not be checked.
-fn unchecked_notice(author_known: bool, reviewer_known: bool) -> Option<Notice> {
+fn unchecked_notice(
+    author_known: bool,
+    reviewer_known: bool,
+) -> Result<Option<Notice>, AgentsError> {
     let missing = match (author_known, reviewer_known) {
-        (true, true) => return None,
+        (true, true) => return Ok(None),
         (false, true) => "the author model",
         (true, false) => "the reviewer model",
         (false, false) => "the author model and the reviewer model",
     };
-    Some(Notice {
-        code: "review-model-unchecked",
-        message: format!(
+    notice(
+        "review-model-unchecked",
+        NoticeLevel::Warning,
+        format!(
             "the reviewer is not checked against the author: {missing} is unknown. \
              Pass --author-model and --reviewer-model, or set author_model and model under [review]."
         ),
-    })
+    )
+    .map(Some)
 }
 
 fn call_provider(env: &ReviewEnv<'_>, plan: &Plan) -> Result<String, AgentsError> {

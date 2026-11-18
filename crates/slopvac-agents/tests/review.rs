@@ -688,3 +688,60 @@ fn prime_review_verdict_reports_both_models_and_forbids_guessing() {
     ));
     assert!(text.contains("name the model the harness actually ran, or `unknown`; never guess."));
 }
+#[test]
+fn the_author_flag_overrides_the_config_author_at_the_provider_check() {
+    let dir = tempfile::tempdir().unwrap();
+    // The provider runs `gpt-5`. The config author is also `gpt-5`, which would be refused,
+    // but the flag names a different author, so the provider check passes and the call runs.
+    let mock = Mock {
+        model: "gpt-5",
+        calls: Cell::new(0),
+    };
+    let env = ReviewEnv {
+        provider: Some(&mock),
+        author_model: Some("gpt-5".into()),
+        ..ReviewEnv::default()
+    };
+    let out = run(
+        &args(
+            dir.path(),
+            &[
+                "--author-model",
+                "claude-opus-5-5",
+                "--reviewer-model",
+                "mistral-large",
+            ],
+        ),
+        &env,
+    )
+    .unwrap();
+    assert!(out.contains("\"report\": \"no findings\""), "{out}");
+    assert_eq!(mock.calls.get(), 1);
+}
+
+#[test]
+fn a_mechanical_review_ignores_matching_author_and_provider_models() {
+    let dir = tempfile::tempdir().unwrap();
+    let mock = Mock {
+        model: "gpt-5",
+        calls: Cell::new(0),
+    };
+    for offline in [false, true] {
+        let env = ReviewEnv {
+            offline,
+            provider: Some(&mock),
+            author_model: Some("gpt-5".into()),
+            ..ReviewEnv::default()
+        };
+        let out = run(
+            &pair(dir.path(), &prose("handles"), &prose("serves"), &[]),
+            &env,
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["review_type"], "mechanical", "offline={offline}");
+        assert_eq!(json["reviewer_model_checked"], false);
+        assert_eq!(notice_codes(&json), Vec::<&str>::new());
+    }
+    assert_eq!(mock.calls.get(), 0);
+}

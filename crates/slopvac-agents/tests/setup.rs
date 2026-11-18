@@ -437,7 +437,7 @@ fn an_unset_or_inherited_reviewer_model_writes_a_placeholder_and_warns() {
             let dir = tempfile::tempdir().unwrap();
             let out = execute(&agent_opts(dir.path(), harness, model)).unwrap();
             assert_eq!(out.exit, EXIT_OK, "{harness} {model:?}");
-            let codes: Vec<&str> = out.notices.iter().map(|n| n.code).collect();
+            let codes: Vec<&str> = out.notices.iter().map(|n| n.code.as_str()).collect();
             assert_eq!(codes, ["setup-reviewer-model-unset"], "{harness} {model:?}");
             let text = fs::read_to_string(
                 dir.path()
@@ -480,7 +480,7 @@ fn check_reports_an_unset_model_as_a_warning_not_as_stale() {
         out.lines
     );
     assert_eq!(out.notices.len(), 1);
-    assert_eq!(out.notices[0].code, "setup-reviewer-model-unset");
+    assert_eq!(out.notices[0].code.as_str(), "setup-reviewer-model-unset");
 }
 
 #[test]
@@ -528,4 +528,19 @@ fn opencode_keeps_provider_model_and_variant() {
     ))
     .unwrap();
     assert_eq!(out.notices, vec![]);
+}
+#[test]
+fn the_unset_warning_names_what_each_harness_falls_back_to() {
+    let claude = tempfile::tempdir().unwrap();
+    let out = execute(&agent_opts(claude.path(), "claude", None)).unwrap();
+    assert_eq!(out.notices[0].level, slopvac_model::NoticeLevel::Warning);
+    let message = out.notices[0].message.as_str();
+    assert!(message.contains("CLAUDE_CODE_SUBAGENT_MODEL"), "{message}");
+    assert!(message.contains("main conversation's model"), "{message}");
+
+    let opencode = tempfile::tempdir().unwrap();
+    let out = execute(&agent_opts(opencode.path(), "opencode", None)).unwrap();
+    let message = out.notices[0].message.as_str();
+    assert!(message.contains("parent session's model"), "{message}");
+    assert!(!message.contains("CLAUDE_CODE"), "{message}");
 }

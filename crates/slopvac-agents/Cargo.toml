@@ -18,9 +18,11 @@ clap.workspace = true
 minijinja.workspace = true
 pulldown-cmark.workspace = true
 serde.workspace = true
+serde-saphyr.workspace = true
 serde_json.workspace = true
 slopvac-config.workspace = true
 slopvac-migrate.workspace = true
+slopvac-model.workspace = true
 slopvac-text.workspace = true
 thiserror.workspace = true
 

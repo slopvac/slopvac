@@ -2,14 +2,7 @@
 
 use std::path::PathBuf;
 
-/// A warning or notice that does not stop the run. The code is stable and kebab-case.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct Notice {
-    /// The stable code.
-    pub code: &'static str,
-    /// The message.
-    pub message: String,
-}
+use slopvac_model::{KebabName, NonEmptyString, Notice, NoticeLevel};
 
 /// A setup or steering failure. Each variant has a stable kebab-case code.
 #[derive(Debug, thiserror::Error)]
@@ -92,4 +85,25 @@ impl AgentsError {
             source,
         }
     }
+}
+
+/// Build a [`Notice`] for the workflows in this crate.
+///
+/// # Errors
+/// The code is not kebab-case or the message is empty. Both are coding mistakes.
+pub(crate) fn notice(
+    code: &'static str,
+    level: NoticeLevel,
+    message: String,
+) -> Result<Notice, AgentsError> {
+    let invalid = |what: String| AgentsError::Coded {
+        code: "agents-notice-invalid",
+        message: format!("cannot build notice {code}: {what}"),
+    };
+    Ok(Notice {
+        code: KebabName::new(code).map_err(|e| invalid(e.to_string()))?,
+        level,
+        message: NonEmptyString::new(message).map_err(|e| invalid(e.to_string()))?,
+        path: None,
+    })
 }
