@@ -202,7 +202,8 @@ also work. `.slopvac/packs.lock` records the version, source, and digest of each
 
 ### Registry logins
 
-For a private registry, slopvac takes the first login it finds, in this order:
+For a private registry, slopvac takes the first login it finds, in this order: environment
+variables, Docker config logins, then container auth files, then credential helpers.
 
 1. `SLOPVAC_OCI_USER` plus `SLOPVAC_OCI_TOKEN`.
 2. `GITHUB_TOKEN`, for `ghcr.io` only.
@@ -214,22 +215,30 @@ For a private registry, slopvac takes the first login it finds, in this order:
 5. The credential helper that the Docker config names, through `credHelpers` for the registry or
    else `credsStore`.
 
-With none of these, access is anonymous. Slopvac reads logins from your environment and home directory, not from the project.
+go-containerregistry, the library behind crane, reads the container auth files only when no Docker
+config exists. Slopvac also reads them when the Docker config has no entry for the registry. It
+still prefers a static login over running a helper.
+
+With none of these, access is anonymous. Slopvac reads logins from your environment and home
+directory, not from the project. Slopvac asks for a login only when the registry demands one.
 
 Slopvac looks for `docker-credential-<name>` on `PATH`, but only in safe directories. It skips
 relative and empty entries, entries inside the project, and directories that others can write.
 Root or you must own the helper and every directory above it. A directory that a group can write
-passes when you are the only member of the group. It also passes when root owns it and it
-belongs to `admin` and you are an `admin` member.
+is refused, with one exception: the `admin` group, when you belong to it. Slopvac refuses every
+other group, even when you look like its only member.
 
-If the helper exists only in an unsafe directory, the run stops with the code
-`credential-helper-untrusted` and names the helper path. Set `SLOPVAC_OCI_USER` and
-`SLOPVAC_OCI_TOKEN` to sign in without it.
+If the helper exists only in an unsafe directory, slopvac does not start it. It tries the registry
+without a login and continues when the registry allows that. When the registry demands a login,
+the run stops with exit 2 and the code `credential-helper-untrusted`. The message names the
+directory, relative to the project or as `<external>/<name>`. Tighten the permissions of that
+directory, or sign in with a static `auths` login, `SLOPVAC_OCI_USER` plus `SLOPVAC_OCI_TOKEN`,
+or `GITHUB_TOKEN` for `ghcr.io`.
 
 #### Docker Desktop on macOS
 
 Docker Desktop keeps `docker-credential-desktop` under `/Applications`, which the `admin` group
-can write. That directory passes the check for an administrator. A registry that `docker login`
+can write. That directory passes the check for a member of `admin`. A registry that `docker login`
 set up then works with no extra setup. The `docker-credential-desktop` link that Docker Desktop
 installs must sit in a `PATH` directory that you or root own.
 
