@@ -31,6 +31,16 @@ Create a second ruleset that targets `refs/tags/rc/v*` with the same settings as
 
 No workflow checks this ruleset. `scripts/release_ruleset.py` accepts only plain `vX.Y.Z` tags. The stable gate does not rely on it: it needs a passed `candidate.yml` push run for the candidate tag at its current commit, so a moved tag has no passed run until its run passes. The ruleset keeps the tag that testers installed from fixed.
 
+## Pin the tag rulesets
+
+`scripts/release_ruleset.py check` trusts a tag ruleset only while its ID and `updated_at` match `scripts/release_ruleset_pins.json`. After you create or edit a tag ruleset, review it, then run this as a repository admin and commit the result:
+
+```sh
+python3 scripts/release_ruleset.py update-pins --repo slopvac/slopvac
+```
+
+`update-pins` is the only writer of the pin file. It reads the rulesets with your token and refuses to write unless it can see each ruleset's `bypass_actors` and they are empty or admin-only. A token without admin rights therefore cannot update the pins. Review the pin file change like a change to the ruleset itself.
+
 ## Check the setup
 
 Run the `Release candidate` workflow by hand (`workflow_dispatch`) on a branch with `dry-run` on. It exercises the build and tests and publishes nothing. The first real upload happens only when someone pushes an `rc/vX.Y.Z-rc.N` tag and approves the `pypi` environment.
