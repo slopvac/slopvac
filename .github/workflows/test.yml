@@ -43,6 +43,7 @@ jobs:
       package: ${{ steps.filter.outputs.package }}
       rust: ${{ steps.filter.outputs.rust }}
       evals: ${{ steps.filter.outputs.evals }}
+      diagram-adapter: ${{ steps.filter.outputs.diagram-adapter }}
       docs-site: ${{ steps.filter.outputs.docs-site }}
       action: ${{ steps.filter.outputs.action }}
       action-v3: ${{ steps.filter.outputs.action-v3 }}
@@ -461,8 +462,6 @@ jobs:
 
       - name: Run every discovered pytest suite
         run: python3 -m pytest
-        env:
-          SLOPVAC_EVALS_LIVE_ENGINE: "1"
 
       # Needs history for the baseline, so this step alone fetches in full. A pull
       # request compares with its merge-base; a merge-queue entry compares with the
@@ -485,6 +484,33 @@ jobs:
           fi
           git cat-file -e "$base^{commit}"
           python3 scripts/contract/schema_compat.py --base "$base"
+
+  diagram-adapter:
+    name: Live diagram adapter
+    needs: changes
+    if: >-
+      needs.changes.outputs.force_all == 'true' ||
+      needs.changes.outputs['diagram-adapter'] == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Run the live diagram adapter test
+        run: uv run --locked --extra dev pytest -q tests/test_evals_diagrams.py -k test_live_adapter_reproduces_the_recorded_output
+        env:
+          SLOPVAC_EVALS_LIVE_ENGINE: "1"
 
   # Exercise the published package across every Python version claimed in
   # project metadata. This is intentionally separate from the full-suite job.
@@ -701,6 +727,7 @@ jobs:
       - changes
       - quick-lint
       - test
+      - diagram-adapter
       - rust-static
       - rust
       - rust-msrv
@@ -732,6 +759,7 @@ jobs:
           DEPENDENCIES: ${{ needs.changes.outputs.dependencies }}
           FILESYSTEM: ${{ needs.changes.outputs.filesystem }}
           EVALS: ${{ needs.changes.outputs.evals }}
+          DIAGRAM_ADAPTER: ${{ needs.changes.outputs['diagram-adapter'] }}
           DOCS_SITE: ${{ needs.changes.outputs['docs-site'] }}
         run: |
           set -euo pipefail
@@ -766,11 +794,13 @@ jobs:
           dependencies = os.environ["DEPENDENCIES"] == "true"
           filesystem = os.environ["FILESYSTEM"] == "true"
           evals = os.environ["EVALS"] == "true"
+          diagram_adapter = os.environ["DIAGRAM_ADAPTER"] == "true"
           docs_site = os.environ["DOCS_SITE"] == "true"
 
           expected = {
               "quick-lint": True,
               "test": force_all or code,
+              "diagram-adapter": force_all or diagram_adapter,
               "rust-static": force_all or rust,
               "rust": force_all or rust,
               "rust-msrv": force_all or rust,

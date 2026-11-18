@@ -35,8 +35,6 @@ code:
   - 'scripts/contract/**'
   - 'tests/contract/**'
   - 'crates/slopvac-text/**'
-  - 'crates/slopvac-diagrams/**'
-  - 'crates/slopvac-engine/**'
   - 'crates/slopvac-engine/tests/fixtures/**'
   - 'crates/slopvac-rules/tests/fixtures/**'
   - 'crates/slopvac-migrate/data/**'
@@ -61,6 +59,14 @@ rust:
   - 'ast-grep/**'
   - 'sgconfig.yml'
   - 'docs/reference/error-codes.lock'
+
+diagram-adapter:
+  - '.github/workflows/**'
+  - 'crates/slopvac-diagrams/**'
+  - 'crates/slopvac-engine/**'
+  - 'evals/**'
+  - 'tests/test_evals_diagrams.py'
+  - 'tests/fixtures/diagram_eval_output.json'
 
 # Reference-engine eval ratchet. Rule data, the Python engine, the eval corpus
 # and the contracts the corpus is scored against.
