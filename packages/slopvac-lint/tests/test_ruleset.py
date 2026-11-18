@@ -647,3 +647,31 @@ def test_shipped_lexical_examples_fire_through_engine(ruleset):
         failure for failure in failures if failure.split(" ", 1)[0] not in known_failures
     ]
     assert not unexpected, "\n".join(unexpected)
+
+
+def _yaml_rule_counts() -> tuple[int, int]:
+    """Total and judgement rule counts from the YAML text, independent of the loader."""
+    rules_dir = Path(__file__).parents[1] / "src" / "slopvac" / "rules"
+    total = judgement = 0
+    for path in rules_dir.glob("*.yml"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            total += line.startswith("  - id: ")
+            judgement += line == "    kind: judgement"
+    return total, judgement
+
+
+def test_loaded_catalogue_matches_the_yaml_text(ruleset):
+    total, judgement = _yaml_rule_counts()
+    assert len(ruleset.judgement_rules) == judgement
+    assert len(ruleset.rules) + len(ruleset.judgement_rules) == total
+
+
+def test_readme_rule_totals_match_the_yaml_text():
+    """The README counts are prose with no generator, so they are checked here."""
+    total, judgement = _yaml_rule_counts()
+    checked = total - judgement
+    root = Path(__file__).parents[3]
+    for path in (root / "README.md", root / "packages" / "slopvac-lint" / "README.md"):
+        text = " ".join(path.read_text(encoding="utf-8").split())
+        assert f"{checked} checked rules" in text, path
+        assert f"{judgement} judgment rules" in text, path

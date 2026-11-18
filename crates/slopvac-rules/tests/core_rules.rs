@@ -29,6 +29,25 @@ fn core() -> RuleSet {
     .unwrap_or_else(|e| panic!("core rules must load:\n{e}"))
 }
 
+/// Rule counts read straight from the rule YAML on disk, independent of every loader: a
+/// rule starts at a two-space `- id:` line and a judgement rule has a four-space
+/// `kind: judgement` line.
+fn yaml_counts() -> (usize, usize) {
+    let dir = manifest().join("../../packages/slopvac-lint/src/slopvac/rules");
+    let (mut rules, mut judgement) = (0, 0);
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "yml") {
+            continue;
+        }
+        for line in std::fs::read_to_string(&path).unwrap().lines() {
+            rules += usize::from(line.starts_with("  - id: "));
+            judgement += usize::from(line == "    kind: judgement");
+        }
+    }
+    (rules, judgement)
+}
+
 fn no_spans() -> Vec<std::ops::Range<usize>> {
     Vec::new()
 }
@@ -55,9 +74,11 @@ fn every_core_category_file_validates_against_both_schemas() {
 fn the_core_pack_loads_every_category_and_rule() {
     let set = core();
     assert_eq!(set.categories().len(), 26);
-    let in_categories: usize = set.categories().iter().map(|c| c.rules().len()).sum();
-    assert_eq!(set.len(), in_categories);
-    assert_eq!(set.rules().count(), in_categories);
+    let (rules, judgement) = yaml_counts();
+    assert!(rules > 0, "the YAML files must be found");
+    assert_eq!(set.len(), rules);
+    assert_eq!(set.rules().count(), rules);
+    assert_eq!(set.rules_of_kind(MatchKind::Judgement).count(), judgement);
 }
 
 #[test]
