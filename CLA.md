@@ -1,5 +1,4 @@
 <!-- slopvac-disable -->
-
 # Contributor Agreement
 
 ## Individual Contributor Non-Exclusive License Agreement
@@ -97,7 +96,6 @@ You agree to notify Us of any facts or circumstances of which you become aware t
 #### Recreate this Contributor License Agreement
 
 [https://contributoragreements.org/ca-cla-chooser/?beneficiary-name=Sjors+Robroek&project-name=slopvac&project-website=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac&project-email=&process-url=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac%2Fblob%2Fmain%2FCONTRIBUTING.md%23contributor-license-agreement&project-jurisdiction=the+Netherlands&fsfe-compliance=non-fsfe-compliance&agreement-exclusivity=non-exclusive&outbound-option=fsfe&outboundlist=&outboundlist-custom=&license-policy-location=&medialist=None&patent-option=Traditional&your-name=&your-date=&your-title=&your-address=&your-patents=&pos=apply&action=](https://contributoragreements.org/ca-cla-chooser/?beneficiary-name=Sjors+Robroek&project-name=slopvac&project-website=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac&project-email=&process-url=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac%2Fblob%2Fmain%2FCONTRIBUTING.md%23contributor-license-agreement&project-jurisdiction=the+Netherlands&fsfe-compliance=non-fsfe-compliance&agreement-exclusivity=non-exclusive&outbound-option=fsfe&outboundlist=&outboundlist-custom=&license-policy-location=&medialist=None&patent-option=Traditional&your-name=&your-date=&your-title=&your-address=&your-patents=&pos=apply&action=)
-
 <!-- slopvac-enable -->
 
 Based on the Contributor Agreements 1.2 template from contributoragreements.org, licensed under CC BY-SA 4.0.
@@ -107,7 +105,7 @@ CC BY-SA 4.0 licenses this file too.
 Modified from the template:
 
 1. The contact sentence points to the CONTRIBUTING CLA section. The generator had no email for it.
-2. The generator's signature blocks for "You" and "Us" are gone. Signing works by pull request comment.
+2. The generator's signature blocks for "You" and "Us" are gone. Contributors sign through CLA Assistant on their pull request.
 3. One link to recreate the agreement remains. The duplicate links are gone.
 4. The attribution line above replaces the generator's last line.
 5. Markdown links replace the escaped brackets in the outbound Option 1 clause.
