@@ -3,14 +3,10 @@ name: CLA
 # slopvac/cla-signers and are written with a GitHub App token.
 on:
   issue_comment:
-    types: [created]
+    types: [created, edited, deleted]
   pull_request_target:
     types: [opened, closed, reopened, synchronize]
   merge_group:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
-  cancel-in-progress: false # Never cancel a CLA check
 
 permissions: {}
 
@@ -20,7 +16,20 @@ jobs:
   # the same name. The pull request run already enforced the CLA.
   CLA:
     name: CLA
-    if: github.event_name != 'merge_group'
+    # Comments start the job only when they can matter: a pull request comment that
+    # contains the sign phrase or `recheck`. The action itself accepts only a comment
+    # whose whole trimmed body is the phrase, so this looser `contains` filter can
+    # never drop a valid signature. Other comments never join the concurrency queue,
+    # so they cannot displace a pending sign or sync run.
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      (contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA') ||
+      contains(github.event.changes.body.from, 'I have read the CLA Document and I hereby sign the CLA') ||
+      contains(github.event.comment.body, 'recheck')))
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: false # Never cancel a CLA check
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -33,11 +42,6 @@ jobs:
     steps:
       - name: Generate app token
         id: app-token
-        if: >-
-          github.event_name == 'pull_request_target' ||
-          (github.event.issue.pull_request &&
-          (github.event.comment.body == 'recheck' ||
-          github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.CLA_APP_CLIENT_ID }}
@@ -63,6 +67,27 @@ jobs:
           remote-repository-name: cla-signers
           lock-pullrequest-aftermerge: true
           require-opener-as-author: true
+
+      # The action re-runs the pull request's CLA check only when that check failed.
+      # An edited or deleted sign comment can invalidate a check that already passed,
+      # so re-run the latest pull_request_target run for the current head as well.
+      # That run checks the recorded signatures against the comments again.
+      - name: Re-check the pull request after a sign comment changed
+        if: >-
+          github.event_name == 'issue_comment' &&
+          (github.event.action == 'edited' || github.event.action == 'deleted')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          head=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
+          run=$(gh api "repos/$REPO/actions/workflows/cla.yml/runs?event=pull_request_target&head_sha=$head&per_page=1" --jq '.workflow_runs[0].id // empty')
+          if [ -n "$run" ]; then
+            gh run rerun "$run" --repo "$REPO"
+          else
+            echo "No pull_request_target CLA run for $head"
+          fi
 
   CLA-merge-queue:
     name: CLA

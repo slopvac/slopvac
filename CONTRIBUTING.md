@@ -111,7 +111,7 @@ These bot accounts don't sign:
 
 ### Unsigned pull requests
 
-A pull request can't merge until the `CLA` check passes. That covers every author of every commit in it.
+The `CLA` check runs on every pull request and covers every author of every commit in it. Maintainers merge a pull request only after the check passes.
 
 ## Commits and pull requests
 
