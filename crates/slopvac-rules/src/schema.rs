@@ -8,7 +8,7 @@ use schemars::generate::Contract;
 use schemars::transform::{RecursiveTransform, Transform};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::{Value, json};
-use slopvac_model::schema::{absent_not_null, settings};
+use slopvac_model::{absent_not_null, schema_settings};
 
 use crate::model::{Category, Rule, RuleFile};
 
@@ -17,7 +17,7 @@ use crate::model::{Category, Rule, RuleFile};
 /// so every `Option` loses the `null` alternative schemars adds.
 #[must_use]
 pub fn schema_generator() -> SchemaGenerator {
-    settings(Contract::Deserialize)
+    schema_settings(Contract::Deserialize)
         .with_transform(RecursiveTransform(absent_not_null))
         .into_generator()
 }

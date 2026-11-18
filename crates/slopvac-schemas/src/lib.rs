@@ -2,7 +2,7 @@
 //!
 //! [`ARTIFACTS`] lists each generated file. [`generate`] builds every file in memory: it
 //! links each `$defs` entry that another file owns to that file, then writes canonical JSON
-//! ([`to_canonical_json`]). [`write`] stores the result under a repository root and
+//! ([`to_canonical_json`]). [`write()`] stores the result under a repository root and
 //! [`check`] compares it with the committed files.
 
 mod artifacts;

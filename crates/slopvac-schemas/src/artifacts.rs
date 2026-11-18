@@ -1,10 +1,9 @@
 use schemars::generate::Contract;
 use schemars::{JsonSchema, SchemaGenerator};
 use serde_json::{Map, Value};
-use slopvac_model::schema::settings;
 use slopvac_model::{
     ApiVersion, ConfigSource, ContextTag, Edit, LineCol, PackId, Report, RuleId, RuleProvenance,
-    SchemaVersion, Severity, Span,
+    SchemaVersion, Severity, Span, schema_settings,
 };
 use slopvac_rules::{Category, RuleFile, schema_generator};
 
@@ -69,7 +68,7 @@ pub const ARTIFACTS: &[Artifact] = &[
 ];
 
 fn common() -> Value {
-    let mut generator = settings(Contract::Deserialize).into_generator();
+    let mut generator = schema_settings(Contract::Deserialize).into_generator();
     let defs = [
         define::<Span>,
         define::<LineCol>,
@@ -113,7 +112,7 @@ fn category() -> Value {
 /// The producer contract: what `Report` serializes, so a member the producer always writes
 /// stays required even where `Deserialize` would accept it absent.
 fn lint_report() -> Value {
-    settings(Contract::Serialize)
+    schema_settings(Contract::Serialize)
         .into_generator()
         .into_root_schema_for::<Report>()
         .to_value()

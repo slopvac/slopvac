@@ -336,7 +336,7 @@
     },
     "MetricMatch": {
       "additionalProperties": false,
-      "description": "A counted measurement compared with a threshold. The finding fires when measured <comparison> threshold holds.",
+      "description": "A counted measurement compared with a threshold. The finding fires when `measured <comparison> threshold` holds.",
       "patternProperties": {
         "^x-": true
       },

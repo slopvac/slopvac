@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use similar::TextDiff;
-use slopvac_model::schema::id;
+use slopvac_model::schema_id;
 
 use crate::artifacts::{ARTIFACTS, Artifact};
 use crate::canonical::to_canonical_json;
@@ -76,7 +76,7 @@ fn build(artifact: &Artifact, done: &[(&'static str, Value)]) -> Result<Value> {
         });
     };
     object.insert("$schema".into(), DIALECT.into());
-    object.insert("$id".into(), id(artifact.file).into());
+    object.insert("$id".into(), schema_id(artifact.file).into());
     object.insert("title".into(), artifact.title.into());
     if let Some(description) = artifact.description {
         object.insert("description".into(), description.into());

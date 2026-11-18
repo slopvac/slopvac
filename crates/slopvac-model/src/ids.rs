@@ -96,9 +96,9 @@ impl fmt::Display for PackId {
     }
 }
 
-/// Qualified rule identifier <pack>:<id>. A rule from a category file has the id
-/// <category>.<rule>, for example core:prose-craft.acronym-periods; a rule a plugin reports
-/// may use a bare id such as core:passive-voice. Short names resolve in configuration only
+/// Qualified rule identifier `<pack>:<id>`. A rule from a category file has the id
+/// `<category>.<rule>`, for example `core:prose-craft.acronym-periods`; a rule a plugin reports
+/// may use a bare id such as `core:passive-voice`. Short names resolve in configuration only
 /// where they are unambiguous; every output carries the qualified form.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,

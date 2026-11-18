@@ -14,9 +14,9 @@ use std::fmt;
 use schemars::JsonSchema;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use slopvac_model::schema::{SLUG, if_then, x_extensions};
 use slopvac_model::{
-    AiSignal, CategoryId, ContextTag, Density, GenreId, NonEmptyString, SchemaVersion, Severity,
+    AiSignal, CategoryId, ContextTag, Density, GenreId, NonEmptyString, SLUG, SchemaVersion,
+    Severity, if_then, x_extensions,
 };
 
 use crate::ext::{Extensions, UniqueVec, ValueError, is_slug, present, text_newtype};
@@ -473,8 +473,8 @@ pub struct SubstitutionMatch {
     ext: Extensions,
 }
 
-/// A counted measurement compared with a threshold. The finding fires when measured
-/// <comparison> threshold holds.
+/// A counted measurement compared with a threshold. The finding fires when `measured
+/// <comparison> threshold` holds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "MetricMatch")]
 #[schemars(transform = x_extensions, transform = Kind("metric"))]
@@ -1228,7 +1228,7 @@ fn default_weight() -> Weight {
 pub struct Category {
     /// Always 3.
     pub schema_version: SchemaVersion,
-    /// Category id. The qualified rule id is <pack>:<category>.<rule>.
+    /// Category id. The qualified rule id is `<pack>:<category>.<rule>`.
     pub id: CategoryId,
     /// Display title.
     pub title: NonEmptyString,

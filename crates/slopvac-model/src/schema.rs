@@ -1,7 +1,8 @@
 //! Schema helpers for what `#[derive(JsonSchema)]` attributes cannot say on their own.
 //!
-//! `slopvac-schemas` writes `schemas/v3` from the Rust types with [`generator`]; the
-//! crates that check a document against a generated schema use the same settings. Apply a
+//! `slopvac-schemas` writes `schemas/v3` from the Rust types with the generator that
+//! [`settings`] configures; the crates that check a document against a generated schema use
+//! the same settings. Apply a
 //! helper with `#[schemars(transform = ...)]` or `#[schemars(extend("key" = ...))]`.
 
 use schemars::Schema;
@@ -10,17 +11,17 @@ use schemars::transform::RecursiveTransform;
 use serde_json::{Map, Value, json};
 
 /// Where the v3 schemas are published; each file's `$id` is this base plus its file name.
-pub const BASE: &str = "https://slopvac.github.io/slopvac/schemas/v3/";
+pub(crate) const BASE: &str = "https://slopvac.github.io/slopvac/schemas/v3/";
 
 /// A lower-case letter, then lower-case letters, digits and hyphens: pack, category, genre
 /// and context ids.
 pub const SLUG: &str = r"^[a-z][a-z0-9-]*(?![\s\S])";
 
 /// Stable kebab-case: lower-case words of letters and digits joined by single hyphens.
-pub const KEBAB: &str = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\s\S])";
+pub(crate) const KEBAB: &str = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\s\S])";
 
 /// A qualified rule id `<pack>:<id>`.
-pub const RULE_ID: &str = r"^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*(?![\s\S])";
+pub(crate) const RULE_ID: &str = r"^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*(?![\s\S])";
 
 /// The `$id` of the published schema file `file`, such as `common.schema.json`.
 #[must_use]
@@ -29,8 +30,9 @@ pub fn id(file: &str) -> String {
 }
 
 /// The settings every v3 schema uses: draft 2020-12, stated explicitly so a change of the
-/// schemars default cannot move the dialect, plus [`plain_numbers`], [`plain_enums`] and
-/// [`one_line_descriptions`] on every subschema.
+/// schemars default cannot move the dialect. On every subschema they drop the `format` that
+/// schemars adds to Rust number types, write a closed set of strings as a plain `enum`, and
+/// join each description onto one line per paragraph.
 #[must_use]
 pub fn settings(contract: Contract) -> SchemaSettings {
     let mut settings = SchemaSettings::draft2020_12();
@@ -43,7 +45,7 @@ pub fn settings(contract: Contract) -> SchemaSettings {
 
 /// Join the lines of a doc comment into one line per paragraph, so a description reads the
 /// same however the source wraps it.
-pub fn one_line_descriptions(schema: &mut Schema) {
+pub(crate) fn one_line_descriptions(schema: &mut Schema) {
     if let Some(Value::String(text)) = schema.get_mut("description") {
         let joined = text
             .split("\n\n")
@@ -93,7 +95,7 @@ pub fn absent_not_null(schema: &mut Schema) {
 
 /// An object with any members: drop the `"additionalProperties": true` schemars writes for a
 /// map of JSON values. Without the keyword the schema means the same.
-pub fn open_object(schema: &mut Schema) {
+pub(crate) fn open_object(schema: &mut Schema) {
     if schema.get("additionalProperties") == Some(&Value::Bool(true)) {
         schema.remove("additionalProperties");
     }
@@ -107,7 +109,7 @@ pub fn if_then(condition: &Value, then: &Value) -> Value {
 
 /// `dependentRequired`: each key names the members that must come with it.
 #[must_use]
-pub fn dependent_required(pairs: &[(&str, &[&str])]) -> Value {
+pub(crate) fn dependent_required(pairs: &[(&str, &[&str])]) -> Value {
     Value::Object(
         pairs
             .iter()
@@ -118,7 +120,7 @@ pub fn dependent_required(pairs: &[(&str, &[&str])]) -> Value {
 
 /// Drop the `format` schemars adds to Rust number types (`uint`, `double` and the like).
 /// They are not JSON Schema formats, and validators only ignore them.
-pub fn plain_numbers(schema: &mut Schema) {
+pub(crate) fn plain_numbers(schema: &mut Schema) {
     let numeric = match schema.get("type") {
         Some(Value::String(t)) => t == "integer" || t == "number",
         Some(Value::Array(ts)) => ts.iter().any(|t| t == "integer" || t == "number"),
@@ -147,7 +149,7 @@ fn is_rust_number_format(format: &str) -> bool {
 /// Write a closed set of strings as `{"enum": [...]}`, and a string `const` without `type`.
 /// schemars writes a unit enum as a `oneOf` of `const` schemas when its variants carry doc
 /// comments, and adds `"type": "string"`; both say the same as the plain form.
-pub fn plain_enums(schema: &mut Schema) {
+pub(crate) fn plain_enums(schema: &mut Schema) {
     let consts = schema
         .get("oneOf")
         .and_then(Value::as_array)

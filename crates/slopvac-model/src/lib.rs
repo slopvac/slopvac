@@ -8,7 +8,7 @@ mod edit;
 mod ids;
 mod origin;
 mod report;
-pub mod schema;
+mod schema;
 mod source;
 mod span;
 mod values;
@@ -26,6 +26,9 @@ pub use report::{
     AiRegister, AiRegisterSummary, AiSignal, CategoryScore, CategorySummary, ConfigLayer,
     ConfigSource, Document, Extent, Finding, FindingError, Fix, FixError, Gate, GateError,
     GenreReason, GenreResult, GenreSource, Notice, NoticeLevel, Report, RuleProvenance, RunSummary,
+};
+pub use schema::{
+    SLUG, absent_not_null, id as schema_id, if_then, settings as schema_settings, x_extensions,
 };
 #[cfg(feature = "test-counters")]
 #[doc(hidden)]
