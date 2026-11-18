@@ -225,16 +225,6 @@ STRUCTURED_RE = re.compile(
     (?:"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'
     |(?:bearer|basic|token)\s+[^\s,;&}}\]"']+|[^\s,;&}}\]"']+)"""
 )
-_SCHEME_VALUE = r"[A-Za-z0-9._~+/=-]"
-# A scheme with no name in front: `Bearer <token>`, `Basic <base64>`, `token <x>`.
-# The value must look like a credential (a digit or a base64 symbol in it, or twelve
-# mixed-case characters; eight characters for the bare word "token"), so prose such
-# as "Basic usage" or "a bearer of news" stays as it is.
-SCHEME_RE = re.compile(
-    rf"(?i)\b(bearer|basic)\s+(?={_SCHEME_VALUE}*(?:[0-9_~+/=]"
-    rf"|(?-i:(?={_SCHEME_VALUE}{{12}})[A-Za-z0-9]*[a-z][A-Z]))){_SCHEME_VALUE}+"
-    rf"|\b(token)\s+(?={_SCHEME_VALUE}{{8}})(?={_SCHEME_VALUE}*[0-9_~+/=]){_SCHEME_VALUE}+"
-)
 PEM_RE = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)",
     re.DOTALL,
@@ -249,8 +239,7 @@ def redact_credentials(text: str) -> str:
     """
     text = PEM_RE.sub("<private-key>", text)
     text = re.sub(r"\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b", "<key>", text)
-    text = STRUCTURED_RE.sub(r"\1\2\1=<redacted>", text)
-    return SCHEME_RE.sub(lambda m: f"{m.group(1) or m.group(2)} <redacted>", text)
+    return STRUCTURED_RE.sub(r"\1\2\1=<redacted>", text)
 
 
 def redact(text: str) -> str:

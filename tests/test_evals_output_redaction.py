@@ -137,8 +137,9 @@ def test_a_credential_cut_by_the_error_event_limit_is_still_redacted():
 
 
 SCHEME_LEAKS = [
-    ("Sent Bearer abc123def now", "abc123def"),
-    ("Basic dXNlcjpwYXNz rejected", "dXNlcjpwYXNz"),
+    ("Authorization: Bearer abc123def", "abc123def"),
+    ("curl -H 'Authorization: Bearer lowercaseonly'", "lowercaseonly"),
+    ('{"Authorization": "Basic dXNlcjpwYXNz"}', "dXNlcjpwYXNz"),
     ('{"password": "ab\\"cd-SECRETTAIL\\"ef"}', "SECRETTAIL"),
 ]
 

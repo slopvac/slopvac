@@ -772,20 +772,21 @@ def test_names_that_only_contain_token_are_not_credential_fields(text):
     assert procs.redact_credentials(text) == text
 
 
-STANDALONE_SECRETS = [
-    ("Sent Bearer abc123def to the server", "abc123def"),
-    ("curl -H 'Bearer x7'", "x7"),
-    ("Basic dXNlcjpwYXNz was rejected", "dXNlcjpwYXNz"),
+HEADER_SECRETS = [
+    ("Authorization: Bearer abcdefghij", "abcdefghij"),
+    ("curl -H 'Authorization: Bearer lowercaseonly' https://x.test", "lowercaseonly"),
+    ('curl -H "Authorization: Basic dXNlcjpwYXNz" https://x.test', "dXNlcjpwYXNz"),
+    ('{"Authorization": "Bearer x7"}', "x7"),
     ("Authorization: token ghp_abcd1234", "ghp_abcd1234"),
-    ("pushed with token ghp_ab12cd34ef today", "ghp_ab12cd34ef"),
+    ("authorization=Bearer lowercase", "lowercase"),
     ('{"password": "ab\\"cd-SECRETTAIL\\"ef"}', "SECRETTAIL"),
     ("{'token': 'it\\'s-SECRETTAIL'}", "SECRETTAIL"),
     ('{"secret": "a\\\\\\"SECRETTAIL"}', "SECRETTAIL"),
 ]
 
 
-@pytest.mark.parametrize(("raw", "gone"), STANDALONE_SECRETS)
-def test_redaction_removes_standalone_schemes_and_escaped_quote_values(raw, gone):
+@pytest.mark.parametrize(("raw", "gone"), HEADER_SECRETS)
+def test_redaction_removes_auth_schemes_in_a_header_and_escaped_quote_values(raw, gone):
     assert gone not in procs.redact_credentials(raw)
     assert gone not in procs.redact(raw)
 
@@ -794,13 +795,20 @@ def test_redaction_removes_standalone_schemes_and_escaped_quote_values(raw, gone
     "text",
     [
         "A bearer of news arrived.",
+        "Sent Bearer abc123def to the server.",
+        "Basic dXNlcjpwYXNz was rejected.",
+        "pushed with token ghp_ab12cd34ef today",
         "Basic usage needs no token.",
-        "Basic authentication is optional here.",
+        "Use the token to sign in.",
+        "token max_tokens",
+        "Use the token max_tokens to cap output.",
         "Check token 63 against the budget.",
         "The token budget is explicit.",
     ],
 )
-def test_prose_that_names_a_scheme_is_not_redacted(text):
+def test_a_scheme_or_token_word_outside_an_authorization_header_is_not_redacted(
+    text,
+):
     assert procs.redact_credentials(text) == text
 
 
