@@ -73,6 +73,7 @@ fn config_and_genre_resolution_agree_on_negated_and_nested_patterns() {
         let opts = ResolveOptions {
             assignments: &assignments,
             relative_path: None,
+            ..Default::default()
         };
         let from_context = registry
             .resolve(&PlainDocument::from_markdown(path, "t\n"), &opts)
@@ -94,6 +95,7 @@ fn config_and_genre_resolution_agree_on_negated_and_nested_patterns() {
         let opts = ResolveOptions {
             assignments: &assignments,
             relative_path: None,
+            ..Default::default()
         };
         let got = registry
             .resolve(&PlainDocument::from_markdown(path, "t\n"), &opts)

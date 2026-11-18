@@ -98,6 +98,7 @@ fn explain(
         &ResolveOptions {
             assignments,
             relative_path: None,
+            ..Default::default()
         },
     )?;
     Ok(render(path, &result))

@@ -92,3 +92,64 @@ fn genres_blocks_choose_the_genre_and_level_of_each_document() {
     let freed = document(&report, "d.md");
     assert_ne!(freed["genre"]["source"], "explicit", "{freed}");
 }
+
+/// Lint a project with `config` and one document `notes/n.md`, which `CONFIG`-style blocks
+/// assign to `internal`. Returns the exit code and the report.
+fn lint_note(config: &str, text: &str) -> (Option<i32>, Value) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("slopvac.toml"), config).expect("write config");
+    let path = dir.path().join("notes/n.md");
+    fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+    fs::write(path, text).expect("write document");
+    let out = slopvac()
+        .args(["lint", "--format", "json"])
+        .arg(dir.path())
+        .output()
+        .expect("run");
+    let report = serde_json::from_slice(&out.stdout).expect("a JSON report");
+    (out.status.code(), report)
+}
+
+const ASSIGNED: &str =
+    "schema_version = 3\n\n[[genres]]\nfiles = [\"notes/**\"]\ngenre = \"internal\"\n";
+
+#[test]
+fn a_top_level_genre_key_never_overrides_the_assignment() {
+    let text = format!("---\ngenre: reference\n---\n{HISTORY}");
+    let (_, report) = lint_note(ASSIGNED, &text);
+    let doc = document(&report, "n.md");
+    assert_eq!(doc["genre"]["id"], "internal", "{doc}");
+    assert_eq!(doc["genre"]["source"], "explicit", "{doc}");
+    assert_eq!(history_levels(doc), ["suggestion"], "{doc}");
+}
+
+#[test]
+fn an_unknown_top_level_genre_key_does_not_fail_the_run() {
+    let text = format!("---\ngenre: no-such-genre\n---\n{HISTORY}");
+    let (code, report) = lint_note(ASSIGNED, &text);
+    assert_ne!(code, Some(2), "{report}");
+    assert_eq!(document(&report, "n.md")["genre"]["id"], "internal");
+}
+
+#[test]
+fn a_disabled_front_matter_block_is_ignored() {
+    let config = format!("{ASSIGNED}\n[frontmatter]\nenabled = false\n");
+    let text = format!("---\nslopvac:\n  v: 3\n  genre: reference\n---\n{HISTORY}");
+    let (_, report) = lint_note(&config, &text);
+    let doc = document(&report, "n.md");
+    assert_eq!(doc["genre"]["id"], "internal", "{doc}");
+}
+
+#[test]
+fn an_allowed_slopvac_block_genre_wins_over_the_assignment() {
+    let text = format!("---\nslopvac:\n  v: 3\n  genre: reference\n---\n{HISTORY}");
+    let (_, report) = lint_note(ASSIGNED, &text);
+    let doc = document(&report, "n.md");
+    assert_eq!(doc["genre"]["id"], "reference", "{doc}");
+    assert_eq!(doc["genre"]["source"], "explicit", "{doc}");
+    assert_eq!(
+        doc["genre"]["reasons"][0]["signal"], "front-matter",
+        "{doc}"
+    );
+    assert_eq!(history_levels(doc), ["warning"], "{doc}");
+}

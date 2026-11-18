@@ -507,6 +507,20 @@ pub struct ResolveOptions<'a> {
     pub assignments: &'a [GenreAssignment],
     /// Path relative to the config directory, for glob matching. Defaults to the document path.
     pub relative_path: Option<&'a str>,
+    /// Where the genre a document declares for itself comes from.
+    pub declared: DeclaredGenre<'a>,
+}
+
+/// Where [`GenreRegistry::resolve`] takes the genre that a document declares for itself.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DeclaredGenre<'a> {
+    /// The top-level `genre` key of the document's front matter.
+    #[default]
+    FromFrontMatter,
+    /// A genre the host has already read, validated and checked against the project policy,
+    /// or none. The document's own front matter is not consulted.
+    Given(Option<&'a str>),
 }
 
 /// Validated set of genres.
@@ -694,7 +708,11 @@ impl GenreRegistry {
                 scores: scores.clone(),
             })
         };
-        if let Some(id) = doc.front_matter("genre") {
+        let declared = match opts.declared {
+            DeclaredGenre::FromFrontMatter => doc.front_matter("genre"),
+            DeclaredGenre::Given(id) => id,
+        };
+        if let Some(id) = declared {
             return explicit(id, "front-matter", format!("`genre: {id}`"));
         }
         let mut assigned = None;

@@ -111,6 +111,7 @@ fn assignments_apply_in_file_order_and_the_last_match_wins() {
             &ResolveOptions {
                 assignments: &assignments,
                 relative_path: None,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -139,6 +140,7 @@ fn assignments_use_the_relative_path() {
             &ResolveOptions {
                 assignments: &assignments,
                 relative_path: Some("docs/a.md"),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -561,6 +563,7 @@ fn files_match(patterns: &[String], path: &str) -> Result<bool, slopvac_context:
     let opts = slopvac_context::ResolveOptions {
         assignments: &assignments,
         relative_path: None,
+        ..Default::default()
     };
     Ok(reg.resolve(&doc, &opts)?.id == "hit")
 }
@@ -660,6 +663,7 @@ mod display_escaping {
         let opts = ResolveOptions {
             assignments: &assignments,
             relative_path: None,
+            ..Default::default()
         };
         let err = reg
             .resolve(&PlainDocument::from_markdown("a.md", "t\n"), &opts)

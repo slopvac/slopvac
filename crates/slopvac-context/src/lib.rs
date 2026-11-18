@@ -26,9 +26,9 @@ pub use cli::{command, render, run};
 pub use declarative::{DeclarativeTagger, Matcher, TaggerSpec, Unit};
 pub use declared::{DeclaredContextTagger, context_hint};
 pub use genre::{
-    Budget, CategorySettings, CategoryTable, Detect, GenreAssignment, GenreRegistry, GenreResult,
-    GenreSource, GenreSpec, NoBudget, Profile, Reason, ResolveOptions, RuleLevel, Scalar, Signal,
-    SignalKind, parse_genres,
+    Budget, CategorySettings, CategoryTable, DeclaredGenre, Detect, GenreAssignment, GenreRegistry,
+    GenreResult, GenreSource, GenreSpec, NoBudget, Profile, Reason, ResolveOptions, RuleLevel,
+    Scalar, Signal, SignalKind, parse_genres,
 };
 pub use mixed::mixed_types_entry;
 pub use pattern::{Pattern, normalize_path};

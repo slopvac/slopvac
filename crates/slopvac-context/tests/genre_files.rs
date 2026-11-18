@@ -25,6 +25,7 @@ fn files_match(patterns: &[String], path: &str) -> Result<bool, slopvac_context:
     let opts = slopvac_context::ResolveOptions {
         assignments: &assignments,
         relative_path: None,
+        ..Default::default()
     };
     Ok(reg.resolve(&doc, &opts)?.id == "hit")
 }
@@ -81,6 +82,7 @@ fn an_excluded_file_falls_through_to_the_earlier_block() {
             &ResolveOptions {
                 assignments: &a,
                 relative_path: None,
+                ..Default::default()
             },
         )
         .unwrap()

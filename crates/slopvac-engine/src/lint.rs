@@ -12,7 +12,7 @@ use std::sync::Arc;
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
 use slopvac_comments::Language;
-use slopvac_context::{GenreRegistry, ResolveOptions, TagIndex, TagRegistry};
+use slopvac_context::{DeclaredGenre, GenreRegistry, ResolveOptions, TagIndex, TagRegistry};
 use slopvac_diagrams::{
     Extraction, ExtractionStatus, Format as DiagramFormat, Signal, extract, extract_fenced,
 };
@@ -90,6 +90,10 @@ pub struct Input<'a> {
     /// The path relative to the project root, for matching `[[genres]]` file patterns. When
     /// unset, patterns match against [`Input::path`].
     pub relative_path: Option<&'a str>,
+    /// The genre the document declares for itself, as the config reader validated it and the
+    /// project's front matter policy allows. The engine never reads a genre from the raw
+    /// front matter; without this, a document declares none.
+    pub declared_genre: Option<&'a str>,
 }
 
 impl<'a> Input<'a> {
@@ -102,7 +106,16 @@ impl<'a> Input<'a> {
             kind: Kind::Markdown,
             bom: BomMode::Disk,
             relative_path: None,
+            declared_genre: None,
         }
+    }
+
+    /// The same input with the genre its front matter declares, already validated against
+    /// the project's policy.
+    #[must_use]
+    pub const fn with_declared_genre(mut self, genre: &'a str) -> Self {
+        self.declared_genre = Some(genre);
+        self
     }
 
     /// The same input with its path relative to the project root.
@@ -991,6 +1004,7 @@ impl Engine {
         let opts = ResolveOptions {
             assignments,
             relative_path: input.relative_path,
+            declared: DeclaredGenre::Given(input.declared_genre),
         };
         let found = tagging::genre(
             registry,
