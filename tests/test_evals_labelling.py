@@ -529,6 +529,28 @@ def test_merge_counts_only_the_newest_model_of_a_family(tmp_path):
     ]
 
 
+def test_older_model_judgments_never_label_items_the_newest_model_skipped(
+    tmp_path, capsys
+):
+    d = tmp_path / "labels"
+    lab.write_jsonl(d / "items.jsonl", items("a", "b", "c"))
+    write_judgments(d, "openai", "gpt-5", ["a", "b", "c"])
+    write_judgments(d, "anthropic", "claude-old", ["a", "b", "c"])
+    path = d / "judgments" / "anthropic.jsonl"
+    old = lab.read_jsonl(path)
+    write_judgments(d, "anthropic", "claude-new", ["a"])  # newest covers only "a"
+    new = lab.read_jsonl(path)
+    lab.write_jsonl(path, [*old, *new])
+    assert merge_cli(d) == 0
+    assert [r["item"] for r in lab.read_jsonl(d / "labels.jsonl")] == ["a"]
+    assert sorted(r["item"] for r in lab.read_jsonl(d / "disputes.jsonl")) == [
+        "b",
+        "c",
+    ]
+    # 3 items x 2 orders from claude-old are set aside.
+    assert "ignored 6 judgments" in capsys.readouterr().err
+
+
 def test_merge_exits_2_when_a_recorded_family_contradicts_its_model(tmp_path):
     d = tmp_path / "labels"
     lab.write_jsonl(d / "items.jsonl", items("a"))
