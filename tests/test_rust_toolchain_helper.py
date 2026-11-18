@@ -136,6 +136,8 @@ _NO_RUST_GROUPS = {
         ("lint.yml", "prose"),
         ("markdown-audit.yml", "inventory-and-audit"),
         ("publish-lint.yml", "build"),
+        ("publish-lint.yml", "pypi-rc"),
+        ("publish-lint.yml", "pypi"),
         ("release-provenance.yml", "provenance"),
         ("release-smoke.yml", "resolve"),
         ("test.yml", "quick-lint"),
