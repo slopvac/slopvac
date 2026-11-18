@@ -30,6 +30,7 @@
 //!   non-empty one, but not another empty match at the same position.
 
 mod ffi;
+pub mod spike;
 mod version;
 
 use std::ops::Range;
@@ -42,6 +43,7 @@ use pcre2_sys::{
     PCRE2_ERROR_HEAP_FAILED, PCRE2_ERROR_HEAPLIMIT, PCRE2_ERROR_JIT_STACKLIMIT,
     PCRE2_ERROR_MATCHLIMIT, PCRE2_ERROR_NOMATCH, PCRE2_ERROR_NOMEMORY,
     PCRE2_ERROR_PARENTHESES_NEST_TOO_DEEP, PCRE2_NEVER_BACKSLASH_C, PCRE2_UCP, PCRE2_UTF,
+    PCRE2_AUTO_CALLOUT,
 };
 
 use ffi::{Code, Contexts, Engine, ExecError, MatchData};
@@ -158,6 +160,9 @@ impl Options {
         if self.ucp {
             bits |= PCRE2_UCP;
         }
+        if spike::mode() == spike::Mode::Callout {
+            bits |= PCRE2_AUTO_CALLOUT;
+        }
         bits
     }
 }
@@ -226,6 +231,12 @@ pub enum MatchError {
         /// The limit that was hit, in KiB.
         kib: u32,
     },
+    /// SPIKE: the callout step budget ran out (JIT).
+    #[error("step budget of {limit} callouts exceeded")]
+    StepBudget {
+        /// The budget.
+        limit: u64,
+    },
     /// PCRE2 could not allocate memory for a match.
     #[error("PCRE2 ran out of memory")]
     OutOfMemory,
@@ -249,7 +260,10 @@ impl MatchError {
     pub fn is_limit(&self) -> bool {
         matches!(
             self,
-            Self::MatchLimit { .. } | Self::DepthLimit { .. } | Self::HeapLimit { .. }
+            Self::MatchLimit { .. }
+                | Self::DepthLimit { .. }
+                | Self::HeapLimit { .. }
+                | Self::StepBudget { .. }
         )
     }
 }
@@ -283,20 +297,51 @@ impl Captures {
 pub struct Regex {
     code: Arc<Code>,
     limits: Limits,
+    spike: Option<Arc<spike::Spike>>,
 }
 
 impl Regex {
     /// Compile `pattern` under [`Limits::POLICY`].
+    #[track_caller]
     pub fn new(pattern: &str, options: Options) -> Result<Self, CompileError> {
         Self::with_limits(pattern, options, Limits::POLICY)
     }
 
+    /// SPIKE: compile `pattern` for PCRE2, with `source` (the pre-rewrite pattern) for the
+    /// Rust twin.
+    #[track_caller]
+    pub fn new_with_source(
+        pattern: &str,
+        source: &str,
+        options: Options,
+    ) -> Result<Self, CompileError> {
+        Self::build(pattern, source, options, Limits::POLICY, std::panic::Location::caller())
+    }
+
     /// Compile `pattern` under custom limits. Lower limits make the limit paths testable.
+    #[track_caller]
     pub fn with_limits(
         pattern: &str,
         options: Options,
         limits: Limits,
     ) -> Result<Self, CompileError> {
+        Self::build(pattern, pattern, options, limits, std::panic::Location::caller())
+    }
+
+    fn build(
+        pattern: &str,
+        source: &str,
+        mut options: Options,
+        mut limits: Limits,
+        caller: &std::panic::Location<'_>,
+    ) -> Result<Self, CompileError> {
+        let mode = spike::mode();
+        if matches!(mode, spike::Mode::Jit | spike::Mode::Callout) {
+            options.jit = true;
+        }
+        if mode == spike::Mode::Callout && limits == Limits::POLICY {
+            limits.jit_match_limit = Limits::MATCH;
+        }
         ensure_supported_version()?;
         if pattern.len() > MAX_PATTERN_BYTES {
             return Err(CompileError::TooLong {
@@ -311,10 +356,24 @@ impl Regex {
         };
         let code = Code::compile(pattern, options.bits(), bounds, options.jit)
             .map_err(|f| compile_error(&f))?;
-        Ok(Self {
+        let mut re = Self {
             code: Arc::new(code),
             limits,
-        })
+            spike: None,
+        };
+        if mode != spike::Mode::Interp || std::env::var_os("SLOPVAC_SPIKE_DUMP").is_some() {
+            let (record, new) =
+                spike::register(pattern, source, options.caseless, options.ucp, caller);
+            re.spike = Some(record);
+            if new && mode == spike::Mode::Parity {
+                spike::in_edge(true);
+                for edge in spike::EDGES {
+                    let _ = re.find_all(edge);
+                }
+                spike::in_edge(false);
+            }
+        }
+        Ok(re)
     }
 
     /// Whether the pattern has JIT code (false on targets without a JIT).
@@ -325,7 +384,23 @@ impl Regex {
 
     /// Whether the pattern matches anywhere in `subject`.
     pub fn is_match(&self, subject: &str) -> Result<bool, MatchError> {
-        self.run(|re, data, contexts| re.search(subject, 0, false, data, contexts))
+        if let Some(s) = self.spike.as_deref() {
+            if s.use_twin {
+                return Ok(spike::twin_find(s, subject).is_some());
+            }
+            if spike::mode() == spike::Mode::Parity && s.twin.is_some() {
+                let p = self.pcre_is_match(subject);
+                spike::record(s, "is_match", subject, &p, &spike::twin_find(s, subject).is_some());
+                return p;
+            }
+        }
+        self.pcre_is_match(subject)
+    }
+
+    fn pcre_is_match(&self, subject: &str) -> Result<bool, MatchError> {
+        let r = self.run(|re, data, contexts| re.search(subject, 0, false, data, contexts));
+        spike_count(&r);
+        r
     }
 
     /// The first match.
@@ -335,7 +410,27 @@ impl Regex {
 
     /// The first match with all its capture groups.
     pub fn captures(&self, subject: &str) -> Result<Option<Captures>, MatchError> {
-        self.run(|re, data, contexts| {
+        if let Some(s) = self.spike.as_deref() {
+            if s.use_twin {
+                return Ok(spike::twin_captures(s, subject).map(Captures));
+            }
+            if spike::mode() == spike::Mode::Parity && s.twin.is_some() {
+                let p = self.pcre_captures(subject);
+                let r = spike::twin_captures(s, subject).map(Captures);
+                if s.guarded {
+                    let p0 = p.clone().map(|c| c.and_then(|c| c.get(0)));
+                    spike::record(s, "captures0", subject, &p0, &r.and_then(|c| c.get(0)));
+                } else {
+                    spike::record(s, "captures", subject, &p, &r);
+                }
+                return p;
+            }
+        }
+        self.pcre_captures(subject)
+    }
+
+    fn pcre_captures(&self, subject: &str) -> Result<Option<Captures>, MatchError> {
+        let r = self.run(|re, data, contexts| {
             if !re.search(subject, 0, false, data, contexts)? {
                 return Ok(None);
             }
@@ -343,12 +438,28 @@ impl Regex {
                 .map(|index| span(subject, data.group(index)))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Some(Captures(groups)))
-        })
+        });
+        spike_count(&r);
+        r
     }
 
     /// Every non-overlapping match left to right, with Python `re.finditer` semantics.
     pub fn find_all(&self, subject: &str) -> Result<Vec<Range<usize>>, MatchError> {
-        self.run(|re, data, contexts| {
+        if let Some(s) = self.spike.as_deref() {
+            if s.use_twin {
+                return Ok(spike::twin_find_all(s, subject));
+            }
+            if spike::mode() == spike::Mode::Parity && s.twin.is_some() {
+                let p = self.pcre_find_all(subject);
+                spike::record(s, "find_all", subject, &p, &spike::twin_find_all(s, subject));
+                return p;
+            }
+        }
+        self.pcre_find_all(subject)
+    }
+
+    fn pcre_find_all(&self, subject: &str) -> Result<Vec<Range<usize>>, MatchError> {
+        let r = self.run(|re, data, contexts| {
             let mut matches = Vec::new();
             let mut position = 0;
             let mut not_empty = false;
@@ -367,7 +478,9 @@ impl Regex {
                 matches.push(found);
             }
             Ok(matches)
-        })
+        });
+        spike_count(&r);
+        r
     }
 
     /// Allocate match data and fetch this thread's contexts, then run `f`.
@@ -424,6 +537,9 @@ impl Regex {
         match rc {
             rc if rc > 0 => Ok(true),
             PCRE2_ERROR_NOMATCH => Ok(false),
+            ffi::BUDGET_RC => Err(MatchError::StepBudget {
+                limit: spike::budget(),
+            }),
             PCRE2_ERROR_NOMEMORY => Err(MatchError::OutOfMemory),
             PCRE2_ERROR_MATCHLIMIT => Err(MatchError::MatchLimit {
                 limit: self.limits.match_limit,
@@ -439,6 +555,12 @@ impl Regex {
                 message: ffi::error_message(code),
             }),
         }
+    }
+}
+
+fn spike_count<T>(r: &Result<T, MatchError>) {
+    if matches!(r, Err(e) if e.is_limit()) {
+        spike::LIMIT_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
