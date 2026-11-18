@@ -2,14 +2,12 @@
 //! `opt:init:--force`, `--path`, `--skip-agents`, `--harness`, `--no-skills`,
 //! `--profile` (removed), `behavior:init-flags`, `behavior:init-idempotence`).
 //!
-//! The output is validated against the published config schema.
-//! STUB(slopvac-8l4.12.25): swap to `slopvac validate` when 8l4.4.6 lands.
+//! The written file is checked with `slopvac validate`.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use serde_json::Value;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 fn slopvac(dir: &Path) -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
@@ -25,47 +23,43 @@ fn slopvac(dir: &Path) -> Command {
     cmd
 }
 
-fn schemas() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3")
-}
-
-fn validator() -> jsonschema::Validator {
-    let read = |name: &str| -> Value {
-        serde_json::from_str(&fs::read_to_string(schemas().join(name)).expect("schema"))
-            .expect("schema json")
-    };
-    let registry = jsonschema::Registry::new()
-        .add(
-            "https://slopvac.github.io/slopvac/schemas/v3/common.schema.json",
-            read("common.schema.json"),
-        )
-        .expect("register common")
-        .prepare()
-        .expect("prepare registry");
-    jsonschema::options()
-        .with_registry(&registry)
-        .build(&read("config.schema.json"))
-        .expect("schema compiles")
-}
-
 #[test]
-fn init_writes_a_config_that_validates_against_the_schema() {
+fn init_writes_a_config_that_slopvac_validate_accepts() {
     let dir = tempfile::tempdir().unwrap();
     slopvac(dir.path())
         .args(["init", "--skip-agents"])
         .assert()
         .code(0)
         .stdout("wrote slopvac.toml\nnext: slopvac prime\n");
+    slopvac(dir.path())
+        .args(["validate", "--config", "slopvac.toml"])
+        .assert()
+        .code(0)
+        .stdout("checked 1 file(s): 0 problem(s)\n");
     let text = fs::read_to_string(dir.path().join("slopvac.toml")).unwrap();
-    let value: toml::Value = toml::from_str(&text).expect("the template is TOML");
-    let json = serde_json::to_value(&value).unwrap();
-    let problems: Vec<String> = validator()
-        .iter_errors(&json)
-        .map(|e| e.to_string())
-        .collect();
-    assert!(problems.is_empty(), "{problems:?}");
-    assert_eq!(json["schema_version"], 3);
-    assert_eq!(json["profile"], "normal");
+    assert!(text.contains("\nschema_version = 3\n"));
+    assert!(text.contains("\nprofile = \"normal\"\n"));
+}
+
+#[test]
+fn validate_flags_a_broken_value_in_the_written_config() {
+    let dir = tempfile::tempdir().unwrap();
+    slopvac(dir.path())
+        .args(["init", "--skip-agents"])
+        .assert()
+        .code(0);
+    let path = dir.path().join("slopvac.toml");
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(
+        &path,
+        text.replace("profile = \"normal\"", "profile = \"nope\""),
+    )
+    .unwrap();
+    slopvac(dir.path())
+        .args(["validate", "--config", "slopvac.toml"])
+        .assert()
+        .code(2)
+        .stdout(predicate::str::starts_with("error[config-invalid-value]: "));
 }
 
 #[test]

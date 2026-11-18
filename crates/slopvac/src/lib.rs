@@ -17,6 +17,7 @@ pub mod lint_settings;
 pub mod logging;
 pub mod offline;
 pub mod output;
+pub mod owners;
 pub mod redact;
 pub mod rule_catalog;
 mod run;

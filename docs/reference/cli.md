@@ -140,6 +140,167 @@ Migrate a 2.x project to 3.0: config, inline directives and steering blocks
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
+### `slopvac terms`
+
+Manage project terms
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac terms list`
+
+List terms
+
+| Argument | Description |
+| --- | --- |
+| `--kind` |  |
+| `--builtin` | Include the built-in list |
+| `--files` | Terms file (default: .slopvac/terms.toml) |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac terms search`
+
+Find terms by substring, ignoring case
+
+| Argument | Description |
+| --- | --- |
+| `<QUERY>` |  |
+| `--files` | Terms file (default: .slopvac/terms.toml) |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac terms add`
+
+Add a term; lower-case terms default to ignoring case
+
+| Argument | Description |
+| --- | --- |
+| `<TERM>` |  |
+| `--kind` |  |
+| `--variant` |  |
+| `--ignore-case` |  |
+| `--case-sensitive` | Match only the exact spelling; other casings are different words |
+| `--files` | Terms file (default: .slopvac/terms.toml) |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac terms remove`
+
+Remove a term
+
+| Argument | Description |
+| --- | --- |
+| `<TERM>` |  |
+| `--files` | Terms file (default: .slopvac/terms.toml) |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac terms check`
+
+Report wrong-case terms in files; exit 1 when any are found
+
+| Argument | Description |
+| --- | --- |
+| `<PATHS>` |  |
+| `--files` | Terms file (default: .slopvac/terms.toml) |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac terms suggest`
+
+List inferred proper nouns and acronyms that are not terms yet; nothing is written unless you name a term with --accept
+
+| Argument | Description |
+| --- | --- |
+| `<PATHS>` |  |
+| `--min` | Only candidates seen at least N times |
+| `--accept` | Add this suggested spelling to the terms file |
+| `--files` | Terms file (default: .slopvac/terms.toml) |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac terms import`
+
+Import words from another tool: a Vale accept.txt, a cspell JSON config (YAML configs are not supported) or a codespell ignore list
+
+| Argument | Description |
+| --- | --- |
+| `--from` |  |
+| `<FILE>` |  |
+| `--files` | Terms file (default: .slopvac/terms.toml) |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+### `slopvac genre`
+
+Print the genre of each file, with scores and the reasons for the choice
+
+| Argument | Description |
+| --- | --- |
+| `<FILES>` |  |
+| `--assign` | Assign a genre to files that match a glob, as a `[[genres]]` block would |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+### `slopvac validate`
+
+Check config, front matter and inline directives without linting
+
+| Argument | Description |
+| --- | --- |
+| `<PATHS>` | Documents or directories to check; none checks the config alone |
+| `--config` | Use this config for every file and skip discovery |
+| `--schema` | Print a JSON Schema for editors and exit |
+| `--quiet` | Print problems only |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+### `slopvac setup`
+
+Install or remove project-local steering for a harness
+
+| Argument | Description |
+| --- | --- |
+| `<HARNESS>` | Required unless --list is used |
+| `--list` | List supported harnesses |
+| `--remove` | Remove the managed block, skill and reviewer agent |
+| `--check` | Report whether the managed files are current without changing them |
+| `--root` | Project directory that holds the steering files |
+| `--block` | Size of the steering block |
+| `--no-skill` | Install no slopvac-prose skill |
+| `--agent` | Install the reviewer agent file, which runs only when `slopvac prime review` calls it |
+| `--reviewer-model` | Model for the reviewer agent; it must differ from the author's model |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+### `slopvac prime`
+
+Print guidance for agents, one topic at a time
+
+| Argument | Description |
+| --- | --- |
+| `<TOPIC>` | A topic; omit it for the base guide |
+| `--level` | Detail level for this run |
+| `--type` | Review type, for the review topic |
+| `--config` | Config file whose [guidance] table sets the level; --level overrides it |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
 ### `slopvac completions`
 
 Print a shell completion script.
@@ -162,36 +323,6 @@ Write man pages.
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
-### `slopvac terms`
-
-Check and list the project terms.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac genre`
-
-Show or detect the document genre.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac validate`
-
-Validate configuration, packs and front matter.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
 ### `slopvac plugins`
 
 Manage plugins and packs: sync, trust, update.
@@ -205,26 +336,6 @@ Manage plugins and packs: sync, trust, update.
 ### `slopvac packs`
 
 List installed rule packs.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac setup`
-
-Install slopvac guidance into agent harnesses.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac prime`
-
-Print guidance for agents, by topic.
 
 | Argument | Description |
 | --- | --- |
@@ -255,6 +366,16 @@ Generate or check the rules reference.
 ### `slopvac report`
 
 Preview or submit an issue report.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+### `slopvac review`
+
+Run the prose reviewer on files.
 
 | Argument | Description |
 | --- | --- |
