@@ -254,8 +254,10 @@ def run_engine(
                     reported = (staged_engine.cwd or Path.cwd()) / entry["path"]
                     doc = by_path.get(str(reported.resolve()))
                     if doc is None:
+                        # The path is engine output and may name private
+                        # directories, so the error does not repeat it.
                         raise EngineError(
-                            f"report names an unknown path: {entry['path']}"
+                            "report names an unknown path that this run did not stage"
                         )
                     results[doc["id"]] = {
                         "words": entry.get("words", 0),
