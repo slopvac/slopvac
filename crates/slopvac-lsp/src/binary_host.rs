@@ -44,5 +44,6 @@ pub(crate) fn unchecked_notice() -> Option<Notice> {
         level: NoticeLevel::Warning,
         message: NonEmptyString::new("binary host not linted in the editor; run the CLI").ok()?,
         path: None,
+        data: serde_json::Map::new(),
     })
 }
