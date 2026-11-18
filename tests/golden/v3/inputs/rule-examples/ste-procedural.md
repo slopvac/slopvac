@@ -42,6 +42,22 @@ Reconcile the ledger when the import completes.
 
 When the import completes, reconcile the ledger.
 
+Remove the lock file if the worker is stopped.
+
+Note that the cache expires when the import completes.
+
+Archive the report before the worker shuts down.
+
+Verify the checksum after each download.
+
+Restart the worker if the health check fails.
+
+Check if the worker is running.
+
+Pause the job when the queue depth passes one thousand.
+
+Select when you want the status to expire.
+
 NOTE: Always clear the cache before you run the import.
 
 Clear the cache before you run the import. NOTE: The import reads the cache at startup.

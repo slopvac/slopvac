@@ -258,13 +258,13 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 4,
+        "errors": 3,
         "findings": 4,
-        "gating_per_100_words": 1.487,
+        "gating_per_100_words": 1.115,
         "over_budget": true,
         "per_100_words": 1.487,
-        "score": 6.6,
-        "suggestions": 0,
+        "score": 27.3,
+        "suggestions": 1,
         "warnings": 0
       },
       {
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 36,
+    "errors": 35,
     "findings": [
       {
         "ai_signal": "none",
@@ -749,7 +749,7 @@
         "message": "The condition follows the command (\"Start a replica before you migrate.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 914,
           "start": 879
@@ -1082,13 +1082,13 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "36 error(s), limit 0",
-        "14.68 severity-weighted findings per 100 words, budget 1.5",
+        "35 error(s), limit 0",
+        "14.31 severity-weighted findings per 100 words, budget 1.5",
         "score 0.0, minimum 85.0",
         "prose-discipline at 5.95 severity-weighted findings per 100 words, budget 0.4",
         "prose-inflation at 1.11 severity-weighted findings per 100 words, budget 0.3",
         "prose-scope at 0.37 severity-weighted findings per 100 words, budget 0.3",
-        "ste-procedural at 1.49 severity-weighted findings per 100 words, budget 0.4",
+        "ste-procedural at 1.11 severity-weighted findings per 100 words, budget 0.4",
         "ste-sentences at 1.49 severity-weighted findings per 100 words, budget 0.5",
         "ste-verbs at 2.60 severity-weighted findings per 100 words, budget 0.4"
       ]
@@ -1098,14 +1098,14 @@
     "per_100_words": 16.357,
     "profile": "strict",
     "prose": {
-      "errors": 36,
+      "errors": 35,
       "findings": 44,
       "per_100_words": 16.357,
       "warnings": 7
     },
     "score": 0.0,
     "sentences": 30,
-    "suggestions": 1,
+    "suggestions": 2,
     "total_findings": 44,
     "unchecked": [],
     "warnings": 7,

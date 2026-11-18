@@ -258,13 +258,13 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 1,
+        "errors": 0,
         "findings": 1,
-        "gating_per_100_words": 0.529,
-        "over_budget": true,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
         "per_100_words": 0.529,
-        "score": 62.5,
-        "suggestions": 0,
+        "score": 98.7,
+        "suggestions": 1,
         "warnings": 0
       },
       {
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 22,
+    "errors": 21,
     "findings": [
       {
         "ai_signal": "none",
@@ -511,7 +511,7 @@
         "message": "The condition follows the command (\"Stop polling when the run is no longer live.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 576,
           "start": 532
@@ -725,12 +725,11 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "22 error(s), limit 0",
-        "11.90 severity-weighted findings per 100 words, budget 1.5",
+        "21 error(s), limit 0",
+        "11.38 severity-weighted findings per 100 words, budget 1.5",
         "score 0.0, minimum 85.0",
         "docs-discipline at 7.94 severity-weighted findings per 100 words, budget 0.2",
         "prose-scope at 0.53 severity-weighted findings per 100 words, budget 0.3",
-        "ste-procedural at 0.53 severity-weighted findings per 100 words, budget 0.4",
         "ste-sentences at 1.06 severity-weighted findings per 100 words, budget 0.5",
         "ste-verbs at 1.59 severity-weighted findings per 100 words, budget 0.4"
       ]
@@ -740,14 +739,14 @@
     "per_100_words": 12.169,
     "profile": "strict",
     "prose": {
-      "errors": 22,
+      "errors": 21,
       "findings": 23,
       "per_100_words": 12.169,
       "warnings": 1
     },
     "score": 0.0,
     "sentences": 28,
-    "suggestions": 0,
+    "suggestions": 1,
     "total_findings": 23,
     "unchecked": [],
     "warnings": 1,
