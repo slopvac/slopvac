@@ -89,7 +89,7 @@ pub(crate) fn with_html_prose(
 /// line is one paragraph of the kind `Paragraph`, whatever elements it came from, so a heading,
 /// list item or table cell is a paragraph too, and a sentence never runs over a line end. Text
 /// of several elements on one line joins into that line's paragraph. Inline code (`<code>`,
-/// `<kbd>`, `<samp>`) joins the code spans and is masked in the prose; `<pre>` stays a code
+/// `<kbd>`, `<samp>`) joins the code spans and is left out of the prose; `<pre>` stays a code
 /// block; `<script>`, `<style>`, `<noscript>`, `<template>`, `<head>` and `<title>` give
 /// nothing. A Markdown fence in the file is plain text, as in 2.x. A line ends at LF, CRLF or a
 /// lone CR, as everywhere else in the engine.
@@ -139,8 +139,8 @@ pub(crate) fn html_file(source: &str) -> Result<Document, ParseError> {
 
 /// The pieces of `projection` that sit on one source line each, with the line number. A
 /// whitespace run that holds a line end cuts the text, and so does a token that starts on a
-/// later line than the piece (masked code that spans lines). A piece with only masked code
-/// is not text, so it is dropped, as 2.x drops a line without visible text.
+/// later line than the piece. Masked code is left out, as 2.x skips `<code>`, `<kbd>` and
+/// `<samp>`: it adds no word and no placeholder, and a line with nothing else is no paragraph.
 fn line_pieces(
     source: &str,
     lines: &Lines<'_>,
@@ -153,9 +153,6 @@ fn line_pieces(
         {
             tokens.pop();
         }
-        if tokens.iter().all(|t| t.kind == TokenKind::Masked) {
-            return;
-        }
         let mut piece = Projection::new();
         for t in &tokens {
             piece.push_unordered(t.kind, &t.text, t.src);
@@ -166,6 +163,9 @@ fn line_pieces(
     let mut out = Vec::new();
     let mut current: Option<(usize, Vec<Token>)> = None;
     for token in projection.tokens() {
+        if token.kind == TokenKind::Masked {
+            continue;
+        }
         let ends_line = token.kind == TokenKind::Collapse
             && source[token.src.start()..token.src.end()].contains(['\n', '\r']);
         if ends_line {
@@ -181,7 +181,19 @@ fn line_pieces(
             finish(&mut out, open, tokens);
         }
         match &mut current {
-            Some((_, tokens)) => tokens.push(token.clone()),
+            Some((_, tokens)) => {
+                if let Some(last) = tokens.last()
+                    && tag_between(source, last, token)
+                {
+                    // The space 2.x puts at a tag or comment: no source text of its own.
+                    tokens.push(Token {
+                        kind: TokenKind::Wrap,
+                        text: " ".to_owned(),
+                        src: Span::empty(token.src.start()),
+                    });
+                }
+                tokens.push(token.clone());
+            }
             // A piece starts at a word.
             None if matches!(token.kind, TokenKind::Collapse | TokenKind::Wrap) => {}
             None => current = Some((line, vec![token.clone()])),
@@ -191,6 +203,22 @@ fn line_pieces(
         finish(&mut out, line, tokens);
     }
     out
+}
+
+/// Whether 2.x puts a space between the adjacent tokens `before` and `after` of one line.
+///
+/// `_HtmlTextExtractor` flags a boundary at every start tag, end tag and comment, and adds a
+/// space at the next character when neither side is white space. An entity is no boundary.
+fn tag_between(source: &str, before: &Token, after: &Token) -> bool {
+    let spaced = |c: Option<char>| c.is_none_or(char::is_whitespace);
+    if spaced(before.text.chars().next_back()) || spaced(after.text.chars().next()) {
+        return false;
+    }
+    let (from, to) = (before.src.end(), after.src.start());
+    from < to
+        && source.as_bytes()[from..to]
+            .windows(2)
+            .any(|w| w[0] == b'<' && (w[1].is_ascii_alphabetic() || matches!(w[1], b'/' | b'!')))
 }
 
 /// The fence character and marker length when `line` opens or closes a Markdown fence:

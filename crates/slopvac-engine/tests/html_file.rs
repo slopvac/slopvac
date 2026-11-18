@@ -111,3 +111,68 @@ fn a_fix_changes_the_text_and_leaves_the_markup() {
     let report = fix_document(&engine, &input, &doc, None).unwrap();
     assert_eq!(report.text, "<p class=\"leverage\">Do <b>use</b> it.</p>\n");
 }
+
+#[rstest]
+#[case::attribute_values(
+    "<p class=\"delta\"><a href=\"docs/delta.md\" title='delta'>delta</a> and delta</p>\n",
+    "<p class=\"delta\"><a href=\"docs/delta.md\" title='delta'>d</a> and d</p>\n"
+)]
+#[case::unquoted_attribute_and_src(
+    "<img src=delta.png alt=delta> delta\n",
+    "<img src=delta.png alt=delta> d\n"
+)]
+#[case::tag_name("<delta>delta</delta>\n", "<delta>d</delta>\n")]
+#[case::bare_address_in_text(
+    "<p>See https://example.com/delta and delta.</p>\n",
+    "<p>See https://example.com/delta and d.</p>\n"
+)]
+fn a_raw_scope_fix_never_rewrites_a_tag_or_an_address(#[case] html: &str, #[case] want: &str) {
+    let engine = engine(&[rule(
+        "swap",
+        &json!({"kind": "substitution", "substitutions": {"delta": "d"}}),
+        &json!({"scope": "raw"}),
+    )]);
+    let input = Input::html("page.html", html);
+    let doc = engine.lint(&input).unwrap();
+    let report = fix_document(&engine, &input, &doc, None).unwrap();
+    assert_eq!(report.text, want);
+}
+
+#[test]
+fn markdown_syntax_in_html_text_is_not_a_destination() {
+    // In a Markdown file `(delta)` after a bracketed label is a destination; here it is prose.
+    let engine = engine(&[rule(
+        "swap",
+        &json!({"kind": "substitution", "substitutions": {"delta": "d"}}),
+        &json!({"scope": "raw"}),
+    )]);
+    let html = "<p>[label](delta) text</p>\n";
+    let input = Input::html("page.html", html);
+    let doc = engine.lint(&input).unwrap();
+    let report = fix_document(&engine, &input, &doc, None).unwrap();
+    assert_eq!(report.text, "<p>[label](d) text</p>\n");
+}
+
+#[rstest]
+#[case::inline_elements("<p>one<b>two</b><i>three</i></p>\n", 3)]
+#[case::comment("<p>one<!-- note -->two</p>\n", 2)]
+#[case::skipped_element("<p>one<code>x</code>two</p>\n", 2)]
+#[case::skipped_element_with_spaces("<p>one <code>x</code> two</p>\n", 2)]
+#[case::line_break("<p>one<br>two</p>\n", 2)]
+#[case::spaced_already("<p>one <b>two</b> three</p>\n", 3)]
+#[case::entity_is_not_a_boundary("<p>caf&eacute;</p>\n", 1)]
+#[case::start_of_line("<p><b>one</b>two</p>\n", 2)]
+fn a_tag_or_comment_between_words_separates_them_as_in_2x(
+    #[case] html: &str,
+    #[case] words: usize,
+) {
+    assert_eq!(lint(html).words, words);
+}
+
+#[test]
+fn a_word_between_inline_tags_is_matched_as_a_whole_word() {
+    // 2.x reads `Use leverage now.`; the match starts after `<p>Use<b>` (9 bytes).
+    let doc = lint("<p>Use<b>leverage</b>now.</p>\n");
+    assert_eq!(places(&doc), vec![at(1, 10)]);
+    assert_eq!(matched(&doc), vec!["leverage"]);
+}

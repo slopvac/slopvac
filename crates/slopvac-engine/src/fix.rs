@@ -49,7 +49,7 @@ use slopvac_parse::{
 
 use crate::lint::{Engine, EngineError, Input, Kind};
 use crate::prepare::{html_file, with_html_prose};
-use crate::protect::destinations;
+use crate::protect::{destinations, html_destinations};
 use crate::rst::RstError;
 
 /// Why a finding that carries a fix was left alone.
@@ -292,7 +292,9 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
         parsed,
     )?;
     spans.extend(parsed.code_spans.iter().copied());
-    if input.kind != Kind::Html {
+    if input.kind == Kind::Html {
+        spans.extend(html_destinations(input.source));
+    } else {
         spans.extend(destinations(input.source, body_start));
     }
     if input.kind == Kind::Mdx {
