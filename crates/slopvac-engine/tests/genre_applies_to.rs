@@ -8,8 +8,9 @@ mod common;
 use common::{category, rule, ruleset, tokens};
 use serde_json::{Value, json};
 use slopvac_context::GenreAssignment;
-use slopvac_engine::{Engine, Input, Settings};
+use slopvac_engine::{Engine, Input, Settings, matcher_entries};
 use slopvac_model::{Document, GenreId, GenreResult, GenreSource, NonEmptyString};
+use slopvac_rules::MatchKind;
 use slopvac_terms::Blocklist;
 
 const BODY: &str = "We refactored the parser.\n";
@@ -150,4 +151,28 @@ fn a_rule_the_genre_excludes_does_not_run_on_the_document() {
     let doc = engine.lint(&Input::markdown("a.md", &source)).unwrap();
     assert_eq!(doc.genre.id.as_str(), "consumer");
     assert_eq!(doc.findings.len(), 0);
+}
+
+#[test]
+fn a_metric_the_genre_excludes_is_not_measured_on_the_document() {
+    let metric = rule(
+        "long-sentence",
+        &json!({"kind": "metric", "metric": "sentence_words", "threshold": 2.0, "comparison": "gt"}),
+        &json!({"scope": "sentence", "applies_to": {"genres": ["reference"]}}),
+    );
+    let set = ruleset(vec![category("cat", &[metric])]);
+    let engine = Engine::new(vec![set], per_document()).unwrap();
+    let entries = |genre: &str| {
+        let before = matcher_entries(MatchKind::Metric);
+        let doc = engine
+            .lint(&Input::markdown("a.md", &with_genre(genre)))
+            .unwrap();
+        (
+            matcher_entries(MatchKind::Metric) - before,
+            doc.findings.len(),
+        )
+    };
+    // The reference document is measured and reported, so the counter is live.
+    assert_eq!(entries("reference"), (1, 1));
+    assert_eq!(entries("consumer"), (0, 0));
 }

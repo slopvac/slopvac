@@ -27,6 +27,7 @@ use crate::capitalization::{self, SentenceCase};
 use crate::diagrams::{self, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
 use crate::directives::{Directives, Lines, Target, scan};
 use crate::exceptions::{Detectors, MatchSite, TextOrigin};
+use crate::matcher_work;
 use crate::matching::{
     LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
 };
@@ -1141,6 +1142,7 @@ impl Run<'_> {
                 _ => None,
             };
             for unit in self.prepared.units(rule.scope)? {
+                matcher_work::entered(loaded.kind());
                 let ranges = match &sentence_case {
                     Some(check) => check.find(unit.text)?.into_iter().collect(),
                     None => loaded.find_all(unit.text)?,
@@ -1282,6 +1284,7 @@ impl Run<'_> {
                 }
                 None => &inline_code,
             };
+            matcher_work::entered(MatchKind::Metric);
             for hit in self.subject.measure(metric, rule.text_type)? {
                 // The guards read the measured sentence or paragraph. A document-wide
                 // measurement has no unit to guard.
