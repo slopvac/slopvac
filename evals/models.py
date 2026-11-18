@@ -299,7 +299,8 @@ def make_linter(engine: runner.Engine, suffix: str = ".md") -> Linter:
             str(note) for d in report["documents"] for note in d.get("unchecked") or []
         ]
         if unchecked:
-            raise LintIncomplete(f"lint incomplete: {'; '.join(unchecked)[:300]}")
+            note = procs.redact_credentials("; ".join(unchecked))[:300]
+            raise LintIncomplete(f"lint incomplete: {note}")
         return [runner._slim(f) for d in report["documents"] for f in d["findings"]]
 
     return lint

@@ -164,7 +164,7 @@ def _slim(finding: Mapping[str, Any]) -> dict[str, Any]:
     if finding.get("end_line") is not None:
         out["end_line"] = finding["end_line"]
     if finding.get("matched_text") is not None:
-        out["text"] = finding["matched_text"]
+        out["text"] = procs.redact_credentials(str(finding["matched_text"]))
     return out
 
 

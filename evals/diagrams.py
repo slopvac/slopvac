@@ -190,7 +190,11 @@ def score(
             ]
             used = set(pairs.values())
             row["false_positives"] += [
-                {"sample": sid, "line": f["line"], "matched": f["matched"]}
+                {
+                    "sample": sid,
+                    "line": f["line"],
+                    "matched": procs.redact_credentials(f["matched"]),
+                }
                 for i, f in enumerate(found)
                 if i not in used
             ]

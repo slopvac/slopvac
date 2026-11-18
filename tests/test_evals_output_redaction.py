@@ -221,3 +221,84 @@ def test_a_private_key_in_a_journaled_answer_is_stored_without_its_body(
     stored = path.read_text("utf-8")
     assert BODY not in stored
     assert "BEGIN PRIVATE KEY" not in stored
+
+
+# --- sinks of successful output: stored reasons, matched text, adapter answers ------
+
+
+def report_engine(report: dict) -> runner.Engine:
+    script = f"import sys; sys.stdout.write({json.dumps(report)!r})"
+    return runner.Engine("fake", (sys.executable, "-c", script), runner.REPO_ROOT)
+
+
+def finding(matched: str) -> dict:
+    return {
+        "rule_id": "r.one",
+        "line": 1,
+        "severity": "warning",
+        "matched_text": matched,
+    }
+
+
+def test_an_unchecked_note_with_a_credential_is_stored_without_it():
+    report = {
+        "documents": [
+            {"unchecked": [f"rule r.two could not run: {LEAK}"], "findings": []}
+        ]
+    }
+    with pytest.raises(models.LintIncomplete) as caught:
+        models.make_linter(report_engine(report))("text")
+    assert_clean(str(caught.value))
+    assert "rule r.two could not run" in str(caught.value)
+
+
+def test_engine_matched_text_with_a_credential_is_stored_without_it():
+    report = {"documents": [{"findings": [finding(f"use {LEAK} here")]}]}
+    found = models.make_linter(report_engine(report))("text")
+    assert_clean(json.dumps(found))
+    assert found[0]["text"].startswith("use ")
+
+
+def test_ordinary_matched_text_is_unchanged():
+    report = {
+        "documents": [{"findings": [finding("delve into the max_tokens setting")]}]
+    }
+    found = models.make_linter(report_engine(report))("text")
+    assert found[0]["text"] == "delve into the max_tokens setting"
+
+
+def test_diagram_matched_text_with_a_credential_is_stored_without_it():
+    labels = {"s": {"labels": []}}
+    findings = {
+        "s": [
+            {"rule": "diagram.note-long", "line": 2, "matched": f"note {LEAK}"},
+        ]
+    }
+    counts = diagrams.score(labels, findings)
+    stored = counts["diagram.note-long"]["false_positives"]
+    assert len(stored) == 1
+    assert_clean(json.dumps(stored))
+
+
+def test_diagram_matched_text_still_pairs_with_its_label():
+    labels = {"s": {"labels": [{"rule": "diagram.note-long", "text": "long note"}]}}
+    findings = {
+        "s": [{"rule": "diagram.note-long", "line": 2, "matched": "a long note"}]
+    }
+    assert diagrams.score(labels, findings)["diagram.note-long"]["matched"] == 1
+
+
+def test_adapter_answers_are_returned_without_credentials():
+    events = [
+        {"type": "text", "part": {"text": "Answer with AKIAFAKE"}},
+        {"type": "text", "part": {"text": "FAKEFAKE0000 inside."}},
+    ]
+    stream = "\n".join(json.dumps(e) for e in events)
+    text = opencode_model.parse_events(stream)
+    assert_clean(text)
+    assert text.startswith("Answer with")
+
+
+def test_ordinary_adapter_answers_are_unchanged():
+    stream = json.dumps({"type": "text", "part": {"text": "Set max_tokens = 4096."}})
+    assert opencode_model.parse_events(stream) == "Set max_tokens = 4096."
