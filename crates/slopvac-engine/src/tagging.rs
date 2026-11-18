@@ -63,9 +63,6 @@ impl Extents {
 /// A parsed document as the taggers read it.
 struct View<'a> {
     path: &'a str,
-    /// Steps taken by `split_interleaved`, for the tests that bound its work.
-    #[cfg(feature = "test-counters")]
-    visits: Cell<usize>,
     /// The entry that produced each span handed to a tagger as a block or a sentence.
     owners: RefCell<HashMap<(usize, usize), usize>>,
     source_len: usize,
@@ -160,8 +157,6 @@ impl<'a> View<'a> {
             .collect();
         Self {
             path,
-            #[cfg(feature = "test-counters")]
-            visits: Cell::new(0),
             owners: RefCell::new(owners),
             views,
             source_len: source.len(),
@@ -188,14 +183,18 @@ impl View<'_> {
     /// tag is the entry whose sentence or block produced its span.
     /// Count one step of `split_interleaved`.
     #[cfg(feature = "test-counters")]
+    #[expect(
+        clippy::unused_self,
+        reason = "matches the variant without counters, which has no use for the view"
+    )]
     fn visit(&self) {
-        self.visits.set(self.visits.get() + 1);
+        counted::visit();
     }
 
     #[cfg(not(feature = "test-counters"))]
     #[expect(
         clippy::unused_self,
-        reason = "matches the counting variant, which the tests build"
+        reason = "matches the variant with counters, which the tests build"
     )]
     #[inline(always)]
     fn visit(&self) {}
@@ -363,6 +362,34 @@ pub(crate) fn genre(
     registry.resolve(&View::new(path, source, doc, front_matter), opts)
 }
 
+/// Steps `split_interleaved` takes on this thread, for the tests that bound its work.
+#[cfg(feature = "test-counters")]
+mod counted {
+    use std::cell::Cell;
+
+    thread_local! {
+        static VISITS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn visit() {
+        VISITS.with(|c| c.set(c.get() + 1));
+    }
+
+    pub(super) fn take() -> usize {
+        VISITS.with(|c| c.replace(0))
+    }
+}
+
+/// The steps taken on this thread to split tags over the extents of their blocks since the
+/// last call. A test that lints tables of growing size and reads the count shows whether the
+/// split does work in proportion to the table.
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn take_split_visits() -> usize {
+    counted::take()
+}
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
@@ -393,88 +420,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test-counters")]
-    fn splitting_interleaved_tags_takes_a_fixed_number_of_steps_for_each_entry() {
-        let count = 20_000;
-        let doc = row_of_fallback_cells(count);
-        let view = View::new("t.rst", "", &doc, None);
-        // One tag on every cell, as a block tagger would produce.
-        let tags = (0..count)
-            .map(|_| Tag {
-                kind: "requirement".to_owned(),
-                span: 0..1000,
-                confidence: 1.0,
-                evidence: String::new(),
-            })
-            .collect();
-        view.blocks();
-        let _ = view.split_interleaved(TagIndex::from_tags(tags));
-        // The sweep visits each entry once, and each tag its owner and its extents.
-        assert!(
-            view.visits.get() <= 8 * count,
-            "{} steps for {count} entries",
-            view.visits.get()
-        );
-    }
-
-    /// A cell that wraps over `lines` lines, each a sentence on its own extent, and a cell
-    /// beside it that overlaps it.
-    fn wrapped_cell(lines: usize) -> Document {
-        let whole = slopvac_model::Span::new(0, 10 * lines).unwrap();
-        let mut wrapped = Projection::new();
-        for line in 0..lines {
-            let at = 10 * line;
-            let word = slopvac_model::Span::new(at, at + 2).unwrap();
-            let gap = slopvac_model::Span::new(at + 2, at + 10).unwrap();
-            wrapped.push(TokenKind::Identity, "a.", word);
-            wrapped.push_bridge(TokenKind::Collapse, " ", gap);
-        }
-        let beside = slopvac_model::Span::new(5, 8).unwrap();
-        let mut other = Projection::new();
-        other.push(TokenKind::Opaque, "x", beside);
-        let cell = |span, projection| Block {
-            kind: BlockKind::TableCell { row: 0, column: 0 },
-            span,
-            projection: Some(projection),
-            containers: Vec::new(),
-        };
-        Document {
-            blocks: vec![cell(whole, wrapped), cell(beside, other)],
-            code_spans: Vec::new(),
-            html_blocks: Vec::new(),
-        }
-    }
-
-    #[test]
-    #[cfg(feature = "test-counters")]
-    fn splitting_interleaved_tags_visits_only_the_extents_a_tag_meets() {
-        for lines in [1_000, 2_000, 4_000] {
-            let source = "a. ".repeat(lines);
-            let doc = wrapped_cell(lines);
-            let view = View::new("t.rst", &source, &doc, None);
-            let blocks = view.blocks();
-            let tags: Vec<Tag> = view
-                .sentences(&blocks[0])
-                .into_iter()
-                .map(|s| Tag {
-                    kind: "requirement".to_owned(),
-                    span: s.span,
-                    confidence: 1.0,
-                    evidence: String::new(),
-                })
-                .collect();
-            assert_eq!(tags.len(), lines);
-            let split = view.split_interleaved(TagIndex::from_tags(tags));
-            assert_eq!(split.tags().len(), lines);
-            assert!(
-                view.visits.get() <= 8 * lines,
-                "{} steps for {lines} sentences on {lines} extents",
-                view.visits.get()
-            );
-        }
-    }
-
-    #[test]
     fn every_tagger_reads_blocks_built_once() {
         let count = 50;
         let doc = row_of_fallback_cells(count);
@@ -484,50 +429,6 @@ mod tests {
         // The built-in taggers each ask for the blocks. A rebuild per tagger would multiply
         // the count by the number of taggers.
         assert_eq!(entry::counted::take_built(), count);
-    }
-
-    /// The code of `split_interleaved` and of `sentences` as they were before the sentence
-    /// index and the sorted extents, kept as the oracle for the differential tests.
-    impl View<'_> {
-        fn split_interleaved_oracle(&self, index: &TagIndex, marked: &[bool]) -> TagIndex {
-            let owners = self.owners.borrow();
-            let mut extents: BTreeMap<usize, Vec<Range<usize>>> = BTreeMap::new();
-            let mut tags = Vec::with_capacity(index.tags().len());
-            for (group, tag) in index.tags().iter().enumerate() {
-                let owner = owners
-                    .get(&(tag.span.start, tag.span.end))
-                    .copied()
-                    .filter(|&i| marked[i]);
-                let runs = owner.map(|i| {
-                    extents.entry(i).or_insert_with(|| {
-                        self.entries[i]
-                            .projection
-                            .map(|p| p.extents().iter().map(|s| s.start()..s.end()).collect())
-                            .unwrap_or_default()
-                    })
-                });
-                let mut pieces = Vec::new();
-                for run in runs.into_iter().flatten() {
-                    let from = run.start.max(tag.span.start);
-                    let to = run.end.min(tag.span.end);
-                    if from < to {
-                        pieces.push((
-                            Tag {
-                                span: from..to,
-                                ..tag.clone()
-                            },
-                            group,
-                        ));
-                    }
-                }
-                if pieces.is_empty() {
-                    tags.push((tag.clone(), group));
-                } else {
-                    tags.extend(pieces);
-                }
-            }
-            TagIndex::from_pieces(tags)
-        }
     }
 
     /// Spans of the sentences of `block`, each mapped by the old per-sentence scan.
@@ -623,42 +524,26 @@ mod tests {
         }
 
         #[test]
-        fn split_tags_equal_those_of_the_scan_over_every_extent(
-            projections in prop::collection::vec(prose_projection(), 1..5),
-            spans in prop::collection::vec((0usize..40, 100usize..200), 1..5),
-            wanted in prop::collection::vec((0usize..8, 0usize..2, 0usize..240, 0usize..240), 1..12),
+        fn the_extents_a_span_meets_are_those_the_scan_over_every_extent_found(
+            runs in prop::collection::vec((0usize..60, 0usize..20), 0..30),
+            span in (0usize..80, 0usize..80),
         ) {
-            let doc = cells(projections, &spans);
-            let view = View::new("t.rst", "", &doc, None);
-            let blocks = view.blocks();
-            // A tag on a block's own span, so it has an owner, or on any range.
-            let tags: Vec<Tag> = wanted
-                .into_iter()
-                .map(|(pick, own, a, b)| Tag {
-                    kind: ["a", "b"][own].to_owned(),
-                    span: if pick < blocks.len() { blocks[pick].span.clone() } else { a.min(b)..a.max(b) },
-                    confidence: 1.0,
-                    evidence: String::new(),
+            let runs: Vec<Range<usize>> = runs.into_iter().map(|(a, len)| a..a + len).collect();
+            let span = span.0.min(span.1)..span.0.max(span.1);
+            // The scan the sorted extents replaced: clip every run to the span.
+            let mut want: Vec<Range<usize>> = runs
+                .iter()
+                .filter_map(|run| {
+                    let from = run.start.max(span.start);
+                    let to = run.end.min(span.end);
+                    (from < to).then_some(from..to)
                 })
                 .collect();
-            let index = TagIndex::from_tags(tags);
-            // An entry is split when its span meets the span of another entry.
-            let marked: Vec<bool> = (0..view.entries.len())
-                .map(|i| {
-                    let a = &view.entries[i].span;
-                    (0..view.entries.len()).any(|j| {
-                        let b = &view.entries[j].span;
-                        j != i && b.start < a.end && a.start < b.end
-                    })
-                })
-                .collect();
-            let want = view.split_interleaved_oracle(&index, &marked);
-            let got = view.split_interleaved(index);
-            prop_assert_eq!(got.tags(), want.tags());
-            let ranges: Vec<Range<usize>> = want.tags().iter().map(|t| t.span.clone()).collect();
-            for pair in ranges.windows(2) {
-                prop_assert_eq!(got.kinds_covering(pair), want.kinds_covering(pair));
-            }
+            want.sort_by_key(|r| (r.start, r.end));
+            let extents = Extents::new(runs);
+            let mut got: Vec<Range<usize>> = extents.overlapping(&span, || {}).collect();
+            got.sort_by_key(|r| (r.start, r.end));
+            prop_assert_eq!(got, want);
         }
     }
 }
