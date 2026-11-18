@@ -14,17 +14,16 @@
 //! The program, its directory and every ancestor must belong to root or the
 //! current user, and must not be writable by others. One exception: a sticky,
 //! root-owned ancestor such as `/tmp` may be, because others cannot replace
-//! what they do not own. Writable by group is allowed in two cases only:
+//! what they do not own.
 //!
-//! - the owner is root, the group is `admin` (macOS: gid 80, looked up by
-//!   name) and the current user belongs to it. This is how `/Applications` is
-//!   set up, where Docker Desktop keeps its credential helper;
-//! - the current user is the only member of the group, so the group grants no
-//!   one else a write. Groups below gid 100 are system groups and never count.
-//!
-//! Group membership comes from the process's groups, `/etc/group` and
-//! `/etc/passwd`. Accounts that live only in a directory service are not
-//! listed there, which is why the second case excludes system groups.
+//! Writable by group is refused, except for one group: `admin`, looked up by
+//! name (macOS: gid 80), when the current process belongs to it. An
+//! administrator can already become root, so the group adds no write that the
+//! user could not make anyway. This is how `/Applications` is set up, where
+//! Docker Desktop keeps its credential helper, and how Homebrew's
+//! `/usr/local/bin` is often set up. Any other group is refused, even when the
+//! user looks like its only member: `/etc/group` does not list accounts that a
+//! directory service holds, so absence from it proves nothing.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -66,8 +65,6 @@ trait Host {
     fn in_group(&self, gid: u32) -> bool;
     /// The group id named `admin`.
     fn admin_gid(&self) -> Option<u32>;
-    /// Whether the current user is the only member of group `gid`.
-    fn sole_member(&self, gid: u32) -> bool;
 }
 
 fn find_in(program: &str, path: &OsStr, project: &Path, host: &dyn Host) -> Option<PathBuf> {
@@ -107,13 +104,10 @@ fn trusted_path(path: &Path, host: &dyn Host) -> bool {
     })
 }
 
-/// Whether a group-writable entry grants a write to nobody but the user.
+/// Whether a group-writable entry grants a write to nobody but administrators
+/// that the current user belongs to.
 fn group_is_closed(meta: &Stat, host: &dyn Host) -> bool {
-    if !host.in_group(meta.gid) {
-        return false;
-    }
-    let admin = meta.uid == 0 && host.admin_gid() == Some(meta.gid);
-    admin || host.sole_member(meta.gid)
+    host.admin_gid() == Some(meta.gid) && host.in_group(meta.gid)
 }
 
 /// The machine this process runs on.
@@ -143,16 +137,6 @@ impl Host for SystemHost {
     fn admin_gid(&self) -> Option<u32> {
         group_gid(&std::fs::read_to_string("/etc/group").ok()?, "admin")
     }
-
-    fn sole_member(&self, gid: u32) -> bool {
-        let (Ok(groups), Ok(passwd)) = (
-            std::fs::read_to_string("/etc/group"),
-            std::fs::read_to_string("/etc/passwd"),
-        ) else {
-            return false;
-        };
-        sole_member_in(&groups, &passwd, gid, self.uid())
-    }
 }
 
 #[cfg(not(unix))]
@@ -173,9 +157,6 @@ impl Host for SystemHost {
     fn admin_gid(&self) -> Option<u32> {
         None
     }
-    fn sole_member(&self, _: u32) -> bool {
-        false
-    }
 }
 
 /// The id of group `name` in the text of `/etc/group`.
@@ -187,39 +168,6 @@ fn group_gid(groups: &str, name: &str) -> Option<u32> {
         }
         f.nth(1)?.parse().ok()
     })
-}
-
-/// Whether user `uid` is the only member of group `gid`. System groups never
-/// qualify. Others are members when `/etc/group` lists them or `/etc/passwd`
-/// makes the group their primary group.
-fn sole_member_in(groups: &str, passwd: &str, gid: u32, uid: u32) -> bool {
-    if gid < 100 {
-        return false;
-    }
-    let accounts: Vec<(&str, u32, u32)> = passwd
-        .lines()
-        .filter_map(|line| {
-            let mut f = line.split(':');
-            let name = f.next()?;
-            let id = f.nth(1)?.parse().ok()?;
-            let primary = f.next()?.parse().ok()?;
-            Some((name, id, primary))
-        })
-        .collect();
-    let me = accounts.iter().find(|a| a.1 == uid).map(|a| a.0);
-    let others_primary = accounts.iter().any(|a| a.1 != uid && a.2 == gid);
-    let listed = groups.lines().any(|line| {
-        let mut f = line.split(':');
-        let _name = f.next();
-        let id = f.nth(1).and_then(|g| g.parse::<u32>().ok());
-        let members = f.next().unwrap_or("");
-        id == Some(gid)
-            && members
-                .split(',')
-                .filter(|m| !m.is_empty())
-                .any(|m| Some(m) != me)
-    });
-    !others_primary && !listed
 }
 
 #[cfg(test)]
@@ -239,7 +187,6 @@ mod tests {
         uid: u32,
         groups: Vec<u32>,
         admin: Option<u32>,
-        sole: Vec<u32>,
     }
 
     #[cfg(unix)]
@@ -250,7 +197,6 @@ mod tests {
                 uid: SystemHost.uid(),
                 groups: Vec::new(),
                 admin: Some(80),
-                sole: Vec::new(),
             }
         }
 
@@ -276,9 +222,6 @@ mod tests {
         }
         fn admin_gid(&self) -> Option<u32> {
             self.admin
-        }
-        fn sole_member(&self, gid: u32) -> bool {
-            self.sole.contains(&gid)
         }
     }
 
@@ -444,15 +387,24 @@ mod tests {
         (l, bin, apps)
     }
 
+    /// `owner`: 0 for root, otherwise another user; the current user stays
+    /// the owner when `None`.
     #[cfg(unix)]
-    #[test]
-    fn a_root_owned_directory_the_admin_group_can_write_is_trusted_for_a_member() {
-        let (l, bin, apps) = desktop_layout();
-        let host = Fake {
+    fn desktop_host(apps: &Path, owner: Option<u32>, gid: u32, mode: u32) -> Fake {
+        Fake {
             groups: vec![80],
             ..Fake::me()
         }
-        .claim(&apps, 0, 80, 0o775);
+        .claim(apps, owner.unwrap_or(SystemHost.uid()), gid, mode)
+    }
+
+    #[cfg(unix)]
+    #[rstest::rstest]
+    #[case::owned_by_root(Some(0))]
+    #[case::owned_by_the_current_user(None)]
+    fn an_admin_group_directory_is_trusted_for_a_member(#[case] owner: Option<u32>) {
+        let (l, bin, apps) = desktop_layout();
+        let host = desktop_host(&apps, owner, 80, 0o775);
         assert_eq!(
             find_in("tool", &path_of(&[&bin]), &l.project, &host),
             Some(apps.join("desktop-tool"))
@@ -461,19 +413,19 @@ mod tests {
 
     #[cfg(unix)]
     #[rstest::rstest]
-    #[case::not_a_member(vec![], Some(80), 0, 80)]
-    #[case::group_is_not_admin(vec![80], Some(81), 0, 80)]
-    #[case::admin_group_missing(vec![80], None, 0, 80)]
-    #[case::owner_is_not_root(vec![80], Some(80), 1, 80)]
-    fn the_admin_exception_needs_membership_a_root_owner_and_the_admin_group(
+    #[case::not_a_member(vec![], Some(80), None, 80)]
+    #[case::group_is_not_admin(vec![80], Some(81), None, 80)]
+    #[case::admin_group_missing(vec![80], None, None, 80)]
+    #[case::owned_by_another_user(vec![80], Some(80), Some(1), 80)]
+    fn the_admin_exception_needs_membership_the_admin_group_and_a_trusted_owner(
         #[case] groups: Vec<u32>,
         #[case] admin: Option<u32>,
-        #[case] owner: u32,
+        #[case] foreign_owner: Option<u32>,
         #[case] gid: u32,
     ) {
         let (l, bin, apps) = desktop_layout();
-        // `owner` 1 stands for a user who is neither root nor the current user.
-        let owner = if owner == 0 { 0 } else { SystemHost.uid() + 1 };
+        // Any non-zero id here differs from the current user.
+        let owner = foreign_owner.map_or(SystemHost.uid(), |_| SystemHost.uid() + 1);
         let host = Fake {
             groups,
             admin,
@@ -485,40 +437,34 @@ mod tests {
 
     #[cfg(unix)]
     #[rstest::rstest]
-    #[case::only_member(vec![5000], vec![5000], true)]
-    #[case::shared_group(vec![5000], vec![], false)]
-    #[case::not_in_the_group(vec![], vec![5000], false)]
-    fn a_group_writable_directory_is_trusted_only_for_its_only_member(
-        #[case] groups: Vec<u32>,
-        #[case] sole: Vec<u32>,
-        #[case] trusted: bool,
-    ) {
+    #[case::the_only_listed_member(vec![5000])]
+    #[case::not_in_the_group(vec![])]
+    fn a_group_writable_directory_of_another_group_is_refused(#[case] groups: Vec<u32>) {
+        // Group 5000 stands for any group but admin, here with the user as its
+        // only listed member: nothing proves no one else is in it.
         let l = layout();
         let host = Fake {
             groups,
-            sole,
             ..Fake::me()
         }
         .claim(&l.trusted, SystemHost.uid(), 5000, 0o775);
-        let found = find_in("tool", &path_of(&[&l.trusted]), &l.project, &host);
-        assert_eq!(found.is_some(), trusted);
+        assert_eq!(
+            find_in("tool", &path_of(&[&l.trusted]), &l.project, &host),
+            None
+        );
     }
 
     #[cfg(unix)]
-    #[test]
-    fn a_world_writable_directory_is_refused_whoever_owns_it_and_whatever_the_group() {
+    #[rstest::rstest]
+    #[case::owned_by_root(Some(0))]
+    #[case::owned_by_the_current_user(None)]
+    fn a_world_writable_directory_is_refused_even_in_the_admin_group(#[case] owner: Option<u32>) {
         let (l, bin, apps) = desktop_layout();
-        let host = Fake {
-            groups: vec![80],
-            sole: vec![80],
-            ..Fake::me()
-        }
-        .claim(&apps, 0, 80, 0o777);
+        let host = desktop_host(&apps, owner, 80, 0o777);
         assert_eq!(find_in("tool", &path_of(&[&bin]), &l.project, &host), None);
     }
 
     const GROUPS: &str = "root:x:0:\nadmin:*:80:root,alice\nalice:x:1000:\nteam:x:1001:alice,bob\n";
-    const PASSWD: &str = "root:x:0:0:r:/root:/bin/sh\nalice:x:1000:1000:a:/home/alice:/bin/sh\nbob:x:1002:1001:b:/home/bob:/bin/sh\n";
 
     #[rstest::rstest]
     #[case::finds_it("admin", Some(80))]
@@ -526,18 +472,5 @@ mod tests {
     #[case::not_a_prefix("adm", None)]
     fn groups_are_looked_up_by_name(#[case] name: &str, #[case] gid: Option<u32>) {
         assert_eq!(group_gid(GROUPS, name), gid);
-    }
-
-    #[rstest::rstest]
-    #[case::private_group(1000, 1000, true)]
-    #[case::shared_by_listing(1001, 1000, false)]
-    #[case::system_group(80, 1000, false)]
-    #[case::primary_group_of_another_user(1001, 1002, false)]
-    fn a_user_is_the_only_member_of_a_private_group_alone(
-        #[case] gid: u32,
-        #[case] uid: u32,
-        #[case] only: bool,
-    ) {
-        assert_eq!(sole_member_in(GROUPS, PASSWD, gid, uid), only);
     }
 }

@@ -12,7 +12,7 @@ use sha2::{Digest as _, Sha256};
 use ureq::Body;
 use ureq::http::Response;
 
-use super::auth::{Challenge, CredentialSource, DefaultCredentials};
+use super::auth::{Challenge, Credential, CredentialSource, DefaultCredentials};
 use super::http::{
     Req, TestNet, Timeouts, Transport, bare_host, host_of, is_loopback_host, origin_of, read_error,
     resolve, url_allowed, wire_bytes_used,
@@ -254,7 +254,34 @@ impl Client {
         }
     }
 
-    fn fetch_token(&self, r: &Reference, ch: &Challenge, scope: &str) -> Result<String, OciError> {
+    /// The login for `registry`. A refusal to start a credential helper does not
+    /// fail the request: anonymous access may still work. The refusal goes to
+    /// `refused`, and the caller reports it when the registry then denies access.
+    fn login(
+        &self,
+        registry: &str,
+        refused: &mut Option<OciError>,
+    ) -> Result<Option<Credential>, OciError> {
+        match self.creds.credential(registry) {
+            Err(e) if e.code().is_some() => {
+                tracing::warn!(
+                    code = e.code(),
+                    "a credential helper was refused; continuing without a login"
+                );
+                *refused = Some(e);
+                Ok(None)
+            }
+            other => other,
+        }
+    }
+
+    fn fetch_token(
+        &self,
+        r: &Reference,
+        ch: &Challenge,
+        scope: &str,
+        refused: &mut Option<OciError>,
+    ) -> Result<String, OciError> {
         let realm = ch
             .param("realm")
             .ok_or_else(|| OciError::Invalid("bearer challenge without realm".into()))?;
@@ -267,7 +294,7 @@ impl Client {
             let _ = write!(url, "service={}&", encode(service));
         }
         let _ = write!(url, "scope={}", encode(scope));
-        let cred = self.creds.credential(&r.registry)?;
+        let cred = self.login(&r.registry, refused)?;
         let mut resp = self.transport.send(&Req {
             method: "GET",
             url: url.clone(),
@@ -279,7 +306,9 @@ impl Client {
         let status = resp.status().as_u16();
         if status != 200 {
             return Err(if matches!(status, 401 | 403) {
-                OciError::Denied(redact_url(&url))
+                refused
+                    .take()
+                    .unwrap_or_else(|| OciError::Denied(redact_url(&url)))
             } else {
                 OciError::Status {
                     status,
@@ -365,15 +394,24 @@ impl Client {
         let Some(challenge) = challenge else {
             return Ok(resp);
         };
+        let mut refused = None;
         let auth = match challenge.scheme.as_str() {
-            "bearer" => format!("Bearer {}", self.fetch_token(r, &challenge, &scope)?),
-            "basic" => match self.creds.credential(&r.registry)? {
+            "bearer" => format!(
+                "Bearer {}",
+                self.fetch_token(r, &challenge, &scope, &mut refused)?
+            ),
+            "basic" => match self.login(&r.registry, &mut refused)? {
                 Some(c) => c.basic_header(),
-                None => return Ok(resp),
+                // Anonymous access was refused already, so the refusal is why.
+                None => return refused.map_or(Ok(resp), Err),
             },
             _ => return Ok(resp),
         };
-        self.transport.send(&make(Some(auth)))
+        let resp = self.transport.send(&make(Some(auth)))?;
+        match refused {
+            Some(e) if matches!(resp.status().as_u16(), 401 | 403) => Err(e),
+            _ => Ok(resp),
+        }
     }
 
     fn deny_or_status(url: &str, status: u16) -> OciError {

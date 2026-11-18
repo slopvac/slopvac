@@ -1477,10 +1477,12 @@ mod helpers {
     }
 
     /// `dir` is relative to the scratch base, whose `project` subdirectory is
-    /// the project. `shown` is how the refusal names the helper.
+    /// the project. `shown` is how the refusal names the directory (policies
+    /// section 1.7: project-relative, or `<external>/<name>` outside it).
     #[rstest::rstest]
-    #[case::inside_the_project("project/tools", 0o755, "tools/docker-credential-planted")]
-    #[case::group_writable_directory("shared", 0o775, "<external>/docker-credential-planted")]
+    #[case::project_local_directory("project/tools", 0o755, "tools")]
+    #[case::group_writable_directory("shared", 0o775, "<external>/shared")]
+    #[case::world_writable_directory("open", 0o777, "<external>/open")]
     fn tm38_a_helper_in_an_untrusted_directory_is_not_run(
         #[case] dir: &str,
         #[case] mode: u32,
@@ -1498,13 +1500,41 @@ mod helpers {
         );
         let err = refused(&creds, &marker);
         assert_eq!(err.code(), Some("credential-helper-untrusted"));
-        let text = err.to_string();
-        assert!(text.contains("not found in a trusted directory"), "{text}");
-        assert!(text.contains(&format!("exists only at {shown}.")), "{text}");
-        for alternative in ["SLOPVAC_OCI_USER", "SLOPVAC_OCI_TOKEN", "GITHUB_TOKEN"] {
-            assert!(text.contains(alternative), "{text}");
-        }
-        assert!(!text.contains(base.to_str().unwrap()), "{text}");
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "credential helper `docker-credential-planted` was not found in a trusted \
+                 directory; it exists only in {shown}. Tighten the permissions of that \
+                 directory so that only you or root can write it, or sign in with a static \
+                 `auths` login in the Docker config, with SLOPVAC_OCI_USER and \
+                 SLOPVAC_OCI_TOKEN, or with GITHUB_TOKEN for ghcr.io"
+            )
+        );
+    }
+
+    #[test]
+    fn tm38_an_auth_file_login_wins_over_a_configured_helper_and_no_helper_starts() {
+        use slopvac_plugins::oci::CredentialSource;
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        plant(&base.join("trusted"), "planted", &marker, 0o755);
+        let mut creds = creds_for(
+            &base,
+            "planted",
+            base.join("trusted").to_str().unwrap(),
+            &base.join("project"),
+        );
+        let auth = base64_std(b"from-auth-file:pw");
+        let file = base.join("auth.json");
+        std::fs::write(
+            &file,
+            json!({"auths": {"ghcr.io": {"auth": auth}}}).to_string(),
+        )
+        .unwrap();
+        creds.auth_files = vec![file];
+        let got = creds.credential("ghcr.io").unwrap().unwrap();
+        assert_eq!(got.username, "from-auth-file");
+        assert!(!marker.exists(), "the helper started");
     }
 
     #[test]
@@ -1523,6 +1553,11 @@ mod helpers {
         creds.project_root = None;
         let err = creds.credential("ghcr.io").unwrap_err();
         assert_eq!(err.code(), Some("credential-helper-project-unknown"));
+        assert_eq!(
+            err.to_string(),
+            "credential helper `docker-credential-planted` was not run: the project \
+             directory is unknown"
+        );
         assert!(!marker.exists(), "the helper ran");
     }
 
@@ -1727,6 +1762,80 @@ mod login_order {
         let want: Vec<std::path::PathBuf> = want.iter().map(std::path::PathBuf::from).collect();
         assert_eq!(got, want);
     }
+}
+
+/// A credential source whose helper was refused.
+struct Refusing(OciError);
+
+impl CredentialSource for Refusing {
+    fn credential(&self, _: &str) -> Result<Option<slopvac_plugins::oci::Credential>, OciError> {
+        Err(self.0.clone())
+    }
+}
+
+fn untrusted() -> OciError {
+    OciError::HelperUntrusted {
+        program: "docker-credential-x".into(),
+        dir: "<external>/bin".into(),
+    }
+}
+
+fn project_unknown() -> OciError {
+    OciError::HelperProjectUnknown("docker-credential-x".into())
+}
+
+#[rstest::rstest]
+#[case::untrusted_helper(untrusted(), "credential-helper-untrusted")]
+#[case::unknown_project(project_unknown(), "credential-helper-project-unknown")]
+fn a_refused_helper_does_not_stop_a_registry_that_serves_anonymous_tokens(
+    #[case] refusal: OciError,
+    #[case] _code: &str,
+) {
+    let body = manifest_json(&Descriptor::for_bytes("x", b"{}"), &[]);
+    let server = Server::start(with_auth("reg", None, move |_| manifest_response(&body)));
+    let client = Client::with_loopback_http_for_tests(Box::new(Refusing(refusal)));
+    client.fetch_manifest(&reference(&server, "a/b:1")).unwrap();
+    let token_req = server
+        .requests()
+        .into_iter()
+        .find(|q| q.path.starts_with("/token"))
+        .unwrap();
+    assert!(token_req.header("authorization").is_none());
+}
+
+#[rstest::rstest]
+#[case::untrusted_helper(untrusted(), "credential-helper-untrusted")]
+#[case::unknown_project(project_unknown(), "credential-helper-project-unknown")]
+fn a_refused_helper_is_reported_when_the_token_endpoint_needs_a_login(
+    #[case] refusal: OciError,
+    #[case] code: &str,
+) {
+    let server = Server::start(with_auth("reg", Some(("me", "s3cret")), |_| {
+        Response::new(200)
+    }));
+    let client = Client::with_loopback_http_for_tests(Box::new(Refusing(refusal.clone())));
+    let err = client
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert_eq!(err, refusal);
+    assert_eq!(err.code(), Some(code));
+}
+
+#[rstest::rstest]
+#[case::untrusted_helper(untrusted(), "credential-helper-untrusted")]
+#[case::unknown_project(project_unknown(), "credential-helper-project-unknown")]
+fn a_refused_helper_is_reported_when_a_basic_challenge_needs_a_login(
+    #[case] refusal: OciError,
+    #[case] code: &str,
+) {
+    let server =
+        Server::start(|_| Response::new(401).header("WWW-Authenticate", "Basic realm=\"reg\""));
+    let client = Client::with_loopback_http_for_tests(Box::new(Refusing(refusal.clone())));
+    let err = client
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert_eq!(err, refusal);
+    assert_eq!(err.code(), Some(code));
 }
 
 mod config_key_case {

@@ -327,10 +327,11 @@ fn resolve_helper(
     match find_in_path(program, search) {
         Some(seen) => {
             let seen = std::fs::canonicalize(&seen).unwrap_or(seen);
+            let dir = seen.parent().unwrap_or(&seen);
             let project = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_owned());
             Err(OciError::HelperUntrusted {
                 program: program.to_owned(),
-                path: slopvac_fs::display_under_root(&seen, &project),
+                dir: slopvac_fs::display_under_root(dir, &project),
             })
         }
         None => Err(OciError::Credential(format!(

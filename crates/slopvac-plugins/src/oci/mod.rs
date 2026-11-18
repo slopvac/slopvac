@@ -76,19 +76,20 @@ pub enum OciError {
     #[error("credential error: {}", esc(.0))]
     Credential(String),
     /// A credential helper exists only in a directory that is not trusted.
-    /// `path` is already redacted for display.
     #[error(
-        "credential helper `{}` was not found in a trusted directory; it exists only at {}. \
-         Set SLOPVAC_OCI_USER and SLOPVAC_OCI_TOKEN (or GITHUB_TOKEN for ghcr.io) to sign in \
-         without it; these take precedence over the Docker config",
+        "credential helper `{}` was not found in a trusted directory; it exists only in {}. \
+         Tighten the permissions of that directory so that only you or root can write it, \
+         or sign in with a static `auths` login in the Docker config, with SLOPVAC_OCI_USER \
+         and SLOPVAC_OCI_TOKEN, or with GITHUB_TOKEN for ghcr.io",
         esc(.program),
-        esc(.path)
+        esc(.dir)
     )]
     HelperUntrusted {
         /// The helper program name.
         program: String,
-        /// Where it was found, project-relative or `<external>/<file name>`.
-        path: String,
+        /// The directory that holds it, already redacted for display: relative
+        /// to the project, or `<external>/<directory name>` outside it.
+        dir: String,
     },
     /// A credential helper was not run because the project directory is unknown,
     /// so slopvac cannot tell whether the helper lies inside it.
