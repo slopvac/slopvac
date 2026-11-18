@@ -15,10 +15,11 @@ use std::ops::Range;
 use slopvac_model::Span;
 use slopvac_model::{Finding, GenreId, Notice, NoticeLevel};
 use slopvac_pos::{Mask, Tagger};
-use slopvac_rules::{LoadedRule, RuleSet, Scope};
+use slopvac_rules::{LoadedRule, MatchKind, RuleSet, Scope};
 use slopvac_terms::{Blocklist, Pos};
 
 use super::{Active, Candidate, Engine, EngineError, Kind, Run, notice};
+use crate::matcher_work;
 use crate::matching::format_message;
 use crate::skip;
 
@@ -259,6 +260,7 @@ impl Run<'_> {
         );
         let tagger = Tagger::english();
         for unit in prepared.units(Scope::Prose)? {
+            matcher_work::entered(MatchKind::Vocabulary);
             let text = unit.text;
             let masks = masks(text, self.input.source, |r| unit.span(&r));
             for token in
