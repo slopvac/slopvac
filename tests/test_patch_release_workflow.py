@@ -411,6 +411,71 @@ def provenance() -> dict:
     return yaml.safe_load(PROVENANCE.read_text(encoding="utf-8"))
 
 
+# A minimal evaluator for the `if:` subset these workflows use: ==, !=, &&, ||, !,
+# parentheses, string literals and context names. Merge it with tests/workflow_expr.py
+# once that helper lands from the publish-lint test work.
+_TOKEN = re.compile(r"\s*(==|!=|&&|\|\||!|\(|\)|'[^']*'|[A-Za-z_][A-Za-z0-9_.]*)")
+
+
+def evaluate_condition(expression: str, context: dict[str, str]) -> bool:
+    text = expression.strip()
+    if text.startswith("${{") and text.endswith("}}"):
+        text = text[3:-2]
+    tokens = _TOKEN.findall(text)
+    position = 0
+
+    def peek() -> str | None:
+        return tokens[position] if position < len(tokens) else None
+
+    def take() -> str:
+        nonlocal position
+        position += 1
+        return tokens[position - 1]
+
+    def atom() -> str | bool:
+        token = take()
+        if token == "(":
+            value = either()
+            assert take() == ")"
+            return value
+        if token == "!":
+            return not truthy(atom())
+        if token.startswith("'"):
+            return token[1:-1]
+        return context[token]  # a missing context name is a test error
+
+    def truthy(value: str | bool) -> bool:
+        return bool(value)
+
+    def comparison() -> str | bool:
+        left = atom()
+        if peek() in ("==", "!="):
+            operator = take()
+            right = atom()
+            return (left == right) if operator == "==" else (left != right)
+        return left
+
+    def both() -> str | bool:
+        value = comparison()
+        while peek() == "&&":
+            take()
+            right = comparison()
+            value = right if truthy(value) else value
+        return value
+
+    def either() -> str | bool:
+        value = both()
+        while peek() == "||":
+            take()
+            right = both()
+            value = value if truthy(value) else right
+        return value
+
+    result = either()
+    assert position == len(tokens), f"unparsed input in {expression!r}"
+    return truthy(result)
+
+
 def test_the_app_key_is_a_required_workflow_call_secret(provenance):
     # PyYAML reads the bare `on` key as boolean True.
     secrets = provenance[True]["workflow_call"]["secrets"]
@@ -433,18 +498,44 @@ def test_a_failed_mint_stops_the_job_with_an_instruction(provenance):
     assert explain["run"].rstrip().endswith("exit 1")
 
 
-def test_dispatching_with_a_tag_runs_only_the_ruleset_check(provenance):
+def test_the_dispatch_input_is_a_required_tag_that_only_the_check_reads(provenance):
     dispatch = provenance[True]["workflow_dispatch"]["inputs"]["tag"]
     assert dispatch["required"] is True
     steps = {s["name"]: s for s in provenance["jobs"]["provenance"]["steps"] if "name" in s}
-    # `inputs.tag` is empty when a release workflow calls this one, so a caller that
-    # was itself dispatched still gets the candidate check.
-    assert "inputs.tag == ''" in steps["Check the candidate"]["if"]
-    for name in ("Mint the ruleset read token", "Require an immutable tag ruleset"):
-        assert "inputs.tag != ''" in steps[name]["if"]
     check = steps["Require an immutable tag ruleset"]
     assert check["env"]["TAG"] == "${{ inputs.tag || github.ref_name }}"
     assert "inputs" not in check["run"]
+
+
+# Which provenance steps run, by how the workflow starts. `inputs.tag` is empty when
+# a release workflow calls it, even a caller that was itself dispatched, so those
+# callers still get the candidate check. A pull request or a plain branch run
+# starts no check: only a tag can publish.
+GATED_STEPS = {
+    "Check the candidate": "candidate",
+    "Mint the ruleset read token": "mint",
+    "Require an immutable tag ruleset": "ruleset",
+}
+RUNS = [
+    pytest.param("branch", "v2.9.1", {"mint", "ruleset"}, id="dispatch-from-a-branch"),
+    pytest.param("tag", "v2.9.1", {"mint", "ruleset"}, id="dispatch-on-a-tag-ref"),
+    pytest.param("tag", "", {"candidate", "mint", "ruleset"}, id="called-by-a-release"),
+    pytest.param("branch", "", set(), id="pull-request-or-branch-call"),
+]
+
+
+@pytest.mark.parametrize(("ref_type", "tag", "expected"), RUNS)
+def test_each_start_runs_exactly_the_intended_provenance_steps(
+    provenance, ref_type, tag, expected
+):
+    context = {"github.ref_type": ref_type, "inputs.tag": tag}
+    steps = {s["name"]: s for s in provenance["jobs"]["provenance"]["steps"] if "name" in s}
+    ran = {
+        label
+        for name, label in GATED_STEPS.items()
+        if evaluate_condition(steps[name]["if"], context)
+    }
+    assert ran == expected
 
 
 def test_the_provenance_workflow_has_no_write_permission(provenance):
