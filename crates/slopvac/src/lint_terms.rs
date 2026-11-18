@@ -103,12 +103,24 @@ pub fn build_engine(
     terms: &TermInputs,
     cwd: &Path,
 ) -> Result<Engine, CliError> {
+    build_engine_reading(sets, settings, terms, cwd, &TermsFile::load)
+}
+
+/// [`build_engine`] with the terms file read passed in, so a test can change a file between
+/// the one read and anything that would read it again.
+fn build_engine_reading(
+    sets: Vec<RuleSet>,
+    settings: Settings,
+    terms: &TermInputs,
+    cwd: &Path,
+    read_terms: &dyn Fn(&Path) -> Result<TermsFile, TermsError>,
+) -> Result<Engine, CliError> {
     // Each file is read once, and the engine gets the entries that passed validation. A second
     // read by the engine could fail with a message that holds the file's text.
     let mut entries = Vec::new();
     for file in &terms.files {
-        let loaded = TermsFile::load(file)
-            .map_err(|e| failed(file, "cannot load the terms file", &e, cwd))?;
+        let loaded =
+            read_terms(file).map_err(|e| failed(file, "cannot load the terms file", &e, cwd))?;
         entries.extend(loaded.terms);
     }
     let mut blocklist = Blocklist::default();
@@ -130,4 +142,63 @@ pub fn build_engine(
         })?;
     }
     Ok(engine)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lint_settings::{self, Overrides};
+    use crate::rule_catalog::Catalog;
+    use slopvac_config::LoadedConfig;
+    use slopvac_engine::Input;
+
+    const SENTINEL: &str = "SENTINEL-NOT-A-TERMS-FILE {{{";
+
+    #[test]
+    fn a_validated_terms_file_is_not_read_again() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("terms.toml");
+        std::fs::write(
+            &file,
+            "schema_version = 3\n\n[[terms]]\nterm = \"Zorblax\"\n",
+        )
+        .expect("terms");
+        let config = LoadedConfig::without_files(dir.path().to_path_buf());
+        let resolved = lint_settings::resolve(&config, Path::new("doc.md"));
+        let catalog = Catalog::load().expect("the rules load");
+        let settings = lint_settings::build(&catalog, &resolved, Vec::new(), &Overrides::default())
+            .expect("settings");
+        let inputs = TermInputs {
+            files: vec![file.clone()],
+            blocklists: Vec::new(),
+        };
+        // The one read returns the valid file, then the file on disk becomes unreadable
+        // content. Anything that read the path again would fail on the sentinel.
+        let read_once = |path: &Path| {
+            let loaded = TermsFile::load(path);
+            std::fs::write(path, SENTINEL).expect("replace the file");
+            loaded
+        };
+        let engine = build_engine_reading(
+            catalog.into_sets(),
+            settings,
+            &inputs,
+            dir.path(),
+            &read_once,
+        )
+        .unwrap_or_else(|e| panic!("the validated entries govern the engine: {e}"));
+        let doc = engine
+            .lint(&Input::markdown(
+                "doc.md",
+                "The team deploys zorblax today.\n",
+            ))
+            .expect("lint");
+        let matched: Vec<&str> = doc
+            .findings
+            .iter()
+            .filter(|f| f.rule_id.as_str() == "terms:terms.casing")
+            .map(|f| f.matched_text.as_str())
+            .collect();
+        assert_eq!(matched, ["zorblax"]);
+    }
 }
