@@ -1,0 +1,64 @@
+name: CLA sign
+
+# Runs on issue_comment, which GitHub always takes from the default branch. A comment that is exactly
+# the signing phrase records a signature; editing it away or deleting it removes the signature. Either
+# way the job then posts a fresh "CLA" check run for each affected pull request.
+on:
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    name: Sign
+    if: github.event.issue.pull_request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    # No concurrency group: a fixed one keeps a single pending run, so a newer comment event could
+    # replace a queued revocation. The contents API blob sha makes concurrent writers retry instead.
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      # Reads the comment from the event payload; no expression carries untrusted text into a shell.
+      - name: Is this a signing comment, or one edited away or deleted
+        id: phrase
+        run: python3 -B scripts/cla_check.py --match-only
+
+      # Two narrow tokens: one writes the signatures repository, one creates check runs here.
+      - name: Mint the signatures token
+        id: signatures
+        if: steps.phrase.outputs.matches == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.CLA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLA_APP_PRIVATE_KEY }}
+          owner: slopvac
+          repositories: cla-signers
+          permission-contents: write
+
+      - name: Mint the check-run token
+        id: repo
+        if: steps.phrase.outputs.matches == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.CLA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLA_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-checks: write
+          permission-pull-requests: read
+
+      - name: Update the signature record and the CLA check runs
+        if: steps.phrase.outputs.matches == 'true'
+        env:
+          GITHUB_TOKEN: ${{ steps.repo.outputs.token }}
+          SIGNATURES_TOKEN: ${{ steps.signatures.outputs.token }}
+        run: python3 -B scripts/cla_check.py

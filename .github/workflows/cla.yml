@@ -1,112 +1,20 @@
 name: CLA
-# The run name carries the pull request number, so the re-check below can find this
-# pull request's own run. Numbers come from GitHub, not from user text.
-run-name: "CLA #${{ github.event.pull_request.number || github.event.issue.number || github.ref_name }}"
-# Contributor License Agreement check, run by CLA Assistant Lite. Signatures live in
-# slopvac/cla-signers and are written with a GitHub App token.
+
+# Trigger only. Nothing trusted runs here: a pull request can rewrite this file, so its result means
+# nothing. The "CLA" check that the ruleset requires is a check run created by the CLA GitHub App
+# from cla-check.yml, which GitHub runs from the default branch after this workflow finishes.
 on:
-  issue_comment:
-    types: [created, edited, deleted]
-  pull_request_target:
-    types: [opened, closed, reopened, synchronize]
+  pull_request:
+    types: [opened, synchronize, reopened]
   merge_group:
 
 permissions: {}
 
 jobs:
-  # Both jobs are named "CLA": that is the required status check name. A ruleset's
-  # required checks also gate merge_group runs, so the merge queue needs a job with
-  # the same name. The pull request run already enforced the CLA.
-  CLA:
-    name: CLA
-    # Comments start the job only when they can matter: a pull request comment that
-    # contains the sign phrase or `recheck`. The action itself accepts only a comment
-    # whose whole trimmed body is the phrase, so this looser `contains` filter can
-    # never drop a valid signature. Other comments never join the concurrency queue,
-    # so they cannot displace a pending sign or sync run.
-    if: >-
-      github.event_name == 'pull_request_target' ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
-      (contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA') ||
-      contains(github.event.changes.body.from, 'I have read the CLA Document and I hereby sign the CLA') ||
-      contains(github.event.comment.body, 'recheck')))
-    concurrency:
-      # Three queues per pull request: pull request events, new comments, and edited
-      # or deleted comments. No comment can replace a pending pull request check, and
-      # a `recheck` comment cannot replace a pending revocation re-check.
-      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'issue_comment' && github.event.action != 'created' && 'revocation' || 'main' }}-${{ github.event.pull_request.number || github.event.issue.number }}
-      cancel-in-progress: false # Never cancel a CLA check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: write
-      contents: read # signatures are written to slopvac/cla-signers with the App token
-      pull-requests: write
-      statuses: write
-    # Write scopes on a pull_request_target job are safe only while nothing here
-    # checks out or executes pull request content. Do not add a checkout or build step.
-    steps:
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ secrets.CLA_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLA_APP_PRIVATE_KEY }}
-          owner: slopvac
-          repositories: cla-signers
-          permission-contents: write
-
-      - name: CLA Assistant
-        if: steps.app-token.outcome == 'success'
-        # The slopvac fork of iainmcgin/cla-github-action v3.2.0, hardened in fork PRs #1 to #6.
-        uses: slopvac/cla-github-action@24f90b8e956ba16ae1b98ba0de48ba07739476af # master after #5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PERSONAL_ACCESS_TOKEN: ${{ steps.app-token.outputs.token }}
-        with:
-          path-to-signatures: signatures/v1/cla.json
-          path-to-document: https://github.com/slopvac/slopvac/blob/main/CLA.md
-          cla-version: harmony-icla-1.2-opt1-v1
-          branch: main # must not be protected
-          allowlist: dependabot[bot],sjorsr-release-bot[bot],github-actions[bot],renovate[bot]
-          remote-organization-name: slopvac
-          remote-repository-name: cla-signers
-          lock-pullrequest-aftermerge: true
-          require-opener-as-author: true
-
-      # The action re-runs the pull request's CLA check only when that check failed.
-      # An edited or deleted sign comment can invalidate a check that already passed,
-      # so re-run the latest pull_request_target run for the current head as well.
-      # That run checks the recorded signatures against the comments again.
-      - name: Re-check the pull request after a sign comment changed
-        # Runs even when the action failed: a withdrawn signature fails the action,
-        # and that is exactly when the earlier passing run must be re-checked.
-        if: >-
-          !cancelled() &&
-          github.event_name == 'issue_comment' &&
-          (github.event.action == 'edited' || github.event.action == 'deleted')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.issue.number }}
-        run: |
-          head=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
-          # Fork PR runs carry no pull_requests list, so match the run name, which
-          # holds this pull request's number, and the head SHA. Page through all runs
-          # for the SHA, so newer runs from other pull requests cannot hide this one.
-          run=$(TITLE="CLA #$PR" gh api --paginate "repos/$REPO/actions/workflows/cla.yml/runs?event=pull_request_target&head_sha=$head&per_page=100" \
-            --jq '.workflow_runs[] | select(.display_title == env.TITLE) | .id' | head -n 1)
-          if [ -z "$run" ]; then
-            echo "::error::No CLA run for pull request #$PR at $head, so its earlier result was not re-checked"
-            exit 1
-          fi
-          gh run rerun "$run" --repo "$REPO"
-
-  CLA-merge-queue:
-    name: CLA
-    if: github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  trigger:
+    name: CLA trigger
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
     permissions: {}
     steps:
-      - run: echo "CLA enforced on the pull request"
+      - run: echo "CLA check requested; the CLA app posts the result."
