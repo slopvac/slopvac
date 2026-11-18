@@ -57,9 +57,9 @@ Each entry has a `layer` (`explicit` for `--config`, `project` for the nearest `
 
 The `error` text is a fixed message with no file content. `config.ok` is true when every source has status `ok`. A project with no source runs on the defaults, and `config.ok` is true.
 
-### 2.4 Packs and trust
+### 2.4 Plugins and trust
 
-The lockfile is `.slopvac/packs.lock` in the directory of the configuration file, or in the working directory if the search finds none. `packs.lockfile.status` is `absent` when there is no lockfile, which is not a problem. It is `invalid` when the file does not parse, and `unreadable` when the file or the pack store cannot be read. The `invalid` error holds the location only, such as `invalid value at /packs/0/digest`, or `not a valid lockfile` for a syntax error. It repeats nothing the file said, because a parser message can echo a rejected value. A pointer segment that is not a lockfile key or an array index shows as `*`.
+The lockfile is `.slopvac/packs.lock` in the directory of the configuration file, or in the working directory if the search finds none. `packs.lockfile.status` is `absent` when there is no lockfile, which is not a problem. It is `invalid` when the file does not parse, and `unreadable` when the file or the plugin store cannot be read. The `invalid` error holds the location only, such as `invalid value at /packs/0/digest`, or `not a valid lockfile` for a syntax error. It repeats nothing the file said, because a parser message can echo a rejected value. A pointer segment that is not a lockfile key or an array index shows as `*`.
 
 Each entry in `packs.items` has the plugin `id`, `version` and `kind` (`data` or `code`), and a `state`: `recorded`, `in-place`, `changed`, `tampered` or `not-installed`. Doctor reports the state without repairing it. `plugins sync` repairs a tampered plugin.
 

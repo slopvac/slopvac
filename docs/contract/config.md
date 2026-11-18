@@ -49,7 +49,7 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 
 ### 1.3.1 Plugins
 
-`[[plugins]]` lists every data plugin and code plugin that the project uses, in one array. Each entry has `id`, `source` and an optional `version` requirement. The config does not state the kind: the plugin manifest declares it, and the lockfile records it (packs.md, section 2).
+`[[plugins]]` lists every data plugin and code plugin that the project uses, in one array. Each entry has `id`, `source` and an optional `version` requirement. The config does not state the kind: the plugin manifest declares it, and the lockfile records it (plugins.md, section 2).
 
 - Each `id` appears once. A repeated id is an error at the second entry.
 - `core` is reserved for the built-in plugin, which the binary compiles in. An entry with the id `core` is an error.
@@ -61,7 +61,7 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 Every resolved value carries a `ConfigSource` (`common.schema.json#/$defs/ConfigSource`):
 
 - `layer` is one of the names in section 1.1, or `env`.
-- `file` is the path relative to the project root. A value from a pack uses `pack:<id>/<path>`. A `core`, `cli` or `env` value has no file.
+- `file` is the path relative to the project root. A value from a plugin uses `pack:<id>/<path>`. A `core`, `cli` or `env` value has no file.
 - `line` and `column` are one-based and point at the key that set the value. For front matter, they count from the start of the document file, not from the start of the block.
 - A `[[genres]]` or `[[overrides]]` value uses layer `override`. The report names the block by its index.
 
@@ -89,7 +89,7 @@ Resolution is cached per directory, so a run over many files reads each config o
 ### 2.1 `extends`
 
 - Entries apply in list order, and a later entry wins. The extending file wins over all of them.
-- An entry is a path relative to the extending file, or `<pack>:<name>` for a config that a pack ships.
+- An entry is a path relative to the extending file, or `<plugin>:<name>` for a config that a plugin ships.
 - An extended file is a v3 config. It must carry `schema_version = 3`. It may extend others.
 - A cycle is an error that names the chain: `config-extends-cycle`.
 - The nearest config decides `exclude` globs and override globs, wherever the pattern was written.
@@ -109,7 +109,7 @@ The block is the mapping under the `slopvac:` key of a document's front matter. 
 
 - Every `slopvac.toml` carries `schema_version = 3`. A file without it, or with 2, is a 2.x config.
 - Unknown keys are errors with file, line and column, and the nearest valid key. Keys that start with `x-` are ignored. The exception is a map keyed by rule or category name (`rules`, `categories`). Its keys are data, so `x-` has no special meaning there ([policies.md](policies.md), section 3.3).
-- A rule or category key is qualified (`<pack>:<id>`) or a bare name that is unambiguous across the active packs. An ambiguous or unknown name is an error from the resolver. The schema checks only the form.
+- A rule or category key is qualified (`<plugin>:<id>`) or a bare name that is unambiguous across the active plugins. An ambiguous or unknown name is an error from the resolver. The schema checks only the form.
 - `rules` takes a bare level. The 2.x table form `[rules."x"] severity = "off"` is not valid, because a level is the only field.
 - Two blocks in `[[overrides]]` or `[[genres]]` with the same `files` set are an error: `config-duplicate-scope`. This keeps `Config._reject_duplicate_scopes` from 2.x. The patterns compare as a set after whitespace is trimmed.
 - A `[[genres]]` block assigns a genre to the files it matches and patches their settings. The genre itself is defined in a genre file (`genre.schema.json`, owned by another bead).
@@ -135,7 +135,7 @@ Owners for the behavior: `slopvac-8l4.16.1` for `migrate`, `slopvac-8l4.4.5` for
 
 ### 5.2 Mapping table
 
-Rule and category names change with the pack model. `migrate` maps a 2.x name such as `prose-format.no-unicode-dash` to its 3.0 qualified id through the rename table in the binary. A name with no entry stops the migration. The table is part of the profile and rule mapping (`slopvac-8l4.2.10`). The rows below call this "rename".
+Rule and category names change with the plugin model. `migrate` maps a 2.x name such as `prose-format.no-unicode-dash` to its 3.0 qualified id through the rename table in the binary. A name with no entry stops the migration. The table is part of the profile and rule mapping (`slopvac-8l4.2.10`). The rows below call this "rename".
 
 | 2.x setting | Disposition | 3.0 | `slopvac migrate` |
 |---|---|---|---|
