@@ -2421,6 +2421,7 @@ dependencies = [
  "slopvac-agents",
  "slopvac-config",
  "slopvac-engine",
+ "slopvac-fs",
  "slopvac-lsp",
  "slopvac-migrate",
  "slopvac-model",
@@ -2497,6 +2498,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "slopvac-pcre2",
+ "slopvac-sanitize",
  "thiserror",
  "toml",
 ]

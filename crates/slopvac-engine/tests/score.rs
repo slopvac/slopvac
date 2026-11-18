@@ -194,6 +194,7 @@ fn a_warning_notice_makes_the_check_incomplete_and_an_info_notice_does_not() {
         level,
         message: NonEmptyString::new(message).unwrap(),
         path: None,
+        data: serde_json::Map::new(),
     };
     let unchecked = [
         notice(NoticeLevel::Warning, "metric did not run"),

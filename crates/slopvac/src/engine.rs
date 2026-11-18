@@ -120,6 +120,7 @@ impl Run {
             level: NoticeLevel::Warning,
             message: NonEmptyString::new(error.message.clone()).expect("messages are not empty"),
             path: Some(shown.to_owned()),
+            data: serde_json::Map::new(),
         });
         self.incomplete.push(error);
     }
@@ -343,6 +344,7 @@ fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome 
         message: NonEmptyString::new(error.message.clone())
             .unwrap_or_else(|_| NonEmptyString::new("lint failed").expect("not empty")),
         path: None,
+        data: serde_json::Map::new(),
     });
     run.incomplete.push(error.clone());
     RunOutcome {
@@ -502,14 +504,21 @@ fn collect_targets(
                     continue;
                 }
             };
-            let bytes = match std::fs::read(&file.path) {
+            let read = std::fs::File::open(&file.path)
+                .map_err(slopvac_fs::Error::Read)
+                .and_then(|f| slopvac_fs::read_capped(f, slopvac_fs::MAX_DOCUMENT_BYTES));
+            let bytes = match read {
                 Ok(bytes) => bytes,
-                Err(err) => {
+                Err(slopvac_fs::Error::CapExceeded { .. }) => {
                     run.skip(
-                        "input-unreadable",
+                        "document-too-large",
                         &shown,
-                        format!("{shown}: {}", err.kind()),
+                        format!("{shown}: larger than the 64 MiB document limit"),
                     );
+                    continue;
+                }
+                Err(_) => {
+                    run.skip("input-unreadable", &shown, format!("{shown}: cannot read"));
                     continue;
                 }
             };

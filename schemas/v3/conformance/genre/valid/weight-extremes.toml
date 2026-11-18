@@ -1,0 +1,10 @@
+schema_version = 3
+id = "g"
+
+[detect]
+min_score = 1e-50
+
+[[detect.signals]]
+kind = "text"
+pattern = "x"
+weight = 1e300

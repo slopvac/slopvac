@@ -1,0 +1,16 @@
+vulnerabilities:
+  - id: CVE-2026-112366
+    paths:
+      - site/package-lock.json
+    purls:
+      - pkg:npm/picomatch@4.0.7
+      - pkg:npm/picomatch@2.3.2
+    statement: >-
+      picomatch ReDoS through 4.0.7 (single-branch repeated extglob patterns).
+      npm's latest picomatch is 4.0.7, and no fixed version exists in the 4.x
+      or 2.x line as of 2026-11-18. picomatch is a build-time dependency of the
+      docs site (Astro, Vite, tinyglobby and anymatch, through astro and
+      @astrojs/starlight in site/package.json). It is not shipped in the static
+      site, the binary or the wheel, and the glob patterns come from our own
+      config. Remove this entry when picomatch ships a fix (slopvac-8l4.14.44).
+    expired_at: 2026-12-18
