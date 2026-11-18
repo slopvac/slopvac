@@ -60,7 +60,7 @@
 "opt:prime:topic" = { disposition = "preserve", owner = "slopvac-8l4.11.1", note = "write, review and report stay; migrate and configure are new." }
 "opt:prime:--config" = { disposition = "preserve", owner = "slopvac-8l4.11.1", note = "Same meaning." }
 "opt:prime:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry." }
-"cmd:onboard" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
+"cmd:onboard" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays. Prints the 3.0 setup text." }
 "cmd:setup" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Covers all harnesses including OpenCode." }
 "opt:setup:harness" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Stays." }
 "opt:setup:--list" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Stays." }
@@ -77,9 +77,9 @@
 "cmd:cache" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Pruned the Vale cache; removed." }
 "opt:cache:--prune" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale cache option." }
 "opt:cache:--all" = { disposition = "remove", owner = "slopvac-8l4.16.2", note = "Vale cache option." }
-"cmd:reference" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
-"opt:reference:--write" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
-"opt:reference:--check" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
+"cmd:reference" = { disposition = "remove", owner = "slopvac-8l4.12.10", note = "Replaced by the generated docs site: `just docs` writes the rules reference and `just docs-check` is the CI check. `slopvac reference` exits 2 with this pointer." }
+"opt:reference:--write" = { disposition = "remove", owner = "slopvac-8l4.12.10", note = "Goes with the command. `just docs` regenerates the reference." }
+"opt:reference:--check" = { disposition = "remove", owner = "slopvac-8l4.12.10", note = "Goes with the command. `just docs-check` is the CI check." }
 "opt:reference:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry." }
 "action:input:paths" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
 "action:input:profile" = { disposition = "remove", owner = "slopvac-8l4.13.6", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
@@ -123,8 +123,8 @@
 "behavior:diff-working-tree-staged" = { summary = "--diff-working-tree staged.", disposition = "preserve", owner = "slopvac-8l4.3.19", note = "Staged changes are in scope." }
 "behavior:diff-working-tree-unstaged" = { summary = "--diff-working-tree unstaged.", disposition = "preserve", owner = "slopvac-8l4.3.19", note = "Unstaged changes are in scope." }
 "behavior:diff-working-tree-untracked" = { summary = "--diff-working-tree untracked.", disposition = "preserve", owner = "slopvac-8l4.3.19", note = "Untracked files are in scope." }
-"behavior:reference-write" = { summary = "reference --write.", disposition = "preserve", owner = "slopvac-8l4.12.10", note = "reference --write regenerates the rules reference." }
-"behavior:reference-check" = { summary = "reference --check.", disposition = "preserve", owner = "slopvac-8l4.12.10", note = "reference --check exits non-zero when the file is stale." }
+"behavior:reference-write" = { summary = "reference --write.", disposition = "remove", owner = "slopvac-8l4.12.10", note = "The docs build generates the rules reference; `slopvac reference --write` exits 2 with a pointer." }
+"behavior:reference-check" = { summary = "reference --check.", disposition = "remove", owner = "slopvac-8l4.12.10", note = "`just docs-check` fails CI on drift; `slopvac reference --check` exits 2 with a pointer." }
 "behavior:onboard-output" = { summary = "onboard.", disposition = "preserve", owner = "slopvac-8l4.12.10", note = "onboard prints the agent onboarding text." }
 "behavior:init-flags" = { summary = "init flags.", disposition = "preserve", owner = "slopvac-8l4.12.8", note = "init flags select profile, path, harnesses and skills." }
 "behavior:init-idempotence" = { summary = "init idempotence.", disposition = "preserve", owner = "slopvac-8l4.12.8", note = "A second init leaves files unchanged unless --force." }

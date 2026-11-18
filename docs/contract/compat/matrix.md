@@ -2,7 +2,7 @@
 
 # 2.x compatibility matrix
 
-Totals: migrate 3, preserve 107, remove 31, 141 rows.
+Totals: migrate 3, preserve 102, remove 36, 141 rows.
 
 | Row | Disposition | 3.0 note | Owner | Test |
 | --- | --- | --- | --- | --- |
@@ -52,8 +52,8 @@ Totals: migrate 3, preserve 107, remove 31, 141 rows.
 | `behavior:locale-overrides` | preserve | Locale from the flag, config and front matter. | slopvac-8l4.3.12 | pending |
 | `behavior:onboard-output` | preserve | onboard prints the agent onboarding text. | slopvac-8l4.12.10 | pending |
 | `behavior:prime-topics` | preserve | prime write, review and report keep their text contract; new topics join. | slopvac-8l4.11.1 | pending |
-| `behavior:reference-check` | preserve | reference --check exits non-zero when the file is stale. | slopvac-8l4.12.10 | pending |
-| `behavior:reference-write` | preserve | reference --write regenerates the rules reference. | slopvac-8l4.12.10 | pending |
+| `behavior:reference-check` | remove | `just docs-check` fails CI on drift; `slopvac reference --check` exits 2 with a pointer. | slopvac-8l4.12.10 | n/a |
+| `behavior:reference-write` | remove | The docs build generates the rules reference; `slopvac reference --write` exits 2 with a pointer. | slopvac-8l4.12.10 | n/a |
 | `behavior:report-out-open` | preserve | --out writes the report; --open shows it. | slopvac-8l4.12.2 | pending |
 | `behavior:rst-linting` | preserve | reStructuredText lints through a bundled docutils adapter. | slopvac-8l4.3.21 | pending |
 | `behavior:setup-list-remove-check` | preserve | setup --list, --remove and --check; remove deletes only what setup wrote. | slopvac-8l4.11.2 | pending |
@@ -73,9 +73,9 @@ Totals: migrate 3, preserve 107, remove 31, 141 rows.
 | `cmd:explain` | preserve | Rule explanation. | slopvac-8l4.12.11 | pending |
 | `cmd:init` | preserve | Writes 3.0 config templates. | slopvac-8l4.12.8 | pending |
 | `cmd:lint` | preserve | Core command; bare paths keep linting. | slopvac-8l4.12.1 | pending |
-| `cmd:onboard` | preserve | Stays. | slopvac-8l4.12.10 | pending |
+| `cmd:onboard` | preserve | Stays. Prints the 3.0 setup text. | slopvac-8l4.12.10 | pending |
 | `cmd:prime` | preserve | Progressive disclosure; same entry point. | slopvac-8l4.11.1 | pending |
-| `cmd:reference` | preserve | Stays. | slopvac-8l4.12.10 | pending |
+| `cmd:reference` | remove | Replaced by the generated docs site: `just docs` writes the rules reference and `just docs-check` is the CI check. `slopvac reference` exits 2 with this pointer. | slopvac-8l4.12.10 | n/a |
 | `cmd:root` | preserve | `slopvac` stays the entry point; `slopvac <paths>` keeps working as `lint`. | slopvac-8l4.12.1 | pending |
 | `cmd:rules` | preserve | Rule listing. | slopvac-8l4.12.11 | pending |
 | `cmd:setup` | preserve | Covers all harnesses including OpenCode. | slopvac-8l4.11.2 | pending |
@@ -130,9 +130,9 @@ Totals: migrate 3, preserve 107, remove 31, 141 rows.
 | `opt:prime:--config` | preserve | Same meaning. | slopvac-8l4.11.1 | pending |
 | `opt:prime:--rules-dir` | remove | Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
 | `opt:prime:topic` | preserve | write, review and report stay; migrate and configure are new. | slopvac-8l4.11.1 | pending |
-| `opt:reference:--check` | preserve | Stays. | slopvac-8l4.12.10 | pending |
+| `opt:reference:--check` | remove | Goes with the command. `just docs-check` is the CI check. | slopvac-8l4.12.10 | n/a |
 | `opt:reference:--rules-dir` | remove | Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
-| `opt:reference:--write` | preserve | Stays. | slopvac-8l4.12.10 | pending |
+| `opt:reference:--write` | remove | Goes with the command. `just docs` regenerates the reference. | slopvac-8l4.12.10 | n/a |
 | `opt:root:--version` | preserve | Prints the version. | slopvac-8l4.12.1 | pending |
 | `opt:rules:--category` | preserve | Filter stays. | slopvac-8l4.12.11 | pending |
 | `opt:rules:--config` | preserve | Same meaning. | slopvac-8l4.12.11 | pending |

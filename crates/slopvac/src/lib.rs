@@ -16,6 +16,7 @@ pub mod inspect;
 pub mod lint_settings;
 pub mod logging;
 pub mod offline;
+pub mod onboard;
 pub mod output;
 pub mod redact;
 pub mod rule_catalog;

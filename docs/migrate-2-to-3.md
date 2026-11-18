@@ -75,6 +75,7 @@ These 2.x surfaces fail with exit 2. Update scripts, CI and hooks by hand. `slop
 | `--comments` | Use `--mode code-comments`. |
 | `compile` and its options (`--outdir`, `--profile`, `--config`, `--rules-dir`, `--no-validate`, `--format`) | Delete the call. Compiled Vale styles are removed. |
 | `cache` and its options (`--prune`, `--all`) | Delete the call. The Vale cache is removed. |
+| `reference` (`--write`, `--check`) | Removed. Run `just docs` or `just docs-check`. |
 | Action inputs `profile`, `vale`, `vale-version` and `rules-dir` | Delete the input. Set the style preset and packs in `slopvac.toml`. |
 | Hook id `slopvac-no-vale` | Delete the hook. |
 | Hook id `slopvac-strict` | Use the `slopvac` hook with `profile = "strict"` and `styles = ["core:legacy-strict"]` in `slopvac.toml`. |

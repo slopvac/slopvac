@@ -498,20 +498,20 @@
       "source": "behavior",
       "summary": "reference --check.",
       "detail": {},
-      "disposition": "preserve",
-      "note": "reference --check exits non-zero when the file is stale.",
+      "disposition": "remove",
+      "note": "`just docs-check` fails CI on drift; `slopvac reference --check` exits 2 with a pointer.",
       "owner": "slopvac-8l4.12.10",
-      "test": "pending"
+      "test": "n/a"
     },
     {
       "id": "behavior:reference-write",
       "source": "behavior",
       "summary": "reference --write.",
       "detail": {},
-      "disposition": "preserve",
-      "note": "reference --write regenerates the rules reference.",
+      "disposition": "remove",
+      "note": "The docs build generates the rules reference; `slopvac reference --write` exits 2 with a pointer.",
       "owner": "slopvac-8l4.12.10",
-      "test": "pending"
+      "test": "n/a"
     },
     {
       "id": "behavior:report-out-open",
@@ -709,7 +709,7 @@
       "summary": "slopvac onboard",
       "detail": {},
       "disposition": "preserve",
-      "note": "Stays.",
+      "note": "Stays. Prints the 3.0 setup text.",
       "owner": "slopvac-8l4.12.10",
       "test": "pending"
     },
@@ -728,10 +728,10 @@
       "source": "click",
       "summary": "slopvac reference",
       "detail": {},
-      "disposition": "preserve",
-      "note": "Stays.",
+      "disposition": "remove",
+      "note": "Replaced by the generated docs site: `just docs` writes the rules reference and `just docs-check` is the CI check. `slopvac reference` exits 2 with this pointer.",
       "owner": "slopvac-8l4.12.10",
-      "test": "pending"
+      "test": "n/a"
     },
     {
       "id": "cmd:root",
@@ -1448,10 +1448,10 @@
         "kind": "option",
         "flag": true
       },
-      "disposition": "preserve",
-      "note": "Stays.",
+      "disposition": "remove",
+      "note": "Goes with the command. `just docs-check` is the CI check.",
       "owner": "slopvac-8l4.12.10",
-      "test": "pending"
+      "test": "n/a"
     },
     {
       "id": "opt:reference:--rules-dir",
@@ -1472,10 +1472,10 @@
       "detail": {
         "kind": "option"
       },
-      "disposition": "preserve",
-      "note": "Stays.",
+      "disposition": "remove",
+      "note": "Goes with the command. `just docs` regenerates the reference.",
       "owner": "slopvac-8l4.12.10",
-      "test": "pending"
+      "test": "n/a"
     },
     {
       "id": "opt:root:--version",

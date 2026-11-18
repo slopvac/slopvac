@@ -162,6 +162,16 @@ Write man pages.
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
+### `slopvac onboard`
+
+Print the agent onboarding text.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
 ### `slopvac terms`
 
 Check and list the project terms.
@@ -225,26 +235,6 @@ Install slopvac guidance into agent harnesses.
 ### `slopvac prime`
 
 Print guidance for agents, by topic.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac onboard`
-
-Print the agent onboarding text.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac reference`
-
-Generate or check the rules reference.
 
 | Argument | Description |
 | --- | --- |
