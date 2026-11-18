@@ -116,8 +116,7 @@ impl KindRuns {
     fn kinds_containing(runs: &[Self], start: usize, end: usize) -> Vec<&str> {
         let mut kinds = Vec::new();
         for r in runs {
-            work::lookup(search_steps(r.starts.len()));
-            let upto = r.starts.partition_point(|&s| s <= start);
+            let upto = starts_up_to(&r.starts, start);
             if upto > 0 && r.max_end[upto - 1] >= end {
                 kinds.push(r.kind.as_str());
             }
@@ -126,9 +125,16 @@ impl KindRuns {
     }
 }
 
-/// Probes of a binary search over `len` entries.
-fn search_steps(len: usize) -> usize {
-    1 + len.checked_ilog2().map_or(0, |l| l as usize)
+/// How many of `starts`, which are sorted, are at most `start`. Each comparison made counts
+/// as one step of work.
+fn starts_up_to(starts: &[usize], start: usize) -> usize {
+    let mut compared = 0;
+    let upto = starts.partition_point(|&s| {
+        compared += 1;
+        s <= start
+    });
+    work::lookup(compared);
+    upto
 }
 
 /// A segment tree over tags in start order that holds the greatest end of each node, so a
@@ -164,8 +170,7 @@ impl Stab {
 
     /// Call `f` with the index of each tag that contains `start..end`.
     fn containing(&self, start: usize, end: usize, f: &mut impl FnMut(usize)) {
-        work::lookup(search_steps(self.starts.len()));
-        let upto = self.starts.partition_point(|&s| s <= start);
+        let upto = starts_up_to(&self.starts, start);
         if upto > 0 {
             self.visit(1, 0, self.leaves, upto, end, f);
         }
