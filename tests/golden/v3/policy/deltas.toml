@@ -20,3 +20,71 @@
 #   finding = { ... }                   # kind = added
 #   document = { score = 71.2 }         # document-level values the delta moves
 #   run = { group = "prose:markdown", exit_code = 1, summary = { passed = false } }
+
+# --- slopvac-8l4.6.4
+
+[[delta]]
+input = "stacklok-before"
+profile = "strict"
+kind = "removed"
+rule_id = "core:ai-tells-structure.negative-guarantee-core"
+line = 320
+column = 1
+reason = "The sentence 'An allow-always decision never overrides a deny or configured ask' is tagged requirement or enforced-invariant, so the context gate drops the match. The 2.x reference has no context taggers."
+approved_by = "pending-review"
+modes = ["parity", "preserve", "policy"]
+
+[[delta]]
+input = "stacklok-after"
+profile = "strict"
+kind = "removed"
+rule_id = "core:ai-tells-structure.negative-guarantee-core"
+line = 335
+column = 1
+reason = "The sentence 'An allow-always decision never overrides a deny or configured ask' is tagged requirement or enforced-invariant, so the context gate drops the match. The 2.x reference has no context taggers."
+approved_by = "pending-review"
+modes = ["parity", "preserve", "policy"]
+
+[[delta]]
+input = "stacklok-before"
+profile = "normal"
+kind = "removed"
+rule_id = "core:ai-tells-structure.negative-guarantee-core"
+line = 320
+column = 1
+reason = "The sentence 'An allow-always decision never overrides a deny or configured ask' is tagged requirement or enforced-invariant, so the context gate drops the match. The 2.x reference has no context taggers."
+approved_by = "pending-review"
+modes = ["parity", "preserve", "policy"]
+
+[[delta]]
+input = "stacklok-after"
+profile = "normal"
+kind = "removed"
+rule_id = "core:ai-tells-structure.negative-guarantee-core"
+line = 335
+column = 1
+reason = "The sentence 'An allow-always decision never overrides a deny or configured ask' is tagged requirement or enforced-invariant, so the context gate drops the match. The 2.x reference has no context taggers."
+approved_by = "pending-review"
+modes = ["parity", "preserve", "policy"]
+
+[[delta]]
+input = "stacklok-before"
+profile = "relaxed"
+kind = "removed"
+rule_id = "core:ai-tells-structure.negative-guarantee-core"
+line = 320
+column = 1
+reason = "The sentence 'An allow-always decision never overrides a deny or configured ask' is tagged requirement or enforced-invariant, so the context gate drops the match. The 2.x reference has no context taggers."
+approved_by = "pending-review"
+modes = ["parity", "preserve", "policy"]
+
+[[delta]]
+input = "stacklok-after"
+profile = "relaxed"
+kind = "removed"
+rule_id = "core:ai-tells-structure.negative-guarantee-core"
+line = 335
+column = 1
+reason = "The sentence 'An allow-always decision never overrides a deny or configured ask' is tagged requirement or enforced-invariant, so the context gate drops the match. The 2.x reference has no context taggers."
+approved_by = "pending-review"
+modes = ["parity", "preserve", "policy"]

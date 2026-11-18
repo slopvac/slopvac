@@ -251,7 +251,8 @@ def run_engine(
                     report.get("slopvac_version") or report.get("version") or version
                 )
                 for entry in report.get("documents", []):
-                    doc = by_path.get(str(Path(entry["path"]).resolve()))
+                    reported = staged_engine.cwd / entry["path"]
+                    doc = by_path.get(str(reported.resolve()))
                     if doc is None:
                         raise EngineError(
                             f"report names an unknown path: {entry['path']}"

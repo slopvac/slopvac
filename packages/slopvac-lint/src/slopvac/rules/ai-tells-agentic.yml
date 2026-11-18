@@ -976,6 +976,8 @@ rules:
     severity: warning
     message: "negative guarantee: {match} -- state what the component does, or name the hook, test, gate, or permission that stops it"
     scope: paragraph
+    contexts:
+      skip: [requirement, enforced-invariant]
     tiers:
       strict: enforced
       normal: enforced
@@ -1017,6 +1019,8 @@ rules:
         The core skips normative modals, imperatives, selected state verbs, and
         selected past-tense forms. Its active forms can still match a backed invariant;
         use the enforced-invariant exception when the passage names its enforcement.
+        The 3.0 engine also skips a match in a sentence tagged requirement or
+        enforced-invariant; the 2.x reference ignores the gate.
         The rule reports a warning at normal and strict, and a suggestion at relaxed.
 
   - id: think-of-it-as-core
