@@ -168,10 +168,20 @@ A per-file cap does not bound the work of many files. Two aggregate budgets boun
 | `extends` nesting, from the nearest config down | `extends-depth` | 32 | levels | `config-budget-exceeded` | A real chain is two or three levels. |
 | `extends` graph, files applied | `extends-files` | 256 | files | `config-budget-exceeded` | A real graph has fewer than ten files. A file that more than one file extends counts once for each time it applies, because it applies each time. |
 | `extends` graph, bytes read | `extends-bytes` | 8 MiB | bytes | `config-budget-exceeded` | A real graph is under 100 KiB. Eight files at the 1 MiB cap fit. |
-| Pack directory, rule and category files | `pack-files` | 256 | files | `rules-budget-exceeded` | The shipped pack has 23 files. |
+| `extends` graph, bytes of config applied | `extends-applied-bytes` | 64 MiB | bytes | `config-budget-exceeded` | A real graph applies under 100 KiB. A file that more than one file extends counts its size once for each time it applies, so 64 MiB stops a small graph from repeating a large file hundreds of times. |
+| Pack directory, rule and category files | `pack-files` | 256 | files | `rules-budget-exceeded` | The shipped pack has 23 files. A directory with more than 1024 entries of any kind trips this budget too, before the loader sorts or resolves any of them. |
 | Pack directory, bytes read | `pack-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The shipped pack is about 450 KiB. |
 
-A config file that more than one file extends is read and parsed once, and its result is reused at every place it applies, so the order of settings and their provenance do not change. The two `extends` counters differ on purpose: files applied counts every application and so bounds the merge work, and bytes read counts each read once and so bounds the I/O. A rule file reached by more than one name, such as a symlink, loads once under the first name in file-name order, and the file budget counts it once. The pack loader reads and compiles one file at a time. An `extends` cycle is not a budget: it keeps `config-extends-cycle`, and the loader checks for a cycle before it checks the depth. The constants live in `slopvac-config` (`MAX_EXTENDS_DEPTH`, `MAX_EXTENDS_FILES`, `MAX_EXTENDS_BYTES`) and `slopvac-rules` (`MAX_PACK_FILES`, `MAX_PACK_BYTES`).
+How the budgets apply:
+
+- A config file that more than one file extends is read and parsed once. The loader shares that parsed copy between its applications, so the order of settings and their provenance do not change.
+- The `extends` counters differ on purpose. Files applied counts every application, and so bounds the merge work. Bytes read counts each read once, and so bounds the I/O. Bytes applied counts every application by size, and so bounds the settings the result holds.
+- An extended file whose ancestor is still waiting to apply counts against the file budget. The loader checks the depth of a reused subtree at each place it applies again, and checks every budget before it adds an application.
+- An `extends` cycle is not a budget. It keeps `config-extends-cycle`, and the loader checks for a cycle before it checks the depth.
+- A rule file reached by more than one name, such as a symlink, loads once under the first name in file-name order, and the file budget counts it once.
+- The pack loader reads and compiles one file at a time.
+
+The constants live in `slopvac-config` (`MAX_EXTENDS_DEPTH`, `MAX_EXTENDS_FILES`, `MAX_EXTENDS_BYTES`, `MAX_EXTENDS_APPLIED_BYTES`) and `slopvac-rules` (`MAX_PACK_FILES`, `MAX_PACK_BYTES`, `MAX_PACK_ENTRIES`).
 
 Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`).
 

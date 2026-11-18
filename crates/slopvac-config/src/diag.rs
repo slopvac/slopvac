@@ -86,6 +86,9 @@ pub enum ConfigBudget {
     ExtendsFiles,
     /// Bytes read, in bytes: [`crate::MAX_EXTENDS_BYTES`].
     ExtendsBytes,
+    /// Bytes of config text applied, counting each application, in bytes:
+    /// [`crate::MAX_EXTENDS_APPLIED_BYTES`].
+    ExtendsAppliedBytes,
 }
 
 impl ConfigBudget {
@@ -96,6 +99,7 @@ impl ConfigBudget {
             Self::ExtendsDepth => "extends-depth",
             Self::ExtendsFiles => "extends-files",
             Self::ExtendsBytes => "extends-bytes",
+            Self::ExtendsAppliedBytes => "extends-applied-bytes",
         }
     }
 }

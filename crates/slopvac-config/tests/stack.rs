@@ -1350,3 +1350,118 @@ fn a_two_file_cycle_reports_the_cycle_and_not_a_budget() {
     assert_eq!(err.code(), Code::ExtendsCycle);
     assert_eq!(err.exit_code(), 2);
 }
+
+fn extends_line(names: &[String]) -> String {
+    let quoted: Vec<String> = names.iter().map(|n| format!("\"{n}\"")).collect();
+    format!("schema_version = 3\nextends = [{}]\n", quoted.join(", "))
+}
+
+#[test]
+fn applications_waiting_on_an_ancestor_count_against_the_file_limit() {
+    let max = slopvac_config::MAX_EXTENDS_FILES;
+    // Project config -> one intermediate -> leaves: the intermediate is one more application.
+    for (leaves, ok) in [(max - 1, true), (max, false)] {
+        let fx = Fixture::new();
+        let names: Vec<String> = (0..leaves).map(|i| format!("l{i}.toml")).collect();
+        for n in &names {
+            fx.write(n, "schema_version = 3\n");
+        }
+        fx.write("mid.toml", &extends_line(&names));
+        let root = fx.write("slopvac.toml", &extends_line(&["mid.toml".to_owned()]));
+        let result = load(&root, &NoPresets);
+        if ok {
+            assert_eq!(result.unwrap().files.len(), max + 1);
+        } else {
+            let data = budget_data(result.unwrap_err());
+            assert_eq!(data.budget, ConfigBudget::ExtendsFiles);
+        }
+    }
+}
+
+/// `slopvac.toml` extends `s.toml` (which extends `t.toml`) first, then a chain of `chain`
+/// files whose last one extends `s.toml` again.
+fn shared_subtree_below_a_chain(fx: &Fixture, chain: usize) -> PathBuf {
+    fx.write("t.toml", "schema_version = 3\n");
+    fx.write("s.toml", &extends_line(&["t.toml".to_owned()]));
+    for i in 0..chain {
+        let next = if i + 1 == chain {
+            "s.toml".to_owned()
+        } else {
+            format!("c{}.toml", i + 1)
+        };
+        fx.write(&format!("c{i}.toml"), &extends_line(&[next]));
+    }
+    fx.write(
+        "slopvac.toml",
+        &extends_line(&["s.toml".to_owned(), "c0.toml".to_owned()]),
+    )
+}
+
+#[test]
+fn a_cached_subtree_is_checked_against_the_depth_limit_where_it_applies_again() {
+    let depth = slopvac_config::MAX_EXTENDS_DEPTH;
+    // The chain of `n` files puts `s.toml` at level n + 1 and `t.toml` at level n + 2.
+    let fx = Fixture::new();
+    let root = shared_subtree_below_a_chain(&fx, depth - 2);
+    assert!(load(&root, &NoPresets).is_ok());
+    let fx = Fixture::new();
+    let root = shared_subtree_below_a_chain(&fx, depth - 1);
+    let data = budget_data(load(&root, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::ExtendsDepth);
+    assert_eq!(data.limit, depth as u64);
+}
+
+/// Text of exactly `len` bytes that starts with `head` and ends in a comment.
+fn exact(head: &str, len: usize) -> String {
+    format!("{head}#{}\n", "x".repeat(len - head.len() - 2))
+}
+
+/// Project config -> `c1` -> `c2` -> `big_user.toml`, which extends the 1 MiB file `big.toml`
+/// `times` times. `big_user.toml` is sized so that the applied text of the three extended files
+/// besides `big.toml` is exactly 1 MiB plus `extra` bytes.
+fn amplification(fx: &Fixture, times: usize, extra: usize) -> PathBuf {
+    let cap = usize::try_from(slopvac_config::MAX_CONFIG_BYTES).unwrap();
+    fx.write("big.toml", &exact("schema_version = 3\n", cap));
+    let c2 = extends_line(&["big_user.toml".to_owned()]);
+    let c1 = extends_line(&["c2.toml".to_owned()]);
+    fx.write("c2.toml", &c2);
+    fx.write("c1.toml", &c1);
+    let names = vec!["big.toml".to_owned(); times];
+    let user_len = cap - c1.len() - c2.len() + extra;
+    fx.write("big_user.toml", &exact(&extends_line(&names), user_len));
+    fx.write("slopvac.toml", &extends_line(&["c1.toml".to_owned()]))
+}
+
+#[test]
+fn applied_text_exactly_at_the_limit_loads_and_shares_one_parse() {
+    let fx = Fixture::new();
+    // 63 MiB of `big.toml` plus exactly 1 MiB of the other three files is the 64 MiB limit.
+    let root = amplification(&fx, 63, 0);
+    let cfg = load(&root, &NoPresets).unwrap();
+    let bigs: Vec<_> = cfg
+        .files
+        .iter()
+        .filter(|f| f.display == "big.toml")
+        .collect();
+    assert_eq!(bigs.len(), 63);
+    assert!(bigs.windows(2).all(|w| std::sync::Arc::ptr_eq(w[0], w[1])));
+}
+
+#[test]
+fn applied_text_one_byte_past_the_limit_is_refused() {
+    let fx = Fixture::new();
+    let root = amplification(&fx, 63, 1);
+    let data = budget_data(load(&root, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::ExtendsAppliedBytes);
+    assert_eq!(data.budget.as_str(), "extends-applied-bytes");
+    assert_eq!(data.limit, slopvac_config::MAX_EXTENDS_APPLIED_BYTES);
+}
+
+#[test]
+fn repeating_a_large_file_two_hundred_times_is_refused_without_applying_it() {
+    let fx = Fixture::new();
+    // 224 applications of a 1 MiB file pass the file and read budgets but would apply 224 MiB.
+    let root = amplification(&fx, 224, 0);
+    let data = budget_data(load(&root, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::ExtendsAppliedBytes);
+}

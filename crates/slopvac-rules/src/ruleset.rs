@@ -21,6 +21,11 @@ pub const MAX_RULE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 /// file under several names count once. The shipped pack has 23, so 256 leaves a wide margin.
 pub const MAX_PACK_FILES: usize = 256;
 
+/// The most directory entries one pack directory may hold, whatever their names. It bounds the
+/// scan before any file is sorted or resolved, and leaves room for aliases and other files
+/// beside the pack: four times [`MAX_PACK_FILES`].
+pub const MAX_PACK_ENTRIES: usize = 4 * MAX_PACK_FILES;
+
 /// The most bytes read in total from the files of one pack directory. The shipped pack is about
 /// 450 KiB, so 32 MiB leaves a wide margin and still holds the pack in memory at once.
 pub const MAX_PACK_BYTES: u64 = 32 * 1024 * 1024;
@@ -168,35 +173,10 @@ impl RuleSet {
         dir: &Path,
         options: &CompileOptions,
     ) -> Result<Self, LoadErrors> {
-        let read_error = |path: &Path, e: &std::io::Error| LoadError {
-            file: path.to_path_buf(),
-            line: None,
-            rule: None,
-            kind: LoadErrorKind::Read(e.to_string()),
-        };
-        let mut files: Vec<PathBuf> = fs::read_dir(dir)
-            .map_err(|e| read_error(dir, &e))?
-            .map(|entry| entry.map(|e| e.path()).map_err(|e| read_error(dir, &e)))
-            .collect::<Result<_, _>>()?;
-        files.retain(|p| Format::of(p).is_some());
-        files.sort();
-        // A file reached by several names is read once, under the first name in file-name order.
-        let mut identities: HashSet<PathBuf> = HashSet::new();
-        let mut distinct = Vec::new();
-        for p in files {
-            let id = fs::canonicalize(&p).map_err(|e| read_error(&p, &e))?;
-            if identities.insert(id) {
-                distinct.push(p);
-            }
-        }
+        let distinct = pack_files(dir)?;
         let mut bytes = 0_u64;
-        let mut count = 0_usize;
         // Read one file at a time, so the texts of a large pack are never all in memory.
         let sources = distinct.into_iter().map(move |p| {
-            count += 1;
-            if count > MAX_PACK_FILES {
-                return Err(over_budget(dir, PackBudget::Files, MAX_PACK_FILES as u64));
-            }
             let text =
                 slopvac_fs::read_text_capped(&p, MAX_RULE_FILE_BYTES).map_err(|e| match e {
                     slopvac_fs::Error::CapExceeded { cap } => LoadError {
@@ -342,6 +322,48 @@ impl RuleSet {
     pub fn rules_in_scope(&self, scope: Scope) -> impl Iterator<Item = &LoadedRule> {
         self.rules().filter(move |r| r.rule.scope == scope)
     }
+}
+
+/// The rule and category files of `dir`, each file once, in file-name order.
+///
+/// The work is bounded before it starts: the scan stops at [`MAX_PACK_ENTRIES`] directory
+/// entries, only the bounded set is sorted, and the scan stops at the first distinct file past
+/// [`MAX_PACK_FILES`]. A file reached by several names is read once, under the first name in
+/// file-name order.
+fn pack_files(dir: &Path) -> Result<Vec<PathBuf>, LoadError> {
+    let read_error = |path: &Path, e: &std::io::Error| LoadError {
+        file: path.to_path_buf(),
+        line: None,
+        rule: None,
+        kind: LoadErrorKind::Read(e.to_string()),
+    };
+    let too_many = || over_budget(dir, PackBudget::Files, MAX_PACK_FILES as u64);
+    let mut files: Vec<PathBuf> = Vec::new();
+    for (seen, entry) in fs::read_dir(dir)
+        .map_err(|e| read_error(dir, &e))?
+        .enumerate()
+    {
+        if seen >= MAX_PACK_ENTRIES {
+            return Err(too_many());
+        }
+        let path = entry.map_err(|e| read_error(dir, &e))?.path();
+        if Format::of(&path).is_some() {
+            files.push(path);
+        }
+    }
+    files.sort();
+    let mut identities: HashSet<PathBuf> = HashSet::new();
+    let mut distinct = Vec::new();
+    for p in files {
+        let id = fs::canonicalize(&p).map_err(|e| read_error(&p, &e))?;
+        if identities.insert(id) {
+            if distinct.len() >= MAX_PACK_FILES {
+                return Err(too_many());
+            }
+            distinct.push(p);
+        }
+    }
+    Ok(distinct)
 }
 
 /// The refusal for a pack directory that passes `budget`. It names the directory relative to the

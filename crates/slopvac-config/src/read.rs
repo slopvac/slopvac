@@ -22,6 +22,11 @@ pub const MAX_EXTENDS_FILES: usize = 256;
 /// A real graph is under 100 KiB, so 8 MiB leaves a wide margin.
 pub const MAX_EXTENDS_BYTES: u64 = 8 * 1024 * 1024;
 
+/// The most bytes of config text an `extends` graph may apply, counting a file once for each
+/// time it applies. It bounds the merge work and the settings the result holds. A real graph is
+/// under 100 KiB, so 64 MiB leaves a wide margin.
+pub const MAX_EXTENDS_APPLIED_BYTES: u64 = 64 * 1024 * 1024;
+
 /// The most bytes of one document that the crate reads for front matter and directives.
 pub use slopvac_fs::MAX_DOCUMENT_BYTES;
 

@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde_json::Value as Json;
@@ -12,8 +13,8 @@ use crate::error::{ConfigError, Rejected};
 use crate::flatten::{Origin, flatten};
 use crate::presets::Presets;
 use crate::read::{
-    MAX_CONFIG_BYTES, MAX_EXTENDS_BYTES, MAX_EXTENDS_DEPTH, MAX_EXTENDS_FILES, ReadFailure,
-    read_text,
+    MAX_CONFIG_BYTES, MAX_EXTENDS_APPLIED_BYTES, MAX_EXTENDS_BYTES, MAX_EXTENDS_DEPTH,
+    MAX_EXTENDS_FILES, ReadFailure, read_text,
 };
 use crate::schema::validate_config;
 use crate::source::{Layer, Setting};
@@ -87,7 +88,7 @@ pub struct LoadedConfig {
     /// Directory of the nearest config. Globs in every file match from here.
     pub root: PathBuf,
     /// Extended files first, in the order they apply, and the project config last.
-    pub files: Vec<ConfigFile>,
+    pub files: Vec<Arc<ConfigFile>>,
     exclude: Gitignore,
 }
 
@@ -158,6 +159,8 @@ fn load_counted(
         stack: Vec::new(),
         files: Vec::new(),
         expanded: HashMap::new(),
+        applied_bytes: 0,
+        deepest: 0,
         bytes: text.len() as u64,
         reads: 1,
     };
@@ -169,7 +172,7 @@ fn load_counted(
     )?;
     let exclude = build_exclude(&loader.files, &root);
     let reads = loader.reads;
-    let files = loader.files;
+    let files = loader.files.into_iter().map(|a| a.file).collect();
     Ok((
         LoadedConfig {
             root,
@@ -180,10 +183,10 @@ fn load_counted(
     ))
 }
 
-fn build_exclude(files: &[ConfigFile], root: &Path) -> Gitignore {
+fn build_exclude(files: &[Applied], root: &Path) -> Gitignore {
     let patterns = files
         .iter()
-        .flat_map(|f| f.settings.iter())
+        .flat_map(|a| a.file.settings.iter())
         .rfind(|s| s.path == ["exclude"])
         .map_or_else(
             || {
@@ -282,6 +285,24 @@ enum Key {
     Pack(String),
 }
 
+/// One application of a parsed config file. The file is shared, so an application beyond the
+/// first copies a pointer and not the settings.
+#[derive(Clone)]
+struct Applied {
+    file: Arc<ConfigFile>,
+    /// Bytes of the file's text, for the applied-bytes budget.
+    bytes: u64,
+}
+
+/// What an extended file expanded to, kept so a later reference copies pointers only.
+#[derive(Clone)]
+struct Expansion {
+    /// The applications in order, the file's own last.
+    files: Vec<Applied>,
+    /// Levels the subtree spans, the file itself included: a file with no `extends` is 1.
+    height: usize,
+}
+
 /// An `extends` entry that is refused: the diagnostic code, message, help and any budget detail.
 struct Refusal {
     code: Code,
@@ -305,10 +326,14 @@ struct Loader<'a> {
     root: &'a Path,
     presets: &'a dyn Presets,
     stack: Vec<(Key, String)>,
-    files: Vec<ConfigFile>,
+    files: Vec<Applied>,
     /// For each extended file already loaded, the files it expanded to, in apply order. A file
     /// that several others extend is read and parsed once and its expansion is copied after that.
-    expanded: HashMap<Key, Vec<ConfigFile>>,
+    expanded: HashMap<Key, Expansion>,
+    /// The deepest level reached so far in the subtree being loaded.
+    deepest: usize,
+    /// Bytes of text of the extended files applied or reserved so far, one count per application.
+    applied_bytes: u64,
     /// Bytes read so far from distinct reads.
     bytes: u64,
     /// Files read so far.
@@ -376,11 +401,14 @@ impl Loader<'_> {
             },
             &["schema_version", "extends", "overrides", "genres"],
         );
-        self.files.push(ConfigFile {
-            display: display.to_owned(),
-            layer,
-            settings,
-            blocks,
+        self.files.push(Applied {
+            file: Arc::new(ConfigFile {
+                display: display.to_owned(),
+                layer,
+                settings,
+                blocks,
+            }),
+            bytes: text.len() as u64,
         });
         Ok(())
     }
@@ -526,6 +554,11 @@ impl Loader<'_> {
                 "reads more than {} bytes through `extends`",
                 "remove entries or split the files",
             ),
+            ConfigBudget::ExtendsAppliedBytes => (
+                MAX_EXTENDS_APPLIED_BYTES,
+                "applies more than {} bytes of config through `extends`",
+                "remove entries that extend the same large files again",
+            ),
         };
         Refusal {
             code: Code::BudgetExceeded,
@@ -537,6 +570,71 @@ impl Loader<'_> {
                 path,
             })),
         }
+    }
+
+    /// Extended files on the stack that have not been applied yet, so each is still to come.
+    fn pending(&self) -> usize {
+        self.stack.len().saturating_sub(1)
+    }
+
+    /// Refuse a file that is not cached when it nests too deep or would pass the file budget.
+    fn check_fresh(&self, key: &Key, display: &str) -> Result<(), Refusal> {
+        if self.stack.len() > MAX_EXTENDS_DEPTH {
+            return Err(self.over_budget(key, display, ConfigBudget::ExtendsDepth));
+        }
+        if self.files.len() + self.pending() + 1 > MAX_EXTENDS_FILES {
+            return Err(self.over_budget(key, display, ConfigBudget::ExtendsFiles));
+        }
+        Ok(())
+    }
+
+    /// Apply the cached expansion of `target`, if there is one. The depth, file and byte
+    /// budgets are checked before any application is added. Returns whether it applied.
+    fn apply_cached(&mut self, target: &Key, key: &Key, display: &str) -> Result<bool, Refusal> {
+        let Some(done) = self.expanded.get(target).cloned() else {
+            return Ok(false);
+        };
+        let deepest = self.stack.len() + done.height - 1;
+        if deepest > MAX_EXTENDS_DEPTH {
+            return Err(self.over_budget(key, display, ConfigBudget::ExtendsDepth));
+        }
+        if self.files.len() + self.pending() + done.files.len() > MAX_EXTENDS_FILES {
+            return Err(self.over_budget(key, display, ConfigBudget::ExtendsFiles));
+        }
+        let bytes: u64 = done.files.iter().map(|a| a.bytes).sum();
+        if !self.reserve_applied(bytes) {
+            return Err(self.over_applied(key, display));
+        }
+        self.deepest = self.deepest.max(deepest);
+        self.files.extend(done.files);
+        Ok(true)
+    }
+
+    /// Load an extended file that is not cached, and cache its expansion.
+    fn load_fresh(&mut self, target: Key, shown: &str, body: String) -> Result<(), ConfigError> {
+        let level = self.stack.len();
+        let outer = std::mem::replace(&mut self.deepest, level);
+        let start = self.files.len();
+        self.load_text(&target, shown, body, Layer::Extends)?;
+        let height = self.deepest - level + 1;
+        self.deepest = self.deepest.max(outer);
+        let files = self.files[start..].to_vec();
+        self.expanded.insert(target, Expansion { files, height });
+        Ok(())
+    }
+
+    /// Count `bytes` more applied text, or return false when that passes the applied-bytes budget.
+    fn reserve_applied(&mut self, bytes: u64) -> bool {
+        let total = self.applied_bytes.saturating_add(bytes);
+        if total > MAX_EXTENDS_APPLIED_BYTES {
+            return false;
+        }
+        self.applied_bytes = total;
+        true
+    }
+
+    fn over_applied(&self, key: &Key, display: &str) -> Refusal {
+        self.over_budget(key, display, ConfigBudget::ExtendsAppliedBytes)
     }
 
     /// Read the extended file `target`, which the entry `name` names.
@@ -623,32 +721,10 @@ impl Loader<'_> {
                     Some("remove one entry from the loop".into()),
                 )));
             }
-            if let Some(done) = self.expanded.get(&target) {
-                if self.files.len() + done.len() > MAX_EXTENDS_FILES {
-                    return Err(fail(self.over_budget(
-                        key,
-                        display,
-                        ConfigBudget::ExtendsFiles,
-                    )));
-                }
-                let copy = done.clone();
-                self.files.extend(copy);
+            if self.apply_cached(&target, key, display).map_err(fail)? {
                 continue;
             }
-            if self.stack.len() > MAX_EXTENDS_DEPTH {
-                return Err(fail(self.over_budget(
-                    key,
-                    display,
-                    ConfigBudget::ExtendsDepth,
-                )));
-            }
-            if self.files.len() >= MAX_EXTENDS_FILES {
-                return Err(fail(self.over_budget(
-                    key,
-                    display,
-                    ConfigBudget::ExtendsFiles,
-                )));
-            }
+            self.check_fresh(key, display).map_err(fail)?;
             let body = match body {
                 Some(b) => b,
                 None => self.read_extended(&target, name).map_err(fail)?,
@@ -662,9 +738,11 @@ impl Loader<'_> {
                     ConfigBudget::ExtendsBytes,
                 )));
             }
-            let start = self.files.len();
-            self.load_text(&target, &shown, body, Layer::Extends)?;
-            self.expanded.insert(target, self.files[start..].to_vec());
+            // Reserve the file's bytes before it loads, so its own `extends` entries see them.
+            if !self.reserve_applied(body.len() as u64) {
+                return Err(fail(self.over_applied(key, display)));
+            }
+            self.load_fresh(target, &shown, body)?;
         }
         Ok(())
     }
