@@ -159,25 +159,56 @@ def test_hook_passes_without_tags(repo):
     assert run(repo, "--pre-push").returncode == 0
 
 
-def test_hook_names_the_command_that_deletes_a_few_tags(repo):
+def test_hook_names_the_delete_flag(repo):
     git(repo["path"], "tag", "pi-v1", repo["foreign"])
-    git(repo["path"], "tag", "pi-v2", repo["foreign"])
     result = run(repo, "--pre-push")
-    assert "git tag -d pi-v1 pi-v2" in result.stderr
-
-
-def test_hook_names_a_filtering_command_for_many_tags(repo):
-    for i in range(11):
-        git(repo["path"], "tag", f"t{i:02}", repo["foreign"])
-    result = run(repo, "--pre-push")
-    assert "xargs git tag -d" in result.stderr
-    assert repo["root"] in result.stderr
-    assert "git tag -d t00" not in result.stderr
+    assert "--delete-foreign-local-tags" in result.stderr
+    assert "local tags" in result.stderr
 
 
 def test_ci_mode_does_not_print_a_delete_command(repo):
     git(repo["path"], "tag", "pi-v1", repo["foreign"])
-    assert "git tag -d" not in run(repo).stderr
+    assert "--delete-foreign-local-tags" not in run(repo).stderr
+
+
+def tag_names(path: Path) -> set[str]:
+    return set(git(path, "for-each-ref", "--format=%(refname)", "refs/tags").split())
+
+
+# Names that a shell, xargs or git's short-name rules would mangle.
+AWKWARD = ["pi-v1", "t'00'", "-x", "x-", 'q"1"', "v1", "$(id)", "a;b", "t00.x"]
+
+
+@pytest.mark.parametrize("count", [2, 12], ids=["few", "many"])
+def test_delete_flag_removes_exactly_the_foreign_tags(repo, count):
+    path = repo["path"]
+    git(path, "branch", "v1", repo["tip"])
+    good = ["t00", "pi", "x", "q1", "a", "-y"]
+    for name in good:
+        git(path, "update-ref", f"refs/tags/{name}", repo["tip"])
+    git(path, "tag", "-a", "-m", "x", "annotated-good", repo["root"])
+    foreign = [*AWKWARD, *(f"f{i}" for i in range(count))][: max(count, len(AWKWARD))]
+    for name in foreign:
+        git(path, "update-ref", f"refs/tags/{name}", repo["foreign"])
+    result = run(repo, "--delete-foreign-local-tags")
+    assert result.returncode == 0, result.stderr
+    assert tag_names(path) == {f"refs/tags/{n}" for n in [*good, "annotated-good"]}
+    assert git(path, "rev-parse", "refs/heads/v1") == repo["tip"]
+
+
+def test_delete_flag_leaves_a_clean_repo_alone(repo):
+    git(repo["path"], "tag", "v1", repo["tip"])
+    result = run(repo, "--delete-foreign-local-tags")
+    assert result.returncode == 0
+    assert tag_names(repo["path"]) == {"refs/tags/v1"}
+
+
+def test_listed_names_are_full_tag_names_even_when_a_branch_shares_one(repo):
+    git(repo["path"], "branch", "v1", repo["tip"])
+    git(repo["path"], "update-ref", "refs/tags/v1", repo["foreign"])
+    result = run(repo, "--pre-push")
+    assert "  v1\n" in result.stderr
+    assert "tags/v1" not in result.stderr
 
 
 def test_default_root_is_slopvacs_real_root(repo):

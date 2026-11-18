@@ -6,9 +6,11 @@ one root, comes from an unrelated history. Two modes share the same check:
 
 * default: check every tag in the repository in the current directory;
 * --pre-push: the same check, run before a push with no network access, with a
-  message that says how to delete the offending tags locally. It ignores which
+  message that names --delete-foreign-local-tags to remove the offenders locally. It ignores which
   refs the push carries, because prek does not forward them: a foreign tag in the
-  clone is refused whatever is being pushed.
+  clone is refused whatever is being pushed;
+* --delete-foreign-local-tags: delete the offending tags from this clone by full
+  refname, with no shell involved.
 
 Exit 0 when every checked tag passes, 1 when a tag fails, 2 when git fails.
 """
@@ -17,16 +19,16 @@ from __future__ import annotations
 
 import argparse
 import os
-import shlex
 import subprocess
 import sys
 from collections.abc import Iterable
+from pathlib import Path
 
 # The one place the root is recorded. SLOPVAC_ROOT_COMMIT overrides it for tests.
 ROOT_COMMIT = "b516adb5ed8789b2b737c5876f75f2fbc809e755"
 TAG_PREFIX = "refs/tags/"
+DELETE_FLAG = "--delete-foreign-local-tags"
 LIST_LIMIT = 50
-HINT_LIMIT = 10
 
 
 class GitError(RuntimeError):
@@ -49,8 +51,15 @@ def roots_of(commit: str) -> list[str] | None:
 
 
 def offending(pairs: Iterable[tuple[str, str]], root: str) -> list[str]:
-    """Names of tags whose commit does not have `root` as its only root."""
-    return [name for name, commit in pairs if roots_of(commit) != [root]]
+    """Full refnames of tags whose commit does not have `root` as its only root."""
+    cache: dict[str, list[str] | None] = {}
+    bad = []
+    for ref, sha in pairs:
+        if sha not in cache:
+            cache[sha] = roots_of(sha)
+        if cache[sha] != [root]:
+            bad.append(ref)
+    return bad
 
 
 def require_full_history() -> None:
@@ -71,20 +80,18 @@ def all_tags() -> list[tuple[str, str]]:
     if result.returncode != 0:
         raise GitError(result.stderr.strip() or "git for-each-ref failed")
     return [
-        (ref.removeprefix(TAG_PREFIX), sha)
-        for ref, sha in (line.split() for line in result.stdout.splitlines())
+        (ref, sha) for ref, sha in (line.split() for line in result.stdout.splitlines())
     ]
 
 
-def delete_hint(bad: list[str], root: str) -> str:
-    """A command that deletes the offending tags from the local clone only."""
-    if len(bad) <= HINT_LIMIT:
-        return "git tag -d " + " ".join(shlex.quote(name) for name in bad)
-    return (
-        "git for-each-ref --format='%(refname:short)' refs/tags | "
-        'while read -r t; do [ "$(git rev-list --max-parents=0 "$t^{commit}")" = '
-        f'"{root}" ] || echo "$t"; done | xargs git tag -d'
-    )
+def delete_refs(refs: list[str]) -> None:
+    """Delete each ref by its full name. No shell and no name splitting is involved."""
+    for ref in refs:
+        if not ref.startswith(TAG_PREFIX):
+            raise GitError(f"refusing to delete a ref outside {TAG_PREFIX}: {ref}")
+        result = git("update-ref", "-d", ref)
+        if result.returncode != 0:
+            raise GitError(result.stderr.strip() or f"could not delete {ref}")
 
 
 def report(bad: list[str], checked: int, root: str, hint: bool) -> None:
@@ -94,14 +101,15 @@ def report(bad: list[str], checked: int, root: str, hint: bool) -> None:
         f"(expected the only root commit to be {root}).",
         file=sys.stderr,
     )
-    for name in bad[:LIST_LIMIT]:
-        print(f"  {name}", file=sys.stderr)
+    for ref in bad[:LIST_LIMIT]:
+        print(f"  {ref.removeprefix(TAG_PREFIX)}", file=sys.stderr)
     if len(bad) > LIST_LIMIT:
         print(f"  ... and {len(bad) - LIST_LIMIT} more", file=sys.stderr)
     if hint:
         print(
             "Push refused: these tags exist in this clone, whether or not the push "
-            f"carries them. Delete them locally with:\n  {delete_hint(bad, root)}",
+            "carries them. Delete exactly these local tags with:\n"
+            f"  python3 {Path(__file__).as_posix()} {DELETE_FLAG}",
             file=sys.stderr,
         )
 
@@ -118,10 +126,19 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("SLOPVAC_ROOT_COMMIT", ROOT_COMMIT),
         help="expected root commit (default: SLOPVAC_ROOT_COMMIT or slopvac's root)",
     )
+    parser.add_argument(
+        DELETE_FLAG,
+        action="store_true",
+        help="delete the foreign tags from this clone, by full refname, then exit",
+    )
     args = parser.parse_args(argv)
     try:
         pairs = all_tags()
         bad = offending(pairs, args.root)
+        if args.delete_foreign_local_tags:
+            delete_refs(bad)
+            print(f"deleted {len(bad)} local tags")
+            return 0
     except GitError as err:
         print(f"error: {err}", file=sys.stderr)
         return 2
