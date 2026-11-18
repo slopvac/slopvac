@@ -173,13 +173,14 @@ pub fn legacy_engine(profile: &str) -> Engine {
     for (name, dials) in style["categories"].as_table().unwrap() {
         settings.categories.insert(
             CategoryId::new(name).unwrap(),
-            CategoryDials {
-                level: Some(level(dials["severity"].as_str().unwrap())),
-                weight: dials.get("weight").and_then(toml::Value::as_float),
-                max_per_100_words: dials
-                    .get("max_per_100_words")
-                    .and_then(toml::Value::as_float),
-            },
+            CategoryDials::default()
+                .with_level(Some(level(dials["severity"].as_str().unwrap())))
+                .with_weight(dials.get("weight").and_then(toml::Value::as_float))
+                .with_max_per_100_words(
+                    dials
+                        .get("max_per_100_words")
+                        .and_then(toml::Value::as_float),
+                ),
         );
     }
     for (id, value) in style["rules"].as_table().unwrap() {
@@ -197,4 +198,10 @@ pub fn legacy_engine(profile: &str) -> Engine {
     settings.thresholds.max_total_per_100_words = t["max_total_per_100_words"].as_f64();
     settings.thresholds.min_score = t["min_score"].as_f64();
     Engine::new(vec![set], settings).unwrap()
+}
+
+/// An engine over the one category file `category` with `settings`.
+pub fn engine_with(category: &Value, settings: Settings) -> Engine {
+    let files = vec![(PathBuf::from("cat.json"), category.to_string())];
+    Engine::new(vec![ruleset(files)], settings).unwrap()
 }

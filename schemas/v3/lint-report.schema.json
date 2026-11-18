@@ -164,6 +164,29 @@
       "patternProperties": {"^x-": true},
       "additionalProperties": false
     },
+    "SegmentRange": {
+      "description": "Half-open range [start, end) of UTF-8 bytes in the text of one segment. Local to that segment, not to the container file. The end is exclusive, start is at most end, and both fall on code point boundaries of the segment text. Closed on purpose: it has no extension keys. See docs/contract/lint-report.md.",
+      "type": "object",
+      "properties": {
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0}
+      },
+      "required": ["start", "end"],
+      "additionalProperties": false
+    },
+    "Origin": {
+      "description": "Where a finding sits in a container document such as a Word file or a diagram: the extracted text segment that holds the match. Present only for findings in extracted segments, and never together with `fix`. See docs/contract/lint-report.md for escaping, uniqueness, length and stability.",
+      "type": "object",
+      "properties": {
+        "locator": {"description": "Percent-escaped locator, unique per segment within the document. Opaque: a consumer compares it byte for byte and never parses it.", "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])"},
+        "label": {"description": "Display name of the segment. Never an identity.", "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])"},
+        "segment": {"description": "Segment id, unique within the document.", "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])"},
+        "range": {"$ref": "#/$defs/SegmentRange"}
+      },
+      "required": ["locator", "label", "segment", "range"],
+      "patternProperties": {"^x-": true},
+      "additionalProperties": false
+    },
     "Finding": {
       "description": "One violation at one position. `line`, `column`, `end_line` and `end_column` are the display position; `span` is the byte range. A finding with no source range, such as a metric over a whole document, omits `span`, `end_line` and `end_column`.",
       "type": "object",
@@ -182,9 +205,11 @@
         "ai_signal": {"$ref": "#/$defs/AiSignal"},
         "matched_text": {"type": "string"},
         "fix": {"$ref": "#/$defs/Fix"},
-        "provenance": {"$ref": "common.schema.json#/$defs/RuleProvenance"}
+        "provenance": {"$ref": "common.schema.json#/$defs/RuleProvenance"},
+        "origin": {"$ref": "#/$defs/Origin"}
       },
       "required": ["rule_id", "pack", "category", "severity", "message", "line", "column", "contexts", "ai_signal", "matched_text"],
+      "not": {"required": ["origin", "fix"]},
       "dependentRequired": {
         "span": ["end_line", "end_column"],
         "end_line": ["end_column", "span"],

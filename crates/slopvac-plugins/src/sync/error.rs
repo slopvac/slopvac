@@ -24,20 +24,30 @@ pub enum SyncError {
         /// What is missing.
         what: String,
     },
-    /// The source kind is not implemented yet.
-    #[error("pack `{id}`: {}", esc(.reason))]
-    Unsupported {
-        /// Pack id.
-        id: PackId,
-        /// Why.
-        reason: String,
-    },
     /// The lock entry cannot be resolved as written.
     #[error("pack `{id}`: {}", esc(.why))]
     Source {
         /// Pack id.
         id: PackId,
         /// What is wrong.
+        why: String,
+    },
+    /// Fetching or exporting a pinned git commit failed, or the commit holds
+    /// something a pack may not (a link or a submodule).
+    #[error("pack `{id}`: git source: {}", esc(.why))]
+    Git {
+        /// Pack id.
+        id: PackId,
+        /// What went wrong.
+        why: String,
+    },
+    /// A git source passed a limit: the download size, the number of files or
+    /// the expanded size.
+    #[error("pack `{id}`: git source passes a limit: {}", esc(.why))]
+    GitLimit {
+        /// Pack id.
+        id: PackId,
+        /// Which limit.
         why: String,
     },
     /// The registry or the network failed.

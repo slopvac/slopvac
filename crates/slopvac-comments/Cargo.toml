@@ -1,0 +1,33 @@
+[package]
+name = "slopvac-comments"
+description = "Comment and docstring extraction from source code with tree-sitter."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+default = ["all-languages"]
+# Tree-sitter grammars. Each is a language whose grammar has no external scanner; every
+# other language is read by the lexer, which needs no feature.
+all-languages = ["lang-c", "lang-go", "lang-java", "lang-proto"]
+lang-c = ["dep:tree-sitter", "dep:tree-sitter-c"]
+lang-go = ["dep:tree-sitter", "dep:tree-sitter-go"]
+lang-java = ["dep:tree-sitter", "dep:tree-sitter-java"]
+lang-proto = ["dep:tree-sitter", "dep:tree-sitter-proto"]
+
+[dependencies]
+thiserror.workspace = true
+tree-sitter = { workspace = true, optional = true }
+tree-sitter-c = { workspace = true, optional = true }
+tree-sitter-go = { workspace = true, optional = true }
+tree-sitter-java = { workspace = true, optional = true }
+tree-sitter-proto = { workspace = true, optional = true }
+
+[dev-dependencies]
+toml.workspace = true
+
+[lints]
+workspace = true

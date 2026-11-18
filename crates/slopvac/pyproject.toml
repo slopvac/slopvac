@@ -22,8 +22,8 @@ classifiers = [
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "https://github.com/srobroek/slopvac"
-Repository = "https://github.com/srobroek/slopvac"
+Homepage = "https://github.com/slopvac/slopvac"
+Repository = "https://github.com/slopvac/slopvac"
 
 [tool.maturin]
 # Ship the Rust binary as the wheel's script; there is no Python module.

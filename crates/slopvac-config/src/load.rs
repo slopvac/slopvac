@@ -10,6 +10,7 @@ use crate::diag::{Code, Diagnostic};
 use crate::error::{ConfigError, Rejected};
 use crate::flatten::{Origin, flatten};
 use crate::presets::Presets;
+use crate::read::{MAX_CONFIG_BYTES, ReadFailure, read_text};
 use crate::schema::validate_config;
 use crate::source::{Layer, Setting};
 use crate::tree::{Node, Value, parse_toml};
@@ -103,6 +104,17 @@ impl LoadedConfig {
             })
     }
 
+    /// A config with no files, for a project that has none: only the core defaults apply and
+    /// nothing is excluded. `root` is the directory that stands in for the project root.
+    #[must_use]
+    pub fn without_files(root: PathBuf) -> Self {
+        Self {
+            root,
+            files: Vec::new(),
+            exclude: Gitignore::empty(),
+        }
+    }
+
     /// Whether `rel`, a path relative to the project root, is outside the lint run.
     #[must_use]
     pub fn is_excluded(&self, rel: &Path) -> bool {
@@ -126,7 +138,7 @@ pub fn load_labeled(
 ) -> Result<LoadedConfig, ConfigError> {
     let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(label, source))?;
     let root = abs.parent().map_or_else(PathBuf::new, Path::to_path_buf);
-    let text = fs::read_to_string(&abs).map_err(|source| ConfigError::io(label, source))?;
+    let text = ConfigError::read_config(&abs, label)?;
     let mut loader = Loader {
         root: &root,
         presets,
@@ -265,9 +277,10 @@ impl Loader<'_> {
         text: String,
         layer: Layer,
     ) -> Result<(), ConfigError> {
+        let label = self.error_label(key, display);
         let reject = |text: String, diagnostics: Vec<Diagnostic>| {
             ConfigError::Rejected(Box::new(Rejected {
-                file: display.to_owned(),
+                file: label.clone(),
                 text,
                 diagnostics,
             }))
@@ -293,6 +306,7 @@ impl Loader<'_> {
         let mut diagnostics = validate_config(&tree, &text);
         if diagnostics.is_empty() {
             check_exclude(&tree, &mut diagnostics);
+            self.check_styles(&tree, &mut diagnostics);
         }
         let blocks = if diagnostics.is_empty() {
             self.blocks(&tree, display, &text, &mut diagnostics)
@@ -322,6 +336,40 @@ impl Loader<'_> {
             blocks,
         });
         Ok(())
+    }
+
+    /// How a file is named in an error: relative to the project root when it sits under it,
+    /// else `<external>/<file name>`. Provenance keeps the fuller relative form; an error
+    /// must not show the directories beside or above the root (policies.md, 1.7).
+    fn error_label(&self, key: &Key, display: &str) -> String {
+        match key {
+            Key::Path(p) => safe_display(p, self.root),
+            Key::Pack(_) => display.to_owned(),
+        }
+    }
+
+    /// Report a `styles` list that the provider cannot load for a reason that must stop the run.
+    fn check_styles(&self, tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
+        let Some(node) = tree.get("styles") else {
+            return;
+        };
+        let Value::Array(items) = &node.value else {
+            return;
+        };
+        let listed: Vec<String> = items
+            .iter()
+            .filter_map(|n| n.as_str().map(str::to_owned))
+            .collect();
+        if let Err(failure) = self.presets.check_styles(&listed) {
+            diagnostics.push(Diagnostic {
+                code: failure.code,
+                message: failure.message,
+                label: "listed here".into(),
+                span: node.span.clone(),
+                help: None,
+                path: vec!["styles".into()],
+            });
+        }
     }
 
     fn blocks(
@@ -421,9 +469,10 @@ impl Loader<'_> {
         };
         for entry in entries {
             let name = entry.as_str().unwrap_or_default();
+            let label = self.error_label(key, display);
             let fail = |code: Code, message: String, help: Option<String>| {
                 ConfigError::Rejected(Box::new(Rejected {
-                    file: display.to_owned(),
+                    file: label.clone(),
                     text: text.to_owned(),
                     diagnostics: vec![Diagnostic {
                         code,
@@ -454,9 +503,11 @@ impl Loader<'_> {
                 (Key::Path(joined), shown, None)
             };
             if let Some(at) = self.stack.iter().position(|(k, _)| *k == target) {
-                let mut chain: Vec<String> =
-                    self.stack[at..].iter().map(|(_, d)| d.clone()).collect();
-                chain.push(shown);
+                let mut chain: Vec<String> = self.stack[at..]
+                    .iter()
+                    .map(|(k, d)| self.error_label(k, d))
+                    .collect();
+                chain.push(self.error_label(&target, &shown));
                 return Err(fail(
                     Code::ExtendsCycle,
                     format!("`extends` loops: {}", chain.join(" -> ")),
@@ -466,12 +517,20 @@ impl Loader<'_> {
             let body = match body {
                 Some(b) => b,
                 None => match &target {
-                    Key::Path(p) => fs::read_to_string(p).map_err(|e| {
-                        fail(
+                    Key::Path(p) => read_text(p, MAX_CONFIG_BYTES).map_err(|e| match e {
+                        ReadFailure::TooLarge(cap) => fail(
+                            Code::TooLarge,
+                            format!("the extended config `{name}` is larger than {cap} bytes"),
+                            Some("split the file or remove unused settings".into()),
+                        ),
+                        ReadFailure::Io(e) => fail(
                             Code::ExtendsMissing,
-                            format!("cannot read the extended config `{name}`: {e}"),
+                            format!(
+                                "cannot read the extended config `{}`: {e}",
+                                safe_display(p, self.root)
+                            ),
                             Some("paths are relative to the file that holds the entry".into()),
-                        )
+                        ),
                     })?,
                     Key::Pack(_) => String::new(),
                 },
@@ -480,6 +539,23 @@ impl Loader<'_> {
         }
         Ok(())
     }
+}
+
+/// A path for a message: relative to the project root when it sits under it, else
+/// `<external>/<file name>`. Unlike [`relative_display`] it never shows the directories
+/// above or beside the root.
+fn safe_display(path: &Path, root: &Path) -> String {
+    if let Ok(rel) = path.strip_prefix(root) {
+        return rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
+    }
+    let name = path
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    format!("<external>/{name}")
 }
 
 fn is_pack_ref(name: &str) -> bool {

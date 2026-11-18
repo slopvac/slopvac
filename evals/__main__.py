@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import ab as ab_mod
 from . import corpuslib as lib
-from . import gate, labelling, models, runner, scoring
+from . import gate, labelling, models, procs, runner, scoring
 
 
 def _cache(args: argparse.Namespace) -> Path:
@@ -111,12 +111,14 @@ def cmd_gate(args: argparse.Namespace) -> int:
     except (OSError, ValueError, runner.EngineError) as exc:
         print(f"evals gate: {exc}", file=sys.stderr)
         return 2
-    result = gate.compare(baseline, cards)
+    verdicts = scoring.load_verdicts(Path(args.labels)) if args.labels else {}
+    rows = [{"rule": key[1], "label": label} for key, label in verdicts.items()]
+    result = gate.compare(baseline, cards, labels=rows)
     text = gate.markdown(result, mode)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
     sys.stdout.write(text)
-    return 1 if result["regressions"] and mode == "enforce" else 0
+    return 1 if not result["passed"] and mode == "enforce" else 0
 
 
 def _model_tasks(args: argparse.Namespace) -> tuple[list[dict], list[dict]]:
@@ -135,6 +137,10 @@ def cmd_models(args: argparse.Namespace) -> int:
         if args.models_command == "summarize":
             summary = models.summarize(models.load(Path(args.results)))
             _emit(summary, args.out)
+            return 0
+        if args.models_command == "recommend":
+            results = models.load(Path(args.results))
+            _emit(models.recommendations(results, publish=args.publish), args.out)
             return 0
         if args.models_command == "cost":
             report = models.estimate_cost(
@@ -190,7 +196,11 @@ def cmd_models(args: argparse.Namespace) -> int:
             return 2
         models.dump(results, out)
         return 0
-    except (models.ModelEvalError, runner.EngineError) as exc:
+    except (
+        models.ModelEvalError,
+        runner.EngineError,
+        procs.UnsupportedPlatform,
+    ) as exc:
         print(f"evals models: {exc}", file=sys.stderr)
         return 2
 
@@ -435,6 +445,18 @@ def build_parser() -> argparse.ArgumentParser:
     sm.add_argument("results")
     sm.add_argument("--out")
     sm.set_defaults(func=cmd_models)
+    rc = msub.add_parser(
+        "recommend",
+        help="write the reviewer rows that feed the agents crate and the docs",
+    )
+    rc.add_argument("results")
+    rc.add_argument(
+        "--publish",
+        action="store_true",
+        help="write the rows; without it the file is pending re-evaluation, with no rows",
+    )
+    rc.add_argument("--out")
+    rc.set_defaults(func=cmd_models)
     cs = msub.add_parser(
         "cost",
         help="tokens and estimated cost per model from a results file or journal",

@@ -42,6 +42,14 @@ pub enum ConfigError {
         #[source]
         source: io::Error,
     },
+    /// A config file is larger than [`crate::MAX_CONFIG_BYTES`].
+    #[error("{path} is larger than {cap} bytes")]
+    TooLarge {
+        /// The path as the caller gave it, or relative to the project root.
+        path: String,
+        /// The cap that the file exceeded, in bytes.
+        cap: u64,
+    },
     /// A file was read and refused.
     #[error("{}: {}", .0.file, summary(&.0.diagnostics))]
     Rejected(Box<Rejected>),
@@ -74,11 +82,25 @@ impl ConfigError {
         }
     }
 
+    /// Read the config file at `path`, naming it `label` in errors, within
+    /// [`crate::MAX_CONFIG_BYTES`].
+    pub(crate) fn read_config(path: &std::path::Path, label: &str) -> Result<String, Self> {
+        use crate::read::{MAX_CONFIG_BYTES, ReadFailure, read_text};
+        read_text(path, MAX_CONFIG_BYTES).map_err(|e| match e {
+            ReadFailure::TooLarge(cap) => ConfigError::TooLarge {
+                path: label.to_owned(),
+                cap,
+            },
+            ReadFailure::Io(source) => ConfigError::io(label, source),
+        })
+    }
+
     /// The stable error class: the first diagnostic's code, or `config-io` for a read failure.
     #[must_use]
     pub fn code(&self) -> Code {
         match self {
             ConfigError::Io { .. } => Code::Io,
+            ConfigError::TooLarge { .. } => Code::TooLarge,
             ConfigError::Rejected(r) => r.diagnostics.first().map_or(Code::Parse, |d| d.code),
         }
     }
@@ -99,7 +121,9 @@ impl ConfigError {
     #[must_use]
     pub fn render(&self) -> String {
         match self {
-            ConfigError::Io { .. } => format!("error[{}]: {self}", Code::Io.as_str()),
+            ConfigError::Io { .. } | ConfigError::TooLarge { .. } => {
+                format!("error[{}]: {self}", self.code().as_str())
+            }
             ConfigError::Rejected(r) => r.render(),
         }
     }

@@ -1,0 +1,21 @@
+# ZZZ positions that 3.0 extracts and the 2.x native projection did not. Each group
+# was checked by hand against the sample file: all are real comments. Python docstrings
+# are strings in 2.x and in 3.0, so the Python sample matches 2.x exactly.
+#
+# Lua. 2.x had no `--` marker for Lua, so it kept no Lua comment.
+sample.lua 1 4
+sample.lua 2 26
+sample.lua 3 6
+sample.lua 4 1
+# Rust. The lifetime in `&'static str` opened a quote in the 2.x projection and it
+# blanked the rest of the file, so it lost these genuine comments.
+sample.rs 5 8
+sample.rs 6 44
+sample.rs 7 10
+sample.rs 11 4
+sample.rs 12 4
+sample.rs 14 5
+# Clojure. 2.x used `#` as the Clojure line marker, so it kept no `;` comment.
+sample.clj 1 3
+sample.clj 2 22
+sample.clj 3 14

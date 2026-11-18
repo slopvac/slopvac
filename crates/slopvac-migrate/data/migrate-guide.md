@@ -1,12 +1,12 @@
 # Migrate from 2.x to 3.0
 
-Slopvac 3.0 has no 2.x compatibility mode. A 2.x config makes every command that reads config exit 2 with `config-legacy-version`. Nothing is linted until you migrate. `slopvac migrate` is the only path.
+Slopvac 3.0 has no 2.x compatibility mode. A 2.x config makes every command that reads config exit 2 with `config-legacy-version`. `slopvac migrate` is the only path.
 
-Migrations chain from the version it detects. One step exists: 2.x to 3.0. A config with no `schema_version`, or with `schema_version = 2`, starts at that step. A config with `schema_version = 3` needs no migration, and `slopvac migrate` reports it as already migrated.
+One step exists: 2.x to 3.0. A config with no `schema_version`, or with `schema_version = 2`, starts at that step. `slopvac migrate` reports a config with `schema_version = 3` as already migrated.
 
 ## 1. Find the 2.x surfaces
 
-Look for these in the project:
+Look for:
 
 - `.slopvac.toml`, or a `slopvac.toml` with no `schema_version = 3`.
 - A `[tool.slopvac]` table in `pyproject.toml`.
@@ -24,7 +24,7 @@ The command prints a diff of every file it would change and exits 0. It writes n
 
 ## 3. Resolve blockers
 
-Some 2.x settings have no 3.0 equivalent. The command stops with exit 2 and prints one `config-legacy-dropped` line for each, with the file, line, key and reason. It lists all of them in one run and writes nothing.
+Some 2.x settings have no 3.0 equivalent. The command stops with exit 2 and prints one `config-legacy-dropped` line for each, with the file, line, key and reason. It lists all of them in one run and writes nothing when it stops.
 
 Common causes:
 
@@ -76,3 +76,4 @@ These 2.x surfaces fail with exit 2. Update scripts, CI and hooks by hand. `slop
 | `reference` and its options (`--write`, `--check`) | Delete the call. The docs build generates the rules reference: run `just docs` to write it and `just docs-check` to check it in CI. |
 | Action inputs `profile`, `vale`, `vale-version` and `rules-dir` | Delete the input. Set the style preset and packs in `slopvac.toml`. |
 | Hook id `slopvac-no-vale` | Delete the hook. |
+| Hook id `slopvac-strict` | Use the `slopvac` hook with `profile = "strict"` and `styles = ["core:legacy-strict"]` in `slopvac.toml`. |

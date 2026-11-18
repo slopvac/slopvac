@@ -86,7 +86,7 @@ pub enum DiffError {
     #[error("git did not finish within {0:?}")]
     TimedOut(std::time::Duration),
     /// A changed file is larger than [`Limits::max_file`], so it was not read.
-    #[error("changed file {} is larger than {limit} bytes", .path.display())]
+    #[error("[document-too-large] changed file {} is larger than {limit} bytes", .path.display())]
     FileTooLarge {
         /// The file.
         path: PathBuf,

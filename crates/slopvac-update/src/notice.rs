@@ -23,7 +23,7 @@ pub const CACHE_TTL_SECS: u64 = 24 * 60 * 60;
 /// Longest a refresh may delay a command.
 pub const REFRESH_DEADLINE: Duration = Duration::from_millis(1500);
 const MAX_REGISTRY_BYTES: u64 = 4 * 1024 * 1024;
-const GITHUB_LATEST: &str = "https://api.github.com/repos/srobroek/slopvac/releases/latest";
+const GITHUB_LATEST: &str = "https://api.github.com/repos/slopvac/slopvac/releases/latest";
 const PYPI_JSON: &str = "https://pypi.org/pypi/slopvac/json";
 
 /// Reads an environment variable.
@@ -82,7 +82,7 @@ pub fn notice_for(current: &str, latest: &str, method: InstallMethod) -> Option<
             message.push_str(cmd);
             message.push_str("`.");
         }
-        None => message.push_str(" See https://github.com/srobroek/slopvac/releases."),
+        None => message.push_str(" See https://github.com/slopvac/slopvac/releases."),
     }
     if let Some(hint) = &migrate_hint {
         message.push(' ');
@@ -145,6 +145,21 @@ impl Cache {
 
     /// Store an entry. The caller may ignore the error.
     pub fn write(&self, entry: &Entry) -> std::io::Result<()> {
+        self.write_with(entry, |tmp| {
+            tmp.persist(&self.path)
+                .map(|_| ())
+                .map_err(|e| (e.error, e.file))
+        })
+    }
+
+    /// [`Cache::write`] with the rename step supplied, so a test can make it fail.
+    ///
+    /// This is the only place that retries the rename: `write` calls it, so a test that
+    /// injects a failing step here fails when the retry is removed.
+    fn write_with<F>(&self, entry: &Entry, persist: F) -> std::io::Result<()>
+    where
+        F: FnMut(tempfile::NamedTempFile) -> Result<(), (std::io::Error, tempfile::NamedTempFile)>,
+    {
         let dir = self.path.parent().unwrap_or_else(|| Path::new("."));
         std::fs::create_dir_all(dir)?;
         // A unique temp file per writer, renamed over the target: readers see the old or the new
@@ -156,16 +171,7 @@ impl Cache {
             &mut tmp,
             &serde_json::to_vec(entry).map_err(std::io::Error::other)?,
         )?;
-        persist_retrying(
-            tmp,
-            |tmp| {
-                tmp.persist(&self.path)
-                    .map(|_| ())
-                    .map_err(|e| (e.error, e.file))
-            },
-            PERSIST_RETRIES,
-            PERSIST_PAUSE,
-        )
+        persist_retrying(tmp, persist, PERSIST_RETRIES, PERSIST_PAUSE)
     }
 
     /// Path of the cache file.
@@ -399,7 +405,7 @@ mod tests {
         assert_eq!(n.latest, "3.1.0");
         assert_eq!(
             n.upgrade_command.as_deref(),
-            Some("brew upgrade srobroek/tap/slopvac")
+            Some("brew upgrade slopvac/tap/slopvac")
         );
         assert_eq!(n.migrate_hint, None);
         assert_eq!(cache.read().unwrap(), entry(T0, "3.1.0"));
@@ -565,7 +571,7 @@ mod tests {
     fn unknown_channel_points_at_releases() {
         let n = notice_for("3.0.0", "3.1.0", InstallMethod::Unknown).unwrap();
         assert_eq!(n.upgrade_command, None);
-        assert!(n.message.contains("github.com/srobroek/slopvac/releases"));
+        assert!(n.message.contains("github.com/slopvac/slopvac/releases"));
     }
 
     #[test]
@@ -663,6 +669,56 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
         assert_eq!(calls, 1);
         assert!(dir_is_empty(dir.path()), "the temp file is cleaned up");
+    }
+
+    /// Fail the rename `failures` times with `PermissionDenied`, then do the real rename.
+    fn flaky_persist(
+        target: &Path,
+        failures: u32,
+        calls: &std::cell::Cell<u32>,
+    ) -> impl FnMut(tempfile::NamedTempFile) -> Result<(), (std::io::Error, tempfile::NamedTempFile)>
+    {
+        let target = target.to_path_buf();
+        move |tmp| {
+            calls.set(calls.get() + 1);
+            if calls.get() <= failures {
+                Err((denied(), tmp))
+            } else {
+                tmp.persist(&target)
+                    .map(|_| ())
+                    .map_err(|e| (e.error, e.file))
+            }
+        }
+    }
+
+    #[test]
+    fn cache_write_retries_a_transient_permission_denied_and_stores_the_entry() {
+        let (_dir, cache) = cache();
+        let calls = std::cell::Cell::new(0);
+        cache
+            .write_with(&entry(7, "9.9.9"), flaky_persist(cache.path(), 3, &calls))
+            .expect("the write succeeds after the retries");
+        assert_eq!(calls.get(), 4, "three refusals and one success");
+        assert_eq!(cache.read().expect("stored").latest, "9.9.9");
+    }
+
+    #[test]
+    fn cache_write_gives_up_after_its_retry_budget_and_leaves_no_temp_file() {
+        let (dir, cache) = cache();
+        let calls = std::cell::Cell::new(0);
+        let err = cache
+            .write_with(
+                &entry(7, "9.9.9"),
+                flaky_persist(cache.path(), u32::MAX, &calls),
+            )
+            .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(calls.get(), PERSIST_RETRIES + 1, "one try plus the retries");
+        assert!(cache.read().is_none());
+        assert!(
+            dir_is_empty(&dir.path().join("c")),
+            "the temp file is cleaned up"
+        );
     }
 
     #[test]

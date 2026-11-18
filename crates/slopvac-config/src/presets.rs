@@ -11,6 +11,15 @@ pub struct PackFile {
     pub text: String,
 }
 
+/// A failure that a provider reports for the `styles` list, such as a file over its size cap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetFailure {
+    /// The stable code of the failure.
+    pub code: crate::Code,
+    /// One-line statement of the problem.
+    pub message: String,
+}
+
 /// Source of the layers that come from packs.
 pub trait Presets {
     /// The settings of a style preset, in layer `style`. `None` when no active pack has it.
@@ -22,6 +31,17 @@ pub trait Presets {
     /// ancestor applies once.
     fn style_layers(&self, listed: &[String]) -> Vec<Vec<Setting>> {
         listed.iter().filter_map(|n| self.style(n)).collect()
+    }
+
+    /// Check that every style in the `styles` list can be loaded, for the failures that must
+    /// stop a run. [`Presets::style_layers`] has no error channel, so a provider reports such a
+    /// failure here and the loader rejects the config at the `styles` key. The default accepts
+    /// every list.
+    ///
+    /// # Errors
+    /// The failure to report, such as a style file over its size cap.
+    fn check_styles(&self, _listed: &[String]) -> Result<(), PresetFailure> {
+        Ok(())
     }
 
     /// The settings of a genre and of the genres it extends, lowest first, in layer `genre`.

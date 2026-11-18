@@ -136,11 +136,22 @@ fn term_files(m: &ArgMatches, cwd: &Path) -> Vec<PathBuf> {
     }
 }
 
-fn load_project(paths: &[PathBuf]) -> Result<Vec<TermEntry>, TermsError> {
+/// The name of `path` in messages: relative to `cwd`, the project root, or `<external>/<name>`.
+fn label(cwd: &Path, path: &Path) -> String {
+    slopvac_fs::display_under_root(path, cwd)
+}
+
+/// Read a file named on the command line, labelled relative to `cwd` in errors.
+fn read_input(cwd: &Path, given: &str, cap: u64) -> Result<String, TermsError> {
+    let path = cwd.join(given);
+    crate::read::read_existing(&path, &label(cwd, &path), cap)
+}
+
+fn load_project(paths: &[PathBuf], cwd: &Path) -> Result<Vec<TermEntry>, TermsError> {
     let mut out = Vec::new();
     for p in paths {
         if p.exists() {
-            out.extend(TermsFile::load(p)?.terms);
+            out.extend(TermsFile::load_labeled(p, &label(cwd, p))?.terms);
         }
     }
     Ok(out)
@@ -247,9 +258,14 @@ fn print_row(out: &mut dyn Write, t: &TermEntry, src: &str) -> Result<(), TermsE
     .map_err(|e| io_err(&e))
 }
 
-fn cmd_list(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
+fn cmd_list(
+    m: &ArgMatches,
+    cwd: &Path,
+    paths: &[PathBuf],
+    out: &mut dyn Write,
+) -> Result<i32, TermsError> {
     let kind = m.get_one::<String>("kind");
-    for (t, src) in rows(&load_project(paths)?, m.get_flag("builtin")) {
+    for (t, src) in rows(&load_project(paths, cwd)?, m.get_flag("builtin")) {
         if kind.is_none_or(|k| t.kind.as_deref() == Some(k.as_str())) {
             print_row(out, &t, src)?;
         }
@@ -257,13 +273,18 @@ fn cmd_list(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i3
     Ok(0)
 }
 
-fn cmd_search(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
+fn cmd_search(
+    m: &ArgMatches,
+    cwd: &Path,
+    paths: &[PathBuf],
+    out: &mut dyn Write,
+) -> Result<i32, TermsError> {
     let q = m
         .get_one::<String>("query")
         .expect("required")
         .to_lowercase();
     let mut hits = 0;
-    for (t, src) in rows(&load_project(paths)?, true) {
+    for (t, src) in rows(&load_project(paths, cwd)?, true) {
         let hit = std::iter::once(&t.term)
             .chain(&t.variants)
             .any(|s| s.to_lowercase().contains(&q));
@@ -275,7 +296,12 @@ fn cmd_search(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<
     Ok(i32::from(hits == 0))
 }
 
-fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
+fn cmd_add(
+    m: &ArgMatches,
+    cwd: &Path,
+    paths: &[PathBuf],
+    out: &mut dyn Write,
+) -> Result<i32, TermsError> {
     let term = m.get_one::<String>("term").expect("required").clone();
     let case_sensitive = m.get_flag("case-sensitive");
     let ignore_case = if m.get_flag("ignore-case") {
@@ -296,9 +322,9 @@ fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32
         case_sensitive,
     };
     let file = &paths[0];
-    let mut doc = TermsDoc::open(file)?;
+    let mut doc = TermsDoc::open_labeled(file, &label(cwd, file))?;
     doc.add(&entry)?;
-    doc.save(file)?;
+    doc.save_labeled(file, &label(cwd, file))?;
     let how = if ignore_case {
         "ignoring case"
     } else if case_sensitive {
@@ -310,16 +336,21 @@ fn cmd_add(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32
     Ok(0)
 }
 
-fn cmd_remove(m: &ArgMatches, paths: &[PathBuf], out: &mut dyn Write) -> Result<i32, TermsError> {
+fn cmd_remove(
+    m: &ArgMatches,
+    cwd: &Path,
+    paths: &[PathBuf],
+    out: &mut dyn Write,
+) -> Result<i32, TermsError> {
     let term = m.get_one::<String>("term").expect("required");
     let file = &paths[0];
-    let mut doc = TermsDoc::open(file)?;
+    let mut doc = TermsDoc::open_labeled(file, &label(cwd, file))?;
     if doc.remove(term) {
-        doc.save(file)?;
+        doc.save_labeled(file, &label(cwd, file))?;
         writeln!(out, "removed {term}").map_err(|e| io_err(&e))?;
         Ok(0)
     } else {
-        writeln!(out, "no term {term} in {}", file.display()).map_err(|e| io_err(&e))?;
+        writeln!(out, "no term {term} in {}", label(cwd, file)).map_err(|e| io_err(&e))?;
         Ok(1)
     }
 }
@@ -331,16 +362,13 @@ fn cmd_check(
     out: &mut dyn Write,
 ) -> Result<i32, TermsError> {
     let mut entries = TermsFile::builtin().terms;
-    let project = load_project(paths)?;
+    let project = load_project(paths, cwd)?;
     entries.retain(|b| !project.iter().any(|p| p.term == b.term));
     entries.extend(project);
     let set = TermSet::new(entries);
     let mut found = 0;
     for p in m.get_many::<String>("paths").expect("required") {
-        let text = std::fs::read_to_string(cwd.join(p)).map_err(|e| TermsError::Io {
-            path: p.clone(),
-            message: e.to_string(),
-        })?;
+        let text = read_input(cwd, p, slopvac_fs::MAX_DOCUMENT_BYTES)?;
         for f in set.check_casing(&text, &markdown_code_ranges(&text)) {
             let (line, col) = line_col(&text, f.span.start);
             writeln!(out, "{p}:{line}:{col}: {} -> {}", f.found, f.expected)
@@ -357,7 +385,7 @@ fn cmd_suggest(
     paths: &[PathBuf],
     out: &mut dyn Write,
 ) -> Result<i32, TermsError> {
-    let project = load_project(paths)?;
+    let project = load_project(paths, cwd)?;
     let known: std::collections::BTreeSet<String> = TermsFile::builtin()
         .terms
         .iter()
@@ -367,10 +395,7 @@ fn cmd_suggest(
         .collect();
     let mut texts = Vec::new();
     for p in m.get_many::<String>("paths").expect("required") {
-        let text = std::fs::read_to_string(cwd.join(p)).map_err(|e| TermsError::Io {
-            path: p.clone(),
-            message: e.to_string(),
-        })?;
+        let text = read_input(cwd, p, slopvac_fs::MAX_DOCUMENT_BYTES)?;
         texts.push((p.clone(), text));
     }
     let inputs: Vec<_> = texts
@@ -400,7 +425,7 @@ fn cmd_suggest(
         });
     }
     let target = &paths[0];
-    let mut doc = TermsDoc::open(target)?;
+    let mut doc = TermsDoc::open_labeled(target, &label(cwd, target))?;
     for term in &accept {
         doc.add(&TermEntry {
             term: (*term).clone(),
@@ -410,7 +435,7 @@ fn cmd_suggest(
             case_sensitive: false,
         })?;
     }
-    doc.save(target)?;
+    doc.save_labeled(target, &label(cwd, target))?;
     for term in accept {
         writeln!(out, "added {term}").map_err(|e| io_err(&e))?;
     }
@@ -426,13 +451,10 @@ fn cmd_import(
     let from = m.get_one::<String>("from").expect("required");
     let source = Source::parse(from).expect("clap value_parser restricts values");
     let file = m.get_one::<String>("file").expect("required");
-    let text = std::fs::read_to_string(cwd.join(file)).map_err(|e| TermsError::Io {
-        path: file.clone(),
-        message: e.to_string(),
-    })?;
-    let imported = import::parse(file, source, &text)?;
+    let text = read_input(cwd, file, crate::MAX_TERMS_FILE_BYTES)?;
+    let imported = import::parse(&label(cwd, &cwd.join(file)), source, &text)?;
     let target = &paths[0];
-    let mut doc = TermsDoc::open(target)?;
+    let mut doc = TermsDoc::open_labeled(target, &label(cwd, target))?;
     let (mut added, mut existing) = (0, 0);
     for w in &imported.words {
         if doc.contains(w) {
@@ -448,7 +470,7 @@ fn cmd_import(
         })?;
         added += 1;
     }
-    doc.save(target)?;
+    doc.save_labeled(target, &label(cwd, target))?;
     writeln!(
         out,
         "imported {added} terms ({existing} already present, {} patterns skipped)",
@@ -471,10 +493,10 @@ pub fn run(matches: &ArgMatches, cwd: &Path, out: &mut dyn Write) -> Result<i32,
     };
     let paths = term_files(m, cwd);
     match name {
-        "list" => cmd_list(m, &paths, out),
-        "search" => cmd_search(m, &paths, out),
-        "add" => cmd_add(m, &paths, out),
-        "remove" => cmd_remove(m, &paths, out),
+        "list" => cmd_list(m, cwd, &paths, out),
+        "search" => cmd_search(m, cwd, &paths, out),
+        "add" => cmd_add(m, cwd, &paths, out),
+        "remove" => cmd_remove(m, cwd, &paths, out),
         "check" => cmd_check(m, cwd, &paths, out),
         "import" => cmd_import(m, cwd, &paths, out),
         "suggest" => cmd_suggest(m, cwd, &paths, out),

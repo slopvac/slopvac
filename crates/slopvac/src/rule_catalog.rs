@@ -1,4 +1,4 @@
-//! STUB(slopvac-8l4.12.20): the core rules the inspection commands read.
+//! STUB(slopvac-8l4.12.27): the core rules the inspection commands read.
 //!
 //! Main has no shipped core pack loader yet, so the binary embeds the 2.x rules
 //! converted to v3 category files (the `slopvac-rules` test fixtures). The swap

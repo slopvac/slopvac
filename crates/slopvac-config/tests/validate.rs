@@ -341,3 +341,17 @@ fn a_missing_config_is_reported_with_its_code_and_the_path_as_typed() {
     );
     assert!(!out.contains(p.root().to_str().unwrap()), "{out}");
 }
+
+#[test]
+fn a_document_one_byte_over_the_cap_is_incomplete_with_its_code() {
+    let p = Project::new();
+    p.write("slopvac.toml", "schema_version = 3\n");
+    let big = p.root().join("big.md");
+    fs::File::create(&big)
+        .unwrap()
+        .set_len(slopvac_config::MAX_DOCUMENT_BYTES + 1)
+        .unwrap();
+    let (code, out) = p.validate(&["big.md"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("error[document-too-large]"), "{out}");
+}

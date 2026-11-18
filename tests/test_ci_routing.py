@@ -254,6 +254,19 @@ def test_schema_changes_route_to_rust(path):
     assert in_class("rust", path)
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "crates/slopvac-engine/tests/fixtures/x.json",
+        "crates/slopvac-rules/tests/fixtures/x.json",
+    ],
+)
+def test_fixtures_read_by_contract_tests_run_the_full_suite(path):
+    outputs = classes_of([path])
+    assert "code" in outputs
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+
+
 @pytest.mark.parametrize("job", ["evals-ratchet", "docs-site"])
 def test_folded_job_calls_its_workflow_with_read_only_token(job):
     call = JOBS[job]
@@ -315,10 +328,13 @@ FLAG_ENV = {
 ALWAYS = {"changes", "quick-lint"}
 
 
-def run_gate(flags: set[str], results: dict[str, str]) -> subprocess.CompletedProcess:
+def run_gate(
+    flags: set[str], results: dict[str, str], *, draft: bool = False
+) -> subprocess.CompletedProcess:
     needs = {name: {"result": results.get(name, "skipped")} for name in GATE_NEEDS}
     env = {k: "true" if v in flags else "false" for k, v in FLAG_ENV.items()}
     env["RESULTS"] = json.dumps(needs)
+    env["DRAFT"] = "true" if draft else "false"
     return subprocess.run(
         [sys.executable, "-c", GATE_SCRIPT],
         env={**os.environ, **env},
@@ -333,7 +349,7 @@ def ok(*names: str) -> dict[str, str]:
 
 
 def test_gate_step_declares_an_env_for_every_flag():
-    assert set(GATE_STEP["env"]) >= set(FLAG_ENV) | {"RESULTS"}
+    assert set(GATE_STEP["env"]) >= set(FLAG_ENV) | {"RESULTS", "DRAFT"}
 
 
 def test_gate_needs_include_the_folded_jobs():
@@ -381,3 +397,101 @@ def test_gate_rejects_mismatches_failures_and_cancellations(flags, results, mess
     proc = run_gate(flags, results)
     assert proc.returncode == 1
     assert message in proc.stdout
+
+
+# --- draft pull requests ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("flags", "results"),
+    [
+        # What a draft run produces: every routed job skipped.
+        (set(), {}),
+        # Even a run where every suite succeeded is not a pass for a draft.
+        ({"force_all"}, ok(*(set(GATE_NEEDS) - ALWAYS))),
+    ],
+    ids=["skipped", "all-green"],
+)
+def test_gate_fails_a_draft(flags, results):
+    proc = run_gate(flags, results, draft=True)
+    assert proc.returncode == 1
+    assert "draft pull request" in proc.stdout
+
+
+# A skipped job reports success to branch protection, so the required checks
+# must run on a draft to fail it.
+@pytest.mark.parametrize("job", ["gate", "lint-gate-compat", "security-gate-compat"])
+def test_required_checks_are_never_skipped(job):
+    assert JOBS[job]["if"] == "always()"
+
+
+@pytest.mark.parametrize(
+    ("result", "code"), [("success", 0), ("failure", 1), ("skipped", 1)]
+)
+@pytest.mark.parametrize("job", ["lint-gate-compat", "security-gate-compat"])
+def test_compat_checks_pass_only_when_the_gate_passed(job, result, code):
+    step = JOBS[job]["steps"][0]
+    proc = subprocess.run(
+        ["bash", "-c", step["run"]], env={**os.environ, "RESULT": result}, check=False
+    )
+    assert proc.returncode == code
+
+
+# --- full suite on the queue and main ---------------------------------------
+
+FORCE_STEP = next(s for s in JOBS["changes"]["steps"] if s.get("id") == "force")
+ROUTED_JOBS = sorted(set(GATE_NEEDS) - ALWAYS - {"changes"})
+
+
+def force_all_for(event: str, routing_changed: bool, tmp_path: Path) -> str:
+    out = tmp_path / "output"
+    out.touch()
+    env = {
+        **os.environ,
+        "EVENT_NAME": event,
+        "ROUTING_CHANGED": "true" if routing_changed else "false",
+        "GITHUB_OUTPUT": str(out),
+    }
+    subprocess.run(["bash", "-c", FORCE_STEP["run"]], env=env, check=True)
+    return out.read_text().strip()
+
+
+def test_changes_job_exposes_the_forced_flag_not_the_raw_routing_filter():
+    assert JOBS["changes"]["outputs"]["force_all"] == (
+        "${{ steps.force.outputs.force_all }}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("event", "routing_changed", "expected"),
+    [
+        ("merge_group", False, "force_all=true"),
+        ("push", False, "force_all=true"),
+        ("pull_request", True, "force_all=true"),
+        ("pull_request", False, "force_all=false"),
+    ],
+)
+def test_force_all_is_set_for_the_queue_main_and_routing_edits(
+    event, routing_changed, expected, tmp_path
+):
+    assert force_all_for(event, routing_changed, tmp_path) == expected
+
+
+@pytest.mark.parametrize("event", ["merge_group", "push"])
+@pytest.mark.parametrize("job", ROUTED_JOBS)
+def test_every_routed_job_runs_on_the_queue_and_main_with_no_class_matched(
+    event, job, tmp_path
+):
+    forced = force_all_for(event, False, tmp_path) == "force_all=true"
+    outputs = {"force_all"} if forced else set()
+    assert evaluate(JOBS[job]["if"], outputs) is True
+
+
+@pytest.mark.parametrize("event", ["merge_group", "push"])
+def test_gate_expects_every_suite_to_succeed_on_the_queue_and_main(event, tmp_path):
+    forced = force_all_for(event, False, tmp_path) == "force_all=true"
+    flags = {"force_all"} if forced else set()
+    everything = ok(*(set(GATE_NEEDS) - ALWAYS))
+    assert run_gate(flags, everything).returncode == 0
+    skipped = {**everything, "test": "skipped"}
+    assert run_gate(flags, skipped).returncode == 1

@@ -320,8 +320,8 @@ mod tests {
     #[test]
     fn redirects_may_lead_only_to_github_release_hosts() {
         for url in [
-            "https://github.com/srobroek/slopvac/releases/download/v3.1.0/a.tar.gz",
-            "https://api.github.com/repos/srobroek/slopvac/releases/latest",
+            "https://github.com/slopvac/slopvac/releases/download/v3.1.0/a.tar.gz",
+            "https://api.github.com/repos/slopvac/slopvac/releases/latest",
             "https://release-assets.githubusercontent.com/github-production-release-asset/1?x=y",
             "https://objects.githubusercontent.com/a",
             "https://github.com:443/a",
@@ -360,7 +360,7 @@ mod tests {
         }
     }
 
-    const START: &str = "https://github.com/srobroek/slopvac/releases/download/v3.1.0/a";
+    const START: &str = "https://github.com/slopvac/slopvac/releases/download/v3.1.0/a";
     const ASSETS: &str = "https://release-assets.githubusercontent.com/a";
 
     type Asked = std::rc::Rc<std::cell::RefCell<Vec<String>>>;

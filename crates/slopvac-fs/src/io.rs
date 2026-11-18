@@ -12,6 +12,13 @@ use cap_std::fs::{Dir, File, OpenOptions, OpenOptionsExt, Permissions};
 
 use crate::{Error, Result};
 
+/// The most bytes of one document that any slopvac entry point reads: 64 MiB.
+///
+/// The span crates index text with 32-bit offsets and size their structures from its length, so
+/// every path that feeds them text must stay under this. The larger caps for each entry point
+/// are listed in `docs/contract/policies.md`.
+pub const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
+
 /// Read all of `reader`, failing when it holds more than `cap` bytes.
 ///
 /// Memory stays bounded by `cap + 1` bytes, so an endless reader cannot exhaust it.
@@ -26,6 +33,24 @@ pub fn read_capped(reader: impl Read, cap: u64) -> Result<Vec<u8>> {
         return Err(Error::CapExceeded { cap });
     }
     Ok(buf)
+}
+
+/// Read the file at `path` as UTF-8 text, failing when it holds more than `cap` bytes.
+///
+/// Memory stays bounded by `cap + 1` bytes whatever the file reports as its size.
+///
+/// # Errors
+/// [`Error::CapExceeded`] when the file is larger than `cap`, [`Error::NotUtf8`] when the bytes
+/// are not UTF-8, and [`Error::Io`] when opening or reading fails.
+pub fn read_text_capped(path: &Path, cap: u64) -> Result<String> {
+    let file = std::fs::File::open(path).map_err(|e| Error::io("open", path, &e))?;
+    let bytes = read_capped(file, cap).map_err(|e| match e {
+        Error::Read(source) => Error::io("read", path, &source),
+        other => other,
+    })?;
+    String::from_utf8(bytes).map_err(|_| Error::NotUtf8 {
+        path: path.to_path_buf(),
+    })
 }
 
 /// Options for [`write_atomic`].
@@ -111,14 +136,26 @@ pub fn write_atomic(root: &Dir, rel: &Path, bytes: &[u8], opts: WriteOptions) ->
         let _ = parent.remove_file(&temp);
         return Err(e);
     }
-    parent
-        .open(".")
-        .and_then(|dir| dir.sync_all())
-        .map_err(|e| io("sync directory of", e))
+    sync_dir(&parent).map_err(|e| io("sync directory of", e))
+}
+
+/// Flush the directory `dir` itself, so its entries survive a crash.
+///
+/// Every directory sync goes through here. Under test, a thread-local hook can fail a chosen
+/// call, because a real directory sync cannot be made to fail from a test.
+fn sync_dir(dir: &Dir) -> std::io::Result<()> {
+    #[cfg(test)]
+    tests::inject_sync_failure()?;
+    dir.open(".")?.sync_all()
 }
 
 /// Write all of `bytes`. The error is the writer's own, so its OS code survives.
+///
+/// Under test, a thread-local hook can fail the write, because a full disk cannot be made
+/// portably from a test.
 fn write_to(mut writer: impl Write, bytes: &[u8]) -> std::io::Result<()> {
+    #[cfg(test)]
+    tests::inject_write_failure()?;
     writer.write_all(bytes)
 }
 
@@ -131,8 +168,8 @@ fn open_parent(root: &Dir, ancestors: &[&OsStr], create: bool) -> std::io::Resul
             Err(e) if create && e.kind() == ErrorKind::NotFound => {
                 match dir.create_dir(name) {
                     // Sync the directory that gained an entry, so the new directory survives a
-                    // crash. The effect is not observable in a test.
-                    Ok(()) => dir.open(".")?.sync_all()?,
+                    // crash.
+                    Ok(()) => sync_dir(&dir)?,
                     Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
                     Err(e) => return Err(e),
                 }
@@ -183,6 +220,39 @@ mod tests {
 
     use super::*;
 
+    thread_local! {
+        /// `(calls left before the failure, OS code)` for the next `sync_dir` calls.
+        static SYNC_FAILURE: std::cell::Cell<Option<(usize, i32)>> =
+            const { std::cell::Cell::new(None) };
+    }
+
+    thread_local! {
+        /// OS code for the next `write_to` call to fail with.
+        static WRITE_FAILURE: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+    }
+
+    /// Called by `write_to`: fail once with the planned OS code.
+    pub(super) fn inject_write_failure() -> std::io::Result<()> {
+        WRITE_FAILURE
+            .take()
+            .map_or(Ok(()), |code| Err(std::io::Error::from_raw_os_error(code)))
+    }
+
+    /// Called by `sync_dir`: fail with the planned OS code once the countdown reaches zero.
+    pub(super) fn inject_sync_failure() -> std::io::Result<()> {
+        SYNC_FAILURE.with(|plan| match plan.get() {
+            Some((0, code)) => {
+                plan.set(None);
+                Err(std::io::Error::from_raw_os_error(code))
+            }
+            Some((skip, code)) => {
+                plan.set(Some((skip - 1, code)));
+                Ok(())
+            }
+            None => Ok(()),
+        })
+    }
+
     #[test]
     fn read_capped_accepts_exactly_the_cap() {
         assert_eq!(read_capped(&b"abc"[..], 3).unwrap(), b"abc");
@@ -202,6 +272,44 @@ mod tests {
             read_capped(repeat(b'x'), 1024),
             Err(Error::CapExceeded { .. })
         ));
+    }
+
+    #[test]
+    fn read_text_capped_reads_a_file_at_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        std::fs::write(&path, "héllo").unwrap();
+        // "héllo" is 6 bytes in UTF-8.
+        assert_eq!(read_text_capped(&path, 6).unwrap(), "héllo");
+    }
+
+    #[test]
+    fn read_text_capped_rejects_one_byte_over() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        std::fs::write(&path, "héllo").unwrap();
+        assert!(matches!(
+            read_text_capped(&path, 5),
+            Err(Error::CapExceeded { cap: 5 })
+        ));
+    }
+
+    #[test]
+    fn read_text_capped_refuses_invalid_utf8() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.bin");
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+        let err = read_text_capped(&path, 10).unwrap_err();
+        assert!(matches!(err, Error::NotUtf8 { .. }));
+        assert_eq!(err.path(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn read_text_capped_reports_a_missing_file_with_its_path() {
+        let path = PathBuf::from("/nonexistent-slopvac-dir/a.txt");
+        let err = read_text_capped(&path, 10).unwrap_err();
+        assert!(matches!(&err, Error::Io { op: "open", .. }));
+        assert_eq!(err.path(), Some(path.as_path()));
     }
 
     struct Failing(Option<std::io::Error>);
@@ -387,29 +495,25 @@ mod tests {
         assert_eq!(source.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
-    struct Full;
-
-    impl Write for Full {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::from_raw_os_error(28))
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
     #[test]
-    fn data_write_failure_keeps_its_os_code() {
-        // No portable way to fill a disk (/dev/full is Linux only), so a writer that fails
-        // with ENOSPC stands in at the boundary `write_atomic` writes through.
-        let err = write_to(Full, b"x").unwrap_err();
-        assert_eq!(err.raw_os_error(), Some(28), "ENOSPC");
-        let wrapped = Error::io("write", Path::new("f"), &err);
-        let Error::Io { source, .. } = wrapped else {
-            panic!("expected Error::Io")
+    fn failed_data_write_keeps_the_destination_and_leaves_no_temporary_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("f"), b"old").unwrap();
+        // 28 is ENOSPC on every Unix; its kind is StorageFull.
+        WRITE_FAILURE.set(Some(28));
+        let result = write(&tmp, "f", b"new", WriteOptions::default());
+        WRITE_FAILURE.set(None);
+        assert_eq!(std::fs::read(tmp.path().join("f")).unwrap(), b"old");
+        let names: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [OsString::from("f")]);
+        let Err(Error::Io { source, .. }) = result else {
+            panic!("expected Error::Io, got {result:?}");
         };
         assert_eq!(source.raw_os_error(), Some(28));
+        assert_eq!(source.kind(), std::io::ErrorKind::StorageFull);
     }
 
     #[test]
@@ -473,5 +577,30 @@ mod tests {
             assert!(matches!(err, Error::UnsafeTarget { .. }), "{rel}: {err:?}");
         }
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn write_atomic_reports_a_failed_sync_of_the_directory_that_gained_a_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        // 28 is ENOSPC on every Unix; its kind is StorageFull.
+        // The first directory sync follows the creation of `new`, in the root.
+        SYNC_FAILURE.set(Some((0, 28)));
+        let err = write_atomic(
+            &root(tmp.path()),
+            Path::new("new/f"),
+            b"x",
+            WriteOptions {
+                create_parents: true,
+                ..WriteOptions::default()
+            },
+        )
+        .unwrap_err();
+        SYNC_FAILURE.set(None);
+        assert!(!tmp.path().join("new/f").exists());
+        let Error::Io { source, .. } = err else {
+            panic!("expected Error::Io, got {err:?}")
+        };
+        assert_eq!(source.raw_os_error(), Some(28));
+        assert_eq!(source.kind(), std::io::ErrorKind::StorageFull);
     }
 }

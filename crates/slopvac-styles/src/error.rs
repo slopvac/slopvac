@@ -39,6 +39,14 @@ pub enum StyleError {
         /// Later style.
         winner: String,
     },
+    /// The file is larger than [`MAX_STYLE_BYTES`](crate::MAX_STYLE_BYTES).
+    #[error("[style-too-large] style `{style}` is larger than {cap} bytes")]
+    TooLarge {
+        /// Style name.
+        style: String,
+        /// The cap that the file exceeded, in bytes.
+        cap: u64,
+    },
     /// Reading a style file failed.
     #[error("reading style `{style}`: {message}")]
     Io {

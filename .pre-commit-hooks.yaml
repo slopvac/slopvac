@@ -11,16 +11,3 @@
   # pre-commit passes filenames positionally, which is what `lint` wants. It runs
   # only on staged files, so the gate sees the change rather than the repository.
   require_serial: false
-
-- id: slopvac-strict
-  name: slopvac prose gate (strict)
-  description: >-
-    Lint with the bundled core:legacy-strict style, for reference material,
-    runbooks, and procedures. Scope it with `files:` in your
-    .pre-commit-config.yaml.
-  # --profile is removed in 3.0; the bundled core:legacy-strict style replaces it.
-  # STUB(slopvac-8l4.13.13): --style is a placeholder until the CLI exposes its style-selection option.
-  entry: slopvac lint --style core:legacy-strict
-  language: system
-  types_or: [markdown, rst, plain-text, html]
-  require_serial: false

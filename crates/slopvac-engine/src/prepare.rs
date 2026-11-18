@@ -9,7 +9,7 @@ use slopvac_parse::{
     Block, BlockKind, Document, ParseError, Projection, TokenKind, parse_html_segments,
 };
 use slopvac_rules::Scope;
-use slopvac_text::{Sentence, TextError, split_sentences};
+use slopvac_text::{Sentence, TextError, cell_sentence, split_sentences};
 
 use crate::directives::Lines;
 use crate::exceptions::TextOrigin;
@@ -310,11 +310,17 @@ impl<'a> Prepared<'a> {
             if projection.text().is_empty() {
                 continue;
             }
+            // The reference counts a table cell as one sentence, whatever it contains.
+            let sentences = if matches!(block.kind, BlockKind::TableCell { .. }) {
+                cell_sentence(projection.text())?.into_iter().collect()
+            } else {
+                split_sentences(projection.text())?
+            };
             blocks.push(ProseBlock {
                 kind: &block.kind,
                 contained: !block.containers.is_empty(),
                 projection,
-                sentences: split_sentences(projection.text())?,
+                sentences,
             });
         }
         Ok(Self {

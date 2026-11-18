@@ -74,7 +74,7 @@ pub const MEDIA_REVOCATIONS: &str = "application/vnd.slopvac.revocations.v1+json
 pub const LIST_TYPE: &str = "revocations";
 /// Where the list is published. The release process must publish a signed
 /// list here before the CLI ships.
-pub const DEFAULT_SOURCE: &str = "ghcr.io/srobroek/slopvac-revocations:latest";
+pub const DEFAULT_SOURCE: &str = "ghcr.io/slopvac/slopvac-revocations:latest";
 /// Largest list the verifier reads.
 pub const MAX_LIST_BYTES: usize = 1 << 20;
 /// The longest a list is valid (`expires` minus `issued`). An offline cache

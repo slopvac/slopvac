@@ -155,6 +155,7 @@ fn a_file_over_the_size_cap_is_refused_unread_and_unchanged() {
     drop(file);
     let out = run(root.path(), "big.md", false);
     assert_eq!(refused(&out), Refusal::TooLarge);
+    assert_eq!(Refusal::TooLarge.code(), Some("document-too-large"));
     assert_eq!(
         std::fs::metadata(&path).unwrap().len(),
         slopvac_engine::MAX_FILE_BYTES + 1

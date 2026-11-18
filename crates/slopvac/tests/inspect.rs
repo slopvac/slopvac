@@ -4,7 +4,7 @@
 //!
 //! Expected counts come from the converted 2.x core files under
 //! `crates/slopvac-rules/tests/fixtures/core-v3`, counted with `jq`, not from
-//! the code under test. The rules are embedded by STUB(slopvac-8l4.12.20).
+//! the code under test. The rules are embedded by STUB(slopvac-8l4.12.27).
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -21,6 +21,9 @@ fn slopvac() -> Command {
         cmd.env_remove(var);
     }
     cmd.env("NO_COLOR", "1");
+    // The repository root holds a 2.x `slopvac.toml`, which a run from inside it would find.
+    // From `/` no config is found, so these tests see the rules as shipped.
+    cmd.current_dir("/");
     cmd
 }
 
@@ -288,7 +291,10 @@ fn a_missing_absolute_config_path_is_redacted() {
         .tempdir()
         .unwrap();
     let missing = outside.path().join("proj").join("slopvac.toml");
+    // Run from another directory, so the path is outside the working directory.
+    let work = tempfile::tempdir().unwrap();
     let out = slopvac()
+        .current_dir(work.path())
         .args(["rules", "--config"])
         .arg(&missing)
         .output()
@@ -306,7 +312,7 @@ fn a_missing_absolute_config_path_is_redacted() {
 fn config_that_exists_is_accepted() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("slopvac.toml");
-    std::fs::write(&file, "").unwrap();
+    std::fs::write(&file, "schema_version = 3\n").unwrap();
     slopvac()
         .args(["rules", "--category", "ai-residue", "--config"])
         .arg(&file)
@@ -326,5 +332,459 @@ fn bad_filter_values_are_usage_errors() {
             .assert()
             .code(2)
             .stderr(predicate::str::starts_with("error[usage]: "));
+    }
+}
+
+/// A config file in a fresh directory.
+fn config(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("slopvac.toml");
+    std::fs::write(&file, text).unwrap();
+    (dir, file)
+}
+
+fn rule_json(args: &[&str], file: &std::path::Path) -> Value {
+    let mut all = args.to_vec();
+    all.extend(["--format", "json", "--config", file.to_str().unwrap()]);
+    json(&all)
+}
+
+#[test]
+fn a_rules_entry_changes_the_effective_severity_and_names_its_line() {
+    let (_dir, file) =
+        config("schema_version = 3\n\n[rules]\n\"ai-residue.chat-leakage\" = \"off\"\n");
+    let v = rule_json(&["explain", CHAT_LEAKAGE], &file);
+    assert_eq!(v["severity"], "error", "the shipped level stays visible");
+    assert_eq!(v["effective_severity"], "off");
+    assert_eq!(v["severity_from"], "project slopvac.toml:4:1");
+}
+
+#[test]
+fn a_qualified_rule_key_works_too() {
+    let (_dir, file) = config(
+        "schema_version = 3\n\n[rules]\n\"core:ai-residue.chat-leakage\" = \"suggestion\"\n",
+    );
+    let v = rule_json(&["explain", CHAT_LEAKAGE], &file);
+    assert_eq!(v["effective_severity"], "suggestion");
+}
+
+#[test]
+fn a_category_entry_sets_every_rule_in_it() {
+    let (_dir, file) = config("schema_version = 3\n\n[categories]\norwell = \"suggestion\"\n");
+    let v = rule_json(&["rules", "--category", "orwell"], &file);
+    let rules = v["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 5);
+    assert!(
+        rules
+            .iter()
+            .all(|r| r["effective_severity"] == "suggestion")
+    );
+}
+
+#[test]
+fn a_rule_entry_beats_a_category_entry_in_the_same_file() {
+    let (_dir, file) = config(
+        "schema_version = 3\n\n[categories]\nai-residue = \"warning\"\n\n[rules]\n\"ai-residue.chat-leakage\" = \"suggestion\"\n",
+    );
+    let v = rule_json(&["explain", CHAT_LEAKAGE], &file);
+    assert_eq!(v["effective_severity"], "suggestion");
+}
+
+#[test]
+fn a_bundled_style_changes_severities_and_names_the_style() {
+    // The google preset turns the semicolon rule off.
+    let (_dir, file) = config("schema_version = 3\nstyles = [\"google\"]\n");
+    let v = rule_json(&["explain", "core:ste-punctuation.semicolon-used"], &file);
+    assert_eq!(v["effective_severity"], "off");
+    assert_eq!(v["severity_from"], "style preset:google:22:1");
+}
+
+#[test]
+fn a_project_entry_beats_a_style() {
+    let (_dir, file) = config(
+        "schema_version = 3\nstyles = [\"google\"]\n\n[rules]\n\"ste-punctuation.semicolon-used\" = \"error\"\n",
+    );
+    let v = rule_json(&["explain", "core:ste-punctuation.semicolon-used"], &file);
+    assert_eq!(v["effective_severity"], "error");
+    assert_eq!(v["severity_from"], "project slopvac.toml:5:1");
+}
+
+#[test]
+fn the_profile_severity_shift_moves_rules_that_no_entry_names() {
+    // chat-leakage ships as error and cannot go higher; a warning rule moves to error.
+    let (_dir, file) =
+        config("schema_version = 3\n\n[profile]\nname = \"normal\"\nseverity_shift = -1\n");
+    let v = rule_json(&["explain", CHAT_LEAKAGE], &file);
+    assert_eq!(v["effective_severity"], "warning");
+    let up = config("schema_version = 3\n\n[profile]\nname = \"normal\"\nseverity_shift = 2\n");
+    let w = rule_json(&["explain", CHAT_LEAKAGE], &up.1);
+    assert_eq!(
+        w["effective_severity"], "error",
+        "results clamp at the ends"
+    );
+}
+
+#[test]
+fn text_and_markdown_show_the_configured_severity() {
+    let (_dir, file) =
+        config("schema_version = 3\n\n[rules]\n\"ai-residue.chat-leakage\" = \"off\"\n");
+    let path = file.to_str().unwrap();
+    let text = stdout(&["explain", CHAT_LEAKAGE, "--config", path]);
+    assert!(text.contains("severity: off"), "{text}");
+    assert!(
+        text.contains("configured: off (project slopvac.toml:4:1); it ships as error"),
+        "{text}"
+    );
+    let md = stdout(&["explain", CHAT_LEAKAGE, "--format", "md", "--config", path]);
+    assert!(
+        md.contains("- Severity: `error`; configured: `off` (project slopvac.toml:4:1)"),
+        "{md}"
+    );
+    let table = stdout(&["rules", "--category", "ai-residue", "--config", path]);
+    let row: Vec<&str> = table.lines().next().unwrap().split_whitespace().collect();
+    assert_eq!(&row[..3], [CHAT_LEAKAGE, "pattern", "off"]);
+}
+
+#[test]
+fn an_unconfigured_run_reports_the_shipped_severity_without_a_source() {
+    let v = json(&["explain", CHAT_LEAKAGE, "--format", "json"]);
+    assert_eq!(v["effective_severity"], "error");
+    assert!(v.get("severity_from").is_none());
+}
+
+#[test]
+fn the_nearest_config_applies_without_config_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("slopvac.toml"),
+        "schema_version = 3\n\n[rules]\n\"ai-residue.chat-leakage\" = \"warning\"\n",
+    )
+    .unwrap();
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["explain", CHAT_LEAKAGE, "--format", "json"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let v: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(v["effective_severity"], "warning");
+}
+
+#[test]
+fn a_2x_config_is_refused_with_its_code() {
+    let (_dir, file) = config("profile = \"strict\"\n");
+    slopvac()
+        .args(["rules", "--config"])
+        .arg(&file)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[config-legacy-version]: this file has no `schema_version`",
+        ));
+}
+
+#[test]
+fn an_unknown_style_is_named_with_the_styles_that_ship() {
+    let (_dir, file) = config("schema_version = 3\nstyles = [\"chicago\"]\n");
+    slopvac()
+        .args(["rules", "--config"])
+        .arg(&file)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[unknown-style]: unknown style \"chicago\"; the styles that ship are: ",
+        ));
+}
+
+/// A base config and a project config that extends it, in one directory.
+fn extended(base: &str, project: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("base.toml"),
+        format!("schema_version = 3\n\n{base}"),
+    )
+    .unwrap();
+    let file = dir.path().join("slopvac.toml");
+    std::fs::write(
+        &file,
+        format!("schema_version = 3\nextends = [\"base.toml\"]\n\n{project}"),
+    )
+    .unwrap();
+    (dir, file)
+}
+
+#[test]
+fn a_project_bare_key_beats_an_extended_qualified_key() {
+    let (_d, file) = extended(
+        "[rules]\n\"core:ai-residue.chat-leakage\" = \"error\"\n",
+        "[rules]\n\"ai-residue.chat-leakage\" = \"suggestion\"\n",
+    );
+    let v = rule_json(&["explain", CHAT_LEAKAGE], &file);
+    assert_eq!(v["effective_severity"], "suggestion");
+    assert_eq!(v["severity_from"], "project slopvac.toml:5:1");
+}
+
+#[test]
+fn a_project_qualified_key_beats_an_extended_bare_key() {
+    let (_d, file) = extended(
+        "[rules]\n\"ai-residue.chat-leakage\" = \"warning\"\n",
+        "[rules]\n\"core:ai-residue.chat-leakage\" = \"suggestion\"\n",
+    );
+    let v = rule_json(&["explain", CHAT_LEAKAGE], &file);
+    assert_eq!(v["effective_severity"], "suggestion");
+}
+
+#[test]
+fn a_qualified_category_key_is_read() {
+    let (_d, file) =
+        config("schema_version = 3\n\n[categories]\n\"core:ai-residue\" = \"warning\"\n");
+    let v = rule_json(&["explain", CHAT_LEAKAGE], &file);
+    assert_eq!(v["effective_severity"], "warning");
+}
+
+#[test]
+fn a_project_category_beats_an_extended_rule_entry_whatever_the_spelling() {
+    let (_d, file) = extended(
+        "[rules]\n\"core:ai-residue.chat-leakage\" = \"error\"\n",
+        "[categories]\n\"core:ai-residue\" = \"suggestion\"\n",
+    );
+    let v = rule_json(&["explain", CHAT_LEAKAGE], &file);
+    assert_eq!(v["effective_severity"], "suggestion");
+}
+
+#[test]
+fn the_ste_style_lowers_a_rule_through_its_category() {
+    // The STE preset sets the ste-punctuation category to suggestion and names no rule in it.
+    // The rule ships as a warning.
+    let (_d, file) = config("schema_version = 3\nstyles = [\"ste\"]\n");
+    let v = rule_json(&["explain", "core:ste-punctuation.semicolon-used"], &file);
+    assert_eq!(v["severity"], "warning");
+    assert_eq!(v["effective_severity"], "suggestion");
+    assert_eq!(v["severity_from"], "style preset:ste:12:21");
+}
+
+#[test]
+fn a_category_entry_leaves_a_judgement_rule_alone_but_a_rule_entry_sets_it() {
+    // concrete-floor is a judgement rule that ships as a suggestion; the orwell category
+    // holds checked rules too.
+    let (_d, by_category) = config("schema_version = 3\n\n[categories]\norwell = \"error\"\n");
+    let v = rule_json(&["explain", JUDGEMENT], &by_category);
+    assert_eq!(
+        v["effective_severity"], "suggestion",
+        "a category does not set it"
+    );
+    assert!(v.get("severity_from").is_none());
+    let checked = rule_json(&["explain", "core:orwell.not-un"], &by_category);
+    assert_eq!(
+        checked["effective_severity"], "error",
+        "checked rules follow the category"
+    );
+
+    let (_e, by_rule) = config(
+        "schema_version = 3\n\n[categories]\norwell = \"off\"\n\n[rules]\n\"orwell.concrete-floor\" = \"error\"\n",
+    );
+    let v = rule_json(&["explain", JUDGEMENT], &by_rule);
+    assert_eq!(v["effective_severity"], "error");
+}
+
+#[test]
+fn a_config_diagnostic_never_prints_an_absolute_path_or_source_excerpt() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("slopvac.toml");
+    std::fs::write(
+        &file,
+        "schema_version = 3\nextends = [\"/home/SENTINEL-user-1234/base.toml\"]\n",
+    )
+    .unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .current_dir(work.path())
+        .args(["rules", "--config"])
+        .arg(&file)
+        .output()
+        .expect("run");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.starts_with(
+            "error[config-extends-missing]: cannot read the extended config `<external>/base.toml`"
+        ),
+        "{err}"
+    );
+    assert!(!err.contains("SENTINEL"), "{err}");
+    assert!(!err.contains(&dir.path().display().to_string()), "{err}");
+    assert!(
+        err.contains(" --> <external>/slopvac.toml:2:12") || err.contains("slopvac.toml:2:12"),
+        "{err}"
+    );
+    assert!(
+        !err.contains("extends = ["),
+        "the source excerpt leaked: {err}"
+    );
+}
+
+#[test]
+fn a_config_path_with_spaces_is_redacted_whole() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("slopvac.toml");
+    std::fs::write(
+        &file,
+        "schema_version = 3\nextends = [\"/home/SENTINEL user 1234/my base.toml\"]\n",
+    )
+    .unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .current_dir(work.path())
+        .args(["explain", CHAT_LEAKAGE, "--config"])
+        .arg(&file)
+        .output()
+        .expect("run");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.contains("`<external>/my base.toml`"),
+        "the file name is kept: {err}"
+    );
+    for leaked in ["SENTINEL", "1234", "/home"] {
+        assert!(!err.contains(leaked), "{leaked} leaked: {err}");
+    }
+}
+
+#[test]
+fn a_config_path_inside_the_working_directory_is_shown_relative() {
+    let work = tempfile::tempdir().unwrap();
+    std::fs::write(
+        work.path().join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"conf dir/missing.toml\"]\n",
+    )
+    .unwrap();
+    let out = slopvac()
+        .current_dir(work.path())
+        .args(["rules", "--config", "slopvac.toml"])
+        .output()
+        .expect("run");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(err.contains("`conf dir/missing.toml`"), "{err}");
+    assert!(err.contains(" --> slopvac.toml:2:12"), "{err}");
+    assert!(!err.contains(&work.path().display().to_string()), "{err}");
+}
+
+/// Run `rules --config` on a config with the given text, from another directory.
+fn refused(text: &str) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("slopvac.toml");
+    std::fs::write(&file, text).unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .current_dir(work.path())
+        .args(["rules", "--config"])
+        .arg(&file)
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[test]
+fn a_quoted_absolute_path_in_a_diagnostic_message_is_redacted() {
+    // Three producers quote the user's value: a bad enum, a bad key and a bad name.
+    for text in [
+        "schema_version = 3\nlocale = \"/home/SENTINEL user 1234/secret dir\"\n",
+        "schema_version = 3\nprofile = \"/home/SENTINEL user 1234/secret dir\"\n",
+        "schema_version = 3\n\"/home/SENTINEL user 1234/secret dir\" = 1\n",
+        "schema_version = 3\n\n[rules]\n\"/home/SENTINEL user 1234/secret dir\" = \"off\"\n",
+    ] {
+        let err = refused(text);
+        for leaked in ["SENTINEL", "1234", "/home"] {
+            assert!(!err.contains(leaked), "{leaked} leaked for {text:?}: {err}");
+        }
+        assert!(err.contains("<external>/secret dir"), "{err}");
+    }
+}
+
+#[test]
+fn every_diagnostic_after_the_first_keeps_its_code() {
+    let err = refused("schema_version = 3\nlocale = \"klingon\"\nbogus = true\n");
+    let mut lines = err.lines().filter(|l| l.starts_with("error["));
+    assert!(
+        lines
+            .next()
+            .unwrap()
+            .starts_with("error[config-invalid-value]: "),
+        "{err}"
+    );
+    assert!(
+        lines
+            .next()
+            .is_some_and(|l| l.starts_with("error[config-unknown-key]: unknown key `bogus`")),
+        "the second diagnostic lost its code: {err}"
+    );
+}
+
+/// A readable external base file and a project config that extends it, in sibling directories.
+fn external_base(base: &str, project_extra: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let outer = tempfile::Builder::new()
+        .prefix("SENTINEL-outer")
+        .tempdir()
+        .unwrap();
+    let shared = outer.path().join("shared dir");
+    let proj = outer.path().join("proj");
+    std::fs::create_dir_all(&shared).unwrap();
+    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::write(shared.join("base.toml"), base).unwrap();
+    std::fs::write(
+        proj.join("slopvac.toml"),
+        format!("schema_version = 3\nextends = [\"../shared dir/base.toml\"]\n{project_extra}"),
+    )
+    .unwrap();
+    let file = proj.join("slopvac.toml");
+    (outer, file)
+}
+
+fn refused_at(file: &std::path::Path) -> String {
+    let work = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .current_dir(work.path())
+        .args(["rules", "--config"])
+        .arg(file)
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[test]
+fn an_invalid_value_in_a_readable_external_base_hides_its_directories() {
+    let (outer, file) = external_base("schema_version = 3\nlocale = \"klingon\"\n", "");
+    let err = refused_at(&file);
+    assert!(err.starts_with("error[config-invalid-value]: "), "{err}");
+    assert!(err.contains(" --> <external>/base.toml:2:10"), "{err}");
+    for leaked in [
+        "SENTINEL",
+        "shared dir",
+        &outer.path().display().to_string(),
+    ] {
+        assert!(!err.contains(leaked), "{leaked} leaked: {err}");
+    }
+}
+
+#[test]
+fn an_extends_cycle_through_an_external_file_hides_its_directories() {
+    let (outer, file) = external_base(
+        "schema_version = 3\nextends = [\"../proj/slopvac.toml\"]\n",
+        "",
+    );
+    let err = refused_at(&file);
+    assert!(err.starts_with("error[config-extends-cycle]: "), "{err}");
+    assert!(err.contains("<external>/base.toml"), "{err}");
+    for leaked in [
+        "SENTINEL",
+        "shared dir",
+        &outer.path().display().to_string(),
+    ] {
+        assert!(!err.contains(leaked), "{leaked} leaked: {err}");
     }
 }
