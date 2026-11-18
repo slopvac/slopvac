@@ -26,9 +26,49 @@ fn doc_matches_the_guide_source() {
     );
 }
 
+const DOC_URL: &str = "https://github.com/slopvac/slopvac/blob/main/docs/migrate-2-to-3.md";
+
 #[test]
-fn doc_content_is_the_prime_output() {
-    assert!(guide_doc().ends_with(prime_migrate()));
+fn prime_prints_the_decision_sections_in_full() {
+    let prime = prime_migrate();
+    for heading in [
+        "## 1. Find the 2.x surfaces",
+        "## 2. Preview",
+        "## 3. Resolve blockers",
+        "## 5. Verify and undo",
+    ] {
+        assert!(prime.contains(heading), "prime lacks {heading}");
+        assert!(guide_doc().contains(heading), "doc lacks {heading}");
+    }
+}
+
+#[test]
+fn prime_links_the_reference_sections_instead_of_printing_them() {
+    let prime = prime_migrate();
+    for (heading, anchor) in [
+        ("4. Apply", "4-apply"),
+        ("6. Removed in 3.0", "6-removed-in-30"),
+    ] {
+        let link = format!("Read \"{heading}\" at {DOC_URL}#{anchor}.");
+        assert_eq!(prime.matches(&link).count(), 1, "{heading}");
+        assert!(!prime.contains(&format!("## {heading}")), "{heading}");
+        // The linked anchor is a heading of the generated doc.
+        assert!(
+            guide_doc().contains(&format!("\n## {heading}\n")),
+            "{heading}"
+        );
+    }
+    assert!(
+        !prime.contains("| Surface |"),
+        "the removed-surface table is linked"
+    );
+    assert!(!prime.contains("--write"), "the apply steps are linked");
+}
+
+#[test]
+fn markers_stay_out_of_the_doc_and_prime() {
+    assert!(!guide_doc().contains("<!-- prime:"));
+    assert!(!prime_migrate().contains("<!-- prime:"));
 }
 
 /// The token a removed surface is named by in the guide.
@@ -59,7 +99,7 @@ fn guide_names_every_removed_surface() {
         }
         let Some(tok) = token(row) else { continue };
         assert!(
-            prime_migrate().contains(&tok),
+            guide_doc().contains(&tok),
             "guide does not mention {tok} ({row})"
         );
         checked += 1;
