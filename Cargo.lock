@@ -2587,6 +2587,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "jsonschema",
+ "rstest",
  "serde_json",
  "similar 3.2.1",
  "slopvac-agents",

@@ -24,7 +24,7 @@ The styles name only categories that own at least one rule. The 2.x profile tabl
 
 ### Removed rules
 
-3.0 removes five 2.x rules. [`compat/removed-rules.toml`](compat/removed-rules.toml) is the source of truth for the list: each entry has the rule id, a reason and the decision behind it. `slopvac migrate` drops every config entry and suppression directive that names one of them, and a test checks that each id is a 2.x rule and no 3.0 rule.
+The file lists five 2.x rules that 3.0 drops. [`compat/removed-rules.toml`](compat/removed-rules.toml) is the source of truth for the list: each entry has the rule id, a reason and the decision behind it. `slopvac migrate` drops every config entry and suppression directive that names one of them, and a test checks that each id is a 2.x rule.
 
 ### Migrate decisions
 

@@ -55,6 +55,10 @@ pub struct Rewrite {
     pub text: String,
     /// One line per change that is not a plain copy.
     pub notes: Vec<String>,
+    /// The categories that 3.0 no longer has and the rewrite dropped, with lines in
+    /// `text`'s source. A caller that embeds the source in a larger file maps the
+    /// lines first, then renders each with [`Dropped::category_removed_notice`].
+    pub removed_categories: Vec<Dropped>,
 }
 
 /// Rewrite 2.x config text. `file` names the source in diagnostics.
@@ -88,6 +92,7 @@ pub fn migrate_config(
         renames,
         dropped: Vec::new(),
         notes: Vec::new(),
+        removed_categories: Vec::new(),
     };
     migrate_scope(doc.as_table_mut(), "", Scope::Project, &mut cx);
     if cx.dropped.is_empty() && options.preserve_behavior {
@@ -108,6 +113,7 @@ pub fn migrate_config(
         Ok(Rewrite {
             text: doc.to_string(),
             notes: cx.notes,
+            removed_categories: cx.removed_categories,
         })
     } else {
         Err(Error::Dropped(cx.dropped))
@@ -142,19 +148,19 @@ struct Cx<'a> {
     renames: &'a RenameTable,
     dropped: Vec<Dropped>,
     notes: Vec<String>,
+    removed_categories: Vec<Dropped>,
 }
 
 impl Cx<'_> {
     /// Drop a category that 3.0 no longer has and go on, with a
     /// `migrate-category-removed` notice and no exit 2.
     fn drop_category_note(&mut self, path: &str, reason: &str) {
-        let dropped = Dropped {
+        self.removed_categories.push(Dropped {
             file: self.file.to_owned(),
             key: path.to_owned(),
             line: self.lines.get(path).copied().unwrap_or(1),
             reason: reason.to_owned(),
-        };
-        self.notes.push(dropped.category_removed_notice());
+        });
     }
     fn drop_key(&mut self, path: &str, reason: impl Into<String>) {
         self.dropped.push(Dropped {

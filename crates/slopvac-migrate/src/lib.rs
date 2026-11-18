@@ -57,7 +57,8 @@ impl Dropped {
     /// The setting as a notice with the `migrate-category-removed` code, for a
     /// category that 3.0 no longer has. Unlike a blocking drop, it does not stop the
     /// migration.
-    pub(crate) fn category_removed_notice(&self) -> String {
+    #[must_use]
+    pub fn category_removed_notice(&self) -> String {
         format!("migrate-category-removed: {self}")
     }
 }
