@@ -179,7 +179,7 @@ fn read_checked(root: &Path, name: &str) -> Result<String, Skip> {
     if bytes.len() as u64 > MAX_BYTES {
         return Err(Skip::TooLarge);
     }
-    String::from_utf8(bytes).map_err(unusable)
+    String::from_utf8(bytes).map_err(|_| Skip::Unusable)
 }
 
 /// Open `path` for reading and require the opened handle to be a regular file.
