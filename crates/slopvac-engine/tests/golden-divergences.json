@@ -1482,7 +1482,53 @@
       ]
     },
     "normal/rule-examples-prose-inflation": {
+      "document": {
+        "categories": {
+          "ste-words": {
+            "budget": 1.5,
+            "category": "ste-words",
+            "errors": 0,
+            "findings": 1,
+            "gating_per_100_words": 0.296,
+            "over_budget": false,
+            "per_100_words": 0.592,
+            "score": 94.1,
+            "suggestions": 0,
+            "warnings": 1
+          }
+        },
+        "gate": {
+          "passed": false,
+          "reasons": [
+            "20 error(s), limit 0",
+            "12.43 severity-weighted findings per 100 words, budget 3.0",
+            "score 0.0, minimum 70.0",
+            "orwell at 1.77 severity-weighted findings per 100 words, budget 0.8",
+            "prose-discipline at 1.18 severity-weighted findings per 100 words, budget 0.8",
+            "prose-inflation at 8.88 severity-weighted findings per 100 words, budget 0.6"
+          ]
+        },
+        "per_100_words": 18.343,
+        "prose": {
+          "errors": 20,
+          "findings": 31,
+          "per_100_words": 18.343,
+          "warnings": 2
+        },
+        "total_findings": 31,
+        "warnings": 2
+      },
       "exit": 2,
+      "missing": [
+        {
+          "category": "ste-words",
+          "column": 14,
+          "line": 11,
+          "matched_text": "Architected",
+          "rule_id": "core:ste-words.noun-used-as-verb",
+          "severity": "warning"
+        }
+      ],
       "unchecked": [
         "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
@@ -5710,7 +5756,56 @@
       ]
     },
     "strict/rule-examples-prose-inflation": {
+      "document": {
+        "categories": {
+          "ste-words": {
+            "budget": 0.5,
+            "category": "ste-words",
+            "errors": 1,
+            "findings": 1,
+            "gating_per_100_words": 0.592,
+            "over_budget": true,
+            "per_100_words": 0.592,
+            "score": 65.7,
+            "suggestions": 0,
+            "warnings": 0
+          }
+        },
+        "errors": 26,
+        "gate": {
+          "passed": false,
+          "reasons": [
+            "26 error(s), limit 0",
+            "16.86 severity-weighted findings per 100 words, budget 1.5",
+            "score 0.0, minimum 85.0",
+            "orwell at 1.77 severity-weighted findings per 100 words, budget 0.4",
+            "prose-craft at 1.18 severity-weighted findings per 100 words, budget 0.8",
+            "prose-discipline at 1.18 severity-weighted findings per 100 words, budget 0.4",
+            "prose-inflation at 10.65 severity-weighted findings per 100 words, budget 0.3",
+            "ste-verbs at 1.18 severity-weighted findings per 100 words, budget 0.4",
+            "ste-words at 0.59 severity-weighted findings per 100 words, budget 0.5"
+          ]
+        },
+        "per_100_words": 18.935,
+        "prose": {
+          "errors": 26,
+          "findings": 32,
+          "per_100_words": 18.935,
+          "warnings": 5
+        },
+        "total_findings": 32
+      },
       "exit": 2,
+      "missing": [
+        {
+          "category": "ste-words",
+          "column": 14,
+          "line": 11,
+          "matched_text": "Architected",
+          "rule_id": "core:ste-words.noun-used-as-verb",
+          "severity": "error"
+        }
+      ],
       "unchecked": [
         "rule-kind-not-implemented",
         "vocabulary-no-blocklist"

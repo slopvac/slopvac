@@ -904,7 +904,7 @@
           "errors": 11,
           "findings": 16,
           "per_100_words": 0.104,
-          "score": 95.9,
+          "score": 96.0,
           "suggestions": 0,
           "warnings": 5
         },
@@ -920,18 +920,18 @@
         {
           "category": "prose-craft",
           "errors": 0,
-          "findings": 146,
-          "per_100_words": 0.95,
-          "score": 94.3,
+          "findings": 147,
+          "per_100_words": 0.956,
+          "score": 94.2,
           "suggestions": 93,
-          "warnings": 53
+          "warnings": 54
         },
         {
           "category": "prose-discipline",
           "errors": 24,
           "findings": 24,
           "per_100_words": 0.156,
-          "score": 95.4,
+          "score": 95.5,
           "suggestions": 0,
           "warnings": 0
         },
@@ -955,9 +955,9 @@
         },
         {
           "category": "prose-inflation",
-          "errors": 29,
-          "findings": 42,
-          "per_100_words": 0.273,
+          "errors": 30,
+          "findings": 43,
+          "per_100_words": 0.28,
           "score": 92.2,
           "suggestions": 13,
           "warnings": 0
@@ -1020,7 +1020,7 @@
           "category": "ste-punctuation",
           "errors": 0,
           "findings": 94,
-          "per_100_words": 0.612,
+          "per_100_words": 0.611,
           "score": 99.0,
           "suggestions": 94,
           "warnings": 0
@@ -1055,28 +1055,28 @@
         {
           "category": "ste-words",
           "errors": 0,
-          "findings": 54,
-          "per_100_words": 0.351,
-          "score": 97.0,
+          "findings": 56,
+          "per_100_words": 0.364,
+          "score": 96.7,
           "suggestions": 15,
-          "warnings": 39
+          "warnings": 41
         }
       ],
       "documents": 47,
-      "errors": 130,
-      "findings": 1014,
+      "errors": 131,
+      "findings": 1018,
       "passed": false,
-      "per_100_words": 6.597,
+      "per_100_words": 6.618,
       "prose": {
-        "errors": 86,
-        "findings": 871,
-        "per_100_words": 5.667,
-        "warnings": 284
+        "errors": 87,
+        "findings": 875,
+        "per_100_words": 5.688,
+        "warnings": 287
       },
-      "score": 74.5,
+      "score": 74.4,
       "suggestions": 545,
-      "warnings": 339,
-      "words": 15371
+      "warnings": 342,
+      "words": 15382
     }
   },
   "prose:mdx": {
