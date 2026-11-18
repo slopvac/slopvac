@@ -28,7 +28,7 @@ pub use declared::{DeclaredContextTagger, context_hint};
 pub use genre::{
     Budget, CategorySettings, CategoryTable, Detect, GenreAssignment, GenreRegistry, GenreResult,
     GenreSource, GenreSpec, NoBudget, Profile, Reason, ResolveOptions, RuleLevel, Scalar, Signal,
-    SignalKind, files_match, parse_genres,
+    SignalKind, parse_genres,
 };
 pub use mixed::mixed_types_entry;
 pub use pattern::{Pattern, normalize_path};

@@ -624,6 +624,14 @@ fn config_for(
     }))
 }
 
+/// A config-relative path as the forward-slash text that `files` patterns match against.
+fn rel_text(rel: &Path) -> String {
+    rel.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Settings and the indexes of the items that share them.
 type Groups = BTreeMap<String, (slopvac_engine::Settings, TermInputs, Vec<usize>)>;
 
@@ -642,13 +650,14 @@ fn group_by_settings(
         };
         let resolved = lint_settings::resolve(config, &rel);
         let files = config_files(config);
-        let settings = lint_settings::build(
+        let mut settings = lint_settings::build(
             rules,
             &resolved,
             lint_settings::config_sources(&files),
             &request.overrides,
         )?;
         let terms = lint_terms::inputs(&resolved, &config.root);
+        settings.genre_assignments = Some(lint_settings::genre_assignments(config));
         groups
             .entry(format!("{settings:?}{terms:?}"))
             .or_insert_with(|| (settings, terms, Vec::new()))
@@ -702,9 +711,20 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
             Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
             Err(err) => return failed(request, run, &err),
         };
+        let relatives: Vec<Option<String>> = indexes
+            .iter()
+            .map(|&i| items[i].config.as_ref().map(|(_, rel)| rel_text(rel)))
+            .collect();
         let inputs: Vec<Input<'_>> = indexes
             .iter()
-            .map(|&i| Input::new(&items[i].shown, &items[i].text).with_kind(items[i].kind))
+            .zip(&relatives)
+            .map(|(&i, rel)| {
+                let input = Input::new(&items[i].shown, &items[i].text).with_kind(items[i].kind);
+                match rel {
+                    Some(rel) => input.with_relative_path(rel),
+                    None => input,
+                }
+            })
             .collect();
         for (&index, result) in indexes.iter().zip(engine.lint_all_with_notices(&inputs)) {
             match result {

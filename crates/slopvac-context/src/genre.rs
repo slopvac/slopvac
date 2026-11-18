@@ -4,10 +4,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::path::Path;
 
 use globset::{GlobBuilder, GlobMatcher};
 use serde::Deserialize;
 use serde::de::{self, Visitor};
+use slopvac_config::{FilesError, FilesMatcher};
 
 use crate::schema::{
     Extensions, GENRE_SCHEMA_VERSION, check_schema_version, is_name, is_ref, is_rule_key, present,
@@ -833,24 +835,15 @@ fn ref_name(r: &str) -> &str {
 
 type Candidate<'a> = (&'a Genre, f64, Vec<Reason>);
 
-/// Whether a `files` list matches a path relative to the config directory. Patterns use
-/// gitignore semantics (`docs/config.md`, `exclude` and `files`): a leading `!` negates and
-/// the last matching pattern wins, so a later `!pattern` re-includes a file.
-///
-/// STUB(slopvac-8l4.5.11): replace with the config crate's matcher once it lands.
-pub fn files_match(patterns: &[String], rel: &str) -> Result<bool, Error> {
-    let mut b = ignore::gitignore::GitignoreBuilder::new("");
-    for p in patterns {
-        b.add_line(None, p.trim()).map_err(|source| Error::Glob {
-            pattern: p.clone(),
-            source,
-        })?;
-    }
-    let set = b.build().map_err(Error::GlobSet)?;
-    let rel = normalize_path(rel);
-    Ok(set
-        .matched_path_or_any_parents(rel.as_str(), false)
-        .is_ignore())
+/// Whether a `files` list matches a path relative to the config directory. The config crate
+/// owns the matching, so a `[[genres]]` block selects the same files here and in the config
+/// stack.
+fn files_match(patterns: &[String], rel: &str) -> Result<bool, Error> {
+    let matcher = FilesMatcher::new(patterns, Path::new("")).map_err(|e| match e {
+        FilesError::Pattern { pattern, source } => Error::Glob { pattern, source },
+        FilesError::Set(source) => Error::GlobSet(source),
+    })?;
+    Ok(matcher.is_match(Path::new(normalize_path(rel).as_str())))
 }
 
 fn compile(spec: GenreSpec) -> Result<Genre, Error> {

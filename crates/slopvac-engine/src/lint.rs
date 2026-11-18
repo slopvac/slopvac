@@ -87,6 +87,9 @@ pub struct Input<'a> {
     pub kind: Kind,
     /// How a leading byte order mark counts in columns.
     pub bom: BomMode,
+    /// The path relative to the project root, for matching `[[genres]]` file patterns. When
+    /// unset, patterns match against [`Input::path`].
+    pub relative_path: Option<&'a str>,
 }
 
 impl<'a> Input<'a> {
@@ -98,7 +101,15 @@ impl<'a> Input<'a> {
             source,
             kind: Kind::Markdown,
             bom: BomMode::Disk,
+            relative_path: None,
         }
+    }
+
+    /// The same input with its path relative to the project root.
+    #[must_use]
+    pub const fn with_relative_path(mut self, relative_path: &'a str) -> Self {
+        self.relative_path = Some(relative_path);
+        self
     }
 
     /// The same input with another file kind.
@@ -979,7 +990,7 @@ impl Engine {
         };
         let opts = ResolveOptions {
             assignments,
-            relative_path: None,
+            relative_path: input.relative_path,
         };
         let found = tagging::genre(
             registry,

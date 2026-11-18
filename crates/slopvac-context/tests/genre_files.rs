@@ -4,8 +4,30 @@
 use std::path::PathBuf;
 
 use slopvac_context::{
-    GenreAssignment, PlainDocument, ResolveOptions, builtin_genres, command, files_match, run,
+    GenreAssignment, PlainDocument, ResolveOptions, builtin_genres, command, run,
 };
+
+/// Whether a `[[genres]]` block with `patterns` assigns its genre to `path`.
+fn files_match(patterns: &[String], path: &str) -> Result<bool, slopvac_context::Error> {
+    let reg = slopvac_context::GenreRegistry::new(
+        slopvac_context::parse_genres(
+            "- {schema_version: 3, id: base}\n- {schema_version: 3, id: hit}\n",
+        )
+        .unwrap(),
+        "base",
+    )
+    .unwrap();
+    let assignments = [slopvac_context::GenreAssignment {
+        files: patterns.to_vec(),
+        genre: "hit".into(),
+    }];
+    let doc = slopvac_context::PlainDocument::from_markdown(path, "t\n");
+    let opts = slopvac_context::ResolveOptions {
+        assignments: &assignments,
+        relative_path: None,
+    };
+    Ok(reg.resolve(&doc, &opts)?.id == "hit")
+}
 
 fn pats(p: &[&str]) -> Vec<String> {
     p.iter().map(|s| (*s).to_string()).collect()
