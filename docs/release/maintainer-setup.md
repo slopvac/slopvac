@@ -98,3 +98,9 @@ The `revocations` environment is separate from `release` on purpose. This schedu
 3. Check the result without a login: `oras manifest fetch ghcr.io/slopvac/slopvac-revocations:latest` must show the artifact type `application/vnd.slopvac.revocations.v1` and two layers, the list and then its signature.
 
 Rerun the workflow, without `first_publication`, whenever the list has lapsed. A rerun issues a newer list, which replaces the old one. The CLI refuses a list with an older `issued` time than the one it cached.
+
+### Recovery and key rotation
+
+The candidate list is always signed with the current key, `keys/slopvac-release.pub`. The published list must verify before a run replaces it. It may verify with the current key or with a key kept in `keys/` as `slopvac-release-<KEYID>.pub` (the previous or next key of a rotation, see [Rotate the key](#rotate-the-key)). Delete that file to stop trusting the key. Clients verify only against the key compiled into the binary, so a list from another key cannot be used and the next run replaces it.
+
+If the published list fails verification (a bad signature, an unlisted key, or a malformed or non-canonical list), a normal run stops and leaves it in place. To replace it, run the workflow by hand on `main` with `first_publication` set to true. That run logs a `::warning::` that names the reason, and then replaces the list. The same option refuses to replace a list that verifies.

@@ -106,7 +106,9 @@ jobs:
       # newer one refuse the older `issued`. The manifest is resolved on its own, and
       # only a clear "manifest not found" means nothing is published. Every other
       # failure stops the job. Only a manual run with first_publication may find
-      # nothing published; a scheduled run never bootstraps.
+      # nothing published, or replace a published list that fails verification (it
+      # logs a warning); it never replaces one that verifies. A scheduled run never
+      # bootstraps or recovers.
       - name: Fetch the published list
         env:
           FIRST_PUBLICATION: ${{ inputs.first_publication }}
@@ -116,8 +118,17 @@ jobs:
             args+=(--first-publication)
           fi
           python3 scripts/revocation_list.py fetch-published "$IMAGE" "$RUNNER_TEMP/published" "${args[@]}"
+
       - name: Require a newer list than the published one
-        run: python3 scripts/revocation_list.py check-newer "$RUNNER_TEMP/revocations" "$RUNNER_TEMP/published"
+        env:
+          FIRST_PUBLICATION: ${{ inputs.first_publication }}
+        run: |
+          args=()
+          if [[ "$FIRST_PUBLICATION" == true ]]; then
+            args+=(--first-publication)
+          fi
+          python3 scripts/revocation_list.py check-newer \
+            "$RUNNER_TEMP/revocations" "$RUNNER_TEMP/published" "${args[@]}"
 
       - name: Push
         env:

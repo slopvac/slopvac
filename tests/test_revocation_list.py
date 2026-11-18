@@ -99,6 +99,50 @@ def test_check_list_refuses_what_the_cli_refuses(data: bytes, why: str) -> None:
         lists.check_list(data, NOW)
 
 
+@pytest.mark.parametrize("version", [b"true", b"1.0", b'"1"', b"2"])
+def test_check_list_requires_the_integer_one_as_schema_version(version: bytes) -> None:
+    good = lists.render(NOW)
+    data = good.replace(b'"schema_version":1', b'"schema_version":' + version)
+    assert data != good
+    with pytest.raises(lists.SigningError, match="version 1 revocation list"):
+        lists.check_list(data, NOW)
+
+
+STUB_SIGNER = """\
+#!/usr/bin/env python3
+import json, os, stat, sys
+
+key = sys.argv[sys.argv.index("-s") + 1]
+with open(os.environ["STUB_LOG"], "w") as log:
+    json.dump({"mode": stat.S_IMODE(os.stat(key).st_mode), "key": key}, log)
+print("signing refused", file=sys.stderr)
+sys.exit(1)
+"""
+
+
+def test_the_secret_key_file_is_private_while_signing_and_removed_when_signing_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    signer = tmp_path / "stub-minisign"
+    signer.write_text(STUB_SIGNER, encoding="utf-8")
+    signer.chmod(0o755)
+    log = tmp_path / "log.json"
+    monkeypatch.setenv("MINISIGN", str(signer))
+    monkeypatch.setenv("STUB_LOG", str(log))
+    with pytest.raises(lists.SigningError, match="signing refused"):
+        lists.build(
+            tmp_path / "out",
+            lists.PUBKEY,
+            {"MINISIGN_SECRET_KEY": "secret-material", "RUNNER_TEMP": str(tmp_path)},
+            NOW,
+            30,
+        )
+    seen = json.loads(log.read_text())
+    assert seen["mode"] == 0o600
+    assert not Path(seen["key"]).exists()
+    assert not list(tmp_path.glob("minisign-*"))
+
+
 def test_check_list_accepts_exactly_thirty_days() -> None:
     data = lists.canonical(_doc(expires="2026-12-17T05:17:42Z"))
     lists.check_list(data, NOW)
@@ -118,8 +162,8 @@ def test_check_list_refuses_a_list_over_one_mebibyte() -> None:
         lists.check_list(data, NOW)
 
 
-def _keypair(tmp_path: Path) -> tuple[Path, Path]:
-    secret, public = tmp_path / "throwaway.key", tmp_path / "throwaway.pub"
+def _keypair(tmp_path: Path, name: str = "throwaway") -> tuple[Path, Path]:
+    secret, public = tmp_path / f"{name}.key", tmp_path / f"{name}.pub"
     subprocess.run(
         ["minisign", "-G", "-W", "-f", "-p", str(public), "-s", str(secret)],
         check=True,
@@ -190,11 +234,17 @@ def test_verify_refuses_a_legacy_signature(tmp_path: Path) -> None:
         lists.verify(out, public, NOW)
 
 
-def _signed(tmp_path: Path, name: str, issued: datetime, days: int = 30) -> Path:
-    """A list issued at ``issued``, signed by the throwaway key of ``tmp_path``."""
-    key, public = tmp_path / "throwaway.key", tmp_path / "throwaway.pub"
+def _signed(
+    tmp_path: Path,
+    name: str,
+    issued: datetime,
+    days: int = 30,
+    key_name: str = "throwaway",
+) -> Path:
+    """A list issued at ``issued``, signed by the throwaway key ``key_name``."""
+    key, public = tmp_path / f"{key_name}.key", tmp_path / f"{key_name}.pub"
     if not key.exists():
-        _keypair(tmp_path)
+        _keypair(tmp_path, key_name)
     out = tmp_path / name
     env = {"MINISIGN_SECRET_KEY": key.read_text(), "RUNNER_TEMP": str(tmp_path)}
     lists.build(out, public, env, issued, days)
@@ -449,13 +499,91 @@ def test_a_layer_that_404s_under_an_existing_manifest_is_not_a_first_run(
 
 
 @NEEDS_MINISIGN
-def test_a_published_list_fails_the_first_publication(
+def test_a_valid_published_list_is_never_replaced_by_a_first_publication(
     tmp_path: Path, stub_oras
 ) -> None:
     published = _signed(tmp_path, "published", EARLIER)
+    candidate = _signed(tmp_path, "candidate", LATER)
     stub_oras("present", published)
+    pulled = tmp_path / "pulled"
+    lists.fetch_published(IMAGE, pulled, first_publication=True)
     with pytest.raises(lists.SigningError, match="already published"):
-        lists.fetch_published(IMAGE, tmp_path / "pulled", first_publication=True)
+        lists.check_newer(
+            candidate,
+            pulled,
+            tmp_path / "throwaway.pub",
+            LATER,
+            first_publication=True,
+        )
+
+
+def _tampered(tmp_path: Path) -> Path:
+    """A published list whose bytes no longer match its signature."""
+    published = _signed(tmp_path, "published", LATER)
+    (published / "revocations.json").write_bytes(lists.render(LATER, days=7))
+    return published
+
+
+@NEEDS_MINISIGN
+def test_an_invalid_published_list_is_not_overwritten_by_default(
+    tmp_path: Path, stub_oras
+) -> None:
+    published = _tampered(tmp_path)
+    candidate = _signed(tmp_path, "candidate", LATER)
+    stub_oras("present", published)
+    pulled = tmp_path / "pulled"
+    lists.fetch_published(IMAGE, pulled, first_publication=False)
+    with pytest.raises(lists.SigningError, match="does not verify"):
+        lists.check_newer(candidate, pulled, tmp_path / "throwaway.pub", LATER)
+
+
+@NEEDS_MINISIGN
+def test_a_first_publication_replaces_an_invalid_published_list_with_a_warning(
+    tmp_path: Path, stub_oras, capsys: pytest.CaptureFixture[str]
+) -> None:
+    published = _tampered(tmp_path)
+    candidate = _signed(tmp_path, "candidate", LATER)
+    stub_oras("present", published)
+    pulled = tmp_path / "pulled"
+    lists.fetch_published(IMAGE, pulled, first_publication=True)
+    lists.check_newer(
+        candidate, pulled, tmp_path / "throwaway.pub", LATER, first_publication=True
+    )
+    out = capsys.readouterr().out
+    assert out.startswith("::warning::replacing an existing list that failed")
+    assert "signature check failed" in out
+    assert out.count("\n") == 1
+
+
+@NEEDS_MINISIGN
+def test_a_published_list_signed_by_a_trusted_previous_key_is_replaced_by_the_new_key(
+    tmp_path: Path,
+) -> None:
+    published = _signed(tmp_path, "published", EARLIER, key_name="old")
+    candidate = _signed(tmp_path, "candidate", LATER)
+    new_pub = tmp_path / "throwaway.pub"
+    (tmp_path / "slopvac-release-AAAAAAAAAAAAAAAA.pub").write_text(
+        (tmp_path / "old.pub").read_text()
+    )
+    lists.check_newer(candidate, published, new_pub, LATER)
+
+
+@NEEDS_MINISIGN
+def test_a_published_list_from_an_unlisted_key_is_not_replaced(
+    tmp_path: Path,
+) -> None:
+    published = _signed(tmp_path, "published", EARLIER, key_name="old")
+    candidate = _signed(tmp_path, "candidate", LATER)
+    with pytest.raises(lists.SigningError, match="does not verify"):
+        lists.check_newer(candidate, published, tmp_path / "throwaway.pub", LATER)
+
+
+@NEEDS_MINISIGN
+def test_a_candidate_signed_by_a_previous_key_is_refused(tmp_path: Path) -> None:
+    published = _signed(tmp_path, "published", EARLIER)
+    candidate = _signed(tmp_path, "candidate", LATER, key_name="old")
+    with pytest.raises(lists.SigningError, match="signature check failed"):
+        lists.check_newer(candidate, published, tmp_path / "throwaway.pub", LATER)
 
 
 @NEEDS_MINISIGN
@@ -498,12 +626,14 @@ def test_first_publication_is_a_manual_boolean_defaulting_to_false(
 ) -> None:
     option = workflow[True]["workflow_dispatch"]["inputs"]["first_publication"]
     assert (option["type"], option["default"]) == ("boolean", False)
-    step = next(
-        s
-        for s in workflow["jobs"]["push"]["steps"]
-        if "fetch-published" in s.get("run", "")
-    )
-    assert step["env"] == {"FIRST_PUBLICATION": "${{ inputs.first_publication }}"}
+    for command in ("fetch-published", "check-newer"):
+        step = next(
+            s
+            for s in workflow["jobs"]["push"]["steps"]
+            if f"revocation_list.py {command}" in s.get("run", "")
+        )
+        assert step["env"] == {"FIRST_PUBLICATION": "${{ inputs.first_publication }}"}
+        assert "--first-publication" in step["run"]
 
 
 def test_build_sign_signs_only_from_main(workflow: dict) -> None:

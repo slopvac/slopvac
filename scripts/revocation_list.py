@@ -4,15 +4,17 @@
     revocation_list.py render [--days N] [--now TIME]
     revocation_list.py build DIR [--days N] [--now TIME]
     revocation_list.py verify DIR
-    revocation_list.py check-newer CANDIDATE CURRENT
+    revocation_list.py check-newer CANDIDATE CURRENT [--first-publication]
     revocation_list.py fetch-published IMAGE DIR [--first-publication]
 
 ``fetch-published`` pulls the published list into DIR. Only a clear "manifest not
 found" means nothing is published, and only ``--first-publication`` accepts that
-(it also fails when a list exists). Every other failure exits 1.
+(an existing list is judged by check-newer). Every other failure exits 1.
 
 ``check-newer`` stops a push unless the candidate's ``issued`` is strictly later
-than the published list's (CURRENT, which may not exist on the first run).
+than the published list's (CURRENT, which may not exist on the first run). A
+published list that does not verify is replaced only with ``--first-publication``,
+which logs a warning; that flag never replaces a list that verifies.
 ``render`` prints the canonical list. ``build`` writes ``revocations.json`` and
 ``revocations.json.minisig`` into DIR, signs with ``MINISIGN_SECRET_KEY`` and checks
 the result as ``verify`` does. ``verify`` is the only gate before a push: it checks
@@ -45,7 +47,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -57,6 +58,7 @@ from release_signing import (
     SigningError,
     _run,
     minisign_binary,
+    secret_key_file,
 )
 from release_signing import (
     verify as verify_signatures,
@@ -138,7 +140,10 @@ def check_list(data: bytes, now: datetime, *, require_fresh: bool = True) -> dat
         raise SigningError(f"the list must have exactly the fields {sorted(_FIELDS)}")
     if canonical(document) != data:
         raise SigningError("the list is not canonical JSON")
-    if document["schema_version"] != 1 or document["type"] != "revocations":
+    # `type(..) is int` rejects true (a bool) and 1.0 (a float), which compare equal to 1.
+    if type(document["schema_version"]) is not int or document["schema_version"] != 1:
+        raise SigningError("not a version 1 revocation list")
+    if document["type"] != "revocations":
         raise SigningError("not a version 1 revocation list")
     issued, expires = _parse(str(document["issued"])), _parse(str(document["expires"]))
     if expires <= issued or expires - issued > timedelta(days=MAX_VALID_DAYS):
@@ -209,9 +214,9 @@ def fetch_published(image: str, directory: Path, *, first_publication: bool) -> 
     The manifest is resolved first, apart from its layers. Only a clear
     "manifest not found" for the tag means absent, and then only
     ``first_publication`` may go on: ``directory`` is left uncreated. A list that
-    exists fails a first publication. Every other failure raises, so the push
-    stops: an auth or network error, a 5xx, a layer that cannot be fetched, or a
-    manifest that is not JSON.
+    exists is pulled and judged by ``check_newer``. Every other failure raises, so
+    the push stops: an auth or network error, a 5xx, a layer that cannot be
+    fetched, or a manifest that is not JSON.
     """
     manifest = _oras(["manifest", "fetch", image])
     if manifest.returncode != 0:
@@ -231,11 +236,6 @@ def fetch_published(image: str, directory: Path, *, first_publication: bool) -> 
         raise SigningError(f"the manifest of {image} is not JSON") from err
     if not isinstance(document, dict) or not isinstance(document.get("layers"), list):
         raise SigningError(f"the manifest of {image} has no layers")
-    if first_publication:
-        raise SigningError(
-            f"a list is already published at {image}; first_publication is only for "
-            "the first run"
-        )
     pulled = _oras(["pull", image, "--output", str(directory)])
     if pulled.returncode != 0:
         raise SigningError(
@@ -243,18 +243,77 @@ def fetch_published(image: str, directory: Path, *, first_publication: bool) -> 
         )
 
 
-def check_newer(candidate: Path, current: Path, pubkey: Path, now: datetime) -> None:
+# Keys that may have signed the *published* list, besides the current committed key:
+# `keys/slopvac-release-<KEYID>.pub`, the previous or next key of a rotation. The
+# candidate is always signed with the current key (`keys/slopvac-release.pub`), and a
+# rotation release is signed with the current key too (docs/release/distribution.md).
+# To trust a previous key through a rotation, keep its file in `keys/`; delete it to
+# stop trusting it. Clients verify only against the compiled-in key, so a published
+# list from another key is never usable and the next push replaces it.
+PUBLISHED_KEY_GLOB = "slopvac-release-[0-9A-F]*.pub"
+
+
+def published_keys(pubkey: Path) -> list[Path]:
+    """The keys that may have signed the published list: current first."""
+    others = sorted(p for p in pubkey.parent.glob(PUBLISHED_KEY_GLOB) if p != pubkey)
+    return [pubkey, *others]
+
+
+def _verify_published(current: Path, pubkey: Path, now: datetime) -> datetime:
+    failures = []
+    for key in published_keys(pubkey):
+        try:
+            return verify(current, key, now, require_fresh=False)
+        except SigningError as err:
+            failures.append(f"{key.name}: {err}")
+    raise SigningError("; ".join(failures))
+
+
+def _workflow_text(text: str) -> str:
+    """One line, safe inside a ``::warning::`` workflow command."""
+    return " ".join(text.replace("%", "%25").split())[:500]
+
+
+def check_newer(
+    candidate: Path,
+    current: Path,
+    pubkey: Path,
+    now: datetime,
+    *,
+    first_publication: bool = False,
+) -> None:
     """Refuse to replace the published list with one that is not strictly newer.
 
     The CLI refuses an older ``issued`` than the one it cached, so an older
-    artifact pushed late (a retried job) would break clients. A ``current``
-    directory that does not exist means nothing is published yet. A published
-    list that does not verify is an error: the push stops rather than guess.
+    artifact pushed late (a retried job) would break clients. The candidate must
+    verify with the current key. The published list may verify with the current
+    key or a trusted previous or next key (``published_keys``). A ``current``
+    directory that does not exist means nothing is published yet.
+
+    A published list that does not verify is not overwritten, except in a first
+    publication: that run logs a warning and replaces it. A first publication
+    never replaces a list that verifies.
     """
     issued = verify(candidate, pubkey, now)
     if not current.exists():
         return
-    published = verify(current, pubkey, now, require_fresh=False)
+    try:
+        published = _verify_published(current, pubkey, now)
+    except SigningError as err:
+        if not first_publication:
+            raise SigningError(
+                f"the published list does not verify, so it is not replaced: {err}"
+            ) from err
+        print(
+            "::warning::replacing an existing list that failed verification: "
+            + _workflow_text(str(err))
+        )
+        return
+    if first_publication:
+        raise SigningError(
+            f"a valid list (issued {_format(published)}) is already published; "
+            "first_publication is only for the first run or a list that fails verification"
+        )
     if issued <= published:
         raise SigningError(
             f"the candidate (issued {_format(issued)}) is not newer than the "
@@ -279,18 +338,11 @@ def build(
     file.write_bytes(data)
     signature = file.with_name(file.name + SIGNATURE_SUFFIX)
 
-    key_dir = Path(tempfile.mkdtemp(prefix="minisign-", dir=environ.get("RUNNER_TEMP")))
-    try:
-        key_file = key_dir / "release.key"
-        descriptor = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(secret.rstrip("\n") + "\n")
+    with secret_key_file(secret, environ.get("RUNNER_TEMP")) as key_file:
         # Default mode is prehashed. -W reads the key as unencrypted, so an
         # encrypted key fails instead of prompting.
         argv = [binary, "-S", "-s", str(key_file), "-m", str(file)]
         _run([*argv, "-x", str(signature), "-W"])
-    finally:
-        shutil.rmtree(key_dir, ignore_errors=True)
     verify(directory, pubkey, now)
 
 
@@ -306,6 +358,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             sub.add_argument("directory", type=Path)
     commands.add_parser("verify").add_argument("directory", type=Path)
     newer = commands.add_parser("check-newer")
+    newer.add_argument("--first-publication", action="store_true")
     newer.add_argument("candidate", type=Path)
     newer.add_argument("current", type=Path, help="may not exist: nothing published")
     fetch = commands.add_parser("fetch-published")
@@ -326,7 +379,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             build(args.directory, args.pubkey, dict(os.environ), now, args.days)
             print(f"signed and verified {LIST_NAME}")
         elif args.command == "check-newer":
-            check_newer(args.candidate, args.current, args.pubkey, now)
+            check_newer(
+                args.candidate,
+                args.current,
+                args.pubkey,
+                now,
+                first_publication=args.first_publication,
+            )
             print("the candidate is newer than the published list")
         else:
             verify(args.directory, args.pubkey, now)
