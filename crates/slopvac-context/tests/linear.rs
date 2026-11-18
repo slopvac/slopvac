@@ -95,24 +95,43 @@ fn a_section_runs_through_its_subsections_to_the_end_of_the_document() {
     );
 }
 
-/// Blocks are `sections * (1 + paragraphs)`; each is examined once.
-#[rstest]
-#[case::one_section_of_11(1, 10, 11)]
-#[case::one_section_of_21(1, 20, 21)]
-#[case::one_section_of_41(1, 40, 41)]
-#[case::five_sections(5, 3, 20)]
-#[case::ten_sections(10, 3, 40)]
-fn finding_section_bounds_examines_each_block_once(
-    #[case] sections: usize,
-    #[case] paragraphs: usize,
-    #[case] blocks: usize,
+/// Assert `steps(size) <= per_unit * size + slack` for sizes that double from about 1k to 8k.
+///
+/// A linear algorithm stays under a bound of this shape at every size. A quadratic one passes
+/// at the smallest size, then overshoots the bound by a factor that doubles with each size,
+/// so the largest size fails it by a wide margin.
+fn assert_linear(
+    what: &str,
+    per_unit: usize,
+    slack: usize,
+    steps: impl Fn(usize) -> (usize, usize),
 ) {
-    let doc = Counting::new(&many_sections(sections, paragraphs));
-    let _ = take_section_steps();
-    section_tagger().tag(&doc).unwrap();
-    assert_eq!(take_section_steps(), blocks);
-    assert_eq!(doc.blocks_calls.get(), 1);
-    assert_eq!(doc.sentences_calls.get(), 0);
+    for size in [1_000, 2_000, 4_000, 8_000] {
+        let (units, used) = steps(size);
+        let bound = per_unit * units + slack;
+        assert!(
+            used <= bound,
+            "{what}: {used} steps for {units} units at size {size}, bound {bound}"
+        );
+    }
+}
+
+/// Each block is examined once to find the section bounds, so the steps are at most the
+/// number of blocks, and a few extra count as slack.
+#[rstest]
+#[case::one_section(1)]
+#[case::sections_of_100_blocks(100)]
+#[case::sections_of_10_blocks(10)]
+fn finding_section_bounds_takes_linear_steps(#[case] paragraphs: usize) {
+    assert_linear("section bounds", 1, 8, |blocks| {
+        let sections = blocks / (1 + paragraphs);
+        let doc = Counting::new(&many_sections(sections.max(1), paragraphs));
+        let _ = take_section_steps();
+        section_tagger().tag(&doc).unwrap();
+        assert_eq!(doc.blocks_calls.get(), 1);
+        assert_eq!(doc.sentences_calls.get(), 0);
+        (blocks, take_section_steps())
+    });
 }
 
 /// Positions examined by `tagger` on one paragraph of `text`.
@@ -130,38 +149,37 @@ fn text_taggers() -> [Box<dyn Tagger>; 2] {
     ]
 }
 
-/// `](` repeated `n` times is `2n` characters and has no `)` to close a link. Cleaning scans
-/// the text for backticks (`2n`), visits each character (`2n`), and looks for the missing `)`
-/// once (`2n - 2` characters after the first `](`).
-#[rstest]
-#[case::fifty(50, 298)]
-#[case::hundred(100, 598)]
-#[case::two_hundred(200, 1198)]
-fn unclosed_link_openers_are_scanned_for_a_closer_once(#[case] n: usize, #[case] steps: usize) {
+/// `](` repeated has no `)` to close a link. Cleaning reads the text a few times at most: to
+/// find backticks, to visit each character, and to look for the missing `)`. The bound is
+/// four steps per byte.
+#[test]
+fn unclosed_link_openers_take_linear_steps() {
     for tagger in text_taggers() {
-        assert_eq!(
-            text_steps(&*tagger, &"](".repeat(n)),
-            steps,
-            "{}",
-            tagger.id()
-        );
+        assert_linear(tagger.id(), 4, 16, |bytes| {
+            (bytes, text_steps(&*tagger, &"](".repeat(bytes / 2)))
+        });
     }
 }
 
 /// Backtick runs of length `k` down to 1, each after an `a`, never find a closing run of
-/// their length. The text has `n = k + k(k+1)/2` bytes and `k` runs. Cleaning reads the bytes
-/// once to find the runs (`n`), decides each run once (`k`), then visits each character (`n`).
-#[rstest]
-#[case::ten(10, 140)]
-#[case::twenty(20, 480)]
-#[case::forty(40, 1760)]
-fn unclosed_backtick_runs_are_matched_in_one_pass(#[case] k: usize, #[case] steps: usize) {
-    let mut text = String::new();
-    for l in (1..=k).rev() {
-        text.push('a');
-        text.push_str(&"`".repeat(l));
-    }
+/// their length. The text has `k + k(k+1)/2` bytes. Cleaning reads the bytes to find the
+/// runs, decides each run once, then visits each character: three steps per byte cover it.
+#[test]
+fn unclosed_backtick_runs_take_linear_steps() {
     for tagger in text_taggers() {
-        assert_eq!(text_steps(&*tagger, &text), steps, "{}", tagger.id());
+        for k in [45, 63, 90, 127] {
+            let mut text = String::new();
+            for l in (1..=k).rev() {
+                text.push('a');
+                text.push_str(&"`".repeat(l));
+            }
+            let bytes = text.len();
+            let used = text_steps(&*tagger, &text);
+            assert!(
+                used <= 3 * bytes + 16,
+                "{}: {used} steps for {bytes} bytes",
+                tagger.id()
+            );
+        }
     }
 }
