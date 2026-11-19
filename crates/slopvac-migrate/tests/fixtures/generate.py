@@ -159,7 +159,8 @@ def renames() -> tuple[dict[str, str], dict[str, str], list[str]]:
     rules: dict[str, str] = {}
     categories: dict[str, str] = {}
     for category in converter.load_categories(converter.DEFAULT_RULES_DIR):
-        converted = converter.convert_category(category)
+        # Keep the removed rules here: the loop below drops them from the table by name.
+        converted = converter.convert_category(category, removed=frozenset())
         categories[category["id"]] = f"{PACK}:{converted['id']}"
         for old, new in zip(category["rules"], converted["rules"], strict=True):
             rules[f"{category['id']}.{old['id']}"] = (

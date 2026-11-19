@@ -48,30 +48,51 @@ fn every_core_category_file_validates_against_both_schemas() {
         assert!(generated.is_valid(&value), "generated: {}", path.display());
         n += 1;
     }
-    assert_eq!(n, 26);
+    assert_eq!(n, common::instances(&core_dir()).len());
+}
+
+/// The `match.kind` of every rule in the fixture files, read as JSON apart from the loader.
+fn fixture_kinds() -> Vec<String> {
+    common::instances(&core_dir())
+        .iter()
+        .flat_map(|path| {
+            let category = common::load(path);
+            category["rules"]
+                .as_array()
+                .expect("rules array")
+                .iter()
+                .map(|rule| rule["match"]["kind"].as_str().expect("kind").to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 #[test]
 fn the_core_pack_loads_every_category_and_rule() {
     let set = core();
-    assert_eq!(set.categories().len(), 26);
-    assert_eq!(set.len(), 237);
-    assert_eq!(set.rules().count(), 237);
+    let expected = fixture_kinds().len();
+    assert_eq!(set.categories().len(), common::instances(&core_dir()).len());
+    assert_eq!(set.len(), expected);
+    assert_eq!(set.rules().count(), expected);
 }
 
 #[test]
 fn rules_are_counted_by_kind() {
     let set = core();
-    let count = |k| set.rules_of_kind(k).count();
-    // 111 + 18 + 17 lexical rules; the rest carry no pattern.
-    assert_eq!(count(MatchKind::Pattern), 111);
-    assert_eq!(count(MatchKind::Substitution), 18);
-    assert_eq!(count(MatchKind::Tokens), 17);
-    assert_eq!(count(MatchKind::Judgement), 68);
-    assert_eq!(count(MatchKind::Metric), 13);
-    assert_eq!(count(MatchKind::Structure), 6);
-    assert_eq!(count(MatchKind::Vocabulary), 4);
-    assert_eq!(count(MatchKind::Capitalization), 0);
+    let kinds = fixture_kinds();
+    let in_fixtures = |name: &str| kinds.iter().filter(|k| *k == name).count();
+    for (kind, name) in [
+        (MatchKind::Pattern, "pattern"),
+        (MatchKind::Substitution, "substitution"),
+        (MatchKind::Tokens, "tokens"),
+        (MatchKind::Judgement, "judgement"),
+        (MatchKind::Metric, "metric"),
+        (MatchKind::Structure, "structure"),
+        (MatchKind::Vocabulary, "vocabulary"),
+        (MatchKind::Capitalization, "capitalization"),
+    ] {
+        assert_eq!(set.rules_of_kind(kind).count(), in_fixtures(name), "{name}");
+    }
 }
 
 #[test]
@@ -244,4 +265,25 @@ fn every_lexical_pattern_matches_python_on_the_corpus() {
     );
     // The recorded divergence is real: if it disappears, delete it here and from the docs.
     assert!(folded > 100, "{folded} pairs depend on İ/ı folding");
+}
+
+#[test]
+fn rules_the_contract_removes_are_not_in_the_core_pack() {
+    let list = manifest().join("../../docs/contract/compat/removed-rules.toml");
+    let removed = common::load(&list);
+    let removed: Vec<&str> = removed["rules"]
+        .as_array()
+        .expect("rules array")
+        .iter()
+        .map(|entry| entry["id"].as_str().expect("id"))
+        .collect();
+    assert!(!removed.is_empty(), "the removed-rules list is empty");
+    let set = core();
+    for qualified in removed {
+        assert!(
+            set.rules()
+                .all(|r| r.id().as_str() != format!("core:{qualified}")),
+            "{qualified} is removed by the contract but still in the core pack"
+        );
+    }
 }

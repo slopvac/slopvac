@@ -348,3 +348,39 @@ def test_tiers_are_extracted_for_the_profile_mapping() -> None:
     assert convert.extract_tiers(category) == {
         "c.r": {"strict": "enforced", "normal": "advisory"}
     }
+
+
+def test_removed_rules_are_left_out_of_every_converted_category() -> None:
+    removed = convert.removed_rule_ids()
+    assert removed, "the removed-rules list is empty"
+    kept = {
+        f"{c['id']}.{r['id']}"
+        for c in (convert.convert_category(s) for s in SOURCES)
+        for r in c["rules"]
+    }
+    assert kept & removed == set()
+
+
+def test_removed_rules_stay_in_the_2x_reference() -> None:
+    shipped = {f"{c['id']}.{r['id']}" for c in SOURCES for r in c["rules"]}
+    assert convert.removed_rule_ids() <= shipped
+
+
+RULE_STUB = {
+    "name": "n",
+    "kind": "judgement",
+    "message": "m",
+    "judgement_question": "Is it so?",
+    "provenance": {"source": "s"},
+}
+
+
+def test_only_listed_rules_are_dropped() -> None:
+    source = {
+        "id": "c",
+        "title": "t",
+        "description": "d",
+        "rules": [{**RULE_STUB, "id": "keep"}, {**RULE_STUB, "id": "drop"}],
+    }
+    out = convert.convert_category(source, removed=frozenset({"c.drop"}))
+    assert [r["id"] for r in out["rules"]] == ["keep"]

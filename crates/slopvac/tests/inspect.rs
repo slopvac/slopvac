@@ -42,15 +42,48 @@ fn json(args: &[&str]) -> Value {
     serde_json::from_str(&stdout(args)).expect("json output")
 }
 
+/// The converted core category files, read apart from the binary.
+fn core_fixture_categories() -> Vec<Value> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../slopvac-rules/tests/fixtures/core-v3");
+    std::fs::read_dir(dir)
+        .expect("fixture dir")
+        .map(|entry| entry.expect("entry").path())
+        .filter(|path| path.extension().is_some_and(|e| e == "json"))
+        .map(|path| {
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("json")
+        })
+        .collect()
+}
+
+/// Rule and category totals from the converted core files.
+fn core_fixture_counts() -> (usize, usize) {
+    let categories = core_fixture_categories();
+    let rules = categories
+        .iter()
+        .map(|c| c["rules"].as_array().expect("rules").len())
+        .sum();
+    (rules, categories.len())
+}
+
+/// The `terms` pack contributes one rule (term casing) in one category.
+const TERMS_RULES: usize = 1;
+
 const CHAT_LEAKAGE: &str = "core:ai-residue.chat-leakage";
 
 #[test]
 fn rules_lists_every_core_and_term_casing_rule_with_a_count_line() {
-    // 237 core rules in 26 categories, and the one rule of the `terms` category.
+    // The core rules, and the rule of the `terms` category.
     let text = stdout(&["rules"]);
-    assert_eq!(text.lines().count(), 239, "238 rules and the count line");
+    let (core_rules, core_categories) = core_fixture_counts();
+    let (rules, categories) = (core_rules + TERMS_RULES, core_categories + 1);
+    assert_eq!(
+        text.lines().count(),
+        rules + 1,
+        "one line per rule and the count line"
+    );
     assert!(
-        text.ends_with("238 rule(s) in 27 category(ies)\n"),
+        text.ends_with(&format!("{rules} rule(s) in {categories} category(ies)\n")),
         "{text}"
     );
 }
@@ -94,9 +127,19 @@ fn kind_filter_counts_match_the_data() {
 
 #[test]
 fn genre_keeps_only_rules_in_categories_recommended_for_it() {
-    // 232 core rules and the term-casing rule, which suits `consumer`.
+    // The core rules, and the term-casing rule, which suits `consumer`.
     let v = json(&["rules", "--genre", "consumer", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 233);
+    let expected: usize = core_fixture_categories()
+        .iter()
+        .filter(|c| {
+            c["recommended_for"]
+                .as_array()
+                .is_some_and(|genres| genres.iter().any(|g| g == "consumer"))
+        })
+        .map(|c| c["rules"].as_array().expect("rules").len())
+        .sum::<usize>()
+        + TERMS_RULES;
+    assert_eq!(v["rules"].as_array().unwrap().len(), expected);
 }
 
 #[test]
@@ -109,7 +152,10 @@ fn a_genre_no_category_recommends_lists_nothing() {
 fn rules_json_has_pack_categories_and_linked_rules() {
     let v = json(&["rules", "--format", "json"]);
     assert_eq!(v["pack"], "core");
-    assert_eq!(v["categories"].as_array().unwrap().len(), 27);
+    assert_eq!(
+        v["categories"].as_array().unwrap().len(),
+        core_fixture_counts().1 + 1
+    );
     let rule = &v["rules"][0];
     assert_eq!(rule["id"], CHAT_LEAKAGE);
     assert_eq!(rule["category"], "ai-residue");

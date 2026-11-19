@@ -2974,48 +2974,6 @@
         "rule-kind-not-implemented"
       ]
     },
-    "relaxed/corpus-adrs.adr-madr.docs-decisions-0010-support-categories-md.3047de": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-adrs.alphagov-content-publisher.docs-adr-0008-restricted-deletion-md.fd76e7": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-adrs.alphagov-govuk-infrastructure.docs-architecture-decisions-0010-use-dex-idp-for.b1d18e": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-adrs.ministryofjustice-cloud-platform.architecture-decision-record-004-use-kubernetes.248736": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-adrs.thomvaill-log4brains.docs-adr-20200924-use-markdown-architectural-dec.e3c70f": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-product.cert-manager-website.content-v1-9-docs-installation-code-signing-md.35ce0d": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-product.kubernetes-website.content-en-docs-concepts-services-networking-ser.bbb967": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
     "relaxed/corpus-product.reactjs-reactjs-org.content-docs-rendering-elements-md.228186": {
       "document": {
         "ai_register": {
@@ -3067,146 +3025,35 @@
           "warnings": 0
         },
         "words": 390
-      },
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
+      }
     },
     "relaxed/corpus-reference.kubernetes-website.content-en-docs-reference-setup-tools-kubeadm-ku.0cbbcf": {
       "document": {
         "words": 250
-      },
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-reference.rust-lang-reference.src-identifiers-md.521af8": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-tutorials.rust-lang-rust-by-example.src-error-md.bfa0b4": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-tutorials.rust-lang-rust-by-example.src-macros-designators-md.708d1c": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/corpus-tutorials.rust-lang-rust-by-example.src-scope-lifetime-lifetime-bounds-md.805d13": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
+      }
     },
     "relaxed/format-mdx": {
       "document": {
         "paragraphs": 4,
         "sentences": 7,
         "words": 41
-      },
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
+      }
     },
     "relaxed/format-rst": {
       "document": {
         "paragraphs": 4,
         "sentences": 7,
         "words": 41
-      },
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/issue-252": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/issue-253": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/issue-254": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/issue-255": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
+      }
     },
     "relaxed/issue-256": {
       "document": {
         "paragraphs": 2,
         "sentences": 4,
         "words": 33
-      },
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/issue-257": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-residue": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-tells-agentic": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-tells-content-shape": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-tells-figurative": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-tells-formatting": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ai-tells-register": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
+      }
     },
     "relaxed/rule-examples-ai-tells-structure": {
-      "exit": 2,
       "extra": [
         {
           "ai_signal": "weak",
@@ -3235,37 +3082,9 @@
           "rule_id": "core:ai-tells-structure.negative-guarantee-core",
           "severity": "suggestion"
         }
-      ],
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-docs-discipline": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-orwell": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-agency": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-craft": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
       ]
     },
     "relaxed/rule-examples-prose-discipline": {
-      "exit": 2,
       "extra": [
         {
           "ai_signal": "none",
@@ -3294,93 +3113,6 @@
           "rule_id": "core:prose-discipline.run-on",
           "severity": "suggestion"
         }
-      ],
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-format": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-inclusive": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-inflation": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-promotion": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-prose-scope": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-descriptive": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-nouns": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-practices": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-procedural": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-punctuation": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-safety": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-sentences": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-verbs": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
-      ]
-    },
-    "relaxed/rule-examples-ste-words": {
-      "exit": 2,
-      "unchecked": [
-        "rule-kind-not-implemented"
       ]
     },
     "relaxed/stacklok-after": {
@@ -3410,7 +3142,6 @@
         "sentences": 341,
         "words": 3514
       },
-      "exit": 2,
       "extra": [
         {
           "ai_signal": "weak",
@@ -3664,13 +3395,9 @@
           "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
           "severity": "suggestion"
         }
-      ],
-      "unchecked": [
-        "rule-kind-not-implemented"
       ]
     },
     "relaxed/stacklok-before": {
-      "exit": 2,
       "extra": [
         {
           "ai_signal": "weak",
@@ -3874,9 +3601,6 @@
           "rule_id": "core:ste-sentences.complex-text-not-in-vertical-list",
           "severity": "suggestion"
         }
-      ],
-      "unchecked": [
-        "rule-kind-not-implemented"
       ]
     },
     "strict/corpus-adrs.adr-madr.docs-decisions-0010-support-categories-md.3047de": {

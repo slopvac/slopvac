@@ -488,40 +488,6 @@
       }
     },
     {
-      "id": "inconsistent-term-for-same-thing",
-      "name": "Use one term per thing",
-      "message": "This document calls the same thing \"{match}\" and \"{other}\".",
-      "severity": "warning",
-      "scope": "document",
-      "match": {
-        "kind": "structure",
-        "check": "inconsistent-term-for-same-thing"
-      },
-      "exceptions": [
-        {
-          "name": "quotation",
-          "detector": "quotation"
-        },
-        {
-          "name": "glossary-definition"
-        }
-      ],
-      "examples": [
-        {
-          "bad": "The worker reads the task queue. Later, the job runner drains the work list.",
-          "good": "The worker reads the task queue. Later, the worker drains the task queue."
-        }
-      ],
-      "fix": "Pick one term and use it in every sentence.",
-      "ai_signal": "none",
-      "ai_signal_source": "unmeasured",
-      "citation": {
-        "source": "ASD-STE100",
-        "ste_ref": "9:1.11",
-        "note": "Mechanizable only against a configured synonym-group list; without one, the checker cannot know that \"task queue\" and \"work list\" are the same thing. Enforced at normal tier because term drift inside one document is a comprehension failure, not a style preference."
-      }
-    },
-    {
       "id": "domain-verb-category-membership",
       "name": "Confirm the domain verb belongs to a declared category",
       "message": "Check that this out-of-vocabulary verb is a declared domain verb used in its own context.",

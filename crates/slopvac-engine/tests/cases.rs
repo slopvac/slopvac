@@ -511,30 +511,14 @@ const NO_EXECUTABLE_CHECK: &[(&str, &str)] = &[
     ("core:ste-descriptive.sentence-too-long-descriptive", METRIC),
     ("core:ste-descriptive.paragraph-too-many-sentences", METRIC),
     ("core:ste-nouns.multiword-noun-too-long", METRIC),
-    (
-        "core:ste-practices.inconsistent-wording-for-same-step",
-        STRUCTURE,
-    ),
     ("core:ste-procedural.sentence-too-long-procedural", METRIC),
     (
         "core:ste-punctuation.colon-terminates-sentence-for-count",
         METRIC,
     ),
     (
-        "core:ste-safety.safety-block-missing-consequence",
-        STRUCTURE,
-    ),
-    (
         "core:ste-sentences.complex-text-not-in-vertical-list",
         METRIC,
-    ),
-    (
-        "core:ste-sentences.vertical-list-lead-in-missing-colon",
-        STRUCTURE,
-    ),
-    (
-        "core:ste-sentences.vertical-list-item-punctuation",
-        STRUCTURE,
     ),
     ("core:ste-verbs.verb-form-not-listed", VOCABULARY),
     (
@@ -549,7 +533,6 @@ const NO_EXECUTABLE_CHECK: &[(&str, &str)] = &[
         "core:ste-words.verb-or-adjective-form-not-permitted",
         VOCABULARY,
     ),
-    ("core:ste-words.inconsistent-term-for-same-thing", STRUCTURE),
 ];
 
 fn names(list: &[(&str, &str)]) -> Vec<String> {

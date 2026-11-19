@@ -18,12 +18,16 @@ import argparse
 import json
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 import yaml
 
 DEFAULT_RULES_DIR = (
     Path(__file__).resolve().parents[2] / "packages/slopvac-lint/src/slopvac/rules"
+)
+REMOVED_RULES_FILE = (
+    Path(__file__).resolve().parents[2] / "docs/contract/compat/removed-rules.toml"
 )
 SCHEMA_VERSION = 3
 ALLOWED_WORDS_PLACEHOLDER = "ALLOWED_WORDS"
@@ -206,8 +210,20 @@ def convert_rule(rule: dict) -> dict:
     return out
 
 
-def convert_category(category: dict) -> dict:
-    """One 2.x category mapping to a v3 category instance."""
+def removed_rule_ids(path: Path = REMOVED_RULES_FILE) -> frozenset[str]:
+    """Qualified ids of the 2.x rules that 3.0 removes (the contract's list)."""
+    entries = tomllib.loads(path.read_text(encoding="utf-8"))["rules"]
+    return frozenset(entry["id"] for entry in entries)
+
+
+def convert_category(category: dict, removed: frozenset[str] | None = None) -> dict:
+    """One 2.x category mapping to a v3 category instance.
+
+    Rules in ``removed`` (default: the contract's removed-rules list) are left out of
+    the instance. They stay in the 2.x YAML, which is the reference.
+    """
+    if removed is None:
+        removed = removed_rule_ids()
     if not CATEGORY_ID.fullmatch(str(category.get("id", ""))):
         raise ConversionError(f"invalid category id {category.get('id')!r}")
     out: dict = {
@@ -219,7 +235,11 @@ def convert_category(category: dict) -> dict:
     for key in ("weight", "max_per_100_words", "recommended_for"):
         if key in category:
             out[key] = category[key]
-    out["rules"] = [convert_rule(r) for r in category["rules"]]
+    out["rules"] = [
+        convert_rule(r)
+        for r in category["rules"]
+        if f"{category['id']}.{r['id']}" not in removed
+    ]
     return out
 
 
