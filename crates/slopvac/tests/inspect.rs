@@ -45,11 +45,12 @@ fn json(args: &[&str]) -> Value {
 const CHAT_LEAKAGE: &str = "core:ai-residue.chat-leakage";
 
 #[test]
-fn rules_lists_every_core_rule_with_a_count_line() {
+fn rules_lists_every_core_and_term_casing_rule_with_a_count_line() {
+    // 237 core rules in 26 categories, and the one rule of the `terms` category.
     let text = stdout(&["rules"]);
-    assert_eq!(text.lines().count(), 238, "237 rules and the count line");
+    assert_eq!(text.lines().count(), 239, "238 rules and the count line");
     assert!(
-        text.ends_with("237 rule(s) in 26 category(ies)\n"),
+        text.ends_with("238 rule(s) in 27 category(ies)\n"),
         "{text}"
     );
 }
@@ -93,8 +94,9 @@ fn kind_filter_counts_match_the_data() {
 
 #[test]
 fn genre_keeps_only_rules_in_categories_recommended_for_it() {
+    // 232 core rules and the term-casing rule, which suits `consumer`.
     let v = json(&["rules", "--genre", "consumer", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 232);
+    assert_eq!(v["rules"].as_array().unwrap().len(), 233);
 }
 
 #[test]
@@ -107,7 +109,7 @@ fn a_genre_no_category_recommends_lists_nothing() {
 fn rules_json_has_pack_categories_and_linked_rules() {
     let v = json(&["rules", "--format", "json"]);
     assert_eq!(v["pack"], "core");
-    assert_eq!(v["categories"].as_array().unwrap().len(), 26);
+    assert_eq!(v["categories"].as_array().unwrap().len(), 27);
     let rule = &v["rules"][0];
     assert_eq!(rule["id"], CHAT_LEAKAGE);
     assert_eq!(rule["category"], "ai-residue");
@@ -787,4 +789,53 @@ fn an_extends_cycle_through_an_external_file_hides_its_directories() {
     ] {
         assert!(!err.contains(leaked), "{leaked} leaked: {err}");
     }
+}
+
+const TERM_CASING: &str = "terms:terms.casing";
+
+#[test]
+fn a_terms_only_listing_names_the_terms_pack() {
+    let v = json(&["rules", "--category", "terms", "--format", "json"]);
+    assert_eq!(v["pack"], "terms");
+    assert_eq!(v["packs"], serde_json::json!(["terms"]));
+    let rules = v["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0]["pack"], "terms");
+}
+
+#[test]
+fn a_mixed_listing_names_every_pack_and_each_entry_its_own() {
+    let v = json(&["rules", "--format", "json"]);
+    assert_eq!(v["packs"], serde_json::json!(["core", "terms"]));
+    let pack_of = |list: &str, id: &str| {
+        v[list]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == id)
+            .unwrap_or_else(|| panic!("{id} is listed"))["pack"]
+            .clone()
+    };
+    assert_eq!(pack_of("rules", CHAT_LEAKAGE), "core");
+    assert_eq!(pack_of("rules", TERM_CASING), "terms");
+    assert_eq!(pack_of("categories", "ai-residue"), "core");
+    assert_eq!(pack_of("categories", "terms"), "terms");
+}
+
+#[test]
+fn rules_lists_the_term_casing_rule() {
+    let v = json(&["rules", "--format", "json"]);
+    let rule = v["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == TERM_CASING)
+        .expect("the term-casing rule is listed");
+    assert_eq!(rule["category"], "terms");
+}
+
+#[test]
+fn explain_finds_the_term_casing_rule() {
+    let text = stdout(&["explain", TERM_CASING]);
+    assert!(text.starts_with(TERM_CASING), "{text}");
 }

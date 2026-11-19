@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
-use slopvac_engine::{Engine, Input, Kind};
+use slopvac_engine::{Input, Kind};
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
@@ -20,8 +20,9 @@ use slopvac_styles::{BuiltinSource, StylePresets};
 
 use crate::errors::CliError;
 use crate::lint_settings::{self, Overrides};
+use crate::lint_terms::{self, TermInputs};
 use crate::redact;
-use crate::rule_catalog;
+use crate::rule_catalog::Catalog;
 use crate::stdin::StdinPlan;
 use crate::summary::summarize;
 
@@ -266,7 +267,7 @@ impl Linter for EngineLinter {
                 }
             }
         }
-        let rules = match rule_catalog::core() {
+        let rules = match Catalog::load() {
             Ok(rules) => rules,
             Err(err) => return failed(request, run, &err),
         };
@@ -286,7 +287,7 @@ impl Linter for EngineLinter {
 fn validate_configs(
     request: &LintRequest,
     configs: &Configs<'_>,
-    rules: &slopvac_rules::RuleSet,
+    rules: &Catalog,
 ) -> Result<(), CliError> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if request.stdin.is_some() {
@@ -581,13 +582,13 @@ fn config_for(
 }
 
 /// Settings and the indexes of the items that share them.
-type Groups = BTreeMap<String, (slopvac_engine::Settings, Vec<usize>)>;
+type Groups = BTreeMap<String, (slopvac_engine::Settings, TermInputs, Vec<usize>)>;
 
 /// Group the items by their settings: one engine per distinct settings.
 fn group_by_settings(
     request: &LintRequest,
     items: &[Item],
-    rules: &slopvac_rules::RuleSet,
+    rules: &Catalog,
 ) -> Result<Groups, CliError> {
     let mut groups = Groups::new();
     let none = LoadedConfig::without_files(request.root.clone());
@@ -604,10 +605,11 @@ fn group_by_settings(
             lint_settings::config_sources(&files),
             &request.overrides,
         )?;
+        let terms = lint_terms::inputs(&resolved, &config.root);
         groups
-            .entry(format!("{settings:?}"))
-            .or_insert_with(|| (settings, Vec::new()))
-            .1
+            .entry(format!("{settings:?}{terms:?}"))
+            .or_insert_with(|| (settings, terms, Vec::new()))
+            .2
             .push(index);
     }
     Ok(groups)
@@ -639,12 +641,7 @@ fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
     roots
 }
 
-fn lint_items(
-    request: &LintRequest,
-    items: Vec<Item>,
-    rules: slopvac_rules::RuleSet,
-    mut run: Run,
-) -> RunOutcome {
+fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: Run) -> RunOutcome {
     let groups = match group_by_settings(request, &items, &rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
@@ -652,21 +649,15 @@ fn lint_items(
 
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
     let mut spare = Some(rules);
-    for (settings, indexes) in groups.into_values() {
-        // The engine owns its rule set, and a set does not clone: reload it for later groups.
-        let set = match spare.take().map_or_else(rule_catalog::core, Ok) {
-            Ok(set) => set,
+    for (settings, terms, indexes) in groups.into_values() {
+        // The engine owns its rule sets, and a set does not clone: reload them for later groups.
+        let sets = match spare.take().map_or_else(Catalog::load, Ok) {
+            Ok(catalog) => catalog.into_sets(),
             Err(err) => return failed(request, run, &err),
         };
-        let engine = match Engine::new(vec![set], settings) {
+        let engine = match lint_terms::build_engine(sets, settings, &terms, &request.root) {
             Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
-            Err(err) => {
-                return failed(
-                    request,
-                    run,
-                    &CliError::new("engine-unavailable", err.to_string()),
-                );
-            }
+            Err(err) => return failed(request, run, &err),
         };
         let inputs: Vec<Input<'_>> = indexes
             .iter()
@@ -713,15 +704,14 @@ fn lint_items(
     }
 }
 
-/// The rules and the settings of the project config found from `root`, for a long-running
-/// consumer such as the language server that lints one buffer at a time.
+/// The language server's linter for the project config found from `root`: the shipped
+/// rules, the term-casing pack, the settings, the project's terms files and the blocklists,
+/// built the same way `slopvac lint` builds an engine.
 ///
 /// # Errors
-/// The config error, or `rules-unavailable`.
-pub fn project_settings(
-    root: &Path,
-) -> Result<(slopvac_rules::RuleSet, slopvac_engine::Settings), CliError> {
-    let rules = rule_catalog::core()?;
+/// The config error, `terms-invalid`, or `rules-unavailable`.
+pub fn project_linter(root: &Path) -> Result<slopvac_lsp::EngineLinter, CliError> {
+    let core = Catalog::load()?;
     let presets = StylePresets(BuiltinSource);
     let discovery = Discovery::new(&presets);
     let found = discovery
@@ -731,15 +721,19 @@ pub fn project_settings(
         Some(config) => (config.as_ref().clone(), config_files(config)),
         None => (LoadedConfig::without_files(root.to_path_buf()), Vec::new()),
     };
-    lint_settings::validate(&config, &rules)?;
+    lint_settings::validate(&config, &core)?;
     let resolved = lint_settings::resolve(&config, Path::new(""));
     let settings = lint_settings::build(
-        &rules,
+        &core,
         &resolved,
         lint_settings::config_sources(&files),
         &Overrides::default(),
     )?;
-    Ok((rules, settings))
+    let terms = lint_terms::inputs(&resolved, &config.root);
+    let sets = core.into_sets();
+    let reasons = slopvac_lsp::exception_names(&sets);
+    let engine = lint_terms::build_engine(sets, settings, &terms, root)?;
+    Ok(slopvac_lsp::EngineLinter::from_engine(engine, reasons))
 }
 
 /// The display name of each config file and whether it was pulled in by `extends`.
