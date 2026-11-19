@@ -105,5 +105,6 @@ pub(crate) fn notice(
         level,
         message: NonEmptyString::new(message).map_err(|e| invalid(e.to_string()))?,
         path: None,
+        data: serde_json::Map::new(),
     })
 }
