@@ -319,6 +319,13 @@ mod unix {
         );
         assert_eq!(read(root.path().join("doc.md")), FIXED);
         assert_eq!(read(root.path().join("b.md")), FIXED);
+        let link = root.path().join("link.md");
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(
+            std::fs::read_link(&link).unwrap(),
+            outside.path().join("doc.md")
+        );
+        assert_eq!(read(&link), DOC);
         assert_eq!(read(outside.path().join("doc.md")), DOC);
     }
 
