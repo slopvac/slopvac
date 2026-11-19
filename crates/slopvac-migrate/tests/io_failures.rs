@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::Path;
 
+use rstest::rstest;
 use slopvac_migrate::{
     CliFailure, Error, Finding, Limits, Linter, NullLinter, Options, Phase, RenameTable, command,
     execute, migrate_config, plan, plan_with_limits, run,
@@ -47,10 +48,12 @@ fn exec(root: &Path) -> Result<String, CliFailure> {
         .map(|()| String::from_utf8(out).unwrap())
 }
 
-/// `f` names `raw` escaped exactly once, and its source names it as it is.
+/// `f` names `raw` escaped exactly once, on one line, and its source names it as it is.
 fn assert_escaped_once(f: &CliFailure, raw: &str, escaped: &str) {
     let shown = f.to_string();
-    assert!(!shown.contains('\u{1b}'), "{shown:?}");
+    assert!(!shown.contains(['\u{1b}', '\t']), "{shown:?}");
+    // A newline in the name does not start a second line.
+    assert_eq!(shown.lines().count(), 1, "{shown:?}");
     // One backslash in the name becomes two, not four.
     assert!(shown.contains(escaped), "{shown:?}");
     assert!(!shown.contains("a\\\\\\\\b"), "{shown:?}");
@@ -58,37 +61,65 @@ fn assert_escaped_once(f: &CliFailure, raw: &str, escaped: &str) {
     assert!(source.contains(raw), "{source:?}");
 }
 
-#[test]
-fn a_restore_failure_is_escaped_once_and_keeps_the_raw_source() {
+/// `execute` on `dir` with `flag`, recording the backup in `state`.
+fn exec_flag(dir: &Path, state: &Path, flag: &str) -> Result<(), CliFailure> {
+    let m = command().get_matches_from(["migrate", dir.to_str().unwrap(), flag]);
+    execute(&m, &NullLinter, STEERING, state, &mut Vec::new())
+}
+
+#[rstest]
+#[case::backslash_and_escape("a\\b\u{1b}", "a\\\\b\\u{1b}")]
+#[case::tab("a\tb", "a\\u{9}b")]
+fn a_restore_failure_is_escaped_once_and_keeps_the_raw_source(
+    #[case] dir_name: &str,
+    #[case] escaped: &str,
+) {
     let dir = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
-    write(
-        dir.path(),
-        "a\\b\u{1b}/slopvac.toml",
-        "profile = \"strict\"\n",
-    );
-    let run_with = |flag: &str| {
-        let m = command().get_matches_from(["migrate", dir.path().to_str().unwrap(), flag]);
-        execute(&m, &NullLinter, STEERING, state.path(), &mut Vec::new())
-    };
-    run_with("--write").unwrap();
-    write(
-        dir.path(),
-        "a\\b\u{1b}/slopvac.toml",
-        "profile = \"normal\"\n",
-    );
-    let f = run_with("--restore").unwrap_err();
+    let target = format!("{dir_name}/slopvac.toml");
+    write(dir.path(), &target, "profile = \"strict\"\n");
+    exec_flag(dir.path(), state.path(), "--write").unwrap();
+    write(dir.path(), &target, "profile = \"normal\"\n");
+    let f = exec_flag(dir.path(), state.path(), "--restore").unwrap_err();
     assert_eq!(f.code(), "migrate-file-changed");
-    assert_escaped_once(&f, "a\\b\u{1b}/slopvac.toml", "a\\\\b\\u{1b}/slopvac.toml");
+    assert_escaped_once(&f, &target, &format!("{escaped}/slopvac.toml"));
 }
 
 #[test]
-fn the_failure_execute_returns_is_escaped_once_and_keeps_the_raw_source() {
+fn an_apply_refusal_of_a_path_with_a_newline_is_escaped_once_and_keeps_the_raw_source() {
     let dir = tempfile::tempdir().unwrap();
-    write(dir.path(), "docs/a\\b\u{1b}.md", UNKNOWN);
+    let state = tempfile::tempdir().unwrap();
+    write(dir.path(), "a\nb/slopvac.toml", "profile = \"strict\"\n");
+    let f = exec_flag(dir.path(), state.path(), "--write").unwrap_err();
+    assert_eq!(f.code(), "migrate-unsafe-path");
+    assert_escaped_once(&f, "a\nb/slopvac.toml", "a\\u{a}b/slopvac.toml");
+}
+
+#[rstest]
+#[case::backslash_and_escape("a\\b\u{1b}", "a\\\\b\\u{1b}")]
+#[case::newline("a\nb", "a\\u{a}b")]
+#[case::tab("a\tb", "a\\u{9}b")]
+fn the_failure_execute_returns_is_escaped_once_and_keeps_the_raw_source(
+    #[case] name: &str,
+    #[case] escaped: &str,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), &format!("docs/{name}.md"), UNKNOWN);
     let f = exec(dir.path()).unwrap_err();
     assert_eq!(f.code(), "config-legacy-dropped");
-    assert_escaped_once(&f, "a\\b\u{1b}.md", "docs/a\\\\b\\u{1b}.md");
+    assert_escaped_once(&f, &format!("{name}.md"), &format!("docs/{escaped}.md"));
+}
+
+#[test]
+fn a_failure_with_several_dropped_settings_shows_one_line_per_setting() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "docs/a.md", UNKNOWN);
+    write(dir.path(), "docs/b.md", UNKNOWN);
+    let shown = exec(dir.path()).unwrap_err().to_string();
+    let lines: Vec<&str> = shown.lines().collect();
+    assert_eq!(lines.len(), 2, "{shown:?}");
+    assert!(lines.iter().any(|l| l.contains("docs/a.md")), "{shown:?}");
+    assert!(lines.iter().any(|l| l.contains("docs/b.md")), "{shown:?}");
 }
 
 #[test]

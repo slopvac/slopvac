@@ -121,11 +121,15 @@ impl fmt::Display for Dropped {
     }
 }
 
+/// What separates the records of [`Error::Dropped`] in its message: each record on its own
+/// indented line.
+const DROPPED_SEPARATOR: &str = "\n  ";
+
 /// Failures of a migration.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Settings with no 3.0 equivalent. Nothing is written.
-    #[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n  "))]
+    #[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join(DROPPED_SEPARATOR))]
     Dropped(Vec<Dropped>),
     /// The file is not valid TOML.
     #[error("{file}: {message}")]

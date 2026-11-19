@@ -80,8 +80,10 @@ pub fn run(
 // then it escapes once, here, so the binary can print the message as it is.
 /// The failure of [`execute`], for the CLI to print.
 ///
-/// Its `Display` is the error message escaped for a terminal. [`source`](std::error::Error::source)
-/// is the raw [`Error`], which library callers should match on.
+/// Its `Display` is the error message escaped for a terminal, one line per record: a list of
+/// dropped settings keeps one line per setting, and every other message is one line.
+/// [`source`](std::error::Error::source) is the raw [`Error`], which library callers should
+/// match on.
 #[derive(Debug)]
 pub struct CliFailure {
     code: &'static str,
@@ -98,7 +100,18 @@ impl CliFailure {
 
 impl std::fmt::Display for CliFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&sanitize::terminal(&self.source.to_string()))
+        // Each record keeps the line the error gives it, and nothing inside a record can
+        // start another: `line` escapes newline and tab as well.
+        match &self.source {
+            Error::Dropped(records) => {
+                let lines: Vec<String> = records
+                    .iter()
+                    .map(|r| sanitize::line(&r.to_string()))
+                    .collect();
+                f.write_str(&lines.join(crate::DROPPED_SEPARATOR))
+            }
+            other => f.write_str(&sanitize::line(&other.to_string())),
+        }
     }
 }
 
