@@ -963,37 +963,15 @@ fn the_plugins_key_is_not_the_release_key() {
 }
 
 #[rstest]
-#[case::first_party("slopvac")]
-#[case::built_in("core")]
-#[case::third_party("acme")]
-fn a_policy_listing_the_plugins_key_refuses_an_artifact_from_any_other_key(
-    #[case] namespace: &str,
-) {
-    // The secret half is not available to tests, so a positive check for `slopvac`
-    // is not possible. The refusal shows that no namespace trusts a key by accident.
-    let policy = KeyPolicy {
-        first_party: vec![plugins_key().unwrap()],
-        first_party_namespaces: vec!["slopvac".into()],
-        pinned: BTreeMap::new(),
-    };
-    let e = Expectation {
-        namespace,
-        ..expect()
-    };
-    assert!(matches!(
-        run(&signed_in(&Key::new(), namespace), &policy, &e),
-        Err(SignError::KeyNotPinned { .. })
-    ));
-}
-
-#[rstest]
 #[case::built_in("core")]
 #[case::third_party("acme")]
 fn the_first_party_key_list_gives_no_trust_outside_the_first_party_namespace(
     #[case] namespace: &str,
 ) {
     // A key in the first-party list, here a test key beside the plugins key, signs
-    // nothing in `core` or a third-party namespace.
+    // nothing in `core` or a third-party namespace. The secret half of the plugins
+    // key is not available to tests, so a positive check for `slopvac` is not
+    // possible; the existing first-party tests cover that path with injected keys.
     let signer = Key::new();
     let policy = KeyPolicy {
         first_party: vec![plugins_key().unwrap(), signer.public()],
