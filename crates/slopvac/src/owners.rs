@@ -1,5 +1,5 @@
-//! Commands whose logic lives in an owner crate: `terms`, `genre`, `validate`, `setup`
-//! and `prime`. Each owner exposes `command()` and a run function; this module maps their
+//! Commands whose logic lives in an owner crate: `terms`, `genre`, `validate`, `setup`,
+//! `prime` and `review`. Each owner exposes `command()` and a run function; this module maps their
 //! results and errors onto the CLI's exit codes and error codes (policies.md, 3.5) and
 //! keeps absolute paths out of every message (policies.md, 1.7).
 
@@ -7,12 +7,14 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::ArgMatches;
+use slopvac_agents::review::{self, ReviewEnv};
 use slopvac_agents::{AgentsError, prime, setup};
+use slopvac_config::Discovery;
 use slopvac_styles::{BuiltinSource, StylePresets};
 use slopvac_terms::TermsError;
 
 use crate::errors::CliError;
-use crate::{cli, exit, redact};
+use crate::{cli, engine, exit, redact};
 
 fn cwd() -> PathBuf {
     std::env::current_dir().unwrap_or_default()
@@ -143,6 +145,32 @@ pub fn setup(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
 /// `slopvac prime`.
 pub fn prime(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
     let text = prime::run(m, &cli::command(), &cwd()).map_err(|e| agents_error(&e))?;
+    write(out, &text)?;
+    Ok(exit::PASS)
+}
+
+/// The model that wrote the revision, from `[review] author_model` of the nearest config.
+fn author_model(root: &Path) -> Result<Option<String>, CliError> {
+    let presets = StylePresets(BuiltinSource);
+    let found = Discovery::new(&presets)
+        .nearest(root)
+        .map_err(|e| engine::config_error(&e, root))?;
+    Ok(found
+        .and_then(|config| config.project_value(&["review", "author_model"]))
+        .and_then(|value| value.as_str().map(str::to_owned)))
+}
+
+/// `slopvac review`.
+///
+/// No model provider is installed yet, so a run without `--dry-run` that needs one fails
+/// with `review-provider-missing`; `--dry-run` and the mechanical type call none.
+pub fn review(m: &ArgMatches, offline: bool, out: &mut dyn Write) -> Result<u8, CliError> {
+    let env = ReviewEnv {
+        offline,
+        author_model: author_model(&cwd())?,
+        ..ReviewEnv::default()
+    };
+    let text = review::run(m, &env).map_err(|e| agents_error(&e))?;
     write(out, &text)?;
     Ok(exit::PASS)
 }

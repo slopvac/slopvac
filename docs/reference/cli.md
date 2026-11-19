@@ -301,6 +301,25 @@ Print guidance for agents, one topic at a time
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
+### `slopvac review`
+
+Plan or run the review of a revision
+
+| Argument | Description |
+| --- | --- |
+| `<REVISED>` | The revised document |
+| `--original` | The document before the revision |
+| `--type` | Review type; auto picks from the change |
+| `--genre` | The document's genre |
+| `--extra` | Checks to add beyond the changed claims |
+| `--scope-approved` | The user confirmed the scope |
+| `--reviewer-model` | Model that reviews; it must differ from the author's |
+| `--author-model` | Model that wrote the revision; overrides [review] author_model |
+| `--dry-run` | Print the exact payload and call no provider |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
 ### `slopvac completions`
 
 Print a shell completion script.
@@ -366,16 +385,6 @@ Generate or check the rules reference.
 ### `slopvac report`
 
 Preview or submit an issue report.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac review`
-
-Run the prose reviewer on files.
 
 | Argument | Description |
 | --- | --- |

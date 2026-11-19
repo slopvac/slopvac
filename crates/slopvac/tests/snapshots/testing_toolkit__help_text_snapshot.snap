@@ -22,6 +22,7 @@ Commands:
   validate     Check config, front matter and inline directives without linting
   setup        Install or remove project-local steering for a harness
   prime        Print guidance for agents, one topic at a time
+  review       Plan or run the review of a revision
   completions  Print a shell completion script.
   man          Write man pages.
   plugins      Manage plugins and packs: sync, trust, update.
@@ -29,7 +30,6 @@ Commands:
   onboard      Print the agent onboarding text.
   reference    Generate or check the rules reference.
   report       Preview or submit an issue report.
-  review       Run the prose reviewer on files.
   help         Print this message or the help of the given subcommand(s)
 
 Options:

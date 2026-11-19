@@ -226,7 +226,7 @@ fn describe_rejected(rejected: &slopvac_config::Rejected, root: &Path) -> String
         .join("\n")
 }
 
-fn config_error(err: &ConfigError, root: &Path) -> CliError {
+pub(crate) fn config_error(err: &ConfigError, root: &Path) -> CliError {
     let mut message = match err {
         ConfigError::Rejected(rejected) => describe_rejected(rejected, root),
         ConfigError::Io { path, .. } | ConfigError::TooLarge { path, .. } => {

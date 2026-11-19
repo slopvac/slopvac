@@ -67,13 +67,12 @@ fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
 
 /// Commands whose implementation another crate has not exposed yet.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str); 6] = [
+pub const PLACEHOLDERS: [(&str, &str); 5] = [
     ("plugins", "Manage plugins and packs: sync, trust, update."),
     ("packs", "List installed rule packs."),
     ("onboard", "Print the agent onboarding text."),
     ("reference", "Generate or check the rules reference."),
     ("report", "Preview or submit an issue report."),
-    ("review", "Run the prose reviewer on files."),
 ];
 
 fn placeholder(name: &'static str, about: &'static str) -> Command {
@@ -382,6 +381,7 @@ pub fn command() -> Command {
         .subcommand(slopvac_config::validate::command())
         .subcommand(slopvac_agents::setup::command())
         .subcommand(slopvac_agents::prime::command())
+        .subcommand(slopvac_agents::review::command())
         .subcommand(completions())
         .subcommand(man())
         .subcommand(Command::new("cli-reference").about("Print the Markdown CLI reference.").hide(true));
