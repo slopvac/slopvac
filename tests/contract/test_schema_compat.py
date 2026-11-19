@@ -1383,6 +1383,36 @@ def test_unchanged_recursive_ref_still_passes(tmp_path):
     assert run(tmp_path, both, both) == []
 
 
+PORTABLE = r"(?![\s\S])"
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "flagged"),
+    [
+        pytest.param("^[a-z]+$", f"^[a-z]+{PORTABLE}", False, id="trailing-dollar"),
+        pytest.param(
+            r"^(?!(.*/)?\.\.(/|$))",
+            rf"^(?!(.*/)?\.\.(/|{PORTABLE}))",
+            False,
+            id="inner",
+        ),
+        pytest.param("^a$|^b$", f"^a{PORTABLE}|^b{PORTABLE}", False, id="alternation"),
+        pytest.param(f"^[a-z]+{PORTABLE}", "^[a-z]+$", False, id="reverse"),
+        pytest.param("^[a-z]+$", f"^[a-z0-9]+{PORTABLE}", True, id="anchor-and-class"),
+        pytest.param("^[a-z]+$", "^[a-z]+", True, id="anchor-dropped"),
+    ],
+)
+def test_portable_end_anchor_equals_dollar(tmp_path, old, new, flagged):
+    findings = run(
+        tmp_path,
+        schema(properties={"s": {"pattern": old}}),
+        schema(properties={"s": {"pattern": new}}),
+    )
+    assert kinds(findings) == (
+        [("/properties/s/pattern", "pattern-changed")] if flagged else []
+    )
+
+
 @pytest.mark.parametrize("side", ["new", "baseline"])
 def test_schema_without_id_is_a_read_error(tmp_path, side):
     with_id = write_dir(tmp_path / "with", {FILE: schema()})

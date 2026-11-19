@@ -6,7 +6,10 @@ Usage: python scripts/contract/schema_compat.py --base <git-ref>
 The baseline is a git ref (read through ``git show``) or a directory with the same
 layout as schemas/v3 (``*.schema.json`` plus ``conformance/``). The working tree
 is compared against it. A change within one schema_version may add, never remove
-or tighten (docs/contract/policies.md, section 3.9).
+or tighten (docs/contract/policies.md, section 3.9). A ``pattern`` that differs only
+by ``(?![\\s\\S])`` against ``$`` is unchanged: under ECMA-262 without the ``m`` flag
+both mean end of input, and only Python's ``re`` read ``$`` as also matching before a
+trailing newline.
 
 Each finding prints as ``file:json-pointer: kind: old -> new``. The kind is a stable
 kebab-case code; a code is never reused and never changes meaning. An entry in
@@ -199,6 +202,15 @@ def _canon(value: object) -> str:
 def _same(a: object, b: object) -> bool:
     return _canon(a) == _canon(b)
 
+
+_PORTABLE_END = r"(?![\s\S])"
+
+
+def _same_pattern(old: object, new: object) -> bool:
+    """Equal patterns, treating the portable end anchor as ``$`` (see the module docstring)."""
+    if isinstance(old, str) and isinstance(new, str):
+        return old.replace(_PORTABLE_END, "$") == new.replace(_PORTABLE_END, "$")
+    return old == new
 
 # --- structural comparison -------------------------------------------------------
 
@@ -613,7 +625,9 @@ def _compare_scalars(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]
     for key in _MAX_KEYWORDS:
         if key in n and not (_is_number(o.get(key)) and n[key] >= o[key]):
             yield find(key, "bound-tightened")
-    if ("pattern" in o or "pattern" in n) and o.get("pattern") != n.get("pattern"):
+    if ("pattern" in o or "pattern" in n) and not _same_pattern(
+        o.get("pattern"), n.get("pattern")
+    ):
         yield find("pattern", "pattern-changed")
     for key in ("format", "multipleOf"):
         if key in n and not _same(o.get(key), n[key]):
