@@ -252,3 +252,30 @@ fn a_blocklist_path_with_a_symlink_before_a_parent_step_is_refused() {
     assert!(!dir.path().join("slopvac.toml").exists());
     assert!(!dir.path().join(".slopvac-migrate-backup").exists());
 }
+
+#[test]
+fn an_absolute_blocklist_path_inside_the_project_migrates_from_the_default_root() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonical");
+    let words = root.join("words.toml");
+    fs::write(
+        root.join("slopvac.toml"),
+        format!("[vocabulary]\npath = \"{}\"\n", words.display()),
+    )
+    .expect("config");
+    fs::write(
+        &words,
+        "[[entries]]\nword = \"synergize\"\npos = \"Verb\"\nreason = \"Business jargon.\"\n",
+    )
+    .expect("blocklist");
+    // No path argument: the project root is the default `.`.
+    slopvac()
+        .current_dir(&root)
+        .args(["migrate", "--write"])
+        .assert()
+        .code(0);
+    assert_eq!(
+        fs::read_to_string(&words).expect("blocklist"),
+        "schema_version = 3\n[[entries]]\nword = \"synergize\"\npos = \"verb\"\nreason = \"Business jargon.\"\n"
+    );
+}

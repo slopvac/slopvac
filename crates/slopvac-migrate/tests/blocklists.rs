@@ -420,6 +420,11 @@ fn a_path_through_a_symlink_is_refused_and_nothing_is_written(#[case] path: &str
     "[[entries]]\nword = \"a\"\nreason = \"x\"\npos = verb SENTINEL-7f3a\n",
     "words.toml:4: "
 )]
+#[case::json_content_with_a_line_keyword(
+    "words.json",
+    "{\"schema_version\": 3, \"entries\": \"line 123 SENTINEL-7f3a\"}\n",
+    "words.json:1: "
+)]
 #[case::toml_type_mismatch(
     "words.toml",
     "[[entries]]\nword = \"a\"\npos = \"verb\"\nreason = [\"SENTINEL-7f3a\"]\n",
@@ -492,4 +497,37 @@ fn blocklist_reads_count_against_the_run_byte_budget() {
     assert!(e.to_string().contains("words.toml"), "{e}");
     assert_eq!(read(dir.path(), "words.toml"), current);
     assert_eq!(read(dir.path(), "slopvac.toml"), CONFIG);
+}
+
+#[test]
+fn a_regular_file_cancelled_by_a_parent_step_is_not_a_directory() {
+    // `notes.txt/..` fails at the OS (a file is not a directory), so the project cannot load
+    // `notes.txt/../words.toml` even though the text collapses to `words.toml`.
+    let dir = project("[vocabulary]\npath = \"notes.txt/../words.toml\"\n", OLD);
+    write(dir.path(), "notes.txt", "Not a directory.\n");
+    let before = read(dir.path(), "slopvac.toml");
+    let (code, _, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("file not found"), "{err}");
+    assert_eq!(read(dir.path(), "words.toml"), OLD);
+    assert_eq!(read(dir.path(), "slopvac.toml"), before);
+    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+}
+
+#[test]
+fn a_missing_absolute_reference_is_reported_relative_to_the_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let missing = root.join("docs").join("missing.toml");
+    write(
+        &root,
+        "slopvac.toml",
+        &format!("[vocabulary]\npath = \"{}\"\n", missing.display()),
+    );
+    let (code, _, err) = run_cli(&[root.to_str().unwrap(), "--write"]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        err,
+        "error[config-legacy-dropped]: slopvac.toml:2: `vocabulary.path`: blocklist `docs/missing.toml`: file not found\n"
+    );
 }
