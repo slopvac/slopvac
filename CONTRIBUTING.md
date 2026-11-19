@@ -97,7 +97,14 @@ The project stays under Apache-2.0. The laws of the Netherlands govern the agree
 
 Contributors sign through [CLA Assistant](https://cla-assistant.io). On your first pull request, the CLA Assistant bot posts a comment with a link. Sign at that link with your GitHub account.
 
-One signature covers all your pull requests, and the `license/cla` check passes on each of them.
+You sign once for each version of the agreement. If the text changes, CLA Assistant asks you to sign again.
+
+The `license/cla` check covers one account for each commit:
+
+- The linked GitHub account of the commit author.
+- The linked GitHub account of the committer, when the author has no linked account.
+
+Each such account must sign. `Co-authored-by` trailers are not read, so a co-author named only in a trailer is not checked.
 
 The text that you sign is in the [slopvac CLA Gist](https://gist.github.com/srobroek/5374c748726c6ec555de263ba96c15b4). [`CLA.md`](CLA.md) in this repository is the same text.
 
