@@ -329,7 +329,8 @@ def test_manifest_reference_documents_fields_and_the_kind_rule(
 ) -> None:
     _run(sources)
     page = _read(sources, "plugins/manifest.md")
-    assert "| `id` | string (`PackId`) | yes |" in page
+    top_level = page.split("## Top-level fields", 1)[1].split("\n## ", 1)[0]
+    assert "| `id` | string (`PluginId`) | yes |" in top_level
     assert "- When `kind` is `code`, the manifest requires `plugin`." in page
     assert "- For any other kind, the manifest forbids `plugin`." in page
     assert "Keys that start with `x-` are extensions" in page
