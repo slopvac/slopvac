@@ -13,6 +13,7 @@ use std::path::Path;
 
 use common::legacy_engine;
 use common::{engine, rule};
+use rstest::rstest;
 use serde_json::Value;
 use serde_json::json;
 use slopvac_engine::{Engine, FixReport, Input, SkipReason, fix_document, unified_diff};
@@ -225,20 +226,32 @@ fn stale_unicode_input_is_reported_not_a_panic() {
     assert_eq!(report.skipped[0].reason, SkipReason::Stale);
 }
 
-#[test]
-fn the_replacement_takes_the_case_of_the_match() {
+/// The reported edit text is final: the case of the match is applied when the edit is
+/// generated, so a client applying the reported edits gets what `fix_document` writes.
+#[rstest]
+#[case::lower("utilize it\n", "use", "use it\n")]
+#[case::title("Utilize it\n", "Use", "Use it\n")]
+#[case::upper("UTILIZE it\n", "USE", "USE it\n")]
+#[case::mixed("uTILIZE it\n", "use", "use it\n")]
+fn the_reported_edit_is_final_and_applying_it_equals_fix_document(
+    #[case] text: &str,
+    #[case] edit_text: &str,
+    #[case] want: &str,
+) {
     let all_caps = engine(&[rule(
         "one",
         &json!({"kind": "substitution", "substitutions": {"utilize": "use"}, "ignore_case": true, "match_all_caps": true}),
         &json!({}),
     )]);
-    for (text, want) in [
-        ("utilize it\n", "use it\n"),
-        ("Utilize it\n", "Use it\n"),
-        ("UTILIZE it\n", "USE it\n"),
-    ] {
-        assert_eq!(fix(&all_caps, text, None).text, want, "{text:?}");
-    }
+    let input = Input::markdown("doc.md", text);
+    let doc = all_caps.lint(&input).unwrap();
+    let edits = doc.findings[0].fix.as_ref().unwrap().edits().to_vec();
+    assert_eq!(edits.len(), 1);
+    assert_eq!(edits[0].text, edit_text, "{text:?}");
+    let direct = slopvac_model::apply_edits(text, &edits).unwrap();
+    assert_eq!(direct, want);
+    let report = fix_document(&all_caps, &input, &doc, None).unwrap();
+    assert_eq!(report.text, direct);
 }
 
 #[test]

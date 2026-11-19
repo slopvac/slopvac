@@ -443,13 +443,6 @@ impl Engine {
         Ok(self)
     }
 
-    /// Whether `id` is a term-casing rule.
-    pub(crate) fn is_term_casing(&self, id: &RuleId) -> bool {
-        self.casing_rules
-            .iter()
-            .any(|a| self.sets[a.set].categories()[a.category].rules()[a.rule].id() == id)
-    }
-
     /// Replace the exception detectors.
     #[must_use]
     pub fn with_detectors(mut self, detectors: Detectors) -> Self {
@@ -1418,7 +1411,7 @@ impl Run<'_> {
             Some(text) if is_single_replacement(text) && source_text == shown => Some(
                 Fix::new(vec![Edit {
                     span,
-                    text: text.to_owned(),
+                    text: preserve_case(source_text, text),
                 }])
                 .map_err(|e| EngineError::Internal(e.to_string()))?,
             ),
@@ -1692,4 +1685,20 @@ impl Run<'_> {
             })
             .collect()
     }
+}
+
+/// `replacement` in the case of `original`: upper case after an upper-case match, a
+/// capital first letter after a capitalised one.
+fn preserve_case(original: &str, replacement: &str) -> String {
+    let cased = original.chars().any(char::is_uppercase);
+    if cased && !original.chars().any(char::is_lowercase) {
+        return replacement.to_uppercase();
+    }
+    if original.chars().next().is_some_and(char::is_uppercase) {
+        let mut chars = replacement.chars();
+        if let Some(first) = chars.next() {
+            return first.to_uppercase().chain(chars).collect();
+        }
+    }
+    replacement.to_owned()
 }
