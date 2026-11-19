@@ -76,6 +76,10 @@ fn assigned(files: &[&str], path: &str) -> (bool, bool) {
 #[case::anchored(&["/top.md"], "sub/top.md", false)]
 #[case::backslash_is_not_a_separator(&["guide/branch/**"], r"guide\branch/x.md", false)]
 #[case::escaped_backslash_is_literal(&[r"guide\\branch/**"], r"guide\branch/x.md", true)]
+#[case::leading_space_is_part_of_the_pattern(&[" docs/**"], "docs/a.md", false)]
+#[case::leading_space_names_a_space_directory(&[" docs/**"], " docs/a.md", true)]
+#[case::parent_path_is_outside_the_root(&["**/a.md"], "../docs/a.md", false)]
+#[case::absolute_path_is_outside_the_root(&["**/a.md"], "/proj/docs/a.md", false)]
 fn config_and_genre_resolution_agree(
     #[case] files: &[&str],
     #[case] path: &str,

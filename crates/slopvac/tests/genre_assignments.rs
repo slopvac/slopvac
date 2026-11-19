@@ -64,7 +64,13 @@ fn history_levels(document: &Value) -> Vec<String> {
 fn genres_blocks_choose_the_genre_and_level_of_each_document() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("slopvac.toml"), CONFIG).expect("write config");
-    for rel in ["guide/a.md", "notes/b.md", "log/c.md", "log/keep/d.md"] {
+    for rel in [
+        "guide/a.md",
+        "notes/b.md",
+        "log/c.md",
+        "log/keep/d.md",
+        "reference/e.md",
+    ] {
         let path = dir.path().join(rel);
         fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
         fs::write(path, HISTORY).expect("write document");
@@ -76,21 +82,44 @@ fn genres_blocks_choose_the_genre_and_level_of_each_document() {
         .expect("run");
     let report: Value = serde_json::from_slice(&out.stdout).expect("a JSON report");
 
-    // (document, genre, source of the choice, levels of the history rule)
-    let expected: [(&str, &str, &str, &[&str]); 3] = [
-        ("a.md", "consumer", "explicit", &["warning"]),
-        ("b.md", "internal", "explicit", &["suggestion"]),
-        ("c.md", "change-comms", "explicit", &[]),
+    // (document, genre, source, the path-glob evidence that names the matching block)
+    let assigned: [(&str, &str, &str, &[&str]); 3] = [
+        (
+            "a.md",
+            "consumer",
+            "`[[genres]]` block 0 matches `guide/a.md`",
+            &["warning"],
+        ),
+        (
+            "b.md",
+            "internal",
+            "`[[genres]]` block 1 matches `notes/b.md`",
+            &["suggestion"],
+        ),
+        (
+            "c.md",
+            "change-comms",
+            "`[[genres]]` block 2 matches `log/c.md`",
+            &[],
+        ),
     ];
-    for (suffix, genre, source, levels) in expected {
+    for (suffix, genre, detail, levels) in assigned {
         let doc = document(&report, suffix);
         assert_eq!(doc["genre"]["id"], genre, "{suffix}: {doc}");
-        assert_eq!(doc["genre"]["source"], source, "{suffix}: {doc}");
+        assert_eq!(doc["genre"]["source"], "explicit", "{suffix}: {doc}");
+        assert_eq!(doc["genre"]["reasons"][0]["signal"], "path-glob", "{doc}");
+        assert_eq!(doc["genre"]["reasons"][0]["detail"], detail, "{doc}");
         assert_eq!(history_levels(doc), levels, "{suffix}: {doc}");
     }
-    // The negated pattern frees this file from the block, so no assignment names its genre.
+    // The negated pattern frees this file from block 2, so no assignment names it and no
+    // genre reaches its threshold: the registry default applies.
     let freed = document(&report, "d.md");
-    assert_ne!(freed["genre"]["source"], "explicit", "{freed}");
+    assert_eq!(freed["genre"]["id"], "consumer", "{freed}");
+    assert_eq!(freed["genre"]["source"], "default", "{freed}");
+    // No block selects this file, so its path is detected as a reference page.
+    let unassigned = document(&report, "e.md");
+    assert_eq!(unassigned["genre"]["id"], "reference", "{unassigned}");
+    assert_eq!(unassigned["genre"]["source"], "detected", "{unassigned}");
 }
 
 /// Lint a project with `config` and one document `notes/n.md`, which `CONFIG`-style blocks
