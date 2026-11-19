@@ -85,7 +85,7 @@ proptest! {
         id in "[a-z][a-z0-9-]{0,20}",
         (major, minor, patch) in (0u32..1000, 0u32..1000, 0u32..1000),
         api in 1u32..1000,
-        styles in proptest::collection::btree_set("[a-z][a-z0-9/_.-]{0,15}\\.toml", 0..4),
+        styles in proptest::collection::btree_set("([a-z][a-z0-9_-]{0,7}/){0,3}[a-z][a-z0-9_-]{0,7}\\.toml", 0..4),
         required in proptest::collection::btree_set("[a-z][a-z0-9-]{0,10}", 0..3),
     ) {
         let mut text = format!(

@@ -20,3 +20,5 @@
 "requires-prerelease-partial.toml" = "/requires/0/version"
 "requires-prerelease-major-only.toml" = "/requires/0/version"
 "requires-trailing-newline.toml" = "/requires/0/version"
+"requires-leading-zero.toml" = "/requires/0/version"
+"requires-empty-prerelease-segment.toml" = "/requires/0/version"
