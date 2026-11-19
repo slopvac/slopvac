@@ -174,7 +174,7 @@ A per-file cap does not bound the work of many files. Two aggregate budgets boun
 | Pack directory, rule and category files | `pack-files` | 256 | files | `rules-budget-exceeded` | The shipped pack has 23 files. |
 | Pack directory, entries of any kind | `pack-entries` | 1024 | entries | `rules-budget-exceeded` | Bounds directory scanning before the loader resolves any file. |
 | Pack directory, bytes read | `pack-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The shipped pack is about 450 KiB. |
-| Context tags on one document | tags | 1 per 64 bytes of the document, plus 65,536 | tags | context-budget-exceeded | Prose holds a sentence tag every few dozen bytes at most. The cap stops a document made of many short sentences from building an index of gigabytes. |
+| Context tags on one document | tags | 1 per 64 bytes of the document, plus 65,536 | tags | context-budget-exceeded | At the 64 MiB document cap, the limit is about 1.1 million tags, an index of about 200 MiB. The densest measured prose holds about 1 tag per 44 bytes, so a document that dense and larger than about 9.5 MB is refused. The cap stops a document made of many short sentences from building an index of gigabytes. |
 | Context lookups on one document | tag-lookups | 8 per byte of the document, plus 16,384 | looks | context-budget-exceeded | A document with a few tags on a few cells looks at a few tags for each match. Many tag kinds on one cell, with rules that match across its lines, make the looks grow with kinds times matches. |
 
 How the budgets apply:
