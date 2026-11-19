@@ -1378,6 +1378,17 @@ def test_unverified_recursion_stop_is_suppressed_by_an_allow_entry(tmp_path):
     assert run(tmp_path, old, new, allow=[allow]) == []
 
 
+@pytest.mark.parametrize("keyword", ["enum", "const", "default"])
+def test_portable_end_anchor_equivalence_is_limited_to_pattern(tmp_path, keyword):
+    """A rule regex held in another keyword compiles with PCRE2, where `$` differs."""
+    def body(regex: str) -> dict:
+        value = [regex] if keyword == "enum" else regex
+        return schema(properties={"s": {"type": "string", keyword: value}})
+
+    findings = run(tmp_path, body("^a$"), body(f"^a{PORTABLE}"))
+    assert findings != []
+
+
 def test_unchanged_recursive_ref_still_passes(tmp_path):
     both = schema(properties={"p": {"$ref": "#/$defs/Node"}}, **{"$defs": node_defs()})
     assert run(tmp_path, both, both) == []
