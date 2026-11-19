@@ -50,10 +50,17 @@ pub fn prime_migrate() -> String {
             let heading = heading.trim_end();
             linked = lines.peek().and_then(|next| marker(next)) == Some(LINK);
             if linked {
-                out.push_str(&format!(
-                    "Read \"{heading}\" at {DOC_URL}#{}.\n\n",
-                    anchor(heading)
-                ));
+                for part in [
+                    "Read \"",
+                    heading,
+                    "\" at ",
+                    DOC_URL,
+                    "#",
+                    &anchor(heading),
+                    ".\n\n",
+                ] {
+                    out.push_str(part);
+                }
                 continue;
             }
         } else if linked {
