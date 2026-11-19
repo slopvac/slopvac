@@ -474,6 +474,7 @@ def test_a_landed_entry_does_not_suppress_a_new_finding_at_its_pointer(tmp_path)
 
 
 UNRESOLVED = "https://elsewhere.test/x.schema.json"
+RESOLVED = "#/$defs/D"
 ALLOW_REF = (
     '[[allow]]\nfile = "thing.schema.json"\npointer = "/properties/p/$ref"\n'
     'kind = "unverified"\nreason = "external"\napproved_by = "tester"\n'
@@ -481,12 +482,14 @@ ALLOW_REF = (
 
 
 def with_ref(ref: str) -> dict:
-    return schema(properties={"p": {"$ref": ref}})
+    return schema(
+        properties={"p": {"$ref": ref}}, **{"$defs": {"D": {"type": "string"}}}
+    )
 
 
 def test_an_approved_unresolved_ref_still_passes_once_landed(tmp_path):
     repo, git = git_repo(tmp_path)
-    commit(repo, git, schema(), "")
+    commit(repo, git, with_ref(RESOLVED), "")
     commit(repo, git, with_ref(UNRESOLVED), ALLOW_REF)
     assert compat.main(["--repo", str(repo), "--base", "HEAD~1"]) == 0
     # On the landed base the reference is unchanged but still unresolvable.
@@ -495,7 +498,7 @@ def test_an_approved_unresolved_ref_still_passes_once_landed(tmp_path):
 
 def test_a_landed_entry_does_not_cover_a_changed_unresolved_ref(tmp_path, capsys):
     repo, git = git_repo(tmp_path)
-    commit(repo, git, schema(), "")
+    commit(repo, git, with_ref(RESOLVED), "")
     commit(repo, git, with_ref(UNRESOLVED), ALLOW_REF)
     write_dir(repo / "schemas" / "v3", {FILE: with_ref(UNRESOLVED + "?v=2")})
     assert compat.main(["--repo", str(repo), "--base", "HEAD"]) == 1
