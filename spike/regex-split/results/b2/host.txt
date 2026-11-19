@@ -1,0 +1,1 @@
+host=dev-dsk-sjors-1a-fe47843f.eu-west-1.amazon.com aarch64 nproc=16  14:25:27 up 4 days, 21:53,  1 user,  load average: 13.21, 12.13, 7.43

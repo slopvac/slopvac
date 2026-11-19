@@ -52,16 +52,6 @@ if [ "$STAGE" = prep ]; then
   printf 'schema_version = 3\nprofile = "strict"\n' > "$P/slopvac.toml"
   cp -R "$WT/docs" "$P/docs"
   python3 "$TOOLS/eval_copy.py" "$WT/evals/corpus" "$P/eval" > "$OUT/eval-ext.txt"
-  # Golden RST input, which b1 ran without docutils: parity again with the helper's venv.
-  mkdir -p "$P/golden-rst" && cp "$WT/tests/golden/v3/inputs/formats/sample.rst" "$P/golden-rst/"
-  cd "$P"
-  for loc in en-US en-GB; do
-    rm -f "$OUT/parity-golden-rst-$loc.jsonl"
-    SLOPVAC_SPIKE_ENGINE=parity SLOPVAC_SPIKE_DUMP="$OUT/parity-golden-rst-$loc.jsonl" timeout 300 \
-      "$S/bin/slopvac-spike" lint golden-rst --format json --locale "$loc" > /dev/null 2> "$OUT/golden-rst-$loc.err"
-    echo "golden-rst-$loc rc=$?"
-  done
-  cd "$WT"
   python3 -c 'import docutils; print("docutils", docutils.__version__)' > "$OUT/docutils.txt" 2>&1
   echo done-prep
   exit 0

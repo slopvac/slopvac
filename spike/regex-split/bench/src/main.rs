@@ -63,6 +63,7 @@ fn main() {
     let mut timeout = 300u64;
     let mut per_dir: Option<String> = None;
     let mut fuzz = 0usize;
+    let mut fuzz_file: Option<std::collections::HashMap<String, Vec<String>>> = None;
     let mut i = 5;
     while i < args.len() {
         match args[i].as_str() {
@@ -70,6 +71,20 @@ fn main() {
             "--timeout" => timeout = args[i + 1].parse().unwrap(),
             "--pattern-input" => per_dir = Some(args[i + 1].clone()),
             "--fuzz" => fuzz = args[i + 1].parse().unwrap(),
+            "--fuzz-file" => {
+                let mut m = std::collections::HashMap::new();
+                for l in std::fs::read_to_string(&args[i + 1]).unwrap().lines() {
+                    let v: Value = serde_json::from_str(l).unwrap();
+                    let ss = v["strings"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter_map(|s| s.as_str().map(str::to_owned))
+                        .collect();
+                    m.insert(v["id"].as_str().unwrap().to_owned(), ss);
+                }
+                fuzz_file = Some(m);
+            }
             a => panic!("unknown arg {a}"),
         }
         i += 2;
@@ -110,6 +125,10 @@ fn main() {
         let source = p["source"].as_str().unwrap().to_owned();
         let caseless = p["caseless"].as_bool().unwrap();
         let ucp = p["ucp"].as_bool().unwrap();
+        let directed: Vec<String> = fuzz_file
+            .as_ref()
+            .and_then(|m| m.get(&id).cloned())
+            .unwrap_or_default();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let built = if ucp {
@@ -128,12 +147,13 @@ fn main() {
                     return;
                 }
             };
-            if fuzz > 0 {
+            if fuzz > 0 || !directed.is_empty() {
                 let mut errs = 0usize;
-                for t in fuzz_inputs(&source, fuzz) {
-                    errs += usize::from(re.find_all(&t).is_err());
+                for t in fuzz_inputs(&source, fuzz).iter().chain(directed.iter()) {
+                    errs += usize::from(re.find_all(t).is_err());
                 }
-                let _ = tx.send(json!({"fuzz": fuzz, "match_errors": errs}));
+                let _ = tx
+                    .send(json!({"fuzz": fuzz, "directed": directed.len(), "match_errors": errs}));
                 return;
             }
             let mut times = Vec::new();
@@ -185,12 +205,78 @@ fn main() {
 /// with a trailing newline. Deterministic per pattern.
 fn fuzz_inputs(source: &str, n: usize) -> Vec<String> {
     const PIECES: &[&str] = &[
-        " ", " ", " ", "\n", "\r\n", "\n\n", "\t", "-", "--", "'", "’", ".", ",", ";", ":", "?",
-        "!", "_", "1", "42", "٣", "²", "\u{A0}", "\u{2028}", "\u{85}", "(", ")", "[", "]", "\"",
-        "“", "”", "‘", "#", "## ", "* ", "- ", "`", "```", "$ ", "=======", "<<<<<<< ", "/",
-        "K", "\u{212A}", "ß", "SS", "\u{17F}", "İ", "ı", "é", "e\u{301}", "\u{200D}", "x",
-        "word", "Word", "WORD", "a", "the", "The", "I", "it's", "e.g.", "i.e.", "U.S.", "👍🏽",
-        "—", "–", "http://x.io/a", "<b>", "&amp;", "…",
+        " ",
+        " ",
+        " ",
+        "\n",
+        "\r\n",
+        "\n\n",
+        "\t",
+        "-",
+        "--",
+        "'",
+        "’",
+        ".",
+        ",",
+        ";",
+        ":",
+        "?",
+        "!",
+        "_",
+        "1",
+        "42",
+        "٣",
+        "²",
+        "\u{A0}",
+        "\u{2028}",
+        "\u{85}",
+        "(",
+        ")",
+        "[",
+        "]",
+        "\"",
+        "“",
+        "”",
+        "‘",
+        "#",
+        "## ",
+        "* ",
+        "- ",
+        "`",
+        "```",
+        "$ ",
+        "=======",
+        "<<<<<<< ",
+        "/",
+        "K",
+        "\u{212A}",
+        "ß",
+        "SS",
+        "\u{17F}",
+        "İ",
+        "ı",
+        "é",
+        "e\u{301}",
+        "\u{200D}",
+        "x",
+        "word",
+        "Word",
+        "WORD",
+        "a",
+        "the",
+        "The",
+        "I",
+        "it's",
+        "e.g.",
+        "i.e.",
+        "U.S.",
+        "👍🏽",
+        "—",
+        "–",
+        "http://x.io/a",
+        "<b>",
+        "&amp;",
+        "…",
     ];
     let mut words: Vec<String> = Vec::new();
     let mut cur = String::new();
