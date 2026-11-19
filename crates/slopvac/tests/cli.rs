@@ -383,6 +383,47 @@ fn cache_with_newer_release() -> tempfile::TempDir {
     dir
 }
 
+/// The `--offline --version --json` document, parsed.
+fn offline_version_document() -> serde_json::Value {
+    let cache = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .args(["--offline", "--version", "--json"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&out).unwrap()
+}
+
+#[test]
+fn version_json_lists_supported_versions_from_the_owning_crates() {
+    let doc = offline_version_document();
+    assert_eq!(
+        doc["schema_versions"],
+        serde_json::json!({
+            "config": [slopvac_config::version::SUPPORTED],
+            "lint-report": [slopvac_model::SchemaVersion::VALUE],
+            "prime": [slopvac_agents::prime::SCHEMA_VERSION],
+        })
+    );
+    assert_eq!(
+        doc["slopvac_api"],
+        serde_json::json!(slopvac_model::ApiVersion::SUPPORTED)
+    );
+}
+
+/// insta: the whole document, with the two values that vary by build and install redacted.
+/// Review changes with `cargo insta review`.
+#[test]
+fn version_json_snapshot() {
+    let mut doc = offline_version_document();
+    doc["version"] = "[version]".into();
+    doc["install_method"] = "[method]".into();
+    insta::assert_json_snapshot!(doc);
+}
+
 fn version_json(cmd: &mut Command, cache: &std::path::Path) -> serde_json::Value {
     let out = cmd
         .env("SLOPVAC_CACHE_DIR", cache)

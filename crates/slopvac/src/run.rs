@@ -130,7 +130,10 @@ where
             offline::resolve(flag, env, config_offline),
             policy.update_check,
         );
-        return match write_stdout(out, slopvac_update::command::version_json(&rt).as_bytes()) {
+        return match write_stdout(
+            out,
+            slopvac_update::command::version_json(&rt, &supported_versions()).as_bytes(),
+        ) {
             Ok(code) => exit::code(code),
             Err(failure) => {
                 let _ = writeln!(err_out, "{failure}");
@@ -464,6 +467,30 @@ fn lint_with(
     } else {
         exit::PASS
     })
+}
+
+/// The versions this build supports, taken from the crates that own them.
+fn supported_versions() -> slopvac_update::command::Supported {
+    // `slopvac-config` and `slopvac-agents` own the config and prime versions, `slopvac-model`
+    // owns the report version and the extension API.
+    let config = u64::try_from(slopvac_config::version::SUPPORTED).unwrap_or_default();
+    slopvac_update::command::Supported {
+        schema_versions: std::collections::BTreeMap::from([
+            ("config", vec![config]),
+            (
+                "lint-report",
+                vec![u64::from(slopvac_model::SchemaVersion::VALUE)],
+            ),
+            (
+                "prime",
+                vec![u64::from(slopvac_agents::prime::SCHEMA_VERSION)],
+            ),
+        ]),
+        slopvac_api: slopvac_model::ApiVersion::SUPPORTED
+            .iter()
+            .map(|v| u64::from(*v))
+            .collect(),
+    }
 }
 
 #[cfg(test)]
