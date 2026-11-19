@@ -345,6 +345,21 @@ ESCAPED_STDERR = (
 )
 
 
+VECTORS = json.loads(
+    (ROOT / "tests" / "fixtures" / "workflow-escape-vectors.json").read_text(
+        encoding="utf-8"
+    )
+)["workflow_data"]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [pytest.param(v["input"], v["expected"], id=v["name"]) for v in VECTORS],
+)
+def test_the_escaper_agrees_with_slopvac_sanitize_on_the_shared_vectors(text, expected):
+    assert action.escape_workflow_data(text) == expected
+
+
 def _assert_no_workflow_command(text):
     assert not [ln for ln in text.splitlines() if ln.lstrip().startswith("::")]
 

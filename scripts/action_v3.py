@@ -15,7 +15,6 @@ import json
 import os
 import subprocess
 import sys
-import unicodedata
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -118,27 +117,47 @@ def _command(
     return [*command, "--", *targets]
 
 
-# Characters that sanitize.rs `is_unsafe` also covers: controls, format
-# characters (bidi overrides), line and paragraph separators, private use and
-# surrogates.
-_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Co", "Cs"})
+# Inclusive code point ranges that slopvac-sanitize escapes (`UNSAFE` in
+# crates/slopvac-sanitize/src/tables.rs). tests/fixtures/workflow-escape-vectors.json
+# holds both edges of every range and is checked by the Rust and the Python side.
+_UNSAFE_RANGES = (
+    (0x0, 0x1F), (0x7F, 0x9F), (0xAD, 0xAD), (0x34F, 0x34F), (0x600, 0x605),
+    (0x61C, 0x61C), (0x6DD, 0x6DD), (0x70F, 0x70F), (0x890, 0x891), (0x8E2, 0x8E2),
+    (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F), (0x200B, 0x200F),
+    (0x2028, 0x202E), (0x2060, 0x206F), (0x3164, 0x3164), (0xE000, 0xF8FF),
+    (0xFDD0, 0xFDEF), (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFFB), (0xFFFE, 0xFFFF), (0x110BD, 0x110BD), (0x110CD, 0x110CD),
+    (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A),
+    *((plane << 16 | 0xFFFE, plane << 16 | 0xFFFF) for plane in range(1, 15)),
+    (0xE0000, 0xE0FFF), (0xEFFFE, 0x10FFFF),
+)  # fmt: skip
 
 
-def escape_log_line(line: str) -> str:
-    r"""Escape one line of untrusted text so the runner reads no command in it.
+def _is_unsafe(char: str) -> bool:
+    code = ord(char)
+    return any(low <= code <= high for low, high in _UNSAFE_RANGES)
 
-    Mirrors ``workflow_data`` in crates/slopvac-sanitize (TM-13/O4): ``%``
-    becomes ``%25``, ``::`` becomes ``%3A%3A``, ``##[`` is neutralised, and a
-    backslash or an unsafe character becomes ``\\`` or ``\u{..}``. Tab stays.
-    Callers split on newlines first, so each line is emitted as a line.
+
+def escape_workflow_data(text: str) -> str:
+    r"""Escape untrusted text so the runner reads no workflow command in it.
+
+    The same function as ``workflow_data`` in crates/slopvac-sanitize
+    (TM-13/O4): ``%`` becomes ``%25``, CR ``%0D``, LF ``%0A``, ``::`` becomes
+    ``%3A%3A``, ``##[`` is neutralised, a backslash is doubled, and an unsafe
+    character becomes ``\u{..}``. Tab stays. The shared vectors in
+    tests/fixtures/workflow-escape-vectors.json keep the two in step.
     """
     out = []
-    for char in line:
+    for char in text:
         if char == "%":
             out.append("%25")
+        elif char == "\r":
+            out.append("%0D")
+        elif char == "\n":
+            out.append("%0A")
         elif char == "\\":
             out.append("\\\\")
-        elif char != "\t" and unicodedata.category(char) in _UNSAFE_CATEGORIES:
+        elif char != "\t" and _is_unsafe(char):
             out.append(f"\\u{{{ord(char):x}}}")
         else:
             out.append(char)
@@ -146,13 +165,13 @@ def escape_log_line(line: str) -> str:
 
 
 def _relay_stderr(raw: bytes) -> None:
-    """Re-emit the binary's stderr line by line through ``escape_log_line``.
+    """Re-emit the binary's stderr line by line through ``escape_workflow_data``.
 
     The binary echoes PR-controlled text (a file name may hold a newline and
     ``::error::``), so its stderr must never reach the job log raw.
     """
     for line in raw.decode("utf-8", errors="replace").splitlines():
-        print(escape_log_line(line), file=sys.stderr)
+        print(escape_workflow_data(line), file=sys.stderr)
 
 
 def _run(command: Sequence[str], env: Mapping[str, str]) -> int:
