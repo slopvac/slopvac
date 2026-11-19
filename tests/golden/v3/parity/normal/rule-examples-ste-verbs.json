@@ -259,12 +259,12 @@
         "budget": 1.0,
         "category": "ste-procedural",
         "errors": 0,
-        "findings": 7,
+        "findings": 3,
         "gating_per_100_words": 0.602,
         "over_budget": false,
-        "per_100_words": 2.811,
-        "score": 77.9,
-        "suggestions": 4,
+        "per_100_words": 1.205,
+        "score": 81.9,
+        "suggestions": 0,
         "warnings": 3
       },
       {
@@ -638,23 +638,6 @@
       },
       {
         "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
-        "end_column": 35,
-        "end_line": 19,
-        "line": 19,
-        "matched_text": "Rotate the token before the audit.",
-        "message": "The condition follows the command (\"Rotate the token before the audit.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "suggestion",
-        "span": {
-          "end": 515,
-          "start": 481
-        }
-      },
-      {
-        "ai_signal": "none",
         "category": "ste-verbs",
         "column": 11,
         "end_column": 27,
@@ -685,23 +668,6 @@
         "span": {
           "end": 543,
           "start": 533
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
-        "end_column": 36,
-        "end_line": 23,
-        "line": 23,
-        "matched_text": "Rebuild the index after the import.",
-        "message": "The condition follows the command (\"Rebuild the index after the import.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "suggestion",
-        "span": {
-          "end": 598,
-          "start": 563
         }
       },
       {
@@ -1012,40 +978,6 @@
       },
       {
         "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
-        "end_column": 54,
-        "end_line": 53,
-        "line": 53,
-        "matched_text": "Do a verification of the checksum after the download.",
-        "message": "The condition follows the command (\"Do a verification of the checksum after the download.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "suggestion",
-        "span": {
-          "end": 1375,
-          "start": 1322
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
-        "end_column": 40,
-        "end_line": 55,
-        "line": 55,
-        "matched_text": "Verify the checksum after the download.",
-        "message": "The condition follows the command (\"Verify the checksum after the download.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "suggestion",
-        "span": {
-          "end": 1416,
-          "start": 1377
-        }
-      },
-      {
-        "ai_signal": "none",
         "category": "prose-discipline",
         "column": 10,
         "end_column": 29,
@@ -1089,18 +1021,18 @@
     },
     "paragraphs": 30,
     "path": "rule-examples-ste-verbs.md",
-    "per_100_words": 17.671,
+    "per_100_words": 16.064,
     "profile": "normal",
     "prose": {
       "errors": 4,
-      "findings": 44,
-      "per_100_words": 17.671,
+      "findings": 40,
+      "per_100_words": 16.064,
       "warnings": 5
     },
     "score": 58.9,
     "sentences": 30,
-    "suggestions": 35,
-    "total_findings": 44,
+    "suggestions": 31,
+    "total_findings": 40,
     "unchecked": [],
     "warnings": 5,
     "words": 249

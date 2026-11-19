@@ -822,7 +822,7 @@
         "weak": {
           "errors": 0,
           "findings": 65,
-          "per_100_words": 0.423,
+          "per_100_words": 0.421,
           "warnings": 9
         }
       },
@@ -831,7 +831,7 @@
           "category": "ai-residue",
           "errors": 3,
           "findings": 3,
-          "per_100_words": 0.02,
+          "per_100_words": 0.019,
           "score": 98.7,
           "suggestions": 0,
           "warnings": 0
@@ -885,7 +885,7 @@
           "category": "ai-tells-structure",
           "errors": 0,
           "findings": 53,
-          "per_100_words": 0.345,
+          "per_100_words": 0.343,
           "score": 99.6,
           "suggestions": 52,
           "warnings": 1
@@ -912,7 +912,7 @@
           "category": "prose-agency",
           "errors": 0,
           "findings": 17,
-          "per_100_words": 0.111,
+          "per_100_words": 0.11,
           "score": 99.7,
           "suggestions": 17,
           "warnings": 0
@@ -930,7 +930,7 @@
           "category": "prose-discipline",
           "errors": 0,
           "findings": 24,
-          "per_100_words": 0.156,
+          "per_100_words": 0.155,
           "score": 99.5,
           "suggestions": 24,
           "warnings": 0
@@ -957,7 +957,7 @@
           "category": "prose-inflation",
           "errors": 0,
           "findings": 28,
-          "per_100_words": 0.182,
+          "per_100_words": 0.181,
           "score": 97.4,
           "suggestions": 11,
           "warnings": 17
@@ -1038,8 +1038,8 @@
           "category": "ste-sentences",
           "errors": 0,
           "findings": 39,
-          "per_100_words": 0.254,
-          "score": 99.7,
+          "per_100_words": 0.253,
+          "score": 99.8,
           "suggestions": 39,
           "warnings": 0
         },
@@ -1066,17 +1066,17 @@
       "errors": 3,
       "findings": 208,
       "passed": false,
-      "per_100_words": 1.353,
+      "per_100_words": 1.348,
       "prose": {
         "errors": 3,
         "findings": 135,
-        "per_100_words": 0.878,
+        "per_100_words": 0.875,
         "warnings": 25
       },
       "score": 96.9,
       "suggestions": 171,
       "warnings": 34,
-      "words": 15371
+      "words": 15435
     }
   },
   "prose:mdx": {

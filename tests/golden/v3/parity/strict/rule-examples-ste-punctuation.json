@@ -258,13 +258,13 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 1,
+        "errors": 0,
         "findings": 1,
-        "gating_per_100_words": 0.98,
-        "over_budget": true,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
         "per_100_words": 0.98,
-        "score": 36.1,
-        "suggestions": 0,
+        "score": 97.5,
+        "suggestions": 1,
         "warnings": 0
       },
       {
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 3,
+    "errors": 2,
     "findings": [
       {
         "ai_signal": "none",
@@ -460,7 +460,7 @@
         "message": "The condition follows the command (\"Check these preconditions before you promote the release candidate:\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 683,
           "start": 616
@@ -470,10 +470,9 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "3 error(s), limit 0",
-        "5.39 severity-weighted findings per 100 words, budget 1.5",
-        "score 9.5, minimum 85.0",
-        "ste-procedural at 0.98 severity-weighted findings per 100 words, budget 0.4",
+        "2 error(s), limit 0",
+        "4.41 severity-weighted findings per 100 words, budget 1.5",
+        "score 22.3, minimum 85.0",
         "ste-punctuation at 2.45 severity-weighted findings per 100 words, budget 0.5",
         "ste-sentences at 1.96 severity-weighted findings per 100 words, budget 0.5"
       ]
@@ -483,14 +482,14 @@
     "per_100_words": 7.843,
     "profile": "strict",
     "prose": {
-      "errors": 3,
+      "errors": 2,
       "findings": 8,
       "per_100_words": 7.843,
       "warnings": 5
     },
-    "score": 9.5,
+    "score": 22.3,
     "sentences": 11,
-    "suggestions": 0,
+    "suggestions": 1,
     "total_findings": 8,
     "unchecked": [],
     "warnings": 5,
