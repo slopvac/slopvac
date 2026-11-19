@@ -977,3 +977,46 @@ fn a_path_through_a_symlinked_parent_still_hides_the_external_directory() {
         }
     }
 }
+
+/// `shortcut` is a symlink whose target does not exist, so `shortcut/..` cannot be resolved.
+/// A fold that assumes it is a plain directory would place the path inside the project.
+#[cfg(unix)]
+#[test]
+fn a_path_through_a_dangling_symlink_hides_the_external_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let top = dir.path().canonicalize().expect("canonical temp dir");
+    let base = top.join("base");
+    let proj = base.join("proj");
+    fs::create_dir_all(&proj).expect("proj dir");
+    std::os::unix::fs::symlink(top.join("nowhere"), base.join("shortcut")).expect("symlink");
+    fs::write(proj.join("ok.md"), CLEAN).expect("document");
+
+    let via_shortcut = base
+        .join("shortcut")
+        .join("..")
+        .join("proj")
+        .join("sentinel-private");
+    for format in ["text", "json"] {
+        for (is_config, name) in [(true, "missing.toml"), (false, "missing.md")] {
+            let target = via_shortcut.join(name);
+            let mut cmd = slopvac();
+            cmd.current_dir(&proj).args(["lint", "--format", format]);
+            if is_config {
+                cmd.arg("--config").arg(&target).arg("ok.md");
+            } else {
+                cmd.arg(&target);
+            }
+            let out = cmd.output().expect("run");
+            let all = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                all.contains(&format!("<external>/{name}")),
+                "{format} {name}: {all}"
+            );
+            assert!(!all.contains("sentinel-private"), "{format} {name}: {all}");
+        }
+    }
+}

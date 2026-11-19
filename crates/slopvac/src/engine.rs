@@ -499,6 +499,7 @@ fn collect_targets(
         Selection::Prose
     };
     let mut seen = HashSet::new();
+    let shower = redact::PathShower::new(&request.root);
     for target in &request.targets {
         let shown_target = redact::shown_path(target, &request.root);
         let found = match discover(
@@ -530,7 +531,7 @@ fn collect_targets(
             if !seen.insert(canonical.clone()) {
                 continue;
             }
-            let shown = redact::shown_path(&file.path, &request.root);
+            let shown = shower.shown(&file.path, &canonical);
             let config = config_for(configs, &request.root, &canonical)?;
             // Exclusions apply first, whether the config was found or named with `--config`,
             // so an excluded file is never read, parsed or reported.

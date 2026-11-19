@@ -3,7 +3,9 @@
 
 use std::path::Path;
 
-use slopvac_fs::display_physical;
+use std::path::PathBuf;
+
+use slopvac_fs::{display_physical, display_under_root, lexical_normalize, resolve_physical};
 
 /// The name shown for standard input everywhere.
 pub const STDIN_NAME: &str = "<stdin>";
@@ -34,6 +36,43 @@ pub fn shown_path(path: &Path, root: &Path) -> String {
         }
     };
     display_physical(&absolute(path), &absolute(root))
+}
+
+/// Shows many paths against one root, resolving the root and the working directory once.
+///
+/// A caller that already holds the canonical form of a path gets its display with no
+/// filesystem call, as long as the path was reached without a symlink. Any other path falls
+/// back to [`shown_path`].
+#[derive(Debug)]
+pub struct PathShower {
+    root: PathBuf,
+    cwd: PathBuf,
+    physical_root: Option<PathBuf>,
+}
+
+impl PathShower {
+    /// Resolve `root` once.
+    #[must_use]
+    pub fn new(root: &Path) -> Self {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let physical_root = resolve_physical(&cwd.join(root));
+        Self {
+            root: root.to_path_buf(),
+            cwd,
+            physical_root,
+        }
+    }
+
+    /// How `path` appears in a message, given its already canonical form `canonical`.
+    #[must_use]
+    pub fn shown(&self, path: &Path, canonical: &Path) -> String {
+        if let Some(root) = &self.physical_root
+            && lexical_normalize(&self.cwd.join(path)) == canonical
+        {
+            return display_under_root(canonical, root);
+        }
+        shown_path(path, &self.root)
+    }
 }
 
 /// Remove the user-info part of every `scheme://user:pass@host` in `text`.
@@ -143,7 +182,8 @@ mod tests {
 
     #[rstest]
     #[case::current_dir_prefix("./a.md", "a.md")]
-    #[case::folded_parent("a/../b.md", "b.md")]
+    #[case::folded_parent("src/../b.md", "b.md")]
+    #[case::unresolved_parent("a/../b.md", "<external>/b.md")]
     #[case::already_rooted("docs/a.md", "docs/a.md")]
     #[case::climbs_out("../x/y.md", "<external>/y.md")]
     #[case::climbs_out_after_folding("a/../../x.md", "<external>/x.md")]
@@ -153,6 +193,30 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let given = given.replace("ROOT", &cwd.display().to_string());
         assert_eq!(shown_path(Path::new(&given), &cwd), want);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_shower_matches_shown_path_with_and_without_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path().canonicalize().unwrap();
+        let root = top.join("proj");
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::create_dir_all(top.join("outside")).unwrap();
+        std::fs::write(root.join("docs/a.md"), "x").unwrap();
+        std::fs::write(top.join("outside/b.md"), "x").unwrap();
+        std::os::unix::fs::symlink(top.join("outside/b.md"), root.join("docs/link.md")).unwrap();
+        let shower = PathShower::new(&root);
+        // The link points outside the project, so both forms hide the directory.
+        for (given, want) in [
+            ("docs/a.md", "docs/a.md"),
+            ("docs/link.md", "<external>/b.md"),
+        ] {
+            let path = root.join(given);
+            let canonical = path.canonicalize().unwrap();
+            assert_eq!(shower.shown(&path, &canonical), want);
+            assert_eq!(shown_path(&path, &root), want);
+        }
     }
 
     #[test]
