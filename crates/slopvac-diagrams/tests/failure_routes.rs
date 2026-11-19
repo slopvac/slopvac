@@ -1,5 +1,7 @@
 //! Inputs that cannot be read at all: the status and the empty result they report.
 
+use std::ops::Range;
+
 use rstest::rstest;
 use slopvac_diagrams::{
     Extraction, ExtractionStatus, Format, extract, extract_bytes, extract_fenced,
@@ -33,9 +35,9 @@ fn bytes_that_are_not_utf8_are_malformed_for_a_text_format(#[case] format: Forma
 
 #[rstest]
 #[case::past_the_end(10..20)]
-#[case::reversed(3..1)]
+#[case::reversed(Range { start: 3, end: 1 })]
 #[case::inside_a_character(1..2)]
-fn a_fence_range_outside_the_source_is_malformed(#[case] body: std::ops::Range<usize>) {
+fn a_fence_range_outside_the_source_is_malformed(#[case] body: Range<usize>) {
     let ex = extract_fenced(Format::Mermaid, "é\nflowchart TD\n", body);
     assert_read_nothing(
         &ex,
