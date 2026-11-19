@@ -56,9 +56,30 @@ Status: IN PROGRESS (partial results survive restarts; sections fill in as measu
 
 ## Batches
 
-| Batch | Head | Toolchain | Content | Load start/end | State |
-|---|---|---|---|---|---|
-| b1 | a46aa04683 | 1.99.1 (helper) | build + parity over 4 corpora | see log | running |
+| Batch | Head | Host | Toolchain | Content | Load start/end | State |
+|---|---|---|---|---|---|---|
+| b1 | a46aa04683 | dev aarch64, 16 cores | rustc 1.99.1 (58cf8f9c3) | build + parity over golden, docs, k8s (eval skipped by mistake, see below) | 36.6 / 36.0 (no timings in b1) | done, rc=0, 2026-11-19 11:25-11:39Z |
+| b2 | 752411bf5d | dev aarch64, 16 cores | 1.99.1 | builds, eval parity re-run, differential fuzz, summary, shape check, recheck, inputs (no timings) | n/a | submitted |
+
+### b1 results (parity, interpreter vs Rust twin, every engine call)
+
+| Lint run (strict profile) | Exit | Wall (parity mode, both engines, load ~36) | Peak RSS | Distinct patterns | Exercised | Twin does not compile | Calls with a span difference |
+|---|---|---|---|---|---|---|---|
+| golden inputs, en-US / en-GB | 2 / 2 | 1.9 s | 225 MiB | 954 | 880 | 74 | 0 |
+| slopvac `docs/`, en-US / en-GB | 1 / 1 | 8.0 s | 276 MiB | 408 | 346 | 62 | 0 |
+| Kubernetes `content/en` (2530 `.md`, 101 MB; commit be58364903; CC BY 4.0), en-US / en-GB | 2 / 2 | 260-267 s | 1.5 GiB | 957 | 883 | 74 | 0 (16.8M calls) |
+| eval corpus | 0 | 0.4 s | 43 MiB | 146 | 111 | 35 | 0, **void**: its files end in `.corpus`, so lint skipped them all; b2 re-runs it |
+
+- Exit 2 on golden is the RST input with no docutils on dev (`input` incomplete); exit 2 on k8s is
+  `input-unsupported` for its `.html` files. Every other file was linted.
+- The edge suite (13 strings per pattern) also found no difference. Corpus parity alone is weak
+  evidence: for example `^\W*(?:added|changed|fixed|removed)\W*$` (no `(?m)`) has a real
+  semantic gap (PCRE2 `$` also matches before a final `\n`, Rust `$` does not) that no corpus
+  call hit, because headings reach it without a trailing newline. b2 adds a differential fuzz
+  (3000 generated strings per pattern from its own words plus newline, CRLF, case-fold and
+  mark pieces, a quarter with a trailing `\n`) before any pattern counts as identical.
+- Exercised counts include engine-built patterns: about 740 of the ~955 are per-rule probes
+  built in `slopvac-engine/src/matching.rs` (`\A(?:probe)\z` exception anchors).
 
 ## 1. Split counts
 
