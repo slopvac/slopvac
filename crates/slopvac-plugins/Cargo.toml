@@ -16,12 +16,6 @@ path = "src/bin/slopvac-plugin-launcher.rs"
 test = false
 doc = false
 
-# This test binary calls `launch::intercept` itself and runs the launcher
-# through `Launcher::CurrentExe`, so it brings its own `main`.
-[[test]]
-name = "launcher_installed"
-harness = false
-
 # Polling a pidfd shows whether its process exited. The launcher points its
 # own standard streams at /dev/null once the plugin holds them.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -65,6 +59,12 @@ rstest.workspace = true
 rustls.workspace = true
 tempfile.workspace = true
 toml.workspace = true
+
+# This test binary calls `launch::intercept` itself and runs the launcher
+# through `Launcher::CurrentExe`, so it brings its own `main`.
+[[test]]
+name = "launcher_installed"
+harness = false
 
 [lints]
 workspace = true
