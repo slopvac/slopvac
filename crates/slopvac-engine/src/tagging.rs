@@ -370,11 +370,12 @@ pub(crate) fn lookup_budget(source_len: usize) -> usize {
         .saturating_add(LOOKUP_HEADROOM)
 }
 
-/// Tags allowed for each byte of the document.
+/// Bytes of the document for each tag it may hold.
 ///
-/// Prose holds a sentence tag for every few dozen bytes at most, and a tag costs index memory
-/// whatever its size. One tag for every 64 bytes is far over that, and under what a
-/// document of short sentences needs to build an index of gigabytes.
+/// Prose holds a sentence tag every few dozen bytes at most, and a tag costs index memory
+/// whatever its size. One tag for every 64 bytes sits above what prose needs, and keeps a
+/// document of very short sentences from building an index of gigabytes. The value is in
+/// `docs/contract/policies.md`, section 1.9.
 const BYTES_PER_TAG: usize = 64;
 
 /// Tags allowed whatever the size of the document.
