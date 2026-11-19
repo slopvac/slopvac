@@ -32,7 +32,7 @@ schema_version = 3
 id = "acme-tagger"
 version = "0.3.1-rc.1"
 slopvac_api = 1
-kind = "plugin"
+kind = "code"
 
 [plugin]
 command = "bin/acme"
@@ -86,7 +86,7 @@ fn a_plugin_manifest_holds_the_declaration() {
 #[rstest]
 #[case::unknown_key("kind = \"data\"\ntier = 1", "", "unknown key")]
 #[case::kind_missing("", "", "missing required key `kind`")]
-#[case::plugin_table_missing("kind = \"plugin\"", "", "needs a `[plugin]` table")]
+#[case::plugin_table_missing("kind = \"code\"", "", "needs a `[plugin]` table")]
 #[case::plugin_table_on_data(
     "kind = \"data\"\n[plugin]\ncommand = \"x\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }",
     "",

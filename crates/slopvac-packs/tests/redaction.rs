@@ -13,7 +13,7 @@ const BASE: &str =
     "schema_version = 3\nid = \"tiny\"\nversion = \"0.1.0\"\nslopvac_api = 1\nkind = \"data\"\n";
 
 const PLUGIN_BASE: &str =
-    "schema_version = 3\nid = \"tiny\"\nversion = \"0.1.0\"\nslopvac_api = 1\nkind = \"plugin\"\n";
+    "schema_version = 3\nid = \"tiny\"\nversion = \"0.1.0\"\nslopvac_api = 1\nkind = \"code\"\n";
 
 /// Every text that holds the sentinel somewhere a validator looks at it.
 fn hostile(case: &str) -> String {
