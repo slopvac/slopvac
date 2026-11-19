@@ -93,7 +93,7 @@ impl Server {
             .initialize_start()
             .map_err(ServerError::protocol)?;
         let params: InitializeParams =
-            serde_json::from_value(params).map_err(ServerError::initialize)?;
+            serde_json::from_value(params).map_err(|e| ServerError::initialize(&e))?;
         let encoding = negotiate(&params);
         let capabilities = capabilities(encoding);
         let init = serde_json::json!({

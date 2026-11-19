@@ -1,7 +1,6 @@
 # Append-only list of every message code that has shipped, one `code kind` per line.
 # Add a line when you add a code. Never edit or delete one: move a removed code to
 # RETIRED in crates/slopvac/src/messages.rs and keep its line here.
-binary-host-unchecked notice
 config-budget-applied-bytes text
 config-budget-bytes text
 config-budget-depth text
@@ -137,9 +136,9 @@ config-value-out-of-range text
 config-version-newer text
 config-version-unsupported text
 document-too-large error
-lint-incomplete notice
 lsp-action-allow text
 lsp-action-fix text
+lsp-binary-unchecked notice
 lsp-connection-closed error
 lsp-help-about text
 lsp-hover-finding text
@@ -148,10 +147,11 @@ lsp-hover-matched text
 lsp-hover-problem text
 lsp-initialize-invalid error
 lsp-io-failed error
+lsp-lint-incomplete notice
 lsp-method-unsupported error
 lsp-protocol-error error
 lsp-setup-failed error
-lsp-unchecked notice
+lsp-unchecked text
 lsp-worker-panicked error
 offline-network-needed error
 render-json error

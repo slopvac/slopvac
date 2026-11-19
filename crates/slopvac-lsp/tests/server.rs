@@ -450,7 +450,7 @@ fn a_document_that_cannot_be_linted_is_not_reported_clean() {
     let mut client = Client::start(Server::new(Arc::new(Failing)), None);
     let published = client.open("Anything.\n");
     let d = &published["diagnostics"][0];
-    assert_eq!(d["code"], "lint-incomplete");
+    assert_eq!(d["code"], "lsp-lint-incomplete");
     assert!(d["message"].as_str().unwrap().contains("the engine broke"));
     client.finish().unwrap();
 }
@@ -979,7 +979,7 @@ fn only_diagnostic(published: &Value) -> &Value {
 
 fn assert_binary_host_diagnostic(published: &Value) {
     let d = only_diagnostic(published);
-    assert_eq!(d["code"], "binary-host-unchecked");
+    assert_eq!(d["code"], "lsp-binary-unchecked");
     assert_eq!(d["severity"], 2);
     assert_eq!(d["source"], "slopvac");
     assert!(

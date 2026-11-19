@@ -7,25 +7,25 @@ use slopvac_messages::{Catalog, Entry};
 /// A failure that ends the server.
 #[derive(Debug, Catalog)]
 pub enum ServerError {
-    /// The connection broke or the client broke the protocol.
+    /// The connection broke or the client broke the protocol. The message carries no
+    /// protocol text, because it can quote a whole client message, document text included.
     #[code("lsp-protocol-error")]
-    #[message("language server protocol error: {detail}")]
-    Protocol {
-        /// The protocol failure, as text.
-        detail: String,
-        /// The protocol failure.
-        #[source]
-        source: lsp_server::ProtocolError,
-    },
-    /// The client sent `initialize` parameters this server cannot read.
+    #[message("language server protocol error")]
+    Protocol,
+    /// The client sent `initialize` parameters this server cannot read. The message names
+    /// the failure's category and position only, because the parser's text quotes the
+    /// rejected value, such as a workspace path.
     #[code("lsp-initialize-invalid")]
-    #[message("invalid initialize parameters: {detail}")]
+    #[message("invalid initialize parameters: {category} error at line {line}, column {column}")]
     Initialize {
-        /// The parse failure, as text.
-        detail: String,
-        /// The parse failure.
-        #[source]
-        source: serde_json::Error,
+        /// The failure's category: `syntax`, `data`, `eof` or `io`.
+        category: String,
+        /// The line of the failure; 0 when the parameters were already a parsed value.
+        #[count]
+        line: usize,
+        /// The column of the failure; 0 when the parameters were already a parsed value.
+        #[count]
+        column: usize,
     },
     /// The connection closed while the server was still sending.
     #[code("lsp-connection-closed")]
@@ -38,19 +38,23 @@ pub enum ServerError {
 }
 
 impl ServerError {
-    /// A protocol failure, with its text in the message.
-    pub(crate) fn protocol(source: lsp_server::ProtocolError) -> Self {
-        Self::Protocol {
-            detail: source.to_string(),
-            source,
-        }
+    /// A protocol failure. The source error is dropped on purpose: see [`Self::Protocol`].
+    pub(crate) fn protocol(_source: lsp_server::ProtocolError) -> Self {
+        Self::Protocol
     }
 
-    /// Unreadable `initialize` parameters, with the parser's text in the message.
-    pub(crate) fn initialize(source: serde_json::Error) -> Self {
+    /// Unreadable `initialize` parameters, reduced to category and position.
+    pub(crate) fn initialize(source: &serde_json::Error) -> Self {
+        let category = match source.classify() {
+            serde_json::error::Category::Io => "io",
+            serde_json::error::Category::Syntax => "syntax",
+            serde_json::error::Category::Data => "data",
+            serde_json::error::Category::Eof => "eof",
+        };
         Self::Initialize {
-            detail: source.to_string(),
-            source,
+            category: category.to_owned(),
+            line: source.line(),
+            column: source.column(),
         }
     }
 }
@@ -90,16 +94,17 @@ pub(crate) enum LspMessage {
     #[text("Run the language server on standard input and output.")]
     HelpAbout,
     /// A binary container is not linted in the editor.
-    #[code("binary-host-unchecked")]
+    #[code("lsp-binary-unchecked")]
     #[notice("binary host not linted in the editor; run the CLI")]
     BinaryHostUnchecked,
     /// The lint could not finish, so the buffer must not look clean.
-    #[code("lint-incomplete")]
+    #[code("lsp-lint-incomplete")]
     #[notice("slopvac could not lint this document: {reason}")]
     LintIncomplete { reason: String },
-    /// Part of the check did not run.
+    /// Part of the check did not run. The diagnostic carries the notice's own code, so this
+    /// is message text only.
     #[code("lsp-unchecked")]
-    #[notice("slopvac did not fully check this document: {message}")]
+    #[text("slopvac did not fully check this document: {message}")]
     Unchecked { message: String },
     /// Hover heading for a finding. The message is rule data.
     #[code("lsp-hover-finding")]
