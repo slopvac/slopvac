@@ -68,20 +68,20 @@ trait Host {
 }
 
 fn find_in(program: &str, path: &OsStr, project: &Path, host: &dyn Host) -> Option<PathBuf> {
-    let trusted: Vec<PathBuf> = std::env::split_paths(path)
+    // Each directory is searched on its own, so a candidate that fails its
+    // checks (a link into the project, say) does not hide a later valid one.
+    // An empty list of directories finds nothing, not the working directory.
+    std::env::split_paths(path)
         .filter(|dir| dir.is_absolute())
         .filter_map(|dir| std::fs::canonicalize(dir).ok())
         .filter(|dir| !dir.starts_with(project) && trusted_path(dir, host))
-        .collect();
-    // An empty search path would otherwise mean the working directory.
-    if trusted.is_empty() {
-        return None;
-    }
-    let found = find_in_path(program, Some(&std::env::join_paths(trusted).ok()?))?;
-    // Run the program the checks saw, not a link that could be repointed.
-    let real = std::fs::canonicalize(&found).ok()?;
-    let regular = std::fs::metadata(&real).is_ok_and(|m| m.is_file());
-    (regular && !real.starts_with(project) && trusted_path(&real, host)).then_some(real)
+        .find_map(|dir| {
+            let found = find_in_path(program, Some(dir.as_os_str()))?;
+            // Run the program the checks saw, not a link that could be repointed.
+            let real = std::fs::canonicalize(&found).ok()?;
+            let regular = std::fs::metadata(&real).is_ok_and(|m| m.is_file());
+            (regular && !real.starts_with(project) && trusted_path(&real, host)).then_some(real)
+        })
 }
 
 /// Whether nobody but root or the current user can change what `path` names
@@ -306,6 +306,18 @@ mod tests {
         let alias = l.trusted.parent().unwrap().join("alias");
         std::os::unix::fs::symlink(&l.local, &alias).unwrap();
         assert_eq!(find(&path_of(&[&alias]), &l.project), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_rejected_candidate_does_not_hide_a_valid_one_later_on_the_path() {
+        let l = layout();
+        // The first directory is fine, but its `tool` links into the project.
+        let linked = l.trusted.parent().unwrap().join("linked-first");
+        std::fs::create_dir(&linked).unwrap();
+        std::os::unix::fs::symlink(l.local.join("tool"), linked.join("tool")).unwrap();
+        let path = path_of(&[&linked, &l.trusted]);
+        assert_eq!(find(&path, &l.project), Some(l.trusted.join("tool")));
     }
 
     #[cfg(unix)]

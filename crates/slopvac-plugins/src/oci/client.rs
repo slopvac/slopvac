@@ -42,6 +42,9 @@ const TOKEN_SERVICES: &[(&str, &str)] = &[
 struct CachedToken {
     value: String,
     expires: Instant,
+    /// Why a credential helper was not used when this token was fetched
+    /// anonymously. A later denial with the token reports it.
+    refused: Option<OciError>,
 }
 
 #[derive(Deserialize)]
@@ -239,13 +242,13 @@ impl Client {
         })
     }
 
-    fn cached(&self, scope: &str) -> Option<String> {
+    fn cached(&self, scope: &str) -> Option<(String, Option<OciError>)> {
         let mut t = self
             .tokens
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match t.get(scope) {
-            Some(c) if c.expires > Instant::now() => Some(c.value.clone()),
+            Some(c) if c.expires > Instant::now() => Some((c.value.clone(), c.refused.clone())),
             Some(_) => {
                 t.remove(scope);
                 None
@@ -333,6 +336,7 @@ impl Client {
                 CachedToken {
                     value: value.clone(),
                     expires: Instant::now() + ttl,
+                    refused: refused.clone(),
                 },
             );
         Ok(value)
@@ -379,11 +383,19 @@ impl Client {
             authorization,
             ..template.clone()
         };
-        let first = self
-            .cached(&self.token_key(r, &scope))
-            .map(|t| format!("Bearer {t}"));
+        let (first, mut refused) = match self.cached(&self.token_key(r, &scope)) {
+            Some((token, refused)) => (Some(format!("Bearer {token}")), refused),
+            None => (None, None),
+        };
         let resp = self.transport.send(&make(first))?;
-        if resp.status().as_u16() != 401 {
+        let status = resp.status().as_u16();
+        if status == 403
+            && let Some(e) = refused
+        {
+            // The cached token is anonymous because a helper was refused.
+            return Err(e);
+        }
+        if status != 401 {
             return Ok(resp);
         }
         let challenge = resp
@@ -394,7 +406,6 @@ impl Client {
         let Some(challenge) = challenge else {
             return Ok(resp);
         };
-        let mut refused = None;
         let auth = match challenge.scheme.as_str() {
             "bearer" => format!(
                 "Bearer {}",

@@ -1,5 +1,6 @@
 //! OCI client tests against a scripted loopback registry (threat model section 6.4).
 
+mod log_capture;
 mod oci_server;
 
 use std::collections::HashMap;
@@ -1258,12 +1259,16 @@ mod helpers {
         assert_eq!(got.unwrap().unwrap().username, "bob");
     }
 
-    #[test]
-    fn tm38_helper_names_with_separators_or_shell_characters_are_refused() {
-        for (i, bad) in ["../evil", "a/b", "x;y", "a b", "-flag"].iter().enumerate() {
-            let err = lookup(&format!("bad{i}"), bad, None).unwrap_err();
-            assert!(matches!(err, OciError::Credential(_)), "{bad}: {err:?}");
-        }
+    #[rstest::rstest]
+    #[case::parent_directory("../evil")]
+    #[case::path_separator("a/b")]
+    #[case::semicolon("x;y")]
+    #[case::space("a b")]
+    #[case::leading_dash("-flag")]
+    fn tm38_helper_names_with_separators_or_shell_characters_are_refused(#[case] bad: &str) {
+        let tag: String = bad.bytes().map(|b| format!("{b:02x}")).collect();
+        let err = lookup(&format!("bad{tag}"), bad, None).unwrap_err();
+        assert!(matches!(err, OciError::Credential(_)), "{bad}: {err:?}");
     }
 
     #[test]
@@ -1792,8 +1797,33 @@ fn a_refused_helper_does_not_stop_a_registry_that_serves_anonymous_tokens(
 ) {
     let body = manifest_json(&Descriptor::for_bytes("x", b"{}"), &[]);
     let server = Server::start(with_auth("reg", None, move |_| manifest_response(&body)));
-    let client = Client::with_loopback_http_for_tests(Box::new(Refusing(refusal)));
-    client.fetch_manifest(&reference(&server, "a/b:1")).unwrap();
+    let client = Client::with_loopback_http_for_tests(Box::new(Refusing(refusal.clone())));
+    let capture = log_capture::Capture::default();
+    tracing::subscriber::with_default(capture.clone(), || {
+        client.fetch_manifest(&reference(&server, "a/b:1")).unwrap();
+    });
+    let warnings: Vec<_> = capture
+        .events()
+        .into_iter()
+        .filter(|(level, _)| *level == tracing::Level::WARN)
+        .collect();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    let field = |name: &str| {
+        warnings[0]
+            .1
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default()
+    };
+    assert!(
+        field("code").contains(refusal.code().unwrap()),
+        "{warnings:?}"
+    );
+    assert!(
+        field("message").contains("continuing without a login"),
+        "{warnings:?}"
+    );
     let token_req = server
         .requests()
         .into_iter()
@@ -1835,6 +1865,69 @@ fn a_refused_helper_is_reported_when_a_basic_challenge_needs_a_login(
         .unwrap_err();
     assert_eq!(err, refusal);
     assert_eq!(err.code(), Some(code));
+}
+
+/// A registry that hands out anonymous tokens. A manifest request with the
+/// token gets `statuses[n]` on its n-th try (the last one repeats).
+fn token_then(statuses: &'static [u16]) -> Server {
+    let tries = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    Server::start(move |req| {
+        if req.path.starts_with("/token") {
+            return Response::new(200).json(&json!({"token": "T0K", "expires_in": 300}));
+        }
+        if req.header("authorization") != Some("Bearer T0K") {
+            let challenge = format!(
+                "Bearer realm=\"http://{}/token\",service=\"reg\",scope=\"repository:a/b:pull\"",
+                host(req)
+            );
+            return Response::new(401).header("WWW-Authenticate", &challenge);
+        }
+        let n = tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        match statuses[n.min(statuses.len() - 1)] {
+            200 => manifest_response(&manifest_json(&Descriptor::for_bytes("x", b"{}"), &[])),
+            status => Response::new(status),
+        }
+    })
+}
+
+fn refused_untrusted_client() -> Client {
+    Client::with_loopback_http_for_tests(Box::new(Refusing(untrusted())))
+}
+
+/// The error a failed pack fetch reports: the code and exit 2.
+fn as_sync_error(source: OciError) -> slopvac_plugins::sync::SyncError {
+    slopvac_plugins::sync::SyncError::Fetch {
+        id: "demo".parse().unwrap(),
+        source,
+    }
+}
+
+#[rstest::rstest]
+#[case::anonymous_token_then_401(&[401])]
+#[case::anonymous_token_then_403(&[403])]
+fn a_refused_helper_is_reported_when_the_registry_denies_the_anonymous_token(
+    #[case] statuses: &'static [u16],
+) {
+    let server = token_then(statuses);
+    let err = refused_untrusted_client()
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert_eq!(err, untrusted());
+    let failure = as_sync_error(err);
+    assert_eq!(failure.code(), "credential-helper-untrusted");
+    assert_eq!(failure.exit_code(), 2);
+}
+
+#[test]
+fn a_cached_anonymous_token_keeps_the_helper_refusal_for_a_later_403() {
+    // The first request is served; the next one, with the cached token, is not.
+    let server = token_then(&[200, 403]);
+    let client = refused_untrusted_client();
+    let r = reference(&server, "a/b:1");
+    client.fetch_manifest(&r).unwrap();
+    let err = client.fetch_manifest(&r).unwrap_err();
+    assert_eq!(err, untrusted());
+    assert_eq!(server.count("/token"), 1, "the token was cached");
 }
 
 mod config_key_case {
