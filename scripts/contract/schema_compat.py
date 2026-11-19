@@ -11,8 +11,9 @@ or tighten (docs/contract/policies.md, section 3.9).
 Each finding prints as ``file:json-pointer: kind: old -> new``. The kind is a stable
 kebab-case code; a code is never reused and never changes meaning. An entry in
 schemas/v3/compat-allow.toml suppresses one finding; an entry that matches nothing
-is itself a finding. Entries that the baseline's own allow file already holds are
-ignored: their change has landed, so they neither suppress nor go stale.
+is itself a finding. Entries that the baseline's own allow file already holds approved
+a landed change: they never go stale, and they suppress only a finding that the
+baseline also has against itself, unchanged, such as an unresolvable ``$ref``.
 
 Exit codes: 0 compatible, 1 a breaking finding, 2 a usage or read error.
 
@@ -813,6 +814,13 @@ def _parse_schema(name: str, text: str) -> dict:
 
 
 def snapshot_from_dir(directory: Path) -> Snapshot:
+    """Read a baseline directory, its allow file included."""
+    snapshot = _read_dir(directory)
+    return replace(snapshot, allow=frozenset(load_allow(directory / ALLOW_FILE)))
+
+
+def _read_dir(directory: Path) -> Snapshot:
+    """Read the schemas and the valid corpus of a directory; its allow file is not read."""
     if not directory.is_dir():
         raise CompatError(f"not a directory: {directory}")
     conformance = directory / "conformance"
@@ -827,7 +835,7 @@ def snapshot_from_dir(directory: Path) -> Snapshot:
         raise CompatError(f"cannot list {directory}: {exc}") from exc
     schemas = {p.name: _parse_schema(p.name, _read(p)) for p in schema_paths}
     corpus = {p.relative_to(conformance).as_posix(): _read(p) for p in corpus_paths}
-    return Snapshot(schemas, corpus, frozenset(load_allow(directory / ALLOW_FILE)))
+    return Snapshot(schemas, corpus)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -917,13 +925,22 @@ def _is_valid_instance(under_conformance: str) -> bool:
 def check(base: Snapshot, new_dir: Path, allow: list[AllowEntry]) -> list[Finding]:
     """Return every unsuppressed breaking finding, stale allow entries included.
 
-    Only the entries that are not in the baseline's own allow file take part. An entry
-    the baseline already holds approved a change that has landed: it suppresses nothing
-    and is never stale. So an entry survives its change reaching the base, and a later
-    finding at the same pointer needs a new review.
+    ``allow`` is the selected allow file of the new tree; the new tree's own default
+    allow file is not read. Only the entries that are not in the baseline's allow file
+    take part. An entry the baseline already holds approved a change that has landed:
+    it is never stale, and it suppresses nothing except a finding the baseline also
+    has against itself, unchanged (an unresolvable ``$ref``, say). So an entry survives
+    its change reaching the base, and a different finding at the same pointer needs a
+    new review.
     """
-    new = snapshot_from_dir(new_dir).schemas
+    new = _read_dir(new_dir).schemas
     findings = compare_snapshots(base.schemas, new) + validate_corpus(base.corpus, new)
+    persisting = set(compare_snapshots(base.schemas, base.schemas))
+    findings = [
+        f
+        for f in findings
+        if not (f in persisting and any(entry.matches(f) for entry in base.allow))
+    ]
     added = [entry for entry in allow if entry not in base.allow]
     remaining, stale = apply_allow(findings, added)
     return remaining + stale
