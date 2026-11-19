@@ -1,7 +1,8 @@
 //! The vocabulary rules against the results that Vale gave 2.x.
 //!
-//! STUB(slopvac-8l4.3.44): the golden suite records no vocabulary findings, because its
-//! reference runs without a word blocklist. `fixtures/vocabulary-parity.json` keeps what the
+//! The golden suite records no vocabulary findings: its reference runs with an empty config,
+//! so 2.x sets no word blocklist and runs no vocabulary rule. This oracle stays the only
+//! check of the sweep. `fixtures/vocabulary-parity.json` keeps what the
 //! 2.x sweep reported with the shipped example blocklist (`fixtures/generate_vocabulary.py`
 //! runs Vale 3.27 or later, the oracle). Each document lists the findings of the vocabulary
 //! rule only; the rest of the report is the golden's concern. The test compares the native
