@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import signal
 import subprocess
@@ -18,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from evals import __main__ as cli
-from evals import build_derived, facts, models, runner
+from evals import build_derived, facts, models, runner, textops
 from evals import corpuslib as lib
 
 # --- facts --------------------------------------------------------------------------
@@ -85,6 +86,8 @@ def test_task_building_is_deterministic_and_covers_every_type(corpus):
         ("update", "author"),
         ("rewrite", "author"),
         ("rewrite", "reviewer"),
+        ("mechanical", "reviewer"),
+        ("update", "reviewer"),
     }
     assert len({t["id"] for t in a}) == len(a)
 
@@ -102,12 +105,334 @@ def test_planted_review_tasks_carry_both_texts_a_quote_may_come_from(corpus):
         assert task["passage"].count("\n") >= 1
 
 
+@pytest.mark.parametrize("kind", ["mechanical", "update"])
+def test_planted_review_tasks_of_the_author_types_plant_damage_the_candidate_lacks(
+    corpus, kind
+):
+    manifest, cache = corpus
+    planted = [
+        t
+        for t in models.build_tasks(manifest, cache, per_type=6)
+        if t.get("variant") == "planted" and t["type"] == kind
+    ]
+    assert planted
+    for task in planted:
+        assert task["edits"]
+        for edit in task["edits"]:
+            assert edit["sentence"] in task["original"]
+            assert edit["sentence"] not in task["candidate"]
+        assert task["passage"] == task["original"] + "\n" + task["candidate"]
+
+
+@pytest.mark.parametrize(
+    ("damage", "kind"),
+    [("dropped", "drop"), ("changed", "number")],
+)
+def test_damage_sentence_plants_the_named_kind(damage, kind):
+    sentence = "The queue holds 63 jobs."
+    kept, detail = build_derived.damage_sentence(sentence, kind, [], random.Random("x"))
+    if kind == "drop":
+        assert (kept, detail) == (None, "dropped")
+    else:
+        # 63 plus one of 1, 2, 5 or 10.
+        assert kept in {f"The queue holds {n} jobs." for n in (64, 65, 68, 73)}
+
+
+@pytest.mark.parametrize(
+    ("sentence", "kind", "expected"),
+    [
+        ("The service must restart.", "negation", "The service must not restart."),
+        ("Use `aa` here.", "entity", "Use `bb` here."),
+    ],
+)
+def test_damage_sentence_rewrites_one_fact(sentence, kind, expected):
+    kept, _ = build_derived.damage_sentence(
+        sentence, kind, ["aa", "bb"], random.Random("x")
+    )
+    assert kept == expected
+
+
+@pytest.mark.parametrize(
+    ("sentence", "kind"),
+    [
+        ("The service restarts quickly.", "drop"),
+        ("The service restarts quickly.", "number"),
+        ("The service restarts quickly.", "negation"),
+        ("The service restarts quickly.", "entity"),
+        ("The service must not restart.", "negation"),
+    ],
+)
+def test_damage_sentence_declines_a_sentence_with_nothing_to_damage(sentence, kind):
+    assert (
+        build_derived.damage_sentence(sentence, kind, ["zz"], random.Random("x"))
+        is None
+    )
+
+
+def planted_tasks_from(tmp_path, kind, parent_text, **source):
+    """The planted review tasks of `kind` that `build_tasks` makes from one parent."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "parent.txt").write_text(parent_text + "\n")
+    (docs / "pair.txt").write_text(parent_text + "\n")
+    manifest = {
+        "documents": [
+            {
+                "id": "parent",
+                "origin": "seeded-defect" if kind == "mechanical" else "human",
+                "format": "text",
+                "genre": "g",
+                "source": source.get("parent", {}),
+            },
+            {
+                "id": "pair",
+                "origin": "rewrite-pair",
+                "format": "text",
+                "genre": "g",
+                "source": {"parents": ["parent"], "edits": source.get("edits", [])},
+            },
+        ]
+    }
+    built = models.build_tasks(manifest, tmp_path, per_type=12)
+    return [t for t in built if t["type"] == kind and t["role"] == "reviewer"]
+
+
+MECHANICAL_TEXT = (
+    "# Title\n\nThe queue holds 63 jobs before it blocks writers. "
+    "We leverage the cache to speed up reads.\n\nTail."
+)
+
+
+def test_a_mechanical_planted_task_leaves_the_flagged_sentence_alone(tmp_path):
+    flagged = "We leverage the cache to speed up reads."
+    (task,) = planted_tasks_from(
+        tmp_path,
+        "mechanical",
+        MECHANICAL_TEXT,
+        parent={"defects": [{"line": 3, "rule": "r", "text": flagged}]},
+    )
+    # The only other sentence with a fact is the queue one: it is the damage.
+    assert [e["sentence"] for e in task["edits"]] == [
+        "The queue holds 63 jobs before it blocks writers."
+    ]
+    assert flagged in task["candidate"]
+    assert "63" not in task["candidate"]
+
+
+UPDATE_TEXT = (
+    "Intro paragraph here. The cache holds 40 items in memory. "
+    "Run `purge` to empty it before restart."
+)
+
+
+@pytest.fixture
+def update_planted(tmp_path):
+    (task,) = planted_tasks_from(
+        tmp_path,
+        "update",
+        UPDATE_TEXT,
+        edits=[
+            {
+                "kind": "number",
+                "detail": "40 -> 50",
+                "original_sentence": "The cache holds 40 items in memory.",
+                "line": 1,
+            }
+        ],
+    )
+    return task
+
+
+def test_an_update_planted_task_makes_the_stated_change_and_plants_damage_elsewhere(
+    update_planted,
+):
+    assert update_planted["candidate"] == (
+        "Intro paragraph here. The cache holds 50 items in memory."
+    )
+    assert [e["sentence"] for e in update_planted["edits"]] == [
+        "Run `purge` to empty it before restart."
+    ]
+
+
+def test_an_update_planted_review_prompt_names_the_change_as_intended(update_planted):
+    assert "replace 40 with 50" in update_planted["prompt"]
+    assert update_planted["original"] in update_planted["prompt"]
+    assert update_planted["candidate"] in update_planted["prompt"]
+
+
+def update_tasks_of(tmp_path, paragraph, old="40", new="50", line=1):
+    """The update planted tasks from a one-paragraph parent whose edit starts `line`."""
+    return planted_tasks_from(
+        tmp_path,
+        "update",
+        paragraph,
+        edits=[
+            {
+                "kind": "number",
+                "detail": f"{old} -> {new}",
+                "original_sentence": textops.split_sentences(paragraph)[0],
+                "line": line,
+            }
+        ],
+    )
+
+
+def one_update_task(tmp_path, paragraph, old="40", new="50"):
+    (task,) = update_tasks_of(tmp_path, paragraph, old, new)
+    return task
+
+
+QUEUE_40 = "The queue holds 40 jobs before it blocks writers."
+QUEUE_50 = "The queue holds 50 jobs before it blocks writers."
+QUEUE_63 = "The queue holds 63 jobs before it blocks writers."
+QUEUE_68 = "The queue holds 68 jobs before it blocks writers."
+CACHE_12 = "The cache keeps 12 entries per user today."
+CACHE_17 = "The cache keeps 17 entries per user today."
+PURGE = "Run `purge` to empty it before restart."
+
+
+def intended_task(sentence=CACHE_12, after=CACHE_17):
+    return {
+        "type": "update",
+        "variant": "planted",
+        "passage": f"{QUEUE_40}\n{sentence}\n{QUEUE_50}\n{after}",
+        "edits": [{"kind": "number", "sentence": sentence, "after": after}],
+        "intended": [QUEUE_40, QUEUE_50],
+    }
+
+
+@pytest.mark.parametrize(
+    ("quote", "found", "alarms"),
+    [
+        (CACHE_12, 1, 0),  # the damaged sentence as the original has it
+        (CACHE_17, 1, 0),  # the damaged sentence as the candidate has it
+        (QUEUE_40, 0, 0),  # the intended change, original side: not an alarm
+        (QUEUE_50, 0, 0),  # the intended change, candidate side
+        ("Totally unrelated heading text here", 0, 1),
+    ],
+)
+def test_a_finding_counts_by_what_it_matches_not_by_which_is_closer(
+    quote, found, alarms
+):
+    answer = json.dumps([{"quote": quote.rstrip("."), "problem": "number changed"}])
+    scored = models.score_review(intended_task(), answer)
+    assert (scored["found"], scored["false_alarms"]) == (found, alarms)
+
+
+def test_a_candidate_side_quote_of_damage_that_differs_from_the_change_by_numbers_only():
+    # The damaged candidate sentence overlaps both intended sentences as much as it
+    # overlaps the damaged original, so only the planted text can tell them apart.
+    task = intended_task(QUEUE_63, QUEUE_68)
+    answer = json.dumps([{"quote": QUEUE_68.rstrip("."), "problem": "number changed"}])
+    scored = models.score_review(task, answer)
+    assert (scored["found"], scored["false_alarms"], scored["success"]) == (1, 0, True)
+
+
+def test_the_builder_rejects_damage_it_cannot_tell_from_the_intended_change(
+    tmp_path, caplog
+):
+    # Both queue sentences differ by a number only: either could be the damage.
+    assert update_tasks_of(tmp_path, f"{QUEUE_40} {QUEUE_63}") == []
+    assert [r.getMessage() for r in caplog.records] == [
+        (
+            "skipped planted review candidates "
+            "(update: no sentence to damage that the stated change leaves distinct x1)"
+        )
+    ]
+
+
+def test_the_builder_plants_the_damage_on_a_sentence_apart_from_the_intended_change(
+    tmp_path, caplog
+):
+    task = one_update_task(tmp_path, f"{QUEUE_40} {QUEUE_63} {PURGE}")
+    assert [e["sentence"] for e in task["edits"]] == [PURGE]
+    assert task["intended"] == [QUEUE_40, QUEUE_50]
+    assert caplog.records == []
+    only_intended = json.dumps([{"quote": QUEUE_40[:-1], "problem": "number changed"}])
+    scored = models.score_review(task, only_intended)
+    assert (scored["found"], scored["false_alarms"], scored["success"]) == (
+        0,
+        0,
+        False,
+    )
+    damaged = json.dumps([{"quote": PURGE[:-1], "problem": "dropped"}])
+    assert models.score_review(task, damaged)["success"]
+
+
+def test_shared_words_with_the_damaged_sentence_are_not_a_detection(tmp_path):
+    intended = "The service holds 40 items in the shared cache during startup."
+    damaged = "The shared cache keeps 12 entries per user today."
+    task = one_update_task(tmp_path, f"{intended} {damaged}")
+    assert [e["sentence"] for e in task["edits"]] == [damaged]
+    # Three of these five words are also in the damaged sentence, but the quote
+    # lies in the intended sentence, and the complaint is about 40 -> 50 only.
+    answer = json.dumps(
+        [{"quote": "the shared cache during startup", "problem": "40 became 50"}]
+    )
+    scored = models.score_review(task, answer)
+    assert (scored["found"], scored["success"]) == (0, False)
+
+
+def test_a_quote_inside_the_damaged_sentence_still_detects_it(tmp_path):
+    intended = "The service holds 40 items in the shared cache during startup."
+    damaged = "The shared cache keeps 12 entries per user today."
+    task = one_update_task(tmp_path, f"{intended} {damaged}")
+    answer = json.dumps([{"quote": "keeps 12 entries per user", "problem": "number"}])
+    assert models.score_review(task, answer)["success"]
+
+
+COPY_PAIRS = [("40", "50"), ("7", "9"), ("12", "13"), ("21", "22"), ("64", "65")]
+
+
+@pytest.mark.parametrize(("old", "new"), COPY_PAIRS)
+def test_a_change_that_turns_one_sentence_into_a_copy_of_another_leaves_no_damage_site(
+    tmp_path, old, new
+):
+    first = f"The shared cache holds {old} items in memory today."
+    second = f"The shared cache holds {new} items in memory today."
+    assert update_tasks_of(tmp_path, f"{first} {second}", old, new) == []
+
+
+@pytest.mark.parametrize(("old", "new"), COPY_PAIRS)
+def test_damage_beside_a_copy_lands_on_the_sentence_that_is_not_one(tmp_path, old, new):
+    first = f"The shared cache holds {old} items in memory today."
+    second = f"The shared cache holds {new} items in memory today."
+    task = one_update_task(tmp_path, f"{first} {second} {PURGE}", old, new)
+    assert [e["sentence"] for e in task["edits"]] == [PURGE]
+    assert task["intended"] == [first, second]
+    for quote in (first, second):
+        answer = json.dumps([{"quote": quote.rstrip("."), "problem": "x"}])
+        scored = models.score_review(task, answer)
+        assert (scored["found"], scored["false_alarms"]) == (0, 0)
+
+
+def test_the_builder_reports_a_paragraph_it_cannot_find(tmp_path, caplog):
+    assert update_tasks_of(tmp_path, f"{QUEUE_40} {PURGE}", line=5) == []
+    assert [r.getMessage() for r in caplog.records] == [
+        "skipped planted review candidates (update: stated paragraph not found x1)"
+    ]
+
+
+@pytest.mark.parametrize(
+    "neighbour", ["40.5", "40,500", "1,40", "3.40", "40.5.1", ".40"]
+)
+def test_the_update_changes_whole_numbers_only(tmp_path, neighbour):
+    paragraph = (
+        f"The limit is {neighbour} seconds and the quota is 40 items. "
+        "Run `purge` to empty it before restart."
+    )
+    task = one_update_task(tmp_path, paragraph)
+    assert task["candidate"] == (
+        f"The limit is {neighbour} seconds and the quota is 50 items."
+    )
+
+
 def test_update_tasks_carry_the_stated_change_and_it_is_in_the_passage(corpus):
     manifest, cache = corpus
     for task in (
         t
         for t in models.build_tasks(manifest, cache, per_type=6)
-        if t["type"] == "update"
+        if t["type"] == "update" and t["role"] == "author"
     ):
         change = task["expected"][0]
         assert re.search(rf"(?<!\d){re.escape(change['old'])}(?!\d)", task["source"])
@@ -1449,7 +1774,7 @@ def test_a_number_change_applies_to_every_occurrence_of_the_old_value():
 def update_tasks(corpus):
     manifest, cache = corpus
     built = models.build_tasks(manifest, cache, per_type=12)
-    return [t for t in built if t["type"] == "update"]
+    return [t for t in built if t["type"] == "update" and t["role"] == "author"]
 
 
 def apply_change(task):
@@ -1504,7 +1829,7 @@ def update_tasks_for(tmp_path, passage, old):
         ]
     }
     built = models.build_tasks(manifest, tmp_path, per_type=12)
-    return [t for t in built if t["type"] == "update"]
+    return [t for t in built if t["type"] == "update" and t["role"] == "author"]
 
 
 @pytest.mark.parametrize(
@@ -1972,3 +2297,13 @@ def test_recommend_command_writes_the_file_named_by_out(tmp_path, capsys):
     assert cli.main(["models", "recommend", str(path), "--out", str(target)]) == 0
     assert capsys.readouterr().out == ""
     assert json.loads(target.read_text())["status"] == "pending-reevaluation"
+
+
+@pytest.mark.parametrize("kind", ["mechanical", "update", "rewrite"])
+def test_the_summary_ranks_planted_reviewers_for_every_review_type(kind):
+    task = tiny_tasks()[2] | {"type": kind}
+    out = models.execute(
+        [task], roster("a", "b"), 3, NO_FINDINGS, ask_for=fake_ask, date="2026-11-19"
+    )
+    ranking = models.summarize(out, resamples=1)["ranking"]
+    assert set(ranking[f"{kind}/reviewer"]) == {"a", "b"}
