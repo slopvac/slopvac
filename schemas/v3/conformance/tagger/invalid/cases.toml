@@ -29,3 +29,4 @@
 "when-only-extension.toml" = "/when"
 "when-with-empty-match.toml" = ""
 "when-with-empty-unless.toml" = ""
+"confidence-just-over-one.toml" = "/confidence"

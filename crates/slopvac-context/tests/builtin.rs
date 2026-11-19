@@ -1,6 +1,7 @@
 //! Behaviour of the built-in taggers through the public API.
 #![allow(clippy::assert_is_empty)]
 
+use rstest::rstest;
 use slopvac_context::{BlockKind, OwnedBlock, PlainDocument, builtin_registry};
 
 fn kinds_for(path: &str, src: &str, needle: &str) -> Vec<String> {
@@ -247,4 +248,32 @@ fn generated_notice_also_covers_list_items_and_headings() {
     assert!(has(&item, "generated"), "{item:?}");
     let plain = kinds_for("a.md", src, "Plain item.");
     assert!(!has(&plain, "generated"), "{plain:?}");
+}
+
+#[rstest]
+#[case::emphasis_and_link_are_reduced_to_words(
+    "**Never** pass `--force` to [the tool](http://x).",
+    true
+)]
+#[case::a_marker_in_a_code_span_is_dropped("Use `must` here.", false)]
+#[case::a_marker_in_a_link_target_is_dropped("See [docs](http://x/must) now.", false)]
+#[case::an_unmatched_link_opener_keeps_the_text_after_it("Read a](b and you must stop.", true)]
+#[case::an_unclosed_backtick_stays_literal("Use ` and you must stop.", true)]
+#[case::a_shorter_run_does_not_close_a_longer_span("Use `` a ` must `` now.", false)]
+#[case::an_unclosed_run_leaves_a_later_span_to_close("A ``` b `x` you must stop.", true)]
+fn requirement_reads_the_cleaned_sentence(#[case] sentence: &str, #[case] want: bool) {
+    let src = format!("# T\n\n{sentence}\n");
+    let kinds = kinds_for("a.md", &src, sentence);
+    assert_eq!(has(&kinds, "requirement"), want, "{kinds:?}");
+}
+
+#[rstest]
+#[case::link_text_is_kept("The [rejects](http://x) page loads.", true)]
+#[case::a_verb_in_a_code_span_is_dropped("The server `rejects` unsigned requests.", false)]
+#[case::an_unmatched_link_opener_keeps_the_text_after_it("The server a](b rejects requests.", true)]
+#[case::an_unclosed_backtick_stays_literal("The server ` rejects requests.", true)]
+fn enforced_invariant_reads_the_cleaned_sentence(#[case] sentence: &str, #[case] want: bool) {
+    let src = format!("# T\n\n{sentence}\n");
+    let kinds = kinds_for("a.md", &src, sentence);
+    assert_eq!(has(&kinds, "enforced-invariant"), want, "{kinds:?}");
 }

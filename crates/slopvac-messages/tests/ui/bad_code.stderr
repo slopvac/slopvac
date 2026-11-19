@@ -1,0 +1,5 @@
+error: `Bad_Code` is not kebab-case; use lower-case letters and digits in groups joined by single `-`
+ --> tests/ui/bad_code.rs:7:12
+  |
+7 |     #[code("Bad_Code")]
+  |            ^^^^^^^^^^

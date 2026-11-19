@@ -1,0 +1,19 @@
+[package]
+name = "slopvac-messages"
+description = "Message catalogs: entry types, one render function and the Fluent export."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+slopvac-messages-derive = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+trybuild = { workspace = true }
+
+[lints]
+workspace = true

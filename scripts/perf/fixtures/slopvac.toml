@@ -1,0 +1,3 @@
+# Minimal 3.0 config for the binary perf scenarios. They pass it with
+# --config so they never read the repository slopvac.toml (a 2.x file).
+schema_version = 3

@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use slopvac_model::{KebabName, NonEmptyString, Notice, NoticeLevel};
+
 /// A setup or steering failure. Each variant has a stable kebab-case code.
 #[derive(Debug, thiserror::Error)]
 pub enum AgentsError {
@@ -38,6 +40,9 @@ pub enum AgentsError {
         code: &'static str,
         /// The rendered diagnostics.
         message: String,
+        /// Each path, exactly as the message prints it, so a caller can replace it whole
+        /// instead of guessing where a path ends.
+        paths: Vec<String>,
     },
     /// An I/O failure.
     #[error("{path}: {source}")]
@@ -80,4 +85,26 @@ impl AgentsError {
             source,
         }
     }
+}
+
+/// Build a [`Notice`] for the workflows in this crate.
+///
+/// # Errors
+/// The code is not kebab-case or the message is empty. Both are coding mistakes.
+pub(crate) fn notice(
+    code: &'static str,
+    level: NoticeLevel,
+    message: String,
+) -> Result<Notice, AgentsError> {
+    let invalid = |what: String| AgentsError::Coded {
+        code: "agents-notice-invalid",
+        message: format!("cannot build notice {code}: {what}"),
+    };
+    Ok(Notice {
+        code: KebabName::new(code).map_err(|e| invalid(e.to_string()))?,
+        level,
+        message: NonEmptyString::new(message).map_err(|e| invalid(e.to_string()))?,
+        path: None,
+        data: serde_json::Map::new(),
+    })
 }

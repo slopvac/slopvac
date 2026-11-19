@@ -35,7 +35,7 @@ Each run of a binary has a process exit status and a summary that the document g
 
 ## Pin
 
-`pin.toml` records the reference: the package version, the last commit that changed its sources, a hash of its source and rule data, and the Vale version. `record` refuses to run when the checkout does not match the pin. The pin test fails when the reference changes. A fix to rule data lands in the Python package first, then `golden.py pin` moves the pin, and then the golden is recorded again. The commit is compared only in a full clone, because the source hash proves the same thing.
+`pin.toml` records the reference: the package version, a hash of its source and rule data, and the Vale version. `record` refuses to run when the checkout does not match the pin. The pin test fails when the reference changes. A fix to rule data lands in the Python package first, then `golden.py pin` moves the pin, and then the golden is recorded again. The pin holds no commit, because a branch commit disappears at squash-merge. Every field is a version or a content hash, so the check reads no git state and gives the same result in a shallow clone. The source hash covers the `.py`, `.yml`, `.yaml`, `.toml` and `.json` files under `packages/slopvac-lint/src/slopvac`, outside `__pycache__`, in order of relative path, with POSIX path separators. The inputs, including the corpus subset, are pinned by hash in `inputs.toml` and checked by the inputs test.
 
 ## Approved changes
 

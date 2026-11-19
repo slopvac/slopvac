@@ -12,7 +12,7 @@ use crate::engine::{self, EngineLinter, LintRequest, Linter};
 use crate::env::Env;
 use crate::errors::CliError;
 use crate::{
-    exit, generate, init, inspect, lint_settings, logging, offline, output, redact, stdin,
+    exit, generate, init, inspect, lint_settings, logging, offline, output, owners, redact, stdin,
 };
 
 /// Settings every command shares, resolved once.
@@ -230,6 +230,11 @@ fn dispatch(
             reject_removed(m, &cli::REMOVED_INSPECT_OPTIONS)?;
             inspect::explain(m, out)
         }
+        Some(("terms", m)) => owners::terms(m, out),
+        Some(("genre", m)) => owners::genre(m, out),
+        Some(("validate", m)) => owners::validate(m, out),
+        Some(("setup", m)) => owners::setup(m, out),
+        Some(("prime", m)) => owners::prime(m, out),
         Some(("man", m)) => man(m, out),
         Some(("doctor", m)) => doctor(matches, m, env, out),
         Some(("cli-reference", _)) => write_stdout(
@@ -254,7 +259,8 @@ fn doctor(
     env: &dyn Env,
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    use crate::doctor::stubs::{EnvDirs, LocalConfigSources, LocalUpdateProbe};
+    use crate::doctor::stubs::{EnvDirs, LocalConfigSources};
+    use crate::doctor::update::InstalledUpdateProbe;
     let cwd = std::env::current_dir().unwrap_or_default();
     let report = crate::doctor::build(&crate::doctor::Inputs {
         env,
@@ -262,7 +268,7 @@ fn doctor(
         offline_flag: root.get_flag("offline"),
         explicit_config: m.get_one::<PathBuf>("config").map(PathBuf::as_path),
         version: env!("CARGO_PKG_VERSION"),
-        update: &LocalUpdateProbe,
+        update: &InstalledUpdateProbe::new(),
         config: &LocalConfigSources,
         dirs: &EnvDirs,
         walk_limit: crate::doctor::WALK_LIMIT,

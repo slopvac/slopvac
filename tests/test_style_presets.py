@@ -8,9 +8,11 @@ from pathlib import Path
 from slopvac.profiles import _NORMAL
 
 REMOVED_RULES = frozenset(
-    tomllib.loads(
+    entry["id"]
+    for entry in tomllib.loads(
         (
-            Path(__file__).resolve().parents[1] / "scripts/contract/removed-rules.toml"
+            Path(__file__).resolve().parents[1]
+            / "docs/contract/compat/removed-rules.toml"
         ).read_text()
     )["rules"]
 )
@@ -66,7 +68,7 @@ def _engine_effective_ste_rules() -> dict[str, str]:
 def test_ste_preset_reproduces_effective_state_of_every_ste_rule() -> None:
     """Active state and level per rule, as the 2.x engine resolves them at normal.
 
-    The rules 3.0 removed (`scripts/contract/removed-rules.toml`) are left out.
+    The rules 3.0 removed (`docs/contract/compat/removed-rules.toml`) are left out.
 
     A category entry sets every rule in the category, and a rule entry beats it.
     """

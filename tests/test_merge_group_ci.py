@@ -391,13 +391,13 @@ def test_agnix_diff_base_uses_the_merge_group_base():
     assert evaluate(base, ctx(pr)) == "a" * 40
 
 
-def test_secret_scan_of_a_queue_entry_is_bounded_by_the_group_range():
+def test_secret_scan_of_a_queue_entry_is_bounded_by_the_computed_range():
     steps = load("security.yml")["jobs"]["trufflehog"]["steps"]
     queue = next(s for s in steps if s["name"] == "Scan merge queue entry")
     assert condition(queue["if"], ctx(MERGE_GROUP))
     assert not condition(queue["if"], ctx(PULL_REQUEST))
-    assert evaluate(queue["with"]["base"], ctx(MERGE_GROUP)) == "b" * 40
-    assert evaluate(queue["with"]["head"], ctx(MERGE_GROUP)) == "c" * 40
+    assert queue["with"]["base"] == "${{ steps.range.outputs.base }}"
+    assert queue["with"]["head"] == "${{ steps.range.outputs.head }}"
     pushed = next(s for s in steps if s["name"] == "Scan pushed commits")
     assert not condition(pushed["if"], ctx(MERGE_GROUP))
 

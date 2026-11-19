@@ -752,3 +752,61 @@ fn a_corpus_file_one_byte_over_the_document_cap_is_refused_with_its_code() {
         "{err}"
     );
 }
+
+#[test]
+fn a_fifo_coverage_file_is_refused_without_blocking() {
+    let dir = pack_dir(1);
+    let fifo = dir.path().join("pipe.md");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let pack = dir.path().to_str().unwrap().to_owned();
+    let corpus = fifo.to_str().unwrap().to_owned();
+    let probe = fifo.clone();
+    let result = common::within_timeout(&probe, move || {
+        let m = slopvac_engine::cases::cli::command()
+            .try_get_matches_from(["cases", &pack, "--coverage", &corpus])
+            .unwrap();
+        slopvac_engine::cases::cli::run(&m, &mut Vec::new())
+    });
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("not a regular file"), "{err}");
+}
+
+/// A link to a regular corpus file is read through the link.
+#[test]
+fn a_symlinked_coverage_file_is_read() {
+    let dir = pack_dir(1);
+    let real = dir.path().join("real.txt");
+    std::fs::write(&real, "no match here").unwrap();
+    let link = dir.path().join("doc.md");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let (code, out) = cli(&[
+        dir.path().to_str().unwrap(),
+        "--coverage",
+        link.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{out}");
+}
+
+/// A dangling link is a missing file, as before.
+#[test]
+fn a_dangling_coverage_link_is_a_not_found_error() {
+    let dir = pack_dir(1);
+    let link = dir.path().join("doc.md");
+    std::os::unix::fs::symlink(dir.path().join("gone.md"), &link).unwrap();
+    let m = slopvac_engine::cases::cli::command()
+        .try_get_matches_from([
+            "cases",
+            dir.path().to_str().unwrap(),
+            "--coverage",
+            link.to_str().unwrap(),
+        ])
+        .unwrap();
+    let err = slopvac_engine::cases::cli::run(&m, &mut Vec::new()).unwrap_err();
+    assert!(err.to_string().contains("No such file"), "{err}");
+}

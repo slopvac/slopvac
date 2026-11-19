@@ -65,6 +65,9 @@ pub enum OciError {
         url: String,
         /// The rule.
         why: String,
+        /// Raw bytes read from the socket before the refusal, for callers that
+        /// keep a shared byte budget. Zero when nothing was read.
+        wire_bytes: u64,
     },
     /// The token realm is not on the registry's origin or a listed token service.
     #[error("token realm {} is not on the registry origin; credentials were not sent", esc(.0))]

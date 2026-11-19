@@ -1,0 +1,5 @@
+error: tuple variants are not allowed: parameters are named, so use a struct variant
+ --> tests/ui/tuple_variant.rs:9:9
+  |
+9 |     Oops(String),
+  |         ^^^^^^^^

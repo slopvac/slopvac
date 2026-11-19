@@ -35,20 +35,21 @@ pub enum Pos {
 }
 
 impl Pos {
-    /// Parse the abbreviations 2.x accepted, including spaCy-style tags.
+    /// Parse a part of speech exactly as the blocklist schema lists it.
+    ///
+    /// The match is case-sensitive and does not trim: the lowercase short and
+    /// long forms, and the uppercase spaCy tags.
     #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
-        let raw = raw.trim();
-        let lower = raw.to_ascii_lowercase();
-        Some(match lower.as_str() {
-            "n" | "noun" => Self::Noun,
-            "v" | "verb" => Self::Verb,
-            "adj" | "adjective" => Self::Adjective,
-            "adv" | "adverb" => Self::Adverb,
-            "prep" | "preposition" | "adp" => Self::Preposition,
-            "conj" | "conjunction" | "cconj" | "sconj" => Self::Conjunction,
-            "pron" | "pronoun" => Self::Pronoun,
-            "art" | "article" | "det" => Self::Article,
+        Some(match raw {
+            "n" | "noun" | "NOUN" => Self::Noun,
+            "v" | "verb" | "VERB" => Self::Verb,
+            "adj" | "adjective" | "ADJ" => Self::Adjective,
+            "adv" | "adverb" | "ADV" => Self::Adverb,
+            "prep" | "preposition" | "ADP" => Self::Preposition,
+            "conj" | "conjunction" | "CCONJ" | "SCONJ" => Self::Conjunction,
+            "pron" | "pronoun" | "PRON" => Self::Pronoun,
+            "art" | "article" | "DET" => Self::Article,
             _ => return None,
         })
     }

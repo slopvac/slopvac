@@ -49,7 +49,7 @@ from mdtext import text as _text
 ROOT = Path(__file__).resolve().parents[2]
 RULES_DIR = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac" / "rules"
 SCHEMAS_DIR = ROOT / "schemas" / "v3"
-REMOVED_RULES_FILE = ROOT / "scripts" / "contract" / "removed-rules.toml"
+REMOVED_RULES_FILE = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
 DEFAULT_OUT = ROOT / "build" / "site-src"
 # Pack manifests to document. The example plugin pack is the only committed one
 # until the pack loader and the bundled core pack exist.
@@ -182,7 +182,7 @@ def load_categories(rules_dir: Path = RULES_DIR) -> list[dict]:
 def removed_rules() -> frozenset[str]:
     """The 2.x rules that 3.0 does not ship, as ``<category>.<rule>``."""
     text = REMOVED_RULES_FILE.read_text(encoding="utf-8")
-    return frozenset(tomllib.loads(text)["rules"])
+    return frozenset(entry["id"] for entry in tomllib.loads(text)["rules"])
 
 
 def generate_rules(rules_dir: Path = RULES_DIR) -> Pages:
@@ -282,6 +282,10 @@ def generate_genres() -> Pages:
 
 def generate_cli() -> Pages:
     return rust_reference("slopvac", "cli-reference")
+
+
+def generate_error_codes() -> Pages:
+    return rust_reference("slopvac")
 
 
 class _ConfigSchema:
@@ -423,6 +427,7 @@ SECTIONS = (
     ("Pack manifest", "plugins/manifest.md"),
     ("Packs", "plugins/packs/index.md"),
     ("Command line", "cli/index.md"),
+    ("Error codes", "reference/error-codes.md"),
     ("Configuration", "config/index.md"),
     ("Schemas", "schemas/index.md"),
 )
@@ -453,6 +458,7 @@ def build(
         generate_genres(),
         plugin_pages.generate_packs(schemas, packs_dir),
         generate_cli(),
+        generate_error_codes(),
         generate_config(schemas_dir),
         {"index.md": index_page()},
     )

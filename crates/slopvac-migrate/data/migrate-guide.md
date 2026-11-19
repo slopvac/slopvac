@@ -32,7 +32,9 @@ Common causes:
 - A rule or category name that is not in the rename table.
 - A key 3.0 does not know, or a `guidance` table inside an override.
 
-Edit the file, then run the preview again.
+Edit the file and preview again.
+
+A 2.x category with no rules is dropped with `migrate-category-removed`; migrate exits 0.
 
 ## 4. Apply
 
@@ -42,14 +44,14 @@ slopvac migrate --write
 
 The command copies each file it replaces to `.slopvac-migrate-backup` and then rewrites it. Config comments and key order stay. It does the following:
 
-- Moves `.slopvac.toml` and `[tool.slopvac]` into `slopvac.toml`, and adds `schema_version = 3`. Other content in `pyproject.toml` stays.
+- Moves `.slopvac.toml` and `[tool.slopvac]` into `slopvac.toml`, and adds `schema_version = 3`.
 - Renames categories and rules to their 3.0 names, and writes a rule that had only a `severity` as a bare level.
 - Moves `locale.default` to `locale`, `locale.allow` to `terms.allow`, and `vocabulary.path` to `terms.blocklists`.
 - Deletes a `[vale]` table that has `enabled = false`.
 - Qualifies the rule id in each `slopvac-allow` comment. Comments inside code fences and code spans are examples and stay.
 - Replaces each steering block with the 3.0 text.
 
-The command stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml` and `[tool.slopvac]`. 2.x read only one of them. Remove the ones you do not use and run again.
+The command stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml` and `[tool.slopvac]`. 2.x read only one of them. Remove the unused ones.
 
 To keep the 2.x gates, add `--preserve-behavior`. It selects the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Other patterns fail with `migrate-override-overlap`.
 

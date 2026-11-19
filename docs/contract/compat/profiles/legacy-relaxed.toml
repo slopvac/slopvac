@@ -37,18 +37,10 @@ weight = 1.0
 [categories.docs-discipline]
 severity = "off"
 
-[categories.meta]
-severity = "error"
-max_per_100_words = 0.0
-weight = 1.0
-
 [categories.orwell]
 severity = "warning"
 max_per_100_words = 2.0
 weight = 1.0
-
-[categories.orwell-voice]
-severity = "off"
 
 [categories.prose-agency]
 severity = "suggestion"
@@ -56,9 +48,6 @@ max_per_100_words = 2.0
 weight = 0.5
 
 [categories.prose-craft]
-severity = "off"
-
-[categories.prose-density]
 severity = "off"
 
 [categories.prose-discipline]
@@ -115,9 +104,6 @@ max_per_100_words = 2.5
 weight = 0.8
 
 [categories.ste-verbs]
-severity = "off"
-
-[categories.ste-vocabulary]
 severity = "off"
 
 [categories.ste-words]
@@ -281,3 +267,4 @@ severity = "off"
 "ste-words.domain-noun-not-organization-approved" = "off"
 "ste-words.domain-noun-too-long-or-unclear" = "off"
 "ste-words.domain-verb-category-membership" = "off"
+"ste-words.spelling" = "off"

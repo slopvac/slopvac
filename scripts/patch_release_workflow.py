@@ -233,7 +233,7 @@ _CUSTOM_NEW = """\
       "actions": "read"
       "contents": "read"
     secrets:
-      RULESET_READ_TOKEN: ${{ secrets.RULESET_READ_TOKEN }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 """
 _HOST_NEEDS_OLD = "  host:\n    needs:\n      - plan\n"
 _HOST_NEEDS_NEW = (
@@ -395,10 +395,26 @@ _LEGACY_JOB = """
       - uses: {checkout}
         with:
           persist-credentials: false
+      - name: Mint the ruleset read token
+        id: ruleset-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-administration: read
+      - name: Explain a failed token mint
+        if: ${{ failure() && steps.ruleset-token.outcome == 'failure' }}
+        shell: bash
+        run: |
+          echo "::error::Could not mint the ruleset read token."
+          echo "::error::The release app needs Administration: Read-only on the slopvac/slopvac installation."
+          exit 1
       - name: Require an immutable tag ruleset
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.RULESET_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.ruleset-token.outputs.token }}
         run: |
           python3 scripts/release_ruleset.py check "$RELEASE_TAG" --repo "$REPO"
       - name: Check the release is the unpublished release-please release

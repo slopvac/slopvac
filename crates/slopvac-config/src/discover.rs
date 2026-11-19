@@ -158,6 +158,7 @@ fn legacy(file: &str, text: String, span: std::ops::Range<usize>, message: &str)
             span,
             help: Some("run `slopvac migrate` to convert it".into()),
             path: Vec::new(),
+            data: None,
         }],
     }))
 }

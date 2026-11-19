@@ -82,6 +82,20 @@ pub struct Notice {
     )]
     #[schemars(transform = absent_not_null)]
     pub path: Option<String>,
+    /// Details as a JSON object; a value may be any JSON value, including a nested object or
+    /// array. Each notice code documents its own keys. Consumers must ignore keys they do
+    /// not know. Omitted when the notice has none.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub data: serde_json::Map<String, Value>,
+}
+
+impl Notice {
+    /// Returns the notice with `data` attached.
+    #[must_use]
+    pub fn with_data(mut self, data: serde_json::Map<String, Value>) -> Self {
+        self.data = data;
+        self
+    }
 }
 
 /// Where a rule came from.

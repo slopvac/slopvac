@@ -2,6 +2,8 @@
 
 #![allow(missing_docs, clippy::single_range_in_vec_init)]
 
+mod common;
+
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
@@ -286,4 +288,183 @@ fn a_rule_file_one_byte_over_the_cap_is_refused_with_its_code() {
         LoadErrorKind::TooLarge(slopvac_rules::MAX_RULE_FILE_BYTES)
     );
     assert!(e.to_string().contains("[rules-file-too-large]"), "{e}");
+}
+
+fn one_rule_category(id: &str) -> String {
+    let rule = tokens_rule("r", "foo", &json!([{"bad": "a foo b", "good": "a bar b"}]));
+    category(id, &[rule])
+}
+
+#[cfg(unix)]
+#[test]
+fn many_names_for_one_rule_file_load_it_once() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.json"), one_rule_category("cat")).unwrap();
+    // 300 aliases is past the file budget, so only deduplication lets the pack load.
+    for i in 0..300 {
+        std::os::unix::fs::symlink("a.json", dir.path().join(format!("alias{i:03}.json"))).unwrap();
+    }
+    let set = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap();
+    assert_eq!(set.categories().len(), 1);
+}
+
+fn write_categories(dir: &std::path::Path, count: usize) {
+    for i in 0..count {
+        let id = format!("cat{i:04}");
+        std::fs::write(dir.join(format!("{id}.json")), one_rule_category(&id)).unwrap();
+    }
+}
+
+fn budget_error(e: &LoadErrors) -> (&'static str, u64, &str) {
+    match &e.errors()[0].kind {
+        LoadErrorKind::BudgetExceeded {
+            budget,
+            limit,
+            path,
+        } => (budget.as_str(), *limit, path),
+        other => panic!("expected a budget refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_pack_with_exactly_the_file_limit_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    write_categories(dir.path(), slopvac_rules::MAX_PACK_FILES);
+    let set = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap();
+    assert_eq!(set.categories().len(), slopvac_rules::MAX_PACK_FILES);
+}
+
+#[test]
+fn a_pack_one_file_past_the_limit_is_refused_with_its_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    write_categories(dir.path(), slopvac_rules::MAX_PACK_FILES + 1);
+    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
+    let (budget, limit, path) = budget_error(&e);
+    assert_eq!(budget, "pack-files");
+    assert_eq!(limit, slopvac_rules::MAX_PACK_FILES as u64);
+    assert!(!path.starts_with('/'), "{path}");
+    assert!(e.to_string().contains("[rules-budget-exceeded]"), "{e}");
+}
+
+/// Sixteen valid category files of exactly the per-file cap, so the pack holds the byte limit.
+fn write_full_pack(dir: &std::path::Path) {
+    let cap = usize::try_from(slopvac_rules::MAX_RULE_FILE_BYTES).unwrap();
+    for i in 0..(slopvac_rules::MAX_PACK_BYTES / slopvac_rules::MAX_RULE_FILE_BYTES) {
+        let id = format!("cat{i:04}");
+        let mut text = one_rule_category(&id);
+        // Trailing whitespace is valid JSON, so the file stays a category.
+        text.push_str(&" ".repeat(cap - text.len()));
+        std::fs::write(dir.join(format!("{id}.json")), text).unwrap();
+    }
+}
+
+#[test]
+fn a_pack_with_exactly_the_byte_limit_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    write_full_pack(dir.path());
+    assert!(RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).is_ok());
+}
+
+#[test]
+fn a_pack_one_byte_past_the_byte_limit_is_refused_with_its_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    write_full_pack(dir.path());
+    // A seventeenth file sorts last and adds one byte.
+    std::fs::write(dir.path().join("zz.json"), " ").unwrap();
+    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
+    let (budget, limit, _) = budget_error(&e);
+    assert_eq!(budget, "pack-bytes");
+    assert_eq!(limit, slopvac_rules::MAX_PACK_BYTES);
+}
+
+#[test]
+fn a_budget_refusal_for_a_pack_outside_the_working_directory_shows_no_absolute_path() {
+    // The temporary directory is absolute and outside the working directory of the test.
+    let dir = tempfile::tempdir().unwrap();
+    write_categories(dir.path(), slopvac_rules::MAX_PACK_FILES + 1);
+    let name = dir.path().file_name().unwrap().to_str().unwrap().to_owned();
+    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
+    let (_, _, path) = budget_error(&e);
+    assert_eq!(path, format!("<external>/{name}"));
+    let absolute = dir.path().to_str().unwrap();
+    for shown in [e.to_string(), format!("{e:?}")] {
+        assert!(shown.contains(&format!("<external>/{name}")), "{shown}");
+        assert!(
+            !shown.contains(absolute),
+            "an absolute path leaked: {shown}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_flood_of_aliases_past_the_entry_limit_is_refused_as_too_many_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.json"), one_rule_category("cat")).unwrap();
+    for i in 0..slopvac_rules::MAX_PACK_ENTRIES {
+        std::os::unix::fs::symlink("a.json", dir.path().join(format!("alias{i:05}.json"))).unwrap();
+    }
+    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
+    let (budget, limit, _) = budget_error(&e);
+    assert_eq!(budget, "pack-entries");
+    assert_eq!(limit, slopvac_rules::MAX_PACK_ENTRIES as u64);
+}
+
+#[test]
+fn a_flood_of_unrelated_entries_past_the_entry_limit_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..=slopvac_rules::MAX_PACK_ENTRIES {
+        std::fs::write(dir.path().join(format!("note{i:05}.txt")), "").unwrap();
+    }
+    let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
+    let (budget, limit, _) = budget_error(&e);
+    assert_eq!(budget, "pack-entries");
+    assert_eq!(limit, 1024);
+}
+
+#[test]
+fn a_pack_with_exactly_the_entry_limit_of_unrelated_entries_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.json"), one_rule_category("cat")).unwrap();
+    for i in 1..slopvac_rules::MAX_PACK_ENTRIES {
+        std::fs::write(dir.path().join(format!("note{i:05}.txt")), "").unwrap();
+    }
+    let set = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap();
+    assert_eq!(set.categories().len(), 1);
+}
+
+fn load_pack_dir(dir: &std::path::Path) -> Result<RuleSet, LoadErrors> {
+    RuleSet::load_dir(&pack(), dir, &CompileOptions::default())
+}
+
+#[test]
+fn a_fifo_pack_file_is_refused_as_a_read_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let fifo = dir.path().join("cat.json");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let path = dir.path().to_path_buf();
+    let e = common::within_timeout(&fifo, move || load_pack_dir(&path).unwrap_err());
+    let first = &e.errors()[0];
+    assert!(
+        matches!(&first.kind, LoadErrorKind::Read(m) if m.contains("not a regular file")),
+        "{first:?}"
+    );
+}
+
+#[test]
+fn a_symlinked_pack_file_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = tempfile::tempdir().unwrap();
+    std::fs::write(real.path().join("real.txt"), category("cat", &[])).unwrap();
+    let link = dir.path().join("cat.json");
+    std::os::unix::fs::symlink(real.path().join("real.txt"), &link).unwrap();
+    let path = dir.path().to_path_buf();
+    let set = common::within_timeout(&link, move || load_pack_dir(&path));
+    assert!(set.is_ok(), "{:?}", set.err());
 }

@@ -158,6 +158,25 @@ impl std::fmt::Debug for ReadHook {
     }
 }
 
+/// Test seam: called by [`Plugin::shutdown`] once the leader is reaped,
+/// just before it starts the wait for the output readers.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct DrainHook(Arc<dyn Fn() + Send + Sync>);
+
+impl DrainHook {
+    /// Wrap `f`.
+    pub fn new(f: impl Fn() + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+}
+
+impl std::fmt::Debug for DrainHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DrainHook")
+    }
+}
+
 /// What the host offers and proposes.
 #[derive(Debug, Clone)]
 pub struct HostConfig {
@@ -201,6 +220,9 @@ pub struct HostConfig {
     /// Test seam for the standard error reader; production code never sets it.
     #[doc(hidden)]
     pub stderr_read_hook: Option<ReadHook>,
+    /// Test seam for the start of the shutdown drain; production code never sets it.
+    #[doc(hidden)]
+    pub drain_hook: Option<DrainHook>,
 }
 
 impl Default for HostConfig {
@@ -222,6 +244,7 @@ impl Default for HostConfig {
             launcher_sweep: Duration::from_secs(2),
             limits_pause: Duration::ZERO,
             stderr_read_hook: None,
+            drain_hook: None,
         }
     }
 }
@@ -313,6 +336,7 @@ struct Shared {
     caps: RunCaps,
     budget: Arc<RunBudget>,
     stderr_read_hook: Option<ReadHook>,
+    drain_hook: Option<DrainHook>,
     exit_timeout: Duration,
     stream: Activity,
 }
@@ -1209,6 +1233,9 @@ impl Plugin {
         shared.group.kill();
         // The waiter reaps a killed leader; its status belongs in the report.
         let _ = shared.group.wait_done(REAP_WAIT);
+        if let Some(hook) = &shared.drain_hook {
+            (hook.0)();
+        }
         // Output that is still in the pipes counts against the caps, so read
         // both streams to the end before the verdict.
         // A reader that is still running when the wait ends has not finished
@@ -1436,6 +1463,7 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         caps: cfg.caps,
         budget: Arc::clone(&cfg.budget),
         stderr_read_hook: cfg.stderr_read_hook.clone(),
+        drain_hook: cfg.drain_hook.clone(),
         exit_timeout: cfg.timeouts.exit,
         stream: Activity::new(),
     });

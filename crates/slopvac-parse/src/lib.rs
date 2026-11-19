@@ -17,6 +17,7 @@
 
 mod align;
 mod code;
+mod counters;
 mod document;
 mod html;
 mod jsexpr;
@@ -27,6 +28,9 @@ mod projection;
 #[cfg(test)]
 mod work;
 
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use counters::scan_work;
 pub use document::{
     Admonition, AdmonitionSyntax, Block, BlockKind, Container, Document, HtmlBlock, ParseError,
 };
@@ -38,4 +42,4 @@ pub use html::{
 pub use html::{parse_html, parse_html_segments};
 pub use markdown::parse_markdown;
 pub use mdx::{mdx_syntax_spans, mdx_syntax_spans_counted, parse_mdx};
-pub use projection::{Projection, Token, TokenKind};
+pub use projection::{ByteMapper, Projection, Token, TokenKind};

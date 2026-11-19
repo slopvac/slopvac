@@ -75,7 +75,49 @@ pub fn valid_model(model: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || "._:/#@-".contains(c))
 }
 
+/// Model aliases a Claude Code subagent accepts in its `model:` field
+/// (<https://code.claude.com/docs/en/sub-agents#choose-a-model>).
+pub const CLAUDE_MODEL_ALIASES: [&str; 4] = ["sonnet", "opus", "haiku", "fable"];
+
+/// The value that asks a harness to use the parent session's model.
+pub const INHERIT: &str = "inherit";
+
+/// The commented placeholder written when no reviewer model is set.
+pub const MODEL_PLACEHOLDER: &str = "# model: <a model from a different family than the author's>";
+
+/// Check a reviewer model against the dialect of the agent file.
+///
+/// Claude Code takes an alias, a `claude-*` model ID or `inherit`. `OpenCode` takes
+/// `provider/model` with an optional `#variant` and has no `inherit`; the caller
+/// treats `inherit` as unset before it gets here.
+///
+/// # Errors
+/// A message that names the accepted forms.
+pub fn check_model_format(format: AgentFormat, model: &str) -> Result<(), String> {
+    match format {
+        AgentFormat::Opencode => Ok(()),
+        AgentFormat::Claude => {
+            if model == INHERIT
+                || CLAUDE_MODEL_ALIASES.contains(&model)
+                || model
+                    .strip_prefix("claude-")
+                    .is_some_and(|rest| !rest.is_empty())
+            {
+                Ok(())
+            } else {
+                Err(format!(
+                    "reviewer model {model:?} is not valid for claude; use an alias ({}), a claude-* model ID or {INHERIT}.",
+                    CLAUDE_MODEL_ALIASES.join(", ")
+                ))
+            }
+        }
+    }
+}
+
 /// The reviewer agent file. It runs only when `slopvac prime review` invokes it.
+///
+/// With no model, the file carries [`MODEL_PLACEHOLDER`] as a comment, so the
+/// harness falls back to the parent session's model.
 #[must_use]
 pub fn reviewer_agent(format: AgentFormat, model: Option<&str>) -> String {
     let description = "Reviews prose for slopvac. Launch only when `slopvac prime review` \
@@ -84,7 +126,10 @@ pub fn reviewer_agent(format: AgentFormat, model: Option<&str>) -> String {
                 you receive. Do not edit files. Report each finding as rule id, quoted text, \
                 and proposed rewrite, then list the facts of the received document and mark \
                 each kept or wrong.";
-    let model_line = model.map(|m| format!("model: {m}\n")).unwrap_or_default();
+    let model_line = match model {
+        Some(m) => format!("model: {m}\n"),
+        None => format!("{MODEL_PLACEHOLDER}\n"),
+    };
     let head = match format {
         AgentFormat::Opencode => format!(
             "name: {REVIEWER_NAME}\ndescription: \"{description}\"\nmode: subagent\n{model_line}\

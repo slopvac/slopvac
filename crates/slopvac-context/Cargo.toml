@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# Counts the work the taggers do, for the tests that bound it. Off in production builds.
+work-counters = []
+
 [dependencies]
 clap = { workspace = true }
 globset = { workspace = true }
@@ -15,11 +19,16 @@ ignore = { workspace = true }
 serde = { workspace = true }
 serde-saphyr = { workspace = true }
 slopvac-pcre2 = { workspace = true }
+slopvac-sanitize = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 jsonschema = { workspace = true }
+proptest = { workspace = true }
+rstest = { workspace = true }
 serde_json = { workspace = true }
+# Turns the counters on for this crate's own tests, so a plain `cargo nextest run` sees them.
+slopvac-context = { workspace = true, features = ["work-counters"] }
 toml = { workspace = true }
 
 [lints]

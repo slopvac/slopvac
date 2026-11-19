@@ -1,0 +1,30 @@
+# The 2.x rules that 3.0 removes. They have no 3.0 id: `slopvac migrate` drops every
+# reference to them (config entries, suppression directives).
+# Hand-written source of truth. Read by crates/slopvac-migrate/tests/fixtures/generate.py.
+# tests/contract/test_removed_rules.py checks that each id is a 2.x rule and not a 3.0 rule.
+# `reason` is one line. `source` names the decision.
+
+[[rules]]
+id = "ste-practices.inconsistent-wording-for-same-step"
+reason = "Structure rule with no check behind it; no engine can run it."
+source = "user decision, 2026-11-16, see slopvac-8l4.3.43"
+
+[[rules]]
+id = "ste-safety.safety-block-missing-consequence"
+reason = "Structure rule with no check behind it; no engine can run it."
+source = "user decision, 2026-11-16, see slopvac-8l4.3.43"
+
+[[rules]]
+id = "ste-sentences.vertical-list-item-punctuation"
+reason = "Structure rule with no check behind it; no engine can run it."
+source = "user decision, 2026-11-16, see slopvac-8l4.3.43"
+
+[[rules]]
+id = "ste-sentences.vertical-list-lead-in-missing-colon"
+reason = "Structure rule with no check behind it; no engine can run it."
+source = "user decision, 2026-11-16, see slopvac-8l4.3.43"
+
+[[rules]]
+id = "ste-words.inconsistent-term-for-same-thing"
+reason = "Structure rule with no check behind it; no engine can run it."
+source = "user decision, 2026-11-16, see slopvac-8l4.3.43"

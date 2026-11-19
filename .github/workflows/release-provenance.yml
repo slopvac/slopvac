@@ -5,15 +5,23 @@ name: Release provenance
 # publish unless a passed candidate (rc/vX.Y.Z-rc.N) tested the same tree.
 # The release workflow only starts on plain vX.Y.Z tags.
 
+# A maintainer can also dispatch it with a tag to run only the tag ruleset check,
+# token mint included. That path skips the candidate checks and publishes nothing.
 on:
   workflow_call:
     secrets:
-      RULESET_READ_TOKEN:
+      RELEASE_APP_PRIVATE_KEY:
         description: >-
-          Fine-grained token for this repository with Administration: read, so the
-          tag ruleset check can see bypass actors. Optional; without it the check
-          fails closed.
-        required: false
+          Private key of the release GitHub App, whose installation on this
+          repository needs Administration: read so the tag ruleset check can see
+          bypass actors.
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z) for the ruleset check; nothing is published.
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -33,7 +41,7 @@ jobs:
 
       - name: Check the candidate
         # Pull requests run the release plan too; only a tag push can publish.
-        if: ${{ github.ref_type == 'tag' }}
+        if: ${{ github.ref_type == 'tag' && inputs.tag == '' }}
         env:
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
@@ -42,14 +50,36 @@ jobs:
         run: |
           python3 scripts/release_provenance.py check-stable "$TAG" --repo "$REPO" --sha "$EVENT_SHA"
 
+      # GitHub returns bypass_actors only to a token that can administer the
+      # repository, which GITHUB_TOKEN cannot. The release App's installation token
+      # is scoped to this repository with Administration: read and nothing else.
+      - name: Mint the ruleset read token
+        id: ruleset-token
+        if: ${{ github.ref_type == 'tag' || inputs.tag != '' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-administration: read
+
+      - name: Explain a failed token mint
+        if: ${{ failure() && steps.ruleset-token.outcome == 'failure' }}
+        run: |
+          echo "::error::Could not mint the ruleset read token."
+          echo "::error::The release app needs Administration: Read-only on the slopvac/slopvac installation."
+          exit 1
+
       # A tag-writer could move the tag after this check. Only a repository ruleset
       # makes version tags immutable, and a maintainer must create it. Read-only;
-      # fails closed, also when the token cannot read rulesets.
+      # fails closed, also when the token cannot read rulesets. The script checks
+      # that TAG is vX.Y.Z.
       - name: Require an immutable tag ruleset
-        if: ${{ github.ref_type == 'tag' }}
+        if: ${{ github.ref_type == 'tag' || inputs.tag != '' }}
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
           REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ secrets.RULESET_READ_TOKEN || github.token }}
+          GH_TOKEN: ${{ steps.ruleset-token.outputs.token }}
         run: |
           python3 scripts/release_ruleset.py check "$TAG" --repo "$REPO"

@@ -195,6 +195,39 @@ jobs:
       - name: Rustdoc
         run: cargo doc --workspace --no-deps --document-private-items --locked
 
+      # mise reads the ast-grep pin from mise.toml and verifies the download through its aqua
+      # backend. Only ast-grep's bin directory joins PATH, added below: no shims, no mise.toml
+      # [env] and no cache write.
+      - name: Install ast-grep
+        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.11.9
+          sha256: f13f3e5ec88807e0161669b3aa07a91d84478cdf1e95b5b92b63f85a25d42395
+          install_args: ast-grep
+          cache: false
+          env: false
+          add_shims_to_path: false
+      # With `env: false` the action exports only the mise binary directory. Link just the
+      # ast-grep binary into its own directory, because the install directory also holds `sg`,
+      # which would shadow the system `sg`.
+      - name: Put ast-grep on PATH
+        run: |
+          set -eu
+          dirs="$(mise bin-paths ast-grep)"
+          if [ "$(printf '%s\n' "$dirs" | wc -l)" -ne 1 ] || [ ! -x "$dirs/ast-grep" ]; then
+            echo "expected one ast-grep install directory, got: $dirs" >&2
+            exit 1
+          fi
+          bin="$RUNNER_TEMP/ast-grep-bin"
+          mkdir -p "$bin"
+          ln -s "$dirs/ast-grep" "$bin/ast-grep"
+          echo "$bin" >> "$GITHUB_PATH"
+
+      - name: Message registry checks
+        run: |
+          ast-grep test
+          ast-grep scan
+
       # The fuzz crate is outside the workspace (cargo-fuzz needs nightly), so build it
       # here to keep the target compiling.
       - name: Check the fuzz targets
@@ -265,7 +298,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
         with:
           tool: nextest@0.9.152
 
@@ -390,20 +423,19 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Cache Vale download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vale-cache
+          key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
       - name: Install Vale
-        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin"
+        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
       - name: Add Vale to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install minisign
         # The release signing tests run the real binary; the script checks its sha256.
         run: bash scripts/install_minisign.sh
-
-      - name: Install ast-grep
-        run: |
-          set -euo pipefail
-          python3 -m pip install --quiet ast-grep-cli==0.45.3
-          ast-grep --version
 
       - name: Install package and test dependencies
         # docutils is pinned for the RST sample of the golden suite (tests/golden/v3).
@@ -480,8 +512,13 @@ jobs:
         working-directory: packages/slopvac-lint
         run: uv pip install --system -e ".[dev]"
 
+      - name: Cache Vale download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vale-cache
+          key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
       - name: Install Vale
-        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin"
+        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
       - name: Add Vale to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 

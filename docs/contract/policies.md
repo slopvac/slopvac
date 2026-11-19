@@ -145,7 +145,7 @@ Owners: `slopvac-8l4.9.3`, `slopvac-8l4.9.4`.
 
 ### 1.9 Input size caps
 
-**3.0 requirement.** Every entry point that reads text enforces a size cap before it hands the text to a parser, an index or a matcher. An input over its cap is refused whole. Slopvac never truncates it. The run is incomplete and exits 2, and the error or notice carries the stable code from the table.
+**3.0 requirement.** Every entry point that reads text enforces a size cap before it hands the text to a parser, an index or a matcher. An input over its cap is refused whole, and its text never reaches a parser. The run is incomplete and exits 2, and the error or notice carries the stable code from the table.
 
 The span crates index text with 32-bit offsets and size their structures from its length, and they do not cap their input. Their documentation states the 64 MiB limit as a rule for callers. Memory per read stays bounded by the cap plus one byte, because the reader stops at the cap.
 
@@ -161,9 +161,32 @@ The span crates index text with 32-bit offsets and size their structures from it
 | Style file | 1 MiB | `style-too-large` | The built-in styles are a few KiB. |
 | Terms file | 1 MiB | `terms-file-too-large` | The built-in terms file is about 30 KiB. |
 
+A per-file cap does not bound the work of many files. Two aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the config file or pack directory at which it tripped, relative to the root, or `<external>/<file name>` outside it. The list of `data.budget` values can grow. A message names only that path and the limit.
+
+| Entry point | Budget (`data.budget`) | Limit | Unit | Code | Why this value |
+|---|---|---|---|---|---|
+| `extends` nesting, from the nearest config down | `extends-depth` | 32 | levels | `config-budget-exceeded` | A real chain is two or three levels. |
+| `extends` graph, files applied | `extends-files` | 256 | files | `config-budget-exceeded` | A real graph has fewer than ten files. A file that more than one file extends counts once for each time it applies, because it applies each time. |
+| `extends` graph, bytes read | `extends-bytes` | 8 MiB | bytes | `config-budget-exceeded` | A real graph is under 100 KiB. Eight files at the 1 MiB cap fit. |
+| `extends` graph, bytes of config applied | `extends-applied-bytes` | 64 MiB | bytes | `config-budget-exceeded` | A real graph applies under 100 KiB. A file that more than one file extends counts its size once for each time it applies, so 64 MiB stops a small graph from repeating a large file hundreds of times. |
+| Pack directory, rule and category files | `pack-files` | 256 | files | `rules-budget-exceeded` | The shipped pack has 23 files. |
+| Pack directory, entries of any kind | `pack-entries` | 1024 | entries | `rules-budget-exceeded` | Bounds directory scanning before the loader resolves any file. |
+| Pack directory, bytes read | `pack-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The shipped pack is about 450 KiB. |
+
+How the budgets apply:
+
+- A config file that more than one file extends is read and parsed once. The loader shares that parsed copy between its applications, so the order of settings and their provenance do not change.
+- The `extends` counters differ on purpose. Files applied counts every application, and so bounds the merge work. Bytes read counts each read once, and so bounds the I/O. Bytes applied counts every application by size, and so bounds the settings the result holds.
+- An extended file whose ancestor is still waiting to apply counts against the file budget. The loader checks the depth of a reused subtree at each place it applies again, and checks every budget before it adds an application.
+- An `extends` cycle is not a budget. It keeps `config-extends-cycle`, and the loader checks for a cycle before it checks the depth.
+- A rule file reached by more than one name, such as a symlink, loads once under the first name in file-name order, and the file budget counts it once.
+- The pack loader reads and compiles one file at a time.
+
 Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`).
 
-The CLI file and stdin reads, the language server and `migrate` document reads, and the `migrate` config read enforce their caps in the change that follows this one. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and the CLI reports it in that change.
+The CLI file and stdin reads enforce their cap and report `document-too-large` with exit 2. The language server and `migrate` document reads, and the `migrate` config read, enforce theirs in a later change. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and a `--diff` scoping read fails with `DiffError::FileTooLarge`. The `lint` command does not yet pass `--fix` or `--diff-base` to the engine. When it does, it reports both with `document-too-large`.
+
+A capped file read opens the file without blocking and accepts only a regular file. A FIFO, device, socket or directory at the path is refused at once, so a repository entry cannot hang a run. The refusal reports through the entry point's existing read-failure error, such as `input-unreadable` for a document, and not through a new code. Stdin is the exception: it reads a pipe by design.
 
 Output and protocol caps are separate and already hold: plugin frames 16 MiB, reStructuredText converter output 16 MiB, and fixer edits 1 MiB.
 

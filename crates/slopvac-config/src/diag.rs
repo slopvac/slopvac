@@ -34,6 +34,9 @@ pub enum Code {
     UnsupportedVersion,
     /// An `extends` chain that loops back on itself.
     ExtendsCycle,
+    /// An `extends` graph that passes a budget: depth, files applied or bytes read. The
+    /// diagnostic's `data` names which.
+    BudgetExceeded,
     /// An `extends` entry that names no readable config.
     ExtendsMissing,
     /// Two `[[overrides]]` or `[[genres]]` blocks with the same `files` set.
@@ -59,6 +62,7 @@ impl Code {
             Code::LegacyVersion => "config-legacy-version",
             Code::UnsupportedVersion => "config-unsupported-version",
             Code::ExtendsCycle => "config-extends-cycle",
+            Code::BudgetExceeded => "config-budget-exceeded",
             Code::ExtendsMissing => "config-extends-missing",
             Code::DuplicateScope => "config-duplicate-scope",
             Code::FrontmatterFieldDenied => "config-frontmatter-field-denied",
@@ -70,6 +74,45 @@ impl fmt::Display for Code {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
+}
+
+/// Which `extends` budget a run passed. The list can grow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConfigBudget {
+    /// Nesting depth, in levels: [`crate::MAX_EXTENDS_DEPTH`].
+    ExtendsDepth,
+    /// Files applied, in files: [`crate::MAX_EXTENDS_FILES`].
+    ExtendsFiles,
+    /// Bytes read, in bytes: [`crate::MAX_EXTENDS_BYTES`].
+    ExtendsBytes,
+    /// Bytes of config text applied, counting each application, in bytes:
+    /// [`crate::MAX_EXTENDS_APPLIED_BYTES`].
+    ExtendsAppliedBytes,
+}
+
+impl ConfigBudget {
+    /// The `data.budget` text, such as `extends-depth`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExtendsDepth => "extends-depth",
+            Self::ExtendsFiles => "extends-files",
+            Self::ExtendsBytes => "extends-bytes",
+            Self::ExtendsAppliedBytes => "extends-applied-bytes",
+        }
+    }
+}
+
+/// The machine-readable detail of a `config-budget-exceeded` diagnostic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BudgetData {
+    /// The budget that was passed.
+    pub budget: ConfigBudget,
+    /// The limit, in the unit of `budget`.
+    pub limit: u64,
+    /// The config file at which the limit tripped, relative to the root.
+    pub path: String,
 }
 
 /// One problem, anchored to a byte range of one source text.
@@ -88,6 +131,8 @@ pub struct Diagnostic {
     pub help: Option<String>,
     /// Key path from the document root to the offending key or value.
     pub path: Vec<String>,
+    /// Machine-readable detail, set only for a budget diagnostic.
+    pub data: Option<Box<BudgetData>>,
 }
 
 impl Diagnostic {
@@ -215,6 +260,7 @@ mod tests {
             span: 0..0,
             help: None,
             path: vec!["rules".into(), "a/b~c".into()],
+            data: None,
         };
         assert_eq!(d.pointer(), "/rules/a~1b~0c");
     }
@@ -228,6 +274,7 @@ mod tests {
             span: 50..60,
             help: None,
             path: vec![],
+            data: None,
         };
         let out = render(
             SourceFile {

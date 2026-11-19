@@ -1,0 +1,10 @@
+{
+  "_comment": "Tag rulesets that protect release tags, pinned by ID and updated_at. Change this file only through release_ruleset.py update-pins, and review it like a change to the ruleset itself.",
+  "repo": "slopvac/slopvac",
+  "rulesets": {
+    "27468001": {
+      "name": "tags: release tags immutable",
+      "updated_at": "2026-11-18T17:53:53.415+04:00"
+    }
+  }
+}

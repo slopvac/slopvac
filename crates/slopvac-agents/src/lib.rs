@@ -13,6 +13,11 @@ pub mod managed;
 pub mod models;
 pub mod prime;
 pub mod review;
+pub mod reviewers;
 pub mod setup;
 
 pub use error::AgentsError;
+
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use block::marker_scan_steps;

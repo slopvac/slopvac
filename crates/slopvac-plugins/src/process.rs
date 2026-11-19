@@ -30,7 +30,9 @@
 //!    The walk records every other one as escaped. Elsewhere it records
 //!    every such descendant as escaped. The table comes from `/bin/ps`,
 //!    never from `PATH`, run with a scrubbed environment, a deadline and an
-//!    output limit, and parsed strictly. A helper that fails, hangs or
+//!    output limit, and parsed strictly. A well-formed row for a process
+//!    that the kernel is releasing (state `X`) is left out: it can no longer
+//!    fork or be signalled. A helper that fails, hangs or
 //!    prints anything unexpected ends the walk, as do the deadline and a
 //!    cap on held descendants, and the walk is then reported incomplete.
 //! 3. Kill the held descendants, deepest first, then the group and the
@@ -981,11 +983,14 @@ mod unix {
     }
 
     /// Parse `ps -A -o pid=,ppid=,pgid=,stat=,lstart=` output, all or nothing.
+    /// A well-formed row for a process that is being released is left out.
     pub(super) fn parse_table(out: &[u8]) -> Option<HashMap<u32, Entry>> {
         let text = std::str::from_utf8(out).ok()?;
         let mut table = HashMap::new();
         for line in text.lines() {
-            let entry = parse_row(line)?;
+            let Row::Live(entry) = parse_row(line)? else {
+                continue;
+            };
             if table.insert(entry.pid, entry).is_some() {
                 return None;
             }
@@ -993,8 +998,17 @@ mod unix {
         (!table.is_empty()).then_some(table)
     }
 
+    /// What one well-formed row shows.
+    enum Row {
+        Live(Entry),
+        /// State `X`: the process has exited and the kernel is releasing it,
+        /// so it can no longer fork, reap or be signalled. procps shows its
+        /// parent as 0 and its group as -1, printed as 4294967295.
+        Exiting,
+    }
+
     /// One row: three ids, a state and a C-locale `lstart` such as `Sat Nov 14 23:00:07 2026`.
-    fn parse_row(line: &str) -> Option<Entry> {
+    fn parse_row(line: &str) -> Option<Row> {
         let fields: Vec<&str> = line.split_ascii_whitespace().collect();
         let [own, parent, group, state, lstart @ ..] = &fields[..] else {
             return None;
@@ -1021,13 +1035,18 @@ mod unix {
         if !(state_ok && when_ok) {
             return None;
         }
-        Some(Entry {
-            pid: id(own).filter(|&p| p > 0)?,
+        let pid = id(own).filter(|&p| p > 0)?;
+        if state.starts_with('X') {
+            let released = |s: &str| id(s).is_some() || s == "4294967295";
+            return (released(parent) && released(group)).then_some(Row::Exiting);
+        }
+        Some(Row::Live(Entry {
+            pid,
             ppid: id(parent)?,
             pgid: id(group)?,
             stat: (*state).to_owned(),
             start: lstart.join(" "),
-        })
+        }))
     }
 
     /// A process id in decimal digits only, within the range of `pid_t`.
@@ -1321,6 +1340,35 @@ mod tests {
             }
             assert!(parse_table(b"").is_none());
             assert!(parse_table(b"1 0 1 S Sat Nov 14 23:00:07 2026\n\xff\n").is_none());
+        }
+
+        /// procps shows a process that is being released (state `X`) with
+        /// parent 0 and group -1 printed unsigned, as seen under load on
+        /// Linux: `1661612 0 4294967295 XN+ ...`. It can no longer fork or be
+        /// signalled, so the table leaves it out instead of failing.
+        #[test]
+        fn a_process_mid_exit_is_left_out_of_the_table() {
+            let text = format!("1 0 1 Ss {ROW}\n1661612       0 4294967295 XN+  {ROW}\n");
+            let t = parse_table(text.as_bytes()).unwrap();
+            assert_eq!(t.keys().copied().collect::<Vec<_>>(), [1]);
+        }
+
+        #[test]
+        fn a_malformed_row_mid_exit_is_still_refused() {
+            let good = format!("1 0 1 Ss {ROW}");
+            for bad in [
+                format!("4294967295 0 4294967295 X {ROW}"),
+                format!("0 0 4294967295 X {ROW}"),
+                format!("5 0 -1 X {ROW}"),
+                format!("5 0 4294967296 X {ROW}"),
+                format!("5 4294967294 1 X {ROW}"),
+                "5 0 4294967295 X Sat Nov 14 23:00:07".to_owned(),
+            ] {
+                let text = format!("{good}\n{bad}\n");
+                assert!(parse_table(text.as_bytes()).is_none(), "{bad:?}");
+            }
+            // Left out, the rows leave an empty table, which is refused.
+            assert!(parse_table(format!("5 0 4294967295 X {ROW}\n").as_bytes()).is_none());
         }
     }
 }

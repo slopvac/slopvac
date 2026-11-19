@@ -4,11 +4,11 @@ Run from the repository root:
 
     mise exec -- uv run --extra dev python crates/slopvac-engine/tests/fixtures/generate_vocabulary.py [--check]
 
-STUB(slopvac-8l4.3.44): the golden suite records no vocabulary findings, because its
-reference runs without a word blocklist. 2.x has no native vocabulary check: it compiles the
+The golden suite records no vocabulary findings, because its reference runs with an empty
+config and so without a word blocklist. This fixture stays the only check of the sweep. 2.x has no native vocabulary check: it compiles the
 shipped example blocklist into Vale ``sequence`` rules (one per part of speech) and runs
 Vale, so Vale is the oracle. This fixture keeps those recorded results for the documents in
-``vocabulary-parity.json`` until the golden runs cover vocabulary. ``vocabulary_parity.rs``
+``vocabulary-parity.json``. ``vocabulary_parity.rs``
 compares the native sweep with them.
 
 The findings come from Vale 3.27 or later, the version that ``slopvac-pos`` is validated

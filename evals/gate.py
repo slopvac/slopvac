@@ -216,6 +216,7 @@ def compare(
         "uncertain": uncertain,
         "inadequate_coverage": [inadequate[r] for r in sorted(inadequate)],
         "precision": "measured" if measured else "not measured",
+        "labels_missing": gates_precision and not measured,
         "passed": not regressions and (measured or not gates_precision),
     }
 
@@ -246,7 +247,7 @@ def markdown(result: Mapping[str, Any], mode: str) -> str:
                 f"| {fmt(r['was'])} | {fmt(r['now'])} | {detail} |"
             )
         lines.append("")
-    if result["precision"] == "not measured" and not result["passed"]:
+    if result["labels_missing"]:
         lines.append(
             "Precision not measured: no adjudicated labels were supplied, "
             "so the gate does not pass."

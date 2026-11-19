@@ -1,12 +1,14 @@
 //! Layer order, merge rules, provenance and discovery, through the public interface.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value as Json, json};
 use slopvac_config::{
-    Code, ConfigError, Discovery, Inputs, Layer, LoadedConfig, NoPresets, PackFile, Presets,
-    Setting, Source, load,
+    BudgetData, Code, ConfigBudget, ConfigError, Discovery, Inputs, Layer, LoadedConfig, NoPresets,
+    PackFile, Presets, Setting, Source, load,
 };
 use tempfile::TempDir;
 
@@ -1148,4 +1150,394 @@ fn a_legacy_config_file_over_the_cap_is_refused_during_discovery() {
             .unwrap_err();
         assert_eq!(err.code(), Code::TooLarge, "{name}");
     }
+}
+
+/// Write `levels + 1` files where `d<i>.toml` extends `d<i+1>.toml` twice, so the graph has
+/// `levels + 1` files and expands to `2^(levels + 1) - 2` applications below the root.
+fn diamond_chain(fx: &Fixture, levels: usize) {
+    for i in 0..levels {
+        let next = format!("d{}.toml", i + 1);
+        fx.write(
+            &format!("d{i}.toml"),
+            &format!("schema_version = 3\nextends = [\"{next}\", \"{next}\"]\n"),
+        );
+    }
+    fx.write(
+        &format!("d{levels}.toml"),
+        "schema_version = 3\n[thresholds]\nmax_warnings = 7\n",
+    );
+}
+
+#[test]
+fn a_diamond_chain_expands_in_full_and_keeps_every_application_in_order() {
+    let fx = Fixture::new();
+    diamond_chain(&fx, 5);
+    let cfg = load_at(&fx, "d0.toml");
+    // 2 + 4 + 8 + 16 + 32 applications below the root, the leaf twice per parent, plus the root.
+    assert_eq!(cfg.files.len(), 2 + 4 + 8 + 16 + 32 + 1);
+    let shown: Vec<&str> = cfg.files.iter().map(|f| f.display.as_str()).collect();
+    assert_eq!(&shown[..3], ["d5.toml", "d5.toml", "d4.toml"]);
+    assert_eq!(shown.last(), Some(&"d0.toml"));
+    assert_eq!(
+        cfg.project_value(&["thresholds", "max_warnings"]),
+        Some(json!(7))
+    );
+}
+
+/// The budget data of a refused load.
+fn budget_data(err: ConfigError) -> BudgetData {
+    assert_eq!(err.code(), Code::BudgetExceeded);
+    assert_eq!(err.exit_code(), 2);
+    let r = rejected(err);
+    *r.diagnostics
+        .into_iter()
+        .next()
+        .and_then(|d| d.data)
+        .expect("a budget diagnostic carries data")
+}
+
+/// Text of exactly `len` bytes that is a valid config: the version line, then a comment.
+fn padded(len: usize) -> String {
+    let head = "schema_version = 3\n";
+    format!("{head}#{}\n", "x".repeat(len - head.len() - 2))
+}
+
+/// A flat project config that extends `count` files named `f<i>.toml`, written with `size(i)` bytes.
+fn flat_graph(fx: &Fixture, count: usize, size: impl Fn(usize) -> usize) -> PathBuf {
+    let names: Vec<String> = (0..count).map(|i| format!("\"f{i}.toml\"")).collect();
+    for i in 0..count {
+        fx.write(&format!("f{i}.toml"), &padded(size(i)));
+    }
+    fx.write(
+        "slopvac.toml",
+        &format!("schema_version = 3\nextends = [{}]\n", names.join(", ")),
+    )
+}
+
+#[test]
+fn an_extends_graph_applying_exactly_the_file_limit_loads() {
+    let fx = Fixture::new();
+    let root = flat_graph(&fx, slopvac_config::MAX_EXTENDS_FILES, |_| 64);
+    let cfg = load(&root, &NoPresets).unwrap();
+    assert_eq!(cfg.files.len(), slopvac_config::MAX_EXTENDS_FILES + 1);
+}
+
+#[test]
+fn an_extends_graph_applying_one_file_past_the_limit_is_refused() {
+    let fx = Fixture::new();
+    let root = flat_graph(&fx, slopvac_config::MAX_EXTENDS_FILES + 1, |_| 64);
+    let data = budget_data(load(&root, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::ExtendsFiles);
+    assert_eq!(data.budget.as_str(), "extends-files");
+    assert_eq!(data.limit, slopvac_config::MAX_EXTENDS_FILES as u64);
+    assert_eq!(data.path, "slopvac.toml");
+}
+
+#[test]
+fn a_diamond_chain_past_the_file_limit_is_refused_by_expansion_not_by_distinct_files() {
+    let fx = Fixture::new();
+    diamond_chain(&fx, 9);
+    let data = budget_data(load(&fx.root().join("d0.toml"), &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::ExtendsFiles);
+}
+
+/// A graph whose files add up to `MAX_EXTENDS_BYTES + extra` bytes, each file within the per-file cap.
+fn byte_graph(fx: &Fixture, extra: usize) -> PathBuf {
+    let cap = usize::try_from(slopvac_config::MAX_CONFIG_BYTES).unwrap();
+    let files = usize::try_from(slopvac_config::MAX_EXTENDS_BYTES).unwrap() / cap;
+    // The project config counts too, so the last file takes what is left of the total.
+    let root_len = format!(
+        "schema_version = 3\nextends = [{}]\n",
+        (0..files)
+            .map(|i| format!("\"f{i}.toml\""))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+    .len();
+    flat_graph(fx, files, |i| {
+        if i + 1 == files {
+            cap - root_len + extra
+        } else {
+            cap
+        }
+    })
+}
+
+#[test]
+fn an_extends_graph_reading_exactly_the_byte_limit_loads() {
+    let fx = Fixture::new();
+    let root = byte_graph(&fx, 0);
+    assert!(load(&root, &NoPresets).is_ok());
+}
+
+#[test]
+fn an_extends_graph_reading_one_byte_past_the_limit_is_refused() {
+    let fx = Fixture::new();
+    let root = byte_graph(&fx, 1);
+    let data = budget_data(load(&root, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::ExtendsBytes);
+    assert_eq!(data.budget.as_str(), "extends-bytes");
+    assert_eq!(data.limit, slopvac_config::MAX_EXTENDS_BYTES);
+}
+
+#[test]
+fn a_file_extended_from_many_places_counts_once_in_bytes() {
+    let fx = Fixture::new();
+    // Nine applications of one 1 MiB file would be 9 MiB if each counted, past the 8 MiB limit.
+    fx.write(
+        "big.toml",
+        &padded(usize::try_from(slopvac_config::MAX_CONFIG_BYTES).unwrap()),
+    );
+    let root = fx.write(
+        "slopvac.toml",
+        &format!(
+            "schema_version = 3\nextends = [{}]\n",
+            ["\"big.toml\""; 9].join(", ")
+        ),
+    );
+    let cfg = load(&root, &NoPresets).unwrap();
+    assert_eq!(cfg.files.len(), 10);
+}
+
+/// A chain `c0 -> c1 -> ... -> c<levels>`: `levels` extended levels below the project config.
+fn chain(fx: &Fixture, levels: usize) {
+    for i in 0..levels {
+        fx.write(
+            &format!("c{i}.toml"),
+            &format!("schema_version = 3\nextends = [\"c{}.toml\"]\n", i + 1),
+        );
+    }
+    fx.write(&format!("c{levels}.toml"), "schema_version = 3\n");
+}
+
+#[test]
+fn an_extends_chain_at_the_depth_limit_loads() {
+    let fx = Fixture::new();
+    let depth = slopvac_config::MAX_EXTENDS_DEPTH;
+    chain(&fx, depth);
+    assert_eq!(load_at(&fx, "c0.toml").files.len(), depth + 1);
+}
+
+#[test]
+fn an_extends_chain_one_level_past_the_depth_limit_is_refused() {
+    let fx = Fixture::new();
+    let depth = slopvac_config::MAX_EXTENDS_DEPTH;
+    chain(&fx, depth + 1);
+    let data = budget_data(load(&fx.root().join("c0.toml"), &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::ExtendsDepth);
+    assert_eq!(data.budget.as_str(), "extends-depth");
+    assert_eq!(data.limit, depth as u64);
+    assert_eq!(data.path, format!("c{depth}.toml"));
+}
+
+#[test]
+fn a_budget_message_names_the_relative_path_and_the_limit_only() {
+    let fx = Fixture::new();
+    chain(&fx, slopvac_config::MAX_EXTENDS_DEPTH + 1);
+    let err = load(&fx.root().join("c0.toml"), &NoPresets).unwrap_err();
+    let shown = err.render();
+    assert!(shown.contains("32 levels"), "{shown}");
+    assert!(
+        !shown.contains(fx.root().to_str().unwrap()),
+        "an absolute path leaked: {shown}"
+    );
+}
+
+#[test]
+fn a_two_file_cycle_reports_the_cycle_and_not_a_budget() {
+    let fx = Fixture::new();
+    fx.write("a.toml", "schema_version = 3\nextends = [\"b.toml\"]\n");
+    fx.write("b.toml", "schema_version = 3\nextends = [\"a.toml\"]\n");
+    let err = load(&fx.root().join("a.toml"), &NoPresets).unwrap_err();
+    assert_eq!(err.code(), Code::ExtendsCycle);
+    assert_eq!(err.exit_code(), 2);
+}
+
+fn extends_line(names: &[String]) -> String {
+    let quoted: Vec<String> = names.iter().map(|n| format!("\"{n}\"")).collect();
+    format!("schema_version = 3\nextends = [{}]\n", quoted.join(", "))
+}
+
+#[test]
+fn applications_waiting_on_an_ancestor_count_against_the_file_limit() {
+    let max = slopvac_config::MAX_EXTENDS_FILES;
+    // Project config -> one intermediate -> leaves: the intermediate is one more application.
+    for (leaves, ok) in [(max - 1, true), (max, false)] {
+        let fx = Fixture::new();
+        let names: Vec<String> = (0..leaves).map(|i| format!("l{i}.toml")).collect();
+        for n in &names {
+            fx.write(n, "schema_version = 3\n");
+        }
+        fx.write("mid.toml", &extends_line(&names));
+        let root = fx.write("slopvac.toml", &extends_line(&["mid.toml".to_owned()]));
+        let result = load(&root, &NoPresets);
+        if ok {
+            assert_eq!(result.unwrap().files.len(), max + 1);
+        } else {
+            let data = budget_data(result.unwrap_err());
+            assert_eq!(data.budget, ConfigBudget::ExtendsFiles);
+        }
+    }
+}
+
+/// `slopvac.toml` extends `s.toml` (which extends `t.toml`) first, then a chain of `chain`
+/// files whose last one extends `s.toml` again.
+fn shared_subtree_below_a_chain(fx: &Fixture, chain: usize) -> PathBuf {
+    fx.write("t.toml", "schema_version = 3\n");
+    fx.write("s.toml", &extends_line(&["t.toml".to_owned()]));
+    for i in 0..chain {
+        let next = if i + 1 == chain {
+            "s.toml".to_owned()
+        } else {
+            format!("c{}.toml", i + 1)
+        };
+        fx.write(&format!("c{i}.toml"), &extends_line(&[next]));
+    }
+    fx.write(
+        "slopvac.toml",
+        &extends_line(&["s.toml".to_owned(), "c0.toml".to_owned()]),
+    )
+}
+
+#[test]
+fn a_cached_subtree_is_checked_against_the_depth_limit_where_it_applies_again() {
+    let depth = slopvac_config::MAX_EXTENDS_DEPTH;
+    // The chain of `n` files puts `s.toml` at level n + 1 and `t.toml` at level n + 2.
+    let fx = Fixture::new();
+    let root = shared_subtree_below_a_chain(&fx, depth - 2);
+    assert!(load(&root, &NoPresets).is_ok());
+    let fx = Fixture::new();
+    let root = shared_subtree_below_a_chain(&fx, depth - 1);
+    let data = budget_data(load(&root, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::ExtendsDepth);
+    assert_eq!(data.limit, depth as u64);
+}
+
+/// Text of exactly `len` bytes that starts with `head` and ends in a comment.
+fn exact(head: &str, len: usize) -> String {
+    format!("{head}#{}\n", "x".repeat(len - head.len() - 2))
+}
+
+/// Project config -> `c1` -> `c2` -> `big_user.toml`, which extends the 1 MiB file `big.toml`
+/// `times` times. `big_user.toml` is sized so that the applied text of the three extended files
+/// besides `big.toml` is exactly 1 MiB plus `extra` bytes.
+fn amplification(fx: &Fixture, times: usize, extra: usize) -> PathBuf {
+    let cap = usize::try_from(slopvac_config::MAX_CONFIG_BYTES).unwrap();
+    fx.write("big.toml", &exact("schema_version = 3\n", cap));
+    let c2 = extends_line(&["big_user.toml".to_owned()]);
+    let c1 = extends_line(&["c2.toml".to_owned()]);
+    fx.write("c2.toml", &c2);
+    fx.write("c1.toml", &c1);
+    let names = vec!["big.toml".to_owned(); times];
+    let user_len = cap - c1.len() - c2.len() + extra;
+    fx.write("big_user.toml", &exact(&extends_line(&names), user_len));
+    fx.write("slopvac.toml", &extends_line(&["c1.toml".to_owned()]))
+}
+
+#[test]
+fn applied_text_exactly_at_the_limit_loads_and_shares_one_parse() {
+    let fx = Fixture::new();
+    // 63 MiB of `big.toml` plus exactly 1 MiB of the other three files is the 64 MiB limit.
+    let root = amplification(&fx, 63, 0);
+    let cfg = load(&root, &NoPresets).unwrap();
+    let bigs: Vec<_> = cfg
+        .files
+        .iter()
+        .filter(|f| f.display == "big.toml")
+        .collect();
+    assert_eq!(bigs.len(), 63);
+    assert!(bigs.windows(2).all(|w| std::sync::Arc::ptr_eq(w[0], w[1])));
+}
+
+#[test]
+fn applied_text_one_byte_past_the_limit_is_refused() {
+    let fx = Fixture::new();
+    let root = amplification(&fx, 63, 1);
+    let data = budget_data(load(&root, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::ExtendsAppliedBytes);
+    assert_eq!(data.budget.as_str(), "extends-applied-bytes");
+    assert_eq!(data.limit, slopvac_config::MAX_EXTENDS_APPLIED_BYTES);
+}
+
+#[test]
+fn repeating_a_large_file_two_hundred_times_is_refused_without_applying_it() {
+    let fx = Fixture::new();
+    // 224 applications of a 1 MiB file pass the file and read budgets but would apply 224 MiB.
+    let root = amplification(&fx, 224, 0);
+    let data = budget_data(load(&root, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::ExtendsAppliedBytes);
+}
+
+fn mkfifo(path: &Path) {
+    let made = std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(made.success());
+}
+
+#[test]
+fn a_fifo_config_is_refused_with_config_io() {
+    let fx = Fixture::new();
+    let fifo = fx.root().join("slopvac.toml");
+    mkfifo(&fifo);
+    let path = fifo.clone();
+    let err = common::within_timeout(&fifo, move || load(&path, &NoPresets).unwrap_err());
+    assert_eq!(err.code(), Code::Io);
+    assert!(
+        err.render().starts_with("error[config-io]"),
+        "{}",
+        err.render()
+    );
+}
+
+#[test]
+fn a_fifo_extends_target_is_refused_at_the_entry() {
+    let fx = Fixture::new();
+    let fifo = fx.root().join("pipe.toml");
+    mkfifo(&fifo);
+    let p = fx.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"pipe.toml\"]\n",
+    );
+    let err = common::within_timeout(&fifo, move || load(&p, &NoPresets).unwrap_err());
+    let r = rejected(err);
+    assert_eq!(r.diagnostics[0].code, Code::ExtendsMissing);
+    assert!(
+        r.diagnostics[0].message.contains("not a regular file"),
+        "{}",
+        r.diagnostics[0].message
+    );
+}
+
+#[test]
+fn symlinked_configs_still_load() {
+    let fx = Fixture::new();
+    fx.write(
+        "real/base.toml",
+        "schema_version = 3\n[thresholds]\nmax_warnings = 9\n",
+    );
+    let root = fx.root();
+    std::os::unix::fs::symlink(root.join("real/base.toml"), root.join("link-base.toml")).unwrap();
+    let p = fx.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"link-base.toml\"]\n",
+    );
+    std::os::unix::fs::symlink(&p, root.join("link.toml")).unwrap();
+    let probe = root.join("link.toml");
+    let loaded = common::within_timeout(&probe.clone(), move || load(&probe, &NoPresets));
+    assert!(loaded.is_ok(), "{:?}", loaded.err().map(|e| e.render()));
+}
+
+#[test]
+fn a_dangling_extends_link_is_missing_as_before() {
+    let fx = Fixture::new();
+    let root = fx.root();
+    std::os::unix::fs::symlink(root.join("gone.toml"), root.join("dead.toml")).unwrap();
+    let p = fx.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"dead.toml\"]\n",
+    );
+    let r = rejected(load(&p, &NoPresets).unwrap_err());
+    assert_eq!(r.diagnostics[0].code, Code::ExtendsMissing);
 }

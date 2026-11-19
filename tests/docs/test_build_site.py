@@ -984,8 +984,9 @@ def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
 def test_rule_pages_and_indexes_skip_the_rules_3_0_removed() -> None:
     import tomllib
 
-    shared = ROOT / "scripts" / "contract" / "removed-rules.toml"
-    removed = tomllib.loads(shared.read_text(encoding="utf-8"))["rules"]
+    shared = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
+    entries = tomllib.loads(shared.read_text(encoding="utf-8"))["rules"]
+    removed = [entry["id"] for entry in entries]
     assert removed, "the shared list names the removed rules"
     pages = build_site.generate_rules()
     for key in removed:
@@ -1001,3 +1002,11 @@ def test_rule_pages_and_indexes_skip_the_rules_3_0_removed() -> None:
         for p, text in pages.items()
         if any(k.split(".", 1)[1] in text for k in removed)
     ]
+
+
+def test_removed_rules_fails_when_the_contract_file_is_missing(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(build_site, "REMOVED_RULES_FILE", tmp_path / "missing.toml")
+    with pytest.raises(FileNotFoundError):
+        build_site.removed_rules()

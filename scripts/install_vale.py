@@ -5,12 +5,17 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import os
 import platform
+import shutil
+import ssl
 import subprocess
 import tarfile
 import tempfile
+import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 RELEASE_BASE = "https://github.com/vale-cli/vale/releases/download"
@@ -18,6 +23,11 @@ RELEASE_BASE = "https://github.com/vale-cli/vale/releases/download"
 # The one Vale pin for CI and the GitHub Action. Dependabot cannot update it; the
 # weekly pin-check workflow opens an issue when a newer Vale release exists.
 VALE_VERSION = "3.24.0"
+
+# Total download attempts per file, and the wait before the second attempt. Each
+# later wait doubles: 2 s, then 4 s.
+DOWNLOAD_ATTEMPTS = 3
+BACKOFF_SECONDS = 2.0
 
 
 class InstallError(RuntimeError):
@@ -41,13 +51,47 @@ def _asset_name(version: str) -> str:
     return f"vale_{version}_{system_name}_{architecture}.tar.gz"
 
 
+def _transient(exc: BaseException) -> bool:
+    """Return whether a network failure is worth another attempt.
+
+    Server errors (5xx), refused or dropped connections, truncated bodies and
+    timeouts are transient. Any 4xx answer and any TLS certificate failure is
+    final.
+    """
+    if isinstance(exc, HTTPError):
+        return exc.code >= 500
+    if isinstance(exc, URLError):
+        return not isinstance(exc.reason, ssl.SSLCertVerificationError)
+    return isinstance(exc, (TimeoutError, ConnectionError, http.client.HTTPException))
+
+
+def _fetch(url: str) -> bytes:
+    """Return the body of ``url``, retrying transient network failures.
+
+    The whole body is read before it is returned, so a failure mid-read retries
+    from the start and never leaves a partial file.
+    """
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            with urlopen(url, timeout=60) as response:
+                return response.read()
+        except (OSError, http.client.HTTPException) as exc:
+            if not _transient(exc):
+                raise InstallError(f"download failed for {url}: {exc}") from exc
+            if attempt == DOWNLOAD_ATTEMPTS:
+                raise InstallError(
+                    f"download failed for {url} after {attempt} attempts: {exc}"
+                ) from exc
+            time.sleep(BACKOFF_SECONDS * 2 ** (attempt - 1))
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def _download(url: str, destination: Path) -> None:
+    body = _fetch(url)
     try:
-        with urlopen(url, timeout=60) as response, destination.open("wb") as output:
-            while chunk := response.read(1024 * 1024):
-                output.write(chunk)
+        destination.write_bytes(body)
     except OSError as exc:
-        raise InstallError(f"download failed for {url}: {exc}") from exc
+        raise InstallError(f"could not write {destination}: {exc}") from exc
 
 
 def _checksum(checksums: Path, archive_name: str) -> str:
@@ -113,16 +157,37 @@ def _verify_version(binary: Path) -> str:
     return output
 
 
-def install(version: str, prefix: Path) -> tuple[Path, str]:
+def install(
+    version: str, prefix: Path, cache_dir: Path | None = None
+) -> tuple[Path, str]:
+    """Install Vale into ``prefix``.
+
+    With ``cache_dir``, a previously stored archive and checksums file are used
+    without network access. Either way the archive is checked against the
+    checksums file before it is unpacked. Files enter the cache only after that
+    check passes.
+    """
     archive_name = _asset_name(version)
+    checksums_name = f"vale_{version}_checksums.txt"
     base = f"{RELEASE_BASE}/v{version}"
     with tempfile.TemporaryDirectory(prefix="slopvac-vale-") as temporary:
         directory = Path(temporary)
         archive = directory / archive_name
-        checksums = directory / f"vale_{version}_checksums.txt"
-        _download(f"{base}/{archive_name}", archive)
-        _download(f"{base}/{checksums.name}", checksums)
+        checksums = directory / checksums_name
+        cached = cache_dir is not None and all(
+            (cache_dir / name).is_file() for name in (archive_name, checksums_name)
+        )
+        if cached and cache_dir is not None:
+            shutil.copyfile(cache_dir / archive_name, archive)
+            shutil.copyfile(cache_dir / checksums_name, checksums)
+        else:
+            _download(f"{base}/{archive_name}", archive)
+            _download(f"{base}/{checksums_name}", checksums)
         _verify_checksum(archive, _checksum(checksums, archive_name))
+        if cache_dir is not None and not cached:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(archive, cache_dir / archive_name)
+            shutil.copyfile(checksums, cache_dir / checksums_name)
         binary = _install_binary(archive, prefix)
     return binary, _verify_version(binary)
 
@@ -141,10 +206,18 @@ def main() -> int:
         default=Path("/usr/local/bin"),
         help="directory in which to install vale (default: /usr/local/bin)",
     )
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=None,
+        help="directory that holds the verified archive between runs",
+    )
     args = parser.parse_args()
     try:
         binary, version = install(
-            args.version or VALE_VERSION, args.prefix.expanduser()
+            args.version or VALE_VERSION,
+            args.prefix.expanduser(),
+            args.cache_dir.expanduser() if args.cache_dir else None,
         )
     except InstallError as exc:
         parser.error(str(exc))

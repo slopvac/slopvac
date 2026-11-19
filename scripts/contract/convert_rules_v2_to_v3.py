@@ -37,12 +37,24 @@ CHECK_KINDS = frozenset({"structure", "vocabulary"})
 # The only 2.x rule that carries an ALLOWED_WORDS placeholder; the 2.x loader
 # (rules._inject_heading_allow) substitutes it for this rule id alone.
 PLACEHOLDER_RULE_ID = "title-case-heading"
-# 2.x rules that 3.0 does not ship, as `<category>.<rule>`, from the shared list. The
-# converter and the generators that list 2.x rules skip them.
-REMOVED_RULES_FILE = Path(__file__).with_name("removed-rules.toml")
-REMOVED_RULES = frozenset(
-    tomllib.loads(REMOVED_RULES_FILE.read_text(encoding="utf-8"))["rules"]
+# 2.x rules that 3.0 does not ship, as `<category>.<rule>`, from the contract's list.
+# The converter and the generators that list 2.x rules skip them.
+REMOVED_RULES_FILE = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "contract"
+    / "compat"
+    / "removed-rules.toml"
 )
+
+
+def load_removed_rules(path: Path = REMOVED_RULES_FILE) -> frozenset[str]:
+    """The removed rule ids in the contract file; a missing file raises."""
+    entries = tomllib.loads(path.read_text(encoding="utf-8"))["rules"]
+    return frozenset(entry["id"] for entry in entries)
+
+
+REMOVED_RULES = load_removed_rules()
 
 CATEGORY_ID = re.compile(r"^[a-z][a-z0-9-]*$")
 

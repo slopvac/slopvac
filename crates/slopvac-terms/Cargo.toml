@@ -19,5 +19,8 @@ thiserror = { workspace = true }
 toml = { workspace = true }
 toml_edit = "0.25"
 
+[dev-dependencies]
+rstest = { workspace = true }
+
 [lints]
 workspace = true
