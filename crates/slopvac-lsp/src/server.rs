@@ -89,15 +89,20 @@ impl Server {
 
     /// Serve one client until it sends `shutdown` and `exit`.
     pub fn serve(self, connection: &Connection) -> Result<Exit, ServerError> {
-        let (id, params) = connection.initialize_start()?;
-        let params: InitializeParams = serde_json::from_value(params)?;
+        let (id, params) = connection
+            .initialize_start()
+            .map_err(ServerError::protocol)?;
+        let params: InitializeParams =
+            serde_json::from_value(params).map_err(ServerError::initialize)?;
         let encoding = negotiate(&params);
         let capabilities = capabilities(encoding);
         let init = serde_json::json!({
             "capabilities": capabilities,
             "serverInfo": ServerInfo { name: "slopvac".to_owned(), version: None },
         });
-        connection.initialize_finish(id, init)?;
+        connection
+            .initialize_finish(id, init)
+            .map_err(ServerError::protocol)?;
 
         let shared = Arc::new(Shared {
             linter: self.linter,
@@ -325,7 +330,10 @@ fn main_loop(
     for message in &connection.receiver {
         match message {
             Message::Request(req) => {
-                if connection.handle_shutdown(&req)? {
+                if connection
+                    .handle_shutdown(&req)
+                    .map_err(ServerError::protocol)?
+                {
                     return Ok(Exit::AfterShutdown);
                 }
                 let response = handle_request(shared, req);

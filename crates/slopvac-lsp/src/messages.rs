@@ -9,18 +9,22 @@ use slopvac_messages::{Catalog, Entry};
 pub enum ServerError {
     /// The connection broke or the client broke the protocol.
     #[code("lsp-protocol-error")]
-    #[message("language server protocol error")]
+    #[message("language server protocol error: {detail}")]
     Protocol {
+        /// The protocol failure, as text.
+        detail: String,
         /// The protocol failure.
-        #[from]
+        #[source]
         source: lsp_server::ProtocolError,
     },
     /// The client sent `initialize` parameters this server cannot read.
     #[code("lsp-initialize-invalid")]
-    #[message("invalid initialize parameters")]
+    #[message("invalid initialize parameters: {detail}")]
     Initialize {
+        /// The parse failure, as text.
+        detail: String,
         /// The parse failure.
-        #[from]
+        #[source]
         source: serde_json::Error,
     },
     /// The connection closed while the server was still sending.
@@ -31,6 +35,24 @@ pub enum ServerError {
     #[code("lsp-worker-panicked")]
     #[message("the lint worker panicked")]
     WorkerPanicked,
+}
+
+impl ServerError {
+    /// A protocol failure, with its text in the message.
+    pub(crate) fn protocol(source: lsp_server::ProtocolError) -> Self {
+        Self::Protocol {
+            detail: source.to_string(),
+            source,
+        }
+    }
+
+    /// Unreadable `initialize` parameters, with the parser's text in the message.
+    pub(crate) fn initialize(source: serde_json::Error) -> Self {
+        Self::Initialize {
+            detail: source.to_string(),
+            source,
+        }
+    }
 }
 
 /// Why `slopvac lsp` stopped with an error.

@@ -45,3 +45,15 @@ fn a_wrapped_server_error_keeps_its_text_and_code() {
     assert_eq!(error.code(), "lsp-connection-closed");
     assert!(error.source().is_none());
 }
+
+#[test]
+fn an_initialize_error_keeps_the_parser_text_and_source() {
+    let inner = serde_json::from_str::<u32>("x").unwrap_err();
+    let text = inner.to_string();
+    let error = slopvac_lsp::ServerError::Initialize {
+        detail: text.clone(),
+        source: inner,
+    };
+    assert!(error.to_string().ends_with(&text), "{error}");
+    assert!(error.source().is_some());
+}

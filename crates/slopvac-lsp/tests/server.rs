@@ -943,9 +943,15 @@ fn a_fatal_error_returns_at_once_although_the_transport_is_blocked() {
         .done
         .recv_timeout(Duration::from_secs(4))
         .expect("serve returns although the transport is blocked");
-    assert!(
-        matches!(result, Err(ServerError::Protocol { .. })),
-        "{result:?}"
+    let Err(error @ ServerError::Protocol { .. }) = result else {
+        panic!("expected a protocol error, got {result:?}");
+    };
+    // The message keeps the inner error's text and the chain keeps the inner error.
+    let inner = std::error::Error::source(&error).expect("the protocol error is the source");
+    assert_ne!(inner.to_string(), "");
+    assert_eq!(
+        error.to_string(),
+        format!("language server protocol error: {inner}")
     );
 }
 
