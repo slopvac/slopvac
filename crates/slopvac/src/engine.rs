@@ -910,3 +910,45 @@ mod read_tests {
         assert_eq!(outcome.documents, 1);
     }
 }
+
+#[cfg(test)]
+mod skip_tests {
+    use super::*;
+    use rstest::rstest;
+    use slopvac_model::PositionError;
+    use slopvac_parse::ParseError;
+    use slopvac_pcre2::MatchError;
+    use slopvac_text::TextError;
+
+    /// Every `EngineError` variant. The enum is `#[non_exhaustive]` across crates, so the
+    /// compiler cannot force this list to grow: add a case when the engine adds a variant.
+    #[rstest]
+    #[case::parse(EngineError::from(ParseError::Mdx("x".into())), "lint-failed")]
+    #[case::text(
+        EngineError::from(TextError::from(MatchError::MatchLimit { limit: 1 })),
+        "lint-failed"
+    )]
+    #[case::context(EngineError::Context("x".into()), "lint-failed")]
+    #[case::position(EngineError::from(PositionError::PastEnd(9)), "lint-failed")]
+    #[case::bad_range(EngineError::BadRange("x".into()), "lint-failed")]
+    #[case::tag_lookup_budget(
+        EngineError::TagLookupBudget { limit: 16_384 },
+        "tag-lookup-budget-exceeded"
+    )]
+    #[case::terms(EngineError::Terms("x".into()), "lint-failed")]
+    #[case::internal(EngineError::Internal("x".into()), "lint-failed")]
+    fn an_engine_error_leaves_the_file_unchecked_and_the_run_incomplete(
+        #[case] err: EngineError,
+        #[case] code: &str,
+    ) {
+        let mut run = Run::default();
+        run.skip_engine_error("docs/a.md", &err);
+
+        let codes: Vec<&str> = run.incomplete.iter().map(|e| e.code).collect();
+        assert_eq!(codes, [code]);
+        assert_eq!(run.notices.len(), 1);
+        assert_eq!(run.notices[0].code.as_str(), code);
+        assert_eq!(run.notices[0].level, NoticeLevel::Warning);
+        assert_eq!(run.notices[0].path.as_deref(), Some("docs/a.md"));
+    }
+}

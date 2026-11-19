@@ -62,6 +62,9 @@ predicates = "3.1.4"
 proptest.workspace = true
 roxmltree.workspace = true
 rstest.workspace = true
+slopvac-parse.workspace = true
+slopvac-pcre2.workspace = true
+slopvac-text.workspace = true
 snapbox.workspace = true
 
 [lints]
