@@ -1,0 +1,2 @@
+SLOPVAC_RST_CONVERTER=/home/sjors/tmp/rst-venv-344/bin/python
+docutils 0.21.2

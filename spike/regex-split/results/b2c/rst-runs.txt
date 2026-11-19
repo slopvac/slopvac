@@ -1,0 +1,4 @@
+eval-rst en-US rc=1 stderr_lines=0 docutils_mentions=0
+eval-rst en-GB rc=1 stderr_lines=0 docutils_mentions=0
+golden-rst en-US rc=1 stderr_lines=0 docutils_mentions=0
+golden-rst en-GB rc=1 stderr_lines=0 docutils_mentions=0

@@ -61,7 +61,7 @@ Status: IN PROGRESS (partial results survive restarts; sections fill in as measu
 | b1 | a46aa04683 | dev aarch64, 16 cores | rustc 1.99.1 (58cf8f9c3) | build + parity over golden, docs, k8s (eval skipped by mistake, see below) | 36.6 / 36.0 (no timings in b1) | done, rc=0, 2026-11-19 11:25-11:39Z |
 | b2 | 752411bf5d | dev aarch64, 16 cores | 1.99.1 | builds, eval parity re-run, random fuzz, summary, shape check, inputs (recheck failed: ESM import) | n/a (no timings) | done, rc=0, 14:25-14:31Z |
 | b2b | 23c8854367 | dev aarch64, 16 cores | 1.99.1 | directed fuzz, gap scan, RST reruns, shape check, recheck | n/a (no timings) | done, rc=0, 14:37-14:46Z |
-| b2c | see log | dev aarch64, 16 cores | 1.99.1 | shape check rerun (fixed parser), RST reruns via `SLOPVAC_RST_CONVERTER`, stats | n/a (no timings) | next |
+| b2c | ec0af61eb3 | dev aarch64, 16 cores | 1.99.1 | shape check rerun (fixed parser), RST reruns via `SLOPVAC_RST_CONVERTER`, stats | n/a (no timings) | done, rc=0, 15:20Z |
 
 Timing stages (batch 3: prep, small, large, e2e) all run on dev: arm64 (aarch64 Linux),
 16 cores. Each starts only at a 1-minute load under 4. A stage whose end load is 4 or more is
@@ -101,6 +101,10 @@ CI times. The RST inputs get parity reruns in b2c (see below).
   checks through `$SLOPVAC_RST_CONVERTER`, keeps full stderr, and reruns the 18 eval `.rst`
   files and `sample.rst`.
 - recheck 4.6.2 ran over every pattern in b2b (b2's run failed on an ESM import, fixed).
+- b2c (head ec0af61eb3): RST parity with `SLOPVAC_RST_CONVERTER=$HOME/tmp/rst-venv-344/bin/python`
+  (docutils 0.21.2). The 18 eval `.rst` files and the golden `sample.rst` each exited 1 in both
+  locales, with no stderr and no docutils message. That is the findings gate, so the RST
+  inputs are fully linted. The split counts are unchanged by these runs.
 
 ## 1. Split counts
 
@@ -183,7 +187,39 @@ a warning). Three of the core flags were prototype false positives, now fixed:
 lookaround probes `(?:[^()]|\([^()]*\))*` (separated by mandatory parentheses). The b2c rerun
 gives the final FP/FN numbers, and the measured malicious runs decide which flags are real.
 
-(final numbers pending b2c and the timing stages)
+b2c run (`results/b2c/stats.md`, fixed parser; self-test 25 of 26 as expected):
+
+| Source | Patterns | reject | warn (POLY2 / long lookbehind) | ok | parse error |
+|---|---|---|---|---|---|
+| core rules: `pattern` | 111 | 3 | 10 | 98 | 0 |
+| core rules: `substitution` | 18 | 0 | 0 | 18 | 0 |
+| core rules: `tokens` | 17 | 0 | 0 | 17 | 0 |
+| engine-built probes | 743 | 0 | 0 | 743 | 0 |
+| other built-ins | 13 | 0 | 0 | 13 | 0 |
+| `slopvac-context` | 17 | 0 | 2 | 15 | 0 |
+| `slopvac-text` built-ins | 38 | 1 | 5 | 32 | 0 |
+| malicious plugin set | 22 | 16 | 1 | 5 | 0 |
+
+- Core rejects (4 of 957, 0.4 %): `ai-tells-formatting.title-case-heading` (POLY, NEST),
+  `ai-tells-structure.tricolon-abuse-core` (POLY), `ste-procedural.condition-after-command`
+  (POLY) and `slopvac-text/src/tokens.rs:76` (units, POLY). Each is a false positive unless the
+  timing stages show a blow-up.
+- Plugin set: all 12 exponential shapes and the recursion shape are rejected. Of the 7
+  polynomial shapes, 3 are rejected (`(?=(a+))+b`, `(.*a){12}`, `\w*\w*\w*!`). The prototype
+  passes `(?:(?<=a)a)+$`, `a*\K` and `\s+\S+\s+$` and only warns on
+  `(?<=a{0,200})(?<!b{1,200})x`. The two safe shapes `(?>a+)+b` and `(a++)+b` pass. The timing
+  stages show whether the 4 polynomial shapes that weren't rejected are false negatives under
+  the interpreter limits.
+- recheck 4.6.2 (JS translation of each pattern, 10 s per pattern) over the 957: safe 879, linear
+  41, polynomial 26 (25 of degree 2, 1 of degree 3:
+  `ai-tells-structure.rhetorical-question-transition`), unknown 11 (4 timeouts, 7 parse
+  failures of the JS translation). Zero of recheck's 26 overlap the shape check's 4 rejects. 8
+  of the 26 get a POLY2 warning. The degree-2 cases are the quadratic cost of an unanchored
+  search re-tried at every start position. The shape check doesn't model that, by design,
+  because the interpreter's match limit bounds each attempt. The timing stages run recheck's
+  attack strings at native length, 64 KiB and 1 MiB to measure each one.
+
+(final FP/FN numbers pending the timing stages)
 
 ## 3. End-to-end timing
 

@@ -15,7 +15,8 @@ WT=$PWD
 SHA8=$(git rev-parse --short=8 HEAD)
 S=$HOME/tmp/spike-regex-build
 D=$S/data
-IN=$WT/spike/regex-split/results/b2
+IN=$WT/spike/regex-split/results/b2c
+PLUG=$WT/spike/regex-split/results/b2/plugin-patterns.jsonl
 TOOLS=$WT/spike/regex-split/tools
 OUT=$HOME/personal/dev/slopvac/.git/runs/spike-t-$SHA8-$STAGE
 BENCH=$S/bin/bench
@@ -71,7 +72,7 @@ run() {
   label="$mode/$cls"
   echo "$(date -u +%T) $label load=$(load1)" >> "$OUT/load.txt"
   while :; do
-    ( ulimit -v 8388608; SLOPVAC_SPIKE_ENGINE=$mode SLOPVAC_SPIKE_ALLOW=$IN/allow.txt \
+    ( ulimit -v 8388608; SLOPVAC_SPIKE_ENGINE=$mode SLOPVAC_SPIKE_ALLOW=$ALLOW \
       timeout 7200 "$BENCH" "$pats" "$input" "$label" "$OUT/bench.jsonl" "$@" ) \
       > /dev/null 2>> "$OUT/bench.err"
     rc=$?
@@ -92,8 +93,13 @@ run() {
 # Core: rule and built-in patterns; `rust` mode only for the parity-identical ones.
 CORE=$IN/patterns.jsonl
 RUSTP=$S/patterns-identical.jsonl
-grep '"verdict": "identical"' "$CORE" > "$RUSTP"
-PLUG=$IN/plugin-patterns.jsonl
+# Split allowlist: parity-identical minus every pattern the gap scan names ($ / (?m)^).
+cut -d'"' -f4 "$IN/gaps.jsonl" > "$S/gap-ids.txt"
+grep -v -F -f "$S/gap-ids.txt" "$IN/allow.txt" > "$S/allow-split.txt"
+ALLOW=$S/allow-split.txt
+grep '"verdict": "identical"' "$CORE" | grep -v -F -f "$S/gap-ids.txt" > "$RUSTP"
+wc -l "$IN/allow.txt" "$S/allow-split.txt" "$RUSTP" >> "$OUT/host.txt"
+PLUG=${PLUG}
 pats_for() { if [ "$1" = rust ]; then echo "$RUSTP"; else echo "$CORE"; fi; }
 case $STAGE in
 small)
@@ -124,13 +130,13 @@ e2e)
     for rep in 1 2 3; do
       $M "$OUT/e2e.jsonl" "main-interp/$set" 300 16384 -- "$S/bin/slopvac-main" lint "$set" --format json
       SLOPVAC_SPIKE_ENGINE=interp $M "$OUT/e2e.jsonl" "spike-interp/$set" 300 16384 -- "$S/bin/slopvac-spike" lint "$set" --format json
-      SLOPVAC_SPIKE_ENGINE=split SLOPVAC_SPIKE_ALLOW=$IN/allow.txt $M "$OUT/e2e.jsonl" "split/$set" 300 16384 -- "$S/bin/slopvac-spike" lint "$set" --format json
+      SLOPVAC_SPIKE_ENGINE=split SLOPVAC_SPIKE_ALLOW=$ALLOW $M "$OUT/e2e.jsonl" "split/$set" 300 16384 -- "$S/bin/slopvac-spike" lint "$set" --format json
       SLOPVAC_SPIKE_ENGINE=jit $M "$OUT/e2e.jsonl" "jit/$set" 300 16384 -- "$S/bin/slopvac-spike" lint "$set" --format json
       SLOPVAC_SPIKE_ENGINE=callout $M "$OUT/e2e.jsonl" "callout/$set" 300 16384 -- "$S/bin/slopvac-spike" lint "$set" --format json
     done
   done
   for e in interp split jit callout; do
-    SLOPVAC_SPIKE_ENGINE=$e SLOPVAC_SPIKE_ALLOW=$IN/allow.txt timeout 300 "$S/bin/slopvac-spike" lint docs eval --format json > "$OUT/report-$e.json" 2>/dev/null
+    SLOPVAC_SPIKE_ENGINE=$e SLOPVAC_SPIKE_ALLOW=$ALLOW timeout 300 "$S/bin/slopvac-spike" lint docs eval --format json > "$OUT/report-$e.json" 2>/dev/null
     echo "$e rc=$? sha=$(sha256sum < "$OUT/report-$e.json" | cut -c1-16)" >> "$OUT/reports.txt"
   done
   "$S/bin/slopvac-main" lint docs eval --format json > "$OUT/report-main.json" 2>/dev/null
