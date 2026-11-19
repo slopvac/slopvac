@@ -5,6 +5,7 @@ Slopvac 3.0 has no 2.x compatibility mode. A 2.x config makes every command that
 A config with no `schema_version`, or with `schema_version = 2`, needs migrating. One with `schema_version = 3` is reported as already migrated.
 
 ## 1. Find the 2.x surfaces
+<!-- prime: include -->
 
 Look for:
 
@@ -14,6 +15,7 @@ Look for:
 - Steering blocks between `<!-- slopvac:begin -->` and `<!-- slopvac:end -->` in agent instruction files.
 
 ## 2. Preview
+<!-- prime: include -->
 
 ```sh
 slopvac migrate
@@ -22,6 +24,7 @@ slopvac migrate
 The command prints a diff of every file it would change, lists the rules whose finding counts change, and exits 0. It writes nothing.
 
 ## 3. Resolve blockers
+<!-- prime: include -->
 
 Some 2.x settings have no 3.0 equivalent. The command stops with exit 2 and prints one `config-legacy-dropped` line for each, with the file, line, key and reason. It writes nothing.
 
@@ -46,6 +49,7 @@ These failures also exit 2 and write nothing:
 - `migrate-lint-failed`: the lint could not finish. Fix the file named.
 
 ## 4. Apply
+<!-- prime: link -->
 
 ```sh
 slopvac migrate --write
@@ -65,12 +69,14 @@ The command stops if one directory holds more than one of `slopvac.toml`, `.slop
 To keep the 2.x gates, add `--preserve-behavior`. It selects the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Other patterns fail with `migrate-override-overlap`.
 
 ## 5. Verify and undo
+<!-- prime: include -->
 
 Run `slopvac lint` and compare it with the preview report.
 
 To undo a write, run `slopvac migrate --restore`. It restores the backed-up files, removes the files the write created, and deletes the backup. To keep the migration, delete `.slopvac-migrate-backup`. A second `slopvac migrate` finds nothing to change.
 
 ## 6. Removed in 3.0
+<!-- prime: link -->
 
 These 2.x surfaces fail with exit 2. Update scripts, CI and hooks by hand.
 

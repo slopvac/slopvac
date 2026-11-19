@@ -499,6 +499,7 @@ fn collect_targets(
         Selection::Prose
     };
     let mut seen = HashSet::new();
+    let shower = redact::PathShower::new(&request.root);
     for target in &request.targets {
         let shown_target = redact::shown_path(target, &request.root);
         let found = match discover(
@@ -526,11 +527,12 @@ fn collect_targets(
             );
         }
         for file in found.files {
-            let canonical = std::fs::canonicalize(&file.path).unwrap_or_else(|_| file.path.clone());
+            let resolved = std::fs::canonicalize(&file.path).ok();
+            let canonical = resolved.clone().unwrap_or_else(|| file.path.clone());
             if !seen.insert(canonical.clone()) {
                 continue;
             }
-            let shown = redact::shown_path(&file.path, &request.root);
+            let shown = shower.shown(&file.path, resolved.as_deref());
             let config = config_for(configs, &request.root, &canonical)?;
             // Exclusions apply first, whether the config was found or named with `--config`,
             // so an excluded file is never read, parsed or reported.
@@ -910,6 +912,30 @@ mod read_tests {
         let outcome = lint_within_timeout(&link, request(&root, &link), None);
         assert_eq!(outcome.incomplete.len(), 0);
         assert_eq!(outcome.documents, 1);
+    }
+
+    /// A target reached through a symlink to an external directory, which vanishes after
+    /// discovery, cannot be canonicalized. Its notice must not show the external directory.
+    #[test]
+    fn a_vanished_file_behind_an_external_symlink_hides_the_external_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(dir.path()).unwrap();
+        let root = top.join("proj");
+        let external = top.join("elsewhere").join("sentinel-private");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        std::fs::write(external.join("a.md"), "Hello there.\n").unwrap();
+        std::os::unix::fs::symlink(top.join("elsewhere"), root.join("link")).unwrap();
+        let target = root.join("link").join("sentinel-private").join("a.md");
+        let gone = external.join("a.md");
+        let outcome = lint_within_timeout(
+            &root.join("probe-fifo"),
+            request(&root, &target),
+            Some(Box::new(move || std::fs::remove_file(&gone).unwrap())),
+        );
+        let text = format!("{:?}", outcome.incomplete);
+        assert!(text.contains("<external>/a.md"), "{text}");
+        assert!(!text.contains("sentinel-private"), "{text}");
     }
 }
 
