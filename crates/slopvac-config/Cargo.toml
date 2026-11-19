@@ -17,6 +17,7 @@ saphyr.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 slopvac-fs.workspace = true
+slopvac-messages.workspace = true
 strsim.workspace = true
 thiserror.workspace = true
 toml_edit.workspace = true

@@ -11,6 +11,7 @@ use serde_json::Value as Json;
 use crate::diag::{BudgetData, Code, ConfigBudget, Diagnostic};
 use crate::error::{ConfigError, Rejected};
 use crate::flatten::{Origin, flatten};
+use crate::messages::{ConfigPhrase, ConfigText};
 use crate::presets::Presets;
 use crate::read::{
     MAX_CONFIG_BYTES, MAX_EXTENDS_APPLIED_BYTES, MAX_EXTENDS_BYTES, MAX_EXTENDS_DEPTH,
@@ -362,8 +363,8 @@ impl Loader<'_> {
                 let span = e.span.unwrap_or(0..0);
                 let d = Diagnostic {
                     code: Code::Parse,
-                    message: format!("not valid TOML: {}", e.message),
-                    label: "the parser stopped here".into(),
+                    message: ConfigText::NotValidToml { detail: e.message }.to_string(),
+                    label: ConfigPhrase::LabelParserStopped.text(),
                     span,
                     help: None,
                     path: Vec::new(),
@@ -439,7 +440,7 @@ impl Loader<'_> {
             diagnostics.push(Diagnostic {
                 code: failure.code,
                 message: failure.message,
-                label: "listed here".into(),
+                label: ConfigPhrase::LabelListedHere.text(),
                 span: node.span.clone(),
                 help: None,
                 path: vec!["styles".into()],
@@ -481,12 +482,15 @@ impl Loader<'_> {
                 if let Some((_, first)) = seen.iter().find(|(s, _)| *s == scope) {
                     diagnostics.push(Diagnostic {
                         code: Code::DuplicateScope,
-                        message: format!(
-                            "`{table}[{index}]` repeats the `files` of `{table}[{first}]`"
-                        ),
-                        label: "same files as an earlier block".into(),
+                        message: ConfigText::ScopeRepeats {
+                            table: table.to_owned(),
+                            index: index.to_string(),
+                            first: first.to_string(),
+                        }
+                        .to_string(),
+                        label: ConfigPhrase::LabelSameFiles.text(),
                         span,
-                        help: Some("merge the two blocks".into()),
+                        help: Some(ConfigPhrase::HelpMergeBlocks.text()),
                         path: vec![table.into(), index.to_string(), "files".into()],
                         data: None,
                     });
@@ -498,8 +502,8 @@ impl Loader<'_> {
                     Err(msg) => {
                         diagnostics.push(Diagnostic {
                             code: Code::InvalidValue,
-                            message: format!("a `files` pattern does not compile: {msg}"),
-                            label: "bad pattern".into(),
+                            message: ConfigText::FilesPatternBad { detail: msg }.to_string(),
+                            label: ConfigPhrase::LabelBadPattern.text(),
                             span,
                             help: None,
                             path: vec![table.into(), index.to_string(), "files".into()],
@@ -538,32 +542,45 @@ impl Loader<'_> {
             Key::Path(p) => slopvac_fs::display_under_root(p, self.root),
             Key::Pack(_) => display.to_owned(),
         };
-        let (limit, what, help) = match budget {
-            ConfigBudget::ExtendsDepth => (
-                MAX_EXTENDS_DEPTH as u64,
-                "nests `extends` deeper than {} levels",
-                "flatten the chain",
-            ),
-            ConfigBudget::ExtendsFiles => (
-                MAX_EXTENDS_FILES as u64,
-                "applies more than {} files through `extends`",
-                "remove entries that extend the same files again",
-            ),
-            ConfigBudget::ExtendsBytes => (
-                MAX_EXTENDS_BYTES,
-                "reads more than {} bytes through `extends`",
-                "remove entries or split the files",
-            ),
-            ConfigBudget::ExtendsAppliedBytes => (
-                MAX_EXTENDS_APPLIED_BYTES,
-                "applies more than {} bytes of config through `extends`",
-                "remove entries that extend the same large files again",
-            ),
+        let path_text = path.clone();
+        let (limit, message, help) = match budget {
+            ConfigBudget::ExtendsDepth => {
+                let limit = MAX_EXTENDS_DEPTH as u64;
+                let message = ConfigText::BudgetDepth {
+                    path: path_text,
+                    limit,
+                };
+                (limit, message, ConfigPhrase::HelpFlattenChain)
+            }
+            ConfigBudget::ExtendsFiles => {
+                let limit = MAX_EXTENDS_FILES as u64;
+                let message = ConfigText::BudgetFiles {
+                    path: path_text,
+                    limit,
+                };
+                (limit, message, ConfigPhrase::HelpRemoveRepeatedFiles)
+            }
+            ConfigBudget::ExtendsBytes => {
+                let limit = MAX_EXTENDS_BYTES;
+                let message = ConfigText::BudgetBytes {
+                    path: path_text,
+                    limit,
+                };
+                (limit, message, ConfigPhrase::HelpRemoveOrSplit)
+            }
+            ConfigBudget::ExtendsAppliedBytes => {
+                let limit = MAX_EXTENDS_APPLIED_BYTES;
+                let message = ConfigText::BudgetAppliedBytes {
+                    path: path_text,
+                    limit,
+                };
+                (limit, message, ConfigPhrase::HelpRemoveRepeatedLarge)
+            }
         };
         Refusal {
             code: Code::BudgetExceeded,
-            message: format!("{path} {}", what.replace("{}", &limit.to_string())),
-            help: Some(help.into()),
+            message: message.to_string(),
+            help: Some(help.text()),
             data: Some(Box::new(BudgetData {
                 budget,
                 limit,
@@ -645,16 +662,21 @@ impl Loader<'_> {
         read_text(p, MAX_CONFIG_BYTES).map_err(|e| match e {
             ReadFailure::TooLarge(cap) => Refusal::new(
                 Code::TooLarge,
-                format!("the extended config `{name}` is larger than {cap} bytes"),
-                Some("split the file or remove unused settings".into()),
+                ConfigText::ExtendedTooLarge {
+                    name: name.to_owned(),
+                    cap,
+                }
+                .to_string(),
+                Some(ConfigPhrase::HelpSplitFile.text()),
             ),
             ReadFailure::Io(e) => Refusal::new(
                 Code::ExtendsMissing,
-                format!(
-                    "cannot read the extended config `{}`: {e}",
-                    safe_display(p, self.root)
-                ),
-                Some("paths are relative to the file that holds the entry".into()),
+                ConfigText::ExtendedUnreadable {
+                    path: safe_display(p, self.root),
+                    detail: e.to_string(),
+                }
+                .to_string(),
+                Some(ConfigPhrase::HelpRelativeToEntry.text()),
             ),
         })
     }
@@ -683,7 +705,7 @@ impl Loader<'_> {
                     diagnostics: vec![Diagnostic {
                         code: r.code,
                         message: r.message,
-                        label: "extended here".into(),
+                        label: ConfigPhrase::LabelExtendedHere.text(),
                         span: entry.span.clone(),
                         help: r.help,
                         path: vec!["extends".into()],
@@ -695,7 +717,10 @@ impl Loader<'_> {
                 let Some(file) = self.presets.pack_config(name) else {
                     return Err(fail(Refusal::new(
                         Code::ExtendsMissing,
-                        format!("no active plugin provides the config `{name}`"),
+                        ConfigText::NoPackConfig {
+                            name: name.to_owned(),
+                        }
+                        .to_string(),
                         None,
                     )));
                 };
@@ -717,8 +742,11 @@ impl Loader<'_> {
                 chain.push(self.error_label(&target, &shown));
                 return Err(fail(Refusal::new(
                     Code::ExtendsCycle,
-                    format!("`extends` loops: {}", chain.join(" -> ")),
-                    Some("remove one entry from the loop".into()),
+                    ConfigText::ExtendsLoop {
+                        chain: chain.join(" -> "),
+                    }
+                    .to_string(),
+                    Some(ConfigPhrase::HelpBreakLoop.text()),
                 )));
             }
             if self.apply_cached(&target, key, display).map_err(fail)? {
@@ -802,8 +830,8 @@ fn check_exclude(tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
         if let Err(msg) = compile(&[pattern.to_owned()], Path::new("/")) {
             diagnostics.push(Diagnostic {
                 code: Code::InvalidValue,
-                message: format!("the pattern does not compile: {msg}"),
-                label: "bad pattern".into(),
+                message: ConfigText::PatternBad { detail: msg }.to_string(),
+                label: ConfigPhrase::LabelBadPattern.text(),
                 span: item.span.clone(),
                 help: None,
                 path: vec!["exclude".into(), i.to_string()],

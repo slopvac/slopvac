@@ -3,7 +3,6 @@
 //! The CLI crate wires `command` and `run` into its tree. The checks are plain functions so the
 //! language server and tests call them directly.
 
-use std::fmt::Write as _;
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -11,13 +10,15 @@ use std::sync::Arc;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use ignore::WalkBuilder;
+use slopvac_messages::Catalog;
 
 use crate::diag::{Code, SourceFile, render};
 use crate::directives;
 use crate::discover::Discovery;
-use crate::error::ConfigError;
+use crate::error::{ConfigError, error_line};
 use crate::frontmatter::{self, Policy};
 use crate::load::LoadedConfig;
+use crate::messages::{ConfigMessage, ConfigPhrase, ConfigText};
 use crate::presets::Presets;
 use crate::read::{MAX_DOCUMENT_BYTES, ReadFailure, read_text};
 
@@ -170,13 +171,17 @@ fn collect(paths: &[PathBuf], cwd: &Path, report: &mut Report) -> Vec<PathBuf> {
                         }
                     }
                     Err(err) => {
-                        let reason = err
-                            .io_error()
-                            .map_or("the directory cannot be read", crate::error::reason);
+                        let reason = err.io_error().map_or(
+                            ConfigPhrase::ReasonDirectory.as_static(),
+                            crate::error::reason,
+                        );
                         unreadable(
                             report,
                             &shown,
-                            &format!("cannot read inside {shown}: {reason}"),
+                            &ConfigText::UnreadableInside {
+                                path: shown.clone(),
+                                reason: reason.to_owned(),
+                            },
                         );
                     }
                 }
@@ -189,7 +194,10 @@ fn collect(paths: &[PathBuf], cwd: &Path, report: &mut Report) -> Vec<PathBuf> {
             unreadable(
                 report,
                 &shown,
-                &format!("cannot read {shown}: no such file"),
+                &ConfigMessage::Io {
+                    path: shown.clone(),
+                    reason: ConfigPhrase::ReasonNotFound.text(),
+                },
             );
         }
     }
@@ -197,17 +205,17 @@ fn collect(paths: &[PathBuf], cwd: &Path, report: &mut Report) -> Vec<PathBuf> {
 }
 
 /// Record a path that could not be read. The check is incomplete.
-fn unreadable(report: &mut Report, file: &str, message: &str) {
+fn unreadable(report: &mut Report, file: &str, message: &dyn Catalog) {
     unreadable_with(report, file, Code::Io, message);
 }
 
 /// Record a path that could not be read, under `code`. The check is incomplete.
-fn unreadable_with(report: &mut Report, file: &str, code: Code, message: &str) {
+fn unreadable_with(report: &mut Report, file: &str, code: Code, message: &dyn Catalog) {
     report.incomplete = true;
     report.problems.push(Problem {
         file: file.to_owned(),
         code: Some(code),
-        rendered: format!("error[{}]: {message}", code.as_str()),
+        rendered: error_line(code, message),
     });
 }
 
@@ -229,12 +237,18 @@ fn check_document(file: &Path, cwd: &Path, config: Option<&LoadedConfig>, report
     let text = match read_text(file, MAX_DOCUMENT_BYTES) {
         Ok(t) => t,
         Err(ReadFailure::TooLarge(cap)) => {
-            let message = format!("{shown} is larger than {cap} bytes");
+            let message = ConfigMessage::DocumentTooLarge {
+                path: shown.clone(),
+                cap,
+            };
             unreadable_with(report, &shown, Code::DocumentTooLarge, &message);
             return;
         }
         Err(ReadFailure::Io(e)) => {
-            let message = format!("cannot read {shown}: {}", crate::error::reason(&e));
+            let message = ConfigMessage::Io {
+                path: shown.clone(),
+                reason: crate::error::reason(&e).to_owned(),
+            };
             unreadable(report, &shown, &message);
             return;
         }
@@ -277,18 +291,17 @@ fn missing_term_files(config: &LoadedConfig) -> Vec<Problem> {
                 .filter_map(|v| v.as_str())
             {
                 if !crate::load::normalise_join(&dir, name).is_file() {
-                    let mut msg = String::new();
-                    let _ = write!(
-                        msg,
-                        "error[config-invalid-value]: `terms.{key}` names `{name}`, which is not a file\n --> {}:{}:{}",
-                        file.display,
-                        s.source.line.unwrap_or(1),
-                        s.source.column.unwrap_or(1),
-                    );
+                    let message = ConfigText::TermFileMissing {
+                        key: key.to_owned(),
+                        name: name.to_owned(),
+                        file: file.display.clone(),
+                        line: s.source.line.unwrap_or(1),
+                        column: s.source.column.unwrap_or(1),
+                    };
                     out.push(Problem {
                         file: file.display.clone(),
                         code: Some(Code::InvalidValue),
-                        rendered: msg,
+                        rendered: error_line(Code::InvalidValue, &message),
                     });
                 }
             }
@@ -301,31 +314,31 @@ fn missing_term_files(config: &LoadedConfig) -> Vec<Problem> {
 #[must_use]
 pub fn command() -> Command {
     Command::new("validate")
-        .about("Check config, front matter and inline directives without linting")
+        .about(ConfigPhrase::ValidateAbout.as_static())
         .arg(
             Arg::new("paths")
                 .num_args(0..)
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("Documents or directories to check; none checks the config alone"),
+                .help(ConfigPhrase::ValidatePaths.as_static()),
         )
         .arg(
             Arg::new("config")
                 .long("config")
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("Use this config for every file and skip discovery"),
+                .help(ConfigPhrase::ValidateConfig.as_static()),
         )
         .arg(
             Arg::new("schema")
                 .long("schema")
                 .value_parser(["frontmatter", "config"])
-                .help("Print a JSON Schema for editors and exit"),
+                .help(ConfigPhrase::ValidateSchema.as_static()),
         )
         .arg(
             Arg::new("quiet")
                 .long("quiet")
                 .short('q')
                 .action(ArgAction::SetTrue)
-                .help("Print problems only"),
+                .help(ConfigPhrase::ValidateQuiet.as_static()),
         )
 }
 
@@ -355,12 +368,11 @@ pub fn run(
         writeln!(out, "{}\n", p.rendered)?;
     }
     if !matches.get_flag("quiet") {
-        writeln!(
-            out,
-            "checked {} file(s): {} problem(s)",
-            report.checked,
-            report.problems.len()
-        )?;
+        let summary = ConfigText::ValidateSummary {
+            checked: report.checked,
+            problems: report.problems.len(),
+        };
+        writeln!(out, "{summary}")?;
     }
     Ok(report.exit_code())
 }
