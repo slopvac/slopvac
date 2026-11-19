@@ -1,29 +1,32 @@
 //! Applying a plan and undoing it, safe against a hostile checkout.
 //!
 //! The author of a pull request controls every file in the tree, the backup directory
-//! included, so neither step trusts what it finds on disk:
+//! included. This module defends against a hostile checkout that stays the same while
+//! migrate runs:
 //!
-//! - Every path is walked from one handle on the project root, without following a link at
-//!   any component. A symbolic link, a non-regular file and a file with more than one link
-//!   are refused.
-//! - Each change is conditional. Next to the target, the change makes a holding directory:
-//!   owner-only, with a random name, and held open. The new bytes are staged in it. The
-//!   target then moves into it and is checked there, through the held handle: the same file
-//!   the preflight saw, with the expected bytes. The staged file takes the name with a
-//!   rename that fails if the name was taken again, and the object under the name must then
-//!   be the staged file before the original is removed. An unexpected object goes back
-//!   under its name, or stays in the holding directory, and the step fails.
-//! - The trusted state is a record in the per-user cache directory, outside the project. It
-//!   names the root and backup directories by device and inode, and it holds a random
-//!   instance id, the digest of every file before and after, each file's mode, the identity
-//!   of each staged file, the digest of the backup manifest, and which changes completed.
-//!   Restore acts only on what the record says this run did, and it refuses a backup
-//!   directory with any other content.
+//! - No symbolic link is followed. Every path is walked from one handle on the project
+//!   root, one component at a time. A symbolic link, a non-regular file and a file with
+//!   more than one hard link are refused.
+//! - The trusted restore record lives in the per-user cache directory, outside the project.
+//!   It is bound to the checkout's identity, the root directory's device and inode, and to
+//!   one migration instance, a random id that the backup manifest repeats. Restore refuses
+//!   a backup directory that does not match the record exactly.
+//! - A target counts as the migration's own only when both its identity and its digest
+//!   match the record: it is the file the migration staged, by device and inode, with the
+//!   bytes the migration wrote. Same bytes alone prove nothing. `--force` also puts back a
+//!   target that is still the file the migration installed, by device and inode, but whose
+//!   bytes changed. It never replaces any other object.
+//! - Otherwise it fails closed: it stops with an error, or it keeps the target as it is.
 //!
-//! One window remains: a removal checks a file's identity through the holding directory's
-//! handle and then removes it by name there, in two calls. A process that runs as the same
-//! user, finds the random name and swaps the file between the two calls has the file it
-//! swapped in removed. Files in the checkout itself are never removed by name.
+//! Each change stages its bytes in an owner-only holding directory with a random name, and
+//! moves the target there to check it through the held handle.
+//!
+//! Accepted risk: a process that runs as the same user and changes the checkout during the
+//! run can defeat these checks. It can change the tree between a check and the next step.
+//! For example, it can swap a file in a holding directory between the identity check and
+//! the unlink by name that follows it, so the swapped file is removed. It can also move a
+//! parent directory out of the project during a change, so the write lands at the new
+//! place.
 
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
@@ -378,7 +381,8 @@ fn remove_if(dir: &Dir, name: &OsStr, id: Id) -> std::io::Result<bool> {
 /// Objects move into it before they are checked, so the check and the step after it reach
 /// them through this handle, not through a name in the checkout. On drop it removes the
 /// files it created, if they are still those files, and then itself if it is empty.
-/// Anything else stays, so a failure never removes what it did not check.
+/// Anything else stays, so in a checkout that stays the same during the run, a failure
+/// never removes what it did not check.
 struct Holding<'a> {
     parent: &'a Dir,
     name: OsString,
@@ -565,7 +569,9 @@ fn check_taken(hold: &Holding<'_>, rel: &Path, id: Id, digest: Option<Sha>) -> R
 /// holding directory and is checked there, through its handle. An unexpected object goes
 /// back under its name. The staged file takes the name, and the object under the name is
 /// checked to be the staged file before the original is removed. Every rename refuses to
-/// replace an existing name, so nothing that was not checked is overwritten or removed.
+/// replace an existing name, so a rename never overwrites an object. The original is
+/// removed by a check and an unlink by name in the holding directory; the module docs name
+/// the risk between the two.
 // TODO(8l4.12.37): move to the compare-and-swap write in slopvac-fs when it lands.
 fn mutate(
     root: &Dir,
