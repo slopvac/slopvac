@@ -21,6 +21,15 @@ fn clip(text: &str) -> String {
     }
 }
 
+/// [`clip`] for an owned message. A short one is kept, trimmed to its length.
+fn clip_owned(mut text: String) -> String {
+    if text.char_indices().nth(MAX_MESSAGE_CHARS).is_some() {
+        return clip(&text);
+    }
+    text.shrink_to_fit();
+    text
+}
+
 /// A list of messages that keeps the first [`MAX_MESSAGES`], cuts each to
 /// [`MAX_MESSAGE_CHARS`] characters, and counts the rest.
 #[derive(Debug)]
@@ -45,7 +54,7 @@ impl Capped {
             self.suppressed = self.suppressed.saturating_add(1);
             return;
         }
-        self.items.push(clip(&message));
+        self.items.push(clip_owned(message));
     }
 
     /// The kept messages, then one line that counts the suppressed ones.
@@ -87,7 +96,7 @@ impl Blockers {
     }
 
     /// Adds a record. A closing record of another capped list adds its count.
-    pub(crate) fn push(&mut self, record: Dropped) {
+    pub(crate) fn push(&mut self, record: &Dropped) {
         if record.suppressed > 0 {
             self.suppressed = self.suppressed.saturating_add(record.suppressed);
             return;
@@ -97,7 +106,7 @@ impl Blockers {
 
     pub(crate) fn extend(&mut self, records: impl IntoIterator<Item = Dropped>) {
         for record in records {
-            self.push(record);
+            self.push(&record);
         }
     }
 
@@ -145,7 +154,7 @@ mod tests {
         for _ in 0..(MAX_MESSAGES + 5) {
             list.record("a.toml", "k", 1, "r");
         }
-        list.push(Dropped::suppression(7));
+        list.push(&Dropped::suppression(7));
         assert_eq!(list.total(), MAX_MESSAGES + 12);
         let kept = list.finish();
         assert_eq!(kept.len(), MAX_MESSAGES + 1);
