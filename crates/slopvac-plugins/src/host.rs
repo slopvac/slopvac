@@ -1387,7 +1387,7 @@ fn limit_hit(_status: ExitStatus, _caps: &RunCaps) -> Option<String> {
         reason = "only the Unix launcher path can fail"
     )
 )]
-fn plugin_command(spec: &PluginSpec, cfg: &HostConfig) -> io::Result<Command> {
+fn plugin_command(spec: &PluginSpec, cfg: &HostConfig) -> Result<Command, PluginError> {
     let env = [("PATH", spec.path_env.as_str()), ("LANG", "C.UTF-8")]
         .into_iter()
         .chain(spec.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
@@ -1400,7 +1400,12 @@ fn plugin_command(spec: &PluginSpec, cfg: &HostConfig) -> io::Result<Command> {
             file_size: c.file_size,
             memory: c.memory,
         };
-        let launcher = cfg.launcher.path()?;
+        let launcher = cfg.launcher.path().map_err(|e| match e {
+            crate::launch::LaunchError::NotInstalled => PluginError::LauncherNotInstalled,
+            e @ crate::launch::LaunchError::CurrentExe(_) => {
+                PluginError::SpawnFailed(format!("{}: {e}", spec.name))
+            }
+        })?;
         Ok(crate::launch::command(
             &launcher,
             limits,
@@ -1424,7 +1429,10 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         error: PluginError::SpawnFailed(format!("{}: {e}", spec.name)),
         teardown: Teardown::default(),
     };
-    let mut cmd = plugin_command(spec, cfg).map_err(spawn_failed)?;
+    let mut cmd = plugin_command(spec, cfg).map_err(|error| StartError {
+        error,
+        teardown: Teardown::default(),
+    })?;
     cmd.current_dir(&spec.cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
