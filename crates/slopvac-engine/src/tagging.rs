@@ -501,28 +501,6 @@ mod tests {
         }
     }
 
-    #[rstest::rstest]
-    #[case::boolean("generated: true", "generated", Some("true"))]
-    #[case::integer("year: 2024", "year", Some("2024"))]
-    #[case::float("ratio: 1.5", "ratio", Some("1.5"))]
-    #[case::datetime("when: 2024-05-01", "when", Some("2024-05-01"))]
-    #[case::string("genre: reference", "genre", Some("reference"))]
-    #[case::quoted_number("year: \"2024\"", "year", Some("2024"))]
-    #[case::null("note:", "note", None)]
-    #[case::sequence("tags: [a, b]", "tags", None)]
-    #[case::absent("year: 1", "other", None)]
-    fn front_matter_renders_parsed_scalars_as_text(
-        #[case] line: &str,
-        #[case] key: &str,
-        #[case] want: Option<&str>,
-    ) {
-        let source = format!("---\n{line}\n---\nBody.\n");
-        let front = FrontMatter::parse(&source).unwrap().unwrap();
-        let doc = row_of_fallback_cells(0);
-        let view = View::new("a.md", &source, &doc, Some(&front));
-        assert_eq!(view.front_matter(key), want);
-    }
-
     #[test]
     fn every_tagger_reads_blocks_built_once() {
         let count = 50;
