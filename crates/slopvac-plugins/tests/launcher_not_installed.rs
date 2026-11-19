@@ -19,7 +19,7 @@ fn a_program_without_the_launcher_entry_point_gets_a_typed_error_and_no_child() 
     assert_eq!(
         err.to_string(),
         "the running program did not install the slopvac plugin launcher, \
-         so plugins and git pack sources cannot start"
+         so plugins and git plugin sources cannot start"
     );
     // Nothing started, so nothing was torn down and nothing is left undone.
     assert_eq!(err.teardown, Teardown::default());

@@ -847,10 +847,10 @@ fn a_path_source_through_a_link_is_refused() {
     let outside = tempfile::tempdir().unwrap();
     fs::write(outside.path().join("pack.toml"), b"x").unwrap();
     fs::create_dir_all(env.project.path().join("plugins")).unwrap();
-    std::os::unix::fs::symlink(outside.path(), env.project.path().join("packs/link")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), env.project.path().join("plugins/link")).unwrap();
     let lock = lock_text(&[format!(
         "\n[[plugins]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
-         source = \"packs/link\"\ndigest = \"sha256:{}\"\n",
+         source = \"plugins/link\"\ndigest = \"sha256:{}\"\n",
         "00".repeat(32)
     )]);
     let err = run(&env, Network::Offline, &KeyPolicy::default(), &lock).unwrap_err();

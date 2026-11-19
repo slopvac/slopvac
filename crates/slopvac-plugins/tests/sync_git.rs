@@ -348,8 +348,8 @@ fn a_program_without_the_launcher_entry_point_syncs_no_git_source() {
     assert_eq!(err.exit_code(), 2);
     assert_eq!(
         err.to_string(),
-        "pack `style`: the running program did not install the slopvac plugin launcher, \
-         so plugins and git pack sources cannot start"
+        "plugin `style`: the running program did not install the slopvac plugin launcher, \
+         so plugins and git plugin sources cannot start"
     );
     env.assert_no_trees();
     // A refused sync has no side effects: no revocation fetch, no store, no
