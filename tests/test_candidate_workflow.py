@@ -478,6 +478,10 @@ def test_the_prerelease_attaches_the_signatures_without_the_secret():
     assert "MINISIGN" not in str(JOBS["prerelease"])
 
 
+def test_candidate_signing_runs_in_its_own_environment():
+    assert JOBS["sign"]["environment"] == "candidate-signing"
+
+
 def test_the_signing_secret_is_in_the_candidate_signing_step_env_only():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert text.count("secrets.MINISIGN_SECRET_KEY") == 1
