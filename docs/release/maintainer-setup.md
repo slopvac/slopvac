@@ -71,7 +71,7 @@ The release and candidate workflows sign with this key and check each signature 
 
 The `slopvac-plugins` crate compiles `keys/slopvac-release.pub` in with `include_str!`. `KeyPolicy::compiled()` in `sign.rs` makes it the only key for the first-party namespace `slopvac`. `Revocations::with_compiled_root` in `revoke.rs` makes it the root key that verifies the revocation list. Both return an error if the compiled key does not parse, and first-party verification then refuses.
 
-The `slopvac-update` crate includes the same file in `verify.rs`. `ReleaseVerifier` checks the `.minisig` of the archive that `slopvac self update` downloads. It accepts prehashed signatures only. It refuses a missing, tampered, legacy or foreign-key signature before it replaces the binary. It also requires the signed trusted comment to name the requested archive and version, so an older or foreign-target archive that the key signed does not install. `scripts/release_signing.py` writes that comment.
+The `slopvac-update` crate includes the same file in `verify.rs`, plus the optional `NEXT_RELEASE_KEY_FILE` constant in `verify.rs`. `ReleaseVerifier` checks the `.minisig` of the archive that `slopvac self update` downloads against both keys. It accepts prehashed signatures only. It refuses a missing, tampered, legacy or foreign-key signature before it replaces the binary. It also requires the signed trusted comment to name the requested archive and version, so an older or foreign-target archive that the key signed does not install. `scripts/release_signing.py` writes that comment.
 
 Tests inject other keys through the public fields of `KeyPolicy`, through `Revocations::new` and through `Runtime::verifier`, so no test needs the secret key.
 
@@ -81,12 +81,24 @@ Release CI signs release artifacts with `MINISIGN_SECRET_KEY` in minisign's defa
 
 ### Rotate the key
 
-The first-party key set is compiled in, so it changes only with a slopvac release. A publisher-key rotation statement (signed by the old and new key) applies to pinned user keys, not to this key.
+The trusted release keys are compiled in, so they change only with a slopvac release. `slopvac self update` trusts a list of up to two keys: the current key in `keys/slopvac-release.pub` and an optional next key in the `NEXT_RELEASE_KEY_FILE` constant in `crates/slopvac-update/src/verify.rs`. A signature from either key verifies, and the trusted comment must still match. The constant is `None` when no rotation is under way.
 
-1. Generate the new minisign key pair. Store the secret key in the Actions secret `MINISIGN_SECRET_KEY` and a backup in 1Password, without printing it.
-2. Replace `keys/slopvac-release.pub` with the new public key, update the key id on this page, and release a binary that embeds it. The embedded-key tests in `crates/slopvac-plugins/tests/sign.rs` and `crates/slopvac-update/src/verify.rs` must change in the same pull request.
-3. Re-sign the first-party plugins and publish a new revocation list with the new key.
-4. If the old key leaked, publish a list that names its key id, signed while the old key is still a root. Binaries that embed the old key keep trusting it until the user upgrades, which is residual risk R8 in the threat model.
+A binary trusts only the keys it was built with. If a rotation skipped the next-key step, a client could never verify a release signed with the new key, and it would need a manual reinstall. The next key therefore ships in a release before anything is signed with it.
+
+A publisher-key rotation statement (signed by the old and new key) applies to pinned user keys, not to this key.
+
+1. Generate the next minisign key pair with `minisign -G -W`. Keep the secret key out of the repository and the transcript. Store a backup in 1Password. Do not touch `MINISIGN_SECRET_KEY` yet.
+2. Set `NEXT_RELEASE_KEY_FILE` to the text of the new public key, in a pull request that updates the key ids on this page and in [distribution](distribution.md#signatures).
+3. Release. This rotation release is signed with the current key, still in `MINISIGN_SECRET_KEY`, and embeds both public keys. Clients that update to it now trust the next key.
+4. Wait until enough clients have updated to the rotation release. Clients that skip it cannot verify a release signed with the next key.
+5. Promote the next key in one pull request: move the key text from `NEXT_RELEASE_KEY_FILE` into `keys/slopvac-release.pub` and set the constant back to `None`. After it merges and before the release workflow runs, replace `MINISIGN_SECRET_KEY` with the new secret. The release workflow checks each signature against `keys/slopvac-release.pub`, so the secret and that file must change together. The release is signed with the new key. Clients on the rotation release accept it through their next key, and it embeds only the new key.
+6. Re-sign the first-party plugins and publish a new revocation list with the new key.
+
+`slopvac-plugins` stays on the single key in `keys/slopvac-release.pub`. First-party plugins are not signed yet, so no plugin needs the next key before step 5. After step 5 the plugin key is the new current key in the same build.
+
+#### After a key compromise
+
+If the signing key leaked, rotation does not repair existing installs. Anyone with the old secret can sign an update that a client with the old key accepts, so a client that updates through `self update` cannot recover. Users must reinstall from a source they verify themselves: a release checked against the key id published in this repository, or a package manager. Publish the new key id and the reinstall instruction, then publish a revocation list that names the old key id, signed while the old key is still a root. Binaries that embed the old key keep trusting it until the user reinstalls, which is residual risk R8 in the threat model.
 
 ## The signed revocation list
 

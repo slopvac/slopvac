@@ -4,7 +4,7 @@
 //! tagger and lost no observed true positive. The paragraph-level invariant form was too
 //! loose, so only the sentence-level form exists here.
 
-use crate::{BlockKind, DocumentView, Error, Pattern, Tag, Tagger};
+use crate::{BlockKind, DocumentView, Error, Pattern, Tag, TagSink, Tagger};
 
 use super::text::clean;
 
@@ -19,24 +19,24 @@ fn sentence_tags(
     kind: &str,
     confidence: f32,
     test: impl Fn(&str) -> Result<Option<String>, Error>,
-) -> Result<Vec<Tag>, Error> {
-    let mut out = Vec::new();
+    sink: &mut TagSink,
+) -> Result<(), Error> {
     for b in doc.blocks() {
         if matches!(b.kind, BlockKind::Heading | BlockKind::CodeBlock) {
             continue;
         }
         for s in doc.sentences(&b) {
             if let Some(evidence) = test(s.text)? {
-                out.push(Tag {
+                sink.push_with(|| Tag {
                     kind: kind.to_string(),
                     span: s.span,
                     confidence,
                     evidence,
-                });
+                })?;
             }
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 /// Tags sentences that state a requirement.
@@ -63,22 +63,34 @@ impl Tagger for RequirementTagger {
     }
 
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
-        sentence_tags(doc, "requirement", 0.8, |s| {
-            let cleaned = clean(s);
-            if let Some(m) = self.normative.find(&cleaned)? {
-                let word = cleaned[m]
-                    .trim_matches(|c: char| !c.is_alphanumeric())
-                    .to_lowercase();
-                return Ok(Some(format!("requirement: normative marker `{word}`")));
-            }
-            if self.negated_imperative.is_match(&cleaned)? {
-                return Ok(Some("requirement: negated imperative".to_string()));
-            }
-            Ok(self
-                .negated_literal
-                .find(s)?
-                .map(|m| format!("requirement: negated literal `{}`", &s[m])))
-        })
+        let mut sink = TagSink::unbounded();
+        self.tag_into(doc, &mut sink)?;
+        Ok(sink.into_tags())
+    }
+
+    fn tag_into(&self, doc: &dyn DocumentView, sink: &mut TagSink) -> Result<(), Error> {
+        sentence_tags(
+            doc,
+            "requirement",
+            0.8,
+            |s| {
+                let cleaned = clean(s);
+                if let Some(m) = self.normative.find(&cleaned)? {
+                    let word = cleaned[m]
+                        .trim_matches(|c: char| !c.is_alphanumeric())
+                        .to_lowercase();
+                    return Ok(Some(format!("requirement: normative marker `{word}`")));
+                }
+                if self.negated_imperative.is_match(&cleaned)? {
+                    return Ok(Some("requirement: negated imperative".to_string()));
+                }
+                Ok(self
+                    .negated_literal
+                    .find(s)?
+                    .map(|m| format!("requirement: negated literal `{}`", &s[m])))
+            },
+            sink,
+        )
     }
 }
 
@@ -126,15 +138,27 @@ impl Tagger for EnforcedInvariantTagger {
     }
 
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
-        sentence_tags(doc, "enforced-invariant", 0.7, |s| {
-            let text = clean(s);
-            if let Some(v) = self.enforcement_verb(&text)? {
-                return Ok(Some(format!("enforced-invariant: enforcement verb `{v}`")));
-            }
-            Ok(self
-                .mechanism
-                .find(s)?
-                .map(|m| format!("enforced-invariant: mechanism clause `{}`", s[m].trim())))
-        })
+        let mut sink = TagSink::unbounded();
+        self.tag_into(doc, &mut sink)?;
+        Ok(sink.into_tags())
+    }
+
+    fn tag_into(&self, doc: &dyn DocumentView, sink: &mut TagSink) -> Result<(), Error> {
+        sentence_tags(
+            doc,
+            "enforced-invariant",
+            0.7,
+            |s| {
+                let text = clean(s);
+                if let Some(v) = self.enforcement_verb(&text)? {
+                    return Ok(Some(format!("enforced-invariant: enforcement verb `{v}`")));
+                }
+                Ok(self
+                    .mechanism
+                    .find(s)?
+                    .map(|m| format!("enforced-invariant: mechanism clause `{}`", s[m].trim())))
+            },
+            sink,
+        )
     }
 }

@@ -52,6 +52,24 @@ pub enum PluginError {
     /// The content hash has no recorded trust.
     #[error("plugin {} is not trusted; run `slopvac plugins trust` for it", esc(.0))]
     Untrusted(String),
+    /// Trust records exist but the key they were made under is gone. The run exits 2.
+    #[error(
+        "the trust key is missing while trust records exist, so plugin {} cannot be checked; run `slopvac plugins trust` for it to trust it again",
+        esc(.0)
+    )]
+    TrustKeyMissing(String),
+    /// The trust records were made under another key than the store's. The run exits 2.
+    #[error(
+        "the trust key changed after plugin {} was trusted, so it cannot be checked; run `slopvac plugins trust` for it to trust it again",
+        esc(.0)
+    )]
+    TrustKeyMismatch(String),
+    /// The trust key file is not private to the user or does not hold a key. The run exits 2.
+    #[error(
+        "the trust key cannot be used for plugin {}; fix the file, or delete it and run `slopvac plugins trust` for each plugin",
+        esc(.0)
+    )]
+    TrustKeyUnusable(String),
     /// The installed bytes differ from the hash that trust recorded.
     #[error(
         "plugin {} changed after it was trusted; run `slopvac plugins sync` to restore the verified files, and `slopvac plugins trust` to approve new content",
@@ -132,6 +150,9 @@ impl PluginError {
     pub fn slopvac_code(&self) -> &str {
         match self {
             Self::Untrusted(_) => "plugin-untrusted",
+            Self::TrustKeyMissing(_) => "trust-key-missing",
+            Self::TrustKeyMismatch(_) => "trust-key-mismatch",
+            Self::TrustKeyUnusable(_) => "trust-key-unusable",
             Self::HashMismatch(_) => "plugin-hash-mismatch",
             Self::Timeout { .. } => "plugin-timeout",
             Self::Exited { .. } => "plugin-exited",

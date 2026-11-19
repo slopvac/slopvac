@@ -8,6 +8,7 @@
 # reason = "Why the break is acceptable."
 # approved_by = "reviewer name"
 
+
 # The plugins amendment: one plugins group, kinds data and code, reserved core, pack names renamed to plugin.
 [[allow]]
 file = "config.schema.json"

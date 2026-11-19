@@ -6,8 +6,10 @@
 //!   [`Notice`](notice::Notice) that `prime`, JSON `notices` and `--version --json` show.
 //! - [`install`]: which channel installed this binary, and so which command upgrades it.
 //! - [`policy`]: the project `[network]` settings (a stub until the config layer lands).
-//! - [`pipeline`]: download, verify, extract, replace. Verification is its own step
+//! - [`pipeline`]: lock, download, verify, extract, replace. Verification is its own step
 //!   ([`verify::ArtifactVerifier`]) and runs before anything touches the installed binary.
+//! - [`messages`]: the message catalog for the codes that the update lock and the installed
+//!   binary report.
 //! - [`command`]: the clap subtree and the `self update` entry point.
 //!
 //! The crate uses blocking `ureq` and one worker thread with a deadline; there is no async runtime.
@@ -18,9 +20,12 @@ mod bounded;
 pub mod command;
 pub mod fetch;
 pub mod install;
+mod lock;
+pub mod messages;
 pub mod notice;
 pub mod pipeline;
 pub mod policy;
+mod probe;
 pub mod verify;
 
 /// GitHub repository that publishes releases.

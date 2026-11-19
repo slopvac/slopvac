@@ -2,6 +2,7 @@
 
 #![allow(dead_code, unreachable_pub, missing_docs)]
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
@@ -264,4 +265,54 @@ pub fn within_timeout<T: Send + 'static>(
             }
         }
     }
+}
+
+/// The table: a left cell of `lines` lines that each read `Must go.`, and `x` beside the first.
+/// An RST grid table with a left cell of `lines` lines that each read `Must go.`, and `x`
+/// beside the first line.
+pub fn wrapped_table(lines: usize) -> String {
+    let border = format!("+{}+{}+\n", "-".repeat(12), "-".repeat(5));
+    let mut source = border.clone();
+    for line in 0..lines {
+        let right = if line == 0 { "x" } else { " " };
+        writeln!(source, "| Must go.   | {right}   |").unwrap();
+    }
+    source.push_str(&border);
+    source
+}
+
+/// The driver output for the table.
+fn wrapped_driver_output(lines: usize) -> String {
+    let left = vec!["Must go."; lines].join("\\n");
+    let cell = |end: usize, column: usize, text: &str| {
+        format!(
+            r#"{{"tag":"paragraph","start":2,"end":{end},"containers":[],"cell":[0,{column},1],"pieces":[{{"k":"t","t":"{text}"}}]}}"#
+        )
+    };
+    format!(
+        r#"{{"docutils":"0.21.2","nodes":[{{"tag":"table","table":true,"start":1,"end":{},"containers":[]}},{},{}]}}"#,
+        lines + 2,
+        cell(lines + 1, 0, &left),
+        cell(2, 1, "x"),
+    )
+}
+
+/// RST options whose interpreter prints the driver output for [`wrapped_table`]. Both cells
+/// are paragraphs, and the left one wraps over `lines` lines.
+#[cfg(unix)]
+pub fn wrapped_rst(lines: usize) -> slopvac_engine::rst::RstOptions {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = private_dir("rst-split");
+    let json_path = dir.join(format!("wrapped-{lines}.json"));
+    std::fs::write(&json_path, wrapped_driver_output(lines)).unwrap();
+    let python = dir.join(format!("wrapped-python-{lines}"));
+    std::fs::write(
+        &python,
+        format!("#!/bin/sh\ncat >/dev/null\ncat '{}'\n", json_path.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut options = slopvac_engine::rst::RstOptions::default();
+    options.interpreter = Some(python);
+    options
 }

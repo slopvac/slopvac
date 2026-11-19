@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::schema::{Extensions, check_schema_version, is_name, present};
 use crate::structural::{Scope, Settings, StructuralTagger, When};
-use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, Tagger};
+use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, TagSink, Tagger};
 
 /// The text unit that receives the tag.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -284,12 +284,16 @@ impl DeclarativeTagger {
         }
     }
 
-    fn tag_block(&self, doc: &dyn DocumentView, b: &BlockView<'_>) -> Result<Vec<Tag>, Error> {
-        let mut out = Vec::new();
+    fn tag_block(
+        &self,
+        doc: &dyn DocumentView,
+        b: &BlockView<'_>,
+        sink: &mut TagSink,
+    ) -> Result<(), Error> {
         match self.unit().block_kind() {
             Some(kind) if b.kind == kind => {
                 if self.fires(b.text)? {
-                    out.push(self.tag_for(b.span.clone()));
+                    sink.push_with(|| self.tag_for(b.span.clone()))?;
                 }
             }
             Some(_) => {}
@@ -297,12 +301,12 @@ impl DeclarativeTagger {
             None => {
                 for s in doc.sentences(b) {
                     if self.fires(s.text)? {
-                        out.push(self.tag_for(s.span));
+                        sink.push_with(|| self.tag_for(s.span))?;
                     }
                 }
             }
         }
-        Ok(out)
+        Ok(())
     }
 }
 
@@ -312,13 +316,18 @@ impl Tagger for DeclarativeTagger {
     }
 
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
+        let mut sink = TagSink::unbounded();
+        self.tag_into(doc, &mut sink)?;
+        Ok(sink.into_tags())
+    }
+
+    fn tag_into(&self, doc: &dyn DocumentView, sink: &mut TagSink) -> Result<(), Error> {
         if let Some(structural) = &self.structural {
-            return structural.tag(doc);
+            return structural.tag(doc, sink);
         }
-        let mut out = Vec::new();
         for b in doc.blocks() {
-            out.extend(self.tag_block(doc, &b)?);
+            self.tag_block(doc, &b, sink)?;
         }
-        Ok(out)
+        Ok(())
     }
 }

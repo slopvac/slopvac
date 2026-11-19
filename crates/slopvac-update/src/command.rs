@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::{ArgMatches, Command};
+use slopvac_messages::Catalog as _;
 
 use crate::fetch::{Fetcher, UreqFetcher};
 use crate::install::{self, InstallMethod};
@@ -73,6 +74,12 @@ pub struct Runtime {
     pub target: Option<&'static str>,
     /// Cache file, `None` when no cache directory exists.
     pub cache: Option<Cache>,
+    /// Fingerprint of the running binary taken when the process started, for the update's
+    /// check that nobody replaced it. `None` takes it when `self update` begins.
+    pub running_sha: Option<String>,
+    /// Called each time `self update` finds the update lock held by another update and waits
+    /// for it. `None` waits silently.
+    pub on_lock_wait: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl Runtime {
@@ -114,6 +121,8 @@ impl Runtime {
             download_base: DOWNLOAD_BASE.to_owned(),
             target: pipeline::target_triple(),
             cache,
+            running_sha: None,
+            on_lock_wait: None,
         }
     }
 
@@ -192,6 +201,13 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
             "offline: self update needs the network",
         ));
     }
+    // The fingerprint must come before any external work: the network lookup below gives
+    // another installer time to replace the file, and a later fingerprint would credit that
+    // new file to this older process.
+    let running_sha = rt
+        .running_sha
+        .clone()
+        .or_else(|| pipeline::running_fingerprint(&rt.exe));
     let latest = notice::latest_version(&*rt.fetcher, false)
         .map_err(|e| Failure::new("update-check-failed", e.to_string()))?;
     if notice::notice_for(&rt.current, &latest, method).is_none() {
@@ -203,6 +219,11 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
             UpdateError::UnsupportedPlatform.to_string(),
         )
     })?;
+    let host = pipeline::Host::new(&rt.exe, running_sha);
+    let host = match &rt.on_lock_wait {
+        Some(observer) => host.on_lock_wait(&**observer),
+        None => host,
+    };
     pipeline::update(
         &*rt.fetcher,
         &*rt.verifier,
@@ -210,12 +231,13 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
         &rt.current,
         &latest,
         target,
-        &rt.exe,
+        &host,
     )
     .map_err(|e| {
         let code = match e {
             UpdateError::Verify(_) => "update-verification-failed",
             UpdateError::Prerelease(_) => "update-prerelease-refused",
+            UpdateError::Refused(ref message) => message.code(),
             _ => "self-update-failed",
         };
         Failure::new(code, e.to_string())

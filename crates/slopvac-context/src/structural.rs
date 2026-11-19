@@ -11,7 +11,7 @@ use std::ops::Range;
 use serde::Deserialize;
 
 use crate::schema::{Extensions, present};
-use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, normalize_path};
+use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, TagSink, normalize_path};
 
 /// How far a matching condition spreads its tag.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -275,16 +275,15 @@ impl StructuralTagger {
 }
 
 impl StructuralTagger {
-    pub(crate) fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
+    pub(crate) fn tag(&self, doc: &dyn DocumentView, sink: &mut TagSink) -> Result<(), Error> {
         if !self.document_level_ok(doc)? {
-            return Ok(Vec::new());
+            return Ok(());
         }
         let whole = 0..doc.source_len();
         if self.scope == Scope::Document && !self.has_block_conditions {
-            return Ok(vec![self.tag_for(whole, "document")]);
+            return sink.push_with(|| self.tag_for(whole, "document"));
         }
         let blocks = doc.blocks();
-        let mut out = Vec::new();
         let mut bounds = None;
         let mut emitted: Vec<bool> = Vec::new();
         let mut verdicts = Vec::new();
@@ -311,9 +310,11 @@ impl StructuralTagger {
             }
             match self.scope {
                 Scope::Sentence => {
-                    out.extend(hits.into_iter().map(|s| self.tag_for(s, "sentence")));
+                    for s in hits {
+                        sink.push_with(|| self.tag_for(s, "sentence"))?;
+                    }
                 }
-                Scope::Paragraph => out.push(self.tag_for(b.span.clone(), "block")),
+                Scope::Paragraph => sink.push_with(|| self.tag_for(b.span.clone(), "block"))?,
                 Scope::Section => {
                     let (spans, owner_of) = bounds.get_or_insert_with(|| {
                         let (spans, owner_of) = sections(&blocks);
@@ -325,13 +326,13 @@ impl StructuralTagger {
                         && !std::mem::replace(done, true)
                         && let Some(span) = spans.get(id)
                     {
-                        out.push(self.tag_for(span.clone(), "section"));
+                        sink.push_with(|| self.tag_for(span.clone(), "section"))?;
                     }
                 }
-                Scope::Document => return Ok(vec![self.tag_for(whole, "document")]),
+                Scope::Document => return sink.push_with(|| self.tag_for(whole, "document")),
             }
         }
-        Ok(out)
+        Ok(())
     }
 }
 

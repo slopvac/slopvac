@@ -643,11 +643,10 @@ impl Report {
         );
         let _ = match (&self.update.latest, self.update.state) {
             (Some(latest), "available") => {
-                let hint = self
-                    .slopvac
-                    .upgrade_command
-                    .as_deref()
-                    .map_or(String::new(), |c| format!(" Upgrade with `{c}`."));
+                let hint = self.slopvac.upgrade_command.as_deref().map_or_else(
+                    || format!(" See {}.", slopvac_update::install::RELEASES_URL),
+                    |c| format!(" Upgrade with `{c}`."),
+                );
                 writeln!(out, "update: {latest} is available.{hint}")
             }
             (Some(latest), _) => writeln!(out, "update: up to date (latest known {latest})"),

@@ -493,3 +493,19 @@ fn init_suggests_the_google_preset_for_a_vale_google_repo() {
              next: slopvac prime\n",
         );
 }
+
+#[test]
+fn init_reports_an_oversized_style_file_as_an_info_notice_and_still_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("STYLE.md"), "x".repeat(1024 * 1024 + 1)).unwrap();
+    slopvac(dir.path())
+        .args(["init", "--skip-agents"])
+        .assert()
+        .code(0)
+        .stdout(
+            "wrote slopvac.toml\n\
+             notice[style-detect-file-too-large]: STYLE.md is over the 1 MiB style detection limit; house-style detection skipped it.\n\
+             next: slopvac prime\n",
+        );
+    assert!(dir.path().join("slopvac.toml").is_file());
+}

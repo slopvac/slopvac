@@ -239,6 +239,7 @@ fn dispatch(
         Some(("validate", m)) => owners::validate(m, out),
         Some(("setup", m)) => owners::setup(m, out),
         Some(("prime", m)) => owners::prime(m, out),
+        Some(("review", m)) => owners::review(m, globals.offline, out),
         Some(("man", m)) => man(m, out),
         Some(("doctor", m)) => doctor(matches, m, env, out),
         Some(("cli-reference", _)) => write_stdout(

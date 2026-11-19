@@ -19,3 +19,8 @@
 "blocklists-traversal.toml" = "/provides/blocklists/0"
 "kind-plugin-retired.toml" = "/kind"
 "id-core.toml" = "/id"
+"requires-prerelease-partial.toml" = "/requires/0/version"
+"requires-prerelease-major-only.toml" = "/requires/0/version"
+"requires-trailing-newline.toml" = "/requires/0/version"
+"requires-leading-zero.toml" = "/requires/0/version"
+"requires-empty-prerelease-segment.toml" = "/requires/0/version"

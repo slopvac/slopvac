@@ -1490,6 +1490,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "os_pipe"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2427,11 +2437,14 @@ dependencies = [
  "slopvac-messages",
  "slopvac-migrate",
  "slopvac-model",
+ "slopvac-parse",
+ "slopvac-pcre2",
  "slopvac-plugins",
  "slopvac-report",
  "slopvac-rules",
  "slopvac-styles",
  "slopvac-terms",
+ "slopvac-text",
  "slopvac-update",
  "snapbox",
  "tempfile",
@@ -2647,6 +2660,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "slopvac-packs"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "regex",
+ "rstest",
+ "semver",
+ "serde_json",
+ "slopvac-fs",
+ "slopvac-model",
+ "slopvac-plugins",
+ "slopvac-sanitize",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "slopvac-parse"
 version = "0.0.0"
 dependencies = [
@@ -2681,6 +2711,8 @@ dependencies = [
  "caseless",
  "crossbeam-channel",
  "flate2",
+ "getrandom 0.4.3",
+ "hmac",
  "minisign",
  "minisign-verify",
  "rstest",
@@ -2800,6 +2832,8 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2",
+ "slopvac-messages",
  "tar",
  "tempfile",
  "thiserror",
@@ -2821,9 +2855,13 @@ checksum = "8de56eb4784a2c5c1efede55a0f06fbf481bc12b42b355b9525c15db1e3581a8"
 dependencies = [
  "anstream",
  "anstyle",
+ "libc",
  "normalize-line-endings",
+ "os_pipe",
  "similar 3.2.1",
  "snapbox-macros",
+ "wait-timeout",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

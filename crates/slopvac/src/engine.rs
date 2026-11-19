@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
-use slopvac_engine::{Input, Kind};
+use slopvac_engine::{EngineError, Input, Kind};
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
@@ -125,6 +125,20 @@ impl Run {
         });
         self.incomplete.push(error);
     }
+
+    /// Record a file the engine could not lint: not checked, so the run exits 2.
+    fn skip_engine_error(&mut self, shown: &str, err: &EngineError) {
+        // `EngineError` is `#[non_exhaustive]`, so a new variant lands in `lint-failed` until
+        // it gets a code of its own.
+        let code = match err {
+            // The check is incomplete for a reason a pack can fix, so it has a code.
+            EngineError::TagLookupBudget { .. } | EngineError::TagBuildBudget { .. } => {
+                "context-budget-exceeded"
+            }
+            _ => "lint-failed",
+        };
+        self.skip(code, shown, format!("{shown}: {err}"));
+    }
 }
 
 /// The engine kind for a discovered file, or why there is none.
@@ -212,7 +226,7 @@ fn describe_rejected(rejected: &slopvac_config::Rejected, root: &Path) -> String
         .join("\n")
 }
 
-fn config_error(err: &ConfigError, root: &Path) -> CliError {
+pub(crate) fn config_error(err: &ConfigError, root: &Path) -> CliError {
     let mut message = match err {
         ConfigError::Rejected(rejected) => describe_rejected(rejected, root),
         ConfigError::Io { path, .. } | ConfigError::TooLarge { path, .. } => {
@@ -667,8 +681,7 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
             match result {
                 Ok(document) => documents[index] = Some(document),
                 Err(err) => {
-                    let shown = items[index].shown.clone();
-                    run.skip("lint-failed", &shown, format!("{shown}: {err}"));
+                    run.skip_engine_error(&items[index].shown, &err);
                 }
             }
         }
@@ -897,5 +910,51 @@ mod read_tests {
         let outcome = lint_within_timeout(&link, request(&root, &link), None);
         assert_eq!(outcome.incomplete.len(), 0);
         assert_eq!(outcome.documents, 1);
+    }
+}
+
+#[cfg(test)]
+mod skip_tests {
+    use super::*;
+    use rstest::rstest;
+    use slopvac_model::PositionError;
+    use slopvac_parse::ParseError;
+    use slopvac_pcre2::MatchError;
+    use slopvac_text::TextError;
+
+    /// Every `EngineError` variant. The enum is `#[non_exhaustive]` across crates, so the
+    /// compiler cannot force this list to grow: add a case when the engine adds a variant.
+    #[rstest]
+    #[case::parse(EngineError::from(ParseError::Mdx("x".into())), "lint-failed")]
+    #[case::text(
+        EngineError::from(TextError::from(MatchError::MatchLimit { limit: 1 })),
+        "lint-failed"
+    )]
+    #[case::context(EngineError::Context("x".into()), "lint-failed")]
+    #[case::position(EngineError::from(PositionError::PastEnd(9)), "lint-failed")]
+    #[case::bad_range(EngineError::BadRange("x".into()), "lint-failed")]
+    #[case::tag_lookup_budget(
+        EngineError::TagLookupBudget { limit: 16_384 },
+        "context-budget-exceeded"
+    )]
+    #[case::tag_build_budget(
+        EngineError::TagBuildBudget { limit: 65_536 },
+        "context-budget-exceeded"
+    )]
+    #[case::terms(EngineError::Terms("x".into()), "lint-failed")]
+    #[case::internal(EngineError::Internal("x".into()), "lint-failed")]
+    fn an_engine_error_leaves_the_file_unchecked_and_the_run_incomplete(
+        #[case] err: EngineError,
+        #[case] code: &str,
+    ) {
+        let mut run = Run::default();
+        run.skip_engine_error("docs/a.md", &err);
+
+        let codes: Vec<&str> = run.incomplete.iter().map(|e| e.code).collect();
+        assert_eq!(codes, [code]);
+        assert_eq!(run.notices.len(), 1);
+        assert_eq!(run.notices[0].code.as_str(), code);
+        assert_eq!(run.notices[0].level, NoticeLevel::Warning);
+        assert_eq!(run.notices[0].path.as_deref(), Some("docs/a.md"));
     }
 }

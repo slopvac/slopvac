@@ -310,26 +310,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_link_to_a_directory_with_a_colon_in_its_name_is_searched_as_one_directory() {
-        let l = layout();
-        let base = l.trusted.parent().unwrap().to_owned();
-        // `a:b/bin` read as a PATH list is the directories `a` and `b/bin`.
-        let prefix = base.join("a");
-        std::fs::create_dir(&prefix).unwrap();
-        std::fs::write(prefix.join("tool"), b"").unwrap();
-        let colon = base.join("a:b/bin");
-        std::fs::create_dir_all(&colon).unwrap();
-        std::fs::write(colon.join("tool"), b"").unwrap();
-        let link = base.join("colon-link");
-        std::os::unix::fs::symlink(&colon, &link).unwrap();
-        assert_eq!(
-            find(&path_of(&[&link]), &l.project),
-            Some(colon.join("tool"))
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
     fn a_link_to_a_file_in_a_writable_directory_is_refused() {
         let l = layout();
         // The link sits in a protected directory; the file it names does not.

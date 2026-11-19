@@ -162,10 +162,10 @@ The span crates index text with 32-bit offsets and size their structures from it
 | Rule or category file in a plugin | 2 MiB | `rules-file-too-large` | The largest shipped rule file is about 130 KiB. 2 MiB leaves more than a tenfold margin. |
 | Style file | 1 MiB | `style-too-large` | The built-in styles are a few KiB. |
 | Update-check policy read (`slopvac.toml`, read before argument parsing) | 1 MiB | `update-policy-too-large` | Same value as the config file. The read covers two keys, and a real file is under 10 KiB. |
-| House-style detection read (`.vale.ini`, `STYLE.md`, `_STYLE.md`, `CONTRIBUTING.md`) | 1 MiB | `style-detect-file-too-large` | A real style note is a few KiB. Detection skips a larger file and does not fail. The code is emitted as an info notice that names the file. The notice is not wired yet. |
+| House-style detection read (`.vale.ini`, `STYLE.md`, `_STYLE.md`, `CONTRIBUTING.md`) | 1 MiB | `style-detect-file-too-large` | A real style note is a few KiB. Detection skips a larger file and does not fail. `slopvac init` reports the skipped file as an info notice with this code, naming the file by its root-relative label. |
 | Terms file | 1 MiB | `terms-file-too-large` | The built-in terms file is about 30 KiB. |
 
-A per-file cap does not bound the work of many files. Two aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the config file or plugin directory at which it tripped, relative to the root, or `<external>/<file name>` outside it. The list of `data.budget` values can grow. A message names only that path and the limit.
+A per-file cap does not bound the work of many files. Two aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the config file, plugin directory or document at which it tripped, relative to the root, or `<external>/<file name>` outside it. The list of `data.budget` values can grow. A message names only that path and the limit.
 
 | Entry point | Budget (`data.budget`) | Limit | Unit | Code | Why this value |
 |---|---|---|---|---|---|
@@ -176,6 +176,8 @@ A per-file cap does not bound the work of many files. Two aggregate budgets boun
 | Plugin directory, rule and category files | `plugin-files` | 256 | files | `rules-budget-exceeded` | The built-in core has 23 files. |
 | Plugin directory, entries of any kind | `plugin-entries` | 1024 | entries | `rules-budget-exceeded` | Bounds directory scanning before the loader resolves any file. |
 | Plugin directory, bytes read | `plugin-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The built-in core is about 450 KiB. |
+| Context tags on one document | tags | 1 per 64 bytes of the document, plus 65,536 | tags | context-budget-exceeded | At the 64 MiB document cap, the limit is about 1.1 million tags, an index of about 200 MiB. The densest measured prose holds about 1 tag per 44 bytes, so a document that dense and larger than about 9.5 MB is refused. The cap stops a document made of many short sentences from building an index of gigabytes. |
+| Context lookups on one document | tag-lookups | 8 per byte of the document, plus 16,384 | looks | context-budget-exceeded | A document with a few tags on a few cells looks at a few tags for each match. Many tag kinds on one cell, with rules that match across its lines, make the looks grow with kinds times matches. |
 
 How the budgets apply:
 
