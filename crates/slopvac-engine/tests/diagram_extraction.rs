@@ -6,8 +6,11 @@ use std::fmt::Write as _;
 
 use common::{category, ruleset, settings};
 use slopvac_diagrams::Format;
-use slopvac_engine::{DIAGRAM_PACK, Engine, Input, diagram_rule_set};
-use slopvac_model::{Document, Notice, NoticeLevel, PackId};
+use slopvac_engine::{
+    DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input,
+    diagram_rule_set,
+};
+use slopvac_model::{Document, Notice, NoticeLevel, PackId, RuleId, Severity};
 
 fn engine() -> Engine {
     let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
@@ -187,6 +190,13 @@ fn a_budget_notice_names_the_cap_and_its_limit() {
             "{name}"
         );
         assert!(!doc.gate.is_passed(), "{name}");
+        let data = serde_json::Value::Object(doc.unchecked[0].data.clone());
+        let limit: u64 = limit.parse().unwrap();
+        assert_eq!(
+            data,
+            serde_json::json!({"budget": cap, "limit": limit}),
+            "{name}"
+        );
     }
 }
 
@@ -309,7 +319,13 @@ fn excalidraw_elements_that_hold_no_text_stay_valid() {
 }
 
 /// The run-level notice and the clean verdict for content that is valid but not read.
-fn assert_unsupported_info(doc: &Document, notices: &[Notice], path: &str, reason: &str) {
+fn assert_unsupported_info(
+    doc: &Document,
+    notices: &[Notice],
+    path: &str,
+    reason: &str,
+    kind: &str,
+) {
     assert_eq!(notices.len(), 1, "{notices:?}");
     let n = &notices[0];
     assert_eq!(n.code.as_str(), "extract-unsupported");
@@ -319,6 +335,10 @@ fn assert_unsupported_info(doc: &Document, notices: &[Notice], path: &str, reaso
         format!("{reason}; the diagram was not checked")
     );
     assert_eq!(n.path.as_deref(), Some(path));
+    assert_eq!(
+        serde_json::Value::Object(n.data.clone()),
+        serde_json::json!({"document": path, "kind": kind})
+    );
     assert!(doc.unchecked.is_empty(), "{:?}", codes(doc));
     assert_eq!(doc.findings, []);
     assert!(doc.gate.is_passed(), "{:?}", doc.gate.reasons());
@@ -326,30 +346,26 @@ fn assert_unsupported_info(doc: &Document, notices: &[Notice], path: &str, reaso
 
 #[test]
 fn unsupported_content_in_a_diagram_file_is_an_info_notice_and_a_complete_run() {
-    for (name, source, format, reason) in [
+    for (name, source, format, reason, kind) in [
         (
             "plantuml mind map",
             "@startmindmap\n* root\n** child\n@endmindmap\n",
             Format::PlantUml,
             "unsupported PlantUML diagram type",
+            "plantuml",
         ),
         (
             "mermaid gitGraph",
             "gitGraph\n  commit\n  branch dev\n",
             Format::Mermaid,
             "unsupported Mermaid diagram type",
-        ),
-        (
-            "svg without an embedded diagram",
-            "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
-            Format::DrawioSvg,
-            "no embedded diagram",
+            "mermaid",
         ),
     ] {
         let (doc, notices) = engine()
             .lint_with_notices(&Input::diagram("d.file", source, format))
             .unwrap_or_else(|e| panic!("{name}: {e}"));
-        assert_unsupported_info(&doc, &notices, "d.file", reason);
+        assert_unsupported_info(&doc, &notices, "d.file", reason, kind);
     }
 }
 
@@ -359,7 +375,163 @@ fn an_unsupported_fenced_diagram_is_an_info_notice_and_the_markdown_run_passes()
     let (doc, notices) = engine()
         .lint_with_notices(&Input::markdown("a.md", source))
         .unwrap();
-    assert_unsupported_info(&doc, &notices, "a.md", "unsupported Mermaid diagram type");
+    assert_unsupported_info(
+        &doc,
+        &notices,
+        "a.md",
+        "unsupported Mermaid diagram type",
+        "mermaid",
+    );
+}
+
+#[test]
+fn an_unsupported_fenced_plantuml_type_is_info_and_a_broken_supported_type_is_incomplete() {
+    let (doc, notices) = engine()
+        .lint_with_notices(&Input::markdown(
+            "a.md",
+            "Intro.\n\n```plantuml\n@startmindmap\n* root\n@endmindmap\n```\n",
+        ))
+        .unwrap();
+    assert_unsupported_info(
+        &doc,
+        &notices,
+        "a.md",
+        "unsupported PlantUML diagram type",
+        "plantuml",
+    );
+
+    for (name, fence, reason) in [
+        (
+            "plantuml that never ends",
+            "```plantuml\n@startuml\nA -> B : hi\n```\n",
+            "missing @enduml",
+        ),
+        (
+            "mermaid front matter that never closes",
+            "```mermaid\n---\ntitle: X\nflowchart TD\n  A --> B\n```\n",
+            "front matter is not closed",
+        ),
+    ] {
+        let source = format!("Intro.\n\n{fence}");
+        let (doc, notices) = engine()
+            .lint_with_notices(&Input::markdown("a.md", &source))
+            .unwrap();
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+        assert_incomplete(&doc, "extract-malformed", reason);
+    }
+}
+
+#[test]
+fn a_drawio_svg_without_a_diagram_source_is_an_incomplete_run() {
+    let source = "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+    let (doc, notices) = engine()
+        .lint_with_notices(&Input::diagram("d.drawio.svg", source, Format::DrawioSvg))
+        .unwrap();
+    assert!(notices.is_empty(), "{notices:?}");
+    assert_incomplete(&doc, "extract-malformed", "no diagram source");
+    assert_eq!(doc.unchecked[0].path.as_deref(), Some("d.drawio.svg"));
+}
+
+/// A checker that returns a range past the end of the file for a source that holds `BOOM`,
+/// so that one input of a batch fails with an engine error.
+struct Boom;
+
+impl DiagramChecker for Boom {
+    fn rules(&self) -> Vec<DiagramRule> {
+        vec![DiagramRule {
+            id: RuleId::new("acme:diagram.boom").unwrap(),
+            severity: Severity::Suggestion,
+        }]
+    }
+
+    fn check(&self, input: &DiagramInput<'_>) -> Vec<DiagramHit> {
+        if !input.source.contains("BOOM") {
+            return Vec::new();
+        }
+        vec![DiagramHit {
+            rule: RuleId::new("acme:diagram.boom").unwrap(),
+            span: input.source.len()..input.source.len() + 10,
+            message: "bad".to_owned(),
+            matched: None,
+        }]
+    }
+}
+
+#[test]
+fn a_mixed_batch_keeps_input_order_notices_and_per_input_errors() {
+    let nodes = too_many_nodes();
+    let inputs = [
+        Input::diagram("a.mmd", "gitGraph\n  commit\n", Format::Mermaid),
+        Input::diagram(
+            "b.mmd",
+            "flowchart TD\n  A[BOOM] --> B[x]\n",
+            Format::Mermaid,
+        ),
+        Input::diagram(
+            "c.puml",
+            "@startmindmap\n* r\n@endmindmap\n",
+            Format::PlantUml,
+        ),
+        Input::diagram("d.excalidraw", "{", Format::Excalidraw),
+        Input::markdown("e.md", "Intro.\n\n```mermaid\ngitGraph\n  commit\n```\n"),
+        Input::diagram("f.drawio", &nodes, Format::Drawio),
+        Input::diagram(
+            "g.mmd",
+            "flowchart TD\n  A[ok] --> B[ok]\n",
+            Format::Mermaid,
+        ),
+    ];
+    let engine = engine().with_diagram_checker(Box::new(Boom));
+    let results = engine.lint_all_with_notices(&inputs);
+    assert_eq!(results.len(), inputs.len());
+
+    // The notices of each input, by position: path, code and level.
+    let seen: Vec<Option<Vec<(String, &str, NoticeLevel)>>> = results
+        .iter()
+        .map(|r| {
+            r.as_ref().ok().map(|(_, notices)| {
+                notices
+                    .iter()
+                    .map(|n| (n.path.clone().unwrap(), n.code.as_str(), n.level))
+                    .collect()
+            })
+        })
+        .collect();
+    let info = |path: &str| vec![(path.to_owned(), "extract-unsupported", NoticeLevel::Info)];
+    assert_eq!(
+        seen,
+        [
+            Some(info("a.mmd")),
+            None,
+            Some(info("c.puml")),
+            Some(vec![]),
+            Some(info("e.md")),
+            Some(vec![]),
+            Some(vec![]),
+        ]
+    );
+    assert!(matches!(
+        results[1],
+        Err(slopvac_engine::EngineError::BadRange(_))
+    ));
+
+    // Documents follow the input order, and each verdict is its own.
+    let verdicts: Vec<(&str, bool, Vec<&str>)> = results
+        .iter()
+        .filter_map(|r| r.as_ref().ok())
+        .map(|(doc, _)| (doc.path.as_str(), doc.gate.is_passed(), codes(doc)))
+        .collect();
+    assert_eq!(
+        verdicts,
+        [
+            ("a.mmd", true, vec![]),
+            ("c.puml", true, vec![]),
+            ("d.excalidraw", false, vec!["extract-malformed"]),
+            ("e.md", true, vec![]),
+            ("f.drawio", false, vec!["extract-budget"]),
+            ("g.mmd", true, vec![]),
+        ]
+    );
 }
 
 #[test]

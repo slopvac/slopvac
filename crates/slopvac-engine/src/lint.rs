@@ -363,6 +363,19 @@ pub mod extract_code {
 /// A linted document and its run-level notices, or why the input could not be linted.
 pub type LintOutcome = Result<(Document, Vec<Notice>), EngineError>;
 
+/// The `data.kind` of an `extract-unsupported` notice: the format of the diagram that was
+/// not read.
+const fn format_name(format: DiagramFormat) -> &'static str {
+    match format {
+        DiagramFormat::Mermaid => "mermaid",
+        DiagramFormat::PlantUml => "plantuml",
+        DiagramFormat::Excalidraw => "excalidraw",
+        DiagramFormat::Drawio => "drawio",
+        DiagramFormat::DrawioSvg => "drawio-svg",
+        DiagramFormat::DrawioPng => "drawio-png",
+    }
+}
+
 /// What the diagram pass found in one input.
 #[derive(Default)]
 struct DiagramResult {
@@ -1861,7 +1874,7 @@ impl Run<'_> {
         let mut unchecked = Vec::new();
         let mut notices = Vec::new();
         for (format, extraction, nearby) in &diagrams {
-            if let Some(n) = self.extraction_notice(extraction.status)? {
+            if let Some(n) = self.extraction_notice(*format, extraction.status)? {
                 if n.level == NoticeLevel::Info {
                     notices.push(n);
                 } else {
@@ -1902,7 +1915,11 @@ impl Run<'_> {
     /// A diagram that is malformed or over a limit gets a warning: the result cannot
     /// establish a pass, so the run is incomplete. A diagram of an unsupported type gets an
     /// info notice: valid content that the extractor does not read.
-    fn extraction_notice(&self, status: ExtractionStatus) -> Result<Option<Notice>, EngineError> {
+    fn extraction_notice(
+        &self,
+        format: DiagramFormat,
+        status: ExtractionStatus,
+    ) -> Result<Option<Notice>, EngineError> {
         let (code, message) = match status {
             ExtractionStatus::Ok => return Ok(None),
             ExtractionStatus::Unsupported(r) => (extract_code::UNSUPPORTED, r.to_owned()),
@@ -1924,7 +1941,19 @@ impl Run<'_> {
         };
         let mut n = notice(code, level, format!("{message}; {tail}"))?;
         n.path = Some(self.input.path.to_owned());
-        Ok(Some(n))
+        let mut data = serde_json::Map::new();
+        match status {
+            ExtractionStatus::Unsupported(_) => {
+                data.insert("document".to_owned(), self.input.path.into());
+                data.insert("kind".to_owned(), format_name(format).into());
+            }
+            ExtractionStatus::BudgetExhausted(hit) => {
+                data.insert("budget".to_owned(), hit.cap.into());
+                data.insert("limit".to_owned(), hit.limit.into());
+            }
+            _ => {}
+        }
+        Ok(Some(n.with_data(data)))
     }
 
     /// The paragraphs next to a fenced block: the last one before it and the first after.

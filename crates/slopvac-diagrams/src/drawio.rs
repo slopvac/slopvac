@@ -70,7 +70,7 @@ fn extract_svg_with(src: &str, base: usize, budget: &mut Budget) -> Extraction {
     };
     let root = doc.root_element();
     let Some(attr) = root.attribute_node("content") else {
-        return Extraction::failed(ExtractionStatus::Unsupported("no embedded diagram"));
+        return Extraction::failed(ExtractionStatus::Malformed("no diagram source"));
     };
     let range = attr.range_value();
     let whole = Origin::Whole(base + range.start..base + range.end);
@@ -85,7 +85,7 @@ pub(crate) fn extract_png(bytes: &[u8], base: usize) -> Extraction {
 
 fn extract_png_with(bytes: &[u8], base: usize, budget: &mut Budget) -> Extraction {
     let Some((range, text)) = png_mxfile(bytes) else {
-        return Extraction::failed(ExtractionStatus::Unsupported("no embedded diagram"));
+        return Extraction::failed(ExtractionStatus::Malformed("no diagram source"));
     };
     let Some(xml) = percent_decode(&text) else {
         return Extraction::failed(ExtractionStatus::Malformed("invalid percent encoding"));
@@ -531,7 +531,7 @@ mod tests {
         }
         assert_eq!(
             extract_bytes(Format::DrawioPng, b"not a png", 0).status,
-            ExtractionStatus::Unsupported("no embedded diagram")
+            ExtractionStatus::Malformed("no diagram source")
         );
     }
 
@@ -543,16 +543,13 @@ mod tests {
     }
 
     #[test]
-    fn an_svg_without_an_embedded_diagram_is_unsupported() {
+    fn a_drawio_svg_without_a_diagram_source_is_malformed() {
         let ex = extract(
             Format::DrawioSvg,
             "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
             0,
         );
-        assert_eq!(
-            ex.status,
-            ExtractionStatus::Unsupported("no embedded diagram")
-        );
+        assert_eq!(ex.status, ExtractionStatus::Malformed("no diagram source"));
     }
 
     #[test]
