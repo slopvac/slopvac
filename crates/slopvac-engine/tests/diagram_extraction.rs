@@ -332,6 +332,16 @@ fn a_mismatched_plantuml_terminator_is_malformed() {
 }
 
 #[test]
+fn an_unclosed_plantuml_block_before_an_unsupported_start_is_malformed_not_unsupported() {
+    let source = "@startuml\nA -> B : hi\n@startmindmap\n* root\n@endmindmap\n";
+    let (doc, notices) = engine()
+        .lint_with_notices(&Input::diagram("d.puml", source, Format::PlantUml))
+        .unwrap();
+    assert_incomplete(&doc, "extract-malformed", "missing @enduml");
+    assert!(notices.is_empty(), "{notices:?}");
+}
+
+#[test]
 fn a_malformed_excalidraw_element_is_an_incomplete_run_that_keeps_earlier_findings() {
     let first = format!(
         "{{\"id\":\"r1\",\"type\":\"rectangle\"}},\
