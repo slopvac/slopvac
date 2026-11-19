@@ -291,6 +291,36 @@ def cmd_label_sample(args: argparse.Namespace) -> int:
     return 0
 
 
+def _judge_start_refusal(judgments: Path, out: Path, ledger: Path) -> str | None:
+    """Why a judge run must not start, or None. The ledger holds the spent count.
+
+    Every artifact an earlier run leaves (the judgments file of any size and the
+    ledger lock) with no ledger would let a fresh ledger reset the ceiling.
+    """
+    wanted = {out.name, ledger.name, ledger.name + ".lock"}
+    folded = {w.lower() for w in wanted}
+    if judgments.is_dir():
+        strays = sorted(
+            f.name
+            for f in judgments.iterdir()
+            if f.name not in wanted and f.name.lower() in folded
+        )
+        if strays:
+            return (
+                f"{', '.join(strays)} differs from the family files only in letter "
+                "case, so a ledger could fork; rename or remove it"
+            )
+    if not ledger.exists():
+        lock = ledger.with_name(ledger.name + ".lock")
+        left = [f.name for f in (out, lock) if f.exists()]
+        if left:
+            return (
+                f"{' and '.join(left)} exists without {ledger.name}, so its spent "
+                "invocations are unknown; start with a fresh --dir"
+            )
+    return None
+
+
 def cmd_label_judge(args: argparse.Namespace) -> int:
     p = _paths(args)
     out = p["judgments"] / f"{args.family}.jsonl"
@@ -300,29 +330,12 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
         print(f"evals label judge: {exc}", file=sys.stderr)
         return 2
     ledger = out.with_suffix(".ledger.jsonl")
-    wanted = {out.name, ledger.name, ledger.name + ".lock"}
-    if p["judgments"].is_dir():
-        strays = sorted(
-            f.name
-            for f in p["judgments"].iterdir()
-            if f.name not in wanted and f.name.lower() in {w.lower() for w in wanted}
-        )
-        if strays:
-            print(
-                f"evals label judge: {', '.join(strays)} differs from the family "
-                "files only in letter case, so a ledger could fork; rename or remove it",
-                file=sys.stderr,
-            )
-            return 2
-    if out.is_file() and out.stat().st_size and not ledger.is_file():
-        print(
-            f"evals label judge: {out.name} exists without {ledger.name}, "
-            "so its spent invocations are unknown; start with a fresh --dir",
-            file=sys.stderr,
-        )
-        return 2
-    done = labelling.completed(labelling.read_jsonl(out), args.model)
     try:
+        refusal = _judge_start_refusal(p["judgments"], out, ledger)
+        if refusal:
+            print(f"evals label judge: {refusal}", file=sys.stderr)
+            return 2
+        done = labelling.completed(labelling.read_jsonl(out), args.model)
         with models.Budget(args.max_invocations, ledger) as budget:
             rows = labelling.judge_items(
                 labelling.read_jsonl(p["items"]),
@@ -342,7 +355,7 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    except (models.ModelEvalError, runner.EngineError) as exc:
+    except (models.ModelEvalError, runner.EngineError, OSError) as exc:
         print(f"evals label judge: {exc}", file=sys.stderr)
         return 2
     print(f"{len(rows)} judgments written to {out}")

@@ -1070,3 +1070,44 @@ def test_import_failing_to_append_reports_and_exits_2(
     (sheet_env / "human.jsonl").mkdir()  # appending to a directory fails
     assert import_cli(sheet_env, out) == 2
     assert "evals label import-worksheet" in capsys.readouterr().err
+
+
+# --- review round 2 ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("leftover", ["anthropic.jsonl", "anthropic.ledger.jsonl.lock"])
+def test_judge_refuses_earlier_run_artifacts_when_the_ledger_is_missing(
+    judge_env, tmp_path, monkeypatch, leftover
+):
+    (judge_env / "judgments").mkdir()
+    (judge_env / "judgments" / leftover).write_text("")  # zero length still counts
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 2
+    assert asked == []
+    assert [f.name for f in (judge_env / "judgments").iterdir()] == [leftover]
+
+
+def test_the_ledger_already_holds_a_calls_reservation_when_the_provider_runs(
+    judge_env, tmp_path, monkeypatch
+):
+    ledger = judge_env / "judgments" / "anthropic.ledger.jsonl"
+    asked, seen = [], []
+
+    def answer(prompt):
+        # asked already counts this call, so its reservation must be on disk.
+        events = lab.read_jsonl(ledger)
+        seen.append((len(asked), [e["n"] for e in events if e["event"] == "reserve"]))
+        return "A"
+
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=answer) == 0
+    assert seen == [(1, [1]), (2, [1, 2])]
+
+
+def test_judge_reports_an_unusable_ledger_path_and_exits_2(
+    judge_env, tmp_path, monkeypatch, capsys
+):
+    (judge_env / "judgments" / "anthropic.ledger.jsonl").mkdir(parents=True)
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 2
+    assert asked == []
+    assert "evals label judge" in capsys.readouterr().err
