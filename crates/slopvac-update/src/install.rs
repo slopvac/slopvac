@@ -60,7 +60,8 @@ impl InstallMethod {
         }
     }
 
-    /// The command that upgrades this install, or `None` when the channel is unknown.
+    /// The command that upgrades this install, or `None` when no safe command exists (an unknown
+    /// channel, or a cargo-style install).
     #[must_use]
     pub fn upgrade_command(self) -> Option<&'static str> {
         Some(match self {
@@ -71,8 +72,10 @@ impl InstallMethod {
             Self::Wheel(WheelTool::UvPip) => "uv pip install --upgrade slopvac",
             Self::Homebrew => "brew upgrade slopvac/tap/slopvac",
             Self::Mise => "mise upgrade slopvac",
-            Self::Cargo => "cargo install --locked --force slopvac",
-            Self::Unknown => return None,
+            // No crate is published, so `cargo install slopvac` would fetch whoever registers the
+            // name. Archive installs without a readable receipt land here too, and a `--git`
+            // install builds unreleased code. Callers fall back to the signed releases page.
+            Self::Cargo | Self::Unknown => return None,
         })
     }
 
@@ -658,10 +661,7 @@ mod tests {
                 Some("brew upgrade slopvac/tap/slopvac"),
             ),
             (InstallMethod::Mise, Some("mise upgrade slopvac")),
-            (
-                InstallMethod::Cargo,
-                Some("cargo install --locked --force slopvac"),
-            ),
+            (InstallMethod::Cargo, None),
             (InstallMethod::Unknown, None),
         ];
         for (method, want) in cases {
