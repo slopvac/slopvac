@@ -71,6 +71,8 @@ args = sys.argv[1:]
 if os.environ.get("FAKE_LOG"):
     with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as handle:
         handle.write(json.dumps(args) + "\\n")
+if os.environ.get("FAKE_STDERR"):
+    sys.stderr.buffer.write(os.environ["FAKE_STDERR"].encode("utf-8", "surrogateescape"))
 if "plugins" in args and "sync" in args:
     sys.exit(int(os.environ.get("FAKE_EXIT_SYNC", "0")))
 fmt = args[args.index("--format") + 1]
@@ -324,6 +326,78 @@ def test_no_targets_passes_without_running_the_binary(tmp_path):
         {"PATH_LIST": str(paths), "GITHUB_OUTPUT": str(out), "BINARY": "/nonexistent"}
     )
     assert (code, out.read_text(encoding="utf-8")) == (0, "passed=true\n")
+
+
+# ---- binary stderr never reaches the job log as a workflow command -----------
+
+# A target path with a newline reaches the binary's stderr verbatim. Expected
+# values are worked out by hand from GitHub's workflow-command rules: `::`
+# becomes %3A%3A, `%` becomes %25, `##[` is neutralised, a bell is shown as
+# \u{7}, and each line stays a line.
+HOSTILE_STDERR = (
+    "cannot read a.md\n::error::x %0A\n::set-output name=p::1\n##[group]g\a\n"
+)
+ESCAPED_STDERR = (
+    "cannot read a.md\n"
+    "%3A%3Aerror%3A%3Ax %250A\n"
+    "%3A%3Aset-output name=p%3A%3A1\n"
+    "\\u{23}#[group]g\\u{7}\n"
+)
+
+
+VECTORS = json.loads(
+    (ROOT / "tests" / "fixtures" / "workflow-escape-vectors.json").read_text(
+        encoding="utf-8"
+    )
+)["workflow_data"]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [pytest.param(v["input"], v["expected"], id=v["name"]) for v in VECTORS],
+)
+def test_the_escaper_agrees_with_slopvac_sanitize_on_the_shared_vectors(text, expected):
+    assert action.escape_workflow_data(text) == expected
+
+
+def _assert_no_workflow_command(text):
+    assert not [ln for ln in text.splitlines() if ln.lstrip().startswith("::")]
+
+
+def test_lint_stderr_is_escaped_before_it_reaches_the_job_log(run, capfd):
+    run(FAKE_STDERR=HOSTILE_STDERR)
+    err = capfd.readouterr().err
+    _assert_no_workflow_command(err)
+    # one copy per report format: the four runs each emit the same text
+    assert err == ESCAPED_STDERR * len(FORMATS)
+
+
+def test_sync_stderr_is_escaped_before_it_reaches_the_job_log(sync, capfd):
+    sync(locked=True, FAKE_STDERR=HOSTILE_STDERR)
+    err = capfd.readouterr().err
+    _assert_no_workflow_command(err)
+    assert err == ESCAPED_STDERR
+
+
+# Only LF ends a record. NEL, LS, FS and the like stay in their line, shown as
+# the visible escape that names them; CRLF loses its CR, a lone CR is escaped.
+SEPARATOR_STDERR = "cannot read a\x85b\u2028c\x1cd.md\r\nnext\rline\n"
+SEPARATOR_SHOWN = "cannot read a\\u{85}b\\u{2028}c\\u{1c}d.md\nnext%0Dline\n"
+
+
+def test_lint_stderr_keeps_unicode_separators_in_their_line(run, capfd):
+    run(FAKE_STDERR=SEPARATOR_STDERR)
+    assert capfd.readouterr().err == SEPARATOR_SHOWN * len(FORMATS)
+
+
+def test_sync_stderr_keeps_unicode_separators_in_their_line(sync, capfd):
+    sync(locked=True, FAKE_STDERR=SEPARATOR_STDERR)
+    assert capfd.readouterr().err == SEPARATOR_SHOWN
+
+
+def test_stderr_that_is_not_utf8_is_shown_not_dropped(sync, capfd):
+    sync(locked=True, FAKE_STDERR="bad \udcff byte\n")
+    assert capfd.readouterr().err == "bad \ufffd byte\n"
 
 
 # ---- plugins sync ------------------------------------------------------------

@@ -174,6 +174,7 @@ def evaluate(condition: str, true_outputs: set[str]) -> bool:
         ("evals-ratchet", "evals"),
         ("docs-site", "docs-site"),
         ("action-v3", "action-v3"),
+        ("diagram-adapter", "diagram-adapter"),
     ],
 )
 @pytest.mark.parametrize(
@@ -195,6 +196,48 @@ def test_folded_job_runs_exactly_when_routed(job, klass, true_outputs, runs):
 )
 def test_folded_job_ignores_the_other_class(job, other):
     assert evaluate(JOBS[job]["if"], {other}) is False
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "crates/slopvac-diagrams/src/mermaid.rs",
+        "crates/slopvac-engine/src/lint.rs",
+        "evals/diagrams.py",
+        "tests/test_evals_diagrams.py",
+        "tests/fixtures/diagram_eval_output.json",
+    ],
+)
+def test_live_adapter_path_also_runs_the_python_suite(path):
+    # Main classifies these paths as `code`, so the Python suite runs with the adapter.
+    outputs = classes_of([path])
+    assert {"diagram-adapter", "code"} <= outputs
+    assert evaluate(JOBS["diagram-adapter"]["if"], outputs) is True
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+
+
+def test_adapter_class_alone_runs_the_adapter_and_not_the_python_suite():
+    # The gates are isolated: the adapter job fires on its own class, and the
+    # Python suite does not fire on it.
+    outputs = {"diagram-adapter"}
+    assert evaluate(JOBS["diagram-adapter"]["if"], outputs) is True
+    assert evaluate(JOBS["test"]["if"], outputs) is False
+
+
+@pytest.mark.parametrize("path", ["README.md", "docs/design/slopvac-3.md"])
+def test_prose_change_runs_neither_the_adapter_nor_the_python_suite(path):
+    outputs = classes_of([path])
+    assert evaluate(JOBS["diagram-adapter"]["if"], outputs) is False
+    assert evaluate(JOBS["test"]["if"], outputs) is False
+
+
+def test_live_diagram_adapter_pytest_step_requires_the_real_engine():
+    step = next(
+        step
+        for step in JOBS["diagram-adapter"]["steps"]
+        if "pytest" in step.get("run", "")
+    )
+    assert step.get("env", {}).get("SLOPVAC_EVALS_LIVE_ENGINE") == "1"
 
 
 @pytest.mark.parametrize(
@@ -385,6 +428,7 @@ FLAG_ENV = {
     "FILESYSTEM": "filesystem",
     "EVALS": "evals",
     "DOCS_SITE": "docs-site",
+    "DIAGRAM_ADAPTER": "diagram-adapter",
 }
 ALWAYS = {"changes", "quick-lint"}
 
@@ -425,6 +469,7 @@ def test_gate_needs_include_the_folded_jobs():
         ({"docs-site"}, ok("docs-site")),
         ({"action-v3"}, ok("action-v3")),
         ({"evals", "docs-site"}, ok("evals-ratchet", "docs-site")),
+        ({"diagram-adapter"}, ok("diagram-adapter")),
         ({"force_all"}, ok(*(set(GATE_NEEDS) - ALWAYS))),
     ],
 )
@@ -440,6 +485,17 @@ def test_gate_accepts_runs_and_skips_matching_the_classification(flags, results)
         ({"docs-site"}, ok(), "docs-site: got skipped, expected success"),
         ({"action-v3"}, ok(), "action-v3: got skipped, expected success"),
         (set(), ok("action-v3"), "action-v3: got success, expected skipped"),
+        ({"diagram-adapter"}, ok(), "diagram-adapter: got skipped, expected success"),
+        (
+            set(),
+            ok("diagram-adapter"),
+            "diagram-adapter: got success, expected skipped",
+        ),
+        (
+            {"diagram-adapter"},
+            {**ok(), "diagram-adapter": "failure"},
+            "diagram-adapter: got failure, expected success",
+        ),
         (set(), ok("evals-ratchet"), "evals-ratchet: got success, expected skipped"),
         (set(), ok("docs-site"), "docs-site: got success, expected skipped"),
         (

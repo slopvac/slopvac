@@ -2779,6 +2779,9 @@ dependencies = [
 [[package]]
 name = "slopvac-sanitize"
 version = "0.0.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "slopvac-styles"
