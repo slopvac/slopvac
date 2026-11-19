@@ -4,15 +4,15 @@
 use std::sync::{Arc, Mutex};
 
 /// One event: its level and fields (name and debug text).
-pub type Logged = (tracing::Level, Vec<(String, String)>);
+pub(crate) type Logged = (tracing::Level, Vec<(String, String)>);
 
 /// Records every event. Clones share one list.
 #[derive(Default, Clone)]
-pub struct Capture(Arc<Mutex<Vec<Logged>>>);
+pub(crate) struct Capture(Arc<Mutex<Vec<Logged>>>);
 
 impl Capture {
     /// The events recorded so far.
-    pub fn events(&self) -> Vec<Logged> {
+    pub(crate) fn events(&self) -> Vec<Logged> {
         self.0.lock().unwrap().clone()
     }
 }

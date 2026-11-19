@@ -1260,14 +1260,16 @@ mod helpers {
     }
 
     #[rstest::rstest]
-    #[case::parent_directory("../evil")]
-    #[case::path_separator("a/b")]
-    #[case::semicolon("x;y")]
-    #[case::space("a b")]
-    #[case::leading_dash("-flag")]
-    fn tm38_helper_names_with_separators_or_shell_characters_are_refused(#[case] bad: &str) {
-        let tag: String = bad.bytes().map(|b| format!("{b:02x}")).collect();
-        let err = lookup(&format!("bad{tag}"), bad, None).unwrap_err();
+    #[case::parent_directory("parent", "../evil")]
+    #[case::path_separator("separator", "a/b")]
+    #[case::semicolon("semicolon", "x;y")]
+    #[case::space("space", "a b")]
+    #[case::leading_dash("dash", "-flag")]
+    fn tm38_helper_names_with_separators_or_shell_characters_are_refused(
+        #[case] tag: &str,
+        #[case] bad: &str,
+    ) {
+        let err = lookup(&format!("bad-{tag}"), bad, None).unwrap_err();
         assert!(matches!(err, OciError::Credential(_)), "{bad}: {err:?}");
     }
 
