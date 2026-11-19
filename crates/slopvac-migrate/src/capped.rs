@@ -7,13 +7,18 @@ const MAX_MESSAGES: usize = 100;
 /// Most characters kept per message or field.
 const MAX_MESSAGE_CHARS: usize = 512;
 
-/// `text` cut to [`MAX_MESSAGE_CHARS`] characters, with `…` when it was cut.
-fn clip(mut text: String) -> String {
-    if let Some((cut, _)) = text.char_indices().nth(MAX_MESSAGE_CHARS) {
-        text.truncate(cut);
-        text.push('…');
+/// A fresh string with the first [`MAX_MESSAGE_CHARS`] characters of `text`, and `…` when it
+/// was cut. It never keeps the allocation of `text`, so a long input is freed.
+fn clip(text: &str) -> String {
+    match text.char_indices().nth(MAX_MESSAGE_CHARS) {
+        Some((cut, _)) => {
+            let mut out = String::with_capacity(cut + '…'.len_utf8());
+            out.push_str(&text[..cut]);
+            out.push('…');
+            out
+        }
+        None => text.to_owned(),
     }
-    text
 }
 
 /// A list of messages that keeps the first [`MAX_MESSAGES`], cuts each to
@@ -40,7 +45,7 @@ impl Capped {
             self.suppressed = self.suppressed.saturating_add(1);
             return;
         }
-        self.items.push(clip(message));
+        self.items.push(clip(&message));
     }
 
     /// The kept messages, then one line that counts the suppressed ones.
@@ -53,7 +58,8 @@ impl Capped {
     }
 }
 
-/// The settings that stop a run, bounded the same way as [`Capped`].
+/// The settings that stop a run, bounded the same way as [`Capped`]. Records past the cap are
+/// only counted, so a hostile config cannot grow the list or force a copy of its keys.
 #[derive(Debug, Default)]
 pub(crate) struct Blockers {
     items: Vec<Dropped>,
@@ -61,15 +67,32 @@ pub(crate) struct Blockers {
 }
 
 impl Blockers {
-    pub(crate) fn push(&mut self, mut record: Dropped) {
+    /// How many settings block, kept or not.
+    pub(crate) fn total(&self) -> usize {
+        self.items.len().saturating_add(self.suppressed)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.total() == 0
+    }
+
+    /// Records the setting at `line` of `file`. Past the cap it only counts, without copying.
+    pub(crate) fn record(&mut self, file: &str, key: &str, line: usize, reason: &str) {
         if self.items.len() >= MAX_MESSAGES {
             self.suppressed = self.suppressed.saturating_add(1);
             return;
         }
-        record.file = clip(record.file);
-        record.key = clip(record.key);
-        record.reason = clip(record.reason);
-        self.items.push(record);
+        self.items
+            .push(Dropped::new(clip(file), clip(key), line, clip(reason)));
+    }
+
+    /// Adds a record. A closing record of another capped list adds its count.
+    pub(crate) fn push(&mut self, record: Dropped) {
+        if record.suppressed > 0 {
+            self.suppressed = self.suppressed.saturating_add(record.suppressed);
+            return;
+        }
+        self.record(&record.file, &record.key, record.line, &record.reason);
     }
 
     pub(crate) fn extend(&mut self, records: impl IntoIterator<Item = Dropped>) {
@@ -83,13 +106,49 @@ impl Blockers {
     pub(crate) fn finish(self) -> Vec<Dropped> {
         let mut items = self.items;
         if self.suppressed > 0 {
-            items.push(Dropped {
-                file: String::new(),
-                key: String::new(),
-                line: 0,
-                reason: format!("{} more blocking settings suppressed", self.suppressed),
-            });
+            items.push(Dropped::suppression(self.suppressed));
         }
         items
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn long() -> String {
+        "x".repeat(100_000)
+    }
+
+    #[test]
+    fn a_cut_message_does_not_keep_the_big_allocation() {
+        let mut list = Capped::new("warnings");
+        list.push(long());
+        let kept = list.finish();
+        assert_eq!(kept[0].chars().count(), MAX_MESSAGE_CHARS + 1);
+        assert!(kept[0].capacity() < 2048, "{}", kept[0].capacity());
+    }
+
+    #[test]
+    fn a_cut_blocking_field_does_not_keep_the_big_allocation() {
+        let mut list = Blockers::default();
+        list.record(&long(), &long(), 3, &long());
+        let kept = list.finish();
+        for field in [&kept[0].file, &kept[0].key, &kept[0].reason] {
+            assert!(field.capacity() < 2048, "{}", field.capacity());
+        }
+    }
+
+    #[test]
+    fn records_past_the_cap_are_counted_and_the_status_stays_blocking() {
+        let mut list = Blockers::default();
+        for _ in 0..(MAX_MESSAGES + 5) {
+            list.record("a.toml", "k", 1, "r");
+        }
+        list.push(Dropped::suppression(7));
+        assert_eq!(list.total(), MAX_MESSAGES + 12);
+        let kept = list.finish();
+        assert_eq!(kept.len(), MAX_MESSAGES + 1);
+        assert_eq!(kept[MAX_MESSAGES].suppressed, 12);
     }
 }

@@ -364,7 +364,7 @@ fn dropped_in_pyproject(mut dropped: Vec<Dropped>, py: Option<&str>) -> Vec<Drop
     let Some(lines) = py.and_then(|t| key_lines(t).ok()) else {
         return dropped;
     };
-    for x in &mut dropped {
+    for x in dropped.iter_mut().filter(|x| x.suppressed == 0) {
         if let Some(l) = lines.get(&format!("tool.slopvac.{}", x.key)) {
             x.line = *l;
         }
@@ -451,11 +451,13 @@ fn plan_document(
             label.display()
         ));
     }
-    dropped.extend(found.unknown.into_iter().map(|u| Dropped {
-        file: label.display().to_string(),
-        key: format!("slopvac-allow rule={}", u.id),
-        line: u.line,
-        reason: "directive rule id has no 3.0 name; the rename table has no entry".into(),
+    dropped.extend(found.unknown.into_iter().map(|u| {
+        Dropped::new(
+            label.display().to_string(),
+            format!("slopvac-allow rule={}", u.id),
+            u.line,
+            "directive rule id has no 3.0 name; the rename table has no entry",
+        )
     }));
     match rewrite_steering(&text, steering) {
         Ok(Some(new)) => text = new,

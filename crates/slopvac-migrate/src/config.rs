@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use toml_edit::{Array, Document, DocumentMut, Item, RawString, Table, TableLike, Value, value};
 
+use crate::capped::Blockers;
 use crate::{Dropped, Error, Options, RenameTable, preserve_doc};
 
 const THRESHOLD_KEYS: &[&str] = &[
@@ -90,7 +91,7 @@ pub fn migrate_config(
         file,
         lines: &lines,
         renames,
-        dropped: Vec::new(),
+        dropped: Blockers::default(),
         notes: Vec::new(),
         removed_categories: Vec::new(),
     };
@@ -116,7 +117,7 @@ pub fn migrate_config(
             removed_categories: cx.removed_categories,
         })
     } else {
-        Err(Error::Dropped(cx.dropped))
+        Err(Error::Dropped(cx.dropped.finish()))
     }
 }
 
@@ -157,7 +158,7 @@ struct Cx<'a> {
     file: &'a str,
     lines: &'a HashMap<String, usize>,
     renames: &'a RenameTable,
-    dropped: Vec<Dropped>,
+    dropped: Blockers,
     notes: Vec<String>,
     removed_categories: Vec<Dropped>,
 }
@@ -166,20 +167,20 @@ impl Cx<'_> {
     /// Drop a category that 3.0 no longer has and go on, with a
     /// `migrate-category-removed` notice and no exit 2.
     fn drop_category_note(&mut self, path: &str, reason: &str) {
-        self.removed_categories.push(Dropped {
-            file: self.file.to_owned(),
-            key: path.to_owned(),
-            line: self.lines.get(path).copied().unwrap_or(1),
-            reason: reason.to_owned(),
-        });
+        self.removed_categories.push(Dropped::new(
+            self.file,
+            path,
+            self.lines.get(path).copied().unwrap_or(1),
+            reason,
+        ));
     }
-    fn drop_key(&mut self, path: &str, reason: impl Into<String>) {
-        self.dropped.push(Dropped {
-            file: self.file.to_owned(),
-            key: path.to_owned(),
-            line: self.lines.get(path).copied().unwrap_or(1),
-            reason: reason.into(),
-        });
+    fn drop_key(&mut self, path: &str, reason: impl AsRef<str>) {
+        self.dropped.record(
+            self.file,
+            path,
+            self.lines.get(path).copied().unwrap_or(1),
+            reason.as_ref(),
+        );
     }
 }
 

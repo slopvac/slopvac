@@ -50,8 +50,8 @@ pub struct Options {
 
 /// A 2.x setting that 3.0 cannot represent (`config-legacy-dropped`).
 ///
-/// A run keeps a bounded number of these. When it left some out, the last record has an
-/// empty `key` and a `reason` that counts them.
+/// A run keeps a bounded number of these. When it left some out, the last record has a
+/// non-zero `suppressed` count and a `reason` that states it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dropped {
     /// The file that holds the setting.
@@ -62,9 +62,41 @@ pub struct Dropped {
     pub line: usize,
     /// Why 3.0 cannot take it.
     pub reason: String,
+    /// Zero for a real setting. For the closing record of a capped list, how many settings
+    /// the run left out.
+    pub suppressed: usize,
 }
 
 impl Dropped {
+    /// A setting at `line` of `file`.
+    #[must_use]
+    pub fn new(
+        file: impl Into<String>,
+        key: impl Into<String>,
+        line: usize,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            file: file.into(),
+            key: key.into(),
+            line,
+            reason: reason.into(),
+            suppressed: 0,
+        }
+    }
+
+    /// The closing record of a capped list, for `count` settings left out.
+    #[must_use]
+    pub fn suppression(count: usize) -> Self {
+        Self {
+            file: String::new(),
+            key: String::new(),
+            line: 0,
+            reason: format!("{count} more blocking settings suppressed"),
+            suppressed: count,
+        }
+    }
+
     /// The setting as a notice with the `migrate-category-removed` code, for a
     /// category that 3.0 no longer has. Unlike a blocking drop, it does not stop the
     /// migration.
@@ -76,8 +108,8 @@ impl Dropped {
 
 impl fmt::Display for Dropped {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // The closing record of a capped list has no key; it only counts the rest.
-        if self.key.is_empty() {
+        // The closing record of a capped list only counts the rest.
+        if self.suppressed > 0 {
             return f.write_str(&self.reason);
         }
         write!(

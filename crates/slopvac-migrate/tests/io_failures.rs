@@ -347,3 +347,48 @@ fn a_read_failure_keeps_its_filesystem_and_io_source_chain() {
         .expect("an io error");
     assert_eq!(io_error.kind(), std::io::ErrorKind::PermissionDenied);
 }
+
+fn unknown_keys(count: usize, prefix: &str) -> String {
+    (0..count).fold(String::new(), |mut s, i| {
+        s.push_str(&format!("{prefix}{i} = 1\n"));
+        s
+    })
+}
+
+#[test]
+fn config_blockers_are_capped_while_the_config_is_migrated() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "slopvac.toml", unknown_keys(250, "bogus"));
+    let d = dropped_of(dir.path());
+    assert_eq!(d.len(), 101);
+    assert_eq!(d[0].key, "bogus0");
+    assert_eq!(d[0].file, "slopvac.toml");
+    assert_eq!(d[0].suppressed, 0);
+    assert_eq!(d[100].suppressed, 150);
+    assert_eq!(d[100].reason, "150 more blocking settings suppressed");
+    assert_eq!(cli(dir.path()).0, 2);
+}
+
+#[test]
+fn suppressed_counts_add_up_across_config_files() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "slopvac.toml", unknown_keys(60, "a"));
+    write(dir.path(), "sub/slopvac.toml", unknown_keys(60, "b"));
+    let d = dropped_of(dir.path());
+    assert_eq!(d.len(), 101);
+    assert_eq!(d[100].suppressed, 20);
+}
+
+#[test]
+fn an_empty_top_level_key_is_a_real_record_not_the_suppression_marker() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "slopvac.toml", "\"\" = 1\n");
+    let d = dropped_of(dir.path());
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].file, "slopvac.toml");
+    assert_eq!(d[0].key, "");
+    assert_eq!(d[0].suppressed, 0);
+    let (code, _, err) = cli(dir.path());
+    assert_eq!(code, 2);
+    assert!(err.contains("slopvac.toml:"), "{err}");
+}
