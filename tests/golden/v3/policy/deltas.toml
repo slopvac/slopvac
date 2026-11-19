@@ -305,7 +305,7 @@ rule_id = "core:ste-procedural.condition-after-command"
 line = 7
 column = 66
 reason = "The change-note context gates the rule."
-approved_by = "pending-review"
+approved_by = "lead"
 modes = ["parity", "preserve", "policy"]
 document = { "categories" = [
   { "budget" = 0.0, "category" = "ai-residue", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
@@ -372,7 +372,7 @@ rule_id = "core:ste-procedural.condition-after-command"
 line = 7
 column = 66
 reason = "The change-note context gates the rule."
-approved_by = "pending-review"
+approved_by = "lead"
 modes = ["parity", "preserve", "policy"]
 document = { "categories" = [
   { "budget" = 0.0, "category" = "ai-residue", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
@@ -442,7 +442,7 @@ rule_id = "core:ste-procedural.condition-after-command"
 line = 281
 column = 11
 reason = "The change-note context gates the rule."
-approved_by = "pending-review"
+approved_by = "lead"
 modes = ["parity", "preserve", "policy"]
 document = { "categories" = [
   { "budget" = 0.0, "category" = "ai-residue", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
@@ -481,7 +481,7 @@ rule_id = "core:ste-procedural.condition-after-command"
 line = 281
 column = 11
 reason = "The change-note context gates the rule."
-approved_by = "pending-review"
+approved_by = "lead"
 modes = ["parity", "preserve", "policy"]
 document = { "categories" = [
   { "budget" = 0.0, "category" = "ai-residue", "errors" = 0, "findings" = 0, "gating_per_100_words" = 0.0, "over_budget" = false, "per_100_words" = 0.0, "score" = 100.0, "suggestions" = 0, "warnings" = 0 },
