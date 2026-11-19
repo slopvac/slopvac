@@ -160,9 +160,7 @@ def _link_archive(kind: str) -> tuple[bytes, str]:
     return blob, hashlib.sha256(blob).hexdigest()
 
 
-INSTALL_TOOL = (
-    'source "$1" && install_release_archive tool https://example.test/t.tar.xz "$2" "$3"'
-)
+INSTALL_TOOL = 'source "$1" && install_release_archive tool https://example.test/t.tar.xz "$2" "$3"'
 
 
 @pytest.mark.parametrize("kind", ["symlink", "hardlink"])

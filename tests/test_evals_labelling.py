@@ -988,3 +988,85 @@ def test_import_rejects_an_unknown_item_naming_the_row(sheet_env, tmp_path, caps
     assert import_cli(sheet_env, out) == 2
     assert "row 3: unknown item 'nope'" in capsys.readouterr().err
     assert not (sheet_env / "human.jsonl").exists()
+
+
+# --- review round 1 ----------------------------------------------------------------
+
+
+def test_judge_rejects_a_family_spelled_other_than_the_canonical_lowercase(
+    judge_env, tmp_path, monkeypatch
+):
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 0
+    assert len(asked) == 2
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked, family="ANTHROPIC") == 2
+    assert len(asked) == 2  # no paid call, and no second ledger
+    assert not list((judge_env / "judgments").glob("ANTHROPIC*"))
+
+
+@pytest.mark.parametrize(
+    "stray",
+    ["Anthropic.jsonl", "ANTHROPIC.ledger.jsonl", "Anthropic.ledger.jsonl.lock"],
+)
+def test_judge_refuses_a_case_variant_of_its_files_in_the_directory(
+    judge_env, tmp_path, monkeypatch, stray
+):
+    (judge_env / "judgments").mkdir()
+    (judge_env / "judgments" / stray).write_text("")
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 2
+    assert asked == []
+    assert [f.name for f in (judge_env / "judgments").iterdir()] == [stray]
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ('queue,item,verdict,reason\n"dispute,i1,tp,x\n', "row"),  # unterminated quote
+        ("queue,item,verdict,reason\ndispute,i1,tp\n", "row 2"),  # too few fields
+        ("queue,item,verdict,reason\ndispute,i1,tp,x,extra\n", "row 2"),  # too many
+        ("queue,item,verdict,reason,item\ndispute,i1,tp,x,i1\n", "item"),  # duplicate
+        ("queue,item,verdict\ndispute,i1,tp\n", "reason"),  # missing column
+    ],
+)
+def test_import_rejects_structurally_broken_csv_and_leaves_human_untouched(
+    sheet_env, tmp_path, capsys, content, message
+):
+    human = sheet_env / "human.jsonl"
+    lab.write_jsonl(
+        human, [{"item": "i0", "label": "tp", "reviewer": "a", "reason": "r"}]
+    )
+    before = human.read_bytes()
+    bad = tmp_path / "bad.csv"
+    bad.write_text(content, encoding="utf-8")
+    assert import_cli(sheet_env, bad) == 2
+    assert message in capsys.readouterr().err
+    assert human.read_bytes() == before
+
+
+def test_import_rejects_a_row_after_a_good_one_without_writing_the_good_row(
+    sheet_env, tmp_path, capsys
+):
+    bad = tmp_path / "bad.csv"
+    bad.write_text("item,verdict,reason\ni1,tp,ok\ni0,fp\n", encoding="utf-8")
+    assert import_cli(sheet_env, bad) == 2
+    assert "row 3" in capsys.readouterr().err
+    assert not (sheet_env / "human.jsonl").exists()
+
+
+def test_worksheet_to_a_directory_reports_and_exits_2(sheet_env, tmp_path, capsys):
+    target = tmp_path / "isdir"
+    target.mkdir()
+    assert worksheet_cli(sheet_env, target, tmp_path) == 2
+    assert "evals label worksheet" in capsys.readouterr().err
+
+
+def test_import_failing_to_append_reports_and_exits_2(
+    sheet_env, tmp_path, monkeypatch, capsys
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(sheet_env, out, tmp_path) == 0
+    fill_sheet(out, {"i1": ("tp", "ok")})
+    (sheet_env / "human.jsonl").mkdir()  # appending to a directory fails
+    assert import_cli(sheet_env, out) == 2
+    assert "evals label import-worksheet" in capsys.readouterr().err

@@ -111,7 +111,7 @@ def model_family(model: str) -> str | None:
 def check_identity(family: str, model: str) -> None:
     """Raise unless `model` names `family`; the two-family rule depends on it."""
     actual = model_family(model)
-    if actual != family.lower():
+    if actual != family:  # exact: a second spelling would fork the files and ledger
         seen = actual or "no single known family"
         raise runner.EngineError(
             f"judge family {family!r} does not match model {model!r} ({seen})"
@@ -607,36 +607,52 @@ def worksheet_verdicts(
     seen = {
         (h["item"], h.get("reviewer"), h["label"], h.get("reason")) for h in existing
     }
-    with path.open(encoding="utf-8", newline="") as fh:
-        reader = csv.DictReader(fh)
-        missing = {"item", "verdict", "reason"} - set(reader.fieldnames or ())
-        if missing:
-            raise ValueError(
-                f"the worksheet has no {', '.join(sorted(missing))} column"
-            )
-        out: list[dict[str, Any]] = []
-        for number, row in enumerate(reader, start=2):
-            verdict = restore_cell(row["verdict"] or "").strip().lower()
-            if not verdict:
-                continue
-            item = restore_cell(row["item"] or "").strip()
-            reason = restore_cell(row["reason"] or "")
-            if item not in known:
-                raise ValueError(f"row {number}: unknown item {item!r}")
-            try:
-                human = record_human(
-                    item=item,
-                    label=verdict,
-                    reviewer=reviewer,
-                    reason=reason,
-                    date=date,
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        reader = csv.reader(fh, strict=True)
+        number = 1
+        try:
+            header = next(reader, [])
+            if len(set(header)) != len(header):
+                dupes = sorted({h for h in header if header.count(h) > 1})
+                raise ValueError(f"row 1: duplicate columns {', '.join(dupes)}")
+            missing = {"item", "verdict", "reason"} - set(header)
+            if missing:
+                raise ValueError(
+                    f"row 1: the worksheet has no {', '.join(sorted(missing))} column"
                 )
-            except ValueError as exc:
-                raise ValueError(f"row {number}: {exc}") from None
-            key = (item, reviewer, verdict, reason)
-            if key not in seen:
-                seen.add(key)
-                out.append(human)
+            at = {name: header.index(name) for name in ("item", "verdict", "reason")}
+            out: list[dict[str, Any]] = []
+            for fields in reader:
+                number += 1
+                if not fields:  # a blank line, as spreadsheets leave at the end
+                    continue
+                if len(fields) != len(header):
+                    raise ValueError(
+                        f"row {number}: {len(fields)} fields, the header has {len(header)}"
+                    )
+                verdict = restore_cell(fields[at["verdict"]]).strip().lower()
+                if not verdict:
+                    continue
+                item = restore_cell(fields[at["item"]]).strip()
+                reason = restore_cell(fields[at["reason"]])
+                if item not in known:
+                    raise ValueError(f"row {number}: unknown item {item!r}")
+                try:
+                    human = record_human(
+                        item=item,
+                        label=verdict,
+                        reviewer=reviewer,
+                        reason=reason,
+                        date=date,
+                    )
+                except ValueError as exc:
+                    raise ValueError(f"row {number}: {exc}") from None
+                key = (item, reviewer, verdict, reason)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(human)
+        except csv.Error as exc:
+            raise ValueError(f"row {number + 1}: malformed CSV ({exc})") from None
     return out
 
 

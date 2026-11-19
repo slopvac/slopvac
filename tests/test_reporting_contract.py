@@ -110,7 +110,9 @@ def test_registry_repository_slug_matches_project_urls():
     assert REPOSITORY_SLUG == repository_url.removeprefix("https://github.com/")
 
 
-@pytest.mark.parametrize("category", REPORT_CATEGORIES, ids=lambda category: category.key)
+@pytest.mark.parametrize(
+    "category", REPORT_CATEGORIES, ids=lambda category: category.key
+)
 def test_issue_form_matches_registry(category):
     path = FORM_ROOT / category.form_file
     assert path.is_file(), f"missing issue form named in report registry: {path}"
@@ -126,7 +128,16 @@ def test_issue_form_files_match_registry():
 
 @pytest.mark.parametrize(
     "field",
-    ["options", "checkbox_options", "checkbox_required", "required", "render", "description", "labels", "title"],
+    [
+        "options",
+        "checkbox_options",
+        "checkbox_required",
+        "required",
+        "render",
+        "description",
+        "labels",
+        "title",
+    ],
 )
 def test_form_comparison_rejects_contract_drift(field, tmp_path):
     category_key = "false-positive" if field == "description" else "bug"

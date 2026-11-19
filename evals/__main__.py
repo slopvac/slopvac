@@ -8,7 +8,6 @@ ab      paired comparison of two stored results
 from __future__ import annotations
 
 import argparse
-import csv
 import dataclasses
 import json
 import os
@@ -301,6 +300,20 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
         print(f"evals label judge: {exc}", file=sys.stderr)
         return 2
     ledger = out.with_suffix(".ledger.jsonl")
+    wanted = {out.name, ledger.name, ledger.name + ".lock"}
+    if p["judgments"].is_dir():
+        strays = sorted(
+            f.name
+            for f in p["judgments"].iterdir()
+            if f.name not in wanted and f.name.lower() in {w.lower() for w in wanted}
+        )
+        if strays:
+            print(
+                f"evals label judge: {', '.join(strays)} differs from the family "
+                "files only in letter case, so a ledger could fork; rename or remove it",
+                file=sys.stderr,
+            )
+            return 2
     if out.is_file() and out.stat().st_size and not ledger.is_file():
         print(
             f"evals label judge: {out.name} exists without {ledger.name}, "
@@ -432,10 +445,10 @@ def cmd_label_worksheet(args: argparse.Namespace) -> int:
             doc_text=lambda doc: runner.text_path(docs[doc], cache).read_text("utf-8"),
             notes=labelling.rule_notes(Path(args.rules_dir)),
         )
+        labelling.write_worksheet(Path(args.out), families, rows)
     except (runner.EngineError, OSError) as exc:
         print(f"evals label worksheet: {exc}", file=sys.stderr)
         return 2
-    labelling.write_worksheet(Path(args.out), families, rows)
     print(f"{len(rows)} rows written to {args.out}")
     return 0
 
@@ -450,10 +463,10 @@ def cmd_label_import_worksheet(args: argparse.Namespace) -> int:
             reviewer=args.reviewer,
             date=args.date or labelling.today(),
         )
-    except (ValueError, OSError, csv.Error) as exc:
+        labelling.append_jsonl(p["human"], rows)
+    except (ValueError, OSError) as exc:
         print(f"evals label import-worksheet: {exc}", file=sys.stderr)
         return 2
-    labelling.append_jsonl(p["human"], rows)
     print(f"{len(rows)} human verdicts recorded")
     return 0
 
