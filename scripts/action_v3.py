@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import sys
+import unicodedata
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -117,8 +118,50 @@ def _command(
     return [*command, "--", *targets]
 
 
+# Characters that sanitize.rs `is_unsafe` also covers: controls, format
+# characters (bidi overrides), line and paragraph separators, private use and
+# surrogates.
+_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Co", "Cs"})
+
+
+def escape_log_line(line: str) -> str:
+    r"""Escape one line of untrusted text so the runner reads no command in it.
+
+    Mirrors ``workflow_data`` in crates/slopvac-sanitize (TM-13/O4): ``%``
+    becomes ``%25``, ``::`` becomes ``%3A%3A``, ``##[`` is neutralised, and a
+    backslash or an unsafe character becomes ``\\`` or ``\u{..}``. Tab stays.
+    Callers split on newlines first, so each line is emitted as a line.
+    """
+    out = []
+    for char in line:
+        if char == "%":
+            out.append("%25")
+        elif char == "\\":
+            out.append("\\\\")
+        elif char != "\t" and unicodedata.category(char) in _UNSAFE_CATEGORIES:
+            out.append(f"\\u{{{ord(char):x}}}")
+        else:
+            out.append(char)
+    return "".join(out).replace("::", "%3A%3A").replace("##[", "\\u{23}#[")
+
+
+def _relay_stderr(raw: bytes) -> None:
+    """Re-emit the binary's stderr line by line through ``escape_log_line``.
+
+    The binary echoes PR-controlled text (a file name may hold a newline and
+    ``::error::``), so its stderr must never reach the job log raw.
+    """
+    for line in raw.decode("utf-8", errors="replace").splitlines():
+        print(escape_log_line(line), file=sys.stderr)
+
+
 def _run(command: Sequence[str], env: Mapping[str, str]) -> int:
-    return subprocess.run(command, check=False, env={**os.environ, **env}).returncode
+    """Run the binary, relay its stderr escaped, and return its exit code."""
+    done = subprocess.run(
+        command, check=False, env={**os.environ, **env}, stderr=subprocess.PIPE
+    )
+    _relay_stderr(done.stderr)
+    return done.returncode
 
 
 def sync(env: Mapping[str, str] = os.environ) -> int:
