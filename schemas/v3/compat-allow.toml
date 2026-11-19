@@ -7,3 +7,24 @@
 # kind = "property-removed"
 # reason = "Why the break is acceptable."
 # approved_by = "reviewer name"
+
+[[allow]]
+file = "pack-manifest.schema.json"
+pointer = '/properties/requires/items/$ref(pack-manifest.schema.json#/$defs/Requirement)/properties/version/$ref(pack-manifest.schema.json#/$defs/VersionReq)/pattern'
+kind = "pattern-changed"
+reason = "VersionReq narrows before release: a pre-release needs a full MAJOR.MINOR.PATCH, numbers and pre-release identifiers follow the Semver def (no leading zero, no empty segment), and the pattern ends with (?![\\s\\S]) so a trailing newline no longer matches. No pack uses the pre-release forms yet. The parser in slopvac-packs follows the same grammar."
+approved_by = "contract owner (slopvac-8l4.2), PR 570 cross-epic reply"
+
+[[allow]]
+file = "pack-manifest.schema.json"
+pointer = '/$defs/VersionReq/pattern'
+kind = "pattern-changed"
+reason = "VersionReq narrows before release: a pre-release needs a full MAJOR.MINOR.PATCH, numbers and pre-release identifiers follow the Semver def (no leading zero, no empty segment), and the pattern ends with (?![\\s\\S]) so a trailing newline no longer matches. No pack uses the pre-release forms yet. The parser in slopvac-packs follows the same grammar."
+approved_by = "contract owner (slopvac-8l4.2), PR 570 cross-epic reply"
+
+[[allow]]
+file = "pack-manifest.schema.json"
+pointer = '/$defs/Requirement/properties/version/$ref(pack-manifest.schema.json#/$defs/VersionReq)/pattern'
+kind = "pattern-changed"
+reason = "VersionReq narrows before release: a pre-release needs a full MAJOR.MINOR.PATCH, numbers and pre-release identifiers follow the Semver def (no leading zero, no empty segment), and the pattern ends with (?![\\s\\S]) so a trailing newline no longer matches. No pack uses the pre-release forms yet. The parser in slopvac-packs follows the same grammar."
+approved_by = "contract owner (slopvac-8l4.2), PR 570 cross-epic reply"

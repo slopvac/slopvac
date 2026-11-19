@@ -52,6 +52,7 @@ proptest = "1.12.0"
 pulldown-cmark = { version = "0.13", default-features = false }
 quote = "1"
 rayon = "1.11"
+regex = "1"
 roxmltree = "0.21"
 rstest = "0.28"
 rustix = { version = "1", default-features = false, features = [
