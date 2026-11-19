@@ -201,8 +201,8 @@ def test_folded_job_ignores_the_other_class(job, other):
 @pytest.mark.parametrize(
     ("path", "adapter", "code"),
     [
-        ("crates/slopvac-diagrams/src/mermaid.rs", True, False),
-        ("crates/slopvac-engine/src/lint.rs", True, False),
+        ("crates/slopvac-diagrams/src/mermaid.rs", True, True),
+        ("crates/slopvac-engine/src/lint.rs", True, True),
         ("evals/diagrams.py", True, True),
         ("tests/test_evals_diagrams.py", True, True),
         ("tests/fixtures/diagram_eval_output.json", True, True),
