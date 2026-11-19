@@ -53,13 +53,23 @@ pub enum Refusal {
 }
 
 impl Refusal {
-    /// The stable code of a refusal that has one: `document-too-large` for
-    /// [`Refusal::TooLarge`]. The other refusals have no code yet.
+    /// The stable code of the refusal, in kebab-case. `document-too-large` is the code the
+    /// input size caps use for [`Refusal::TooLarge`]. The other refusals each have a code
+    /// that starts with `fix-`.
     #[must_use]
-    pub fn code(self) -> Option<&'static str> {
+    pub fn code(self) -> &'static str {
         match self {
-            Refusal::TooLarge => Some("document-too-large"),
-            _ => None,
+            Refusal::OutsideRoot => "fix-outside-root",
+            Refusal::Symlink => "fix-symlink",
+            Refusal::NotRegular => "fix-not-regular",
+            Refusal::Hardlinked => "fix-hardlinked",
+            Refusal::NotOwner => "fix-not-owner",
+            Refusal::TooLarge => "document-too-large",
+            Refusal::UnsafeDirectory => "fix-unsafe-directory",
+            Refusal::GroupMismatch => "fix-group-mismatch",
+            Refusal::AclPresent => "fix-acl-present",
+            Refusal::UnsupportedPlatform => "fix-unsupported-platform",
+            Refusal::Changed => "fix-changed",
         }
     }
 }

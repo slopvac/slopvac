@@ -114,7 +114,11 @@ where
                 redact::path_for_log(err.path(), &cwd),
                 err.problem()
             );
-            let _ = writeln!(err_out, "{}", CliError::new("config-unreadable", message));
+            let _ = writeln!(
+                err_out,
+                "{}",
+                CliError::new(err.code().unwrap_or("config-unreadable"), message)
+            );
             return exit::code(exit::INCOMPLETE);
         }
     };
