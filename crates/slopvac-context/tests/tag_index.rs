@@ -294,7 +294,7 @@ fn the_lookup_budget_stops_the_work_when_lookups_look_at_too_many_tags() {
     let index = TagIndex::from_pieces(wrapped_kinds(kinds)).with_lookup_budget(limit);
     let _ = take_lookup_steps();
     for _ in 0..lookups {
-        assert!(index.kinds_covering(&MISSES).is_empty());
+        assert_eq!(index.kinds_covering(&MISSES), Vec::<&str>::new());
     }
     let used = take_lookup_steps();
     assert!(index.lookup_budget_exceeded());
@@ -309,7 +309,8 @@ fn lookups_within_the_budget_answer_as_without_one() {
     let pieces = wrapped_kinds(50);
     let free = TagIndex::from_pieces(pieces.clone());
     let capped = TagIndex::from_pieces(pieces).with_lookup_budget(10_000);
-    for ranges in [&MISSES[..], &[2..5, 22..25], &[2..5]] {
+    let one = 2..5;
+    for ranges in [&MISSES[..], &[2..5, 22..25], std::slice::from_ref(&one)] {
         assert_eq!(capped.kinds_covering(ranges), free.kinds_covering(ranges));
     }
     assert!(!capped.lookup_budget_exceeded());
