@@ -11,6 +11,9 @@
 set -u
 STAGE=$1
 MODES=${2:-"interp jit callout rust"}
+FULL=$STAGE
+# `small-interp` = stage small, mode interp (one mode per stage keeps each stage short).
+case $STAGE in *-*) MODES=${STAGE#*-}; STAGE=${STAGE%%-*} ;; esac
 WT=$PWD
 SHA8=$(git rev-parse --short=8 HEAD)
 S=$HOME/tmp/spike-regex-build
@@ -18,8 +21,9 @@ D=$S/data
 IN=$WT/spike/regex-split/results/b2c
 PLUG=$WT/spike/regex-split/results/b2/plugin-patterns.jsonl
 TOOLS=$WT/spike/regex-split/tools
-OUT=$HOME/personal/dev/slopvac/.git/runs/spike-t-$SHA8-$STAGE
+OUT=$HOME/personal/dev/slopvac/.git/runs/spike-t-$SHA8-$FULL
 BENCH=$S/bin/bench
+if [ "$STAGE" != prep ] && [ -d "$OUT" ]; then mv "$OUT" "$OUT.prev-$(date +%s)"; fi
 mkdir -p "$OUT" "$S/bin"
 echo "toolchain=$(rustc --version)" > "$OUT/toolchain.txt"
 echo "host=$(hostname) arch=$(uname -m) nproc=$(nproc)" > "$OUT/host.txt"
@@ -91,7 +95,10 @@ run() {
 }
 
 # Core: rule and built-in patterns; `rust` mode only for the parity-identical ones.
-CORE=$IN/patterns.jsonl
+CORE=$S/patterns-timing.jsonl
+# The ~740 `matching.rs` probes are anchored (`\A...\z`) and only ever run on a finding's
+# span, so timing them over whole documents says nothing; they stay out of the timing set.
+grep -v 'slopvac-engine/src/matching.rs' "$IN/patterns.jsonl" > "$CORE"
 RUSTP=$S/patterns-identical.jsonl
 # Split allowlist: parity-identical minus every pattern the gap scan names ($ / (?m)^).
 cut -d'"' -f4 "$IN/gaps.jsonl" > "$S/gap-ids.txt"
@@ -116,8 +123,14 @@ small)
       run "$mode" "plugin-$a" "$PLUG" /dev/null --pattern-input "$D/attack-$a"
     done
   done ;;
-large)
-  for c in block-8m sentence-8m nearmiss-8m block-64m sentence-64m; do
+large8)
+  for c in block-8m sentence-8m nearmiss-8m; do
+    for mode in $MODES; do
+      run "$mode" "$c" "$(pats_for "$mode")" "$D/inputs/$c.txt" --reps 3
+    done
+  done ;;
+large64)
+  for c in block-64m sentence-64m; do
     for mode in $MODES; do
       run "$mode" "$c" "$(pats_for "$mode")" "$D/inputs/$c.txt" --reps 3
     done
