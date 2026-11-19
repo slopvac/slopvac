@@ -13,6 +13,9 @@ const MAX_RECORD_BYTES: u64 = 1024 * 1024;
 /// Largest wheel `INSTALLER` read; it names one program.
 const MAX_INSTALLER_BYTES: u64 = 4 * 1024;
 
+/// Where to get a release when no upgrade command applies.
+pub const RELEASES_URL: &str = "https://github.com/slopvac/slopvac/releases";
+
 /// The Python tool that put a wheel install in place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WheelTool {
