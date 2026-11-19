@@ -106,6 +106,12 @@ def test_evals_class_includes(path):
     assert in_class("evals", path)
 
 
+@pytest.mark.parametrize("path", ["CLA.md", "tests/test_cla_text.py"])
+def test_code_class_runs_the_cla_text_test(path):
+    # tests/test_cla_text.py hashes CLA.md, so a change to the agreement text must run the tests.
+    assert in_class("code", path)
+
+
 @pytest.mark.parametrize(
     "path",
     [
