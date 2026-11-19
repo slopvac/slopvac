@@ -379,3 +379,26 @@ fn tiny_tls_records_through_a_connect_proxy_are_refused() {
     assert_refused(&blob(port, &bytes, Some(&proxy)));
     assert_eq!(tunnels.load(Ordering::SeqCst), 1, "the proxy was not used");
 }
+
+/// Threat model N5 (TM-37): no option turns off certificate checks. A server
+/// whose certificate chains to a root outside the client's trust store is
+/// refused, and the same server is served to a client that trusts that root.
+#[test]
+fn tm37_a_server_with_an_untrusted_certificate_is_refused() {
+    let bytes = vec![7u8; 1024];
+    let port = tls_registry(bytes.clone(), Records::Of(1024));
+    assert_eq!(
+        blob(port, &bytes, None).unwrap(),
+        bytes,
+        "the control client trusts the root"
+    );
+
+    let r = Reference::parse(&format!("127.0.0.1:{port}/a/b:1")).unwrap();
+    let desc = Descriptor::for_bytes("x", &bytes);
+    let mut out = Vec::new();
+    let err = Client::with_credentials(Box::new(Anonymous))
+        .pull_blob(&r, &desc, &mut out)
+        .unwrap_err();
+    assert!(matches!(err, OciError::Network { .. }), "{err:?}");
+    assert!(out.is_empty(), "no body bytes were accepted");
+}
