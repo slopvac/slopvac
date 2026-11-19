@@ -43,7 +43,8 @@ fn exec(root: &Path) -> Result<String, CliFailure> {
     let m = command().get_matches_from(["migrate", root.to_str().unwrap()]);
     let mut out = Vec::new();
     let state = tempfile::tempdir().unwrap();
-    execute(&m, &NullLinter, STEERING, state.path(), &mut out).map(|()| String::from_utf8(out).unwrap())
+    execute(&m, &NullLinter, STEERING, state.path(), &mut out)
+        .map(|()| String::from_utf8(out).unwrap())
 }
 
 #[test]
