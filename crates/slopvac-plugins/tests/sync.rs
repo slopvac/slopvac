@@ -3,6 +3,7 @@
 
 mod oci_server;
 mod revocations;
+mod support;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -191,8 +192,8 @@ fn oci_lock(registry: &str, p: &Published) -> Lockfile {
 }
 
 struct Env {
-    data: tempfile::TempDir,
-    project: tempfile::TempDir,
+    data: support::Scratch,
+    project: support::Scratch,
     root: Root,
     list: ListServer,
 }
@@ -206,8 +207,8 @@ impl Env {
             list_json("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z", &[], &[]),
         );
         Self {
-            data: tempfile::tempdir().unwrap(),
-            project: tempfile::tempdir().unwrap(),
+            data: support::scratch(),
+            project: support::scratch(),
             root,
             list: ListServer::start(Some(empty)),
         }
@@ -830,7 +831,7 @@ fn tm31_a_branch_or_short_name_is_refused_as_a_git_pin(#[case] pin: &str) {
 fn a_planted_trees_link_cannot_redirect_extraction_outside_the_store() {
     // CWE-59: `trees` is a link to a directory the attacker chose.
     let env = Env::new();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = support::scratch();
     fs::create_dir_all(env.data.path().join("slopvac")).unwrap();
     std::os::unix::fs::symlink(outside.path(), env.data.path().join("slopvac/trees")).unwrap();
     let lock = lock_text(&[local_archive(&env, "style", FILES)]);
@@ -844,7 +845,7 @@ fn a_planted_trees_link_cannot_redirect_extraction_outside_the_store() {
 #[test]
 fn a_path_source_through_a_link_is_refused() {
     let env = Env::new();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = support::scratch();
     fs::write(outside.path().join("pack.toml"), b"x").unwrap();
     fs::create_dir_all(env.project.path().join("packs")).unwrap();
     std::os::unix::fs::symlink(outside.path(), env.project.path().join("packs/link")).unwrap();

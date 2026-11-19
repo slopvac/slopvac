@@ -4,6 +4,7 @@
 
 mod oci_server;
 mod revocations;
+mod support;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -54,7 +55,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
 
 /// A source repository with one commit.
 struct Remote {
-    dir: tempfile::TempDir,
+    dir: support::Scratch,
     commit: String,
 }
 
@@ -79,7 +80,7 @@ impl Remote {
     }
 
     fn build(fill: impl FnOnce(&Path)) -> Self {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = support::scratch();
         let work = dir.path().join("repo");
         fs::create_dir(&work).unwrap();
         git(&work, &["init", "--quiet"]);
@@ -134,7 +135,7 @@ impl Remote {
 
 /// The tree hash of `files`, computed on a plain directory, not through git.
 fn expected_digest(files: &[(&str, &[u8])]) -> String {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     for (name, data) in files {
         let path = dir.path().join(name);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -144,8 +145,8 @@ fn expected_digest(files: &[(&str, &[u8])]) -> String {
 }
 
 struct Env {
-    data: tempfile::TempDir,
-    project: tempfile::TempDir,
+    data: support::Scratch,
+    project: support::Scratch,
     root: Root,
     list: ListServer,
 }
@@ -158,8 +159,8 @@ impl Env {
             list_json("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z", &[], &[]),
         );
         Self {
-            data: tempfile::tempdir().unwrap(),
-            project: tempfile::tempdir().unwrap(),
+            data: support::scratch(),
+            project: support::scratch(),
             root,
             list: ListServer::start(Some(empty)),
         }
@@ -453,7 +454,7 @@ fn an_executable_file_keeps_its_bit_when_the_commit_lists_it() {
     let files: &[(&str, &[u8])] = &[("bin/run", b"#!/bin/sh\n"), (".slopvac-exec", b"bin/run\n")];
     let remote = Remote::with_files(files, &["bin/run"]);
     // The expected digest comes from a plain directory with the same mode.
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     fs::create_dir(dir.path().join("bin")).unwrap();
     fs::write(dir.path().join("bin/run"), b"#!/bin/sh\n").unwrap();
     fs::set_permissions(
@@ -532,7 +533,7 @@ fn n10_a_symlink_or_a_submodule_in_the_commit_is_refused() {
 #[test]
 fn tm40_hooks_filters_and_attributes_in_the_repository_do_nothing() {
     use std::os::unix::fs::PermissionsExt;
-    let marker_dir = tempfile::tempdir().unwrap();
+    let marker_dir = support::scratch();
     let marker = marker_dir.path().join("ran");
     let marker_text = marker.display().to_string();
     let script = format!("#!/bin/sh\ntouch '{marker_text}'\n");

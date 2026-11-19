@@ -2,6 +2,8 @@
 //! `docs/contract/threat-model.md`. Test names cite the test ids TM-14 to TM-18
 //! and H22 (`docs/contract/plugin-protocol.md` section 12.1).
 
+mod support;
+
 use std::fs;
 use std::path::Path;
 
@@ -13,7 +15,7 @@ use slopvac_plugins::apply::{
 #[cfg(unix)]
 use slopvac_plugins::apply::{SeamStage, WriteOutcome};
 use slopvac_plugins::hooks::{FixEdit, MAX_INSERTED_BYTES, RecipeAction, RecipeFile, Span};
-use tempfile::TempDir;
+use support::Scratch;
 
 fn edit(start: u64, end: u64, text: &str) -> FixEdit {
     FixEdit {
@@ -51,13 +53,13 @@ fn dry() -> PlanOptions {
 
 /// A project root and a sibling directory outside it.
 struct Sandbox {
-    _tmp: TempDir,
+    _tmp: Scratch,
     root: std::path::PathBuf,
     outside: std::path::PathBuf,
 }
 
 fn sandbox() -> Sandbox {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = support::scratch();
     let root = tmp.path().join("project");
     let outside = tmp.path().join("outside");
     fs::create_dir(&root).unwrap();

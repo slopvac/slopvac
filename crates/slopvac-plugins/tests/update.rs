@@ -4,6 +4,7 @@
 
 mod oci_server;
 mod revocations;
+mod support;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
@@ -228,7 +229,7 @@ fn entry(id: &str, registry: &str, current: &Release, signed: bool) -> String {
 }
 
 struct Env {
-    dir: tempfile::TempDir,
+    dir: support::Scratch,
     root: Root,
     list: ListServer,
 }
@@ -242,7 +243,7 @@ impl Env {
             list_json("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z", &[], &[]),
         );
         Self {
-            dir: tempfile::tempdir().unwrap(),
+            dir: support::scratch(),
             root,
             list: ListServer::start(Some(empty)),
         }
