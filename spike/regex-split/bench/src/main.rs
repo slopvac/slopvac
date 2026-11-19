@@ -100,6 +100,10 @@ fn main() {
             continue;
         }
         let text = text.unwrap_or_else(|| main_text.clone());
+        let _ = std::fs::write(
+            format!("{out}.cur"),
+            format!("{id}\t{label}\t{}", p["origin"].as_str().unwrap_or("")),
+        );
         let len = text.len();
         let source = p["source"].as_str().unwrap().to_owned();
         let caseless = p["caseless"].as_bool().unwrap();

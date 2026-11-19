@@ -5,7 +5,8 @@
 // PCRE -> JS translation is best effort and conservative (atomic and possessive become
 // plain groups and greedy quantifiers), so recheck may call a safe PCRE2 pattern
 // vulnerable; the measured runs decide.
-import { checkSync } from "recheck";
+import recheckPkg from "recheck";
+const { checkSync } = recheckPkg;
 import fs from "node:fs";
 import path from "node:path";
 
