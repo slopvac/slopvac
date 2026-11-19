@@ -1,0 +1,72 @@
+# The core pack: the rules, styles, genres and taggers compiled into the binary.
+# The loader replaces `version` with the binary's version. Genre and tagger order is the
+# registration order, which breaks detection ties, so keep it.
+schema_version = 3
+id = "core"
+version = "0.0.0"
+slopvac_api = 1
+kind = "data"
+description = "The rules, styles, genres and taggers built into slopvac."
+license = "Apache-2.0"
+
+[provides]
+categories = [
+  "categories/ai-residue.json",
+  "categories/ai-tells-agentic.json",
+  "categories/ai-tells-content-shape.json",
+  "categories/ai-tells-figurative.json",
+  "categories/ai-tells-formatting.json",
+  "categories/ai-tells-register.json",
+  "categories/ai-tells-structure.json",
+  "categories/docs-discipline.json",
+  "categories/orwell.json",
+  "categories/prose-agency.json",
+  "categories/prose-craft.json",
+  "categories/prose-discipline.json",
+  "categories/prose-format.json",
+  "categories/prose-inclusive.json",
+  "categories/prose-inflation.json",
+  "categories/prose-promotion.json",
+  "categories/prose-scope.json",
+  "categories/ste-descriptive.json",
+  "categories/ste-nouns.json",
+  "categories/ste-practices.json",
+  "categories/ste-procedural.json",
+  "categories/ste-punctuation.json",
+  "categories/ste-safety.json",
+  "categories/ste-sentences.json",
+  "categories/ste-verbs.json",
+  "categories/ste-words.json",
+]
+styles = ["styles/ste.toml", "styles/google.toml"]
+genres = [
+  "genres/consumer.yaml",
+  "genres/reference.yaml",
+  "genres/change-comms.yaml",
+  "genres/internal.yaml",
+  "genres/informal.yaml",
+  "genres/security.yaml",
+  "genres/ui-copy.yaml",
+  "genres/agent-instructions.yaml",
+  "genres/tutorial.yaml",
+  "genres/how-to.yaml",
+  "genres/reference-page.yaml",
+  "genres/explanation.yaml",
+]
+taggers = [
+  "taggers/change-note-heading.yaml",
+  "taggers/change-note-changelog-heading.yaml",
+  "taggers/change-note-version-heading.yaml",
+  "taggers/change-note-admonition.yaml",
+  "taggers/change-note-file.yaml",
+  "taggers/procedure-heading.yaml",
+  "taggers/safety-admonition.yaml",
+  "taggers/safety-heading.yaml",
+  "taggers/example-heading.yaml",
+  "taggers/example-admonition.yaml",
+  "taggers/quote-block.yaml",
+  "taggers/generated-heading.yaml",
+  "taggers/generated-frontmatter.yaml",
+  "taggers/generated-notice.yaml",
+  "taggers/change-note-version-sentence.yaml",
+]

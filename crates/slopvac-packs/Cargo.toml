@@ -10,10 +10,15 @@ publish.workspace = true
 
 [dependencies]
 semver.workspace = true
+serde_json.workspace = true
+slopvac-config.workspace = true
+slopvac-context.workspace = true
 slopvac-fs.workspace = true
 slopvac-model.workspace = true
 slopvac-plugins.workspace = true
+slopvac-rules.workspace = true
 slopvac-sanitize.workspace = true
+slopvac-styles.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 
@@ -21,7 +26,7 @@ toml.workspace = true
 proptest.workspace = true
 regex.workspace = true
 rstest.workspace = true
-serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
