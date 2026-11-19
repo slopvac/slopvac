@@ -469,21 +469,39 @@ fn lint_with(
     })
 }
 
-/// The versions this build supports, taken from the crates that own them.
+/// The versions this build supports, taken from the crates that own them. Keys are the file
+/// names under `schemas/v3`, without the `.schema.json` suffix.
 fn supported_versions() -> slopvac_update::command::Supported {
-    // `slopvac-config` and `slopvac-agents` own the config and prime versions, `slopvac-model`
-    // owns the report version and the extension API.
+    // A config-style file is checked by `slopvac-config`, which owns its version; styles share it.
     let config = u64::try_from(slopvac_config::version::SUPPORTED).unwrap_or_default();
+    let lock = u64::try_from(slopvac_plugins::lock::LOCK_SCHEMA_VERSION).unwrap_or_default();
+    let report = u64::from(slopvac_model::SchemaVersion::VALUE);
     slopvac_update::command::Supported {
         schema_versions: std::collections::BTreeMap::from([
+            (
+                "blocklist",
+                vec![u64::from(slopvac_terms::BLOCKLIST_SCHEMA_VERSION)],
+            ),
+            ("category", vec![report]),
             ("config", vec![config]),
             (
-                "lint-report",
-                vec![u64::from(slopvac_model::SchemaVersion::VALUE)],
+                "doctor-report",
+                vec![u64::from(crate::doctor::SCHEMA_VERSION)],
             ),
             (
-                "prime",
-                vec![u64::from(slopvac_agents::prime::SCHEMA_VERSION)],
+                "genre",
+                vec![u64::from(slopvac_context::GENRE_SCHEMA_VERSION)],
+            ),
+            ("lint-report", vec![report]),
+            ("packs-lock", vec![lock]),
+            ("style", vec![config]),
+            (
+                "tagger",
+                vec![u64::from(slopvac_context::TAGGER_SCHEMA_VERSION)],
+            ),
+            (
+                "terms",
+                vec![u64::from(slopvac_terms::TERMS_SCHEMA_VERSION)],
             ),
         ]),
         slopvac_api: slopvac_model::ApiVersion::SUPPORTED
