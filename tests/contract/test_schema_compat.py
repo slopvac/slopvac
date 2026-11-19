@@ -1381,6 +1381,7 @@ def test_unverified_recursion_stop_is_suppressed_by_an_allow_entry(tmp_path):
 @pytest.mark.parametrize("keyword", ["enum", "const", "default"])
 def test_portable_end_anchor_equivalence_is_limited_to_pattern(tmp_path, keyword):
     """A rule regex held in another keyword compiles with PCRE2, where `$` differs."""
+
     def body(regex: str) -> dict:
         value = [regex] if keyword == "enum" else regex
         return schema(properties={"s": {"type": "string", keyword: value}})
