@@ -111,7 +111,7 @@ the original file bytes, and a segment range does not. `SegmentRange` takes no `
   bidirectional overrides (U+202A to U+202E, U+2066 to U+2069). Every other character,
   including `/`, `#`, `[`, `]`, `@` and non-ASCII text, appears as is. A `%` in a locator
   is always the start of a `%XX` escape, so the schema rejects `%zz` and `%0a`.
-- Length: at most 512 code points. A producer that needs more shortens the path by using
+- Length: at most 3072 code points, three times the 1024-character limit on an extractor locator. A producer that needs more shortens the path by using
   a stable id the format provides, and never truncates.
 - Uniqueness: within one document, a `locator` identifies one `segment` and a `segment`
   has one `locator`. Findings in the same segment share both and differ in `range`. Each pair of

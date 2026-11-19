@@ -587,7 +587,7 @@
       ]
     },
     "BinaryFormat": {
-      "description": "Format id of a binary document, from the 3.0 list in docs/contract/plugin-protocol.md section 5.5.1. The enum is extensible (x-slopvac-extensible, bead slopvac-8l4.2.61): a later release may add ids without a new protocol version. A plugin or reader that receives an id it does not know declines that document with binary-input-declined, reason unknown-format, and does not fail the request. Manifest validation applies the list strictly: the host refuses a manifest that declares an id outside its own list.",
+      "description": "Format id of a binary document, from the 3.0 list in docs/contract/plugin-protocol.md section 5.5.1. The enum is extensible (x-slopvac-extensible): a later release may add ids without a new protocol version. A plugin or reader that receives an id it does not know declines that document with binary-input-declined, reason unknown-format, and does not fail the request. Manifest validation applies the list strictly: the host refuses a manifest that declares an id outside its own list.",
       "x-slopvac-extensible": true,
       "enum": [
         "docx",
@@ -725,7 +725,7 @@
       ]
     },
     "BinaryBudget": {
-      "description": "The budget an extract-budget error names in data.budget. This def is the one list of allowed values; docs/contract/plugin-protocol.md section 5.5.5 gives each value its limit, which an extract-budget error carries in data.limit in the unit of that table. The enum is extensible (x-slopvac-extensible, bead slopvac-8l4.2.61): a reader keeps a value it does not know.",
+      "description": "The budget an extract-budget error names in data.budget. This def is the one list of allowed values; docs/contract/plugin-protocol.md section 5.5.5 gives each value its limit, which an extract-budget error carries in data.limit in the unit of that table. The enum is extensible (x-slopvac-extensible): a reader keeps a value it does not know.",
       "x-slopvac-extensible": true,
       "enum": [
         "segments",
