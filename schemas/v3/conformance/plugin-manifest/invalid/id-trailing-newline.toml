@@ -1,0 +1,5 @@
+schema_version = 3
+id = "tiny\n"
+version = "0.1.0"
+slopvac_api = 1
+kind = "data"

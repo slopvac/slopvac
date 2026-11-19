@@ -20,3 +20,7 @@
 "missing-citation.json" = ""
 "unknown-key.json" = ""
 "pattern-long-unicode-escape.json" = "/match"
+"id-trailing-newline.json" = "/id"
+"metric-trailing-newline.json" = "/match"
+"ste-ref-trailing-newline.json" = "/citation/ste_ref"
+"placeholder-name-trailing-newline.json" = "/match"
