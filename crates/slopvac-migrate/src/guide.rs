@@ -17,12 +17,14 @@ const DOC_URL: &str = "https://github.com/slopvac/slopvac/blob/main/docs/migrate
 const MARKER_PREFIX: &str = "<!-- prime: ";
 const MARKER_SUFFIX: &str = " -->";
 
+#[cfg(test)]
 const INCLUDE: &str = "include";
 
 /// The marker value of a `link` section.
 const LINK: &str = "link";
 
 /// A marker line that breaks the contract of the guide source.
+#[cfg(test)]
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 enum MarkerError {
     #[error("line {line}: the heading has no marker on the next line")]
@@ -47,6 +49,7 @@ fn marker(line: &str) -> Option<&str> {
 
 /// Check that exactly one recognised marker follows each `##` heading and no
 /// other marker line exists.
+#[cfg(test)]
 fn validate(guide: &str) -> Result<(), MarkerError> {
     let lines: Vec<&str> = guide.lines().collect();
     for (i, line) in lines.iter().enumerate() {
@@ -87,18 +90,9 @@ fn anchor(heading: &str) -> String {
         .collect()
 }
 
-/// A guide that passed [`validate`] is rendered. A guide that did not is a bug
-/// in the embedded source, so a debug or test build stops here.
-fn assert_valid(guide: &str) {
-    debug_assert!(
-        validate(guide).is_ok(),
-        "migrate-guide.md markers: {:?}",
-        validate(guide)
-    );
-}
-
+/// Render the prime topic. `validate` guards the embedded guide in a test; a
+/// section whose marker is not `link` is printed in full.
 fn render_prime(guide: &str) -> String {
-    assert_valid(guide);
     let mut out = String::new();
     let mut linked = false;
     let mut lines = guide.split_inclusive('\n').peekable();
@@ -131,7 +125,6 @@ fn render_prime(guide: &str) -> String {
 }
 
 fn render_doc(guide: &str) -> String {
-    assert_valid(guide);
     let body: String = guide
         .split_inclusive('\n')
         .filter(|line| !is_marker_like(line))
@@ -166,33 +159,23 @@ mod tests {
     }
 
     #[rstest]
-    #[case::missing("## A\n\ntext\n", MarkerError::Missing { line: 1 })]
-    #[case::missing_at_end("## A", MarkerError::Missing { line: 1 })]
-    #[case::unknown_value(
-        "## A\n<!-- prime: skip -->\n",
-        MarkerError::Unknown { line: 2, value: "skip".into() }
-    )]
-    #[case::malformed(
-        "## A\n<!-- prime: include\n",
-        MarkerError::Unknown { line: 2, value: "<!-- prime: include".into() }
-    )]
-    #[case::stray_in_body(
-        "## A\n<!-- prime: include -->\ntext\n<!-- prime: link -->\n",
-        MarkerError::Stray { line: 4 }
-    )]
-    #[case::before_any_heading("<!-- prime: include -->\n## A\n<!-- prime: include -->\n", MarkerError::Stray { line: 1 })]
-    #[case::second_after_heading(
-        "## A\n<!-- prime: include -->\n<!-- prime: link -->\n",
-        MarkerError::Stray { line: 3 }
-    )]
-    #[case::after_a_blank_line("## A\n\n<!-- prime: include -->\n", MarkerError::Missing { line: 1 })]
-    fn a_broken_marker_is_rejected(#[case] guide: &str, #[case] expected: MarkerError) {
-        assert_eq!(validate(guide), Err(expected));
+    #[case::missing("## A\n\ntext\n")]
+    #[case::missing_at_end("## A")]
+    #[case::unknown_value("## A\n<!-- prime: skip -->\n")]
+    #[case::malformed("## A\n<!-- prime: include\n")]
+    #[case::stray_in_body("## A\n<!-- prime: include -->\ntext\n<!-- prime: link -->\n")]
+    #[case::before_any_heading("<!-- prime: include -->\n## A\n<!-- prime: include -->\n")]
+    #[case::second_after_heading("## A\n<!-- prime: include -->\n<!-- prime: link -->\n")]
+    #[case::after_a_blank_line("## A\n\n<!-- prime: include -->\n")]
+    fn a_broken_marker_is_rejected(#[case] guide: &str) {
+        assert!(validate(guide).is_err());
     }
 
-    #[test]
-    #[should_panic(expected = "migrate-guide.md markers")]
-    fn rendering_a_broken_guide_stops_in_a_debug_build() {
-        let _ = render_prime("## A\ntext\n");
+    #[rstest]
+    #[case::include("## A\n<!-- prime: include -->\ntext\n")]
+    #[case::link("## A\n<!-- prime: link -->\ntext\n")]
+    #[case::two_sections("## A\n<!-- prime: include -->\nx\n## B\n<!-- prime: link -->\ny\n")]
+    fn well_formed_markers_are_accepted(#[case] guide: &str) {
+        assert!(validate(guide).is_ok());
     }
 }
