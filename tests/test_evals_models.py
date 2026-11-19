@@ -260,6 +260,94 @@ def test_an_update_planted_review_prompt_names_the_change_as_intended(update_pla
     assert update_planted["candidate"] in update_planted["prompt"]
 
 
+def one_update_task(tmp_path, paragraph, old="40", new="50"):
+    """The update planted task from a one-paragraph parent whose edit starts line 1."""
+    first = split_first_sentence(paragraph)
+    (task,) = planted_tasks_from(
+        tmp_path,
+        "update",
+        paragraph,
+        edits=[
+            {
+                "kind": "number",
+                "detail": f"{old} -> {new}",
+                "original_sentence": first,
+                "line": 1,
+            }
+        ],
+    )
+    return task
+
+
+def split_first_sentence(paragraph):
+    from evals.textops import split_sentences
+
+    return split_sentences(paragraph)[0]
+
+
+QUEUE_40 = "The queue holds 40 jobs before it blocks writers."
+QUEUE_63 = "The queue holds 63 jobs before it blocks writers."
+
+
+def test_a_review_that_reports_only_the_intended_update_does_not_succeed(tmp_path):
+    task = one_update_task(tmp_path, f"{QUEUE_40} {QUEUE_63}")
+    only_intended = json.dumps([{"quote": QUEUE_40[:-1], "problem": "number changed"}])
+    scored = models.score_review(task, only_intended)
+    assert (scored["found"], scored["success"]) == (0, False)
+
+
+def test_a_review_that_quotes_the_damaged_sentence_succeeds_beside_the_update(
+    tmp_path,
+):
+    task = one_update_task(tmp_path, f"{QUEUE_40} {QUEUE_63}")
+    answer = json.dumps([{"quote": QUEUE_63[:-1], "problem": "number changed"}])
+    scored = models.score_review(task, answer)
+    assert (scored["found"], scored["false_alarms"], scored["success"]) == (1, 0, True)
+
+
+@pytest.mark.parametrize("side", ["original", "changed"])
+def test_a_finding_on_either_side_of_the_intended_change_is_not_damage(side):
+    task = {
+        "variant": "planted",
+        "passage": f"{QUEUE_40}\n{QUEUE_63}\nThe queue holds 50 jobs before it blocks writers.",
+        "edits": [{"kind": "number", "sentence": QUEUE_63}],
+        "intended": [QUEUE_40, "The queue holds 50 jobs before it blocks writers."],
+    }
+    quote = QUEUE_40 if side == "original" else task["intended"][1]
+    scored = models.score_review(
+        task, json.dumps([{"quote": quote[:-1], "problem": "x"}])
+    )
+    assert scored["found"] == 0
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [("40", "50"), ("7", "9"), ("12", "13"), ("21", "22"), ("64", "65"), ("3", "4")],
+)
+def test_a_sentence_the_change_turns_into_a_copy_of_another_stays_protected(
+    tmp_path, old, new
+):
+    first = f"The shared cache holds {old} items in memory today."
+    second = f"The shared cache holds {new} items in memory today."
+    task = one_update_task(tmp_path, f"{first} {second}", old, new)
+    # Sentence 0 becomes a copy of sentence 1, and only sentence 1 may be damaged.
+    assert [e["sentence"] for e in task["edits"]] == [second]
+    assert task["candidate"].startswith(second)
+    assert task["intended"] == [first, second]
+
+
+@pytest.mark.parametrize("neighbour", ["40.5", "40,500", "1,40", "3.40", "40.5.1"])
+def test_the_update_changes_whole_numbers_only(tmp_path, neighbour):
+    paragraph = (
+        f"The limit is {neighbour} seconds and the quota is 40 items. "
+        "Run `purge` to empty it before restart."
+    )
+    task = one_update_task(tmp_path, paragraph)
+    assert task["candidate"] == (
+        f"The limit is {neighbour} seconds and the quota is 50 items."
+    )
+
+
 def test_update_tasks_carry_the_stated_change_and_it_is_in_the_passage(corpus):
     manifest, cache = corpus
     for task in (
