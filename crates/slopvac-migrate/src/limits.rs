@@ -3,7 +3,10 @@
 use std::fs::File;
 use std::path::Path;
 
+use cap_std::fs::Dir;
+
 use slopvac_config::{MAX_CONFIG_BYTES, MAX_DOCUMENT_BYTES};
+use slopvac_terms::MAX_TERMS_FILE_BYTES;
 
 use crate::Error;
 
@@ -42,6 +45,7 @@ impl Default for Limits {
 pub(crate) enum Kind {
     Config,
     Document,
+    Terms,
 }
 
 impl Kind {
@@ -49,6 +53,7 @@ impl Kind {
         match self {
             Self::Config => MAX_CONFIG_BYTES,
             Self::Document => MAX_DOCUMENT_BYTES,
+            Self::Terms => MAX_TERMS_FILE_BYTES,
         }
     }
 
@@ -57,6 +62,7 @@ impl Kind {
         match self {
             Self::Config => Error::ConfigTooLarge { path, cap },
             Self::Document => Error::DocumentTooLarge { path, cap },
+            Self::Terms => Error::TermsFileTooLarge { path, cap },
         }
     }
 }
@@ -118,6 +124,49 @@ impl Budget {
         })
     }
 
+    /// Read the regular file at `rel` below `root` as UTF-8 text, within the cap for `kind` and
+    /// the run's byte budget.
+    ///
+    /// Every component of `rel` is opened through the handle without following links, so a
+    /// parent swapped for a symlink after the caller's checks cannot redirect the read.
+    /// `shown` is the path that errors carry. A file that is missing, not regular or hard-linked
+    /// is a [`Refused`] for the caller to report. A symlink on the way is [`Error::Unsafe`].
+    pub(crate) fn read_in(
+        &mut self,
+        root: &Dir,
+        rel: &Path,
+        shown: &Path,
+        kind: Kind,
+    ) -> Result<Result<String, Refused>, Error> {
+        use slopvac_fs::InputKind;
+        let bytes = match slopvac_fs::read_capped_regular_in(root, rel, kind.cap()) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                return match e.input_kind() {
+                    Some(InputKind::NotFound) => Ok(Err(Refused::NotFound)),
+                    Some(InputKind::NotRegular) => Ok(Err(Refused::NotRegular)),
+                    Some(InputKind::MultiplyLinked) => Ok(Err(Refused::MultiplyLinked)),
+                    Some(InputKind::TooLarge) => Err(kind.too_large(shown)),
+                    Some(InputKind::Symlink) => Err(Error::Unsafe(format!(
+                        "{}: a path component is a symbolic link",
+                        rel.display()
+                    ))),
+                    Some(InputKind::UnsafePath) => Err(Error::Unsafe(format!(
+                        "{}: path leaves the project",
+                        rel.display()
+                    ))),
+                    _ => Err(Error::read(shown, e)),
+                };
+            }
+        };
+        self.charge_bytes(shown, bytes.len())?;
+        String::from_utf8(bytes)
+            .map(Ok)
+            .map_err(|_| Error::NotUtf8 {
+                path: shown.display().to_string(),
+            })
+    }
+
     /// Check text that is not read from disk, such as a rewritten document, against the
     /// same cap and budget as a read.
     pub(crate) fn check_text(&mut self, path: &Path, kind: Kind, text: &str) -> Result<(), Error> {
@@ -126,4 +175,12 @@ impl Budget {
         }
         self.charge_bytes(path, text.len())
     }
+}
+
+/// Why a confined read found no file to take. The caller reports it at the setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Refused {
+    NotFound,
+    NotRegular,
+    MultiplyLinked,
 }
