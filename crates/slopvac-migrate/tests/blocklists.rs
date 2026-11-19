@@ -8,7 +8,8 @@ use std::path::Path;
 
 use rstest::rstest;
 use slopvac_migrate::{
-    Error, NullLinter, Options, Plan, RenameTable, apply, command, plan, render_diff, run,
+    Error, Limits, NullLinter, Options, Plan, RenameTable, apply, command, plan, plan_with_limits,
+    render_diff, run,
 };
 use slopvac_terms::{Blocklist, Pos};
 
