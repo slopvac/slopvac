@@ -632,6 +632,31 @@ fn the_command_rejects_a_pack_with_nothing_to_run() {
 }
 
 #[test]
+fn the_plugin_option_names_the_plugin_whose_rule_runs() {
+    let dir = pack_dir(1);
+    let (code, out) = cli(&[
+        dir.path().to_str().unwrap(),
+        "--plugin",
+        "acme",
+        "--rule",
+        "acme:cat.r",
+    ]);
+    assert_eq!(
+        (code, out.as_str()),
+        (0, "1 passed, 0 failed, 0 incomplete\n")
+    );
+}
+
+#[test]
+fn the_retired_pack_option_is_a_usage_error() {
+    let dir = pack_dir(1);
+    let err = slopvac_engine::cases::cli::command()
+        .try_get_matches_from(["cases", dir.path().to_str().unwrap(), "--pack", "acme"])
+        .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+}
+
+#[test]
 fn the_command_rejects_an_unknown_rule() {
     let dir = pack_dir(1);
     let m = slopvac_engine::cases::cli::command()
