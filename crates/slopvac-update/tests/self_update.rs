@@ -455,9 +455,19 @@ impl Fetcher for Gate {
 
 type Outcome = Result<String, command::Failure>;
 
+/// What the second update of a [`race`] reports to the test.
+enum Event {
+    /// It found the lock held and is waiting for it.
+    Waiting,
+    /// It ended, which is only possible without a lock to wait for.
+    Finished,
+}
+
 /// Two `self update` runs on one installed binary. The first stops inside its download, so it
-/// holds the lock. The second starts then and has to wait for the lock. Returns the install and
-/// each run's outcome, first then second.
+/// holds the lock. The second starts then. The test lets the first go only after the second
+/// reports that it is waiting for the lock, or has finished because nothing made it wait, so the
+/// order of the two runs never depends on timing. Returns the install and each run's outcome,
+/// first then second.
 fn race(first: (&str, &[u8]), second: (&str, &[u8])) -> (Fixture, Outcome, Outcome) {
     use std::sync::mpsc::channel;
 
@@ -471,6 +481,7 @@ fn race(first: (&str, &[u8]), second: (&str, &[u8])) -> (Fixture, Outcome, Outco
     };
     let (entered_tx, entered_rx) = channel();
     let (release_tx, release_rx) = channel();
+    let (event_tx, event_rx) = channel();
     let (first_out, second_out) = std::thread::scope(|scope| {
         let first_run = scope.spawn(|| {
             // `Runtime` is not `Send`, so each thread builds its own.
@@ -485,8 +496,16 @@ fn race(first: (&str, &[u8]), second: (&str, &[u8])) -> (Fixture, Outcome, Outco
         entered_rx.recv().unwrap();
         let second_run = scope.spawn(|| {
             let plain = signed_release(&keys, second.0, second.1);
-            update(&build(second.0, Arc::new(plain)))
+            let mut rt = build(second.0, Arc::new(plain));
+            let waiting = std::sync::Mutex::new(event_tx.clone());
+            rt.on_lock_wait = Some(Arc::new(move || {
+                let _ = waiting.lock().unwrap().send(Event::Waiting); // The test may be past it.
+            }));
+            let outcome = update(&rt);
+            let _ = event_tx.send(Event::Finished); // The test may be past it.
+            outcome
         });
+        event_rx.recv().unwrap();
         release_tx.send(()).unwrap();
         (first_run.join().unwrap(), second_run.join().unwrap())
     });

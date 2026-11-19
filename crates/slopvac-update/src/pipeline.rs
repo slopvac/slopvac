@@ -119,6 +119,16 @@ pub fn asset_name(target: &str) -> String {
     format!("slopvac-{target}.tar.gz")
 }
 
+/// A callback that the update calls while it waits for another update to release the lock.
+#[derive(Clone, Copy)]
+struct WaitObserver<'a>(&'a dyn Fn());
+
+impl std::fmt::Debug for WaitObserver<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WaitObserver")
+    }
+}
+
 /// The installed executable and what is known about the process that updates it.
 #[derive(Debug, Clone)]
 pub struct Host<'a> {
@@ -126,6 +136,7 @@ pub struct Host<'a> {
     running_sha: Option<String>,
     lock_timeout: Duration,
     probe_timeout: Duration,
+    on_lock_wait: Option<WaitObserver<'a>>,
 }
 
 impl<'a> Host<'a> {
@@ -141,7 +152,16 @@ impl<'a> Host<'a> {
             running_sha,
             lock_timeout: lock::DEFAULT_TIMEOUT,
             probe_timeout: probe::DEFAULT_TIMEOUT,
+            on_lock_wait: None,
         }
+    }
+
+    /// Call `observer` each time the update finds the lock held by another update and is about
+    /// to wait for it. It runs on the updating thread and must not block.
+    #[must_use]
+    pub fn on_lock_wait(mut self, observer: &'a dyn Fn()) -> Self {
+        self.on_lock_wait = Some(WaitObserver(observer));
+        self
     }
 }
 
@@ -197,7 +217,12 @@ pub fn update(
     if new <= cur {
         return Err(not_newer(current));
     }
-    let mut lock = UpdateLock::acquire(exe, host.lock_timeout)?;
+    let mut lock = match host.on_lock_wait {
+        Some(WaitObserver(observer)) => {
+            UpdateLock::acquire_observed(exe, host.lock_timeout, observer)
+        }
+        None => UpdateLock::acquire(exe, host.lock_timeout),
+    }?;
     // Another update, or another installer, may have put a version on disk since this process
     // started. The version is established under the lock, so no update is in flight while it is
     // compared.

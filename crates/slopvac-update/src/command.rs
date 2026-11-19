@@ -76,6 +76,9 @@ pub struct Runtime {
     /// Fingerprint of the running binary taken when the process started, for the update's
     /// check that nobody replaced it. `None` takes it when `self update` begins.
     pub running_sha: Option<String>,
+    /// Called each time `self update` finds the update lock held by another update and waits
+    /// for it. `None` waits silently.
+    pub on_lock_wait: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl Runtime {
@@ -118,6 +121,7 @@ impl Runtime {
             target: pipeline::target_triple(),
             cache,
             running_sha: None,
+            on_lock_wait: None,
         }
     }
 
@@ -214,6 +218,11 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
             UpdateError::UnsupportedPlatform.to_string(),
         )
     })?;
+    let host = pipeline::Host::new(&rt.exe, running_sha);
+    let host = match &rt.on_lock_wait {
+        Some(observer) => host.on_lock_wait(&**observer),
+        None => host,
+    };
     pipeline::update(
         &*rt.fetcher,
         &*rt.verifier,
@@ -221,7 +230,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
         &rt.current,
         &latest,
         target,
-        &pipeline::Host::new(&rt.exe, running_sha),
+        &host,
     )
     .map_err(|e| {
         let code = match e {

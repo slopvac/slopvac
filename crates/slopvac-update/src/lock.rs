@@ -272,6 +272,16 @@ pub(crate) fn recovery_hint(exe: &Path) -> String {
 impl UpdateLock {
     /// Take the lock for `exe`, waiting up to `timeout` for another update to release it.
     pub(crate) fn acquire(exe: &Path, timeout: Duration) -> Result<Self, LockError> {
+        Self::acquire_observed(exe, timeout, &|| {})
+    }
+
+    /// Like [`UpdateLock::acquire`], calling `on_wait` each time the lock is held by another
+    /// update and this one is about to wait for it.
+    pub(crate) fn acquire_observed(
+        exe: &Path,
+        timeout: Duration,
+        on_wait: &dyn Fn(),
+    ) -> Result<Self, LockError> {
         let path = lock_path(exe);
         let name = path
             .file_name()
@@ -310,6 +320,7 @@ impl UpdateLock {
                     });
                 }
                 Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                    on_wait();
                     std::thread::sleep(POLL);
                 }
                 Err(TryLockError::WouldBlock) => return Err(LockError::Busy(name)),
