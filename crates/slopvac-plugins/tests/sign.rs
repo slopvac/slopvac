@@ -869,3 +869,76 @@ fn a_first_party_pack_verifies_only_when_the_signing_key_is_injected() {
     };
     assert_eq!(run(&s, &injected, &first_party_expect()), Ok(()));
 }
+
+fn reserved_policy(compiled: &Key, pinned_for: &str, pinned: &Key) -> KeyPolicy {
+    KeyPolicy {
+        first_party: vec![compiled.public()],
+        first_party_namespaces: vec!["slopvac".into()],
+        pinned: BTreeMap::from([(pinned_for.to_owned(), vec![pinned.public()])]),
+    }
+}
+
+fn signed_in(key: &Key, namespace: &str) -> Signed {
+    sign_manifest(
+        key,
+        namespace,
+        ID,
+        "1.2.0",
+        "2026-11-01T00:00:00Z",
+        &[(LAYER, b"x")],
+    )
+}
+
+#[test]
+fn a_core_artifact_is_refused_whatever_key_signed_it() {
+    let compiled = Key::new();
+    let pinned = Key::new();
+    let policy = reserved_policy(&compiled, "core", &pinned);
+    let e = Expectation {
+        namespace: "core",
+        ..expect()
+    };
+    for (who, key) in [("pinned", &pinned), ("compiled", &compiled)] {
+        assert!(
+            matches!(
+                run(&signed_in(key, "core"), &policy, &e),
+                Err(SignError::KeyNotPinned { .. })
+            ),
+            "core signed by the {who} key"
+        );
+    }
+    // A policy that lists core as first-party does not open it either.
+    let listed = KeyPolicy {
+        first_party_namespaces: vec!["slopvac".into(), "core".into()],
+        ..policy
+    };
+    assert!(matches!(
+        run(&signed_in(&compiled, "core"), &listed, &e),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[test]
+fn a_slopvac_artifact_signed_by_a_pinned_key_is_refused_even_without_the_first_party_list() {
+    let compiled = Key::new();
+    let pinned = Key::new();
+    let e = Expectation {
+        namespace: "slopvac",
+        ..expect()
+    };
+    let bare = KeyPolicy {
+        first_party: vec![compiled.public()],
+        first_party_namespaces: Vec::new(),
+        pinned: BTreeMap::from([("slopvac".to_owned(), vec![pinned.public()])]),
+    };
+    assert!(matches!(
+        run(&signed_in(&pinned, "slopvac"), &bare, &e),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+    assert_eq!(run(&signed_in(&compiled, "slopvac"), &bare, &e), Ok(()));
+}
+
+#[test]
+fn the_plugins_key_slot_holds_no_key_until_one_is_issued() {
+    assert!(slopvac_plugins::sign::plugins_key().unwrap().is_none());
+}

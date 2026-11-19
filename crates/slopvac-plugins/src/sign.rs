@@ -162,8 +162,44 @@ impl PublicKey {
 /// The secret half lives in release CI; see `docs/release/maintainer-setup.md`.
 pub(crate) const RELEASE_KEY_FILE: &str = include_str!("../../../keys/slopvac-release.pub");
 
-/// Namespaces that only the first-party release key may sign.
-pub const FIRST_PARTY_NAMESPACES: &[&str] = &["slopvac"];
+/// The only first-party namespace. Only a compiled key verifies an artifact in it.
+pub const FIRST_PARTY_NAMESPACE: &str = "slopvac";
+
+/// The built-in pack's namespace. It is reserved: the pack ships inside the
+/// binary and is never fetched, so no key, compiled or pinned, verifies a
+/// fetched artifact in it.
+pub const BUILT_IN_NAMESPACE: &str = "core";
+
+/// Namespaces that only the compiled first-party key may sign.
+pub const FIRST_PARTY_NAMESPACES: &[&str] = &[FIRST_PARTY_NAMESPACE];
+
+/// Every namespace nobody can pin a key for: the first-party and the built-in
+/// one. Search flags them, `pin_key` refuses them and the trust store never
+/// loads a pin for them. This is the one list; do not copy it.
+pub const RESERVED_NAMESPACES: &[&str] = &[BUILT_IN_NAMESPACE, FIRST_PARTY_NAMESPACE];
+
+/// Whether `namespace` is in [`RESERVED_NAMESPACES`].
+#[must_use]
+pub fn is_reserved_namespace(namespace: &str) -> bool {
+    RESERVED_NAMESPACES.contains(&namespace)
+}
+
+/// The compiled plugins key file. Not yet issued: the maintainer generates the
+/// key pair and keeps the secret half in a protected environment. Until the key
+/// ceremony puts the public half here, the slot is `None` and
+/// [`plugins_key`] returns no key. First-party packs verify against
+/// [`release_key`] meanwhile.
+const PLUGINS_KEY_FILE: Option<&str> = None;
+
+/// The compiled plugins key, which will verify the first-party namespace after
+/// the key ceremony. Not yet issued, so this returns `Ok(None)`. No caller may
+/// treat a missing key as a match.
+///
+/// # Errors
+/// [`SignError::InvalidKey`] when a compiled file is present and is not a minisign key.
+pub fn plugins_key() -> Result<Option<PublicKey>, SignError> {
+    PLUGINS_KEY_FILE.map(PublicKey::from_pub_file).transpose()
+}
 
 /// The compiled first-party release key. It signs first-party packs and the
 /// revocation list.
@@ -214,7 +250,12 @@ impl KeyPolicy {
     }
 
     fn candidates(&self, namespace: &str) -> &[PublicKey] {
-        if self.first_party_namespaces.iter().any(|n| n == namespace) {
+        if namespace == BUILT_IN_NAMESPACE {
+            // Fails closed: the built-in pack is never fetched.
+            &[]
+        } else if namespace == FIRST_PARTY_NAMESPACE
+            || self.first_party_namespaces.iter().any(|n| n == namespace)
+        {
             &self.first_party
         } else {
             self.pinned.get(namespace).map_or(&[], Vec::as_slice)

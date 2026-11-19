@@ -51,7 +51,9 @@ use crate::oci::Digest;
 use crate::protocol::PluginDeclaration;
 use crate::pyenv::{ManagedEnv, PYTHON_FLAGS, PyEnvError};
 use crate::revoke::{RevocationError, RevocationList, Revocations};
-use crate::sign::{PublicKey, RotationProof, SignError, canonical_json, verify_rotation};
+use crate::sign::{
+    PublicKey, RotationProof, SignError, canonical_json, is_reserved_namespace, verify_rotation,
+};
 
 const FILE_NAME: &str = "trust.json";
 const LOCK_NAME: &str = "trust.lock";
@@ -95,6 +97,12 @@ pub enum TrustError {
         /// Fingerprint of the key that holds it.
         existing: String,
     },
+    /// The namespace is reserved or first-party, so no key can be pinned for it.
+    #[error("namespace `{}` is reserved; no key can be pinned for it", esc(.namespace))]
+    ReservedNamespace {
+        /// The namespace.
+        namespace: String,
+    },
     /// The plugin tree failed verification.
     #[error(transparent)]
     Tree(#[from] ExtractError),
@@ -125,6 +133,17 @@ pub enum TrustError {
         /// Size the write would have.
         bytes: usize,
     },
+}
+
+impl TrustError {
+    /// The stable error code (policies.md section 3.5) where one exists.
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::ReservedNamespace { .. } => Some("namespace-reserved"),
+            _ => None,
+        }
+    }
 }
 
 fn io_err(what: impl Into<String>) -> impl FnOnce(io::Error) -> TrustError {
@@ -493,8 +512,14 @@ impl TrustStore {
     /// the key; a different key needs a rotation statement ([`Self::rotate_key`]).
     ///
     /// # Errors
-    /// [`TrustError::NamespaceBound`] when the namespace has another key.
+    /// [`TrustError::NamespaceBound`] when the namespace has another key,
+    /// [`TrustError::ReservedNamespace`] for `slopvac` and `core`.
     pub fn pin_key(&self, namespace: &str, key_b64: &str, now: &str) -> Result<KeyPin, TrustError> {
+        if is_reserved_namespace(namespace) {
+            return Err(TrustError::ReservedNamespace {
+                namespace: namespace.to_owned(),
+            });
+        }
         let key = PublicKey::from_base64(key_b64).map_err(|e| TrustError::Corrupt {
             path: self.path(),
             why: e.to_string(),
@@ -572,10 +597,16 @@ impl TrustStore {
     /// Every pinned key by namespace, ready for [`crate::sign::KeyPolicy::pinned`].
     ///
     /// # Errors
-    /// [`TrustError::Corrupt`] for a damaged store or key.
+    /// [`TrustError::Corrupt`] for a damaged store or key,
+    /// [`TrustError::ReservedNamespace`] for a pin in a reserved namespace.
     pub fn pinned_map(&self) -> Result<BTreeMap<String, Vec<PublicKey>>, TrustError> {
         let mut map: BTreeMap<String, Vec<PublicKey>> = BTreeMap::new();
         for p in self.read()?.pins {
+            if is_reserved_namespace(&p.namespace) {
+                return Err(TrustError::ReservedNamespace {
+                    namespace: p.namespace,
+                });
+            }
             let key = PublicKey::from_base64(&p.key).map_err(|e| TrustError::Corrupt {
                 path: self.path(),
                 why: e.to_string(),
