@@ -9,6 +9,8 @@ it either moves to a minted token or gets a recorded departure.
 
 from __future__ import annotations
 
+from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -40,23 +42,83 @@ DEPARTURES: dict[str, set[tuple[str, str]]] = {
     "pages": {("docs-deploy.yml", "deploy")},
 }
 
+REPOSITORY = "${{ github.event.repository.name }}"
+OWNER = "${{ github.repository_owner }}"
+
+
+@dataclass(frozen=True)
+class Writer:
+    """A job that writes through a minted token, and the steps that must use it."""
+
+    workflow: str
+    job: str
+    mint_id: str
+    grants: tuple[str, ...]  # the permission-* inputs, all at `write`
+    consumers: tuple[tuple[str, str, str], ...]  # (step id or name, section, key)
+
+
+POST = (
+    ("Post review comments", "env", "GH_TOKEN"),
+    ("Post review comments", "env", "REVIEWDOG_GITHUB_API_TOKEN"),
+)
+
 # Jobs that write to the repository, and so must do it through a minted App token.
 MINTED_WRITERS = [
-    ("release.yml", "host"),
-    ("release.yml", "publish-legacy-release"),
-    ("candidate.yml", "prerelease"),
-    ("release-please.yml", "release-please"),
-    ("pin-check.yml", "pin-check"),
-    ("reviewdog.yml", "comment"),
-    ("reviewdog.yml", "comment-v3"),
+    Writer(
+        "release.yml",
+        "host",
+        "release-token",
+        ("contents",),
+        (
+            ("host", "env", "GH_TOKEN"),
+            ("Upload the artifacts to the draft release", "env", "GH_TOKEN"),
+            ("Publish the release", "env", "GH_TOKEN"),
+        ),
+    ),
+    Writer(
+        "release.yml",
+        "publish-legacy-release",
+        "release-token",
+        ("contents",),
+        (("Publish the release", "env", "GH_TOKEN"),),
+    ),
+    Writer(
+        "candidate.yml",
+        "prerelease",
+        "release-token",
+        ("contents",),
+        (("Create the prerelease", "env", "GH_TOKEN"),),
+    ),
+    Writer(
+        "release-please.yml",
+        "release-please",
+        "app-token",
+        ("contents", "pull-requests"),
+        (("Run release-please", "with", "token"),),
+    ),
+    Writer(
+        "pin-check.yml",
+        "pin-check",
+        "issue-token",
+        ("issues",),
+        (("Open, update or close the issue", "env", "GH_TOKEN"),),
+    ),
+    Writer("reviewdog.yml", "comment", "comment-token", ("pull-requests",), POST),
+    Writer("reviewdog.yml", "comment-v3", "comment-token", ("pull-requests",), POST),
 ]
+WRITER_IDS = [f"{w.workflow}:{w.job}" for w in MINTED_WRITERS]
 
 
-def load_workflows() -> dict[str, dict]:
+def workflow_paths(directory: Path) -> list[Path]:
+    """Every workflow GitHub runs: both `.yml` and `.yaml` files."""
+    return sorted([*directory.glob("*.yml"), *directory.glob("*.yaml")])
+
+
+def load_workflows(directory: Path = WORKFLOWS) -> dict[str, dict]:
     # BaseLoader keeps every scalar a string, so `on` stays a key and not a boolean.
     return {
         path.name: yaml.load(path.read_text(), Loader=yaml.BaseLoader)
-        for path in sorted(WORKFLOWS.glob("*.yml"))
+        for path in workflow_paths(directory)
     }
 
 
@@ -78,20 +140,47 @@ def written_scopes(workflow: dict, job: dict) -> set[str]:
     return {scope for scope, level in grants.items() if level == "write"}
 
 
-def mint_steps(job: dict) -> list[dict]:
-    return [
-        s
-        for s in job.get("steps", [])
-        if str(s.get("uses", "")).startswith(MINT_ACTION)
-    ]
+def find_step(job: dict, ident: str) -> tuple[int, dict]:
+    for index, step in enumerate(job.get("steps", [])):
+        if ident in (step.get("id"), step.get("name")):
+            return index, step
+    raise LookupError(ident)
 
 
-def minted_writes(job: dict) -> bool:
-    return any(
-        key.startswith("permission-") and value == "write"
-        for step in mint_steps(job)
-        for key, value in step.get("with", {}).items()
-    )
+def token_problems(job: dict, writer: Writer) -> list[str]:
+    """Everything that stops the job's writes from using its minimal, minted token."""
+    try:
+        mint_at, mint = find_step(job, writer.mint_id)
+    except LookupError:
+        return ["no mint step"]
+    problems = []
+    if not str(mint.get("uses", "")).startswith(MINT_ACTION):
+        problems.append("the mint step does not use create-github-app-token")
+    inputs = mint.get("with", {})
+    granted = {k: v for k, v in inputs.items() if k.startswith("permission-")}
+    if granted != {f"permission-{scope}": "write" for scope in writer.grants}:
+        problems.append(f"grant is {granted}")
+    if inputs.get("repositories") != REPOSITORY or inputs.get("owner", OWNER) != OWNER:
+        problems.append("the token is not scoped to this repository")
+    if "continue-on-error" in mint or "continue-on-error" in job:
+        problems.append("a failed mint can be ignored")
+    expected = f"${{{{ steps.{writer.mint_id}.outputs.token }}}}"
+    for ident, section, key in writer.consumers:
+        try:
+            at, step = find_step(job, ident)
+        except LookupError:
+            problems.append(f"no consuming step {ident}")
+            continue
+        if at < mint_at:
+            problems.append(f"{ident} runs before the mint")
+        if "continue-on-error" in step:
+            problems.append(f"{ident} can fail silently")
+        if step.get(section, {}).get(key) != expected:
+            problems.append(f"{ident} {key} is not the minted token")
+        used = str(step.get("env", {})) + str(step.get("with", {}))
+        if "GITHUB_TOKEN" in used or "github.token" in used:
+            problems.append(f"{ident} names the workflow token")
+    return problems
 
 
 def violations(workflows: dict[str, dict]) -> list[str]:
@@ -111,12 +200,96 @@ def test_no_job_writes_with_github_token_beyond_the_approved_departures():
     assert violations(load_workflows()) == []
 
 
-@pytest.mark.parametrize(("name", "job_id"), MINTED_WRITERS)
-def test_a_repository_writer_mints_its_token_and_holds_no_write_grant(name, job_id):
-    workflow = load_workflows()[name]
-    job = workflow["jobs"][job_id]
-    assert minted_writes(job), "no create-github-app-token step with a write permission"
+@pytest.mark.parametrize("writer", MINTED_WRITERS, ids=WRITER_IDS)
+def test_a_repository_writer_uses_a_minimal_minted_token(writer):
+    job = load_workflows()[writer.workflow]["jobs"][writer.job]
+    assert token_problems(job, writer) == []
+
+
+@pytest.mark.parametrize("writer", MINTED_WRITERS, ids=WRITER_IDS)
+def test_a_repository_writer_holds_no_github_token_write_beyond_a_departure(writer):
+    workflow = load_workflows()[writer.workflow]
+    job = workflow["jobs"][writer.job]
     assert written_scopes(workflow, job) - OIDC - set(DEPARTURES) == set()
+
+
+def _mint(job, writer):
+    return find_step(job, writer.mint_id)[1]
+
+
+def _first_consumer(job, writer):
+    ident, section, key = writer.consumers[0]
+    return find_step(job, ident)[1][section], key
+
+
+def _swap_token(value):
+    def mutate(job, writer):
+        holder, key = _first_consumer(job, writer)
+        holder[key] = value
+
+    return mutate
+
+
+def _fall_back(job, writer):
+    holder, key = _first_consumer(job, writer)
+    holder[key] += " || secrets.GITHUB_TOKEN"
+
+
+def _flag_consumer(job, writer):
+    find_step(job, writer.consumers[0][0])[1]["continue-on-error"] = "true"
+
+
+def _widen(job, writer):
+    _mint(job, writer)["with"]["permission-actions"] = "write"
+
+
+def _raise(job, writer):
+    _mint(job, writer)["with"][f"permission-{writer.grants[0]}"] = "admin"
+
+
+def _drop_grant(job, writer):
+    del _mint(job, writer)["with"][f"permission-{writer.grants[0]}"]
+
+
+def _drop_scope(job, writer):
+    del _mint(job, writer)["with"]["repositories"]
+
+
+def _flag_mint(job, writer):
+    _mint(job, writer)["continue-on-error"] = "true"
+
+
+def _remove_mint(job, writer):
+    job["steps"].remove(_mint(job, writer))
+
+
+MUTATIONS = {
+    "consumer-uses-GITHUB_TOKEN": _swap_token("${{ secrets.GITHUB_TOKEN }}"),
+    "consumer-uses-github-token-context": _swap_token("${{ github.token }}"),
+    "consumer-falls-back-to-GITHUB_TOKEN": _fall_back,
+    "mint-continues-on-error": _flag_mint,
+    "consumer-continues-on-error": _flag_consumer,
+    "grant-widened": _widen,
+    "grant-raised": _raise,
+    "grant-dropped": _drop_grant,
+    "repository-scope-dropped": _drop_scope,
+    "mint-removed": _remove_mint,
+}
+
+
+@pytest.mark.parametrize("mutation", MUTATIONS)
+@pytest.mark.parametrize("writer", MINTED_WRITERS, ids=WRITER_IDS)
+def test_a_broken_token_setup_is_reported(writer, mutation):
+    job = deepcopy(load_workflows()[writer.workflow]["jobs"][writer.job])
+    MUTATIONS[mutation](job, writer)
+    assert token_problems(job, writer) != []
+
+
+@pytest.mark.parametrize("suffix", [".yml", ".yaml"])
+def test_workflow_discovery_reads_both_extensions(tmp_path, suffix):
+    (tmp_path / f"w{suffix}").write_text("jobs: {}\n")
+    (tmp_path / "notes.txt").write_text("jobs: {}\n")
+    assert list(load_workflows(tmp_path)) == [f"w{suffix}"]
 
 
 def test_departures_name_only_jobs_that_still_hold_the_write():
