@@ -170,8 +170,13 @@ def _relay_stderr(raw: bytes) -> None:
     The binary echoes PR-controlled text (a file name may hold a newline and
     ``::error::``), so its stderr must never reach the job log raw.
     """
-    for line in raw.decode("utf-8", errors="replace").splitlines():
-        print(escape_workflow_data(line), file=sys.stderr)
+    records = raw.decode("utf-8", errors="replace").split("\n")
+    if records[-1] == "":  # the final newline ends a record, it does not start one
+        records.pop()
+    for record in records:
+        # CRLF is one line ending; a lone CR stays and is escaped as %0D.
+        text = record.removesuffix("\r")
+        print(escape_workflow_data(text), file=sys.stderr)
 
 
 def _run(command: Sequence[str], env: Mapping[str, str]) -> int:

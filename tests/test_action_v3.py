@@ -379,6 +379,22 @@ def test_sync_stderr_is_escaped_before_it_reaches_the_job_log(sync, capfd):
     assert err == ESCAPED_STDERR
 
 
+# Only LF ends a record. NEL, LS, FS and the like stay in their line, shown as
+# the visible escape that names them; CRLF loses its CR, a lone CR is escaped.
+SEPARATOR_STDERR = "cannot read a\x85b\u2028c\x1cd.md\r\nnext\rline\n"
+SEPARATOR_SHOWN = "cannot read a\\u{85}b\\u{2028}c\\u{1c}d.md\nnext%0Dline\n"
+
+
+def test_lint_stderr_keeps_unicode_separators_in_their_line(run, capfd):
+    run(FAKE_STDERR=SEPARATOR_STDERR)
+    assert capfd.readouterr().err == SEPARATOR_SHOWN * len(FORMATS)
+
+
+def test_sync_stderr_keeps_unicode_separators_in_their_line(sync, capfd):
+    sync(locked=True, FAKE_STDERR=SEPARATOR_STDERR)
+    assert capfd.readouterr().err == SEPARATOR_SHOWN
+
+
 def test_stderr_that_is_not_utf8_is_shown_not_dropped(sync, capfd):
     sync(locked=True, FAKE_STDERR="bad \udcff byte\n")
     assert capfd.readouterr().err == "bad \ufffd byte\n"
