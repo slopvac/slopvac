@@ -672,7 +672,7 @@ fn download_reads_up_to_the_limit_and_production_clients_refuse_http() {
         matches!(err, OciError::TooLarge { limit: 99, .. }),
         "{err:?}"
     );
-    let err = Client::new()
+    let err = Client::new(std::env::temp_dir())
         .download(&url, 100, &mut Vec::new())
         .unwrap_err();
     assert!(matches!(err, OciError::InsecureUrl(_)), "{err:?}");
