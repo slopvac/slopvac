@@ -451,8 +451,18 @@ fn restore_rejects_a_replayed_older_backup() {
     copy_dir(&s.path(BACKUP_DIR), &old_backup);
     s.restore(false).unwrap();
     s.apply(&s.plan()).unwrap();
-    fs::remove_dir_all(s.path(BACKUP_DIR)).unwrap();
-    copy_dir(&old_backup, &s.path(BACKUP_DIR));
+    // The authentic backup directory stays, with its inode; only its files become the older
+    // backup's. The copies hold the same original bytes, so only the instance differs.
+    let backup = s.path(BACKUP_DIR);
+    let inode = fs::metadata(&backup).unwrap().ino();
+    for entry in fs::read_dir(&backup).unwrap() {
+        fs::remove_file(entry.unwrap().path()).unwrap();
+    }
+    for entry in fs::read_dir(&old_backup).unwrap() {
+        let entry = entry.unwrap();
+        fs::copy(entry.path(), backup.join(entry.file_name())).unwrap();
+    }
+    assert_eq!(fs::metadata(&backup).unwrap().ino(), inode);
     assert!(matches!(s.restore(true), Err(Error::Unsafe(_))));
     assert_eq!(s.read("slopvac.toml"), NEW);
 }
