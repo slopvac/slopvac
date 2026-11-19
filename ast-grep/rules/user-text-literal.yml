@@ -13,6 +13,7 @@ files:
   - crates/slopvac-messages/src/**
   - crates/slopvac-report/src/**
   - crates/slopvac-lsp/src/**
+  - crates/slopvac-update/src/**
 ignores:
   # Audit output is for contributors reading a failing test, not for users.
   - crates/slopvac-messages/src/audit.rs

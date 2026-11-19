@@ -7,10 +7,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::{ArgMatches, Command};
-use slopvac_messages::Catalog as _;
+use slopvac_messages::Catalog;
 
 use crate::fetch::{Fetcher, UreqFetcher};
-use crate::install::{self, InstallMethod, RELEASES_URL};
+use crate::install::{self, InstallMethod};
+use crate::messages::{UpdateMessage, UpdatePhrase, UpdateText, line};
 use crate::notice::{self, Cache, Context, Notice};
 use crate::pipeline::{self, DOWNLOAD_BASE, UpdateError};
 use crate::verify::{ArtifactVerifier, ReleaseVerifier};
@@ -48,6 +49,10 @@ impl Failure {
             code,
             message: message.into(),
         }
+    }
+
+    fn from_message(message: &UpdateMessage) -> Self {
+        Self::new(message.code(), message.to_string())
     }
 }
 
@@ -160,16 +165,12 @@ impl Runtime {
 #[must_use]
 pub fn command() -> Command {
     Command::new("self")
-        .about("Manage this installation.")
+        .about(UpdatePhrase::SelfAbout.as_static())
         .subcommand_required(true)
         .subcommand(
             Command::new("update")
-                .about("Update slopvac to the latest release.")
-                .long_about(
-                    "Update slopvac to the latest release. Works for installs made by the slopvac \
-                 installer. For any other install it prints the command that upgrades it. The \
-                 download must carry a valid minisign signature, or nothing is replaced.",
-                ),
+                .about(UpdatePhrase::SelfUpdateAbout.as_static())
+                .long_about(UpdatePhrase::SelfUpdateLongAbout.as_static()),
         )
 }
 
@@ -177,7 +178,11 @@ pub fn command() -> Command {
 pub fn run(matches: &ArgMatches, rt: &Runtime) -> Result<String, Failure> {
     match matches.subcommand() {
         Some(("update", _)) => self_update(rt),
-        _ => Err(Failure::new("usage", "unknown `self` subcommand")),
+        // `usage` is the CLI's shared code, so the catalog holds the text only.
+        _ => Err(Failure::new(
+            "usage",
+            UpdatePhrase::UnknownSubcommand.as_static(),
+        )),
     }
 }
 
@@ -185,22 +190,21 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
     let method = rt.method();
     if method != InstallMethod::Installer {
         let advice = method.upgrade_command().map_or_else(
-            || format!("download a release from {RELEASES_URL}"),
-            |c| format!("run `{c}`"),
+            || UpdatePhrase::AdviceDownload.as_static().to_owned(),
+            |command| {
+                UpdateText::AdviceRun {
+                    command: command.to_owned(),
+                }
+                .to_string()
+            },
         );
-        return Err(Failure::new(
-            "self-update-unmanaged",
-            format!(
-                "this install ({}) is not managed by the slopvac installer; {advice}",
-                method.id()
-            ),
-        ));
+        return Err(Failure::from_message(&UpdateMessage::SelfUpdateUnmanaged {
+            method: method.id().to_owned(),
+            advice,
+        }));
     }
     if rt.offline {
-        return Err(Failure::new(
-            "offline-network-needed",
-            "offline: self update needs the network",
-        ));
+        return Err(Failure::from_message(&UpdateMessage::OfflineNetworkNeeded));
     }
     // The fingerprint must come before any external work: the network lookup below gives
     // another installer time to replace the file, and a later fingerprint would credit that
@@ -209,16 +213,20 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
         .running_sha
         .clone()
         .or_else(|| pipeline::running_fingerprint(&rt.exe));
-    let latest = notice::latest_version(&*rt.fetcher, false)
-        .map_err(|e| Failure::new("update-check-failed", e.to_string()))?;
+    let latest = notice::latest_version(&*rt.fetcher, false).map_err(|e| {
+        Failure::from_message(&UpdateMessage::UpdateCheckFailed {
+            detail: e.to_string(),
+        })
+    })?;
     if notice::notice_for(&rt.current, &latest, method).is_none() {
-        return Ok(format!("slopvac {} is up to date.\n", rt.current));
+        return Ok(line(&UpdateText::UpToDate {
+            current: rt.current.clone(),
+        }));
     }
     let target = rt.target.ok_or_else(|| {
-        Failure::new(
-            "self-update-failed",
-            UpdateError::UnsupportedPlatform.to_string(),
-        )
+        Failure::from_message(&UpdateMessage::SelfUpdateFailed {
+            detail: UpdateError::UnsupportedPlatform.to_string(),
+        })
     })?;
     let host = pipeline::Host::new(&rt.exe, running_sha);
     let host = match &rt.on_lock_wait {
@@ -234,14 +242,16 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
         target,
         &host,
     )
-    .map_err(|e| {
-        let code = match e {
-            UpdateError::Verify(_) => "update-verification-failed",
-            UpdateError::Prerelease(_) => "update-prerelease-refused",
-            UpdateError::Refused(ref message) => message.code(),
-            _ => "self-update-failed",
-        };
-        Failure::new(code, e.to_string())
+    .map_err(|e| match e {
+        UpdateError::Refused(ref message) => Failure::from_message(message),
+        other => {
+            let detail = other.to_string();
+            Failure::from_message(&match other {
+                UpdateError::Verify(_) => UpdateMessage::UpdateVerificationFailed { detail },
+                UpdateError::Prerelease(_) => UpdateMessage::UpdatePrereleaseRefused { detail },
+                _ => UpdateMessage::SelfUpdateFailed { detail },
+            })
+        }
     })?;
     if let Some(cache) = &rt.cache {
         let _ = cache.write(&notice::Entry {
@@ -249,7 +259,10 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
             latest: latest.clone(),
         });
     }
-    Ok(format!("Updated slopvac {} to {latest}.\n", rt.current))
+    Ok(line(&UpdateText::Updated {
+        current: rt.current.clone(),
+        latest,
+    }))
 }
 
 /// The schema and extension-API versions this build supports, which the binary takes from the

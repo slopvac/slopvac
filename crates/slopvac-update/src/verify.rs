@@ -6,28 +6,43 @@
 
 use thiserror::Error;
 
+use crate::messages::{UpdatePhrase, UpdateText};
+
 /// Why an artifact was not accepted.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum VerifyError {
     /// No signature was published for the artifact.
-    #[error("the release has no signature for this artifact")]
+    #[error("{}", UpdatePhrase::VerifyMissing.as_static())]
     MissingSignature,
     /// The signature or the key does not parse.
-    #[error("invalid signature or key: {0}")]
+    #[error("{}", invalid_text(.0))]
     Invalid(String),
     /// The signature does not match the bytes.
-    #[error("the signature does not verify")]
+    #[error("{}", UpdatePhrase::VerifyRejected.as_static())]
     Rejected,
     /// The signature is valid but names a different file or release than the one requested.
-    #[error(
-        "the signature is for a different release or file: expected `{expected}`, signed `{signed}`"
-    )]
+    #[error("{}", wrong_release_text(.expected, .signed))]
     WrongRelease {
         /// The trusted comment this download must carry.
         expected: String,
         /// The trusted comment the signature carries (empty if it has none).
         signed: String,
     },
+}
+
+fn invalid_text(detail: &str) -> String {
+    UpdateText::VerifyInvalid {
+        detail: detail.to_owned(),
+    }
+    .to_string()
+}
+
+fn wrong_release_text(expected: &str, signed: &str) -> String {
+    UpdateText::VerifyWrongRelease {
+        expected: expected.to_owned(),
+        signed: signed.to_owned(),
+    }
+    .to_string()
 }
 
 /// Which release file a download must be: the identity that release signing binds in.
@@ -45,6 +60,7 @@ impl ReleaseFile<'_> {
     /// signature proves the key owner signed exactly this file of exactly this release.
     #[must_use]
     pub fn trusted_comment(&self) -> String {
+        // ast-grep-ignore: user-text-literal
         format!(
             "slopvac-release file:{} version:{}",
             self.name, self.version
@@ -93,8 +109,9 @@ impl ArtifactVerifier for MinisignVerifier {
         signature: &[u8],
         expected: &ReleaseFile<'_>,
     ) -> Result<(), VerifyError> {
-        let text = std::str::from_utf8(signature)
-            .map_err(|_| VerifyError::Invalid("signature is not UTF-8".into()))?;
+        let text = std::str::from_utf8(signature).map_err(|_| {
+            VerifyError::Invalid(UpdatePhrase::VerifyNotUtf8.as_static().to_owned())
+        })?;
         let sig = minisign_verify::Signature::decode(text)
             .map_err(|e| VerifyError::Invalid(e.to_string()))?;
         // `allow_legacy = false`: only prehashed signatures verify, which is what release CI

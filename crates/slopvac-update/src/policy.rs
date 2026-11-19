@@ -13,7 +13,10 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use slopvac_messages::Catalog;
 use thiserror::Error;
+
+use crate::messages::{UpdateMessage, UpdatePhrase, UpdateText};
 
 /// Largest `slopvac.toml` this stub reads.
 pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
@@ -31,13 +34,13 @@ pub struct NetworkPolicy {
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum PolicyError {
     /// The path is a directory, FIFO, device or other non-regular file.
-    #[error("{}: not a regular file", .0.display())]
+    #[error("{}", at_path(.0, self))]
     NotRegular(PathBuf),
     /// The file is larger than [`MAX_CONFIG_BYTES`].
-    #[error("{}: larger than {MAX_CONFIG_BYTES} bytes", .0.display())]
+    #[error("{}", at_path(.0, self))]
     TooLarge(PathBuf),
     /// Any other read failure.
-    #[error("{}: cannot read: {reason}", path.display())]
+    #[error("{}", at_path(path, self))]
     Unreadable {
         /// The file.
         path: PathBuf,
@@ -62,7 +65,7 @@ impl PolicyError {
     #[must_use]
     pub fn code(&self) -> Option<&'static str> {
         match self {
-            Self::TooLarge(_) => Some("update-policy-too-large"),
+            Self::TooLarge(_) => Some(too_large().code()),
             Self::NotRegular(_) | Self::Unreadable { .. } => None,
         }
     }
@@ -71,11 +74,28 @@ impl PolicyError {
     #[must_use]
     pub fn problem(&self) -> String {
         match self {
-            Self::NotRegular(_) => "not a regular file".to_owned(),
-            Self::TooLarge(_) => format!("larger than {MAX_CONFIG_BYTES} bytes"),
-            Self::Unreadable { reason, .. } => format!("cannot read: {reason}"),
+            Self::NotRegular(_) => UpdatePhrase::PolicyNotRegular.as_static().to_owned(),
+            Self::TooLarge(_) => too_large().to_string(),
+            Self::Unreadable { reason, .. } => UpdateText::PolicyUnreadable {
+                reason: reason.clone(),
+            }
+            .to_string(),
         }
     }
+}
+
+fn too_large() -> UpdateMessage {
+    UpdateMessage::UpdatePolicyTooLarge {
+        cap: MAX_CONFIG_BYTES,
+    }
+}
+
+fn at_path(path: &Path, error: &PolicyError) -> String {
+    UpdateText::PolicyAtPath {
+        path: path.to_owned(),
+        problem: error.problem(),
+    }
+    .to_string()
 }
 
 /// Read the policy of the nearest `slopvac.toml` at or above `start`.

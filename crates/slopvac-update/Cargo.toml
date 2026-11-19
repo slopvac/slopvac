@@ -32,6 +32,7 @@ ureq.workspace = true
 
 [dev-dependencies]
 minisign.workspace = true
+rstest.workspace = true
 
 [lints]
 workspace = true

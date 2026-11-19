@@ -19,15 +19,13 @@ pub static ALL: &[Registered] = &[
     ("report", slopvac_report::message_entries),
     ("slopvac-lsp", slopvac_lsp::message_entries),
     ("report issue", report_entries),
-    ("self update", update_entries),
+    ("self update", slopvac_update::error_entries),
+    ("self update text", slopvac_update::text_entries),
+    ("self update phrases", slopvac_update::phrase_entries),
 ];
 
 fn report_entries() -> &'static [Entry] {
     <crate::report::messages::ReportError as slopvac_messages::Catalog>::entries()
-}
-
-fn update_entries() -> &'static [Entry] {
-    <slopvac_update::messages::UpdateMessage as slopvac_messages::Catalog>::entries()
 }
 
 /// A code that no longer exists. Its meaning stays reserved and the reference page keeps it.
