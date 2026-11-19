@@ -349,10 +349,7 @@ fn a_read_failure_keeps_its_filesystem_and_io_source_chain() {
 }
 
 fn unknown_keys(count: usize, prefix: &str) -> String {
-    (0..count).fold(String::new(), |mut s, i| {
-        s.push_str(&format!("{prefix}{i} = 1\n"));
-        s
-    })
+    (0..count).map(|i| format!("{prefix}{i} = 1\n")).collect()
 }
 
 #[test]
