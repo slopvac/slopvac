@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::fetch::{FetchError, Fetcher};
-use crate::install::InstallMethod;
+use crate::install::{InstallMethod, RELEASES_URL};
 
 /// Commands that may start a refresh.
 pub const REFRESH_COMMANDS: [&str; 4] = ["lint", "doctor", "prime", "self update"];
@@ -76,13 +76,14 @@ pub fn notice_for(current: &str, latest: &str, method: InstallMethod) -> Option<
             .to_owned()
     });
     let mut message = format!("slopvac {latest} is available (you have {current}).");
-    match &upgrade_command {
-        Some(cmd) => {
-            message.push_str(" Upgrade with `");
-            message.push_str(cmd);
-            message.push_str("`.");
-        }
-        None => message.push_str(" See https://github.com/slopvac/slopvac/releases."),
+    if let Some(cmd) = &upgrade_command {
+        message.push_str(" Upgrade with `");
+        message.push_str(cmd);
+        message.push_str("`.");
+    } else {
+        message.push_str(" See ");
+        message.push_str(RELEASES_URL);
+        message.push('.');
     }
     if let Some(hint) = &migrate_hint {
         message.push(' ');

@@ -87,7 +87,11 @@ impl World {
 
     /// `slopvac doctor` with a clean environment.
     fn doctor(&self) -> Command {
-        let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+        self.doctor_with(Command::cargo_bin("slopvac").expect("binary builds"))
+    }
+
+    /// `doctor` on `cmd`, a command for some copy of the binary, with a clean environment.
+    fn doctor_with(&self, mut cmd: Command) -> Command {
         for var in [
             "SLOPVAC_OFFLINE",
             "SLOPVAC_LOG",
@@ -901,6 +905,32 @@ fn the_text_report_gives_the_upgrade_command_when_an_update_is_cached() {
     assert!(text.contains("installer"), "{text}");
     assert!(text.contains("slopvac self update"), "{text}");
     assert!(text.contains("99.0.0"), "{text}");
+}
+
+#[test]
+fn the_text_report_points_a_cargo_install_at_the_releases_page_when_an_update_is_cached() {
+    let w = World::new();
+    // A binary under `<CARGO_HOME>/bin` with no receipt is classed as a cargo install.
+    let cargo_home = fs::canonicalize(w.root.path()).unwrap().join("cargo-home");
+    let bin = cargo_home.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let exe = bin.join(assert_cmd::cargo::cargo_bin("slopvac").file_name().unwrap());
+    fs::copy(assert_cmd::cargo::cargo_bin("slopvac"), &exe).unwrap();
+    cache_entry(&w, "99.0.0");
+    let out = w
+        .doctor_with(Command::new(&exe))
+        .env("CARGO_HOME", &cargo_home)
+        .env_remove("AXOUPDATER_CONFIG_PATH")
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("(cargo)"), "{text}");
+    assert!(
+        text.contains(
+            "update: 99.0.0 is available. See https://github.com/slopvac/slopvac/releases.\n"
+        ),
+        "{text}"
+    );
 }
 
 #[test]

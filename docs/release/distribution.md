@@ -56,7 +56,7 @@ When `slopvac self update` refuses or fails, it exits 2, leaves the installed bi
 
 | Code | When |
 | --- | --- |
-| `self-update-unmanaged` | The binary was not installed by the slopvac shell installer. The message names the upgrade command for a known install method, or the releases page otherwise. |
+| `self-update-unmanaged` | The binary was not installed by the slopvac shell installer. The message names the upgrade command for a known install method. Cargo-style installs and unknown ones get the releases page, because slopvac is not published on crates.io. |
 | `offline-network-needed` | Offline mode is on. Self update needs the network. |
 | `update-check-failed` | The latest-release lookup failed. |
 | `update-prerelease-refused` | The latest release is a candidate (`X.Y.Z-rc.N`). Self update installs stable releases only. |
