@@ -199,23 +199,36 @@ def test_folded_job_ignores_the_other_class(job, other):
 
 
 @pytest.mark.parametrize(
-    ("path", "adapter", "code"),
+    "path",
     [
-        ("crates/slopvac-diagrams/src/mermaid.rs", True, True),
-        ("crates/slopvac-engine/src/lint.rs", True, True),
-        ("evals/diagrams.py", True, True),
-        ("tests/test_evals_diagrams.py", True, True),
-        ("tests/fixtures/diagram_eval_output.json", True, True),
-        ("README.md", False, False),
+        "crates/slopvac-diagrams/src/mermaid.rs",
+        "crates/slopvac-engine/src/lint.rs",
+        "evals/diagrams.py",
+        "tests/test_evals_diagrams.py",
+        "tests/fixtures/diagram_eval_output.json",
     ],
 )
-def test_live_diagram_adapter_routes_separately_from_the_python_suite(
-    path, adapter, code
-):
-    outputs = {klass for klass in CLASSES if in_class(klass, path)}
-    assert in_class("diagram-adapter", path) is adapter
-    assert in_class("code", path) is code
-    assert evaluate(JOBS["diagram-adapter"]["if"], outputs) is adapter
+def test_live_adapter_path_also_runs_the_python_suite(path):
+    # Main classifies these paths as `code`, so the Python suite runs with the adapter.
+    outputs = classes_of([path])
+    assert {"diagram-adapter", "code"} <= outputs
+    assert evaluate(JOBS["diagram-adapter"]["if"], outputs) is True
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+
+
+def test_adapter_class_alone_runs_the_adapter_and_not_the_python_suite():
+    # The gates are isolated: the adapter job fires on its own class, and the
+    # Python suite does not fire on it.
+    outputs = {"diagram-adapter"}
+    assert evaluate(JOBS["diagram-adapter"]["if"], outputs) is True
+    assert evaluate(JOBS["test"]["if"], outputs) is False
+
+
+@pytest.mark.parametrize("path", ["README.md", "docs/design/slopvac-3.md"])
+def test_prose_change_runs_neither_the_adapter_nor_the_python_suite(path):
+    outputs = classes_of([path])
+    assert evaluate(JOBS["diagram-adapter"]["if"], outputs) is False
+    assert evaluate(JOBS["test"]["if"], outputs) is False
 
 
 def test_live_diagram_adapter_pytest_step_requires_the_real_engine():
