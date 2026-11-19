@@ -226,47 +226,90 @@ fn plan_dir(
         plan.notes
             .push(format!("{label}: {}", d.category_removed_notice()));
     }
-    let target = rel(root, &main_cfg);
-    match origin {
-        Origin::InPlace => plan.changes.push(Change {
-            path: target,
-            kind: ChangeKind::Write,
-            old: Some(old),
-            new: Some(rewrite.text),
-        }),
-        Origin::Dotfile => {
-            plan.notes.push(format!("{label}: renamed to slopvac.toml"));
-            plan.changes.push(Change {
+    let moved = Moved {
+        root,
+        label: &label,
+        origin,
+        old,
+        new: rewrite.text,
+        dot: &dot,
+        pyproject: &pyproject,
+        py_text,
+        py_table,
+    };
+    moved.record(&main_cfg, plan);
+    Ok(())
+}
+
+/// The 2.x config text and the 3.0 text that replaces it.
+struct Moved<'a> {
+    root: &'a Path,
+    label: &'a str,
+    origin: Origin,
+    old: String,
+    new: String,
+    dot: &'a Path,
+    pyproject: &'a Path,
+    py_text: Option<String>,
+    py_table: Option<(String, String)>,
+}
+
+impl Moved<'_> {
+    /// Adds the changes and notes for the move to `plan`.
+    fn record(self, main_cfg: &Path, plan: &mut Sink) {
+        let Self {
+            root,
+            label,
+            origin,
+            old,
+            new,
+            dot,
+            pyproject,
+            py_text,
+            py_table,
+        } = self;
+        let rewrite_text = new;
+        let target = rel(root, main_cfg);
+        match origin {
+            Origin::InPlace => plan.changes.push(Change {
                 path: target,
                 kind: ChangeKind::Write,
-                old: None,
-                new: Some(rewrite.text),
-            });
-            plan.changes.push(Change {
-                path: rel(root, &dot),
-                kind: ChangeKind::Delete,
                 old: Some(old),
-                new: None,
-            });
-        }
-        Origin::Pyproject => {
-            plan.notes
-                .push(format!("{label}: moved [tool.slopvac] to slopvac.toml"));
-            plan.changes.push(Change {
-                path: target,
-                kind: ChangeKind::Write,
-                old: None,
-                new: Some(rewrite.text),
-            });
-            plan.changes.push(Change {
-                path: rel(root, &pyproject),
-                kind: ChangeKind::Write,
-                old: py_text,
-                new: py_table.map(|(_, stripped)| stripped),
-            });
+                new: Some(rewrite_text),
+            }),
+            Origin::Dotfile => {
+                plan.notes.push(format!("{label}: renamed to slopvac.toml"));
+                plan.changes.push(Change {
+                    path: target,
+                    kind: ChangeKind::Write,
+                    old: None,
+                    new: Some(rewrite_text),
+                });
+                plan.changes.push(Change {
+                    path: rel(root, dot),
+                    kind: ChangeKind::Delete,
+                    old: Some(old),
+                    new: None,
+                });
+            }
+            Origin::Pyproject => {
+                plan.notes
+                    .push(format!("{label}: moved [tool.slopvac] to slopvac.toml"));
+                plan.changes.push(Change {
+                    path: target,
+                    kind: ChangeKind::Write,
+                    old: None,
+                    new: Some(rewrite_text),
+                });
+                plan.changes.push(Change {
+                    path: rel(root, pyproject),
+                    kind: ChangeKind::Write,
+                    old: py_text,
+                    new: py_table.map(|(_, stripped)| stripped),
+                });
+            }
         }
     }
-    Ok(())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
