@@ -257,8 +257,12 @@ Tasks come from the corpus:
 | mechanical | author | A seeded sentence and its rule | The rule does not fire on the output and no fact is lost. |
 | update | author | A planted number change | The new number appears, the old one is gone, nothing else moves. |
 | rewrite | author | A prose paragraph | No fact is lost and findings per word do not rise. |
+| mechanical | reviewer, planted | A seeded passage with one fact damaged | The reviewer quotes the planted edit with at most one false alarm. |
+| update | reviewer, planted | A paragraph with the stated number change made and one other fact damaged | The reviewer quotes the planted edit and leaves the stated change out, with at most one false alarm. |
 | rewrite | reviewer, planted | A rewrite pair with planted damage | The reviewer quotes every planted edit with at most one false alarm. |
 | rewrite | reviewer, authored | Another model's rewrite | The reviewer names every fact the lexical alignment finds lost. |
+
+Mechanical and update planted tasks damage a fact with the same four edit kinds as the rewrite pairs (drop, number, negation, entity). The damage never lands on the flagged sentence or on a sentence that holds the stated change. The mechanical candidate keeps the flagged sentence as written, because the reviewer checks facts only.
 
 Reviewer scores are detection by quotation, and the results and summary rows carry the label `detection by quotation`. A finding counts only when three things hold: its quote is in the passage, it locates the planted or lost change, and its `problem` text does not deny the change. The denial check is a short phrase list, such as "is preserved", "no change", "unchanged" and "still says". It does not judge whether the diagnosis is right. A reply that quotes the right words and explains the wrong cause still counts. Treat the score as a detection measure until a better oracle exists. Results and each run row record a `scorer_version`. A row without one inherits the file's header, and a file with no header is legacy: its summary rows are labelled `legacy (pre-15.17)`, not with the metric names above. A row that disagrees with its header, or rows that disagree with each other, make the summary stop with exit 2. Rescore the legacy rows from the journal first.
 

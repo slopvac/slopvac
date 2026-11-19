@@ -46,9 +46,9 @@ from functools import partial
 from pathlib import Path
 from typing import Any, NamedTuple, Self
 
+from . import build_derived, facts, metrics, procs, runner
 from . import corpuslib as lib
-from . import facts, metrics, procs, runner
-from .textops import prose_paragraphs
+from .textops import CODE_SPAN_RE, prose_paragraphs, split_sentences
 
 PROMPT_VERSION = "1"
 RESULTS_SCHEMA = 1
@@ -56,6 +56,8 @@ RESULTS_DIR = lib.EVALS_DIR / "results" / "models"
 MIN_REPEATS = 3
 TYPES = ("mechanical", "update", "rewrite")
 SEED = "slopvac-evals-models-1"
+PLANT_KINDS = ("drop", "number", "negation", "entity")
+PLANT_MIN_WORDS = 6
 FALSE_ALARM_LIMIT = 1
 QUOTE_OVERLAP = 0.6
 MIN_QUOTE_WORDS = 3
@@ -102,6 +104,17 @@ Candidate:
 
 Answer with a JSON list. Each item has "quote" (the exact words from either text) and "problem". Answer [] when the candidate keeps every fact.
 """
+# The mechanical and update reviewers see the same text as the rewrite reviewer,
+# after a line that says what the candidate was asked to do. The stated change is
+# not damage, so the update prompt tells the reviewer to leave it out.
+MECHANICAL_REVIEW_PROMPT = (
+    "A model was asked to fix one prose problem in the original and change nothing else.\n\n"
+    + REVIEW_PROMPT
+)
+UPDATE_REVIEW_PROMPT = (
+    "A model was asked to replace {old} with {new} where the original states it and "
+    "change nothing else. That change is intended: do not list it.\n\n" + REVIEW_PROMPT
+)
 
 
 class ModelEvalError(Exception):
@@ -143,10 +156,7 @@ def build_tasks(
             pool.append((doc, defect))
     rng.shuffle(pool)
     for doc, defect in pool[:per_type]:
-        lines = _read(doc, cache).split("\n")
-        at = defect["line"] - 1
-        first, last = max(0, at - 2), min(len(lines), at + 3)
-        passage = "\n".join(lines[first:last])
+        passage = _mechanical_passage(doc, defect, cache)
         tasks.append(
             {
                 "id": task_id(
@@ -251,7 +261,144 @@ def build_tasks(
                 "genre": doc["genre"],
             }
         )
+
+    for doc, defect in pool[:per_type]:
+        passage = _mechanical_passage(doc, defect, cache)
+        flagged = defect["text"]
+        review = _planted_review(
+            kind="mechanical",
+            key=(doc["id"], str(defect["line"]), defect["rule"]),
+            doc=doc,
+            original=passage,
+            base=passage,
+            protected=lambda s, f=flagged: s in f or f in s,
+            pool=sorted(set(CODE_SPAN_RE.findall(_read(doc, cache)))),
+            prompt=MECHANICAL_REVIEW_PROMPT,
+        )
+        if review:
+            tasks.append(review)
+
+    for doc, edit, old, new in usable[:per_type]:
+        parent = docs[doc["source"]["parents"][0]]
+        text = _read(parent, cache)
+        lines = text.split("\n")
+        paragraph = next(
+            (
+                "\n".join(lines[first : last + 1])
+                for first, last in prose_paragraphs(text)
+                if first + 1 == edit["line"]
+            ),
+            None,
+        )
+        if paragraph is None or edit["original_sentence"] not in paragraph:
+            continue
+        review = _planted_review(
+            kind="update",
+            key=(doc["id"], str(edit["line"]), old, new),
+            doc=doc,
+            original=paragraph,
+            base=_apply_change(paragraph, old, new),
+            protected=partial(_rewritten, set(split_sentences(paragraph))),
+            pool=sorted(set(CODE_SPAN_RE.findall(text))),
+            prompt=UPDATE_REVIEW_PROMPT,
+            old=old,
+            new=new,
+        )
+        if review:
+            tasks.append(review)
     return tasks
+
+
+def plant_damage(
+    text: str,
+    protected: Callable[[str], bool],
+    pool: list[str],
+    rng: random.Random,
+) -> tuple[str, dict[str, str]] | None:
+    """Damage one fact in `text`: (candidate text, edit) or None when nothing fits.
+
+    The damage comes from `build_derived.damage_sentence`, the same one that plants
+    the rewrite pairs. A sentence for which `protected` is true stays as it is.
+    The edit records the kind and the original sentence, like a rewrite pair's.
+    """
+    lines = text.split("\n")
+    paragraphs = prose_paragraphs(text, min_words=PLANT_MIN_WORDS)
+    rng.shuffle(paragraphs)
+    kinds = list(PLANT_KINDS)
+    rng.shuffle(kinds)
+    for first, last in paragraphs:
+        sentences = split_sentences("\n".join(lines[first : last + 1]))
+        order = list(range(len(sentences)))
+        rng.shuffle(order)
+        for kind in kinds:
+            for i in order:
+                if protected(sentences[i]):
+                    continue
+                damage = build_derived.damage_sentence(sentences[i], kind, pool, rng)
+                if damage is None:
+                    continue
+                kept = [damage[0]] if damage[0] is not None else []
+                rebuilt = " ".join(sentences[:i] + kept + sentences[i + 1 :])
+                lines[first : last + 1] = [rebuilt]
+                return "\n".join(lines), {"kind": kind, "sentence": sentences[i]}
+    return None
+
+
+def _planted_review(
+    *,
+    kind: str,
+    key: tuple[str, ...],
+    doc: Mapping[str, Any],
+    original: str,
+    base: str,
+    protected: Callable[[str], bool],
+    pool: list[str],
+    prompt: str,
+    **fields: str,
+) -> dict[str, Any] | None:
+    """A planted-damage review task for an author type, or None when no sentence fits.
+
+    `base` is the candidate before damage. The random stream follows the task id
+    alone, so one task's damage never depends on another task.
+    """
+    ident = task_id("planted", kind, *key)
+    rng = random.Random(f"{SEED}|{ident}")
+    planted = plant_damage(base, protected, pool, rng)
+    if planted is None:
+        return None
+    candidate, edit = planted
+    return {
+        "id": ident,
+        "type": kind,
+        "role": "reviewer",
+        "variant": "planted",
+        "doc": doc["id"],
+        "prompt": prompt.format(original=original, candidate=candidate, **fields),
+        "original": original,
+        "candidate": candidate,
+        "passage": original + "\n" + candidate,
+        "edits": [edit],
+        "genre": doc["genre"],
+    }
+
+
+def _mechanical_passage(
+    doc: Mapping[str, Any], defect: Mapping[str, Any], cache: Path
+) -> str:
+    """The flagged line with two lines of context before it and after it."""
+    lines = _read(doc, cache).split("\n")
+    at = defect["line"] - 1
+    return "\n".join(lines[max(0, at - 2) : min(len(lines), at + 3)])
+
+
+def _rewritten(original_sentences: set[str], sentence: str) -> bool:
+    """True for a sentence the stated change rewrote: it is not in the original."""
+    return sentence not in original_sentences
+
+
+def _apply_change(text: str, old: str, new: str) -> str:
+    """Replace every standalone `old` number with `new`, as the update task asks."""
+    return re.sub(rf"(?<![\w.]){re.escape(old)}(?![\w])", new, text)
 
 
 def _stands_alone(passage: str, old: str) -> bool:

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import signal
 import subprocess
@@ -85,6 +86,8 @@ def test_task_building_is_deterministic_and_covers_every_type(corpus):
         ("update", "author"),
         ("rewrite", "author"),
         ("rewrite", "reviewer"),
+        ("mechanical", "reviewer"),
+        ("update", "reviewer"),
     }
     assert len({t["id"] for t in a}) == len(a)
 
@@ -102,12 +105,167 @@ def test_planted_review_tasks_carry_both_texts_a_quote_may_come_from(corpus):
         assert task["passage"].count("\n") >= 1
 
 
+@pytest.mark.parametrize("kind", ["mechanical", "update"])
+def test_planted_review_tasks_of_the_author_types_plant_damage_the_candidate_lacks(
+    corpus, kind
+):
+    manifest, cache = corpus
+    planted = [
+        t
+        for t in models.build_tasks(manifest, cache, per_type=6)
+        if t.get("variant") == "planted" and t["type"] == kind
+    ]
+    assert planted
+    for task in planted:
+        assert task["edits"]
+        for edit in task["edits"]:
+            assert edit["sentence"] in task["original"]
+            assert edit["sentence"] not in task["candidate"]
+        assert task["passage"] == task["original"] + "\n" + task["candidate"]
+
+
+@pytest.mark.parametrize(
+    ("damage", "kind"),
+    [("dropped", "drop"), ("changed", "number")],
+)
+def test_damage_sentence_plants_the_named_kind(damage, kind):
+    sentence = "The queue holds 63 jobs."
+    kept, detail = build_derived.damage_sentence(sentence, kind, [], random.Random("x"))
+    if kind == "drop":
+        assert (kept, detail) == (None, "dropped")
+    else:
+        # 63 plus one of 1, 2, 5 or 10.
+        assert kept in {f"The queue holds {n} jobs." for n in (64, 65, 68, 73)}
+
+
+@pytest.mark.parametrize(
+    ("sentence", "kind", "expected"),
+    [
+        ("The service must restart.", "negation", "The service must not restart."),
+        ("Use `aa` here.", "entity", "Use `bb` here."),
+    ],
+)
+def test_damage_sentence_rewrites_one_fact(sentence, kind, expected):
+    kept, _ = build_derived.damage_sentence(
+        sentence, kind, ["aa", "bb"], random.Random("x")
+    )
+    assert kept == expected
+
+
+@pytest.mark.parametrize(
+    ("sentence", "kind"),
+    [
+        ("The service restarts quickly.", "drop"),
+        ("The service restarts quickly.", "number"),
+        ("The service restarts quickly.", "negation"),
+        ("The service restarts quickly.", "entity"),
+        ("The service must not restart.", "negation"),
+    ],
+)
+def test_damage_sentence_declines_a_sentence_with_nothing_to_damage(sentence, kind):
+    assert (
+        build_derived.damage_sentence(sentence, kind, ["zz"], random.Random("x"))
+        is None
+    )
+
+
+def planted_tasks_from(tmp_path, kind, parent_text, **source):
+    """The planted review tasks of `kind` that `build_tasks` makes from one parent."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "parent.txt").write_text(parent_text + "\n")
+    (docs / "pair.txt").write_text(parent_text + "\n")
+    manifest = {
+        "documents": [
+            {
+                "id": "parent",
+                "origin": "seeded-defect" if kind == "mechanical" else "human",
+                "format": "text",
+                "genre": "g",
+                "source": source.get("parent", {}),
+            },
+            {
+                "id": "pair",
+                "origin": "rewrite-pair",
+                "format": "text",
+                "genre": "g",
+                "source": {"parents": ["parent"], "edits": source.get("edits", [])},
+            },
+        ]
+    }
+    built = models.build_tasks(manifest, tmp_path, per_type=12)
+    return [t for t in built if t["type"] == kind and t["role"] == "reviewer"]
+
+
+MECHANICAL_TEXT = (
+    "# Title\n\nThe queue holds 63 jobs before it blocks writers. "
+    "We leverage the cache to speed up reads.\n\nTail."
+)
+
+
+def test_a_mechanical_planted_task_leaves_the_flagged_sentence_alone(tmp_path):
+    flagged = "We leverage the cache to speed up reads."
+    (task,) = planted_tasks_from(
+        tmp_path,
+        "mechanical",
+        MECHANICAL_TEXT,
+        parent={"defects": [{"line": 3, "rule": "r", "text": flagged}]},
+    )
+    # The only other sentence with a fact is the queue one: it is the damage.
+    assert [e["sentence"] for e in task["edits"]] == [
+        "The queue holds 63 jobs before it blocks writers."
+    ]
+    assert flagged in task["candidate"]
+    assert "63" not in task["candidate"]
+
+
+UPDATE_TEXT = (
+    "Intro paragraph here. The cache holds 40 items in memory. "
+    "Run `purge` to empty it before restart."
+)
+
+
+@pytest.fixture
+def update_planted(tmp_path):
+    (task,) = planted_tasks_from(
+        tmp_path,
+        "update",
+        UPDATE_TEXT,
+        edits=[
+            {
+                "kind": "number",
+                "detail": "40 -> 50",
+                "original_sentence": "The cache holds 40 items in memory.",
+                "line": 1,
+            }
+        ],
+    )
+    return task
+
+
+def test_an_update_planted_task_makes_the_stated_change_and_plants_damage_elsewhere(
+    update_planted,
+):
+    assert update_planted["candidate"] == (
+        "Intro paragraph here. The cache holds 50 items in memory."
+    )
+    assert [e["sentence"] for e in update_planted["edits"]] == [
+        "Run `purge` to empty it before restart."
+    ]
+
+
+def test_an_update_planted_review_prompt_names_the_change_as_intended(update_planted):
+    assert "replace 40 with 50" in update_planted["prompt"]
+    assert update_planted["original"] in update_planted["prompt"]
+    assert update_planted["candidate"] in update_planted["prompt"]
+
+
 def test_update_tasks_carry_the_stated_change_and_it_is_in_the_passage(corpus):
     manifest, cache = corpus
     for task in (
         t
         for t in models.build_tasks(manifest, cache, per_type=6)
-        if t["type"] == "update"
+        if t["type"] == "update" and t["role"] == "author"
     ):
         change = task["expected"][0]
         assert re.search(rf"(?<!\d){re.escape(change['old'])}(?!\d)", task["source"])
@@ -1449,7 +1607,7 @@ def test_a_number_change_applies_to_every_occurrence_of_the_old_value():
 def update_tasks(corpus):
     manifest, cache = corpus
     built = models.build_tasks(manifest, cache, per_type=12)
-    return [t for t in built if t["type"] == "update"]
+    return [t for t in built if t["type"] == "update" and t["role"] == "author"]
 
 
 def apply_change(task):
@@ -1504,7 +1662,7 @@ def update_tasks_for(tmp_path, passage, old):
         ]
     }
     built = models.build_tasks(manifest, tmp_path, per_type=12)
-    return [t for t in built if t["type"] == "update"]
+    return [t for t in built if t["type"] == "update" and t["role"] == "author"]
 
 
 @pytest.mark.parametrize(
@@ -1972,3 +2130,13 @@ def test_recommend_command_writes_the_file_named_by_out(tmp_path, capsys):
     assert cli.main(["models", "recommend", str(path), "--out", str(target)]) == 0
     assert capsys.readouterr().out == ""
     assert json.loads(target.read_text())["status"] == "pending-reevaluation"
+
+
+@pytest.mark.parametrize("kind", ["mechanical", "update", "rewrite"])
+def test_the_summary_ranks_planted_reviewers_for_every_review_type(kind):
+    task = tiny_tasks()[2] | {"type": kind}
+    out = models.execute(
+        [task], roster("a", "b"), 3, NO_FINDINGS, ask_for=fake_ask, date="2026-11-19"
+    )
+    ranking = models.summarize(out, resamples=1)["ranking"]
+    assert set(ranking[f"{kind}/reviewer"]) == {"a", "b"}
