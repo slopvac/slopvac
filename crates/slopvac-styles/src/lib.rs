@@ -16,7 +16,7 @@ mod source;
 mod stack;
 mod types;
 
-pub use detect::{Evidence, Suggestion, detect_house_styles};
+pub use detect::{Detection, Evidence, SkippedFile, Suggestion, detect_house_styles};
 pub use error::StyleError;
 pub use reference::reference_pages;
 pub use resolve::{Conflict, Resolution, resolve};
