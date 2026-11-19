@@ -2681,6 +2681,8 @@ dependencies = [
  "caseless",
  "crossbeam-channel",
  "flate2",
+ "getrandom 0.4.3",
+ "hmac",
  "minisign",
  "minisign-verify",
  "rstest",

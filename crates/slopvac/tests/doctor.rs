@@ -471,6 +471,7 @@ fn trust_reports_counts_and_fingerprints_but_never_keys() {
             key_fingerprint: None,
             manifest_digest: None,
             key_id: None,
+            trust_key_id: None,
             declaration: DeclSummary {
                 network: false,
                 hooks: vec![],

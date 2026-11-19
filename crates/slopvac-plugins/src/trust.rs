@@ -13,8 +13,10 @@
 //! interpreter identity and environment listing of a managed Python
 //! environment ([`crate::pyenv`]). Any change revokes trust.
 //!
-//! Do not pass secrets through a plugin's declared environment; values are part
-//! of the public trust hash.
+//! Environment values enter the hash only as HMAC-SHA256 commitments under a
+//! per-user key kept in the store (see [`TrustKey`]), so a credential in a
+//! plugin's declared environment cannot be guessed offline from the hash that
+//! diagnostics and `SLOPVAC_TRUST` show. A changed value still changes the hash.
 //!
 //! Lookup is by trust hash only (section 5.4). A record also keeps the name,
 //! version, source, key and declaration, but they only feed listings and update
@@ -54,6 +56,10 @@ use crate::revoke::{RevocationError, RevocationList, Revocations};
 use crate::sign::{
     PublicKey, RotationProof, SignError, canonical_json, is_reserved_namespace, verify_rotation,
 };
+
+mod key;
+
+pub use key::TrustKey;
 
 const FILE_NAME: &str = "trust.json";
 const LOCK_NAME: &str = "trust.lock";
@@ -133,6 +139,32 @@ pub enum TrustError {
         /// Size the write would have.
         bytes: usize,
     },
+    /// Trust records exist but the key they were made under is gone.
+    #[error(
+        "the trust key {} is missing while trust records exist, so they cannot be checked; run `slopvac plugins trust` for each plugin to trust it again",
+        esc(&.path.to_string_lossy())
+    )]
+    KeyMissing {
+        /// Where the key belongs.
+        path: PathBuf,
+    },
+    /// A trust record was made under another key than the one in the store.
+    #[error(
+        "the trust key changed since the trust records were made, so they cannot be checked; run `slopvac plugins trust` for each plugin to trust it again"
+    )]
+    KeyMismatch,
+    /// The key file is not private to the user or does not hold a key.
+    #[error(
+        "the trust key {} cannot be used: {}; fix it, or delete it and run `slopvac plugins trust` for each plugin",
+        esc(&.path.to_string_lossy()),
+        esc(.why)
+    )]
+    KeyUnusable {
+        /// The file.
+        path: PathBuf,
+        /// What is wrong with it.
+        why: String,
+    },
 }
 
 impl TrustError {
@@ -180,14 +212,21 @@ pub struct TrustInputs<'a> {
 
 /// The trust hash of a plugin.
 ///
+/// Each environment value enters as an HMAC under `key` (see [`TrustKey`]), so
+/// the hash commits to the value without letting anyone test a guess for it.
+///
 /// # Panics
 /// Never: the hash input always serialises.
 #[must_use]
-pub fn trust_hash(i: &TrustInputs<'_>) -> Digest {
-    let mut env: Vec<[&str; 2]> = i.env.iter().map(|(k, v)| [k.as_str(), v]).collect();
+pub fn trust_hash(i: &TrustInputs<'_>, key: &TrustKey) -> Digest {
+    let mut env: Vec<[String; 2]> = i
+        .env
+        .iter()
+        .map(|(k, v)| [k.clone(), key.commit_env(k, v)])
+        .collect();
     env.sort_unstable();
     let doc = json!({
-        "v": 1,
+        "v": 2,
         "name": i.name,
         "tree": i.tree.as_str(),
         "declaration": serde_json::to_value(i.declaration).expect("declaration serialises"),
@@ -293,6 +332,10 @@ pub struct TrustRecord {
     /// Key id of the publisher key, so `plugins status` can flag a revoked one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_id: Option<String>,
+    /// Id of the trust key the hash was made under ([`TrustKey::id`]). A record
+    /// without one, or with another id than the store's key, fails closed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust_key_id: Option<String>,
     /// What the plugin declared when it was trusted.
     pub declaration: DeclSummary,
     /// When, as `YYYY-MM-DDTHH:MM:SSZ`. The caller supplies the clock.
@@ -427,11 +470,8 @@ impl TrustStore {
         parse_store_file(&raw, &path)
     }
 
-    /// Run `f` on the store under an exclusive lock and write the result atomically.
-    fn update<T>(
-        &self,
-        f: impl FnOnce(&mut StoreFile) -> Result<T, TrustError>,
-    ) -> Result<T, TrustError> {
+    /// Take the exclusive store lock. It is released when the guard drops.
+    fn lock(&self) -> Result<File, TrustError> {
         create_private_dir(&self.dir)?;
         let lock = OpenOptions::new()
             .create(true)
@@ -440,6 +480,15 @@ impl TrustStore {
             .open(self.dir.join(LOCK_NAME))
             .map_err(io_err("opening the trust lock"))?;
         lock.lock().map_err(io_err("locking the trust store"))?;
+        Ok(lock)
+    }
+
+    /// Run `f` on the store under an exclusive lock and write the result atomically.
+    fn update<T>(
+        &self,
+        f: impl FnOnce(&mut StoreFile) -> Result<T, TrustError>,
+    ) -> Result<T, TrustError> {
+        let lock = self.lock()?;
         let mut file = self.read()?;
         let out = f(&mut file)?;
         let bytes = serde_json::to_vec_pretty(&file).map_err(|e| TrustError::Corrupt {
@@ -794,6 +843,7 @@ fn hash_for(
     spec: &PluginSpec,
     external: &HashSet<PathBuf>,
     python: Option<&ManagedEnv>,
+    key: &TrustKey,
 ) -> Result<Digest, TrustError> {
     check_environment(spec)?;
     let (program, interpreter, environment) = match python {
@@ -818,19 +868,22 @@ fn hash_for(
             )
         }
     };
-    Ok(trust_hash(&TrustInputs {
-        name: &vp.name,
-        tree: &vp.tree,
-        declaration: &spec.declaration,
-        program: &program,
-        args: &spec.args,
-        env: &spec.env,
-        path_env: &spec.path_env,
-        manifest_digest: vp.manifest_digest.as_deref(),
-        key_fingerprint: vp.key_fingerprint.as_deref(),
-        interpreter: interpreter.as_deref(),
-        environment: environment.as_deref(),
-    }))
+    Ok(trust_hash(
+        &TrustInputs {
+            name: &vp.name,
+            tree: &vp.tree,
+            declaration: &spec.declaration,
+            program: &program,
+            args: &spec.args,
+            env: &spec.env,
+            path_env: &spec.path_env,
+            manifest_digest: vp.manifest_digest.as_deref(),
+            key_fingerprint: vp.key_fingerprint.as_deref(),
+            interpreter: interpreter.as_deref(),
+            environment: environment.as_deref(),
+        },
+        key,
+    ))
 }
 
 /// Where a plugin stands.
@@ -981,7 +1034,8 @@ impl TrustGate {
         vp: &VerifiedPlugin,
         spec: &PluginSpec,
     ) -> Result<(Digest, TrustState), TrustError> {
-        let hash = hash_for(vp, spec, &self.external, self.python.get(&vp.name))?;
+        let key = self.store.key()?;
+        let hash = hash_for(vp, spec, &self.external, self.python.get(&vp.name), &key)?;
         if self.revoked(vp, &hash)? {
             return Ok((hash, TrustState::Revoked));
         }
@@ -1029,7 +1083,8 @@ impl TrustGate {
         if let Some(env) = python {
             env.verify_full()?;
         }
-        let hash = hash_for(vp, spec, &self.external, python)?;
+        let key = self.store.key_for_recording()?;
+        let hash = hash_for(vp, spec, &self.external, python, &key)?;
         let rec = TrustRecord {
             hash: hash.to_string(),
             name: vp.name.clone(),
@@ -1038,6 +1093,7 @@ impl TrustGate {
             key_fingerprint: vp.key_fingerprint.clone(),
             manifest_digest: vp.manifest_digest.clone(),
             key_id: vp.key_id.clone(),
+            trust_key_id: Some(key.id().to_owned()),
             declaration: DeclSummary::of(&spec.declaration),
             recorded_at: now.to_owned(),
         };
@@ -1093,6 +1149,18 @@ impl SpawnGate for TrustGate {
             Err(TrustError::Environment(m)) => {
                 return Err(PluginError::Usage(format!(
                     "{name}: environment refused: {m}"
+                )));
+            }
+            Err(TrustError::KeyMissing { .. }) => {
+                return Err(PluginError::TrustKeyMissing(name.clone()));
+            }
+            Err(TrustError::KeyMismatch) => {
+                return Err(PluginError::TrustKeyMismatch(name.clone()));
+            }
+            Err(TrustError::KeyUnusable { path, why }) => {
+                return Err(PluginError::TrustKeyUnusable(format!(
+                    "{name}: {} ({why})",
+                    path.display()
                 )));
             }
             Err(_) => return Err(PluginError::Untrusted(name.clone())),
