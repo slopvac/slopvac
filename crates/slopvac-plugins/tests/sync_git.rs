@@ -306,7 +306,7 @@ fn a_second_online_sync_uses_the_stored_tree() {
 }
 
 #[test]
-fn a_commit_whose_tree_differs_from_the_lock_installs_nothing() {
+fn tm31_a_pinned_commit_whose_tree_differs_from_the_lock_exits_2_and_installs_nothing() {
     let remote = Remote::with_files(FILES, &[]);
     let env = Env::new();
     let c = client();
