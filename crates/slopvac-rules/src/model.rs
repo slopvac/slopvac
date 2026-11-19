@@ -8,7 +8,7 @@
 // `PlaceholderSource` has one variant today and gains more when a second source appears.
 #![allow(clippy::zero_sized_map_values)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
 use schemars::JsonSchema;
@@ -372,8 +372,9 @@ impl<'de> Deserialize<'de> for Substitutions {
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Substitutions, A::Error> {
                 let mut entries: Vec<(Pcre2Pattern, String)> = Vec::new();
+                let mut seen: HashSet<Pcre2Pattern> = HashSet::new();
                 while let Some((k, v)) = map.next_entry::<Pcre2Pattern, String>()? {
-                    if entries.iter().any(|(e, _)| *e == k) {
+                    if !seen.insert(k.clone()) {
                         return Err(de::Error::custom(format!(
                             "substitution key {:?} appears twice",
                             k.as_str()
@@ -649,7 +650,7 @@ impl TryFrom<AppliesToFields> for AppliesTo {
 }
 
 /// A named, closed reason a finding may be suppressed.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "Exception")]
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct Exception {

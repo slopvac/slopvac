@@ -468,3 +468,32 @@ fn a_symlinked_pack_file_still_loads() {
     let set = common::within_timeout(&link, move || load_pack_dir(&path));
     assert!(set.is_ok(), "{:?}", set.err());
 }
+
+/// A category whose one tokens rule lists `count` distinct tokens, `foo` first so its example matches.
+fn token_list_category(count: usize) -> String {
+    let tokens: Vec<String> = std::iter::once("foo".to_owned())
+        .chain((1..count).map(|i| format!("t{i}")))
+        .collect();
+    let mut rule = tokens_rule("r", "foo", &json!([{"bad": "a foo b", "good": "a bar b"}]));
+    rule["match"]["tokens"] = json!(tokens);
+    category("cat", &[rule])
+}
+
+#[test]
+fn a_rule_listing_exactly_the_entry_limit_loads() {
+    let text = token_list_category(slopvac_rules::MAX_RULE_ENTRIES);
+    let set = load(&[("a.json", text)]).unwrap();
+    assert_eq!(set.categories().len(), 1);
+}
+
+#[test]
+fn a_rule_listing_one_entry_past_the_limit_is_refused_with_its_budget() {
+    let text = token_list_category(slopvac_rules::MAX_RULE_ENTRIES + 1);
+    let e = errors(&[("a.json", text)]);
+    let (budget, limit, path) = budget_error(&e);
+    assert_eq!(budget, "rule-entries");
+    assert_eq!(limit, slopvac_rules::MAX_RULE_ENTRIES as u64);
+    assert!(path.ends_with("a.json") && !path.starts_with('/'), "{path}");
+    assert_eq!(e.errors()[0].rule.as_deref(), Some("cat.r"));
+    assert!(e.to_string().contains("[rules-budget-exceeded]"), "{e}");
+}

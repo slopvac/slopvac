@@ -2,7 +2,9 @@
 //! unique lists, validated text and absent-but-never-null members.
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::fmt;
+use std::hash::Hash;
 use std::ops::Deref;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
@@ -13,7 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 ///
 /// Embed it as `#[serde(flatten)] #[schemars(skip)]` and add `additionalProperties: false`
 /// plus `patternProperties` to the struct's schema.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(crate) struct Extensions;
 
 impl<'de> Deserialize<'de> for Extensions {
@@ -76,7 +78,7 @@ impl<'a, T, const MIN: usize> IntoIterator for &'a UniqueVec<T, MIN> {
     }
 }
 
-impl<'de, T: Deserialize<'de> + PartialEq, const MIN: usize> Deserialize<'de>
+impl<'de, T: Deserialize<'de> + Eq + Hash, const MIN: usize> Deserialize<'de>
     for UniqueVec<T, MIN>
 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -87,8 +89,9 @@ impl<'de, T: Deserialize<'de> + PartialEq, const MIN: usize> Deserialize<'de>
                 items.len()
             )));
         }
+        let mut seen: HashSet<&T> = HashSet::with_capacity(items.len());
         for (i, item) in items.iter().enumerate() {
-            if items[..i].contains(item) {
+            if !seen.insert(item) {
                 return Err(de::Error::custom(format!(
                     "items must be unique, item {i} repeats an earlier one"
                 )));

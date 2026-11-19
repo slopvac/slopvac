@@ -13,6 +13,9 @@ pub enum PackBudget {
     Entries,
     /// Bytes read, in bytes: [`MAX_PACK_BYTES`](crate::MAX_PACK_BYTES).
     Bytes,
+    /// Tokens or substitutions in one rule, in entries:
+    /// [`MAX_RULE_ENTRIES`](crate::MAX_RULE_ENTRIES).
+    RuleEntries,
 }
 
 impl PackBudget {
@@ -23,6 +26,7 @@ impl PackBudget {
             Self::Files => "plugin-files",
             Self::Entries => "plugin-entries",
             Self::Bytes => "plugin-bytes",
+            Self::RuleEntries => "rule-entries",
         }
     }
 
@@ -33,6 +37,7 @@ impl PackBudget {
             Self::Files => "files",
             Self::Entries => "entries",
             Self::Bytes => "bytes",
+            Self::RuleEntries => "entries",
         }
     }
 }
@@ -48,14 +53,15 @@ pub enum LoadErrorKind {
     TooLarge(u64),
     /// The pack directory holds more files, or more bytes in total, than
     /// [`MAX_PACK_FILES`](crate::MAX_PACK_FILES) or [`MAX_PACK_BYTES`](crate::MAX_PACK_BYTES)
-    /// allow. Its stable code is `rules-budget-exceeded`.
+    /// allow, or one rule lists more than [`MAX_RULE_ENTRIES`](crate::MAX_RULE_ENTRIES) tokens or
+    /// substitutions. Its stable code is `rules-budget-exceeded`.
     BudgetExceeded {
         /// The budget that was passed.
         budget: PackBudget,
         /// The limit, in the unit of `budget`.
         limit: u64,
-        /// The pack directory as a display path, never absolute: relative to the working directory,
-        /// or `<external>/<name>` outside it.
+        /// The pack directory, or for `rule-entries` the rule file, as a display path, never
+        /// absolute: relative to the working directory, or `<external>/<name>` outside it.
         path: String,
     },
     /// The file does not parse as a rule or category file.
