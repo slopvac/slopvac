@@ -2715,14 +2715,15 @@ dependencies = [
 name = "slopvac-report"
 version = "0.0.0"
 dependencies = [
+ "insta",
  "jsonschema",
  "roxmltree",
  "rstest",
  "scraper",
  "serde_json",
+ "slopvac-messages",
  "slopvac-model",
  "slopvac-sanitize",
- "thiserror",
 ]
 
 [[package]]

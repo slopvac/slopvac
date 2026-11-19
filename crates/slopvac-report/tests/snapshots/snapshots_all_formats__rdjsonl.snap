@@ -1,0 +1,9 @@
+---
+source: crates/slopvac-report/tests/snapshots_all_formats.rs
+expression: "rendered(Format::Rdjsonl)"
+---
+{"code":{"url":"https://docs.example/slopvac/v3/rules/ai-residue/chat-leakage/","value":"core:ai-residue.chat-leakage"},"location":{"path":"docs/guide.md","range":{"end":{"column":111,"line":2},"start":{"column":88,"line":2}}},"message":"Remove the chat reply that leaked into the document.","severity":"ERROR","source":{"name":"slopvac"}}
+{"code":{"url":"https://docs.example/slopvac/v3/rules/prose-inflation/slop-lexicon/","value":"core:prose-inflation.slop-lexicon"},"location":{"path":"docs/guide.md","range":{"end":{"column":147,"line":1},"start":{"column":142,"line":1}}},"message":"Replace 'delve' with a plain verb.","severity":"WARNING","source":{"name":"slopvac"},"suggestions":[{"range":{"end":{"column":147,"line":1},"start":{"column":142,"line":1}},"text":"look"}]}
+{"code":{"url":"https://docs.example/slopvac/v3/rules/orwell/not-un/","value":"core:orwell.not-un"},"location":{"path":"docs/guide.md","range":{"end":{"column":216,"line":2},"start":{"column":202,"line":2}}},"message":"Say 'unclear' without the 'not un' double negative.","severity":"INFO","source":{"name":"slopvac"}}
+{"code":{"url":"https://docs.example/slopvac/v3/rules/docs-discipline/document-length/","value":"core:docs-discipline.document-length"},"location":{"path":"src/app.py","range":{"start":{"line":1}}},"message":"The comment block runs 80 words; keep it under 60.","severity":"WARNING","source":{"name":"slopvac"}}
+{"code":{"url":"https://docs.example/slopvac/v3/rules/prose-inflation/slop-lexicon/","value":"core:prose-inflation.slop-lexicon"},"location":{"path":"dossiers/ça & <é>.md","range":{"end":{"column":7,"line":2},"start":{"column":1,"line":2}}},"message":"Replace \"wörld\" <b>& `x` | y\u0001","severity":"WARNING","source":{"name":"slopvac"},"suggestions":[{"range":{"end":{"column":7,"line":2},"start":{"column":1,"line":2}},"text":"monde"}]}

@@ -165,6 +165,17 @@ fn a_span_past_the_text_is_a_position_error() {
     let sources: HashMap<String, String> = HashMap::from([("t.txt".into(), "abc".into())]);
     let err = render(Format::Sarif, &report, &sources).unwrap_err();
     assert!(matches!(err, RenderError::Position { .. }), "{err}");
+    let source = std::error::Error::source(&err).expect("the position error stays the source");
+    assert_eq!(err.to_string(), format!("t.txt: {source}"));
+}
+
+#[test]
+fn render_errors_have_stable_codes() {
+    use slopvac_messages::Catalog as _;
+    let report = report_for(Some((0, 3)), [1, 1, 1, 4], "msg");
+    let err = render(Format::Sarif, &report, &NoSources).unwrap_err();
+    assert_eq!(err.code(), "render-missing-source");
+    assert_eq!(err.to_string(), "sarif output needs the text of t.txt");
 }
 
 #[test]

@@ -1,3 +1,45 @@
 # Append-only list of every message code that has shipped, one `code kind` per line.
 # Add a line when you add a code. Never edit or delete one: move a removed code to
 # RETIRED in crates/slopvac/src/messages.rs and keep its line here.
+render-json error
+render-missing-source error
+render-position error
+report-column-document text
+report-column-findings text
+report-column-location text
+report-column-message text
+report-column-rule text
+report-column-score text
+report-column-severity text
+report-column-verdict text
+report-html-documents-caption text
+report-html-documents-heading text
+report-html-findings-caption text
+report-html-no-findings text
+report-html-notices-heading text
+report-html-page-title text
+report-html-skip text
+report-html-summary text
+report-html-title text
+report-html-unchecked text
+report-markdown-document-heading text
+report-markdown-document-stats text
+report-markdown-notice text
+report-markdown-notices-heading text
+report-markdown-reason text
+report-markdown-row text
+report-markdown-summary text
+report-markdown-table-header text
+report-markdown-title text
+report-markdown-unchecked text
+report-severity-error text
+report-severity-suggestion text
+report-severity-warning text
+report-text-document text
+report-text-finding text
+report-text-notice text
+report-text-reason text
+report-text-summary text
+report-text-unchecked text
+report-verdict-fail text
+report-verdict-pass text
