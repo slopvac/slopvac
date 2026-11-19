@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -389,6 +390,86 @@ def test_header_only_allow_file_has_no_entries(tmp_path):
     path = tmp_path / "allow.toml"
     path.write_text("# reviewed exceptions\n", encoding="utf-8")
     assert compat.load_allow(path) == []
+
+
+ALLOW_A = (
+    '[[allow]]\nfile = "thing.schema.json"\npointer = "/properties/a"\n'
+    'kind = "property-removed"\nreason = "reviewed"\napproved_by = "tester"\n'
+)
+NEVER_MATCHES = (
+    '[[allow]]\nfile = "thing.schema.json"\npointer = "/properties/zzz"\n'
+    'kind = "property-removed"\nreason = "typo"\napproved_by = "tester"\n'
+)
+
+
+def git_repo(tmp_path: Path) -> tuple[Path, Callable[..., None]]:
+    import subprocess
+
+    repo = tmp_path / "repo"
+    (repo / "schemas" / "v3").mkdir(parents=True)
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                *args,
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-q")
+    return repo, git
+
+
+def commit(repo: Path, git: Callable[..., None], body: dict, allow: str) -> None:
+    write_dir(repo / "schemas" / "v3", {FILE: body})
+    (repo / "schemas" / "v3" / compat.ALLOW_FILE).write_text(allow, encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "step")
+
+
+def test_allow_entry_still_passes_once_its_change_is_on_the_base(tmp_path):
+    repo, git = git_repo(tmp_path)
+    commit(repo, git, OLD_WITH_A, "")
+    commit(repo, git, schema(properties={}), ALLOW_A)
+    assert compat.main(["--repo", str(repo), "--base", "HEAD~1"]) == 0
+    # The change has landed: the base now holds the removal and its entry.
+    assert compat.main(["--repo", str(repo), "--base", "HEAD"]) == 0
+
+
+@pytest.mark.parametrize("base", ["HEAD~1", "HEAD"], ids=["before", "after-landing"])
+def test_an_added_entry_that_matches_nothing_is_stale_on_either_base(tmp_path, base):
+    repo, git = git_repo(tmp_path)
+    commit(repo, git, OLD_WITH_A, "")
+    commit(repo, git, schema(properties={}), ALLOW_A)
+    (repo / "schemas" / "v3" / compat.ALLOW_FILE).write_text(
+        ALLOW_A + NEVER_MATCHES, encoding="utf-8"
+    )
+    findings = compat.check(
+        compat.snapshot_from_ref(repo, base),
+        repo / "schemas" / "v3",
+        compat.load_allow(repo / "schemas" / "v3" / compat.ALLOW_FILE),
+    )
+    assert kinds(findings) == [("/properties/zzz", "allow-entry-stale")]
+
+
+def test_a_landed_entry_does_not_suppress_a_new_finding_at_its_pointer(tmp_path):
+    # The base removed `a` under an entry and then put it back; removing it again
+    # needs a new review, so the landed entry must not cover it.
+    base = write_dir(tmp_path / "old", {FILE: OLD_WITH_A})
+    (base / compat.ALLOW_FILE).write_text(ALLOW_A, encoding="utf-8")
+    new = write_dir(tmp_path / "new", {FILE: schema(properties={})})
+    findings = compat.check(
+        compat.snapshot_from_dir(base), new, compat.load_allow(base / compat.ALLOW_FILE)
+    )
+    assert kinds(findings) == [("/properties/a", "property-removed")]
 
 
 def test_missing_allow_file_has_no_entries(tmp_path):
