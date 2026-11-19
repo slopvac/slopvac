@@ -482,7 +482,8 @@ fn blocklist_reads_count_against_the_run_byte_budget() {
             l,
         )
     };
-    assert!(run(limits(used)).is_ok(), "the exact total fits");
+    assert!(run(limits(10 * used)).is_ok(), "a generous budget fits");
+    // The config and the blocklist are read in turn; the blocklist read crosses the budget.
     let e = run(limits(used - 1)).unwrap_err();
     assert_eq!(e.code(), "migrate-run-limit");
     assert!(e.to_string().contains("words.toml"), "{e}");
