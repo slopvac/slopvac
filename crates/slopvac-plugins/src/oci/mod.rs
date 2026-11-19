@@ -21,7 +21,7 @@ mod process;
 mod reference;
 mod types;
 
-pub(crate) use auth::find_in_path;
+pub(crate) use auth::find_in_dir;
 pub use auth::{
     Anonymous, Challenge, Credential, CredentialSource, DefaultCredentials, EnvCredentials,
 };

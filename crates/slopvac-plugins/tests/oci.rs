@@ -1604,6 +1604,54 @@ mod helpers {
         assert!(good_marker.exists(), "the trusted helper did not run");
         assert!(!bad_marker.exists(), "the planted helper ran");
     }
+
+    #[test]
+    fn a_path_link_to_a_directory_with_a_colon_in_its_name_finds_that_directory_only() {
+        use slopvac_plugins::oci::CredentialSource;
+        let (_guard, base) = scratch();
+        let (prefix_marker, real_marker) = (base.join("prefix"), base.join("real"));
+        let project = base.join("project");
+        // `a:b/bin` read as a PATH list is the directories `a` and `b/bin`.
+        plant(&base.join("a"), "colon", &prefix_marker, 0o755);
+        plant(&base.join("a:b/bin"), "colon", &real_marker, 0o755);
+        let link = base.join("link");
+        std::os::unix::fs::symlink(base.join("a:b/bin"), &link).unwrap();
+        let creds = creds_for(&base, "colon", link.to_str().unwrap(), &project);
+        let got = creds.credential("ghcr.io").unwrap().unwrap();
+        assert_eq!(got.username, "bob");
+        assert!(
+            real_marker.exists(),
+            "the helper in the linked directory did not run"
+        );
+        assert!(
+            !prefix_marker.exists(),
+            "the helper in the directory before the colon ran"
+        );
+    }
+
+    #[test]
+    fn a_helper_that_is_rejected_first_does_not_hide_a_valid_one_later_on_the_path() {
+        use slopvac_plugins::oci::CredentialSource;
+        let (_guard, base) = scratch();
+        let (bad_marker, good_marker) = (base.join("bad"), base.join("good"));
+        let project = base.join("project");
+        plant(&project.join("tools"), "both", &bad_marker, 0o755);
+        // The first directory is fine, but its helper is a link into the project.
+        let linked = base.join("linked-first");
+        std::fs::create_dir(&linked).unwrap();
+        std::os::unix::fs::symlink(
+            project.join("tools/docker-credential-both"),
+            linked.join("docker-credential-both"),
+        )
+        .unwrap();
+        plant(&base.join("trusted"), "both", &good_marker, 0o755);
+        let search = std::env::join_paths([linked, base.join("trusted")]).unwrap();
+        let creds = creds_for(&base, "both", search.to_str().unwrap(), &project);
+        let got = creds.credential("ghcr.io").unwrap().unwrap();
+        assert_eq!(got.username, "bob");
+        assert!(good_marker.exists(), "the trusted helper did not run");
+        assert!(!bad_marker.exists(), "the planted helper ran");
+    }
 }
 
 #[test]
@@ -1930,6 +1978,98 @@ fn a_cached_anonymous_token_keeps_the_helper_refusal_for_a_later_403() {
     let err = client.fetch_manifest(&r).unwrap_err();
     assert_eq!(err, untrusted());
     assert_eq!(server.count("/token"), 1, "the token was cached");
+}
+
+/// A credential source that answers from a script, one entry per lookup. The
+/// last entry repeats.
+struct Scripted(Mutex<Vec<Result<Option<slopvac_plugins::oci::Credential>, OciError>>>);
+
+impl CredentialSource for Scripted {
+    fn credential(&self, _: &str) -> Result<Option<slopvac_plugins::oci::Credential>, OciError> {
+        let mut steps = self.0.lock().unwrap();
+        if steps.len() > 1 {
+            steps.remove(0)
+        } else {
+            steps[0].clone()
+        }
+    }
+}
+
+/// A registry that gives an anonymous token to a request without a login and
+/// an authenticated one to a request with a login. A manifest request with the
+/// anonymous token is served once, then rejected with a new challenge. With the
+/// authenticated token it gets `authenticated[n]` on its n-th try (the last
+/// repeats).
+fn rotating_login_registry(authenticated: &'static [u16]) -> Server {
+    let anonymous_tries = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let authenticated_tries = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    Server::start(move |req| {
+        if req.path.starts_with("/token") {
+            let token = if req.header("authorization").is_some() {
+                "AUTH"
+            } else {
+                "ANON"
+            };
+            return Response::new(200).json(&json!({"token": token, "expires_in": 300}));
+        }
+        let next = |tries: &Arc<std::sync::atomic::AtomicUsize>| {
+            tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        };
+        let status = match req.header("authorization") {
+            Some("Bearer ANON") => {
+                if next(&anonymous_tries) == 0 {
+                    200
+                } else {
+                    401
+                }
+            }
+            Some("Bearer AUTH") => {
+                authenticated[next(&authenticated_tries).min(authenticated.len() - 1)]
+            }
+            _ => 401,
+        };
+        match status {
+            200 => manifest_response(&manifest_json(&Descriptor::for_bytes("x", b"{}"), &[])),
+            401 => Response::new(401).header(
+                "WWW-Authenticate",
+                &format!(
+                    "Bearer realm=\"http://{}/token\",service=\"reg\",scope=\"repository:a/b:pull\"",
+                    host(req)
+                ),
+            ),
+            other => Response::new(other),
+        }
+    })
+}
+
+#[rstest::rstest]
+#[case::denied_on_the_fresh_login(&[403])]
+#[case::denied_later_on_the_cached_login(&[200, 403])]
+fn a_helper_refusal_does_not_outlive_a_login_that_later_succeeds(
+    #[case] authenticated: &'static [u16],
+) {
+    let server = rotating_login_registry(authenticated);
+    let login = slopvac_plugins::oci::Credential {
+        username: "me".into(),
+        secret: "s3cret".into(),
+    };
+    // The helper is refused for the first lookup only.
+    let client = Client::with_loopback_http_for_tests(Box::new(Scripted(Mutex::new(vec![
+        Err(untrusted()),
+        Ok(Some(login)),
+    ]))));
+    let r = reference(&server, "a/b:1");
+    // Served with the anonymous token, which keeps the refusal.
+    client.fetch_manifest(&r).unwrap();
+    // The anonymous token is rejected, and the new login is used.
+    let mut outcome = client.fetch_manifest(&r);
+    if authenticated[0] == 200 {
+        outcome.unwrap();
+        outcome = client.fetch_manifest(&r);
+    }
+    let err = outcome.unwrap_err();
+    assert!(matches!(err, OciError::Denied(_)), "{err:?}");
+    assert_eq!(err.code(), None);
 }
 
 mod config_key_case {

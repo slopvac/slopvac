@@ -279,34 +279,35 @@ fn executable_suffixes() -> Vec<String> {
 }
 
 pub(crate) fn find_in_path(program: &str, search: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
-    find_with_suffixes(program, search, &executable_suffixes())
-}
-
-fn find_with_suffixes(
-    program: &str,
-    search: Option<&std::ffi::OsStr>,
-    suffixes: &[String],
-) -> Option<PathBuf> {
     let path = search
         .map(ToOwned::to_owned)
         .or_else(|| std::env::var_os("PATH"))?;
+    let suffixes = executable_suffixes();
+    std::env::split_paths(&path).find_map(|dir| find_with_suffixes(program, &dir, &suffixes))
+}
+
+/// `program` in the single directory `dir`, which is not parsed as a `PATH`
+/// list, so a `:` in its name stays part of the name.
+pub(crate) fn find_in_dir(program: &str, dir: &Path) -> Option<PathBuf> {
+    find_with_suffixes(program, dir, &executable_suffixes())
+}
+
+fn find_with_suffixes(program: &str, dir: &Path, suffixes: &[String]) -> Option<PathBuf> {
     // A name that already ends in a runnable suffix (`desktop.exe`) is tried as
     // written before any suffix is appended.
     let lower = program.to_ascii_lowercase();
     let as_written = suffixes
         .iter()
         .any(|ext| !ext.is_empty() && lower.ends_with(ext.as_str()));
-    std::env::split_paths(&path).find_map(|dir| {
-        let written = as_written.then(|| dir.join(program));
-        written
-            .into_iter()
-            .chain(
-                suffixes
-                    .iter()
-                    .map(|ext| dir.join(format!("{program}{ext}"))),
-            )
-            .find(|p| p.is_file())
-    })
+    let written = as_written.then(|| dir.join(program));
+    written
+        .into_iter()
+        .chain(
+            suffixes
+                .iter()
+                .map(|ext| dir.join(format!("{program}{ext}"))),
+        )
+        .find(|p| p.is_file())
 }
 
 /// `program` from a trusted directory only (see [`crate::trusted_path`]). The

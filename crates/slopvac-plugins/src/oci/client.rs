@@ -260,11 +260,14 @@ impl Client {
     /// The login for `registry`. A refusal to start a credential helper does not
     /// fail the request: anonymous access may still work. The refusal goes to
     /// `refused`, and the caller reports it when the registry then denies access.
+    /// Each lookup starts clean, so a refusal from an earlier lookup (inherited
+    /// with a cached token) never describes this one.
     fn login(
         &self,
         registry: &str,
         refused: &mut Option<OciError>,
     ) -> Result<Option<Credential>, OciError> {
+        *refused = None;
         match self.creds.credential(registry) {
             Err(e) if e.code().is_some() => {
                 tracing::warn!(
