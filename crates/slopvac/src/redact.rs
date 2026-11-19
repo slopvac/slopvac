@@ -63,10 +63,11 @@ impl PathShower {
         }
     }
 
-    /// How `path` appears in a message, given its already canonical form `canonical`.
+    /// How `path` appears in a message. `canonical` is its canonical form when resolving it
+    /// succeeded and `None` when it failed; only a resolved path takes the fast path.
     #[must_use]
-    pub fn shown(&self, path: &Path, canonical: &Path) -> String {
-        if let Some(root) = &self.physical_root
+    pub fn shown(&self, path: &Path, canonical: Option<&Path>) -> String {
+        if let (Some(root), Some(canonical)) = (&self.physical_root, canonical)
             && lexical_normalize(&self.cwd.join(path)) == canonical
         {
             return display_under_root(canonical, root);
@@ -214,7 +215,7 @@ mod tests {
         ] {
             let path = root.join(given);
             let canonical = path.canonicalize().unwrap();
-            assert_eq!(shower.shown(&path, &canonical), want);
+            assert_eq!(shower.shown(&path, Some(&canonical)), want);
             assert_eq!(shown_path(&path, &root), want);
         }
     }
