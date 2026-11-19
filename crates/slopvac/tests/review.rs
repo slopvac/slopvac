@@ -119,3 +119,52 @@ fn a_missing_original_option_is_a_usage_error() {
         .code(2)
         .stderr(predicate::str::contains("error[usage]"));
 }
+
+/// A project whose config names the model that wrote the revision.
+fn project_with_author_model(model: &str) -> tempfile::TempDir {
+    let dir = project();
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        format!("schema_version = 3\n\n[review]\nauthor_model = \"{model}\"\n"),
+    )
+    .expect("config");
+    dir
+}
+
+#[test]
+fn a_reviewer_that_is_the_configured_author_model_is_refused() {
+    let dir = project_with_author_model("claude-sonnet-5-5");
+    slopvac(dir.path())
+        .args([
+            "review",
+            "new.md",
+            "--original",
+            "old.md",
+            "--dry-run",
+            "--reviewer-model",
+            "claude-sonnet-5-5#high",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[review-same-model]"));
+}
+
+#[test]
+fn a_different_reviewer_passes_the_author_model_check_in_a_dry_run() {
+    let dir = project_with_author_model("claude-sonnet-5-5");
+    let out = slopvac(dir.path())
+        .args([
+            "review",
+            "new.md",
+            "--original",
+            "old.md",
+            "--dry-run",
+            "--reviewer-model",
+            "gpt-5",
+        ])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(0));
+    let plan: Value = serde_json::from_slice(&out.stdout).expect("a JSON plan");
+    assert_eq!(plan["reviewer_model_checked"], true, "{plan}");
+}
