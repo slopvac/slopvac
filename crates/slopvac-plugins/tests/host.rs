@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::*;
+use rstest::rstest;
 use serde_json::{Value, json};
 use slopvac_plugins::hooks::{
     CompleteItem, Completion, Document, Finding, FindingsDocument, RecipeAction, RecipeFile,
@@ -57,6 +58,56 @@ fn h5_version_outside_the_host_range_is_not_loaded() {
         &Allow,
     );
     assert_eq!(code(&r), "protocol-version-unsupported");
+}
+
+/// Start against a plugin that answers `initialize` with an error object.
+fn init_error(numeric: i64, label: &str) -> PluginError {
+    let mode = format!("init-error:{numeric}:{label}");
+    Plugin::start(&spec(&mode), &cfg(), &Allow)
+        .unwrap_err()
+        .error
+}
+
+#[rstest]
+#[case::plugin_range_claims_the_version_label(-32060, "protocol-version-unsupported")]
+#[case::host_reserved_claims_the_version_label(-32010, "protocol-version-unsupported")]
+fn h5b_an_initialize_error_with_another_number_is_not_a_version_refusal(
+    #[case] numeric: i64,
+    #[case] label: &str,
+) {
+    let err = init_error(numeric, label);
+    let PluginError::Rpc(e) = &err else {
+        panic!("expected the plain RPC error, got {err:?}");
+    };
+    assert_eq!(e.code, numeric);
+    assert_eq!(err.slopvac_code(), "internal-error");
+}
+
+#[rstest]
+#[case::another_valid_label("my-own-label")]
+#[case::a_host_label("plugin-untrusted")]
+fn h5c_minus_32001_is_a_version_refusal_whatever_label_it_carries(#[case] label: &str) {
+    assert_eq!(
+        init_error(-32001, label),
+        PluginError::ProtocolVersionUnsupported {
+            host: "1..=1".into(),
+            plugin: "[3,4]".into(),
+        }
+    );
+}
+
+#[rstest]
+#[case::plugin_range(-32060, "plugin-untrusted", "plugin error -32060: m (internal-error)")]
+#[case::offline(-32007, "my-own-label", "plugin error -32007: m (offline)")]
+#[case::undefined(5, "plugin-hash-mismatch", "plugin error 5: m (internal-error)")]
+fn a_displayed_rpc_error_names_the_contract_code_never_the_plugins_label(
+    #[case] numeric: i64,
+    #[case] label: &str,
+    #[case] want: &str,
+) {
+    let obj = json!({"code": numeric, "message": "m", "data": {"slopvac_code": label}});
+    let e = slopvac_plugins::hooks::parse_error_object(&obj).unwrap();
+    assert_eq!(PluginError::Rpc(e).to_string(), want);
 }
 
 #[test]
