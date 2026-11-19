@@ -140,4 +140,11 @@ with open(out.parent / "patterns.jsonl", "w") as f:
             "id": r["id"], "source": r["source"], "caseless": r["caseless"], "ucp": r["ucp"],
             "origin": source(r)[0], "where": r["_where"], "verdict": verdict(r),
         }) + "\n")
+with open(out.parent / "patterns-identical.jsonl", "w") as f:
+    for r in sorted(recs.values(), key=lambda r: (source(r)[0], r["_where"], r["id"])):
+        if verdict(r) == "identical":
+            f.write(json.dumps({
+                "id": r["id"], "source": r["source"], "caseless": r["caseless"], "ucp": r["ucp"],
+                "origin": source(r)[0], "where": r["_where"], "verdict": "identical",
+            }) + "\n")
 print(f"wrote {out}")

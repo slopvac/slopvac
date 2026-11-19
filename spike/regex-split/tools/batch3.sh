@@ -1,23 +1,64 @@
 #!/bin/sh
-# SPIKE batch 3 (dev, under slopvac-heavy): timings. Refuses to start above load 12.
-# Usage: sh spike/regex-split/tools/batch3.sh <b2-sha8> <set: small|large|e2e> [modes]
+# SPIKE batch 3 (timing host, under slopvac-heavy). Self-contained: reads the pattern lists
+# committed in spike/regex-split/results/b2.
+# Usage: sh spike/regex-split/tools/batch3.sh <stage> [modes]
+#   prep  : build instrumented slopvac, bench, uninstrumented baseline; inputs; recheck
+#   small : 1 MiB classes, nesting, near-miss, recheck and plugin attacks (all modes)
+#   large : 8 MiB, then 64 MiB classes
+#   e2e   : release `slopvac lint` on slopvac docs and the eval corpus, median of 3
+# Timing stages refuse to start above 1-minute load 12 and mark the run DISCARD if the
+# load at the end is above 12.
 set -u
-B2=$1
-SET=$2
-MODES=${3:-"interp jit callout rust"}
+STAGE=$1
+MODES=${2:-"interp jit callout rust"}
 WT=$PWD
 SHA8=$(git rev-parse --short=8 HEAD)
 S=$HOME/tmp/spike-regex-build
 D=$S/data
-IN=$HOME/personal/dev/slopvac/.git/runs/spike-out-$B2
-OUT=$HOME/personal/dev/slopvac/.git/runs/spike-t-$SHA8-$SET
-BENCH=$S/bench-$B2
-mkdir -p "$OUT"
+IN=$WT/spike/regex-split/results/b2
+TOOLS=$WT/spike/regex-split/tools
+OUT=$HOME/personal/dev/slopvac/.git/runs/spike-t-$SHA8-$STAGE
+BENCH=$S/bin/bench
+mkdir -p "$OUT" "$S/bin"
 echo "toolchain=$(rustc --version)" > "$OUT/toolchain.txt"
+echo "host=$(hostname) arch=$(uname -m) nproc=$(nproc)" > "$OUT/host.txt"
 load1() { cut -d' ' -f1 /proc/loadavg; }
+gt12() { awk "BEGIN{exit !($1 > 12)}"; }
+
+if [ "$STAGE" = prep ]; then
+  B=$S/tree-$SHA8 T=$S/target
+  mkdir -p "$B"
+  rsync -a --delete --exclude target --exclude .git "$WT/" "$B/"
+  python3 "$TOOLS/apply.py" "$B" || exit 10
+  (cd "$B" && CARGO_TARGET_DIR=$T cargo build --release -p slopvac --bin slopvac) > "$OUT/build.log" 2>&1; echo build-slopvac=$?
+  cp "$T/release/slopvac" "$S/bin/slopvac-spike" || exit 11
+  cp "$B/Cargo.lock" "$B/spike/regex-split/bench/Cargo.lock"
+  (cd "$B/spike/regex-split/bench" && CARGO_TARGET_DIR=$T cargo build --release) > "$OUT/bench-build.log" 2>&1; echo build-bench=$?
+  cp "$T/release/spike-regex-bench" "$S/bin/bench" || exit 12
+  CARGO_TARGET_DIR=$S/target-main cargo build --release -p slopvac --bin slopvac > "$OUT/build-main.log" 2>&1; echo build-main=$?
+  cp "$S/target-main/release/slopvac" "$S/bin/slopvac-main" || exit 13
+  echo "$SHA8 $(rustc --version)" > "$S/bin/STAMP"
+  python3 "$TOOLS/gen_inputs.py" "$WT" "$D"; echo gen=$?
+  mkdir -p "$S/recheck" && cd "$S/recheck" &&
+    { [ -d node_modules/recheck ] || npm install --silent --no-audit --no-fund recheck@4.6.2 > npm.log 2>&1; }
+  node -e 'console.log(require("recheck/package.json").version)' > "$OUT/recheck-version.txt" 2>&1
+  cp "$TOOLS/recheck_run.mjs" "$S/recheck/"
+  timeout 5400 node "$S/recheck/recheck_run.mjs" "$IN/patterns.jsonl" "$D" > "$OUT/recheck.log" 2>&1; echo recheck=$?
+  cp "$D/recheck.jsonl" "$OUT/" 2>/dev/null
+  # Lint project: strict profile; slopvac docs and the eval corpus with real extensions.
+  P=$S/project
+  rm -rf "$P" && mkdir -p "$P"
+  printf 'schema_version = 3\nprofile = "strict"\n' > "$P/slopvac.toml"
+  cp -R "$WT/docs" "$P/docs"
+  python3 "$TOOLS/eval_copy.py" "$WT/evals/corpus" "$P/eval" > "$OUT/eval-ext.txt"
+  echo done-prep
+  exit 0
+fi
+
+echo "bin=$(cat "$S/bin/STAMP")" >> "$OUT/host.txt"
 L0=$(load1)
-echo "start uptime: $(uptime) nproc=$(nproc)" | tee "$OUT/load.txt"
-if awk "BEGIN{exit !($L0 > 12)}"; then
+echo "start: $(uptime) nproc=$(nproc)" | tee "$OUT/load.txt"
+if gt12 "$L0"; then
   echo "load-gate: load $L0 above 12, nothing measured" | tee -a "$OUT/load.txt"
   exit 75
 fi
@@ -28,16 +69,16 @@ run() {
   label="$mode/$cls"
   echo "$(date -u +%T) $label load=$(load1)" >> "$OUT/load.txt"
   while :; do
-    ( ulimit -v 8388608; SLOPVAC_SPIKE_ENGINE=$mode timeout 7200 "$BENCH" "$pats" "$input" "$label" "$OUT/bench.jsonl" "$@" ) \
+    ( ulimit -v 8388608; SLOPVAC_SPIKE_ENGINE=$mode SLOPVAC_SPIKE_ALLOW=$IN/allow.txt \
+      timeout 7200 "$BENCH" "$pats" "$input" "$label" "$OUT/bench.jsonl" "$@" ) \
       > /dev/null 2>> "$OUT/bench.err"
     rc=$?
     [ $rc = 0 ] && break
     [ $rc = 3 ] && continue
-    # Any other exit: memory cap (abort) or the outer timeout. Mark the pattern in flight.
     if [ -f "$OUT/bench.jsonl.cur" ]; then
       cur=$(cut -f1 "$OUT/bench.jsonl.cur")
       origin=$(cut -f3 "$OUT/bench.jsonl.cur")
-      printf '{"id":"%s","label":"%s","mode":"%s","origin":"%s","killed":"exit %s (8192 MiB address-space cap or outer timeout)"}\n' \
+      printf '{"id":"%s","label":"%s","mode":"%s","origin":"%s","killed":"exit %s (killed at the 8192 MiB address-space cap, or outer timeout)"}\n' \
         "$cur" "$label" "$mode" "$origin" "$rc" >> "$OUT/bench.jsonl"
       rm -f "$OUT/bench.jsonl.cur"
     else
@@ -46,49 +87,53 @@ run() {
   done
 }
 
+# Core: rule and built-in patterns; `rust` mode only for the parity-identical ones.
 CORE=$IN/patterns.jsonl
+RUSTP=$IN/patterns-identical.jsonl
 PLUG=$IN/plugin-patterns.jsonl
-case $SET in
+pats_for() { if [ "$1" = rust ]; then echo "$RUSTP"; else echo "$CORE"; fi; }
+case $STAGE in
 small)
   for mode in $MODES; do
     for c in block-1m sentence-1m nest-paren-1k nest-paren-10k nest-mixed-1k nest-mixed-10k \
       nest-list-1k nest-list-10k run-ws-1m run-dots-1m run-dash-1m run-a-1m run-word-1m \
       run-caps-1m run-quote-1m run-apos-1m nearmiss-1m; do
-      run "$mode" "$c" "$CORE" "$D/inputs/$c.txt"
+      run "$mode" "$c" "$(pats_for "$mode")" "$D/inputs/$c.txt"
     done
     for a in native 64k 1m; do
-      run "$mode" "recheck-$a" "$CORE" "$D/inputs/block-1m.txt" --pattern-input "$D/attack-core-$a"
+      run "$mode" "recheck-$a" "$(pats_for "$mode")" /dev/null --pattern-input "$D/attack-core-$a"
     done
     for a in 30 64k 1m; do
-      run "$mode" "plugin-$a" "$PLUG" "$D/inputs/block-1m.txt" --pattern-input "$D/attack-$a"
+      run "$mode" "plugin-$a" "$PLUG" /dev/null --pattern-input "$D/attack-$a"
     done
   done ;;
 large)
   for c in block-8m sentence-8m nearmiss-8m block-64m sentence-64m; do
     for mode in $MODES; do
-      run "$mode" "$c" "$CORE" "$D/inputs/$c.txt"
+      run "$mode" "$c" "$(pats_for "$mode")" "$D/inputs/$c.txt" --reps 3
     done
   done ;;
 e2e)
   P=$S/project
-  M="python3 $WT/spike/regex-split/tools/measure.py"
+  M="python3 $TOOLS/measure.py"
   cd "$P"
   for set in docs eval; do
     for rep in 1 2 3; do
-      $M "$OUT/e2e.jsonl" "main-interp/$set" 300 16384 -- "$S/slopvac-main-$B2" lint "$set" --format json
-      SLOPVAC_SPIKE_ENGINE=interp $M "$OUT/e2e.jsonl" "spike-interp/$set" 300 16384 -- "$S/slopvac-spike-$B2" lint "$set" --format json
-      SLOPVAC_SPIKE_ENGINE=split SLOPVAC_SPIKE_ALLOW=$IN/allow.txt $M "$OUT/e2e.jsonl" "split/$set" 300 16384 -- "$S/slopvac-spike-$B2" lint "$set" --format json
-      SLOPVAC_SPIKE_ENGINE=jit $M "$OUT/e2e.jsonl" "jit/$set" 300 16384 -- "$S/slopvac-spike-$B2" lint "$set" --format json
-      SLOPVAC_SPIKE_ENGINE=callout $M "$OUT/e2e.jsonl" "callout/$set" 300 16384 -- "$S/slopvac-spike-$B2" lint "$set" --format json
+      $M "$OUT/e2e.jsonl" "main-interp/$set" 300 16384 -- "$S/bin/slopvac-main" lint "$set" --format json
+      SLOPVAC_SPIKE_ENGINE=interp $M "$OUT/e2e.jsonl" "spike-interp/$set" 300 16384 -- "$S/bin/slopvac-spike" lint "$set" --format json
+      SLOPVAC_SPIKE_ENGINE=split SLOPVAC_SPIKE_ALLOW=$IN/allow.txt $M "$OUT/e2e.jsonl" "split/$set" 300 16384 -- "$S/bin/slopvac-spike" lint "$set" --format json
+      SLOPVAC_SPIKE_ENGINE=jit $M "$OUT/e2e.jsonl" "jit/$set" 300 16384 -- "$S/bin/slopvac-spike" lint "$set" --format json
+      SLOPVAC_SPIKE_ENGINE=callout $M "$OUT/e2e.jsonl" "callout/$set" 300 16384 -- "$S/bin/slopvac-spike" lint "$set" --format json
     done
   done
-  # Findings equal? One JSON report per engine (eval corpus), compared by digest.
   for e in interp split jit callout; do
-    SLOPVAC_SPIKE_ENGINE=$e SLOPVAC_SPIKE_ALLOW=$IN/allow.txt timeout 300 "$S/slopvac-spike-$B2" lint eval docs --format json > "$OUT/report-$e.json" 2>/dev/null
+    SLOPVAC_SPIKE_ENGINE=$e SLOPVAC_SPIKE_ALLOW=$IN/allow.txt timeout 300 "$S/bin/slopvac-spike" lint docs eval --format json > "$OUT/report-$e.json" 2>/dev/null
     echo "$e rc=$? sha=$(sha256sum < "$OUT/report-$e.json" | cut -c1-16)" >> "$OUT/reports.txt"
-  done ;;
+  done
+  "$S/bin/slopvac-main" lint docs eval --format json > "$OUT/report-main.json" 2>/dev/null
+  echo "main rc=$? sha=$(sha256sum < "$OUT/report-main.json" | cut -c1-16)" >> "$OUT/reports.txt" ;;
 esac
-echo "end uptime: $(uptime)" | tee -a "$OUT/load.txt"
 L1=$(load1)
-if awk "BEGIN{exit !($L1 > 12)}"; then echo "load-gate: end load $L1 above 12, DISCARD" | tee -a "$OUT/load.txt"; fi
-echo done-$SET
+echo "end: $(uptime)" | tee -a "$OUT/load.txt"
+if gt12 "$L1"; then echo "load-gate: end load $L1 above 12, DISCARD" | tee -a "$OUT/load.txt"; fi
+echo done-$STAGE
