@@ -37,6 +37,7 @@ use crate::rst::{RstAdapter, RstError, RstOptions};
 use crate::score::{CategoryInfo, score_document};
 use crate::settings::{Level, Settings};
 use crate::skip::{self, SkipRanges};
+use crate::structure::{self, Check};
 use crate::tagging;
 use crate::terms;
 
@@ -262,6 +263,8 @@ pub struct Engine {
     pub(crate) terms: TermSet,
     /// Metric rules that run.
     metrics: Vec<Active>,
+    /// Structure rules that run, with their checks.
+    structure: Vec<(Active, Check)>,
     /// Diagram rules that run, by id.
     diagram_rules: HashMap<RuleId, ActiveDiagram>,
     /// The rules that run a signal of `slopvac-diagrams`.
@@ -345,8 +348,8 @@ impl Engine {
     /// An engine for `sets` under `settings`, with the built-in taggers and detectors and
     /// no diagram checker.
     ///
-    /// Rules of kinds the engine does not run yet (structure checks and
-    /// capitalization, and metrics it does not measure) are skipped, and each document says
+    /// Rules of kinds the engine does not run yet (capitalization styles and metrics it does
+    /// not measure, and structure checks it does not know) are skipped, and each document says
     /// so in an `info` notice.
     pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
         Self::new_shared(sets.into_iter().map(Arc::new).collect(), settings)
@@ -385,6 +388,7 @@ impl Engine {
             casing_rules: Vec::new(),
             terms: TermSet::default(),
             metrics: Vec::new(),
+            structure: Vec::new(),
             diagram_rules: HashMap::new(),
             signal_rules: Vec::new(),
             catalog: HashMap::new(),
@@ -618,7 +622,15 @@ impl Engine {
                                     .insert(id, ActiveDiagram { severity, at });
                                 self.signal_rules.push((signal, rule));
                             } else {
-                                self.not_run.push(NotRun::of("structure", rule));
+                                let check = match &rule.match_ {
+                                    Match::Structure(m) => Check::named(m.check.as_str()),
+                                    _ => None,
+                                };
+                                if let Some(check) = check {
+                                    self.structure.push((Active::new(s, c, r, severity), check));
+                                } else {
+                                    self.not_run.push(NotRun::of("structure", rule));
+                                }
                             }
                         }
                         MatchKind::Vocabulary => {
@@ -663,6 +675,7 @@ impl Engine {
         let owns =
             |plan: &vocabulary::Plan| plan.owner.is_some_and(|i| at(&&self.vocabulary_rules[i]));
         let executes = self.active.iter().any(|a| at(&a))
+            || self.structure.iter().any(|(a, _)| at(&a))
             || self.metrics.iter().any(|a| at(&a))
             || self.casing_rules.iter().any(|a| at(&a))
             || self.vocabulary.plans().any(owns);
@@ -766,6 +779,7 @@ impl Engine {
         findings.extend(run.vocabulary()?);
         findings.extend(run.term_casing()?);
         findings.extend(run.metrics()?);
+        findings.extend(run.structure()?);
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
@@ -1354,6 +1368,90 @@ impl Run<'_> {
                     }),
                     origin: None,
                 });
+            }
+        }
+        Ok(out)
+    }
+
+    /// Findings of structure rules that run. A heading finding covers the heading line, as
+    /// the 2.x script reported it. A finding on a front matter line or on a line that starts
+    /// inside an HTML comment is dropped, unless the rule is `raw`; those lines still set the
+    /// heading level that the next heading is compared with.
+    fn structure(&self) -> Result<Vec<Finding>, EngineError> {
+        let engine = self.engine;
+        if engine.structure.is_empty() || matches!(self.input.kind, Kind::Diagram(_)) {
+            return Ok(Vec::new());
+        }
+        let source = self.input.source;
+        let skips = structure::heading_skips(source);
+        let (comments, _) = structure::html_comments(source);
+        let mut out = Vec::new();
+        for (active, check) in &engine.structure {
+            let Check::HeadingHierarchy = check;
+            let set = &engine.sets[active.set];
+            let loaded = &set.categories()[active.category].rules()[active.rule];
+            let rule = loaded.rule();
+            let exceptions: Vec<&str> = rule.exceptions().iter().map(|e| e.name.as_str()).collect();
+            let detectors: Vec<&str> = rule
+                .exceptions()
+                .iter()
+                .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
+                .collect();
+            let exclusions = rule.exclude_blocks.as_ref().map(|kinds| {
+                skip::build(
+                    self.parsed,
+                    kinds,
+                    self.front_matter,
+                    rule.scope != Scope::Raw,
+                )
+            });
+            // Front matter and comments hide a finding only from rules that are not `raw`.
+            let hides_automatically = rule.scope != Scope::Raw;
+            let mut next_comment = 0;
+            for line in &skips.lines {
+                // The lines come in order, so the comments before this one are done with.
+                while comments
+                    .get(next_comment)
+                    .is_some_and(|c| c.end <= line.start)
+                {
+                    next_comment += 1;
+                }
+                if hides_automatically
+                    && (self.front_matter.is_some_and(|f| line.start < f.end())
+                        || comments
+                            .get(next_comment)
+                            .is_some_and(|c| c.start <= line.start))
+                {
+                    continue;
+                }
+                let span = Span::new(line.start, line.end)
+                    .map_err(|e| EngineError::Internal(e.to_string()))?;
+                let text = &source[line.clone()];
+                if exclusions.as_ref().is_some_and(|skip| skip.hides(span))
+                    || self.guarded(rule, &detectors, text, &(0..text.len()), None, span, &[])
+                    || self.suppressed(loaded.id().as_str(), &exceptions, span)
+                {
+                    continue;
+                }
+                out.push(
+                    self.finding(Candidate {
+                        rule_id: loaded.id(),
+                        pack: set.pack(),
+                        category: loaded.category().clone(),
+                        severity: active.severity,
+                        // The 2.x report folded the whitespace left where `{match}` was empty.
+                        message: format_message(rule.message.as_str(), "", "")
+                            .split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        span,
+                        matched_text: text.to_owned(),
+                        ai_signal: rule.ai_signal,
+                        fix: None,
+                        extra_context: None,
+                        covering: Vec::new(),
+                    })?,
+                );
             }
         }
         Ok(out)

@@ -37,7 +37,7 @@ fn ste_preset_sets_the_normal_profile_levels() {
 #[test]
 fn ste_preset_keeps_rules_that_two_x_ships_off_or_advisory() {
     let r = resolve(&["ste".to_owned()], &BuiltinSource, true).unwrap();
-    assert_eq!(count(&r, "rules"), 18);
+    assert_eq!(count(&r, "rules"), 17);
     assert_eq!(rule(&r, "ste-practices.latin-abbreviation"), &json!("off"));
     assert_eq!(rule(&r, "ste-verbs.passive-voice"), &json!("suggestion"));
 }
@@ -49,8 +49,6 @@ fn google_preset_resolves_every_entry_to_its_documented_level() {
         ("ai-tells-formatting.title-case-heading", "warning"),
         ("ste-punctuation.semicolon-used", "off"),
         ("ste-sentences.complex-text-not-in-vertical-list", "off"),
-        ("ste-sentences.vertical-list-lead-in-missing-colon", "off"),
-        ("ste-sentences.vertical-list-item-punctuation", "off"),
         ("ste-practices.latin-abbreviation", "warning"),
         ("prose-inclusive.exclusive", "warning"),
         ("prose-inclusive.ableist", "warning"),

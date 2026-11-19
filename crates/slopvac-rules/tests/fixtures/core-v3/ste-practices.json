@@ -141,37 +141,6 @@
       }
     },
     {
-      "id": "inconsistent-wording-for-same-step",
-      "name": "Word the same step the same way",
-      "message": "This step is worded two ways in one document (\"{match}\" and \"{other}\").",
-      "severity": "warning",
-      "scope": "document",
-      "match": {
-        "kind": "structure",
-        "check": "inconsistent-wording-for-same-step"
-      },
-      "exceptions": [
-        {
-          "name": "quotation",
-          "detector": "quotation"
-        }
-      ],
-      "examples": [
-        {
-          "bad": "Step 3. Apply the migration with the CLI.\nStep 9. Use the CLI to run the migration.",
-          "good": "Step 3. Apply the migration with the CLI.\nStep 9. Apply the migration with the CLI."
-        }
-      ],
-      "fix": "Pick one wording for the step and use it everywhere.",
-      "ai_signal": "none",
-      "ai_signal_source": "unmeasured",
-      "citation": {
-        "source": "ASD-STE100",
-        "ste_ref": "9:9.4",
-        "note": "Mechanizable as a near-duplicate detector across steps in one document: two steps with a high token overlap but different verbs are the signal. Both wordings can be individually correct; the defect is the variation, which makes a reader think two different things happen."
-      }
-    },
-    {
       "id": "omitted-conjunction-that",
       "name": "Keep the conjunction",
       "message": "Add \"that\" after \"{match}\".",

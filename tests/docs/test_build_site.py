@@ -527,7 +527,13 @@ def test_real_data_builds_clean_with_a_page_per_rule_and_matching_ids() -> None:
     pages = build_site.build(site)
     assert build_site.broken_links(pages) == []
     assert build_site.schema_id_problems(pages, site) == []
-    expected = sum(len(c.get("rules", [])) for c in build_site.load_categories())
+    removed = build_site.removed_rules()
+    expected = sum(
+        1
+        for c in build_site.load_categories()
+        for r in c.get("rules", [])
+        if f"{c['id']}.{r['id']}" not in removed
+    )
     rule_pages = [
         p for p in pages if p.startswith("rules/") and not p.endswith("index.md")
     ]
@@ -973,3 +979,34 @@ def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
     (sources["out"] / "cli/lint.md").write_text("edited\n")
     assert _run(sources, "--check") == 1
     assert "cli/lint.md: out of date" in capsys.readouterr().err
+
+
+def test_rule_pages_and_indexes_skip_the_rules_3_0_removed() -> None:
+    import tomllib
+
+    shared = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
+    entries = tomllib.loads(shared.read_text(encoding="utf-8"))["rules"]
+    removed = [entry["id"] for entry in entries]
+    assert removed, "the shared list names the removed rules"
+    pages = build_site.generate_rules()
+    for key in removed:
+        category, rule = key.split(".", 1)
+        assert build_site.rule_page_path(category, rule) not in pages, key
+        assert rule not in pages[f"rules/{category}/index.md"], key
+        assert rule not in pages["rules/index.md"], key
+    # A rule next to the removed ones is still listed.
+    assert "rules/ste-words/index.md" in pages
+    assert "spelling" in pages["rules/ste-words/index.md"]
+    assert not [
+        p
+        for p, text in pages.items()
+        if any(k.split(".", 1)[1] in text for k in removed)
+    ]
+
+
+def test_removed_rules_fails_when_the_contract_file_is_missing(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(build_site, "REMOVED_RULES_FILE", tmp_path / "missing.toml")
+    with pytest.raises(FileNotFoundError):
+        build_site.removed_rules()
