@@ -687,7 +687,10 @@ impl GenreRegistry {
         doc: &dyn DocumentView,
         opts: &ResolveOptions<'_>,
     ) -> Result<GenreResult, Error> {
-        let rel = normalize_path(opts.relative_path.unwrap_or_else(|| doc.path()));
+        // Assignments match the path as given, like the config stack does; only the path
+        // signals below read a normalized copy.
+        let native = opts.relative_path.unwrap_or_else(|| doc.path());
+        let rel = normalize_path(native);
         let rel = rel.as_str();
         let candidates = self.score(doc, rel)?;
         let mut scores: Vec<(String, f64)> = candidates
@@ -717,7 +720,7 @@ impl GenreRegistry {
         }
         let mut assigned = None;
         for (i, a) in opts.assignments.iter().enumerate() {
-            if files_match(&a.files, rel)? {
+            if files_match(&a.files, native)? {
                 assigned = Some((i, a));
             }
         }
@@ -856,12 +859,12 @@ type Candidate<'a> = (&'a Genre, f64, Vec<Reason>);
 /// Whether a `files` list matches a path relative to the config directory. The config crate
 /// owns the matching, so a `[[genres]]` block selects the same files here and in the config
 /// stack.
-fn files_match(patterns: &[String], rel: &str) -> Result<bool, Error> {
+fn files_match(patterns: &[String], native: &str) -> Result<bool, Error> {
     let matcher = FilesMatcher::new(patterns, Path::new("")).map_err(|e| match e {
         FilesError::Pattern { pattern, source } => Error::Glob { pattern, source },
         FilesError::Set(source) => Error::GlobSet(source),
     })?;
-    Ok(matcher.is_match(Path::new(normalize_path(rel).as_str())))
+    Ok(matcher.is_match(Path::new(native)))
 }
 
 fn compile(spec: GenreSpec) -> Result<Genre, Error> {

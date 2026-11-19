@@ -82,6 +82,23 @@ fn parse_assignments(matches: &ArgMatches) -> Result<Vec<GenreAssignment>, Error
         .collect()
 }
 
+/// The path relative to the working directory, else the file name. Assignments match
+/// relative paths, and a path outside the working directory has no relative form.
+fn relative_to_cwd(path: &str) -> String {
+    let path = std::path::Path::new(path);
+    let relative = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| {
+            path.strip_prefix(cwd)
+                .ok()
+                .map(std::path::Path::to_path_buf)
+        })
+        .or_else(|| path.is_relative().then(|| path.to_path_buf()))
+        .or_else(|| path.file_name().map(std::path::PathBuf::from))
+        .unwrap_or_default();
+    relative.to_string_lossy().into_owned()
+}
+
 fn explain(
     registry: &GenreRegistry,
     path: &str,
@@ -97,7 +114,7 @@ fn explain(
         &doc as &dyn DocumentView,
         &ResolveOptions {
             assignments,
-            relative_path: None,
+            relative_path: Some(&relative_to_cwd(path)),
             ..Default::default()
         },
     )?;

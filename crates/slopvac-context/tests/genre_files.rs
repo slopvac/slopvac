@@ -163,17 +163,15 @@ fn run_assignments_match_absolute_paths_without_panicking() {
 }
 
 #[test]
-fn windows_and_absolute_paths_match_like_relative_unix_paths() {
+fn assignments_match_the_path_as_given_and_never_a_path_outside_the_root() {
     let cases = [
-        (&["docs/**"][..], r"docs\a.md", true),
-        (&["**/a.md"][..], r"C:\proj\docs\a.md", true),
-        (&["docs/**"][..], r"C:\proj\docs\a.md", false),
-        (&["**/docs/**"][..], "/proj/docs/a.md", true),
-        (
-            &["docs/**", "!docs/internal/**"][..],
-            r"docs\internal\x.md",
-            false,
-        ),
+        (&["docs/**"][..], r"docs\a.md", false),
+        (&["**/a.md"][..], "/proj/docs/a.md", false),
+        (&["**/a.md"][..], "../docs/a.md", false),
+        (&["**/a.md"][..], "docs/a.md", true),
+        // A directory literally named `guide\branch` is one component, not two.
+        (&["guide\\\\branch/**"][..], "guide\\branch/a.md", true),
+        (&["guide/branch/**"][..], "guide\\branch/a.md", false),
     ];
     for (p, path, want) in cases {
         assert_eq!(
