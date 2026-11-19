@@ -6,21 +6,18 @@
 //! real `slopvac-terms` loader before the plan is returned.
 
 use std::collections::{BTreeSet, HashMap};
-use std::fs;
+use std::ffi::OsString;
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 
-use slopvac_fs::lexical_normalize;
+use cap_std::ambient_authority;
+use cap_std::fs::Dir;
 use slopvac_terms::{Blocklist, Pos, TermsError};
 use toml_edit::{DocumentMut, Item, TableLike, Value};
 
 use crate::config::{key_lines, line_of};
-use crate::limits::{Budget, Kind};
-use crate::plan::ensure_inside;
+use crate::limits::{Budget, Kind, Refused};
 use crate::{Dropped, Error};
-
-/// The longest part of a user's `pos` value that a message repeats.
-const SHOWN_POS_CHARS: usize = 64;
 
 /// A `vocabulary.path` in a 2.x config.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,35 +87,78 @@ pub(crate) enum Planned {
     Blocked(Vec<Dropped>),
 }
 
-/// The file a reference names, relative to the project root.
+/// Where a reference points, relative to the project root.
+enum Resolved {
+    /// The file or directory the path names. No component on the way is a symlink.
+    Found(PathBuf),
+    /// Something on the way does not exist.
+    Missing,
+}
+
+/// Follow a reference one component at a time, as the runtime does, and refuse any symlink.
+///
+/// `..` is applied to the real directories walked so far. Because none of them is a symlink,
+/// the result is the file the runtime loads for the unchanged reference. The lexical result
+/// can differ from it only through a link, which this refuses.
 ///
 /// # Errors
-/// [`Error::Unsafe`] when the path leaves the project root or crosses a symbolic link.
-fn locate(
+/// [`Error::Unsafe`] when the path leaves the project root or a component is a symlink.
+fn resolve(
     root: &Path,
+    base: &Dir,
     dir: &Path,
     reference: &Reference,
-    config: &str,
-    line: usize,
-) -> Result<PathBuf, Error> {
-    let full = lexical_normalize(&dir.join(&reference.path));
-    let base = lexical_normalize(root);
-    let rel = if base == Path::new(".") {
-        full.is_relative().then(|| full.clone())
-    } else {
-        full.strip_prefix(&base).ok().map(Path::to_path_buf)
-    };
-    match rel {
-        Some(rel) if !matches!(rel.components().next(), Some(Component::ParentDir)) => {
-            ensure_inside(root, &rel)?;
-            Ok(rel)
-        }
-        _ => Err(Error::Unsafe(format!(
-            "{config}:{line}: `{}`: the blocklist is outside the project root, so migrate does not rewrite it. \
+    site: &(&str, usize),
+) -> Result<Resolved, Error> {
+    let outside = || {
+        Error::Unsafe(format!(
+            "{}:{}: `{}`: the blocklist is outside the project root, so migrate does not rewrite it. \
              Move it into the project, or give it `schema_version = 3` by hand",
-            reference.key
-        ))),
+            site.0, site.1, reference.key
+        ))
+    };
+    let given = Path::new(&reference.path);
+    let rest: PathBuf = if given.is_absolute() {
+        given
+            .strip_prefix(root)
+            .map_err(|_| outside())?
+            .to_path_buf()
+    } else {
+        dir.strip_prefix(root).unwrap_or(Path::new("")).join(given)
+    };
+    let mut stack: Vec<OsString> = Vec::new();
+    for component in rest.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if stack.pop().is_none() {
+                    return Err(outside());
+                }
+            }
+            Component::Normal(name) => {
+                stack.push(name.to_owned());
+                let so_far: PathBuf = stack.iter().collect();
+                match base.symlink_metadata(&so_far) {
+                    Ok(meta) if meta.is_symlink() => {
+                        return Err(Error::Unsafe(format!(
+                            "{}:{}: `{}`: the blocklist path crosses a symbolic link, so migrate cannot tell which file the project loads. \
+                             Name the file without the link",
+                            site.0, site.1, reference.key
+                        )));
+                    }
+                    Ok(_) => {}
+                    Err(e)
+                        if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) =>
+                    {
+                        return Ok(Resolved::Missing);
+                    }
+                    Err(e) => return Err(Error::io(&root.join(&so_far), e)),
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => return Err(outside()),
+        }
     }
+    Ok(Resolved::Found(stack.iter().collect()))
 }
 
 /// Plan the rewrite of the blocklist `reference` names. The reference sits at `line` of
@@ -127,7 +167,8 @@ fn locate(
 /// `seen` holds the files already planned, so a file two settings share is planned once.
 ///
 /// # Errors
-/// [`Error::Unsafe`] for a path outside the project, and the read errors of [`Budget::read`].
+/// [`Error::Unsafe`] for a path outside the project or through a symlink, and the read errors
+/// of [`Budget::read_in`].
 pub(crate) fn plan_reference(
     root: &Path,
     dir: &Path,
@@ -137,13 +178,8 @@ pub(crate) fn plan_reference(
     seen: &mut BTreeSet<PathBuf>,
     budget: &mut Budget,
 ) -> Result<Planned, Error> {
-    let rel = locate(root, dir, reference, config, line)?;
-    if !seen.insert(rel.clone()) {
-        return Ok(Planned::Skip);
-    }
-    let label = rel.display().to_string();
-    let full = root.join(&rel);
-    let blocked = |reason: &str| {
+    let base = Dir::open_ambient_dir(root, ambient_authority()).map_err(|e| Error::io(root, e))?;
+    let blocked = |label: &str, reason: &str| {
         Ok(Planned::Blocked(vec![Dropped::new(
             config,
             reference.key.as_str(),
@@ -151,13 +187,21 @@ pub(crate) fn plan_reference(
             format!("blocklist `{label}`: {reason}"),
         )]))
     };
-    match fs::symlink_metadata(&full) {
-        Ok(meta) if meta.is_file() => {}
-        Ok(_) => return blocked("not a regular file"),
-        Err(e) if e.kind() == ErrorKind::NotFound => return blocked("file not found"),
-        Err(e) => return Err(Error::io(&full, e)),
+    let rel = match resolve(root, &base, dir, reference, &(config, line))? {
+        Resolved::Found(rel) => rel,
+        Resolved::Missing => return blocked(&reference.path, "file not found"),
+    };
+    if !seen.insert(rel.clone()) {
+        return Ok(Planned::Skip);
     }
-    let old = budget.read(&full, Kind::Terms)?;
+    let label = rel.display().to_string();
+    let full = root.join(&rel);
+    let old = match budget.read_in(&base, &rel, &full, Kind::Terms)? {
+        Ok(text) => text,
+        Err(Refused::NotFound) => return blocked(&label, "file not found"),
+        Err(Refused::NotRegular) => return blocked(&label, "not a regular file"),
+        Err(Refused::MultiplyLinked) => return blocked(&label, "has more than one hard link"),
+    };
     let format = full
         .extension()
         .and_then(|e| e.to_str())
@@ -202,25 +246,23 @@ fn long_form(pos: Pos) -> &'static str {
     }
 }
 
+/// Python's `str.strip()`, which 2.x used. It removes what Rust's `trim` removes, and also
+/// U+001C to U+001F.
+fn py_strip(raw: &str) -> &str {
+    raw.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
+}
+
 /// 2.x trimmed the value, tried it as it was, then lower-cased it. 3.0 matches the listed
 /// spellings exactly, so the two fallbacks become the long form.
 fn fix_pos(raw: &str) -> PosFix {
     if Pos::parse(raw).is_some() {
         return PosFix::Keep;
     }
-    let trimmed = raw.trim();
+    let trimmed = py_strip(raw);
     match Pos::parse(trimmed).or_else(|| Pos::parse(&trimmed.to_lowercase())) {
         Some(pos) => PosFix::To(long_form(pos)),
         None => PosFix::Unknown,
     }
-}
-
-fn shown_pos(raw: &str) -> String {
-    let mut out: String = raw.chars().take(SHOWN_POS_CHARS).collect();
-    if raw.chars().nth(SHOWN_POS_CHARS).is_some() {
-        out.push('…');
-    }
-    out
 }
 
 /// The entry tables with their index in `entries`, the index `key_lines` uses.
@@ -256,21 +298,34 @@ fn rewrite(
         return Ok(None);
     };
     if format != "toml" {
-        return Err(blocked(
-            1,
-            "schema_version",
+        let reason = if matches!(format, "json" | "yml" | "yaml") {
             format!(
-                "3.0 refuses this .{format} blocklist ({}), and migrate rewrites TOML blocklists only. \
+                "3.0 refuses this .{format} blocklist ({}). migrate rewrites TOML blocklists only. \
                  Add `schema_version: 3` and long-form `pos` values by hand, or convert it to TOML",
                 describe(&refused)
-            ),
+            )
+        } else {
+            "the suffix is not .toml, .json, .yml or .yaml, so 3.0 cannot load it".to_owned()
+        };
+        return Err(blocked(
+            located(&refused, &HashMap::new()).1,
+            "schema_version",
+            reason,
+        ));
+    }
+    // The parser's message can quote the file, so only its position is kept.
+    if matches!(refused, TermsError::Parse { .. }) {
+        return Err(blocked(
+            located(&refused, &HashMap::new()).1,
+            "entries",
+            format!("the file {}", describe(&refused)),
         ));
     }
     let mut doc: DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| {
         blocked(
             e.span().map_or(1, |s| line_of(text, s.start)),
-            "",
-            e.message().to_owned(),
+            "entries",
+            "the file is not valid TOML".to_owned(),
         )
     })?;
     let lines = key_lines(text).unwrap_or_default();
@@ -310,19 +365,14 @@ fn rewrite(
                         }
                         *item = Item::Value(value);
                     }
-                    notes.push(format!(
-                        "{label}:{pos_line}: pos `{}` rewritten to `{long}`",
-                        shown_pos(&raw)
-                    ));
+                    notes.push(format!("{label}:{pos_line}: pos rewritten to `{long}`"));
                 }
                 PosFix::Unknown => problems.extend(blocked(
                     pos_line,
                     &format!("{key}.pos"),
-                    format!(
-                        "unrecognized part of speech `{}`; use noun, verb, adjective, adverb, \
-                         preposition, conjunction, pronoun or article",
-                        shown_pos(&raw)
-                    ),
+                    "unrecognized part of speech; use noun, verb, adjective, adverb, \
+                     preposition, conjunction, pronoun or article"
+                        .to_owned(),
                 )),
             }
         }
@@ -338,10 +388,11 @@ fn rewrite(
     }
 }
 
-/// A loader failure as a located record. An entry error points at the entry in the file on
-/// disk; the loader numbers entries from one.
-fn blocked_by(label: &str, error: &TermsError, lines: &HashMap<String, usize>) -> Vec<Dropped> {
-    let (key, line) = match error {
+/// The key and one-based line a loader failure points at, in the file on disk. An entry
+/// error names the entry (the loader numbers entries from one). A parse error carries its
+/// position in the parser's message, and that is all this reads from the message.
+fn located(error: &TermsError, lines: &HashMap<String, usize>) -> (String, usize) {
+    match error {
         TermsError::Entry {
             number: Some(n), ..
         } => {
@@ -349,11 +400,30 @@ fn blocked_by(label: &str, error: &TermsError, lines: &HashMap<String, usize>) -
             let line = lines.get(&key).copied().unwrap_or(1);
             (key, line)
         }
+        TermsError::Parse { message, .. } => ("entries".to_owned(), line_in(message)),
         _ => (
             "entries".to_owned(),
             lines.get("entries").copied().unwrap_or(1),
         ),
-    };
+    }
+}
+
+/// The number after the first `line ` in a parser message, or 1.
+fn line_in(message: &str) -> usize {
+    message
+        .split_once("line ")
+        .map(|(_, rest)| {
+            rest.chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>()
+        })
+        .and_then(|digits| digits.parse().ok())
+        .unwrap_or(1)
+}
+
+/// A loader failure as a located record.
+fn blocked_by(label: &str, error: &TermsError, lines: &HashMap<String, usize>) -> Vec<Dropped> {
+    let (key, line) = located(error, lines);
     vec![Dropped::new(
         label,
         key,
@@ -362,7 +432,9 @@ fn blocked_by(label: &str, error: &TermsError, lines: &HashMap<String, usize>) -
     )]
 }
 
-/// A loader failure without the text of the entry it names.
+/// A content-free category for a loader failure. The loader's own messages can quote the file
+/// (a parser echoes the text it stopped at, an unknown key is a word from the file), and
+/// policies section 1.7 keeps file content out of messages.
 fn describe(error: &TermsError) -> String {
     match error {
         TermsError::Entry {
@@ -371,10 +443,10 @@ fn describe(error: &TermsError) -> String {
             ..
         } => format!("entry {n} {}", problem.describe()),
         TermsError::Entry { problem, .. } => format!("an entry {}", problem.describe()),
-        TermsError::MissingSchemaVersion { .. } => "no `schema_version`".to_owned(),
-        TermsError::SchemaVersion { found, .. } => format!("`schema_version` is {found}"),
-        TermsError::UnknownKey { key, .. } => format!("unknown key `{key}`"),
-        TermsError::Parse { message, .. } => message.clone(),
-        other => other.to_string(),
+        TermsError::MissingSchemaVersion { .. } => "has no `schema_version`".to_owned(),
+        TermsError::SchemaVersion { .. } => "has an unsupported `schema_version`".to_owned(),
+        TermsError::UnknownKey { .. } => "has an unknown key".to_owned(),
+        TermsError::Parse { .. } => "is not valid for its format".to_owned(),
+        _ => "cannot be read".to_owned(),
     }
 }

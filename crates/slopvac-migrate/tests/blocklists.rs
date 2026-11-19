@@ -145,6 +145,14 @@ fn the_diff_and_notes_show_the_blocklist_change() {
 #[case::title_pron("Pron", "pronoun", Pos::Pronoun)]
 #[case::upper_art("ART", "article", Pos::Article)]
 #[case::long_upper("ARTICLE", "article", Pos::Article)]
+// Python's `str.strip()` also removes U+001C to U+001F, and it removes NEL, NBSP and the
+// ideographic space. The raw text is a TOML escape, so the file holds the control character.
+#[case::unit_separator("\\u001Fnoun", "noun", Pos::Noun)]
+#[case::group_and_file_separators("\\u001CVerb\\u001D", "verb", Pos::Verb)]
+#[case::next_line("\\u0085adj", "adjective", Pos::Adjective)]
+#[case::ideographic_space("\\u3000N", "noun", Pos::Noun)]
+#[case::no_break_space("\\u00A0noun", "noun", Pos::Noun)]
+#[case::vertical_tab_and_form_feed("\\u000BPREP\\u000C", "preposition", Pos::Preposition)]
 fn a_pos_that_2x_normalised_becomes_its_long_form(
     #[case] raw: &str,
     #[case] long: &str,
@@ -169,7 +177,7 @@ fn a_pos_that_2x_normalised_becomes_its_long_form(
     assert!(
         p.notes
             .iter()
-            .any(|n| n == &format!("words.toml:3: pos `{raw}` rewritten to `{long}`")),
+            .any(|n| n == &format!("words.toml:3: pos rewritten to `{long}`")),
         "{:?}",
         p.notes
     );
@@ -193,6 +201,7 @@ fn a_pos_that_3_0_already_reads_stays_as_written(#[case] raw: &str) {
 #[case::lowercase_spacy_tag("adp")]
 #[case::mixed_spacy_tag("Det")]
 #[case::unknown_word("gerund")]
+#[case::zero_width_space_is_not_whitespace("\\u200Bnoun")]
 fn an_unknown_pos_is_reported_with_its_line_and_nothing_is_written(#[case] raw: &str) {
     let old = format!(
         "[[entries]]\nword = \"a\"\npos = \"verb\"\nreason = \"x\"\n\n[[entries]]\nword = \"b\"\npos = \"{raw}\"\nreason = \"y\"\n"
@@ -204,7 +213,10 @@ fn an_unknown_pos_is_reported_with_its_line_and_nothing_is_written(#[case] raw: 
         text.starts_with("words.toml:8: `entries[1].pos`: unrecognized part of speech"),
         "{text}"
     );
-    assert!(text.contains(&format!("`{raw}`")), "{text}");
+    assert!(
+        !text.contains("gerund") && !text.contains("200B"),
+        "the message does not repeat the value: {text}"
+    );
 
     let (code, _, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"]);
     assert_eq!(code, 2);
@@ -279,6 +291,7 @@ fn a_second_run_finds_nothing_to_do() {
 fn a_blocklist_two_settings_share_is_rewritten_once() {
     let config = "[vocabulary]\npath = \"words.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"./docs/../words.toml\"\n";
     let dir = project(config, OLD);
+    write(dir.path(), "docs/page.md", "Text.\n");
     let p = plan_of(dir.path()).unwrap();
     let files: Vec<_> = p.changes.iter().map(|c| c.path.to_str().unwrap()).collect();
     assert_eq!(files, ["slopvac.toml", "words.toml"]);
@@ -318,7 +331,7 @@ fn a_json_blocklist_that_3_0_refuses_is_reported_not_rewritten() {
     let text = dropped_text(&plan_of(dir.path()).unwrap_err());
     assert!(
         text.starts_with(
-            "words.json:1: `schema_version`: 3.0 refuses this .json blocklist (no `schema_version`)"
+            "words.json:1: `schema_version`: 3.0 refuses this .json blocklist (has no `schema_version`)"
         ),
         "{text}"
     );
@@ -337,4 +350,141 @@ fn a_json_blocklist_that_is_already_3_0_is_left_alone() {
     let p = plan_of(dir.path()).unwrap();
     let files: Vec<_> = p.changes.iter().map(|c| c.path.to_str().unwrap()).collect();
     assert_eq!(files, ["slopvac.toml"]);
+}
+#[test]
+fn an_absolute_path_inside_the_project_is_followed() {
+    let dir = tempfile::tempdir().unwrap();
+    let absolute = dir.path().join("words.toml");
+    write(
+        dir.path(),
+        "slopvac.toml",
+        &format!("[vocabulary]\npath = \"{}\"\n", absolute.display()),
+    );
+    write(dir.path(), "words.toml", OLD);
+    let p = plan_of(dir.path()).unwrap();
+    let files: Vec<_> = p.changes.iter().map(|c| c.path.to_str().unwrap()).collect();
+    assert_eq!(files, ["slopvac.toml", "words.toml"]);
+}
+
+#[test]
+fn a_parent_directory_step_inside_the_project_is_followed() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "docs/slopvac.toml",
+        "[vocabulary]\npath = \"../words.toml\"\n",
+    );
+    write(dir.path(), "words.toml", OLD);
+    let p = plan_of(dir.path()).unwrap();
+    let files: Vec<_> = p.changes.iter().map(|c| c.path.to_str().unwrap()).collect();
+    assert_eq!(files, ["docs/slopvac.toml", "words.toml"]);
+}
+
+#[rstest]
+#[case::directory_link("shared/words.toml")]
+#[case::file_link("words-link.toml")]
+fn a_path_through_a_symlink_is_refused_and_nothing_is_written(#[case] path: &str) {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "real/words.toml", OLD);
+    std::os::unix::fs::symlink("real", dir.path().join("shared")).unwrap();
+    std::os::unix::fs::symlink("real/words.toml", dir.path().join("words-link.toml")).unwrap();
+    let config = format!("[vocabulary]\npath = \"{path}\"\n");
+    write(dir.path(), "slopvac.toml", &config);
+    let e = plan_of(dir.path()).unwrap_err();
+    assert_eq!(e.code(), "migrate-unsafe-path");
+    assert!(
+        e.to_string().contains(
+            "slopvac.toml:2: `vocabulary.path`: the blocklist path crosses a symbolic link"
+        ),
+        "{e}"
+    );
+    let (code, _, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"]);
+    assert_eq!(code, 2);
+    assert!(err.starts_with("error[migrate-unsafe-path]: "), "{err}");
+    assert_eq!(read(dir.path(), "real/words.toml"), OLD);
+    assert_eq!(read(dir.path(), "slopvac.toml"), config);
+    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+}
+
+/// A message never quotes the blocklist: a parser echoes the text it stopped at, and file
+/// content stays out of messages. Only the file and line are reported.
+#[rstest]
+#[case::json_type_mismatch(
+    "words.json",
+    "{\"schema_version\": 3, \"entries\": \"SENTINEL-7f3a\"}\n",
+    "words.json:1: "
+)]
+#[case::toml_syntax_error(
+    "words.toml",
+    "[[entries]]\nword = \"a\"\nreason = \"x\"\npos = verb SENTINEL-7f3a\n",
+    "words.toml:4: "
+)]
+#[case::toml_type_mismatch(
+    "words.toml",
+    "[[entries]]\nword = \"a\"\npos = \"verb\"\nreason = [\"SENTINEL-7f3a\"]\n",
+    "words.toml:4: "
+)]
+fn a_parse_failure_reports_the_location_and_none_of_the_content(
+    #[case] name: &str,
+    #[case] content: &str,
+    #[case] location: &str,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "slopvac.toml",
+        &format!("[vocabulary]\npath = \"{name}\"\n"),
+    );
+    write(dir.path(), name, content);
+    let e = plan_of(dir.path()).unwrap_err();
+    assert!(!e.to_string().contains("SENTINEL"), "{e}");
+    let (code, out, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"]);
+    assert_eq!(code, 2);
+    assert!(
+        err.starts_with(&format!("error[config-legacy-dropped]: {location}")),
+        "{err}"
+    );
+    assert!(
+        !err.contains("SENTINEL") && !out.contains("SENTINEL"),
+        "{err}{out}"
+    );
+    assert_eq!(read(dir.path(), name), content);
+}
+
+#[test]
+fn a_blocklist_over_the_terms_file_cap_exits_2_and_nothing_is_written() {
+    const CAP: usize = 1024 * 1024;
+    let big = format!("{OLD}# {}\n", "x".repeat(CAP));
+    let dir = project(CONFIG, &big);
+    let (code, _, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"]);
+    assert_eq!(code, 2);
+    assert_eq!(
+        err,
+        format!("error[terms-file-too-large]: words.toml: larger than {CAP} bytes\n")
+    );
+    assert_eq!(read(dir.path(), "words.toml"), big);
+    assert_eq!(read(dir.path(), "slopvac.toml"), CONFIG);
+    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+}
+
+#[test]
+fn blocklist_reads_count_against_the_run_byte_budget() {
+    let dir = project(CONFIG, OLD);
+    let used = CONFIG.len() + OLD.len();
+    let limits = |bytes: usize| Limits::new(1000, u64::try_from(bytes).unwrap());
+    let run = |l| {
+        plan_with_limits(
+            dir.path(),
+            &RenameTable::bundled(),
+            Options::default(),
+            STEERING,
+            l,
+        )
+    };
+    assert!(run(limits(used)).is_ok(), "the exact total fits");
+    let e = run(limits(used - 1)).unwrap_err();
+    assert_eq!(e.code(), "migrate-run-limit");
+    assert!(e.to_string().contains("words.toml"), "{e}");
+    assert_eq!(read(dir.path(), "words.toml"), OLD);
+    assert_eq!(read(dir.path(), "slopvac.toml"), CONFIG);
 }
