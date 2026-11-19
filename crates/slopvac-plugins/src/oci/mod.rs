@@ -21,10 +21,10 @@ mod process;
 mod reference;
 mod types;
 
-pub(crate) use auth::find_in_path;
 pub use auth::{
     Anonymous, Challenge, Credential, CredentialSource, DefaultCredentials, EnvCredentials,
 };
+pub(crate) use auth::{find_in_dir, find_in_path};
 pub use client::{Client, Fetched};
 pub(crate) use process::Contained;
 pub(crate) use reference::valid_tag;

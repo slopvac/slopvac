@@ -28,7 +28,7 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use crate::oci::find_in_path;
+use crate::oci::find_in_dir;
 
 /// `program` from the first trusted directory of `search` (default: the
 /// `PATH` variable), as a link-resolved path. `project_root` anchors the check
@@ -76,7 +76,7 @@ fn find_in(program: &str, path: &OsStr, project: &Path, host: &dyn Host) -> Opti
         .filter_map(|dir| std::fs::canonicalize(dir).ok())
         .filter(|dir| !dir.starts_with(project) && trusted_path(dir, host))
         .find_map(|dir| {
-            let found = find_in_path(program, Some(dir.as_os_str()))?;
+            let found = find_in_dir(program, &dir)?;
             // Run the program the checks saw, not a link that could be repointed.
             let real = std::fs::canonicalize(&found).ok()?;
             let regular = std::fs::metadata(&real).is_ok_and(|m| m.is_file());
@@ -310,14 +310,22 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_rejected_candidate_does_not_hide_a_valid_one_later_on_the_path() {
+    fn a_link_to_a_directory_with_a_colon_in_its_name_is_searched_as_one_directory() {
         let l = layout();
-        // The first directory is fine, but its `tool` links into the project.
-        let linked = l.trusted.parent().unwrap().join("linked-first");
-        std::fs::create_dir(&linked).unwrap();
-        std::os::unix::fs::symlink(l.local.join("tool"), linked.join("tool")).unwrap();
-        let path = path_of(&[&linked, &l.trusted]);
-        assert_eq!(find(&path, &l.project), Some(l.trusted.join("tool")));
+        let base = l.trusted.parent().unwrap().to_owned();
+        // `a:b/bin` read as a PATH list is the directories `a` and `b/bin`.
+        let prefix = base.join("a");
+        std::fs::create_dir(&prefix).unwrap();
+        std::fs::write(prefix.join("tool"), b"").unwrap();
+        let colon = base.join("a:b/bin");
+        std::fs::create_dir_all(&colon).unwrap();
+        std::fs::write(colon.join("tool"), b"").unwrap();
+        let link = base.join("colon-link");
+        std::os::unix::fs::symlink(&colon, &link).unwrap();
+        assert_eq!(
+            find(&path_of(&[&link]), &l.project),
+            Some(colon.join("tool"))
+        );
     }
 
     #[cfg(unix)]
