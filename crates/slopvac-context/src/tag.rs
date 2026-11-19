@@ -25,6 +25,70 @@ pub trait Tagger: Send + Sync {
     fn id(&self) -> &str;
     /// Tags for one document.
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error>;
+    /// Tags for one document, pushed into `sink`, which charges its ceiling before each tag
+    /// is built. A tagger that can produce many tags overrides this, so that it stops at the
+    /// ceiling without holding the tags past it. The default runs [`Self::tag`], which holds
+    /// its whole result before the sink sees it.
+    fn tag_into(&self, doc: &dyn DocumentView, sink: &mut TagSink) -> Result<(), Error> {
+        for tag in self.tag(doc)? {
+            sink.push_with(|| tag)?;
+        }
+        Ok(())
+    }
+}
+
+/// A bounded collection of tags. It charges one tag against its ceiling before the tag is
+/// built, so a producer that stops at the first error never holds more tags than the ceiling.
+#[derive(Debug)]
+pub struct TagSink {
+    tags: Vec<Tag>,
+    limit: usize,
+}
+
+impl TagSink {
+    /// A sink that takes at most `limit` tags.
+    #[must_use]
+    pub fn new(limit: usize) -> Self {
+        Self {
+            tags: Vec::new(),
+            limit,
+        }
+    }
+
+    /// A sink with no ceiling.
+    #[must_use]
+    pub fn unbounded() -> Self {
+        Self::new(usize::MAX)
+    }
+
+    /// Charge one tag, then build it with `make` and keep it. Fails with [`Error::TagLimit`],
+    /// without calling `make`, when the sink already holds `limit` tags.
+    pub fn push_with(&mut self, make: impl FnOnce() -> Tag) -> Result<(), Error> {
+        if self.tags.len() >= self.limit {
+            return Err(Error::TagLimit { limit: self.limit });
+        }
+        work::materialised(1);
+        self.tags.push(make());
+        Ok(())
+    }
+
+    /// The tags kept so far.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.tags.len()
+    }
+
+    /// Whether the sink holds no tag.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.tags.is_empty()
+    }
+
+    /// The tags, in the order they were pushed.
+    #[must_use]
+    pub fn into_tags(self) -> Vec<Tag> {
+        self.tags
+    }
 }
 
 /// Ordered set of taggers.
@@ -65,13 +129,11 @@ impl TagRegistry {
     /// [`Error::TagLimit`] once the taggers so far hold more than `max_tags` tags, so a
     /// document cannot make the caller build an index of unbounded size.
     pub fn collect_tags(&self, doc: &dyn DocumentView, max_tags: usize) -> Result<Vec<Tag>, Error> {
-        let mut tags = Vec::new();
+        let mut sink = TagSink::new(max_tags);
         for t in &self.taggers {
-            tags.extend(t.tag(doc)?);
-            if tags.len() > max_tags {
-                return Err(Error::TagLimit { limit: max_tags });
-            }
+            t.tag_into(doc, &mut sink)?;
         }
+        let mut tags = sink.into_tags();
         normalize_tags(&mut tags);
         Ok(tags)
     }

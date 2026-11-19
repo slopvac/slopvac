@@ -15,6 +15,17 @@ mod enabled {
         static ADMONITION: Cell<usize> = const { Cell::new(0) };
         static LOOKUP: Cell<usize> = const { Cell::new(0) };
         static BUILD: Cell<usize> = const { Cell::new(0) };
+        static MATERIALISED: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn materialised(n: usize) {
+        MATERIALISED.with(|c| c.set(c.get() + n));
+    }
+
+    /// Tags and pieces of tags built through a tag sink since the last call.
+    #[must_use]
+    pub fn take_materialised_tags() -> usize {
+        MATERIALISED.with(|c| c.replace(0))
     }
 
     pub(crate) fn build(n: usize) {
@@ -81,11 +92,11 @@ mod enabled {
 }
 
 #[cfg(feature = "work-counters")]
-pub(crate) use enabled::{admonition, build, heading, lookup, section, text};
+pub(crate) use enabled::{admonition, build, heading, lookup, materialised, section, text};
 #[cfg(feature = "work-counters")]
 pub use enabled::{
     take_admonition_steps, take_build_elements, take_heading_steps, take_lookup_steps,
-    take_section_steps, take_text_steps,
+    take_materialised_tags, take_section_steps, take_text_steps,
 };
 
 #[cfg(not(feature = "work-counters"))]
@@ -111,3 +122,7 @@ pub(crate) fn lookup(_n: usize) {}
 #[cfg(not(feature = "work-counters"))]
 #[inline(always)]
 pub(crate) fn build(_n: usize) {}
+
+#[cfg(not(feature = "work-counters"))]
+#[inline(always)]
+pub(crate) fn materialised(_n: usize) {}

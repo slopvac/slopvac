@@ -31,7 +31,7 @@ pub use mixed::{MIXED_TYPES_RULE_ID, mixed_types_entry, mixed_types_rule};
 pub use pattern::{Pattern, normalize_path};
 pub use reference::reference_pages;
 pub use structural::{FrontMatterCondition, Scope, When};
-pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger, normalize_tags};
+pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, TagSink, Tagger, normalize_tags};
 pub use view::{
     BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, split_sentences,
 };
@@ -39,7 +39,7 @@ pub use view::{
 #[doc(hidden)]
 pub use work::{
     take_admonition_steps, take_build_elements, take_heading_steps, take_lookup_steps,
-    take_section_steps, take_text_steps,
+    take_materialised_tags, take_section_steps, take_text_steps,
 };
 
 pub use pattern::MAX_PATTERN_BYTES;

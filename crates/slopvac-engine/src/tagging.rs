@@ -11,7 +11,7 @@ use std::ops::Range;
 use frontmatter_spans::FrontMatter;
 use slopvac_context::{
     BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, GenreRegistry,
-    GenreResult, ResolveOptions, SentenceView, Tag, TagIndex, TagRegistry,
+    GenreResult, ResolveOptions, SentenceView, Tag, TagIndex, TagRegistry, TagSink,
 };
 use slopvac_parse::{BlockKind, ByteMapper, Container, Document};
 
@@ -225,8 +225,11 @@ impl View<'_> {
         }
         let owners = self.owners.borrow();
         let mut extents: BTreeMap<usize, Extents> = BTreeMap::new();
-        let mut pieces_of_all = Vec::with_capacity(tags.len());
-        for (group, tag) in tags.iter().enumerate() {
+        // Each piece is charged against the ceiling before it is built, so the split never
+        // holds more pieces than the document may. The groups are one number per piece.
+        let mut sink = TagSink::new(max_tags);
+        let mut groups: Vec<usize> = Vec::new();
+        for (group, tag) in tags.into_iter().enumerate() {
             self.visit();
             let owner = owners
                 .get(&(tag.span.start, tag.span.end))
@@ -242,30 +245,24 @@ impl View<'_> {
                     )
                 })
             });
-            let mut pieces = Vec::new();
+            let before = sink.len();
             for span in extents
                 .into_iter()
                 .flat_map(|e| e.overlapping(&tag.span, || self.visit()))
             {
-                pieces.push((
-                    Tag {
-                        span,
-                        ..tag.clone()
-                    },
-                    group,
-                ));
+                sink.push_with(|| Tag {
+                    span,
+                    ..tag.clone()
+                })?;
+                groups.push(group);
             }
-            if pieces.is_empty() {
-                pieces_of_all.push((tag.clone(), group));
-            } else {
-                pieces_of_all.extend(pieces);
-            }
-            // Splitting multiplies the tags, so the ceiling is checked as pieces are made.
-            if pieces_of_all.len() > max_tags {
-                return Err(TagError::Budget { limit: max_tags });
+            if sink.len() == before {
+                sink.push_with(|| tag)?;
+                groups.push(group);
             }
         }
-        Ok(TagIndex::from_pieces(pieces_of_all))
+        let pieces = sink.into_tags().into_iter().zip(groups).collect();
+        Ok(TagIndex::from_pieces(pieces))
     }
 }
 
@@ -332,7 +329,7 @@ impl DocumentView for View<'_> {
 pub(crate) enum TagError {
     /// A tagger failed.
     #[error(transparent)]
-    Tagger(#[from] ContextError),
+    Tagger(ContextError),
     /// The document has more tags than its size allows, so no index was built.
     #[error("the document has more than {limit} context tags")]
     Budget {
@@ -342,6 +339,15 @@ pub(crate) enum TagError {
     /// The sentences of a block do not lie on the text the block was projected from.
     #[error("the sentences of a block do not map onto its projected text")]
     Unmapped,
+}
+
+impl From<ContextError> for TagError {
+    fn from(e: ContextError) -> Self {
+        match e {
+            ContextError::TagLimit { limit } => Self::Budget { limit },
+            other => Self::Tagger(other),
+        }
+    }
 }
 
 /// Tags that context lookups may look at for each byte of the document.
@@ -367,9 +373,9 @@ pub(crate) fn lookup_budget(source_len: usize) -> usize {
 /// Tags allowed for each byte of the document.
 ///
 /// Prose holds a sentence tag for every few dozen bytes at most, and a tag costs index memory
-/// whatever its size. One tag for every sixteen bytes is far over that, and under what a
+/// whatever its size. One tag for every 64 bytes is far over that, and under what a
 /// document of short sentences needs to build an index of gigabytes.
-const BYTES_PER_TAG: usize = 16;
+const BYTES_PER_TAG: usize = 64;
 
 /// Tags allowed whatever the size of the document.
 const TAG_HEADROOM: usize = 65_536;
@@ -389,12 +395,7 @@ pub(crate) fn tag(
 ) -> Result<TagIndex, TagError> {
     let view = View::new(path, source, doc, front_matter);
     let max_tags = tag_budget(source.len());
-    let tags = registry
-        .collect_tags(&view, max_tags)
-        .map_err(|e| match e {
-            ContextError::TagLimit { limit } => TagError::Budget { limit },
-            other => TagError::Tagger(other),
-        })?;
+    let tags = registry.collect_tags(&view, max_tags)?;
     if view.unmapped.get() {
         return Err(TagError::Unmapped);
     }
