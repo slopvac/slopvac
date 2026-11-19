@@ -48,7 +48,10 @@ fn sources() -> HashMap<String, String> {
         ("README.md".to_owned(), "# Readme\n".to_owned()),
         ("src/app.py".to_owned(), "# comment\n".to_owned()),
         // 12 bytes before "wörld" (6 bytes) which ends the file.
-        ("dossiers/ça & <é>.md".to_owned(), "héllo 😀\nwörld".to_owned()),
+        (
+            "dossiers/ça & <é>.md".to_owned(),
+            "héllo 😀\nwörld".to_owned(),
+        ),
     ])
 }
 
