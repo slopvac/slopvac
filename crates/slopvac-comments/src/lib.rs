@@ -32,6 +32,7 @@
 //! Extraction is all this crate does. `slopvac-engine` runs the rules over the fragments:
 //! see `Input::comments` there.
 
+mod docstring;
 mod extract;
 mod language;
 mod lexer;

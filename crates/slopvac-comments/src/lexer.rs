@@ -26,6 +26,9 @@ use crate::language::{Block, Quote, Syntax};
 /// The comments in `source` and the number of steps the scan took.
 pub(crate) struct Scan {
     pub(crate) comments: Vec<Range<usize>>,
+    /// The terminated `"` and `'` strings, from opening to closing delimiter, when the
+    /// syntax asks for them (`Syntax::docstrings`). Empty otherwise.
+    pub(crate) strings: Vec<Range<usize>>,
     pub(crate) steps: usize,
 }
 
@@ -39,7 +42,10 @@ enum State {
         depth: usize,
         line_start: bool,
     },
-    Quote(Quote),
+    Quote {
+        quote: Quote,
+        start: usize,
+    },
     /// A Lua long-bracket string, such as `[==[ ... ]==]`.
     Long {
         close: String,
@@ -59,6 +65,7 @@ pub(crate) fn scan(source: &str, syntax: &Syntax, max_steps: usize) -> Result<Sc
     let bytes = source.as_bytes();
     let bom = if source.starts_with('\u{feff}') { 3 } else { 0 };
     let mut comments = Vec::new();
+    let mut strings = Vec::new();
     let mut state = State::Code;
     let mut at = 0;
     let mut steps = 0;
@@ -127,7 +134,16 @@ pub(crate) fn scan(source: &str, syntax: &Syntax, max_steps: usize) -> Result<Sc
                     }
                 }
             }
-            State::Quote(quote) => in_quote(bytes, &mut at, quote),
+            State::Quote { quote, start } => {
+                let done = in_quote(bytes, &mut at, quote);
+                if done == Quoted::Closed && syntax.docstrings {
+                    strings.push(start..at);
+                }
+                match done {
+                    Quoted::Open => State::Quote { quote, start },
+                    Quoted::Closed | Quoted::Ended => State::Code,
+                }
+            }
             State::Long { close } => {
                 if bytes[at..].starts_with(close.as_bytes()) {
                     at += close.len();
@@ -142,11 +158,26 @@ pub(crate) fn scan(source: &str, syntax: &Syntax, max_steps: usize) -> Result<Sc
     if let State::Block { start, .. } = state {
         comments.push(start..bytes.len());
     }
-    Ok(Scan { comments, steps })
+    Ok(Scan {
+        comments,
+        strings,
+        steps,
+    })
 }
 
-/// One step inside a string. Returns the state after it and moves `at` forward.
-fn in_quote(bytes: &[u8], at: &mut usize, quote: Quote) -> State {
+/// What one step inside a string did.
+#[derive(Debug, PartialEq, Eq)]
+enum Quoted {
+    /// The string goes on.
+    Open,
+    /// The closing delimiter was read.
+    Closed,
+    /// A line end cut the string off before a closing delimiter.
+    Ended,
+}
+
+/// One step inside a string. Returns what happened and moves `at` forward.
+fn in_quote(bytes: &[u8], at: &mut usize, quote: Quote) -> Quoted {
     let here = &bytes[*at..];
     if bytes[*at] == b'\\' {
         // A backslash takes the next byte, and a CRLF as one.
@@ -154,16 +185,16 @@ fn in_quote(bytes: &[u8], at: &mut usize, quote: Quote) -> State {
         if bytes.get(*at - 1) == Some(&b'\r') && bytes.get(*at) == Some(&b'\n') {
             *at += 1;
         }
-        State::Quote(quote)
+        Quoted::Open
     } else if here.starts_with(quote.delim.as_bytes()) {
         *at += quote.delim.len();
-        State::Code
+        Quoted::Closed
     } else if matches!(bytes[*at], b'\n' | b'\r') && !quote.multiline {
         *at += 1;
-        State::Code
+        Quoted::Ended
     } else {
         *at += 1;
-        State::Quote(quote)
+        Quoted::Open
     }
 }
 
@@ -248,7 +279,13 @@ fn code(
             }
             continue;
         }
-        return Some((at + quote.delim.len(), State::Quote(*quote)));
+        return Some((
+            at + quote.delim.len(),
+            State::Quote {
+                quote: *quote,
+                start: at,
+            },
+        ));
     }
     None
 }

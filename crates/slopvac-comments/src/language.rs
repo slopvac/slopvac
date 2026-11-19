@@ -307,6 +307,9 @@ pub(crate) struct Syntax {
     pub(crate) backslash_char: bool,
     /// Strings may use Lua long brackets, `[[ ... ]]` and `[==[ ... ]==]`.
     pub(crate) long_strings: bool,
+    /// A string that is the first statement of a module, class or function body is
+    /// documentation (Python).
+    pub(crate) docstrings: bool,
     /// Block forms, checked in order, before line forms.
     pub(crate) blocks: &'static [Block],
     /// String forms, checked in order. List a longer delimiter before its prefix.
@@ -370,6 +373,7 @@ const fn syntax(
         leaders: &[],
         continuation: false,
         long_strings: false,
+        docstrings: false,
         backslash_char: false,
         blocks,
         strings,
@@ -429,7 +433,10 @@ const fn hash(blocks: &'static [Block], strings: &'static [Quote]) -> Syntax {
     }
 }
 
-const PYTHON: Syntax = hash(&[], &[TDQ, TSQ, DQ, SQ]);
+const PYTHON: Syntax = Syntax {
+    docstrings: true,
+    ..hash(&[], &[TDQ, TSQ, DQ, SQ])
+};
 const SHELL: Syntax = hash(&[], &[MDQ, MSQ, BT]);
 const PERL: Syntax = hash(&[], &[MDQ, MSQ]);
 const ELIXIR: Syntax = hash(&[], &[TDQ, TSQ, MDQ, MSQ]);
