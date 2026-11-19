@@ -21,7 +21,7 @@ mod process;
 mod reference;
 mod types;
 
-pub(crate) use auth::find_in_path;
+pub(crate) use auth::find_in_dir;
 pub use auth::{
     Anonymous, Challenge, Credential, CredentialSource, DefaultCredentials, EnvCredentials,
 };
@@ -75,6 +75,26 @@ pub enum OciError {
     /// Credentials could not be read.
     #[error("credential error: {}", esc(.0))]
     Credential(String),
+    /// A credential helper exists only in a directory that is not trusted.
+    #[error(
+        "credential helper `{}` was not found in a trusted directory; it exists only in {}. \
+         Tighten the permissions of that directory so that only you or root can write it, \
+         or sign in with a static `auths` login in the Docker config, with SLOPVAC_OCI_USER \
+         and SLOPVAC_OCI_TOKEN, or with GITHUB_TOKEN for ghcr.io",
+        esc(.program),
+        esc(.dir)
+    )]
+    HelperUntrusted {
+        /// The helper program name.
+        program: String,
+        /// The directory that holds it, already redacted for display: relative
+        /// to the project, or `<external>/<directory name>` outside it.
+        dir: String,
+    },
+    /// A credential helper was not run because the project directory is unknown,
+    /// so slopvac cannot tell whether the helper lies inside it.
+    #[error("credential helper `{}` was not run: the project directory is unknown", esc(.0))]
+    HelperProjectUnknown(String),
     /// The registry answered 401 or 403. A private or missing package looks like this on GHCR.
     #[error("access denied or not found at {}", esc(.0))]
     Denied(String),
@@ -130,6 +150,19 @@ pub(crate) fn redact_url(url: &str) -> String {
         rest
     } else {
         format!("{scheme}://{rest}")
+    }
+}
+
+impl OciError {
+    /// The stable error code of the contract (policies.md, section 3.5), where
+    /// one exists.
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::HelperUntrusted { .. } => Some("credential-helper-untrusted"),
+            Self::HelperProjectUnknown(_) => Some("credential-helper-project-unknown"),
+            _ => None,
+        }
     }
 }
 

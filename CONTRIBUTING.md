@@ -57,6 +57,8 @@ Rust test conventions are in [`docs/testing-rust.md`](docs/testing-rust.md). Ins
 
 Rust CI runs rustfmt, clippy, rustdoc, nextest and doctests. A supply-chain job runs `cargo deny` for licences, bans and sources, `cargo shear` for unused dependencies, `cargo sort` for manifest order and `typos`. Advisories run nightly and report on pull requests without blocking them. `mise install` pins the tools. `prek run --all-files` runs the same checks locally.
 
+A separate workflow, `tag-roots.yml`, runs after pushes to main and weekly, and fails when any remote tag points at a commit outside this repository's history. To catch a stray tag before it leaves your machine, run `prek install -t pre-push`. The hook then refuses any push while a local tag has a different root commit, and it lists those tags by full ref name. Remove each listed tag by hand with `git update-ref --no-deref -d <ref>`, using the full ref name as listed, which works for symbolic tags and for names that start with a hyphen.
+
 Licences: `deny.toml` allows permissive licences only. The CC BY-SA 4.0 part-of-speech model covers the model file, so add a per-crate exception for the crate that embeds it. Never add CC BY-SA to the global allow list.
 
 ## Rules
@@ -81,6 +83,40 @@ Release candidates build from each update to the release PR branch. They also
 wait for `pypi` approval. They get no tag or changelog entry.
 
 Plain installs and `slopvac@latest` stay on the latest stable release. The package README lists how to opt in to a candidate.
+
+## Contributor license agreement
+
+Contributions to slopvac need a signed [Contributor License Agreement](CLA.md) (CLA). It is the Individual Contributor Non-Exclusive License Agreement from the Contributor Agreements 1.2 templates (Harmony), with the traditional patent license. You keep the copyright in your contribution. You grant Sjors Robroek a non-exclusive license to use, sublicense and distribute it, and a patent license.
+
+In return, Sjors Robroek takes on two duties:
+
+- License your contribution under licenses that the Free Software Foundation classifies as free and the Open Source Initiative approves.
+- Offer material under a free and open license too, when it also has a license that is not free or not open.
+
+The project stays under Apache-2.0. The laws of the Netherlands govern the agreement.
+
+### Sign the CLA
+
+Contributors sign through [CLA Assistant](https://cla-assistant.io). On your first pull request, the CLA Assistant bot posts a comment with a link. Sign at that link with your GitHub account.
+
+You sign once for each version of the agreement. If the text changes, CLA Assistant asks you to sign again.
+
+The `license/cla` check covers one account for each commit:
+
+- The linked GitHub account of the commit author.
+- The linked GitHub account of the committer, when the author has no linked account.
+
+Each such account must sign. `Co-authored-by` trailers are not read, so a co-author named only in a trailer is not checked.
+
+The text that you sign is in the [slopvac CLA Gist](https://gist.github.com/srobroek/5374c748726c6ec555de263ba96c15b4). [`CLA.md`](CLA.md) in this repository is the same text.
+
+### Contributions from your employer
+
+If you created the contribution as part of your job, your employer must approve the agreement first. The "How to use this Contributor Agreement" section of the CLA says so. The project has no entity agreement yet. If your employer needs one, open an issue.
+
+### Bots
+
+Bot accounts that the maintainer allowlists in CLA Assistant don't sign.
 
 ## Commits and pull requests
 

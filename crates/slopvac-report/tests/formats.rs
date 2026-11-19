@@ -294,3 +294,31 @@ fn sarif_with_notices_and_no_findings_validates() {
     let notes = &sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"];
     assert!(notes.as_array().unwrap().len() >= 2);
 }
+
+/// Hostile text per control family: ESC+CSI, OSC ended by BEL, C1 CSI and C1 NEL.
+/// The text renderer emits no colour of its own, so there is no colour-on case.
+#[rstest::rstest]
+#[case::csi("a\u{1b}[2Jb")]
+#[case::osc_bel("a\u{1b}]0;title\u{7}b")]
+#[case::c1_csi("a\u{9b}2Jb")]
+#[case::c1_nel_and_cr("a\u{85}b\rc")]
+fn text_output_has_no_raw_terminal_controls(#[case] hostile: &str) {
+    let report = report_for(Some((0, 1)), [1, 1, 1, 2], hostile);
+    let mut value = serde_json::to_value(&report).unwrap();
+    value["documents"][0]["path"] = json!(format!("{hostile}.md"));
+    value["documents"][0]["unchecked"] =
+        json!([{"code": "x-skipped", "level": "warning", "message": hostile, "path": "t.txt"}]);
+    value["documents"][0]["gate"] = json!({"passed": false, "reasons": [hostile]});
+    value["notices"] = json!([{"code": "n-code", "level": "info", "message": hostile}]);
+    let report: Report = serde_json::from_value(value).unwrap();
+    let sources: HashMap<String, String> = HashMap::from([(format!("{hostile}.md"), "a".into())]);
+
+    let rendered = render(Format::Text, &report, &sources).unwrap();
+
+    let raw: Vec<char> = rendered
+        .chars()
+        .filter(|c| c.is_control() && *c != '\n')
+        .collect();
+    assert!(raw.is_empty(), "raw controls {raw:?} in {rendered:?}");
+    assert!(rendered.contains("\\u{"), "escaped visibly: {rendered:?}");
+}

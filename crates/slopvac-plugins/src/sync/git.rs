@@ -65,7 +65,6 @@
 //! The caller compares the resulting tree hash with the lock before anything
 //! reaches the store.
 
-use std::ffi::OsStr;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
@@ -75,7 +74,8 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::extract::{ExtractError, Limits, StagedTree};
-use crate::oci::{Contained, find_in_path};
+use crate::oci::Contained;
+use crate::trusted_path::find_trusted;
 
 /// Longest `git` error text kept for a message.
 const MAX_STDERR_BYTES: u64 = 4 * 1024;
@@ -146,64 +146,7 @@ pub(super) struct Request<'a> {
 /// The `git` program: the first in a trusted `PATH` directory (see the module
 /// documentation). `project_root` anchors the check that it is not in the project.
 pub(super) fn find_git(project_root: &Path) -> Option<PathBuf> {
-    let project = std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_owned());
-    find_git_in(&std::env::var_os("PATH")?, &project)
-}
-
-fn find_git_in(path: &OsStr, project: &Path) -> Option<PathBuf> {
-    find_git_as(path, project, current_uid())
-}
-
-/// [`find_git_in`] for a given user id, so tests can stand in for another user.
-fn find_git_as(path: &OsStr, project: &Path, me: u32) -> Option<PathBuf> {
-    let trusted: Vec<PathBuf> = std::env::split_paths(path)
-        .filter(|dir| dir.is_absolute())
-        .filter_map(|dir| std::fs::canonicalize(dir).ok())
-        .filter(|dir| !dir.starts_with(project) && trusted_path(dir, me))
-        .collect();
-    let found = find_in_path("git", Some(&std::env::join_paths(trusted).ok()?))?;
-    // Run the program the checks saw, not a link that could be repointed.
-    let real = std::fs::canonicalize(&found).ok()?;
-    let regular = std::fs::metadata(&real).is_ok_and(|m| m.is_file());
-    (regular && !real.starts_with(project) && trusted_path(&real, me)).then_some(real)
-}
-
-#[cfg(unix)]
-fn current_uid() -> u32 {
-    rustix::process::getuid().as_raw()
-}
-
-#[cfg(not(unix))]
-fn current_uid() -> u32 {
-    0
-}
-
-/// Whether nobody but root or `me` can change what `path` names: `path` and
-/// every ancestor belong to root or `me`. `path` itself is not writable by
-/// group or others. An ancestor may be, only when it is sticky and owned by
-/// root (`/tmp`), since then others cannot replace what they do not own.
-/// `path` is canonical, so no link is left to repoint.
-///
-/// Windows has no such mode bits and is not a supported platform for 3.0.
-fn trusted_path(path: &Path, me: u32) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        path.ancestors().all(|step| {
-            let Ok(meta) = std::fs::metadata(step) else {
-                return false;
-            };
-            let owner_ok = meta.uid() == 0 || meta.uid() == me;
-            let open = meta.mode() & 0o022 != 0;
-            let sticky_root = meta.mode() & 0o1000 != 0 && meta.uid() == 0;
-            owner_ok && (!open || (step != path && sticky_root))
-        })
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (path, me);
-        true
-    }
+    find_trusted("git", None, project_root)
 }
 
 /// Most data memory a `git` process may use (CWE-409, threat model E4).
@@ -808,148 +751,32 @@ fn check_status(what: &str, status: ExitStatus, stderr: &[u8]) -> Result<(), Git
 mod tests {
     use super::*;
 
-    /// A scratch tree: `project/bin`, a private `trusted` directory and an
-    /// `open` directory that anyone can write to, each holding a `git` file.
+    /// Removes the file it names when dropped, even if the test panics.
     #[cfg(unix)]
-    struct Layout {
-        _dir: tempfile::TempDir,
-        project: PathBuf,
-        local: PathBuf,
-        trusted: PathBuf,
-        open: PathBuf,
-    }
+    struct RemoveOnDrop(PathBuf);
 
     #[cfg(unix)]
-    fn layout() -> Layout {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let base = std::fs::canonicalize(dir.path()).unwrap();
-        let make = |rel: &str, mode: u32| {
-            let path = base.join(rel);
-            std::fs::create_dir_all(&path).unwrap();
-            std::fs::write(path.join("git"), b"").unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
-            path
-        };
-        let project = base.join("project");
-        let local = make("project/bin", 0o755);
-        let trusted = make("trusted", 0o755);
-        let open = make("open", 0o777);
-        Layout {
-            _dir: dir,
-            project,
-            local,
-            trusted,
-            open,
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
         }
     }
 
     #[cfg(unix)]
-    fn path_of(dirs: &[&Path]) -> std::ffi::OsString {
-        std::env::join_paths(dirs).unwrap()
-    }
-
-    #[cfg(unix)]
     #[test]
-    fn relative_path_entries_never_find_git() {
-        let l = layout();
-        // `trusted` is reachable only through a relative entry.
-        let relative = path_of(&[Path::new("."), Path::new("sub/bin")]);
-        assert_eq!(find_git_in(&relative, &l.project), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn an_absolute_entry_after_a_relative_one_still_finds_git() {
-        let l = layout();
-        let path = path_of(&[Path::new("."), &l.trusted]);
-        assert_eq!(find_git_in(&path, &l.project), Some(l.trusted.join("git")));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_git_inside_the_project_is_ignored_even_first_on_the_path() {
-        let l = layout();
-        let path = path_of(&[&l.local, &l.trusted]);
-        assert_eq!(find_git_in(&path, &l.project), Some(l.trusted.join("git")));
-        assert_eq!(find_git_in(&path_of(&[&l.local]), &l.project), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_link_into_the_project_does_not_hide_a_planted_git() {
-        let l = layout();
-        // `/usr/bin`-like directory whose `git` is a link to the project's file.
-        let linked = l.trusted.parent().unwrap().join("linked");
-        std::fs::create_dir(&linked).unwrap();
-        std::os::unix::fs::symlink(l.local.join("git"), linked.join("git")).unwrap();
-        let path = path_of(&[&linked]);
-        assert_eq!(find_git_in(&path, &l.project), None);
-        // A link to the project directory itself is resolved before the check.
-        let alias = l.trusted.parent().unwrap().join("alias");
-        std::os::unix::fs::symlink(&l.local, &alias).unwrap();
-        assert_eq!(find_git_in(&path_of(&[&alias]), &l.project), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_link_to_a_file_in_a_writable_directory_is_refused() {
-        let l = layout();
-        // The link sits in a protected directory; the file it names does not.
-        let linked = l.trusted.parent().unwrap().join("linked-open");
-        std::fs::create_dir(&linked).unwrap();
-        std::os::unix::fs::symlink(l.open.join("git"), linked.join("git")).unwrap();
-        assert_eq!(find_git_in(&path_of(&[&linked]), &l.project), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_protected_directory_under_a_writable_ancestor_is_refused() {
+    fn when_every_path_entry_is_rejected_git_is_not_taken_from_the_working_directory() {
         use std::os::unix::fs::PermissionsExt;
-        let l = layout();
-        let inner = l.open.join("inner");
-        std::fs::create_dir(&inner).unwrap();
-        std::fs::write(inner.join("git"), b"").unwrap();
-        std::fs::set_permissions(&inner, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert_eq!(find_git_in(&path_of(&[&inner]), &l.project), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_program_owned_by_another_user_is_refused() {
-        // The tests run as the owner of every file here. Standing in for a
-        // different user makes the same files belong to someone else.
-        let l = layout();
-        let path = path_of(&[&l.trusted]);
-        let me = current_uid();
-        assert_eq!(
-            find_git_as(&path, &l.project, me),
-            Some(l.trusted.join("git"))
-        );
-        assert_eq!(find_git_as(&path, &l.project, me + 1), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn the_resolved_path_is_what_the_lookup_returns() {
-        let l = layout();
-        let real_dir = l.trusted.parent().unwrap().join("real");
-        std::fs::create_dir(&real_dir).unwrap();
-        std::fs::write(real_dir.join("git-2.99"), b"").unwrap();
-        let bin = l.trusted.parent().unwrap().join("bin");
-        std::fs::create_dir(&bin).unwrap();
-        std::os::unix::fs::symlink(real_dir.join("git-2.99"), bin.join("git")).unwrap();
-        assert_eq!(
-            find_git_in(&path_of(&[&bin]), &l.project),
-            Some(real_dir.join("git-2.99"))
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_directory_others_can_write_is_not_trusted() {
-        let l = layout();
-        assert_eq!(find_git_in(&path_of(&[&l.open]), &l.project), None);
+        // The working directory is outside the project. `.` and a missing
+        // directory are both rejected, which leaves nothing to search.
+        let cwd = std::env::current_dir().unwrap();
+        let planted = cwd.join("git");
+        assert!(!planted.exists(), "a file named git is already here");
+        std::fs::write(&planted, b"#!/bin/sh\n").unwrap();
+        let _cleanup = RemoveOnDrop(planted.clone());
+        std::fs::set_permissions(&planted, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let path = std::env::join_paths([Path::new("."), Path::new("/no/such/dir")]).unwrap();
+        assert_eq!(find_trusted("git", Some(&path), project.path()), None);
     }
 
     #[test]

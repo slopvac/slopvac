@@ -206,10 +206,10 @@ def parse_events(stdout: str) -> str:
             continue
         if event.get("type") == "error":
             message = (event.get("error") or {}).get("message", "unknown error")
-            raise ModelCallError(str(message)[:300])
+            raise ModelCallError(procs.redact(str(message))[:300])
         if event.get("type") == "text":
             parts.append(event["part"].get("text", ""))
-    return "".join(parts)
+    return procs.redact_credentials("".join(parts))
 
 
 class Answer(NamedTuple):

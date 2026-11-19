@@ -10,7 +10,7 @@ use std::path::Path;
 
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value, value};
 
-use crate::{TermEntry, TermsError};
+use crate::{EntryProblem, TermEntry, TermsError};
 
 /// A terms file open for editing. Comments and layout survive an edit.
 #[derive(Debug)]
@@ -22,6 +22,8 @@ fn err(path: &str, message: impl Into<String>) -> TermsError {
     TermsError::Entry {
         path: path.to_owned(),
         message: message.into(),
+        number: None,
+        problem: EntryProblem::Duplicate,
     }
 }
 

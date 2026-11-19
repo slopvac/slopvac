@@ -10,6 +10,7 @@
 code:
   - '.github/workflows/**'
   - '.github/action-fixtures/**'
+  - 'CLA.md'
   - 'pyproject.toml'
   - 'uv.lock'
   - 'packages/slopvac-lint/pyproject.toml'
@@ -19,6 +20,12 @@ code:
   - 'packages/slopvac-lint/vale/styles-verified/**'
   - 'packages/slopvac-plugin/**'
   - 'tests/**'
+  # The tests run the built slopvac binary, so a change to its sources reruns them.
+  - 'action-v3/**'
+  - 'crates/**'
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+  - 'rust-toolchain.toml'
   - 'scripts/**/*.py'
   - 'scripts/install_vale.py'
   - 'mise.toml'
@@ -99,6 +106,19 @@ action:
   - 'scripts/action_entry.py'
   - 'scripts/install_vale.py'
   - 'packages/slopvac-lint/src/**'
+
+# The 3.0 composite action, run with the binary built from this checkout.
+action-v3:
+  - '.github/workflows/**'
+  - '.github/action-fixtures/**'
+  - 'action-v3/**'
+  - 'scripts/action_v3.py'
+  - 'scripts/action_entry.py'
+  - 'scripts/ci/install-rust-toolchain.sh'
+  - 'crates/**'
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+  - 'rust-toolchain.toml'
 
 # The linter supports these prose extensions. Keep this list aligned with
 # slopvac.contract.LINTABLE so repository prose cannot bypass its own gate.

@@ -128,7 +128,6 @@ def test_malformed_toml_fails_before_rustup(tmp_path: Path) -> None:
 _NO_RUST_GROUPS = {
     "Python-only or installed-package job; no cargo": [
         ("action-test.yml", "action"),
-        ("action-v3-test.yml", "action"),
         ("candidate.yml", "validate"),
         ("cli-e2e.yml", "e2e"),
         ("cli-e2e.yml", "smoke"),
@@ -163,11 +162,13 @@ _NO_RUST_GROUPS = {
         ("release-smoke.yml", "shell-installer"),
         ("release-smoke.yml", "homebrew"),
         ("release.yml", "plan"),
+        ("release.yml", "sign"),
         ("release.yml", "host"),
         ("release.yml", "publish-homebrew-formula"),
         ("release.yml", "announce"),
         ("revocations.yml", "build-sign"),
         ("revocations.yml", "push"),
+        ("tag-roots.yml", "tag-roots"),
         ("trunk-dev-stale-branches.yml", "stale-bead-branches"),
     ],
 }

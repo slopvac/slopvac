@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from . import corpuslib as lib
-from . import runner
+from . import procs, runner
 from .splits import split_of
 
 LABELS_DIR = lib.EVALS_DIR / "labels"
@@ -368,7 +368,7 @@ def command_asker(command: str) -> Callable[[str], str]:
         )
         if proc.returncode != 0:
             raise runner.EngineError(
-                f"provider command exited {proc.returncode}: {proc.stderr[:300]}"
+                f"provider command exited {proc.returncode}: {procs.redact(proc.stderr)[:300]}"
             )
         return proc.stdout
 

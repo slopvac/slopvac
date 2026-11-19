@@ -106,6 +106,12 @@ def test_evals_class_includes(path):
     assert in_class("evals", path)
 
 
+@pytest.mark.parametrize("path", ["CLA.md", "tests/test_cla_text.py"])
+def test_code_class_runs_the_cla_text_test(path):
+    # tests/test_cla_text.py hashes CLA.md, so a change to the agreement text must run the tests.
+    assert in_class("code", path)
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -164,7 +170,11 @@ def evaluate(condition: str, true_outputs: set[str]) -> bool:
 
 @pytest.mark.parametrize(
     ("job", "klass"),
-    [("evals-ratchet", "evals"), ("docs-site", "docs-site")],
+    [
+        ("evals-ratchet", "evals"),
+        ("docs-site", "docs-site"),
+        ("action-v3", "action-v3"),
+    ],
 )
 @pytest.mark.parametrize(
     ("true_outputs", "runs"),
@@ -267,17 +277,67 @@ def test_fixtures_read_by_contract_tests_run_the_full_suite(path):
     assert evaluate(JOBS["test"]["if"], outputs) is True
 
 
-@pytest.mark.parametrize("job", ["evals-ratchet", "docs-site"])
-def test_folded_job_calls_its_workflow_with_read_only_token(job):
+@pytest.mark.parametrize(
+    "path",
+    [
+        "crates/slopvac-report/src/lib.rs",
+        "crates/slopvac-engine/src/lib.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+        "rust-toolchain.toml",
+    ],
+)
+def test_a_change_to_the_binary_sources_runs_the_real_binary_suites(path):
+    outputs = classes_of([path])
+    assert {"code", "action-v3"} <= outputs
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+    assert evaluate(JOBS["action-v3"]["if"], outputs) is True
+
+
+def test_a_change_to_the_action_alone_runs_its_contract_tests():
+    # tests/test_action_v3.py reads action-v3/action.yml, so the full suite must run.
+    outputs = classes_of(["action-v3/action.yml"])
+    assert {"code", "action-v3"} <= outputs
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+    assert evaluate(JOBS["action-v3"]["if"], outputs) is True
+
+
+@pytest.mark.parametrize("path", ["README.md", "docs/design/x.md"])
+def test_prose_only_changes_skip_the_action_v3_job(path):
+    assert evaluate(JOBS["action-v3"]["if"], classes_of([path])) is False
+
+
+def test_the_pytest_job_builds_the_binary_before_it_runs_the_suites():
+    steps = JOBS["test"]["steps"]
+    build = next(s for s in steps if s["name"] == "Build the slopvac binary")
+    assert build["run"] == "cargo build --locked -p slopvac"
+    assert JOBS["test"]["env"]["SLOPVAC_BIN"].endswith("/target/debug/slopvac")
+    names = [s["name"] for s in steps]
+    assert names.index("Build the slopvac binary") < names.index(
+        "Run every discovered pytest suite"
+    )
+
+
+@pytest.mark.parametrize(
+    ("job", "workflow"),
+    [
+        ("evals-ratchet", "evals-ratchet.yml"),
+        ("docs-site", "docs-site.yml"),
+        ("action-v3", "action-v3-test.yml"),
+    ],
+)
+def test_folded_job_calls_its_workflow_with_read_only_token(job, workflow):
     call = JOBS[job]
-    assert call["uses"] == f"./.github/workflows/{job}.yml"
+    assert call["uses"] == f"./.github/workflows/{workflow}"
     assert call["permissions"] == {"contents": "read"}
 
 
 # --- workflow triggers and permissions ---------------------------------------
 
 
-@pytest.mark.parametrize("workflow", ["evals-ratchet.yml", "docs-site.yml"])
+@pytest.mark.parametrize(
+    "workflow", ["evals-ratchet.yml", "docs-site.yml", "action-v3-test.yml"]
+)
 def test_folded_workflow_has_no_standalone_pr_or_push_trigger(workflow):
     triggers = load(workflow)["on"]
     assert "workflow_call" in triggers
@@ -317,6 +377,7 @@ FLAG_ENV = {
     "PACKAGE": "package",
     "RUST": "rust",
     "ACTION": "action",
+    "ACTION_V3": "action-v3",
     "LINT": "lint",
     "DOCS": "docs",
     "SECRETS": "secrets",
@@ -362,6 +423,7 @@ def test_gate_needs_include_the_folded_jobs():
         (set(), ok()),
         ({"evals"}, ok("evals-ratchet")),
         ({"docs-site"}, ok("docs-site")),
+        ({"action-v3"}, ok("action-v3")),
         ({"evals", "docs-site"}, ok("evals-ratchet", "docs-site")),
         ({"force_all"}, ok(*(set(GATE_NEEDS) - ALWAYS))),
     ],
@@ -376,6 +438,8 @@ def test_gate_accepts_runs_and_skips_matching_the_classification(flags, results)
     [
         ({"evals"}, ok(), "evals-ratchet: got skipped, expected success"),
         ({"docs-site"}, ok(), "docs-site: got skipped, expected success"),
+        ({"action-v3"}, ok(), "action-v3: got skipped, expected success"),
+        (set(), ok("action-v3"), "action-v3: got success, expected skipped"),
         (set(), ok("evals-ratchet"), "evals-ratchet: got success, expected skipped"),
         (set(), ok("docs-site"), "docs-site: got success, expected skipped"),
         (

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from . import corpuslib as lib
+from . import procs
 from .textops import outline_for
 
 PROMPT_VERSION = "1"
@@ -77,9 +78,9 @@ def run_provider(command: str, prompt: str, timeout: int) -> str:
     )
     if done.returncode != 0:
         raise RuntimeError(
-            f"provider exited {done.returncode}: {done.stderr.strip()[:200]}"
+            f"provider exited {done.returncode}: {procs.redact(done.stderr.strip())[:200]}"
         )
-    return done.stdout
+    return procs.redact_credentials(done.stdout)
 
 
 def cmd_outline(manifest: dict[str, Any], cache: Path) -> int:

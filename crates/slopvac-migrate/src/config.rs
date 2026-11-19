@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use toml_edit::{Array, Document, DocumentMut, Item, RawString, Table, TableLike, Value, value};
 
+use crate::capped::Blockers;
 use crate::{Dropped, Error, Options, RenameTable, preserve_doc};
 
 const THRESHOLD_KEYS: &[&str] = &[
@@ -70,10 +71,30 @@ pub fn migrate_config(
     renames: &RenameTable,
     options: Options,
 ) -> Result<Rewrite, Error> {
-    let lines = key_lines(text).map_err(|e| Error::Parse {
+    migrate_config_in(text, file, renames, options, None)
+}
+
+/// [`migrate_config`] for text that came from a `[tool.slopvac]` table. `outer` holds the
+/// line of every key in the file that holds the table, so each blocker is given its line in
+/// that file before its key is clipped for display.
+pub(crate) fn migrate_config_in(
+    text: &str,
+    file: &str,
+    renames: &RenameTable,
+    options: Options,
+    outer: Option<&HashMap<String, usize>>,
+) -> Result<Rewrite, Error> {
+    let mut lines = key_lines(text).map_err(|e| Error::Parse {
         file: file.to_owned(),
         message: e,
     })?;
+    if let Some(outer) = outer {
+        for (key, line) in &mut lines {
+            if let Some(l) = outer.get(&format!("tool.slopvac.{key}")) {
+                *line = *l;
+            }
+        }
+    }
     let mut doc: DocumentMut = text
         .parse()
         .map_err(|e: toml_edit::TomlError| Error::Parse {
@@ -90,7 +111,7 @@ pub fn migrate_config(
         file,
         lines: &lines,
         renames,
-        dropped: Vec::new(),
+        dropped: Blockers::default(),
         notes: Vec::new(),
         removed_categories: Vec::new(),
     };
@@ -116,7 +137,7 @@ pub fn migrate_config(
             removed_categories: cx.removed_categories,
         })
     } else {
-        Err(Error::Dropped(cx.dropped))
+        Err(Error::Dropped(cx.dropped.finish()))
     }
 }
 
@@ -130,6 +151,17 @@ fn is_legacy(text: &str, file: &str) -> Result<bool, Error> {
         file: file.to_owned(),
         message: e.message,
     })?;
+    // The version gate leaves a non-integer to the schema, so a value like `"3"` would pass
+    // for migrated. Refuse it here, with its line.
+    if let Some(entry) = root.entry("schema_version")
+        && !matches!(entry.node.value, slopvac_config::tree::Value::Int(_))
+    {
+        return Err(Error::InvalidType {
+            file: file.to_owned(),
+            line: line_of(text, entry.node.span.start),
+            message: "`schema_version` must be an integer".to_owned(),
+        });
+    }
     Ok(matches!(
         slopvac_config::version::check_version(&root, text),
         Err(d) if d.code == slopvac_config::Code::LegacyVersion
@@ -146,7 +178,7 @@ struct Cx<'a> {
     file: &'a str,
     lines: &'a HashMap<String, usize>,
     renames: &'a RenameTable,
-    dropped: Vec<Dropped>,
+    dropped: Blockers,
     notes: Vec<String>,
     removed_categories: Vec<Dropped>,
 }
@@ -155,20 +187,20 @@ impl Cx<'_> {
     /// Drop a category that 3.0 no longer has and go on, with a
     /// `migrate-category-removed` notice and no exit 2.
     fn drop_category_note(&mut self, path: &str, reason: &str) {
-        self.removed_categories.push(Dropped {
-            file: self.file.to_owned(),
-            key: path.to_owned(),
-            line: self.lines.get(path).copied().unwrap_or(1),
-            reason: reason.to_owned(),
-        });
+        self.removed_categories.push(Dropped::new(
+            self.file,
+            path,
+            self.lines.get(path).copied().unwrap_or(1),
+            reason,
+        ));
     }
-    fn drop_key(&mut self, path: &str, reason: impl Into<String>) {
-        self.dropped.push(Dropped {
-            file: self.file.to_owned(),
-            key: path.to_owned(),
-            line: self.lines.get(path).copied().unwrap_or(1),
-            reason: reason.into(),
-        });
+    fn drop_key(&mut self, path: &str, reason: impl AsRef<str>) {
+        self.dropped.record(
+            self.file,
+            path,
+            self.lines.get(path).copied().unwrap_or(1),
+            reason.as_ref(),
+        );
     }
 }
 
@@ -613,7 +645,7 @@ pub(crate) fn key_lines(text: &str) -> Result<HashMap<String, usize>, String> {
     Ok(out)
 }
 
-fn line_of(text: &str, offset: usize) -> usize {
+pub(crate) fn line_of(text: &str, offset: usize) -> usize {
     text[..offset.min(text.len())]
         .bytes()
         .filter(|b| *b == b'\n')

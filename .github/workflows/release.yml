@@ -98,10 +98,7 @@ jobs:
           persist-credentials: false
           submodules: recursive
       - name: Install dist
-        # we specify bash to get pipefail; it guards against the `curl` command
-        # failing. otherwise `sh` won't catch that `curl` returned non-0
-        shell: bash
-        run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.34.0/cargo-dist-installer.sh | sh"
+        run: bash scripts/install_cargo_dist.sh
       - name: Cache dist
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -181,20 +178,13 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - name: Install Rust non-interactively if not already installed
-        if: ${{ matrix.container }}
-        run: |
-          if ! command -v cargo > /dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          fi
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
       - name: Install the pinned toolchain
         run: bash scripts/ci/install-rust-toolchain.sh
       - name: Install dist
-        run: ${{ matrix.install_dist.run }} # zizmor: ignore[template-injection] value comes from dist plan of the tagged tree's dist-workspace.toml, not from untrusted input
+        run: bash scripts/install_cargo_dist.sh
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -203,7 +193,7 @@ jobs:
           path: target/distrib/
           merge-multiple: true
       - name: Install cargo-auditable
-        run: ${{ matrix.install_cargo_auditable.run }} # zizmor: ignore[template-injection] value comes from dist plan of the tagged tree's dist-workspace.toml, not from untrusted input
+        run: bash scripts/install_cargo_auditable.sh
       - name: Install dependencies
         run: | # zizmor: ignore[template-injection] value comes from dist plan of the tagged tree's dist-workspace.toml, not from untrusted input
           ${{ matrix.packages_install }}
@@ -267,10 +257,7 @@ jobs:
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
       - name: Install cargo-cyclonedx
-        # we specify bash to get pipefail; it guards against the `curl` command
-        # failing. otherwise `sh` won't catch that `curl` return non-0
-        run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/cargo-cyclonedx-0.5.5/cargo-cyclonedx-installer.sh | sh"
-        shell: bash
+        run: bash scripts/install_cargo_cyclonedx.sh
       # Get all the local artifacts for the global tasks to use (for e.g. checksums)
       - name: Fetch local artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -311,15 +298,67 @@ jobs:
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ steps.cargo-cyclonedx.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
-  # Determines if we should publish/announce
-  host:
+  # Signs the built artifacts. It never installs or runs dist, so the one job that
+  # reads the signing secret executes nothing that dist produced or downloaded.
+  sign:
+    name: Sign the release artifacts
     needs:
       - plan
       - custom-release-provenance
       - build-local-artifacts
       - build-global-artifacts
-    # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
     if: ${{ always() && needs.plan.result == 'success' && needs.custom-release-provenance.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    runs-on: "ubuntu-22.04"
+    # The signing key lives in this environment, which only main and v* tags can deploy to.
+    environment: release
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Confirm the tag still points at the built commit
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
+      - name: Fetch artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: artifacts-*
+          path: artifacts
+          merge-multiple: true
+      - name: Cleanup
+        run: |
+          # Remove the granular manifests
+          rm -f artifacts/*-dist-manifest.json
+          # The host job writes this one itself; it is not a signed release asset
+          rm -f artifacts/dist-manifest.json
+      - name: Install minisign
+        run: bash scripts/install_minisign.sh
+      - name: Sign the release artifacts
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          python3 scripts/release_signing.py sign artifacts --version "${RELEASE_TAG#v}"
+      - name: Upload the signatures
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-signatures
+          path: artifacts/*.minisig
+          if-no-files-found: error
+
+  # Determines if we should publish/announce
+  host:
+    needs:
+      - plan
+      - custom-release-provenance
+      - sign
+      - build-local-artifacts
+      - build-global-artifacts
+    # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
+    if: ${{ always() && needs.plan.result == 'success' && needs.custom-release-provenance.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') && needs.sign.result == 'success' }}
     permissions:
       "contents": "write"
     env:
@@ -377,14 +416,19 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
+          # This job's own dist run writes this one; the sign job never sees it
+          rm -f artifacts/dist-manifest.json
+      - name: Fetch the signatures
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-signatures
+          path: artifacts
       - name: Install minisign
         run: bash scripts/install_minisign.sh
-      - name: Sign the release artifacts
-        env:
-          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+      - name: Verify the signatures against the committed key
+        shell: bash
         run: |
-          python3 scripts/release_signing.py sign artifacts --version "${RELEASE_TAG#v}"
+          find artifacts -type f ! -name '*.minisig' -print0 | xargs -0 python3 scripts/release_signing.py verify
       - name: Upload the artifacts to the draft release
         env:
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
@@ -429,7 +473,7 @@ jobs:
           permission-contents: write
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          persist-credentials: true
+          persist-credentials: false
           repository: "slopvac/homebrew-tap"
           token: ${{ steps.tap-token.outputs.token }}
       # So we have access to the formula
@@ -446,20 +490,32 @@ jobs:
           git config --global user.name "${GITHUB_USER}"
           git config --global user.email "${GITHUB_EMAIL}"
 
+          set -euo pipefail
           for release in $(echo "$PLAN" | jq --compact-output '.releases[] | select([.artifacts[] | endswith(".rb")] | any)'); do
             filename=$(echo "$release" | jq '.artifacts[] | select(endswith(".rb"))' --raw-output)
             name=$(echo "$filename" | sed "s/\.rb$//")
             version=$(echo "$release" | jq .app_version --raw-output)
 
-            export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
-            brew update
-            # We avoid reformatting user-provided data such as the app description and homepage.
-            brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true
+            [[ "$filename" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.rb$ ]] || { echo "unexpected formula file name: $filename" >&2; exit 1; }
+            [[ -s "Formula/${filename}" ]] || { echo "missing or empty formula: $filename" >&2; exit 1; }
 
             git add "Formula/${filename}"
             git commit -m "${name} ${version}"
           done
-          git push
+      # The one step that sees the token. It runs no fetched code, only git.
+      - name: Push the formula files
+        env:
+          TAP_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # The header goes to git through its environment, never its argument list, which
+          # any process on the runner can read. printf is a shell builtin, so the token
+          # is not in a command line there either.
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TAP_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0
+          git push origin HEAD
 
   announce:
     needs:

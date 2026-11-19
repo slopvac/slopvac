@@ -68,27 +68,42 @@ pub struct EngineLinter {
     reasons: HashMap<RuleId, Vec<String>>,
 }
 
+/// The exception names of each rule in `sets`, for the allow-directive code action.
+#[must_use]
+pub fn exception_names<'a>(
+    sets: impl IntoIterator<Item = &'a RuleSet>,
+) -> HashMap<RuleId, Vec<String>> {
+    sets.into_iter()
+        .flat_map(RuleSet::rules)
+        .map(|loaded| {
+            let names = loaded
+                .rule()
+                .exceptions()
+                .iter()
+                .map(|e| e.name.to_string())
+                .collect();
+            (loaded.id().clone(), names)
+        })
+        .collect()
+}
+
 impl EngineLinter {
     /// Build the engine from `sets` and `settings`, and record the exception names of each
     /// rule for the allow-directive code action.
     pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
-        let reasons = sets
-            .iter()
-            .flat_map(RuleSet::rules)
-            .map(|loaded| {
-                let names = loaded
-                    .rule()
-                    .exceptions()
-                    .iter()
-                    .map(|e| e.name.to_string())
-                    .collect();
-                (loaded.id().clone(), names)
-            })
-            .collect();
+        let reasons = exception_names(&sets);
         Ok(Self {
             engine: Engine::new(sets, settings)?,
             reasons,
         })
+    }
+
+    /// Serve an engine that the caller built, with the exception names of its rules (see
+    /// [`exception_names`]). The caller sets everything the engine needs, such as terms and
+    /// the blocklist.
+    #[must_use]
+    pub fn from_engine(engine: Engine, reasons: HashMap<RuleId, Vec<String>>) -> Self {
+        Self { engine, reasons }
     }
 }
 

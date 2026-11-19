@@ -30,6 +30,8 @@ pub struct Found {
     /// One-based lines of comma-list directives. 2.x took one id per directive, so
     /// these were already invalid; they stay as written.
     pub invalid: Vec<usize>,
+    /// One-based lines of directives whose id was renamed.
+    pub renamed: Vec<usize>,
 }
 
 /// Rewrite 2.x rule ids in `slopvac-allow` directives to 3.0 qualified ids.
@@ -242,6 +244,7 @@ fn rewrite_comment(
         return None;
     }
     if let Some(new) = renames.rule(id) {
+        found.renamed.push(line);
         return Some(format!(
             "{}{new}{}",
             &comment[..value_start],

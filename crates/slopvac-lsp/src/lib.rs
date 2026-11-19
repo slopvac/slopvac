@@ -21,7 +21,7 @@ mod server;
 
 use clap::{ArgMatches, Command};
 
-pub use linter::{Check, EngineLinter, LintError, Linted, Linter, Problem};
+pub use linter::{Check, EngineLinter, LintError, Linted, Linter, Problem, exception_names};
 pub use server::{Exit, Server, ServerError};
 
 /// How long a clean exit waits for the stdio threads to finish.

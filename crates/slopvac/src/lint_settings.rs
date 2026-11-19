@@ -23,10 +23,11 @@ use slopvac_model::{
     CategoryId, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, NonEmptyString,
     RuleId, Severity,
 };
-use slopvac_rules::{MatchKind, RuleSet};
+use slopvac_rules::MatchKind;
 use slopvac_styles::{BuiltinSource, Style, StylePresets};
 
 use crate::errors::CliError;
+use crate::rule_catalog::Catalog;
 
 /// What the command line adds on top of the files.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -83,31 +84,20 @@ fn legacy_style(profile: &str) -> &'static Style {
         .unwrap_or_else(|| &styles["legacy-normal"])
 }
 
-fn rule_id_of(rules: &RuleSet, key: &str) -> Option<RuleId> {
-    let qualified = if key.contains(':') {
-        key.to_owned()
-    } else {
-        format!("core:{key}")
-    };
-    rules
-        .rules()
-        .find(|r| r.id().as_str() == qualified)
-        .map(|r| r.id().clone())
+fn rule_id_of(rules: &Catalog, key: &str) -> Option<RuleId> {
+    rules.rule_named(key).map(|r| r.id().clone())
 }
 
-fn category_of(rules: &RuleSet, key: &str) -> Option<String> {
-    let bare = key.strip_prefix("core:").unwrap_or(key);
+fn category_of(rules: &Catalog, key: &str) -> Option<String> {
     rules
-        .categories()
-        .iter()
-        .find(|c| c.id().as_str() == bare)
+        .category_named(key)
         .map(|c| c.id().as_str().to_owned())
 }
 
 /// Check the names a config uses against the catalogue. A key may be bare (`orwell.x`,
 /// `orwell`) or qualified (`core:orwell.x`, `core:orwell`); both resolve to the same rule or
 /// category, and the layer that wrote an entry decides which wins, never its spelling.
-fn check_names(settings: &[Setting], rules: &RuleSet) -> Result<(), CliError> {
+fn check_names(settings: &[Setting], rules: &Catalog) -> Result<(), CliError> {
     for setting in settings {
         let place = describe(&setting.source);
         match setting.path.as_slice() {
@@ -136,7 +126,7 @@ fn check_names(settings: &[Setting], rules: &RuleSet) -> Result<(), CliError> {
 /// # Errors
 /// `config-unknown-rule` or `config-unknown-category`, naming the file and line of the key,
 /// and `unknown-style` for a `styles` entry that does not ship.
-pub fn validate(config: &LoadedConfig, rules: &RuleSet) -> Result<(), CliError> {
+pub fn validate(config: &LoadedConfig, rules: &Catalog) -> Result<(), CliError> {
     let listed = config.project_value(&["styles"]);
     for name in listed
         .iter()
@@ -316,7 +306,7 @@ fn internal(what: &str, err: impl std::fmt::Display) -> CliError {
 }
 
 /// The ids a `--category` or `--disable` name selects: a category, or a rule in either form.
-fn selected(rules: &RuleSet, names: &[String]) -> Result<Vec<String>, CliError> {
+fn selected(rules: &Catalog, names: &[String]) -> Result<Vec<String>, CliError> {
     let mut out = Vec::new();
     for name in names {
         if let Some(category) = category_of(rules, name) {
@@ -347,7 +337,7 @@ fn is_inherited(layer: Layer) -> bool {
 /// # Errors
 /// `usage` for a `--category` or `--disable` name that the catalogue lacks.
 pub fn build(
-    rules: &RuleSet,
+    rules: &Catalog,
     resolved: &Resolved,
     sources: Vec<ConfigSource>,
     cli: &Overrides,
@@ -484,7 +474,7 @@ mod tests {
 
     /// The settings that `config` (the text of a `slopvac.toml`) gives to a file.
     fn settings(config: &str) -> Result<Settings, CliError> {
-        let rules = crate::rule_catalog::core().expect("the core rules load");
+        let rules = Catalog::load().expect("the rules load");
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("slopvac.toml");
         std::fs::write(&path, config).expect("write config");

@@ -431,7 +431,7 @@ impl Engine {
     /// # Errors
     /// A file cannot be read or is not a valid terms file.
     pub fn with_term_files<P: AsRef<std::path::Path>>(
-        mut self,
+        self,
         files: &[P],
     ) -> Result<Self, EngineError> {
         let mut entries = Vec::new();
@@ -442,9 +442,17 @@ impl Engine {
                     .terms,
             );
         }
+        Ok(self.with_term_entries(entries))
+    }
+
+    /// Set the terms from entries the caller has already read and validated, then the
+    /// built-in list. An entry that comes earlier wins over a later one and over the built-in
+    /// list. No file is read, so a caller that validated its files reads each only once.
+    #[must_use]
+    pub fn with_term_entries(mut self, mut entries: Vec<slopvac_terms::TermEntry>) -> Self {
         entries.extend(slopvac_terms::TermsFile::builtin().terms);
         self.terms = TermSet::new(entries);
-        Ok(self)
+        self
     }
 
     /// Whether `id` is a term-casing rule.
