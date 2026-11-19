@@ -225,7 +225,7 @@ Markdown uses `pulldown-cmark` and MDX uses `markdown-rs`. HTML uses `html5ever`
 - Reason: a scanner is hand-written C that keeps its own state in raw memory. Review found hangs and memory corruption in the F#, Kotlin and Swift scanners on hostile input. The Dart scanner also crashed on a multi-byte character at a read edge. Rust safety rules and parse budgets cannot contain C code.
 - Checks: the lexer is linear. The crate has a fuzz target, and a test fails if a linked grammar gains a scanner.
 - Rejected: tree-sitter with every grammar. It added 60 MiB to a release binary and put unaudited C scanners on the path of every source file.
-- Cost: Python, Elixir and Julia docstrings are strings, as in 2.x, so the lexer does not extract them. A scanner-free parser for them can come later.
+- Cost: Elixir and Julia docstrings are strings, as in 2.x, so the lexer does not extract them. A scanner-free parser for them can come later. Python is the exception: the lexer extracts the string that opens a module, class or function body.
 
 ### 23. Agent review
 

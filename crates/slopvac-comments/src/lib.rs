@@ -21,8 +21,11 @@
 //!   `SPDX-` lines, `# type:` or `// eslint-disable` directives. Neither does this
 //!   crate. A fragment records its [`CommentKind`] so a caller can tell a doc comment
 //!   from a plain one.
-//! - Strings are code, as in 2.x. A Python docstring is a string, so it is not
-//!   extracted: Python has a scanner grammar and 2.x blanked docstrings too.
+//! - Strings are code, as in 2.x, with one exception. A Python string that is the first
+//!   statement of a module, class or function body is extracted as a
+//!   [`CommentKind::Doc`] fragment, with its prefix and quotes as gaps. 2.x blanked
+//!   these. Byte strings and f-strings are not docstrings in Python and stay code.
+//!   Elixir and Julia docstrings are still strings.
 //! - Consecutive own-line comments with the same marker form one fragment per
 //!   paragraph, joined by a synthetic [`TokenKind::Wrap`] space. A blank comment line
 //!   starts a new paragraph. A comment after code on its line stands alone.

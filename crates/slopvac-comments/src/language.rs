@@ -288,6 +288,10 @@ pub(crate) struct Quote {
 }
 
 /// The comment and string delimiters of one language.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each flag is an independent trait of one language's syntax table"
+)]
 #[derive(Debug)]
 pub(crate) struct Syntax {
     /// Line comment markers, checked in order.

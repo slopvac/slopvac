@@ -135,14 +135,8 @@ pub(crate) fn scan(source: &str, syntax: &Syntax, max_steps: usize) -> Result<Sc
                 }
             }
             State::Quote { quote, start } => {
-                let done = in_quote(bytes, &mut at, quote);
-                if done == Quoted::Closed && syntax.docstrings {
-                    strings.push(start..at);
-                }
-                match done {
-                    Quoted::Open => State::Quote { quote, start },
-                    Quoted::Closed | Quoted::Ended => State::Code,
-                }
+                let collect = syntax.docstrings.then_some(&mut strings);
+                in_quote(bytes, &mut at, (quote, start), collect)
             }
             State::Long { close } => {
                 if bytes[at..].starts_with(close.as_bytes()) {
@@ -165,19 +159,14 @@ pub(crate) fn scan(source: &str, syntax: &Syntax, max_steps: usize) -> Result<Sc
     })
 }
 
-/// What one step inside a string did.
-#[derive(Debug, PartialEq, Eq)]
-enum Quoted {
-    /// The string goes on.
-    Open,
-    /// The closing delimiter was read.
-    Closed,
-    /// A line end cut the string off before a closing delimiter.
-    Ended,
-}
-
-/// One step inside a string. Returns what happened and moves `at` forward.
-fn in_quote(bytes: &[u8], at: &mut usize, quote: Quote) -> Quoted {
+/// One step inside a string that opened at `start`. Returns the state after it and moves
+/// `at` forward. A string that closes is recorded in `strings`, when given.
+fn in_quote(
+    bytes: &[u8],
+    at: &mut usize,
+    (quote, start): (Quote, usize),
+    strings: Option<&mut Vec<Range<usize>>>,
+) -> State {
     let here = &bytes[*at..];
     if bytes[*at] == b'\\' {
         // A backslash takes the next byte, and a CRLF as one.
@@ -185,16 +174,19 @@ fn in_quote(bytes: &[u8], at: &mut usize, quote: Quote) -> Quoted {
         if bytes.get(*at - 1) == Some(&b'\r') && bytes.get(*at) == Some(&b'\n') {
             *at += 1;
         }
-        Quoted::Open
+        State::Quote { quote, start }
     } else if here.starts_with(quote.delim.as_bytes()) {
         *at += quote.delim.len();
-        Quoted::Closed
+        if let Some(strings) = strings {
+            strings.push(start..*at);
+        }
+        State::Code
     } else if matches!(bytes[*at], b'\n' | b'\r') && !quote.multiline {
         *at += 1;
-        Quoted::Ended
+        State::Code
     } else {
         *at += 1;
-        Quoted::Open
+        State::Quote { quote, start }
     }
 }
 
