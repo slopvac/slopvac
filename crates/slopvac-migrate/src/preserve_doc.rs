@@ -329,7 +329,7 @@ fn note_layout(expanded: &Expanded, ctx: &mut Ctx<'_>) {
         }
         if let Some(after) = b.moved_after {
             ctx.notes.push(format!(
-                "moved {at} after overrides[{after}], which holds its files and switches them to another 2.x profile; it gives up the settings of {} that won in 2.x",
+                "moved {at} after overrides[{after}], which holds its files and switches them to another 2.x profile; it drops the settings that {} also sets, which won in 2.x",
                 list(&b.yields_to)
             ));
         }
