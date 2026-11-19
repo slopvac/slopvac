@@ -10,6 +10,20 @@ const fn entry(code: &'static str, kind: Kind) -> Entry {
     Entry::new(code, kind, "E::V", "text", &[], "Summary.")
 }
 
+#[rstest::rstest]
+#[case::in_progress("update-in-progress")]
+#[case::lock_unsafe("update-lock-unsafe")]
+#[case::interrupted("update-interrupted")]
+#[case::version_unknown("update-version-unknown")]
+fn a_self_update_refusal_code_is_registered_as_an_error(#[case] code: &str) {
+    let entry = catalogs()
+        .into_iter()
+        .flat_map(|(_, entries)| entries.iter())
+        .find(|e| e.code == code)
+        .unwrap_or_else(|| panic!("`{code}` is not in the registry"));
+    assert_eq!(entry.kind, Kind::Error);
+}
+
 #[test]
 fn the_registry_passes_the_audit() {
     let problems: Vec<String> = audit(&catalogs()).iter().map(ToString::to_string).collect();
