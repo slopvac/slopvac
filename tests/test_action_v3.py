@@ -13,6 +13,8 @@ import yaml
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
+pytest_plugins = ["real_binary"]  # the real-binary fixtures
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "action_v3.py"
 ACTION = ROOT / "action-v3" / "action.yml"
@@ -61,7 +63,7 @@ FORMATS = ["json", "rdjsonl", "sarif", "codeclimate"]
 # A process double for what the real binary cannot be told to do: die from a
 # signal, exit 70, fail `plugins sync` (not wired in the binary yet) and log
 # the exact argv it received. It writes no report content; every test of report
-# content runs the real binary (see conftest.py).
+# content runs the real binary (see real_binary.py).
 PROCESS_DOUBLE = """#!/usr/bin/env python3
 import json, os, signal, sys
 

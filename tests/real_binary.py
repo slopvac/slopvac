@@ -1,4 +1,8 @@
-"""Fixtures that run the real ``crates/slopvac`` binary.
+"""Helpers and fixtures that run the real ``crates/slopvac`` binary.
+
+This is not a ``conftest.py``: a root ``tests/conftest.py`` would shadow the
+plugin package's own ``conftest`` module, which its tests import by name. Tests
+that need the fixtures import them from here.
 
 Build it with ``cargo build -p slopvac``. The tests find it through
 ``SLOPVAC_BIN`` or ``target/{release,debug}/slopvac``. Without one they skip on

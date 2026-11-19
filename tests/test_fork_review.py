@@ -1,7 +1,7 @@
 """The privileged fork-review consumer must reject a hostile artifact.
 
 The valid report is the rdjsonl the real slopvac binary writes for a sloppy
-document (see conftest.py).
+document (see real_binary.py).
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ import zipfile
 from pathlib import Path
 
 import pytest
+
+pytest_plugins = ["real_binary"]  # the real-binary fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "fork_review.py"
