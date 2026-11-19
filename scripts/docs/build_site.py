@@ -13,8 +13,9 @@ author-side ``$id`` prefix. Publishing rewrites that prefix to the configured
 site URL, so changing ``site_url`` (for example for a custom domain) needs no
 edit to the committed schemas.
 
-Rules, schemas, the plugin protocol and pack manifest references, the pack
-pages, styles, terms and genres come from real data. The styles, terms and
+Hand-written guides come from ``docs/guides``. Rules, schemas, the plugin
+protocol and pack manifest references, the pack pages, styles, terms and genres
+come from real data. The styles, terms and
 genres pages come from each crate's ``reference`` example, which the builder
 runs through cargo.
 """
@@ -37,6 +38,7 @@ from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import guides
 import mdlinks
 import plugin_pages
 import starlight
@@ -54,6 +56,7 @@ DEFAULT_OUT = ROOT / "build" / "site-src"
 # until the pack loader and the bundled core pack exist.
 PACKS_DIR = ROOT / "packages" / "slopvac-plugin" / "examples"
 CONTRACT_DIR = ROOT / "docs" / "contract"
+GUIDES_DIR = ROOT / "docs" / "guides"
 SITE_CONFIG = ROOT / "docs" / "site.toml"
 CARGO = "cargo"
 
@@ -409,11 +412,13 @@ SECTIONS = (
     ("Configuration", "config/index.md"),
     ("Schemas", "schemas/index.md"),
 )
+GUIDES_ENTRY = ("Guides", "guides/index.md")
 
 
-def index_page() -> str:
+def index_page(with_guides: bool = False) -> str:
     lines = ["# slopvac reference", ""]
-    lines += [f"- [{title}]({path})" for title, path in SECTIONS]
+    sections = (GUIDES_ENTRY, *SECTIONS) if with_guides else SECTIONS
+    lines += [f"- [{title}]({path})" for title, path in sections]
     return "\n".join(lines) + "\n"
 
 
@@ -423,8 +428,10 @@ def build(
     schemas_dir: Path = SCHEMAS_DIR,
     packs_dir: Path = PACKS_DIR,
     contract_dir: Path = CONTRACT_DIR,
+    guides_dir: Path = GUIDES_DIR,
 ) -> Pages:
     pages: Pages = {}
+    guide_pages = guides.generate_guides(guides_dir)
     schemas = plugin_pages.SchemaSet(schemas_dir)
     generated = (
         generate_rules(rules_dir),
@@ -438,7 +445,8 @@ def build(
         generate_cli(),
         generate_error_codes(),
         generate_config(schemas_dir),
-        {"index.md": index_page()},
+        guide_pages,
+        {"index.md": index_page(bool(guide_pages))},
     )
     for group in generated:
         for path, text in group.items():
@@ -509,6 +517,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--schemas-dir", type=Path, default=SCHEMAS_DIR)
     parser.add_argument("--packs-dir", type=Path, default=PACKS_DIR)
     parser.add_argument("--contract-dir", type=Path, default=CONTRACT_DIR)
+    parser.add_argument("--guides-dir", type=Path, default=GUIDES_DIR)
     parser.add_argument(
         "--check",
         action="store_true",
@@ -523,7 +532,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     site = load_site(args.config)
     pages = build(
-        site, args.rules_dir, args.schemas_dir, args.packs_dir, args.contract_dir
+        site,
+        args.rules_dir,
+        args.schemas_dir,
+        args.packs_dir,
+        args.contract_dir,
+        args.guides_dir,
     )
     problems = broken_links(pages) + schema_id_problems(pages, site)
     if args.check:

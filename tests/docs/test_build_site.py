@@ -975,3 +975,67 @@ def test_cli_pages_come_from_the_clap_tree_and_are_covered_by_check(
     (sources["out"] / "cli/lint.md").write_text("edited\n")
     assert _run(sources, "--check") == 1
     assert "cli/lint.md: out of date" in capsys.readouterr().err
+
+GUIDE = """\
+---
+title: Choosing a model
+description: Pick a reviewer model.
+---
+
+Body text with a [rule page](../rules/index.md) link.
+"""
+
+
+def _guides(sources: dict[str, Path]) -> Path:
+    folder = sources["out"].parent / "guides"
+    folder.mkdir()
+    return folder
+
+
+def _starlight_args(sources: dict[str, Path], folder: Path) -> tuple[str, ...]:
+    return ("--guides-dir", str(folder), "--starlight", str(_site(sources)))
+
+
+def test_a_guide_renders_in_the_site_the_sidebar_and_the_guides_index(
+    sources: dict[str, Path],
+) -> None:
+    folder = _guides(sources)
+    (folder / "choosing-model.md").write_text(GUIDE)
+    (folder / "plain.md").write_text("# Plain guide\n\nFirst paragraph.\n\nMore.\n")
+    assert _run(sources, *_starlight_args(sources, folder)) == 0
+    page = _starlight_page(sources, "guides/choosing-model.md")
+    assert page.startswith('---\ntitle: "Choosing a model"\n')
+    assert "[rule page](../../rules/)" in page
+    index = _read(sources, "guides/index.md")
+    assert "- [Choosing a model](choosing-model.md): Pick a reviewer model." in index
+    assert "- [Plain guide](plain.md): First paragraph." in index
+    assert "[Guides](guides/index.md)" in _read(sources, "index.md")
+    config = json.loads((_site(sources) / "generated/site.json").read_text())
+    assert config["guides"] == [
+        {"label": "Guides", "slug": "v3/guides"},
+        {"label": "Choosing a model", "slug": "v3/guides/choosing-model"},
+        {"label": "Plain guide", "slug": "v3/guides/plain"},
+    ]
+
+
+def test_a_broken_link_in_a_guide_fails_the_build(
+    sources: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = _guides(sources)
+    (folder / "bad.md").write_text("# Bad\n\nSee [nowhere](missing.md).\n")
+    assert _run(sources, "--guides-dir", str(folder)) == 1
+    assert "guides/bad.md: broken link missing.md" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("name", ["empty", "absent"])
+def test_a_missing_or_empty_guides_dir_adds_no_guides(
+    sources: dict[str, Path], name: str
+) -> None:
+    folder = sources["out"].parent / name
+    if name == "empty":
+        folder.mkdir()
+    assert _run(sources, *_starlight_args(sources, folder)) == 0
+    assert not (sources["out"] / "guides").exists()
+    assert "guides" not in _read(sources, "index.md")
+    config = json.loads((_site(sources) / "generated/site.json").read_text())
+    assert config["guides"] == []
