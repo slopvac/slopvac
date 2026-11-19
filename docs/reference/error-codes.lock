@@ -43,3 +43,7 @@ report-text-summary text
 report-text-unchecked text
 report-verdict-fail text
 report-verdict-pass text
+update-in-progress error
+update-interrupted error
+update-lock-unsafe error
+update-version-unknown error

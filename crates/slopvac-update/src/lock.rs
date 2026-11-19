@@ -12,7 +12,7 @@
 //! The directory is attacker-reachable in the way any user-writable install directory is, so
 //! the file is opened with `O_NOFOLLOW` and checked through the open handle before anything
 //! is read or written: a regular file, one link, owned by the current user, mode `0600` or
-//! tighter. A planted symlink, hard link or foreign file is refused with [`LockError::Unsafe`]
+//! tighter. A planted symlink, hard link or foreign file is refused with [`UpdateMessage::LockUnsafe`]
 //! and never written.
 //!
 //! # The record
@@ -26,7 +26,7 @@
 //!   dies, the next holder compares the executable with both fingerprints and recovers: it
 //!   matches `new` (the rename happened) or `old` (it did not). A third fingerprint means
 //!   someone else changed the binary mid-update, and the next holder refuses with
-//!   [`LockError::Interrupted`] rather than install over it.
+//!   [`UpdateMessage::Interrupted`] rather than install over it.
 //!
 //! # The installed version
 //!
@@ -41,7 +41,7 @@
 //!
 //! A record whose fingerprint no longer matches is stale and counts for nothing. When no source
 //! vouches for the file and it cannot report a version, the holder refuses with
-//! [`LockError::VersionUnknown`].
+//! [`UpdateMessage::VersionUnknown`].
 //!
 //! A record is replaced by writing the new text over the start of the file and then truncating,
 //! so a crash never leaves an empty file where a record was. Text that cannot be parsed is
@@ -56,6 +56,8 @@ use std::time::{Duration, Instant};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+use crate::messages::UpdateMessage;
+
 /// How long [`UpdateLock::acquire`] waits for another update to finish.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 /// How often a waiting update retries the lock.
@@ -68,32 +70,10 @@ const MAX_RECORD_BYTES: u64 = 4096;
 /// Why the lock was not taken, or the recorded state could not be trusted.
 #[derive(Debug, Error)]
 pub(crate) enum LockError {
-    /// Another update held the lock for the whole wait.
-    #[error("another slopvac update is running (lock file {0}); try again when it finishes")]
-    Busy(String),
-    /// The lock file is not one this process may use.
-    #[error("refusing to use the update lock {file}: {problem}")]
-    Unsafe {
-        /// Lock file name.
-        file: String,
-        /// What is wrong with it.
-        problem: String,
-    },
-    /// An earlier update died part-way and the installed binary matches no known build.
-    #[error(
-        "an earlier update was interrupted and the installed binary is not one it knows; \
-         check the installed slopvac"
-    )]
-    Interrupted,
-    /// No record vouches for the installed binary and it did not report a version.
-    #[error(
-        "cannot tell which version of slopvac is installed ({reason}); refusing to install over \
-         it. Check that the installed slopvac runs, then run the update again"
-    )]
-    VersionUnknown {
-        /// Why the executable's version is unknown.
-        reason: String,
-    },
+    /// The lock, the record or the installed binary stopped the update. The message and its
+    /// code are the catalog's.
+    #[error(transparent)]
+    Refused(#[from] UpdateMessage),
     /// The lock file or the executable could not be opened, read, written or locked.
     #[error("cannot use the update lock {file}: {source}")]
     Io {
@@ -102,6 +82,20 @@ pub(crate) enum LockError {
         /// The failure.
         source: std::io::Error,
     },
+}
+
+impl LockError {
+    /// An interrupted update. The advice is filled in by the caller that can release the lock.
+    fn interrupted() -> Self {
+        UpdateMessage::Interrupted {
+            hint: String::new(),
+        }
+        .into()
+    }
+
+    fn version_unknown(reason: String) -> Self {
+        UpdateMessage::VersionUnknown { reason }.into()
+    }
 }
 
 /// An exclusive hold on the update lock. Dropping it releases the lock.
@@ -246,7 +240,7 @@ fn handle_problem(file: &File) -> std::io::Result<Option<&'static str>> {
     Ok((!file.metadata()?.is_file()).then_some("it is not a regular file"))
 }
 
-/// What to tell the user after [`LockError::Interrupted`], decided by trying the lock.
+/// What to tell the user after [`UpdateMessage::Interrupted`], decided by trying the lock.
 ///
 /// The caller must have released its own hold. A free lock means no update is running, so the
 /// stale file is safe to remove. A held lock means another update is running, and removing the
@@ -259,9 +253,11 @@ pub(crate) fn recovery_hint(exe: &Path) -> String {
         Ok(_free) => format!(
             "No other update is running, so remove {name} beside it and run the update again."
         ),
-        Err(LockError::Busy(_)) => "Another slopvac update is running; wait for it to finish, \
+        Err(LockError::Refused(UpdateMessage::InProgress { .. })) => {
+            "Another slopvac update is running; wait for it to finish, \
              then run the update again."
-            .to_owned(),
+                .to_owned()
+        }
         Err(_) => format!(
             "Make sure that no slopvac update is running before you remove {name}, \
              then run the update again."
@@ -290,9 +286,11 @@ impl UpdateLock {
             file: name.clone(),
             source,
         };
-        let unsafe_file = |problem: &str| LockError::Unsafe {
-            file: name.clone(),
-            problem: problem.to_owned(),
+        let unsafe_file = |problem: &str| {
+            LockError::from(UpdateMessage::LockUnsafe {
+                file: name.clone(),
+                problem: problem.to_owned(),
+            })
         };
         let file = match open_nofollow(&path) {
             Ok(f) => f,
@@ -323,7 +321,9 @@ impl UpdateLock {
                     on_wait();
                     std::thread::sleep(POLL);
                 }
-                Err(TryLockError::WouldBlock) => return Err(LockError::Busy(name)),
+                Err(TryLockError::WouldBlock) => {
+                    return Err(UpdateMessage::InProgress { file: name }.into());
+                }
                 Err(TryLockError::Error(e)) => return Err(io(e)),
             }
         }
@@ -361,7 +361,7 @@ impl UpdateLock {
             .ok()
             .and_then(Record::parse)
             .map(Some)
-            .ok_or(LockError::Interrupted)
+            .ok_or_else(LockError::interrupted)
     }
 
     /// Write `record` over the start of the file, truncate the tail, and sync.
@@ -382,8 +382,8 @@ impl UpdateLock {
     /// The result is the highest version that the file's fingerprint vouches for: a matching
     /// record, a `pending` record resolved from the fingerprint, or the running version when
     /// `running` carries the same fingerprint. With none of those, the executable is run for its
-    /// version, and a failure is [`LockError::VersionUnknown`]. A `pending` record that fits
-    /// neither build is [`LockError::Interrupted`].
+    /// version, and a failure is [`UpdateMessage::VersionUnknown`]. A `pending` record that fits
+    /// neither build is [`UpdateMessage::Interrupted`].
     pub(crate) fn installed_version(
         &mut self,
         running: &Running<'_>,
@@ -411,7 +411,7 @@ impl UpdateLock {
                 } else if now == old_sha {
                     (from, old_sha)
                 } else {
-                    return Err(LockError::Interrupted);
+                    return Err(LockError::interrupted());
                 };
                 self.write_record(&Record::Installed {
                     version: version.clone(),
@@ -427,11 +427,8 @@ impl UpdateLock {
         }
         let version = match floor {
             Some(version) => version,
-            None => crate::probe::installed_version(&self.exe, probe_timeout).map_err(|e| {
-                LockError::VersionUnknown {
-                    reason: format!("{}: {e}", self.name_of_exe()),
-                }
-            })?,
+            None => crate::probe::installed_version(&self.exe, probe_timeout)
+                .map_err(|e| LockError::version_unknown(format!("{}: {e}", self.name_of_exe())))?,
         };
         Ok(Installed { version, sha: now })
     }
@@ -489,9 +486,10 @@ impl UpdateLock {
         if self.exe_fingerprint()? == sha {
             return Ok(());
         }
-        Err(LockError::VersionUnknown {
-            reason: format!("{}: {reason}", self.name_of_exe()),
-        })
+        Err(LockError::version_unknown(format!(
+            "{}: {reason}",
+            self.name_of_exe()
+        )))
     }
 }
 
@@ -540,7 +538,7 @@ mod tests {
         let first = acquire(&exe);
         let err = UpdateLock::acquire(&exe, Duration::ZERO).unwrap_err();
         assert!(
-            matches!(err, LockError::Busy(ref f) if f == "slopvac.update.lock"),
+            matches!(err, LockError::Refused(UpdateMessage::InProgress { ref file }) if file == "slopvac.update.lock"),
             "{err}"
         );
         drop(first);
@@ -614,7 +612,8 @@ mod tests {
         let mut lock = acquire(&exe);
         lock.begin(&at(&exe, "3.0.0"), &v("3.2.0"), b"new").unwrap();
         std::fs::write(&exe, b"new").unwrap();
-        lock.finish(&v("3.2.0"), &fingerprint_bytes(b"new")).unwrap();
+        lock.finish(&v("3.2.0"), &fingerprint_bytes(b"new"))
+            .unwrap();
         drop(lock);
         // The next holder started as the old binary, so only the record can vouch for the file.
         assert_eq!(
@@ -667,7 +666,10 @@ mod tests {
         std::fs::write(&exe, b"someone else's build").unwrap();
         drop(dead);
         let err = floor(&mut acquire(&exe), "3.0.0", Some(&sha)).unwrap_err();
-        assert!(matches!(err, LockError::Interrupted), "{err}");
+        assert!(
+            matches!(err, LockError::Refused(UpdateMessage::Interrupted { .. })),
+            "{err}"
+        );
     }
 
     #[test]
@@ -677,7 +679,10 @@ mod tests {
         drop(acquire(&exe));
         std::fs::write(lock_file(&dir), b"\xff\xfe junk").unwrap();
         let err = floor(&mut acquire(&exe), "3.0.0", Some(&sha)).unwrap_err();
-        assert!(matches!(err, LockError::Interrupted), "{err}");
+        assert!(
+            matches!(err, LockError::Refused(UpdateMessage::Interrupted { .. })),
+            "{err}"
+        );
     }
 
     #[test]
@@ -719,7 +724,8 @@ mod tests {
         let mut lock = acquire(&exe);
         lock.begin(&at(&exe, "3.0.0"), &v("3.1.0"), b"new").unwrap();
         std::fs::write(&exe, b"new").unwrap();
-        lock.finish(&v("3.1.0"), &fingerprint_bytes(b"new")).unwrap();
+        lock.finish(&v("3.1.0"), &fingerprint_bytes(b"new"))
+            .unwrap();
         fake_exe(&exe, "echo '{\"name\":\"slopvac\",\"version\":\"3.3.0\"}'");
         assert_eq!(
             floor(&mut lock, "3.0.0", Some(&started_as)).unwrap(),
@@ -751,7 +757,10 @@ mod tests {
             fake_exe(&exe, body);
             let err = floor(&mut acquire(&exe), "3.0.0", Some(&started_as)).unwrap_err();
             assert!(
-                matches!(err, LockError::VersionUnknown { .. }),
+                matches!(
+                    err,
+                    LockError::Refused(UpdateMessage::VersionUnknown { .. })
+                ),
                 "{body}: {err}"
             );
         }
@@ -774,7 +783,13 @@ mod tests {
                 Duration::ZERO,
             )
             .unwrap_err();
-        assert!(matches!(err, LockError::VersionUnknown { .. }), "{err}");
+        assert!(
+            matches!(
+                err,
+                LockError::Refused(UpdateMessage::VersionUnknown { .. })
+            ),
+            "{err}"
+        );
     }
 
     #[test]
@@ -809,7 +824,13 @@ mod tests {
         let from = checked(&mut lock, "3.0.0", Some(&sha)).unwrap();
         std::fs::write(&exe, b"swapped in by another installer").unwrap();
         let err = lock.begin(&from, &v("3.2.0"), b"new").unwrap_err();
-        assert!(matches!(err, LockError::VersionUnknown { .. }), "{err}");
+        assert!(
+            matches!(
+                err,
+                LockError::Refused(UpdateMessage::VersionUnknown { .. })
+            ),
+            "{err}"
+        );
         assert_eq!(lock.read_record().unwrap(), None, "nothing was recorded");
     }
 
@@ -824,7 +845,13 @@ mod tests {
         let payload = lock.begin(&from, &v("3.2.0"), b"new").unwrap();
         std::fs::write(&exe, b"swapped in by another installer").unwrap();
         let err = lock.finish(&v("3.2.0"), &payload).unwrap_err();
-        assert!(matches!(err, LockError::VersionUnknown { .. }), "{err}");
+        assert!(
+            matches!(
+                err,
+                LockError::Refused(UpdateMessage::VersionUnknown { .. })
+            ),
+            "{err}"
+        );
         assert!(
             matches!(lock.read_record().unwrap(), Some(Record::Pending { .. })),
             "the pending record stays, so the next holder refuses instead of trusting the file"
@@ -837,7 +864,9 @@ mod tests {
         let mut lock = acquire(&exe);
         // Reopen the handle read-only: the record write then fails with a real I/O error.
         lock.file = File::open(lock_path(&exe)).unwrap();
-        let err = lock.begin(&at(&exe, "3.0.0"), &v("3.2.0"), b"new").unwrap_err();
+        let err = lock
+            .begin(&at(&exe, "3.0.0"), &v("3.2.0"), b"new")
+            .unwrap_err();
         assert!(matches!(err, LockError::Io { .. }), "{err}");
     }
 
@@ -854,7 +883,7 @@ mod tests {
             symlink(&target, lock_file(&dir)).unwrap();
             let err = UpdateLock::acquire(&exe, Duration::ZERO).unwrap_err();
             assert!(
-                matches!(err, LockError::Unsafe { ref problem, .. } if problem.contains("symbolic link")),
+                matches!(err, LockError::Refused(UpdateMessage::LockUnsafe { ref problem, .. }) if problem.contains("symbolic link")),
                 "{err}"
             );
             assert_eq!(std::fs::read(&target).unwrap(), b"precious");
@@ -866,7 +895,10 @@ mod tests {
             let target = dir.path().join("not-yet");
             symlink(&target, lock_file(&dir)).unwrap();
             let err = UpdateLock::acquire(&exe, Duration::ZERO).unwrap_err();
-            assert!(matches!(err, LockError::Unsafe { .. }), "{err}");
+            assert!(
+                matches!(err, LockError::Refused(UpdateMessage::LockUnsafe { .. })),
+                "{err}"
+            );
             assert!(!target.exists());
         }
 
@@ -879,7 +911,7 @@ mod tests {
                     .unwrap();
                 let err = UpdateLock::acquire(&exe, Duration::ZERO).unwrap_err();
                 assert!(
-                    matches!(err, LockError::Unsafe { ref problem, .. } if problem.contains("mode")),
+                    matches!(err, LockError::Refused(UpdateMessage::LockUnsafe { ref problem, .. }) if problem.contains("mode")),
                     "{mode:o}: {err}"
                 );
             }
@@ -894,7 +926,7 @@ mod tests {
             std::fs::hard_link(&other, lock_file(&dir)).unwrap();
             let err = UpdateLock::acquire(&exe, Duration::ZERO).unwrap_err();
             assert!(
-                matches!(err, LockError::Unsafe { ref problem, .. } if problem.contains("hard link")),
+                matches!(err, LockError::Refused(UpdateMessage::LockUnsafe { ref problem, .. }) if problem.contains("hard link")),
                 "{err}"
             );
         }

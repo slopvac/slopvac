@@ -20,6 +20,7 @@ use thiserror::Error;
 
 use crate::fetch::{FetchError, Fetcher};
 use crate::lock::{self, LockError, Running, UpdateLock};
+use crate::messages::UpdateMessage;
 use crate::probe;
 use crate::verify::{ArtifactVerifier, ReleaseFile, VerifyError};
 
@@ -67,18 +68,11 @@ pub enum UpdateError {
     /// The archive is damaged.
     #[error("cannot read the archive: {0}")]
     Archive(String),
-    /// Another update held the lock for the whole wait.
-    #[error("{0}")]
-    Busy(String),
-    /// The update lock file is not safe to use.
-    #[error("{0}")]
-    LockUnsafe(String),
-    /// An earlier update died part-way and left an installed binary that it does not know.
-    #[error("{0}")]
-    Interrupted(String),
-    /// The installed binary's version cannot be established.
-    #[error("{0}")]
-    VersionUnknown(String),
+    /// The update lock or the installed binary stopped the update: another update held the lock
+    /// for the whole wait, the lock file is unsafe, an earlier update was interrupted, or the
+    /// installed version cannot be established.
+    #[error(transparent)]
+    Refused(#[from] UpdateMessage),
     /// Writing the new binary failed.
     #[error("cannot replace the installed binary: {0}")]
     Replace(String),
@@ -87,10 +81,7 @@ pub enum UpdateError {
 impl From<LockError> for UpdateError {
     fn from(e: LockError) -> Self {
         match e {
-            LockError::Busy(_) => Self::Busy(e.to_string()),
-            LockError::Unsafe { .. } => Self::LockUnsafe(e.to_string()),
-            LockError::Interrupted => Self::Interrupted(e.to_string()),
-            LockError::VersionUnknown { .. } => Self::VersionUnknown(e.to_string()),
+            LockError::Refused(message) => Self::Refused(message),
             LockError::Io { .. } => Self::Replace(e.to_string()),
         }
     }
@@ -187,10 +178,10 @@ pub fn running_fingerprint(exe: &Path) -> Option<String> {
 /// after the rename. Under the lock it establishes the installed version from evidence tied to
 /// the file's fingerprint: the lock record, the running version when the file is still the
 /// running binary, or else what the file reports when it runs. It refuses when that is not older
-/// than `version`, and fails with [`UpdateError::VersionUnknown`] when it cannot tell. It
+/// than `version`, and fails with [`UpdateMessage::VersionUnknown`] when it cannot tell. It
 /// records the update before the rename, so an updater that dies part-way is recovered or
 /// refused by the next one, never installed over. It waits up to a minute for another update,
-/// then fails with [`UpdateError::Busy`].
+/// then fails with [`UpdateMessage::InProgress`].
 pub fn update(
     fetcher: &dyn Fetcher,
     verifier: &dyn ArtifactVerifier,
@@ -232,14 +223,13 @@ pub fn update(
     };
     let installed = match lock.installed_version(&running, host.probe_timeout) {
         Ok(v) => v,
-        Err(LockError::Interrupted) => {
+        Err(LockError::Refused(UpdateMessage::Interrupted { .. })) => {
             // Release our hold so that the advice can try the lock.
             drop(lock);
-            return Err(UpdateError::Interrupted(format!(
-                "{} {}",
-                LockError::Interrupted,
-                lock::recovery_hint(exe)
-            )));
+            return Err(UpdateMessage::Interrupted {
+                hint: lock::recovery_hint(exe),
+            }
+            .into());
         }
         Err(e) => return Err(e.into()),
     };
@@ -737,7 +727,10 @@ mod tests {
             )
             .unwrap_err();
             assert!(
-                matches!(err, UpdateError::VersionUnknown(_)),
+                matches!(
+                    err,
+                    UpdateError::Refused(UpdateMessage::VersionUnknown { .. })
+                ),
                 "{body}: {err}"
             );
             assert_eq!(std::fs::read(&exe).unwrap(), before);
@@ -762,7 +755,13 @@ mod tests {
             &host,
         )
         .unwrap_err();
-        assert!(matches!(err, UpdateError::VersionUnknown(_)), "{err}");
+        assert!(
+            matches!(
+                err,
+                UpdateError::Refused(UpdateMessage::VersionUnknown { .. })
+            ),
+            "{err}"
+        );
     }
 
     /// `exe` as the update lock establishes it, for a process that runs `version` from this file.
@@ -824,7 +823,10 @@ mod tests {
             &exe,
         )
         .unwrap_err();
-        assert!(matches!(err, UpdateError::Interrupted(_)), "{err}");
+        assert!(
+            matches!(err, UpdateError::Refused(UpdateMessage::Interrupted { .. })),
+            "{err}"
+        );
         // No update holds the lock now, so the advice says it is safe to remove.
         assert!(
             err.to_string().contains("remove slopvac.update.lock"),
@@ -838,8 +840,7 @@ mod tests {
         let (_dir, exe) = installed();
         let mut dead = UpdateLock::acquire(&exe, Duration::ZERO).unwrap();
         let before = checked(&mut dead, &exe, "3.0.0");
-        dead.begin(&before, &ver("3.2.0"), b"binary 3.2.0")
-            .unwrap();
+        dead.begin(&before, &ver("3.2.0"), b"binary 3.2.0").unwrap();
         drop(dead);
         let files = release(tar_gz("slopvac", b"binary 3.1.0"));
         update(
@@ -872,7 +873,10 @@ mod tests {
             &exe,
         )
         .unwrap_err();
-        assert!(matches!(err, UpdateError::LockUnsafe(_)), "{err}");
+        assert!(
+            matches!(err, UpdateError::Refused(UpdateMessage::LockUnsafe { .. })),
+            "{err}"
+        );
         assert_eq!(std::fs::read(&victim).unwrap(), b"precious");
         assert_eq!(std::fs::read(&exe).unwrap(), b"old");
     }
@@ -894,7 +898,10 @@ mod tests {
             &host,
         )
         .unwrap_err();
-        assert!(matches!(err, UpdateError::Busy(_)), "{err}");
+        assert!(
+            matches!(err, UpdateError::Refused(UpdateMessage::InProgress { .. })),
+            "{err}"
+        );
         assert_eq!(std::fs::read(&exe).unwrap(), b"old");
     }
 

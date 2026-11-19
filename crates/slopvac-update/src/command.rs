@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::{ArgMatches, Command};
+use slopvac_messages::Catalog as _;
 
 use crate::fetch::{Fetcher, UreqFetcher};
 use crate::install::{self, InstallMethod};
@@ -236,10 +237,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
         let code = match e {
             UpdateError::Verify(_) => "update-verification-failed",
             UpdateError::Prerelease(_) => "update-prerelease-refused",
-            UpdateError::Busy(_) => "update-in-progress",
-            UpdateError::LockUnsafe(_) => "update-lock-unsafe",
-            UpdateError::Interrupted(_) => "update-interrupted",
-            UpdateError::VersionUnknown(_) => "update-version-unknown",
+            UpdateError::Refused(ref message) => message.code(),
             _ => "self-update-failed",
         };
         Failure::new(code, e.to_string())

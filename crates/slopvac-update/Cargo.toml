@@ -23,6 +23,7 @@ serde.workspace = true
 serde_json.workspace = true
 # Fingerprints the executable for the update record (already a workspace dependency).
 sha2.workspace = true
+slopvac-messages.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true

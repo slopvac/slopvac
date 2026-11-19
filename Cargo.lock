@@ -2801,6 +2801,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "slopvac-messages",
  "tar",
  "tempfile",
  "thiserror",
