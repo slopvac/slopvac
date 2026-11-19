@@ -1,0 +1,2 @@
+Linux dev-dsk-sjors-1a-fe47843f.eu-west-1.amazon.com 6.12.115-140.210.amzn2023.aarch64 #1 SMP Wed Nov 11 00:31:12 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+16
