@@ -176,7 +176,7 @@ pub fn detect_house_styles(root: &Path) -> Detection {
 /// The most bytes read from one file. A larger file is skipped.
 const MAX_BYTES: u64 = 1024 * 1024;
 
-/// Why [`read`] skipped a file.
+/// Why [`read_checked`] skipped a file.
 #[derive(Debug, PartialEq, Eq)]
 enum Skip {
     /// The file is larger than [`MAX_BYTES`].
