@@ -62,6 +62,12 @@ Status: IN PROGRESS (partial results survive restarts; sections fill in as measu
 | b2 | 752411bf5d | dev aarch64, 16 cores | 1.99.1 | builds, eval parity re-run, random fuzz, summary, shape check, inputs (recheck failed: ESM import) | n/a (no timings) | done, rc=0, 14:25-14:31Z |
 | b2b | 23c8854367 | dev aarch64, 16 cores | 1.99.1 | directed fuzz, gap scan, RST reruns, shape check, recheck | n/a (no timings) | done, rc=0, 14:37-14:46Z |
 | b2c | ec0af61eb3 | dev aarch64, 16 cores | 1.99.1 | shape check rerun (fixed parser), RST reruns via `SLOPVAC_RST_CONVERTER`, stats | n/a (no timings) | done, rc=0, 15:20Z |
+| t-prep | 8f32d8061e | dev aarch64, 16 cores | 1.99.1 | timing binaries (instrumented, bench, uninstrumented main), inputs, recheck attack strings | n/a (no timings) | done, rc=0, 15:25-15:34Z |
+| t-* | 78992a08e0 | dev aarch64, 16 cores | 1.99.1 | 13 timing stages, one mode each, through `tools/gate_run.sh` (each starts only at 1-min load < 4, up to 60 min per stage, DISCARD on end load >= 4, 64 MiB last) | per stage, `load.txt` | waiting for load < 4 since 15:37Z (load 9.7) |
+
+The timing set leaves out the ~740 `matching.rs` exception probes. They're anchored
+(`\A...\z`) and only run on a finding's span, so timing them on whole documents measures
+nothing.
 
 Timing stages (batch 3: prep, small, large, e2e) all run on dev: arm64 (aarch64 Linux),
 16 cores. Each starts only at a 1-minute load under 4. A stage whose end load is 4 or more is
