@@ -11,7 +11,7 @@ README.md: PASS score 100.0
 src/app.py:1:1 warning core:docs-discipline.document-length The comment block runs 80 words; keep it under 60.
 src/app.py: UNCHECKED [vale-not-found] Vale is not installed, so the Vale-backed rules did not run.
 src/app.py: PASS score 94.0
-dossiers/ça & <é>.md:2:7 warning core:prose-inflation.slop-lexicon Replace "wörld" <b>& `x` | y
+dossiers/ça & <é>.md:2:7 warning core:prose-inflation.slop-lexicon Replace "wörld" <b>& `x` | y\u{1}
 dossiers/ça & <é>.md: PASS score 88.5
 notice[directory-entries-skipped]: Skipped 4 files under node_modules.
 3 documents, 4 findings (1 errors, 2 warnings, 1 suggestions), score 93.0: FAIL
