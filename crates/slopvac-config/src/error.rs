@@ -1,9 +1,8 @@
 //! Errors from loading configuration.
 
-use std::fmt;
 use std::io;
 
-use slopvac_messages::{Catalog, write_message};
+use slopvac_messages::Catalog;
 
 use crate::diag::{Code, Diagnostic, SourceFile, render};
 use crate::messages::{ConfigMessage, ConfigPhrase, ConfigText};
@@ -34,17 +33,22 @@ impl Rejected {
 }
 
 /// Why configuration could not be loaded.
-#[derive(Debug)]
+///
+/// Each variant's text comes from the message catalog through the helpers below.
+#[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     /// A file could not be read.
+    #[error("{}", io_text(.path, .source))]
     Io {
         /// The path as the caller gave it, or relative to the project root. Never an absolute
         /// path that the caller did not supply.
         path: String,
         /// The operating-system error, kept for debugging and left out of the message.
+        #[source]
         source: io::Error,
     },
     /// A config file is larger than [`crate::MAX_CONFIG_BYTES`].
+    #[error("{}", too_large_text(.path, *.cap))]
     TooLarge {
         /// The path as the caller gave it, or relative to the project root.
         path: String,
@@ -52,38 +56,24 @@ pub enum ConfigError {
         cap: u64,
     },
     /// A file was read and refused.
+    #[error("{}", summary(.0))]
     Rejected(Box<Rejected>),
 }
 
-impl fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ConfigError::Io { path, source } => write_message(
-                &ConfigMessage::Io {
-                    path: path.clone(),
-                    reason: reason(source).to_owned(),
-                },
-                f,
-            ),
-            ConfigError::TooLarge { path, cap } => write_message(
-                &ConfigMessage::TooLarge {
-                    path: path.clone(),
-                    cap: *cap,
-                },
-                f,
-            ),
-            ConfigError::Rejected(r) => write_message(&summary(r), f),
-        }
+fn io_text(path: &str, source: &io::Error) -> String {
+    ConfigMessage::Io {
+        path: path.to_owned(),
+        reason: reason(source).to_owned(),
     }
+    .to_string()
 }
 
-impl std::error::Error for ConfigError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            ConfigError::Io { source, .. } => Some(source),
-            ConfigError::TooLarge { .. } | ConfigError::Rejected(_) => None,
-        }
+fn too_large_text(path: &str, cap: u64) -> String {
+    ConfigMessage::TooLarge {
+        path: path.to_owned(),
+        cap,
     }
+    .to_string()
 }
 
 /// A fixed phrase per error kind, so the message does not change with the operating system.
@@ -97,17 +87,19 @@ pub(crate) fn reason(e: &io::Error) -> &'static str {
     .as_static()
 }
 
-fn summary(rejected: &Rejected) -> ConfigText {
+fn summary(rejected: &Rejected) -> String {
     let file = rejected.file.clone();
     match rejected.diagnostics.as_slice() {
         [only] => ConfigText::RejectedOne {
             file,
             diagnostic: only.to_string(),
-        },
+        }
+        .to_string(),
         many => ConfigText::RejectedMany {
             file,
             problems: many.len(),
-        },
+        }
+        .to_string(),
     }
 }
 

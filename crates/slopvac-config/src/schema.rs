@@ -829,7 +829,7 @@ fn check_list(
 
 fn check_table(ctx: &mut Ctx<'_>, node: &Node, shape: &TableShape, path: &[String]) {
     let Value::Table(entries) = &node.value else {
-        ctx.type_error(node, path, "a table", None);
+        ctx.type_error(node, path, ConfigPhrase::KindTable.as_static(), None);
         return;
     };
     for e in entries {
