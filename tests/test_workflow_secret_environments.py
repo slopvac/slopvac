@@ -4,8 +4,9 @@ The signing key is stored on environments, never on the repository, so a deploym
 policy (the refs that may deploy) and optional reviewers guard every read. A job
 without `environment:` falls back to repository secrets, which a workflow run on any
 ref can read. This test parses each workflow and flags a `MINISIGN_*` secret reference
-in a job that names no environment, wherever the reference sits: job or step `env`,
-step `with`, `run`, or a reusable-workflow `secrets` map.
+(or a computed `secrets[...]` index, which may name one) in a job that names no
+environment, wherever the reference sits: job or step `env`, step `with`, `run`, or a
+reusable-workflow `secrets` map.
 """
 
 from __future__ import annotations
@@ -18,9 +19,16 @@ import yaml
 
 WORKFLOWS = Path(__file__).resolve().parent.parent / ".github" / "workflows"
 
-# `secrets.MINISIGN_X`, `secrets['MINISIGN_X']` and `secrets["MINISIGN_X"]`; the secrets
-# context is case-insensitive.
-SECRET_READ = re.compile(r"""secrets\s*(?:\.|\[\s*['"])\s*MINISIGN_""", re.IGNORECASE)
+# `secrets.MINISIGN_X`, `secrets['MINISIGN_X']` and `secrets["MINISIGN_X"]`, or an index
+# that is not a single string literal (`secrets[format(...)]`, `secrets[env.NAME]`), which
+# may resolve to a signing secret. The secrets context is case-insensitive.
+SECRET_READ = re.compile(
+    r"""(?<![\w.\-])secrets\s*(?:
+        (?:\.|\[\s*['"])\s*MINISIGN_
+        | \[(?!\s*(?:'[^']*'|"[^"]*")\s*\])
+    )""",
+    re.IGNORECASE | re.VERBOSE,
+)
 SECRET = "${{ secrets.MINISIGN_SECRET_KEY }}"
 
 
@@ -124,6 +132,15 @@ def test_the_scan_sees_the_signing_jobs_it_is_meant_to_guard():
     } <= readers
 
 
+# Indexes the scan cannot resolve to a name, so each may be a signing-secret read.
+COMPUTED_INDEXES = {
+    "computed-format": "${{ secrets[format('MINISIGN_{0}', 'SECRET_KEY')] }}",
+    "computed-env": "${{ secrets[env.NAME] }}",
+    "computed-spaced": "${{ secrets[ inputs.k ] }}",
+    "computed-multiline": "${{\n  secrets[\n    env.NAME\n  ]\n}}",
+}
+
+
 def synthetic(job: dict, **workflow) -> dict[str, dict]:
     return {"x.yml": {"jobs": {"j": job}, **workflow}}
 
@@ -155,12 +172,25 @@ def synthetic(job: dict, **workflow) -> dict[str, dict]:
             {"environment": "", "steps": [{"env": {"K": SECRET}}]},
             id="empty-environment",
         ),
+        *(
+            pytest.param({"steps": [{"run": f"echo {expr}"}]}, id=name)
+            for name, expr in COMPUTED_INDEXES.items()
+        ),
     ],
 )
 def test_a_signing_secret_read_without_an_environment_is_reported(job):
     assert violations(synthetic(job)) == [
         "x.yml:j reads a MINISIGN secret without an environment"
     ]
+
+
+@pytest.mark.parametrize("expression", COMPUTED_INDEXES.values(), ids=COMPUTED_INDEXES)
+def test_a_computed_secrets_index_inside_a_reviewed_environment_is_allowed(expression):
+    job = {
+        "environment": "candidate-signing",
+        "steps": [{"run": f"echo {expression}"}],
+    }
+    assert violations(synthetic(job)) == []
 
 
 @pytest.mark.parametrize(
@@ -267,6 +297,11 @@ def test_a_workflow_level_signing_secret_is_reported_even_with_job_environments(
     ]
 
 
-def test_other_secrets_need_no_environment():
-    job = {"steps": [{"env": {"T": "${{ secrets.GITHUB_TOKEN }}"}}]}
+@pytest.mark.parametrize(
+    "expression",
+    ["${{ secrets.GITHUB_TOKEN }}", "${{ secrets['GITHUB_TOKEN'] }}"],
+    ids=["property", "literal-index"],
+)
+def test_other_secrets_need_no_environment(expression):
+    job = {"steps": [{"env": {"T": expression}}]}
     assert violations(synthetic(job)) == []
