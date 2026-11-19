@@ -432,6 +432,9 @@ fn a_drawio_svg_without_a_diagram_source_is_an_incomplete_run() {
     assert_eq!(doc.unchecked[0].path.as_deref(), Some("d.drawio.svg"));
 }
 
+/// The path, code and level of each notice of one input.
+type Seen<'a> = Vec<(String, &'a str, NoticeLevel)>;
+
 /// A checker that returns a range past the end of the file for a source that holds `BOOM`,
 /// so that one input of a batch fails with an engine error.
 struct Boom;
@@ -486,7 +489,7 @@ fn a_mixed_batch_keeps_input_order_notices_and_per_input_errors() {
     assert_eq!(results.len(), inputs.len());
 
     // The notices of each input, by position: path, code and level.
-    let seen: Vec<Option<Vec<(String, &str, NoticeLevel)>>> = results
+    let seen: Vec<Option<Seen<'_>>> = results
         .iter()
         .map(|r| {
             r.as_ref().ok().map(|(_, notices)| {
