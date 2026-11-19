@@ -379,7 +379,7 @@ fn parse_root(value: &Value) -> Result<Manifest> {
         "data" => PackKind::Data,
         "code" => PackKind::Plugin,
         _ => {
-            return Err(err("/kind", "not a pack kind (`data` or `code`)"));
+            return Err(err("/kind", "not a plugin kind (`data` or `code`)"));
         }
     };
     let description = root.non_empty("description")?;
