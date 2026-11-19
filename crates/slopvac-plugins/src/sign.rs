@@ -165,18 +165,13 @@ pub(crate) const RELEASE_KEY_FILE: &str = include_str!("../../../keys/slopvac-re
 /// The only first-party namespace. Only a compiled key verifies an artifact in it.
 pub const FIRST_PARTY_NAMESPACE: &str = "slopvac";
 
-/// The built-in pack's namespace. It is reserved: the pack ships inside the
-/// binary and is never fetched, so no key, compiled or pinned, verifies a
-/// fetched artifact in it.
-pub const BUILT_IN_NAMESPACE: &str = "core";
-
 /// Namespaces that only the compiled first-party key may sign.
 pub const FIRST_PARTY_NAMESPACES: &[&str] = &[FIRST_PARTY_NAMESPACE];
 
 /// Every namespace nobody can pin a key for: the first-party and the built-in
 /// one. Search flags them, `pin_key` refuses them and the trust store never
 /// loads a pin for them. This is the one list; do not copy it.
-pub const RESERVED_NAMESPACES: &[&str] = &[BUILT_IN_NAMESPACE, FIRST_PARTY_NAMESPACE];
+pub const RESERVED_NAMESPACES: &[&str] = &[RESERVED_ID, FIRST_PARTY_NAMESPACE];
 
 /// Whether `namespace` is in [`RESERVED_NAMESPACES`].
 #[must_use]
@@ -201,8 +196,10 @@ pub fn plugins_key() -> Result<Option<PublicKey>, SignError> {
     PLUGINS_KEY_FILE.map(PublicKey::from_pub_file).transpose()
 }
 
-/// The id and namespace of the built-in plugin. The binary compiles it in, so
-/// no lock entry or index entry may use it, and a reader refuses one that does.
+/// The id and namespace of the built-in plugin. It is reserved: the binary
+/// compiles it in and never fetches it, so no lock entry or index entry may use
+/// it, no key, compiled or pinned, verifies a fetched artifact in it, and a
+/// reader refuses one that does.
 pub const RESERVED_ID: &str = "core";
 
 /// The compiled first-party release key. It signs first-party packs and the
@@ -254,7 +251,7 @@ impl KeyPolicy {
     }
 
     fn candidates(&self, namespace: &str) -> &[PublicKey] {
-        if namespace == BUILT_IN_NAMESPACE {
+        if namespace == RESERVED_ID {
             // Fails closed: the built-in pack is never fetched.
             &[]
         } else if namespace == FIRST_PARTY_NAMESPACE
@@ -686,7 +683,7 @@ pub struct RotationStatement {
     /// Always [`ROTATION_TYPE`], so no other signed document can pass as a rotation.
     #[serde(rename = "type")]
     pub kind: String,
-    /// The pack namespace whose key changes.
+    /// The namespace whose key changes.
     pub namespace: String,
     /// Key id of the pinned key.
     #[serde(rename = "oldKeyId")]

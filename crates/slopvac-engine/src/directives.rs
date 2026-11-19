@@ -364,7 +364,7 @@ pub(crate) fn scan<'a>(
             }
             if !rule.contains(':') {
                 invalid(format!(
-                    "suppression names {rule}, a 2.x rule id with no pack. Run `slopvac migrate` \
+                    "suppression names {rule}, a 2.x rule id with no plugin. Run `slopvac migrate` \
                      to qualify it as <plugin>:{rule}."
                 ));
                 continue;
