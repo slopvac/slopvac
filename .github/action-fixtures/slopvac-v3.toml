@@ -1,0 +1,4 @@
+# Config for the 3.0 action test. The repository slopvac.toml is a 2.x file, and the
+# 3.0 binary stops on it, so the workflow passes this one with `config`.
+schema_version = 3
+profile = "normal"
