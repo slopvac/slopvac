@@ -147,7 +147,9 @@ def test_the_provenance_job_gets_no_secrets_and_read_permissions(workflow):
     job = workflow["jobs"]["custom-release-provenance"]
     assert job["uses"] == "./.github/workflows/release-provenance.yml"
     # Only the app key reaches the called workflow; never `secrets: inherit`.
-    assert job["secrets"] == {"RELEASE_APP_PRIVATE_KEY": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}"}
+    assert job["secrets"] == {
+        "RELEASE_APP_PRIVATE_KEY": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}"
+    }
     assert job["permissions"] == {"actions": "read", "contents": "read"}
 
 
@@ -416,7 +418,9 @@ def test_the_legacy_ruleset_check_reads_with_the_app_token_and_no_fallback(workf
 
 def test_the_pypi_gate_passes_only_the_app_key():
     provenance = _publish_jobs()["provenance"]
-    assert provenance["secrets"] == {"RELEASE_APP_PRIVATE_KEY": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}"}
+    assert provenance["secrets"] == {
+        "RELEASE_APP_PRIVATE_KEY": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}"
+    }
 
 
 # --- the reusable provenance workflow ------------------------------------------
@@ -519,7 +523,9 @@ def test_a_failed_mint_stops_the_job_with_an_instruction(provenance):
 def test_the_dispatch_input_is_a_required_tag_that_only_the_check_reads(provenance):
     dispatch = provenance[True]["workflow_dispatch"]["inputs"]["tag"]
     assert dispatch["required"] is True
-    steps = {s["name"]: s for s in provenance["jobs"]["provenance"]["steps"] if "name" in s}
+    steps = {
+        s["name"]: s for s in provenance["jobs"]["provenance"]["steps"] if "name" in s
+    }
     check = steps["Require an immutable tag ruleset"]
     assert check["env"]["TAG"] == "${{ inputs.tag || github.ref_name }}"
     assert "inputs" not in check["run"]
@@ -547,7 +553,9 @@ def test_each_start_runs_exactly_the_intended_provenance_steps(
     provenance, ref_type, tag, expected
 ):
     context = {"github.ref_type": ref_type, "inputs.tag": tag}
-    steps = {s["name"]: s for s in provenance["jobs"]["provenance"]["steps"] if "name" in s}
+    steps = {
+        s["name"]: s for s in provenance["jobs"]["provenance"]["steps"] if "name" in s
+    }
     ran = {
         label
         for name, label in GATED_STEPS.items()
@@ -704,7 +712,10 @@ def test_the_host_job_fetches_and_verifies_the_signatures_before_the_upload(work
         )
     ]
     assert order == sorted(order)
-    assert steps[order[1]]["with"] == {"name": "release-signatures", "path": "artifacts"}
+    assert steps[order[1]]["with"] == {
+        "name": "release-signatures",
+        "path": "artifacts",
+    }
     verify = steps[order[3]]["run"]
     assert "scripts/release_signing.py verify" in verify
     assert "release_signing.py sign" not in verify
@@ -924,7 +935,11 @@ def test_hardening_refuses_a_matrix_install_command_it_did_not_replace(raw):
     ("job", "name", "script"),
     [
         ("build-local-artifacts", "Install cargo-auditable", "install_cargo_auditable"),
-        ("build-global-artifacts", "Install cargo-cyclonedx", "install_cargo_cyclonedx"),
+        (
+            "build-global-artifacts",
+            "Install cargo-cyclonedx",
+            "install_cargo_cyclonedx",
+        ),
     ],
 )
 def test_the_cargo_tools_install_from_the_pinned_scripts(workflow, job, name, script):
@@ -969,7 +984,9 @@ def test_the_homebrew_job_runs_no_brew_command():
 def test_the_tap_checkout_does_not_persist_the_token(workflow):
     steps = _homebrew_steps(workflow)
     (checkout,) = [
-        s for s in steps if s.get("with", {}).get("repository") == "slopvac/homebrew-tap"
+        s
+        for s in steps
+        if s.get("with", {}).get("repository") == "slopvac/homebrew-tap"
     ]
     assert checkout["with"]["persist-credentials"] is False
 
@@ -979,7 +996,8 @@ def test_only_the_push_step_of_the_homebrew_job_reads_the_tap_token(workflow):
     readers = [
         s.get("name", s.get("uses"))
         for s in steps
-        if "steps.tap-token.outputs.token" in str(s.get("env", {})) + str(s.get("run", ""))
+        if "steps.tap-token.outputs.token"
+        in str(s.get("env", {})) + str(s.get("run", ""))
     ]
     assert readers == ["Push the formula files"]
     commit = next(s for s in steps if s.get("name") == "Commit formula files")
@@ -1045,7 +1063,9 @@ def test_a_changed_brew_script_in_the_template_stops_the_homebrew_rewrite(raw):
 
 def _push_step(workflow) -> dict:
     return next(
-        s for s in _homebrew_steps(workflow) if s.get("name") == "Push the formula files"
+        s
+        for s in _homebrew_steps(workflow)
+        if s.get("name") == "Push the formula files"
     )
 
 
@@ -1218,7 +1238,9 @@ def test_hardening_refuses_a_quoted_job_permissions_key(raw, quote):
         patcher.harden(_local_job_with(raw, quoted))
 
 
-@pytest.mark.parametrize("separator", ["# a comment at column 0\n", "\n", "      # indented\n"])
+@pytest.mark.parametrize(
+    "separator", ["# a comment at column 0\n", "\n", "      # indented\n"]
+)
 def test_hardening_refuses_a_comment_or_blank_line_inside_the_permissions_block(
     raw, separator
 ):
@@ -1279,7 +1301,8 @@ INJECTED_STEPS = [
         _run_step("cargo install \\\n    ripgrep"), id="continuation-with-indented-arg"
     ),
     pytest.param(
-        '      - name: Injected\n        "run": cargo install ripgrep\n', id="quoted-run-key"
+        '      - name: Injected\n        "run": cargo install ripgrep\n',
+        id="quoted-run-key",
     ),
     pytest.param(_run_step("cat install.sh |\n  sh"), id="multi-line-pipe-into-sh"),
     pytest.param(_run_step("cat install.sh | /bin/sh"), id="pipe-into-bin-sh"),
@@ -1328,7 +1351,9 @@ def test_generating_the_pinned_raw_template_succeeds_and_writes_the_committed_fi
     )
 
 
-@pytest.mark.parametrize("anchor", [SECRET_ANCHOR, HOST_ANCHOR], ids=["secret-job", "host"])
+@pytest.mark.parametrize(
+    "anchor", [SECRET_ANCHOR, HOST_ANCHOR], ids=["secret-job", "host"]
+)
 @pytest.mark.parametrize("step", INJECTED_STEPS)
 def test_a_step_injected_into_a_credentialed_job_fails_generation(
     raw, generate, anchor, step
@@ -1348,7 +1373,9 @@ def test_a_change_in_a_job_without_credentials_fails_the_pins(committed):
 
 
 def test_a_single_added_byte_inside_a_job_fails_the_pins(committed):
-    changed = committed.replace('runs-on: "ubuntu-22.04"', 'runs-on: "ubuntu-22.04" ', 1)
+    changed = committed.replace(
+        'runs-on: "ubuntu-22.04"', 'runs-on: "ubuntu-22.04" ', 1
+    )
     assert changed != committed
     with pytest.raises(ValueError, match="changed"):
         patcher.check_pins(changed, PIN_FILE)
@@ -1366,7 +1393,10 @@ def test_a_quoted_permissions_key_in_a_job_fails_the_pins(committed, quote):
 
 
 def test_a_new_job_fails_the_pins(committed):
-    changed = committed + "\n  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+    changed = (
+        committed
+        + "\n  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+    )
     with pytest.raises(ValueError, match="job extra is new"):
         patcher.check_pins(changed, PIN_FILE)
 
@@ -1428,9 +1458,10 @@ def test_writing_the_pins_makes_a_changed_workflow_pass(committed, tmp_path):
         patcher.check_pins(changed, pins)
     patcher.write_pins(changed, pins)
     patcher.check_pins(changed, pins)
-    assert json.loads(pins.read_text(encoding="utf-8"))["jobs"]["host"] != json.loads(
-        PIN_FILE.read_text(encoding="utf-8")
-    )["jobs"]["host"]
+    assert (
+        json.loads(pins.read_text(encoding="utf-8"))["jobs"]["host"]
+        != json.loads(PIN_FILE.read_text(encoding="utf-8"))["jobs"]["host"]
+    )
 
 
 def test_a_changed_header_comment_fails_the_pins(committed):
@@ -1459,7 +1490,11 @@ def test_generation_fails_when_the_regions_do_not_add_up(committed, monkeypatch)
         patcher.pin_table(committed)
 
 
-@pytest.mark.parametrize("earlier", ["jobs: {}\n", '"jobs": {}\n', "'jobs':\n"], ids=["inline", "quoted", "single-quoted"])
+@pytest.mark.parametrize(
+    "earlier",
+    ["jobs: {}\n", '"jobs": {}\n', "'jobs':\n"],
+    ids=["inline", "quoted", "single-quoted"],
+)
 def test_a_second_jobs_declaration_fails_generation(raw, generate, earlier):
     assert raw.count("\njobs:\n") == 1
     code, err = generate(raw.replace("\njobs:\n", "\n" + earlier + "jobs:\n", 1))
@@ -1474,7 +1509,11 @@ WRAPPER = ROOT / "scripts" / "dist_generate.sh"
 
 def _wrapper(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", str(WRAPPER), *args], cwd=ROOT, capture_output=True, text=True, check=False
+        ["bash", str(WRAPPER), *args],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
@@ -1527,13 +1566,19 @@ def test_the_wrapper_sets_the_update_variable_only_for_update_pins(
     shims = tmp_path / "shims"
     shims.mkdir()
     record = tmp_path / "seen"
-    (shims / "dist").write_text("#!/usr/bin/env bash\ntouch .github/workflows/release.yml\n")
+    (shims / "dist").write_text(
+        "#!/usr/bin/env bash\ntouch .github/workflows/release.yml\n"
+    )
     (shims / "python3").write_text(
         '#!/usr/bin/env bash\nprintf %s "${SLOPVAC_UPDATE_PINS-unset}" > "$RECORD"\n'
     )
     for shim in shims.iterdir():
         shim.chmod(0o755)
-    env = {**os.environ, "PATH": f"{shims}{os.pathsep}{os.environ['PATH']}", "RECORD": str(record)}
+    env = {
+        **os.environ,
+        "PATH": f"{shims}{os.pathsep}{os.environ['PATH']}",
+        "RECORD": str(record),
+    }
     env.pop("SLOPVAC_UPDATE_PINS", None)
     if ambient:
         env["SLOPVAC_UPDATE_PINS"] = ambient
@@ -1561,7 +1606,9 @@ def test_the_patcher_script_takes_no_arguments_and_has_no_pin_writing_flag():
 
 
 @pytest.mark.parametrize(
-    ("env", "wrote", "checked"), [("1", True, False), (None, False, True)], ids=["update", "check"]
+    ("env", "wrote", "checked"),
+    [("1", True, False), (None, False, True)],
+    ids=["update", "check"],
 )
 def test_only_the_update_environment_makes_generation_write_the_pins(
     raw, generate, monkeypatch, env, wrote, checked

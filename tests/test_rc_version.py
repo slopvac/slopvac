@@ -77,8 +77,8 @@ def test_rewrites_every_configured_version_file(tmp_path):
             'additional_dependencies: ["slopvac==2.17.0"] # x-release-please-version\n'
         ),
         "README.md": (
-            'rev: v2.17.0 # x-release-please-version\n'
-            'uses: slopvac/slopvac@v2.17.0 # x-release-please-version\n'
+            "rev: v2.17.0 # x-release-please-version\n"
+            "uses: slopvac/slopvac@v2.17.0 # x-release-please-version\n"
         ),
     }
     for relative, text in files.items():
@@ -101,12 +101,16 @@ def test_rewrite_leaves_unmarked_lines_alone():
     )
     rewritten = rc_version.rewrite_marked_versions(text, "2.17.0rc1")
     assert rewritten.splitlines()[0] == 'requires = ["slopvac>=2.17.0"]'
-    assert rewritten.splitlines()[1] == 'version = "2.17.0rc1" # x-release-please-version'
+    assert (
+        rewritten.splitlines()[1] == 'version = "2.17.0rc1" # x-release-please-version'
+    )
 
 
 def test_extra_file_outside_the_workspace_is_rejected(tmp_path):
     config = {"packages": {".": {"extra-files": ["../outside.toml"]}}}
-    (tmp_path / "release-please-config.json").write_text(json.dumps(config), encoding="utf-8")
+    (tmp_path / "release-please-config.json").write_text(
+        json.dumps(config), encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="escapes workspace"):
         rc_version.release_version_files(tmp_path)
 
@@ -114,7 +118,9 @@ def test_extra_file_outside_the_workspace_is_rejected(tmp_path):
 def test_updater_objects_in_extra_files_are_not_marker_files(tmp_path):
     updater = {"type": "toml", "path": "Cargo.toml", "jsonpath": "$.a.b"}
     config = {"packages": {".": {"extra-files": ["README.md", updater]}}}
-    (tmp_path / "release-please-config.json").write_text(json.dumps(config), encoding="utf-8")
+    (tmp_path / "release-please-config.json").write_text(
+        json.dumps(config), encoding="utf-8"
+    )
     names = {p.name for p in rc_version.release_version_files(tmp_path)}
     assert names == {"pyproject.toml", "README.md"}
 

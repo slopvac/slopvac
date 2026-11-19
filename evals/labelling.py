@@ -35,6 +35,7 @@ Rules of the procedure
 
 from __future__ import annotations
 
+import csv
 import datetime as dt
 import hashlib
 import json
@@ -48,7 +49,7 @@ from pathlib import Path
 from typing import Any
 
 from . import corpuslib as lib
-from . import procs, runner
+from . import models, procs, runner
 from .splits import split_of
 
 LABELS_DIR = lib.EVALS_DIR / "labels"
@@ -110,7 +111,7 @@ def model_family(model: str) -> str | None:
 def check_identity(family: str, model: str) -> None:
     """Raise unless `model` names `family`; the two-family rule depends on it."""
     actual = model_family(model)
-    if actual != family.lower():
+    if actual != family:  # exact: a second spelling would fork the files and ledger
         seen = actual or "no single known family"
         raise runner.EngineError(
             f"judge family {family!r} does not match model {model!r} ({seen})"
@@ -324,8 +325,12 @@ def judge_items(
     notes: Mapping[str, str],
     done: Iterable[tuple[str, str]] = (),
     sink: Callable[[dict[str, Any]], None] | None = None,
+    budget: models.Budget | None = None,
 ) -> list[dict[str, Any]]:
     """Judge every pending (item, order) pair. `ask` maps a prompt to an answer.
+
+    With a `budget`, each call is charged before it runs. `models.BudgetExceeded`
+    then stops the run, and the rows already passed to `sink` stay.
 
     `sink` receives each judgment as soon as it exists, so a caller can persist it
     before the next paid call. A run that stops half way then resumes without
@@ -351,12 +356,32 @@ def judge_items(
                 "model": model,
                 "order": order,
                 "prompt_version": PROMPT_VERSION,
-                "verdict": parse_answer(ask(prompt), letters),
+                "verdict": parse_answer(
+                    _charged_ask(ask, prompt, budget, model), letters
+                ),
             }
             if sink:
                 sink(row)
             rows.append(row)
     return rows
+
+
+def _charged_ask(
+    ask: Callable[[str], str],
+    prompt: str,
+    budget: models.Budget | None,
+    model: str,
+) -> str:
+    if budget is None:
+        return ask(prompt)
+    number = budget.reserve(model)
+    try:
+        answer = ask(prompt)
+    except BaseException:
+        budget.finish(number, "failed", model)
+        raise
+    budget.finish(number, "ok", model)
+    return answer
 
 
 def command_asker(command: str) -> Callable[[str], str]:
@@ -479,6 +504,156 @@ def merge(
         "spot_pending": pending,
         "stats": stats,
     }
+
+
+# --- the human review worksheet ---------------------------------------------------
+
+WORKSHEET_HEAD = (
+    "queue",
+    "item",
+    "rule",
+    "doc",
+    "line",
+    "flagged text",
+    "context",
+    "rule note",
+)
+WORKSHEET_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def neutralize_cell(value: str) -> str:
+    """Stop a spreadsheet reading a cell as a formula (CWE-1236) with a leading quote."""
+    return "'" + value if value.startswith(WORKSHEET_FORMULA_STARTS) else value
+
+
+def restore_cell(value: str) -> str:
+    """Undo `neutralize_cell`: drop the quote only where it shields a formula start."""
+    if value.startswith("'") and value[1:].startswith(WORKSHEET_FORMULA_STARTS):
+        return value[1:]
+    return value
+
+
+def worksheet_rows(
+    items: Sequence[Mapping[str, Any]],
+    judgments: Sequence[Mapping[str, Any]],
+    human: Sequence[Mapping[str, Any]],
+    *,
+    doc_text: Callable[[str], str],
+    notes: Mapping[str, str],
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Rows for every item that still needs a human verdict, and the family names.
+
+    Both queues come from `merge` on the inputs, not from files that `label merge`
+    writes only after a clean run. Disputes come first, then rule, then document.
+    """
+    merged = merge(items, judgments, human)
+    by_id = {i["id"]: i for i in items}
+    families = sorted({j["family"] for j in judgments})
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for j in judgments:
+        grouped[(j["item"], j["family"])].append(j)
+    queued = [("dispute", d["item"]) for d in merged["disputes"]]
+    queued += [("spot", i) for i in merged["spot_pending"]]
+    rows: list[dict[str, str]] = []
+    for queue, iid in queued:
+        item = by_id[iid]
+        row = {
+            "queue": queue,
+            "item": iid,
+            "rule": item["rule"],
+            "doc": item["doc"],
+            "line": str(item["line"]),
+            "flagged text": item["text"],
+            "context": context_for(doc_text(item["doc"]), item["line"])[2],
+            "rule note": notes.get(item["rule"], ""),
+        }
+        for fam in families:
+            row[f"judge {fam}"] = family_verdict(grouped[(iid, fam)])
+        rows.append(row)
+    rows.sort(
+        key=lambda r: (r["queue"] != "dispute", r["rule"], r["doc"], int(r["line"]))
+    )
+    return families, rows
+
+
+def write_worksheet(
+    path: Path, families: Sequence[str], rows: Sequence[Mapping[str, str]]
+) -> None:
+    head = [*WORKSHEET_HEAD, *(f"judge {f}" for f in families), "verdict", "reason"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        out = csv.DictWriter(fh, fieldnames=head, restval="")
+        out.writeheader()
+        for row in rows:
+            out.writerow({k: neutralize_cell(v) for k, v in row.items()})
+
+
+def worksheet_verdicts(
+    path: Path,
+    known_items: Iterable[str],
+    existing: Sequence[Mapping[str, Any]],
+    *,
+    reviewer: str,
+    date: str,
+) -> list[dict[str, Any]]:
+    """Validate every filled row and return the human rows to append.
+
+    Raises ValueError naming the spreadsheet row (the header is row 1) on the first
+    problem, so a caller writes nothing. Rows with a blank verdict are skipped, and
+    so is a row that repeats a human entry with the same item, reviewer, verdict
+    and reason.
+    """
+    known = set(known_items)
+    seen = {
+        (h["item"], h.get("reviewer"), h["label"], h.get("reason")) for h in existing
+    }
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        reader = csv.reader(fh, strict=True)
+        number = 1
+        try:
+            header = next(reader, [])
+            if len(set(header)) != len(header):
+                dupes = sorted({h for h in header if header.count(h) > 1})
+                raise ValueError(f"row 1: duplicate columns {', '.join(dupes)}")
+            missing = {"item", "verdict", "reason"} - set(header)
+            if missing:
+                raise ValueError(
+                    f"row 1: the worksheet has no {', '.join(sorted(missing))} column"
+                )
+            at = {name: header.index(name) for name in ("item", "verdict", "reason")}
+            out: list[dict[str, Any]] = []
+            for fields in reader:
+                number += 1
+                if not fields:  # a blank line, as spreadsheets leave at the end
+                    continue
+                if len(fields) != len(header):
+                    raise ValueError(
+                        f"row {number}: {len(fields)} fields, the header has {len(header)}"
+                    )
+                verdict = restore_cell(fields[at["verdict"]]).strip().lower()
+                if not verdict:
+                    continue
+                item = restore_cell(fields[at["item"]]).strip()
+                reason = restore_cell(fields[at["reason"]])
+                if item not in known:
+                    raise ValueError(f"row {number}: unknown item {item!r}")
+                try:
+                    human = record_human(
+                        item=item,
+                        label=verdict,
+                        reviewer=reviewer,
+                        reason=reason,
+                        date=date,
+                    )
+                except ValueError as exc:
+                    raise ValueError(f"row {number}: {exc}") from None
+                key = (item, reviewer, verdict, reason)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(human)
+        except csv.Error as exc:
+            raise ValueError(f"row {number + 1}: malformed CSV ({exc})") from None
+    return out
 
 
 def underlabelled(

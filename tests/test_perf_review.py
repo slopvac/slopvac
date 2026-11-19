@@ -29,13 +29,20 @@ def benchmark(monkeypatch, tmp_path):
 
     monkeypatch.setattr(perf, "_prepare_scratch", scratch)
     monkeypatch.setattr(perf, "hyperfine_command", lambda: ["fake-hyperfine"])
-    monkeypatch.setattr(perf, "_scenario_command", lambda scenario, python, scratch, *rest: [
-        sys.executable, "-c",
-        ("import os,json; from pathlib import Path; "
-        f"p=Path({str(log)!r}); "
-        f"p.open('a').write(json.dumps([{python!r},os.getcwd()])+'\\n'); "
-        f"raise SystemExit({scenario.get('exit', 0)})"),
-    ])
+    monkeypatch.setattr(
+        perf,
+        "_scenario_command",
+        lambda scenario, python, scratch, *rest: [
+            sys.executable,
+            "-c",
+            (
+                "import os,json; from pathlib import Path; "
+                f"p=Path({str(log)!r}); "
+                f"p.open('a').write(json.dumps([{python!r},os.getcwd()])+'\\n'); "
+                f"raise SystemExit({scenario.get('exit', 0)})"
+            ),
+        ],
+    )
     real_run = subprocess.run
 
     def hyperfine(command, **kwargs):
@@ -47,11 +54,18 @@ def benchmark(monkeypatch, tmp_path):
         for index, arg in enumerate(command):
             if arg == "--command-name":
                 real_run(shlex.split(command[index + 2]), check=True)
-                results.append({"name": command[index + 1], "summary": {
-                    "time_wall_clock": {"mean": 1.0},
-                    "memory_peak_resident": {"mean": 100.0},
-                }})
-        Path(command[command.index("--export-json") + 1]).write_text(json.dumps({"results": results}))
+                results.append(
+                    {
+                        "name": command[index + 1],
+                        "summary": {
+                            "time_wall_clock": {"mean": 1.0},
+                            "memory_peak_resident": {"mean": 100.0},
+                        },
+                    }
+                )
+        Path(command[command.index("--export-json") + 1]).write_text(
+            json.dumps({"results": results})
+        )
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(perf.subprocess, "run", hyperfine)
@@ -62,18 +76,36 @@ def benchmark(monkeypatch, tmp_path):
 
 def test_comparison_alternates_revisions_in_separate_projects(benchmark):
     directory, log = benchmark
-    results = perf._run_hyperfine([{"name": "setup", "kind": "init"}], directory,
-                                 runs=3, base_python="base", head_python="head")
+    results = perf._run_hyperfine(
+        [{"name": "setup", "kind": "init"}],
+        directory,
+        runs=3,
+        base_python="base",
+        head_python="head",
+    )
     calls = [json.loads(line) for line in log.read_text().splitlines()]
-    assert [label for label, _ in calls] == ["base", "head", "head", "base", "base", "head"]
+    assert [label for label, _ in calls] == [
+        "base",
+        "head",
+        "head",
+        "base",
+        "base",
+        "head",
+    ]
     assert len({cwd for _, cwd in calls}) == 2
     assert len(results) == 2
     assert all(item["summary"]["time_wall_clock"]["mean"] == 1 for item in results)
 
 
-@pytest.mark.parametrize("kind,code,accepted", [
-    ("cli", 1, False), ("init", 1, False), ("lint", 1, True), ("lint", 2, False),
-])
+@pytest.mark.parametrize(
+    "kind,code,accepted",
+    [
+        ("cli", 1, False),
+        ("init", 1, False),
+        ("lint", 1, True),
+        ("lint", 2, False),
+    ],
+)
 def test_hyperfine_wrapper_enforces_scenario_exits(benchmark, kind, code, accepted):
     directory, _ = benchmark
     args = ([{"name": "test", "kind": kind, "exit": code}], directory)
@@ -86,10 +118,17 @@ def test_hyperfine_wrapper_enforces_scenario_exits(benchmark, kind, code, accept
 
 @pytest.mark.skipif(os.name != "posix", reason="profilers require Unix")
 def test_notifier_target_really_has_a_terminal():
-    result = subprocess.run([
-        sys.executable, str(perf.ROOT / "scripts/perf/terminal_target.py"),
-        sys.executable, "-c", "import sys; raise SystemExit(0 if sys.stderr.isatty() else 9)",
-    ], check=False, capture_output=True)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(perf.ROOT / "scripts/perf/terminal_target.py"),
+            sys.executable,
+            "-c",
+            "import sys; raise SystemExit(0 if sys.stderr.isatty() else 9)",
+        ],
+        check=False,
+        capture_output=True,
+    )
     assert result.returncode == 0
 
 
@@ -97,21 +136,37 @@ def test_notifier_target_really_has_a_terminal():
 def test_profile_cache_environment(monkeypatch, tmp_path, mode):
     calls = []
     monkeypatch.setattr(perf, "prepare_inputs", lambda *_: ["--version"])
-    monkeypatch.setattr(perf.subprocess, "run", lambda command, **kwargs:
-                        calls.append((command, kwargs)) or subprocess.CompletedProcess(command, 0))
+    monkeypatch.setattr(
+        perf.subprocess,
+        "run",
+        lambda command, **kwargs: (
+            calls.append((command, kwargs)) or subprocess.CompletedProcess(command, 0)
+        ),
+    )
     scenario = {"kind": "cache", "cache": mode}
     perf.run_profiled(["profiler"], scenario, cwd=tmp_path)
     assert len(calls) == (2 if mode == "warm" else 1)
-    assert all(call[1]["env"]["SLOPVAC_CACHE_DIR"] == str(tmp_path / "profile-cache") for call in calls)
+    assert all(
+        call[1]["env"]["SLOPVAC_CACHE_DIR"] == str(tmp_path / "profile-cache")
+        for call in calls
+    )
 
 
 def test_spy_child_keeps_scenario_settings_across_sudo(monkeypatch, tmp_path):
     calls = []
-    monkeypatch.setattr(perf.subprocess, "run", lambda command, **kwargs:
-                        calls.append(command) or subprocess.CompletedProcess(command, 0))
-    perf.run_profiled(["sudo", "/bin/py-spy", "record", "--", "/bin/python", "-m", "slopvac.cli"],
-                      {"kind": "cache", "cache": "cold"}, cwd=tmp_path)
-    child = calls[0][calls[0].index("--") + 1:]
+    monkeypatch.setattr(
+        perf.subprocess,
+        "run",
+        lambda command, **kwargs: (
+            calls.append(command) or subprocess.CompletedProcess(command, 0)
+        ),
+    )
+    perf.run_profiled(
+        ["sudo", "/bin/py-spy", "record", "--", "/bin/python", "-m", "slopvac.cli"],
+        {"kind": "cache", "cache": "cold"},
+        cwd=tmp_path,
+    )
+    child = calls[0][calls[0].index("--") + 1 :]
     assert child[0] == "env"
     assert f"SLOPVAC_CACHE_DIR={tmp_path / 'profile-cache'}" in child
     assert "NO_UPDATE_NOTIFIER=1" in child
@@ -120,11 +175,23 @@ def test_spy_child_keeps_scenario_settings_across_sudo(monkeypatch, tmp_path):
 def test_profile_warmup_uses_profiled_interpreter(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(perf, "prepare_inputs", lambda *_: ["--version"])
-    monkeypatch.setattr(perf.subprocess, "run", lambda command, **kwargs:
-                        calls.append((command, kwargs)) or subprocess.CompletedProcess(command, 0))
+    monkeypatch.setattr(
+        perf.subprocess,
+        "run",
+        lambda command, **kwargs: (
+            calls.append((command, kwargs)) or subprocess.CompletedProcess(command, 0)
+        ),
+    )
     target_python = "/isolated-venv/bin/python"
-    perf.run_profiled(["sudo", "/bin/py-spy", "record", "--", target_python, "-m", "slopvac.cli"],
-                      {"kind": "cache", "cache": "warm"}, python=target_python, cwd=tmp_path)
+    perf.run_profiled(
+        ["sudo", "/bin/py-spy", "record", "--", target_python, "-m", "slopvac.cli"],
+        {"kind": "cache", "cache": "warm"},
+        python=target_python,
+        cwd=tmp_path,
+    )
     assert calls[0][0][0] == target_python
     assert target_python in calls[1][0]
-    assert calls[0][1]["env"]["SLOPVAC_CACHE_DIR"] == calls[1][1]["env"]["SLOPVAC_CACHE_DIR"]
+    assert (
+        calls[0][1]["env"]["SLOPVAC_CACHE_DIR"]
+        == calls[1][1]["env"]["SLOPVAC_CACHE_DIR"]
+    )

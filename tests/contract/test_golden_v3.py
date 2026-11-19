@@ -634,9 +634,7 @@ def _compare(mode, flavor):
 
 
 @pytest.mark.parametrize("mode", ["parity", "preserve", "policy"])
-def test_the_2x_reference_is_compared_without_deltas_in_every_mode(
-    monkeypatch, mode
-):
+def test_the_2x_reference_is_compared_without_deltas_in_every_mode(monkeypatch, mode):
     _parity_binary(monkeypatch, {"modes": ["parity", "preserve", "policy"]})
     assert _compare(mode, "2x") == []
 

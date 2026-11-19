@@ -497,7 +497,9 @@ _DOTTED = "ghcr.io/a/b:latest"
 @pytest.mark.parametrize(
     ("image", "stderr"),
     [
-        pytest.param(IMAGE, _not_found_for("ghcr.io/slopvac/other:latest"), id="other-ref"),
+        pytest.param(
+            IMAGE, _not_found_for("ghcr.io/slopvac/other:latest"), id="other-ref"
+        ),
         pytest.param(IMAGE, _not_found_for(IMAGE + "2"), id="stderr-longer-tag"),
         pytest.param(IMAGE + "2", _not_found_for(IMAGE), id="requested-longer-tag"),
         pytest.param(IMAGE, _not_found_for(_DIGEST), id="stderr-digest"),
@@ -514,7 +516,9 @@ _DOTTED = "ghcr.io/a/b:latest"
             id="name-unknown-code",
         ),
         pytest.param(IMAGE, f"Error: {IMAGE}: not found\n", id="old-short-form"),
-        pytest.param(IMAGE, _real_not_found().strip() + " (retry)\n", id="trailing-text"),
+        pytest.param(
+            IMAGE, _real_not_found().strip() + " (retry)\n", id="trailing-text"
+        ),
         pytest.param(IMAGE, "Error: " + _real_not_found(), id="leading-text"),
         pytest.param(IMAGE, _AUTH, id="auth"),
         pytest.param(

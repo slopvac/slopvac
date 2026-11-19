@@ -117,12 +117,18 @@ Precision needs a trustworthy answer to "was this finding right?". The labelling
 
 ```sh
 python -m evals label sample results.json                 # pick findings, balanced across documents
-python -m evals label judge --family anthropic --model <name> --provider-cmd '<cmd>'
-python -m evals label judge --family openai --model <name> --provider-cmd '<cmd>'
+python -m evals label judge --family anthropic --model <name> --provider-cmd '<cmd>' --max-invocations <N>
+python -m evals label judge --family openai --model <name> --provider-cmd '<cmd>' --max-invocations <N>
 python -m evals label merge                               # labels, disputes, stats
+python -m evals label worksheet --out review.csv          # disputes and spot check, for a spreadsheet
+python -m evals label import-worksheet review.csv --reviewer <you>
 python -m evals label resolve <item> tp --reviewer <you> --reason '<why>'
 python -m evals score results.json --labels evals/labels/labels.jsonl
 ```
+
+`label judge` needs `--max-invocations`, a hard cap on provider calls. The harness writes each call to `judgments/<family>.ledger.jsonl` before it runs the provider, so a crash cannot hide a call. A resume counts earlier calls as spent. When the cap is reached, the command exits 2 and keeps the judgments it wrote. If `judgments/<family>.jsonl` exists without its ledger, the command refuses to run.
+
+`label worksheet` writes both review queues to one CSV, without needing a clean `label merge`. Disputes come first, then rows sort by rule and document, and items with a human verdict are left out. Fill the `verdict` column with `tp` or `fp` and give a `reason`. `label import-worksheet` records the filled rows in `human.jsonl`, skips blank verdicts, and exits 2 with the row number on a bad row, writing nothing. Importing a file again adds no duplicates. Cells that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading quote so a spreadsheet does not run them as formulas. The import removes that quote.
 
 Files live in `evals/labels/`:
 
