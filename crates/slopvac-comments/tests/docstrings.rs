@@ -49,6 +49,33 @@ fn docstrings(source: &str) -> Vec<String> {
 #[case::unicode_prefix("def f():\n    u\"Unicode doc.\"\n", &["Unicode doc."])]
 #[case::statement_ends_at_semicolon("def f():\n    \"Doc.\"; x = 1\n", &["Doc."])]
 #[case::statement_ends_at_end_of_file("\"Doc.\"", &["Doc."])]
+#[case::parenthesised_module_string("(\"Module doc.\")\nx = 1\n", &["Module doc."])]
+#[case::multi_line_parentheses(
+    "def f():\n    (\n        \"Function doc.\"\n    )\n",
+    &["Function doc."]
+)]
+#[case::nested_parentheses("def f():\n    ((\"Doc.\"))\n", &["Doc."])]
+#[case::adjacent_literals_inside_parentheses(
+    "def f():\n    (\"First \"\n     \"second.\")\n",
+    &["First", "second."]
+)]
+#[case::comment_inside_parentheses("(  # note\n    \"Doc.\"\n)\n", &["Doc."])]
+#[case::lambda_in_the_return_annotation(
+    "def f() -> lambda: None:\n    \"\"\"Function doc.\"\"\"\n",
+    &["Function doc."]
+)]
+#[case::lambda_default_value(
+    "def f(a=lambda: 1):\n    \"\"\"Function doc.\"\"\"\n",
+    &["Function doc."]
+)]
+#[case::lambda_with_a_slice_in_its_default(
+    "def f(a=lambda x=y[1:2]: x):\n    \"Doc.\"\n",
+    &["Doc."]
+)]
+#[case::lambda_with_parameters_in_a_class_header(
+    "class C(metaclass=lambda n, b, d: type):\n    \"Doc.\"\n",
+    &["Doc."]
+)]
 #[case::implicit_concatenation(
     "def f():\n    \"First \" \"second.\"\n",
     &["First", "second."]
@@ -72,7 +99,16 @@ fn a_leading_string_of_a_body_is_extracted(#[case] source: &str, #[case] expecte
 #[case::call_argument("print(\"not a doc\")\n")]
 #[case::method_call_on_the_string("\"not a doc\".strip()\n")]
 #[case::string_in_an_expression("def f():\n    \"a\" + \"b\"\n")]
-#[case::parenthesised_expression_statement("def f():\n    (\"a\")\n")]
+#[case::tuple_of_one("def f():\n    (\"a\",)\n")]
+#[case::multi_line_tuple("def f():\n    (\n        \"a\",\n        \"b\",\n    )\n")]
+#[case::empty_tuple("()\n")]
+#[case::call_on_a_parenthesised_string("(\"a\").strip()\n")]
+#[case::parenthesised_string_plus_another("(\"a\") + \"b\"\n")]
+#[case::operator_inside_the_parentheses("(\"a\" + \"b\")\n")]
+#[case::parenthesised_f_string("(f\"a\")\n")]
+#[case::string_next_to_a_parenthesised_string("(\"a\" (\"b\"))\n")]
+#[case::name_inside_the_parentheses("(x \"a\")\n")]
+#[case::parenthesised_string_in_an_if_body("if x:\n    (\"a\")\n")]
 #[case::return_annotation("def f() -> \"X\":\n    pass\n")]
 #[case::default_value("def f(a=\"x\"):\n    pass\n")]
 #[case::base_class_argument("class C(\"x\"):\n    pass\n")]

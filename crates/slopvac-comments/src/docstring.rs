@@ -2,7 +2,7 @@
 //!
 //! The lexer already knows where every comment and string is. This pass reads only the
 //! code between them, as a few token kinds, to decide which strings open a body. It makes
-//! one pass over the source and keeps no stack, so its cost is linear.
+//! one pass over the source, so its cost is linear.
 //!
 //! A string is a docstring when it is the first statement of the module, or the first
 //! statement after the colon that ends a `def` or `class` header, and the statement is
@@ -87,12 +87,25 @@ enum Header {
     Open,
 }
 
+/// What the last token inside a parenthesised string statement was.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Last {
+    Open,
+    Str,
+    Close,
+}
+
 struct Walker {
     /// Bracket nesting. Line ends and colons count only at depth zero.
     depth: usize,
     /// Nothing but blanks, comments and strings precede this point on its logical line.
     line_start: bool,
     header: Header,
+    /// The bracket depth of each `lambda` in the header that still waits for its colon.
+    lambdas: Vec<usize>,
+    /// Set while reading a parenthesised statement that so far holds only strings and
+    /// parentheses, as in `("doc")`. Python drops the parentheses, so it is a docstring.
+    paren: Option<Last>,
     /// The next statement is the first of a module, class or function body.
     body: bool,
     /// Adjacent plain strings that make up that statement so far.
@@ -106,6 +119,8 @@ impl Walker {
             depth: 0,
             line_start: true,
             header: Header::None,
+            lambdas: Vec::new(),
+            paren: None,
             body: true,
             run: Vec::new(),
             found: Vec::new(),
@@ -128,14 +143,22 @@ impl Walker {
 
     /// Something other than a string statement came first, so there is no docstring.
     fn other(&mut self) {
+        self.paren = None;
         self.run.clear();
         self.body = false;
         self.line_start = false;
     }
 
     fn string(&mut self, range: Range<usize>, eligible: bool) {
-        if self.body && self.depth == 0 && eligible {
+        let allowed = match self.paren {
+            Some(last) => last != Last::Close,
+            None => self.depth == 0,
+        };
+        if self.body && allowed && eligible {
             self.run.push(range);
+            if self.paren.is_some() {
+                self.paren = Some(Last::Str);
+            }
             self.line_start = false;
         } else {
             self.other();
@@ -163,20 +186,26 @@ impl Walker {
                         2
                     };
                 }
-                b'(' | b'[' | b'{' => {
+                b'(' => {
+                    self.open_paren();
+                    at += 1;
+                }
+                b')' => {
+                    self.close_paren();
+                    at += 1;
+                }
+                b'[' | b'{' => {
                     self.depth += 1;
                     self.other();
                     at += 1;
                 }
-                b')' | b']' | b'}' => {
+                b']' | b'}' => {
                     self.depth = self.depth.saturating_sub(1);
                     self.other();
                     at += 1;
                 }
-                b':' if self.depth == 0 && self.header == Header::Open => {
-                    self.header = Header::None;
-                    self.line_start = false;
-                    self.body = true;
+                b':' if self.header == Header::Open => {
+                    self.header_colon();
                     at += 1;
                 }
                 b';' if self.depth == 0 => {
@@ -201,12 +230,53 @@ impl Walker {
         }
     }
 
+    fn open_paren(&mut self) {
+        let starts_statement = self.body && self.depth == 0 && self.run.is_empty();
+        match self.paren {
+            Some(Last::Open) => {}
+            None if starts_statement => self.paren = Some(Last::Open),
+            Some(_) | None => self.other(),
+        }
+        self.depth += 1;
+    }
+
+    fn close_paren(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
+        match self.paren {
+            Some(Last::Str | Last::Close) => {
+                // The statement is complete once the outermost parenthesis closes.
+                self.paren = if self.depth == 0 {
+                    None
+                } else {
+                    Some(Last::Close)
+                };
+            }
+            _ => self.other(),
+        }
+    }
+
+    /// A colon in a `def` or `class` header ends it, unless it belongs to a `lambda`.
+    fn header_colon(&mut self) {
+        if self.lambdas.last() == Some(&self.depth) {
+            self.lambdas.pop();
+            self.other();
+        } else if self.depth == 0 {
+            self.header = Header::None;
+            self.lambdas.clear();
+            self.line_start = false;
+            self.body = true;
+        } else {
+            self.other();
+        }
+    }
+
     fn newline(&mut self) {
         if self.depth > 0 {
             return;
         }
-        if self.header == Header::Async {
+        if self.header != Header::None {
             self.header = Header::None;
+            self.lambdas.clear();
         }
         if !self.run.is_empty() {
             self.end_statement();
@@ -219,6 +289,9 @@ impl Walker {
             b"def" | b"class" => self.line_start || self.header == Header::Async,
             _ => false,
         };
+        if word == b"lambda" && self.header == Header::Open {
+            self.lambdas.push(self.depth);
+        }
         let async_def = word == b"async" && self.line_start;
         self.other();
         if starts_header {
