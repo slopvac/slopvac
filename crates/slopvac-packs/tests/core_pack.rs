@@ -34,7 +34,10 @@ fn embedded_and_on_disk_copies_load_the_same_rule_ids() {
     let from_disk = LoadedPack::load(&DirSource::new(dir.path()), Source::Core).unwrap();
 
     let ids = rule_ids(&from_binary);
-    assert!(ids.len() > 100, "the core pack carries the converted 2.x rules");
+    assert!(
+        ids.len() > 100,
+        "the core pack carries the converted 2.x rules"
+    );
     assert!(ids.iter().all(|id| id.starts_with("core:")));
     assert_eq!(ids, rule_ids(&from_disk));
 }
@@ -46,8 +49,18 @@ fn core_genres_keep_the_registration_order_of_the_built_ins() {
     assert_eq!(
         ids,
         [
-            "consumer", "reference", "change-comms", "internal", "informal", "security", "ui-copy",
-            "agent-instructions", "tutorial", "how-to", "reference-page", "explanation",
+            "consumer",
+            "reference",
+            "change-comms",
+            "internal",
+            "informal",
+            "security",
+            "ui-copy",
+            "agent-instructions",
+            "tutorial",
+            "how-to",
+            "reference-page",
+            "explanation",
         ]
     );
 }
@@ -67,14 +80,18 @@ fn a_genre_chain_lists_the_parent_before_the_genre() {
             .iter()
             .any(|s| s.path == ["rules", "core:prose-craft.future-tense"] && s.value == "off")
     };
-    assert!(sets_rule(chain.last().unwrap()), "the tutorial layer comes last");
+    assert!(
+        sets_rule(chain.last().unwrap()),
+        "the tutorial layer comes last"
+    );
     assert!(!chain[..chain.len() - 1].iter().any(sets_rule));
     assert!(chain.len() >= 2, "the consumer parent comes first");
 }
 
 #[test]
 fn an_unknown_genre_has_no_chain() {
-    assert!(Packs::core().unwrap().genre_chain("core:nope").is_empty());
+    let chain = Packs::core().unwrap().genre_chain("core:nope");
+    assert_eq!(chain, Vec::<Vec<slopvac_config::Setting>>::new());
 }
 
 #[test]
@@ -88,7 +105,10 @@ fn core_styles_resolve_by_bare_and_qualified_name() {
 #[test]
 fn the_core_pack_takes_the_binary_version() {
     let pack = LoadedPack::load(&core_source(), Source::Core).unwrap();
-    assert_eq!(pack.manifest().version.to_string(), env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        pack.manifest().version.to_string(),
+        env!("CARGO_PKG_VERSION")
+    );
     assert_eq!(pack.manifest().id, PackId::new("core").unwrap());
 }
 
