@@ -1,6 +1,6 @@
 # Slopvac 3.0 plugin protocol v1
 
-Status: contract for 3.0. Bead `slopvac-8l4.2.6`; section 5.5 is `slopvac-8l4.2.27`. Plan: [slopvac-3.md](../design/slopvac-3.md). Decision: [0001-slopvac-3-architecture.md](../design/0001-slopvac-3-architecture.md), decisions 8 and 9. Policies: [policies.md](policies.md).
+Status: contract for 3.0. Bead `slopvac-8l4.2.6`. Plan: [slopvac-3.md](../design/slopvac-3.md). Decision: [0001-slopvac-3-architecture.md](../design/0001-slopvac-3-architecture.md), decisions 8 and 9. Policies: [policies.md](policies.md).
 
 A code plugin is a separate program. The host starts it as a subprocess and speaks JSON-RPC 2.0 to it over the plugin's standard input and output. This document fixes the wire format, the lifecycle, and the hooks. The schema is [`plugin-protocol.schema.json`](../../schemas/v3/plugin-protocol.schema.json). It holds the message shapes and their field descriptions. This document does not repeat them.
 
@@ -175,10 +175,10 @@ Plugin-defined formats are not part of 3.0. A hook may declare only ids from thi
 The host sends a file to a binary extractor only under these rules:
 
 - A `binary-extractor` hook lists the formats it reads in `HookDecl.formats`, both in the manifest and in the `initialize` reply. The list is required for this kind. A reply that lists a format the manifest does not list for the same hook is `plugin-declaration-mismatch` (section 4.3).
-- The host decides the format from the bytes first. A PNG signature means a PNG format. A ZIP local file header with a `[Content_Types].xml` entry means Office Open XML, and a stored `mimetype` entry means OpenDocument. The file name then picks the variant. Discovery and the mapping from names to ids belong to `slopvac-8l4.12`.
+- The host decides the format from the bytes first. A PNG signature means a PNG format. A ZIP local file header with a `[Content_Types].xml` entry means Office Open XML, and a stored `mimetype` entry means OpenDocument. The file name then picks the variant. Discovery and the mapping from names to ids belong to the discovery contract.
 - An encrypted Office Open XML package is an OLE compound file, not a ZIP. When a file with an Office Open XML name starts with the compound file signature `D0 CF 11 E0 A1 B1 1A E1`, the host sends it to no extractor and reports `binary-encrypted` (section 5.5.4).
 - When the signature and the name disagree in any other way, the host sends the file to no extractor. It reports `binary-format-mismatch`, and the run exits 2.
-- Discovery selects only files of the listed formats, so it skips EPUB, PDF and every other format slopvac does not read. When the user names such a file explicitly, or names a file of a listed format that no enabled extractor reads, the host sends it to no extractor. It reports `input-unsupported`, `data.format` names the detected format, such as `epub`, `pdf` or a listed id, and the run exits 2. Routing and discovery stay with the CLI (`slopvac-8l4.20.13`).
+- Discovery selects only files of the listed formats, so it skips EPUB, PDF and every other format slopvac does not read. When the user names such a file explicitly, or names a file of a listed format that no enabled extractor reads, the host sends it to no extractor. It reports `input-unsupported`, `data.format` names the detected format, such as `epub`, `pdf` or a listed id, and the run exits 2. Routing and discovery stay with the CLI.
 - The host sends a format only to a hook that declared it, and sends each document to one binary extractor only.
 - A plugin or other reader that receives a format id it does not know treats the document as unsupported. It declines that document with the per-document error -32008 `binary-input-declined` and `data.reason` `unknown-format`, answers the other documents, and does not fail the request. The host adds `binary-input-declined` to that document's `unchecked`, and the run exits 2. The vectors in [`binary-unknown-format.json`](../../schemas/v3/conformance/plugin-protocol/binary-unknown-format.json) show the rule.
 - No hook wins a format by default, because load order and pack order carry no intent. When two or more enabled hooks list a format, built-in extractors included, a mapping in the user's config picks one, such as `[formats] pptx = "<pack>:<hook>"`. The config contract fixes the key name. Without a mapping, the host sends files of that format to no extractor. It reports `binary-format-ambiguous`, names every hook that claims the format and the config key that resolves it, and the run exits 2.
@@ -445,7 +445,7 @@ The following hand-offs go to the threat-model bead. The threat model and indepe
 | Fixer envelope | Whether the finding-span rule is tight enough, for example a fixer that rewrites a whole sentence through many one-finding edits. | Section 5.2. The model sets per-document limits on edit count and inserted bytes. |
 | Duplicate keys and parser differences | Ambiguity between the host parser and the plugin parser. | Section 2.2 rejects duplicate keys. |
 | Log leakage | Plugin standard error in host logs. | Section 7. The host cannot redact free text. |
-| Binary documents | What a binary extractor learns from a whole file, and what a hostile file can make it do. | Section 5.5. The plugin sees images, revision history, embedded objects and metadata. Extractors fetch no external relationship and run no embedded content. `slopvac-8l4.2.30` sets the container limits and the threat rows. |
+| Binary documents | What a binary extractor learns from a whole file, and what a hostile file can make it do. | Section 5.5. The plugin sees images, revision history, embedded objects and metadata. Extractors fetch no external relationship and run no embedded content. The threat model sets the container limits and the threat rows. |
 
 ## 12. Conformance test outline
 
