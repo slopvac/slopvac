@@ -62,24 +62,27 @@ impl Extents {
 
 /// The text of each top-level non-string scalar, rendered as `slopvac-context` renders a
 /// genre signal's expected value: `true`, `42`, `1.5`. A datetime keeps its source text.
-/// Nulls, arrays and tables have no text. The last duplicate key wins, as in `get`.
+/// The last occurrence of a key decides: a later null, sequence or table removes the text of
+/// an earlier scalar, as `get` returns the last occurrence.
 fn scalar_text<'a>(front: &'a FrontMatter<'a>) -> HashMap<&'a str, String> {
     let Value::Table(entries) = &front.root.value else {
         return HashMap::new();
     };
-    entries
-        .iter()
-        .filter_map(|e| {
-            let text = match &e.value.value {
-                Value::Bool(b) => b.to_string(),
-                Value::Integer(i) => i.to_string(),
-                Value::Float(f) => f.to_string(),
-                Value::Datetime(d) => d.clone(),
-                Value::Null | Value::String(_) | Value::Array(_) | Value::Table(_) => return None,
-            };
-            Some((e.key.as_str(), text))
-        })
-        .collect()
+    let mut texts = HashMap::new();
+    for e in entries {
+        let text = match &e.value.value {
+            Value::Bool(b) => b.to_string(),
+            Value::Integer(i) => i.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Datetime(d) => d.clone(),
+            Value::Null | Value::String(_) | Value::Array(_) | Value::Table(_) => {
+                texts.remove(e.key.as_str());
+                continue;
+            }
+        };
+        texts.insert(e.key.as_str(), text);
+    }
+    texts
 }
 
 /// A parsed document as the taggers read it.

@@ -69,3 +69,13 @@ fn a_scalar_reaches_the_tagger_as_text(
 ) {
     assert_eq!(tagged(front, pattern), fires);
 }
+
+#[rstest]
+#[case::scalar_last("{\"flag\": null, \"flag\": true}\n", true)]
+#[case::null_last("{\"flag\": true, \"flag\": null}\n", false)]
+#[case::array_last("{\"flag\": true, \"flag\": [1]}\n", false)]
+#[case::object_last("{\"flag\": true, \"flag\": {\"a\": 1}}\n", false)]
+#[case::string_last("{\"flag\": true, \"flag\": \"no\"}\n", false)]
+fn the_last_occurrence_of_a_repeated_key_decides(#[case] front: &str, #[case] fires: bool) {
+    assert_eq!(tagged(front, "^true$"), fires);
+}
