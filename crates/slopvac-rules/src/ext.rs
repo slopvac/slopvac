@@ -230,7 +230,9 @@ mod tests {
     use std::cell::Cell;
     use std::hash::{Hash, Hasher};
 
-    use super::first_repeat;
+    use serde::Deserialize;
+
+    use super::UniqueVec;
 
     thread_local! {
         static HASHES: Cell<usize> = const { Cell::new(0) };
@@ -238,7 +240,7 @@ mod tests {
     }
 
     /// An item that counts every hash and equality call made on it.
-    #[derive(Debug)]
+    #[derive(Debug, Deserialize)]
     struct Counted(usize);
 
     impl PartialEq for Counted {
@@ -255,32 +257,37 @@ mod tests {
         }
     }
 
-    fn work(items: &[Counted]) -> (Option<usize>, usize, usize) {
+    /// Deserialize `items` as a unique list and report the hashes and comparisons it cost.
+    fn parse(items: &[usize]) -> (Result<UniqueVec<Counted, 1>, String>, usize, usize) {
+        let text = serde_json::to_string(items).unwrap();
         HASHES.with(|c| c.set(0));
         COMPARES.with(|c| c.set(0));
-        let found = first_repeat(items);
-        (found, HASHES.with(Cell::get), COMPARES.with(Cell::get))
+        let result = serde_json::from_str(&text).map_err(|e: serde_json::Error| e.to_string());
+        (result, HASHES.with(Cell::get), COMPARES.with(Cell::get))
     }
 
     /// A quadratic scan makes n(n-1)/2 comparisons, 5e9 for 100,000 items. A hash set hashes
-    /// each item once and compares only on a bucket collision, so the count stays near n.
+    /// each item at most once and compares only on a bucket collision.
     #[test]
-    fn distinct_items_cost_one_hash_each_and_comparisons_linear_in_the_list() {
+    fn deserializing_distinct_items_costs_work_linear_in_the_list() {
         let n = 100_000;
-        let items: Vec<Counted> = (0..n).map(Counted).collect();
-        let (found, hashes, compares) = work(&items);
-        assert_eq!(found, None);
-        assert_eq!(hashes, n);
+        let items: Vec<usize> = (0..n).collect();
+        let (result, hashes, compares) = parse(&items);
+        assert_eq!(result.unwrap().len(), n);
+        assert!(hashes <= n, "{hashes} hashes for {n} items");
         assert!(compares <= 2 * n, "{compares} comparisons for {n} items");
     }
 
     #[test]
-    fn the_first_repeat_is_reported_and_the_scan_stops_there() {
-        let mut items: Vec<Counted> = (0..1_000).map(Counted).collect();
-        items.push(Counted(7));
-        items.push(Counted(8));
-        let (found, hashes, _) = work(&items);
-        assert_eq!(found, Some(1_000));
-        assert_eq!(hashes, 1_001);
+    fn deserializing_a_repeat_names_the_first_repeated_index() {
+        let mut items: Vec<usize> = (0..1_000).collect();
+        items.push(7);
+        items.push(8);
+        let (result, _, _) = parse(&items);
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("items must be unique, item 1000 repeats an earlier one"),
+            "{err}"
+        );
     }
 }
