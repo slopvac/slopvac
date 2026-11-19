@@ -1542,13 +1542,30 @@ fn a_dangling_extends_link_is_missing_as_before() {
     assert_eq!(r.diagnostics[0].code, Code::ExtendsMissing);
 }
 
+/// `count` distinct blocks of `table`, each scoping `<prefix><i>/*.md`.
+fn blocks_text(table: &str, prefix: &str, extra: &str, count: usize) -> String {
+    (0..count)
+        .map(|i| {
+            [
+                "\n[[",
+                table,
+                "]]\nfiles = [\"",
+                prefix,
+                &i.to_string(),
+                "/*.md\"]\n",
+                extra,
+            ]
+            .concat()
+        })
+        .collect()
+}
+
 /// A config with `count` distinct `[[overrides]]` blocks.
 fn block_config(count: usize) -> String {
-    let mut text = String::from("schema_version = 3\n");
-    for i in 0..count {
-        text.push_str(&format!("\n[[overrides]]\nfiles = [\"dir{i}/*.md\"]\n"));
-    }
-    text
+    format!(
+        "schema_version = 3\n{}",
+        blocks_text("overrides", "dir", "", count)
+    )
 }
 
 #[test]
@@ -1581,11 +1598,7 @@ fn blocks_split_across_both_tables_count_together() {
     let fx = Fixture::new();
     let half = slopvac_config::MAX_FILE_BLOCKS / 2 + 1;
     let mut text = block_config(half);
-    for i in 0..half {
-        text.push_str(&format!(
-            "\n[[genres]]\nfiles = [\"g{i}/*.md\"]\ngenre = \"docs\"\n"
-        ));
-    }
+    text.push_str(&blocks_text("genres", "g", "genre = \"docs\"\n", half));
     let p = fx.write("slopvac.toml", &text);
     let data = budget_data(load(&p, &NoPresets).unwrap_err());
     assert_eq!(data.budget, ConfigBudget::FileBlocks);
