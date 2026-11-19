@@ -1,11 +1,11 @@
-"""Plugin protocol, pack manifest and per-pack reference pages.
+"""Plugin protocol, plugin manifest and per-plugin reference pages.
 
 The protocol and manifest pages come from the JSON Schemas in ``schemas/<api>/``,
 plus the error-code tables of the protocol contract, which the schema cannot
-express. A pack page comes from one ``slopvac-plugin.toml`` manifest, checked
+express. A plugin page comes from one ``slopvac-plugin.toml`` manifest, checked
 against the manifest schema first.
 
-STUB(slopvac-8l4.9.1): no pack loader exists yet, so pack pages list the files
+STUB(slopvac-8l4.9.1): no plugin loader exists yet, so plugin pages list the files
 a manifest declares under ``provides``. They do not open those files to list
 the rules, styles, genres and terms inside. Swap this for the loader's registry
 when it lands.
@@ -472,7 +472,7 @@ def generate_manifest(schemas: SchemaSet) -> Pages:
 
 
 # ---------------------------------------------------------------------------
-# Pack pages
+# Plugin pages
 
 
 def load_manifests(packs_dir: Path) -> dict[str, tuple[Path, dict]]:
@@ -633,7 +633,7 @@ def generate_packs(schemas: SchemaSet, packs_dir: Path) -> Pages:
     else:
         index.append("No plugins are bundled with this build.")
     for pack_id, (_, data) in sorted(manifests.items()):
-        # A folder per pack keeps the page clear of packs/index.md, whatever the
+        # A folder per plugin keeps the page clear of bundled/index.md, whatever the
         # id, and the public route stays /plugins/bundled/<id>/.
         pages[f"plugins/bundled/{pack_id}/index.md"] = _pack_page(
             data, known, artifact_keys

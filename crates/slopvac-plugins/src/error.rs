@@ -89,7 +89,7 @@ pub enum PluginError {
     /// [`launch::intercept`](crate::launch::intercept), so the host cannot
     /// start the launcher. Nothing was spawned.
     #[error(
-        "the running program did not install the slopvac plugin launcher, so plugins and git pack sources cannot start"
+        "the running program did not install the slopvac plugin launcher, so plugins and git plugin sources cannot start"
     )]
     LauncherNotInstalled,
     /// The reply disagrees with the hashed manifest.

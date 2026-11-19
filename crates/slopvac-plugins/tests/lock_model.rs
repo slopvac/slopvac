@@ -18,12 +18,12 @@ fn entry(id: &str, version: &str, source: &str, digest: &str) -> String {
 }
 
 fn lock_of(entries: &[String]) -> Lockfile {
-    let packs = if entries.is_empty() {
-        "packs = []\n"
+    let plugins = if entries.is_empty() {
+        "plugins = []\n"
     } else {
         ""
     };
-    let text = format!("schema_version = 3\n{packs}{}", entries.concat());
+    let text = format!("schema_version = 3\n{plugins}{}", entries.concat());
     Lockfile::parse(&text).unwrap()
 }
 

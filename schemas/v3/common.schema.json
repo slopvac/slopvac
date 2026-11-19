@@ -76,7 +76,7 @@
           "enum": ["core", "style", "genre", "extends", "project", "override", "front-matter", "directive", "cli", "env"]
         },
         "file": {
-          "description": "Path relative to the project root, or pack:<id>/<path> for a plugin file. Absent where no file holds the value: core, cli and env.",
+          "description": "Path relative to the project root, or plugin:<id>/<path> for a plugin file. Absent where no file holds the value: core, cli and env.",
           "type": "string"
         },
         "line": {"type": "integer", "minimum": 1},

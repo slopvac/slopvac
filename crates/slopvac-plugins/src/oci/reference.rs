@@ -28,7 +28,7 @@ impl fmt::Display for Target {
 pub struct Reference {
     /// Registry host with optional port, for example `ghcr.io`.
     pub registry: String,
-    /// Repository path, for example `slopvac/slopvac-packs/core`.
+    /// Repository path, for example `slopvac/slopvac-plugins/core`.
     pub repository: String,
     /// Tag or digest. A digest wins when both are present.
     pub target: Target,

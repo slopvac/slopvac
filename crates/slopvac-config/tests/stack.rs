@@ -471,7 +471,7 @@ impl Presets for Packs {
 
     fn pack_config(&self, name: &str) -> Option<PackFile> {
         (name == "acme:base").then(|| PackFile {
-            display: "pack:acme/base.toml".into(),
+            display: "plugin:acme/base.toml".into(),
             text: "schema_version = 3\n[thresholds]\nmax_errors = 7\n".into(),
         })
     }
@@ -536,7 +536,7 @@ fn a_pack_config_can_be_extended() {
     assert_eq!(
         r.source(&["thresholds", "max_errors"])
             .and_then(|s| s.file.clone()),
-        Some("pack:acme/base.toml".to_string())
+        Some("plugin:acme/base.toml".to_string())
     );
 }
 

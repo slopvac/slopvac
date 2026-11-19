@@ -13,7 +13,7 @@ author-side ``$id`` prefix. Publishing rewrites that prefix to the configured
 site URL, so changing ``site_url`` (for example for a custom domain) needs no
 edit to the committed schemas.
 
-Rules, schemas, the plugin protocol and pack manifest references, the pack
+Rules, schemas, the plugin protocol and plugin manifest references, the plugin
 pages, styles, terms and genres come from real data. The styles, terms and
 genres pages come from each crate's ``reference`` example, which the builder
 runs through cargo.
@@ -51,8 +51,8 @@ RULES_DIR = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac" / "rules"
 SCHEMAS_DIR = ROOT / "schemas" / "v3"
 REMOVED_RULES_FILE = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
 DEFAULT_OUT = ROOT / "build" / "site-src"
-# Pack manifests to document. The example plugin pack is the only committed one
-# until the pack loader and the bundled core pack exist.
+# Plugin manifests to document. The example plugin is the only committed one
+# until the plugin loader and the bundled core plugin exist.
 PACKS_DIR = ROOT / "packages" / "slopvac-plugin" / "examples"
 CONTRACT_DIR = ROOT / "docs" / "contract"
 SITE_CONFIG = ROOT / "docs" / "site.toml"

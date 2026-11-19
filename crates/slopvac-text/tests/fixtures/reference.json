@@ -1509,14 +1509,14 @@
   ]
  },
  {
-  "text": "[![CI](https://github.com/srobroek/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/srobroek/slopvac/actions/workflows/test.yml)\n[![Security](https://github.com/srobroek/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/srobroek/slopvac/actions/workflows/security.yml)\n[![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)",
+  "text": "[![CI](https://github.com/slopvac/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/slopvac/slopvac/actions/workflows/test.yml)\n[![Security](https://github.com/slopvac/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/slopvac/slopvac/actions/workflows/security.yml)\n[![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)",
   "words": 7,
   "text_type": "descriptive",
   "sentences": [
    {
-    "text": "[![CI](https://github.com/srobroek/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/srobroek/slopvac/actions/workflows/test.yml)\n[![Security](https://github.com/srobroek/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/srobroek/slopvac/actions/workflows/security.yml)\n[![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)",
+    "text": "[![CI](https://github.com/slopvac/slopvac/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/slopvac/slopvac/actions/workflows/test.yml)\n[![Security](https://github.com/slopvac/slopvac/actions/workflows/security.yml/badge.svg?branch=main&event=schedule)](https://github.com/slopvac/slopvac/actions/workflows/security.yml)\n[![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)",
     "start": 0,
-    "end": 447,
+    "end": 443,
     "word_count": 7,
     "text_type": "descriptive"
    }
@@ -1845,12 +1845,12 @@
   ]
  },
  {
-  "text": "The linter ships 167 checked rules across 26 categories. The catalog also\ncarries 68 judgment rules that lint never reports. The\n[writing guidance](#writing-guidance) and [semantic review](#semantic-review)\napply them.",
+  "text": "The linter ships 169 checked rules across 26 categories. The catalog also\ncarries 68 judgment rules that lint never reports. The\n[writing guidance](#writing-guidance) and [semantic review](#semantic-review)\napply them.",
   "words": 30,
   "text_type": "descriptive",
   "sentences": [
    {
-    "text": "The linter ships 167 checked rules across 26 categories.",
+    "text": "The linter ships 169 checked rules across 26 categories.",
     "start": 0,
     "end": 56,
     "word_count": 9,
@@ -2293,29 +2293,29 @@
   ]
  },
  {
-  "text": "Use the `slopvac-strict` hook for the strict profile. Install Vale on the machine\nrunning pre-commit. The `slopvac-no-vale` hook leaves selected Vale-backed checks\nunchecked and returns exit 2.",
-  "words": 27,
-  "text_type": "procedural",
+  "text": "The hook runs the `slopvac` binary on your `PATH`. Set the style in `slopvac.toml`; the 3.0 CLI has no `--profile` or `--style` option. Setup for prek, lefthook, and hk is in [docs/hooks.md](docs/hooks.md).",
+  "words": 33,
+  "text_type": "descriptive",
   "sentences": [
    {
-    "text": "Use the `slopvac-strict` hook for the strict profile.",
+    "text": "The hook runs the `slopvac` binary on your `PATH`.",
     "start": 0,
-    "end": 53,
-    "word_count": 8,
+    "end": 50,
+    "word_count": 9,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Set the style in `slopvac.toml`; the 3.0 CLI has no `--profile` or `--style` option.",
+    "start": 51,
+    "end": 135,
+    "word_count": 14,
     "text_type": "procedural"
    },
    {
-    "text": "Install Vale on the machine\nrunning pre-commit.",
-    "start": 54,
-    "end": 101,
-    "word_count": 7,
-    "text_type": "procedural"
-   },
-   {
-    "text": "The `slopvac-no-vale` hook leaves selected Vale-backed checks\nunchecked and returns exit 2.",
-    "start": 102,
-    "end": 193,
-    "word_count": 12,
+    "text": "Setup for prek, lefthook, and hk is in [docs/hooks.md](docs/hooks.md).",
+    "start": 136,
+    "end": 206,
+    "word_count": 10,
     "text_type": "descriptive"
    }
   ]
@@ -2461,7 +2461,7 @@
   ]
  },
  {
-  "text": "Lint is deterministic, and the [semantic review](#semantic-review) is a\nchecklist that an agent applies. A separate development track evaluates optional **typed judge models** for semantic decisions. Candidate backends include\nhosted [Jev](https://www.typesafeai.org/jev) and local/open models such as\n[Laya](https://github.com/NandhaKishorM/laya),\n[Nimble](https://github.com/bespokelabsai/nimble), and\n[Kev](https://github.com/jaredpalmer/kev), plus the\n[SemIf](https://github.com/theoleecj/semif) direct-logit scoring approach.\nThe design appears in\n[issue #162](https://github.com/srobroek/slopvac/issues/162).",
+  "text": "Lint is deterministic, and the [semantic review](#semantic-review) is a\nchecklist that an agent applies. A separate development track evaluates optional **typed judge models** for semantic decisions. Candidate backends include\nhosted [Jev](https://www.typesafeai.org/jev) and local/open models such as\n[Laya](https://github.com/NandhaKishorM/laya),\n[Nimble](https://github.com/bespokelabsai/nimble), and\n[Kev](https://github.com/jaredpalmer/kev), plus the\n[SemIf](https://github.com/theoleecj/semif) direct-logit scoring approach.\nThe design appears in\n[issue #162](https://github.com/slopvac/slopvac/issues/162).",
   "words": 59,
   "text_type": "descriptive",
   "sentences": [
@@ -2487,9 +2487,9 @@
     "text_type": "descriptive"
    },
    {
-    "text": "The design appears in\n[issue #162](https://github.com/srobroek/slopvac/issues/162).",
+    "text": "The design appears in\n[issue #162](https://github.com/slopvac/slopvac/issues/162).",
     "start": 531,
-    "end": 614,
+    "end": 613,
     "word_count": 7,
     "text_type": "descriptive"
    }
@@ -3273,42 +3273,35 @@
   ]
  },
  {
-  "text": "- Dependabot only: remove `renovate.json`. Auto-merge patch updates and security updates with `dependabot/fetch-metadata` and the release app token. A weekly workflow checks the mise and Vale pins.\n- Triage the open PRs. Close #245, #246, and #191 without merging: 3.0 removes Vale and ships a Rust binary.\n- Adopt reviewdog in this repository, with a read-only lint job and a separate reporting job. Until 3.0 adds rdjsonl, reviewdog reads the 2.x SARIF output.",
-  "words": 71,
+  "text": "- Renovate for version and security updates, with Dependabot raising alerts only (decision 28 in [0001](0001-slopvac-3-architecture.md) supersedes the earlier Dependabot-only plan). Once the CI gate passes, Renovate auto-merges minor, patch and digest updates.\n- Triage the open PRs. Close #245, #246, and #191 without merging: 3.0 removes Vale and ships a Rust binary.\n- Adopt reviewdog in this repository, with a read-only lint job and a separate reporting job. Until 3.0 adds rdjsonl, reviewdog reads the 2.x SARIF output.",
+  "words": 75,
   "text_type": "descriptive",
   "sentences": [
    {
-    "text": "- Dependabot only: remove `renovate.json`.",
+    "text": "- Renovate for version and security updates, with Dependabot raising alerts only (decision 28 in [0001](0001-slopvac-3-architecture.md) supersedes the earlier Dependabot-only plan).",
     "start": 0,
-    "end": 42,
-    "word_count": 4,
+    "end": 181,
+    "word_count": 20,
     "text_type": "descriptive"
    },
    {
-    "text": "Auto-merge patch updates and security updates with `dependabot/fetch-metadata` and the release app token.",
-    "start": 43,
-    "end": 148,
-    "word_count": 13,
-    "text_type": "descriptive"
-   },
-   {
-    "text": "A weekly workflow checks the mise and Vale pins.\n- Triage the open PRs.",
-    "start": 149,
-    "end": 220,
-    "word_count": 13,
+    "text": "Once the CI gate passes, Renovate auto-merges minor, patch and digest updates.\n- Triage the open PRs.",
+    "start": 182,
+    "end": 283,
+    "word_count": 16,
     "text_type": "descriptive"
    },
    {
     "text": "Close #245, #246, and #191 without merging: 3.0 removes Vale and ships a Rust binary.\n- Adopt reviewdog in this repository, with a read-only lint job and a separate reporting job.",
-    "start": 221,
-    "end": 400,
+    "start": 284,
+    "end": 463,
     "word_count": 30,
     "text_type": "procedural"
    },
    {
     "text": "Until 3.0 adds rdjsonl, reviewdog reads the 2.x SARIF output.",
-    "start": 401,
-    "end": 462,
+    "start": 464,
+    "end": 525,
     "word_count": 11,
     "text_type": "descriptive"
    }
@@ -3399,70 +3392,70 @@
   ]
  },
  {
-  "text": "- **IDs:** namespaced as `<plugin>:<id>`. Built-ins live in `core`. Short names still work where they are unambiguous.\n- **Rules:**\n  - A typed `match:` block (`tokens`, `pattern`, `substitution`, `metric`, `structure`, `capitalization`, `vocabulary`, `judgement`).\n  - Fields for `exclude_blocks`, `contexts`, `applies_to`, and named exception detectors.\n  - Test cases in the `vale test` style: `input`, `want`, `contains`, `absent`.\n  - `tiers` is removed.\n- **Profiles:** set gate thresholds and a severity shift only.\n- **Styles:** ordered presets with `extends` and declared `conflicts`. The last listed style wins.\n- **Genres:** data files with detection signals. A content type such as `how-to` is a genre that extends a genre. Diátaxis types are consumer content types.\n- **Context tags:** `{kind, span, confidence, evidence}` from registered taggers. Taggers are declarative in data packs and code in plugins.\n- **Terms:** `.slopvac/terms.toml`. Each term needs only `term`. `variants` and `kind` are optional.\n- **Config:**\n  - `slopvac.toml` with `schema_version = 3`, `extends`, `styles`, `packs`, `plugins`, `[[genres]]`, `[frontmatter]` policy, `[vale]` removed, `[guidance] level`, `[thresholds]`, and `[[overrides]]`.\n  - The nearest config to each file applies.\n  - Front matter is an allowed-fields layer under a `slopvac:` key.\n- **Lint JSON v3:** `schema_version`, `notices`, per-document `genre` and config sources, and per-finding `pack`, `contexts`, and `end_line`.\n- **Output formats:** `text`, `json`, `sarif`, `rdjsonl`, `codeclimate`, `junit`, `checkstyle`, `markdown`, `html`, and LSP diagnostics. Each rule has a stable documentation page that the formats link to.",
-  "words": 194,
+  "text": "- **IDs:** namespaced as `<plugin>:<id>`. Built-ins live in `core`. Short names still work where they are unambiguous.\n- **Rules:**\n  - A typed `match:` block (`tokens`, `pattern`, `substitution`, `metric`, `structure`, `capitalization`, `vocabulary`, `judgement`).\n  - Fields for `exclude_blocks`, `contexts`, `applies_to`, and named exception detectors.\n  - Test cases in the `vale test` style: `input`, `want`, `contains`, `absent`.\n  - `tiers` is removed.\n- **Profiles:** set gate thresholds and a severity shift only.\n- **Styles:** ordered presets with `extends` and declared `conflicts`. The last listed style wins.\n- **Genres:** data files with detection signals. A content type such as `how-to` is a genre that extends a genre. Diátaxis types are consumer content types.\n- **Context tags:** `{kind, span, confidence, evidence}` from registered taggers. Taggers are declarative in data plugins and code in plugins.\n- **Terms:** `.slopvac/terms.toml`. Each term needs only `term`. `variants` and `kind` are optional.\n- **Config:**\n  - `slopvac.toml` with `schema_version = 3`, `extends`, `styles`, `plugins`, `[[genres]]`, `[frontmatter]` policy, `[vale]` removed, `[guidance] level`, `[thresholds]`, and `[[overrides]]`.\n  - The nearest config to each file applies.\n  - Front matter is an allowed-fields layer under a `slopvac:` key.\n- **Lint JSON v3:** `schema_version`, `notices`, per-document `genre` and config sources, and per-finding `pack`, `contexts`, and `end_line`.\n- **Output formats:** `text`, `json`, `sarif`, `rdjsonl`, `codeclimate`, `junit`, `checkstyle`, `markdown`, `html`, and LSP diagnostics. Each rule has a stable documentation page that the formats link to.",
+  "words": 193,
   "text_type": "descriptive",
   "sentences": [
    {
     "text": "- **IDs:** namespaced as `<plugin>:<id>`.",
     "start": 0,
-    "end": 39,
+    "end": 41,
     "word_count": 4,
     "text_type": "descriptive"
    },
    {
     "text": "Built-ins live in `core`.",
-    "start": 40,
-    "end": 65,
+    "start": 42,
+    "end": 67,
     "word_count": 4,
     "text_type": "descriptive"
    },
    {
     "text": "Short names still work where they are unambiguous.\n- **Rules:**\n  - A typed `match:` block (`tokens`, `pattern`, `substitution`, `metric`, `structure`, `capitalization`, `vocabulary`, `judgement`).\n  - Fields for `exclude_blocks`, `contexts`, `applies_to`, and named exception detectors.\n  - Test cases in the `vale test` style: `input`, `want`, `contains`, `absent`.\n  - `tiers` is removed.\n- **Profiles:** set gate thresholds and a severity shift only.\n- **Styles:** ordered presets with `extends` and declared `conflicts`.",
-    "start": 66,
-    "end": 591,
+    "start": 68,
+    "end": 593,
     "word_count": 53,
     "text_type": "descriptive"
    },
    {
     "text": "The last listed style wins.\n- **Genres:** data files with detection signals.",
-    "start": 592,
-    "end": 668,
+    "start": 594,
+    "end": 670,
     "word_count": 11,
     "text_type": "descriptive"
    },
    {
     "text": "A content type such as `how-to` is a genre that extends a genre.",
-    "start": 669,
-    "end": 733,
+    "start": 671,
+    "end": 735,
     "word_count": 13,
     "text_type": "descriptive"
    },
    {
     "text": "Diátaxis types are consumer content types.\n- **Context tags:** `{kind, span, confidence, evidence}` from registered taggers.",
-    "start": 734,
-    "end": 859,
+    "start": 736,
+    "end": 861,
     "word_count": 12,
     "text_type": "descriptive"
    },
    {
-    "text": "Taggers are declarative in data packs and code in plugins.\n- **Terms:** `.slopvac/terms.toml`.",
-    "start": 860,
-    "end": 954,
+    "text": "Taggers are declarative in data plugins and code in plugins.\n- **Terms:** `.slopvac/terms.toml`.",
+    "start": 862,
+    "end": 958,
     "word_count": 12,
     "text_type": "descriptive"
    },
    {
-    "text": "Each term needs only `term`. `variants` and `kind` are optional.\n- **Config:**\n  - `slopvac.toml` with `schema_version = 3`, `extends`, `styles`, `packs`, `plugins`, `[[genres]]`, `[frontmatter]` policy, `[vale]` removed, `[guidance] level`, `[thresholds]`, and `[[overrides]]`.\n  - The nearest config to each file applies.\n  - Front matter is an allowed-fields layer under a `slopvac:` key.\n- **Lint JSON v3:** `schema_version`, `notices`, per-document `genre` and config sources, and per-finding `pack`, `contexts`, and `end_line`.\n- **Output formats:** `text`, `json`, `sarif`, `rdjsonl`, `codeclimate`, `junit`, `checkstyle`, `markdown`, `html`, and LSP diagnostics.",
-    "start": 955,
-    "end": 1625,
-    "word_count": 73,
+    "text": "Each term needs only `term`. `variants` and `kind` are optional.\n- **Config:**\n  - `slopvac.toml` with `schema_version = 3`, `extends`, `styles`, `plugins`, `[[genres]]`, `[frontmatter]` policy, `[vale]` removed, `[guidance] level`, `[thresholds]`, and `[[overrides]]`.\n  - The nearest config to each file applies.\n  - Front matter is an allowed-fields layer under a `slopvac:` key.\n- **Lint JSON v3:** `schema_version`, `notices`, per-document `genre` and config sources, and per-finding `pack`, `contexts`, and `end_line`.\n- **Output formats:** `text`, `json`, `sarif`, `rdjsonl`, `codeclimate`, `junit`, `checkstyle`, `markdown`, `html`, and LSP diagnostics.",
+    "start": 959,
+    "end": 1620,
+    "word_count": 72,
     "text_type": "descriptive"
    },
    {
     "text": "Each rule has a stable documentation page that the formats link to.",
-    "start": 1626,
-    "end": 1693,
+    "start": 1621,
+    "end": 1688,
     "word_count": 12,
     "text_type": "descriptive"
    }
@@ -3483,70 +3476,70 @@
   ]
  },
  {
-  "text": "- **Data packs** hold rules, styles, genres, terms, declarative taggers, and prime snippets. They contain no code. A `slopvac-pack.toml` manifest declares `slopvac_api`.\n- **Code plugins** speak JSON-RPC 2.0 over stdio. Framing follows LSP. The `initialize` handshake exchanges capabilities. A Python SDK ships with them, and a conformance suite tests them.\n  - Hook points: taggers, extractors, reporters, harness recipes, fixers, scorers, and model providers.\n  - Python plugins run in their own environment.\n- **Distribution:** OCI artifacts on GHCR or any registry is the primary channel. Release archives, local folders, and git pinned to a commit also work.\n- **Lockfile:** `.slopvac/packs.lock` records the version, source, and digest.\n- **Signatures:** minisign signatures ship as manifest layers. Publisher keys are listed in the index.\n- **Trust:**\n  - The plugin host refuses to load an untrusted code plugin. slopvac lists each one with the command that trusts it.\n  - `slopvac plugins trust` records trust per content hash. Trust is an explicit command, not a prompt.\n  - Agents and CI never trust on the user's behalf.\n- **Commands:** `plugins sync`, `outdated`, `update`, `status`, `trust`, and `search`, which reads an index that a job rebuilds automatically. `pack new`, `validate`, `test`, and `publish` complete the set.",
+  "text": "- **Data plugins** hold rules, styles, genres, terms, declarative taggers, and prime snippets. They contain no code. A `slopvac-plugin.toml` manifest declares `slopvac_api`.\n- **Code plugins** speak JSON-RPC 2.0 over stdio. Framing follows LSP. The `initialize` handshake exchanges capabilities. A Python SDK ships with them, and a conformance suite tests them.\n  - Hook points: taggers, extractors, reporters, harness recipes, fixers, scorers, and model providers.\n  - Python plugins run in their own environment.\n- **Distribution:** OCI artifacts on GHCR or any registry is the primary channel. Release archives, local folders, and git pinned to a commit also work.\n- **Lockfile:** `.slopvac/plugins.lock` records the version, source, and digest.\n- **Signatures:** minisign signatures ship as manifest layers. Publisher keys are listed in the index.\n- **Trust:**\n  - The plugin host refuses to load an untrusted code plugin. slopvac lists each one with the command that trusts it.\n  - `slopvac plugins trust` records trust per content hash. Trust is an explicit command, not a prompt.\n  - Agents and CI never trust on the user's behalf.\n- **Commands:** `plugins sync`, `outdated`, `update`, `status`, `trust`, and `search`, which reads an index that a job rebuilds automatically. `plugins new`, `validate`, `test`, and `publish` complete the set.",
   "words": 178,
   "text_type": "descriptive",
   "sentences": [
    {
-    "text": "- **Data packs** hold rules, styles, genres, terms, declarative taggers, and prime snippets.",
+    "text": "- **Data plugins** hold rules, styles, genres, terms, declarative taggers, and prime snippets.",
     "start": 0,
-    "end": 92,
+    "end": 94,
     "word_count": 12,
     "text_type": "descriptive"
    },
    {
     "text": "They contain no code.",
-    "start": 93,
-    "end": 114,
+    "start": 95,
+    "end": 116,
     "word_count": 4,
     "text_type": "descriptive"
    },
    {
-    "text": "A `slopvac-pack.toml` manifest declares `slopvac_api`.\n- **Code plugins** speak JSON-RPC 2.0 over stdio.",
-    "start": 115,
-    "end": 219,
+    "text": "A `slopvac-plugin.toml` manifest declares `slopvac_api`.\n- **Code plugins** speak JSON-RPC 2.0 over stdio.",
+    "start": 117,
+    "end": 223,
     "word_count": 12,
     "text_type": "descriptive"
    },
    {
     "text": "Framing follows LSP.",
-    "start": 220,
-    "end": 240,
+    "start": 224,
+    "end": 244,
     "word_count": 3,
     "text_type": "descriptive"
    },
    {
     "text": "The `initialize` handshake exchanges capabilities.",
-    "start": 241,
-    "end": 291,
+    "start": 245,
+    "end": 295,
     "word_count": 5,
     "text_type": "descriptive"
    },
    {
     "text": "A Python SDK ships with them, and a conformance suite tests them.\n  - Hook points: taggers, extractors, reporters, harness recipes, fixers, scorers, and model providers.\n  - Python plugins run in their own environment.\n- **Distribution:** OCI artifacts on GHCR or any registry is the primary channel.",
-    "start": 292,
-    "end": 592,
+    "start": 296,
+    "end": 596,
     "word_count": 41,
     "text_type": "descriptive"
    },
    {
-    "text": "Release archives, local folders, and git pinned to a commit also work.\n- **Lockfile:** `.slopvac/packs.lock` records the version, source, and digest.\n- **Signatures:** minisign signatures ship as manifest layers.",
-    "start": 593,
-    "end": 805,
+    "text": "Release archives, local folders, and git pinned to a commit also work.\n- **Lockfile:** `.slopvac/plugins.lock` records the version, source, and digest.\n- **Signatures:** minisign signatures ship as manifest layers.",
+    "start": 597,
+    "end": 811,
     "word_count": 27,
     "text_type": "procedural"
    },
    {
     "text": "Publisher keys are listed in the index.\n- **Trust:**\n  - The plugin host refuses to load an untrusted code plugin. slopvac lists each one with the command that trusts it.\n  - `slopvac plugins trust` records trust per content hash.",
-    "start": 806,
-    "end": 1036,
+    "start": 812,
+    "end": 1042,
     "word_count": 34,
     "text_type": "descriptive"
    },
    {
-    "text": "Trust is an explicit command, not a prompt.\n  - Agents and CI never trust on the user's behalf.\n- **Commands:** `plugins sync`, `outdated`, `update`, `status`, `trust`, and `search`, which reads an index that a job rebuilds automatically. `pack new`, `validate`, `test`, and `publish` complete the set.",
-    "start": 1037,
-    "end": 1339,
+    "text": "Trust is an explicit command, not a prompt.\n  - Agents and CI never trust on the user's behalf.\n- **Commands:** `plugins sync`, `outdated`, `update`, `status`, `trust`, and `search`, which reads an index that a job rebuilds automatically. `plugins new`, `validate`, `test`, and `publish` complete the set.",
+    "start": 1043,
+    "end": 1348,
     "word_count": 40,
     "text_type": "descriptive"
    }
@@ -3595,56 +3588,77 @@
   ]
  },
  {
-  "text": "- cargo-dist builds release archives, installers, and a Homebrew tap (`srobroek/homebrew-tap`).\n- maturin wheels keep `uvx slopvac` as the documented default.\n- Release candidates are `rc/vX.Y.Z-rc.N` tags cut on demand, with a provenance gate before stable. In 2.x, candidates build from each update to the release PR branch, wait for approval in the `pypi` environment, and get no tag or changelog entry.\n- Releases carry minisign signatures. GitHub attestations, an SBOM, and an auditable binary come with each release.\n- `slopvac self update` runs for installs made by our installer. Other installs print the matching upgrade command.\n- The GitHub Action uses reviewdog with `reporter: auto`, or uploads SARIF. Its own annotation code is removed.\n- MegaLinter and Trunk descriptors follow the release.",
-  "words": 109,
+  "text": "- cargo-dist builds release archives, installers, and a Homebrew tap (`slopvac/homebrew-tap`).\n- maturin wheels keep `uvx slopvac` as the documented default.\n- Platforms: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl). Decided 2026-11-16: 3.0 has no native Windows build. Windows users run the Linux build under WSL, and native Windows is a 3.x feature (decision 26 of the architecture record). This supersedes the earlier Windows target and PowerShell installer.\n- Release candidates are `rc/vX.Y.Z-rc.N` tags cut on demand, with a provenance gate before stable. In 2.x, candidates build from each update to the release PR branch, wait for approval in the `pypi` environment, and get no tag or changelog entry.\n- Releases carry minisign signatures. GitHub attestations, an SBOM, and an auditable binary come with each release.\n- `slopvac self update` runs for installs made by our installer. Other installs print the matching upgrade command.\n- The GitHub Action uses reviewdog with `reporter: auto`, or uploads SARIF. Its own annotation code is removed.\n- MegaLinter and Trunk descriptors follow the release.",
+  "words": 151,
   "text_type": "descriptive",
   "sentences": [
    {
-    "text": "- cargo-dist builds release archives, installers, and a Homebrew tap (`srobroek/homebrew-tap`).\n- maturin wheels keep `uvx slopvac` as the documented default.\n- Release candidates are `rc/vX.Y.Z-rc.N` tags cut on demand, with a provenance gate before stable.",
+    "text": "- cargo-dist builds release archives, installers, and a Homebrew tap (`slopvac/homebrew-tap`).\n- maturin wheels keep `uvx slopvac` as the documented default.\n- Platforms: macOS (arm64, x86_64) and Linux (arm64 and x86_64 glibc, x86_64 musl).",
     "start": 0,
-    "end": 258,
-    "word_count": 32,
+    "end": 241,
+    "word_count": 24,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Decided 2026-11-16: 3.0 has no native Windows build.",
+    "start": 242,
+    "end": 294,
+    "word_count": 10,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "Windows users run the Linux build under WSL, and native Windows is a 3.x feature (decision 26 of the architecture record).",
+    "start": 295,
+    "end": 417,
+    "word_count": 17,
+    "text_type": "descriptive"
+   },
+   {
+    "text": "This supersedes the earlier Windows target and PowerShell installer.\n- Release candidates are `rc/vX.Y.Z-rc.N` tags cut on demand, with a provenance gate before stable.",
+    "start": 418,
+    "end": 586,
+    "word_count": 23,
     "text_type": "descriptive"
    },
    {
     "text": "In 2.x, candidates build from each update to the release PR branch, wait for approval in the `pypi` environment, and get no tag or changelog entry.\n- Releases carry minisign signatures.",
-    "start": 259,
-    "end": 444,
+    "start": 587,
+    "end": 772,
     "word_count": 31,
     "text_type": "descriptive"
    },
    {
     "text": "GitHub attestations, an SBOM, and an auditable binary come with each release.\n- `slopvac self update` runs for installs made by our installer.",
-    "start": 445,
-    "end": 587,
+    "start": 773,
+    "end": 915,
     "word_count": 20,
     "text_type": "descriptive"
    },
    {
     "text": "Other installs print the matching upgrade command.\n- The GitHub Action uses reviewdog with `reporter: auto`, or uploads SARIF.",
-    "start": 588,
-    "end": 714,
+    "start": 916,
+    "end": 1042,
     "word_count": 15,
     "text_type": "descriptive"
    },
    {
     "text": "Its own annotation code is removed.\n- MegaLinter and Trunk descriptors follow the release.",
-    "start": 715,
-    "end": 805,
+    "start": 1043,
+    "end": 1133,
     "word_count": 11,
     "text_type": "descriptive"
    }
   ]
  },
  {
-  "text": "- Tests: nextest, `cargo test --doc`, insta, and snapbox or trycmd.\n- Lints: clippy with workspace lints, and rustfmt.\n- Hygiene: cargo-deny, cargo-shear, typos, cargo-sort, Swatinem/rust-cache, and Dependabot for cargo.\n- Hooks: prek.\n- Added later: cargo-llvm-cov, cargo-mutants on the diff, fuzzing of parsers, CodeQL, gungraun benchmarks, and an MSRV check.",
+  "text": "- Tests: nextest, `cargo test --doc`, insta, and snapbox or trycmd.\n- Lints: clippy with workspace lints, and rustfmt.\n- Hygiene: cargo-deny, cargo-shear, typos, cargo-sort, Swatinem/rust-cache, and Renovate for cargo.\n- Hooks: prek.\n- Added later: cargo-llvm-cov, cargo-mutants on the diff, fuzzing of parsers, CodeQL, gungraun benchmarks, and an MSRV check.",
   "words": 44,
   "text_type": "descriptive",
   "sentences": [
    {
-    "text": "- Tests: nextest, `cargo test --doc`, insta, and snapbox or trycmd.\n- Lints: clippy with workspace lints, and rustfmt.\n- Hygiene: cargo-deny, cargo-shear, typos, cargo-sort, Swatinem/rust-cache, and Dependabot for cargo.\n- Hooks: prek.\n- Added later: cargo-llvm-cov, cargo-mutants on the diff, fuzzing of parsers, CodeQL, gungraun benchmarks, and an MSRV check.",
+    "text": "- Tests: nextest, `cargo test --doc`, insta, and snapbox or trycmd.\n- Lints: clippy with workspace lints, and rustfmt.\n- Hygiene: cargo-deny, cargo-shear, typos, cargo-sort, Swatinem/rust-cache, and Renovate for cargo.\n- Hooks: prek.\n- Added later: cargo-llvm-cov, cargo-mutants on the diff, fuzzing of parsers, CodeQL, gungraun benchmarks, and an MSRV check.",
     "start": 0,
-    "end": 361,
+    "end": 359,
     "word_count": 44,
     "text_type": "descriptive"
    }
@@ -3665,28 +3679,28 @@
   ]
  },
  {
-  "text": "- API schemas from the Rust types: lint JSON, config, front matter, pack manifest, rules, styles, genres, terms, lockfile, and plugin protocol messages. Each schema is versioned per API major and published at a stable URL.\n- One page per rule, with examples, exceptions, contexts, severity per profile and style, and provenance. Output formats link to these pages.\n- One page per style preset and per genre or content type.\n- The plugin protocol reference, the hook points, the pack manifest reference, and a page per pack.\n- Rust API docs: crate docs in every `lib.rs`, `missing_docs` on library crates, rustdoc with warnings denied, and docs.rs for published crates.",
+  "text": "- API schemas from the Rust types: lint JSON, config, front matter, plugin manifest, rules, styles, genres, terms, lockfile, and plugin protocol messages. Each schema is versioned per API major and published at a stable URL.\n- One page per rule, with examples, exceptions, contexts, severity per profile and style, and provenance. Output formats link to these pages.\n- One page per style preset and per genre or content type.\n- The plugin protocol reference, the hook points, the plugin manifest reference, and a page per plugin.\n- Rust API docs: crate docs in every `lib.rs`, `missing_docs` on library crates, rustdoc with warnings denied, and docs.rs for published crates.",
   "words": 103,
   "text_type": "descriptive",
   "sentences": [
    {
-    "text": "- API schemas from the Rust types: lint JSON, config, front matter, pack manifest, rules, styles, genres, terms, lockfile, and plugin protocol messages.",
+    "text": "- API schemas from the Rust types: lint JSON, config, front matter, plugin manifest, rules, styles, genres, terms, lockfile, and plugin protocol messages.",
     "start": 0,
-    "end": 152,
+    "end": 154,
     "word_count": 22,
     "text_type": "descriptive"
    },
    {
     "text": "Each schema is versioned per API major and published at a stable URL.\n- One page per rule, with examples, exceptions, contexts, severity per profile and style, and provenance.",
-    "start": 153,
-    "end": 328,
+    "start": 155,
+    "end": 330,
     "word_count": 28,
     "text_type": "descriptive"
    },
    {
-    "text": "Output formats link to these pages.\n- One page per style preset and per genre or content type.\n- The plugin protocol reference, the hook points, the pack manifest reference, and a page per pack.\n- Rust API docs: crate docs in every `lib.rs`, `missing_docs` on library crates, rustdoc with warnings denied, and docs.rs for published crates.",
-    "start": 329,
-    "end": 668,
+    "text": "Output formats link to these pages.\n- One page per style preset and per genre or content type.\n- The plugin protocol reference, the hook points, the plugin manifest reference, and a page per plugin.\n- Rust API docs: crate docs in every `lib.rs`, `missing_docs` on library crates, rustdoc with warnings denied, and docs.rs for published crates.",
+    "start": 331,
+    "end": 674,
     "word_count": 53,
     "text_type": "descriptive"
    }
@@ -3840,8 +3854,8 @@
   ]
  },
  {
-  "text": "- **Compatibility:** a generated matrix of every 2.x command, flag, and behavior, with a disposition (preserve, migrate, or remove) and an owning bead. Installed-binary tests cover the preserved rows. stdin, `--diff-working-tree`, `--fix`, `reference`, `onboard`, `init`, `setup --remove`, and the published pre-commit hook IDs each have their own bead.\n- **Golden suite modes:** reference parity pinned to a Python commit, Vale 3.24, and corpus hashes; 3.0 default-policy tests with reviewed deltas; and migration-preservation tests. The 2.x profiles have per-rule dispositions, so a separate bead maps them onto the 3.0 model.\n- **Plugin security:** a threat model and an independent review before the plugin host and OCI client close. The review covers what the signature covers, publisher-key authority, key rotation, extraction limits, subprocess containment, and regex resource limits.\n- **PCRE2 build policy:** pin version 10.43 or later, test JIT and non-JIT across Windows, macOS, glibc, and musl, and prove a match-limit mechanism.\n- **POS tagger:** `harper-brill` failed its spike (`slopvac-8l4.3.10`): noun agreement 3.8% and 10.9% of words untagged. A Rust port of the `prose` tagger passed, with 99.1% exact tag match. Only the opt-in vocabulary blocklist check depends on POS. The binary embeds the model under CC BY-SA 4.0 with attribution and a share-alike notice for the model file only; the code keeps the project licence (`slopvac-8l4.3.23`).\n- **Accuracy gate:** recall on seeded and adjudicated positives, false-positive rates on clean controls, and a held-out set, as well as precision.\n- **Position contract:** byte spans, line and column bases, and per-format conversions, including LSP UTF-16. Agree these before fixes and suggestions ship.\n- **RST:** stays in core through a bundled docutils adapter. AsciiDoc is new and experimental.\n- **Performance:** budgets for the installed binary, measured before they gate releases.\n- **Policies:** network and privacy, accessibility, and API lifecycle. Breaking changes happen at major versions, with no deprecation windows.\n- **Release readiness:** one gate bead that the stable release depends on, separate from building candidates.\n- **Interim status:** no 2.x release ships, so the issues get status and workarounds now.",
-  "words": 320,
+  "text": "- **Compatibility:** a generated matrix of every 2.x command, flag, and behavior, with a disposition (preserve, migrate, or remove) and an owning bead. Installed-binary tests cover the preserved rows. stdin, `--diff-working-tree`, `--fix`, `reference`, `onboard`, `init`, `setup --remove`, and the published pre-commit hook IDs each have their own bead.\n- **Golden suite modes:** reference parity pinned to a Python commit, Vale 3.24, and corpus hashes; 3.0 default-policy tests with reviewed deltas; and migration-preservation tests. The 2.x profiles have per-rule dispositions, so a separate bead maps them onto the 3.0 model.\n- **Plugin security:** a threat model and an independent review before the plugin host and OCI client close. The review covers what the signature covers, publisher-key authority, key rotation, extraction limits, subprocess containment, and regex resource limits.\n- **PCRE2 build policy:** pin version 10.43 or later, test JIT and non-JIT across macOS, glibc, and musl, and prove a match-limit mechanism.\n- **POS tagger:** `harper-brill` failed its spike (`slopvac-8l4.3.10`): noun agreement 3.8% and 10.9% of words untagged. A Rust port of the `prose` tagger passed, with 99.1% exact tag match. Only the opt-in vocabulary blocklist check depends on POS. The binary embeds the model under CC BY-SA 4.0 with attribution and a share-alike notice for the model file only; the code keeps the project licence (`slopvac-8l4.3.23`).\n- **Accuracy gate:** recall on seeded and adjudicated positives, false-positive rates on clean controls, and a held-out set, as well as precision.\n- **Position contract:** byte spans, line and column bases, and per-format conversions, including LSP UTF-16. Agree these before fixes and suggestions ship.\n- **RST:** stays in core through a bundled docutils adapter. AsciiDoc is new and experimental.\n- **Performance:** budgets for the installed binary, measured before they gate releases.\n- **Policies:** network and privacy, accessibility, and API lifecycle. Breaking changes happen at major versions, with no deprecation windows.\n- **Release readiness:** one gate bead that the stable release depends on, separate from building candidates.\n- **Interim status:** no 2.x release ships, so the issues get status and workarounds now.",
+  "words": 319,
   "text_type": "descriptive",
   "sentences": [
    {
@@ -3866,51 +3880,51 @@
     "text_type": "descriptive"
    },
    {
-    "text": "The review covers what the signature covers, publisher-key authority, key rotation, extraction limits, subprocess containment, and regex resource limits.\n- **PCRE2 build policy:** pin version 10.43 or later, test JIT and non-JIT across Windows, macOS, glibc, and musl, and prove a match-limit mechanism.\n- **POS tagger:** `harper-brill` failed its spike (`slopvac-8l4.3.10`): noun agreement 3.8% and 10.9% of words untagged.",
+    "text": "The review covers what the signature covers, publisher-key authority, key rotation, extraction limits, subprocess containment, and regex resource limits.\n- **PCRE2 build policy:** pin version 10.43 or later, test JIT and non-JIT across macOS, glibc, and musl, and prove a match-limit mechanism.\n- **POS tagger:** `harper-brill` failed its spike (`slopvac-8l4.3.10`): noun agreement 3.8% and 10.9% of words untagged.",
     "start": 738,
-    "end": 1162,
-    "word_count": 57,
+    "end": 1153,
+    "word_count": 56,
     "text_type": "descriptive"
    },
    {
     "text": "A Rust port of the `prose` tagger passed, with 99.1% exact tag match.",
-    "start": 1163,
-    "end": 1232,
+    "start": 1154,
+    "end": 1223,
     "word_count": 13,
     "text_type": "descriptive"
    },
    {
     "text": "Only the opt-in vocabulary blocklist check depends on POS.",
-    "start": 1233,
-    "end": 1291,
+    "start": 1224,
+    "end": 1282,
     "word_count": 9,
     "text_type": "descriptive"
    },
    {
     "text": "The binary embeds the model under CC BY-SA 4.0 with attribution and a share-alike notice for the model file only; the code keeps the project licence (`slopvac-8l4.3.23`).\n- **Accuracy gate:** recall on seeded and adjudicated positives, false-positive rates on clean controls, and a held-out set, as well as precision.\n- **Position contract:** byte spans, line and column bases, and per-format conversions, including LSP UTF-16.",
-    "start": 1292,
-    "end": 1719,
+    "start": 1283,
+    "end": 1710,
     "word_count": 60,
     "text_type": "descriptive"
    },
    {
     "text": "Agree these before fixes and suggestions ship.\n- **RST:** stays in core through a bundled docutils adapter.",
-    "start": 1720,
-    "end": 1827,
+    "start": 1711,
+    "end": 1818,
     "word_count": 16,
     "text_type": "descriptive"
    },
    {
     "text": "AsciiDoc is new and experimental.\n- **Performance:** budgets for the installed binary, measured before they gate releases.\n- **Policies:** network and privacy, accessibility, and API lifecycle.",
-    "start": 1828,
-    "end": 2021,
+    "start": 1819,
+    "end": 2012,
     "word_count": 24,
     "text_type": "descriptive"
    },
    {
     "text": "Breaking changes happen at major versions, with no deprecation windows.\n- **Release readiness:** one gate bead that the stable release depends on, separate from building candidates.\n- **Interim status:** no 2.x release ships, so the issues get status and workarounds now.",
-    "start": 2022,
-    "end": 2293,
+    "start": 2013,
+    "end": 2284,
     "word_count": 40,
     "text_type": "descriptive"
    }
@@ -3952,8 +3966,8 @@
   ]
  },
  {
-  "text": "1. Rule-data fixes in the Python reference, and repository hygiene.\n2. 3.0 contract: schemas, plugin protocol, golden suite, fixtures.\n3. Rust engine crates, behind the golden suite.\n4. Config, front matter, terms, genres, styles, and context tagger.\n5. CLI, output formats, LSP, prime, and setup.\n6. Packs and plugins: protocol, OCI, trust, signatures, and first-party packs.\n7. Diagrams, experimental.\n8. Distribution, release candidates, and migration.\n9. Evals and the precision ratchet. These start in step 2 and continue in parallel.",
-  "words": 79,
+  "text": "1. Rule-data fixes in the Python reference, and repository hygiene.\n2. 3.0 contract: schemas, plugin protocol, golden suite, fixtures.\n3. Rust engine crates, behind the golden suite.\n4. Config, front matter, terms, genres, styles, and context tagger.\n5. CLI, output formats, LSP, prime, and setup.\n6. Plugins: protocol, OCI, trust, signatures, and first-party plugins.\n7. Diagrams, experimental.\n8. Distribution, release candidates, and migration.\n9. Evals and the precision ratchet. These start in step 2 and continue in parallel.",
+  "words": 77,
   "text_type": "descriptive",
   "sentences": [
    {
@@ -4034,58 +4048,58 @@
     "text_type": "descriptive"
    },
    {
-    "text": "Packs and plugins: protocol, OCI, trust, signatures, and first-party packs.",
+    "text": "Plugins: protocol, OCI, trust, signatures, and first-party plugins.",
     "start": 301,
-    "end": 376,
-    "word_count": 10,
+    "end": 368,
+    "word_count": 8,
     "text_type": "descriptive"
    },
    {
     "text": "7.",
-    "start": 377,
-    "end": 379,
+    "start": 369,
+    "end": 371,
     "word_count": 0,
     "text_type": "descriptive"
    },
    {
     "text": "Diagrams, experimental.",
-    "start": 380,
-    "end": 403,
+    "start": 372,
+    "end": 395,
     "word_count": 2,
     "text_type": "descriptive"
    },
    {
     "text": "8.",
-    "start": 404,
-    "end": 406,
+    "start": 396,
+    "end": 398,
     "word_count": 0,
     "text_type": "descriptive"
    },
    {
     "text": "Distribution, release candidates, and migration.",
-    "start": 407,
-    "end": 455,
+    "start": 399,
+    "end": 447,
     "word_count": 5,
     "text_type": "descriptive"
    },
    {
     "text": "9.",
-    "start": 456,
-    "end": 458,
+    "start": 448,
+    "end": 450,
     "word_count": 0,
     "text_type": "descriptive"
    },
    {
     "text": "Evals and the precision ratchet.",
-    "start": 459,
-    "end": 491,
+    "start": 451,
+    "end": 483,
     "word_count": 5,
     "text_type": "descriptive"
    },
    {
     "text": "These start in step 2 and continue in parallel.",
-    "start": 492,
-    "end": 539,
+    "start": 484,
+    "end": 531,
     "word_count": 9,
     "text_type": "descriptive"
    }

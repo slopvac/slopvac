@@ -376,7 +376,10 @@ fn every_string_field_accepts_its_cap_and_refuses_one_more() {
     assert!(build_index([at_cap]).is_ok());
     let mut over = listing("acme", "a", "A", "d");
     over.source = with_source_len(2049);
-    assert_eq!(build_index([over]).unwrap_err().pointer, "/plugins/0/source");
+    assert_eq!(
+        build_index([over]).unwrap_err().pointer,
+        "/plugins/0/source"
+    );
 }
 
 #[test]

@@ -45,7 +45,7 @@ pub enum SyncError {
     /// A git source needs the plugin launcher and the running program did not
     /// install it ([`PluginError::LauncherNotInstalled`], code
     /// `launcher-not-installed`). No git process ran and nothing was installed.
-    #[error("pack `{id}`: {source}")]
+    #[error("plugin `{id}`: {source}")]
     Launcher {
         /// Pack id.
         id: PackId,

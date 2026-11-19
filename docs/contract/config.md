@@ -61,7 +61,7 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 Every resolved value carries a `ConfigSource` (`common.schema.json#/$defs/ConfigSource`):
 
 - `layer` is one of the names in section 1.1, or `env`.
-- `file` is the path relative to the project root. A value from a plugin uses `pack:<id>/<path>`. A `core`, `cli` or `env` value has no file.
+- `file` is the path relative to the project root. A value from a plugin uses `plugin:<id>/<path>`. A `core`, `cli` or `env` value has no file.
 - `line` and `column` are one-based and point at the key that set the value. For front matter, they count from the start of the document file, not from the start of the block.
 - A `[[genres]]` or `[[overrides]]` value uses layer `override`. The report names the block by its index.
 

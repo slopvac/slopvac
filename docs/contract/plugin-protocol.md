@@ -251,7 +251,7 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 | `plugin-protocol-violation` | A framing error, a limit breach or a duplicate key. |
 | `plugin-output-invalid` | A result does not match its schema, or breaks a rule such as span bounds. |
 | `plugin-spawn-failed` | The program did not start. |
-| `launcher-not-installed` | The running program did not install the plugin launcher, so the host cannot start a plugin or a git pack source. Nothing was spawned. |
+| `launcher-not-installed` | The running program did not install the plugin launcher, so the host cannot start a plugin or a git plugin source. Nothing was spawned. |
 | `plugin-declaration-mismatch` | The reply disagrees with the hashed manifest (section 4.3). |
 | `request-id-exhausted` | The request counter reached 2^53-1. |
 

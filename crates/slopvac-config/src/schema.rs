@@ -16,7 +16,7 @@ pub enum Shape {
     NonEmptyStr,
     /// A string that `check` accepts. `name` completes "a valid ...".
     Pattern {
-        /// Name of the accepted form, such as "pack id".
+        /// Name of the accepted form, such as "plugin id".
         name: &'static str,
         /// The accept test.
         check: fn(&str) -> bool,
@@ -658,12 +658,13 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
             key,
             key_name,
             value,
-        } => match &node.value {
-            Value::Table(entries) => {
-                for e in entries {
-                    let p = child(path, &e.key);
-                    if !key(&e.key) {
-                        ctx.push(
+        } => {
+            match &node.value {
+                Value::Table(entries) => {
+                    for e in entries {
+                        let p = child(path, &e.key);
+                        if !key(&e.key) {
+                            ctx.push(
                             Code::InvalidValue,
                             e.key_span.clone(),
                             &p,
@@ -671,12 +672,13 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                             "not valid here".into(),
                             Some("use `<plugin>:<id>` with a lowercase plugin id, or a bare name".into()),
                         );
+                        }
+                        check(ctx, &e.node, value, &p);
                     }
-                    check(ctx, &e.node, value, &p);
                 }
+                _ => ctx.type_error(node, path, "a table", None),
             }
-            _ => ctx.type_error(node, path, "a table", None),
-        },
+        }
         Shape::Either { scalar, table } => {
             if matches!(node.value, Value::Table(_)) {
                 check(ctx, node, table, path);

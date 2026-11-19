@@ -5,7 +5,7 @@ use crate::source::Setting;
 /// A config file that a pack ships.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackFile {
-    /// Path shown in provenance, `pack:<id>/<path>`.
+    /// Path shown in provenance, `plugin:<id>/<path>`.
     pub display: String,
     /// The file text.
     pub text: String,

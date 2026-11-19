@@ -110,7 +110,9 @@ impl FromStr for PackId {
 
     fn from_str(s: &str) -> Result<Self, ValueError> {
         if s.len() > MAX_STRING_BYTES {
-            return bad(format!("a plugin id is longer than {MAX_STRING_BYTES} bytes"));
+            return bad(format!(
+                "a plugin id is longer than {MAX_STRING_BYTES} bytes"
+            ));
         }
         let mut chars = s.chars();
         let ok = chars.next().is_some_and(|c| c.is_ascii_lowercase())
@@ -427,7 +429,10 @@ impl Lockfile {
             if pack.id.as_str() == crate::sign::RESERVED_ID {
                 return Err(LockError::new(
                     at("id"),
-                    format!("`{}` is reserved for the built-in plugin and is never locked", pack.id),
+                    format!(
+                        "`{}` is reserved for the built-in plugin and is never locked",
+                        pack.id
+                    ),
                 ));
             }
             if !seen.insert(&pack.id) {

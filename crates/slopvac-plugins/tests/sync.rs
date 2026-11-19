@@ -794,7 +794,7 @@ fn local_archive(env: &Env, id: &str, files: &[(&str, &[u8])]) -> String {
 /// A lock whose one plugin pack has `source` and a placeholder digest.
 fn git_pin_lock(source: &str) -> String {
     format!(
-        "schema_version = 3\n\n[[packs]]\nid = \"tagger\"\nkind = \"plugin\"\n\
+        "schema_version = 3\n\n[[plugins]]\nid = \"tagger\"\nkind = \"code\"\n\
          version = \"0.3.1\"\nslopvac_api = 1\nsource = \"{source}\"\n\
          digest = \"sha256:{}\"\n",
         "00".repeat(32)
@@ -822,7 +822,7 @@ fn tm31_a_branch_or_short_name_is_refused_as_a_git_pin(#[case] pin: &str) {
         "git+https://github.com/acme/tagger@{pin}"
     )))
     .unwrap_err();
-    assert_eq!(err.pointer, "/packs/0/source", "{pin}: {err}");
+    assert_eq!(err.pointer, "/plugins/0/source", "{pin}: {err}");
 }
 
 #[cfg(unix)]

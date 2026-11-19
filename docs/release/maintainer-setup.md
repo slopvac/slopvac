@@ -75,9 +75,9 @@ The `slopvac-update` crate includes the same file in `verify.rs`. `ReleaseVerifi
 
 Tests inject other keys through the public fields of `KeyPolicy`, through `Revocations::new` and through `Runtime::verifier`, so no test needs the secret key.
 
-### How first-party packs are signed
+### How first-party plugins are signed
 
-Release CI signs release artifacts with `MINISIGN_SECRET_KEY` in minisign's default prehashed mode. The `Revocation list` workflow signs the revocation list the same way, as [the last section](#the-signed-revocation-list) describes. Signing first-party packs is not wired into a workflow yet, so no first-party pack is signed. A first-party pack carries a signed statement and its `.minisig` as the two signature layers described in [the threat model](../contract/threat-model.md#53-rotation-and-revocation). The statement names the namespace `slopvac` and the key id `D9914BDB4570AC6D`. The revocation list uses the same key. No one signs by hand and no one reads the secret key.
+Release CI signs release artifacts with `MINISIGN_SECRET_KEY` in minisign's default prehashed mode. The `Revocation list` workflow signs the revocation list the same way, as [the last section](#the-signed-revocation-list) describes. Signing first-party plugins is not wired into a workflow yet, so no first-party plugin is signed. A first-party plugin carries a signed statement and its `.minisig` as the two signature layers described in [the threat model](../contract/threat-model.md#53-rotation-and-revocation). The statement names the namespace `slopvac` and the key id `D9914BDB4570AC6D`. The revocation list uses the same key. No one signs by hand and no one reads the secret key.
 
 ### Rotate the key
 
@@ -85,7 +85,7 @@ The first-party key set is compiled in, so it changes only with a slopvac releas
 
 1. Generate the new minisign key pair. Store the secret key in the Actions secret `MINISIGN_SECRET_KEY` and a backup in 1Password, without printing it.
 2. Replace `keys/slopvac-release.pub` with the new public key, update the key id on this page, and release a binary that embeds it. The embedded-key tests in `crates/slopvac-plugins/tests/sign.rs` and `crates/slopvac-update/src/verify.rs` must change in the same pull request.
-3. Re-sign the first-party packs and publish a new revocation list with the new key.
+3. Re-sign the first-party plugins and publish a new revocation list with the new key.
 4. If the old key leaked, publish a list that names its key id, signed while the old key is still a root. Binaries that embed the old key keep trusting it until the user upgrades, which is residual risk R8 in the threat model.
 
 ## The signed revocation list

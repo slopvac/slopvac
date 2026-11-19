@@ -592,9 +592,9 @@ fn lockfile_errors_say_where_and_never_echo_file_content() {
     let syntax = format!("schema_version = 3\n{LEAK} = = =\n");
     let w = World::new();
     for (body, want) in [
-        (bad_digest, "invalid value at /packs/0/digest"),
-        (bad_id, "invalid value at /packs/0"),
-        (unknown_key, "invalid value at /packs/0"),
+        (bad_digest, "invalid value at /plugins/0/digest"),
+        (bad_id, "invalid value at /plugins/0"),
+        (unknown_key, "invalid value at /plugins/0"),
         (syntax, "not a valid lockfile"),
     ] {
         w.write(".slopvac/plugins.lock", &body);

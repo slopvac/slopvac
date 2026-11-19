@@ -59,7 +59,7 @@ The `error` text is a fixed message with no file content. `config.ok` is true wh
 
 ### 2.4 Plugins and trust
 
-The lockfile is `.slopvac/plugins.lock` in the directory of the configuration file, or in the working directory if the search finds none. `plugins.lockfile.status` is `absent` when there is no lockfile, which is not a problem. It is `invalid` when the file does not parse, and `unreadable` when the file or the plugin store cannot be read. The `invalid` error holds the location only, such as `invalid value at /packs/0/digest`, or `not a valid lockfile` for a syntax error. It repeats nothing the file said, because a parser message can echo a rejected value. A pointer segment that is not a lockfile key or an array index shows as `*`.
+The lockfile is `.slopvac/plugins.lock` in the directory of the configuration file, or in the working directory if the search finds none. `plugins.lockfile.status` is `absent` when there is no lockfile, which is not a problem. It is `invalid` when the file does not parse, and `unreadable` when the file or the plugin store cannot be read. The `invalid` error holds the location only, such as `invalid value at /plugins/0/digest`, or `not a valid lockfile` for a syntax error. It repeats nothing the file said, because a parser message can echo a rejected value. A pointer segment that is not a lockfile key or an array index shows as `*`.
 
 Each entry in `plugins.items` has the plugin `id`, `version` and `kind` (`data` or `code`), and a `state`: `recorded`, `in-place`, `changed`, `tampered` or `not-installed`. Doctor reports the state without repairing it. `plugins sync` repairs a tampered plugin.
 
