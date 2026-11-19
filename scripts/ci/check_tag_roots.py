@@ -130,17 +130,16 @@ def escape(char: str) -> str:
 
 
 def report(bad: list[str], checked: int, root: str, local: bool) -> None:
-    where = "local tags" if local else "tags"
-    print(
-        f"error: {len(bad)} of {checked} {where} are not in slopvac's history "
-        f"(expected the only root commit to be {root}).",
-        file=sys.stderr,
-    )
     if local:
         print(
-            "Push refused. These local tags are outside slopvac's history, whether or "
-            "not the push carries them; CONTRIBUTING.md explains how to remove them "
-            "by hand.",
+            "Push refused: these local tags are outside slopvac's history; "
+            "CONTRIBUTING.md explains how to remove them by hand.",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"error: {len(bad)} of {checked} tags are not in slopvac's history "
+            f"(expected the only root commit to be {root}).",
             file=sys.stderr,
         )
     for ref in bad[:LIST_LIMIT]:

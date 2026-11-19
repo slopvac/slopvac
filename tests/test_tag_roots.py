@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -159,12 +160,20 @@ def test_hook_passes_without_tags(repo):
     assert run(repo, "--pre-push").returncode == 0
 
 
-def test_hook_points_at_contributing_and_lists_full_ref_names(repo):
+def test_hook_output_is_one_explanatory_line_then_the_refs(repo):
     git(repo["path"], "tag", "pi-v1", repo["foreign"])
+    git(repo["path"], "tag", "pi-v2", repo["foreign"])
     result = run(repo, "--pre-push")
-    assert "local tags" in result.stderr
-    assert "CONTRIBUTING.md" in result.stderr
-    assert "\nrefs/tags/pi-v1\n" in result.stderr
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        (
+            "Push refused: these local tags are outside slopvac's history; "
+            "CONTRIBUTING.md explains how to remove them by hand."
+        ),
+        "refs/tags/pi-v1",
+        "refs/tags/pi-v2",
+    ]
 
 
 def test_ci_mode_lists_full_ref_names_without_the_local_message(repo):
@@ -214,12 +223,50 @@ def test_unicode_separators_in_a_name_cannot_fabricate_records(repo, mode):
     git(path, "update-ref", f"refs/tags/{name}", repo["foreign"])
     result = run(repo, *mode)
     assert result.returncode == 1
-    assert "1 of 2 " in result.stderr
     lines = result.stderr.splitlines()
     assert "refs/tags/a\\u2028refs/tags/good\\u0085b\\u00a0c" in lines
     assert "refs/tags/good" not in lines
+    assert sum(line.startswith("refs/tags/") for line in lines) == 1
     for raw in ("\u2028", "\u0085", "\u00a0"):
         assert raw not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        pytest.param(r"refs/tags/v1\0abc\0", id="missing-field"),
+        pytest.param(r"refs/tags/v1\0abc\0\0extra\0", id="extra-field"),
+        pytest.param(r"refs/heads/x\0abc\0\0", id="not-a-tag-ref"),
+        pytest.param(r"refs/tags/v1\0\0\0", id="empty-object-id"),
+    ],
+)
+@pytest.mark.parametrize("mode", [[], ["--pre-push"]], ids=["ci", "hook"])
+def test_malformed_for_each_ref_output_is_incomplete_not_clean(
+    repo, tmp_path, record, mode
+):
+    """A fake git first on PATH answers for-each-ref wrongly and defers the rest."""
+    real_git = shutil.which("git")
+    fake = tmp_path / "fakebin"
+    fake.mkdir()
+    wrapper = fake / "git"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f"if [ \"$1\" = for-each-ref ]; then printf '{record}'; exit 0; fi\n"
+        f'exec "{real_git}" "$@"\n'
+    )
+    wrapper.chmod(0o755)
+    git(repo["path"], "tag", "v1", repo["tip"])
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", repo["root"], *mode],
+        cwd=repo["path"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": f"{fake}{os.pathsep}{os.environ['PATH']}"},
+    )
+    assert result.returncode == 2
+    assert "unexpected git for-each-ref" in result.stderr
+    assert "checked" not in result.stdout
 
 
 def test_default_root_is_slopvacs_real_root(repo):
