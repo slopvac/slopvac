@@ -196,6 +196,13 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
             "offline: self update needs the network",
         ));
     }
+    // The fingerprint must come before any external work: the network lookup below gives
+    // another installer time to replace the file, and a later fingerprint would credit that
+    // new file to this older process.
+    let running_sha = rt
+        .running_sha
+        .clone()
+        .or_else(|| pipeline::running_fingerprint(&rt.exe));
     let latest = notice::latest_version(&*rt.fetcher, false)
         .map_err(|e| Failure::new("update-check-failed", e.to_string()))?;
     if notice::notice_for(&rt.current, &latest, method).is_none() {
@@ -207,10 +214,6 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
             UpdateError::UnsupportedPlatform.to_string(),
         )
     })?;
-    let running_sha = rt
-        .running_sha
-        .clone()
-        .or_else(|| pipeline::running_fingerprint(&rt.exe));
     pipeline::update(
         &*rt.fetcher,
         &*rt.verifier,

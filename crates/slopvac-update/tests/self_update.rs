@@ -555,3 +555,55 @@ fn an_installed_binary_with_an_unknown_version_fails_with_its_own_code() {
     assert_eq!(failure.code, "update-version-unknown");
     assert_eq!(content(&fx.exe), before);
 }
+
+/// Serves `inner`, and runs `during_lookup` when the latest version is asked for, which is the
+/// first network call `self update` makes.
+#[cfg(unix)]
+struct SwapDuringLookup<F: Fn() + Send + Sync> {
+    inner: Arc<Server>,
+    during_lookup: F,
+}
+
+#[cfg(unix)]
+impl<F: Fn() + Send + Sync> Fetcher for SwapDuringLookup<F> {
+    fn get(&self, url: &str, limit: u64) -> Result<Vec<u8>, FetchError> {
+        if url == LATEST {
+            (self.during_lookup)();
+        }
+        self.inner.get(url, limit)
+    }
+}
+
+// The runtime takes no fingerprint up front here (`running_sha` is `None`, as in the real
+// process). Another installer swaps in 3.3.0 while the update asks for the latest version. The
+// update must not credit that new file to the running 3.0.0 and install 3.2.0 over it.
+#[cfg(unix)]
+#[test]
+fn a_binary_swapped_during_the_version_lookup_is_not_taken_for_the_running_one() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = installed();
+    let exe = fx.exe.clone();
+    let mut rt = runtime(&fx, server("3.2.0"), Box::new(Fixed(Ok(()))));
+    assert!(rt.running_sha.is_none());
+    rt.fetcher = Arc::new(SwapDuringLookup {
+        inner: server("3.2.0"),
+        during_lookup: move || {
+            std::fs::write(
+                &exe,
+                "#!/bin/sh\necho '{\"name\":\"slopvac\",\"version\":\"3.3.0\"}'\n",
+            )
+            .unwrap();
+            std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        },
+    });
+    let failure = update(&rt).unwrap_err();
+    assert_eq!(failure.code, "self-update-failed");
+    assert!(
+        failure
+            .message
+            .contains("refusing to install 3.2.0: it is not newer than the running 3.3.0"),
+        "{}",
+        failure.message
+    );
+    assert_ne!(content(&fx.exe), b"new binary");
+}
