@@ -168,6 +168,7 @@ _NO_RUST_GROUPS = {
         ("release.yml", "announce"),
         ("revocations.yml", "build-sign"),
         ("revocations.yml", "push"),
+        ("tag-roots.yml", "tag-roots"),
         ("trunk-dev-stale-branches.yml", "stale-bead-branches"),
     ],
 }
