@@ -473,8 +473,13 @@ fn lint_with(
 /// names under `schemas/v3`, without the `.schema.json` suffix.
 fn supported_versions() -> slopvac_update::command::Supported {
     // A config-style file is checked by `slopvac-config`, which owns its version; styles share it.
-    let config = u64::try_from(slopvac_config::version::SUPPORTED).unwrap_or_default();
-    let lock = u64::try_from(slopvac_plugins::lock::LOCK_SCHEMA_VERSION).unwrap_or_default();
+    // Both owners declare an `i64`. The assertion below makes `unsigned_abs` exact for them.
+    const _: () = assert!(
+        slopvac_config::version::SUPPORTED > 0 && slopvac_plugins::lock::LOCK_SCHEMA_VERSION > 0,
+        "schema versions are positive"
+    );
+    let config = slopvac_config::version::SUPPORTED.unsigned_abs();
+    let lock = slopvac_plugins::lock::LOCK_SCHEMA_VERSION.unsigned_abs();
     let report = u64::from(slopvac_model::SchemaVersion::VALUE);
     slopvac_update::command::Supported {
         schema_versions: std::collections::BTreeMap::from([
