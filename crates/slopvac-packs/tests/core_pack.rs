@@ -117,3 +117,29 @@ fn the_core_manifest_is_refused_from_any_other_origin() {
     let err = LoadedPack::load(&core_source(), Source::Plugin).unwrap_err();
     assert!(matches!(err, PackError::ReservedId));
 }
+
+fn write_pack(provides: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = format!(
+        "schema_version = 3\nid = \"acme\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n\n[provides]\n{provides}\n"
+    );
+    fs::write(dir.path().join(MANIFEST_FILE), manifest).unwrap();
+    fs::create_dir(dir.path().join("taggers")).unwrap();
+    // Valid YAML that would fail the tagger schema: the loader must not read it.
+    fs::write(dir.path().join("taggers/t.yaml"), "not: a tagger\n").unwrap();
+    dir
+}
+
+#[test]
+fn a_non_core_pack_loads_no_taggers() {
+    let dir = write_pack("taggers = [\"taggers/t.yaml\"]");
+    let pack = LoadedPack::load(&DirSource::new(dir.path()), Source::Pack).unwrap();
+    assert!(pack.taggers().is_empty());
+}
+
+#[test]
+fn a_glob_in_provides_is_refused() {
+    let dir = write_pack("genres = [\"genres/*.yaml\"]");
+    let err = LoadedPack::load(&DirSource::new(dir.path()), Source::Pack).unwrap_err();
+    assert!(matches!(err, PackError::Glob { .. }), "{err}");
+}
