@@ -78,6 +78,12 @@ impl<'a, T, const MIN: usize> IntoIterator for &'a UniqueVec<T, MIN> {
     }
 }
 
+/// The index of the first item that repeats an earlier one, in one pass of hash lookups.
+fn first_repeat<T: Eq + Hash>(items: &[T]) -> Option<usize> {
+    let mut seen: HashSet<&T> = HashSet::with_capacity(items.len());
+    items.iter().position(|item| !seen.insert(item))
+}
+
 impl<'de, T: Deserialize<'de> + Eq + Hash, const MIN: usize> Deserialize<'de>
     for UniqueVec<T, MIN>
 {
@@ -89,13 +95,10 @@ impl<'de, T: Deserialize<'de> + Eq + Hash, const MIN: usize> Deserialize<'de>
                 items.len()
             )));
         }
-        let mut seen: HashSet<&T> = HashSet::with_capacity(items.len());
-        for (i, item) in items.iter().enumerate() {
-            if !seen.insert(item) {
-                return Err(de::Error::custom(format!(
-                    "items must be unique, item {i} repeats an earlier one"
-                )));
-            }
+        if let Some(i) = first_repeat(&items) {
+            return Err(de::Error::custom(format!(
+                "items must be unique, item {i} repeats an earlier one"
+            )));
         }
         Ok(Self(items))
     }
@@ -220,4 +223,64 @@ pub(crate) fn is_slug(s: &str, separator: char) -> bool {
     let mut chars = s.chars();
     chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == separator)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::hash::{Hash, Hasher};
+
+    use super::first_repeat;
+
+    thread_local! {
+        static HASHES: Cell<usize> = const { Cell::new(0) };
+        static COMPARES: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// An item that counts every hash and equality call made on it.
+    #[derive(Debug)]
+    struct Counted(usize);
+
+    impl PartialEq for Counted {
+        fn eq(&self, other: &Self) -> bool {
+            COMPARES.with(|c| c.set(c.get() + 1));
+            self.0 == other.0
+        }
+    }
+    impl Eq for Counted {}
+    impl Hash for Counted {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            HASHES.with(|c| c.set(c.get() + 1));
+            self.0.hash(state);
+        }
+    }
+
+    fn work(items: &[Counted]) -> (Option<usize>, usize, usize) {
+        HASHES.with(|c| c.set(0));
+        COMPARES.with(|c| c.set(0));
+        let found = first_repeat(items);
+        (found, HASHES.with(Cell::get), COMPARES.with(Cell::get))
+    }
+
+    /// A quadratic scan makes n(n-1)/2 comparisons, 5e9 for 100,000 items. A hash set hashes
+    /// each item once and compares only on a bucket collision, so the count stays near n.
+    #[test]
+    fn distinct_items_cost_one_hash_each_and_comparisons_linear_in_the_list() {
+        let n = 100_000;
+        let items: Vec<Counted> = (0..n).map(Counted).collect();
+        let (found, hashes, compares) = work(&items);
+        assert_eq!(found, None);
+        assert_eq!(hashes, n);
+        assert!(compares <= 2 * n, "{compares} comparisons for {n} items");
+    }
+
+    #[test]
+    fn the_first_repeat_is_reported_and_the_scan_stops_there() {
+        let mut items: Vec<Counted> = (0..1_000).map(Counted).collect();
+        items.push(Counted(7));
+        items.push(Counted(8));
+        let (found, hashes, _) = work(&items);
+        assert_eq!(found, Some(1_000));
+        assert_eq!(hashes, 1_001);
+    }
 }
