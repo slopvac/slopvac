@@ -123,4 +123,10 @@ for d, j in summaries:
     lines.append(f"- {pathlib.Path(d).name}: limit_hits={j['limit_hits']}")
 out.write_text("\n".join(lines) + "\n")
 (out.parent / "allow.txt").write_text("\n".join(sorted(allow)) + "\n")
+with open(out.parent / "patterns.jsonl", "w") as f:
+    for r in sorted(recs.values(), key=lambda r: (source(r)[0], r["_where"], r["id"])):
+        f.write(json.dumps({
+            "id": r["id"], "source": r["source"], "caseless": r["caseless"], "ucp": r["ucp"],
+            "origin": source(r)[0], "where": r["_where"], "verdict": verdict(r),
+        }) + "\n")
 print(f"wrote {out}")
