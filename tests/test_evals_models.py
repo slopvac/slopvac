@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from evals import __main__ as cli
-from evals import build_derived, facts, models, runner
+from evals import build_derived, facts, models, runner, textops
 from evals import corpuslib as lib
 
 # --- facts --------------------------------------------------------------------------
@@ -260,10 +260,9 @@ def test_an_update_planted_review_prompt_names_the_change_as_intended(update_pla
     assert update_planted["candidate"] in update_planted["prompt"]
 
 
-def one_update_task(tmp_path, paragraph, old="40", new="50"):
-    """The update planted task from a one-paragraph parent whose edit starts line 1."""
-    first = split_first_sentence(paragraph)
-    (task,) = planted_tasks_from(
+def update_tasks_of(tmp_path, paragraph, old="40", new="50", line=1):
+    """The update planted tasks from a one-paragraph parent whose edit starts `line`."""
+    return planted_tasks_from(
         tmp_path,
         "update",
         paragraph,
@@ -271,72 +270,129 @@ def one_update_task(tmp_path, paragraph, old="40", new="50"):
             {
                 "kind": "number",
                 "detail": f"{old} -> {new}",
-                "original_sentence": first,
-                "line": 1,
+                "original_sentence": textops.split_sentences(paragraph)[0],
+                "line": line,
             }
         ],
     )
+
+
+def one_update_task(tmp_path, paragraph, old="40", new="50"):
+    (task,) = update_tasks_of(tmp_path, paragraph, old, new)
     return task
 
 
-def split_first_sentence(paragraph):
-    from evals.textops import split_sentences
-
-    return split_sentences(paragraph)[0]
-
-
 QUEUE_40 = "The queue holds 40 jobs before it blocks writers."
+QUEUE_50 = "The queue holds 50 jobs before it blocks writers."
 QUEUE_63 = "The queue holds 63 jobs before it blocks writers."
+QUEUE_68 = "The queue holds 68 jobs before it blocks writers."
+CACHE_12 = "The cache keeps 12 entries per user today."
+CACHE_17 = "The cache keeps 17 entries per user today."
+PURGE = "Run `purge` to empty it before restart."
 
 
-def test_a_review_that_reports_only_the_intended_update_does_not_succeed(tmp_path):
-    task = one_update_task(tmp_path, f"{QUEUE_40} {QUEUE_63}")
-    only_intended = json.dumps([{"quote": QUEUE_40[:-1], "problem": "number changed"}])
-    scored = models.score_review(task, only_intended)
-    assert (scored["found"], scored["success"]) == (0, False)
+def intended_task(sentence=CACHE_12, after=CACHE_17):
+    return {
+        "variant": "planted",
+        "passage": f"{QUEUE_40}\n{sentence}\n{QUEUE_50}\n{after}",
+        "edits": [{"kind": "number", "sentence": sentence, "after": after}],
+        "intended": [QUEUE_40, QUEUE_50],
+    }
 
 
-def test_a_review_that_quotes_the_damaged_sentence_succeeds_beside_the_update(
-    tmp_path,
+@pytest.mark.parametrize(
+    ("quote", "found", "alarms"),
+    [
+        (CACHE_12, 1, 0),  # the damaged sentence as the original has it
+        (CACHE_17, 1, 0),  # the damaged sentence as the candidate has it
+        (QUEUE_40, 0, 0),  # the intended change, original side: not an alarm
+        (QUEUE_50, 0, 0),  # the intended change, candidate side
+        ("Totally unrelated heading text here", 0, 1),
+    ],
+)
+def test_a_finding_counts_by_what_it_matches_not_by_which_is_closer(
+    quote, found, alarms
 ):
-    task = one_update_task(tmp_path, f"{QUEUE_40} {QUEUE_63}")
-    answer = json.dumps([{"quote": QUEUE_63[:-1], "problem": "number changed"}])
+    answer = json.dumps([{"quote": quote.rstrip("."), "problem": "number changed"}])
+    scored = models.score_review(intended_task(), answer)
+    assert (scored["found"], scored["false_alarms"]) == (found, alarms)
+
+
+def test_a_candidate_side_quote_of_damage_that_differs_from_the_change_by_numbers_only():
+    # The damaged candidate sentence overlaps both intended sentences as much as it
+    # overlaps the damaged original, so only the planted text can tell them apart.
+    task = intended_task(QUEUE_63, QUEUE_68)
+    answer = json.dumps([{"quote": QUEUE_68.rstrip("."), "problem": "number changed"}])
     scored = models.score_review(task, answer)
     assert (scored["found"], scored["false_alarms"], scored["success"]) == (1, 0, True)
 
 
-@pytest.mark.parametrize("side", ["original", "changed"])
-def test_a_finding_on_either_side_of_the_intended_change_is_not_damage(side):
-    task = {
-        "variant": "planted",
-        "passage": f"{QUEUE_40}\n{QUEUE_63}\nThe queue holds 50 jobs before it blocks writers.",
-        "edits": [{"kind": "number", "sentence": QUEUE_63}],
-        "intended": [QUEUE_40, "The queue holds 50 jobs before it blocks writers."],
-    }
-    quote = QUEUE_40 if side == "original" else task["intended"][1]
-    scored = models.score_review(
-        task, json.dumps([{"quote": quote[:-1], "problem": "x"}])
+def test_the_builder_rejects_damage_it_cannot_tell_from_the_intended_change(
+    tmp_path, caplog
+):
+    # Both queue sentences differ by a number only: either could be the damage.
+    assert update_tasks_of(tmp_path, f"{QUEUE_40} {QUEUE_63}") == []
+    assert [r.getMessage() for r in caplog.records] == [
+        (
+            "skipped planted review candidates "
+            "(update: no sentence to damage that the stated change leaves distinct x1)"
+        )
+    ]
+
+
+def test_the_builder_plants_the_damage_on_a_sentence_apart_from_the_intended_change(
+    tmp_path, caplog
+):
+    task = one_update_task(tmp_path, f"{QUEUE_40} {QUEUE_63} {PURGE}")
+    assert [e["sentence"] for e in task["edits"]] == [PURGE]
+    assert task["intended"] == [QUEUE_40, QUEUE_50]
+    assert caplog.records == []
+    only_intended = json.dumps([{"quote": QUEUE_40[:-1], "problem": "number changed"}])
+    scored = models.score_review(task, only_intended)
+    assert (scored["found"], scored["false_alarms"], scored["success"]) == (
+        0,
+        0,
+        False,
     )
-    assert scored["found"] == 0
+    damaged = json.dumps([{"quote": PURGE[:-1], "problem": "dropped"}])
+    assert models.score_review(task, damaged)["success"]
 
 
-@pytest.mark.parametrize(
-    ("old", "new"),
-    [("40", "50"), ("7", "9"), ("12", "13"), ("21", "22"), ("64", "65"), ("3", "4")],
-)
-def test_a_sentence_the_change_turns_into_a_copy_of_another_stays_protected(
+COPY_PAIRS = [("40", "50"), ("7", "9"), ("12", "13"), ("21", "22"), ("64", "65")]
+
+
+@pytest.mark.parametrize(("old", "new"), COPY_PAIRS)
+def test_a_change_that_turns_one_sentence_into_a_copy_of_another_leaves_no_damage_site(
     tmp_path, old, new
 ):
     first = f"The shared cache holds {old} items in memory today."
     second = f"The shared cache holds {new} items in memory today."
-    task = one_update_task(tmp_path, f"{first} {second}", old, new)
-    # Sentence 0 becomes a copy of sentence 1, and only sentence 1 may be damaged.
-    assert [e["sentence"] for e in task["edits"]] == [second]
-    assert task["candidate"].startswith(second)
+    assert update_tasks_of(tmp_path, f"{first} {second}", old, new) == []
+
+
+@pytest.mark.parametrize(("old", "new"), COPY_PAIRS)
+def test_damage_beside_a_copy_lands_on_the_sentence_that_is_not_one(tmp_path, old, new):
+    first = f"The shared cache holds {old} items in memory today."
+    second = f"The shared cache holds {new} items in memory today."
+    task = one_update_task(tmp_path, f"{first} {second} {PURGE}", old, new)
+    assert [e["sentence"] for e in task["edits"]] == [PURGE]
     assert task["intended"] == [first, second]
+    for quote in (first, second):
+        answer = json.dumps([{"quote": quote.rstrip("."), "problem": "x"}])
+        scored = models.score_review(task, answer)
+        assert (scored["found"], scored["false_alarms"]) == (0, 0)
 
 
-@pytest.mark.parametrize("neighbour", ["40.5", "40,500", "1,40", "3.40", "40.5.1"])
+def test_the_builder_reports_a_paragraph_it_cannot_find(tmp_path, caplog):
+    assert update_tasks_of(tmp_path, f"{QUEUE_40} {PURGE}", line=5) == []
+    assert [r.getMessage() for r in caplog.records] == [
+        "skipped planted review candidates (update: stated paragraph not found x1)"
+    ]
+
+
+@pytest.mark.parametrize(
+    "neighbour", ["40.5", "40,500", "1,40", "3.40", "40.5.1", ".40"]
+)
 def test_the_update_changes_whole_numbers_only(tmp_path, neighbour):
     paragraph = (
         f"The limit is {neighbour} seconds and the quota is 40 items. "

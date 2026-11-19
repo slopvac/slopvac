@@ -32,6 +32,7 @@ import datetime as dt
 import fcntl
 import hashlib
 import json
+import logging
 import os
 import random
 import re
@@ -49,6 +50,8 @@ from typing import Any, NamedTuple, Self
 from . import build_derived, facts, metrics, procs, runner
 from . import corpuslib as lib
 from .textops import CODE_SPAN_RE, prose_paragraphs, split_sentences
+
+logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "1"
 RESULTS_SCHEMA = 1
@@ -145,6 +148,7 @@ def build_tasks(
     docs = {d["id"]: d for d in manifest["documents"]}
     rng = random.Random(seed)
     tasks: list[dict[str, Any]] = []
+    skipped: Counter[str] = Counter()
 
     seeded = sorted(
         (d for d in docs.values() if d["origin"] == "seeded-defect"),
@@ -277,6 +281,8 @@ def build_tasks(
         )
         if review:
             tasks.append(review)
+        else:
+            skipped["mechanical: no sentence to damage away from the flagged one"] += 1
 
     for doc, edit, old, new in usable[:per_type]:
         parent = docs[doc["source"]["parents"][0]]
@@ -291,14 +297,17 @@ def build_tasks(
             None,
         )
         if paragraph is None or edit["original_sentence"] not in paragraph:
+            skipped["update: stated paragraph not found"] += 1
             continue
         base = _apply_change(paragraph, old, new)
         before, after = split_sentences(paragraph), split_sentences(base)
         if len(before) != len(after):
+            skipped["update: the change altered the sentence count"] += 1
             continue
         # The change protects the sentences it rewrote, by position: a rewritten
         # sentence can become a copy of another one, so its text proves nothing.
         rewritten = {i for i, (a, b) in enumerate(zip(before, after)) if a != b}
+        intended = [t[i] for i in sorted(rewritten) for t in (before, after)]
         review = _planted_review(
             kind="update",
             key=(doc["id"], str(edit["line"]), old, new),
@@ -306,7 +315,8 @@ def build_tasks(
             original=paragraph,
             base=base,
             protected=lambda i, _, kept=rewritten: i in kept,
-            intended=[t[i] for i in sorted(rewritten) for t in (before, after)],
+            intended=intended,
+            distinct=partial(_apart_from, intended),
             pool=sorted(set(CODE_SPAN_RE.findall(text))),
             prompt=UPDATE_REVIEW_PROMPT,
             old=old,
@@ -314,6 +324,15 @@ def build_tasks(
         )
         if review:
             tasks.append(review)
+        else:
+            skipped[
+                "update: no sentence to damage that the stated change leaves distinct"
+            ] += 1
+    if skipped:
+        logger.warning(
+            "skipped planted review candidates (%s)",
+            "; ".join(f"{reason} x{count}" for reason, count in skipped.items()),
+        )
     return tasks
 
 
@@ -322,7 +341,8 @@ def plant_damage(
     protected: Callable[[int, str], bool],
     pool: list[str],
     rng: random.Random,
-) -> tuple[str, dict[str, str]] | None:
+    distinct: Callable[[str, str | None], bool] = lambda _before, _after: True,
+) -> tuple[str, dict[str, Any]] | None:
     """Damage one fact in `text`: (candidate text, edit) or None when nothing fits.
 
     The damage comes from `build_derived.damage_sentence`, the same one that plants
@@ -344,12 +364,15 @@ def plant_damage(
                 if protected(i, sentences[i]):
                     continue
                 damage = build_derived.damage_sentence(sentences[i], kind, pool, rng)
-                if damage is None:
+                if damage is None or not distinct(sentences[i], damage[0]):
                     continue
                 kept = [damage[0]] if damage[0] is not None else []
                 rebuilt = " ".join(sentences[:i] + kept + sentences[i + 1 :])
                 lines[first : last + 1] = [rebuilt]
-                return "\n".join(lines), {"kind": kind, "sentence": sentences[i]}
+                edit: dict[str, Any] = {"kind": kind, "sentence": sentences[i]}
+                if damage[0] is not None:
+                    edit["after"] = damage[0]
+                return "\n".join(lines), edit
     return None
 
 
@@ -364,6 +387,7 @@ def _planted_review(
     pool: list[str],
     prompt: str,
     intended: Sequence[str] = (),
+    distinct: Callable[[str, str | None], bool] = lambda _before, _after: True,
     **fields: str,
 ) -> dict[str, Any] | None:
     """A planted-damage review task for an author type, or None when no sentence fits.
@@ -375,7 +399,7 @@ def _planted_review(
     """
     ident = task_id("planted", kind, *key)
     rng = random.Random(f"{SEED}|{ident}")
-    planted = plant_damage(base, protected, pool, rng)
+    planted = plant_damage(base, protected, pool, rng, distinct)
     if planted is None:
         return None
     candidate, edit = planted
@@ -395,6 +419,21 @@ def _planted_review(
     }
 
 
+def _similar(a: str, b: str) -> bool:
+    """True when either sentence takes `QUOTE_OVERLAP` of its words from the other.
+
+    Such sentences cannot be told apart by the words a reviewer quotes.
+    """
+    return max(_overlap(a, b), _overlap(b, a)) >= QUOTE_OVERLAP
+
+
+def _apart_from(intended: Sequence[str], before: str, after: str | None) -> bool:
+    """True when damage to `before` (leaving `after`) cannot pass for an intended change."""
+    return not any(
+        _similar(text, i) for i in intended for text in (before, after) if text
+    )
+
+
 def _mechanical_passage(
     doc: Mapping[str, Any], defect: Mapping[str, Any], cache: Path
 ) -> str:
@@ -407,10 +446,11 @@ def _mechanical_passage(
 def _number_token(number: str) -> str:
     """A pattern for `number` as a whole numeric token.
 
-    The number must not sit inside a longer number ("3" in "13", "3.5" or "3,500").
+    The number must not sit inside a longer number ("3" in "13", "3.5", "3,500",
+    ".3" or "1,3").
     A full stop after it that ends a sentence is fine.
     """
-    return rf"(?<![\w])(?<!\d[.,]){re.escape(number)}(?!\w)(?![.,]\d)"
+    return rf"(?<![\w.,]){re.escape(number)}(?!\w)(?![.,]\d)"
 
 
 def _apply_change(text: str, old: str, new: str) -> str:
@@ -672,20 +712,26 @@ def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
 
         intended = task.get("intended", [])
 
-        def locates(r: Mapping[str, str], e: Mapping[str, str]) -> bool:
-            # A quote at least as close to an intended change as to the damage is
-            # about the intended change, which is not damage.
-            closest = max((_overlap(r["quote"], i) for i in intended), default=0.0)
-            return (
-                _in_passage(r["quote"], passage)
-                and _hits(r["quote"], e["sentence"])
-                and _overlap(r["quote"], e["sentence"]) > closest
+        def locates(r: Mapping[str, str], e: Mapping[str, Any]) -> bool:
+            # The planted sentence, before or after the damage. The builder keeps it
+            # apart from every intended sentence, so word overlap is enough here.
+            return _in_passage(r["quote"], passage) and any(
+                _hits(r["quote"], text)
+                for text in (e["sentence"], e.get("after"))
+                if text
+            )
+
+        def intended_change(r: Mapping[str, str]) -> bool:
+            return _in_passage(r["quote"], passage) and any(
+                _hits(r["quote"], text) for text in intended
             )
 
         matched = [any(locates(r, e) for r in reported) for e in edits]
         edits_total, edits_found = len(edits), sum(matched)
         alarms = len(reported) - sum(
-            1 for r in reported if any(locates(r, e) for e in edits)
+            1
+            for r in reported
+            if intended_change(r) or any(locates(r, e) for e in edits)
         )
     recall = edits_found / edits_total if edits_total else None
     return {
