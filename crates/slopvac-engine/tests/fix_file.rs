@@ -291,6 +291,38 @@ mod unix {
     }
 
     #[test]
+    fn a_refused_file_in_a_batch_stays_unchanged_while_the_others_are_fixed() {
+        let root = project();
+        std::fs::write(root.path().join("b.md"), DOC).unwrap();
+        let outside = project();
+        symlink(outside.path().join("doc.md"), root.path().join("link.md")).unwrap();
+
+        let outcomes: Vec<(&str, FileFix)> = ["doc.md", "link.md", "b.md"]
+            .into_iter()
+            .map(|name| (name, run(root.path(), name, false)))
+            .collect();
+
+        let reported: Vec<(&str, Option<&str>)> = outcomes
+            .iter()
+            .map(|(name, out)| match out {
+                FileFix::Refused(why) => (*name, Some(why.code())),
+                FileFix::Done(_) => (*name, None),
+            })
+            .collect();
+        assert_eq!(
+            reported,
+            [
+                ("doc.md", None),
+                ("link.md", Some("fix-symlink")),
+                ("b.md", None)
+            ]
+        );
+        assert_eq!(read(root.path().join("doc.md")), FIXED);
+        assert_eq!(read(root.path().join("b.md")), FIXED);
+        assert_eq!(read(outside.path().join("doc.md")), DOC);
+    }
+
+    #[test]
     fn a_symlinked_directory_above_the_file_is_refused() {
         let root = project();
         let outside = project();
