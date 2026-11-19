@@ -992,7 +992,7 @@ fn a_changed_env_value_revokes_trust_under_the_same_key() {
 }
 
 #[test]
-fn nothing_the_user_sees_or_stores_carries_an_env_value_or_an_unkeyed_digest_of_it() {
+fn nothing_stored_or_shown_carries_an_env_value_or_a_plain_digest_of_it() {
     // The attack in the finding: guess a low-entropy secret, hash the guess, compare.
     let s = Scratch::new("no-disclosure");
     let vp = install(&s, "1.0.0", "");
@@ -1536,6 +1536,17 @@ mod unix_only {
             .unwrap();
         let err = gate(&s, &vp).check(&spec).unwrap_err();
         assert_eq!(err.slopvac_code(), "trust-key-missing", "{err}");
+    }
+
+    #[test]
+    fn a_record_that_names_no_key_fails_closed_even_when_a_key_exists() {
+        let (s, _vp, spec, g) = trusted("u-key-legacy-with-key");
+        let store = TrustStore::open(s.dir("state"));
+        store
+            .record(record(&Digest::of(b"old").to_string(), "other"))
+            .unwrap();
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-mismatch", "{err}");
     }
 
     #[rstest::rstest]
