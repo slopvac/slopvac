@@ -92,41 +92,91 @@ impl Suggestion {
     }
 }
 
+/// A detection file that was skipped and that the caller must report.
+///
+/// Only a file over the size cap is reported. A missing or unreadable file is
+/// the normal case for a project that does not use that file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedFile {
+    /// The file, relative to the project root.
+    pub file: String,
+    /// The stable code of the notice, `style-detect-file-too-large`.
+    pub code: &'static str,
+}
+
+impl SkippedFile {
+    /// The info notice text. `label` is the file's root-relative display path.
+    ///
+    /// The text stays here until the styles crate moves onto the message registry.
+    #[must_use]
+    pub fn message(&self, label: &str) -> String {
+        format!(
+            "{label} is over the 1 MiB style detection limit; house-style detection skipped it."
+        )
+    }
+}
+
+/// What [`detect_house_styles`] found and what it skipped.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Detection {
+    /// The house styles the project declares.
+    pub suggestions: Vec<Suggestion>,
+    /// The files detection skipped for size, in source order.
+    pub skipped: Vec<SkippedFile>,
+}
+
 /// Detect the house styles `root` declares.
 ///
-/// The result is ordered by source (`.vale.ini`, `STYLE.md`, `_STYLE.md`,
+/// The suggestions are ordered by source (`.vale.ini`, `STYLE.md`, `_STYLE.md`,
 /// `CONTRIBUTING.md`) and then by line. A style appears once, at its first match.
+/// A file over the size cap is not read; it comes back in [`Detection::skipped`].
 #[must_use]
-pub fn detect_house_styles(root: &Path) -> Vec<Suggestion> {
+pub fn detect_house_styles(root: &Path) -> Detection {
     let mut found: Vec<Suggestion> = Vec::new();
+    let mut skipped: Vec<SkippedFile> = Vec::new();
     let mut add = |s: Suggestion| {
         if !found.iter().any(|f| f.style == s.style) {
             found.push(s);
         }
     };
-    if let Some(text) = read(root, ".vale.ini") {
+    let mut load = |name: &str| match read_checked(root, name) {
+        Ok(text) => Some(text),
+        Err(skip) => {
+            if let Some(code) = skip.code() {
+                skipped.push(SkippedFile {
+                    file: name.to_owned(),
+                    code,
+                });
+            }
+            None
+        }
+    };
+    if let Some(text) = load(".vale.ini") {
         vale_styles(&text).into_iter().for_each(&mut add);
     }
     for name in ["STYLE.md", "_STYLE.md"] {
-        if let Some(text) = read(root, name) {
+        if let Some(text) = load(name) {
             phrase_matches(name, &text, |_| true)
                 .into_iter()
                 .for_each(&mut add);
         }
     }
-    if let Some(text) = read(root, "CONTRIBUTING.md") {
+    if let Some(text) = load("CONTRIBUTING.md") {
         let in_style = style_section_lines(&text);
         phrase_matches("CONTRIBUTING.md", &text, |n| in_style.contains(&n))
             .into_iter()
             .for_each(&mut add);
     }
-    found
+    Detection {
+        suggestions: found,
+        skipped,
+    }
 }
 
 /// The most bytes read from one file. A larger file is skipped.
 const MAX_BYTES: u64 = 1024 * 1024;
 
-/// Why [`read`] skipped a file.
+/// Why [`read_checked`] skipped a file.
 #[derive(Debug, PartialEq, Eq)]
 enum Skip {
     /// The file is larger than [`MAX_BYTES`].
@@ -138,20 +188,13 @@ enum Skip {
 impl Skip {
     /// The stable code of the skip, or `None` when the file is merely unusable.
     ///
-    /// `style-detect-file-too-large` is the code for [`Skip::TooLarge`]. Detection never
-    /// fails, so no caller reports it yet.
-    #[expect(dead_code, reason = "reserved until detection reports a skipped file")]
+    /// `style-detect-file-too-large` is the code for [`Skip::TooLarge`].
     fn code(&self) -> Option<&'static str> {
         match self {
             Skip::TooLarge => Some("style-detect-file-too-large"),
             Skip::Unusable => None,
         }
     }
-}
-
-/// Read a regular file under `root`, or `None`.
-fn read(root: &Path, name: &str) -> Option<String> {
-    read_checked(root, name).ok()
 }
 
 /// Read a regular file under `root`, or say why it was skipped.
