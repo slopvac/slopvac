@@ -9,7 +9,7 @@ use slopvac_engine::discover::FileKind;
 use toml_edit::{DocumentMut, Item, Value};
 
 use crate::capped::{Blockers, Capped};
-use crate::config::{key_lines, migrate_config};
+use crate::config::{key_lines, migrate_config_in};
 use crate::limits::{Budget, Kind, Limits};
 use crate::walk::{Dir, discover};
 use crate::{Dropped, Error, Options, RenameTable, rewrite_directives, rewrite_steering};
@@ -204,11 +204,12 @@ fn plan_dir(
         return Ok(());
     };
     let label = rel(root, &source).display().to_string();
-    let rewrite = match migrate_config(&old, &label, renames, options) {
+    let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
+    let outer = py.and_then(|t| key_lines(t).ok());
+    let rewrite = match migrate_config_in(&old, &label, renames, options, outer.as_ref()) {
         Ok(rw) => rw,
         Err(Error::AlreadyMigrated { .. }) => return Ok(()),
         Err(e) => {
-            let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
             return match pyproject_lines(e, py) {
                 Error::Dropped(d) => {
                     dropped.extend(d);
@@ -221,8 +222,7 @@ fn plan_dir(
     for n in rewrite.notes {
         plan.notes.push(format!("{label}: {n}"));
     }
-    let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
-    for d in dropped_in_pyproject(rewrite.removed_categories, py) {
+    for d in rewrite.removed_categories {
         plan.notes
             .push(format!("{label}: {}", d.category_removed_notice()));
     }
@@ -323,7 +323,6 @@ enum Origin {
 /// its `[tool.slopvac]` table. `py` is the `pyproject.toml` text in that case.
 fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
     match e {
-        Error::Dropped(d) => Error::Dropped(dropped_in_pyproject(d, py)),
         Error::OverrideOverlap {
             file,
             line,
@@ -356,20 +355,6 @@ fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
         }
         e => e,
     }
-}
-
-/// Point the lines of dropped settings at `pyproject.toml`, as `pyproject_lines` does
-/// for errors. `py` is `None` when the config did not come from that table.
-fn dropped_in_pyproject(mut dropped: Vec<Dropped>, py: Option<&str>) -> Vec<Dropped> {
-    let Some(lines) = py.and_then(|t| key_lines(t).ok()) else {
-        return dropped;
-    };
-    for x in dropped.iter_mut().filter(|x| x.suppressed == 0) {
-        if let Some(l) = lines.get(&format!("tool.slopvac.{}", x.key)) {
-            x.line = *l;
-        }
-    }
-    dropped
 }
 
 /// The `[tool.slopvac]` table as a standalone document, and `pyproject.toml` text

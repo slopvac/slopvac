@@ -71,10 +71,30 @@ pub fn migrate_config(
     renames: &RenameTable,
     options: Options,
 ) -> Result<Rewrite, Error> {
-    let lines = key_lines(text).map_err(|e| Error::Parse {
+    migrate_config_in(text, file, renames, options, None)
+}
+
+/// [`migrate_config`] for text that came from a `[tool.slopvac]` table. `outer` holds the
+/// line of every key in the file that holds the table, so each blocker is given its line in
+/// that file before its key is clipped for display.
+pub(crate) fn migrate_config_in(
+    text: &str,
+    file: &str,
+    renames: &RenameTable,
+    options: Options,
+    outer: Option<&HashMap<String, usize>>,
+) -> Result<Rewrite, Error> {
+    let mut lines = key_lines(text).map_err(|e| Error::Parse {
         file: file.to_owned(),
         message: e,
     })?;
+    if let Some(outer) = outer {
+        for (key, line) in &mut lines {
+            if let Some(l) = outer.get(&format!("tool.slopvac.{key}")) {
+                *line = *l;
+            }
+        }
+    }
     let mut doc: DocumentMut = text
         .parse()
         .map_err(|e: toml_edit::TomlError| Error::Parse {

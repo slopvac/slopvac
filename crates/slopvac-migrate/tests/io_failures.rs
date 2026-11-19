@@ -6,7 +6,7 @@ use std::path::Path;
 
 use slopvac_migrate::{
     CliFailure, Error, Finding, Limits, Linter, NullLinter, Options, Phase, RenameTable, command,
-    execute, plan, plan_with_limits, run,
+    execute, migrate_config, plan, plan_with_limits, run,
 };
 
 const STEERING: &str = "<!-- slopvac:begin -->\nnew\n<!-- slopvac:end -->\n";
@@ -390,4 +390,49 @@ fn an_empty_top_level_key_is_a_real_record_not_the_suppression_marker() {
     let (code, _, err) = cli(dir.path());
     assert_eq!(code, 2);
     assert!(err.contains("slopvac.toml:"), "{err}");
+}
+
+fn migrate_text(text: &str, preserve_behavior: bool) -> Vec<slopvac_migrate::Dropped> {
+    match migrate_config(
+        text,
+        "slopvac.toml",
+        &RenameTable::bundled(),
+        Options { preserve_behavior },
+    ) {
+        Err(Error::Dropped(d)) => d,
+        other => panic!("expected Dropped, got {other:?}"),
+    }
+}
+
+#[test]
+fn migrate_config_bounds_its_blockers_and_counts_the_rest() {
+    let d = migrate_text(&unknown_keys(250, "bogus"), false);
+    assert_eq!(d.len(), 101);
+    assert!(d[..100].iter().all(|r| r.suppressed == 0));
+    assert_eq!(d[100].suppressed, 150);
+}
+
+#[test]
+fn migrate_config_bounds_its_preserve_behavior_blockers_and_counts_the_rest() {
+    let block = "[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"lax\"\n";
+    let d = migrate_text(&block.repeat(150), true);
+    assert_eq!(d.len(), 101);
+    assert!(d[..100].iter().all(|r| r.suppressed == 0));
+    assert_eq!(d[100].suppressed, 50);
+}
+
+#[test]
+fn a_key_over_the_display_cap_keeps_its_pyproject_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let key = "k".repeat(600);
+    write(
+        dir.path(),
+        "pyproject.toml",
+        format!("[project]\nname = \"x\"\n\n[tool.slopvac]\nprofile = \"normal\"\n\"{key}\" = 1\n"),
+    );
+    let d = dropped_of(dir.path());
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].file, "pyproject.toml");
+    assert_eq!(d[0].line, 6);
+    assert_eq!(d[0].key.chars().count(), 513);
 }
