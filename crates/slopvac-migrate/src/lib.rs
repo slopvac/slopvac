@@ -6,6 +6,7 @@
 //!
 //! The CLI crate wires [`command`] and [`run`] into the clap tree.
 
+mod blocklist;
 mod capped;
 mod cli;
 mod config;
@@ -204,6 +205,14 @@ pub enum Error {
         /// The cap in bytes.
         cap: u64,
     },
+    /// A blocklist is larger than the terms file cap.
+    #[error("{path}: larger than {cap} bytes")]
+    TermsFileTooLarge {
+        /// The file.
+        path: String,
+        /// The cap in bytes.
+        cap: u64,
+    },
     /// A run read more files or bytes than its limits allow.
     #[error("{path}: run limit reached: more than {limit} {what} in one run")]
     RunLimit {
@@ -247,6 +256,7 @@ impl Error {
             Self::Lint(_) => "migrate-lint-failed",
             Self::DocumentTooLarge { .. } => Code::DocumentTooLarge.as_str(),
             Self::ConfigTooLarge { .. } => Code::TooLarge.as_str(),
+            Self::TermsFileTooLarge { .. } => "terms-file-too-large",
             Self::RunLimit { .. } => "migrate-run-limit",
             Self::NotUtf8 { .. } => "migrate-not-utf8",
             Self::Io { .. } | Self::Read { .. } => "migrate-io-failed",
@@ -267,6 +277,10 @@ impl Error {
                 cap,
             },
             Self::ConfigTooLarge { path, cap } => Self::ConfigTooLarge {
+                path: shown(&path, root),
+                cap,
+            },
+            Self::TermsFileTooLarge { path, cap } => Self::TermsFileTooLarge {
                 path: shown(&path, root),
                 cap,
             },
@@ -292,6 +306,7 @@ impl Error {
         match self {
             Self::DocumentTooLarge { cap, .. } => Self::DocumentTooLarge { path, cap },
             Self::ConfigTooLarge { cap, .. } => Self::ConfigTooLarge { path, cap },
+            Self::TermsFileTooLarge { cap, .. } => Self::TermsFileTooLarge { path, cap },
             Self::RunLimit { what, limit, .. } => Self::RunLimit { path, what, limit },
             Self::NotUtf8 { .. } => Self::NotUtf8 { path },
             Self::Read { source, .. } => Self::Read { path, source },
