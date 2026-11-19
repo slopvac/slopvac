@@ -1541,3 +1541,52 @@ fn a_dangling_extends_link_is_missing_as_before() {
     let r = rejected(load(&p, &NoPresets).unwrap_err());
     assert_eq!(r.diagnostics[0].code, Code::ExtendsMissing);
 }
+
+/// A config with `count` distinct `[[overrides]]` blocks.
+fn block_config(count: usize) -> String {
+    let mut text = String::from("schema_version = 3\n");
+    for i in 0..count {
+        text.push_str(&format!("\n[[overrides]]\nfiles = [\"dir{i}/*.md\"]\n"));
+    }
+    text
+}
+
+#[test]
+fn a_file_with_exactly_the_block_limit_loads() {
+    let fx = Fixture::new();
+    let p = fx.write(
+        "slopvac.toml",
+        &block_config(slopvac_config::MAX_FILE_BLOCKS),
+    );
+    let cfg = load(&p, &NoPresets).unwrap();
+    assert_eq!(cfg.files[0].blocks.len(), slopvac_config::MAX_FILE_BLOCKS);
+}
+
+#[test]
+fn a_file_one_block_past_the_limit_is_refused_with_its_budget() {
+    let fx = Fixture::new();
+    let p = fx.write(
+        "slopvac.toml",
+        &block_config(slopvac_config::MAX_FILE_BLOCKS + 1),
+    );
+    let data = budget_data(load(&p, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::FileBlocks);
+    assert_eq!(data.budget.as_str(), "file-blocks");
+    assert_eq!(data.limit, slopvac_config::MAX_FILE_BLOCKS as u64);
+    assert_eq!(data.path, "slopvac.toml");
+}
+
+#[test]
+fn blocks_split_across_both_tables_count_together() {
+    let fx = Fixture::new();
+    let half = slopvac_config::MAX_FILE_BLOCKS / 2 + 1;
+    let mut text = block_config(half);
+    for i in 0..half {
+        text.push_str(&format!(
+            "\n[[genres]]\nfiles = [\"g{i}/*.md\"]\ngenre = \"docs\"\n"
+        ));
+    }
+    let p = fx.write("slopvac.toml", &text);
+    let data = budget_data(load(&p, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::FileBlocks);
+}

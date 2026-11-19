@@ -15,7 +15,7 @@ use crate::messages::{ConfigPhrase, ConfigText};
 use crate::presets::Presets;
 use crate::read::{
     MAX_CONFIG_BYTES, MAX_EXTENDS_APPLIED_BYTES, MAX_EXTENDS_BYTES, MAX_EXTENDS_DEPTH,
-    MAX_EXTENDS_FILES, ReadFailure, read_text,
+    MAX_EXTENDS_FILES, MAX_FILE_BLOCKS, ReadFailure, read_text,
 };
 use crate::schema::validate_config;
 use crate::source::{Layer, Setting};
@@ -376,6 +376,9 @@ impl Loader<'_> {
         if let Err(d) = check_version(&tree, &text) {
             return Err(reject(text, vec![d]));
         }
+        if let Some(d) = self.check_block_count(&tree, key, display) {
+            return Err(reject(text, vec![d]));
+        }
         let mut diagnostics = validate_config(&tree, &text);
         if diagnostics.is_empty() {
             check_exclude(&tree, &mut diagnostics);
@@ -424,6 +427,38 @@ impl Loader<'_> {
         }
     }
 
+    /// Refuse a file that lists more than [`MAX_FILE_BLOCKS`] `[[genres]]` and `[[overrides]]`
+    /// blocks, before the schema check or any block compiles a glob matcher.
+    fn check_block_count(&self, tree: &Node, key: &Key, display: &str) -> Option<Diagnostic> {
+        let mut count = 0usize;
+        let mut span = None;
+        for table in ["genres", "overrides"] {
+            if let Some(
+                node @ Node {
+                    value: Value::Array(items),
+                    ..
+                },
+            ) = tree.get(table)
+            {
+                count += items.len();
+                span.get_or_insert_with(|| node.span.clone());
+            }
+        }
+        if count <= MAX_FILE_BLOCKS {
+            return None;
+        }
+        let refusal = self.over_budget(key, display, ConfigBudget::FileBlocks);
+        Some(Diagnostic {
+            code: refusal.code,
+            message: refusal.message,
+            label: ConfigPhrase::LabelTooManyBlocks.text(),
+            span: span.unwrap_or(0..0),
+            help: refusal.help,
+            path: Vec::new(),
+            data: refusal.data,
+        })
+    }
+
     /// Report a `styles` list that the provider cannot load for a reason that must stop the run.
     fn check_styles(&self, tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
         let Some(node) = tree.get("styles") else {
@@ -468,7 +503,7 @@ impl Loader<'_> {
             else {
                 continue;
             };
-            let mut seen: Vec<(Vec<String>, usize)> = Vec::new();
+            let mut seen: HashMap<Vec<String>, usize> = HashMap::new();
             for (index, item) in items.iter().enumerate() {
                 let files = strings(item.get("files"));
                 let mut scope = files
@@ -479,7 +514,7 @@ impl Loader<'_> {
                 scope.dedup();
                 let files_node = item.get("files");
                 let span = files_node.map_or_else(|| item.span.clone(), |n| n.span.clone());
-                if let Some((_, first)) = seen.iter().find(|(s, _)| *s == scope) {
+                if let Some(first) = seen.get(&scope) {
                     diagnostics.push(Diagnostic {
                         code: Code::DuplicateScope,
                         message: ConfigText::ScopeRepeats {
@@ -496,7 +531,7 @@ impl Loader<'_> {
                     });
                     continue;
                 }
-                seen.push((scope, index));
+                seen.insert(scope, index);
                 let matcher = match compile(&files, self.root) {
                     Ok(m) => m,
                     Err(msg) => {
@@ -567,6 +602,14 @@ impl Loader<'_> {
                     limit,
                 };
                 (limit, message, ConfigPhrase::HelpRemoveOrSplit)
+            }
+            ConfigBudget::FileBlocks => {
+                let limit = MAX_FILE_BLOCKS as u64;
+                let message = ConfigText::BudgetBlocks {
+                    path: path_text,
+                    limit,
+                };
+                (limit, message, ConfigPhrase::HelpMergeOrSplitBlocks)
             }
             ConfigBudget::ExtendsAppliedBytes => {
                 let limit = MAX_EXTENDS_APPLIED_BYTES;

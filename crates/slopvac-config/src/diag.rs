@@ -37,8 +37,8 @@ pub enum Code {
     UnsupportedVersion,
     /// An `extends` chain that loops back on itself.
     ExtendsCycle,
-    /// An `extends` graph that passes a budget: depth, files applied or bytes read. The
-    /// diagnostic's `data` names which.
+    /// A config that passes a budget: `extends` depth, files applied or bytes read, or blocks in
+    /// one file. The diagnostic's `data` names which.
     BudgetExceeded,
     /// An `extends` entry that names no readable config.
     ExtendsMissing,
@@ -113,6 +113,9 @@ pub enum ConfigBudget {
     /// Bytes of config text applied, counting each application, in bytes:
     /// [`crate::MAX_EXTENDS_APPLIED_BYTES`].
     ExtendsAppliedBytes,
+    /// `[[genres]]` and `[[overrides]]` blocks in one file, in blocks:
+    /// [`crate::MAX_FILE_BLOCKS`].
+    FileBlocks,
 }
 
 impl ConfigBudget {
@@ -124,6 +127,7 @@ impl ConfigBudget {
             Self::ExtendsFiles => "extends-files",
             Self::ExtendsBytes => "extends-bytes",
             Self::ExtendsAppliedBytes => "extends-applied-bytes",
+            Self::FileBlocks => "file-blocks",
         }
     }
 }

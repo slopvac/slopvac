@@ -271,6 +271,14 @@ pub(crate) enum ConfigText {
         #[count]
         limit: u64,
     },
+    /// Too many `[[genres]]` and `[[overrides]]` blocks in one file.
+    #[code("config-budget-blocks")]
+    #[text("{path} lists more than {limit} `genres` and `overrides` blocks")]
+    BudgetBlocks {
+        path: String,
+        #[count]
+        limit: u64,
+    },
     /// An extended config over the size cap.
     #[code("config-extended-too-large")]
     #[text("the extended config `{name}` is larger than {cap} bytes")]
@@ -523,6 +531,10 @@ pub(crate) enum ConfigPhrase {
     #[code("config-label-same-files")]
     #[text("same files as an earlier block")]
     LabelSameFiles,
+    /// Label for a file that lists too many blocks.
+    #[code("config-label-too-many-blocks")]
+    #[text("too many blocks")]
+    LabelTooManyBlocks,
     /// Label for an `extends` entry.
     #[code("config-label-extended-here")]
     #[text("extended here")]
@@ -591,6 +603,10 @@ pub(crate) enum ConfigPhrase {
     #[code("config-help-remove-or-split")]
     #[text("remove entries or split the files")]
     HelpRemoveOrSplit,
+    /// Help for too many blocks in one file.
+    #[code("config-help-merge-or-split-blocks")]
+    #[text("merge blocks that share files, or split the config")]
+    HelpMergeOrSplitBlocks,
     /// Help for too many applied bytes.
     #[code("config-help-remove-repeated-large")]
     #[text("remove entries that extend the same large files again")]

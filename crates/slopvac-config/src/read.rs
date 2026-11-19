@@ -13,7 +13,7 @@ pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 // Budget names in `docs/contract/policies.md` section 1.9 and their constants:
 // `extends-depth` is `MAX_EXTENDS_DEPTH`, `extends-files` is `MAX_EXTENDS_FILES`,
 // `extends-bytes` is `MAX_EXTENDS_BYTES` and `extends-applied-bytes` is
-// `MAX_EXTENDS_APPLIED_BYTES`.
+// `MAX_EXTENDS_APPLIED_BYTES`. `file-blocks` is `MAX_FILE_BLOCKS`.
 
 /// The deepest `extends` nesting: the nearest config extends a file that extends a file, and
 /// so on. A real chain is two or three levels, so 32 leaves a wide margin.
@@ -31,6 +31,11 @@ pub const MAX_EXTENDS_BYTES: u64 = 8 * 1024 * 1024;
 /// time it applies. It bounds the merge work and the settings the result holds. A real graph is
 /// under 100 KiB, so 64 MiB leaves a wide margin.
 pub const MAX_EXTENDS_APPLIED_BYTES: u64 = 64 * 1024 * 1024;
+
+/// The most `[[genres]]` and `[[overrides]]` blocks one config file may hold, both tables
+/// together. A real config has fewer than ten, so 256 leaves a wide margin. Each block compiles
+/// a glob matcher, so the file byte cap alone would still allow tens of thousands.
+pub const MAX_FILE_BLOCKS: usize = 256;
 
 /// The most bytes of one document that the crate reads for front matter and directives.
 pub use slopvac_fs::MAX_DOCUMENT_BYTES;
