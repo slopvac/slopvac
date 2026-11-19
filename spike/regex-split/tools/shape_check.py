@@ -209,7 +209,7 @@ class Parser:
                 k = self.take()
                 self.name_until(")")
                 return ("backref",) if k == "=" else ("recurse",)
-            elif c == "R" or c.isdigit() or c in "+-&":
+            elif c == "R" or c.isdigit() or c == "&" or (c in "+-" and (self.peek() or "").isdigit()):
                 self.i -= 1
                 self.name_until(")")
                 return ("recurse",)
@@ -529,11 +529,14 @@ class Analysis:
         for x in inner:
             xc = self.chars(x[1])
             separated = False
-            for it in items:
-                if it is x or self.nullable(it) or self.contains(it, x):
-                    continue
-                if not (self.chars(it) & xc):
-                    separated = True
+            for seq in self.seqs_on_path(rep[1], x):
+                for it in seq[1]:
+                    if self.contains(it, x) or self.nullable(it):
+                        continue
+                    if not (self.chars(it) & xc):
+                        separated = True
+                        break
+                if separated:
                     break
             if not separated and xc:
                 if unbounded:
@@ -553,6 +556,18 @@ class Analysis:
         # Nullable body under an unbounded repeat: (\s*)* style.
         if unbounded and self.nullable(rep[1]) and self.chars(rep[1]):
             self.hit("NULLABLE-REP", "unbounded repeat of a group that can match empty")
+
+    def seqs_on_path(self, n, x):
+        """Every seq node on the path from n down to x."""
+        if n is x:
+            return []
+        t = n[0]
+        kids = n[1] if t in ("seq", "alt") else ([n[1]] if t in ("rep", "group") else [])
+        for k in kids:
+            if self.contains(k, x):
+                below = self.seqs_on_path(k, x)
+                return ([n] if t == "seq" else []) + below
+        return []
 
     def contains(self, n, x):
         if n is x:

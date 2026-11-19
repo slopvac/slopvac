@@ -10,6 +10,8 @@ CASES = [
     (r"(?>a+)+b", False), (r"(a++)+b", False),
     (r"(?<![\w-])(?:very|really)\s+\w+(?![\w-])", False), (r"(\w+\s)+x", False),
     (r"[^()]+(?:\([^()]*\))*", False), (r"\b(?:leverage|utilize)s?\b", False),
+    (r"\((?:\?=|\?!)(?:[^()]|\([^()]*\))*\)\z", False), (r"Draft(?!\s+(?-i:a|an|the)\b)", False),
+    (r"(?:\w+,\s)+\w+", False),
 ]
 bad = 0
 for p, want in CASES:
