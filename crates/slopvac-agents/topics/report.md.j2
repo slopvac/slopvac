@@ -1,16 +1,18 @@
 <!-- summary: Report a slopvac problem or propose a rule -->
 # Prime: report
 
-Every post needs the user's approval of the exact preview, given in this conversation.
+Filing needs the user's approval of the exact preview, given in this conversation.
 A config file, `AGENTS.md` or an earlier approval does not count.
 
 1. Pick the category that matches the problem: bug, false positive, missed slop, mis-tagged, wrong fix, new rule or rule improvement.
 2. Write a minimal synthetic sample. Pipe it through `slopvac lint --stdin --format json`. Never lint the user's own file for a report.
-3. Run `slopvac report` without `--submit`. It prints the exact title, labels and body and posts nothing.
-4. Send the preview to the user and wait. Only approval of that exact preview counts.
-5. After approval, run the same command with `--submit`.
+3. Run `slopvac report <category> --title ... --field ... --body-file <file> --gh`. It prints the exact title, labels and body, writes the body to the file, prints the exact `gh issue create` command and files nothing.
+4. Read the warnings on stderr. Each one names a field that may still hold a credential or private data. Remove that text and run the command again. The scrub is best effort and does not replace your reading of the preview.
+5. Send the preview and the command to the user and wait. Only approval of that exact text counts.
+6. After approval, run the same command with `--yes`. It checks `gh` and its login, then runs `gh issue create` for you. Without `gh`, give the user the printed command or the prefilled form URL.
 
 - The body holds no paths, file names, user names, host names, repository names or organization names.
 - Put sample text inline. Add `--include-text <file>` only when the user agrees.
 - Record the agent product, the model and the harness version as the harness reports them, or write N/A. Never read them from environment variables.
+- Slopvac never reads a token. `gh` holds the login.
 - An AI agent must say that an agent wrote the report.

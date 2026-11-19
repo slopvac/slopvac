@@ -12,7 +12,8 @@ use crate::engine::{self, EngineLinter, LintRequest, Linter};
 use crate::env::Env;
 use crate::errors::CliError;
 use crate::{
-    exit, generate, init, inspect, lint_settings, logging, offline, output, owners, redact, stdin,
+    exit, generate, init, inspect, lint_settings, logging, offline, output, owners, redact, report,
+    stdin,
 };
 
 /// Settings every command shares, resolved once.
@@ -145,8 +146,18 @@ where
     } else {
         clap::ColorChoice::Never
     });
+    // `report` takes text that may be a pasted secret, and clap echoes the value it rejects.
+    let is_report = args.iter().skip(1).any(|a| a == "report");
     let matches = match tree.try_get_matches_from(args) {
         Ok(m) => m,
+        Err(err) if err.use_stderr() && is_report => {
+            let _ = writeln!(
+                err_out,
+                "error[usage]: invalid arguments for `slopvac report` ({:?}). Run `slopvac report --help`.",
+                err.kind()
+            );
+            return exit::code(exit::INCOMPLETE);
+        }
         Err(err) if err.use_stderr() => {
             let styled = err.render();
             let text = if early_color {
@@ -219,6 +230,22 @@ fn dispatch(
             slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
         }),
         Some(("migrate", m)) => migrate(m, out),
+        Some(("report", m)) => {
+            let opener = report::github::SystemOpener;
+            let gh = report::gh::SystemGh::default();
+            report::run(
+                m,
+                &report::Deps {
+                    env,
+                    offline: globals.offline,
+                    cwd: std::env::current_dir().unwrap_or_default(),
+                    opener: &opener,
+                    gh: &gh,
+                },
+                out,
+                err_out,
+            )
+        }
         Some(("completions", m)) => {
             let shell = *m
                 .get_one::<clap_complete::Shell>("shell")

@@ -136,9 +136,11 @@ config-value-out-of-range text
 config-version-newer text
 config-version-unsupported text
 document-too-large error
+offline-network-needed error
 render-json error
 render-missing-source error
 render-position error
+report-body-file error
 report-column-document text
 report-column-findings text
 report-column-location text
@@ -147,6 +149,9 @@ report-column-rule text
 report-column-score text
 report-column-severity text
 report-column-verdict text
+report-gh-failed error
+report-gh-missing error
+report-gh-not-logged-in error
 report-html-documents-caption text
 report-html-documents-heading text
 report-html-findings-caption text
@@ -157,6 +162,8 @@ report-html-skip text
 report-html-summary text
 report-html-title text
 report-html-unchecked text
+report-incomplete error
+report-invalid error
 report-markdown-document-heading text
 report-markdown-document-stats text
 report-markdown-notice text
@@ -167,6 +174,7 @@ report-markdown-summary text
 report-markdown-table-header text
 report-markdown-title text
 report-markdown-unchecked text
+report-sample-unreadable error
 report-severity-error text
 report-severity-suggestion text
 report-severity-warning text

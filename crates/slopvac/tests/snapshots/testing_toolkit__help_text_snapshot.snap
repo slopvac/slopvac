@@ -17,6 +17,7 @@ Commands:
   self         Manage this installation.
   lsp          Run the language server on standard input and output.
   migrate      Migrate a 2.x project to 3.0: config, inline directives and steering blocks
+  report       Preview an issue report, and file it with the GitHub CLI.
   terms        Manage project terms
   genre        Print the genre of each file, with scores and the reasons for the choice
   validate     Check config, front matter and inline directives without linting
@@ -28,7 +29,6 @@ Commands:
   plugins      Manage data plugins and code plugins: sync, trust, update.
   onboard      Print the agent onboarding text.
   reference    Generate or check the rules reference.
-  report       Preview or submit an issue report.
   help         Print this message or the help of the given subcommand(s)
 
 Options:

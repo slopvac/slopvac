@@ -16,7 +16,7 @@ Paragraphs and bullets labeled **2.x behavior** describe `packages/slopvac-lint`
 2. Every network feature is a named command or hook in the table in section 1.2. No other code path opens a connection.
 3. Document text, finding text, file paths, and rule hit counts stay local. The update-check request is the only usage-like traffic, and it carries no document data. Slopvac has no telemetry.
 4. A failed or refused connection never changes a lint verdict. It prints an error, and it exits 2 (incomplete) only when the user asked for the network operation.
-5. Slopvac has no prompts, so consent is an explicit command or flag. A guard such as `--submit` binds a command and cannot tell who ran it. The prime text therefore tells agents to get the user's approval of the previewed output first.
+5. Slopvac has no prompts, so consent is an explicit command or flag. A flag such as `--yes` binds a command and cannot tell who ran it. The prime text therefore tells agents to get the user's approval of the previewed output first.
 
 ### 1.2 Inventory of network features
 
@@ -29,7 +29,7 @@ Paragraphs and bullets labeled **2.x behavior** describe `packages/slopvac-lint`
 | Git plugins | None. | A plugin pinned to a git commit clones during `plugins sync` only. | `slopvac-8l4.9.3` |
 | Outdated check | None. | `plugins outdated` lists newer digests and versions from the pinned sources. | `slopvac-8l4.9.3` |
 | Plugin index search | None. | `plugins search` reads the published index over HTTPS. | `slopvac-8l4.9.8` |
-| Issue submission | `prime report` prints a workflow that tells an agent to run `gh issue create` after the user approves the exact post (`guidance.py`). The `gh` program connects. | `slopvac report` reads a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token` and posts the issue. Without a token it opens a prefilled issue-form URL. Both paths need the consent step in section 1.5. | `slopvac-8l4.12.6` |
+| Issue submission | `prime report` prints a workflow that tells an agent to run `gh issue create` after the user approves the exact post (`guidance.py`). The `gh` program connects. | `slopvac report` posts nothing itself. It prints the exact `gh issue create` command, and `--gh --yes` runs it through the GitHub CLI, which holds the login. Slopvac never reads a token. Without `gh`, the user opens a prefilled issue-form URL. Both paths need the consent step in section 1.5. | `slopvac-8l4.12.6` |
 | Model-provider hooks | None. | A plugin that implements the model-provider hook may contact a model service. Slopvac core does not. Consent rules apply (section 1.5). | `slopvac-8l4.9.6`, `slopvac-8l4.11.3` |
 | LSP server | None. | `slopvac lsp` talks to the editor over stdio and opens no connection. | `slopvac-8l4.12.7` |
 | Code plugins in general | None. | A plugin process is a separate program, and 3.0 leaves its network access unsandboxed. The trust command (section 1.6) is the control. The threat model records the residual risk. | `slopvac-8l4.9.4`, `slopvac-8l4.9.11` |
@@ -90,9 +90,23 @@ Two features need consent beyond installing slopvac: issue submission and model-
 
 **Issue submission.**
 
-- `slopvac report` prints the exact title, labels, and body it would post, then exits. Posting needs `--submit`.
+- `slopvac report` prints the exact title, labels, and body it would file, then exits. Filing needs `--gh --yes`.
 - The body omits local paths, file names, user names, host names, repository names, and organization names. The body includes document text only when the user passes `--include-text <file>`, and the preview shows that text.
 - Environment fields come from the CLI, never from environment variables, as `CONTRIBUTING.md` requires for agent reports.
+- `slopvac report <category> --title TEXT --field ID=VALUE ...` builds the report from the issue form of that category. The field ids are the form ids, and a missing required field exits 2 with the code `report-incomplete`. Document text comes only from `--include-text FILE`, which reads a regular UTF-8 file of at most 256 KiB.
+- Every field goes through a scrub before the preview: the working directory, the home directory, the user name and the host name, path-shaped words (Unix, drive and UNC paths, and relative paths), file names, repository and organization names on GitHub, GitLab and Bitbucket URLs (the slopvac repository stays), GitHub tokens (also when a line break splits one), the value of every `Authorization` header, `Bearer`, `Basic`, `Token` and `Digest` credentials and URL user-info. Percent-escapes in a repository URL are decoded before the check, and only a URL host, a leading host or an scp-style `git@host:` counts as a forge address. Document text gets the exact-string and secret steps only, so the sample stays intact.
+- `--body-file FILE` writes the previewed body to `FILE`. The write goes to a temporary file in the same directory and then renames over `FILE`, so a reader never sees half a body.
+- `--gh` requires `--body-file` and prints the command `gh issue create -R github.com/slopvac/slopvac --title TITLE --body-file FILE`, with each word quoted for a POSIX shell. `gh` has no title-file option, so the title is a quoted argument. The host and repository are constants in the binary. No flag or config key changes them, and slopvac clears `GH_HOST` and `GH_REPO` from the environment of `gh`. A body path that is not UTF-8, or that holds a control character, cannot be printed in the command, so `--gh` exits 2 with `report-body-file`.
+- `--gh --yes` runs that command after the preview. Slopvac finds `gh` by a plain lookup in the directories of `PATH`, so a `gh` earlier on `PATH` wins; the threat model records this as a residual risk. It starts `gh` with an argument list and no shell. It first runs `gh auth status --hostname github.com`. When `gh` is missing, the command exits 2 with `report-gh-missing`. When the login check fails, it exits 2 with `report-gh-not-logged-in`. When `gh issue create` fails or runs longer than 60 seconds, it exits 2 with `report-gh-failed`. Slopvac never reads, stores or logs a token, and it prints none of the output of `gh` except the issue URL. Offline mode makes `--gh --yes` exit 2 with `offline-network-needed` before anything is written or printed. `--gh` alone is offline-safe.
+- Without `--gh`, the command is offline-safe and prints a prefilled issue-form URL. `--open` starts the browser, except in offline mode, where the URL is only printed.
+- The preview shows the target, the title and the body, and no labels, because `gh issue create` would not apply them. The prefilled-form path prints the labels the issue form adds.
+- `report` reads no token and no secret from the environment. The scrub works on the supplied text and on the working directory, home directory, user name and host name only.
+- A control character other than a tab or a newline in the title, a field or the document sample is refused with `report-invalid` (a CRLF pair becomes a newline first). Text with an escape sequence could otherwise act on the terminal that shows the preview. The error does not echo the text.
+- An unknown `--field` id is not echoed back.
+- The scrub is best effort and never refuses a report. After it runs, a check over the title, each field, the document sample and the body looks for text that may still hold a credential or private data. For each hit it prints a warning on stderr that names only the field and the kind (``warning: possible credential in field `steps`: review it before posting``), never the matched text. The check looks for a GitHub token prefix (also when whitespace splits it), a long mixed letter-and-digit run, an `Authorization` line (also when folded), `Basic`, `Bearer`, `Token` or `Digest` followed by a credential, a forge address other than `slopvac/slopvac` (after decoding escapes, ignoring a trailing dot in the host and resolving `..`), an absolute path, and the working directory, home directory, user name and host name. It also checks the text as typed, before the scrub, because a partial scrub can leave a fragment. Placeholders such as `<token>` and ordinary prose such as `Basic authentication.` draw no warning. The warning does not stop the run, so the reader of the preview decides.
+- A usage error for `report` (a bad category or argument) does not echo what was typed.
+- The URL carries the title and every answer that fits in 7000 bytes, keyed by form id. It carries no labels, because GitHub answers 404 when the reader may not set them, and the form sets them. Checkboxes stay unticked. The preview names any field that did not fit. A title over 200 characters is refused.
+- The issue forms in `.github/ISSUE_TEMPLATE` are generated from the field definitions in `crates/slopvac/src/report/fields.rs`. A test regenerates them and fails on any difference.
 - 2.x already requires the agent to get the user's approval of the exact post (`guidance.py`, the `prime report` workflow). 3.0 keeps that rule in the prime text and adds the command-level guard above.
 
 **Model-provider hooks.**
@@ -340,6 +354,7 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 
 - The exit codes keep their meaning. Slopvac uses no other exit code.
 - Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `plugin-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation.
+- The `report` command uses these codes, and each exits 2: `report-incomplete` (a required form field is missing), `report-body-file` (the `--body-file` path is refused or cannot be written), `report-gh-missing` (`gh` is not found), `report-gh-not-logged-in` (`gh` is not logged in to github.com), `report-gh-failed` (`gh issue create` failed or ran longer than 60 seconds), `report-invalid` (a title, field or sample holds a control character) and `report-sample-unreadable` (the `--include-text` file cannot be read).
 - No code is reused, and no code changes meaning. A code that stops occurring stays in the documentation, marked retired.
 - Registry logins have two codes. Slopvac asks for a login only when a registry demands one.
   - `credential-helper-untrusted`: the credential helper exists only in a directory that is not trusted (section 1.7 paths: relative to the project, or `<external>/<name>`). Slopvac leaves the helper unstarted and sends the request without a login. When the registry allows that, the run continues and the log carries a warning. When the registry demands a login, the operation fails with this code and exits 2. The user tightens the permissions of the directory or signs in with a static `auths` login or the environment variables.
@@ -436,7 +451,7 @@ The 3.0 binary must pass these tests. Each runs the installed binary with an iso
 | N6 | Machine formats keep stdout free of update notices, and JSON carries the notice in `notices`. | `slopvac-8l4.12.4` |
 | N7 | `plugins sync` in CI exits 2 on a missing lockfile or a digest mismatch and leaves the lockfile unchanged. | `slopvac-8l4.9.3` |
 | N8 | `sync` and `update` never record trust, with or without `--yes`. Only `plugins trust` and `SLOPVAC_TRUST` do. | `slopvac-8l4.9.4` |
-| N9 | `slopvac report` without `--submit` sends zero requests and prints the full body. Against a mock server, `--submit` posts exactly the previewed body. | `slopvac-8l4.12.6` |
+| N9 | `slopvac report` without `--gh --yes` starts no process and sends zero requests, and it prints the full body. With `--gh --yes`, a fake `gh` on `PATH` receives exactly the arguments of the printed command. | `slopvac-8l4.12.6` |
 | N10 | The issue body for a run in a directory with a unique marker path and user name contains neither. | `slopvac-8l4.12.6` |
 | N11 | A review run with a model provider and `--dry-run` leaves the provider uncalled and prints the payload. A `lint` run leaves every provider uncalled. | `slopvac-8l4.11.3` |
 | N12 | A model provider that is untrusted or absent from the config never starts. | `slopvac-8l4.9.6` |
@@ -472,6 +487,6 @@ The Python 2.x tests that cover current behavior sit in `packages/slopvac-lint/t
 
 ## 5. Follow-up for bead owners
 
-- `slopvac-8l4.12.6` adds the preview and `--submit` behavior from section 1.5.
+- `slopvac-8l4.12.6` adds the preview and `--gh --yes` behavior from section 1.5.
 - `slopvac-8l4.13.6` is the Action bead. Its description lists reviewdog, SARIF, and CodeClimate, so it needs the `plugins sync` step and the `--offline` lint step from section 1.4.
 - `slopvac-8l4.12.4` confirms which commands may start the update check (section 1.2).

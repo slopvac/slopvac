@@ -17,8 +17,13 @@ pub static ALL: &[Registered] = &[
     ("slopvac-config-text", slopvac_config::text_entries),
     ("slopvac-config-phrases", slopvac_config::phrase_entries),
     ("report", slopvac_report::message_entries),
+    ("report issue", report_entries),
     ("self update", update_entries),
 ];
+
+fn report_entries() -> &'static [Entry] {
+    <crate::report::messages::ReportError as slopvac_messages::Catalog>::entries()
+}
 
 fn update_entries() -> &'static [Entry] {
     <slopvac_update::messages::UpdateMessage as slopvac_messages::Catalog>::entries()

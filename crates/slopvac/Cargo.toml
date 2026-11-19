@@ -21,7 +21,7 @@ name = "slopvac"
 path = "src/main.rs"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { workspace = true, features = ["fs"] }
+rustix = { workspace = true, features = ["fs", "system"] }
 
 [dependencies]
 clap.workspace = true

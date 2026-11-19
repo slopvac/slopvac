@@ -1,121 +1,106 @@
-name: Bug report
-description: Report a crash, incorrect result, or broken behavior.
+# Generated from crates/slopvac/src/report/fields.rs. Do not edit by hand.
+# Regenerate with: SLOPVAC_UPDATE_FORMS=1 cargo test -p slopvac --test report_forms
+name: "Bug report"
+description: "Report a crash, incorrect result, or broken behavior."
 title: "[bug]: "
-labels: [bug, needs-triage]
+labels: ["bug", "needs-triage"]
 body:
   - type: markdown
     attributes:
-      value: >-
-        An AI agent filing a report MUST disclose itself: tick Reported by an AI
-        agent and fill in Agent, Model, and Harness and version.
-        Reports must not contain paths or file names. Do not include user names,
-        host names, repository names, organization names, or other private data.
-        For security vulnerabilities, use the private vulnerability report on
-        the Security tab.
+      value: "An AI agent filing a report MUST disclose itself: tick Reported by an AI agent and fill in Agent, Model, and Harness and version. Reports must not contain paths or file names. Do not include user names, host names, repository names, organization names, or other private data. For security vulnerabilities, use the private vulnerability report on the Security tab."
   - type: checkboxes
     id: reporter
     attributes:
-      label: Reporter
+      label: "Reporter"
       options:
-        - label: Reported by an AI agent
+        - label: "Reported by an AI agent"
           required: false
   - type: input
     id: agent
     attributes:
-      label: Agent
-      description: >-
-        Agent product name, for example Claude Code, Codex, omp, Kiro, or Cursor. Write N/A when unknown.
+      label: "Agent"
+      description: "Agent product name, for example Claude Code, Codex, omp, Kiro, or Cursor. Write N/A when unknown."
     validations:
       required: true
   - type: input
     id: model
     attributes:
-      label: Model
-      description: >-
-        Record the active model name exactly as the harness reports it in its
-        system prompt, context, or /model selection.
-        Do not use self-description or config defaults. Write N/A when unavailable.
+      label: "Model"
+      description: "Record the active model name exactly as the harness reports it in its system prompt, context, or /model selection. Do not use self-description or config defaults. Write N/A when unavailable."
     validations:
       required: true
   - type: input
     id: harness
     attributes:
-      label: Harness and version
-      description: >-
-        Use the harness's version command, for example claude --version, codex
-        --version, or omp --version. Write N/A when unavailable.
+      label: "Harness and version"
+      description: "Use the harness's version command, for example claude --version, codex --version, or omp --version. Write N/A when unavailable."
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: slopvac version
+      label: "slopvac version"
       description: "Output of `slopvac --version`."
     validations:
       required: true
   - type: dropdown
     id: latest
     attributes:
-      label: Reproduces on the latest release
-      description: >-
-        Rerun the command with `uvx --from slopvac@latest
-        slopvac ...`. If the latest release fixes it, upgrade instead of filing.
+      label: "Reproduces on the latest release"
+      description: "Rerun the command with `uvx --from slopvac@latest slopvac ...`. If the latest release fixes it, upgrade instead of filing."
       options:
         - "Yes"
-        - Not checked
+        - "Not checked"
     validations:
       required: true
   - type: checkboxes
     id: duplicates
     attributes:
-      label: Duplicate search
+      label: "Duplicate search"
       options:
-        - label: I searched existing issues for duplicates
+        - label: "I searched existing issues for duplicates"
           required: true
   - type: textarea
     id: environment
     attributes:
-      label: Environment
-      description: >-
-        Output of `slopvac doctor --format json`, which contains no paths.
-      render: json
+      label: "Environment"
+      description: "Output of `slopvac doctor --format json`, which contains no paths."
+      render: "json"
     validations:
       required: true
   - type: textarea
     id: command
     attributes:
-      label: Command
-      description: >-
-        The exact command or commands you ran. Pipe the sample into
-        `slopvac lint --stdin`. Do not include paths or file names.
-      render: shell
+      label: "Command"
+      description: "The exact command or commands you ran. Pipe the sample into `slopvac lint --stdin`. Do not include paths or file names."
+      render: "shell"
     validations:
       required: true
   - type: textarea
     id: what-happened
     attributes:
-      label: What happened
+      label: "What happened"
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
+      label: "Expected behavior"
     validations:
       required: true
   - type: textarea
     id: output
     attributes:
-      label: Output
-      description: stderr, traceback, or report excerpt
-      render: text
+      label: "Output"
+      description: "stderr, traceback, or report excerpt"
+      render: "text"
     validations:
       required: false
   - type: textarea
     id: config
     attributes:
-      label: Configuration
-      description: Relevant `slopvac.toml` lines.
-      render: toml
+      label: "Configuration"
+      description: "Relevant `slopvac.toml` lines."
+      render: "toml"
     validations:
       required: false
