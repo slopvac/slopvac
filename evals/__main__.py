@@ -8,6 +8,7 @@ ab      paired comparison of two stored results
 from __future__ import annotations
 
 import argparse
+import csv
 import dataclasses
 import json
 import os
@@ -412,6 +413,51 @@ def cmd_label_resolve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_label_worksheet(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    try:
+        judgments, _ = labelling.usable_judgments(
+            [
+                r
+                for f in sorted(p["judgments"].glob("*.jsonl"))
+                for r in labelling.read_jsonl(f)
+            ]
+        )
+        docs = {d["id"]: d for d in lib.load_manifest()["documents"]}
+        cache = _cache(args)
+        families, rows = labelling.worksheet_rows(
+            labelling.read_jsonl(p["items"]),
+            judgments,
+            labelling.read_jsonl(p["human"]),
+            doc_text=lambda doc: runner.text_path(docs[doc], cache).read_text("utf-8"),
+            notes=labelling.rule_notes(Path(args.rules_dir)),
+        )
+    except (runner.EngineError, OSError) as exc:
+        print(f"evals label worksheet: {exc}", file=sys.stderr)
+        return 2
+    labelling.write_worksheet(Path(args.out), families, rows)
+    print(f"{len(rows)} rows written to {args.out}")
+    return 0
+
+
+def cmd_label_import_worksheet(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    try:
+        rows = labelling.worksheet_verdicts(
+            Path(args.csv),
+            {i["id"] for i in labelling.read_jsonl(p["items"])},
+            labelling.read_jsonl(p["human"]),
+            reviewer=args.reviewer,
+            date=args.date or labelling.today(),
+        )
+    except (ValueError, OSError, csv.Error) as exc:
+        print(f"evals label import-worksheet: {exc}", file=sys.stderr)
+        return 2
+    labelling.append_jsonl(p["human"], rows)
+    print(f"{len(rows)} human verdicts recorded")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m evals", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -483,6 +529,22 @@ def build_parser() -> argparse.ArgumentParser:
     lr.add_argument("--reason", required=True)
     lr.add_argument("--date", default=None)
     lr.set_defaults(func=cmd_label_resolve)
+
+    lw = lsub.add_parser(
+        "worksheet", help="write the disputes and spot-check items as one CSV"
+    )
+    lw.add_argument("--out", required=True)
+    lw.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
+    lw.add_argument("--cache")
+    lw.set_defaults(func=cmd_label_worksheet)
+
+    li = lsub.add_parser(
+        "import-worksheet", help="record the tp and fp rows of a filled worksheet"
+    )
+    li.add_argument("csv")
+    li.add_argument("--reviewer", required=True)
+    li.add_argument("--date", default=None)
+    li.set_defaults(func=cmd_label_import_worksheet)
 
     b = sub.add_parser("baseline", help="write a ratchet baseline from stored results")
     b.add_argument("results")

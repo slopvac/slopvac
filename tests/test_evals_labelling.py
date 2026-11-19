@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 
 import pytest
@@ -759,3 +760,231 @@ def test_sample_dry_run_counts_per_rule_and_writes_nothing(
     assert cli.main([*args, "--dry-run"]) == 0
     assert capsys.readouterr().out == f"{R}\t2\ntotal\t2\n"
     assert not d.exists()
+
+
+# --- the human review worksheet ----------------------------------------------------
+
+ALPHA = "cat.alpha"
+
+
+@pytest.fixture
+def sheet_env(tmp_path, monkeypatch):
+    """Ten items judged by two families: i0 and i1 disputed, i2..i9 agreed.
+
+    Eight agreements at the 10% spot rate give round(0.8) = 1 spot-check item.
+    """
+    monkeypatch.setattr(cli.lib, "load_manifest", manifest)
+    path = tmp_path / "d.txt"
+    path.write_text(DOC_TEXT)
+    monkeypatch.setattr(lab.runner, "text_path", lambda doc, cache: path)
+    d = tmp_path / "labels"
+    rules = {"i0": (R, "h1"), "i1": (ALPHA, "h2")}
+    lab.write_jsonl(
+        d / "items.jsonl",
+        [
+            {
+                **ITEM,
+                "id": f"i{n}",
+                "rule": rules.get(f"i{n}", (R, "h1"))[0],
+                "doc": rules.get(f"i{n}", (R, "h1"))[1],
+                "text": "=SUM(1)" if n == 0 else "flagged",
+                "split": "tuning",
+            }
+            for n in range(10)
+        ],
+    )
+    for family, model, other in (
+        ("anthropic", "claude-test", "tp"),
+        ("openai", "gpt-test", "fp"),
+    ):
+        lab.write_jsonl(
+            d / "judgments" / f"{family}.jsonl",
+            [
+                {
+                    "item": f"i{n}",
+                    "family": family,
+                    "model": model,
+                    "order": o,
+                    "prompt_version": lab.PROMPT_VERSION,
+                    "verdict": other if n < 2 else "tp",
+                }
+                for n in range(10)
+                for o in lab.ORDERS
+            ],
+        )
+    return d
+
+
+def worksheet_cli(d, out, tmp_path):
+    return cli.main(
+        ["label", "--dir", str(d), "worksheet", "--out", str(out)]
+        + ["--rules-dir", str(tmp_path)]
+    )
+
+
+def import_cli(d, sheet, reviewer="sjors"):
+    return cli.main(
+        ["label", "--dir", str(d), "import-worksheet", str(sheet)]
+        + ["--reviewer", reviewer, "--date", "2026-11-19"]
+    )
+
+
+def read_sheet(path):
+    with open(path, encoding="utf-8", newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+def fill_sheet(path, answers):
+    """answers maps item -> (verdict, reason)."""
+    rows = read_sheet(path)
+    for row in rows:
+        row["verdict"], row["reason"] = answers.get(row["item"], ("", ""))
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        out = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        out.writeheader()
+        out.writerows(rows)
+
+
+def test_worksheet_holds_both_queues_disputes_first_then_rule_and_doc(
+    sheet_env, tmp_path
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(sheet_env, out, tmp_path) == 0
+    rows = read_sheet(out)
+    # No merge ran, yet both queues exist. Disputes sort by rule: alpha before rule.
+    assert [r["queue"] for r in rows] == ["dispute", "dispute", "spot"]
+    assert [r["item"] for r in rows[:2]] == ["i1", "i0"]
+    assert rows[2]["item"] not in ("i0", "i1")
+    first = rows[0]
+    assert (first["rule"], first["doc"], first["line"]) == (ALPHA, "h2", "5")
+    assert first["judge anthropic"] == "tp" and first["judge openai"] == "fp"
+    assert ">> 5: line 5" in first["context"] and "2: line 2" in first["context"]
+    assert "8: line 8" in first["context"] and "9: line 9" not in first["context"]
+    assert list(first)[-2:] == ["verdict", "reason"]
+    assert first["verdict"] == first["reason"] == ""
+
+
+def test_worksheet_round_trip_records_filled_rows_and_leaves_blanks(
+    sheet_env, tmp_path
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(sheet_env, out, tmp_path) == 0
+    fill_sheet(out, {"i1": ("tp", "boilerplate"), "i0": ("FP ", "quoted term")})
+    assert import_cli(sheet_env, out) == 0
+    assert lab.read_jsonl(sheet_env / "human.jsonl") == [
+        {
+            "item": item,
+            "label": label,
+            "reviewer": "sjors",
+            "reason": reason,
+            "date": "2026-11-19",
+        }
+        for item, label, reason in (
+            ("i1", "tp", "boilerplate"),
+            ("i0", "fp", "quoted term"),
+        )
+    ]
+    # Reviewed items leave the queue; the blank spot-check row stays.
+    again = tmp_path / "again.csv"
+    assert worksheet_cli(sheet_env, again, tmp_path) == 0
+    assert [r["queue"] for r in read_sheet(again)] == ["spot"]
+
+
+@pytest.mark.parametrize(
+    ("text", "written"),
+    [
+        ("=SUM(1)", "'=SUM(1)"),
+        ("+1", "'+1"),
+        ("-1", "'-1"),
+        ("@cmd", "'@cmd"),
+        ("\tcell", "'\tcell"),
+        ("\rcell", "'\rcell"),
+        ("plain = text", "plain = text"),
+    ],
+)
+def test_worksheet_neutralizes_formula_cells(sheet_env, tmp_path, text, written):
+    items_ = lab.read_jsonl(sheet_env / "items.jsonl")
+    items_[1]["text"] = text
+    lab.write_jsonl(sheet_env / "items.jsonl", items_)
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(sheet_env, out, tmp_path) == 0
+    (row,) = [r for r in read_sheet(out) if r["item"] == "i1"]
+    assert row["flagged text"] == written
+
+
+@pytest.mark.parametrize(
+    ("typed", "stored"),
+    [
+        ("'-dash reason", "-dash reason"),  # the quote shields a formula start
+        ("'=oops", "=oops"),
+        ("'quoted word", "'quoted word"),  # no formula start, so the quote is real
+        ("plain", "plain"),
+    ],
+)
+def test_import_strips_only_the_formula_escape_quote(
+    sheet_env, tmp_path, typed, stored
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(sheet_env, out, tmp_path) == 0
+    fill_sheet(out, {"i1": ("tp", typed)})
+    assert import_cli(sheet_env, out) == 0
+    (row,) = lab.read_jsonl(sheet_env / "human.jsonl")
+    assert row["reason"] == stored
+
+
+def test_reimporting_a_worksheet_does_not_duplicate_entries(sheet_env, tmp_path):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(sheet_env, out, tmp_path) == 0
+    fill_sheet(out, {"i1": ("tp", "boilerplate"), "i0": ("fp", "quoted")})
+    assert import_cli(sheet_env, out) == 0
+    assert import_cli(sheet_env, out) == 0
+    assert len(lab.read_jsonl(sheet_env / "human.jsonl")) == 2
+    # A changed reason is a new decision and is kept; another reviewer is too.
+    fill_sheet(out, {"i1": ("tp", "better reason"), "i0": ("fp", "quoted")})
+    assert import_cli(sheet_env, out) == 0
+    assert len(lab.read_jsonl(sheet_env / "human.jsonl")) == 3
+    assert import_cli(sheet_env, out, reviewer="other") == 0
+    assert len(lab.read_jsonl(sheet_env / "human.jsonl")) == 5
+
+
+@pytest.mark.parametrize(
+    ("answers", "message"),
+    [
+        (
+            {"i0": ("fp", "ok"), "i1": ("maybe", "x")},
+            "row 2: a human verdict is tp or fp",
+        ),
+        (
+            {"i0": ("fp", "ok"), "i1": ("tp", "  ")},
+            "row 2: a human verdict needs a reason",
+        ),
+        (
+            {"i1": ("fp", "ok"), "i0": ("tp", "")},
+            "row 3: a human verdict needs a reason",
+        ),
+    ],
+)
+def test_import_rejects_bad_rows_naming_the_row_and_writes_nothing(
+    sheet_env, tmp_path, capsys, answers, message
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(sheet_env, out, tmp_path) == 0
+    fill_sheet(out, answers)  # rows are i1, i0, spot: spreadsheet rows 2, 3, 4
+    assert import_cli(sheet_env, out) == 2
+    assert message in capsys.readouterr().err
+    assert not (sheet_env / "human.jsonl").exists()
+
+
+def test_import_rejects_an_unknown_item_naming_the_row(sheet_env, tmp_path, capsys):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(sheet_env, out, tmp_path) == 0
+    rows = read_sheet(out)
+    rows[1]["item"], rows[0]["verdict"], rows[0]["reason"] = "nope", "tp", "fine"
+    rows[1]["verdict"], rows[1]["reason"] = "fp", "fine"
+    with open(out, "w", encoding="utf-8", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    assert import_cli(sheet_env, out) == 2
+    assert "row 3: unknown item 'nope'" in capsys.readouterr().err
+    assert not (sheet_env / "human.jsonl").exists()

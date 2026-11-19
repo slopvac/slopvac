@@ -35,6 +35,7 @@ Rules of the procedure
 
 from __future__ import annotations
 
+import csv
 import datetime as dt
 import hashlib
 import json
@@ -503,6 +504,140 @@ def merge(
         "spot_pending": pending,
         "stats": stats,
     }
+
+
+# --- the human review worksheet ---------------------------------------------------
+
+WORKSHEET_HEAD = (
+    "queue",
+    "item",
+    "rule",
+    "doc",
+    "line",
+    "flagged text",
+    "context",
+    "rule note",
+)
+WORKSHEET_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def neutralize_cell(value: str) -> str:
+    """Stop a spreadsheet reading a cell as a formula (CWE-1236) with a leading quote."""
+    return "'" + value if value.startswith(WORKSHEET_FORMULA_STARTS) else value
+
+
+def restore_cell(value: str) -> str:
+    """Undo `neutralize_cell`: drop the quote only where it shields a formula start."""
+    if value.startswith("'") and value[1:].startswith(WORKSHEET_FORMULA_STARTS):
+        return value[1:]
+    return value
+
+
+def worksheet_rows(
+    items: Sequence[Mapping[str, Any]],
+    judgments: Sequence[Mapping[str, Any]],
+    human: Sequence[Mapping[str, Any]],
+    *,
+    doc_text: Callable[[str], str],
+    notes: Mapping[str, str],
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Rows for every item that still needs a human verdict, and the family names.
+
+    Both queues come from `merge` on the inputs, not from files that `label merge`
+    writes only after a clean run. Disputes come first, then rule, then document.
+    """
+    merged = merge(items, judgments, human)
+    by_id = {i["id"]: i for i in items}
+    families = sorted({j["family"] for j in judgments})
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for j in judgments:
+        grouped[(j["item"], j["family"])].append(j)
+    queued = [("dispute", d["item"]) for d in merged["disputes"]]
+    queued += [("spot", i) for i in merged["spot_pending"]]
+    rows: list[dict[str, str]] = []
+    for queue, iid in queued:
+        item = by_id[iid]
+        row = {
+            "queue": queue,
+            "item": iid,
+            "rule": item["rule"],
+            "doc": item["doc"],
+            "line": str(item["line"]),
+            "flagged text": item["text"],
+            "context": context_for(doc_text(item["doc"]), item["line"])[2],
+            "rule note": notes.get(item["rule"], ""),
+        }
+        for fam in families:
+            row[f"judge {fam}"] = family_verdict(grouped[(iid, fam)])
+        rows.append(row)
+    rows.sort(
+        key=lambda r: (r["queue"] != "dispute", r["rule"], r["doc"], int(r["line"]))
+    )
+    return families, rows
+
+
+def write_worksheet(
+    path: Path, families: Sequence[str], rows: Sequence[Mapping[str, str]]
+) -> None:
+    head = [*WORKSHEET_HEAD, *(f"judge {f}" for f in families), "verdict", "reason"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        out = csv.DictWriter(fh, fieldnames=head, restval="")
+        out.writeheader()
+        for row in rows:
+            out.writerow({k: neutralize_cell(v) for k, v in row.items()})
+
+
+def worksheet_verdicts(
+    path: Path,
+    known_items: Iterable[str],
+    existing: Sequence[Mapping[str, Any]],
+    *,
+    reviewer: str,
+    date: str,
+) -> list[dict[str, Any]]:
+    """Validate every filled row and return the human rows to append.
+
+    Raises ValueError naming the spreadsheet row (the header is row 1) on the first
+    problem, so a caller writes nothing. Rows with a blank verdict are skipped, and
+    so is a row that repeats a human entry with the same item, reviewer, verdict
+    and reason.
+    """
+    known = set(known_items)
+    seen = {
+        (h["item"], h.get("reviewer"), h["label"], h.get("reason")) for h in existing
+    }
+    with path.open(encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        missing = {"item", "verdict", "reason"} - set(reader.fieldnames or ())
+        if missing:
+            raise ValueError(
+                f"the worksheet has no {', '.join(sorted(missing))} column"
+            )
+        out: list[dict[str, Any]] = []
+        for number, row in enumerate(reader, start=2):
+            verdict = restore_cell(row["verdict"] or "").strip().lower()
+            if not verdict:
+                continue
+            item = restore_cell(row["item"] or "").strip()
+            reason = restore_cell(row["reason"] or "")
+            if item not in known:
+                raise ValueError(f"row {number}: unknown item {item!r}")
+            try:
+                human = record_human(
+                    item=item,
+                    label=verdict,
+                    reviewer=reviewer,
+                    reason=reason,
+                    date=date,
+                )
+            except ValueError as exc:
+                raise ValueError(f"row {number}: {exc}") from None
+            key = (item, reviewer, verdict, reason)
+            if key not in seen:
+                seen.add(key)
+                out.append(human)
+    return out
 
 
 def underlabelled(
