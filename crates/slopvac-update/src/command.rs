@@ -9,7 +9,7 @@ use clap::{ArgMatches, Command};
 use slopvac_messages::Catalog as _;
 
 use crate::fetch::{Fetcher, UreqFetcher};
-use crate::install::{self, InstallMethod};
+use crate::install::{self, InstallMethod, RELEASES_URL};
 use crate::notice::{self, Cache, Context, Notice};
 use crate::pipeline::{self, DOWNLOAD_BASE, UpdateError};
 use crate::verify::{ArtifactVerifier, ReleaseVerifier};
@@ -184,7 +184,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
     let method = rt.method();
     if method != InstallMethod::Installer {
         let advice = method.upgrade_command().map_or_else(
-            || "download a release from https://github.com/slopvac/slopvac/releases".to_owned(),
+            || format!("download a release from {RELEASES_URL}"),
             |c| format!("run `{c}`"),
         );
         return Err(Failure::new(
