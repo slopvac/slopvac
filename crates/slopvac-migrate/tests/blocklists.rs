@@ -470,8 +470,11 @@ fn a_blocklist_over_the_terms_file_cap_exits_2_and_nothing_is_written() {
 
 #[test]
 fn blocklist_reads_count_against_the_run_byte_budget() {
-    let dir = project(CONFIG, OLD);
-    let used = CONFIG.len() + OLD.len();
+    // An already-3.0 blocklist is never rewritten, so only its read is charged to the budget.
+    let current =
+        "schema_version = 3\n\n[[entries]]\nword = \"use\"\npos = \"verb\"\nreason = \"Why.\"\n";
+    let dir = project(CONFIG, current);
+    let used = CONFIG.len() + current.len();
     let limits = |bytes: usize| Limits::new(1000, u64::try_from(bytes).unwrap());
     let run = |l| {
         plan_with_limits(
@@ -483,10 +486,10 @@ fn blocklist_reads_count_against_the_run_byte_budget() {
         )
     };
     assert!(run(limits(10 * used)).is_ok(), "a generous budget fits");
-    // The config and the blocklist are read in turn; the blocklist read crosses the budget.
+    // The config is read first; the blocklist read is the one that crosses the budget.
     let e = run(limits(used - 1)).unwrap_err();
     assert_eq!(e.code(), "migrate-run-limit");
     assert!(e.to_string().contains("words.toml"), "{e}");
-    assert_eq!(read(dir.path(), "words.toml"), OLD);
+    assert_eq!(read(dir.path(), "words.toml"), current);
     assert_eq!(read(dir.path(), "slopvac.toml"), CONFIG);
 }
