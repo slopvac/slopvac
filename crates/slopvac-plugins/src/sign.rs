@@ -179,21 +179,19 @@ pub fn is_reserved_namespace(namespace: &str) -> bool {
     RESERVED_NAMESPACES.contains(&namespace)
 }
 
-/// The compiled plugins key file. Not yet issued: the maintainer generates the
-/// key pair and keeps the secret half in a protected environment. Until the key
-/// ceremony puts the public half here, the slot is `None` and
-/// [`plugins_key`] returns no key. First-party plugins verify against
-/// [`release_key`] meanwhile.
-const PLUGINS_KEY_FILE: Option<&str> = None;
+/// The compiled plugins key file, `keys/slopvac-plugins.pub`. The secret half
+/// lives in a protected release environment. The release key, which is the
+/// revocation root, can revoke this key by listing its ID.
+const PLUGINS_KEY_FILE: &str = include_str!("../../../keys/slopvac-plugins.pub");
 
-/// The compiled plugins key, which will verify the first-party namespace after
-/// the key ceremony. Not yet issued, so this returns `Ok(None)`. No caller may
-/// treat a missing key as a match.
+/// The compiled plugins key, separate from [`release_key`]. It is the key meant
+/// to sign the first-party namespace. [`KeyPolicy::compiled`] does not list it
+/// yet, so first-party packs still verify against [`release_key`].
 ///
 /// # Errors
-/// [`SignError::InvalidKey`] when a compiled file is present and is not a minisign key.
-pub fn plugins_key() -> Result<Option<PublicKey>, SignError> {
-    PLUGINS_KEY_FILE.map(PublicKey::from_pub_file).transpose()
+/// [`SignError::InvalidKey`] when the compiled file is not a minisign key.
+pub fn plugins_key() -> Result<PublicKey, SignError> {
+    PublicKey::from_pub_file(PLUGINS_KEY_FILE)
 }
 
 /// The id and namespace of the built-in plugin. It is reserved: the binary

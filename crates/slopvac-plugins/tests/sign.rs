@@ -7,13 +7,14 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use oci_server::{Response, Server};
+use rstest::rstest;
 use serde_json::json;
 use slopvac_plugins::oci::{
     Anonymous, Client, Descriptor, MEDIA_MANIFEST, Manifest, OciError, Reference,
 };
 use slopvac_plugins::sign::{
     ANNOTATION_ID, ANNOTATION_VERSION, Expectation, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT,
-    PublicKey, SignError, Statement, canonical_json, fetch_and_verify, release_key,
+    PublicKey, SignError, Statement, canonical_json, fetch_and_verify, plugins_key, release_key,
     signature_layers, verify,
 };
 
@@ -821,6 +822,9 @@ fn the_compiled_release_key_has_the_published_key_id() {
     assert_eq!(release_key().unwrap().key_id(), "D9914BDB4570AC6D");
 }
 
+const PLUGINS_PUB_FILE: &str = include_str!("../../../keys/slopvac-plugins.pub");
+const PLUGINS_KEY_ID: &str = "089DF22CF142CD2B";
+
 fn first_party_signed(key: &Key) -> Signed {
     sign_manifest(
         key,
@@ -939,6 +943,69 @@ fn a_slopvac_artifact_signed_by_a_pinned_key_is_refused_even_without_the_first_p
 }
 
 #[test]
-fn the_plugins_key_slot_holds_no_key_until_one_is_issued() {
-    assert!(slopvac_plugins::sign::plugins_key().unwrap().is_none());
+fn the_compiled_plugins_key_parses_with_the_issued_key_id() {
+    // Bytes 2..10 of the decoded key line, little-endian, worked out by hand from
+    // the key ID in the file's comment line: 2B CD 42 F1 2C F2 9D 08.
+    let comment = PLUGINS_PUB_FILE.lines().next().unwrap();
+    assert!(comment.ends_with(PLUGINS_KEY_ID), "{comment}");
+    let line = PLUGINS_PUB_FILE.lines().nth(1).unwrap();
+    let raw = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, line).unwrap();
+    assert_eq!(raw[2..10], [0x2B, 0xCD, 0x42, 0xF1, 0x2C, 0xF2, 0x9D, 0x08]);
+    assert_eq!(plugins_key().unwrap().key_id(), PLUGINS_KEY_ID);
+}
+
+#[test]
+fn the_plugins_key_is_not_the_release_key() {
+    let plugins = plugins_key().unwrap();
+    let release = release_key().unwrap();
+    assert_ne!(plugins.key_id(), release.key_id());
+    assert_ne!(plugins.fingerprint(), release.fingerprint());
+}
+
+#[rstest]
+#[case::first_party("slopvac")]
+#[case::built_in("core")]
+#[case::third_party("acme")]
+fn a_policy_listing_the_plugins_key_refuses_an_artifact_from_any_other_key(
+    #[case] namespace: &str,
+) {
+    // The secret half is not available to tests, so a positive check for `slopvac`
+    // is not possible. The refusal shows that no namespace trusts a key by accident.
+    let policy = KeyPolicy {
+        first_party: vec![plugins_key().unwrap()],
+        first_party_namespaces: vec!["slopvac".into()],
+        pinned: BTreeMap::new(),
+    };
+    let e = Expectation {
+        namespace,
+        ..expect()
+    };
+    assert!(matches!(
+        run(&signed_in(&Key::new(), namespace), &policy, &e),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[rstest]
+#[case::built_in("core")]
+#[case::third_party("acme")]
+fn the_first_party_key_list_gives_no_trust_outside_the_first_party_namespace(
+    #[case] namespace: &str,
+) {
+    // A key in the first-party list, here a test key beside the plugins key, signs
+    // nothing in `core` or a third-party namespace.
+    let signer = Key::new();
+    let policy = KeyPolicy {
+        first_party: vec![plugins_key().unwrap(), signer.public()],
+        first_party_namespaces: vec!["slopvac".into()],
+        pinned: BTreeMap::new(),
+    };
+    let e = Expectation {
+        namespace,
+        ..expect()
+    };
+    assert!(matches!(
+        run(&signed_in(&signer, namespace), &policy, &e),
+        Err(SignError::KeyNotPinned { .. })
+    ));
 }
