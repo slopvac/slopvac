@@ -243,6 +243,7 @@ Each document ends in exactly one outcome. The last column gives what the host a
   |---|---|
   | `unknown-format` | The extractor does not read this format. |
   | `variant-unsupported` | The extractor reads this format, but not this variant of it. |
+
 - Extraction of a failed document is all or nothing. It returns no segments, and v1 has no partial result.
 - A malformed payload in a named format is `malformed`. It is never `empty` or `no-source`, so a broken file never passes as clean.
 - The native adapter returns the same outcomes with the same codes.
