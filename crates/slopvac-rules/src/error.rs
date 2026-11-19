@@ -35,9 +35,8 @@ impl PackBudget {
     pub fn unit(self) -> &'static str {
         match self {
             Self::Files => "files",
-            Self::Entries => "entries",
+            Self::Entries | Self::RuleEntries => "entries",
             Self::Bytes => "bytes",
-            Self::RuleEntries => "entries",
         }
     }
 }
