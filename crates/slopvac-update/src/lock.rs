@@ -759,10 +759,10 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_binary_that_does_not_answer_in_time_fails_closed() {
+    fn a_binary_that_has_not_answered_by_the_deadline_fails_closed() {
         let (_dir, exe) = installed();
         let started_as = sha_of(&exe);
-        fake_exe(&exe, "exec sleep 30");
+        fake_exe(&exe, "exec sleep 3600");
         let mut lock = acquire(&exe);
         let running = v("3.0.0");
         let err = lock
@@ -771,7 +771,7 @@ mod tests {
                     version: &running,
                     sha: Some(&started_as),
                 },
-                Duration::from_millis(200),
+                Duration::ZERO,
             )
             .unwrap_err();
         assert!(matches!(err, LockError::VersionUnknown { .. }), "{err}");

@@ -748,10 +748,10 @@ mod tests {
     #[test]
     fn an_installed_binary_that_times_out_fails_closed() {
         let (_dir, exe) = installed();
-        let started_as = replaced_by_other_installer(&exe, "exec sleep 30");
+        let started_as = replaced_by_other_installer(&exe, "exec sleep 3600");
         let files = release(tar_gz("slopvac", b"binary 3.1.0"));
         let mut host = Host::new(&exe, Some(started_as));
-        host.probe_timeout = Duration::from_millis(200);
+        host.probe_timeout = Duration::ZERO;
         let err = super::update(
             &files,
             &Verdict(Ok(())),

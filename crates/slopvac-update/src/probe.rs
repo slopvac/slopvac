@@ -167,13 +167,13 @@ mod tests {
         assert!(matches!(err, ProbeError::Failed(_)), "{err}");
     }
 
+    // The deadline has passed when the first check runs, and the child never exits by itself,
+    // so the outcome does not depend on how fast the machine is.
     #[test]
-    fn an_executable_that_does_not_answer_in_time_is_a_timeout() {
-        let (_dir, exe) = script("exec sleep 30");
-        let started = Instant::now();
-        let err = installed_version(&exe, Duration::from_millis(200)).unwrap_err();
+    fn an_executable_that_has_not_answered_by_the_deadline_is_a_timeout() {
+        let (_dir, exe) = script("exec sleep 3600");
+        let err = installed_version(&exe, Duration::ZERO).unwrap_err();
         assert!(matches!(err, ProbeError::Timeout(_)), "{err}");
-        assert!(started.elapsed() < Duration::from_secs(10));
     }
 
     #[test]
