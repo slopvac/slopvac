@@ -622,30 +622,7 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
         },
         Shape::Num { min, max } => check_num(ctx, node, *min, *max, path),
         Shape::Choice { values, table_help } => check_choice(ctx, node, values, *table_help, path),
-        Shape::Version => match node.value {
-            Value::Int(3) => {}
-            Value::Int(n) if n > 3 => ctx.value_error(
-                node,
-                path,
-                ConfigText::VersionNewer {
-                    version: n.to_string(),
-                }
-                .to_string(),
-                ConfigPhrase::LabelReadsVersion3.text(),
-                Some(ConfigPhrase::HelpUpgrade.text()),
-            ),
-            Value::Int(n) => ctx.value_error(
-                node,
-                path,
-                ConfigText::VersionUnsupported {
-                    version: n.to_string(),
-                }
-                .to_string(),
-                ConfigPhrase::LabelMustBe3.text(),
-                Some(ConfigPhrase::HelpMigrateVersion.text()),
-            ),
-            _ => ctx.type_error(node, path, ConfigPhrase::KindIntegerThree.as_static(), None),
-        },
+        Shape::Version => check_version_value(ctx, node, path),
         Shape::List {
             item,
             min_items,
@@ -686,6 +663,33 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                 check(ctx, node, scalar, path);
             }
         }
+    }
+}
+
+fn check_version_value(ctx: &mut Ctx<'_>, node: &Node, path: &[String]) {
+    match node.value {
+        Value::Int(3) => {}
+        Value::Int(n) if n > 3 => ctx.value_error(
+            node,
+            path,
+            ConfigText::VersionNewer {
+                version: n.to_string(),
+            }
+            .to_string(),
+            ConfigPhrase::LabelReadsVersion3.text(),
+            Some(ConfigPhrase::HelpUpgrade.text()),
+        ),
+        Value::Int(n) => ctx.value_error(
+            node,
+            path,
+            ConfigText::VersionUnsupported {
+                version: n.to_string(),
+            }
+            .to_string(),
+            ConfigPhrase::LabelMustBe3.text(),
+            Some(ConfigPhrase::HelpMigrateVersion.text()),
+        ),
+        _ => ctx.type_error(node, path, ConfigPhrase::KindIntegerThree.as_static(), None),
     }
 }
 

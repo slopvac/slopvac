@@ -3,8 +3,8 @@
 //! Three catalogs hold them. [`ConfigMessage`] has one entry per error code. [`ConfigText`]
 //! holds the sentences with parameters that fill a diagnostic's message, label and help.
 //! [`ConfigPhrase`] holds fixed phrases, which callers can read as `&'static str` through
-//! [`ConfigPhrase::as_static`]. The binary registers the three through [`error_entries`],
-//! [`text_entries`] and [`phrase_entries`].
+//! [`ConfigPhrase::as_static`]. The binary registers the three through `error_entries`,
+//! `text_entries` and `phrase_entries`.
 
 use slopvac_messages::{Catalog, Entry};
 
@@ -622,19 +622,19 @@ impl ConfigPhrase {
     }
 }
 
-/// The entries of [`ConfigMessage`]: one per error code.
+/// The entries of `ConfigMessage`: one per error code.
 #[must_use]
 pub fn error_entries() -> &'static [Entry] {
     ConfigMessage::entries()
 }
 
-/// The entries of [`ConfigText`]: sentences with parameters.
+/// The entries of `ConfigText`: sentences with parameters.
 #[must_use]
 pub fn text_entries() -> &'static [Entry] {
     ConfigText::entries()
 }
 
-/// The entries of [`ConfigPhrase`]: fixed phrases.
+/// The entries of `ConfigPhrase`: fixed phrases.
 #[must_use]
 pub fn phrase_entries() -> &'static [Entry] {
     ConfigPhrase::entries()

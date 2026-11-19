@@ -470,7 +470,7 @@ pub fn render_explain(config: &LoadedConfig, explained: &[Explained]) -> String 
     }
     for e in explained {
         let setting = ConfigText::ExplainSetting {
-            path: e.path.to_string(),
+            path: e.path.clone(),
             value: e.value.to_string(),
             origin: describe(&e.source),
         };
