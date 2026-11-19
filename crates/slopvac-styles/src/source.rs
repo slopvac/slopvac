@@ -95,21 +95,32 @@ impl StyleSource for DirSource {
             return Err(StyleError::InvalidName(name.to_owned()));
         }
         let path = self.0.join(format!("{name}.toml"));
-        match slopvac_fs::read_text_capped(&path, MAX_STYLE_BYTES) {
-            Ok(text) => Style::parse(name, &text),
-            Err(slopvac_fs::Error::CapExceeded { cap }) => Err(StyleError::TooLarge {
-                style: name.to_owned(),
-                cap,
-            }),
-            Err(slopvac_fs::Error::Io { source, .. })
-                if source.kind() == std::io::ErrorKind::NotFound =>
-            {
-                Err(StyleError::NotFound(name.to_owned()))
+        // The reader refuses a symlink; resolve one first so a linked style still loads.
+        // A missing file or a dangling link is an unknown style, as it was before this read.
+        let resolved = match std::fs::canonicalize(&path) {
+            Ok(resolved) => resolved,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(StyleError::NotFound(name.to_owned()));
             }
-            Err(e) => Err(StyleError::Io {
-                style: name.to_owned(),
-                message: e.to_string(),
-            }),
+            Err(_) => path,
+        };
+        match slopvac_fs::read_capped_regular_to_string(
+            &resolved,
+            MAX_STYLE_BYTES,
+            slopvac_fs::ReadOptions::new(),
+        ) {
+            Ok(text) => Style::parse(name, &text),
+            Err(e) => match e.input_kind() {
+                Some(slopvac_fs::InputKind::TooLarge) => Err(StyleError::TooLarge {
+                    style: name.to_owned(),
+                    cap: MAX_STYLE_BYTES,
+                }),
+                Some(slopvac_fs::InputKind::NotFound) => Err(StyleError::NotFound(name.to_owned())),
+                _ => Err(StyleError::Io {
+                    style: name.to_owned(),
+                    message: e.to_string(),
+                }),
+            },
         }
     }
 }

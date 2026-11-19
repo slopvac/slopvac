@@ -1,5 +1,7 @@
 //! Layer order, merge rules, provenance and discovery, through the public interface.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -1464,4 +1466,78 @@ fn repeating_a_large_file_two_hundred_times_is_refused_without_applying_it() {
     let root = amplification(&fx, 224, 0);
     let data = budget_data(load(&root, &NoPresets).unwrap_err());
     assert_eq!(data.budget, ConfigBudget::ExtendsAppliedBytes);
+}
+
+fn mkfifo(path: &Path) {
+    let made = std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(made.success());
+}
+
+#[test]
+fn a_fifo_config_is_refused_with_config_io() {
+    let fx = Fixture::new();
+    let fifo = fx.root().join("slopvac.toml");
+    mkfifo(&fifo);
+    let path = fifo.clone();
+    let err = common::within_timeout(&fifo, move || load(&path, &NoPresets).unwrap_err());
+    assert_eq!(err.code(), Code::Io);
+    assert!(
+        err.render().starts_with("error[config-io]"),
+        "{}",
+        err.render()
+    );
+}
+
+#[test]
+fn a_fifo_extends_target_is_refused_at_the_entry() {
+    let fx = Fixture::new();
+    let fifo = fx.root().join("pipe.toml");
+    mkfifo(&fifo);
+    let p = fx.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"pipe.toml\"]\n",
+    );
+    let err = common::within_timeout(&fifo, move || load(&p, &NoPresets).unwrap_err());
+    let r = rejected(err);
+    assert_eq!(r.diagnostics[0].code, Code::ExtendsMissing);
+    assert!(
+        r.diagnostics[0].message.contains("not a regular file"),
+        "{}",
+        r.diagnostics[0].message
+    );
+}
+
+#[test]
+fn symlinked_configs_still_load() {
+    let fx = Fixture::new();
+    fx.write(
+        "real/base.toml",
+        "schema_version = 3\n[thresholds]\nmax_warnings = 9\n",
+    );
+    let root = fx.root();
+    std::os::unix::fs::symlink(root.join("real/base.toml"), root.join("link-base.toml")).unwrap();
+    let p = fx.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"link-base.toml\"]\n",
+    );
+    std::os::unix::fs::symlink(&p, root.join("link.toml")).unwrap();
+    let probe = root.join("link.toml");
+    let loaded = common::within_timeout(&probe.clone(), move || load(&probe, &NoPresets));
+    assert!(loaded.is_ok(), "{:?}", loaded.err().map(|e| e.render()));
+}
+
+#[test]
+fn a_dangling_extends_link_is_missing_as_before() {
+    let fx = Fixture::new();
+    let root = fx.root();
+    std::os::unix::fs::symlink(root.join("gone.toml"), root.join("dead.toml")).unwrap();
+    let p = fx.write(
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"dead.toml\"]\n",
+    );
+    let r = rejected(load(&p, &NoPresets).unwrap_err());
+    assert_eq!(r.diagnostics[0].code, Code::ExtendsMissing);
 }

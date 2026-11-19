@@ -447,6 +447,31 @@ fn collect_stdin(
     Ok(())
 }
 
+/// Read a document found on disk. A symlink was resolved by the caller, so `path` names the
+/// target. The read refuses a FIFO or device there instead of blocking on it. On a failure the
+/// run records a skip and the result is `None`.
+fn read_document(path: &Path, shown: &str, run: &mut Run) -> Option<Vec<u8>> {
+    match slopvac_fs::read_capped_regular(
+        path,
+        slopvac_fs::MAX_DOCUMENT_BYTES,
+        slopvac_fs::ReadOptions::new(),
+    ) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.input_kind() == Some(slopvac_fs::InputKind::TooLarge) => {
+            run.skip(
+                "document-too-large",
+                shown,
+                format!("{shown}: larger than the 64 MiB document limit"),
+            );
+            None
+        }
+        Err(_) => {
+            run.skip("input-unreadable", shown, format!("{shown}: cannot read"));
+            None
+        }
+    }
+}
+
 fn collect_targets(
     request: &LintRequest,
     configs: &Configs<'_>,
@@ -475,6 +500,8 @@ fn collect_targets(
                 continue;
             }
         };
+        #[cfg(test)]
+        after_discovery::run();
         for skipped in found.skipped {
             let shown = redact::shown_path(&skipped.path, &request.root);
             run.skip(
@@ -504,23 +531,8 @@ fn collect_targets(
                     continue;
                 }
             };
-            let read = std::fs::File::open(&file.path)
-                .map_err(|e| slopvac_fs::Error::read(&e))
-                .and_then(|f| slopvac_fs::read_capped(f, slopvac_fs::MAX_DOCUMENT_BYTES));
-            let bytes = match read {
-                Ok(bytes) => bytes,
-                Err(slopvac_fs::Error::CapExceeded { .. }) => {
-                    run.skip(
-                        "document-too-large",
-                        &shown,
-                        format!("{shown}: larger than the 64 MiB document limit"),
-                    );
-                    continue;
-                }
-                Err(_) => {
-                    run.skip("input-unreadable", &shown, format!("{shown}: cannot read"));
-                    continue;
-                }
+            let Some(bytes) = read_document(&canonical, &shown, run) else {
+                continue;
             };
             let Ok(text) = String::from_utf8(bytes) else {
                 run.skip(
@@ -737,4 +749,159 @@ fn config_files(config: &LoadedConfig) -> Vec<(String, bool)> {
         .iter()
         .map(|f| (f.display.clone(), f.layer == slopvac_config::Layer::Extends))
         .collect()
+}
+
+/// A test seam: code that runs once discovery has listed the files and before they are read,
+/// so a test can change a file in that window deterministically.
+#[cfg(test)]
+mod after_discovery {
+    use std::cell::RefCell;
+
+    type Hook = Box<dyn FnOnce()>;
+
+    thread_local! {
+        static HOOK: RefCell<Option<Hook>> = const { RefCell::new(None) };
+    }
+
+    pub(super) fn set(hook: Hook) {
+        HOOK.with(|h| *h.borrow_mut() = Some(hook));
+    }
+
+    pub(super) fn run() {
+        if let Some(hook) = HOOK.with(|h| h.borrow_mut().take()) {
+            hook();
+        }
+    }
+}
+
+#[cfg(test)]
+mod read_tests {
+    use super::*;
+    use crate::lint_settings::Overrides;
+
+    fn request(root: &Path, target: &Path) -> LintRequest {
+        LintRequest {
+            root: root.to_path_buf(),
+            targets: vec![target.to_path_buf()],
+            stdin: None,
+            stdin_plan: None,
+            config: None,
+            code_comments: false,
+            overrides: Overrides::default(),
+        }
+    }
+
+    /// Run the public linter on a worker thread, with `hook` installed on that thread. When it
+    /// blocks, the FIFO at `fifo` is opened without blocking to wake it, and the test fails.
+    fn lint_within_timeout(
+        fifo: &Path,
+        request: LintRequest,
+        hook: Option<Box<dyn FnOnce() + Send>>,
+    ) -> RunOutcome {
+        let probe = fifo.to_path_buf();
+        within_timeout(&probe, move || {
+            if let Some(hook) = hook {
+                after_discovery::set(hook);
+            }
+            EngineLinter.lint(&request)
+        })
+    }
+
+    /// Run `f` on a worker thread and return its result. A panic re-raises at once; a worker
+    /// that has not finished after five seconds gets the FIFO's write end opened without
+    /// blocking, so a reader stuck in `open` wakes, and the test then fails.
+    fn within_timeout<T: Send + 'static>(fifo: &Path, f: impl FnOnce() -> T + Send + 'static) -> T {
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::sync::mpsc::{self, RecvTimeoutError};
+        use std::time::Duration;
+
+        const O_NONBLOCK: i32 = if cfg!(target_os = "linux") {
+            0o4000
+        } else {
+            0x4
+        };
+        const LIMIT: Duration = Duration::from_secs(5);
+
+        let (tx, rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        match rx.recv_timeout(LIMIT) {
+            Ok(value) => {
+                worker.join().expect("the worker finished");
+                value
+            }
+            Err(RecvTimeoutError::Disconnected) => match worker.join() {
+                Err(panic) => std::panic::resume_unwind(panic),
+                Ok(()) => panic!("the worker ended without a result"),
+            },
+            Err(RecvTimeoutError::Timeout) => {
+                // ENXIO means no reader is waiting, so there is nothing to wake.
+                let _writer = std::fs::OpenOptions::new()
+                    .write(true)
+                    .custom_flags(O_NONBLOCK)
+                    .open(fifo);
+                match rx.recv_timeout(LIMIT) {
+                    Ok(_) | Err(RecvTimeoutError::Disconnected) => {
+                        let _ = worker.join();
+                        panic!("the read blocked on a FIFO until it was woken");
+                    }
+                    Err(RecvTimeoutError::Timeout) => panic!("the read blocked on a FIFO"),
+                }
+            }
+        }
+    }
+
+    /// Discovery lists a regular file; the file becomes a FIFO before the read. The run must
+    /// report it as unreadable and finish.
+    #[test]
+    fn a_file_that_becomes_a_fifo_after_discovery_is_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let doc = root.join("a.md");
+        std::fs::write(&doc, "Hello there.\n").unwrap();
+        let swap = doc.clone();
+        let outcome = lint_within_timeout(
+            &doc,
+            request(&root, &doc),
+            Some(Box::new(move || {
+                std::fs::remove_file(&swap).unwrap();
+                assert!(
+                    std::process::Command::new("mkfifo")
+                        .arg(&swap)
+                        .status()
+                        .unwrap()
+                        .success()
+                );
+            })),
+        );
+        let codes: Vec<&str> = outcome.incomplete.iter().map(|e| e.code).collect();
+        assert_eq!(codes, ["input-unreadable"]);
+        assert_eq!(outcome.documents, 0);
+    }
+
+    #[test]
+    fn a_regular_file_is_linted() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let doc = root.join("a.md");
+        std::fs::write(&doc, "Hello there.\n").unwrap();
+        let outcome = lint_within_timeout(&doc, request(&root, &doc), None);
+        assert_eq!(outcome.incomplete.len(), 0);
+        assert_eq!(outcome.documents, 1);
+    }
+
+    /// A target that is a symlink to a regular file is still linted.
+    #[test]
+    fn a_symlink_to_a_regular_file_is_linted() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let real = root.join("real.md");
+        std::fs::write(&real, "Hello there.\n").unwrap();
+        let link = root.join("link.md");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let outcome = lint_within_timeout(&link, request(&root, &link), None);
+        assert_eq!(outcome.incomplete.len(), 0);
+        assert_eq!(outcome.documents, 1);
+    }
 }

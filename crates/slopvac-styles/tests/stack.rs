@@ -1,5 +1,7 @@
 //! Styles as layer 2 of the config stack: values keep the preset and line that set them.
 
+mod common;
+
 use std::path::Path;
 
 use serde_json::json;
@@ -167,4 +169,32 @@ fn an_oversized_style_file_fails_the_config_load_with_its_code() {
     let err = load(&path, &StylePresets(DirSource::new(styles.path()))).unwrap_err();
     assert_eq!(err.code(), slopvac_config::Code::StyleTooLarge);
     assert!(err.render().contains("style-too-large"), "{}", err.render());
+}
+
+#[test]
+fn a_fifo_style_fails_the_config_load_instead_of_vanishing() {
+    use slopvac_styles::DirSource;
+
+    let styles = tempfile::tempdir().unwrap();
+    let fifo = styles.path().join("pipe.toml");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let project = tempfile::tempdir().unwrap();
+    let path = project.path().join("slopvac.toml");
+    std::fs::write(&path, "schema_version = 3\nstyles = [\"pipe\"]\n").unwrap();
+    let source = DirSource::new(styles.path());
+    let probe = fifo.clone();
+    let result = common::within_timeout(&probe, move || load(&path, &StylePresets(source)));
+    let err = result.unwrap_err();
+    assert_eq!(err.code(), slopvac_config::Code::Io);
+    assert!(
+        err.render().contains("not a regular file"),
+        "{}",
+        err.render()
+    );
 }
