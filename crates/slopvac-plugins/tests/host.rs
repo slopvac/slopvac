@@ -781,16 +781,6 @@ fn tm11_hostile_stderr_reaches_the_error_as_visible_escapes() {
     assert!(text.ends_with(want), "{text:?}");
 }
 
-#[test]
-fn h16_only_the_tail_of_a_long_stderr_reaches_the_error() {
-    let p = start("stderr-tail");
-    let text = p.tag("main", &docs(1)).unwrap_err().to_string();
-    assert!(text.contains("line-19999"), "the newest line is kept");
-    assert!(!text.contains("line-00000"), "the oldest line is dropped");
-    // 4 KiB shown at 11 bytes a line, plus the header text.
-    assert!(text.len() < 4096 + 200, "{} bytes", text.len());
-}
-
 /// Threat model P14 (TM-10): a plugin's stderr reaches the user only inside
 /// the error of a failed run, as its last 4 KiB. The mode writes 20,000 lines
 /// of 11 bytes, so the 4,096-byte tail loses its trailing newline to the trim.
@@ -801,6 +791,9 @@ fn tm10_a_failed_run_shows_only_the_last_4_kib_of_stderr() {
     let shown = text.split_once("\nstderr:\n").expect("a stderr section").1;
     assert_eq!(shown.len(), 4096 - 1, "{} bytes", shown.len());
     assert!(shown.ends_with("line-19999"), "the newest line is last");
+    assert!(!text.contains("line-00000"), "the oldest line is dropped");
+    // The header text around the tail stays short.
+    assert!(text.len() < 4096 + 200, "{} bytes", text.len());
 }
 
 /// A subscriber that records only the events at `max` or more severe, as the
