@@ -408,7 +408,7 @@ It then validates every `valid/` instance of the baseline corpus against the new
 - If the corpus needs a definition that the new schema deleted, the check exits 2.
 - A merge-queue entry uses the base commit that the queue built it on as its baseline.
 
-**Allow-file.** `schemas/v3/compat-allow.toml` is the path for a reviewed breaking change. Each `[[allow]]` entry names the `file`, `pointer` and `kind` of one finding, a `reason`, and the reviewer in `approved_by`. A matching entry suppresses that finding. An entry that matches no finding fails the check, so stale entries cannot pile up. The file starts empty.
+**Allow-file.** `schemas/v3/compat-allow.toml` is the path for a reviewed breaking change. Each `[[allow]]` entry names the `file`, `pointer` and `kind` of one finding, a `reason`, and the reviewer in `approved_by`. Only the entries that the change adds take part in the check. An entry that the baseline's allow file already holds approved a change that has landed: it suppresses nothing and never counts as stale. So an entry keeps passing after its change reaches the base, and a later finding at the same pointer needs a new entry and a new review. An added entry that matches a finding suppresses it. An added entry that matches no finding fails the check, so stale entries cannot pile up. The file starts empty.
 
 Owner: `slopvac-8l4.2.50`.
 
