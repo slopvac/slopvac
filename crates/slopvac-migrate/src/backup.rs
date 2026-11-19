@@ -385,6 +385,21 @@ fn put_back(dir: &Dir, aside: &OsStr, name: &OsStr, rel: &Path) -> Result<(), Er
     }
 }
 
+/// A change that failed, and whether the target had already changed when it did.
+struct Failed {
+    error: Error,
+    committed: bool,
+}
+
+impl From<Error> for Failed {
+    fn from(error: Error) -> Self {
+        Self {
+            error,
+            committed: false,
+        }
+    }
+}
+
 /// Replace `rel` below `root` with `new`, or remove it for `None`, if and only if it is what
 /// `want` says at that moment.
 ///
@@ -398,7 +413,27 @@ fn mutate(
     want: Want,
     new: Option<(&[u8], u32)>,
     hook: Hook<'_>,
-) -> Result<(), Error> {
+) -> Result<(), Failed> {
+    let (parent, aside) = swap_in(root, rel, want, new, hook)?;
+    // The target has its new state now; what is left only tidies up.
+    aside
+        .map_or(Ok(()), |aside| parent.remove_file(aside))
+        .and_then(|()| sync_dir(&parent))
+        .map_err(|e| Failed {
+            error: Error::io(rel, e),
+            committed: true,
+        })
+}
+
+/// The part of [`mutate`] up to the moment the target changes. Returns the parent directory
+/// and the name the checked original was moved to, if any.
+fn swap_in(
+    root: &Dir,
+    rel: &Path,
+    want: Want,
+    new: Option<(&[u8], u32)>,
+    hook: Hook<'_>,
+) -> Result<(Dir, Option<OsString>), Error> {
     let io = |e| Error::io(rel, e);
     let Some((parent, name)) = open_parent(root, rel)? else {
         return Err(changed(rel, "its directory disappeared"));
@@ -446,10 +481,8 @@ fn mutate(
     } else if aside.is_none() && parent.symlink_metadata(&name).is_ok() {
         return Err(changed(rel, "appeared after it was checked"));
     }
-    if let Some(aside) = &aside {
-        parent.remove_file(aside).map_err(io)?;
-    }
-    sync_dir(&parent).map_err(io)
+    drop(staged);
+    Ok((parent, aside))
 }
 
 /// One file the migration touches.
@@ -833,13 +866,20 @@ pub fn apply_hooked(
             ChangeKind::Write => c.new.as_deref().map(|t| (t.as_bytes(), mode)),
             ChangeKind::Delete => None,
         };
-        if let Err(e) = mutate(&dir, &c.path, want, new, hook) {
-            if i == 0 {
+        if let Err(failed) = mutate(&dir, &c.path, want, new, hook) {
+            if failed.committed {
+                // The target changed, so restore must undo it. Best effort: restore also
+                // undoes a replaced file whose completion is missing.
+                if let Some(entry) = record.entries.get_mut(i) {
+                    entry.done = true;
+                }
+                let _ = store.save(&record);
+            } else if i == 0 {
                 // Nothing changed yet, so nothing needs the backup or the record.
                 discard(&dir, &owned);
                 let _ = store.remove();
             }
-            return Err(e);
+            return Err(failed.error);
         }
         if let Some(entry) = record.entries.get_mut(i) {
             entry.done = true;
@@ -956,7 +996,14 @@ fn decide(dir: &Dir, record: &Record, force: bool) -> Result<Vec<Step>, Error> {
         let step = if digest == e.before {
             Step::Done
         } else if !e.done {
-            Step::Keep
+            // The change may have gone through without its completion being saved. A file
+            // with an original and exactly the new bytes goes back; a created file stays,
+            // because something else may have put it there.
+            if e.before.is_some() && digest == e.after {
+                Step::Undo(Want::of(now.as_ref(), true))
+            } else {
+                Step::Keep
+            }
         } else if digest == e.after {
             Step::Undo(Want::of(now.as_ref(), true))
         } else if !force {
@@ -986,8 +1033,10 @@ fn decide(dir: &Dir, record: &Record, force: bool) -> Result<Vec<Step>, Error> {
 ///   bytes. With `force`, a changed target is put back anyway, and a changed file that the
 ///   migration created is kept. `force` never skips the other checks or the link checks.
 ///
-/// Only changes the record marks as done are undone. A file is deleted only if the
-/// migration created it and it still holds exactly the bytes the migration wrote.
+/// Changes the record marks as done are undone, and so is a replaced or deleted file that
+/// holds exactly what the migration left there when its completion was not saved. A file is
+/// deleted only if the record says the migration created it and it still holds exactly the
+/// bytes the migration wrote.
 pub fn restore(root: &Path, state: &Path, force: bool) -> Result<Restored, Error> {
     restore_hooked(root, state, force, &mut |_| Ok(()))
 }
@@ -1018,7 +1067,7 @@ pub fn restore_hooked(
             Step::Keep => out.kept.push(rel.to_owned()),
             Step::Undo(want) => {
                 let new = copy.as_deref().map(|bytes| (bytes, e.mode));
-                mutate(&dir, rel, want, new, hook)?;
+                mutate(&dir, rel, want, new, hook).map_err(|f| f.error)?;
                 out.restored += 1;
             }
         }

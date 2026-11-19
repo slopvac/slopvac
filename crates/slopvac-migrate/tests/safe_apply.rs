@@ -456,6 +456,22 @@ fn a_cache_that_cannot_be_written_stops_apply_before_the_backup() {
     assert!(!s.backup_exists());
 }
 
+#[test]
+fn restore_puts_back_a_replaced_file_whose_completion_was_not_recorded() {
+    let s = Setup::new(&[("slopvac.toml", OLD)]);
+    let records = s.cache.path().join("migrate-backups");
+    let set_mode = |mode| fs::set_permissions(&records, fs::Permissions::from_mode(mode)).unwrap();
+    // The change goes through, but the record of it cannot be saved.
+    let mut hook = |_: &Path| set_mode(0o500);
+    assert!(s.apply_hooked(&s.plan(), &mut hook).is_err());
+    set_mode(0o700);
+    assert_eq!(s.read("slopvac.toml"), NEW);
+    let done = s.restore(false).unwrap();
+    assert_eq!((done.restored, done.kept.len()), (1, 0));
+    assert_eq!(s.read("slopvac.toml"), OLD);
+    assert!(!s.backup_exists());
+}
+
 fn run_cli(s: &Setup, args: &[&str]) -> (i32, String, String) {
     let root = s.root();
     let all = [root.to_str().unwrap()]
