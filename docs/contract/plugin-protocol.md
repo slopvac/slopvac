@@ -259,13 +259,20 @@ These budgets hold for every binary extractor. They are fixed host constants, an
 |---|---|---|---|
 | `segments` | Segments | 1,000,000 per document | Count of segments |
 | `part` | Part name | 1024 characters | Unicode code points |
-| `locator` | Locator | 1024 characters | Unicode code points |
+| `locator` | Locator | 1024 characters as sent, and 3072 characters once escaped | Unicode code points of the form that breached |
 | `text` | Extracted text | 32 MiB (33554432 bytes) of UTF-8 per document, across all segments | UTF-8 bytes of extracted text |
 | `in-flight` | Request buffers in flight | 64 MiB (67108864 bytes) across all plugins (section 5.5.6) | Bytes |
 
 The `data.budget` names and units match the list that [lint-report.md](lint-report.md#notice-data) gives for `extract-budget`.
 
 A breach of any budget is `extract-budget` (-32010). `data.budget` names the budget, and `data.limit` holds its value from the table. Both are named fields in the error data, and a reader never parses them from the message. The schema def [`BinaryBudget`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryBudget) is the one list of names. It carries `x-slopvac-extensible`, so a later release may add a budget, and a reader keeps a name it does not know.
+
+The host checks a locator against two limits, in this order:
+
+1. The locator is at most 1024 characters as the extractor sent it. A longer one breaches `locator` with `data.limit` 1024.
+2. The host percent-escapes the locator as [lint-report.md](lint-report.md#locator) describes, before it builds the finding. The escaped form is at most 3072 characters, the bound of the report's `origin.locator`. A longer one breaches `locator` with `data.limit` 3072.
+
+A percent sign or a control character becomes 3 characters, and U+2028 becomes 9, so 1024 characters can escape to 9216. The host refuses the segment's document with `extract-budget` and `data.budget` `locator`, and the run exits 2. It never truncates a locator, and it writes nothing invalid to the report. The vectors in [`binary-locator-escape.json`](../../schemas/v3/conformance/plugin-protocol/binary-locator-escape.json) hold the boundary cases.
 
 An extractor that reaches an output budget reports `extract-budget` itself. When its output still exceeds a budget, the validator fails that document with `extract-budget`. The schema pattern also bounds `part` and `locator`, but the host checks the budgets first. The vectors in [`binary-caps.json`](../../schemas/v3/conformance/plugin-protocol/binary-caps.json) hold a case at and over each output budget.
 
