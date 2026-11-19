@@ -106,6 +106,9 @@ struct Walker {
     /// Set while reading a parenthesised statement that so far holds only strings and
     /// parentheses, as in `("doc")`. Python drops the parentheses, so it is a docstring.
     paren: Option<Last>,
+    /// The outermost parenthesis of that statement has closed. Nothing but the end of the
+    /// statement may follow, so `("a") "b"` is no docstring.
+    closed: bool,
     /// The next statement is the first of a module, class or function body.
     body: bool,
     /// Adjacent plain strings that make up that statement so far.
@@ -121,6 +124,7 @@ impl Walker {
             header: Header::None,
             lambdas: Vec::new(),
             paren: None,
+            closed: false,
             body: true,
             run: Vec::new(),
             found: Vec::new(),
@@ -138,12 +142,14 @@ impl Walker {
             self.found.append(&mut self.run);
         }
         self.run.clear();
+        self.closed = false;
         self.body = false;
     }
 
     /// Something other than a string statement came first, so there is no docstring.
     fn other(&mut self) {
         self.paren = None;
+        self.closed = false;
         self.run.clear();
         self.body = false;
         self.line_start = false;
@@ -152,7 +158,7 @@ impl Walker {
     fn string(&mut self, range: Range<usize>, eligible: bool) {
         let allowed = match self.paren {
             Some(last) => last != Last::Close,
-            None => self.depth == 0,
+            None => self.depth == 0 && !self.closed,
         };
         if self.body && allowed && eligible {
             self.run.push(range);
@@ -231,7 +237,7 @@ impl Walker {
     }
 
     fn open_paren(&mut self) {
-        let starts_statement = self.body && self.depth == 0 && self.run.is_empty();
+        let starts_statement = self.body && self.depth == 0 && self.run.is_empty() && !self.closed;
         match self.paren {
             Some(Last::Open) => {}
             None if starts_statement => self.paren = Some(Last::Open),
@@ -245,11 +251,12 @@ impl Walker {
         match self.paren {
             Some(Last::Str | Last::Close) => {
                 // The statement is complete once the outermost parenthesis closes.
-                self.paren = if self.depth == 0 {
-                    None
+                if self.depth == 0 {
+                    self.paren = None;
+                    self.closed = true;
                 } else {
-                    Some(Last::Close)
-                };
+                    self.paren = Some(Last::Close);
+                }
             }
             _ => self.other(),
         }

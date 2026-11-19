@@ -102,6 +102,8 @@ fn a_leading_string_of_a_body_is_extracted(#[case] source: &str, #[case] expecte
 #[case::tuple_of_one("def f():\n    (\"a\",)\n")]
 #[case::multi_line_tuple("def f():\n    (\n        \"a\",\n        \"b\",\n    )\n")]
 #[case::empty_tuple("()\n")]
+#[case::string_after_a_closed_parenthesis("(\"a\") \"b\"\n")]
+#[case::extra_closing_parenthesis("(\"a\"))\n")]
 #[case::call_on_a_parenthesised_string("(\"a\").strip()\n")]
 #[case::parenthesised_string_plus_another("(\"a\") + \"b\"\n")]
 #[case::operator_inside_the_parentheses("(\"a\" + \"b\")\n")]
