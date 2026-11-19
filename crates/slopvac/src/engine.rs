@@ -679,9 +679,13 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
             .iter()
             .map(|&i| Input::new(&items[i].shown, &items[i].text).with_kind(items[i].kind))
             .collect();
-        for (&index, result) in indexes.iter().zip(engine.lint_all(&inputs)) {
+        for (&index, result) in indexes.iter().zip(engine.lint_all_with_notices(&inputs)) {
             match result {
-                Ok(document) => documents[index] = Some(document),
+                Ok((document, notices)) => {
+                    // Extraction notices of unsupported content: shown, never a failure.
+                    run.notices.extend(notices);
+                    documents[index] = Some(document);
+                }
                 Err(err) => {
                     run.skip_engine_error(&items[index].shown, &err);
                 }

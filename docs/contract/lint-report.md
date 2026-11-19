@@ -10,6 +10,11 @@ went, and the rules a consumer relies on. Field descriptions live in the schema.
 - `schema_version` is 3. Lint JSON jumps from 1 to 3, so no report carries 2.
 - Consumers must branch on `notices[].code` and `unchecked[].code`, never on the message
   text. A code keeps its meaning for the whole 3.x line. Codes are kebab-case.
+- An extractor reports unsupported content inside a supported input, such as a Mermaid
+  `gitGraph` block or a PlantUML mind map, as a root `notices` entry with the code
+  `extract-unsupported` and level `info`. The run stays complete and exits 0. Malformed
+  content (`extract-malformed`) and content over a limit (`extract-budget`) are `unchecked`
+  entries at level `warning`. They make the run incomplete and exit 2.
 - `slopvac_version` names the tool build. It does not signal a schema change.
 - The schema is strict, because it is the producer contract. Slopvac writes only reports
   that validate, and its own tests check that. A consumer must ignore unknown fields, as

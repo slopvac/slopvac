@@ -298,7 +298,7 @@ Native Windows is a 3.x feature (epic `slopvac-8l4.18.8`, label `release:3.x`).
 Decided 2026-11-16. 3.0 lints text inside Office and OpenDocument containers and inside PNG images that embed a diagram source. Formats: `docx`, `pptx`, `xlsx` and their macro and template variants (read-only), `odt`, `odp`, `ods`, and draw.io, Excalidraw and PlantUML PNG. EPUB and PDF are out of scope, as are Mermaid, tldraw and Inkscape images and encrypted files.
 
 - Engine: `Engine::lint_binary` takes `BinaryInput { path, bytes, format }`. Text input stays `&str`.
-- Extraction contract: a new plugin hook kind, `binary-extractor/extract`, sends bytes inline as base64. First-party extractors use the same contract in process, and wire conformance tests run them too. One validator separates valid-empty, no-source, unsupported, malformed and over-budget. A malformed payload exits 2.
+- Extraction contract: a new plugin hook kind, `binary-extractor/extract`, sends bytes inline as base64. First-party extractors use the same contract in process, and wire conformance tests run them too. One validator separates valid-empty, no-source, unsupported, malformed and over-budget. Unsupported content inside a supported input is an `info` notice with exit 0, and the run stays complete. A malformed payload exits 2.
 - Positions: segment-local coordinates drive matching, contexts, exclusions and fingerprints. The container byte range is provenance only. `Finding.origin` is an optional structure that carries the locator, label, segment id and local range.
 - Fix: `--fix` skips binary hosts with `SkipReason::BinaryHost`.
 - Limits: 256 MiB input, ZIP entry-count, size and ratio caps checked before expensive work, DTD off, and bounded PNG chunks. A breach exits 2.

@@ -83,7 +83,7 @@ pub use fix::{FixError, FixReport, SkipReason, Skipped, fix_document, unified_di
 #[cfg(feature = "test-counters")]
 #[doc(hidden)]
 pub use lint::nearby_block_visits;
-pub use lint::{Engine, EngineError, Input, Kind};
+pub use lint::{Engine, EngineError, Input, Kind, LintOutcome, extract_code};
 #[cfg(feature = "test-counters")]
 #[doc(hidden)]
 pub use matcher_work::matcher_entries;

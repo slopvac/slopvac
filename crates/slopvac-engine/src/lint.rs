@@ -13,7 +13,9 @@ use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
 use slopvac_comments::Language;
 use slopvac_context::{GenreRegistry, ResolveOptions, TagIndex, TagRegistry};
-use slopvac_diagrams::{Extraction, Format as DiagramFormat, Signal, extract, extract_fenced};
+use slopvac_diagrams::{
+    Extraction, ExtractionStatus, Format as DiagramFormat, Signal, extract, extract_fenced,
+};
 use slopvac_model::{
     AiSignal, BomMode, CategoryId, ContextTag, Contexts, Document, Edit, Extent, Finding, Fix,
     GenreId, GenreReason, GenreResult, GenreSource, KebabName, LineCol, NonEmptyString, Notice,
@@ -341,6 +343,34 @@ fn runs_lexically(kind: MatchKind, m: &Match) -> bool {
         }
         _ => false,
     }
+}
+
+/// Notice codes for input that an extractor could not read in full. All extractors share
+/// the family, and this table is the one place that spells the strings.
+pub mod extract_code {
+    /// Valid content inside a supported input that the extractor does not read, such as a
+    /// diagram type. An info notice at the root of the report; the run stays complete.
+    pub const UNSUPPORTED: &str = "extract-unsupported";
+    /// The input is not well formed. A warning in `unchecked`; the run is incomplete.
+    pub const MALFORMED: &str = "extract-malformed";
+    /// A size or work limit stopped the read. A warning in `unchecked`; the run is incomplete.
+    pub const BUDGET: &str = "extract-budget";
+    /// An extractor plugin returned output that breaks the protocol. Reserved: the
+    /// built-in extractors never emit it.
+    pub const OUTPUT_INVALID: &str = "extract-output-invalid";
+}
+
+/// A linted document and its run-level notices, or why the input could not be linted.
+pub type LintOutcome = Result<(Document, Vec<Notice>), EngineError>;
+
+/// What the diagram pass found in one input.
+#[derive(Default)]
+struct DiagramResult {
+    findings: Vec<Finding>,
+    /// Warnings for diagrams that were malformed or over a limit.
+    unchecked: Vec<Notice>,
+    /// Info notices for diagrams of an unsupported type.
+    notices: Vec<Notice>,
 }
 
 /// The `unrun` key of capitalization rules in a style the engine does not run.
@@ -753,8 +783,33 @@ impl Engine {
         inputs.par_iter().map(|input| self.lint(input)).collect()
     }
 
+    /// Like [`Engine::lint_all`], with the run-level notices of each input as
+    /// [`Engine::lint_with_notices`] returns them.
+    #[must_use]
+    pub fn lint_all_with_notices(&self, inputs: &[Input<'_>]) -> Vec<LintOutcome> {
+        inputs
+            .par_iter()
+            .map(|input| self.lint_with_notices(input))
+            .collect()
+    }
+
     /// Lint one input.
     pub fn lint(&self, input: &Input<'_>) -> Result<Document, EngineError> {
+        self.lint_with_notices(input).map(|(document, _)| document)
+    }
+
+    /// Lint one input and also return its run-level notices.
+    ///
+    /// The notices are about the run, not about a check that failed to run. An extractor
+    /// emits one at level `info` for unsupported content inside a supported input: the
+    /// content is not read, and the run is still complete. A caller adds them to the root
+    /// `notices` of the report, where they never make the run incomplete. Input that is
+    /// malformed or over a limit is reported in [`Document::unchecked`] instead, and makes
+    /// the run incomplete.
+    pub fn lint_with_notices(
+        &self,
+        input: &Input<'_>,
+    ) -> Result<(Document, Vec<Notice>), EngineError> {
         // Front matter is metadata, not prose: the parser reads only what follows it.
         let front = match input.kind {
             Kind::Diagram(_) | Kind::Rst | Kind::Comments(_) => None,
@@ -830,12 +885,16 @@ impl Engine {
         };
         let mut findings = run.lexical()?;
         // Code-comment mode runs the lexical rules only; `comment_notice` lists the rest.
+        let mut diagram_notices = Vec::new();
         if !matches!(input.kind, Kind::Comments(_)) {
             findings.extend(run.vocabulary()?);
             findings.extend(run.term_casing()?);
             findings.extend(run.metrics()?);
             findings.extend(run.structure()?);
-            findings.extend(run.diagrams()?);
+            let diagrams = run.diagrams()?;
+            findings.extend(diagrams.findings);
+            extra.extend(diagrams.unchecked);
+            diagram_notices = diagrams.notices;
         }
         findings.extend(run.invalid_directives()?);
         // Lookups that passed their budget answered nothing, so nothing found above stands.
@@ -854,7 +913,8 @@ impl Engine {
             self.not_run_notices(&genre.id)?
         };
         notices.extend(extra);
-        Ok(self.document(input, &prepared, &tags, genre, findings, notices))
+        let document = self.document(input, &prepared, &tags, genre, findings, notices);
+        Ok((document, diagram_notices))
     }
 
     /// The notices about active rules the engine does not run and that apply to a document of
@@ -1728,8 +1788,10 @@ impl Run<'_> {
         }))
     }
 
-    /// Findings of diagram rules, over diagram files and fenced diagram blocks.
-    fn diagrams(&self) -> Result<Vec<Finding>, EngineError> {
+    /// Findings of diagram rules, over diagram files and fenced diagram blocks, a warning
+    /// notice for each diagram that was malformed or over a limit, and an info notice for
+    /// each diagram of an unsupported type.
+    fn diagrams(&self) -> Result<DiagramResult, EngineError> {
         let engine = self.engine;
         // A checker none of whose rules applies to the document's genre does not run. One that
         // names no rules is not limited by a genre.
@@ -1740,7 +1802,7 @@ impl Run<'_> {
             .map(|(checker, _)| checker.as_ref())
             .collect();
         if checkers.is_empty() {
-            return Ok(Vec::new());
+            return Ok(DiagramResult::default());
         }
         let mut diagrams: Vec<(DiagramFormat, Extraction, Vec<NearbyProse<'_>>)> = Vec::new();
         if let Kind::Diagram(format) = self.input.kind {
@@ -1796,7 +1858,16 @@ impl Run<'_> {
             }
         }
         let mut out = Vec::new();
+        let mut unchecked = Vec::new();
+        let mut notices = Vec::new();
         for (format, extraction, nearby) in &diagrams {
+            if let Some(n) = self.extraction_notice(extraction.status)? {
+                if n.level == NoticeLevel::Info {
+                    notices.push(n);
+                } else {
+                    unchecked.push(n);
+                }
+            }
             let prose: Vec<slopvac_diagrams::ProseBlock<'_>> = nearby
                 .iter()
                 .map(|n| slopvac_diagrams::ProseBlock {
@@ -1819,7 +1890,41 @@ impl Run<'_> {
                 }
             }
         }
-        Ok(out)
+        Ok(DiagramResult {
+            findings: out,
+            unchecked,
+            notices,
+        })
+    }
+
+    /// The notice for a diagram that was not read in full.
+    ///
+    /// A diagram that is malformed or over a limit gets a warning: the result cannot
+    /// establish a pass, so the run is incomplete. A diagram of an unsupported type gets an
+    /// info notice: valid content that the extractor does not read.
+    fn extraction_notice(&self, status: ExtractionStatus) -> Result<Option<Notice>, EngineError> {
+        let (code, message) = match status {
+            ExtractionStatus::Ok => return Ok(None),
+            ExtractionStatus::Unsupported(r) => (extract_code::UNSUPPORTED, r.to_owned()),
+            ExtractionStatus::Malformed(r) => (extract_code::MALFORMED, r.to_owned()),
+            ExtractionStatus::BudgetExhausted(hit) => (
+                extract_code::BUDGET,
+                format!("the {} limit of {} was reached", hit.cap, hit.limit),
+            ),
+            // A status added later is a failure until this match learns its code.
+            _ => (
+                extract_code::MALFORMED,
+                "diagram extraction failed".to_owned(),
+            ),
+        };
+        let (level, tail) = if code == extract_code::UNSUPPORTED {
+            (NoticeLevel::Info, "the diagram was not checked")
+        } else {
+            (NoticeLevel::Warning, "the diagram was not fully checked")
+        };
+        let mut n = notice(code, level, format!("{message}; {tail}"))?;
+        n.path = Some(self.input.path.to_owned());
+        Ok(Some(n))
     }
 
     /// The paragraphs next to a fenced block: the last one before it and the first after.
