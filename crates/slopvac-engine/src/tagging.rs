@@ -11,7 +11,7 @@ use std::ops::Range;
 use frontmatter_spans::{FrontMatter, Value};
 use slopvac_context::{
     BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, GenreRegistry,
-    GenreResult, ResolveOptions, SentenceView, Tag, TagIndex, TagRegistry, TagSink,
+    GenreResult, ResolveOptions, Scalar, SentenceView, Tag, TagIndex, TagRegistry, TagSink,
 };
 use slopvac_parse::{BlockKind, ByteMapper, Container, Document};
 
@@ -60,8 +60,9 @@ impl Extents {
     }
 }
 
-/// The text of each top-level non-string scalar, rendered as `slopvac-context` renders a
-/// genre signal's expected value: `true`, `42`, `1.5`. A datetime keeps its source text.
+/// The text of each top-level non-string scalar, rendered by `Scalar::to_text`, the one
+/// formatter that genre signals use for their expected value: `true`, `42`, `1.5`. A datetime
+/// keeps its source text.
 /// The last occurrence of a key decides: a later null, sequence or table removes the text of
 /// an earlier scalar, as `get` returns the last occurrence.
 fn scalar_text<'a>(front: &'a FrontMatter<'a>) -> HashMap<&'a str, String> {
@@ -70,17 +71,17 @@ fn scalar_text<'a>(front: &'a FrontMatter<'a>) -> HashMap<&'a str, String> {
     };
     let mut texts = HashMap::new();
     for e in entries {
-        let text = match &e.value.value {
-            Value::Bool(b) => b.to_string(),
-            Value::Integer(i) => i.to_string(),
-            Value::Float(f) => f.to_string(),
-            Value::Datetime(d) => d.clone(),
+        let scalar = match &e.value.value {
+            Value::Bool(b) => Scalar::Bool(*b),
+            Value::Integer(i) => Scalar::Int(*i),
+            Value::Float(f) => Scalar::Float(*f),
+            Value::Datetime(d) => Scalar::Str(d.clone()),
             Value::Null | Value::String(_) | Value::Array(_) | Value::Table(_) => {
                 texts.remove(e.key.as_str());
                 continue;
             }
         };
-        texts.insert(e.key.as_str(), text);
+        texts.insert(e.key.as_str(), scalar.to_text());
     }
     texts
 }

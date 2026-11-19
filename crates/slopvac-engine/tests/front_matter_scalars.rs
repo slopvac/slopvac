@@ -27,10 +27,7 @@ fn tagged(front: &str, pattern: &str) -> bool {
     let mut registry = TagRegistry::new();
     registry
         .register(Box::new(
-            TaggerSpec::from_yaml(&spec)
-                .unwrap()
-                .compile()
-                .unwrap(),
+            TaggerSpec::from_yaml(&spec).unwrap().compile().unwrap(),
         ))
         .unwrap();
     let gated = rule(
