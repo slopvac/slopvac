@@ -92,24 +92,8 @@ In case of Your death, this agreement shall continue with Your heirs. In case of
 If any provision of this Agreement is found void and unenforceable, such provision will be replaced to the extent possible with a provision that comes closest to the meaning of the original provision and that is enforceable. The terms and conditions set forth in this Agreement shall apply notwithstanding any failure of essential purpose of this Agreement or any limited remedy to the maximum extent possible under law.
 
 You agree to notify Us of any facts or circumstances of which you become aware that would make Your representations under this Agreement inaccurate in any respect.
-
-#### Recreate this Contributor License Agreement
-
-[https://contributoragreements.org/ca-cla-chooser/?beneficiary-name=Sjors+Robroek&project-name=slopvac&project-website=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac&project-email=&process-url=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac%2Fblob%2Fmain%2FCONTRIBUTING.md%23contributor-license-agreement&project-jurisdiction=the+Netherlands&fsfe-compliance=non-fsfe-compliance&agreement-exclusivity=non-exclusive&outbound-option=fsfe&outboundlist=&outboundlist-custom=&license-policy-location=&medialist=None&patent-option=Traditional&your-name=&your-date=&your-title=&your-address=&your-patents=&pos=apply&action=](https://contributoragreements.org/ca-cla-chooser/?beneficiary-name=Sjors+Robroek&project-name=slopvac&project-website=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac&project-email=&process-url=https%3A%2F%2Fgithub.com%2Fslopvac%2Fslopvac%2Fblob%2Fmain%2FCONTRIBUTING.md%23contributor-license-agreement&project-jurisdiction=the+Netherlands&fsfe-compliance=non-fsfe-compliance&agreement-exclusivity=non-exclusive&outbound-option=fsfe&outboundlist=&outboundlist-custom=&license-policy-location=&medialist=None&patent-option=Traditional&your-name=&your-date=&your-title=&your-address=&your-patents=&pos=apply&action=)
 <!-- slopvac-enable -->
 
-Based on the Contributor Agreements 1.2 template from contributoragreements.org, licensed under CC BY-SA 4.0.
+---
 
-CC BY-SA 4.0 licenses this file too.
-
-Modified from the template:
-
-1. The contact sentence points to the CONTRIBUTING CLA section. The generator had no email for it.
-2. The generator's signature blocks for "You" and "Us" are gone. Contributors sign through CLA Assistant on their pull request.
-3. One link to recreate the agreement remains. The duplicate links are gone.
-4. The attribution line above replaces the generator's last line.
-5. Markdown links replace the escaped brackets in the outbound Option 1 clause.
-6. A single full stop replaces the double full stop at the end of the second paragraph of the section "License obligations by Us".
-7. The section "Approximation of disclaimer and damage waiver" refers to Section "Disclaimer", the heading that exists. The generator referred to a subsection "Disclaimer of warranty".
-8. The survival list in the section "Term" also names the sections "Consequential damage waiver" and "Approximation of disclaimer and damage waiver". The generator dropped them, but the template lists them as Sections 6 and 7.
-9. The definition of "You" drops the Legal Entity clause, and the unused definitions of "Legal Entity" and "Affiliate" are gone. This agreement covers individuals only.
+Adapted from the [Contributor Agreements 1.2](https://contributoragreements.org/) template by contributoragreements.org, licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). This agreement modifies that template and is also licensed under CC BY-SA 4.0.
