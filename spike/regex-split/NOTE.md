@@ -61,6 +61,13 @@ Status: IN PROGRESS (partial results survive restarts; sections fill in as measu
 | b1 | a46aa04683 | dev aarch64, 16 cores | rustc 1.99.1 (58cf8f9c3) | build + parity over golden, docs, k8s (eval skipped by mistake, see below) | 36.6 / 36.0 (no timings in b1) | done, rc=0, 2026-11-19 11:25-11:39Z |
 | b2 | 752411bf5d | dev aarch64, 16 cores | 1.99.1 | builds, eval parity re-run, differential fuzz, summary, shape check, recheck, inputs (no timings) | n/a | submitted |
 
+Timing stages (batch 3: prep, small, large, e2e) all run on dev: arm64 (aarch64 Linux),
+16 cores. Each starts only at a 1-minute load under 4. A stage whose end load is 4 or more is
+discarded and rerun. Each stage below records its host, arch, nproc and start and end load.
+CI runs on x86_64, so read these arm64 numbers as ratios between modes, not as absolute
+CI times. The golden RST input, which b1 ran without docutils, gets its parity run again in
+the prep stage now that the helper puts the pinned docutils venv on PATH.
+
 ### b1 results (parity, interpreter vs Rust twin, every engine call)
 
 | Lint run (strict profile) | Exit | Wall (parity mode, both engines, load ~36) | Peak RSS | Distinct patterns | Exercised | Twin does not compile | Calls with a span difference |

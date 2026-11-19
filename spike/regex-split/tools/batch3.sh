@@ -6,8 +6,8 @@
 #   small : 1 MiB classes, nesting, near-miss, recheck and plugin attacks (all modes)
 #   large : 8 MiB, then 64 MiB classes
 #   e2e   : release `slopvac lint` on slopvac docs and the eval corpus, median of 3
-# Timing stages refuse to start above 1-minute load 12 and mark the run DISCARD if the
-# load at the end is above 12.
+# Timing stages run on dev only (arm64, 16 cores). They refuse to start at 1-minute load
+# GATE (default 4) or above and mark the run DISCARD if the load at the end is not under GATE.
 set -u
 STAGE=$1
 MODES=${2:-"interp jit callout rust"}
@@ -23,7 +23,8 @@ mkdir -p "$OUT" "$S/bin"
 echo "toolchain=$(rustc --version)" > "$OUT/toolchain.txt"
 echo "host=$(hostname) arch=$(uname -m) nproc=$(nproc)" > "$OUT/host.txt"
 load1() { cut -d' ' -f1 /proc/loadavg; }
-gt12() { awk "BEGIN{exit !($1 > 12)}"; }
+GATE=${GATE:-4}
+over() { awk "BEGIN{exit !($1 >= $GATE)}"; }
 
 if [ "$STAGE" = prep ]; then
   B=$S/tree-$SHA8 T=$S/target
@@ -51,6 +52,17 @@ if [ "$STAGE" = prep ]; then
   printf 'schema_version = 3\nprofile = "strict"\n' > "$P/slopvac.toml"
   cp -R "$WT/docs" "$P/docs"
   python3 "$TOOLS/eval_copy.py" "$WT/evals/corpus" "$P/eval" > "$OUT/eval-ext.txt"
+  # Golden RST input, which b1 ran without docutils: parity again with the helper's venv.
+  mkdir -p "$P/golden-rst" && cp "$WT/tests/golden/v3/inputs/formats/sample.rst" "$P/golden-rst/"
+  cd "$P"
+  for loc in en-US en-GB; do
+    rm -f "$OUT/parity-golden-rst-$loc.jsonl"
+    SLOPVAC_SPIKE_ENGINE=parity SLOPVAC_SPIKE_DUMP="$OUT/parity-golden-rst-$loc.jsonl" timeout 300 \
+      "$S/bin/slopvac-spike" lint golden-rst --format json --locale "$loc" > /dev/null 2> "$OUT/golden-rst-$loc.err"
+    echo "golden-rst-$loc rc=$?"
+  done
+  cd "$WT"
+  python3 -c 'import docutils; print("docutils", docutils.__version__)' > "$OUT/docutils.txt" 2>&1
   echo done-prep
   exit 0
 fi
@@ -58,8 +70,8 @@ fi
 echo "bin=$(cat "$S/bin/STAMP")" >> "$OUT/host.txt"
 L0=$(load1)
 echo "start: $(uptime) nproc=$(nproc)" | tee "$OUT/load.txt"
-if gt12 "$L0"; then
-  echo "load-gate: load $L0 above 12, nothing measured" | tee -a "$OUT/load.txt"
+if over "$L0"; then
+  echo "load-gate: load $L0 not under $GATE, nothing measured" | tee -a "$OUT/load.txt"
   exit 75
 fi
 
@@ -89,7 +101,8 @@ run() {
 
 # Core: rule and built-in patterns; `rust` mode only for the parity-identical ones.
 CORE=$IN/patterns.jsonl
-RUSTP=$IN/patterns-identical.jsonl
+RUSTP=$S/patterns-identical.jsonl
+grep '"verdict": "identical"' "$CORE" > "$RUSTP"
 PLUG=$IN/plugin-patterns.jsonl
 pats_for() { if [ "$1" = rust ]; then echo "$RUSTP"; else echo "$CORE"; fi; }
 case $STAGE in
@@ -135,5 +148,5 @@ e2e)
 esac
 L1=$(load1)
 echo "end: $(uptime)" | tee -a "$OUT/load.txt"
-if gt12 "$L1"; then echo "load-gate: end load $L1 above 12, DISCARD" | tee -a "$OUT/load.txt"; fi
+if over "$L1"; then echo "load-gate: end load $L1 not under $GATE, DISCARD" | tee -a "$OUT/load.txt"; fi
 echo done-$STAGE
