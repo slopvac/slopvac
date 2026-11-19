@@ -125,6 +125,18 @@ impl Run {
         });
         self.incomplete.push(error);
     }
+
+    /// Record a file the engine could not lint: not checked, so the run exits 2.
+    fn skip_engine_error(&mut self, shown: &str, err: &EngineError) {
+        // `EngineError` is `#[non_exhaustive]`, so a new variant lands in `lint-failed` until
+        // it gets a code of its own.
+        let code = match err {
+            // The check is incomplete for a reason a pack can fix, so it has a code.
+            EngineError::TagLookupBudget { .. } => "tag-lookup-budget-exceeded",
+            _ => "lint-failed",
+        };
+        self.skip(code, shown, format!("{shown}: {err}"));
+    }
 }
 
 /// The engine kind for a discovered file, or why there is none.
@@ -667,13 +679,7 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
             match result {
                 Ok(document) => documents[index] = Some(document),
                 Err(err) => {
-                    let shown = items[index].shown.clone();
-                    let code = match err {
-                        // The check is incomplete for a reason a pack can fix, so it has a code.
-                        EngineError::TagLookupBudget { .. } => "tag-lookup-budget-exceeded",
-                        _ => "lint-failed",
-                    };
-                    run.skip(code, &shown, format!("{shown}: {err}"));
+                    run.skip_engine_error(&items[index].shown, &err);
                 }
             }
         }
