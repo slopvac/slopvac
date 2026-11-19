@@ -91,8 +91,9 @@ pub(crate) enum Planned {
 enum Resolved {
     /// The file or directory the path names. No component on the way is a symlink.
     Found(PathBuf),
-    /// Something on the way does not exist.
-    Missing,
+    /// Something on the way does not exist, or a file stands where a directory must be. The
+    /// path is the reference below the project root, for a report.
+    Missing(PathBuf),
 }
 
 /// Follow a reference one component at a time, as the runtime does, and refuse any symlink.
@@ -119,25 +120,34 @@ fn resolve(
     };
     let given = Path::new(&reference.path);
     let rest: PathBuf = if given.is_absolute() {
-        given
-            .strip_prefix(root)
-            .map_err(|_| outside())?
-            .to_path_buf()
+        // The root may be relative (the default is `.`), so compare with its absolute forms.
+        let absolute = std::path::absolute(root).map_err(|e| Error::io(root, e))?;
+        let canonical = root.canonicalize().ok();
+        [Some(absolute), canonical]
+            .into_iter()
+            .flatten()
+            .find_map(|r| given.strip_prefix(r).ok().map(Path::to_path_buf))
+            .ok_or_else(outside)?
     } else {
         dir.strip_prefix(root).unwrap_or(Path::new("")).join(given)
     };
-    let mut stack: Vec<OsString> = Vec::new();
+    // Each entry is a component on the way, with whether it is a real directory. A later
+    // component needs one below it, and so does a `..` that cancels it.
+    let mut stack: Vec<(OsString, bool)> = Vec::new();
     for component in rest.components() {
         match component {
             Component::CurDir => {}
-            Component::ParentDir => {
-                if stack.pop().is_none() {
-                    return Err(outside());
-                }
-            }
+            Component::ParentDir => match stack.pop() {
+                None => return Err(outside()),
+                Some((_, true)) => {}
+                Some((_, false)) => return Ok(Resolved::Missing(rest)),
+            },
             Component::Normal(name) => {
-                stack.push(name.to_owned());
-                let so_far: PathBuf = stack.iter().collect();
+                if stack.last().is_some_and(|(_, is_dir)| !is_dir) {
+                    return Ok(Resolved::Missing(rest));
+                }
+                stack.push((name.to_owned(), false));
+                let so_far: PathBuf = stack.iter().map(|(n, _)| n).collect();
                 match base.symlink_metadata(&so_far) {
                     Ok(meta) if meta.is_symlink() => {
                         return Err(Error::Unsafe(format!(
@@ -146,11 +156,15 @@ fn resolve(
                             site.0, site.1, reference.key
                         )));
                     }
-                    Ok(_) => {}
+                    Ok(meta) => {
+                        if let Some(top) = stack.last_mut() {
+                            top.1 = meta.is_dir();
+                        }
+                    }
                     Err(e)
                         if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) =>
                     {
-                        return Ok(Resolved::Missing);
+                        return Ok(Resolved::Missing(rest));
                     }
                     Err(e) => return Err(Error::io(&root.join(&so_far), e)),
                 }
@@ -158,7 +172,7 @@ fn resolve(
             Component::RootDir | Component::Prefix(_) => return Err(outside()),
         }
     }
-    Ok(Resolved::Found(stack.iter().collect()))
+    Ok(Resolved::Found(stack.iter().map(|(n, _)| n).collect()))
 }
 
 /// Plan the rewrite of the blocklist `reference` names. The reference sits at `line` of
@@ -189,7 +203,7 @@ pub(crate) fn plan_reference(
     };
     let rel = match resolve(root, &base, dir, reference, &(config, line))? {
         Resolved::Found(rel) => rel,
-        Resolved::Missing => return blocked(&reference.path, "file not found"),
+        Resolved::Missing(rest) => return blocked(&rest.display().to_string(), "file not found"),
     };
     if !seen.insert(rel.clone()) {
         return Ok(Planned::Skip);
@@ -313,14 +327,8 @@ fn rewrite(
             reason,
         ));
     }
-    // The parser's message can quote the file, so only its position is kept.
-    if matches!(refused, TermsError::Parse { .. }) {
-        return Err(blocked(
-            located(&refused, &HashMap::new()).1,
-            "entries",
-            format!("the file {}", describe(&refused)),
-        ));
-    }
+    // A parser's message can quote the file, so no message is repeated. The position comes
+    // from the TOML syntax tree, not from the message text.
     let mut doc: DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| {
         blocked(
             e.span().map_or(1, |s| line_of(text, s.start)),
@@ -329,6 +337,14 @@ fn rewrite(
         )
     })?;
     let lines = key_lines(text).unwrap_or_default();
+    if matches!(refused, TermsError::Parse { .. }) {
+        let (key, line) = wrong_type_at(&doc, &lines);
+        return Err(blocked(
+            line,
+            &key,
+            format!("the file {}", describe(&refused)),
+        ));
+    }
     let line = |key: &str| lines.get(key).copied().unwrap_or(1);
     let mut problems = Vec::new();
     let mut notes = Vec::new();
@@ -400,7 +416,9 @@ fn located(error: &TermsError, lines: &HashMap<String, usize>) -> (String, usize
             let line = lines.get(&key).copied().unwrap_or(1);
             (key, line)
         }
-        TermsError::Parse { message, .. } => ("entries".to_owned(), line_in(message)),
+        // The error holds a message and no position. The message can quote the file, so it is
+        // never searched for one.
+        TermsError::Parse { .. } => ("entries".to_owned(), 1),
         _ => (
             "entries".to_owned(),
             lines.get("entries").copied().unwrap_or(1),
@@ -408,17 +426,24 @@ fn located(error: &TermsError, lines: &HashMap<String, usize>) -> (String, usize
     }
 }
 
-/// The number after the first `line ` in a parser message, or 1.
-fn line_in(message: &str) -> usize {
-    message
-        .split_once("line ")
-        .map(|(_, rest)| {
-            rest.chars()
-                .take_while(char::is_ascii_digit)
-                .collect::<String>()
-        })
-        .and_then(|digits| digits.parse().ok())
-        .unwrap_or(1)
+/// The key and line of the first entry field that is not a string, in a TOML blocklist the
+/// loader refused for its types. Falls back to the `entries` key.
+fn wrong_type_at(doc: &DocumentMut, lines: &HashMap<String, usize>) -> (String, usize) {
+    if let Some(Item::ArrayOfTables(entries)) = doc.get("entries") {
+        for (index, table) in entries.iter().enumerate() {
+            for field in ["word", "pos", "reason", "replacement"] {
+                if table.get(field).is_some_and(|item| item.as_str().is_none()) {
+                    let key = format!("entries[{index}].{field}");
+                    let line = lines.get(&key).copied().unwrap_or(1);
+                    return (key, line);
+                }
+            }
+        }
+    }
+    (
+        "entries".to_owned(),
+        lines.get("entries").copied().unwrap_or(1),
+    )
 }
 
 /// A loader failure as a located record.

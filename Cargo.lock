@@ -2627,6 +2627,7 @@ dependencies = [
 name = "slopvac-migrate"
 version = "0.0.0"
 dependencies = [
+ "cap-std",
  "clap",
  "jsonschema",
  "rstest",
