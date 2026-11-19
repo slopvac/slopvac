@@ -429,6 +429,7 @@ fn h19_a_network_plugin_does_not_spawn_in_offline_mode() {
     let err = Plugin::start(&s, &c, &Allow).unwrap_err().error;
     assert_eq!(err, PluginError::Offline("fake".into()));
     assert_eq!(err.to_string(), "offline: fake needs the network");
+    assert_eq!(err.slopvac_code(), "offline-network-needed");
 }
 
 #[test]
@@ -1048,7 +1049,7 @@ fn complete_returns_an_answer_or_an_error_per_item() {
             model: "m1-echo".into(),
         })
     );
-    assert_eq!(out[1].as_ref().unwrap_err().slopvac_code, "offline");
+    assert_eq!(out[1].as_ref().unwrap_err().code_name(), "offline");
     assert_eq!(
         sent,
         json!({"provider": "main", "task": "rewrite", "model": "m1", "items": [

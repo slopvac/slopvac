@@ -12,10 +12,35 @@ pub struct RpcError {
     pub code: i64,
     /// Human-readable message. Not an interface.
     pub message: String,
-    /// Stable kebab-case code from `data.slopvac_code`.
-    pub slopvac_code: String,
+    /// The kebab-case `data.slopvac_code` the plugin sent. Untrusted detail: it
+    /// is never the reported code. Use [`RpcError::code_name`].
+    pub plugin_code: String,
     /// The `data` object, or null.
     pub data: serde_json::Value,
+}
+
+impl RpcError {
+    /// The code the host reports, chosen by the numeric code alone
+    /// (plugin-protocol.md section 10). The plugin's own `slopvac_code` never
+    /// decides it. A code the contract does not define, including the plugin's
+    /// own range -32050 to -32099, is `internal-error`.
+    #[must_use]
+    pub fn code_name(&self) -> &'static str {
+        match self.code {
+            -32700 => "parse-error",
+            -32600 => "invalid-request",
+            -32601 => "method-not-found",
+            -32602 => "invalid-params",
+            -32001 => "protocol-version-unsupported",
+            -32002 => "required-feature-missing",
+            -32003 => "not-initialized",
+            -32004 => "message-too-large",
+            -32005 => "request-cancelled",
+            -32006 => "document-invalid",
+            -32007 => "offline",
+            _ => "internal-error",
+        }
+    }
 }
 
 /// Everything that can go wrong when a host talks to a plugin.
@@ -81,7 +106,7 @@ pub enum PluginError {
     #[error("offline: {} needs the network", esc(.0))]
     Offline(String),
     /// The plugin answered a request with an error object.
-    #[error("plugin error {}: {} ({})", .0.code, esc(&.0.message), esc(&.0.slopvac_code))]
+    #[error("plugin error {}: {} ({})", .0.code, esc(&.0.message), .0.code_name())]
     Rpc(RpcError),
     /// The host cancelled the request and discarded the answer.
     #[error("request cancelled")]
@@ -110,8 +135,8 @@ impl PluginError {
             Self::RequestIdExhausted => "request-id-exhausted",
             Self::ProtocolVersionUnsupported { .. } => "protocol-version-unsupported",
             Self::RequiredFeatureMissing(_) => "required-feature-missing",
-            Self::Offline(_) => "offline",
-            Self::Rpc(e) => &e.slopvac_code,
+            Self::Offline(_) => "offline-network-needed",
+            Self::Rpc(e) => e.code_name(),
             Self::Cancelled => "request-cancelled",
             Self::MessageTooLarge(_) => "message-too-large",
             Self::Usage(_) => "plugin-usage",

@@ -1094,7 +1094,7 @@ impl Plugin {
         });
         let result = match conn.request("initialize", Some(params), cfg.timeouts.initialize, true) {
             Ok(v) => v,
-            Err(PluginError::Rpc(e)) if e.slopvac_code == "protocol-version-unsupported" => {
+            Err(PluginError::Rpc(e)) if e.code_name() == "protocol-version-unsupported" => {
                 return Err(PluginError::ProtocolVersionUnsupported {
                     host: format!("{MIN_PROTOCOL_VERSION}..={PROTOCOL_VERSION}"),
                     plugin: e

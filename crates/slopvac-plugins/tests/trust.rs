@@ -1281,3 +1281,45 @@ mod unix_only {
         assert_eq!(mode(&s.dir("state/trust.json")), 0o600);
     }
 }
+
+#[test]
+fn pin_key_refuses_reserved_and_first_party_namespaces_with_a_code() {
+    let s = Scratch::new("reserved-pins");
+    let store = TrustStore::open(s.dir("state"));
+    let key = minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk
+        .to_base64();
+    for ns in ["core", "slopvac"] {
+        let err = store.pin_key(ns, &key, NOW).unwrap_err();
+        assert!(
+            matches!(&err, TrustError::ReservedNamespace { namespace } if namespace == ns),
+            "{err:?}"
+        );
+        assert_eq!(err.code(), Some("namespace-reserved"));
+    }
+    assert!(
+        store.pinned_map().unwrap().is_empty(),
+        "nothing was written"
+    );
+}
+
+#[test]
+fn a_store_that_pins_a_reserved_namespace_is_refused_on_load() {
+    let s = Scratch::new("reserved-load");
+    let dir = s.dir("state");
+    let store = TrustStore::open(&dir);
+    let key = minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk
+        .to_base64();
+    store.pin_key("acme", &key, NOW).unwrap();
+    let file = dir.join("trust.json");
+    let text = fs::read_to_string(&file).unwrap();
+    fs::write(&file, text.replace("\"acme\"", "\"core\"")).unwrap();
+    let err = store.pinned_map().unwrap_err();
+    assert!(
+        matches!(&err, TrustError::ReservedNamespace { namespace } if namespace == "core"),
+        "{err:?}"
+    );
+}

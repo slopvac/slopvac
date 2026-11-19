@@ -45,7 +45,7 @@ fn cases() -> Vec<(&'static str, String)> {
             PluginError::Rpc(RpcError {
                 code: -1,
                 message: h(),
-                slopvac_code: "c".into(),
+                plugin_code: "c".into(),
                 data: serde_json::Value::Null,
             })
             .to_string(),
