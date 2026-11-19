@@ -186,6 +186,13 @@ pub enum EngineError {
         /// The looks the document was allowed.
         limit: usize,
     },
+    /// The document holds more context tags than its size allows, so no index was built and
+    /// the document is not checked. A very large document of very short sentences causes it.
+    #[error("the document has more than {limit} context tags: the document is not checked")]
+    TagBuildBudget {
+        /// The tags the document was allowed.
+        limit: usize,
+    },
     /// A terms file could not be read or is not valid.
     #[error("terms file: {0}")]
     Terms(String),
@@ -734,7 +741,10 @@ impl Engine {
                 &parsed,
                 front_matter.as_ref(),
             )
-            .map_err(|e| EngineError::Context(e.to_string()))?,
+            .map_err(|e| match e {
+                tagging::TagError::Budget { limit } => EngineError::TagBuildBudget { limit },
+                other => EngineError::Context(other.to_string()),
+            })?,
         };
         let genre = self.genre_of(input, &parsed, front_matter.as_ref())?;
         let lines = Lines::new(input.source);

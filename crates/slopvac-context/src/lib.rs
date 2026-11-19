@@ -31,15 +31,15 @@ pub use mixed::{MIXED_TYPES_RULE_ID, mixed_types_entry, mixed_types_rule};
 pub use pattern::{Pattern, normalize_path};
 pub use reference::reference_pages;
 pub use structural::{FrontMatterCondition, Scope, When};
-pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger};
+pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, Tagger, normalize_tags};
 pub use view::{
     BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, split_sentences,
 };
 #[cfg(feature = "work-counters")]
 #[doc(hidden)]
 pub use work::{
-    take_admonition_steps, take_heading_steps, take_lookup_steps, take_section_steps,
-    take_text_steps,
+    take_admonition_steps, take_build_elements, take_heading_steps, take_lookup_steps,
+    take_section_steps, take_text_steps,
 };
 
 pub use pattern::MAX_PATTERN_BYTES;
@@ -77,6 +77,12 @@ pub enum Error {
     /// A tagger id was registered twice.
     #[error("tagger `{}` is already registered", slopvac_sanitize::line(.0))]
     DuplicateTagger(String),
+    /// The taggers produced more tags than the document is allowed, so no index was built.
+    #[error("the document has more than {limit} context tags")]
+    TagLimit {
+        /// The most tags the document was allowed.
+        limit: usize,
+    },
     /// A genre id that no definition provides.
     #[error("unknown genre `{}`", slopvac_sanitize::line(.0))]
     UnknownGenre(String),

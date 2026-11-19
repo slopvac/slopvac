@@ -132,7 +132,9 @@ impl Run {
         // it gets a code of its own.
         let code = match err {
             // The check is incomplete for a reason a pack can fix, so it has a code.
-            EngineError::TagLookupBudget { .. } => "tag-lookup-budget-exceeded",
+            EngineError::TagLookupBudget { .. } | EngineError::TagBuildBudget { .. } => {
+                "tag-lookup-budget-exceeded"
+            }
             _ => "lint-failed",
         };
         self.skip(code, shown, format!("{shown}: {err}"));
@@ -933,6 +935,10 @@ mod skip_tests {
     #[case::bad_range(EngineError::BadRange("x".into()), "lint-failed")]
     #[case::tag_lookup_budget(
         EngineError::TagLookupBudget { limit: 16_384 },
+        "tag-lookup-budget-exceeded"
+    )]
+    #[case::tag_build_budget(
+        EngineError::TagBuildBudget { limit: 16_384 },
         "tag-lookup-budget-exceeded"
     )]
     #[case::terms(EngineError::Terms("x".into()), "lint-failed")]

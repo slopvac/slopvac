@@ -14,6 +14,18 @@ mod enabled {
         static HEADING: Cell<usize> = const { Cell::new(0) };
         static ADMONITION: Cell<usize> = const { Cell::new(0) };
         static LOOKUP: Cell<usize> = const { Cell::new(0) };
+        static BUILD: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn build(n: usize) {
+        BUILD.with(|c| c.set(c.get() + n));
+    }
+
+    /// Tags handed to the index structures since the last call: each structure built counts
+    /// the tags it was built from.
+    #[must_use]
+    pub fn take_build_elements() -> usize {
+        BUILD.with(|c| c.replace(0))
     }
 
     pub(crate) fn section(n: usize) {
@@ -69,11 +81,11 @@ mod enabled {
 }
 
 #[cfg(feature = "work-counters")]
-pub(crate) use enabled::{admonition, heading, lookup, section, text};
+pub(crate) use enabled::{admonition, build, heading, lookup, section, text};
 #[cfg(feature = "work-counters")]
 pub use enabled::{
-    take_admonition_steps, take_heading_steps, take_lookup_steps, take_section_steps,
-    take_text_steps,
+    take_admonition_steps, take_build_elements, take_heading_steps, take_lookup_steps,
+    take_section_steps, take_text_steps,
 };
 
 #[cfg(not(feature = "work-counters"))]
@@ -95,3 +107,7 @@ pub(crate) fn admonition(_n: usize) {}
 #[cfg(not(feature = "work-counters"))]
 #[inline(always)]
 pub(crate) fn lookup(_n: usize) {}
+
+#[cfg(not(feature = "work-counters"))]
+#[inline(always)]
+pub(crate) fn build(_n: usize) {}

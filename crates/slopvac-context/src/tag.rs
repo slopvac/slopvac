@@ -57,12 +57,33 @@ impl TagRegistry {
 
     /// Run every tagger and index the result. The first tagger error stops the run.
     pub fn tag_document(&self, doc: &dyn DocumentView) -> Result<TagIndex, Error> {
+        Ok(TagIndex::from_tags(self.collect_tags(doc, usize::MAX)?))
+    }
+
+    /// Run every tagger and return their tags in span order, with duplicates removed, before
+    /// anything is indexed. The first tagger error stops the run. The run stops with
+    /// [`Error::TagLimit`] once the taggers so far hold more than `max_tags` tags, so a
+    /// document cannot make the caller build an index of unbounded size.
+    pub fn collect_tags(&self, doc: &dyn DocumentView, max_tags: usize) -> Result<Vec<Tag>, Error> {
         let mut tags = Vec::new();
         for t in &self.taggers {
             tags.extend(t.tag(doc)?);
+            if tags.len() > max_tags {
+                return Err(Error::TagLimit { limit: max_tags });
+            }
         }
-        Ok(TagIndex::from_tags(tags))
+        normalize_tags(&mut tags);
+        Ok(tags)
     }
+}
+
+/// Sort `tags` by span and kind, and drop duplicates: equal tags are one tag, whoever
+/// produced them.
+pub fn normalize_tags(tags: &mut Vec<Tag>) {
+    tags.sort_by(|a, b| {
+        (a.span.start, a.span.end, &a.kind).cmp(&(b.span.start, b.span.end, &b.kind))
+    });
+    tags.dedup_by(|a, b| a.kind == b.kind && a.span == b.span);
 }
 
 /// Tags of one document, sorted by span.
@@ -76,8 +97,9 @@ pub struct TagIndex {
     /// Per kind, over every tag: answers [`Self::kinds_at`].
     all: Spatial,
     /// Per kind, over the tags of a single piece: answers the single-piece part of
-    /// [`Self::kinds_covering`].
-    single: Spatial,
+    /// [`Self::kinds_covering`]. None when every tag is a single piece, which `all` then
+    /// answers, so the index is built once.
+    single: Option<Spatial>,
     /// The tags of several pieces, for the part of [`Self::kinds_covering`] that needs them.
     multi: Stab,
     /// Caps the candidates [`Self::kinds_covering`] visits.
@@ -153,6 +175,7 @@ impl Spatial {
     /// Index `tags`, which are in start order.
     fn build<'t>(tags: impl Iterator<Item = &'t Tag>) -> Self {
         let tags: Vec<&Tag> = tags.collect();
+        work::build(tags.len());
         let kinds: Vec<String> = tags
             .iter()
             .map(|t| t.kind.as_str())
@@ -288,6 +311,7 @@ struct Stab {
 
 impl Stab {
     fn build(tags: &[Tag], ids: Vec<usize>) -> Self {
+        work::build(ids.len());
         let leaves = ids.len().next_power_of_two();
         let mut tree = vec![0; 2 * leaves];
         for (j, &i) in ids.iter().enumerate() {
@@ -339,11 +363,7 @@ impl TagIndex {
     /// Index `tags`: sorted by span, with duplicates removed. Equal tags are not told apart.
     #[must_use]
     pub fn from_tags(mut tags: Vec<Tag>) -> Self {
-        // Equal tags are one tag, whoever produced them.
-        tags.sort_by(|a, b| {
-            (a.span.start, a.span.end, &a.kind).cmp(&(b.span.start, b.span.end, &b.kind))
-        });
-        tags.dedup_by(|a, b| a.kind == b.kind && a.span == b.span);
+        normalize_tags(&mut tags);
         Self::from_pieces(tags.into_iter().enumerate().map(|(i, t)| (t, i)).collect())
     }
 
@@ -370,12 +390,14 @@ impl TagIndex {
             .map(|(g, m)| (g, Pieces::build(&tags, &m)))
             .collect();
         let all = Spatial::build(tags.iter());
-        let single = Spatial::build(
-            tags.iter()
-                .enumerate()
-                .filter(|(i, _)| !members.contains_key(&groups[*i]))
-                .map(|(_, t)| t),
-        );
+        let single = (!members.is_empty()).then(|| {
+            Spatial::build(
+                tags.iter()
+                    .enumerate()
+                    .filter(|(i, _)| !members.contains_key(&groups[*i]))
+                    .map(|(_, t)| t),
+            )
+        });
         let multi_ids = (0..tags.len())
             .filter(|&i| members.contains_key(&groups[i]))
             .collect();
@@ -429,7 +451,8 @@ impl TagIndex {
         // greatest end.
         let from = ranges.iter().map(|r| r.start).min().unwrap_or(first.start);
         let to = ranges.iter().map(|r| r.end).max().unwrap_or(first.end);
-        let mut set: BTreeSet<&str> = self.single.kinds_containing(from, to).into_iter().collect();
+        let single = self.single.as_ref().unwrap_or(&self.all);
+        let mut set: BTreeSet<&str> = single.kinds_containing(from, to).into_iter().collect();
         if !self.multi.ids.is_empty() {
             self.multi.containing(first.start, first.end, &mut |i| {
                 if !self.budget.charge() {

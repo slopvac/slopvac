@@ -199,7 +199,7 @@ impl View<'_> {
     #[inline(always)]
     fn visit(&self) {}
 
-    fn split_interleaved(&self, index: TagIndex) -> TagIndex {
+    fn split_interleaved(&self, tags: Vec<Tag>, max_tags: usize) -> Result<TagIndex, TagError> {
         let mut order: Vec<usize> = (0..self.entries.len())
             .filter(|&i| self.entries[i].projection.is_some())
             .collect();
@@ -221,12 +221,12 @@ impl View<'_> {
             latest_end = latest_end.max(span.end);
         }
         if !marked.contains(&true) {
-            return index;
+            return Ok(TagIndex::from_tags(tags));
         }
         let owners = self.owners.borrow();
         let mut extents: BTreeMap<usize, Extents> = BTreeMap::new();
-        let mut tags = Vec::with_capacity(index.tags().len());
-        for (group, tag) in index.tags().iter().enumerate() {
+        let mut pieces_of_all = Vec::with_capacity(tags.len());
+        for (group, tag) in tags.iter().enumerate() {
             self.visit();
             let owner = owners
                 .get(&(tag.span.start, tag.span.end))
@@ -256,12 +256,16 @@ impl View<'_> {
                 ));
             }
             if pieces.is_empty() {
-                tags.push((tag.clone(), group));
+                pieces_of_all.push((tag.clone(), group));
             } else {
-                tags.extend(pieces);
+                pieces_of_all.extend(pieces);
+            }
+            // Splitting multiplies the tags, so the ceiling is checked as pieces are made.
+            if pieces_of_all.len() > max_tags {
+                return Err(TagError::Budget { limit: max_tags });
             }
         }
-        TagIndex::from_pieces(tags)
+        Ok(TagIndex::from_pieces(pieces_of_all))
     }
 }
 
@@ -329,6 +333,12 @@ pub(crate) enum TagError {
     /// A tagger failed.
     #[error(transparent)]
     Tagger(#[from] ContextError),
+    /// The document has more tags than its size allows, so no index was built.
+    #[error("the document has more than {limit} context tags")]
+    Budget {
+        /// The most tags, or pieces of tags, the document was allowed.
+        limit: usize,
+    },
     /// The sentences of a block do not lie on the text the block was projected from.
     #[error("the sentences of a block do not map onto its projected text")]
     Unmapped,
@@ -354,6 +364,21 @@ pub(crate) fn lookup_budget(source_len: usize) -> usize {
         .saturating_add(LOOKUP_HEADROOM)
 }
 
+/// Tags allowed for each byte of the document.
+///
+/// Prose holds a sentence tag for every few dozen bytes at most, and a tag costs index memory
+/// whatever its size. One tag for every sixteen bytes is far over that, and under what a
+/// document of short sentences needs to build an index of gigabytes.
+const BYTES_PER_TAG: usize = 16;
+
+/// Tags allowed whatever the size of the document.
+const TAG_HEADROOM: usize = 16_384;
+
+/// The tags, and pieces of tags, that a document of `source_len` bytes may hold.
+pub(crate) fn tag_budget(source_len: usize) -> usize {
+    (source_len / BYTES_PER_TAG).saturating_add(TAG_HEADROOM)
+}
+
 /// Run every tagger over `doc`.
 pub(crate) fn tag(
     registry: &TagRegistry,
@@ -363,12 +388,18 @@ pub(crate) fn tag(
     front_matter: Option<&FrontMatter<'_>>,
 ) -> Result<TagIndex, TagError> {
     let view = View::new(path, source, doc, front_matter);
-    let index = registry.tag_document(&view)?;
+    let max_tags = tag_budget(source.len());
+    let tags = registry
+        .collect_tags(&view, max_tags)
+        .map_err(|e| match e {
+            ContextError::TagLimit { limit } => TagError::Budget { limit },
+            other => TagError::Tagger(other),
+        })?;
     if view.unmapped.get() {
         return Err(TagError::Unmapped);
     }
     Ok(view
-        .split_interleaved(index)
+        .split_interleaved(tags, max_tags)?
         .with_lookup_budget(lookup_budget(source.len())))
 }
 
