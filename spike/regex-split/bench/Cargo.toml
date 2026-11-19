@@ -1,0 +1,12 @@
+[package]
+name = "spike-regex-bench"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+slopvac-pcre2 = { path = "../../../crates/slopvac-pcre2" }
+slopvac-text = { path = "../../../crates/slopvac-text" }
+serde_json = "1"
