@@ -190,6 +190,15 @@ pub(crate) fn fingerprint_file(path: &Path) -> std::io::Result<String> {
     File::open(path).and_then(fingerprint)
 }
 
+/// The version at `exe` and the fingerprint of the file that version was established for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Installed {
+    /// The installed version.
+    pub(crate) version: semver::Version,
+    /// The fingerprint of the file the version was established for.
+    sha: String,
+}
+
 /// What is known about the process that runs the update.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Running<'a> {
@@ -368,7 +377,7 @@ impl UpdateLock {
         &mut self,
         running: &Running<'_>,
         probe_timeout: Duration,
-    ) -> Result<semver::Version, LockError> {
+    ) -> Result<Installed, LockError> {
         let record = self.read_record()?;
         let now = self.exe_fingerprint()?;
         let mut floor: Option<semver::Version> = None;
@@ -405,14 +414,15 @@ impl UpdateLock {
         if running.sha == Some(now.as_str()) {
             vouch(running.version.clone());
         }
-        if let Some(version) = floor {
-            return Ok(version);
-        }
-        crate::probe::installed_version(&self.exe, probe_timeout).map_err(|e| {
-            LockError::VersionUnknown {
-                reason: format!("{}: {e}", self.name_of_exe()),
-            }
-        })
+        let version = match floor {
+            Some(version) => version,
+            None => crate::probe::installed_version(&self.exe, probe_timeout).map_err(|e| {
+                LockError::VersionUnknown {
+                    reason: format!("{}: {e}", self.name_of_exe()),
+                }
+            })?,
+        };
+        Ok(Installed { version, sha: now })
     }
 
     fn name_of_exe(&self) -> String {
@@ -421,31 +431,55 @@ impl UpdateLock {
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
     }
 
-    /// Record, before the rename, that `to` is about to replace the build at `from`.
+    /// Record, before the rename, that `to` is about to replace the build `installed` describes.
+    /// Returns the fingerprint of `new_binary`, which [`UpdateLock::finish`] expects on disk.
     ///
     /// The record is synced to disk before this returns. A failure aborts the update before it
     /// touches the executable.
     pub(crate) fn begin(
         &mut self,
-        from: &semver::Version,
+        installed: &Installed,
         to: &semver::Version,
         new_binary: &[u8],
-    ) -> Result<(), LockError> {
-        let old_sha = self.exe_fingerprint()?;
+    ) -> Result<String, LockError> {
+        self.require_on_disk(
+            &installed.sha,
+            "the installed binary changed after its version was checked",
+        )?;
+        let new_sha = fingerprint_bytes(new_binary);
         self.write_record(&Record::Pending {
             to: to.clone(),
-            new_sha: fingerprint_bytes(new_binary),
-            old_sha,
-            from: from.clone(),
-        })
+            new_sha: new_sha.clone(),
+            old_sha: installed.sha.clone(),
+            from: installed.version.clone(),
+        })?;
+        Ok(new_sha)
     }
 
     /// Record, after the rename, that `version` is installed.
-    pub(crate) fn finish(&mut self, version: &semver::Version) -> Result<(), LockError> {
-        let sha = self.exe_fingerprint()?;
+    pub(crate) fn finish(
+        &mut self,
+        version: &semver::Version,
+        payload_sha: &str,
+    ) -> Result<(), LockError> {
+        self.require_on_disk(
+            payload_sha,
+            "the installed binary is not the build this update wrote",
+        )?;
         self.write_record(&Record::Installed {
             version: version.clone(),
-            sha,
+            sha: payload_sha.to_owned(),
+        })
+    }
+
+    /// Refuse unless the executable on disk has fingerprint `sha`. A record pairs a version with
+    /// the bytes it was established for, so it is never written for any other bytes.
+    fn require_on_disk(&self, sha: &str, reason: &str) -> Result<(), LockError> {
+        if self.exe_fingerprint()? == sha {
+            return Ok(());
+        }
+        Err(LockError::VersionUnknown {
+            reason: format!("{}: {reason}", self.name_of_exe()),
         })
     }
 }
@@ -515,11 +549,11 @@ mod tests {
 
     /// The installed version as the lock establishes it, for a process that runs `version`
     /// from a binary with fingerprint `sha` (`None`: unknown).
-    fn floor(
+    fn checked(
         lock: &mut UpdateLock,
         version: &str,
         sha: Option<&str>,
-    ) -> Result<semver::Version, LockError> {
+    ) -> Result<Installed, LockError> {
         let version = v(version);
         lock.installed_version(
             &Running {
@@ -528,6 +562,23 @@ mod tests {
             },
             Duration::from_secs(300),
         )
+    }
+
+    /// Like [`checked`], keeping only the version.
+    fn floor(
+        lock: &mut UpdateLock,
+        version: &str,
+        sha: Option<&str>,
+    ) -> Result<semver::Version, LockError> {
+        checked(lock, version, sha).map(|i| i.version)
+    }
+
+    /// `exe` as a check would describe it today, at `version`.
+    fn at(exe: &Path, version: &str) -> Installed {
+        Installed {
+            version: v(version),
+            sha: sha_of(exe),
+        }
     }
 
     /// The fingerprint of the file at `exe` as it is now: the running binary is that file.
@@ -550,9 +601,9 @@ mod tests {
         let (_dir, exe) = installed();
         let started_as = sha_of(&exe);
         let mut lock = acquire(&exe);
-        lock.begin(&v("3.0.0"), &v("3.2.0"), b"new").unwrap();
+        lock.begin(&at(&exe, "3.0.0"), &v("3.2.0"), b"new").unwrap();
         std::fs::write(&exe, b"new").unwrap();
-        lock.finish(&v("3.2.0")).unwrap();
+        lock.finish(&v("3.2.0"), &fingerprint_bytes(b"new")).unwrap();
         drop(lock);
         // The next holder started as the old binary, so only the record can vouch for the file.
         assert_eq!(
@@ -567,7 +618,7 @@ mod tests {
         let (_dir, exe) = installed();
         let started_as = sha_of(&exe);
         let mut dead = acquire(&exe);
-        dead.begin(&v("3.0.0"), &v("3.2.0"), b"new").unwrap();
+        dead.begin(&at(&exe, "3.0.0"), &v("3.2.0"), b"new").unwrap();
         std::fs::write(&exe, b"new").unwrap();
         drop(dead);
         let mut next = acquire(&exe);
@@ -588,7 +639,7 @@ mod tests {
         let (_dir, exe) = installed();
         let sha = sha_of(&exe);
         let mut dead = acquire(&exe);
-        dead.begin(&v("3.0.0"), &v("3.2.0"), b"new").unwrap();
+        dead.begin(&at(&exe, "3.0.0"), &v("3.2.0"), b"new").unwrap();
         drop(dead);
         assert_eq!(
             floor(&mut acquire(&exe), "3.0.0", Some(&sha)).unwrap(),
@@ -601,7 +652,7 @@ mod tests {
         let (_dir, exe) = installed();
         let sha = sha_of(&exe);
         let mut dead = acquire(&exe);
-        dead.begin(&v("3.0.0"), &v("3.2.0"), b"new").unwrap();
+        dead.begin(&at(&exe, "3.0.0"), &v("3.2.0"), b"new").unwrap();
         std::fs::write(&exe, b"someone else's build").unwrap();
         drop(dead);
         let err = floor(&mut acquire(&exe), "3.0.0", Some(&sha)).unwrap_err();
@@ -623,7 +674,7 @@ mod tests {
         let (dir, exe) = installed();
         let started_as = sha_of(&exe);
         let mut lock = acquire(&exe);
-        lock.finish(&v("3.1.0")).unwrap();
+        lock.finish(&v("3.1.0"), &started_as).unwrap();
         drop(lock);
         let mut text = std::fs::read(lock_file(&dir)).unwrap();
         text.extend_from_slice(b"installed 9.9.9 left over from a longer record\n");
@@ -655,9 +706,9 @@ mod tests {
         let (_dir, exe) = installed();
         let started_as = sha_of(&exe);
         let mut lock = acquire(&exe);
-        lock.begin(&v("3.0.0"), &v("3.1.0"), b"new").unwrap();
+        lock.begin(&at(&exe, "3.0.0"), &v("3.1.0"), b"new").unwrap();
         std::fs::write(&exe, b"new").unwrap();
-        lock.finish(&v("3.1.0")).unwrap();
+        lock.finish(&v("3.1.0"), &fingerprint_bytes(b"new")).unwrap();
         fake_exe(&exe, "echo '{\"name\":\"slopvac\",\"version\":\"3.3.0\"}'");
         assert_eq!(
             floor(&mut lock, "3.0.0", Some(&started_as)).unwrap(),
@@ -737,13 +788,45 @@ mod tests {
         acquire(&exe);
     }
 
+    // Another installer replaces the file after its version was checked and before the
+    // pending record is written. The record would pair the checked version with the new file.
+    #[test]
+    fn begin_refuses_a_file_that_changed_since_its_version_was_checked() {
+        let (_dir, exe) = installed();
+        let sha = sha_of(&exe);
+        let mut lock = acquire(&exe);
+        let from = checked(&mut lock, "3.0.0", Some(&sha)).unwrap();
+        std::fs::write(&exe, b"swapped in by another installer").unwrap();
+        let err = lock.begin(&from, &v("3.2.0"), b"new").unwrap_err();
+        assert!(matches!(err, LockError::VersionUnknown { .. }), "{err}");
+        assert_eq!(lock.read_record().unwrap(), None, "nothing was recorded");
+    }
+
+    // Another installer replaces the file after our rename and before the final record. The
+    // final record would claim that file is the build this update wrote.
+    #[test]
+    fn finish_refuses_a_file_that_is_not_the_verified_payload() {
+        let (_dir, exe) = installed();
+        let sha = sha_of(&exe);
+        let mut lock = acquire(&exe);
+        let from = checked(&mut lock, "3.0.0", Some(&sha)).unwrap();
+        let payload = lock.begin(&from, &v("3.2.0"), b"new").unwrap();
+        std::fs::write(&exe, b"swapped in by another installer").unwrap();
+        let err = lock.finish(&v("3.2.0"), &payload).unwrap_err();
+        assert!(matches!(err, LockError::VersionUnknown { .. }), "{err}");
+        assert!(
+            matches!(lock.read_record().unwrap(), Some(Record::Pending { .. })),
+            "the pending record stays, so the next holder refuses instead of trusting the file"
+        );
+    }
+
     #[test]
     fn a_record_write_failure_surfaces_as_an_error() {
         let (_dir, exe) = installed();
         let mut lock = acquire(&exe);
         // Reopen the handle read-only: the record write then fails with a real I/O error.
         lock.file = File::open(lock_path(&exe)).unwrap();
-        let err = lock.begin(&v("3.0.0"), &v("3.2.0"), b"new").unwrap_err();
+        let err = lock.begin(&at(&exe, "3.0.0"), &v("3.2.0"), b"new").unwrap_err();
         assert!(matches!(err, LockError::Io { .. }), "{err}");
     }
 

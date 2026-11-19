@@ -218,8 +218,8 @@ pub fn update(
         }
         Err(e) => return Err(e.into()),
     };
-    if new <= installed {
-        return Err(not_newer(&installed.to_string()));
+    if new <= installed.version {
+        return Err(not_newer(&installed.version.to_string()));
     }
     let asset = asset_name(target);
     let url = format!("{}/v{version}/{asset}", base_url.trim_end_matches('/'));
@@ -242,9 +242,9 @@ pub fn update(
     verifier.verify(&archive, &signature, &expected)?;
 
     let binary = extract_binary(&archive)?;
-    lock.begin(&installed, &new, &binary)?;
+    let payload = lock.begin(&installed, &new, &binary)?;
     replace(exe, &binary)?;
-    lock.finish(&new)?;
+    lock.finish(&new, &payload)?;
     Ok(())
 }
 
@@ -740,10 +740,24 @@ mod tests {
         assert!(matches!(err, UpdateError::VersionUnknown(_)), "{err}");
     }
 
+    /// `exe` as the update lock establishes it, for a process that runs `version` from this file.
+    fn checked(lock: &mut UpdateLock, exe: &Path, version: &str) -> lock::Installed {
+        let version = ver(version);
+        lock.installed_version(
+            &Running {
+                version: &version,
+                sha: running_fingerprint(exe).as_deref(),
+            },
+            Duration::from_secs(300),
+        )
+        .unwrap()
+    }
+
     /// An updater to `to` that dies right after the rename: pending record, new bytes, no final.
     fn die_after_rename(exe: &Path, from: &str, to: &str, bytes: &[u8]) {
         let mut dead = UpdateLock::acquire(exe, Duration::ZERO).unwrap();
-        dead.begin(&ver(from), &ver(to), bytes).unwrap();
+        let before = checked(&mut dead, exe, from);
+        dead.begin(&before, &ver(to), bytes).unwrap();
         std::fs::write(exe, bytes).unwrap();
     }
 
@@ -798,7 +812,8 @@ mod tests {
     fn an_update_proceeds_when_the_dead_updater_never_reached_the_rename() {
         let (_dir, exe) = installed();
         let mut dead = UpdateLock::acquire(&exe, Duration::ZERO).unwrap();
-        dead.begin(&ver("3.0.0"), &ver("3.2.0"), b"binary 3.2.0")
+        let before = checked(&mut dead, &exe, "3.0.0");
+        dead.begin(&before, &ver("3.2.0"), b"binary 3.2.0")
             .unwrap();
         drop(dead);
         let files = release(tar_gz("slopvac", b"binary 3.1.0"));
