@@ -360,6 +360,24 @@ fn a_malformed_excalidraw_element_is_an_incomplete_run_that_keeps_earlier_findin
 }
 
 #[test]
+fn a_drawio_file_holding_only_comments_and_whitespace_stays_valid() {
+    for (name, source) in [
+        ("comment", "<mxfile><!-- nothing here --></mxfile>"),
+        (
+            "comment and whitespace",
+            "<mxfile>\n  <!-- note -->\n</mxfile>",
+        ),
+    ] {
+        let doc = engine()
+            .lint(&Input::diagram("d.drawio", source, Format::Drawio))
+            .unwrap();
+        assert!(doc.unchecked.is_empty(), "{name}: {:?}", codes(&doc));
+        assert_eq!(doc.findings, [], "{name}");
+        assert!(doc.gate.is_passed(), "{name}: {:?}", doc.gate.reasons());
+    }
+}
+
+#[test]
 fn excalidraw_elements_that_hold_no_text_stay_valid() {
     let source = "{\"elements\":[\
         {\"id\":\"r\",\"type\":\"rectangle\"},\

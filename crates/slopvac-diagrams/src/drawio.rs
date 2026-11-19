@@ -138,9 +138,9 @@ fn document(
     let root = doc.root_element();
     match root.tag_name().name() {
         "mxfile" => {
-            let has_content = root
-                .children()
-                .any(|n| n.is_element() || n.text().is_some_and(|t| !t.trim().is_empty()));
+            let has_content = root.children().any(|n| {
+                n.is_element() || (n.is_text() && n.text().is_some_and(|t| !t.trim().is_empty()))
+            });
             if has_content && !root.children().any(|n| n.has_tag_name("diagram")) {
                 return Err(ExtractionStatus::Malformed("no diagram pages"));
             }
