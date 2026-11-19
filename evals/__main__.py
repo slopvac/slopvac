@@ -294,20 +294,41 @@ def cmd_label_sample(args: argparse.Namespace) -> int:
 def cmd_label_judge(args: argparse.Namespace) -> int:
     p = _paths(args)
     out = p["judgments"] / f"{args.family}.jsonl"
+    try:
+        labelling.check_identity(args.family, args.model)  # before any ledger exists
+    except runner.EngineError as exc:
+        print(f"evals label judge: {exc}", file=sys.stderr)
+        return 2
+    ledger = out.with_suffix(".ledger.jsonl")
+    if out.is_file() and out.stat().st_size and not ledger.is_file():
+        print(
+            f"evals label judge: {out.name} exists without {ledger.name}, "
+            "so its spent invocations are unknown; start with a fresh --dir",
+            file=sys.stderr,
+        )
+        return 2
     done = labelling.completed(labelling.read_jsonl(out), args.model)
     try:
-        rows = labelling.judge_items(
-            labelling.read_jsonl(p["items"]),
-            labelling.command_asker(args.provider_cmd),
-            family=args.family,
-            model=args.model,
-            manifest=lib.load_manifest(),
-            cache=_cache(args),
-            notes=labelling.rule_notes(Path(args.rules_dir)),
-            done=done,
-            sink=lambda row: labelling.append_jsonl(out, [row]),
+        with models.Budget(args.max_invocations, ledger) as budget:
+            rows = labelling.judge_items(
+                labelling.read_jsonl(p["items"]),
+                labelling.command_asker(args.provider_cmd),
+                family=args.family,
+                model=args.model,
+                manifest=lib.load_manifest(),
+                cache=_cache(args),
+                notes=labelling.rule_notes(Path(args.rules_dir)),
+                done=done,
+                sink=lambda row: labelling.append_jsonl(out, [row]),
+                budget=budget,
+            )
+    except models.BudgetExceeded as exc:
+        print(
+            f"evals label judge: {exc}; {out} keeps the finished judgments",
+            file=sys.stderr,
         )
-    except runner.EngineError as exc:
+        return 2
+    except (models.ModelEvalError, runner.EngineError) as exc:
         print(f"evals label judge: {exc}", file=sys.stderr)
         return 2
     print(f"{len(rows)} judgments written to {out}")
@@ -441,6 +462,12 @@ def build_parser() -> argparse.ArgumentParser:
     lj.add_argument("--family", required=True)
     lj.add_argument("--model", required=True)
     lj.add_argument("--provider-cmd", required=True, help="reads a prompt on stdin")
+    lj.add_argument(
+        "--max-invocations",
+        type=int,
+        required=True,
+        help="hard cap on provider calls, counted in the family ledger across resumes",
+    )
     lj.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
     lj.add_argument("--cache")
     lj.set_defaults(func=cmd_label_judge)

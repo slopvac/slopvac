@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from . import corpuslib as lib
-from . import procs, runner
+from . import models, procs, runner
 from .splits import split_of
 
 LABELS_DIR = lib.EVALS_DIR / "labels"
@@ -324,8 +324,12 @@ def judge_items(
     notes: Mapping[str, str],
     done: Iterable[tuple[str, str]] = (),
     sink: Callable[[dict[str, Any]], None] | None = None,
+    budget: models.Budget | None = None,
 ) -> list[dict[str, Any]]:
     """Judge every pending (item, order) pair. `ask` maps a prompt to an answer.
+
+    With a `budget`, each call is charged before it runs. `models.BudgetExceeded`
+    then stops the run, and the rows already passed to `sink` stay.
 
     `sink` receives each judgment as soon as it exists, so a caller can persist it
     before the next paid call. A run that stops half way then resumes without
@@ -351,12 +355,32 @@ def judge_items(
                 "model": model,
                 "order": order,
                 "prompt_version": PROMPT_VERSION,
-                "verdict": parse_answer(ask(prompt), letters),
+                "verdict": parse_answer(
+                    _charged_ask(ask, prompt, budget, model), letters
+                ),
             }
             if sink:
                 sink(row)
             rows.append(row)
     return rows
+
+
+def _charged_ask(
+    ask: Callable[[str], str],
+    prompt: str,
+    budget: models.Budget | None,
+    model: str,
+) -> str:
+    if budget is None:
+        return ask(prompt)
+    number = budget.reserve(model)
+    try:
+        answer = ask(prompt)
+    except BaseException:
+        budget.finish(number, "failed", model)
+        raise
+    budget.finish(number, "ok", model)
+    return answer
 
 
 def command_asker(command: str) -> Callable[[str], str]:

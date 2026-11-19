@@ -307,6 +307,11 @@ def test_resolve_rejects_unknown_items(tmp_path):
     )
 
 
+def reservations(d, family):
+    ledger = lab.read_jsonl(d / "judgments" / f"{family}.ledger.jsonl")
+    return sum(1 for e in ledger if e["event"] == "reserve")
+
+
 def test_an_interrupted_judge_run_keeps_finished_judgments_and_resumes_without_repeats(
     tmp_path, monkeypatch
 ):
@@ -341,12 +346,15 @@ def test_an_interrupted_judge_run_keeps_finished_judgments_and_resumes_without_r
                 "ignored",
                 "--rules-dir",
                 str(tmp_path),
+                "--max-invocations",
+                "99",
             ]
         )
 
     assert run(4) == 2  # 3 items x 2 orders = 6 calls; the 5th call crashes
     saved = lab.read_jsonl(d / "judgments" / "anthropic.jsonl")
     assert len(saved) == 4
+    assert reservations(d, "anthropic") == 5  # the crashed call was charged first
     assert run(99) == 0
     assert len(asked) == 6  # the 4 finished calls were not repeated
     assert len(lab.read_jsonl(d / "judgments" / "anthropic.jsonl")) == 6
@@ -402,6 +410,7 @@ def judge_cli(
     model="claude-test",
     family="anthropic",
     answer=lambda prompt: "A",
+    max_invocations=99,
 ):
     monkeypatch.setattr(
         cli.labelling,
@@ -422,6 +431,8 @@ def judge_cli(
             "ignored",
             "--rules-dir",
             str(tmp_path),
+            "--max-invocations",
+            str(max_invocations),
         ]
     )
 
@@ -468,6 +479,59 @@ def test_a_judgment_under_another_prompt_version_is_not_reused_on_resume(
     monkeypatch.setattr(lab, "PROMPT_VERSION", "2")
     assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 0
     assert len(asked) == 4
+
+
+@pytest.fixture
+def three_items(judge_env):
+    lab.write_jsonl(
+        judge_env / "items.jsonl",
+        [{**ITEM, "id": f"i{n}", "line": 5, "split": "tuning"} for n in range(3)],
+    )
+    return judge_env
+
+
+def test_judge_stops_at_the_ceiling_with_exit_2_and_keeps_finished_rows(
+    three_items, tmp_path, monkeypatch
+):
+    asked = []  # 3 items x 2 orders = 6 calls wanted; the ceiling allows 4
+    assert judge_cli(three_items, tmp_path, monkeypatch, asked, max_invocations=4) == 2
+    assert len(asked) == 4
+    assert len(lab.read_jsonl(three_items / "judgments" / "anthropic.jsonl")) == 4
+    assert reservations(three_items, "anthropic") == 4
+
+
+def test_judge_resume_is_charged_against_the_same_ledger(
+    three_items, tmp_path, monkeypatch
+):
+    asked = []
+    assert judge_cli(three_items, tmp_path, monkeypatch, asked, max_invocations=4) == 2
+    # 4 already spent, so a ceiling of 5 leaves exactly one call.
+    assert judge_cli(three_items, tmp_path, monkeypatch, asked, max_invocations=5) == 2
+    assert len(asked) == 5
+    assert judge_cli(three_items, tmp_path, monkeypatch, asked, max_invocations=6) == 0
+    assert len(asked) == 6  # no finished call was repeated
+    assert reservations(three_items, "anthropic") == 6
+    assert len(lab.read_jsonl(three_items / "judgments" / "anthropic.jsonl")) == 6
+
+
+def test_judge_refuses_judgments_that_have_no_ledger(judge_env, tmp_path, monkeypatch):
+    out = judge_env / "judgments" / "anthropic.jsonl"
+    lab.write_jsonl(out, [{"item": "i0", "order": "tp-first", "model": "claude-test"}])
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 2
+    assert asked == []
+    assert len(lab.read_jsonl(out)) == 1
+    assert not out.with_suffix(".ledger.jsonl").exists()
+
+
+def test_judge_requires_max_invocations(judge_env, tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(
+            ["label", "--dir", str(judge_env), "judge", "--family", "anthropic"]
+            + ["--model", "claude-test", "--provider-cmd", "x"]
+        )
+    assert exc.value.code == 2
+    assert "--max-invocations" in capsys.readouterr().err
 
 
 def write_judgments(d, family, model, ids, **extra):
