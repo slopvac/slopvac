@@ -2556,6 +2556,7 @@ dependencies = [
  "serde",
  "serde_json",
  "similar 3.2.1",
+ "slopvac-comments",
  "slopvac-context",
  "slopvac-diagrams",
  "slopvac-engine",

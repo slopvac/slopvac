@@ -306,11 +306,22 @@ pub(crate) fn scan<'a>(
     front_matter: Option<Span>,
     lookup: impl Fn(&str) -> Target<'a>,
 ) -> Directives {
-    let mut out = Directives::default();
     let quoted = quoted_lines(doc, lines, front_matter);
     let blocks = covered_blocks(doc, lines);
     let targets_for =
         |number: usize| expand_block_targets(&blocks, annotation_targets(lines, number), number);
+    scan_lines(lines, &quoted, &targets_for, lookup)
+}
+
+/// Scan `lines` for directives. `quoted` holds the lines whose text is an example, and
+/// `targets_for` gives the lines a directive on one line applies to.
+pub(crate) fn scan_lines<'a>(
+    lines: &Lines<'_>,
+    quoted: &HashSet<usize>,
+    targets_for: &dyn Fn(usize) -> Vec<usize>,
+    lookup: impl Fn(&str) -> Target<'a>,
+) -> Directives {
+    let mut out = Directives::default();
     let mut block_disabled = false;
     let mut open: BTreeSet<usize> = BTreeSet::new();
     for (number, line) in lines.iter() {
