@@ -8,7 +8,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 
-use frontmatter_spans::FrontMatter;
+use frontmatter_spans::{FrontMatter, Value};
 use slopvac_context::{
     BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, GenreRegistry,
     GenreResult, ResolveOptions, SentenceView, Tag, TagIndex, TagRegistry, TagSink,
@@ -60,6 +60,28 @@ impl Extents {
     }
 }
 
+/// The text of each top-level non-string scalar, rendered as `slopvac-context` renders a
+/// genre signal's expected value: `true`, `42`, `1.5`. A datetime keeps its source text.
+/// Nulls, arrays and tables have no text. The last duplicate key wins, as in `get`.
+fn scalar_text<'a>(front: &'a FrontMatter<'a>) -> HashMap<&'a str, String> {
+    let Value::Table(entries) = &front.root.value else {
+        return HashMap::new();
+    };
+    entries
+        .iter()
+        .filter_map(|e| {
+            let text = match &e.value.value {
+                Value::Bool(b) => b.to_string(),
+                Value::Integer(i) => i.to_string(),
+                Value::Float(f) => f.to_string(),
+                Value::Datetime(d) => d.clone(),
+                Value::Null | Value::String(_) | Value::Array(_) | Value::Table(_) => return None,
+            };
+            Some((e.key.as_str(), text))
+        })
+        .collect()
+}
+
 /// A parsed document as the taggers read it.
 struct View<'a> {
     path: &'a str,
@@ -68,6 +90,8 @@ struct View<'a> {
     source_len: usize,
     title: Option<&'a str>,
     front_matter: Option<&'a FrontMatter<'a>>,
+    /// Top-level front matter keys whose value is not a string, rendered as text.
+    scalars: HashMap<&'a str, String>,
     entries: Vec<Entry<'a>>,
     /// The blocks as taggers read them, built once.
     views: Vec<BlockView<'a>>,
@@ -162,6 +186,7 @@ impl<'a> View<'a> {
             source_len: source.len(),
             title,
             front_matter,
+            scalars: front_matter.map(scalar_text).unwrap_or_default(),
             entries,
             by_text,
             unmapped: Cell::new(false),
@@ -279,7 +304,9 @@ impl DocumentView for View<'_> {
     }
 
     fn front_matter(&self, key: &str) -> Option<&str> {
-        self.front_matter?.get(key)?.as_str()
+        let node = self.front_matter?.get(key)?;
+        node.as_str()
+            .or_else(|| self.scalars.get(key).map(String::as_str))
     }
 
     fn source_len(&self) -> usize {
@@ -472,6 +499,28 @@ mod tests {
             code_spans: Vec::new(),
             html_blocks: Vec::new(),
         }
+    }
+
+    #[rstest::rstest]
+    #[case::boolean("generated: true", "generated", Some("true"))]
+    #[case::integer("year: 2024", "year", Some("2024"))]
+    #[case::float("ratio: 1.5", "ratio", Some("1.5"))]
+    #[case::datetime("when: 2024-05-01", "when", Some("2024-05-01"))]
+    #[case::string("genre: reference", "genre", Some("reference"))]
+    #[case::quoted_number("year: \"2024\"", "year", Some("2024"))]
+    #[case::null("note:", "note", None)]
+    #[case::sequence("tags: [a, b]", "tags", None)]
+    #[case::absent("year: 1", "other", None)]
+    fn front_matter_renders_parsed_scalars_as_text(
+        #[case] line: &str,
+        #[case] key: &str,
+        #[case] want: Option<&str>,
+    ) {
+        let source = format!("---\n{line}\n---\nBody.\n");
+        let front = FrontMatter::parse(&source).unwrap().unwrap();
+        let doc = row_of_fallback_cells(0);
+        let view = View::new("a.md", &source, &doc, Some(&front));
+        assert_eq!(view.front_matter(key), want);
     }
 
     #[test]
