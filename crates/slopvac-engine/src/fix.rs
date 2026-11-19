@@ -14,8 +14,9 @@
 //!   the first one wins and the others stay for the next run.
 //! - With a changed-line filter, every line the edit touches is in a changed range.
 //!
-//! The replacement keeps the case of the text it replaces, as 2.x did: an upper-case match
-//! gives an upper-case replacement and a capitalised match gives a capitalised one.
+//! The text of an edit is the reported replacement, already in the case of the text it
+//! replaces (the engine does that when it generates the edit), so a client that applies the
+//! reported edits gets the same text as [`fix_document`].
 //!
 //! The text of an edit is written verbatim, so CRLF line endings and every byte outside the
 //! edits stay as they were.
@@ -168,23 +169,6 @@ pub fn fix_document(
             });
             continue;
         }
-        // A canonical term spelling is the fix itself: it keeps the case it declares.
-        let exact = engine.is_term_casing(&finding.rule_id);
-        let cased: Vec<Edit> = fix
-            .edits()
-            .iter()
-            .map(|e| Edit {
-                span: e.span,
-                text: if exact {
-                    e.text.clone()
-                } else {
-                    preserve_case(
-                        input.source.get(e.span.start()..e.span.end()).unwrap_or(""),
-                        &e.text,
-                    )
-                },
-            })
-            .collect();
         let mut reason = refusal(
             finding,
             fix.edits(),
@@ -196,7 +180,7 @@ pub fn fix_document(
         );
         // A table cell keeps the width of its text, or the borders no longer line up.
         if reason.is_none()
-            && cased.iter().any(|e| {
+            && fix.edits().iter().any(|e| {
                 overlaps_any(e.span, &tables)
                     && !same_width(&input.source[e.span.start()..e.span.end()], &e.text)
             })
@@ -211,7 +195,7 @@ pub fn fix_document(
             });
             continue;
         }
-        edits.extend(cased);
+        edits.extend(fix.edits().iter().cloned());
         applied += 1;
     }
     let text = apply_edits(input.source, &edits)?;
@@ -319,22 +303,6 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
             .map(|b| b.span),
     );
     Ok(spans)
-}
-
-/// `replacement` in the case of `original`: upper case after an upper-case match, a
-/// capital first letter after a capitalised one.
-fn preserve_case(original: &str, replacement: &str) -> String {
-    let cased = original.chars().any(char::is_uppercase);
-    if cased && !original.chars().any(char::is_lowercase) {
-        return replacement.to_uppercase();
-    }
-    if original.chars().next().is_some_and(char::is_uppercase) {
-        let mut chars = replacement.chars();
-        if let Some(first) = chars.next() {
-            return first.to_uppercase().chain(chars).collect();
-        }
-    }
-    replacement.to_owned()
 }
 
 /// A unified diff of `before` to `after`, headed `a/<path>` and `b/<path>`, with three
