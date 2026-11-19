@@ -944,7 +944,7 @@ fn a_fatal_error_returns_at_once_although_the_transport_is_blocked() {
         .recv_timeout(Duration::from_secs(4))
         .expect("serve returns although the transport is blocked");
     assert!(
-        matches!(result, Err(ServerError::Protocol(_))),
+        matches!(result, Err(ServerError::Protocol { .. })),
         "{result:?}"
     );
 }
