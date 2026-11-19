@@ -265,6 +265,111 @@ fn setup_error_under_an_external_root_names_the_file_without_its_directories() {
 }
 
 #[test]
+fn setup_error_under_a_relative_external_root_hides_the_parent_directories() {
+    let base = tempfile::tempdir().unwrap();
+    let work = base.path().join("work");
+    fs::create_dir(&work).unwrap();
+    let private = base.path().join("private-project");
+    fs::create_dir(&private).unwrap();
+    fs::write(private.join("AGENTS.md"), "<!-- slopvac:begin -->\n").unwrap();
+    let out = slopvac(&work)
+        .args(["setup", "agents", "--root", "../private-project"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.starts_with("error[steering-malformed]: malformed or ambiguous slopvac markers in <external>/AGENTS.md;"),
+        "{err}"
+    );
+    assert!(!err.contains("private-project"), "{err}");
+}
+
+#[test]
+fn setup_with_a_missing_relative_root_shows_the_root_once() {
+    let work = tempfile::tempdir().unwrap();
+    let out = slopvac(work.path())
+        .args(["setup", "agents", "--root", "missing"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(!err.contains("missing/missing"), "{err}");
+}
+
+/// A run directory whose project root is a directory named `AGENTS.md`, so the root and the
+/// project-relative steering path share their leading component.
+fn root_named_like_the_steering_file(content: &[u8]) -> tempfile::TempDir {
+    let work = tempfile::tempdir().unwrap();
+    let root = work.path().join("AGENTS.md");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("AGENTS.md"), content).unwrap();
+    work
+}
+
+#[test]
+fn setup_error_for_a_root_named_like_the_steering_file_keeps_both_components() {
+    let work = root_named_like_the_steering_file(b"\xff\xfe");
+    let out = slopvac(work.path())
+        .args(["setup", "agents", "--root", "AGENTS.md"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.starts_with("error[steering-not-utf8]: steering must be UTF-8: AGENTS.md/AGENTS.md"),
+        "{err}"
+    );
+}
+
+#[test]
+fn setup_unclosed_fence_for_a_root_named_like_the_steering_file_keeps_both_components() {
+    let work = root_named_like_the_steering_file(b"```sh\nno closing fence\n");
+    let out = slopvac(work.path())
+        .args(["setup", "agents", "--root", "AGENTS.md"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        err.starts_with(
+            "error[steering-malformed]: AGENTS.md/AGENTS.md has an unterminated code fence"
+        ),
+        "{err}"
+    );
+}
+
+#[test]
+fn setup_malformed_markers_for_a_root_named_like_the_steering_file_keep_both_components() {
+    let work = root_named_like_the_steering_file(b"<!-- slopvac:begin -->\n");
+    let out = slopvac(work.path())
+        .args(["setup", "agents", "--root", "AGENTS.md"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(err.contains("markers in AGENTS.md/AGENTS.md;"), "{err}");
+}
+
+#[cfg(unix)]
+#[test]
+fn setup_error_under_a_symlinked_root_that_points_outside_is_external() {
+    let work = tempfile::tempdir().unwrap();
+    let outside = external();
+    fs::write(outside.path().join("AGENTS.md"), "<!-- slopvac:begin -->\n").unwrap();
+    std::os::unix::fs::symlink(outside.path(), work.path().join("link")).unwrap();
+    let out = slopvac(work.path())
+        .args(["setup", "agents", "--root", "link"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(err.contains("markers in <external>/AGENTS.md;"), "{err}");
+    assert_clean(&err, &outside);
+    assert!(!err.contains("link"), "{err}");
+}
+
+#[test]
 fn genre_error_for_an_unreadable_external_file_hides_its_directories() {
     let work = tempfile::tempdir().unwrap();
     let outside = external();

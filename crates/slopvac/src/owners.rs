@@ -65,6 +65,8 @@ pub(crate) fn agents_error(err: &AgentsError, root: &Path) -> CliError {
 
 fn agents_message(err: &AgentsError, root: &Path) -> String {
     let cwd = cwd();
+    // Every path in an `AgentsError` is relative to the root the caller passed. An absolute
+    // path (a file the user named on the command line) replaces the root in `join`.
     let path = |p: &Path| redact::shown_path(&root.join(p), &cwd);
     match err {
         AgentsError::UnsafeTarget(target) => {
@@ -187,14 +189,54 @@ pub fn review(m: &ArgMatches, offline: bool, out: &mut dyn Write) -> Result<u8, 
         author_model: author_model(&cwd())?,
         ..ReviewEnv::default()
     };
-    let text = review::run(m, &env).map_err(|e| agents_error(&e))?;
+    let text = review::run(m, &env).map_err(|e| agents_error(&e, &cwd()))?;
     write(out, &text)?;
     Ok(exit::PASS)
 }
 
 /// `slopvac claims`. Reads the two named files and nothing else, so it needs no network.
 pub fn claims(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let text = claims::run(m).map_err(|e| agents_error(&e))?;
+    let text = claims::run(m).map_err(|e| agents_error(&e, &cwd()))?;
     write(out, &text)?;
     Ok(exit::PASS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    // Owners report paths relative to the project. With a relative root, each variant shows
+    // the root once.
+    #[rstest]
+    #[case::io(AgentsError::Io {
+        path: PathBuf::from("AGENTS.md"),
+        source: std::io::Error::from(std::io::ErrorKind::NotFound),
+    }, "setup-io", "proj/AGENTS.md: ")]
+    #[case::unsafe_target(
+        AgentsError::UnsafeTarget("AGENTS.md".to_owned()),
+        "steering-unsafe-target",
+        "unsafe steering target: proj/AGENTS.md"
+    )]
+    #[case::conflict(
+        AgentsError::Conflict(PathBuf::from("AGENTS.md")),
+        "steering-conflict",
+        "retry: proj/AGENTS.md"
+    )]
+    #[case::relative_to_the_project(
+        AgentsError::NotUtf8(PathBuf::from("AGENTS.md")),
+        "steering-not-utf8",
+        "UTF-8: proj/AGENTS.md"
+    )]
+    fn a_relative_root_is_shown_once(
+        #[case] err: AgentsError,
+        #[case] code: &str,
+        #[case] expected: &str,
+    ) {
+        let shown = agents_error(&err, Path::new("proj"));
+        let text = shown.to_string();
+        assert!(text.starts_with(&format!("error[{code}]: ")), "{text}");
+        assert!(text.contains(expected), "{text}");
+        assert!(!text.contains("proj/proj"), "{text}");
+    }
 }
