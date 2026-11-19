@@ -2495,6 +2495,7 @@ dependencies = [
  "frontmatter-spans",
  "ignore",
  "insta",
+ "rstest",
  "saphyr",
  "serde",
  "serde_json",
