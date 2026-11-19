@@ -47,19 +47,48 @@ fn exec(root: &Path) -> Result<String, CliFailure> {
         .map(|()| String::from_utf8(out).unwrap())
 }
 
+/// `f` names `raw` escaped exactly once, and its source names it as it is.
+fn assert_escaped_once(f: &CliFailure, raw: &str, escaped: &str) {
+    let shown = f.to_string();
+    assert!(!shown.contains('\u{1b}'), "{shown:?}");
+    // One backslash in the name becomes two, not four.
+    assert!(shown.contains(escaped), "{shown:?}");
+    assert!(!shown.contains("a\\\\\\\\b"), "{shown:?}");
+    let source = std::error::Error::source(f).unwrap().to_string();
+    assert!(source.contains(raw), "{source:?}");
+}
+
+#[test]
+fn a_restore_failure_is_escaped_once_and_keeps_the_raw_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "a\\b\u{1b}/slopvac.toml",
+        "profile = \"strict\"\n",
+    );
+    let run_with = |flag: &str| {
+        let m = command().get_matches_from(["migrate", dir.path().to_str().unwrap(), flag]);
+        execute(&m, &NullLinter, STEERING, state.path(), &mut Vec::new())
+    };
+    run_with("--write").unwrap();
+    write(
+        dir.path(),
+        "a\\b\u{1b}/slopvac.toml",
+        "profile = \"normal\"\n",
+    );
+    let f = run_with("--restore").unwrap_err();
+    assert_eq!(f.code(), "migrate-file-changed");
+    assert_escaped_once(&f, "a\\b\u{1b}/slopvac.toml", "a\\\\b\\u{1b}/slopvac.toml");
+}
+
 #[test]
 fn the_failure_execute_returns_is_escaped_once_and_keeps_the_raw_source() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "docs/a\\b\u{1b}.md", UNKNOWN);
     let f = exec(dir.path()).unwrap_err();
     assert_eq!(f.code(), "config-legacy-dropped");
-    let shown = f.to_string();
-    assert!(!shown.contains('\u{1b}'), "{shown:?}");
-    // One backslash in the name becomes two, not four.
-    assert!(shown.contains("docs/a\\\\b\\u{1b}.md"), "{shown:?}");
-    assert!(!shown.contains("a\\\\\\\\b"), "{shown:?}");
-    let raw = std::error::Error::source(&f).unwrap().to_string();
-    assert!(raw.contains("a\\b\u{1b}.md"), "{raw:?}");
+    assert_escaped_once(&f, "a\\b\u{1b}.md", "docs/a\\\\b\\u{1b}.md");
 }
 
 #[test]

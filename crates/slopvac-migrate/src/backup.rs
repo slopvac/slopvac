@@ -104,9 +104,9 @@ fn unhex(text: &str) -> Option<Sha> {
     Some(out)
 }
 
-/// A path as messages show it: control characters escaped, on one line.
+/// A path as error messages name it. It stays raw: the CLI escapes the whole message once.
 fn shown(path: &Path) -> String {
-    slopvac_sanitize::line(&path.display().to_string())
+    path.display().to_string()
 }
 
 fn refused(path: &Path, why: &str) -> Error {
