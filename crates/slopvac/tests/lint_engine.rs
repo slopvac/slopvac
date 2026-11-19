@@ -869,3 +869,63 @@ fn the_legacy_style_alone_requires_a_score_of_70() {
         "{reasons:?}"
     );
 }
+
+/// A working directory `proj` beside a sentinel-named directory that stands for a private
+/// location outside the project.
+fn proj_beside_sentinel() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let proj = dir.path().join("proj");
+    fs::create_dir(&proj).expect("proj dir");
+    (dir, proj)
+}
+
+#[test]
+fn a_missing_target_reached_through_dot_dot_hides_the_external_directory() {
+    let (_dir, proj) = proj_beside_sentinel();
+    for format in ["text", "json"] {
+        let out = slopvac()
+            .current_dir(&proj)
+            .args([
+                "lint",
+                "--format",
+                format,
+                "../sentinel-outside-dir/missing.md",
+            ])
+            .output()
+            .expect("run");
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(all.contains("<external>/missing.md"), "{format}: {all}");
+        assert!(!all.contains("sentinel-outside-dir"), "{format}: {all}");
+    }
+}
+
+#[test]
+fn an_external_config_error_hides_the_external_directory() {
+    let (_dir, proj) = proj_beside_sentinel();
+    fs::write(proj.join("ok.md"), CLEAN).expect("document");
+    for format in ["text", "json"] {
+        let out = slopvac()
+            .current_dir(&proj)
+            .args([
+                "lint",
+                "--format",
+                format,
+                "--config",
+                "../sentinel-outside-dir/missing.toml",
+                "ok.md",
+            ])
+            .output()
+            .expect("run");
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(all.contains("<external>/missing.toml"), "{format}: {all}");
+        assert!(!all.contains("sentinel-outside-dir"), "{format}: {all}");
+    }
+}

@@ -3,6 +3,8 @@
 
 use std::path::Path;
 
+use slopvac_fs::display_under_root;
+
 /// The name shown for standard input everywhere.
 pub const STDIN_NAME: &str = "<stdin>";
 
@@ -19,14 +21,19 @@ pub fn path_for_log(path: &Path, root: &Path) -> String {
     format!("<external>/{name}")
 }
 
-/// How a path appears in a message: as given when relative, redacted when absolute.
+/// How a path appears in a message. A relative path resolves against the working directory
+/// and both paths normalize lexically; the result is root-relative or `<external>/<file>`.
 #[must_use]
 pub fn shown_path(path: &Path, root: &Path) -> String {
-    if path.is_absolute() {
-        path_for_log(path, root)
-    } else {
-        path.display().to_string()
-    }
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let absolute = |p: &Path| {
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            cwd.join(p)
+        }
+    };
+    display_under_root(&absolute(path), &absolute(root))
 }
 
 /// Remove the user-info part of every `scheme://user:pass@host` in `text`.
@@ -131,7 +138,22 @@ pub fn redact_absolute(text: &str, cwd: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::path::PathBuf;
+
+    #[rstest]
+    #[case::current_dir_prefix("./a.md", "a.md")]
+    #[case::folded_parent("a/../b.md", "b.md")]
+    #[case::already_rooted("docs/a.md", "docs/a.md")]
+    #[case::climbs_out("../x/y.md", "<external>/y.md")]
+    #[case::climbs_out_after_folding("a/../../x.md", "<external>/x.md")]
+    #[case::absolute_inside("ROOT/docs/a.md", "docs/a.md")]
+    #[case::absolute_outside("/elsewhere/dir/a.md", "<external>/a.md")]
+    fn shown_path_normalizes_before_classifying(#[case] given: &str, #[case] want: &str) {
+        let cwd = std::env::current_dir().unwrap();
+        let given = given.replace("ROOT", &cwd.display().to_string());
+        assert_eq!(shown_path(Path::new(&given), &cwd), want);
+    }
 
     #[test]
     fn path_inside_root_is_relative() {
