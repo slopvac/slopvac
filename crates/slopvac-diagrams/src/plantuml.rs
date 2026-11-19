@@ -309,26 +309,53 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
 /// A diagram body: each line with its offset in the host file.
 type Body<'a> = Vec<(usize, &'a str)>;
 
+/// The diagram bodies of a source, and whether blocks of other types were left out.
+struct Blocks<'a> {
+    bodies: Vec<Body<'a>>,
+    /// A block of an unsupported `@start` type was skipped.
+    skipped: bool,
+}
+
 /// Split the source into diagram bodies, one per `@startuml` to `@enduml` block.
 ///
 /// A body without markers is read as one block. Lines before the first `@startuml` stay in
 /// the first block. Lines between blocks are ignored. A terminator must be exactly
 /// `@enduml`, and an opened block must close, so a truncated or mismatched diagram is
-/// reported instead of read as far as it went.
-fn blocks(src: &str, base: usize) -> Result<Vec<Body<'_>>, ExtractionStatus> {
+/// reported instead of read as far as it went. A block of another type (`@startmindmap`
+/// and so on) runs to its own `@end` marker and is skipped, so it does not hide the
+/// supported blocks around it. A marker inside a `/' … '/` comment starts nothing.
+fn blocks(src: &str, base: usize) -> Result<Blocks<'_>, ExtractionStatus> {
     let mut done = Vec::new();
     let mut current: Option<Body<'_>> = Some(Vec::new());
     let mut explicit = false;
+    let mut skipped = false;
+    let mut in_comment = false;
     for source_line in lines(src) {
         let text = source_line.text;
         let lead = text.len() - text.trim_start().len();
         let t = text.trim();
         let at = base + source_line.start + lead;
+        let was_comment = in_comment;
+        if in_comment {
+            in_comment = !t.ends_with("'/");
+        } else if t.starts_with("/'") && !t.ends_with("'/") {
+            in_comment = true;
+        }
+        if was_comment || in_comment || t.starts_with("/'") {
+            if let Some(body) = current.as_mut() {
+                body.push((at, t));
+            }
+            continue;
+        }
         let opens = t.starts_with("@start");
         if opens && !t.to_ascii_lowercase().starts_with("@startuml") {
-            return Err(ExtractionStatus::Unsupported(
-                "unsupported PlantUML diagram type",
-            ));
+            if explicit && current.is_some() {
+                return Err(ExtractionStatus::Malformed("missing @enduml"));
+            }
+            explicit = true;
+            skipped = true;
+            current = None;
+            continue;
         }
         let Some(body) = current.as_mut() else {
             if opens {
@@ -353,23 +380,35 @@ fn blocks(src: &str, base: usize) -> Result<Vec<Body<'_>>, ExtractionStatus> {
         return Err(ExtractionStatus::Malformed("missing @enduml"));
     }
     done.extend(current);
-    Ok(done)
+    Ok(Blocks {
+        bodies: done,
+        skipped,
+    })
 }
 
-/// Extract and also return the work done: one per line read plus the bytes label scans examine.
+/// Extract and also return the work done: one per line read, one per body detected, and the
+/// bytes label scans examine.
 fn extract_counted(src: &str, base: usize) -> (Extraction, usize) {
-    let blocks = match blocks(src, base) {
-        Ok(blocks) => blocks,
+    let Blocks { bodies, skipped } = match blocks(src, base) {
+        Ok(found) => found,
         Err(status) => return (Extraction::failed(status), 0),
     };
-    let kind = detect(blocks.first().map_or(&[][..], Vec::as_slice));
+    if bodies.is_empty() {
+        return (Extraction::failed(unsupported()), 0);
+    }
     let mut out = Out {
-        kind,
+        kind: Kind::Sequence,
         frags: Sink::default(),
         work: 0,
     };
-    for body in blocks {
+    let mut first = None;
+    for body in bodies {
+        if out.frags.is_full() {
+            break;
+        }
+        out.work += 1;
         out.kind = detect(&body);
+        first.get_or_insert(out.kind);
         let mut block = Block::None;
         for (at, t) in body {
             if out.frags.is_full() {
@@ -380,14 +419,23 @@ fn extract_counted(src: &str, base: usize) -> (Extraction, usize) {
     }
     let work = out.work;
     let (fragments, hit) = out.frags.finish();
+    let status = match hit {
+        Some(_) => crate::sink::status(hit),
+        None if skipped => unsupported(),
+        None => ExtractionStatus::Ok,
+    };
     (
         Extraction {
-            diagram: Some(format!("plantuml.{}", kind.name())),
+            diagram: first.map(|kind| format!("plantuml.{}", kind.name())),
             fragments,
-            status: crate::sink::status(hit),
+            status,
         },
         work,
     )
+}
+
+fn unsupported() -> ExtractionStatus {
+    ExtractionStatus::Unsupported("unsupported PlantUML diagram type")
 }
 
 fn lower_eq(t: &str, a: &str, b: &str) -> bool {
@@ -606,6 +654,21 @@ mod tests {
         let head = doc(MAX_FRAGMENTS + 1);
         let full = doc(MAX_FRAGMENTS + 1 + 50_000);
         assert_eq!(extract_counted(&full, 0).1, extract_counted(&head, 0).1);
+    }
+
+    #[test]
+    fn blocks_after_the_fragment_cap_are_not_detected() {
+        let full = "A -> B : m\n".repeat(MAX_FRAGMENTS + 1);
+        let doc = |extra: usize| {
+            format!(
+                "@startuml\n{full}@enduml\n{}",
+                "@startuml\nA -> B : x\n@enduml\n".repeat(extra)
+            )
+        };
+        assert_eq!(
+            extract_counted(&doc(50), 0).1,
+            extract_counted(&doc(1), 0).1
+        );
     }
 
     #[test]

@@ -266,6 +266,61 @@ fn a_second_plantuml_block_is_checked_and_a_valid_two_block_file_passes() {
 }
 
 #[test]
+fn an_unsupported_plantuml_block_after_a_supported_one_keeps_the_supported_findings() {
+    let source = format!(
+        "@startuml\nrectangle \"{LONG_LABEL}\" as R\n@enduml\n@startmindmap\n* root\n@endmindmap\n"
+    );
+    let (doc, notices) = engine()
+        .lint_with_notices(&Input::diagram("d.puml", &source, Format::PlantUml))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    assert_eq!(doc.findings[0].matched_text, LONG_LABEL);
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert_eq!(notices[0].code.as_str(), "extract-unsupported");
+    assert_eq!(notices[0].level, NoticeLevel::Info);
+    assert!(doc.unchecked.is_empty(), "{:?}", codes(&doc));
+    assert!(
+        doc.gate
+            .reasons()
+            .iter()
+            .all(|r| !r.starts_with("incomplete check:")),
+        "{:?}",
+        doc.gate.reasons()
+    );
+}
+
+#[test]
+fn a_start_marker_inside_a_plantuml_comment_is_not_a_block() {
+    for (name, comment) in [
+        ("inside a block", "/'\n@startmindmap\n'/\n"),
+        ("on one line", "/' @startmindmap '/\n"),
+    ] {
+        for (place, source) in [
+            (
+                "in",
+                format!("@startuml\n{comment}rectangle \"{LONG_LABEL}\" as R\n@enduml\n"),
+            ),
+            (
+                "after",
+                format!("@startuml\nrectangle \"{LONG_LABEL}\" as R\n@enduml\n{comment}"),
+            ),
+        ] {
+            let (doc, notices) = engine()
+                .lint_with_notices(&Input::diagram("d.puml", &source, Format::PlantUml))
+                .unwrap();
+            assert_eq!(doc.findings.len(), 1, "{name} {place}");
+            assert_eq!(doc.findings[0].matched_text, LONG_LABEL, "{name} {place}");
+            assert!(notices.is_empty(), "{name} {place}: {notices:?}");
+            assert!(
+                doc.unchecked.is_empty(),
+                "{name} {place}: {:?}",
+                codes(&doc)
+            );
+        }
+    }
+}
+
+#[test]
 fn a_mismatched_plantuml_terminator_is_malformed() {
     for end in ["@endmindmap", "@endfoo"] {
         let source = format!("@startuml\nA -> B : hi\n{end}\n");
