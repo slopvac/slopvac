@@ -52,7 +52,7 @@ if [ "$STAGE" = prep ]; then
   printf 'schema_version = 3\nprofile = "strict"\n' > "$P/slopvac.toml"
   cp -R "$WT/docs" "$P/docs"
   python3 "$TOOLS/eval_copy.py" "$WT/evals/corpus" "$P/eval" > "$OUT/eval-ext.txt"
-  python3 -c 'import docutils; print("docutils", docutils.__version__)' > "$OUT/docutils.txt" 2>&1
+  "${SLOPVAC_RST_CONVERTER:-false}" -c 'import docutils; print("docutils", docutils.__version__)' > "$OUT/docutils.txt" 2>&1
   echo done-prep
   exit 0
 fi

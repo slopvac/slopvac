@@ -1,0 +1,979 @@
+{"id": "891fa8296e77c51e", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "35cc34f66c045606", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "5f7d3db2803e0d56", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "62bd070847682f86", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "9274b6366717f57e", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "655b1097f91b3d06", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "10b5836b9598d234", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "0a32fc5673f29a69", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "b11ee3f708d439fc", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "796c58338256b215", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "a34e84c60605621d", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "a933a90323d01cc6", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "a8ab78748a637ea6", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "827d8e085c5b513b", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "8c37b5c7d9e35f0d", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "9fa942f983e8275e", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "8c431e08ebea60a4", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "b08f256969b56c72", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "2b0cfd33b44b9529", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "82c32c26ec9660eb", "origin": "core rules (pattern)", "verdict": "flag", "rules": ["POLY", "NEST", "POLY2"], "error": null}
+{"id": "bb15a304acf5a8ca", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "a59e9c40e6b30be2", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "95e7e3f142dc7551", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "0361d6593cbebf40", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "a0f18092db353def", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "4b65485981099537", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "25cc7b6a22117f8f", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "05117b7b5f6b2b2a", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "0e2b6c7db4c3eea0", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "594c31c2e7b81033", "origin": "core rules (pattern)", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "f5b0aa11cc133190", "origin": "core rules (pattern)", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "4d40985bbc78ed57", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "34504f840fb2adb0", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "14a5aab953406c54", "origin": "core rules (pattern)", "verdict": "flag", "rules": ["POLY", "POLY2"], "error": null}
+{"id": "186e23f0ae7ef857", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "e5814ca6a9f8e7b5", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "eef85f3f3bf4782f", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "c1572966ff399263", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "1848ee3f028b46ce", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "5261b3cb2b5bf2b9", "origin": "core rules (pattern)", "verdict": "flag", "rules": ["RECURSION"], "error": null}
+{"id": "a657f7a76d79b0c0", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "af5d4f789697060a", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "2eddf45ba53100fc", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "0afd10eb341ce10e", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "8905a78e8d737a88", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "ac75f3bd663a6d51", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "774d996ecc1af232", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "7ae9081ed0c0b6d3", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "5c16199b5ea0f68f", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "0857c02f5e31c81c", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "fb0adb7284612c9f", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "14bb7476f889c259", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "4ee7f5b71e7d41f1", "origin": "core rules (pattern)", "verdict": "warn", "rules": ["LONG-LOOKBEHIND"], "error": null}
+{"id": "d71263e9191d9ff6", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "9f4ee5a9c6515700", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "ac62bcfd5e6a29e4", "origin": "core rules (pattern)", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "d9c61376a7c4aa9c", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "b21621dfc141d4f1", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "5bb1a026a07dc09e", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "792e06a349c8d593", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "950a31425ccc80c7", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "54d59876af946c34", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "79176e85253e9c66", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "0878cecdc35a4caa", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "39def05755c44e87", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "0edcd9d2afba43e5", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "9e3873596e2bf028", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "930a8d0a6a209173", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "3d0b9521ee4b9767", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "1ed6c1849bfcff8c", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "08f4bc4b3305159c", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "e4d212784356830d", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "f22c5d32ddc75f1f", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "06682ea5ea05c92f", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "c7480fa646a01e35", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "38f0deacbf3e0384", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "93e796291cc9b9c9", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "fd253eedb95aeb9a", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "91c2146b4f51a3b3", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "636ce3d7cc221153", "origin": "core rules (pattern)", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "ceef5b28a5310839", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "c20f2ecb646d9144", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "6578e9e659c66d5e", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "84d99f0a4799b734", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "b4efb3dfe8b0e6b9", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "34046519578107ee", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "bbb99e597f0d6ba3", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "ccc0afd15381f221", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "e6bb46f08b504b58", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "f03eb734b7fba439", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "25bcd6704ab0322f", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "6fa4761526ecfdba", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "2e681baa7fdbddbb", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "f455757052f2b160", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "29694fb3ac1c888d", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "980b1043d04e9ca6", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "96a6cdc3f5960855", "origin": "core rules (pattern)", "verdict": "flag", "rules": ["POLY"], "error": null}
+{"id": "08329a6b845747aa", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "c6ef87faa3028447", "origin": "core rules (pattern)", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "593c16d466df52d4", "origin": "core rules (pattern)", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "edbb3a98301c4230", "origin": "core rules (pattern)", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "8bc02ede249b5656", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "47ea6755348b8b17", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "ab7ca74bdf4065c2", "origin": "core rules (pattern)", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "33d103944c849466", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "3bf00c59f8ba7b99", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "47f26bf0e8aeb701", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "062c8b055547f69e", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "8968a62bde370473", "origin": "core rules (pattern)", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "7d34ac0d755cf3a4", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "ea9e99ea6f212d50", "origin": "core rules (pattern)", "verdict": "ok", "rules": [], "error": null}
+{"id": "6a2011ca696f5cf2", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "d59d40219a81538f", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "fe343320d30594a0", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "0c00ee6bfa7053a9", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "ae9fd2716ffdc035", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "59a738f05bbdb1d0", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "b11b8b5857b3b3a9", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "94891e41c6f9b34c", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "39b27865a404c9b2", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "08d4b25c697ccbc6", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "a0830a1220ef08f3", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "2f412ddc4219adfd", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "ba76393d2db98b5e", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "ee3bc4f9e613fb92", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "44e9e07fd39b5a6c", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "bf889dccf0014ca3", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "9ed3b92c12b3ef24", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "463b9d57693da39d", "origin": "core rules (substitution)", "verdict": "ok", "rules": [], "error": null}
+{"id": "d6103db9739bf3bd", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "0a2ed2372de1b718", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "ab428618344e0ba5", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "eeaaabcc3cc40131", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "eaa1c99eb87f7ec5", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "b2f06bcffd66d535", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "cbb4b7e257ead102", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "23cfdca41df4b066", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "3ae6f23442c4f133", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "1ecd98fa77a8ad05", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "40a187ba0d060020", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "f7a2041e2a4ff8ed", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "727943cd55d101a6", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "57219fa48d9a8d22", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "c67d0329c3fdf331", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "5ab106029139b6f0", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "c07c888f1b075cda", "origin": "core rules (tokens)", "verdict": "ok", "rules": [], "error": null}
+{"id": "13f858e74ddb41f1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c496da5f1030ca8c", "origin": "engine exceptions/matching", "verdict": "flag", "rules": ["NEST"], "error": null}
+{"id": "d3a0f41b9c7c7b51", "origin": "engine exceptions/matching", "verdict": "flag", "rules": ["NEST"], "error": null}
+{"id": "0016260a5bdb9a59", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "00d87bc8c51e5cb1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "00fce5c4d60ac908", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "016bec6b20f48217", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "029c2a1cf542ab20", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "02d66f8636752f4b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "03700311b45711ac", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "03e6d9c0b6285cb5", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "05aa80db91661671", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "062a17ff56e9bfcd", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0696fb0f8ab2e3f7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "07ba39370e0cc7da", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "07c5c8762f0fd174", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "07cebf151d9cf574", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "088a0feaebc87dad", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "08989847cd22405b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "09019377ee6ed0bc", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0b3bb9fc76df9ce4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0d188c2c203a87b6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0e4d1857983e122b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0f4551f78045f6f0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0f5148a086f979f0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0fdd7913514c8b3f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "10cf0591d1c4a486", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "11133a0201b948ad", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "12cfc95cdfd85ecc", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "12e910d0b6299d30", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "13a397d931061897", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "13c4aa3fde546d59", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "14f2dcef790f2798", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "172a342e7d777dcc", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "17f6831961c0a5f0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "180254b6e2fd9872", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "18417ab7d7a5394f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1882f939340bf8c2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "18c0b8fe8e6b37e3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "18cd8d5fec009e9b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "18e52e79e1546364", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "196c5b36bec21f33", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "19864031104f6ae2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "19fba02486569a8d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1b4e368d219971ea", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1cae5c6431b73f6e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1ef7f0f8c539ea94", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1f14626e1f1a64a0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1fbe640b415a3fd2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "21bfef9e26ce4896", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "21d7f239fa52e943", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2302e63fdad92c99", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2464b78606f8db06", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "24f86c147c86ac07", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2711de52886513a8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "29db885dbf721801", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2a41eb54de99acc3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2b4929cbace9bad9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2ba2db4db20520e5", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2e0dd204a62877a8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2fd8acecb144e977", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "301514772e1d0867", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3172c18d6dd9db6f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "31f5602a2de448ed", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "32258261cf590ac8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3291caba9ac44691", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "32cef2ff85da1b05", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "338c6457f25abef4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "33bae8f2823dd067", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "33e0eb7db011b560", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "34594981eba8f7c2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "347bfc62108c8924", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "354a19f927afae45", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3598d79e50076b13", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "35cf93e108151f25", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "36b2d048013a374c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "36d4922b5ee7b688", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "371790857991e789", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "382c6eccd0fd8fb2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "39fa59e19e002448", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3ae19fba233e516c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3b171e69961a57d2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3b44ec062fb90886", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3bae699591cd46c0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3bb3d041ba36ab7b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3c3a5ba1e69bcb7f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3cab656be022b2ed", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3d0dffa1673ab227", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3da8657f448362ec", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "409bd0c41a8737f8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "40a1c303e65aea6b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "40b5af343797f3ef", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "447eb7bee6d91a66", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "44e9dba713ef60b7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4537e49750234a78", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4581f83d583f0e6b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "46698a761ea5c758", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "48e6ae345d0b0fb8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4995e7a36eb7c903", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4af9617c03245826", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4b720056e521497a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4c236d99b7766d8f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4c3b039e293855e9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4d48e65c89522a6d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4d6c972caf0982d2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4fc7c3429eea5676", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4fd2467a767ea613", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4fe510232cdd423f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "521c71a8eab6150f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "52659c0ad2412c72", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "52bd9e2b147ec541", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "52e6fffa53c79f93", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "53f8807f5cbd849b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5505543702181521", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "56059b98c17b444d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "57791b9902d4a670", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "57a10cc16f5f7a43", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5945968badad4266", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5acb0fc2b79de747", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5b3f8b27d559e78d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5b81169d1524c14c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5c16e59d16e7b6f9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5c44717aab39aeed", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5cce2742d29a272c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5d3671f737809b5f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5dd94682ecae59b9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5df0fcd7d55b89d9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5e273e84df2c373c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5f057e3baaa1cbe0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5f987b0d84dc362b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "60071858337314fb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "601bdf1aba654cb9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "603afeb3962d22eb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6138e240e2d28746", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "614c60c7a53392bc", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "630abba52f8ac475", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "63565434c502b5c9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "640a25dc40cee005", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "64563423698a3289", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "64ef79f28729e036", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "65d39eab5383fc91", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "66cf190c43d1a8b4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "675d89fbf5be2224", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "67c426a31e6295d9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6997a6c916c8bb55", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "69b14aa08d1553aa", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6a3edb005fe7bbe5", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6a790bf1bcab6d57", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6b27bcf2e4f40f4c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6b542767bf526b34", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6d31de70ac2d84f4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6d37411233078bbf", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6d8003948ce93620", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6db4a670c28d70e6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6e1a9accd4ae5f06", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6e5a64509c3b607e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6e6ae445921b2d65", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6f5aa8f4346aad18", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6fa100ea336d12de", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7070cc85bfb1f838", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "70b1730fc62c083c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "71638c8791f15b44", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "71b0952e12f195f4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "73a83895ae6f3b1d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "73eb29f05c882169", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7449f00f5b8afbfb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "754dd67ceabb8cba", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "77ae8bfeb00e41a0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "79088ce3059c2980", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "79e17ad84959e0a0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7a1f39abf47cc3b2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7a2d9e1d92b8a817", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7b083d4d1cf9c89d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7bfdd6399dea6b50", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7c2dfb1d83e1f7ad", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7c60e61da0ed801a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7cedd10a6ebd4e92", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7e57e7bec2dbaa74", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "813b2416aeb507e3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "830e74f59cea395b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8336c8493495f1eb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8389413ab8bd0dd5", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "84773e5cdfb99013", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8487a3069d2cdeca", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8648a9ee38194278", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "864ddaf45ad93482", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "88b8b84459a5e061", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8985d1a9f7bde008", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8c7ab2583c5517e1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8d48ae07f43c93dc", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8d9fe6a68deae3c7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8e0d7247b7d916a7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8e1e7d20ead4bf89", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8e3196e86fd9e973", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8fbba01422892df8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "90e20c65e12ae94e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "913a951e8402427a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "91f1ded8bc994e9c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "92081bb01f8d8444", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "92d2ffc2fafb6b2d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "931e727d88cbc4fc", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "941b38d7b3ab8b94", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "94fb47dad4ab3926", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9507217d32816973", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "951fde1f18e17b39", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9554bba97fad15f2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "957dabe08cc9035a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "966102408824cef9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "98290afcf5a30b85", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "982f38814cb6b509", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9960f6c3e907509b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9968c8d957546a81", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9986c439fb931107", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "999c0510f4d243b1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9b4cf47f12ad9a0b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9badb18a40d198fa", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9c4ba16de35857fe", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9c6eca5c07b1b049", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9c7d95d193af212b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9d900ab59a77808f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9e8346f5445797ab", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9e91cbdfb721294e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9ff4c5dac57f95b4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a0c69ca8236ba363", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a17f77a9f749d589", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a1bf9fd233c2e874", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a1f2fbe4f25f469c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a259c1d12274b8d8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a2b9e769bd8a1332", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a36430924f4f0089", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a44682db23529b06", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a4769aa652877dd0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a58965da11578d5f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a5ad16a53e63cc12", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a80ba236811a15c1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a88e1204737d613d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a8fdfb53932921a1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a9af56e1c3a0d9cb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a9e8151661a874c1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "aa6d28ae95451561", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ab7af453925744e8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "abe490520bb08ae0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ad5a1024f2a4b560", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ad8410902a1c4170", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ad9c10c65d71f2c5", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "af141c6f79768c2b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "afb3c81f791a64e7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b028bb79558cf4a7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b087803ba3c15ec9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b152f4b0618f838f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b1da11a5abc0944e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b1f7b54d668128d6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b3785704bbb9622b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b56a9a6ffc3ad763", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b621b656f41ddbab", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b82817e52642d2df", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b8b4388709a6469a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b90969a7d2e0a5bb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ba8dcaff770829fb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bac72a9b52499173", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bb6a356240340e6c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bbac6da134c1726c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bbd6f1a6e774bbc8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bcada94e8edabbc4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bcbc1e636777ade3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bd8cc785366cde2f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "be0d056369be5636", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bfb2791665b61d80", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c048fc981e512e93", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c0c0eefbf6fbd30b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c20121fa263a173e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c2351ccbbd962f46", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c2462b443fd26bab", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c2f245fd44a34944", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c3b2562d48fe41d3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c4b933eac460ef0b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c4ef9ea1aed50fb1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c526dd4b77764de2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c52a293fef5de773", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c5cfe594f8f8c7ee", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c6049b101cfd043e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c6d124e37ef7cd75", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c7a9d653a496ebd2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c87b7f53282e7177", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c8f6436cb5eed316", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c909032a5b182d34", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c91b2f642eadf030", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c967c4c65cadbd8a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c970519073b60b4f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cab960e4aec1e655", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cb89b5af603466bb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cd1f4b534d9bb838", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cd28f6579c6d486e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cd478a7670b52387", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cdeb1bd64c052275", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ce066f8ba86b0463", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cea1d4a14f090b2f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cf7ed8cd8326b017", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cfccd9203dc8a9e9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d03bb1aaa191912c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d0de9e635de925c2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d108c4b2c7730f4f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d1d25fca73a65ad4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d372d0cc0da5f272", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d4f14f152b4b9c1c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d5903a5cd4c1a9f6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d5b54ab6dcb1ba68", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d5c04251471497bf", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d61e7466533a720e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d7ce7f8df71f39f3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d83e25beb0e0b381", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d8c251373daa0cd8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d8c7477daa356637", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d8d545a34f440a5f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d8fcd78636cb8308", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d9393b28acb23416", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d9a42c9892c522c7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "dd078bfe170846d2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "dd15bb46660a41ed", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "dd8dc7cc6a6f2ca8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "dda102c2777534b1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "de1d56b26d300700", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "dee0cf8a572aec66", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e001265a307eaeed", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e03e15e9c315ab30", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e0d55445876aa707", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e1ba5708299738db", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e2b3c51d8e2d7a61", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e478e414dfa4e9f9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e4d2934aaf9e0be5", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e6babdf87a05a0ea", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e6dc4883a9924050", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e6e05dd96937da49", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e709d424703d2f8e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e776b1974b7d9698", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e7ee77ee196e39ad", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e86fd6da206a179b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e8f6b25f024d7eb6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e9e42e0ee7146813", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e9f9dfa576572207", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ea49daad8890fe23", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "eb752161ea03d8db", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ec991423e7229a3e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ed1b5e8b2638ec55", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "edd4c9271bae2136", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ef419f0d40007933", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f000479dbc5076a7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f03debd138b7abaf", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f075877d0f9b7b46", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f0a37e54c0b909cd", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f0a3ade9b50b8e79", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f162e991069ec91e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f21fb59b85e5c721", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f2443698153991df", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f29df36a3ec9880d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f2d7e9d8768b48f7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f31d807afece724e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f332d61884fb846c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f3ba5000b488aad2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f3f14e028dc5cbac", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f466f8eb8ab6470a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f578134e660e3c72", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f6873bd2f1fd4285", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f7073074158a65ca", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f7d61a6b8584aa9a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f81e19f2ee5233df", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f8d6976893266bab", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fa42e237873f4aa0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "faae252f17d77685", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fad8eb0ee06f1412", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fbc6e615d2222271", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fbd014db79032712", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fdd1ea46d4b6067d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fe00f12f30fe3c7a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fe946436c4f0f824", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "feb900dc88ed721c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ff8f33226f5208ac", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "019a970d3d2dbc85", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "029aeec80a087883", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "041581cdf11ee602", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0475490d63697f14", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "04b58b9c4670729b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "061ef079f5296c52", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "068b21aa4ef0d3ab", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0899fbf7baf197ed", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "08af607af4cfeca6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "091d39ca3ca11dc6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "09949c080f17f547", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "09b2021a6c8bad25", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0babb42e6dcc48e8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0c8cf8fe75be222e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0d0df9ca18bae00f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0d17f565f505d3ce", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "106116f5669158a8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "10a287ebeb6a4230", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "110d01a62ad56704", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "11deb7cfb912c6b3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "12e170b47a9ea182", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "13388d9c046096f9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "13c52362632bb4ce", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "141a201f22678795", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1672d6da9df3f6c8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "16e5193580462d79", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1743a8d269ccbcec", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1795f87fd4513d08", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "19f407611d8c43a2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1a98d689f3115056", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1a9a0bda78e9b30e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1c3b468403776132", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1c59adf50b787ecb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1cbd19b33e1f9c4a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1d7ed0f4c28c6da0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1e05aecc1307836c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1f0aaa72836f39ab", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "1f78994ec06b0a1f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "21958e8ef5318dc1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "220e76a3f846d717", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2212ea3500bbcc65", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "225a311fecc20396", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "22ede8a983537e8a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "23f1985c27e638dc", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "23fd0f98bf48a26f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "252345e3823dbbf3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "25ba314a4f58b207", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "25c79bac7dfd5abd", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "25e110770784543a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "26d6a4b1ef488fcc", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "288892eb7a0456ba", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2ae5ba0bcd50e2cf", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2b6f93f8e8d7a636", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2d1799f0189e1ef9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2df8475032309d7f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2e17ef36a1fa4c0b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2f5c7147a9eed260", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2f8832828588ad56", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2fb4b327c584edb0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "2ff55de74a89c7e2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "301ba6ded9943bd8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "32eea7e3cebbef06", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "341aa10bb406897f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3655f64f5f15644e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "36f9522430e66043", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "38167b6359cb6a84", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "38c8a0993cb39415", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "38f084c7df3d8a0d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3a09b27edf4e317a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3af40bd6fcabd692", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3b2eb4de28a15698", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3b6c1795bf161a36", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3c1f154980103383", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3c99b3c6d2d6e013", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3d46b5ea51e9bcd6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3d4aceae6977a47b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3d6f3349d9ca6ec8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3e9b91d3dcdd4b6a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3eed391ae59542c4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "3f80b82649cbb45d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "405c4f32f1ca7544", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "40969a7d57e9bc60", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "41fa278ad0f4365f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "42d926af67e28c50", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "43e06c3abf87bcf3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "449b6d893a74ecaa", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "44cc242e8b5019d8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "44da0c7cf33206cd", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "45533973dc8a1d93", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4642bc49bb48d18b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "47427f5a948e1244", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "482dc64990c56958", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "48cda080c424fcd1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "490f47098b38a79d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "49eec93a67be2cff", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "49f3bf8e7c07b711", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4aa16cc901fbd359", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4ab8b3196f4ef22a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4b533fe60dbb3fca", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4b56bbae7b378523", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4b6d37327e58041d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4e8ff897b99fa612", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4e9804230c5d7c2e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4f09f33f818dc0b8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "4f8b034489b08881", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5154923e7c4dfbad", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "51b531160b7bdc82", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "51c4ed302b2c58db", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5243c59fcbb657c6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "527ea4ef79632377", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "52a46d882f3fea78", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "53f0733ac9b2ca0c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "54f3af7e6e788f92", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "55296df054bb0ca6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5590b74231adfcc3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "564c4498e7b341d0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5772944828e75bca", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5829a52da4774393", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "595547b67ad7a294", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "59dfc15b19d50a2e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "59e10f17100be252", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5a0c17bb8ca906ba", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5b220d07214974a4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5b41339ac2b63a3b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5b993dabd61860a6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5c604b9c6302e825", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5d30e2b109ea6d91", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5d40549bb94f4ab0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5df7bb5cf62fcca0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5e337a91f1bf4a02", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5e9dfbd865719875", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "5f86a9b042423fee", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6046dbc769482c00", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "605fc1684e515380", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6106523ec543504b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "61309a6182146332", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "62817528721ec5bf", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "62affcd6c03da206", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "63390ee9a3781c2e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6339ca9b04bb3fed", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6472391dcaf2a626", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "66a497809d297319", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "66a69a2ea2e51de3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "67af6a8c54c1a505", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "68a2c5a0aad4884d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6924c66ca171fc10", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6941fc20b0c72cfa", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "699ee97665479cc0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "69f5e946aa61c51b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6a793d5c7abee0ed", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6ab4c628eab52d80", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6b663d65b5e9597f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6c20fcd57ed66680", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6dedaf00e43d444f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6efc3443de5e4fda", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6f7e956a58dadbf2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6fbf5b3040c69e87", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "6fcf09899346af74", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7009edc73715a543", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "717932d71789e907", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "71a24914a8ef3bfb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "72f65bc5e5a75429", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "746362ee41851279", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "74ce0dc82830e97b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "74fce37ad2259f44", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7557dce138780cc9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "761636b7f277e323", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "76859a40acfc237d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "782f08229873102d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "78455c0aa4fec9ea", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7a08626e82487c29", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7a208a12a833a745", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7b255c1970ae9501", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7b47f93f3beb5b43", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7b54b119566e5030", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7e1c86ab00776c67", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "7ed6ee522b74d380", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "809769c0f924c0f3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "80dc53d37030f1ae", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "82d08acd32d4a590", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8342c1efe9c2ec20", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "83476dc1dd6cfaac", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8383ed0179f1bddd", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8422707e2aad7d15", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "84395955badb5ef4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "84f638639e79ce42", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "85a9884b9ffa6ab9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "85fcd02f90f08779", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "86ae4fdff4efb713", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "87eebe2bf44cbfa2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "89ca86126b7fa83e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "89fc25e798fcb5bf", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8a3c084dd7030278", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8aabe67485a1e261", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8ad1760b044431f1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8b4f0cc22e8c334b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8c4c4723657cb99c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8c8012fca581405f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8c898fe6c1359a91", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8e85409c01517dfe", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8eb9d6dfd5e1b6bf", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "8eba48568e8c9645", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "903b211dc47fa88f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "912fea65c4cbf05e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9158649358b92c66", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "918c5c47934a9814", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "933131755995c4ed", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "951a55d29971e1ae", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "95c5e2dbffc58333", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9621cbffb4910584", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9706c277c646df7b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "97596d2b5baf3388", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9787edb8e4ab66a8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "97eb73aaea534498", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9830e5ee3f8d18f9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "983b6d158f7e7358", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "98fb50717ad6714c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "99cb966eef83817b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9aea1cd076b986b0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9b738e60d92a21e5", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9bf81c4e19cd1a8f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9c6ab6533ef3630c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9cd11df9222cc600", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9d2941c8bbdc56a1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9d735b45b6036d96", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9f7cbabbd9faaf60", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "9fe95c5d7f89fec4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a041b885fcce3dfd", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a0f44abd1c2c001c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a1748b54a629792d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a19655e31393b22f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a1eb0d9537040cf8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a25fde07e360cfa2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a2b9e4c56976602e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a32fc7a21b39fa30", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a4b9fa4a49eded76", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a524015781065c7e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a5abddc2d12b591f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a6947880fb36327c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a6cf6d6249638d76", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a9582219620dca9e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "a9adc07af5bd1862", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "aa0a76398598b10b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "aa33c673ff9d0a7c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "aca12846ecc2bf5c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ad1c17fc16853e1f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ad874af179f61c9e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ae77cff096c109d4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ae8addbad1f00fb0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "af272ea1fd5cf16d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "af5f19aad35f425e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "af8d56e8c18a1c13", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "afc0fdd944583bed", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "afc16e36967b7ef7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b04ef25e5e22e5ab", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b0fa59288f0049af", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b16a0a39ecce74a8", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b30f7adae5dae261", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b38afe7c5bdfecca", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b407a9feb595644f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b41045e2504f89dd", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b4164c1f6e08c29c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b44256bd5b8fef47", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b579b30ef23f95fc", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b6bd96e39c66188b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b6cf3e5377c0a845", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "b836eefbdb07efd3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bb3d9e7c3c3fa1ba", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bce6b60f1471b828", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "be50a616b3114b8e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "be53f344c6f240b0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bf067e1d35e2ff41", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bf854af94a928896", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bfb320cd261688c9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "bfdedc317dd096a7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c0c0fc27cd4bae1b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c163d8110223c9ef", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c177bd35fde8c3e5", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c1d7acc8a0fb7d36", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c2974b2f96f38622", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c2d3957fff9ce590", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c2f35e6a629a7fe6", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c401d5790005284b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c4493467b78c61ff", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c534f80cf53e25ba", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c57d37e01d192782", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c581736e04c9ff15", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c64c56bd1997c1c9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c6bc6c73238b5997", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c784f346001d5e4f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c7fd37cf51ac00dd", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c9c05c37c16180b1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "c9de8b1d03cfd6b3", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ca30a05595e41255", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ceb38c36254f421a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cf5b1ff5f42df09c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cfece1a3071fe0af", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cff6cbc368804132", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "cffa74d30070c91e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d0a8ce1ab6c3cff1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d165c4bd5158bc71", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d1fb731d82429f1f", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d217e3ce54bd8459", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d292ee2556583e54", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d31ce3dd7cd0c516", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d35628e98ddef145", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d3abeda0559f7f41", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d40dbe0be676da8b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d528187c186658b4", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d548e11a1362ad1a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d6ab42edc8ee932e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d6db15453baa6c68", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d7d88999f99d1036", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d9159cdd300a4f95", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "d91b997c0a6bedb7", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "da1da30abaab0a69", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "db094e5dde0ce42d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "db166556ba318443", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "db48bc4128905b61", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "dc7be0b2943ab53a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "dcc015a99314f799", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ddb9796299245163", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "def273dfce2b7267", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "df6385cb4c14ed86", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e067bd8b30ac67c9", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e0ce318d0d743bda", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e1e319e1d6fdd475", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e21e0f7fc270ce55", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e258326d16e7ebcc", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e75fd0190a4dfceb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e76ff1321f2af0b0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e7c214d196904144", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e825f5fabeb8579b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e92984c00afed85b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "e9420634eb4754eb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ea931a8a7a9c7498", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "eaafbfd23945f4a1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "eacaf879e738bd08", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "eae3946ea8305e09", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "eb62c6e964641f24", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ebedfaa59418ec83", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ebf7ee3a1b88c85e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ec245d8c111b66e1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ec8947d8ceb6a0af", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ed213c7fbbdac582", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "edc01b4edd9a082d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "eee7ec01b02b2feb", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f12368eedb1388b2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f17d95df98f49e8b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f35865f2c1f4e0e0", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f3fb7326562b0980", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f44906b0759d9dd2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f57ed49102a6d43a", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f68edd5f0a7efeaa", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f7495e56bd789e9b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f7530c5b63dcf44c", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f8ac3f096504b792", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f97d3d239f672819", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f980d5acbbd6a49d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "f9e4ee25d900f9d2", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fa5f474b0b736a9b", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fb56c7d9769f710e", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fd6d8f2c1d385c4d", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "fe7b39486b4e2bee", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "feb89b292e2a0f69", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "ffb2ef79f86761a1", "origin": "engine exceptions/matching", "verdict": "ok", "rules": [], "error": null}
+{"id": "0f49348c473f742d", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "5f8e4663ebeab52d", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "6fa82809bbae374e", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "7362d8da03b22ddf", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "743ed148eb87b91d", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "884366a50537d6df", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "903c67004bb05552", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "91e529ad8478c978", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "a935e28218c2e3fe", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "beb045ef1b33c890", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "c3b6deecf924f3bb", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "dc90a7b4fc4b12a9", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "f22e48aea81821bc", "origin": "other", "verdict": "ok", "rules": [], "error": null}
+{"id": "4fbe562ace604cde", "origin": "slopvac-context", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "819e286265806a18", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "7a9115d4bb9c8daf", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "d3a21e567316ebf8", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "8f6be554cbfb0ca9", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "58bad9435fa8449b", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "ef7a50d5b9dbedec", "origin": "slopvac-context", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "1b0dd75c3439b446", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "354ba515d81c5e68", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "44aed3e81dbd42cc", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "51ff375cf1c58fd2", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "55e8339297bbe908", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "6853ecd0528d668e", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "974d67d68a497e1b", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "c9f0c8ba567937e4", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "dc388dd2ccf0473f", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "f0171c7fb128b7e2", "origin": "slopvac-context", "verdict": "ok", "rules": [], "error": null}
+{"id": "5bb198ac7d0971b7", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "79c950f3eed92e73", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "5c9739e2be17afe5", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "3aa49644aa653a5b", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "c8712ac9491c1d96", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "efaf5e69a073d2f9", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "72bf1b7179e1a7cc", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "7b2993e305290b6a", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "60c5a834015430f4", "origin": "slopvac-text built-ins", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "253e979751730578", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "3b44e521405cf9e6", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "8796d3a74c2d9829", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "5635c5fb5b425460", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "ae645cac8638aeea", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "57dc8b99241abad2", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "670185a2d43cd2b3", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "184c49d492525dec", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "e8caedfd24ab2aa8", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "94d5c7a0a0d264e7", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "d409452a592b52d5", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "a72056d085288b18", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "3d9060757b0d63de", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "ec8bcbb653a78348", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "9180b0832671822b", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "7e70597d53248d24", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "911925375a6afc80", "origin": "slopvac-text built-ins", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "45ea9b61cdb1243e", "origin": "slopvac-text built-ins", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "a70aeb406c5e45bc", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "d1546ed0acdc2155", "origin": "slopvac-text built-ins", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "8a6d594bb94db295", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "208d20e3d26b3973", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "d3b85bb553833ff2", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "6a027dea05d94245", "origin": "slopvac-text built-ins", "verdict": "warn", "rules": ["POLY2"], "error": null}
+{"id": "d27612028a4bff05", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "21d0f4d967cbcb1a", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "2240dea2bcc3a1f3", "origin": "slopvac-text built-ins", "verdict": "flag", "rules": ["POLY"], "error": null}
+{"id": "582a6ba5c3d315fd", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "830eba34741cb6a1", "origin": "slopvac-text built-ins", "verdict": "ok", "rules": [], "error": null}
+{"id": "plugin:nested-plus", "origin": "plugin", "verdict": "flag", "rules": ["NEST"], "error": null}
+{"id": "plugin:alt-overlap", "origin": "plugin", "verdict": "flag", "rules": ["ALT-OVERLAP"], "error": null}
+{"id": "plugin:alt-class-overlap", "origin": "plugin", "verdict": "flag", "rules": ["ALT-OVERLAP"], "error": null}
+{"id": "plugin:star-backref", "origin": "plugin", "verdict": "flag", "rules": ["NEST"], "error": null}
+{"id": "plugin:lookahead-repeat", "origin": "plugin", "verdict": "flag", "rules": ["NEST", "LOOK-IN-REP"], "error": null}
+{"id": "plugin:lookahead-nested", "origin": "plugin", "verdict": "flag", "rules": ["NEST"], "error": null}
+{"id": "plugin:lookbehind-var", "origin": "plugin", "verdict": "warn", "rules": ["LONG-LOOKBEHIND"], "error": null}
+{"id": "plugin:lookbehind-chain", "origin": "plugin", "verdict": "ok", "rules": [], "error": null}
+{"id": "plugin:k-abuse", "origin": "plugin", "verdict": "flag", "rules": ["NEST", "K-IN-REP"], "error": null}
+{"id": "plugin:k-empty", "origin": "plugin", "verdict": "ok", "rules": [], "error": null}
+{"id": "plugin:words-dollar", "origin": "plugin", "verdict": "flag", "rules": ["NEST"], "error": null}
+{"id": "plugin:dot-star-poly", "origin": "plugin", "verdict": "flag", "rules": ["NEST-COUNTED"], "error": null}
+{"id": "plugin:double-plus", "origin": "plugin", "verdict": "flag", "rules": ["NEST", "POLY2"], "error": null}
+{"id": "plugin:letters-star", "origin": "plugin", "verdict": "flag", "rules": ["NEST"], "error": null}
+{"id": "plugin:ws-star", "origin": "plugin", "verdict": "flag", "rules": ["NEST"], "error": null}
+{"id": "plugin:same-alt", "origin": "plugin", "verdict": "flag", "rules": ["ALT-OVERLAP"], "error": null}
+{"id": "plugin:recursion", "origin": "plugin", "verdict": "flag", "rules": ["ALT-OVERLAP", "RECURSION"], "error": null}
+{"id": "plugin:poly3", "origin": "plugin", "verdict": "flag", "rules": ["POLY"], "error": null}
+{"id": "plugin:poly2-unanchored", "origin": "plugin", "verdict": "ok", "rules": [], "error": null}
+{"id": "plugin:caseless-alt", "origin": "plugin", "verdict": "flag", "rules": ["ALT-OVERLAP"], "error": null}
+{"id": "plugin:atomic-ok", "origin": "plugin", "verdict": "ok", "rules": [], "error": null}
+{"id": "plugin:possessive-ok", "origin": "plugin", "verdict": "ok", "rules": [], "error": null}
