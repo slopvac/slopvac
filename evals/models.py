@@ -583,7 +583,7 @@ REVIEW_METRIC = "detection by quotation"
 AUTHOR_METRIC = "lexical retention smoke check"
 # Bump when scoring changes. Rows scored before 15.17 carry no version and are
 # "legacy": they were never rescored, so they must not take the new metric names.
-SCORER_VERSION = "15.17"
+SCORER_VERSION = "15.18"
 LEGACY_SCORER = "legacy"
 LEGACY_METRIC = "legacy (pre-15.17)"
 
@@ -713,10 +713,14 @@ def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
         intended = task.get("intended", [])
 
         def locates(r: Mapping[str, str], e: Mapping[str, Any]) -> bool:
-            # The planted sentence, before or after the damage. The builder keeps it
-            # apart from every intended sentence, so word overlap is enough here.
+            # The planted sentence, before or after the damage. Mechanical and update
+            # damage needs the quote inside that text: shared words with a neighbour
+            # of the same wording would otherwise count. Rewrite pairs keep the
+            # word-overlap match.
+            inside = task.get("type") in ("mechanical", "update")
+            match = _in_passage if inside else _hits
             return _in_passage(r["quote"], passage) and any(
-                _hits(r["quote"], text)
+                match(r["quote"], text)
                 for text in (e["sentence"], e.get("after"))
                 if text
             )

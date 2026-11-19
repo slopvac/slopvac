@@ -144,9 +144,15 @@ def test_the_cost_executions_ignore_score_lines(tmp_path):
 
 @pytest.mark.parametrize(
     ("version", "kept"),
-    [(models.SCORER_VERSION, True), ("14.0", False), (None, False)],
+    [
+        (models.SCORER_VERSION, True),
+        ("15.17", False),
+        ("14.0", False),
+        (None, False),
+    ],
     ids=[
         "same-version-is-reused",
+        "containment-scorer-predecessor-is-recomputed",
         "other-version-is-recomputed",
         "no-version-is-recomputed",
     ],

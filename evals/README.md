@@ -226,7 +226,7 @@ Each count is small, so every interval is wide. Treat the table as a sanity chec
 
 ## Model evals
 
-These evals compare models on the three review types: `mechanical`, `update` and `rewrite`. Their results feed the dated recommendation table in prime and the docs. Reviewer tasks cover rewrites only for now; mechanical and update reviewer tasks are tracked in slopvac-8l4.15.8.
+These evals compare models on the three review types: `mechanical`, `update` and `rewrite`. Their results feed the dated recommendation table in prime and the docs. Reviewer tasks cover rewrites only for now; mechanical and update reviewer tasks are tracked in slopvac-8l4.15.8. Until a better oracle exists, a mechanical or update review counts as finding the damage when its quote lies inside the damaged sentence. A review that quotes the whole damaged sentence but describes only the stated change still passes.
 
 Model runs need Python 3.13 or later on macOS. The harness waits for a model command without reaping it, so it can still kill the command's process group safely, and macOS lacks `os.waitid` before 3.13. On an older Python the run stops with a message before it reserves or spawns anything.
 

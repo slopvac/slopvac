@@ -293,6 +293,7 @@ PURGE = "Run `purge` to empty it before restart."
 
 def intended_task(sentence=CACHE_12, after=CACHE_17):
     return {
+        "type": "update",
         "variant": "planted",
         "passage": f"{QUEUE_40}\n{sentence}\n{QUEUE_50}\n{after}",
         "edits": [{"kind": "number", "sentence": sentence, "after": after}],
@@ -356,6 +357,28 @@ def test_the_builder_plants_the_damage_on_a_sentence_apart_from_the_intended_cha
     )
     damaged = json.dumps([{"quote": PURGE[:-1], "problem": "dropped"}])
     assert models.score_review(task, damaged)["success"]
+
+
+def test_shared_words_with_the_damaged_sentence_are_not_a_detection(tmp_path):
+    intended = "The service holds 40 items in the shared cache during startup."
+    damaged = "The shared cache keeps 12 entries per user today."
+    task = one_update_task(tmp_path, f"{intended} {damaged}")
+    assert [e["sentence"] for e in task["edits"]] == [damaged]
+    # Three of these five words are also in the damaged sentence, but the quote
+    # lies in the intended sentence, and the complaint is about 40 -> 50 only.
+    answer = json.dumps(
+        [{"quote": "the shared cache during startup", "problem": "40 became 50"}]
+    )
+    scored = models.score_review(task, answer)
+    assert (scored["found"], scored["success"]) == (0, False)
+
+
+def test_a_quote_inside_the_damaged_sentence_still_detects_it(tmp_path):
+    intended = "The service holds 40 items in the shared cache during startup."
+    damaged = "The shared cache keeps 12 entries per user today."
+    task = one_update_task(tmp_path, f"{intended} {damaged}")
+    answer = json.dumps([{"quote": "keeps 12 entries per user", "problem": "number"}])
+    assert models.score_review(task, answer)["success"]
 
 
 COPY_PAIRS = [("40", "50"), ("7", "9"), ("12", "13"), ("21", "22"), ("64", "65")]
