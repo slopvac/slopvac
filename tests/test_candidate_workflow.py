@@ -92,7 +92,7 @@ def test_each_job_asks_for_the_least_it_needs():
         "sign": {"contents": "read"},
         "publish": {"id-token": "write"},
         "prerelease": {
-            "contents": "write",
+            "contents": "read",
             "id-token": "write",
             "attestations": "write",
         },

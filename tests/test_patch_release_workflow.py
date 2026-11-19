@@ -99,14 +99,22 @@ def test_validation_is_the_first_plan_step(workflow):
     assert first["env"] == {"REF_NAME": "${{ github.ref_name }}"}
 
 
-def test_only_the_host_job_can_write_contents(workflow):
+def test_no_job_writes_contents_with_the_workflow_token(workflow):
     assert workflow["permissions"] == {"contents": "read"}
     writers = {
         name
         for name, job in workflow["jobs"].items()
         if (job.get("permissions") or {}).get("contents") == "write"
     }
-    assert writers == {"host", "publish-legacy-release"}
+    assert writers == set()
+
+
+@pytest.mark.parametrize("name", ["host", "publish-legacy-release"])
+def test_the_release_writers_mint_a_contents_token(workflow, name):
+    mint = next(s for s in workflow["jobs"][name]["steps"] if s.get("id") == "release-token")
+    assert mint["with"]["permission-contents"] == "write"
+    assert mint["with"]["repositories"] == "${{ github.event.repository.name }}"
+    assert "secrets.GITHUB_TOKEN" not in str(workflow["jobs"][name]["permissions"])
 
 
 @pytest.mark.parametrize(
@@ -278,7 +286,8 @@ def test_the_host_job_rechecks_the_tag_before_dist_and_before_the_release(workfl
     publish = next(
         i for i, s in enumerate(steps) if s.get("name") == "Publish the release"
     )
-    assert checks == [host - 1, publish - 1]
+    assert checks == [host - 2, publish - 1]
+    assert steps[host - 1]["id"] == "release-token"
     assert "gh release edit" in steps[publish]["run"]
     assert "--draft=false" in steps[publish]["run"]
     for index in checks:
@@ -350,7 +359,7 @@ def _legacy_steps(workflow) -> list[dict]:
 
 def test_the_legacy_job_takes_its_values_from_the_environment(workflow):
     job = workflow["jobs"]["publish-legacy-release"]
-    assert job["permissions"] == {"contents": "write"}
+    assert job["permissions"] == {"contents": "read"}
     assert job["env"]["RELEASE_TAG"] == "${{ github.ref_name }}"
     assert job["env"]["RELEASE_COMMIT"] == "${{ github.sha }}"
     for step in _legacy_steps(workflow):

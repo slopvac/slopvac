@@ -103,12 +103,14 @@ _RELEASE_NEW = """\
 {signatures}\
       - name: Upload the artifacts to the draft release
         env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
         run: |
           gh release upload "$RELEASE_TAG" artifacts/*
 {verify}\
       - name: Publish the release
         env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
           RELEASE_COMMIT: "${{ github.sha }}"
@@ -295,7 +297,7 @@ def harden(text: str) -> str:
     text = _replace_once(
         text,
         _HOST_ENV,
-        '    permissions:\n      "contents": "write"\n' + _HOST_ENV,
+        '    permissions:\n      "contents": "read"\n' + _HOST_ENV,
         "host job env",
     )
     text = _add_tag_flag_env(text)
@@ -308,6 +310,7 @@ def harden(text: str) -> str:
         text = _replace_once(text, run, first + _ZIZMOR_WHY + rest, what)
     text = _replace_once(text, _SBOM_OLD, _SBOM_NEW, "SBOM output reference")
     text = _verify_tag_before_publishing(text)
+    text = _mint_release_token(text)
     text = _mint_tap_token(text)
     text = _isolate_tap_push(text)
     text = _route_by_major_version(text)
@@ -379,6 +382,25 @@ _VERIFY_STEP = """\
           python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
 """
 _HOST_STEP = "      - id: host\n"
+_HOST_STEP_OLD = _HOST_STEP + "        shell: bash\n"
+_HOST_STEP_NEW = (
+    _HOST_STEP
+    + "        shell: bash\n        env:\n          GH_TOKEN: ${{ steps.release-token.outputs.token }}\n"
+)
+
+# The release is written with a token minted from the release App, scoped to this
+# repository and to contents: write, never with GITHUB_TOKEN. A failed mint fails the job.
+_RELEASE_TOKEN_STEP = """\
+      - name: Mint the release token
+        id: release-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+"""
 
 # cargo-dist reads a long-lived HOMEBREW_TAP_TOKEN secret to push the formula. Mint a
 # short-lived installation token from the release App instead, scoped to the tap.
@@ -407,6 +429,17 @@ _TAP_CHECKOUT = re.compile(
     r"          repository: \"slopvac/homebrew-tap\"\n"
     r"(?:          [^\n]*\n)*?" + re.escape(_TAP_TOKEN_OLD)
 )
+
+
+def _mint_release_token(text: str) -> str:
+    """Make `host` write its release with a minted App token instead of GITHUB_TOKEN.
+
+    The mint step sits right before the dist step that creates the release. The three
+    steps that write carry the token in their own env, so GITHUB_TOKEN only reads.
+    """
+    return _replace_once(
+        text, _HOST_STEP_OLD, _RELEASE_TOKEN_STEP + _HOST_STEP_NEW, "host dist step"
+    )
 
 
 def _mint_tap_token(text: str) -> str:
@@ -752,7 +785,7 @@ _LEGACY_JOB = """
     if: ${{ needs.route.outputs.gated == 'false' }}
     runs-on: "ubuntu-22.04"
     permissions:
-      "contents": "write"
+      "contents": "read"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ github.ref_name }}
@@ -794,8 +827,11 @@ _LEGACY_JOB = """
         shell: bash
         run: |
           python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
+{mint}\
       - name: Publish the release
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
           gh release edit "$RELEASE_TAG" --repo "$REPO" --draft=false
 """
@@ -831,7 +867,10 @@ def _route_by_major_version(text: str) -> str:
         + "    uses: ./.github/workflows/release-provenance.yml\n",
         "routed provenance job",
     )
-    return text.rstrip("\n") + "\n" + _LEGACY_JOB.replace("{checkout}", checkout[1])
+    legacy = _LEGACY_JOB.replace("{checkout}", checkout[1]).replace(
+        "{mint}", _RELEASE_TOKEN_STEP
+    )
+    return text.rstrip("\n") + "\n" + legacy
 
 
 # The plan job installs dist with the generated curl-to-sh line, and the build jobs run
