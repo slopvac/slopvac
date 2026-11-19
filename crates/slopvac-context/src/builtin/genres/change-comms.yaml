@@ -1,0 +1,12 @@
+schema_version: 3
+id: change-comms
+description: Change, rationale, verification. PR and MR text, commits, release notes, migration guides.
+profile: normal
+detect:
+  min_score: 3
+  signals:
+    - { kind: path, glob: '**/{changelog,changes,history,news,release,releases,upgrading,migration}*', weight: 3 }
+    - { kind: heading, pattern: '\b(?:release notes?|changelog|what.?s new|breaking changes?|migration|upgrad\w*)\b', weight: 3 }
+    - { kind: heading, pattern: '^\W*(?:summary|test plan|checks|testing)\W*$', weight: 1.5 }
+rules:
+  docs-discipline.history-internal-reference: 'off'

@@ -16,7 +16,8 @@ mod view;
 mod work;
 
 pub use builtin::{
-    EnforcedInvariantTagger, ListLeadInTagger, RequirementTagger, builtin_genres, builtin_registry,
+    BuiltinFile, EnforcedInvariantTagger, GENRE_FILES, ListLeadInTagger, RequirementTagger,
+    TAGGER_FILES, builtin_genres, builtin_registry,
 };
 pub use checklist::{ChecklistEntry, ChecklistRule, checklist, effective_gates, rule_allows};
 pub use cli::{command, render, run};

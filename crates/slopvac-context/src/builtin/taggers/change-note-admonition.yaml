@@ -1,0 +1,7 @@
+schema_version: 3
+id: change-note-admonition
+tag: change-note
+scope: paragraph
+confidence: 0.9
+when:
+  admonition_title: '\b(?:changed|deprecated|breaking)\b|\bv?\d+\.\d+'
