@@ -51,7 +51,7 @@ impl IdError {
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "String", into = "String")]
-#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*$"))]
+#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*(?![\\s\\S])"))]
 pub struct PackId(String);
 
 impl PackId {
@@ -99,7 +99,7 @@ impl fmt::Display for PackId {
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "String", into = "String")]
-#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*$"))]
+#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"))]
 pub struct RuleId(String);
 
 impl RuleId {
@@ -172,7 +172,7 @@ pub enum Severity {
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "String", into = "String")]
-#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*$"))]
+#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*(?![\\s\\S])"))]
 pub struct ContextTag(String);
 
 impl ContextTag {

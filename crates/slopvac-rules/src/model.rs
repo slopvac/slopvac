@@ -22,20 +22,20 @@ use crate::ext::{Extensions, UniqueVec, ValueError, is_slug, present, text_newty
 
 text_newtype!(
     /// Rule id inside its category: `^[a-z][a-z0-9-]*$`.
-    LocalRuleId, "rule id", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*$"
+    LocalRuleId, "rule id", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 text_newtype!(
     /// A name the engine resolves: a structure or vocabulary check, an exception or a
     /// detector. `^[a-z][a-z0-9-]*$`.
-    Slug, "name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*$"
+    Slug, "name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 text_newtype!(
     /// A profile name, the key of a density budget: `^[a-z][a-z0-9-]*$`.
-    ProfileName, "profile name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*$"
+    ProfileName, "profile name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 text_newtype!(
     /// A metric name: `^[a-z][a-z0-9_]*$`.
-    MetricName, "metric name", |s| is_slug(s, '_'), "^[a-z][a-z0-9_]*$"
+    MetricName, "metric name", |s| is_slug(s, '_'), "^[a-z][a-z0-9_]*(?![\\s\\S])"
 );
 text_newtype!(
     /// A placeholder in a pattern: `^[A-Z][A-Z0-9_]*$`.
@@ -43,11 +43,11 @@ text_newtype!(
         let mut chars = s.chars();
         chars.next().is_some_and(|c| c.is_ascii_uppercase())
             && chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-    }, "^[A-Z][A-Z0-9_]*$"
+    }, "^[A-Z][A-Z0-9_]*(?![\\s\\S])"
 );
 text_newtype!(
     /// An issue-qualified STE rule number such as `9:1.2` or `9:GR-2`.
-    SteRef, "STE reference", is_ste_ref, "^\\d+:\\d+\\.\\d+$|^\\d+:GR-\\d+$"
+    SteRef, "STE reference", is_ste_ref, "^\\d+:\\d+\\.\\d+(?![\\s\\S])|^\\d+:GR-\\d+(?![\\s\\S])"
 );
 
 fn is_ste_ref(s: &str) -> bool {

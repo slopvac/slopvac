@@ -39,7 +39,7 @@
     "PackId": {
       "description": "Plugin identifier: the namespace of a rule. Built-in rules live in the reserved plugin core. Semantics owned by slopvac-8l4.2.3.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$"
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
     },
     "PluginId": {
       "description": "Identifier of a plugin, or of the namespace a publisher signs for. Same character set as PackId. `core` is reserved for the built-in plugin that is compiled into the binary, so no manifest, lock entry, index entry or config entry may use it as an id or a namespace. Semantics: docs/contract/plugins.md, section 9.",
@@ -49,7 +49,7 @@
     "RuleId": {
       "description": "Qualified rule identifier <plugin>:<id>. A rule from a category file has the id <category>.<rule>, for example core:prose-craft.acronym-periods; a rule a plugin reports may use a bare id such as core:passive-voice. Short names resolve in configuration only where they are unambiguous; every output carries the qualified form. Semantics owned by slopvac-8l4.2.3.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*$"
+      "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"
     },
     "Severity": {
       "description": "Finding severity. Excludes off: 2.x config accepts off to disable a rule, so off belongs to config (owned by slopvac-8l4.2.5), not to findings. Semantics owned by slopvac-8l4.2.3.",
@@ -89,7 +89,7 @@
     "ContextTag": {
       "description": "Text-context label such as prose or code. Semantics owned by slopvac-8l4.2.4.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$"
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
     },
     "SchemaVersion": {
       "description": "Root artifact schema version. Semantics owned by slopvac-8l4.2.12.",
