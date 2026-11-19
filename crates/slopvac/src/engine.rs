@@ -938,7 +938,7 @@ mod skip_tests {
         "tag-lookup-budget-exceeded"
     )]
     #[case::tag_build_budget(
-        EngineError::TagBuildBudget { limit: 16_384 },
+        EngineError::TagBuildBudget { limit: 65_536 },
         "tag-lookup-budget-exceeded"
     )]
     #[case::terms(EngineError::Terms("x".into()), "lint-failed")]

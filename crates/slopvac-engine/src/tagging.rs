@@ -372,7 +372,7 @@ pub(crate) fn lookup_budget(source_len: usize) -> usize {
 const BYTES_PER_TAG: usize = 16;
 
 /// Tags allowed whatever the size of the document.
-const TAG_HEADROOM: usize = 16_384;
+const TAG_HEADROOM: usize = 65_536;
 
 /// The tags, and pieces of tags, that a document of `source_len` bytes may hold.
 pub(crate) fn tag_budget(source_len: usize) -> usize {
