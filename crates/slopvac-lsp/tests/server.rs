@@ -943,16 +943,11 @@ fn a_fatal_error_returns_at_once_although_the_transport_is_blocked() {
         .done
         .recv_timeout(Duration::from_secs(4))
         .expect("serve returns although the transport is blocked");
-    let Err(error @ ServerError::Protocol { .. }) = result else {
+    let Err(error @ ServerError::Protocol) = result else {
         panic!("expected a protocol error, got {result:?}");
     };
-    // The message keeps the inner error's text and the chain keeps the inner error.
-    let inner = std::error::Error::source(&error).expect("the protocol error is the source");
-    assert_ne!(inner.to_string(), "");
-    assert_eq!(
-        error.to_string(),
-        format!("language server protocol error: {inner}")
-    );
+    // The message is fixed: the protocol error's text can quote a client message.
+    assert_eq!(error.to_string(), "language server protocol error");
 }
 
 /// Prose the swap rule would flag, so a document that is linted anyway shows a finding.
