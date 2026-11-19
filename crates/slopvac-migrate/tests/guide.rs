@@ -17,28 +17,50 @@ fn doc_matches_the_guide_source() {
     if std::env::var_os("UPDATE_DOCS").is_some() {
         fs::write(&path, guide_doc()).unwrap();
     }
-    // Git may check files out with CRLF on Windows; compare line content only.
-    let on_disk = fs::read_to_string(&path).unwrap().replace("\r\n", "\n");
-    assert_eq!(
-        on_disk,
-        guide_doc().replace("\r\n", "\n"),
+    let on_disk = fs::read(&path).unwrap();
+    assert!(
+        on_disk == guide_doc().as_bytes(),
         "docs/migrate-2-to-3.md is stale; run UPDATE_DOCS=1 cargo test -p slopvac-migrate --test guide"
     );
 }
 
 const DOC_URL: &str = "https://github.com/slopvac/slopvac/blob/main/docs/migrate-2-to-3.md";
 
+/// The `## ` sections of the generated doc, each with its heading and body.
+fn doc_sections() -> Vec<(String, String)> {
+    let doc = guide_doc();
+    let mut sections: Vec<(String, String)> = Vec::new();
+    for line in doc.split_inclusive('\n') {
+        if let Some(heading) = line.strip_prefix("## ") {
+            sections.push((heading.trim_end().to_owned(), String::new()));
+        }
+        if let Some((_, text)) = sections.last_mut() {
+            text.push_str(line);
+        }
+    }
+    sections
+}
+
 #[test]
-fn prime_prints_the_decision_sections_in_full() {
+fn prime_prints_the_decision_sections_in_full_and_in_order() {
     let prime = prime_migrate();
+    let sections = doc_sections();
+    let mut from = 0;
     for heading in [
-        "## 1. Find the 2.x surfaces",
-        "## 2. Preview",
-        "## 3. Resolve blockers",
-        "## 5. Verify and undo",
+        "1. Find the 2.x surfaces",
+        "2. Preview",
+        "3. Resolve blockers",
+        "5. Verify and undo",
     ] {
-        assert!(prime.contains(heading), "prime lacks {heading}");
-        assert!(guide_doc().contains(heading), "doc lacks {heading}");
+        let (_, text) = sections
+            .iter()
+            .find(|(h, _)| h == heading)
+            .unwrap_or_else(|| panic!("doc lacks {heading}"));
+        assert!(text.lines().count() > 3, "{heading} has a body");
+        let at = prime[from..]
+            .find(text.as_str())
+            .unwrap_or_else(|| panic!("prime lacks the full {heading} section, in order"));
+        from += at + text.len();
     }
 }
 

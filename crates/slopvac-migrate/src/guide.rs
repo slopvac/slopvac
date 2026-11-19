@@ -17,14 +17,62 @@ const DOC_URL: &str = "https://github.com/slopvac/slopvac/blob/main/docs/migrate
 const MARKER_PREFIX: &str = "<!-- prime: ";
 const MARKER_SUFFIX: &str = " -->";
 
+const INCLUDE: &str = "include";
+
 /// The marker value of a `link` section.
 const LINK: &str = "link";
 
-/// The value of a marker line, if `line` is one.
+/// A marker line that breaks the contract of the guide source.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+enum MarkerError {
+    #[error("line {line}: the heading has no marker on the next line")]
+    Missing { line: usize },
+    #[error("line {line}: unknown marker value {value:?}")]
+    Unknown { line: usize, value: String },
+    #[error("line {line}: a marker not directly after a `##` heading")]
+    Stray { line: usize },
+}
+
+/// Whether `line` is meant to be a marker, well formed or not.
+fn is_marker_like(line: &str) -> bool {
+    line.trim_start().starts_with("<!-- prime:")
+}
+
+/// The value of a well-formed marker line.
 fn marker(line: &str) -> Option<&str> {
     line.trim_end()
         .strip_prefix(MARKER_PREFIX)?
         .strip_suffix(MARKER_SUFFIX)
+}
+
+/// Check that exactly one recognised marker follows each `##` heading and no
+/// other marker line exists.
+fn validate(guide: &str) -> Result<(), MarkerError> {
+    let lines: Vec<&str> = guide.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        let number = i + 1;
+        if line.starts_with("## ") {
+            match lines.get(i + 1) {
+                Some(next) if is_marker_like(next) => match marker(next) {
+                    Some(INCLUDE | LINK) => {}
+                    other => {
+                        return Err(MarkerError::Unknown {
+                            line: number + 1,
+                            value: other.unwrap_or(next).to_owned(),
+                        });
+                    }
+                },
+                _ => return Err(MarkerError::Missing { line: number }),
+            }
+        } else if is_marker_like(line)
+            && !lines
+                .get(i.wrapping_sub(1))
+                .is_some_and(|p| p.starts_with("## "))
+        {
+            return Err(MarkerError::Stray { line: number });
+        }
+    }
+    Ok(())
 }
 
 /// The GitHub anchor of a heading such as `4. Apply`.
@@ -39,12 +87,21 @@ fn anchor(heading: &str) -> String {
         .collect()
 }
 
-/// The text `slopvac prime migrate` prints.
-#[must_use]
-pub fn prime_migrate() -> String {
+/// A guide that passed [`validate`] is rendered. A guide that did not is a bug
+/// in the embedded source, so a debug or test build stops here.
+fn assert_valid(guide: &str) {
+    debug_assert!(
+        validate(guide).is_ok(),
+        "migrate-guide.md markers: {:?}",
+        validate(guide)
+    );
+}
+
+fn render_prime(guide: &str) -> String {
+    assert_valid(guide);
     let mut out = String::new();
     let mut linked = false;
-    let mut lines = GUIDE.split_inclusive('\n').peekable();
+    let mut lines = guide.split_inclusive('\n').peekable();
     while let Some(line) = lines.next() {
         if let Some(heading) = line.strip_prefix("## ") {
             let heading = heading.trim_end();
@@ -66,19 +123,76 @@ pub fn prime_migrate() -> String {
         } else if linked {
             continue;
         }
-        if marker(line).is_none() {
+        if !is_marker_like(line) {
             out.push_str(line);
         }
     }
     out
 }
 
+fn render_doc(guide: &str) -> String {
+    assert_valid(guide);
+    let body: String = guide
+        .split_inclusive('\n')
+        .filter(|line| !is_marker_like(line))
+        .collect();
+    format!("{DOC_NOTICE}{body}")
+}
+
+/// The text `slopvac prime migrate` prints.
+#[must_use]
+pub fn prime_migrate() -> String {
+    render_prime(GUIDE)
+}
+
 /// The text of `docs/migrate-2-to-3.md`: the guide under a generated-file notice.
 #[must_use]
 pub fn doc() -> String {
-    let body: String = GUIDE
-        .split_inclusive('\n')
-        .filter(|line| marker(line).is_none())
-        .collect();
-    format!("{DOC_NOTICE}{body}")
+    render_doc(GUIDE)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[test]
+    fn the_embedded_guide_has_one_recognised_marker_after_every_heading() {
+        assert_eq!(validate(GUIDE), Ok(()));
+        let headings = GUIDE.lines().filter(|l| l.starts_with("## ")).count();
+        let markers = GUIDE.lines().filter(|l| is_marker_like(l)).count();
+        assert_eq!(headings, 6);
+        assert_eq!(markers, headings);
+    }
+
+    #[rstest]
+    #[case::missing("## A\n\ntext\n", MarkerError::Missing { line: 1 })]
+    #[case::missing_at_end("## A", MarkerError::Missing { line: 1 })]
+    #[case::unknown_value(
+        "## A\n<!-- prime: skip -->\n",
+        MarkerError::Unknown { line: 2, value: "skip".into() }
+    )]
+    #[case::malformed(
+        "## A\n<!-- prime: include\n",
+        MarkerError::Unknown { line: 2, value: "<!-- prime: include".into() }
+    )]
+    #[case::stray_in_body(
+        "## A\n<!-- prime: include -->\ntext\n<!-- prime: link -->\n",
+        MarkerError::Stray { line: 4 }
+    )]
+    #[case::before_any_heading("<!-- prime: include -->\n## A\n<!-- prime: include -->\n", MarkerError::Stray { line: 1 })]
+    #[case::second_after_heading(
+        "## A\n<!-- prime: include -->\n<!-- prime: link -->\n",
+        MarkerError::Stray { line: 3 }
+    )]
+    #[case::after_a_blank_line("## A\n\n<!-- prime: include -->\n", MarkerError::Missing { line: 1 })]
+    fn a_broken_marker_is_rejected(#[case] guide: &str, #[case] expected: MarkerError) {
+        assert_eq!(validate(guide), Err(expected));
+    }
+
+    #[test]
+    #[should_panic(expected = "migrate-guide.md markers")]
+    fn rendering_a_broken_guide_stops_in_a_debug_build() {
+        let _ = render_prime("## A\ntext\n");
+    }
 }
