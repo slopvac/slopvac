@@ -1453,6 +1453,85 @@ mod unix_only {
         assert_ne!(id(&a), id(&b));
     }
 
+    #[test]
+    fn a_fifo_in_place_of_the_key_is_refused_without_blocking() {
+        let (s, _vp, spec, g) = trusted("u-key-fifo");
+        let path = s.dir("state/trust.key");
+        fs::remove_file(&path).unwrap();
+        let made = std::process::Command::new("mkfifo")
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-unusable", "{err}");
+    }
+
+    #[test]
+    fn a_directory_in_place_of_the_key_is_refused() {
+        let (s, _vp, spec, g) = trusted("u-key-dir");
+        let path = s.dir("state/trust.key");
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-unusable", "{err}");
+    }
+
+    #[rstest::rstest]
+    #[case::lost_key(None)]
+    #[case::replaced_key(Some(0x42))]
+    fn a_trust_that_fails_validation_leaves_the_old_records_and_key(
+        #[case] replacement: Option<u8>,
+    ) {
+        let (s, vp, spec, g) = trusted("u-key-failed-trust");
+        match replacement {
+            None => fs::remove_file(s.dir("state/trust.key")).unwrap(),
+            Some(byte) => {
+                write_key(&s, byte);
+            }
+        }
+        let key_before = fs::read(s.dir("state/trust.key")).ok();
+        let before = TrustStore::open(s.dir("state")).records().unwrap();
+        let mut bad = spec.clone();
+        bad.env = vec![("LD_PRELOAD".into(), "x".into())];
+        assert!(matches!(
+            g.record_trust(&vp, &bad, NOW),
+            Err(TrustError::Environment(_))
+        ));
+        assert_eq!(TrustStore::open(s.dir("state")).records().unwrap(), before);
+        assert_eq!(fs::read(s.dir("state/trust.key")).ok(), key_before);
+    }
+
+    #[rstest::rstest]
+    #[case::missing(0)]
+    #[case::wrong_mode(1)]
+    #[case::bad_contents(2)]
+    #[case::not_a_file(3)]
+    fn key_errors_show_no_absolute_path_in_display_or_debug(#[case] which: u8) {
+        let (s, _vp, spec, g) = trusted("u-key-redact");
+        let path = s.dir("state/trust.key");
+        match which {
+            0 => fs::remove_file(&path).unwrap(),
+            1 => fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap(),
+            2 => fs::write(&path, "nope").unwrap(),
+            _ => {
+                fs::remove_file(&path).unwrap();
+                fs::create_dir(&path).unwrap();
+            }
+        }
+        let root = s.dir("").to_string_lossy().into_owned();
+        let store_err = TrustStore::open(s.dir("state")).key().unwrap_err();
+        let plugin_err = g.check(&spec).unwrap_err();
+        for text in [
+            store_err.to_string(),
+            format!("{store_err:?}"),
+            plugin_err.to_string(),
+            format!("{plugin_err:?}"),
+        ] {
+            assert!(!text.contains(&root), "{text}");
+        }
+    }
+
     #[rstest::rstest]
     #[case::group_readable(0o640)]
     #[case::world_readable(0o644)]

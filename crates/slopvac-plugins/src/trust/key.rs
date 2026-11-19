@@ -146,44 +146,76 @@ fn check_owner_and_mode(_: &fs::Metadata) -> Option<String> {
     None
 }
 
+/// The key file as a path outside the project is shown (policies section 1.7).
+fn shown(path: &Path, dir: &Path) -> String {
+    slopvac_fs::display_under_root(path, dir)
+}
+
+/// Open the key file without following a link and without blocking on a pipe.
+#[cfg(unix)]
+fn open_key_file(path: &Path) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let flags = rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK;
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "open flags are small bit masks that fit an i32"
+    )]
+    let flags = flags.bits() as i32;
+    fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(flags)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_key_file(path: &Path) -> io::Result<File> {
+    File::open(path)
+}
+
 /// Read the key file. `None` when there is none; an error when it is not a
 /// regular file the user alone can read and write, or does not hold a key.
-fn read_key_file(path: &Path) -> Result<Option<TrustKey>, TrustError> {
-    let unusable = |why: String| TrustError::KeyUnusable {
-        path: path.to_owned(),
-        why,
+///
+/// The checks run on the handle that was opened, so a file swapped in after
+/// the open changes nothing, and a link or pipe in its place is refused by
+/// the open itself.
+fn read_key_file(path: &Path, dir: &Path) -> Result<Option<TrustKey>, TrustError> {
+    let name = shown(path, dir);
+    let unusable = |why: &str| TrustError::KeyUnusable {
+        file: name.clone(),
+        why: why.to_owned(),
     };
-    match fs::symlink_metadata(path) {
-        Ok(meta) if !meta.file_type().is_file() => {
-            return Err(unusable("it is not a regular file".into()));
-        }
-        Ok(_) => {}
+    let file = match open_key_file(path) {
+        Ok(f) => f,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(io_err(format!("inspecting {}", path.display()))(e)),
-    }
-    let file = File::open(path).map_err(io_err(format!("opening {}", path.display())))?;
-    // The opened file, not the name, so a swap after the check above changes nothing.
+        // ELOOP: a symlink in the way. The error text names no path.
+        Err(e) if e.raw_os_error() == Some(rustix::io::Errno::LOOP.raw_os_error()) => {
+            return Err(unusable("it is a symbolic link"));
+        }
+        Err(e) => return Err(io_err(format!("opening {name}"))(e)),
+    };
     let meta = file
         .metadata()
-        .map_err(io_err(format!("inspecting {}", path.display())))?;
+        .map_err(io_err(format!("inspecting {name}")))?;
+    if !meta.file_type().is_file() {
+        return Err(unusable("it is not a regular file"));
+    }
     if let Some(why) = check_owner_and_mode(&meta) {
-        return Err(unusable(why));
+        return Err(unusable(&why));
     }
     let mut raw = Vec::new();
     file.take(KEY_FILE_MAX + 1)
         .read_to_end(&mut raw)
-        .map_err(io_err(format!("reading {}", path.display())))?;
+        .map_err(io_err(format!("reading {name}")))?;
     String::from_utf8(raw)
         .ok()
         .and_then(|text| TrustKey::parse(&text))
         .map(Some)
-        .ok_or_else(|| unusable("it does not hold a 32-byte key in hex".into()))
+        .ok_or_else(|| unusable("it does not hold a 32-byte key in hex"))
 }
 
 /// Write a new key beside the file, then link it into place without replacing
 /// anything. Callers hold the store lock.
-fn create_key_file(dir: &Path) -> Result<TrustKey, TrustError> {
-    let key = TrustKey::generate()?;
+fn create_key_file(dir: &Path, key: &TrustKey) -> Result<(), TrustError> {
     let mut tmp = tempfile::Builder::new()
         .prefix(".trust-key-")
         .tempfile_in(dir)
@@ -199,7 +231,7 @@ fn create_key_file(dir: &Path) -> Result<TrustKey, TrustError> {
             what: "installing the trust key".into(),
             source: e.error,
         })?;
-    Ok(key)
+    Ok(())
 }
 
 fn names_key(rec: &TrustRecord, key: &TrustKey) -> bool {
@@ -221,33 +253,46 @@ impl TrustStore {
     pub fn key(&self) -> Result<TrustKey, TrustError> {
         let records = self.read()?.records;
         let path = self.dir.join(KEY_FILE);
-        match read_key_file(&path)? {
+        match read_key_file(&path, &self.dir)? {
             Some(key) if records.iter().all(|r| names_key(r, &key)) => Ok(key),
             Some(_) => Err(TrustError::KeyMismatch),
             None if records.is_empty() => TrustKey::generate(),
-            None => Err(TrustError::KeyMissing { path }),
+            None => Err(TrustError::KeyMissing {
+                file: shown(&path, &self.dir),
+            }),
         }
     }
 
-    /// The key for recording trust, and the way back after a lost or replaced
-    /// key: the records that name any other key are dropped, since their
-    /// hashes cannot be recomputed, and a key is created if the file is
-    /// missing. This is the only place a key is created, and only once no
-    /// record is left. A key file that is unusable is still an error, so a key
+    /// Record trust, and be the way back after a lost or replaced key. The
+    /// records that name any other key are dropped, since their hashes cannot
+    /// be recomputed, and a key is created if the file is missing. This is the
+    /// only place a key is created. `make` builds the record under the key and
+    /// validates the plugin: when it fails, nothing is dropped, created or
+    /// written. A key file that is unusable is still an error, so a key
     /// someone else could read is never replaced silently.
     ///
     /// # Errors
-    /// [`TrustError::KeyUnusable`], plus store failures.
-    pub(super) fn key_for_recording(&self) -> Result<TrustKey, TrustError> {
+    /// [`TrustError::KeyUnusable`], whatever `make` returns, plus store failures.
+    pub(super) fn record_with_key(
+        &self,
+        make: impl FnOnce(&TrustKey) -> Result<TrustRecord, TrustError>,
+    ) -> Result<TrustRecord, TrustError> {
         let path = self.dir.join(KEY_FILE);
         self.update(|file| {
-            let existing = read_key_file(&path)?;
-            file.records
-                .retain(|r| existing.as_ref().is_some_and(|k| names_key(r, k)));
-            match existing {
-                Some(key) => Ok(key),
-                None => create_key_file(&self.dir),
+            let existing = read_key_file(&path, &self.dir)?;
+            let key = match &existing {
+                Some(key) => key.clone(),
+                None => TrustKey::generate()?,
+            };
+            let rec = make(&key)?;
+            if existing.is_none() {
+                create_key_file(&self.dir, &key)?;
             }
+            file.schema_version = 1;
+            file.records
+                .retain(|r| names_key(r, &key) && r.hash != rec.hash);
+            file.records.push(rec.clone());
+            Ok(rec)
         })
     }
 }

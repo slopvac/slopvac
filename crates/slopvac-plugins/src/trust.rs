@@ -142,11 +142,11 @@ pub enum TrustError {
     /// Trust records exist but the key they were made under is gone.
     #[error(
         "the trust key {} is missing while trust records exist, so they cannot be checked; run `slopvac plugins trust` for each plugin to trust it again",
-        esc(&.path.to_string_lossy())
+        esc(.file)
     )]
     KeyMissing {
-        /// Where the key belongs.
-        path: PathBuf,
+        /// The key file as policies section 1.7 shows a path outside the project.
+        file: String,
     },
     /// A trust record was made under another key than the one in the store.
     #[error(
@@ -156,12 +156,12 @@ pub enum TrustError {
     /// The key file is not private to the user or does not hold a key.
     #[error(
         "the trust key {} cannot be used: {}; fix it, or delete it and run `slopvac plugins trust` for each plugin",
-        esc(&.path.to_string_lossy()),
+        esc(.file),
         esc(.why)
     )]
     KeyUnusable {
-        /// The file.
-        path: PathBuf,
+        /// The key file, redacted like [`Self::KeyMissing`]'s.
+        file: String,
         /// What is wrong with it.
         why: String,
     },
@@ -1083,22 +1083,21 @@ impl TrustGate {
         if let Some(env) = python {
             env.verify_full()?;
         }
-        let key = self.store.key_for_recording()?;
-        let hash = hash_for(vp, spec, &self.external, python, &key)?;
-        let rec = TrustRecord {
-            hash: hash.to_string(),
-            name: vp.name.clone(),
-            version: vp.version.clone(),
-            source: vp.source.clone(),
-            key_fingerprint: vp.key_fingerprint.clone(),
-            manifest_digest: vp.manifest_digest.clone(),
-            key_id: vp.key_id.clone(),
-            trust_key_id: Some(key.id().to_owned()),
-            declaration: DeclSummary::of(&spec.declaration),
-            recorded_at: now.to_owned(),
-        };
-        self.store.record(rec.clone())?;
-        Ok(rec)
+        self.store.record_with_key(|key| {
+            let hash = hash_for(vp, spec, &self.external, python, key)?;
+            Ok(TrustRecord {
+                hash: hash.to_string(),
+                name: vp.name.clone(),
+                version: vp.version.clone(),
+                source: vp.source.clone(),
+                key_fingerprint: vp.key_fingerprint.clone(),
+                manifest_digest: vp.manifest_digest.clone(),
+                key_id: vp.key_id.clone(),
+                trust_key_id: Some(key.id().to_owned()),
+                declaration: DeclSummary::of(&spec.declaration),
+                recorded_at: now.to_owned(),
+            })
+        })
     }
 }
 
@@ -1157,10 +1156,9 @@ impl SpawnGate for TrustGate {
             Err(TrustError::KeyMismatch) => {
                 return Err(PluginError::TrustKeyMismatch(name.clone()));
             }
-            Err(TrustError::KeyUnusable { path, why }) => {
+            Err(TrustError::KeyUnusable { file, why }) => {
                 return Err(PluginError::TrustKeyUnusable(format!(
-                    "{name}: {} ({why})",
-                    path.display()
+                    "{name}: {file} ({why})"
                 )));
             }
             Err(_) => return Err(PluginError::Untrusted(name.clone())),
