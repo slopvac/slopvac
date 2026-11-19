@@ -403,9 +403,16 @@ fn version_json_lists_supported_versions_from_the_owning_crates() {
     assert_eq!(
         doc["schema_versions"],
         serde_json::json!({
+            "blocklist": [slopvac_terms::BLOCKLIST_SCHEMA_VERSION],
+            "category": [slopvac_model::SchemaVersion::VALUE],
             "config": [slopvac_config::version::SUPPORTED],
+            "doctor-report": [slopvac_cli::doctor::SCHEMA_VERSION],
+            "genre": [slopvac_context::GENRE_SCHEMA_VERSION],
             "lint-report": [slopvac_model::SchemaVersion::VALUE],
-            "prime": [slopvac_agents::prime::SCHEMA_VERSION],
+            "packs-lock": [slopvac_plugins::lock::LOCK_SCHEMA_VERSION],
+            "style": [slopvac_config::version::SUPPORTED],
+            "tagger": [slopvac_context::TAGGER_SCHEMA_VERSION],
+            "terms": [slopvac_terms::TERMS_SCHEMA_VERSION],
         })
     );
     assert_eq!(

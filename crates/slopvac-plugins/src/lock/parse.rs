@@ -50,6 +50,9 @@ impl<'a> Obj<'a> {
     }
 }
 
+/// The only `schema_version` of a packs lockfile this crate reads and writes.
+pub const LOCK_SCHEMA_VERSION: i64 = 3;
+
 pub(super) fn parse(text: &str) -> Result<Lockfile, LockError> {
     if text.len() > MAX_LOCK_BYTES {
         return Err(err("", format!("larger than {MAX_LOCK_BYTES} bytes")));
@@ -62,7 +65,7 @@ pub(super) fn parse(text: &str) -> Result<Lockfile, LockError> {
     })?;
     let root = Obj::new(&table, String::new(), &["schema_version", "plugins"])?;
     match root.required("schema_version")? {
-        Value::Integer(3) => {}
+        Value::Integer(LOCK_SCHEMA_VERSION) => {}
         _ => return Err(err("/schema_version", "must be the integer 3")),
     }
     let items = root

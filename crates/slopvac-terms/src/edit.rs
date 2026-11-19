@@ -30,7 +30,7 @@ fn err(path: &str, message: impl Into<String>) -> TermsError {
 impl Default for TermsDoc {
     fn default() -> Self {
         let mut doc = DocumentMut::new();
-        doc["schema_version"] = value(3);
+        doc["schema_version"] = value(i64::from(TERMS_SCHEMA_VERSION));
         Self { doc }
     }
 }

@@ -168,6 +168,9 @@ pub struct Inputs<'a> {
     pub walk_limit: usize,
 }
 
+/// The only `schema_version` of the doctor report.
+pub const SCHEMA_VERSION: u8 = 3;
+
 /// The report. Field order is the JSON key order.
 #[derive(Debug, Serialize)]
 pub struct Report {
@@ -585,7 +588,7 @@ pub fn build(i: &Inputs<'_>) -> Report {
         && trust.status != "unreadable";
 
     Report {
-        schema_version: 3,
+        schema_version: SCHEMA_VERSION,
         ok,
         slopvac: Binary {
             version: i.version.to_owned(),

@@ -7,13 +7,34 @@ expression: doc
   "name": "slopvac",
   "notices": [],
   "schema_versions": {
+    "blocklist": [
+      3
+    ],
+    "category": [
+      3
+    ],
     "config": [
+      3
+    ],
+    "doctor-report": [
+      3
+    ],
+    "genre": [
       3
     ],
     "lint-report": [
       3
     ],
-    "prime": [
+    "packs-lock": [
+      3
+    ],
+    "style": [
+      3
+    ],
+    "tagger": [
+      3
+    ],
+    "terms": [
       3
     ]
   },
