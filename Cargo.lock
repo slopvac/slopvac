@@ -2713,9 +2713,11 @@ version = "0.0.0"
 dependencies = [
  "jsonschema",
  "roxmltree",
+ "rstest",
  "scraper",
  "serde_json",
  "slopvac-model",
+ "slopvac-sanitize",
  "thiserror",
 ]
 
