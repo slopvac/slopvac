@@ -32,7 +32,7 @@ pub use dirs::{
 };
 pub use error::{Error, InputKind, Op, Reason, Result};
 pub use io::{MAX_DOCUMENT_BYTES, WriteOptions, read_capped, read_text_capped, write_atomic};
-pub use path::{EXTERNAL, display_under_root, lexical_normalize};
+pub use path::{EXTERNAL, display_physical, display_under_root, lexical_normalize};
 pub use read::{
     ReadOptions, read_capped_regular, read_capped_regular_in, read_capped_regular_to_string,
     read_capped_regular_to_string_in,

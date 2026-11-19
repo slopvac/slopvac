@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use slopvac_fs::display_under_root;
+use slopvac_fs::display_physical;
 
 /// The name shown for standard input everywhere.
 pub const STDIN_NAME: &str = "<stdin>";
@@ -22,7 +22,7 @@ pub fn path_for_log(path: &Path, root: &Path) -> String {
 }
 
 /// How a path appears in a message. A relative path resolves against the working directory
-/// and both paths normalize lexically; the result is root-relative or `<external>/<file>`.
+/// and both paths resolve symlinks; the result is root-relative or `<external>/<file>`.
 #[must_use]
 pub fn shown_path(path: &Path, root: &Path) -> String {
     let cwd = std::env::current_dir().unwrap_or_default();
@@ -33,7 +33,7 @@ pub fn shown_path(path: &Path, root: &Path) -> String {
             cwd.join(p)
         }
     };
-    display_under_root(&absolute(path), &absolute(root))
+    display_physical(&absolute(path), &absolute(root))
 }
 
 /// Remove the user-info part of every `scheme://user:pass@host` in `text`.

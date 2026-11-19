@@ -929,3 +929,51 @@ fn an_external_config_error_hides_the_external_directory() {
         assert!(!all.contains("sentinel-outside-dir"), "{format}: {all}");
     }
 }
+
+/// `link` points at `secret/sub`, so `link/..` is `secret`, not the directory that holds
+/// `link`. A lexical fold would turn `base/link/../proj/sentinel-private/...` into a path
+/// below the project and print the private directory name.
+#[cfg(unix)]
+#[test]
+fn a_path_through_a_symlinked_parent_still_hides_the_external_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // The canonical temp dir, so the working directory and the given paths share a prefix.
+    let top = dir.path().canonicalize().expect("canonical temp dir");
+    let base = top.join("base");
+    let proj = base.join("proj");
+    let secret_sub = top.join("secret").join("sub");
+    fs::create_dir_all(&proj).expect("proj dir");
+    fs::create_dir_all(&secret_sub).expect("secret dir");
+    std::os::unix::fs::symlink(&secret_sub, base.join("link")).expect("symlink");
+    fs::write(proj.join("ok.md"), CLEAN).expect("document");
+
+    let via_link = base
+        .join("link")
+        .join("..")
+        .join("proj")
+        .join("sentinel-private");
+    let cases: [(&[&str], &str); 2] = [(&["--config"], "missing.toml"), (&[], "missing.md")];
+    for format in ["text", "json"] {
+        for (flags, name) in cases {
+            let target = via_link.join(name);
+            let mut cmd = slopvac();
+            cmd.current_dir(&proj).args(["lint", "--format", format]);
+            if flags.is_empty() {
+                cmd.arg(&target);
+            } else {
+                cmd.args(flags).arg(&target).arg("ok.md");
+            }
+            let out = cmd.output().expect("run");
+            let all = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                all.contains(&format!("<external>/{name}")),
+                "{format} {name}: {all}"
+            );
+            assert!(!all.contains("sentinel-private"), "{format} {name}: {all}");
+        }
+    }
+}
