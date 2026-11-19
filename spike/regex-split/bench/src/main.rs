@@ -62,12 +62,14 @@ fn main() {
     let mut reps = 3usize;
     let mut timeout = 300u64;
     let mut per_dir: Option<String> = None;
+    let mut fuzz = 0usize;
     let mut i = 5;
     while i < args.len() {
         match args[i].as_str() {
             "--reps" => reps = args[i + 1].parse().unwrap(),
             "--timeout" => timeout = args[i + 1].parse().unwrap(),
             "--pattern-input" => per_dir = Some(args[i + 1].clone()),
+            "--fuzz" => fuzz = args[i + 1].parse().unwrap(),
             a => panic!("unknown arg {a}"),
         }
         i += 2;
@@ -126,6 +128,14 @@ fn main() {
                     return;
                 }
             };
+            if fuzz > 0 {
+                let mut errs = 0usize;
+                for t in fuzz_inputs(&source, fuzz) {
+                    errs += usize::from(re.find_all(&t).is_err());
+                }
+                let _ = tx.send(json!({"fuzz": fuzz, "match_errors": errs}));
+                return;
+            }
             let mut times = Vec::new();
             let mut result = String::new();
             for _ in 0..reps {
@@ -168,4 +178,80 @@ fn main() {
             std::process::exit(3);
         }
     }
+}
+
+/// Strings built from the pattern's own words and a fixed set of tricky pieces
+/// (newlines, CRLF, case-fold specials, marks, quotes), some upper- or title-cased, some
+/// with a trailing newline. Deterministic per pattern.
+fn fuzz_inputs(source: &str, n: usize) -> Vec<String> {
+    const PIECES: &[&str] = &[
+        " ", " ", " ", "\n", "\r\n", "\n\n", "\t", "-", "--", "'", "’", ".", ",", ";", ":", "?",
+        "!", "_", "1", "42", "٣", "²", "\u{A0}", "\u{2028}", "\u{85}", "(", ")", "[", "]", "\"",
+        "“", "”", "‘", "#", "## ", "* ", "- ", "`", "```", "$ ", "=======", "<<<<<<< ", "/",
+        "K", "\u{212A}", "ß", "SS", "\u{17F}", "İ", "ı", "é", "e\u{301}", "\u{200D}", "x",
+        "word", "Word", "WORD", "a", "the", "The", "I", "it's", "e.g.", "i.e.", "U.S.", "👍🏽",
+        "—", "–", "http://x.io/a", "<b>", "&amp;", "…",
+    ];
+    let mut words: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut prev_bs = false;
+    for c in source.chars() {
+        if c.is_alphabetic() && !prev_bs {
+            cur.push(c);
+        } else {
+            if cur.chars().count() >= 2 {
+                words.push(std::mem::take(&mut cur));
+            }
+            cur.clear();
+        }
+        prev_bs = c == '\\' && !prev_bs;
+    }
+    if cur.chars().count() >= 2 {
+        words.push(cur);
+    }
+    let mut h: u64 = 0x9E37_79B9_7F4A_7C15;
+    for b in source.bytes() {
+        h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+    }
+    let mut next = move || {
+        h ^= h << 13;
+        h ^= h >> 7;
+        h ^= h << 17;
+        h
+    };
+    let mut out = Vec::with_capacity(n);
+    for _ in 0..n {
+        let k = 1 + (next() % 14) as usize;
+        let mut s = String::new();
+        for _ in 0..k {
+            let r = next();
+            if !words.is_empty() && r % 2 == 0 {
+                let w = &words[(r >> 8) as usize % words.len()];
+                match (r >> 4) % 6 {
+                    0 => s.push_str(&w.to_uppercase()),
+                    1 => {
+                        let mut cs = w.chars();
+                        if let Some(f) = cs.next() {
+                            s.extend(f.to_uppercase());
+                            s.push_str(cs.as_str());
+                        }
+                    }
+                    2 => {
+                        // drop the last letter: a near miss
+                        let mut t = w.clone();
+                        t.pop();
+                        s.push_str(&t);
+                    }
+                    _ => s.push_str(w),
+                }
+            } else {
+                s.push_str(PIECES[(r >> 8) as usize % PIECES.len()]);
+            }
+        }
+        if next() % 4 == 0 {
+            s.push('\n');
+        }
+        out.push(s);
+    }
+    out
 }

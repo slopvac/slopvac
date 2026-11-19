@@ -21,19 +21,30 @@ for f in sorted(fixtures.glob("*.json")):
 recs = {}
 summaries = []
 for d in dumps:
+    fuzz = "fuzz" in pathlib.Path(d).name
     for line in open(d):
         j = json.loads(line)
         if j.get("summary"):
             summaries.append((d, j))
             continue
+        j.setdefault("fuzz_diffs", 0)
+        j.setdefault("fuzz_first", None)
+        if fuzz:
+            j["fuzz_diffs"], j["diffs"] = j["diffs"], 0
+            j["fuzz_first"], j["first_diff"] = j["first_diff"], None
+            j["calls"] = 0
         r = recs.get(j["id"])
         if r is None:
+            if fuzz:
+                continue
             recs[j["id"]] = j
             continue
-        for k in ("calls", "diffs", "edge_diffs", "pcre_limit"):
+        for k in ("calls", "diffs", "edge_diffs", "pcre_limit", "fuzz_diffs"):
             r[k] += j[k]
         if not r["first_diff"] and j["first_diff"]:
             r["first_diff"] = j["first_diff"]
+        if not r["fuzz_first"] and j["fuzz_first"]:
+            r["fuzz_first"] = j["fuzz_first"]
         if j["label"] and not r["label"]:
             r["label"] = j["label"]
 
@@ -61,7 +72,7 @@ def source(r):
 def verdict(r):
     if r["rust_err"]:
         return "no-compile"
-    if r["diffs"] or r["edge_diffs"]:
+    if r["diffs"] or r["edge_diffs"] or r.get("fuzz_diffs"):
         return "differs"
     return "identical"
 
@@ -107,8 +118,8 @@ lines.append("## Differs (first example each)")
 for s in sorted(groups):
     for r in sorted(groups[s], key=lambda r: r["_where"]):
         if verdict(r) == "differs":
-            lines.append(f"- [{s}] `{r['_where']}` diffs={r['diffs']} edge={r['edge_diffs']} calls={r['calls']}: `{r['source'][:160]}`")
-            lines.append(f"  - {r['first_diff'][:400]}")
+            lines.append(f"- [{s}] `{r['_where']}` diffs={r['diffs']} edge={r['edge_diffs']} fuzz={r.get('fuzz_diffs', 0)} calls={r['calls']}: `{r['source'][:160]}`")
+            lines.append(f"  - {(r['first_diff'] or r.get('fuzz_first') or '')[:400]}")
 lines.append("")
 lines.append("## PCRE2-only (no compile in regex)")
 for s in sorted(groups):
