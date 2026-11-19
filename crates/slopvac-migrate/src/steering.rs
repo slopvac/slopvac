@@ -12,8 +12,9 @@ const END: &str = "<!-- slopvac:end -->";
 /// output so migrate and setup write the same bytes.
 ///
 /// Returns `None` when the text has no managed block. Markers shown inside fenced
-/// or indented code do not count; `slopvac setup` uses the same scanner. A begin without a matching end, or the reverse, is left
-/// alone and reported through `Err` so the user repairs it.
+/// or indented code do not count; `slopvac setup` uses the same scanner. A begin
+/// without a matching end, or the reverse, is left alone and reported through `Err`
+/// so the user repairs it.
 pub fn rewrite_steering(text: &str, block: &str) -> Result<Option<String>, String> {
     let found = marker_lines(text, &[BEGIN, END]);
     match found.as_slice() {
