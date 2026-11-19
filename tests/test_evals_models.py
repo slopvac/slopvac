@@ -89,6 +89,19 @@ def test_task_building_is_deterministic_and_covers_every_type(corpus):
     assert len({t["id"] for t in a}) == len(a)
 
 
+def test_planted_review_tasks_carry_both_texts_a_quote_may_come_from(corpus):
+    manifest, cache = corpus
+    planted = [
+        t
+        for t in models.build_tasks(manifest, cache, per_type=4)
+        if t.get("variant") == "planted"
+    ]
+    assert planted
+    for task in planted:
+        assert all(e["sentence"] in task["passage"] for e in task["edits"])
+        assert task["passage"].count("\n") >= 1
+
+
 def test_update_tasks_carry_the_stated_change_and_it_is_in_the_passage(corpus):
     manifest, cache = corpus
     for task in (
@@ -146,15 +159,67 @@ def test_rewrite_fails_when_slop_rises_even_if_facts_survive():
     assert (ok["success"], worse["success"]) == (True, False)
 
 
+@pytest.mark.parametrize(
+    "output",
+    [
+        "Cache 40 items now.",
+        "Cache   40\nitems now.\n",
+        "```\nCache 40 items now.\n```",
+    ],
+)
+def test_an_unchanged_rewrite_fails(output):
+    task = {"type": "rewrite", "source": "Cache 40 items now.", "expected": []}
+    scored = models.score_author(task, output, NO_FINDINGS)
+    assert (scored["unchanged"], scored["success"]) == (True, False)
+
+
+def test_author_scores_are_labelled_a_lexical_retention_smoke_check():
+    task = {"type": "rewrite", "source": "Cache 40 items now.", "expected": []}
+    scored = models.score_author(task, "Keep 40 items cached.", NO_FINDINGS)
+    assert scored["metric"] == "lexical retention smoke check"
+
+
+LEXICAL_ORACLE = pytest.mark.xfail(
+    strict=True,
+    reason="lexical oracle; meaning-level oracle tracked in slopvac-8l4.15.24",
+)
+
+
+@LEXICAL_ORACLE
+@pytest.mark.parametrize(
+    ("source", "output"),
+    [
+        ("Set min 5, max 10 for the pool.", "Set min 10, max 5 for the pool."),
+        (
+            "Never skip the check; always run it.",
+            "Always skip the check; never run it.",
+        ),
+    ],
+    ids=["swapped-limits", "moved-negation"],
+)
+def test_a_rewrite_that_changes_meaning_without_losing_tokens_fails(source, output):
+    task = {"type": "rewrite", "source": source, "expected": []}
+    assert not models.score_author(task, output, NO_FINDINGS)["success"]
+
+
 def test_a_code_fence_around_the_answer_is_ignored():
     task = {"type": "rewrite", "source": "Cache 40 items."}
     scored = models.score_author(task, "```markdown\nCache 40 items.\n```", NO_FINDINGS)
     assert scored["fact_rate"] == 1.0
 
 
+PLANTED_PASSAGE = (
+    "The queue holds 63 jobs before it blocks writers. "
+    "Run the migration with the `--offline` flag first.\n"
+    "The queue holds 68 jobs before it blocks writers. "
+    "Run the migration with the flag first."
+)
+
+
 def planted_task():
     return {
         "variant": "planted",
+        "passage": PLANTED_PASSAGE,
         "edits": [
             {
                 "kind": "number",
@@ -211,10 +276,203 @@ def test_unparseable_review_answers_find_nothing(answer):
 
 
 def test_authored_review_matches_lost_facts_by_name():
-    task = {"variant": "authored", "lost": ["--offline", "3"]}
-    answer = json.dumps([{"quote": "x", "problem": "the --offline flag vanished"}])
+    task = {
+        "variant": "authored",
+        "lost": ["--offline", "3"],
+        "passage": "Run with the --offline flag first.",
+    }
+    answer = json.dumps(
+        [{"quote": "with the --offline flag", "problem": "the --offline flag vanished"}]
+    )
     scored = models.score_review(task, answer)
     assert (scored["found"], scored["planted"]) == (1, 2)
+
+
+def test_a_denial_with_the_right_quote_does_not_count_as_a_finding():
+    answer = json.dumps(
+        [
+            {
+                "quote": "The queue holds 63 jobs before it blocks writers",
+                "problem": "The 63 is preserved, so there is no change here.",
+            }
+        ]
+    )
+    scored = models.score_review(planted_task(), answer)
+    assert (scored["found"], scored["false_alarms"]) == (0, 0)
+
+
+QUEUE_QUOTE = "The queue holds 63 jobs before it blocks writers"
+
+
+def planted_found(problem):
+    answer = json.dumps([{"quote": QUEUE_QUOTE, "problem": problem}])
+    return models.score_review(planted_task(), answer)["found"]
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "The original still says 63, but the candidate changed the cap to 68.",
+        "The 63 is not preserved: it became 68.",
+        "The cap is unchanged in name, but the number changed from 63 to 68.",
+        "The candidate no longer says 63.",
+        "The limit isn't kept; the candidate now says 68.",
+        "Not unchanged: 63 was replaced by 68.",
+        "The original still says 63, but the candidate omits that limit.",
+        "The limit is preserved in the original; the candidate drops it.",
+        "The candidate keeps the heading but removes the 63 cap.",
+        "The original has 63 and is unchanged, yet the candidate deletes it.",
+        "The original still says max 63. The candidate omitted it.",
+        "The original still states 63, and the candidate dropped it.",
+        "The cap is preserved in the source, but the candidate removed it.",
+        "The source still reads 63; the candidate has deleted the cap.",
+        "The original still says 63, but the candidate loses the limit.",
+    ],
+)
+def test_an_explanation_that_affirms_a_change_counts(problem):
+    assert planted_found(problem) == 1
+
+
+SHORT_PASSAGE = "Run the migration with the `--offline` flag first. Retry 3 times."
+
+
+def authored_found(quote, lost, passage=SHORT_PASSAGE):
+    task = {"variant": "authored", "lost": [lost], "passage": passage}
+    answer = json.dumps([{"quote": quote, "problem": f"{lost} was dropped"}])
+    return models.score_review(task, answer)["found"]
+
+
+@pytest.mark.parametrize(
+    ("quote", "lost"),
+    [("--offline", "--offline"), ("3", "3"), ("`--offline`", "--offline")],
+    ids=["flag", "number", "code-span"],
+)
+def test_a_short_genuine_quote_of_a_whole_fact_counts(quote, lost):
+    assert authored_found(quote, lost) == 1
+
+
+@pytest.mark.parametrize(
+    ("quote", "lost", "passage"),
+    [
+        ("flag first the with migration", "flag", SHORT_PASSAGE),
+        ("Retry times 3", "3", SHORT_PASSAGE),
+        ("3", "3", "Retry 13 times."),
+        ("an invented sentence about the --offline flag", "--offline", SHORT_PASSAGE),
+    ],
+    ids=["reordered-words", "reordered-fact", "inside-longer-number", "invented"],
+)
+def test_a_quote_that_is_not_contiguous_in_the_passage_does_not_count(
+    quote, lost, passage
+):
+    assert authored_found(quote, lost, passage) == 0
+
+
+def test_a_planted_quote_of_real_words_in_another_order_is_a_false_alarm():
+    answer = json.dumps(
+        [{"quote": "jobs queue the 63 holds blocks it writers", "problem": "changed"}]
+    )
+    scored = models.score_review(planted_task(), answer)
+    assert (scored["found"], scored["false_alarms"]) == (0, 1)
+
+
+def test_a_planted_quote_found_in_neither_passage_is_a_false_alarm():
+    answer = json.dumps(
+        [{"quote": "The cache evicts entries after an hour", "problem": "changed"}]
+    )
+    scored = models.score_review(planted_task(), answer)
+    assert (scored["found"], scored["false_alarms"]) == (0, 1)
+
+
+def test_a_planted_quote_of_a_single_digit_fact_locates_the_edit():
+    task = {
+        "variant": "planted",
+        "edits": [
+            {"kind": "number", "sentence": "Set `replicas` to 1 in the ConfigMap."}
+        ],
+        "passage": (
+            "Set `replicas` to 1 in the ConfigMap.\n"
+            "Set `replicas` to 2 in the ConfigMap."
+        ),
+    }
+    answer = json.dumps([{"quote": "1", "problem": "the value changed to 2"}])
+    scored = models.score_review(task, answer)
+    assert (scored["found"], scored["false_alarms"]) == (1, 0)
+
+
+def test_a_planted_quote_of_a_stray_letter_is_still_a_false_alarm():
+    task = {
+        "variant": "planted",
+        "edits": [{"kind": "number", "sentence": "Set a limit of 1 in the file."}],
+        "passage": "Set a limit of 1 in the file.\nSet a limit of 2 in the file.",
+    }
+    answer = json.dumps([{"quote": "a", "problem": "changed"}])
+    scored = models.score_review(task, answer)
+    assert (scored["found"], scored["false_alarms"]) == (0, 1)
+
+
+def test_a_short_planted_quote_of_the_dropped_flag_locates_the_edit():
+    answer = json.dumps([{"quote": "--offline", "problem": "the flag was dropped"}])
+    scored = models.score_review(planted_task(), answer)
+    assert (scored["found"], scored["false_alarms"]) == (1, 0)
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "The 63 is preserved.",
+        "No change here.",
+        "This sentence is unchanged.",
+        "The candidate keeps the 63.",
+        "Nothing is lost; the original still says 63.",
+        "The number remains intact and is the same as the original.",
+    ],
+)
+def test_an_explanation_that_only_denies_the_change_does_not_count(problem):
+    assert planted_found(problem) == 0
+
+
+def test_an_authored_review_needs_a_quote_that_is_in_the_passage():
+    task = {
+        "variant": "authored",
+        "lost": ["--offline"],
+        "passage": "Run the migration with the `--offline` flag first. Original text.",
+    }
+    elsewhere = json.dumps(
+        [{"quote": "an invented sentence about weather", "problem": "--offline lost"}]
+    )
+    quoted = json.dumps(
+        [
+            {
+                "quote": "Run the migration with the --offline flag first",
+                "problem": "the --offline flag vanished",
+            }
+        ]
+    )
+    assert models.score_review(task, elsewhere)["found"] == 0
+    assert models.score_review(task, quoted)["found"] == 1
+
+
+def test_an_authored_denial_does_not_count_as_a_finding():
+    task = {
+        "variant": "authored",
+        "lost": ["--offline"],
+        "passage": "Run the migration with the `--offline` flag first.",
+    }
+    answer = json.dumps(
+        [
+            {
+                "quote": "Run the migration with the --offline flag first",
+                "problem": "the --offline flag still says what it did",
+            }
+        ]
+    )
+    assert models.score_review(task, answer)["found"] == 0
+
+
+def test_reviewer_scores_are_labelled_detection_by_quotation():
+    assert (
+        models.score_review(planted_task(), "[]")["metric"] == "detection by quotation"
+    )
 
 
 # --- planning, running and summarising ------------------------------------------------------
@@ -250,6 +508,7 @@ def tiny_tasks():
         "genre": "g",
         "prompt": "y" * 800,
         "edits": [{"kind": "n", "sentence": "alpha beta gamma delta"}],
+        "passage": "alpha beta gamma delta\nalpha beta gamma epsilon",
     }
     return [author(1, "update"), author(2, "rewrite"), reviewer]
 
@@ -275,7 +534,9 @@ def fake_ask(model):
         if "Update the passage" in prompt:
             return "Cache 40 items."
         if "Rewrite the passage" in prompt:
-            return "Cache 40 items." if model["name"] == "good" else "Cache items."
+            return (
+                "Keep 40 items cached." if model["name"] == "good" else "Cache items."
+            )
         return json.dumps([{"quote": "alpha beta gamma delta", "problem": "changed"}])
 
     return ask
@@ -732,6 +993,85 @@ def test_summary_ranks_models_by_success_per_task():
     assert summary["date"] == "2026-11-14"
 
 
+def fresh_results():
+    tasks = [t for t in tiny_tasks() if t["id"] != "a1"]
+    return models.execute(
+        tasks,
+        roster("good", "poor"),
+        3,
+        NO_FINDINGS,
+        ask_for=fake_ask,
+        date="2026-11-14",
+    )
+
+
+def as_legacy(results):
+    """The shape of a results file written before scorer versions existed."""
+    legacy = {k: v for k, v in results.items() if k != "scorer_version"}
+    legacy["runs"] = [
+        {k: v for k, v in r.items() if k != "scorer_version"} for r in results["runs"]
+    ]
+    return legacy
+
+
+def test_results_and_every_run_row_record_the_scorer_version():
+    out = fresh_results()
+    assert out["scorer_version"] == models.SCORER_VERSION
+    assert {r["scorer_version"] for r in out["runs"]} == {models.SCORER_VERSION}
+
+
+def test_a_summary_of_freshly_scored_runs_reports_the_scorer_and_metric_names():
+    summary = models.summarize(fresh_results(), resamples=20)
+    assert summary["scorer_version"] == models.SCORER_VERSION
+    labels = {(r["role"], r["metric"], r["scorer_version"]) for r in summary["rows"]}
+    assert labels == {
+        ("author", "lexical retention smoke check", models.SCORER_VERSION),
+        ("reviewer", "detection by quotation", models.SCORER_VERSION),
+    }
+
+
+def test_a_summary_of_legacy_scores_does_not_wear_the_new_metric_names():
+    summary = models.summarize(as_legacy(fresh_results()), resamples=20)
+    assert "scorer_version" not in summary
+    assert {r["metric"] for r in summary["rows"]} == {"legacy (pre-15.17)"}
+    assert {r["scorer_version"] for r in summary["rows"]} == {"legacy"}
+
+
+def test_the_committed_legacy_results_are_labelled_legacy():
+    path = Path(models.RESULTS_DIR) / "2026-11-14.json"
+    summary = models.summarize(models.load(path), resamples=20)
+    assert {r["metric"] for r in summary["rows"]} == {"legacy (pre-15.17)"}
+
+
+def without_row_versions(results):
+    out = dict(results)
+    out["runs"] = [
+        {k: v for k, v in r.items() if k != "scorer_version"} for r in results["runs"]
+    ]
+    return out
+
+
+def disagreeing(results):
+    out = dict(results)
+    out["runs"] = [dict(r) for r in results["runs"]]
+    out["runs"][0]["scorer_version"] = "14.0"
+    return out
+
+
+def test_a_row_without_a_version_inherits_the_file_header():
+    summary = models.summarize(without_row_versions(fresh_results()), resamples=20)
+    assert summary["scorer_version"] == models.SCORER_VERSION
+    assert {r["metric"] for r in summary["rows"]} == {
+        "lexical retention smoke check",
+        "detection by quotation",
+    }
+
+
+def test_a_row_that_disagrees_with_the_header_is_refused_before_any_ranking():
+    with pytest.raises(models.ModelEvalError, match="disagrees"):
+        models.summarize(disagreeing(fresh_results()), resamples=20)
+
+
 def test_authored_reviews_with_nothing_lost_are_left_out_of_the_summary():
     tasks = [t for t in tiny_tasks() if t["id"] == "a2"]
     out = models.execute(
@@ -797,8 +1137,14 @@ def test_the_cli_never_starts_a_model_for_plan(tmp_path, monkeypatch, capsys):
     ],
 )
 def test_authored_review_matches_whole_fact_tokens(reply, found):
-    task = {"variant": "authored", "lost": ["3"]}
-    answer = json.dumps([{"quote": "x", "problem": reply}])
+    task = {
+        "variant": "authored",
+        "lost": ["3"],
+        "passage": "Retry up to three times before the lock gives up.",
+    }
+    answer = json.dumps(
+        [{"quote": "Retry up to three times before the lock", "problem": reply}]
+    )
     assert models.score_review(task, answer)["found"] == found
 
 
