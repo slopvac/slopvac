@@ -37,7 +37,7 @@ pub enum PackError {
         /// The pack-relative path.
         path: String,
         /// The parse failure.
-        source: slopvac_context::Error,
+        source: Box<slopvac_context::Error>,
     },
     /// Two packs supply the same name.
     #[error(transparent)]

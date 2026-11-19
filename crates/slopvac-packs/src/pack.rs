@@ -55,7 +55,7 @@ fn read_all(
 fn artifact(path: &PackPath, source: slopvac_context::Error) -> PackError {
     PackError::Artifact {
         path: path.as_str().to_owned(),
-        source,
+        source: Box::new(source),
     }
 }
 
@@ -152,7 +152,7 @@ fn stem(path: &PackPath) -> &str {
 /// The packs a run knows, with their genres and styles by qualified name.
 #[derive(Debug)]
 pub struct Packs {
-    packs: Vec<LoadedPack>,
+    loaded: Vec<LoadedPack>,
     genres: Registry<GenreSpec>,
     styles: Registry<String>,
 }
@@ -176,7 +176,7 @@ impl Packs {
             }
         }
         Ok(Self {
-            packs,
+            loaded: packs,
             genres,
             styles,
         })
@@ -193,24 +193,24 @@ impl Packs {
     /// The loaded packs, in load order.
     #[must_use]
     pub fn packs(&self) -> &[LoadedPack] {
-        &self.packs
+        &self.loaded
     }
 
     /// Every pack's rule set, in load order.
     pub fn rule_sets(&self) -> impl Iterator<Item = &RuleSet> {
-        self.packs.iter().map(LoadedPack::rules)
+        self.loaded.iter().map(LoadedPack::rules)
     }
 
     /// Every genre in load order, then file order. Order breaks detection ties.
     pub fn genres(&self) -> impl Iterator<Item = &GenreSpec> {
-        self.packs
+        self.loaded
             .iter()
             .flat_map(|p| p.genres.iter().map(|(_, g)| g))
     }
 
     /// Every declarative tagger, in load order.
     pub fn taggers(&self) -> impl Iterator<Item = &TaggerSpec> {
-        self.packs.iter().flat_map(|p| p.taggers.iter())
+        self.loaded.iter().flat_map(|p| p.taggers.iter())
     }
 
     fn style_presets(&self) -> StylePresets<PackStyles<'_>> {
@@ -275,7 +275,7 @@ impl Presets for Packs {
     fn pack_config(&self, name: &str) -> Option<PackFile> {
         let (id, local) = name.split_once(':')?;
         let id = PackId::new(id).ok()?;
-        let pack = self.packs.iter().find(|p| p.manifest.id == id)?;
+        let pack = self.loaded.iter().find(|p| p.manifest.id == id)?;
         let (path, text) = pack.configs.iter().find(|(p, _)| stem(p) == local)?;
         Some(PackFile {
             display: display_path(&id, path.as_str()),
