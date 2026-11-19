@@ -35,12 +35,7 @@ use slopvac_model::Document;
 const PROFILES: [&str; 3] = ["strict", "normal", "relaxed"];
 
 /// Inputs that no engine entry point reads yet: input id, the owning bead and why.
-const SKIPPED: [(&str, &str, &str); 3] = [
-    (
-        "format-html",
-        "slopvac-8l4.3.42",
-        "the engine has no standalone HTML file kind (`Kind` stops at Markdown, MDX, RST and diagrams)",
-    ),
+const SKIPPED: [(&str, &str, &str); 2] = [
     (
         "format-python-comments",
         "slopvac-8l4.3.26",
@@ -105,6 +100,7 @@ fn lint(engine: &Engine, entry: &Entry) -> Option<Value> {
     let input = match entry.language.as_str() {
         "markdown" => Input::markdown(name, &text),
         "mdx" => Input::mdx(name, &text),
+        "html" => Input::html(name, &text),
         "rst" => {
             // RST needs docutils. CI sets the variable, so a missing interpreter fails there.
             if let Err(error) = RstAdapter::new(rst_options()).interpreter() {

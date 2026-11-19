@@ -48,8 +48,8 @@ use slopvac_parse::{
 };
 
 use crate::lint::{Engine, EngineError, Input, Kind};
-use crate::prepare::with_html_prose;
-use crate::protect::destinations;
+use crate::prepare::{html_file, with_html_prose};
+use crate::protect::{destinations, html_destinations};
 use crate::rst::RstError;
 
 /// Why a finding that carries a fix was left alone.
@@ -271,7 +271,7 @@ fn lines_changed(index: &SourceIndex<'_>, span: Span, ranges: &[RangeInclusive<u
 fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
     let mut spans = Vec::new();
     let mut body_start = 0;
-    if !matches!(input.kind, Kind::Diagram(_))
+    if !matches!(input.kind, Kind::Diagram(_) | Kind::Html)
         && let Some(front) = detect(input.source)
     {
         body_start = front.body_start;
@@ -283,6 +283,7 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
     let parsed: Parsed = match input.kind {
         Kind::Markdown => parse_markdown(input.source, body)?,
         Kind::Mdx => parse_mdx(input.source, body)?,
+        Kind::Html => html_file(input.source)?,
         Kind::Diagram(_) | Kind::Rst => Parsed::default(),
     };
     let parsed = with_html_prose(
@@ -291,7 +292,11 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
         parsed,
     )?;
     spans.extend(parsed.code_spans.iter().copied());
-    spans.extend(destinations(input.source, body_start));
+    if input.kind == Kind::Html {
+        spans.extend(html_destinations(input.source));
+    } else {
+        spans.extend(destinations(input.source, body_start));
+    }
     if input.kind == Kind::Mdx {
         spans.extend(mdx_syntax_spans(input.source, body)?);
     }

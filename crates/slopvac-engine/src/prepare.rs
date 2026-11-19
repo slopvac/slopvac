@@ -1,12 +1,14 @@
 //! The text units a rule reads, cut from a parsed document by the rule's `scope`.
 
 use std::cell::OnceCell;
+use std::collections::BTreeMap;
 use std::ops::Range;
 
 use slopvac_model::SourceIndex;
 use slopvac_model::Span;
 use slopvac_parse::{
-    Block, BlockKind, Document, ParseError, Projection, TokenKind, parse_html_segments,
+    Block, BlockKind, Document, ParseError, Projection, Token, TokenKind, parse_html,
+    parse_html_segments,
 };
 use slopvac_rules::Scope;
 use slopvac_text::{Sentence, TextError, cell_sentence, split_sentences};
@@ -81,6 +83,142 @@ pub(crate) fn with_html_prose(
         .sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
     doc.code_spans.sort_by_key(Span::start);
     Ok(doc)
+}
+
+/// A standalone HTML file read as 2.x reads it (`_parse_html`): the visible text of each source
+/// line is one paragraph of the kind `Paragraph`, whatever elements it came from, so a heading,
+/// list item or table cell is a paragraph too, and a sentence never runs over a line end. Text
+/// of several elements on one line joins into that line's paragraph. Inline code (`<code>`,
+/// `<kbd>`, `<samp>`) joins the code spans and is left out of the prose; `<pre>` stays a code
+/// block; `<script>`, `<style>`, `<noscript>`, `<template>`, `<head>` and `<title>` give
+/// nothing. A Markdown fence in the file is plain text, as in 2.x. A line ends at LF, CRLF or a
+/// lone CR, as everywhere else in the engine.
+///
+/// # Errors
+/// Returns a [`ParseError`] when the file is too large or needs more work than the parse
+/// budget allows.
+pub(crate) fn html_file(source: &str) -> Result<Document, ParseError> {
+    let body = Span::new(0, source.len()).expect("0 <= the length of the file");
+    let mut doc = parse_html(source, body)?;
+    let lines = Lines::new(source);
+    let mut by_line: BTreeMap<usize, Vec<Projection>> = BTreeMap::new();
+    let mut blocks = Vec::new();
+    for mut block in std::mem::take(&mut doc.blocks) {
+        match &block.projection {
+            Some(projection) if !projection.text().is_empty() => {
+                for (line, piece) in line_pieces(source, &lines, projection) {
+                    by_line.entry(line).or_default().push(piece);
+                }
+            }
+            _ => {
+                block.containers.clear();
+                blocks.push(block);
+            }
+        }
+    }
+    for pieces in by_line.into_values() {
+        let projection = join(pieces.iter());
+        let extents = projection.extents();
+        let (Some(first), Some(last)) = (
+            extents.iter().map(Span::start).min(),
+            extents.iter().map(Span::end).max(),
+        ) else {
+            continue;
+        };
+        blocks.push(Block {
+            kind: BlockKind::Paragraph,
+            span: Span::new(first, last).expect("a block ends after it starts"),
+            projection: Some(projection),
+            containers: Vec::new(),
+        });
+    }
+    blocks.sort_by_key(|b| (b.span.start(), std::cmp::Reverse(b.span.end())));
+    doc.blocks = blocks;
+    Ok(doc)
+}
+
+/// The pieces of `projection` that sit on one source line each, with the line number. A
+/// whitespace run that holds a line end cuts the text, and so does a token that starts on a
+/// later line than the piece. Masked code is left out, as 2.x skips `<code>`, `<kbd>` and
+/// `<samp>`: it adds no word and no placeholder, and a line with nothing else is no paragraph.
+fn line_pieces(
+    source: &str,
+    lines: &Lines<'_>,
+    projection: &Projection,
+) -> Vec<(usize, Projection)> {
+    fn finish(out: &mut Vec<(usize, Projection)>, line: usize, mut tokens: Vec<Token>) {
+        while tokens
+            .last()
+            .is_some_and(|t| matches!(t.kind, TokenKind::Collapse | TokenKind::Wrap))
+        {
+            tokens.pop();
+        }
+        let mut piece = Projection::new();
+        for t in &tokens {
+            piece.push_unordered(t.kind, &t.text, t.src);
+        }
+        out.push((line, piece));
+    }
+
+    let mut out = Vec::new();
+    let mut current: Option<(usize, Vec<Token>)> = None;
+    for token in projection.tokens() {
+        if token.kind == TokenKind::Masked {
+            continue;
+        }
+        let ends_line = token.kind == TokenKind::Collapse
+            && source[token.src.start()..token.src.end()].contains(['\n', '\r']);
+        if ends_line {
+            if let Some((line, tokens)) = current.take() {
+                finish(&mut out, line, tokens);
+            }
+            continue;
+        }
+        let line = lines.line_of(token.src.start());
+        let spills = token.kind != TokenKind::Wrap
+            && current.as_ref().is_some_and(|(open, _)| *open != line);
+        if spills && let Some((open, tokens)) = current.take() {
+            finish(&mut out, open, tokens);
+        }
+        match &mut current {
+            Some((_, tokens)) => {
+                if let Some(last) = tokens.last()
+                    && tag_between(source, last, token)
+                {
+                    // The space 2.x puts at a tag or comment: no source text of its own.
+                    tokens.push(Token {
+                        kind: TokenKind::Wrap,
+                        text: " ".to_owned(),
+                        src: Span::empty(token.src.start()),
+                    });
+                }
+                tokens.push(token.clone());
+            }
+            // A piece starts at a word.
+            None if matches!(token.kind, TokenKind::Collapse | TokenKind::Wrap) => {}
+            None => current = Some((line, vec![token.clone()])),
+        }
+    }
+    if let Some((line, tokens)) = current {
+        finish(&mut out, line, tokens);
+    }
+    out
+}
+
+/// Whether 2.x puts a space between the adjacent tokens `before` and `after` of one line.
+///
+/// `_HtmlTextExtractor` flags a boundary at every start tag, end tag and comment, and adds a
+/// space at the next character when neither side is white space. An entity is no boundary.
+fn tag_between(source: &str, before: &Token, after: &Token) -> bool {
+    let spaced = |c: Option<char>| c.is_none_or(char::is_whitespace);
+    if spaced(before.text.chars().next_back()) || spaced(after.text.chars().next()) {
+        return false;
+    }
+    let (from, to) = (before.src.end(), after.src.start());
+    from < to
+        && source.as_bytes()[from..to]
+            .windows(2)
+            .any(|w| w[0] == b'<' && (w[1].is_ascii_alphabetic() || matches!(w[1], b'/' | b'!')))
 }
 
 /// The fence character and marker length when `line` opens or closes a Markdown fence:

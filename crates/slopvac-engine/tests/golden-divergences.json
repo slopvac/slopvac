@@ -13,6 +13,7 @@
     "corpus-tutorials.rust-lang-rust-by-example.src-error-md.bfa0b4": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Diagnosed (slopvac-8l4.3.41), Vale-only behaviour; golden re-record tracked in slopvac-8l4.6.8: findings differ in presence for prose-craft.negative-requirement, ste-descriptive.sentence-too-long-descriptive, ste-procedural.multiple-instructions-per-sentence because a match that spans a line break: Vale folds it into one text with no end position, or drops it, and Rust reports the exact source range; the 2.x native engine and Rust agree on every finding; and because metric: Vale puts the finding on the first token of the unit (`We`, `. `) where Rust and the 2.x native engine report an empty match at the unit start, so the same finding is both missing and extra; the 2.x native engine and Rust agree on every finding; and because 2.x runs the rule in Vale, which ignores its `text_type: procedural`, so the golden flags descriptive sentences; the 2.x native engine and Rust flag procedural sentences only (the rule's own data). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
     "corpus-tutorials.rust-lang-rust-by-example.src-macros-designators-md.708d1c": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
     "corpus-tutorials.rust-lang-rust-by-example.src-scope-lifetime-lifetime-bounds-md.805d13": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. The golden holds findings of the unrun structure rule ai-tells-formatting.heading-hierarchy (slopvac-8l4.3.43). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "format-html": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Counts, scores and findings agree with the golden at all three profiles.",
     "format-mdx": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Diagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; markup by design (departure from 2.x), because the sample starts with the line `import { Callout } from \"../components\"`. 2.x reads it as a paragraph with one sentence and 4 words; Rust reads it as MDX ESM, not prose (+1 paragraph, +1 sentence, +4 words in 2.x).",
     "format-rst": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither. Diagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; markup by design (departure from 2.x), because 2.x parses the RST as Markdown, so the directive line `.. note::` is a paragraph with one sentence and one word, and the literal-block marker `::` is a paragraph without words; Rust reads both as RST markup (+2 paragraphs, +1 sentence, +1 word in 2.x).",
     "issue-252": "Exit status 2 and the unchecked notices: the engine does not run the 6 structure rules (slopvac-8l4.3.43) and has no word blocklist (slopvac-8l4.3.44), and the golden reports neither.",
@@ -1076,6 +1077,13 @@
           "severity": "warning"
         }
       ],
+      "unchecked": [
+        "rule-kind-not-implemented",
+        "vocabulary-no-blocklist"
+      ]
+    },
+    "normal/format-html": {
+      "exit": 2,
       "unchecked": [
         "rule-kind-not-implemented",
         "vocabulary-no-blocklist"
@@ -3415,6 +3423,12 @@
         "rule-kind-not-implemented"
       ]
     },
+    "relaxed/format-html": {
+      "exit": 2,
+      "unchecked": [
+        "rule-kind-not-implemented"
+      ]
+    },
     "relaxed/format-mdx": {
       "document": {
         "paragraphs": 4,
@@ -5299,6 +5313,13 @@
           "severity": "warning"
         }
       ],
+      "unchecked": [
+        "rule-kind-not-implemented",
+        "vocabulary-no-blocklist"
+      ]
+    },
+    "strict/format-html": {
+      "exit": 2,
       "unchecked": [
         "rule-kind-not-implemented",
         "vocabulary-no-blocklist"

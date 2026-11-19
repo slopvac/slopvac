@@ -76,6 +76,33 @@ pub(crate) fn destinations(source: &str, body_start: usize) -> Vec<Span> {
     spans
 }
 
+/// The protected spans of a standalone HTML file: every tag, attribute values included, and
+/// the bare URLs, `www.` hosts and email addresses of its text. The file is not Markdown, so
+/// `[text](target)` in its text is prose and no link or reference syntax is read. Tags are
+/// blanked before the address scan, so text next to a tag (`<a href="u">text</a>`) is not
+/// taken for part of the address.
+pub(crate) fn html_destinations(source: &str) -> Vec<Span> {
+    let mut spans = Vec::new();
+    let mut push = |range: Range<usize>| {
+        if let Ok(span) = Span::new(range.start, range.end) {
+            spans.push(span);
+        }
+    };
+    let mut text = source.to_owned();
+    for tag in tags(source) {
+        // A tag runs from `<` to `>` (or the end of the file), so both ends are character
+        // boundaries, and a space for each byte keeps every offset.
+        text.replace_range(tag.clone(), &" ".repeat(tag.len()));
+        push(tag);
+    }
+    for run in runs(&text) {
+        for (from, to) in addresses(&text[run.clone()]) {
+            push(run.start + from..run.start + to);
+        }
+    }
+    spans
+}
+
 /// Maximal runs of non-space text.
 fn runs(source: &str) -> Vec<Range<usize>> {
     let mut runs = Vec::new();
