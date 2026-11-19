@@ -1,0 +1,17 @@
+---
+source: crates/slopvac-report/tests/snapshots_all_formats.rs
+expression: "rendered(Format::Text)"
+---
+docs/guide.md:9:1 error core:ai-residue.chat-leakage Remove the chat reply that leaked into the document.
+docs/guide.md:4:12 warning core:prose-inflation.slop-lexicon Replace 'delve' with a plain verb.
+docs/guide.md:12:40 suggestion core:orwell.not-un Say 'unclear' without the 'not un' double negative.
+docs/guide.md: FAIL score 88.5
+docs/guide.md: ai-residue: 0.243 errors and warnings per 100 words exceeds the budget of 0
+README.md: PASS score 100.0
+src/app.py:1:1 warning core:docs-discipline.document-length The comment block runs 80 words; keep it under 60.
+src/app.py: UNCHECKED [vale-not-found] Vale is not installed, so the Vale-backed rules did not run.
+src/app.py: PASS score 94.0
+dossiers/ça & <é>.md:2:7 warning core:prose-inflation.slop-lexicon Replace "wörld" <b>& `x` | y
+dossiers/ça & <é>.md: PASS score 88.5
+notice[directory-entries-skipped]: Skipped 4 files under node_modules.
+3 documents, 4 findings (1 errors, 2 warnings, 1 suggestions), score 93.0: FAIL

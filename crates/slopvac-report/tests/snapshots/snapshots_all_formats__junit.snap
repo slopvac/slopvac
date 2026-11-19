@@ -1,0 +1,24 @@
+---
+source: crates/slopvac-report/tests/snapshots_all_formats.rs
+expression: "rendered(Format::Junit)"
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="slopvac" tests="9" failures="1">
+  <testsuite name="docs/guide.md" tests="4" failures="1">
+    <testcase classname="docs/guide.md" name="core:ai-residue.chat-leakage 9:1"><system-out>9:1 error core:ai-residue.chat-leakage: Remove the chat reply that leaked into the document.</system-out></testcase>
+    <testcase classname="docs/guide.md" name="core:prose-inflation.slop-lexicon 4:12"><system-out>4:12 warning core:prose-inflation.slop-lexicon: Replace &#39;delve&#39; with a plain verb.</system-out></testcase>
+    <testcase classname="docs/guide.md" name="core:orwell.not-un 12:40"><system-out>12:40 suggestion core:orwell.not-un: Say &#39;unclear&#39; without the &#39;not un&#39; double negative.</system-out></testcase>
+    <testcase classname="docs/guide.md" name="gate"><failure type="gate" message="ai-residue: 0.243 errors and warnings per 100 words exceeds the budget of 0">ai-residue: 0.243 errors and warnings per 100 words exceeds the budget of 0</failure></testcase>
+  </testsuite>
+  <testsuite name="README.md" tests="1" failures="0">
+    <testcase classname="README.md" name="gate"></testcase>
+  </testsuite>
+  <testsuite name="src/app.py" tests="2" failures="0">
+    <testcase classname="src/app.py" name="core:docs-discipline.document-length 1:1"><system-out>1:1 warning core:docs-discipline.document-length: The comment block runs 80 words; keep it under 60.</system-out></testcase>
+    <testcase classname="src/app.py" name="gate"></testcase>
+  </testsuite>
+  <testsuite name="dossiers/ça &amp; &lt;é&gt;.md" tests="2" failures="0">
+    <testcase classname="dossiers/ça &amp; &lt;é&gt;.md" name="core:prose-inflation.slop-lexicon 2:7"><system-out>2:7 warning core:prose-inflation.slop-lexicon: Replace &quot;wörld&quot; &lt;b&gt;&amp; `x` | y�</system-out></testcase>
+    <testcase classname="dossiers/ça &amp; &lt;é&gt;.md" name="gate"></testcase>
+  </testsuite>
+</testsuites>
