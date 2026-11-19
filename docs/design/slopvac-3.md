@@ -95,7 +95,7 @@ When 3.0 ships, a bead tracks the replies on #252 to #257 and the Slack thread.
 
 pydantic models defined the 2.x schema. In 3.0, Rust types generate the JSON Schema, which is published per API major version.
 
-- **IDs:** namespaced as `<pack>:<id>`. Built-ins live in `core`. Short names still work where they are unambiguous.
+- **IDs:** namespaced as `<plugin>:<id>`. Built-ins live in `core`. Short names still work where they are unambiguous.
 - **Rules:**
   - A typed `match:` block (`tokens`, `pattern`, `substitution`, `metric`, `structure`, `capitalization`, `vocabulary`, `judgement`).
   - Fields for `exclude_blocks`, `contexts`, `applies_to`, and named exception detectors.
@@ -120,12 +120,12 @@ From lowest priority to highest: core defaults, styles, the genre chain, `extend
 
 ### Packs and plugins
 
-- **Data packs** hold rules, styles, genres, terms, declarative taggers, and prime snippets. They contain no code. A `slopvac-pack.toml` manifest declares `slopvac_api`.
+- **Data packs** hold rules, styles, genres, terms, declarative taggers, and prime snippets. They contain no code. A `slopvac-plugin.toml` manifest declares `slopvac_api`.
 - **Code plugins** speak JSON-RPC 2.0 over stdio. Framing follows LSP. The `initialize` handshake exchanges capabilities. A Python SDK ships with them, and a conformance suite tests them.
   - Hook points: taggers, extractors, reporters, harness recipes, fixers, scorers, and model providers.
   - Python plugins run in their own environment.
 - **Distribution:** OCI artifacts on GHCR or any registry is the primary channel. Release archives, local folders, and git pinned to a commit also work.
-- **Lockfile:** `.slopvac/packs.lock` records the version, source, and digest.
+- **Lockfile:** `.slopvac/plugins.lock` records the version, source, and digest.
 - **Signatures:** minisign signatures ship as manifest layers. Publisher keys are listed in the index.
 - **Trust:**
   - The plugin host refuses to load an untrusted code plugin. slopvac lists each one with the command that trusts it.

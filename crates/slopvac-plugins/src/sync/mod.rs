@@ -1,5 +1,5 @@
 //! `slopvac plugins sync`, `status` and the CI lock check (contract:
-//! `docs/contract/packs.md` section 7, threat model sections 5 and 6.5).
+//! `docs/contract/plugins.md` section 7, threat model sections 5 and 6.5).
 //!
 //! This module is a library. The CLI (`slopvac-8l4.12`) picks the data
 //! directory and the network mode, builds a [`Syncer`] and prints the result.
@@ -37,7 +37,7 @@
 //! cache lacks; a repeat sync makes no request for pack content (it still
 //! fetches the revocation list). Offline mode
 //! ([`Network::Offline`]) uses nothing else and fails with
-//! [`SyncError::OfflinePackMissing`] (`offline-pack-missing`), naming the pack
+//! [`SyncError::OfflinePackMissing`] (`offline-plugin-missing`), naming the pack
 //! and the digest. A cached tree that no longer matches its record is removed
 //! (threat model E8): online it is installed again, offline sync exits 2.
 //!
@@ -461,10 +461,10 @@ impl<'a> Syncer<'a> {
             .iter()
             .filter(|l| l.media_type != MEDIA_STATEMENT && l.media_type != MEDIA_MINISIG);
         let (Some(layer), None) = (payload.next(), payload.next()) else {
-            return Err(layout("a pack has exactly one content layer"));
+            return Err(layout("a plugin has exactly one content layer"));
         };
         if layer.media_type != MEDIA_PACK_LAYER {
-            return Err(layout("the content layer is not a pack archive"));
+            return Err(layout("the content layer is not a plugin archive"));
         }
         if layer.size > self.limits.compressed_bytes {
             return Err(layout("the content layer exceeds the archive size limit"));
@@ -472,7 +472,7 @@ impl<'a> Syncer<'a> {
         if let Some(path) = self.store.blob(&layer.digest, layer.size) {
             return Ok(Acquired::Archive(path));
         }
-        let client = self.client(pack, "pack archive")?;
+        let client = self.client(pack, "plugin archive")?;
         let mut tmp = self.store.blob_tempfile()?;
         client
             .pull_blob(&reference, layer, tmp.as_file_mut())
@@ -918,13 +918,13 @@ pub fn update_notices(
             let mut lines = Vec::new();
             if let Some(v) = &o.update {
                 lines.push(format!(
-                    "pack {}: {} is available (locked {}); run `slopvac plugins update`",
+                    "plugin {}: {} is available (locked {}); run `slopvac plugins update`",
                     o.id, v, o.locked
                 ));
             }
             if let Some(v) = o.newest.as_ref().filter(|v| Some(*v) != o.update.as_ref()) {
                 lines.push(format!(
-                    "pack {}: {} is available but outside the configured range; change the range to use it",
+                    "plugin {}: {} is available but outside the configured range; change the range to use it",
                     o.id, v
                 ));
             }

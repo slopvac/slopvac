@@ -27,8 +27,8 @@
     "config": {
       "$ref": "#/$defs/Config"
     },
-    "packs": {
-      "$ref": "#/$defs/Packs"
+    "plugins": {
+      "$ref": "#/$defs/Plugins"
     },
     "trust": {
       "$ref": "#/$defs/Trust"
@@ -45,7 +45,7 @@
     "update",
     "offline",
     "config",
-    "packs",
+    "plugins",
     "trust",
     "directories"
   ],
@@ -208,7 +208,7 @@
       },
       "additionalProperties": false
     },
-    "Pack": {
+    "LockedPlugin": {
       "type": "object",
       "properties": {
         "id": {
@@ -233,7 +233,7 @@
       },
       "additionalProperties": false
     },
-    "Packs": {
+    "Plugins": {
       "type": "object",
       "properties": {
         "lockfile": {
@@ -263,7 +263,7 @@
           "description": "One entry per locked plugin, sorted by id. Empty unless the lockfile status is `ok`.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Pack"
+            "$ref": "#/$defs/LockedPlugin"
           }
         }
       },

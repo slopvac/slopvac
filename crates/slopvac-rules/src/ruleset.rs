@@ -18,7 +18,7 @@ use crate::model::{Category, LocalRuleId, MatchKind, ProfileName, Rule, Scope, W
 pub const MAX_RULE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 
 // Budget names in `docs/contract/policies.md` section 1.9 and their constants:
-// `pack-files` is `MAX_PACK_FILES`, `pack-bytes` is `MAX_PACK_BYTES` and `pack-entries` is
+// `plugin-files` is `MAX_PACK_FILES`, `plugin-bytes` is `MAX_PACK_BYTES` and `plugin-entries` is
 // `MAX_PACK_ENTRIES`.
 
 /// The most rule or category files one pack directory may load, after files that are the same
@@ -46,7 +46,7 @@ pub struct LoadedRule {
 }
 
 impl LoadedRule {
-    /// The qualified id, `<pack>:<category>.<rule>`.
+    /// The qualified id, `<plugin>:<category>.<rule>`.
     #[must_use]
     pub fn id(&self) -> &RuleId {
         &self.id
@@ -439,7 +439,7 @@ fn load_rules(
             }
         }
         let id = RuleId::new(format!("{pack}:{category}.{local}"))
-            .expect("pack, category and rule ids are valid slugs");
+            .expect("plugin, category and rule ids are valid slugs");
         loaded.push(LoadedRule {
             id,
             category: category.clone(),

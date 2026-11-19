@@ -7,7 +7,7 @@
   "required": ["schema_version"],
   "$defs": {
     "LocalRuleId": {
-      "description": "Rule id inside its category. The qualified RuleId is <pack>:<category>.<id>, built from the pack manifest, the category id and this id.",
+      "description": "Rule id inside its category. The qualified RuleId is <plugin>:<category>.<id>, built from the plugin manifest, the category id and this id.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$"
     },
@@ -274,7 +274,7 @@
       "patternProperties": {"^x-": true}
     },
     "Citation": {
-      "description": "Where the rule's idea comes from, so a reader can argue with it. Not the runtime RuleProvenance, which names the pack that supplied a rule.",
+      "description": "Where the rule's idea comes from, so a reader can argue with it. Not the runtime RuleProvenance, which names the plugin that supplied a rule.",
       "type": "object",
       "properties": {
         "source": {"type": "string", "minLength": 1},

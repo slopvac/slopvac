@@ -12,7 +12,7 @@ const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
 fn pack_text(id: &str, source: &str, extra: &str) -> String {
     format!(
-        "\n[[packs]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\nsource = '{source}'\ndigest = \"{D1}\"\n{extra}"
+        "\n[[plugins]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\nsource = '{source}'\ndigest = \"{D1}\"\n{extra}"
     )
 }
 
@@ -37,7 +37,7 @@ fn locked(id: &str) -> LockedPack {
 
 #[test]
 fn input_at_the_byte_cap_is_read_and_one_byte_more_is_refused() {
-    let base = "schema_version = 3\npacks = []\n";
+    let base = "schema_version = 3\nplugins = []\n";
     let pad = |total: usize| format!("{base}#{}\n", "a".repeat(total - base.len() - 2));
     assert!(Lockfile::parse(&pad(MAX_LOCK_BYTES)).is_ok());
     let err = Lockfile::parse(&pad(MAX_LOCK_BYTES + 1)).unwrap_err();
@@ -59,7 +59,7 @@ fn pack_count_cap() {
     );
     assert_eq!(
         Lockfile::parse(&many(MAX_PACKS + 1)).unwrap_err().pointer,
-        "/packs"
+        "/plugins"
     );
 }
 
@@ -74,7 +74,7 @@ fn requires_count_cap_holds_without_quadratic_work() {
         Lockfile::parse(&requires(MAX_REQUIRES + 1))
             .unwrap_err()
             .pointer,
-        "/packs/0/requires"
+        "/plugins/0/requires"
     );
     // 30,000 entries is about 200 KB of input: the cap answers at once.
     assert!(Lockfile::parse(&requires(30_000)).is_err());
@@ -88,7 +88,7 @@ fn string_length_cap() {
         Lockfile::parse(&source(MAX_STRING_BYTES + 1))
             .unwrap_err()
             .pointer,
-        "/packs/0/source"
+        "/plugins/0/source"
     );
 }
 
@@ -100,7 +100,7 @@ fn string_length_cap_covers_requires_items() {
     );
     assert_eq!(
         Lockfile::parse(&text).unwrap_err().pointer,
-        "/packs/0/requires/0"
+        "/plugins/0/requires/0"
     );
 }
 
@@ -155,7 +155,7 @@ fn every_hostile_class_is_escaped_in_an_invalid_id_error() {
 #[test]
 fn every_hostile_class_is_escaped_in_an_unknown_key_error() {
     for (toml_escape, shown) in HOSTILE {
-        let text = format!("schema_version = 3\npacks = []\n\"k{toml_escape}\" = 1\n");
+        let text = format!("schema_version = 3\nplugins = []\n\"k{toml_escape}\" = 1\n");
         let err = Lockfile::parse(&text).unwrap_err();
         assert_plain(&err.message);
         assert!(err.message.contains(&format!("k{shown}")), "{shown}: {err}");
@@ -166,10 +166,10 @@ fn every_hostile_class_is_escaped_in_an_unknown_key_error() {
 fn every_hostile_class_is_escaped_in_an_invalid_not_before_error() {
     for (toml_escape, shown) in HOSTILE {
         let sig = format!(
-            "[packs.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00{toml_escape}Z\"\n"
+            "[plugins.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00{toml_escape}Z\"\n"
         );
         let err = Lockfile::parse(&lock_text("packs/x", &sig)).unwrap_err();
-        assert_eq!(err.pointer, "/packs/0/signature/not_before");
+        assert_eq!(err.pointer, "/plugins/0/signature/not_before");
         assert_plain(&err.message);
         assert!(
             err.message.contains(&format!("00{shown}Z")),
@@ -193,7 +193,7 @@ fn not_before_value_error_is_escaped_when_parsed_directly() {
 fn a_long_rejected_value_is_cut_in_the_error() {
     let text = lock_text("packs/x", "").replace(D1, &"f".repeat(100_000));
     let err = Lockfile::parse(&text).unwrap_err();
-    assert_eq!(err.pointer, "/packs/0/digest");
+    assert_eq!(err.pointer, "/plugins/0/digest");
     assert!(err.message.len() < 700, "{} bytes", err.message.len());
     assert!(err.message.ends_with("..."));
 }
@@ -277,7 +277,7 @@ fn new_rejects_a_version_over_the_string_cap() {
     pack.version = Version::parse(&format!("1.0.0-{}", "a".repeat(MAX_STRING_BYTES))).unwrap();
     assert_eq!(
         Lockfile::new(vec![pack]).unwrap_err().pointer,
-        "/packs/0/version"
+        "/plugins/0/version"
     );
 }
 
@@ -287,7 +287,7 @@ fn a_file_with_a_version_over_the_string_cap_is_refused() {
     let text = lock_text("packs/x", "").replace("\"1.0.0\"", &format!("\"{long}\""));
     assert_eq!(
         Lockfile::parse(&text).unwrap_err().pointer,
-        "/packs/0/version"
+        "/plugins/0/version"
     );
 }
 
@@ -333,7 +333,7 @@ fn api_version_stops_at_the_largest_toml_integer() {
     pack.slopvac_api = MAX_API_VERSION + 1;
     assert_eq!(
         Lockfile::new(vec![pack]).unwrap_err().pointer,
-        "/packs/0/slopvac_api"
+        "/plugins/0/slopvac_api"
     );
 }
 
@@ -355,7 +355,7 @@ fn sources_with_user_info_are_rejected() {
         git.as_str(),
     ] {
         let err = Lockfile::parse(&lock_text(source, "")).unwrap_err();
-        assert_eq!(err.pointer, "/packs/0/source", "{source}");
+        assert_eq!(err.pointer, "/plugins/0/source", "{source}");
         assert!(!err.message.contains("pw"), "{err}");
     }
 }
@@ -379,7 +379,7 @@ fn new_rejects_build_metadata_in_a_version() {
     pack.version = Version::parse("1.0.0+build").unwrap();
     assert_eq!(
         Lockfile::new(vec![pack]).unwrap_err().pointer,
-        "/packs/0/version"
+        "/plugins/0/version"
     );
 }
 
@@ -389,7 +389,7 @@ fn new_rejects_api_zero() {
     pack.slopvac_api = 0;
     assert_eq!(
         Lockfile::new(vec![pack]).unwrap_err().pointer,
-        "/packs/0/slopvac_api"
+        "/plugins/0/slopvac_api"
     );
 }
 
@@ -400,21 +400,21 @@ fn new_rejects_repeated_requires() {
     pack.requires = vec![dep.clone(), dep];
     assert_eq!(
         Lockfile::new(vec![pack]).unwrap_err().pointer,
-        "/packs/0/requires/1"
+        "/plugins/0/requires/1"
     );
 }
 
 #[test]
 fn new_rejects_too_many_packs() {
     let packs = (0..=MAX_PACKS).map(|i| locked(&format!("p{i}"))).collect();
-    assert_eq!(Lockfile::new(packs).unwrap_err().pointer, "/packs");
+    assert_eq!(Lockfile::new(packs).unwrap_err().pointer, "/plugins");
 }
 
 #[test]
 fn duplicate_id_pointer_uses_the_position_in_the_input() {
     // Sorted, `z z a` would put the second `z` at index 2.
     let packs = vec![locked("z"), locked("z"), locked("a")];
-    assert_eq!(Lockfile::new(packs).unwrap_err().pointer, "/packs/1/id");
+    assert_eq!(Lockfile::new(packs).unwrap_err().pointer, "/plugins/1/id");
 }
 
 #[test]
@@ -425,7 +425,7 @@ fn duplicate_id_in_a_file_names_the_second_entry_in_file_order() {
         pack_text("z", "packs/x", ""),
         pack_text("a", "packs/x", "")
     );
-    assert_eq!(Lockfile::parse(&text).unwrap_err().pointer, "/packs/1/id");
+    assert_eq!(Lockfile::parse(&text).unwrap_err().pointer, "/plugins/1/id");
 }
 
 #[test]
@@ -441,7 +441,7 @@ fn a_constructed_lock_writes_text_the_reader_accepts() {
 #[test]
 fn new_refuses_an_entry_with_the_id_core() {
     let err = Lockfile::new(vec![locked("a"), locked("core")]).unwrap_err();
-    assert_eq!(err.pointer, "/packs/1/id");
+    assert_eq!(err.pointer, "/plugins/1/id");
 }
 
 #[test]
@@ -451,7 +451,7 @@ fn parse_refuses_an_entry_with_the_id_core() {
         pack_text("core", "packs/x", "")
     ))
     .unwrap_err();
-    assert_eq!(err.pointer, "/packs/0/id");
+    assert_eq!(err.pointer, "/plugins/0/id");
 }
 
 #[test]

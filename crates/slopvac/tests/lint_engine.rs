@@ -797,11 +797,11 @@ fn a_config_below_a_glob_target_is_checked_even_when_it_excludes_every_match() {
 
 #[test]
 fn an_unwired_command_says_so_without_any_internal_id() {
-    let out = slopvac().arg("packs").output().expect("run");
+    let out = slopvac().arg("onboard").output().expect("run");
     assert_eq!(out.status.code(), Some(2));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
-        "error[command-not-wired]: `slopvac packs` is not available in this build yet.\n"
+        "error[command-not-wired]: `slopvac onboard` is not available in this build yet.\n"
     );
 }
 

@@ -1,7 +1,7 @@
 //! The index document: typed model, strict parser and canonical writer.
 //!
-//! The shape is `schemas/v3/pack-index.schema.json`; the semantics are in
-//! `docs/contract/pack-index.md`.
+//! The shape is `schemas/v3/plugin-index.schema.json`; the semantics are in
+//! `docs/contract/plugin-index.md`.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -28,7 +28,7 @@ pub const MAX_API: u64 = u32::MAX as u64;
 pub const MAX_VERSION_NUMBER: u64 = 999_999_999;
 
 /// A rejected index document or entry. `pointer` is a JSON Pointer into the
-/// document (for example `/packs/0/source`); it is empty for the whole document.
+/// document (for example `/plugins/0/source`); it is empty for the whole document.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{}: {message}", if pointer.is_empty() { "/" } else { pointer })]
 pub struct IndexError {
@@ -252,17 +252,17 @@ impl Index {
     pub fn new(mut packs: Vec<IndexEntry>) -> Result<Self, IndexError> {
         if packs.len() > MAX_ENTRIES {
             return Err(IndexError::new(
-                "/packs",
+                "/plugins",
                 format!("more than {MAX_ENTRIES} entries"),
             ));
         }
         let mut seen = HashSet::with_capacity(packs.len());
         for (i, entry) in packs.iter().enumerate() {
-            entry.validate(&format!("/packs/{i}"))?;
+            entry.validate(&format!("/plugins/{i}"))?;
             if !seen.insert((&entry.namespace, &entry.id)) {
                 return Err(IndexError::new(
-                    format!("/packs/{i}/id"),
-                    format!("pack `{}/{}` is listed twice", entry.namespace, entry.id),
+                    format!("/plugins/{i}/id"),
+                    format!("plugin `{}/{}` is listed twice", entry.namespace, entry.id),
                 ));
             }
         }
@@ -289,7 +289,7 @@ impl Index {
     pub fn to_json(&self) -> String {
         let out = IndexOut {
             schema_version: 3,
-            packs: self.packs.iter().map(EntryOut::from).collect(),
+            plugins: self.packs.iter().map(EntryOut::from).collect(),
         };
         let mut text = serde_json::to_string_pretty(&out).unwrap_or_default();
         text.push('\n');
@@ -300,7 +300,7 @@ impl Index {
 #[derive(Serialize)]
 struct IndexOut<'a> {
     schema_version: u8,
-    packs: Vec<EntryOut<'a>>,
+    plugins: Vec<EntryOut<'a>>,
 }
 
 #[derive(Serialize)]

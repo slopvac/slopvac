@@ -230,15 +230,15 @@ models in `slopvac.report` and `slopvac.model`.
 | `Finding.line` | preserve | Same keys. `column` and `end_column` now follow the position rules of slopvac-8l4.2.11. `end_column` is present only with `span`. |
 | `Finding.column` | preserve | Same keys. `column` and `end_column` now follow the position rules of slopvac-8l4.2.11. `end_column` is present only with `span`. |
 | `Finding.end_column` | preserve | Same keys. `column` and `end_column` now follow the position rules of slopvac-8l4.2.11. `end_column` is present only with `span`. |
-| `Finding.rule_id` | preserve | Same key. The value uses the form `<pack>:<id>`, such as `core:orwell.not-un`. 2.x emitted `<category>.<id>`. |
+| `Finding.rule_id` | preserve | Same key. The value uses the form `<plugin>:<id>`, such as `core:orwell.not-un`. 2.x emitted `<category>.<id>`. |
 | `Finding.category` | preserve | Unchanged. |
 | `Finding.severity` | preserve | Unchanged. |
 | `Finding.message` | preserve | Unchanged. |
 | `Finding.ai_signal` | preserve | Unchanged. |
 | `Finding.matched_text` | preserve | Unchanged. |
 | `Finding.replacement` | rename | Becomes `fix.edits`, a list of byte-range edits instead of one replacement string. |
-| `Finding.ste_ref` | remove | Rule metadata, not finding data. `slopvac explain` prints it, and `provenance` names the pack and source. |
-| `Finding.orwell_ref` | remove | Rule metadata, not finding data. `slopvac explain` prints it, and `provenance` names the pack and source. |
+| `Finding.ste_ref` | remove | Rule metadata, not finding data. `slopvac explain` prints it, and `provenance` names the plugin and source. |
+| `Finding.orwell_ref` | remove | Rule metadata, not finding data. `slopvac explain` prints it, and `provenance` names the plugin and source. |
 | `AiRegisterSummary.findings` | preserve | Unchanged. |
 | `AiRegisterSummary.errors` | preserve | Unchanged. |
 | `AiRegisterSummary.warnings` | preserve | Unchanged. |

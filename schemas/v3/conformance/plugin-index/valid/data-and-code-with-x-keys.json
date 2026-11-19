@@ -1,0 +1,35 @@
+{
+  "schema_version": 3,
+  "plugins": [
+    {
+      "id": "acme-style",
+      "namespace": "acme",
+      "name": "Acme style",
+      "description": "House style for Acme docs.",
+      "version": "1.2.0",
+      "kind": "data",
+      "slopvac_api": 1,
+      "source": "oci://ghcr.io/acme/slopvac-pack-acme-style",
+      "publisher_key": {
+        "key_id": "0123456789ABCDEF",
+        "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "id": "lint-bridge",
+      "namespace": "beta",
+      "name": "Acme style",
+      "description": "House style for Acme docs.",
+      "version": "0.3.1-rc.1",
+      "kind": "code",
+      "slopvac_api": 2,
+      "source": "git+https://github.com/beta/lint-bridge@0123456789abcdef0123456789abcdef01234567",
+      "publisher_key": {
+        "key_id": "0123456789ABCDEF",
+        "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "x-note": "ignored"
+    }
+  ],
+  "x-built-by": "job"
+}

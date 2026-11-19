@@ -62,7 +62,7 @@ impl PackId {
             Ok(Self(value))
         } else {
             Err(IdError {
-                kind: "pack id",
+                kind: "plugin id",
                 value,
             })
         }
@@ -94,7 +94,7 @@ impl fmt::Display for PackId {
     }
 }
 
-/// Qualified rule identifier `<pack>:<id>`.
+/// Qualified rule identifier `<plugin>:<id>`.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -115,7 +115,7 @@ impl RuleId {
         }
     }
 
-    /// The full `<pack>:<id>` text.
+    /// The full `<plugin>:<id>` text.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0

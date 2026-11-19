@@ -13,7 +13,7 @@ Commands:
   explain      Explain a rule.
   rules        List rules.
   init         Write a commented slopvac.toml and set up agent steering.
-  doctor       Check the binary, configuration and pack health.
+  doctor       Check the binary, configuration and plugin health.
   self         Manage this installation.
   lsp          Run the language server on standard input and output.
   migrate      Migrate a 2.x project to 3.0: config, inline directives and steering blocks
@@ -24,8 +24,7 @@ Commands:
   prime        Print guidance for agents, one topic at a time
   completions  Print a shell completion script.
   man          Write man pages.
-  plugins      Manage plugins and packs: sync, trust, update.
-  packs        List installed rule packs.
+  plugins      Manage data plugins and code plugins: sync, trust, update.
   onboard      Print the agent onboarding text.
   reference    Generate or check the rules reference.
   report       Preview or submit an issue report.

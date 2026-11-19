@@ -32,11 +32,11 @@ def site_dir(tmp_path: Path) -> Path:
     (schemas / "a.schema.json").write_text(
         json.dumps({"$id": f"{PREFIX}a.schema.json", "description": "d", "$defs": {}})
     )
-    for name in ("plugin-protocol", "pack-manifest", "config", "common"):
+    for name in ("plugin-protocol", "plugin-manifest", "config", "common"):
         shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
     packs = tmp_path / "packs" / "demo"
     packs.mkdir(parents=True)
-    (packs / "slopvac-pack.toml").write_text(
+    (packs / "slopvac-plugin.toml").write_text(
         'schema_version = 3\nid = "demo"\nversion = "1.0.0"\nslopvac_api = 1\n'
         'kind = "data"\n'
     )
@@ -51,7 +51,7 @@ def site_dir(tmp_path: Path) -> Path:
             "--config", str(config),
             "--rules-dir", str(rules),
             "--schemas-dir", str(schemas),
-            "--packs-dir", str(tmp_path / "packs"),
+            "--plugins-dir", str(tmp_path / "packs"),
             "--starlight", str(site),
         ]
     )  # fmt: skip
@@ -106,8 +106,8 @@ def test_stale_generated_pages_are_removed_on_rebuild(site_dir: Path) -> None:
 
 
 def test_pack_pages_keep_the_published_packs_urls(site_dir: Path) -> None:
-    # /v3/plugins/packs/ lists the pack, and each pack sits one level below it.
-    assert "(demo/)" in _page(site_dir, "plugins/packs/index.md")
-    page = _page(site_dir, "plugins/packs/demo/index.md")
+    # /v3/plugins/bundled/ lists the plugin, and each plugin sits one level below it.
+    assert "(demo/)" in _page(site_dir, "plugins/bundled/index.md")
+    page = _page(site_dir, "plugins/bundled/demo/index.md")
     assert "(../../manifest/)" in page
     assert "(../../protocol/)" in page

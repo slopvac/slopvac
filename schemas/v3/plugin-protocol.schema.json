@@ -1179,7 +1179,7 @@
       ]
     },
     "PluginDeclaration": {
-      "description": "Pre-spawn declaration. The plugin manifest embeds it, and the manifest is part of the content that `slopvac plugins trust` hashes (pack-manifest schema, owner slopvac-8l4.2.4). The host decides whether to spawn from this declaration, never from the initialize reply. network true allows the plugin to open connections, and the host does not spawn it in offline mode. hooks lists every hook the plugin may offer. features lists the features it may require or request. The initialize reply must stay inside the declaration.",
+      "description": "Pre-spawn declaration. The plugin manifest embeds it, and the manifest is part of the content that `slopvac plugins trust` hashes (plugin-manifest schema, owner slopvac-8l4.2.4). The host decides whether to spawn from this declaration, never from the initialize reply. network true allows the plugin to open connections, and the host does not spawn it in offline mode. hooks lists every hook the plugin may offer. features lists the features it may require or request. The initialize reply must stay inside the declaration.",
       "type": "object",
       "properties": {
         "network": {

@@ -159,7 +159,7 @@ def sources(tmp_path: Path) -> dict[str, Path]:
         )
     )
     (schemas / "b.schema.json").write_text(_schema("b.schema.json"))
-    for name in ("plugin-protocol", "pack-manifest", "common"):
+    for name in ("plugin-protocol", "plugin-manifest", "common"):
         shutil.copy(REAL_SCHEMAS / f"{name}.schema.json", schemas)
     (schemas / "config.schema.json").write_text(
         _schema("config.schema.json", **FIXTURE_CONFIG)
@@ -167,7 +167,7 @@ def sources(tmp_path: Path) -> dict[str, Path]:
     packs = tmp_path / "packs"
     for pack_id, body in (("style-pack", DATA_PACK), ("plug", PLUGIN_PACK)):
         (packs / pack_id).mkdir(parents=True)
-        (packs / pack_id / "slopvac-pack.toml").write_text(body)
+        (packs / pack_id / "slopvac-plugin.toml").write_text(body)
     contract = tmp_path / "contract"
     contract.mkdir()
     (contract / "plugin-protocol.md").write_text(CONTRACT)
@@ -192,7 +192,7 @@ def _run(sources: dict[str, Path], *extra: str) -> int:
             "--config", str(sources["config"]),
             "--rules-dir", str(sources["rules"]),
             "--schemas-dir", str(sources["schemas"]),
-            "--packs-dir", str(sources["packs"]),
+            "--plugins-dir", str(sources["packs"]),
             "--contract-dir", str(sources["contract"]),
             *extra,
         ]
@@ -354,7 +354,7 @@ def test_pack_page_renders_a_data_pack_from_its_manifest(
     sources: dict[str, Path],
 ) -> None:
     _run(sources)
-    page = _read(sources, "plugins/packs/style-pack/index.md")
+    page = _read(sources, "plugins/bundled/style-pack/index.md")
     assert page.startswith("# style-pack\n\nStyles and terms.\n")
     assert "| Version | 1.2.0 |" in page
     assert "| Kind | data |" in page
@@ -368,7 +368,7 @@ def test_pack_page_renders_a_plugin_pack_declaration(
     sources: dict[str, Path],
 ) -> None:
     _run(sources)
-    page = _read(sources, "plugins/packs/plug/index.md")
+    page = _read(sources, "plugins/bundled/plug/index.md")
     assert "Command: `python run.py --fast`" in page
     assert "Network access: yes" in page
     assert "- `HOME_DIR`" in page
@@ -380,7 +380,7 @@ def test_pack_page_renders_a_plugin_pack_declaration(
 
 def test_packs_index_links_every_pack_page(sources: dict[str, Path]) -> None:
     assert _run(sources) == 0
-    index = _read(sources, "plugins/packs/index.md")
+    index = _read(sources, "plugins/bundled/index.md")
     assert "| [plug](plug/index.md) | 0.1.0 | code | A \\| plugin. |" in index
     assert (
         "| [style-pack](style-pack/index.md) | 1.2.0 | data | Styles and terms. |"
@@ -391,16 +391,16 @@ def test_packs_index_links_every_pack_page(sources: dict[str, Path]) -> None:
 def test_manifest_that_breaks_the_schema_stops_the_build(
     sources: dict[str, Path],
 ) -> None:
-    path = sources["packs"] / "plug" / "slopvac-pack.toml"
+    path = sources["packs"] / "plug" / "slopvac-plugin.toml"
     path.write_text(PLUGIN_PACK.replace('kind = "code"', 'kind = "data"'))
-    with pytest.raises(SystemExit, match="plug.*slopvac-pack.toml.*does not match"):
+    with pytest.raises(SystemExit, match="plug.*slopvac-plugin.toml.*does not match"):
         _run(sources)
 
 
 def test_two_packs_with_one_id_stop_the_build(sources: dict[str, Path]) -> None:
     (sources["packs"] / "copy").mkdir()
-    (sources["packs"] / "copy" / "slopvac-pack.toml").write_text(PLUGIN_PACK)
-    with pytest.raises(SystemExit, match="pack id plug also appears"):
+    (sources["packs"] / "copy" / "slopvac-plugin.toml").write_text(PLUGIN_PACK)
+    with pytest.raises(SystemExit, match="plugin id plug also appears"):
         _run(sources)
 
 
@@ -408,7 +408,7 @@ def test_no_packs_gives_an_index_that_says_so(sources: dict[str, Path]) -> None:
     shutil.rmtree(sources["packs"])
     sources["packs"].mkdir()
     assert _run(sources) == 0
-    assert "No packs are bundled" in _read(sources, "plugins/packs/index.md")
+    assert "No plugins are bundled" in _read(sources, "plugins/bundled/index.md")
 
 
 def test_committed_schemas_contract_and_example_pack_render() -> None:
@@ -421,7 +421,7 @@ def test_committed_schemas_contract_and_example_pack_render() -> None:
     packs = plugin_pages.generate_packs(
         schemas, ROOT / "packages" / "slopvac-plugin" / "examples"
     )
-    assert "Command: `python plugin.py`" in packs["plugins/packs/fence-tagger/index.md"]
+    assert "Command: `python plugin.py`" in packs["plugins/bundled/fence-tagger/index.md"]
 
 
 def test_schemas_are_written_at_their_published_id_path(
@@ -679,15 +679,15 @@ _CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
 def _hostile(sources: dict[str, Path], body: str = HOSTILE_PACK) -> str:
     folder = sources["packs"] / "hostile"
     folder.mkdir()
-    (folder / "slopvac-pack.toml").write_text(body)
+    (folder / "slopvac-plugin.toml").write_text(body)
     assert _run(sources) == 0
-    return _read(sources, "plugins/packs/hostile/index.md")
+    return _read(sources, "plugins/bundled/hostile/index.md")
 
 
 def test_no_hostile_manifest_value_leaves_raw_html_outside_code_spans(
     sources: dict[str, Path],
 ) -> None:
-    page = _hostile(sources) + _read(sources, "plugins/packs/index.md")
+    page = _hostile(sources) + _read(sources, "plugins/bundled/index.md")
     for line in page.splitlines():
         assert "<" not in _CODE_SPAN.sub("", line), line
 
@@ -717,7 +717,7 @@ def test_markdown_in_a_pack_description_is_escaped(sources: dict[str, Path]) -> 
     )
     assert f"\n\n{expected}\n" in page
     cell_text = expected.replace("|", "\\|")
-    assert f"| {cell_text} |" in _read(sources, "plugins/packs/index.md")
+    assert f"| {cell_text} |" in _read(sources, "plugins/bundled/index.md")
 
 
 def test_a_pipe_in_a_table_value_cannot_split_the_cell(
@@ -737,9 +737,9 @@ def test_provides_lists_declared_keys_and_ignores_extensions(
         'terms = ["terms/a.toml", "terms/b.toml"]',
         'terms = ["terms/a.toml"]\nx-count = 3\nx-files = ["secret.toml"]',
     )
-    (sources["packs"] / "style-pack" / "slopvac-pack.toml").write_text(body)
+    (sources["packs"] / "style-pack" / "slopvac-plugin.toml").write_text(body)
     assert _run(sources) == 0
-    page = _read(sources, "plugins/packs/style-pack/index.md")
+    page = _read(sources, "plugins/bundled/style-pack/index.md")
     assert "- styles: `styles/*.toml`\n- terms: `terms/a.toml`\n" in page
     assert "x-count" not in page
     assert "secret.toml" not in page
@@ -755,11 +755,11 @@ def test_a_pack_named_index_does_not_replace_the_packs_index(
     folder.mkdir()
     body = DATA_PACK.replace('id = "style-pack"', 'id = "index"')
     body = body.replace('[[requires]]\nid = "plug"\nversion = "^0.1"\n', "")
-    (folder / "slopvac-pack.toml").write_text(body)
+    (folder / "slopvac-plugin.toml").write_text(body)
     assert _run(sources) == 0
-    assert _read(sources, "plugins/packs/index/index.md").startswith("# index\n")
-    index = _read(sources, "plugins/packs/index.md")
-    assert index.startswith("# Packs\n")
+    assert _read(sources, "plugins/bundled/index/index.md").startswith("# index\n")
+    index = _read(sources, "plugins/bundled/index.md")
+    assert index.startswith("# Bundled plugins\n")
     assert "| [index](index/index.md) |" in index
 
 
@@ -822,7 +822,7 @@ def test_a_homepage_that_is_not_a_plain_http_url_stops_the_build(
     folder = sources["packs"] / "hostile"
     folder.mkdir()
     body = HOSTILE_PACK.replace("https://example.test/docs", homepage)
-    (folder / "slopvac-pack.toml").write_text(body)
+    (folder / "slopvac-plugin.toml").write_text(body)
     with pytest.raises(SystemExit, match="homepage"):
         _run(sources)
 
@@ -850,9 +850,9 @@ def test_hostile_values_stay_inside_their_code_spans_in_the_site_pages(
     body = HOSTILE_PACK.replace("MIT`<img src=x onerror=alert(1)>", "](../")
     folder = sources["packs"] / "hostile"
     folder.mkdir()
-    (folder / "slopvac-pack.toml").write_text(body)
+    (folder / "slopvac-plugin.toml").write_text(body)
     assert _run(sources, "--starlight", str(_site(sources))) == 0
-    page = _starlight_page(sources, "plugins/packs/hostile/index.md")
+    page = _starlight_page(sources, "plugins/bundled/hostile/index.md")
     assert "| License | `](../` |\n| Homepage | `https://example.test/docs` |" in page
     parser = MarkdownIt("commonmark", {"html": True}).enable("table")
     tokens = [t for block in parser.parse(page) for t in (block.children or [block])]
@@ -865,9 +865,9 @@ def test_link_like_text_in_a_code_span_is_not_checked_or_rewritten(
     sources: dict[str, Path],
 ) -> None:
     body = DATA_PACK.replace("styles/*.toml", "a](nothing.md)")
-    (sources["packs"] / "style-pack" / "slopvac-pack.toml").write_text(body)
+    (sources["packs"] / "style-pack" / "slopvac-plugin.toml").write_text(body)
     assert _run(sources, "--starlight", str(_site(sources))) == 0
-    page = _starlight_page(sources, "plugins/packs/style-pack/index.md")
+    page = _starlight_page(sources, "plugins/bundled/style-pack/index.md")
     assert "- styles: `a](nothing.md)`" in page
 
 

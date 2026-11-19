@@ -47,12 +47,12 @@ pub trait Presets {
     /// The settings of a genre and of the genres it extends, lowest first, in layer `genre`.
     fn genre_chain(&self, name: &str) -> Vec<Vec<Setting>>;
 
-    /// A config that a pack ships, named by an `extends = ["<pack>:<name>"]` entry.
+    /// A config that a pack ships, named by an `extends = ["<plugin>:<name>"]` entry.
     fn pack_config(&self, name: &str) -> Option<PackFile>;
 }
 
 // STUB(slopvac-8l4.4.10): no pack supplies anything until the pack loader lands, so styles,
-// genres and `<pack>:<name>` extends targets all resolve to nothing.
+// genres and `<plugin>:<name>` extends targets all resolve to nothing.
 /// A [`Presets`] with no packs behind it.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoPresets;

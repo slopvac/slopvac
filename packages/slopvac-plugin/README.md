@@ -36,20 +36,20 @@ What the SDK does for you:
 
 Spans are UTF-8 byte offsets. `Document.span(start, end)` converts character offsets, and `Document.data` holds the bytes. It raises `ValueError` for offsets that [the position contract](../../docs/contract/positions.md) calls invalid: outside the text, a start after the end, or between the CR and LF of one CRLF.
 
-`Plugin(network=...)` must equal the `network` value in the pack manifest. The hooks you register must be a subset of the hooks the manifest declares.
+`Plugin(network=...)` must equal the `network` value in the plugin manifest. The hooks you register must be a subset of the hooks the manifest declares.
 
 ## Run the conformance suite
 
 ```sh
 pip install "slopvac-plugin[conformance]"
-slopvac-plugin-conformance --manifest slopvac-pack.toml -- python plugin.py
+slopvac-plugin-conformance --manifest slopvac-plugin.toml -- python plugin.py
 ```
 
 `python -m slopvac_plugin.conformance` runs the same command. The suite starts the plugin command, drives cases P1 to P19 from section 12.2 of the contract over standard input and output, and prints a report. The plugin can use any language. The suite checks every message the plugin sends against `plugin-protocol.schema.json`.
 
 | Option | Meaning |
 |---|---|
-| `--manifest FILE` | Pack manifest (TOML) or declaration (JSON). Enables P19. |
+| `--manifest FILE` | Plugin manifest (TOML) or declaration (JSON). Enables P19. |
 | `--inputs FILE` | JSON with sample requests for each hook kind. |
 | `--only P1,P13` | Run only these cases. |
 | `--timeout`, `--exit-timeout` | Seconds to wait for a reply and for an exit. |
@@ -95,10 +95,10 @@ The suite sends built-in documents, findings and recipe options. To test with yo
 
 ## Example
 
-[`examples/fence-tagger`](examples/fence-tagger) is a tagger built on the SDK with a pack manifest. Run the suite against it from that directory:
+[`examples/fence-tagger`](examples/fence-tagger) is a tagger built on the SDK with a plugin manifest. Run the suite against it from that directory:
 
 ```sh
-slopvac-plugin-conformance --manifest slopvac-pack.toml --inputs conformance-inputs.json -- python plugin.py
+slopvac-plugin-conformance --manifest slopvac-plugin.toml --inputs conformance-inputs.json -- python plugin.py
 ```
 
 It passes P1 to P15 and P19. P16 to P18 skip because it declares no provider, recipe or fixer.

@@ -12,8 +12,8 @@
       {"layer": "project", "file": "slopvac.toml", "status": "ok", "error": null}
     ]
   },
-  "packs": {
-    "lockfile": {"file": ".slopvac/packs.lock", "status": "ok", "error": null},
+  "plugins": {
+    "lockfile": {"file": ".slopvac/plugins.lock", "status": "ok", "error": null},
     "items": [
       {"id": "acme.style", "version": "1.2.0", "kind": "data", "state": "recorded"},
       {"id": "acme.tagger", "version": "0.4.1", "kind": "code", "state": "tampered"}

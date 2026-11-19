@@ -176,7 +176,7 @@ Confirmed 2026-11-14. An adversarial review proposed a smaller 3.0.0 with new pl
 
 Rust types generate versioned JSON Schemas, published per API major version.
 
-- IDs are namespaced as `<pack>:<id>`, with built-ins in `core`.
+- IDs are namespaced as `<plugin>:<id>`, with built-ins in `core`.
 - Rules use a typed `match:` block, and `tiers` is removed.
 - Profiles set gate thresholds and a severity shift only.
 - Styles are ordered presets with `extends` and declared `conflicts`.

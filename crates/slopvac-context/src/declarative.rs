@@ -1,5 +1,5 @@
 //! Declarative taggers from data packs: the `tagger` artifact of
-//! `schemas/v3/tagger.schema.json`, specified in `docs/contract/packs.md`, section 5.
+//! `schemas/v3/tagger.schema.json`, specified in `docs/contract/plugins.md`, section 5.
 //!
 //! A tagger with `match` sets one context tag on each text unit where a `match` entry
 //! matches and no `unless` entry matches. It reads the text of the unit and nothing else, so

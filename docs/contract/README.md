@@ -7,8 +7,8 @@ The schemas in schemas/v3 are generated from the Rust types by slopvac-schemas. 
 
 - `schemas/v3/<artifact>.schema.json` uses kebab-case names. The artifacts are:
   `common`, `lint-report`, `rule`, `category`, `config`, `frontmatter`,
-  `pack-manifest`, `style`, `genre`, `tagger`, `blocklist`, `terms`, `packs-lock`,
-  `pack-index`, `doctor-report` and `plugin-protocol`.
+  `plugin-manifest`, `style`, `genre`, `tagger`, `blocklist`, `terms`, `plugins-lock`,
+  `plugin-index`, `doctor-report` and `plugin-protocol`.
 - `schemas/v3/conformance/<artifact>/valid/` and `invalid/` hold instances in native
   TOML, YAML or JSON.
 - `invalid/cases.toml` maps each invalid file to a JSON pointer where it must fail.
@@ -18,9 +18,9 @@ The schemas in schemas/v3 are generated from the Rust types by slopvac-schemas. 
 ## Specs
 
 - [doctor.md](doctor.md) specifies the `doctor` command and its JSON report.
-- [pack-index.md](pack-index.md) specifies the plugin index and `plugins search`.
+- [plugin-index.md](plugin-index.md) specifies the plugin index and `plugins search`.
 - [policies.md](policies.md) sets the network, accessibility and API lifecycle policies.
-- [packs.md](packs.md) specifies data plugins and code plugins, the `slopvac plugins` commands, namespaces, signing keys, styles, genres, taggers, terms and the lockfile.
+- [plugins.md](plugins.md) specifies data plugins and code plugins, the `slopvac plugins` commands, namespaces, signing keys, styles, genres, taggers, terms and the lockfile.
 - [profiles.md](profiles.md) maps 2.x profiles and tiers onto the 3.0 model.
 - [compat/](compat/) holds the 2.x to 3.0 compatibility matrix and its dispositions.
 

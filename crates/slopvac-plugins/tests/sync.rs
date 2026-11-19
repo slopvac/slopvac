@@ -180,9 +180,9 @@ fn lock_text(entries: &[String]) -> Lockfile {
 
 fn oci_entry(id: &str, registry: &str, digest: &str, key_id: &str) -> String {
     format!(
-        "\n[[packs]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+        "\n[[plugins]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
          source = \"oci://{registry}/acme/style:1.2.0\"\ndigest = \"{digest}\"\n\n\
-         [packs.signature]\nkey_id = \"{key_id}\"\nnot_before = \"{NOT_BEFORE}\"\n"
+         [plugins.signature]\nkey_id = \"{key_id}\"\nnot_before = \"{NOT_BEFORE}\"\n"
     )
 }
 
@@ -404,7 +404,7 @@ fn a_lock_entry_without_a_signature_is_refused() {
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let mut entry = oci_entry("style", &server.registry(), &p.digest, &p.key_id);
-    entry.truncate(entry.find("\n[packs.signature]").unwrap());
+    entry.truncate(entry.find("\n[plugins.signature]").unwrap());
     let env = Env::new();
     let c = client();
     let err = run(
@@ -513,7 +513,7 @@ fn offline_sync_from_a_cold_cache_names_the_missing_pack_and_digest() {
     let env = Env::new();
     let lock = oci_lock("127.0.0.1:9", &p);
     let err = run(&env, Network::Offline, &policy("acme", &[&key]), &lock).unwrap_err();
-    assert_eq!(err.code(), "offline-pack-missing");
+    assert_eq!(err.code(), "offline-plugin-missing");
     assert_eq!(err.exit_code(), 2);
     let text = err.to_string();
     assert!(text.contains("style") && text.contains(&p.digest), "{text}");
@@ -538,7 +538,7 @@ fn offline_sync_rechecks_a_cached_blob_and_refuses_a_swapped_one() {
         .join(p.digest.trim_start_matches("sha256:"));
     fs::write(&blob, b"{}").unwrap();
     let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
-    assert_eq!(err.code(), "offline-pack-missing", "{err:?}");
+    assert_eq!(err.code(), "offline-plugin-missing", "{err:?}");
 }
 
 fn tamper_edit(tree: &Path) {
@@ -629,7 +629,7 @@ fn status_reports_missing_then_installed() {
 
 fn path_archive_entry(digest: &str) -> String {
     format!(
-        "\n[[packs]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+        "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
          source = \"dist/style.tar.gz\"\ndigest = \"{digest}\"\n"
     )
 }
@@ -689,7 +689,7 @@ fn a_path_source_directory_is_checked_by_tree_hash_and_used_in_place() {
     let hash = slopvac_plugins::extract::tree_hash(&dir).unwrap();
     let entry = |digest: &str| {
         format!(
-            "\n[[packs]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
+            "\n[[plugins]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
              source = \"packs/local\"\ndigest = \"{digest}\"\n"
         )
     };
@@ -745,8 +745,8 @@ fn update_notices_separate_in_range_updates_from_out_of_range_releases() {
     assert_eq!(
         update_notices(&lock, &ranges, &available),
         vec![
-            "pack style: 1.3.0 is available (locked 1.2.0); run `slopvac plugins update`",
-            "pack style: 2.0.0 is available but outside the configured range; change the range to use it",
+            "plugin style: 1.3.0 is available (locked 1.2.0); run `slopvac plugins update`",
+            "plugin style: 2.0.0 is available but outside the configured range; change the range to use it",
         ]
     );
     let none: BTreeMap<PackId, VersionReq> = BTreeMap::new();
@@ -774,7 +774,7 @@ fn available_versions_lists_semver_tags_in_order() {
 
 fn archive_entry(id: &str, url: &str, digest: &str) -> String {
     format!(
-        "\n[[packs]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+        "\n[[plugins]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
          source = \"{url}\"\ndigest = \"{digest}\"\n"
     )
 }
@@ -846,10 +846,10 @@ fn a_path_source_through_a_link_is_refused() {
     let env = Env::new();
     let outside = tempfile::tempdir().unwrap();
     fs::write(outside.path().join("pack.toml"), b"x").unwrap();
-    fs::create_dir_all(env.project.path().join("packs")).unwrap();
+    fs::create_dir_all(env.project.path().join("plugins")).unwrap();
     std::os::unix::fs::symlink(outside.path(), env.project.path().join("packs/link")).unwrap();
     let lock = lock_text(&[format!(
-        "\n[[packs]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
+        "\n[[plugins]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
          source = \"packs/link\"\ndigest = \"sha256:{}\"\n",
         "00".repeat(32)
     )]);
@@ -962,7 +962,7 @@ fn an_https_archive_with_the_wrong_digest_installs_and_caches_nothing() {
     env.assert_no_trees();
     // Nothing was cached either: an offline run finds the pack missing.
     let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
-    assert_eq!(err.code(), "offline-pack-missing", "{err:?}");
+    assert_eq!(err.code(), "offline-plugin-missing", "{err:?}");
 }
 
 #[test]
@@ -1066,7 +1066,7 @@ fn tm26_a_revoked_manifest_digest_fails_sync_before_any_request_for_it() {
     .unwrap_err();
     assert!(matches!(err, SyncError::Revoked { .. }), "{err:?}");
     assert_eq!(err.exit_code(), 2);
-    assert_eq!(err.code(), "pack-revoked");
+    assert_eq!(err.code(), "plugin-revoked");
     assert_eq!(server.requests().len(), 0);
     env.assert_no_trees();
 }

@@ -37,7 +37,7 @@ Method. Section 2 lists assets, section 3 actors, and section 4 boundaries and f
 | A1 | The user's account, files and credentials | A code plugin runs with the user's rights. |
 | A2 | Registry and provider credentials | Tokens for GHCR or a model service can publish or spend. |
 | A3 | The trust store | It decides which code runs. |
-| A4 | The lockfile `.slopvac/packs.lock` | It pins what a project loads. |
+| A4 | The lockfile `.slopvac/plugins.lock` | It pins what a project loads. |
 | A5 | The publisher keys and the key policy | They decide who may speak for a plugin. |
 | A6 | The content-addressed cache and managed environments | The host runs code from here. |
 | A7 | Lint verdicts and exit codes | A gate that a plugin can pass or fail on its own is worthless. |
@@ -93,7 +93,7 @@ This includes a process that writes to a destination directory, its parent or a 
 | F8 | Plugin to the file system | Anything the user may touch. |
 | F9 | Plugin to the network | Anything. 3.0 has no enforcement. |
 | F10 | Host to a provider plugin | Document text for a review. |
-| F11 | Project files to slopvac | Documents, `slopvac.toml`, `.slopvac/packs.lock`, recipe targets. |
+| F11 | Project files to slopvac | Documents, `slopvac.toml`, `.slopvac/plugins.lock`, recipe targets. |
 
 Boundaries. B1 is hostile. B2 is a program chosen by a file in the user's home directory. B3 is trusted. B4 is trusted only as far as its author (section 9, R1). B5 is hostile: a project is data from whoever can open a pull request.
 
@@ -135,7 +135,7 @@ The verifier runs these steps in order, and the first failure ends the check:
 
 A layer that the statement does not list makes the artifact invalid. The minisign trusted comment is signed, but the host does not use it to decide anything.
 
-After verification the lockfile pins the **manifest digest**, and records the `keyId` and `notBefore` of the signature in its `[packs.signature]` table. `sync` fetches by that digest, never by tag, and verifies the signature on every run. It fails with `SignatureDiffersFromLock` when the key id or `notBefore` differs from the lock. A registry cannot change what a pinned digest resolves to. Referrers are not used. GHCR lacks the referrers API (`slopvac-8l4.2.17`), and the layer approach works everywhere.
+After verification the lockfile pins the **manifest digest**, and records the `keyId` and `notBefore` of the signature in its `[plugins.signature]` table. `sync` fetches by that digest, never by tag, and verifies the signature on every run. It fails with `SignatureDiffersFromLock` when the key id or `notBefore` differs from the lock. A registry cannot change what a pinned digest resolves to. Referrers are not used. GHCR lacks the referrers API (`slopvac-8l4.2.17`), and the layer approach works everywhere.
 
 What the signature does not cover: the registry tag (a tag is mutable and only the digest counts), anything outside the artifact, and the behavior of a signed plugin. A signature says who published the bytes. It says nothing about whether they are safe.
 

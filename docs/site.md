@@ -22,7 +22,7 @@ Everything below the API major lives under `/v3/`, so a future major version get
 | `/v3/rules/<category>/` | Category index. |
 | `/v3/styles/`, `/v3/genres/` | Style presets and genres. |
 | `/v3/plugins/protocol/` | Plugin protocol v1 reference. |
-| `/v3/plugins/packs/` | Pack reference. |
+| `/v3/plugins/bundled/` | Reference pages for the bundled plugins. |
 | `/schemas/v3/<name>.schema.json` | Published JSON Schema files. |
 | `/api/` | Rustdoc for the workspace crates. |
 

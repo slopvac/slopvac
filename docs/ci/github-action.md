@@ -31,9 +31,9 @@ jobs:
 
 The `reporter` input takes `auto`, `review`, `annotations` or `none`. With `auto`, the action tries a review with suggestions on a pull request from the same repository that Dependabot did not open. The action cannot see the token's permissions, so if reviewdog fails to post the review, for example on a read-only token, it logs a warning and posts annotations instead. In every other pull request it uses annotations, which need no write permission. On pushes it uses a check run. A reviewdog install or post failure only warns; the slopvac exit code stays the gate.
 
-When the project has a `.slopvac/packs.lock` lockfile, a separate `Sync packs` step runs `slopvac plugins sync` before the lint. A failed sync fails the action.
+When the project has a `.slopvac/plugins.lock` lockfile, a separate `Sync plugins` step runs `slopvac plugins sync` before the lint. A failed sync fails the action.
 
-The lint steps always run with `--offline`, so they never reach the network. Installing slopvac and syncing packs still do.
+The lint steps always run with `--offline`, so they never reach the network. Installing slopvac and syncing plugins still do.
 
 Set `fail-on-findings: false` to report without failing the job. That softens only exit 1. An incomplete check (exit 2), any other exit status and a crash from a signal always fail the job.
 

@@ -466,7 +466,7 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
         let hint = if id.contains(':') {
             ""
         } else {
-            " Rule IDs carry a pack prefix in 3.0, such as `core:ste-words.spelling`; `slopvac migrate` rewrites 2.x IDs."
+            " Rule IDs carry a plugin prefix in 3.0, such as `core:ste-words.spelling`; `slopvac migrate` rewrites 2.x IDs."
         };
         return Err(CliError::new(
             "unknown-rule",

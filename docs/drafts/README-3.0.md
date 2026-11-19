@@ -198,7 +198,7 @@ plugin speaks JSON-RPC 2.0 over stdio and can add taggers, extractors, reporters
 and model providers.
 
 Packs are OCI artifacts on GHCR or any registry. Release archives, local folders, and git commits
-also work. `.slopvac/packs.lock` records the version, source, and digest of each pack.
+also work. `.slopvac/plugins.lock` records the version, source, and digest of each pack.
 
 ### Registry logins
 

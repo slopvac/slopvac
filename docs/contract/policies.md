@@ -61,8 +61,8 @@ In offline mode:
 
 - A command that needs the network exits 2 with the code `offline-network-needed` and the message `offline: <command> needs the network`. It does not retry or fall back.
 - Plugins that the lockfile pins and that sit in the local cache load normally.
-- A plugin missing from the cache exits 2 with the code `offline-pack-missing`. The message names the plugin and the digest.
-- `plugins sync` succeeds from the cache alone. It verifies digests against `.slopvac/packs.lock` and reports each missing plugin.
+- A plugin missing from the cache exits 2 with the code `offline-plugin-missing`. The message names the plugin and the digest.
+- `plugins sync` succeeds from the cache alone. It verifies digests against `.slopvac/plugins.lock` and reports each missing plugin.
 
 These opt-outs apply to the update check only:
 
@@ -112,8 +112,8 @@ Owners: `slopvac-8l4.12.6`, `slopvac-8l4.9.6`, `slopvac-8l4.11.3`.
 - CI has one explicit exception: the `SLOPVAC_TRUST` environment variable, which `slopvac-8l4.9.4` defines. A person writes it into the CI configuration, and it names what to trust. It is configuration, not a prompt, and no tool sets it on its own.
 - OCI artifacts carry minisign signatures as manifest layers. Slopvac verifies the signature before extraction, and a missing or invalid signature makes `sync` fail with exit 2.
 - Release archives verify against the release signature (`self update`).
-- The binary compiles in two keys. The release key signs release archives and the revocation list, and it is the revocation root. The plugins key signs first-party plugins in the `slopvac` namespace and the first-party plugin index. The release key can revoke the plugins key ([packs.md](packs.md), section 10).
-- The namespace `slopvac` verifies against the compiled plugins key only, and no user pin applies to it. `core` is reserved for the built-in plugin and fails closed ([packs.md](packs.md), section 9).
+- The binary compiles in two keys. The release key signs release archives and the revocation list, and it is the revocation root. The plugins key signs first-party plugins in the `slopvac` namespace and the first-party plugin index. The release key can revoke the plugins key ([plugins.md](plugins.md), section 10).
+- The namespace `slopvac` verifies against the compiled plugins key only, and no user pin applies to it. `core` is reserved for the built-in plugin and fails closed ([plugins.md](plugins.md), section 9).
 - Local folders and git commits carry no signature. A git pin names a commit, and the trust hash covers the content.
 
 Owners: `slopvac-8l4.9.4`, `slopvac-8l4.9.5`, `slopvac-8l4.9.11`.
@@ -173,9 +173,9 @@ A per-file cap does not bound the work of many files. Two aggregate budgets boun
 | `extends` graph, files applied | `extends-files` | 256 | files | `config-budget-exceeded` | A real graph has fewer than ten files. A file that more than one file extends counts once for each time it applies, because it applies each time. |
 | `extends` graph, bytes read | `extends-bytes` | 8 MiB | bytes | `config-budget-exceeded` | A real graph is under 100 KiB. Eight files at the 1 MiB cap fit. |
 | `extends` graph, bytes of config applied | `extends-applied-bytes` | 64 MiB | bytes | `config-budget-exceeded` | A real graph applies under 100 KiB. A file that more than one file extends counts its size once for each time it applies, so 64 MiB stops a small graph from repeating a large file hundreds of times. |
-| Plugin directory, rule and category files | `pack-files` | 256 | files | `rules-budget-exceeded` | The built-in core has 23 files. |
-| Plugin directory, entries of any kind | `pack-entries` | 1024 | entries | `rules-budget-exceeded` | Bounds directory scanning before the loader resolves any file. |
-| Plugin directory, bytes read | `pack-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The built-in core is about 450 KiB. |
+| Plugin directory, rule and category files | `plugin-files` | 256 | files | `rules-budget-exceeded` | The built-in core has 23 files. |
+| Plugin directory, entries of any kind | `plugin-entries` | 1024 | entries | `rules-budget-exceeded` | Bounds directory scanning before the loader resolves any file. |
+| Plugin directory, bytes read | `plugin-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The built-in core is about 450 KiB. |
 
 How the budgets apply:
 
@@ -274,8 +274,8 @@ Owners: `slopvac-8l4.12.1` for CLI messages, `slopvac-8l4.4.7` for config diagno
 | Config file | `schema_version` (integer) | `slopvac.toml` root | `config` | `slopvac-8l4.2.5` |
 | Front matter block | `v` | `slopvac:` key | `frontmatter` | `slopvac-8l4.2.5` |
 | Rule, category, style, genre, and terms files | `schema_version` (integer) | File root | One per artifact | `slopvac-8l4.2.3`, `slopvac-8l4.2.4` |
-| Plugin manifest | `slopvac_api` (integer) | `slopvac-pack.toml` | `pack-manifest` | `slopvac-8l4.2.4` |
-| Lockfile | `schema_version` (integer) | `.slopvac/packs.lock` | `packs-lock` | `slopvac-8l4.2.4` |
+| Plugin manifest | `slopvac_api` (integer) | `slopvac-plugin.toml` | `plugin-manifest` | `slopvac-8l4.2.4` |
+| Lockfile | `schema_version` (integer) | `.slopvac/plugins.lock` | `plugins-lock` | `slopvac-8l4.2.4` |
 | Plugin protocol | `protocolVersion` (integer) | `initialize` request and response | `plugin-protocol` | `slopvac-8l4.2.6` |
 
 The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/common.schema.json`. The scaffold bead `slopvac-8l4.2.19` freezes their shape, and `slopvac-8l4.2.12` owns their meaning (section 3.2).
@@ -337,7 +337,7 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 **3.0 requirement.**
 
 - The exit codes keep their meaning. Slopvac uses no other exit code.
-- Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `pack-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation.
+- Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `plugin-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation.
 - No code is reused, and no code changes meaning. A code that stops occurring stays in the documentation, marked retired.
 - Registry logins have two codes. Slopvac asks for a login only when a registry demands one.
   - `credential-helper-untrusted`: the credential helper exists only in a directory that is not trusted (section 1.7 paths: relative to the project, or `<external>/<name>`). Slopvac leaves the helper unstarted and sends the request without a login. When the registry allows that, the run continues and the log carries a warning. When the registry demands a login, the operation fails with this code and exits 2. The user tightens the permissions of the directory or signs in with a static `auths` login or the environment variables.
@@ -350,7 +350,7 @@ The `slopvac plugins` group adds this code. Plugin-protocol.md, section 10, list
 
 | Code | Meaning | Exit |
 | --- | --- | --- |
-| `plugin-not-code` | `slopvac plugins trust` or `slopvac plugins untrust` named a data plugin. A data plugin has no executable content, so trust does not apply to it ([packs.md](packs.md), section 8). The command records nothing. | 2 |
+| `plugin-not-code` | `slopvac plugins trust` or `slopvac plugins untrust` named a data plugin. A data plugin has no executable content, so trust does not apply to it ([plugins.md](plugins.md), section 8). The command records nothing. | 2 |
 
 Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnostics, `slopvac-8l4.12.1` for the CLI.
 
@@ -427,7 +427,7 @@ The 3.0 binary must pass these tests. Each runs the installed binary with an iso
 | ID | Test | Owner |
 |---|---|---|
 | N1 | With the update check disabled, `lint`, `validate`, `rules`, `explain`, `prime`, `reference`, and `claims` each finish under a network sandbox that fails any connection. | `slopvac-8l4.12.1` |
-| N2 | `--offline`, `SLOPVAC_OFFLINE=1`, and `[network] offline = true` each make `plugins sync` exit 2 with the code `offline-pack-missing` when the cache lacks a plugin. A command with no network path exits 2 with `offline-network-needed`. | `slopvac-8l4.9.3` |
+| N2 | `--offline`, `SLOPVAC_OFFLINE=1`, and `[network] offline = true` each make `plugins sync` exit 2 with the code `offline-plugin-missing` when the cache lacks a plugin. A command with no network path exits 2 with `offline-network-needed`. | `slopvac-8l4.9.3` |
 | N3 | `SLOPVAC_OFFLINE=1` with `[network] offline = false` in the config stays offline. The CLI help lists no flag that turns offline mode off. | `slopvac-8l4.12.1` |
 | N4 | With a populated cache and a lockfile, `plugins sync --offline` succeeds and verifies digests. | `slopvac-8l4.9.3` |
 | N5 | No update check starts under `CI`, `NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK`, `DO_NOT_TRACK`, `update_check = false`, or `--offline`. The test extends the 2.x test `test_environment_suppression_prevents_refresh_and_notice`. | `slopvac-8l4.12.4` |

@@ -1,5 +1,5 @@
 //! `slopvac plugins update`: move the lock to the newest versions the config
-//! ranges allow (contract: `docs/contract/packs.md` section 7; threat model
+//! ranges allow (contract: `docs/contract/plugins.md` section 7; threat model
 //! sections 5 and 6.5; policies.md exit codes).
 //!
 //! This module is a library. The CLI (`slopvac-8l4.12`) reads the config
@@ -33,7 +33,7 @@
 //!
 //! The new lock is written in canonical form through a temporary file and a
 //! rename, only when it differs from the file, so a second run changes nothing.
-//! The lock is `.slopvac/packs.lock` under the project root. Update reaches it
+//! The lock is `.slopvac/plugins.lock` under the project root. Update reaches it
 //! through a directory handle that never follows a link, reads at most 1 MiB,
 //! and holds an exclusive lock on a guard file ([`GUARD_PATH`]) from read to
 //! write.
@@ -72,15 +72,15 @@ use crate::sign::{Expectation, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, fetch_
 use crate::sync::{ARTIFACT_TYPE_PACK, MEDIA_PACK_LAYER, Network, SyncError};
 
 /// The lock file, relative to the project root.
-pub const LOCK_PATH: &str = ".slopvac/packs.lock";
+pub const LOCK_PATH: &str = ".slopvac/plugins.lock";
 /// How long update waits for the guard lock before it gives up.
 pub const GUARD_TIMEOUT: Duration = Duration::from_secs(30);
 /// The guard file next to the lock. An exclusive lock on it serialises updates.
 /// It stays after the run; keep it out of version control.
-pub const GUARD_PATH: &str = ".slopvac/packs.lock.guard";
+pub const GUARD_PATH: &str = ".slopvac/plugins.lock.guard";
 const LOCK_DIR: &str = ".slopvac";
-const LOCK_NAME: &str = "packs.lock";
-const GUARD_NAME: &str = "packs.lock.guard";
+const LOCK_NAME: &str = "plugins.lock";
+const GUARD_NAME: &str = "plugins.lock.guard";
 
 /// Why update could not run at all. Every variant makes the command exit 2.
 /// A refusal of one pack is not an error; see [`Outcome::Refused`].
@@ -105,7 +105,7 @@ pub enum UpdateError {
     )]
     UnsupportedOnWindows(String),
     /// A named pack is not in the lock.
-    #[error("pack `{0}` is not in the lock")]
+    #[error("plugin `{0}` is not in the lock")]
     UnknownPack(PackId),
     /// The lock file is unreadable, too large or invalid.
     #[error("lock file {}: {message}", esc(path))]
@@ -256,7 +256,7 @@ impl<'a> Updater<'a> {
         self
     }
 
-    /// Updates `.slopvac/packs.lock` under `project_root`.
+    /// Updates `.slopvac/plugins.lock` under `project_root`.
     ///
     /// All lock I/O goes through a directory handle for the project root and
     /// never follows a link: a `.slopvac` directory or lock file that is a
@@ -651,10 +651,10 @@ fn resolve(
         .iter()
         .filter(|l| l.media_type != MEDIA_STATEMENT && l.media_type != MEDIA_MINISIG);
     let (Some(layer), None) = (payload.next(), payload.next()) else {
-        return Err(layout("a pack has exactly one content layer"));
+        return Err(layout("a plugin has exactly one content layer"));
     };
     if layer.media_type != MEDIA_PACK_LAYER {
-        return Err(layout("the content layer is not a pack archive"));
+        return Err(layout("the content layer is not a plugin archive"));
     }
 
     let namespace = repository.repository.split('/').next().unwrap_or_default();

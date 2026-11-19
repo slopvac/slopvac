@@ -142,10 +142,10 @@ mod tests {
 
     #[test]
     fn parses_tag_digest_and_port_forms() {
-        let r = Reference::parse("ghcr.io/slopvac/packs/core:1.2.3").unwrap();
+        let r = Reference::parse("ghcr.io/slopvac/plugins/core:1.2.3").unwrap();
         assert_eq!(
             (r.registry.as_str(), r.repository.as_str()),
-            ("ghcr.io", "slopvac/packs/core")
+            ("ghcr.io", "slopvac/plugins/core")
         );
         assert_eq!(r.target, Target::Tag("1.2.3".into()));
         let r = Reference::parse(

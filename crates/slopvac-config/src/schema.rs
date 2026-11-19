@@ -169,7 +169,7 @@ fn is_rule_key(s: &str) -> bool {
 
 fn pack_id() -> Shape {
     Shape::Pattern {
-        name: "pack id (lowercase letters, digits and hyphens)",
+        name: "plugin id (lowercase letters, digits and hyphens)",
         check: is_pack_id,
     }
 }
@@ -190,7 +190,7 @@ fn plugin_id() -> Shape {
 
 fn reference() -> Shape {
     Shape::Pattern {
-        name: "name, bare or as `<pack>:<name>`",
+        name: "name, bare or as `<plugin>:<name>`",
         check: is_ref,
     }
 }
@@ -669,7 +669,7 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                             &p,
                             format!("`{}` is not a valid {key_name}", e.key),
                             "not valid here".into(),
-                            Some("use `<pack>:<id>` with a lowercase pack, or a bare name".into()),
+                            Some("use `<plugin>:<id>` with a lowercase plugin id, or a bare name".into()),
                         );
                     }
                     check(ctx, &e.node, value, &p);

@@ -424,8 +424,8 @@ SECTIONS = (
     ("Genres", "genres/index.md"),
     ("Built-in terms", "terms/index.md"),
     ("Plugin protocol", "plugins/protocol.md"),
-    ("Pack manifest", "plugins/manifest.md"),
-    ("Packs", "plugins/packs/index.md"),
+    ("Plugin manifest", "plugins/manifest.md"),
+    ("Bundled plugins", "plugins/bundled/index.md"),
     ("Command line", "cli/index.md"),
     ("Error codes", "reference/error-codes.md"),
     ("Configuration", "config/index.md"),
@@ -529,7 +529,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=SITE_CONFIG)
     parser.add_argument("--rules-dir", type=Path, default=RULES_DIR)
     parser.add_argument("--schemas-dir", type=Path, default=SCHEMAS_DIR)
-    parser.add_argument("--packs-dir", type=Path, default=PACKS_DIR)
+    parser.add_argument("--plugins-dir", type=Path, default=PACKS_DIR)
     parser.add_argument("--contract-dir", type=Path, default=CONTRACT_DIR)
     parser.add_argument(
         "--check",
@@ -545,7 +545,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     site = load_site(args.config)
     pages = build(
-        site, args.rules_dir, args.schemas_dir, args.packs_dir, args.contract_dir
+        site, args.rules_dir, args.schemas_dir, args.plugins_dir, args.contract_dir
     )
     problems = broken_links(pages) + schema_id_problems(pages, site)
     if args.check:

@@ -8,178 +8,94 @@
 # reason = "Why the break is acceptable."
 # approved_by = "reviewer name"
 
-# The plugins amendment: one plugins group, kinds data and code, reserved core.
+# The plugins amendment: one plugins group, kinds data and code, reserved core, pack names renamed to plugin.
 [[allow]]
 file = "config.schema.json"
 pointer = "/properties/packs"
 kind = "property-removed"
-reason = "The plugins amendment (slopvac-8l4.2.73) merges the separate packs array into the one plugins array. v3 is unreleased, so no shipped config uses it."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames every pack key to plugins: the config packs array merges into the one plugins array, and the doctor report key packs becomes plugins. v3 is unreleased, so nothing reads the old key."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
 file = "config.schema.json"
 pointer = "/properties/plugins/items/$ref(config.schema.json#/$defs/Source)/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
 kind = "pattern-changed"
-reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id or namespace may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
 file = "config.schema.json"
 pointer = "/$defs/Source/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
 kind = "pattern-changed"
-reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id or namespace may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
 file = "doctor-report.schema.json"
-pointer = "/properties/packs/$ref(doctor-report.schema.json#/$defs/Packs)/properties/items/items/$ref(doctor-report.schema.json#/$defs/Pack)/properties/kind/enum"
-kind = "enum-narrowed"
-reason = "The plugins amendment (slopvac-8l4.2.73) renames the kind `plugin` to `code`, because plugin is now the umbrella term for data and code plugins. v3 is unreleased."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+pointer = "/required/plugins"
+kind = "required-added"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the doctor report key packs to plugins, which stays required. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
 file = "doctor-report.schema.json"
-pointer = "/$defs/Pack/properties/kind/enum"
-kind = "enum-narrowed"
-reason = "The plugins amendment (slopvac-8l4.2.73) renames the kind `plugin` to `code`, because plugin is now the umbrella term for data and code plugins. v3 is unreleased."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+pointer = "/properties/packs"
+kind = "property-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames every pack key to plugins: the config packs array merges into the one plugins array, and the doctor report key packs becomes plugins. v3 is unreleased, so nothing reads the old key."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
 file = "doctor-report.schema.json"
-pointer = "/$defs/Packs/properties/items/items/$ref(doctor-report.schema.json#/$defs/Pack)/properties/kind/enum"
-kind = "enum-narrowed"
-reason = "The plugins amendment (slopvac-8l4.2.73) renames the kind `plugin` to `code`, because plugin is now the umbrella term for data and code plugins. v3 is unreleased."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+pointer = "/$defs/Pack"
+kind = "def-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the doctor report defs Pack and Packs to LockedPlugin and Plugins. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/$defs/Packs"
+kind = "def-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the doctor report defs Pack and Packs to LockedPlugin and Plugins. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
 file = "pack-index.schema.json"
-pointer = "/properties/packs/items/$ref(pack-index.schema.json#/$defs/PackIndexEntry)/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
-kind = "pattern-changed"
-reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id or namespace may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "pack-index.schema.json"
-pointer = "/properties/packs/items/$ref(pack-index.schema.json#/$defs/PackIndexEntry)/properties/namespace/$ref(common.schema.json#/$defs/PluginId)/pattern"
-kind = "pattern-changed"
-reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id or namespace may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "pack-index.schema.json"
-pointer = "/properties/packs/items/$ref(pack-index.schema.json#/$defs/PackIndexEntry)/properties/kind/enum"
-kind = "enum-narrowed"
-reason = "The plugins amendment (slopvac-8l4.2.73) renames the kind `plugin` to `code`, because plugin is now the umbrella term for data and code plugins. v3 is unreleased."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "pack-index.schema.json"
-pointer = "/$defs/PackIndexEntry/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
-kind = "pattern-changed"
-reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id or namespace may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "pack-index.schema.json"
-pointer = "/$defs/PackIndexEntry/properties/namespace/$ref(common.schema.json#/$defs/PluginId)/pattern"
-kind = "pattern-changed"
-reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id or namespace may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "pack-index.schema.json"
-pointer = "/$defs/PackIndexEntry/properties/kind/enum"
-kind = "enum-narrowed"
-reason = "The plugins amendment (slopvac-8l4.2.73) renames the kind `plugin` to `code`, because plugin is now the umbrella term for data and code plugins. v3 is unreleased."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+pointer = ""
+kind = "file-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack schemas to plugin-manifest, plugins-lock and plugin-index, with no alias, by the maintainer's decision. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
 file = "pack-manifest.schema.json"
-pointer = "/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
-kind = "pattern-changed"
-reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id or namespace may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "pack-manifest.schema.json"
-pointer = "/properties/kind/enum"
-kind = "enum-narrowed"
-reason = "The plugins amendment (slopvac-8l4.2.73) renames the kind `plugin` to `code`, because plugin is now the umbrella term for data and code plugins. v3 is unreleased."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "pack-manifest.schema.json"
-pointer = "/allOf/0/if"
-kind = "if-changed"
-reason = "The plugins amendment (slopvac-8l4.2.73) renames the kind `plugin` to `code`, so the plugin table is required for kind = code."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+pointer = ""
+kind = "file-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack schemas to plugin-manifest, plugins-lock and plugin-index, with no alias, by the maintainer's decision. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
 file = "packs-lock.schema.json"
-pointer = "/properties/packs/items/$ref(packs-lock.schema.json#/$defs/Locked)/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
-kind = "pattern-changed"
-reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id or namespace may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "packs-lock.schema.json"
-pointer = "/properties/packs/items/$ref(packs-lock.schema.json#/$defs/Locked)/properties/kind/enum"
-kind = "enum-narrowed"
-reason = "The plugins amendment (slopvac-8l4.2.73) renames the kind `plugin` to `code`, because plugin is now the umbrella term for data and code plugins. v3 is unreleased."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "packs-lock.schema.json"
-pointer = "/$defs/Locked/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
-kind = "pattern-changed"
-reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id or namespace may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "packs-lock.schema.json"
-pointer = "/$defs/Locked/properties/kind/enum"
-kind = "enum-narrowed"
-reason = "The plugins amendment (slopvac-8l4.2.73) renames the kind `plugin` to `code`, because plugin is now the umbrella term for data and code plugins. v3 is unreleased."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+pointer = ""
+kind = "file-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack schemas to plugin-manifest, plugins-lock and plugin-index, with no alias, by the maintainer's decision. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
 file = "config.schema.json"
 pointer = "/conformance/valid/full.toml"
 kind = "corpus-rejected"
-reason = "The plugins amendment (slopvac-8l4.2.73) retires the packs array and the kind `plugin`; the corpus file now uses the plugins array or the kind `code`."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
 file = "doctor-report.schema.json"
 pointer = "/conformance/valid/full.json"
 kind = "corpus-rejected"
-reason = "The plugins amendment (slopvac-8l4.2.73) retires the packs array and the kind `plugin`; the corpus file now uses the plugins array or the kind `code`."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
-file = "pack-index.schema.json"
-pointer = "/conformance/valid/data-and-plugin-with-x-keys.json"
+file = "doctor-report.schema.json"
+pointer = "/conformance/valid/minimal.json"
 kind = "corpus-rejected"
-reason = "The plugins amendment (slopvac-8l4.2.73) retires the packs array and the kind `plugin`; the corpus file now uses the plugins array or the kind `code`."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "pack-manifest.schema.json"
-pointer = "/conformance/valid/plugin-pack.toml"
-kind = "corpus-rejected"
-reason = "The plugins amendment (slopvac-8l4.2.73) retires the packs array and the kind `plugin`; the corpus file now uses the plugins array or the kind `code`."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "pack-manifest.schema.json"
-pointer = "/conformance/valid/plugin-x-keys-closed-tables.toml"
-kind = "corpus-rejected"
-reason = "The plugins amendment (slopvac-8l4.2.73) retires the packs array and the kind `plugin`; the corpus file now uses the plugins array or the kind `code`."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
-
-[[allow]]
-file = "packs-lock.schema.json"
-pointer = "/conformance/valid/full.toml"
-kind = "corpus-rejected"
-reason = "The plugins amendment (slopvac-8l4.2.73) retires the packs array and the kind `plugin`; the corpus file now uses the plugins array or the kind `code`."
-approved_by = "maintainer, relayed by the lead on 2026-11-18"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"

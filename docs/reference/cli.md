@@ -86,7 +86,7 @@ Write a commented slopvac.toml and set up agent steering.
 
 ### `slopvac doctor`
 
-Check the binary, configuration and pack health.
+Check the binary, configuration and plugin health.
 
 | Argument | Description |
 | --- | --- |
@@ -325,17 +325,7 @@ Write man pages.
 
 ### `slopvac plugins`
 
-Manage plugins and packs: sync, trust, update.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac packs`
-
-List installed rule packs.
+Manage data plugins and code plugins: sync, trust, update.
 
 | Argument | Description |
 | --- | --- |

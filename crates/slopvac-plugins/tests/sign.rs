@@ -413,7 +413,7 @@ fn the_requested_id_version_and_type_must_match_the_signed_ones() {
             ..expect()
         },
         Expectation {
-            artifact_type: "application/vnd.slopvac.plugin.v1",
+            artifact_type: "application/vnd.slopvac.pack.v1",
             ..expect()
         },
     ] {

@@ -42,9 +42,9 @@
       }
     ]
   },
-  "packs": {
+  "plugins": {
     "lockfile": {
-      "file": ".slopvac/packs.lock",
+      "file": ".slopvac/plugins.lock",
       "status": "ok",
       "error": null
     },

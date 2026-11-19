@@ -49,7 +49,7 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 
 #### 1.3.1 Plugins
 
-`[[plugins]]` lists every data plugin and code plugin that the project uses, in one array. Each entry has `id`, `source` and an optional `version` requirement. The config does not state the kind: the plugin manifest declares it, and the lockfile records it (packs.md, section 2).
+`[[plugins]]` lists every data plugin and code plugin that the project uses, in one array. Each entry has `id`, `source` and an optional `version` requirement. The config does not state the kind: the plugin manifest declares it, and the lockfile records it (plugins.md, section 2).
 
 - Each `id` appears once. A repeated id is an error at the second entry.
 - `core` is reserved for the built-in plugin, which the binary compiles in. An entry with the id `core` is an error.

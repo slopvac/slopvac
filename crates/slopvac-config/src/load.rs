@@ -695,7 +695,7 @@ impl Loader<'_> {
                 let Some(file) = self.presets.pack_config(name) else {
                     return Err(fail(Refusal::new(
                         Code::ExtendsMissing,
-                        format!("no active pack provides the config `{name}`"),
+                        format!("no active plugin provides the config `{name}`"),
                         None,
                     )));
                 };

@@ -4,7 +4,7 @@
 //! An `allow` names a rule and one exception from that rule's own closed list:
 //!
 //! ```text
-//! <!-- slopvac-allow: rule=<pack>:<category>.<id> reason=<exception> -->
+//! <!-- slopvac-allow: rule=<plugin>:<category>.<id> reason=<exception> -->
 //! ```
 //!
 //! The 3.0 rule id carries its pack. A 2.x id has none and is reported with a pointer to
@@ -351,7 +351,7 @@ pub(crate) fn scan<'a>(
             let Some((rule, reason)) = parse_allow(raw) else {
                 invalid(
                     "invalid suppression; expected \
-                     <!-- slopvac-allow: rule=<pack>:<rule-id> reason=<reason> -->."
+                     <!-- slopvac-allow: rule=<plugin>:<rule-id> reason=<reason> -->."
                         .to_owned(),
                 );
                 continue;
@@ -365,7 +365,7 @@ pub(crate) fn scan<'a>(
             if !rule.contains(':') {
                 invalid(format!(
                     "suppression names {rule}, a 2.x rule id with no pack. Run `slopvac migrate` \
-                     to qualify it as <pack>:{rule}."
+                     to qualify it as <plugin>:{rule}."
                 ));
                 continue;
             }

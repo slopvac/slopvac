@@ -1,0 +1,19 @@
+{
+  "schema_version": 3,
+  "plugins": [
+    {
+      "id": "acme-style",
+      "namespace": "acme",
+      "name": "Acme style",
+      "description": "House style for Acme docs.",
+      "version": "1.2.0",
+      "kind": "data",
+      "slopvac_api": 1,
+      "source": "oci://ghcr.io/acme/slopvac-pack-acme-style",
+      "publisher_key": {
+        "key_id": "0123456789abcdef",
+        "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  ]
+}

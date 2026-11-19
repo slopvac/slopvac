@@ -167,7 +167,7 @@ fn logging_emits_on_stderr_and_leaves_stdout_unchanged() {
 #[test]
 fn unwired_commands_exit_2_without_naming_anyone() {
     slopvac()
-        .arg("packs")
+        .arg("onboard")
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
@@ -250,7 +250,7 @@ fn failures_carry_stable_bracketed_codes() {
             vec!["lint".into(), "--no-vale".into(), "x".into()],
             "error[removed-option]: ",
         ),
-        (vec!["packs".into()], "error[command-not-wired]: "),
+        (vec!["onboard".into()], "error[command-not-wired]: "),
         (vec!["lint".into(), "--bogus".into()], "error[usage]: "),
     ];
     for (args, prefix) in cases {

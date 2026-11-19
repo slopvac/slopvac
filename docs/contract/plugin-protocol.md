@@ -2,7 +2,7 @@
 
 Status: contract for 3.0. Bead `slopvac-8l4.2.6`. Plan: [slopvac-3.md](../design/slopvac-3.md). Decision: [0001-slopvac-3-architecture.md](../design/0001-slopvac-3-architecture.md), decisions 8 and 9. Policies: [policies.md](policies.md).
 
-A code plugin is a separate program, and its manifest declares `kind = "code"` ([packs.md](packs.md), section 2). The host starts it as a subprocess and speaks JSON-RPC 2.0 to it over the plugin's standard input and output. This document fixes the wire format, the lifecycle, and the hooks. The schema is [`plugin-protocol.schema.json`](../../schemas/v3/plugin-protocol.schema.json). It holds the message shapes and their field descriptions. This document does not repeat them.
+A code plugin is a separate program, and its manifest declares `kind = "code"` ([plugins.md](plugins.md), section 2). The host starts it as a subprocess and speaks JSON-RPC 2.0 to it over the plugin's standard input and output. This document fixes the wire format, the lifecycle, and the hooks. The schema is [`plugin-protocol.schema.json`](../../schemas/v3/plugin-protocol.schema.json). It holds the message shapes and their field descriptions. This document does not repeat them.
 
 2.x has no plugin API. Its only subprocess is Vale, which `vale.py` starts with a timeout and which 3.0 removes (`slopvac-8l4.16.4`). Every statement below is a 3.0 requirement.
 
@@ -105,7 +105,7 @@ A version is a major version in the sense of policies.md section 3.6. A change w
 
 Anything that decides whether the host may start the plugin comes from the plugin manifest, never from the `initialize` reply. The reply arrives after the process runs, so a decision based on it would come too late.
 
-- The manifest embeds a [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration). It states `network`, every hook the plugin may offer, and the features it may require or request. The plugin manifest schema (`pack-manifest`) references this def. The host reads the declaration from the same bytes that it hashes.
+- The manifest embeds a [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration). It states `network`, every hook the plugin may offer, and the features it may require or request. The plugin manifest schema (`plugin-manifest`) references this def. The host reads the declaration from the same bytes that it hashes.
 - The manifest is part of the content hash that `slopvac plugins trust` records. A change to the declaration changes the hash and revokes trust.
 - Before spawn the host checks: trust for the hash, `network` against offline mode (`--offline`, `SLOPVAC_OFFLINE`, `[network] offline`, and the `offline` state at the call site), and the declared hook kinds against the hooks the command needs. A plugin with `network: true` does not spawn in offline mode. The host prints `offline: <plugin> needs the network` and exits 2 when the user asked for the operation.
 - The host also decides from the declaration which features it can grant. It does not spawn a plugin whose declared required feature it lacks.

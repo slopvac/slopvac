@@ -179,7 +179,7 @@ pub struct Report {
     update: Update,
     offline: Offline,
     config: Config,
-    packs: Packs,
+    plugins: Packs,
     trust: Trust,
     directories: Directories,
 }
@@ -349,7 +349,7 @@ fn pack_state(state: &PackState) -> &'static str {
 /// shown as `*`.
 const LOCK_KEYS: [&str; 12] = [
     "schema_version",
-    "packs",
+    "plugins",
     "id",
     "kind",
     "version",
@@ -387,7 +387,7 @@ fn lock_diagnostic(e: &LockError) -> String {
 }
 
 fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> Packs {
-    let lock_path = project_root.join(".slopvac").join("packs.lock");
+    let lock_path = project_root.join(".slopvac").join("plugins.lock");
     let file = path_for_log(&lock_path, cwd);
     let lock = |status, error: Option<String>| Lock {
         file: file.clone(),
@@ -417,7 +417,7 @@ fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> P
     let Some(root) = store_root else {
         return empty(lock(
             "unreadable",
-            Some("pack store: no data directory could be derived".to_owned()),
+            Some("plugin store: no data directory could be derived".to_owned()),
         ));
     };
     match status(&Store::new(root), project_root, &parsed) {
@@ -440,7 +440,7 @@ fn packs_report(project_root: &Path, cwd: &Path, store_root: Option<&Path>) -> P
         },
         Err(_) => empty(lock(
             "unreadable",
-            Some("pack store: cannot read the installed packs".to_owned()),
+            Some("plugin store: cannot read the installed plugins".to_owned()),
         )),
     }
 }
@@ -562,7 +562,7 @@ pub fn build(i: &Inputs<'_>) -> Report {
         .and_then(|s| s.path.parent())
         .map_or_else(|| i.cwd.to_owned(), Path::to_owned);
 
-    let packs = packs_report(&project_root, i.cwd, data.path.as_deref());
+    let plugins = packs_report(&project_root, i.cwd, data.path.as_deref());
     let trust = trust_report(state.path.as_deref());
 
     let config = Config {
@@ -580,8 +580,8 @@ pub fn build(i: &Inputs<'_>) -> Report {
     };
 
     let ok = config.ok
-        && !matches!(packs.lockfile.status, "invalid" | "unreadable")
-        && packs.items.iter().all(|p| p.state != "tampered")
+        && !matches!(plugins.lockfile.status, "invalid" | "unreadable")
+        && plugins.items.iter().all(|p| p.state != "tampered")
         && trust.status != "unreadable";
 
     Report {
@@ -612,7 +612,7 @@ pub fn build(i: &Inputs<'_>) -> Report {
             sources: offline_sources,
         },
         config,
-        packs,
+        plugins,
         trust,
         directories: Directories {
             cache: directory(&cache, i.cwd, i.walk_limit),
@@ -673,13 +673,13 @@ impl Report {
                 .unwrap_or_default();
             let _ = writeln!(out, "config {}: {} {status}{detail}", s.layer, s.file);
         }
-        let lock = &self.packs.lockfile;
+        let lock = &self.plugins.lockfile;
         let detail = lock
             .error
             .as_deref()
             .map_or(String::new(), |e| format!(": {e}"));
-        let _ = writeln!(out, "packs: {} {}{detail}", lock.file, lock.status);
-        for p in &self.packs.items {
+        let _ = writeln!(out, "plugins: {} {}{detail}", lock.file, lock.status);
+        for p in &self.plugins.items {
             let _ = writeln!(out, "  {} {} ({}) {}", p.id, p.version, p.kind, p.state);
         }
         let _ = writeln!(
@@ -829,13 +829,13 @@ mod tests {
         };
         for (pointer, want) in [
             ("", "not a valid lockfile"),
-            ("/packs/12/digest", "invalid value at /packs/12/digest"),
-            ("/packs/0/LEAK", "invalid value at /packs/0/*"),
+            ("/plugins/12/digest", "invalid value at /plugins/12/digest"),
+            ("/plugins/0/LEAK", "invalid value at /plugins/0/*"),
             (
-                "/packs/0/signature/key_id",
-                "invalid value at /packs/0/signature/key_id",
+                "/plugins/0/signature/key_id",
+                "invalid value at /plugins/0/signature/key_id",
             ),
-            ("/packs/9999999", "invalid value at /packs/*"),
+            ("/plugins/9999999", "invalid value at /plugins/*"),
         ] {
             assert_eq!(lock_diagnostic(&err(pointer)), want, "{pointer}");
         }

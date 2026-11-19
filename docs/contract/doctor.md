@@ -27,7 +27,7 @@ The 2.x report had its own `schema_version` of 1. The 3.0 report uses 3, like ev
 | `update` | Whether update checks run, why not, and the cached answer. |
 | `offline` | Whether offline mode is on, and which sources turned it on. |
 | `config` | Each configuration source with a status. |
-| `packs` | The lockfile status and each locked plugin with its state. |
+| `plugins` | The lockfile status and each locked plugin with its state. |
 | `trust` | The trust store status, the number of plugin approvals and the pinned keys. |
 | `directories` | The cache, data and state directories. |
 
@@ -59,9 +59,9 @@ The `error` text is a fixed message with no file content. `config.ok` is true wh
 
 ### 2.4 Plugins and trust
 
-The lockfile is `.slopvac/packs.lock` in the directory of the configuration file, or in the working directory if the search finds none. `packs.lockfile.status` is `absent` when there is no lockfile, which is not a problem. It is `invalid` when the file does not parse, and `unreadable` when the file or the plugin store cannot be read. The `invalid` error holds the location only, such as `invalid value at /packs/0/digest`, or `not a valid lockfile` for a syntax error. It repeats nothing the file said, because a parser message can echo a rejected value. A pointer segment that is not a lockfile key or an array index shows as `*`.
+The lockfile is `.slopvac/plugins.lock` in the directory of the configuration file, or in the working directory if the search finds none. `plugins.lockfile.status` is `absent` when there is no lockfile, which is not a problem. It is `invalid` when the file does not parse, and `unreadable` when the file or the plugin store cannot be read. The `invalid` error holds the location only, such as `invalid value at /packs/0/digest`, or `not a valid lockfile` for a syntax error. It repeats nothing the file said, because a parser message can echo a rejected value. A pointer segment that is not a lockfile key or an array index shows as `*`.
 
-Each entry in `packs.items` has the plugin `id`, `version` and `kind` (`data` or `code`), and a `state`: `recorded`, `in-place`, `changed`, `tampered` or `not-installed`. Doctor reports the state without repairing it. `plugins sync` repairs a tampered plugin.
+Each entry in `plugins.items` has the plugin `id`, `version` and `kind` (`data` or `code`), and a `state`: `recorded`, `in-place`, `changed`, `tampered` or `not-installed`. Doctor reports the state without repairing it. `plugins sync` repairs a tampered plugin.
 
 Doctor reads the trust file like every other project file: without blocking, only as a regular file, and under the 8 MiB limit of the store. A missing file is `absent`. A permission error, a non-regular file, an oversize file or a damaged file is `unreadable`. `trust.trusted_plugins` counts the approvals in the trust store. `trust.pinned_keys` lists each pinned namespace with the SHA-256 fingerprint of its key. Doctor prints no stored text as it stands. It parses each stored key and derives the fingerprint itself, so a stored fingerprint that disagrees fails. The namespace must match `^[a-z][a-z0-9-]{0,63}$`. A store with an invalid pin is `unreadable` with the fixed error `the trust store holds an invalid pinned key`, and `pinned_keys` is empty.
 
