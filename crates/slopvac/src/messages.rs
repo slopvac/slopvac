@@ -13,6 +13,9 @@ pub type Registered = (&'static str, fn() -> &'static [Entry]);
 /// Every catalog in the workspace, by name. Crates add themselves here as they adopt the
 /// message registry.
 pub static ALL: &[Registered] = &[
+    ("slopvac-config", slopvac_config::error_entries),
+    ("slopvac-config-text", slopvac_config::text_entries),
+    ("slopvac-config-phrases", slopvac_config::phrase_entries),
     ("report", slopvac_report::message_entries),
     ("self update", update_entries),
 ];

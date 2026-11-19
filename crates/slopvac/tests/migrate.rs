@@ -193,3 +193,89 @@ fn write_rewrites_a_2x_steering_block_to_the_block_setup_writes() {
         fs::read(reference.path().join("AGENTS.md")).expect("read"),
     );
 }
+
+#[test]
+fn a_migrated_project_loads_its_blocklist() {
+    let dir = project("[vocabulary]\npath = \"words.toml\"\n");
+    fs::write(
+        dir.path().join("words.toml"),
+        "[[entries]]\nword = \"synergize\"\npos = \"Verb\"\nreason = \"Business jargon.\"\n",
+    )
+    .expect("blocklist");
+    let doc = dir.path().join("doc.md");
+    fs::write(&doc, "# Title\n\nManagers synergize the teams on Friday.\n").expect("doc");
+    slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--write")
+        .assert()
+        .code(0);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("words.toml")).expect("blocklist"),
+        "schema_version = 3\n[[entries]]\nword = \"synergize\"\npos = \"verb\"\nreason = \"Business jargon.\"\n"
+    );
+    slopvac()
+        .env("NO_COLOR", "1")
+        .args(["lint", "--format", "json"])
+        .arg(&doc)
+        .assert()
+        .stdout(predicate::str::contains("vocabulary"));
+}
+#[test]
+fn a_blocklist_path_with_a_symlink_before_a_parent_step_is_refused() {
+    // `a/link/../words.toml` is `a/words.toml` when read as text. The OS follows the link
+    // first, so the project loads `other/words.toml`. Migrate cannot tell, so it refuses.
+    let dir = project("[vocabulary]\npath = \"a/link/../words.toml\"\n");
+    let old = "[[entries]]\nword = \"synergize\"\npos = \"verb\"\nreason = \"Jargon.\"\n";
+    for name in ["a/words.toml", "other/words.toml"] {
+        let path = dir.path().join(name);
+        fs::create_dir_all(path.parent().expect("parent")).expect("dirs");
+        fs::write(path, old).expect("blocklist");
+    }
+    fs::create_dir_all(dir.path().join("other/deep")).expect("dirs");
+    std::os::unix::fs::symlink("../other/deep", dir.path().join("a/link")).expect("symlink");
+    slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--write")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[migrate-unsafe-path]: "))
+        .stderr(predicate::str::contains("crosses a symbolic link"));
+    for name in ["a/words.toml", "other/words.toml"] {
+        assert_eq!(
+            fs::read_to_string(dir.path().join(name)).expect("blocklist"),
+            old
+        );
+    }
+    assert!(dir.path().join(".slopvac.toml").exists());
+    assert!(!dir.path().join("slopvac.toml").exists());
+    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+}
+
+#[test]
+fn an_absolute_blocklist_path_inside_the_project_migrates_from_the_default_root() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonical");
+    let words = root.join("words.toml");
+    fs::write(
+        root.join("slopvac.toml"),
+        format!("[vocabulary]\npath = \"{}\"\n", words.display()),
+    )
+    .expect("config");
+    fs::write(
+        &words,
+        "[[entries]]\nword = \"synergize\"\npos = \"Verb\"\nreason = \"Business jargon.\"\n",
+    )
+    .expect("blocklist");
+    // No path argument: the project root is the default `.`.
+    slopvac()
+        .current_dir(&root)
+        .args(["migrate", "--write"])
+        .assert()
+        .code(0);
+    assert_eq!(
+        fs::read_to_string(&words).expect("blocklist"),
+        "schema_version = 3\n[[entries]]\nword = \"synergize\"\npos = \"verb\"\nreason = \"Business jargon.\"\n"
+    );
+}

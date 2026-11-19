@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use crate::diag::{Code, Diagnostic};
 use crate::error::{ConfigError, Rejected};
 use crate::load::{LoadedConfig, load_labeled};
+use crate::messages::ConfigPhrase;
 use crate::presets::Presets;
 use crate::tree::{Node, parse_toml};
 
@@ -114,7 +115,7 @@ fn reject_legacy(dir: &Path) -> Result<(), ConfigError> {
             ".slopvac.toml",
             text.clone(),
             0..text.find('\n').unwrap_or(text.len()),
-            "`.slopvac.toml` is the 2.x config file name",
+            ConfigPhrase::LegacyDotfile,
         ));
     }
     let pyproject = dir.join("pyproject.toml");
@@ -127,7 +128,7 @@ fn reject_legacy(dir: &Path) -> Result<(), ConfigError> {
                 "pyproject.toml",
                 text,
                 span,
-                "a `[tool.slopvac]` table is a 2.x config",
+                ConfigPhrase::LegacyPyproject,
             ));
         }
     }
@@ -147,16 +148,21 @@ fn read(path: &Path) -> Result<String, ConfigError> {
     ConfigError::read_config(path, &label)
 }
 
-fn legacy(file: &str, text: String, span: std::ops::Range<usize>, message: &str) -> ConfigError {
+fn legacy(
+    file: &str,
+    text: String,
+    span: std::ops::Range<usize>,
+    message: ConfigPhrase,
+) -> ConfigError {
     ConfigError::Rejected(Box::new(Rejected {
         file: file.to_owned(),
         text,
         diagnostics: vec![Diagnostic {
             code: Code::LegacyVersion,
-            message: message.to_owned(),
-            label: "slopvac 3 reads only `slopvac.toml`".into(),
+            message: message.text(),
+            label: ConfigPhrase::LabelOnlyToml.text(),
             span,
-            help: Some("run `slopvac migrate` to convert it".into()),
+            help: Some(ConfigPhrase::HelpMigrate.text()),
             path: Vec::new(),
             data: None,
         }],

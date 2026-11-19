@@ -8,6 +8,8 @@ use std::ops::Range;
 use saphyr::{LoadableYamlNode, MarkedYaml, Scalar, YamlData};
 use serde_json::{Map, Number, Value as Json};
 
+use crate::messages::ConfigPhrase;
+
 /// A parsed value and the byte range of the text that produced it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
@@ -69,14 +71,14 @@ impl Node {
     #[must_use]
     pub fn kind(&self) -> &'static str {
         match self.value {
-            Value::Null => "null",
-            Value::Bool(_) => "a boolean",
-            Value::Int(_) => "an integer",
-            Value::Float(_) => "a float",
-            Value::Str(_) => "a string",
-            Value::Datetime(_) => "a date-time",
-            Value::Array(_) => "an array",
-            Value::Table(_) => "a table",
+            Value::Null => ConfigPhrase::KindNull.as_static(),
+            Value::Bool(_) => ConfigPhrase::KindBoolean.as_static(),
+            Value::Int(_) => ConfigPhrase::KindInteger.as_static(),
+            Value::Float(_) => ConfigPhrase::KindFloat.as_static(),
+            Value::Str(_) => ConfigPhrase::KindString.as_static(),
+            Value::Datetime(_) => ConfigPhrase::KindDatetime.as_static(),
+            Value::Array(_) => ConfigPhrase::KindArray.as_static(),
+            Value::Table(_) => ConfigPhrase::KindTable.as_static(),
         }
     }
 

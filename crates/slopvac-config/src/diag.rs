@@ -5,6 +5,9 @@ use std::ops::Range;
 
 use annotate_snippets::{AnnotationKind, Group, Level, Renderer, Snippet};
 
+use slopvac_messages::Catalog;
+
+use crate::messages::ConfigMessage;
 use crate::tree::LineIndex;
 
 /// Stable identifier of a diagnostic, printed in brackets and matched by tests.
@@ -46,26 +49,47 @@ pub enum Code {
 }
 
 impl Code {
-    /// The identifier text, such as `config-unknown-key`.
+    /// The identifier text, such as `config-unknown-key`. The message catalog owns it.
     #[must_use]
     pub fn as_str(self) -> &'static str {
+        let text = String::new;
         match self {
-            Code::Io => "config-io",
-            Code::TooLarge => "config-too-large",
-            Code::StyleTooLarge => "style-too-large",
-            Code::DocumentTooLarge => "document-too-large",
-            Code::Parse => "config-parse",
-            Code::UnknownKey => "config-unknown-key",
-            Code::InvalidType => "config-invalid-type",
-            Code::InvalidValue => "config-invalid-value",
-            Code::MissingKey => "config-missing-key",
-            Code::LegacyVersion => "config-legacy-version",
-            Code::UnsupportedVersion => "config-unsupported-version",
-            Code::ExtendsCycle => "config-extends-cycle",
-            Code::BudgetExceeded => "config-budget-exceeded",
-            Code::ExtendsMissing => "config-extends-missing",
-            Code::DuplicateScope => "config-duplicate-scope",
-            Code::FrontmatterFieldDenied => "config-frontmatter-field-denied",
+            Code::Io => ConfigMessage::Io {
+                path: text(),
+                reason: text(),
+            }
+            .code(),
+            Code::TooLarge => ConfigMessage::TooLarge {
+                path: text(),
+                cap: 0,
+            }
+            .code(),
+            Code::StyleTooLarge => ConfigMessage::StyleTooLarge {
+                path: text(),
+                cap: 0,
+            }
+            .code(),
+            Code::DocumentTooLarge => ConfigMessage::DocumentTooLarge {
+                path: text(),
+                cap: 0,
+            }
+            .code(),
+            Code::Parse => ConfigMessage::Parse { message: text() }.code(),
+            Code::UnknownKey => ConfigMessage::UnknownKey { message: text() }.code(),
+            Code::InvalidType => ConfigMessage::InvalidType { message: text() }.code(),
+            Code::InvalidValue => ConfigMessage::InvalidValue { message: text() }.code(),
+            Code::MissingKey => ConfigMessage::MissingKey { message: text() }.code(),
+            Code::LegacyVersion => ConfigMessage::LegacyVersion { message: text() }.code(),
+            Code::UnsupportedVersion => {
+                ConfigMessage::UnsupportedVersion { message: text() }.code()
+            }
+            Code::ExtendsCycle => ConfigMessage::ExtendsCycle { message: text() }.code(),
+            Code::BudgetExceeded => ConfigMessage::BudgetExceeded { message: text() }.code(),
+            Code::ExtendsMissing => ConfigMessage::ExtendsMissing { message: text() }.code(),
+            Code::DuplicateScope => ConfigMessage::DuplicateScope { message: text() }.code(),
+            Code::FrontmatterFieldDenied => {
+                ConfigMessage::FrontmatterFieldDenied { message: text() }.code()
+            }
         }
     }
 }
@@ -263,6 +287,37 @@ mod tests {
             data: None,
         };
         assert_eq!(d.pointer(), "/rules/a~1b~0c");
+    }
+
+    #[test]
+    fn every_code_keeps_its_published_text_and_is_registered() {
+        let published = [
+            (Code::Io, "config-io"),
+            (Code::TooLarge, "config-too-large"),
+            (Code::StyleTooLarge, "style-too-large"),
+            (Code::DocumentTooLarge, "document-too-large"),
+            (Code::Parse, "config-parse"),
+            (Code::UnknownKey, "config-unknown-key"),
+            (Code::InvalidType, "config-invalid-type"),
+            (Code::InvalidValue, "config-invalid-value"),
+            (Code::MissingKey, "config-missing-key"),
+            (Code::LegacyVersion, "config-legacy-version"),
+            (Code::UnsupportedVersion, "config-unsupported-version"),
+            (Code::ExtendsCycle, "config-extends-cycle"),
+            (Code::BudgetExceeded, "config-budget-exceeded"),
+            (Code::ExtendsMissing, "config-extends-missing"),
+            (Code::DuplicateScope, "config-duplicate-scope"),
+            (
+                Code::FrontmatterFieldDenied,
+                "config-frontmatter-field-denied",
+            ),
+        ];
+        let registered = crate::messages::error_entries();
+        for (code, text) in published {
+            assert_eq!(code.as_str(), text);
+            assert!(registered.iter().any(|e| e.code == text), "{text}");
+        }
+        assert_eq!(registered.len(), published.len());
     }
 
     #[test]

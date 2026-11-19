@@ -103,7 +103,7 @@ fn a_plugin_manifest_holds_the_declaration() {
     "/slopvac_api",
     "at least 1"
 )]
-#[case::kind_unknown("kind = \"theme\"", "/kind", "not a pack kind")]
+#[case::kind_unknown("kind = \"theme\"", "/kind", "not a plugin kind")]
 #[case::duplicate_path(
     "kind = \"data\"\n[provides]\nterms = [\"a.toml\", \"a.toml\"]",
     "/provides/terms/1",

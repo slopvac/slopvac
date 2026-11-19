@@ -182,7 +182,7 @@ pub fn is_reserved_namespace(namespace: &str) -> bool {
 /// The compiled plugins key file. Not yet issued: the maintainer generates the
 /// key pair and keeps the secret half in a protected environment. Until the key
 /// ceremony puts the public half here, the slot is `None` and
-/// [`plugins_key`] returns no key. First-party packs verify against
+/// [`plugins_key`] returns no key. First-party plugins verify against
 /// [`release_key`] meanwhile.
 const PLUGINS_KEY_FILE: Option<&str> = None;
 
@@ -202,8 +202,9 @@ pub fn plugins_key() -> Result<Option<PublicKey>, SignError> {
 /// reader refuses one that does.
 pub const RESERVED_ID: &str = "core";
 
-/// The compiled first-party release key. It signs first-party packs and the
-/// revocation list.
+/// The compiled release key, which signs the revocation list. First-party
+/// plugin verification uses it for now, through the temporary fallback in
+/// [`KeyPolicy::compiled`].
 ///
 /// # Errors
 /// [`SignError::InvalidKey`] when the compiled file is not a minisign key. Callers
