@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use rstest::rstest;
 use slopvac_migrate::{
-    BACKUP_DIR, Change, ChangeKind, Error, NullLinter, Options, Plan, RenameTable, Restored, apply,
-    apply_hooked, command, plan, restore, restore_hooked, run,
+    BACKUP_DIR, Change, ChangeKind, Error, NullLinter, Options, Plan, Point, RenameTable, Restored,
+    apply, apply_hooked, command, plan, restore, restore_hooked, run,
 };
 
 const STEERING: &str = "<!-- slopvac:begin -->\nnew\n<!-- slopvac:end -->\n";
@@ -78,20 +78,32 @@ impl Setup {
         apply(&self.root(), p, self.cache.path())
     }
 
-    fn apply_hooked(&self, p: &Plan, hook: &mut dyn FnMut(&Path)) -> Result<(), Error> {
-        apply_hooked(&self.root(), p, self.cache.path(), &mut |rel| {
-            hook(rel);
+    fn apply_hooked(&self, p: &Plan, hook: &mut dyn FnMut(Point<'_>)) -> Result<(), Error> {
+        self.apply_failing(p, &mut |point| {
+            hook(point);
             Ok(())
         })
+    }
+
+    fn apply_failing(
+        &self,
+        p: &Plan,
+        hook: &mut dyn FnMut(Point<'_>) -> std::io::Result<()>,
+    ) -> Result<(), Error> {
+        apply_hooked(&self.root(), p, self.cache.path(), hook)
     }
 
     fn restore(&self, force: bool) -> Result<Restored, Error> {
         restore(&self.root(), self.cache.path(), force)
     }
 
-    fn restore_hooked(&self, force: bool, hook: &mut dyn FnMut(&Path)) -> Result<Restored, Error> {
-        restore_hooked(&self.root(), self.cache.path(), force, &mut |rel| {
-            hook(rel);
+    fn restore_hooked(
+        &self,
+        force: bool,
+        hook: &mut dyn FnMut(Point<'_>),
+    ) -> Result<Restored, Error> {
+        restore_hooked(&self.root(), self.cache.path(), force, &mut |point| {
+            hook(point);
             Ok(())
         })
     }
@@ -157,15 +169,41 @@ impl Swap {
     }
 }
 
-/// Run `swap` on `name` the first time the hook reaches it.
-fn once<'a>(s: &'a Setup, swap: Swap, name: &'static str) -> impl FnMut(&Path) + 'a {
+/// Run `swap` on `name` the first time the hook reaches its final check.
+fn once<'a>(s: &'a Setup, swap: Swap, name: &'static str) -> impl FnMut(Point<'_>) + 'a {
     let mut done = false;
-    move |rel| {
-        if !done && rel == Path::new(name) {
+    move |point| {
+        if !done && point == Point::Check(Path::new(name)) {
             done = true;
             swap.run(s, name);
         }
     }
+}
+
+/// The one holding directory a change has open in `dir`.
+fn holding(dir: &Path) -> PathBuf {
+    let found: Vec<PathBuf> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".slopvac-hold-")
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "{found:?}");
+    found.into_iter().next().unwrap()
+}
+
+/// Put a hard link to the file outside the project at `path`, in place of what is there.
+fn link_outside(s: &Setup, path: &Path) {
+    fs::remove_file(path).unwrap();
+    fs::hard_link(s.outside(), path).unwrap();
+}
+
+fn outside_links(s: &Setup) -> u64 {
+    fs::metadata(s.outside()).unwrap().nlink()
 }
 
 #[rstest]
@@ -227,8 +265,8 @@ fn restore_never_deletes_a_file_that_apply_did_not_create() {
     // sub/slopvac.toml, a file with exactly the bytes apply would write appears there.
     let s = Setup::new(&[("slopvac.toml", OLD), ("sub/.slopvac.toml", OLD)]);
     let p = s.plan();
-    let mut hook = |rel: &Path| {
-        if rel == Path::new("sub/slopvac.toml") {
+    let mut hook = |point: Point<'_>| {
+        if point == Point::Check(Path::new("sub/slopvac.toml")) {
             fs::write(s.path("sub/slopvac.toml"), NEW).unwrap();
         }
     };
@@ -373,13 +411,17 @@ fn copy_dir(from: &Path, to: &Path) {
 fn restore_rejects_a_checkout_replaced_at_the_same_path() {
     let s = Setup::new(&[("slopvac.toml", OLD)]);
     s.apply(&s.plan()).unwrap();
+    // A new directory takes the project's path, and the authentic backup and migrated file
+    // move into it with their inodes, so only the root directory differs.
     let moved = s.outer.path().join("moved");
     fs::rename(s.root(), &moved).unwrap();
     fs::create_dir(s.root()).unwrap();
-    fs::copy(moved.join("slopvac.toml"), s.path("slopvac.toml")).unwrap();
-    copy_dir(&moved.join(BACKUP_DIR), &s.path(BACKUP_DIR));
-    assert!(matches!(s.restore(true), Err(Error::Unsafe(_))));
+    for name in ["slopvac.toml", BACKUP_DIR] {
+        fs::rename(moved.join(name), s.path(name)).unwrap();
+    }
+    assert!(matches!(s.restore(false), Err(Error::Unsafe(_))));
     assert_eq!(s.read("slopvac.toml"), NEW);
+    assert!(s.backup_exists());
 }
 
 #[test]
@@ -457,12 +499,16 @@ fn a_cache_that_cannot_be_written_stops_apply_before_the_backup() {
 }
 
 #[test]
-fn restore_puts_back_a_replaced_file_whose_completion_was_not_recorded() {
+fn restore_puts_back_the_migrations_own_file_when_its_completion_was_not_saved() {
     let s = Setup::new(&[("slopvac.toml", OLD)]);
     let records = s.cache.path().join("migrate-backups");
     let set_mode = |mode| fs::set_permissions(&records, fs::Permissions::from_mode(mode)).unwrap();
-    // The change goes through, but the record of it cannot be saved.
-    let mut hook = |_: &Path| set_mode(0o500);
+    // The change goes through, but the record of its completion cannot be saved.
+    let mut hook = |point: Point<'_>| {
+        if matches!(point, Point::Discard(_)) {
+            set_mode(0o500);
+        }
+    };
     assert!(s.apply_hooked(&s.plan(), &mut hook).is_err());
     set_mode(0o700);
     assert_eq!(s.read("slopvac.toml"), NEW);
@@ -470,6 +516,138 @@ fn restore_puts_back_a_replaced_file_whose_completion_was_not_recorded() {
     assert_eq!((done.restored, done.kept.len()), (1, 0));
     assert_eq!(s.read("slopvac.toml"), OLD);
     assert!(!s.backup_exists());
+}
+
+#[test]
+fn restore_leaves_a_target_that_holds_its_proposed_bytes_after_apply_refused_it() {
+    let s = Setup::new(&[("slopvac.toml", OLD), ("a.md", DOC_OLD), ("b.md", DOC_OLD)]);
+    let p = s.plan();
+    let last = p.changes.last().unwrap();
+    assert_eq!(last.path, Path::new("b.md"));
+    let proposed = last.new.clone().unwrap();
+    let inode = fs::metadata(s.path("b.md")).unwrap().ino();
+    // Someone else writes exactly the proposed bytes into b.md just before apply checks it.
+    let mut hook = |point: Point<'_>| {
+        if point == Point::Check(Path::new("b.md")) {
+            fs::write(s.path("b.md"), &proposed).unwrap();
+        }
+    };
+    assert!(matches!(
+        s.apply_hooked(&p, &mut hook),
+        Err(Error::Changed(_))
+    ));
+    let done = s.restore(false).unwrap();
+    assert_eq!(done.kept, vec![PathBuf::from("b.md")]);
+    assert_eq!(s.read("b.md"), proposed);
+    assert_eq!(fs::metadata(s.path("b.md")).unwrap().ino(), inode);
+    assert_eq!(s.read("slopvac.toml"), OLD);
+    assert_eq!(s.read("a.md"), DOC_OLD);
+}
+
+#[rstest]
+#[case::refused(false)]
+#[case::kept_with_force(true)]
+fn restore_never_deletes_a_created_file_swapped_for_one_with_the_same_bytes(#[case] force: bool) {
+    let s = Setup::new(&[(".slopvac.toml", OLD)]);
+    s.apply(&s.plan()).unwrap();
+    // A new file with the same bytes replaces the one apply created.
+    s.write("swap.tmp", NEW);
+    fs::rename(s.path("swap.tmp"), s.path("slopvac.toml")).unwrap();
+    let inode = fs::metadata(s.path("slopvac.toml")).unwrap().ino();
+    let result = s.restore(force);
+    if force {
+        assert_eq!(result.unwrap().kept, vec![PathBuf::from("slopvac.toml")]);
+    } else {
+        assert!(matches!(result, Err(Error::Changed(_))));
+    }
+    assert_eq!(s.read("slopvac.toml"), NEW);
+    assert_eq!(fs::metadata(s.path("slopvac.toml")).unwrap().ino(), inode);
+}
+
+#[rstest]
+#[case::hardlink(false)]
+#[case::symlink(true)]
+fn apply_refuses_a_staged_file_replaced_before_it_takes_the_name(#[case] symlink: bool) {
+    let s = Setup::new(&[("slopvac.toml", OLD)]);
+    fs::write(s.outside(), "outside\n").unwrap();
+    let mut kept = None;
+    let mut hook = |point: Point<'_>| {
+        if point == Point::Install(Path::new("slopvac.toml")) {
+            let hold = holding(&s.root());
+            let staged = hold.join("new");
+            fs::remove_file(&staged).unwrap();
+            if symlink {
+                std::os::unix::fs::symlink(s.outside(), &staged).unwrap();
+            } else {
+                fs::hard_link(s.outside(), &staged).unwrap();
+            }
+            kept = Some(hold.join("old"));
+        }
+    };
+    assert!(matches!(
+        s.apply_hooked(&s.plan(), &mut hook),
+        Err(Error::Changed(_))
+    ));
+    assert_eq!(fs::read_to_string(s.outside()).unwrap(), "outside\n");
+    // The checked original is not removed, because the name does not hold the staged file.
+    assert_eq!(fs::read_to_string(kept.unwrap()).unwrap(), OLD);
+}
+
+#[test]
+fn apply_keeps_an_original_replaced_before_it_is_removed() {
+    let s = Setup::new(&[("slopvac.toml", OLD)]);
+    fs::write(s.outside(), "outside\n").unwrap();
+    let mut hook = |point: Point<'_>| {
+        if point == Point::Discard(Path::new("slopvac.toml")) {
+            link_outside(&s, &holding(&s.root()).join("old"));
+        }
+    };
+    assert!(matches!(
+        s.apply_hooked(&s.plan(), &mut hook),
+        Err(Error::Changed(_))
+    ));
+    assert_eq!(s.read("slopvac.toml"), NEW);
+    assert_eq!(outside_links(&s), 2, "the swapped-in link was removed");
+}
+
+#[test]
+fn restore_keeps_a_backup_file_replaced_before_it_is_removed() {
+    let s = Setup::new(&[("slopvac.toml", OLD)]);
+    s.apply(&s.plan()).unwrap();
+    fs::write(s.outside(), "outside\n").unwrap();
+    let copy = Path::new(BACKUP_DIR).join("0");
+    let mut hook = |point: Point<'_>| {
+        if point == Point::Cleanup(&copy) {
+            link_outside(&s, &holding(&s.path(BACKUP_DIR)).join("0"));
+        }
+    };
+    assert!(matches!(
+        s.restore_hooked(false, &mut hook),
+        Err(Error::Changed(_))
+    ));
+    assert_eq!(s.read("slopvac.toml"), OLD);
+    assert_eq!(outside_links(&s), 2, "the swapped-in link was removed");
+}
+
+#[rstest]
+#[case::staged_target("slopvac.toml")]
+#[case::backup_copy(".slopvac-migrate-backup/0")]
+#[case::manifest(".slopvac-migrate-backup/manifest.txt")]
+fn a_failed_write_leaves_no_file_behind(#[case] failing: &str) {
+    let s = Setup::new(&[("slopvac.toml", OLD)]);
+    let mut hook = |point: Point<'_>| match point {
+        Point::Write(p) if p == Path::new(failing) => {
+            Err(std::io::Error::from(std::io::ErrorKind::StorageFull))
+        }
+        _ => Ok(()),
+    };
+    assert!(s.apply_failing(&s.plan(), &mut hook).is_err());
+    assert_eq!(s.read("slopvac.toml"), OLD);
+    let names: Vec<_> = fs::read_dir(s.root())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["slopvac.toml"]);
 }
 
 fn run_cli(s: &Setup, args: &[&str]) -> (i32, String, String) {

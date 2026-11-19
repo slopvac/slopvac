@@ -29,7 +29,7 @@ use std::fmt;
 
 use slopvac_config::Code;
 
-pub use backup::{Restored, apply, apply_hooked, restore, restore_hooked};
+pub use backup::{Point, Restored, apply, apply_hooked, restore, restore_hooked};
 pub use cli::{CliFailure, command, execute, run};
 pub use config::{Rewrite, migrate_config};
 pub use directives::{Found, RemovedId, UnknownId, rewrite_directives};

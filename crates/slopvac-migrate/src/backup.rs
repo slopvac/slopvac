@@ -6,16 +6,24 @@
 //! - Every path is walked from one handle on the project root, without following a link at
 //!   any component. A symbolic link, a non-regular file and a file with more than one link
 //!   are refused.
-//! - Each change is conditional. The new bytes are staged under a random name first. The
-//!   target is then renamed aside, and the object that moved is checked: the same file the
-//!   preflight saw, with the expected bytes. Only then does the staged file take the name,
-//!   with a rename that fails if the name was taken again. An unexpected object goes back
-//!   under its name untouched, and the step fails.
+//! - Each change is conditional. Next to the target, the change makes a holding directory:
+//!   owner-only, with a random name, and held open. The new bytes are staged in it. The
+//!   target then moves into it and is checked there, through the held handle: the same file
+//!   the preflight saw, with the expected bytes. The staged file takes the name with a
+//!   rename that fails if the name was taken again, and the object under the name must then
+//!   be the staged file before the original is removed. An unexpected object goes back
+//!   under its name, or stays in the holding directory, and the step fails.
 //! - The trusted state is a record in the per-user cache directory, outside the project. It
 //!   names the root and backup directories by device and inode, and it holds a random
-//!   instance id, the digest of every file before and after, each file's mode, the digest of
-//!   the backup manifest, and which changes completed. Restore acts only on what the record
-//!   says this run did, and it refuses a backup directory with any other content.
+//!   instance id, the digest of every file before and after, each file's mode, the identity
+//!   of each staged file, the digest of the backup manifest, and which changes completed.
+//!   Restore acts only on what the record says this run did, and it refuses a backup
+//!   directory with any other content.
+//!
+//! One window remains: a removal checks a file's identity through the holding directory's
+//! handle and then removes it by name there, in two calls. A process that runs as the same
+//! user, finds the random name and swaps the file between the two calls has the file it
+//! swapped in removed. Files in the checkout itself are never removed by name.
 
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
@@ -27,7 +35,7 @@ use std::path::{Component, Path, PathBuf};
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
 use cap_std::fs::{
-    Dir, DirBuilder, DirBuilderExt, File, Metadata, MetadataExt, OpenOptions, OpenOptionsExt,
+    Dir, DirBuilder, DirBuilderExt, Metadata, MetadataExt, OpenOptions, OpenOptionsExt,
     Permissions, PermissionsExt,
 };
 use rustix::fs::RenameFlags;
@@ -40,7 +48,7 @@ use crate::plan::{BACKUP_DIR, ChangeKind, Plan};
 /// The list of backup copies, for people. Restore checks its digest and never reads it.
 const MANIFEST: &str = "manifest.txt";
 const MANIFEST_HEADER: &str = "slopvac-migrate-backup";
-const RECORD_HEADER: &str = "slopvac-migrate-record 2";
+const RECORD_HEADER: &str = "slopvac-migrate-record 3";
 /// The directory below the per-user cache that holds one record per project.
 const RECORD_DIR: &str = "migrate-backups";
 /// Permission bits for a file that did not exist before.
@@ -51,9 +59,27 @@ const BACKUP_FILE_MODE: u32 = 0o600;
 /// How many random names to try before giving up.
 const NAME_ATTEMPTS: usize = 16;
 
-/// Runs before the final check of each change, with the project-relative path. Tests swap
-/// the target here.
-type Hook<'a> = &'a mut dyn FnMut(&Path) -> std::io::Result<()>;
+/// A moment in [`apply_hooked`] or [`restore_hooked`] where a test can act. Each carries a
+/// path below the project.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Point<'a> {
+    /// A new file exists, empty, and its bytes are about to be written: a staged target or a
+    /// backup file.
+    Write(&'a Path),
+    /// The new bytes of this target are staged, and it is about to be taken and checked.
+    Check(&'a Path),
+    /// The target was checked, and the staged file is about to take its name.
+    Install(&'a Path),
+    /// The staged file took the name, and the checked original is about to be removed.
+    Discard(&'a Path),
+    /// This backup file was moved into a holding directory and is about to be removed.
+    Cleanup(&'a Path),
+}
+
+/// Runs at each [`Point`]. An error from it fails the step. Tests swap objects here.
+type Hook<'a> = &'a mut dyn FnMut(Point<'_>) -> std::io::Result<()>;
 
 type Sha = [u8; 32];
 
@@ -150,9 +176,11 @@ fn nonblocking(options: &mut OpenOptions) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Rename within `dir`, failing with `AlreadyExists` instead of replacing `to`.
-fn rename_noreplace(dir: &Dir, from: &OsStr, to: &OsStr) -> std::io::Result<()> {
-    rustix::fs::renameat_with(dir, from, dir, to, RenameFlags::NOREPLACE).map_err(Into::into)
+/// Rename `from` in `from_dir` to `to` in `to_dir`, failing with `AlreadyExists` instead of
+/// replacing `to`.
+fn rename_noreplace(from_dir: &Dir, from: &OsStr, to_dir: &Dir, to: &OsStr) -> std::io::Result<()> {
+    rustix::fs::renameat_with(from_dir, from, to_dir, to, RenameFlags::NOREPLACE)
+        .map_err(Into::into)
 }
 
 fn sync_dir(dir: &Dir) -> std::io::Result<()> {
@@ -276,33 +304,48 @@ impl Want {
     }
 }
 
-/// A file under a temporary name, removed on drop unless it was handed over.
-struct Staged<'a> {
-    dir: &'a Dir,
-    name: OsString,
-    armed: bool,
-}
+/// The prefix of a holding directory's name.
+const HOLD_PREFIX: &str = ".slopvac-hold-";
+/// The staged new file inside a holding directory.
+const NEW: &str = "new";
+/// The checked original inside a holding directory.
+const OLD: &str = "old";
 
-impl Drop for Staged<'_> {
-    fn drop(&mut self) {
-        if self.armed {
-            // Best effort: the error that led here is the one to report.
-            let _ = self.dir.remove_file(&self.name);
+/// Create `name` in `parent` as an owner-only directory and open it without following a
+/// link. Fails when what opens is not an empty, owner-only directory.
+fn private_dir(parent: &Dir, name: &OsStr) -> std::io::Result<(Dir, Id)> {
+    let mut builder = DirBuilder::new();
+    builder.mode(BACKUP_DIR_MODE);
+    parent.create_dir_with(name, &builder)?;
+    let dir = match parent.open_dir_nofollow(name) {
+        Ok(dir) => dir,
+        Err(e) => {
+            // Removes only an empty directory, so nothing with content is lost.
+            let _ = parent.remove_dir(name);
+            return Err(e);
         }
+    };
+    let meta = dir.dir_metadata()?;
+    if meta.mode() & 0o077 != 0 || dir.entries()?.next().is_some() {
+        return Err(std::io::Error::other(
+            "a directory this run created was replaced",
+        ));
     }
+    Ok((dir, id_of(&meta)))
 }
 
-fn temp_name(name: &OsStr, role: &str) -> OsString {
-    let mut out = OsString::from(".");
-    if name.len() <= 200 {
-        out.push(name);
-    }
-    out.push(format!(".slopvac-{role}-{:016x}", random()));
-    out
-}
-
-/// Create a new owner-only file in `dir` with `bytes`, without following a link.
-fn create_file(dir: &Dir, name: &OsStr, bytes: &[u8]) -> std::io::Result<File> {
+/// Create `name` in `dir` without following a link and note it in `owned` at once. Then
+/// write `bytes` and set `mode`. A failure after the create leaves the file in `owned`, so
+/// the caller's cleanup removes it. `shown` names the file to the hook.
+fn write_new(
+    dir: &Dir,
+    name: &OsStr,
+    bytes: &[u8],
+    mode: u32,
+    owned: &mut Vec<(OsString, Id)>,
+    shown: &Path,
+    hook: Hook<'_>,
+) -> std::io::Result<Id> {
     let mut options = OpenOptions::new();
     options
         .write(true)
@@ -310,79 +353,179 @@ fn create_file(dir: &Dir, name: &OsStr, bytes: &[u8]) -> std::io::Result<File> {
         .follow(FollowSymlinks::No)
         .mode(BACKUP_FILE_MODE);
     let mut file = dir.open_with(name, &options)?;
+    let id = id_of(&file.metadata()?);
+    owned.push((name.to_owned(), id));
+    hook(Point::Write(shown))?;
     file.write_all(bytes)?;
+    file.set_permissions(Permissions::from_mode(mode))?;
     file.sync_all()?;
-    Ok(file)
+    Ok(id)
 }
 
-/// Stage `bytes` with `mode` under a fresh name next to `name`.
-fn stage<'a>(dir: &'a Dir, name: &OsStr, bytes: &[u8], mode: u32) -> std::io::Result<Staged<'a>> {
-    for _ in 0..NAME_ATTEMPTS {
-        let temp = temp_name(name, "new");
-        match create_file(dir, &temp, bytes) {
-            Ok(file) => {
-                let staged = Staged {
-                    dir,
-                    name: temp,
-                    armed: true,
-                };
-                file.set_permissions(Permissions::from_mode(mode))?;
-                file.sync_all()?;
-                return Ok(staged);
-            }
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(e),
-        }
+/// Remove `name` from `dir` if it is still the regular file `id`. Returns whether it was
+/// removed. The check and the removal are two calls; see the module docs.
+fn remove_if(dir: &Dir, name: &OsStr, id: Id) -> std::io::Result<bool> {
+    match dir.symlink_metadata(name) {
+        Ok(m) if m.is_file() && id_of(&m) == id => dir.remove_file(name).map(|()| true),
+        Ok(_) => Ok(false),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
     }
-    Err(std::io::Error::other("no free temporary name"))
 }
 
-/// Move `name` to a fresh name in `dir`, and return that name.
-fn move_aside(dir: &Dir, name: &OsStr) -> std::io::Result<OsString> {
-    for _ in 0..NAME_ATTEMPTS {
-        let aside = temp_name(name, "old");
-        match rename_noreplace(dir, name, &aside) {
-            Ok(()) => return Ok(aside),
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(e),
-        }
-    }
-    Err(std::io::Error::other("no free temporary name"))
-}
-
-/// Whether the object moved to `aside` is the file the preflight saw, with `digest`.
-fn check_aside(
-    dir: &Dir,
-    aside: &OsStr,
-    rel: &Path,
+/// A directory this run made under a random name, owner-only and held open.
+///
+/// Objects move into it before they are checked, so the check and the step after it reach
+/// them through this handle, not through a name in the checkout. On drop it removes the
+/// files it created, if they are still those files, and then itself if it is empty.
+/// Anything else stays, so a failure never removes what it did not check.
+struct Holding<'a> {
+    parent: &'a Dir,
+    name: OsString,
+    dir: Dir,
     id: Id,
-    digest: Option<Sha>,
-) -> Result<(), Error> {
-    let Some(seen) = read_entry(dir, aside, rel)? else {
-        return Err(changed(rel, "disappeared while it was replaced"));
-    };
-    if seen.id != id {
-        return Err(changed(rel, "was replaced after it was checked"));
-    }
-    if digest.is_some_and(|d| d != seen.digest) {
-        return Err(changed(rel, "changed after it was checked"));
-    }
-    Ok(())
+    /// Files it may remove, by name, with the identity each had when it was created.
+    owned: Vec<(OsString, Id)>,
+    closed: bool,
 }
 
-/// Rename `aside` back to `name`. Fails, and leaves `aside`, when the name is taken again.
-fn put_back(dir: &Dir, aside: &OsStr, name: &OsStr, rel: &Path) -> Result<(), Error> {
-    match rename_noreplace(dir, aside, name) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(changed(
-            rel,
-            &format!(
-                "was replaced twice while it was checked; the first replacement is kept as {}",
-                shown(Path::new(aside))
-            ),
-        )),
-        Err(e) => Err(Error::io(rel, e)),
+impl<'a> Holding<'a> {
+    fn create(parent: &'a Dir) -> std::io::Result<Self> {
+        for _ in 0..NAME_ATTEMPTS {
+            let name = OsString::from(format!("{HOLD_PREFIX}{:016x}", random()));
+            match private_dir(parent, &name) {
+                Ok((dir, id)) => {
+                    return Ok(Self {
+                        parent,
+                        name,
+                        dir,
+                        id,
+                        owned: Vec::new(),
+                        closed: false,
+                    });
+                }
+                Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Err(std::io::Error::other("no free temporary name"))
     }
+
+    /// The path of `inner` for messages, where `at` is the parent directory below the project.
+    fn shown(&self, at: &Path, inner: &str) -> String {
+        shown(&at.join(&self.name).join(inner))
+    }
+
+    /// Stage `bytes` with `mode` as [`NEW`].
+    fn stage(
+        &mut self,
+        bytes: &[u8],
+        mode: u32,
+        rel: &Path,
+        hook: Hook<'_>,
+    ) -> std::io::Result<Id> {
+        write_new(
+            &self.dir,
+            OsStr::new(NEW),
+            bytes,
+            mode,
+            &mut self.owned,
+            rel,
+            hook,
+        )
+    }
+
+    /// Move `name` in `from` in here as `inner`. Fails instead of replacing anything.
+    fn take(&self, from: &Dir, name: &OsStr, inner: &OsStr) -> std::io::Result<()> {
+        rename_noreplace(from, name, &self.dir, inner)
+    }
+
+    /// Move `inner` out to `name` in `to`. Fails instead of replacing anything.
+    fn give(&mut self, inner: &str, to: &Dir, name: &OsStr) -> std::io::Result<()> {
+        rename_noreplace(&self.dir, OsStr::new(inner), to, name)?;
+        self.owned.retain(|(n, _)| n != inner);
+        Ok(())
+    }
+
+    /// Put the taken original back under `name` in `to`. Fails, and keeps it here, when the
+    /// name was taken again.
+    fn give_back(&mut self, to: &Dir, name: &OsStr, rel: &Path) -> Result<(), Error> {
+        match self.give(OLD, to, name) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(changed(
+                rel,
+                &format!(
+                    "was replaced twice while it was checked; the original is kept as {}",
+                    self.shown(rel.parent().unwrap_or(Path::new("")), OLD)
+                ),
+            )),
+            Err(e) => Err(Error::io(rel, e)),
+        }
+    }
+
+    /// Remove every file it created, if each is still that file, then the directory itself.
+    fn close(mut self) -> std::io::Result<()> {
+        self.closed = true;
+        for (name, id) in std::mem::take(&mut self.owned) {
+            remove_if(&self.dir, &name, id)?;
+        }
+        let same = self
+            .parent
+            .symlink_metadata(&self.name)
+            .is_ok_and(|m| m.is_dir() && id_of(&m) == self.id);
+        if !same {
+            return Err(std::io::Error::other("a holding directory was replaced"));
+        }
+        self.parent.remove_dir(&self.name)
+    }
+}
+
+impl Drop for Holding<'_> {
+    fn drop(&mut self) {
+        if self.closed {
+            return;
+        }
+        // Best effort: the error that led here is the one to report. A directory that still
+        // holds something is not empty, so it stays.
+        for (name, id) in &self.owned {
+            let _ = remove_if(&self.dir, name, *id);
+        }
+        if self
+            .parent
+            .symlink_metadata(&self.name)
+            .is_ok_and(|m| m.is_dir() && id_of(&m) == self.id)
+        {
+            let _ = self.parent.remove_dir(&self.name);
+        }
+    }
+}
+
+/// Move each of `files` from `dir` into a holding directory, check it there and remove it.
+/// A file that is no longer the one recorded stays in the holding directory, and the step
+/// fails. `at` is `dir` below the project, for messages and the hook.
+fn remove_checked(
+    dir: &Dir,
+    files: &[(OsString, Id)],
+    at: &Path,
+    hook: Hook<'_>,
+) -> Result<(), Error> {
+    let io = |e| Error::io(at, e);
+    let hold = Holding::create(dir).map_err(io)?;
+    for (name, id) in files {
+        let rel = at.join(name);
+        hold.take(dir, name, name).map_err(|e| Error::io(&rel, e))?;
+        hook(Point::Cleanup(&rel)).map_err(|e| Error::io(&rel, e))?;
+        if !remove_if(&hold.dir, name, *id).map_err(|e| Error::io(&rel, e))? {
+            return Err(changed(
+                &rel,
+                &format!(
+                    "changed after it was checked, so it was not removed; it is kept as {}",
+                    shown(&at.join(&hold.name).join(name))
+                ),
+            ));
+        }
+    }
+    hold.close().map_err(io)
 }
 
 /// A change that failed, and whether the target had already changed when it did.
@@ -400,11 +543,28 @@ impl From<Error> for Failed {
     }
 }
 
+/// Whether the taken original is the file the preflight saw, with `digest`.
+fn check_taken(hold: &Holding<'_>, rel: &Path, id: Id, digest: Option<Sha>) -> Result<(), Error> {
+    let Some(seen) = read_entry(&hold.dir, OsStr::new(OLD), rel)? else {
+        return Err(changed(rel, "disappeared while it was replaced"));
+    };
+    if seen.id != id {
+        return Err(changed(rel, "was replaced after it was checked"));
+    }
+    if digest.is_some_and(|d| d != seen.digest) {
+        return Err(changed(rel, "changed after it was checked"));
+    }
+    Ok(())
+}
+
 /// Replace `rel` below `root` with `new`, or remove it for `None`, if and only if it is what
 /// `want` says at that moment.
 ///
-/// The target is renamed aside and checked there, so the check and the change act on the
-/// same object. An unexpected object goes back under its name. Every rename refuses to
+/// The new bytes are staged in a holding directory next to the target, and `staged` learns
+/// the staged file's identity before anything changes. The target then moves into the
+/// holding directory and is checked there, through its handle. An unexpected object goes
+/// back under its name. The staged file takes the name, and the object under the name is
+/// checked to be the staged file before the original is removed. Every rename refuses to
 /// replace an existing name, so nothing that was not checked is overwritten or removed.
 // TODO(8l4.12.37): move to the compare-and-swap write in slopvac-fs when it lands.
 fn mutate(
@@ -413,76 +573,98 @@ fn mutate(
     want: Want,
     new: Option<(&[u8], u32)>,
     hook: Hook<'_>,
+    staged: &mut dyn FnMut(Id) -> Result<(), Error>,
 ) -> Result<(), Failed> {
-    let (parent, aside) = swap_in(root, rel, want, new, hook)?;
-    // The target has its new state now; what is left only tidies up.
-    aside
-        .map_or(Ok(()), |aside| parent.remove_file(aside))
-        .and_then(|()| sync_dir(&parent))
-        .map_err(|e| Failed {
-            error: Error::io(rel, e),
-            committed: true,
-        })
-}
-
-/// The part of [`mutate`] up to the moment the target changes. Returns the parent directory
-/// and the name the checked original was moved to, if any.
-fn swap_in(
-    root: &Dir,
-    rel: &Path,
-    want: Want,
-    new: Option<(&[u8], u32)>,
-    hook: Hook<'_>,
-) -> Result<(Dir, Option<OsString>), Error> {
     let io = |e| Error::io(rel, e);
     let Some((parent, name)) = open_parent(root, rel)? else {
-        return Err(changed(rel, "its directory disappeared"));
+        return Err(changed(rel, "its directory disappeared").into());
     };
-    let mut staged = match new {
-        Some((bytes, mode)) => Some(stage(&parent, &name, bytes, mode).map_err(io)?),
+    let at = rel.parent().unwrap_or(Path::new(""));
+    let mut hold = Holding::create(&parent).map_err(io)?;
+    let new_id = match new {
+        Some((bytes, mode)) => {
+            let id = hold.stage(bytes, mode, rel, hook).map_err(io)?;
+            staged(id)?;
+            Some(id)
+        }
         None => None,
     };
-    hook(rel).map_err(io)?;
-    let aside = match want {
+    hook(Point::Check(rel)).map_err(io)?;
+    let original = match want {
         Want::Absent => None,
         Want::File { id, digest } => {
-            let aside = match move_aside(&parent, &name) {
-                Ok(aside) => aside,
+            match hold.take(&parent, &name, OsStr::new(OLD)) {
+                Ok(()) => {}
                 Err(e) if e.kind() == ErrorKind::NotFound => {
-                    return Err(changed(rel, "disappeared after it was checked"));
+                    return Err(changed(rel, "disappeared after it was checked").into());
                 }
-                Err(e) => return Err(io(e)),
-            };
-            if let Err(e) = check_aside(&parent, &aside, rel, id, digest) {
-                return Err(put_back(&parent, &aside, &name, rel).err().unwrap_or(e));
+                Err(e) => return Err(io(e).into()),
             }
-            Some(aside)
+            if let Err(e) = check_taken(&hold, rel, id, digest) {
+                return Err(hold
+                    .give_back(&parent, &name, rel)
+                    .err()
+                    .unwrap_or(e)
+                    .into());
+            }
+            Some(id)
         }
     };
-    if let Some(staged) = staged.as_mut() {
-        match rename_noreplace(&parent, &staged.name, &name) {
-            Ok(()) => staged.armed = false,
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-                let kept = aside.as_ref().map_or(String::new(), |a| {
-                    format!("; the checked file is kept as {}", shown(Path::new(a)))
-                });
-                return Err(changed(
-                    rel,
-                    &format!("appeared after it was checked{kept}"),
-                ));
-            }
-            Err(e) => {
-                if let Some(aside) = &aside {
-                    put_back(&parent, aside, &name, rel)?;
-                }
-                return Err(io(e));
-            }
+    if let Err(e) = hook(Point::Install(rel)) {
+        let e = io(e);
+        return Err(match original {
+            Some(_) => hold.give_back(&parent, &name, rel).err().unwrap_or(e),
+            None => e,
         }
-    } else if aside.is_none() && parent.symlink_metadata(&name).is_ok() {
-        return Err(changed(rel, "appeared after it was checked"));
+        .into());
     }
-    drop(staged);
-    Ok((parent, aside))
+    if let Some(new_id) = new_id {
+        if let Err(e) = hold.give(NEW, &parent, &name) {
+            let e = if e.kind() == ErrorKind::AlreadyExists {
+                changed(rel, "appeared after it was checked")
+            } else {
+                io(e)
+            };
+            return Err(match original {
+                Some(_) => hold.give_back(&parent, &name, rel).err().unwrap_or(e),
+                None => e,
+            }
+            .into());
+        }
+        let placed = parent
+            .symlink_metadata(&name)
+            .is_ok_and(|m| m.is_file() && id_of(&m) == new_id);
+        if !placed {
+            let kept = original.map_or(String::new(), |_| {
+                format!("; the original is kept as {}", hold.shown(at, OLD))
+            });
+            return Err(Failed {
+                error: changed(rel, &format!("was replaced while it was written{kept}")),
+                committed: true,
+            });
+        }
+    } else if original.is_none() && parent.symlink_metadata(&name).is_ok() {
+        return Err(changed(rel, "appeared after it was checked").into());
+    }
+    let commit = |error| Failed {
+        error,
+        committed: true,
+    };
+    hook(Point::Discard(rel)).map_err(|e| commit(io(e)))?;
+    if let Some(id) = original {
+        let removed = remove_if(&hold.dir, OsStr::new(OLD), id).map_err(|e| commit(io(e)))?;
+        if !removed {
+            return Err(commit(changed(
+                rel,
+                &format!(
+                    "{} changed after it was checked, so it was not removed; delete it by hand",
+                    hold.shown(at, OLD)
+                ),
+            )));
+        }
+    }
+    hold.close().map_err(|e| commit(io(e)))?;
+    sync_dir(&parent).map_err(|e| commit(io(e)))
 }
 
 /// One file the migration touches.
@@ -495,6 +677,9 @@ struct Entry {
     mode: u32,
     /// The change happened.
     done: bool,
+    /// The file the migration staged for this path, saved before it took the name. A
+    /// target is the migration's own only with this identity and the `after` digest.
+    installed: Option<Id>,
 }
 
 /// The name of the backup copy of entry `index`.
@@ -548,11 +733,13 @@ impl Record {
         );
         let entries = self.entries.iter().map(|e| {
             format!(
-                "entry {} {} {} {:o} {}\n",
+                "entry {} {} {} {:o} {} {}\n",
                 u8::from(e.done),
                 opt_hex(e.before.as_ref()),
                 opt_hex(e.after.as_ref()),
                 e.mode,
+                e.installed
+                    .map_or_else(|| "-".to_owned(), |i| format!("{}:{}", i.dev, i.ino)),
                 e.path
             )
         });
@@ -575,7 +762,7 @@ impl Record {
         let mut entries = Vec::new();
         let mut paths = BTreeSet::new();
         for line in lines {
-            let mut parts = line.strip_prefix("entry ")?.splitn(5, ' ');
+            let mut parts = line.strip_prefix("entry ")?.splitn(6, ' ');
             let done = match parts.next()? {
                 "0" => false,
                 "1" => true,
@@ -586,6 +773,16 @@ impl Record {
             let mode = u32::from_str_radix(parts.next()?, 8)
                 .ok()
                 .filter(|m| *m <= 0o777)?;
+            let installed = match parts.next()? {
+                "-" => None,
+                text => {
+                    let (dev, ino) = text.split_once(':')?;
+                    Some(Id {
+                        dev: dev.parse().ok()?,
+                        ino: ino.parse().ok()?,
+                    })
+                }
+            };
             let path = parts.next()?.to_owned();
             if plain(Path::new(&path)).is_err() || !paths.insert(path.clone()) {
                 return None;
@@ -596,6 +793,7 @@ impl Record {
                 after,
                 mode,
                 done,
+                installed,
             });
         }
         Some(Self {
@@ -703,54 +901,44 @@ fn open_root(root: &Path) -> Result<(Dir, Id), Error> {
     Ok((dir, id))
 }
 
-/// A backup directory this run created, and the names it put in it.
+/// A backup directory this run created, and the files it put in it.
 struct Owned {
     dir: Dir,
     id: Id,
-    names: Vec<OsString>,
+    files: Vec<(OsString, Id)>,
 }
 
 /// Remove what this run put in its backup directory, then the directory. Used when apply
 /// fails before it changed any target.
 fn discard(root: &Dir, owned: &Owned) {
     // Best effort throughout: the error that led here is the one to report, and the record
-    // goes next, so nothing trusts what is left.
-    for name in &owned.names {
-        let _ = owned.dir.remove_file(name);
-    }
+    // goes next, so nothing trusts what is left. A file that is not the one this run wrote
+    // stays, and so does the directory then.
+    let _ = remove_checked(&owned.dir, &owned.files, Path::new(BACKUP_DIR), &mut |_| {
+        Ok(())
+    });
     if root
         .symlink_metadata(BACKUP_DIR)
-        .is_ok_and(|m| id_of(&m) == owned.id)
+        .is_ok_and(|m| m.is_dir() && id_of(&m) == owned.id)
     {
+        // Removes only an empty directory.
         let _ = root.remove_dir(BACKUP_DIR);
     }
 }
 
 /// Create the backup directory and write the copies and the manifest into it. On failure,
 /// whatever it created is gone again.
-fn make_backup(root: &Dir, record: &Record, plan: &Plan) -> Result<Owned, Error> {
+fn make_backup(root: &Dir, record: &Record, plan: &Plan, hook: Hook<'_>) -> Result<Owned, Error> {
     let shown_dir = Path::new(BACKUP_DIR);
-    let mut builder = DirBuilder::new();
-    builder.mode(BACKUP_DIR_MODE);
-    match root.create_dir_with(BACKUP_DIR, &builder) {
-        Ok(()) => {}
+    let (dir, id) = match private_dir(root, OsStr::new(BACKUP_DIR)) {
+        Ok(pair) => pair,
         Err(e) if e.kind() == ErrorKind::AlreadyExists => return Err(exists()),
         Err(e) => return Err(Error::io(shown_dir, e)),
-    }
-    let opened = root
-        .open_dir_nofollow(BACKUP_DIR)
-        .and_then(|dir| Ok((id_of(&dir.dir_metadata()?), dir)));
-    let (id, dir) = match opened {
-        Ok(pair) => pair,
-        Err(e) => {
-            let _ = root.remove_dir(BACKUP_DIR);
-            return Err(Error::io(shown_dir, e));
-        }
     };
     let mut owned = Owned {
         dir,
         id,
-        names: Vec::new(),
+        files: Vec::new(),
     };
     let manifest = record.manifest_text();
     let files = plan
@@ -760,13 +948,20 @@ fn make_backup(root: &Dir, record: &Record, plan: &Plan) -> Result<Owned, Error>
         .filter_map(|(i, c)| Some((copy_name(i), c.old.as_deref()?.as_bytes())))
         .chain([(OsString::from(MANIFEST), manifest.as_bytes())]);
     for (name, bytes) in files {
-        let written = create_file(&owned.dir, &name, bytes);
-        if written.is_ok() {
-            owned.names.push(name.clone());
-        }
-        if let Err(e) = written.and_then(|_| sync_dir(&owned.dir)) {
+        let rel = shown_dir.join(&name);
+        let written = write_new(
+            &owned.dir,
+            &name,
+            bytes,
+            BACKUP_FILE_MODE,
+            &mut owned.files,
+            &rel,
+            hook,
+        )
+        .and_then(|_| sync_dir(&owned.dir));
+        if let Err(e) = written {
             discard(root, &owned);
-            return Err(Error::io(&shown_dir.join(&name), e));
+            return Err(Error::io(&rel, e));
         }
     }
     Ok(owned)
@@ -808,6 +1003,7 @@ fn preflight(dir: &Dir, plan: &Plan) -> Result<(Vec<Want>, Vec<Entry>), Error> {
             after,
             mode: seen.as_ref().map_or(NEW_FILE_MODE, |s| s.mode),
             done: false,
+            installed: None,
         });
     }
     Ok((wants, entries))
@@ -825,15 +1021,14 @@ pub fn apply(root: &Path, plan: &Plan, state: &Path) -> Result<(), Error> {
     apply_hooked(root, plan, state, &mut |_| Ok(()))
 }
 
-/// [`apply`] with a callback that runs before the final check of each change, with the
-/// project-relative path. An error from it fails that change. Tests use it to swap a target
-/// at the worst moment.
+/// [`apply`] with a callback that runs at each [`Point`]. An error from it fails that step.
+/// Tests use it to swap an object or fail a write at the worst moment.
 #[doc(hidden)]
 pub fn apply_hooked(
     root: &Path,
     plan: &Plan,
     state: &Path,
-    hook: &mut dyn FnMut(&Path) -> std::io::Result<()>,
+    hook: &mut dyn FnMut(Point<'_>) -> std::io::Result<()>,
 ) -> Result<(), Error> {
     let (dir, root_id) = open_root(root)?;
     let (wants, entries) = preflight(&dir, plan)?;
@@ -846,7 +1041,7 @@ pub fn apply_hooked(
         entries,
     };
     store.save(&record)?;
-    let owned = match make_backup(&dir, &record, plan) {
+    let owned = match make_backup(&dir, &record, plan, hook) {
         Ok(owned) => owned,
         Err(e) => {
             let _ = store.remove();
@@ -866,10 +1061,18 @@ pub fn apply_hooked(
             ChangeKind::Write => c.new.as_deref().map(|t| (t.as_bytes(), mode)),
             ChangeKind::Delete => None,
         };
-        if let Err(failed) = mutate(&dir, &c.path, want, new, hook) {
+        // The staged file's identity is saved before it takes the name, so restore can tell
+        // the migration's own file from one with the same bytes.
+        let mut staged = |id| {
+            if let Some(entry) = record.entries.get_mut(i) {
+                entry.installed = Some(id);
+            }
+            store.save(&record)
+        };
+        if let Err(failed) = mutate(&dir, &c.path, want, new, hook, &mut staged) {
             if failed.committed {
-                // The target changed, so restore must undo it. Best effort: restore also
-                // undoes a replaced file whose completion is missing.
+                // The target changed, so restore must undo it. Best effort: restore finds
+                // the migration's own file by its saved identity in any case.
                 if let Some(entry) = record.entries.get_mut(i) {
                     entry.done = true;
                 }
@@ -895,8 +1098,8 @@ pub fn apply_hooked(
 pub struct Restored {
     /// Files now back in their state before the migration.
     pub restored: usize,
-    /// Files left as they are: created by the migration and changed since (kept with
-    /// `--force`), or not yet changed when an apply stopped, and different now.
+    /// Files left as they are: not the migration's own file at a path where it created one
+    /// (kept with `--force`), or not changed when an apply stopped, and different now.
     pub kept: Vec<PathBuf>,
 }
 
@@ -993,19 +1196,20 @@ fn decide(dir: &Dir, record: &Record, force: bool) -> Result<Vec<Step>, Error> {
         let rel = Path::new(&e.path);
         let now = look(dir, rel)?;
         let digest = now.as_ref().map(|s| s.digest);
+        // The migration's own result: the file it staged, by identity, with the bytes it
+        // wrote, or no file where it deleted one. Same bytes alone prove nothing.
+        let own = match e.after {
+            Some(after) => now
+                .as_ref()
+                .is_some_and(|s| Some(s.id) == e.installed && s.digest == after),
+            None => now.is_none(),
+        };
         let step = if digest == e.before {
             Step::Done
-        } else if !e.done {
-            // The change may have gone through without its completion being saved. A file
-            // with an original and exactly the new bytes goes back; a created file stays,
-            // because something else may have put it there.
-            if e.before.is_some() && digest == e.after {
-                Step::Undo(Want::of(now.as_ref(), true))
-            } else {
-                Step::Keep
-            }
-        } else if digest == e.after {
+        } else if own {
             Step::Undo(Want::of(now.as_ref(), true))
+        } else if !e.done {
+            Step::Keep
         } else if !force {
             return Err(changed(
                 rel,
@@ -1029,26 +1233,25 @@ fn decide(dir: &Dir, record: &Record, force: bool) -> Result<Vec<Step>, Error> {
 ///   root directory, by device and inode.
 /// - The backup directory is the one that run created, also by device and inode, and holds
 ///   exactly the files that run wrote, each with its recorded digest.
-/// - Each target still holds the bytes the migration wrote, or already its original
-///   bytes. With `force`, a changed target is put back anyway, and a changed file that the
-///   migration created is kept. `force` never skips the other checks or the link checks.
+/// - Each target is the migration's own result, or already holds its original bytes. The
+///   migration's own file is the one it staged, by device and inode, with the bytes it
+///   wrote; a file with the same bytes is not. With `force`, a changed target is put back
+///   anyway, and a changed file where the migration created one is kept. `force` never
+///   skips the other checks or the link checks.
 ///
-/// Changes the record marks as done are undone, and so is a replaced or deleted file that
-/// holds exactly what the migration left there when its completion was not saved. A file is
-/// deleted only if the record says the migration created it and it still holds exactly the
-/// bytes the migration wrote.
+/// A target that is not the migration's own and whose change never completed is left as it
+/// is. A file is deleted only if it is the migration's own.
 pub fn restore(root: &Path, state: &Path, force: bool) -> Result<Restored, Error> {
     restore_hooked(root, state, force, &mut |_| Ok(()))
 }
 
-/// [`restore`] with a callback that runs before the final check of each change, as for
-/// [`apply_hooked`].
+/// [`restore`] with a callback that runs at each [`Point`], as for [`apply_hooked`].
 #[doc(hidden)]
 pub fn restore_hooked(
     root: &Path,
     state: &Path,
     force: bool,
-    hook: &mut dyn FnMut(&Path) -> std::io::Result<()>,
+    hook: &mut dyn FnMut(Point<'_>) -> std::io::Result<()>,
 ) -> Result<Restored, Error> {
     let (dir, root_id) = open_root(root)?;
     let (verified, store) = verify(root, &dir, root_id, state)?;
@@ -1067,38 +1270,22 @@ pub fn restore_hooked(
             Step::Keep => out.kept.push(rel.to_owned()),
             Step::Undo(want) => {
                 let new = copy.as_deref().map(|bytes| (bytes, e.mode));
-                mutate(&dir, rel, want, new, hook).map_err(|f| f.error)?;
+                mutate(&dir, rel, want, new, hook, &mut |_| Ok(())).map_err(|f| f.error)?;
                 out.restored += 1;
             }
         }
     }
-    clean_up(&dir, &verified)?;
+    clean_up(&dir, &verified, hook)?;
     store.remove()?;
     Ok(out)
 }
 
-/// Remove the checked backup files by name through the backup directory's handle, then the
-/// directory itself. A file that is no longer the one that was checked stays, and so does
-/// the directory.
-fn clean_up(dir: &Dir, verified: &Verified) -> Result<(), Error> {
+/// Move each checked backup file into a holding directory inside the backup directory,
+/// check it there and remove it, then remove the backup directory. A file that is no longer
+/// the one that was checked stays, and so does the directory.
+fn clean_up(dir: &Dir, verified: &Verified, hook: Hook<'_>) -> Result<(), Error> {
     let shown_dir = Path::new(BACKUP_DIR);
-    for (name, id) in &verified.files {
-        let rel = shown_dir.join(name);
-        let same = verified
-            .backup
-            .symlink_metadata(name)
-            .is_ok_and(|m| m.is_file() && id_of(&m) == *id);
-        if !same {
-            return Err(changed(
-                &rel,
-                "changed during the restore; delete the backup by hand",
-            ));
-        }
-        verified
-            .backup
-            .remove_file(name)
-            .map_err(|e| Error::io(&rel, e))?;
-    }
+    remove_checked(&verified.backup, &verified.files, shown_dir, hook)?;
     let same = dir
         .symlink_metadata(BACKUP_DIR)
         .is_ok_and(|m| m.is_dir() && id_of(&m) == verified.backup_id);
@@ -1108,6 +1295,7 @@ fn clean_up(dir: &Dir, verified: &Verified) -> Result<(), Error> {
             "changed during the restore; delete it by hand",
         ));
     }
+    // Removes only an empty directory.
     dir.remove_dir(BACKUP_DIR).map_err(|e| {
         if e.kind() == ErrorKind::DirectoryNotEmpty {
             changed(
