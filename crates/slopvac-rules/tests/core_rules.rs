@@ -29,20 +29,48 @@ fn core() -> RuleSet {
     .unwrap_or_else(|e| panic!("core rules must load:\n{e}"))
 }
 
-/// Rule counts read straight from the rule YAML on disk, independent of every loader: a
-/// rule starts at a two-space `- id:` line and a judgement rule has a four-space
-/// `kind: judgement` line.
+/// The ids in `docs/contract/compat/removed-rules.toml`: 2.x rules the YAML keeps and the
+/// 3.0 catalogue drops.
+fn removed_rule_ids() -> Vec<String> {
+    let path = manifest().join("../../docs/contract/compat/removed-rules.toml");
+    let table: toml::Table = std::fs::read_to_string(path).unwrap().parse().unwrap();
+    table["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// Rule counts read straight from the rule YAML on disk, independent of every loader, with
+/// the removed rules left out. A rule starts at a two-space `- id:` line and a judgement
+/// rule has a four-space `kind: judgement` line. Rule ids are `<category>.<name>`, where the
+/// category is the file's top-level `id:`.
 fn yaml_counts() -> (usize, usize) {
     let dir = manifest().join("../../packages/slopvac-lint/src/slopvac/rules");
+    let removed = removed_rule_ids();
     let (mut rules, mut judgement) = (0, 0);
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_none_or(|e| e != "yml") {
             continue;
         }
-        for line in std::fs::read_to_string(&path).unwrap().lines() {
-            rules += usize::from(line.starts_with("  - id: "));
-            judgement += usize::from(line == "    kind: judgement");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let category = text
+            .lines()
+            .find_map(|l| l.strip_prefix("id: "))
+            .unwrap()
+            .trim()
+            .trim_matches('"');
+        // The rule the lines below belong to is retired.
+        let mut retired = false;
+        for line in text.lines() {
+            if let Some(name) = line.strip_prefix("  - id: ") {
+                let full = format!("{category}.{}", name.trim().trim_matches('"'));
+                retired = removed.contains(&full);
+                rules += usize::from(!retired);
+            }
+            judgement += usize::from(!retired && line == "    kind: judgement");
         }
     }
     (rules, judgement)
@@ -94,7 +122,7 @@ fn rules_are_counted_by_kind() {
         .expect("the mixed content types rule loads");
     assert_eq!(mixed.kind(), MatchKind::Judgement);
     assert_eq!(count(MatchKind::Metric), 13);
-    assert_eq!(count(MatchKind::Structure), 6);
+    assert_eq!(count(MatchKind::Structure), 1);
     assert_eq!(count(MatchKind::Vocabulary), 4);
     assert_eq!(count(MatchKind::Capitalization), 0);
 }

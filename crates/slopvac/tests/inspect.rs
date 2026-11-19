@@ -3,7 +3,7 @@
 //! `behavior:inspection-filters`, `behavior:inspection-formats`).
 //!
 //! Expected counts come from the converted 2.x core files under
-//! `crates/slopvac-rules/tests/fixtures/core-v3`, counted with `jq`, not from
+//! `crates/slopvac-rules/tests/fixtures/core-v3` and the term-casing pack data, not from
 //! the code under test. The rules are embedded by STUB(slopvac-8l4.12.27).
 
 use assert_cmd::Command;
@@ -42,16 +42,31 @@ fn json(args: &[&str]) -> Value {
     serde_json::from_str(&stdout(args)).expect("json output")
 }
 
-/// Every rule in the converted core files as `(recommended_for, match kind)`.
-fn fixture_rules() -> Vec<(Vec<String>, String)> {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../slopvac-rules/tests/fixtures/core-v3");
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(dir).expect("fixture dir") {
+/// The category files `slopvac rules` lists: the converted core files and the term-casing
+/// pack, which the binary loads from the engine crate's data file.
+fn category_files() -> Vec<std::path::PathBuf> {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = vec![manifest.join("../slopvac-engine/data/terms-pack.json")];
+    for entry in std::fs::read_dir(manifest.join("../slopvac-rules/tests/fixtures/core-v3"))
+        .expect("fixture dir")
+    {
         let path = entry.expect("entry").path();
-        if path.extension().is_none_or(|e| e != "json") {
-            continue;
+        if path.extension().is_some_and(|e| e == "json") {
+            files.push(path);
         }
+    }
+    files
+}
+
+/// The number of categories `slopvac rules` lists.
+fn fixture_categories() -> usize {
+    category_files().len()
+}
+
+/// Every listed rule as `(recommended_for, match kind)`.
+fn fixture_rules() -> Vec<(Vec<String>, String)> {
+    let mut out = Vec::new();
+    for path in category_files() {
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).expect("read"))
             .expect("fixture json");
         let genres: Vec<String> = v["recommended_for"]
@@ -75,8 +90,9 @@ fn rules_lists_every_core_rule_with_a_count_line() {
     let text = stdout(&["rules"]);
     let n = fixture_rules().len();
     assert_eq!(text.lines().count(), n + 1, "{n} rules and the count line");
+    let categories = fixture_categories();
     assert!(
-        text.ends_with(&format!("{n} rule(s) in 26 category(ies)\n")),
+        text.ends_with(&format!("{n} rule(s) in {categories} category(ies)\n")),
         "{text}"
     );
 }
@@ -150,7 +166,10 @@ fn a_genre_no_category_recommends_lists_nothing() {
 fn rules_json_has_pack_categories_and_linked_rules() {
     let v = json(&["rules", "--format", "json"]);
     assert_eq!(v["pack"], "core");
-    assert_eq!(v["categories"].as_array().unwrap().len(), 26);
+    assert_eq!(
+        v["categories"].as_array().unwrap().len(),
+        fixture_categories()
+    );
     let rule = &v["rules"][0];
     assert_eq!(rule["id"], CHAT_LEAKAGE);
     assert_eq!(rule["category"], "ai-residue");
