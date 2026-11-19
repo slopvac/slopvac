@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location(
     "schema_compat", ROOT / "scripts" / "contract" / "schema_compat.py"
 )
+assert _spec is not None and _spec.loader is not None
 compat = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = compat
 _spec.loader.exec_module(compat)
@@ -461,8 +462,8 @@ def test_an_added_entry_that_matches_nothing_is_stale_on_either_base(tmp_path, b
 
 
 def test_a_landed_entry_does_not_suppress_a_new_finding_at_its_pointer(tmp_path):
-    # The base removed `a` under an entry and then put it back; removing it again
-    # needs a new review, so the landed entry must not cover it.
+    # The base already holds this entry, so it approved an earlier, landed change.
+    # Removing `a` now is a new break and needs a new review.
     base = write_dir(tmp_path / "old", {FILE: OLD_WITH_A})
     (base / compat.ALLOW_FILE).write_text(ALLOW_A, encoding="utf-8")
     new = write_dir(tmp_path / "new", {FILE: schema(properties={})})

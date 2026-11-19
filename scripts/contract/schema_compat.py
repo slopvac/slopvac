@@ -11,7 +11,8 @@ or tighten (docs/contract/policies.md, section 3.9).
 Each finding prints as ``file:json-pointer: kind: old -> new``. The kind is a stable
 kebab-case code; a code is never reused and never changes meaning. An entry in
 schemas/v3/compat-allow.toml suppresses one finding; an entry that matches nothing
-is itself a finding.
+is itself a finding. Entries that the baseline's own allow file already holds are
+ignored: their change has landed, so they neither suppress nor go stale.
 
 Exit codes: 0 compatible, 1 a breaking finding, 2 a usage or read error.
 
@@ -155,10 +156,15 @@ class AllowEntry:
 
 @dataclass(frozen=True)
 class Snapshot:
-    """Baseline schemas by file name and conformance files by path under conformance/."""
+    """Baseline schemas by file name and conformance files by path under conformance/.
+
+    ``allow`` holds the baseline's own allow entries. They approved changes that are
+    already in the baseline, so the check ignores them (see ``check``).
+    """
 
     schemas: dict[str, dict]
     corpus: dict[str, str]
+    allow: frozenset[AllowEntry] = frozenset()
 
 
 def _show(value: object) -> str:
@@ -741,11 +747,14 @@ def validate_corpus(corpus: dict[str, str], new: dict[str, dict]) -> list[Findin
 def load_allow(path: Path) -> list[AllowEntry]:
     if not path.exists():
         return []
-    text = _read(path)
+    return parse_allow(_read(path), str(path))
+
+
+def parse_allow(text: str, source: str) -> list[AllowEntry]:
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise CompatError(f"cannot parse {path}: {exc}") from exc
+        raise CompatError(f"cannot parse {source}: {exc}") from exc
     raw = data.get("allow", [])
     entries = []
     for i, item in enumerate(raw):
@@ -758,7 +767,7 @@ def load_allow(path: Path) -> list[AllowEntry]:
         extra = set(item) - set(ALLOW_FIELDS)
         if missing or extra:
             raise CompatError(
-                f"{path}: allow entry {i + 1}: bad or missing fields {sorted(set(missing) | extra)}"
+                f"{source}: allow entry {i + 1}: bad or missing fields {sorted(set(missing) | extra)}"
             )
         entries.append(AllowEntry(**values))
     return entries
@@ -818,7 +827,7 @@ def snapshot_from_dir(directory: Path) -> Snapshot:
         raise CompatError(f"cannot list {directory}: {exc}") from exc
     schemas = {p.name: _parse_schema(p.name, _read(p)) for p in schema_paths}
     corpus = {p.relative_to(conformance).as_posix(): _read(p) for p in corpus_paths}
-    return Snapshot(schemas, corpus)
+    return Snapshot(schemas, corpus, frozenset(load_allow(directory / ALLOW_FILE)))
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -870,26 +879,30 @@ def snapshot_from_ref(repo: Path, ref: str) -> Snapshot:
     prefix = f"{SCHEMA_REL}/"
     names = _git(repo, "ls-tree", "-r", "--name-only", ref, "--", prefix).splitlines()
     wanted = []
+    allow_path = f"{prefix}{ALLOW_FILE}"
     for full in names:
         rel = full.removeprefix(prefix)
         is_schema = "/" not in rel and rel.endswith(SCHEMA_SUFFIX)
         is_instance = rel.startswith("conformance/") and _is_valid_instance(
             rel.removeprefix("conformance/")
         )
-        if is_schema or is_instance:
+        if is_schema or is_instance or full == allow_path:
             wanted.append(full)
     blobs = _git_blobs(repo, ref, wanted)
     schemas: dict[str, dict] = {}
     corpus: dict[str, str] = {}
+    allow: list[AllowEntry] = []
     for full, text in blobs.items():
         rel = full.removeprefix(prefix)
-        if rel.startswith("conformance/"):
+        if full == allow_path:
+            allow = parse_allow(text, f"{ref}:{full}")
+        elif rel.startswith("conformance/"):
             corpus[rel.removeprefix("conformance/")] = text
         else:
             schemas[rel] = _parse_schema(rel, text)
     if not schemas:
         raise CompatError(f"no {SCHEMA_REL}/*{SCHEMA_SUFFIX} at {ref}")
-    return Snapshot(schemas, corpus)
+    return Snapshot(schemas, corpus, frozenset(allow))
 
 
 def _is_valid_instance(under_conformance: str) -> bool:
@@ -902,15 +915,22 @@ def _is_valid_instance(under_conformance: str) -> bool:
 
 
 def check(base: Snapshot, new_dir: Path, allow: list[AllowEntry]) -> list[Finding]:
-    """Return every unsuppressed breaking finding, stale allow entries included."""
+    """Return every unsuppressed breaking finding, stale allow entries included.
+
+    Only the entries that are not in the baseline's own allow file take part. An entry
+    the baseline already holds approved a change that has landed: it suppresses nothing
+    and is never stale. So an entry survives its change reaching the base, and a later
+    finding at the same pointer needs a new review.
+    """
     new = snapshot_from_dir(new_dir).schemas
     findings = compare_snapshots(base.schemas, new) + validate_corpus(base.corpus, new)
-    remaining, stale = apply_allow(findings, allow)
+    added = [entry for entry in allow if entry not in base.allow]
+    remaining, stale = apply_allow(findings, added)
     return remaining + stale
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--base", help="git ref holding the baseline schemas/v3")
     source.add_argument(
