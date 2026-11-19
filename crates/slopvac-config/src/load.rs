@@ -133,11 +133,26 @@ impl LoadedConfig {
     }
 }
 
-/// Whether `rel` can be matched against root-relative patterns. A path that is absolute or
-/// climbs out with a leading `..` is outside the root and matches no pattern. The matcher
-/// panics on such a path, so every call into it goes through this check.
+/// Whether `rel` can be matched against root-relative patterns. A path that is absolute, or
+/// that climbs above the root at any point (`a/../../x`), is outside the root and matches no
+/// pattern. The matcher panics on such a path, so every call into it goes through this check.
+/// The walk is lexical and touches no filesystem.
 fn is_under_root(rel: &Path) -> bool {
-    !rel.has_root() && !rel.starts_with("..")
+    let mut depth = 0usize;
+    for component in rel.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => return false,
+            Component::CurDir => {}
+            Component::Normal(_) => depth += 1,
+            Component::ParentDir => {
+                let Some(up) = depth.checked_sub(1) else {
+                    return false;
+                };
+                depth = up;
+            }
+        }
+    }
+    true
 }
 
 /// Load the config at `path` and everything it extends.
@@ -945,6 +960,7 @@ mod tests {
     #[case::parent("../README.md")]
     #[case::deep_parent("../../elsewhere/README.md")]
     #[case::absolute("/elsewhere/README.md")]
+    #[case::escapes_mid_path("a/../../README.md")]
     fn a_path_outside_the_root_is_not_excluded(#[case] rel: &str) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("slopvac.toml");
@@ -954,10 +970,21 @@ mod tests {
         assert!(!config.is_excluded(Path::new(rel)));
     }
 
+    #[test]
+    fn a_path_that_climbs_and_returns_inside_the_root_is_excluded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("slopvac.toml");
+        fs::write(&path, "schema_version = 3\nexclude = [\"*.md\"]\n").unwrap();
+        let config = load(&path, &NoPresets).unwrap();
+        assert!(config.is_excluded(Path::new("a/../README.md")));
+    }
+
     #[rstest]
     #[case::inside("README.md", true)]
     #[case::parent("../README.md", false)]
     #[case::absolute("/elsewhere/README.md", false)]
+    #[case::escapes_mid_path("a/../../README.md", false)]
+    #[case::stays_inside("a/../README.md", true)]
     fn a_block_applies_only_to_a_path_under_the_root(#[case] rel: &str, #[case] applies: bool) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("slopvac.toml");

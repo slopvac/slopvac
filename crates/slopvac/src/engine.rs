@@ -571,7 +571,9 @@ fn collect_targets(
     Ok(())
 }
 
-/// The config that applies to `file` and its path relative to the config root.
+/// The config that applies to `file` and its path relative to the config root. A file outside
+/// that root comes back absolute, so the config's root-relative matching rejects it. The path
+/// is for matching only; reports show the separate `shown` path.
 fn config_for(
     configs: &Configs<'_>,
     root: &Path,
@@ -592,7 +594,7 @@ fn config_for(
     Ok(found.map(|config| {
         let rel = absolute
             .strip_prefix(&config.root)
-            .map_or_else(|_| file.to_path_buf(), Path::to_path_buf);
+            .map_or_else(|_| absolute.clone(), Path::to_path_buf);
         (config, rel)
     }))
 }
