@@ -69,6 +69,13 @@ Release artifacts are signed with minisign. The public key is committed at `keys
 
 - The secret key lives in the GitHub Actions secret `MINISIGN_SECRET_KEY`, stored on the `release`, `candidate-signing` and `revocations` environments. A repository-level copy remains only until the first candidate signs in `candidate-signing`. Then delete it with `gh secret delete MINISIGN_SECRET_KEY -R slopvac/slopvac`, and the environments are its only home. A backup is in the 1Password vault `proj-slopvac`, item `slopvac release minisign key`.
 
+## Plugins signing key
+
+The plugins key is a separate minisign key. Its public half is committed at `keys/slopvac-plugins.pub`.
+
+- Key id: `089DF22CF142CD2B`
+- It signs first-party plugins and the first-party plugin index and nothing else.
+
 To verify a release file against the committed key:
 
 ```sh

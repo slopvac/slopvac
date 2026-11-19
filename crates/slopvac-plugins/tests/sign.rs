@@ -845,10 +845,8 @@ fn first_party_expect() -> Expectation<'static> {
 }
 
 #[test]
-fn the_compiled_policy_binds_the_first_party_namespace_to_the_release_key() {
+fn the_compiled_policy_fixes_the_namespace_list_and_pins_nothing() {
     let policy = KeyPolicy::compiled().unwrap();
-    assert_eq!(policy.first_party.len(), 1);
-    assert_eq!(policy.first_party[0].key_id(), "D9914BDB4570AC6D");
     assert_eq!(policy.first_party_namespaces, ["slopvac"]);
     assert!(policy.pinned.is_empty());
 }
@@ -984,6 +982,63 @@ fn the_first_party_key_list_gives_no_trust_outside_the_first_party_namespace(
     };
     assert!(matches!(
         run(&signed_in(&signer, namespace), &policy, &e),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+// ---- The compiled policy binds `slopvac` to the plugins key ----
+
+fn compiled_first_party_ids() -> Vec<String> {
+    KeyPolicy::compiled()
+        .unwrap()
+        .first_party
+        .iter()
+        .map(PublicKey::key_id)
+        .collect()
+}
+
+#[test]
+fn the_compiled_policy_verifies_the_slopvac_namespace_with_the_plugins_key() {
+    assert_eq!(compiled_first_party_ids(), [PLUGINS_KEY_ID]);
+}
+
+#[test]
+fn the_compiled_policy_refuses_the_release_key_for_the_slopvac_namespace() {
+    assert!(!compiled_first_party_ids().contains(&release_key().unwrap().key_id()));
+}
+
+#[rstest]
+#[case::unpinned(None)]
+#[case::another_key_pinned(Some(Key::new()))]
+fn a_third_party_namespace_does_not_verify_through_the_compiled_policy(
+    #[case] pinned: Option<Key>,
+) {
+    let mut policy = KeyPolicy::compiled().unwrap();
+    if let Some(p) = &pinned {
+        policy.pinned.insert("acme".into(), vec![p.public()]);
+    }
+    let e = Expectation {
+        namespace: "acme",
+        ..expect()
+    };
+    assert!(matches!(
+        run(&signed_in(&Key::new(), "acme"), &policy, &e),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[test]
+fn a_core_statement_is_refused_under_the_compiled_policy_whichever_key_signed_it() {
+    let e = Expectation {
+        namespace: "core",
+        ..expect()
+    };
+    assert!(matches!(
+        run(
+            &signed_in(&Key::new(), "core"),
+            &KeyPolicy::compiled().unwrap(),
+            &e
+        ),
         Err(SignError::KeyNotPinned { .. })
     ));
 }
