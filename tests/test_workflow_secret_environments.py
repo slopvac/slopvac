@@ -43,11 +43,45 @@ def reads_signing_secret(node: object) -> bool:
     return False
 
 
-def has_environment(job: dict) -> bool:
+# Reviewed environments that may hold the signing key. Each is a literal name; an
+# expression or any other name is rejected, so a new home for the key needs a change here.
+ALLOWED_ENVIRONMENTS = frozenset({"release", "revocations", "candidate-signing"})
+
+EXPRESSION = re.compile(r"\$\{\{(.*?)\}\}", re.DOTALL)
+STRING_LITERAL = re.compile(r"'(?:[^']|'')*'")
+# `secrets` as a whole context: not a property access, and not itself a property
+# (`inputs.secrets`, `outputs.secrets`).
+BARE_SECRETS = re.compile(r"(?<![\w.\-])secrets\b(?!\s*(?:\.|\[))", re.IGNORECASE)
+
+
+def uses_whole_secrets_context(expression: str) -> bool:
+    return BARE_SECRETS.search(STRING_LITERAL.sub("", expression)) is not None
+
+
+def forwards_all_secrets(node: object, key: str = "") -> bool:
+    """True for `secrets: inherit` and for the whole secrets context in an expression."""
+    if isinstance(node, str):
+        if key == "secrets" and node.strip().lower() == "inherit":
+            return True
+        if key == "if":  # an `if` value is an expression even without `${{ }}`
+            return uses_whole_secrets_context(node)
+        return any(uses_whole_secrets_context(m) for m in EXPRESSION.findall(node))
+    if isinstance(node, dict):
+        return any(forwards_all_secrets(v, str(k)) for k, v in node.items())
+    if isinstance(node, list):
+        return any(forwards_all_secrets(item) for item in node)
+    return False
+
+
+def environment_name(job: dict) -> str | None:
     environment = job.get("environment")
     if isinstance(environment, dict):
-        return bool(environment.get("name"))
-    return bool(environment)
+        environment = environment.get("name")
+    return environment if isinstance(environment, str) else None
+
+
+def has_reviewed_environment(job: dict) -> bool:
+    return environment_name(job) in ALLOWED_ENVIRONMENTS
 
 
 def violations(workflows: dict[str, dict]) -> list[str]:
@@ -57,8 +91,15 @@ def violations(workflows: dict[str, dict]) -> list[str]:
         outside = {k: v for k, v in workflow.items() if k != "jobs"}
         if reads_signing_secret(outside):
             found.append(f"{name} reads a MINISIGN secret outside any job")
+        if forwards_all_secrets(outside):
+            found.append(f"{name} forwards the whole secrets context outside any job")
         for job_id, job in (workflow.get("jobs") or {}).items():
-            if reads_signing_secret(job) and not has_environment(job):
+            if forwards_all_secrets(job):
+                found.append(
+                    f"{name}:{job_id} forwards the whole secrets context"
+                    " (inherit or bulk use)"
+                )
+            if reads_signing_secret(job) and not has_reviewed_environment(job):
                 found.append(
                     f"{name}:{job_id} reads a MINISIGN secret without an environment"
                 )
@@ -130,6 +171,91 @@ def test_a_signing_secret_read_without_an_environment_is_reported(job):
     ],
 )
 def test_a_signing_secret_read_inside_an_environment_is_allowed(environment):
+    job = {"environment": environment, "steps": [{"env": {"K": SECRET}}]}
+    assert violations(synthetic(job)) == []
+
+
+@pytest.mark.parametrize(
+    "job",
+    [
+        pytest.param(
+            {"uses": "./.github/workflows/x.yml", "secrets": "inherit"}, id="inherit"
+        ),
+        pytest.param(
+            {
+                "environment": "release",
+                "steps": [{"env": {"A": "${{ toJSON(secrets) }}"}}],
+            },
+            id="to-json-env",
+        ),
+        pytest.param(
+            {"steps": [{"uses": "a/b@1", "with": {"all": "${{ toJson( secrets ) }}"}}]},
+            id="to-json-with",
+        ),
+        pytest.param(
+            {"steps": [{"run": "echo '${{ format('{0}', secrets) }}'"}]},
+            id="bare-in-run",
+        ),
+        pytest.param(
+            {"if": "${{ secrets != null }}", "steps": []}, id="bare-in-if-expression"
+        ),
+        pytest.param(
+            {"if": "toJSON(secrets) != ''", "steps": []}, id="bare-in-if-field"
+        ),
+    ],
+)
+def test_bulk_secret_forwarding_is_reported(job):
+    assert violations(synthetic(job)) == [
+        "x.yml:j forwards the whole secrets context (inherit or bulk use)"
+    ]
+
+
+@pytest.mark.parametrize(
+    "job",
+    [
+        pytest.param(
+            {"steps": [{"env": {"T": "${{ inputs.secrets }}"}}]},
+            id="input-named-secrets",
+        ),
+        pytest.param(
+            {"steps": [{"env": {"T": "${{ steps.f.outputs.secrets }}"}}]}, id="output"
+        ),
+        pytest.param({"steps": [{"run": "echo secrets are not printed"}]}, id="prose"),
+        pytest.param(
+            {"steps": [{"run": "echo '${{ 'secrets' }}'"}]}, id="string-literal"
+        ),
+        pytest.param(
+            {"steps": [{"env": {"T": "${{ secrets.GITHUB_TOKEN }}"}}]}, id="named"
+        ),
+    ],
+)
+def test_text_that_only_mentions_secrets_is_not_bulk_forwarding(job):
+    assert violations(synthetic(job)) == []
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        pytest.param("staging", id="unknown-name"),
+        pytest.param("${{ inputs.target }}", id="expression"),
+        pytest.param("${{ 'release' }}", id="literal-expression"),
+        pytest.param({"name": "staging"}, id="mapping-unknown-name"),
+        pytest.param({"name": "${{ inputs.target }}"}, id="mapping-expression"),
+        pytest.param({"url": "https://example.test"}, id="mapping-without-name"),
+        pytest.param("Release", id="case-differs"),
+    ],
+)
+def test_a_signing_secret_read_in_an_unreviewed_environment_is_reported(environment):
+    job = {"environment": environment, "steps": [{"env": {"K": SECRET}}]}
+    assert violations(synthetic(job)) == [
+        "x.yml:j reads a MINISIGN secret without an environment"
+    ]
+
+
+@pytest.mark.parametrize("name", ["release", "revocations", "candidate-signing"])
+@pytest.mark.parametrize("form", ["string", "mapping"])
+def test_every_reviewed_environment_is_allowed_in_both_forms(name, form):
+    environment = name if form == "string" else {"name": name, "url": "https://x.test"}
     job = {"environment": environment, "steps": [{"env": {"K": SECRET}}]}
     assert violations(synthetic(job)) == []
 
