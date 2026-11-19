@@ -351,6 +351,25 @@ fn restore_counts_a_file_already_back_to_its_original() {
     assert_eq!(s.read("a.md"), DOC_OLD);
 }
 
+#[rstest]
+#[case::replaced_file("slopvac.toml", "slopvac.toml")]
+#[case::deleted_file(".slopvac.toml", ".slopvac.toml")]
+fn restore_with_force_keeps_an_unrelated_file_at_a_migrated_path(
+    #[case] original: &str,
+    #[case] target: &str,
+) {
+    let s = Setup::new(&[(original, OLD)]);
+    s.apply(&s.plan()).unwrap();
+    // An unrelated, singly linked file takes the path the migration wrote or deleted.
+    s.write("swap.tmp", EDITED);
+    fs::rename(s.path("swap.tmp"), s.path(target)).unwrap();
+    let inode = fs::metadata(s.path(target)).unwrap().ino();
+    let done = s.restore(true).unwrap();
+    assert_eq!(done.kept, vec![PathBuf::from(target)]);
+    assert_eq!(s.read(target), EDITED);
+    assert_eq!(fs::metadata(s.path(target)).unwrap().ino(), inode);
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Forgery {
     /// The checkout ships a backup directory of its own.

@@ -1098,8 +1098,9 @@ pub fn apply_hooked(
 pub struct Restored {
     /// Files now back in their state before the migration.
     pub restored: usize,
-    /// Files left as they are: not the migration's own file at a path where it created one
-    /// (kept with `--force`), or not changed when an apply stopped, and different now.
+    /// Files left as they are. With `--force`, a target that is not the file the migration
+    /// installed, or a changed file where the migration created one. In any run, a target
+    /// that a stopped apply never changed and that differs now.
     pub kept: Vec<PathBuf>,
 }
 
@@ -1198,10 +1199,9 @@ fn decide(dir: &Dir, record: &Record, force: bool) -> Result<Vec<Step>, Error> {
         let digest = now.as_ref().map(|s| s.digest);
         // The migration's own result: the file it staged, by identity, with the bytes it
         // wrote, or no file where it deleted one. Same bytes alone prove nothing.
+        let installed = now.as_ref().is_some_and(|s| Some(s.id) == e.installed);
         let own = match e.after {
-            Some(after) => now
-                .as_ref()
-                .is_some_and(|s| Some(s.id) == e.installed && s.digest == after),
+            Some(after) => installed && digest == Some(after),
             None => now.is_none(),
         };
         let step = if digest == e.before {
@@ -1215,10 +1215,13 @@ fn decide(dir: &Dir, record: &Record, force: bool) -> Result<Vec<Step>, Error> {
                 rel,
                 "changed after the migration wrote it; rerun with --force to restore anyway",
             ));
-        } else if e.before.is_none() {
-            Step::Keep
-        } else {
+        } else if e.before.is_some() && (installed || now.is_none()) {
+            // `force` relaxes only the content check: the object is still the file the
+            // migration installed, edited in place, or the name is empty.
             Step::Undo(Want::of(now.as_ref(), false))
+        } else {
+            // Not the migration's object, or a created file that changed: left as it is.
+            Step::Keep
         };
         steps.push(step);
     }
@@ -1235,9 +1238,12 @@ fn decide(dir: &Dir, record: &Record, force: bool) -> Result<Vec<Step>, Error> {
 ///   exactly the files that run wrote, each with its recorded digest.
 /// - Each target is the migration's own result, or already holds its original bytes. The
 ///   migration's own file is the one it staged, by device and inode, with the bytes it
-///   wrote; a file with the same bytes is not. With `force`, a changed target is put back
-///   anyway, and a changed file where the migration created one is kept. `force` never
-///   skips the other checks or the link checks.
+///   wrote; a file with the same bytes is not.
+///
+/// With `force`, a target whose content changed is put back anyway, but only when it is
+/// still the file the migration installed, or the name is empty. Any other object at the
+/// path is kept, and so is a changed file where the migration created one. `force` never
+/// skips the other checks or the link checks.
 ///
 /// A target that is not the migration's own and whose change never completed is left as it
 /// is. A file is deleted only if it is the migration's own.
