@@ -212,6 +212,7 @@ def _same_pattern(old: object, new: object) -> bool:
         return old.replace(_PORTABLE_END, "$") == new.replace(_PORTABLE_END, "$")
     return old == new
 
+
 # --- structural comparison -------------------------------------------------------
 
 # Maps whose added entries are compared with an unrestricted schema. New ``properties``
