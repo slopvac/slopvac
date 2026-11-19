@@ -6,6 +6,7 @@
 use proptest::prelude::*;
 use rstest::rstest;
 use snapbox::cmd::{Command, cargo_bin};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 /// The binary under test, with the ambient colour and logging settings cleared so
@@ -71,17 +72,55 @@ fn clean_exit(cmd: Command, timeout: Duration) -> Result<(), String> {
     }
 }
 
+/// The binary run inside `dir`, with every directory it may read or write for the
+/// user (home, cache, config, data, state) pointed there. A case then sees an empty
+/// tree and cannot touch the runner's real user files.
+fn slopvac_in(dir: &Path) -> Command {
+    let home = dir.as_os_str();
+    slopvac()
+        .current_dir(dir)
+        .env("HOME", home)
+        .env("SLOPVAC_CACHE_DIR", home)
+        .env("XDG_CACHE_HOME", home)
+        .env("XDG_CONFIG_HOME", home)
+        .env("XDG_DATA_HOME", home)
+        .env("XDG_STATE_HOME", home)
+}
+
+/// A word that stays inside the working directory: it starts with no `/`, so it is
+/// never absolute, and it holds no `..`, so it never climbs out. Built by
+/// construction, not by rejecting, so no generated case is discarded.
+fn contained_word() -> impl Strategy<Value = String> {
+    "([a-zA-Z0-9_.-][a-zA-Z0-9_./-]{0,11})?".prop_map(|mut word| {
+        while word.contains("..") {
+            word = word.replace("..", ".");
+        }
+        word
+    })
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(32))]
 
     /// proptest: state an invariant over generated input. Arbitrary words must
     /// make the CLI exit cleanly (0 or 2), never crash or hang. Each case spawns
-    /// the binary, so the case count stays low.
+    /// the binary in an empty directory, so the case count stays low and an
+    /// argument like `/` cannot walk the host's file system.
     #[test]
-    fn arbitrary_arguments_never_crash(args in proptest::collection::vec("[a-zA-Z0-9_./-]{0,12}", 0..4)) {
-        let verdict = clean_exit(slopvac().args(&args), CASE_TIMEOUT);
+    fn arbitrary_arguments_never_crash(args in proptest::collection::vec(contained_word(), 0..4)) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let verdict = clean_exit(slopvac_in(dir.path()).args(&args), CASE_TIMEOUT);
         prop_assert!(verdict.is_ok(), "{}", verdict.unwrap_err());
     }
+}
+
+/// The current directory is a path the CLI may be asked to check. In an empty
+/// directory it ends within the timeout with a clean exit.
+#[test]
+fn the_current_directory_as_the_only_argument_exits_cleanly() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let verdict = clean_exit(slopvac_in(dir.path()).arg("."), CASE_TIMEOUT);
+    assert!(verdict.is_ok(), "{}", verdict.unwrap_err());
 }
 
 /// A command that outlives the timeout fails the verdict, and quickly.
