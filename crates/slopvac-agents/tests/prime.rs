@@ -92,7 +92,7 @@ fn every_topic_fits_its_budget() {
         let n = words(&render(Some(topic), Level::Default));
         let budget = match topic {
             "review" => 360,
-            "migrate" => 700,
+            "migrate" => 760,
             _ => 330,
         };
         assert!(n <= budget, "{topic} is {n} words");

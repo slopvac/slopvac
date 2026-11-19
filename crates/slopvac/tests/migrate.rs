@@ -193,3 +193,31 @@ fn write_rewrites_a_2x_steering_block_to_the_block_setup_writes() {
         fs::read(reference.path().join("AGENTS.md")).expect("read"),
     );
 }
+
+#[test]
+fn a_migrated_project_loads_its_blocklist() {
+    let dir = project("[vocabulary]\npath = \"words.toml\"\n");
+    fs::write(
+        dir.path().join("words.toml"),
+        "[[entries]]\nword = \"synergize\"\npos = \"Verb\"\nreason = \"Business jargon.\"\n",
+    )
+    .expect("blocklist");
+    let doc = dir.path().join("doc.md");
+    fs::write(&doc, "# Title\n\nManagers synergize the teams on Friday.\n").expect("doc");
+    slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--write")
+        .assert()
+        .code(0);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("words.toml")).expect("blocklist"),
+        "schema_version = 3\n[[entries]]\nword = \"synergize\"\npos = \"verb\"\nreason = \"Business jargon.\"\n"
+    );
+    slopvac()
+        .env("NO_COLOR", "1")
+        .args(["lint", "--format", "json"])
+        .arg(&doc)
+        .assert()
+        .stdout(predicate::str::contains("vocabulary"));
+}

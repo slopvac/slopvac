@@ -1,5 +1,6 @@
 //! Planning, previewing and applying a migration.
 
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,6 +9,7 @@ use similar::TextDiff;
 use slopvac_engine::discover::FileKind;
 use toml_edit::{DocumentMut, Item, Value};
 
+use crate::blocklist::{self, Planned};
 use crate::capped::{Blockers, Capped};
 use crate::config::{key_lines, migrate_config_in};
 use crate::limits::{Budget, Kind, Limits};
@@ -72,6 +74,8 @@ struct Sink {
     changes: Vec<Change>,
     notes: Capped,
     warnings: Capped,
+    /// Blocklists already planned, so a file two settings share is planned once.
+    blocklists: BTreeSet<PathBuf>,
 }
 
 /// Plan the migration of the project under `root`.
@@ -107,6 +111,7 @@ pub fn plan_with_limits(
         changes: Vec::new(),
         notes: Capped::new("notes"),
         warnings: Capped::new("warnings"),
+        blocklists: BTreeSet::new(),
     };
     let mut dropped = Blockers::default();
     let tree = discover(root, &mut budget, &mut sink.warnings)?;
@@ -226,6 +231,8 @@ fn plan_dir(
         plan.notes
             .push(format!("{label}: {}", d.category_removed_notice()));
     }
+    let references = blocklist::references(&old);
+    let lines = key_lines(&old).unwrap_or_default();
     let moved = Moved {
         root,
         label: &label,
@@ -238,6 +245,76 @@ fn plan_dir(
         py_table,
     };
     moved.record(&main_cfg, plan);
+    plan_blocklists(
+        root,
+        dir,
+        &Referrer {
+            label: &label,
+            references: &references,
+            lines: &lines,
+            outer: outer.as_ref(),
+        },
+        budget,
+        plan,
+        dropped,
+    )?;
+    Ok(())
+}
+
+/// The blocklist settings of one config, with where to find their lines.
+struct Referrer<'a> {
+    label: &'a str,
+    references: &'a [blocklist::Reference],
+    lines: &'a std::collections::HashMap<String, usize>,
+    outer: Option<&'a std::collections::HashMap<String, usize>>,
+}
+
+/// Plan the rewrite of each blocklist the config names.
+fn plan_blocklists(
+    root: &Path,
+    dir: &Path,
+    from: &Referrer<'_>,
+    budget: &mut Budget,
+    plan: &mut Sink,
+    dropped: &mut Blockers,
+) -> Result<(), Error> {
+    for reference in from.references {
+        let line = from
+            .outer
+            .and_then(|o| o.get(&format!("tool.slopvac.{}", reference.key)))
+            .or_else(|| from.lines.get(&reference.key))
+            .copied()
+            .unwrap_or(1);
+        let planned = blocklist::plan_reference(
+            root,
+            dir,
+            reference,
+            from.label,
+            line,
+            &mut plan.blocklists,
+            budget,
+        )?;
+        match planned {
+            Planned::Skip => {}
+            Planned::Rewrite {
+                path,
+                old,
+                new,
+                notes,
+            } => {
+                for note in notes {
+                    plan.notes.push(note);
+                }
+                plan.changes.push(Change {
+                    path,
+                    kind: ChangeKind::Write,
+                    old: Some(old),
+                    new: Some(new),
+                });
+            }
+            Planned::Blocked(records) => dropped.extend(records),
+        }
+    }
     Ok(())
 }
 
@@ -510,7 +587,7 @@ pub fn render_diff(plan: &Plan) -> String {
 
 /// Reject a project-relative path that is not a plain descent into the project:
 /// absolute paths, `..`, and any existing symlink on the way. Nothing is touched.
-fn ensure_inside(root: &Path, name: &Path) -> Result<(), Error> {
+pub(crate) fn ensure_inside(root: &Path, name: &Path) -> Result<(), Error> {
     use std::path::Component;
     let mut cur = root.to_owned();
     let mut any = false;

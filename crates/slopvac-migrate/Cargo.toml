@@ -17,6 +17,7 @@ slopvac-fs.workspace = true
 slopvac-model.workspace = true
 slopvac-rules.workspace = true
 slopvac-sanitize.workspace = true
+slopvac-terms.workspace = true
 thiserror.workspace = true
 toml_edit.workspace = true
 

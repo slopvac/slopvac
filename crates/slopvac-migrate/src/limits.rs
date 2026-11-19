@@ -4,6 +4,7 @@ use std::fs::File;
 use std::path::Path;
 
 use slopvac_config::{MAX_CONFIG_BYTES, MAX_DOCUMENT_BYTES};
+use slopvac_terms::MAX_TERMS_FILE_BYTES;
 
 use crate::Error;
 
@@ -42,6 +43,7 @@ impl Default for Limits {
 pub(crate) enum Kind {
     Config,
     Document,
+    Terms,
 }
 
 impl Kind {
@@ -49,6 +51,7 @@ impl Kind {
         match self {
             Self::Config => MAX_CONFIG_BYTES,
             Self::Document => MAX_DOCUMENT_BYTES,
+            Self::Terms => MAX_TERMS_FILE_BYTES,
         }
     }
 
@@ -57,6 +60,7 @@ impl Kind {
         match self {
             Self::Config => Error::ConfigTooLarge { path, cap },
             Self::Document => Error::DocumentTooLarge { path, cap },
+            Self::Terms => Error::TermsFileTooLarge { path, cap },
         }
     }
 }

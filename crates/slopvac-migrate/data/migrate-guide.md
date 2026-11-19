@@ -60,11 +60,14 @@ The command copies each file it replaces to `.slopvac-migrate-backup`, then rewr
 - Moves `.slopvac.toml` and `[tool.slopvac]` into `slopvac.toml`, and adds `schema_version = 3`.
 - Renames categories and rules to their 3.0 names. A rule with only a `severity` becomes a bare level.
 - Moves `locale.default` to `locale`, `locale.allow` to `terms.allow`, and `vocabulary.path` to `terms.blocklists`.
+- Rewrites each TOML blocklist that `vocabulary.path` names: adds `schema_version = 3` and writes `pos` values such as `Noun` in long form (`noun`).
 - Deletes a `[vale]` table that has `enabled = false`.
 - Qualifies the rule id in each `slopvac-allow` comment. Comments in code fences and code spans stay.
 - Replaces each steering block with the 3.0 text.
 
 The command stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml` and `[tool.slopvac]`. Remove the unused ones.
+
+It also stops when a blocklist is outside the project, is missing, is JSON or YAML in the 2.x format, or has a `pos` that 2.x did not accept. The message names the file and line.
 
 To keep the 2.x gates, add `--preserve-behavior`. It selects the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Other patterns fail with `migrate-override-overlap`.
 
