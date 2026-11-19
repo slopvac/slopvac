@@ -145,9 +145,12 @@ fn probes(n: usize) -> usize {
 }
 
 /// `n` sentence tags in a document-wide section: one lookup for each sentence, as a document
-/// with a finding in each sentence makes. A lookup is one binary search and one walk from a
-/// leaf to the root of the tree, so it costs a few times `probes(n)` steps. An index that
-/// scanned every tag would cost `n` steps a lookup and fail the bound at the larger sizes.
+/// with a finding in each sentence makes. A lookup is one binary search over the starts, at
+/// most `probes(n)` comparisons, and one walk from a leaf to the root of the tree, at most
+/// `probes(n)` nodes, and it reads about one entry at each node on the way. That is under
+/// `2 * probes(n)` steps for two kinds and a few more entries, so a bound of `4 * probes(n)` a
+/// lookup holds with room: the counts are about half of it. An index that scanned every tag
+/// would cost `n` steps a lookup and fail the bound at the larger sizes.
 #[test]
 fn one_lookup_for_each_sentence_takes_n_log_n_steps() {
     for n in [1_000, 2_000, 4_000, 8_000] {
@@ -266,4 +269,48 @@ fn lookups_do_not_cost_a_step_for_each_tag_of_a_kind() {
         assert!(used > 0, "no work counted at size {n}");
         assert!(used <= bound, "{used} steps for {n} lookups, bound {bound}");
     }
+}
+
+/// `kinds` tags of distinct kinds, each in two pieces that sit on the same two cells.
+fn wrapped_kinds(kinds: usize) -> Vec<(Tag, usize)> {
+    (0..kinds)
+        .flat_map(|i| {
+            let kind = format!("k{i:05}");
+            [(tag(&kind, 0..10), i), (tag(&kind, 20..30), i)]
+        })
+        .collect()
+}
+
+/// Ranges in the first cell and past the second: every tag holds the first range, and none
+/// covers both, so a lookup finds nothing, whatever it costs.
+const MISSES: [Range<usize>; 2] = [2..5, 40..45];
+
+/// Many tags on one wrapped cell and many lookups that cross its boundary cost kinds times
+/// lookups when each lookup looks at each tag. The budget caps the looks over all lookups, so
+/// the work stops soon after the cap, and the index says so.
+#[test]
+fn the_lookup_budget_stops_the_work_when_lookups_look_at_too_many_tags() {
+    let (kinds, lookups, limit) = (1_000, 1_000, 10_000);
+    let index = TagIndex::from_pieces(wrapped_kinds(kinds)).with_lookup_budget(limit);
+    let _ = take_lookup_steps();
+    for _ in 0..lookups {
+        assert!(index.kinds_covering(&MISSES).is_empty());
+    }
+    let used = take_lookup_steps();
+    assert!(index.lookup_budget_exceeded());
+    // Each look at a tag is one step of the tree walk, and the walk to it costs a few more.
+    // Without a cap the steps are over a million.
+    assert!(used <= 8 * limit, "{used} steps with a cap of {limit}");
+}
+
+/// Within the cap, the budget changes nothing: the answers equal the index without one.
+#[test]
+fn lookups_within_the_budget_answer_as_without_one() {
+    let pieces = wrapped_kinds(50);
+    let free = TagIndex::from_pieces(pieces.clone());
+    let capped = TagIndex::from_pieces(pieces).with_lookup_budget(10_000);
+    for ranges in [&MISSES[..], &[2..5, 22..25], &[2..5]] {
+        assert_eq!(capped.kinds_covering(ranges), free.kinds_covering(ranges));
+    }
+    assert!(!capped.lookup_budget_exceeded());
 }

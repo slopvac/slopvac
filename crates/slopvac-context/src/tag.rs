@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{DocumentView, Error, work};
 
@@ -79,6 +80,50 @@ pub struct TagIndex {
     single: Spatial,
     /// The tags of several pieces, for the part of [`Self::kinds_covering`] that needs them.
     multi: Stab,
+    /// Caps the candidates [`Self::kinds_covering`] visits.
+    budget: Budget,
+}
+
+/// A cap on the tags that [`TagIndex::kinds_covering`] looks at, shared by all its lookups.
+///
+/// A lookup in a table whose cell wraps visits every tag of the cell that holds its first
+/// range, and many tags of different kinds can sit on one cell, so the visits of many
+/// lookups can add up to more than the document is worth. Once the visits pass the cap,
+/// every lookup stops at once and answers nothing, and [`TagIndex::lookup_budget_exceeded`]
+/// tells the caller to discard the run.
+#[derive(Debug)]
+struct Budget {
+    limit: usize,
+    spent: AtomicUsize,
+}
+
+impl Default for Budget {
+    fn default() -> Self {
+        Self {
+            limit: usize::MAX,
+            spent: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl Clone for Budget {
+    fn clone(&self) -> Self {
+        Self {
+            limit: self.limit,
+            spent: AtomicUsize::new(self.spent.load(Ordering::Relaxed)),
+        }
+    }
+}
+
+impl Budget {
+    fn exceeded(&self) -> bool {
+        self.spent.load(Ordering::Relaxed) > self.limit
+    }
+
+    /// Count one visit. False once the cap is passed.
+    fn charge(&self) -> bool {
+        self.spent.fetch_add(1, Ordering::Relaxed) < self.limit
+    }
 }
 
 /// Every tag of a document, indexed so that a lookup costs `O(log n + k)` for the `k` kinds
@@ -260,8 +305,8 @@ impl Stab {
         }
     }
 
-    /// Call `f` with the index of each tag that contains `start..end`.
-    fn containing(&self, start: usize, end: usize, f: &mut impl FnMut(usize)) {
+    /// Call `f` with the index of each tag that contains `start..end`, until `f` says false.
+    fn containing(&self, start: usize, end: usize, f: &mut impl FnMut(usize) -> bool) {
         let upto = starts_up_to(&self.starts, start);
         if upto > 0 {
             self.visit(1, 0, self.leaves, upto, end, f);
@@ -275,19 +320,18 @@ impl Stab {
         hi: usize,
         upto: usize,
         end: usize,
-        f: &mut impl FnMut(usize),
-    ) {
+        f: &mut impl FnMut(usize) -> bool,
+    ) -> bool {
         if lo >= upto || self.tree[node] < end {
-            return;
+            return true;
         }
         work::lookup(1);
         if hi - lo == 1 {
-            f(self.ids[lo]);
-            return;
+            return f(self.ids[lo]);
         }
         let mid = lo + (hi - lo) / 2;
-        self.visit(2 * node, lo, mid, upto, end, f);
-        self.visit(2 * node + 1, mid, hi, upto, end, f);
+        self.visit(2 * node, lo, mid, upto, end, f)
+            && self.visit(2 * node + 1, mid, hi, upto, end, f)
     }
 }
 
@@ -347,7 +391,27 @@ impl TagIndex {
             all,
             single,
             multi,
+            budget: Budget::default(),
         }
+    }
+
+    /// Cap the tags that [`Self::kinds_covering`] looks at, over all its lookups on this index.
+    /// Once the cap is passed, lookups answer nothing and [`Self::lookup_budget_exceeded`] is
+    /// true, so a caller must discard what it built from them. A lookup that finds its answer
+    /// among the tags of a single piece looks at no tag and costs nothing against the cap.
+    #[must_use]
+    pub fn with_lookup_budget(mut self, limit: usize) -> Self {
+        self.budget = Budget {
+            limit,
+            spent: AtomicUsize::new(0),
+        };
+        self
+    }
+
+    /// Whether the cap from [`Self::with_lookup_budget`] was passed.
+    #[must_use]
+    pub fn lookup_budget_exceeded(&self) -> bool {
+        self.budget.exceeded()
     }
 
     /// Kinds of the tags that cover every one of `ranges`, sorted and unique. A tag covers a
@@ -358,6 +422,9 @@ impl TagIndex {
         let Some(first) = ranges.first() else {
             return Vec::new();
         };
+        if self.budget.exceeded() {
+            return Vec::new();
+        }
         // A tag of one piece covers every range when it covers the least start to the
         // greatest end.
         let from = ranges.iter().map(|r| r.start).min().unwrap_or(first.start);
@@ -365,9 +432,12 @@ impl TagIndex {
         let mut set: BTreeSet<&str> = self.single.kinds_containing(from, to).into_iter().collect();
         if !self.multi.ids.is_empty() {
             self.multi.containing(first.start, first.end, &mut |i| {
+                if !self.budget.charge() {
+                    return false;
+                }
                 let kind = self.tags[i].kind.as_str();
                 if set.contains(kind) {
-                    return;
+                    return true;
                 }
                 let covered = self
                     .members
@@ -376,7 +446,11 @@ impl TagIndex {
                 if covered {
                     set.insert(kind);
                 }
+                true
             });
+        }
+        if self.budget.exceeded() {
+            return Vec::new();
         }
         set.into_iter().collect()
     }

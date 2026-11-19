@@ -175,6 +175,17 @@ pub enum EngineError {
     /// prose it was given.
     #[error("diagram checker returned a bad range: {0}")]
     BadRange(String),
+    /// Context lookups looked at more tags than the document allows, so the findings that
+    /// depend on them cannot be trusted and the document is not checked. A pack that puts many
+    /// kinds of tag on one table cell, with rules that match across the cell's lines, causes
+    /// it.
+    #[error(
+        "context lookups passed their budget of {limit} tag looks: the document is not checked"
+    )]
+    TagLookupBudget {
+        /// The looks the document was allowed.
+        limit: usize,
+    },
     /// A terms file could not be read or is not valid.
     #[error("terms file: {0}")]
     Terms(String),
@@ -760,6 +771,12 @@ impl Engine {
         findings.extend(run.metrics()?);
         findings.extend(run.diagrams()?);
         findings.extend(run.invalid_directives()?);
+        // Lookups that passed their budget answered nothing, so nothing found above stands.
+        if tags.lookup_budget_exceeded() {
+            return Err(EngineError::TagLookupBudget {
+                limit: tagging::lookup_budget(input.source.len()),
+            });
+        }
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
         self.apply_genre(&genre, &mut findings);
         // Notices about rules that cannot run come first, then the ones the parse raised.

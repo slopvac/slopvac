@@ -334,6 +334,26 @@ pub(crate) enum TagError {
     Unmapped,
 }
 
+/// Tags that context lookups may look at for each byte of the document.
+///
+/// A lookup for a match that crosses the lines of a wrapped table cell looks at each tag
+/// that sits on the cell. A document with a few kinds of tag on a few cells looks at a few
+/// tags for each match, so a match is far under one look for each byte. A pack that puts many
+/// kinds of tag on one cell, and rules that match across its lines, make each match look at
+/// every kind, and the looks grow with kinds times matches.
+const LOOKUPS_PER_BYTE: usize = 8;
+
+/// Looks allowed whatever the size of the document, so a small document with a few cells
+/// is never cut short.
+const LOOKUP_HEADROOM: usize = 16_384;
+
+/// The looks that context lookups may make on a document of `source_len` bytes.
+pub(crate) fn lookup_budget(source_len: usize) -> usize {
+    source_len
+        .saturating_mul(LOOKUPS_PER_BYTE)
+        .saturating_add(LOOKUP_HEADROOM)
+}
+
 /// Run every tagger over `doc`.
 pub(crate) fn tag(
     registry: &TagRegistry,
@@ -347,7 +367,9 @@ pub(crate) fn tag(
     if view.unmapped.get() {
         return Err(TagError::Unmapped);
     }
-    Ok(view.split_interleaved(index))
+    Ok(view
+        .split_interleaved(index)
+        .with_lookup_budget(lookup_budget(source.len())))
 }
 
 /// Choose the genre of `doc`: front matter, then an assignment from `opts`, then detection.

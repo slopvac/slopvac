@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
-use slopvac_engine::{Engine, Input, Kind};
+use slopvac_engine::{Engine, EngineError, Input, Kind};
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
@@ -677,7 +677,12 @@ fn lint_items(
                 Ok(document) => documents[index] = Some(document),
                 Err(err) => {
                     let shown = items[index].shown.clone();
-                    run.skip("lint-failed", &shown, format!("{shown}: {err}"));
+                    let code = match err {
+                        // The check is incomplete for a reason a pack can fix, so it has a code.
+                        EngineError::TagLookupBudget { .. } => "tag-lookup-budget-exceeded",
+                        _ => "lint-failed",
+                    };
+                    run.skip(code, &shown, format!("{shown}: {err}"));
                 }
             }
         }
