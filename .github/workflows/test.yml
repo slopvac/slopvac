@@ -508,7 +508,9 @@ jobs:
           enable-cache: true
 
       - name: Run the live diagram adapter test
-        run: uv run --locked --extra dev pytest -q tests/test_evals_diagrams.py -k test_live_adapter_reproduces_the_recorded_output
+        run: >-
+          uv run --locked --extra dev pytest -q tests/test_evals_diagrams.py
+          -k test_live_adapter_reproduces_the_recorded_output
         env:
           SLOPVAC_EVALS_LIVE_ENGINE: "1"
 
