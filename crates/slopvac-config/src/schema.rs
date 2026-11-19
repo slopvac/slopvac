@@ -658,27 +658,7 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
             key,
             key_name,
             value,
-        } => {
-            match &node.value {
-                Value::Table(entries) => {
-                    for e in entries {
-                        let p = child(path, &e.key);
-                        if !key(&e.key) {
-                            ctx.push(
-                            Code::InvalidValue,
-                            e.key_span.clone(),
-                            &p,
-                            format!("`{}` is not a valid {key_name}", e.key),
-                            "not valid here".into(),
-                            Some("use `<plugin>:<id>` with a lowercase plugin id, or a bare name".into()),
-                        );
-                        }
-                        check(ctx, &e.node, value, &p);
-                    }
-                }
-                _ => ctx.type_error(node, path, "a table", None),
-            }
-        }
+        } => check_map(ctx, node, (*key, key_name), value, path),
         Shape::Either { scalar, table } => {
             if matches!(node.value, Value::Table(_)) {
                 check(ctx, node, table, path);
@@ -686,6 +666,33 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                 check(ctx, node, scalar, path);
             }
         }
+    }
+}
+
+fn check_map(
+    ctx: &mut Ctx<'_>,
+    node: &Node,
+    (key, key_name): (fn(&str) -> bool, &str),
+    value: &Shape,
+    path: &[String],
+) {
+    let Value::Table(entries) = &node.value else {
+        ctx.type_error(node, path, "a table", None);
+        return;
+    };
+    for e in entries {
+        let p = child(path, &e.key);
+        if !key(&e.key) {
+            ctx.push(
+                Code::InvalidValue,
+                e.key_span.clone(),
+                &p,
+                format!("`{}` is not a valid {key_name}", e.key),
+                "not valid here".into(),
+                Some("use `<plugin>:<id>` with a lowercase plugin id, or a bare name".into()),
+            );
+        }
+        check(ctx, &e.node, value, &p);
     }
 }
 
