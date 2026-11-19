@@ -36,7 +36,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from . import metrics
+from . import metrics, procs
 from .corpuslib import EVALS_DIR
 
 SET_DIR = EVALS_DIR / "diagrams-llm"
@@ -116,7 +116,7 @@ def run_engine(command: Sequence[str], paths: Iterable[str]) -> list[dict[str, A
     )
     if proc.returncode != 0:
         raise DiagramEvalError(
-            f"engine exited {proc.returncode}: {proc.stderr.strip()[:500]}"
+            f"engine exited {proc.returncode}: {procs.redact(proc.stderr.strip())[:500]}"
         )
     return json.loads(proc.stdout)
 
@@ -190,7 +190,11 @@ def score(
             ]
             used = set(pairs.values())
             row["false_positives"] += [
-                {"sample": sid, "line": f["line"], "matched": f["matched"]}
+                {
+                    "sample": sid,
+                    "line": f["line"],
+                    "matched": procs.redact_credentials(f["matched"]),
+                }
                 for i, f in enumerate(found)
                 if i not in used
             ]

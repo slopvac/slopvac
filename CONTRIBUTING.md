@@ -82,6 +82,40 @@ wait for `pypi` approval. They get no tag or changelog entry.
 
 Plain installs and `slopvac@latest` stay on the latest stable release. The package README lists how to opt in to a candidate.
 
+## Contributor license agreement
+
+Contributions to slopvac need a signed [Contributor License Agreement](CLA.md) (CLA). It is the Individual Contributor Non-Exclusive License Agreement from the Contributor Agreements 1.2 templates (Harmony), with the traditional patent license. You keep the copyright in your contribution. You grant Sjors Robroek a non-exclusive license to use, sublicense and distribute it, and a patent license.
+
+In return, Sjors Robroek takes on two duties:
+
+- License your contribution under licenses that the Free Software Foundation classifies as free and the Open Source Initiative approves.
+- Offer material under a free and open license too, when it also has a license that is not free or not open.
+
+The project stays under Apache-2.0. The laws of the Netherlands govern the agreement.
+
+### Sign the CLA
+
+Contributors sign through [CLA Assistant](https://cla-assistant.io). On your first pull request, the CLA Assistant bot posts a comment with a link. Sign at that link with your GitHub account.
+
+You sign once for each version of the agreement. If the text changes, CLA Assistant asks you to sign again.
+
+The `license/cla` check covers one account for each commit:
+
+- The linked GitHub account of the commit author.
+- The linked GitHub account of the committer, when the author has no linked account.
+
+Each such account must sign. `Co-authored-by` trailers are not read, so a co-author named only in a trailer is not checked.
+
+The text that you sign is in the [slopvac CLA Gist](https://gist.github.com/srobroek/5374c748726c6ec555de263ba96c15b4). [`CLA.md`](CLA.md) in this repository is the same text.
+
+### Contributions from your employer
+
+If you created the contribution as part of your job, your employer must approve the agreement first. The "How to use this Contributor Agreement" section of the CLA says so. The project has no entity agreement yet. If your employer needs one, open an issue.
+
+### Bots
+
+Bot accounts that the maintainer allowlists in CLA Assistant don't sign.
+
 ## Commits and pull requests
 
 Use [Conventional Commits](https://www.conventionalcommits.org/). Release-please reads the commit message to prepare releases. Examples: `feat(rules): add a rule`, `fix: correct a rule`, and `docs: clarify setup`.

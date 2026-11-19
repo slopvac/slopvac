@@ -672,7 +672,7 @@ fn download_reads_up_to_the_limit_and_production_clients_refuse_http() {
         matches!(err, OciError::TooLarge { limit: 99, .. }),
         "{err:?}"
     );
-    let err = Client::new()
+    let err = Client::new(std::env::temp_dir())
         .download(&url, 100, &mut Vec::new())
         .unwrap_err();
     assert!(matches!(err, OciError::InsecureUrl(_)), "{err:?}");
@@ -788,6 +788,41 @@ fn local_archive(env: &Env, id: &str, files: &[(&str, &[u8])]) -> String {
         &format!("dist/{id}.tar.gz"),
         &Digest::of(&bytes).to_string(),
     )
+}
+
+#[test]
+fn tm31_a_branch_or_short_name_is_refused_as_a_git_pin() {
+    let pinned = "0123456789abcdef0123456789abcdef01234567";
+    // Each pin is not a full lowercase 40-digit commit hash.
+    let pins = [
+        "main",
+        "v1.2.0",
+        "HEAD",
+        "0123456",
+        &pinned[..39],
+        &format!("{pinned}0"),
+        &pinned.to_uppercase(),
+    ];
+    let entry = |source: &str| {
+        format!(
+            "schema_version = 3\n\n[[packs]]\nid = \"tagger\"\nkind = \"plugin\"\n\
+             version = \"0.3.1\"\nslopvac_api = 1\nsource = \"{source}\"\n\
+             digest = \"sha256:{}\"\n",
+            "00".repeat(32)
+        )
+    };
+    assert!(
+        Lockfile::parse(&entry(&format!(
+            "git+https://github.com/acme/tagger@{pinned}"
+        )))
+        .is_ok(),
+        "the control lock parses"
+    );
+    for pin in pins {
+        let err = Lockfile::parse(&entry(&format!("git+https://github.com/acme/tagger@{pin}")))
+            .unwrap_err();
+        assert_eq!(err.pointer, "/packs/0/source", "{pin}: {err}");
+    }
 }
 
 #[cfg(unix)]

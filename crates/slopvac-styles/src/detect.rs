@@ -126,7 +126,35 @@ pub fn detect_house_styles(root: &Path) -> Vec<Suggestion> {
 /// The most bytes read from one file. A larger file is skipped.
 const MAX_BYTES: u64 = 1024 * 1024;
 
+/// Why [`read`] skipped a file.
+#[derive(Debug, PartialEq, Eq)]
+enum Skip {
+    /// The file is larger than [`MAX_BYTES`].
+    TooLarge,
+    /// The file is missing, outside the root, not a regular file, not UTF-8 or unreadable.
+    Unusable,
+}
+
+impl Skip {
+    /// The stable code of the skip, or `None` when the file is merely unusable.
+    ///
+    /// `style-detect-file-too-large` is the code for [`Skip::TooLarge`]. Detection never
+    /// fails, so no caller reports it yet.
+    #[expect(dead_code, reason = "reserved until detection reports a skipped file")]
+    fn code(&self) -> Option<&'static str> {
+        match self {
+            Skip::TooLarge => Some("style-detect-file-too-large"),
+            Skip::Unusable => None,
+        }
+    }
+}
+
 /// Read a regular file under `root`, or `None`.
+fn read(root: &Path, name: &str) -> Option<String> {
+    read_checked(root, name).ok()
+}
+
+/// Read a regular file under `root`, or say why it was skipped.
 ///
 /// The path is resolved first. A target outside the root is skipped. The file is
 /// opened without blocking, so a FIFO swapped in after the check cannot hang the
@@ -135,20 +163,23 @@ const MAX_BYTES: u64 = 1024 * 1024;
 ///
 /// A local writer who races a symlink swap between the containment check and the
 /// open is out of scope: they already control the repository's files.
-fn read(root: &Path, name: &str) -> Option<String> {
+fn read_checked(root: &Path, name: &str) -> Result<String, Skip> {
     use std::io::Read;
-    let root = std::fs::canonicalize(root).ok()?;
-    let path = std::fs::canonicalize(root.join(name)).ok()?;
+    let unusable = |_| Skip::Unusable;
+    let root = std::fs::canonicalize(root).map_err(unusable)?;
+    let path = std::fs::canonicalize(root.join(name)).map_err(unusable)?;
     if !path.starts_with(&root) {
-        return None;
+        return Err(Skip::Unusable);
     }
-    let file = open_regular(&path).ok()?;
+    let file = open_regular(&path).map_err(unusable)?;
     let mut bytes = Vec::new();
-    file.take(MAX_BYTES + 1).read_to_end(&mut bytes).ok()?;
+    file.take(MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(unusable)?;
     if bytes.len() as u64 > MAX_BYTES {
-        return None;
+        return Err(Skip::TooLarge);
     }
-    String::from_utf8(bytes).ok()
+    String::from_utf8(bytes).map_err(|_| Skip::Unusable)
 }
 
 /// Open `path` for reading and require the opened handle to be a regular file.

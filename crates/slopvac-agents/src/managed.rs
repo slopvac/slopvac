@@ -14,7 +14,7 @@ const KNOWN_MARKERS: [&str; 2] = [
     "<!-- slopvac:managed; slopvac init or slopvac setup rewrites this file -->",
 ];
 
-fn has_marker(text: &str) -> bool {
+pub(crate) fn has_marker(text: &str) -> bool {
     let mut lines = text.split('\n').map(|l| l.trim_end_matches('\r'));
     if lines.next() != Some("---") {
         return false;

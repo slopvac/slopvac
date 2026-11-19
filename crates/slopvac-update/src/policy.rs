@@ -56,6 +56,17 @@ impl PolicyError {
         }
     }
 
+    /// The stable code of the error, or `None` for an error that has none yet.
+    ///
+    /// `update-policy-too-large` is the code of [`PolicyError::TooLarge`].
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::TooLarge(_) => Some("update-policy-too-large"),
+            Self::NotRegular(_) | Self::Unreadable { .. } => None,
+        }
+    }
+
     /// What went wrong, without the path.
     #[must_use]
     pub fn problem(&self) -> String {
@@ -234,10 +245,9 @@ mod tests {
 
         let over = format!("{at_cap}a");
         let d = tree(&[("slopvac.toml", &over)]);
-        assert_eq!(
-            network_policy(d.path()),
-            Err(PolicyError::TooLarge(d.path().join("slopvac.toml")))
-        );
+        let err = network_policy(d.path()).unwrap_err();
+        assert_eq!(err, PolicyError::TooLarge(d.path().join("slopvac.toml")));
+        assert_eq!(err.code(), Some("update-policy-too-large"));
     }
 
     #[test]

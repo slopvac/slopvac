@@ -195,12 +195,22 @@ def verify(
     return issued
 
 
-# Registry answers that mean the tag has no manifest. Nothing else does: a bare
-# 404 can also come from a layer, and auth, network and 5xx errors never mean absent.
-_MANIFEST_ABSENT = re.compile(
-    r"manifest[_ ]unknown|name[_ ]unknown|^Error: \S+: not found$",
-    re.IGNORECASE | re.MULTILINE,
-)
+def _manifest_absent(stderr: str, image: str) -> bool:
+    """Whether ``oras manifest fetch`` said that ``image`` has no manifest.
+
+    Only oras 1.3.6's whole diagnostic counts: stderr, minus trailing
+    whitespace, is exactly the one line below, naming the requested image. Any
+    other output is ambiguous and not absent: a second line, extra text, another
+    reference, or an auth, network or 5xx message. A registry error body can echo
+    text chosen by someone else, so nothing may match inside a longer output. No
+    real oras transcript exists for ``MANIFEST_UNKNOWN`` or ``NAME_UNKNOWN``, so
+    they are not accepted. The caller has already checked for a non-zero exit.
+    """
+    expected = (
+        "Error response from registry: failed to fetch the content of "
+        f'"{image}": {image}: not found'
+    )
+    return stderr.rstrip() == expected
 
 
 def _oras(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -228,7 +238,7 @@ def fetch_published(image: str, directory: Path, *, first_publication: bool) -> 
     """
     manifest = _oras(["manifest", "fetch", image])
     if manifest.returncode != 0:
-        if _MANIFEST_ABSENT.search(manifest.stderr):
+        if _manifest_absent(manifest.stderr, image):
             if first_publication:
                 return
             raise SigningError(

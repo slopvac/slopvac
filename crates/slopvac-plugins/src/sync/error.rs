@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use slopvac_sanitize::line as esc;
 use thiserror::Error;
 
+use crate::error::PluginError;
 use crate::extract::ExtractError;
 use crate::lock::{LockDiff, PackId};
 use crate::oci::OciError;
@@ -40,6 +41,17 @@ pub enum SyncError {
         id: PackId,
         /// What went wrong.
         why: String,
+    },
+    /// A git source needs the plugin launcher and the running program did not
+    /// install it ([`PluginError::LauncherNotInstalled`], code
+    /// `launcher-not-installed`). No git process ran and nothing was installed.
+    #[error("pack `{id}`: {source}")]
+    Launcher {
+        /// Pack id.
+        id: PackId,
+        /// The cause.
+        #[source]
+        source: PluginError,
     },
     /// A git source passed a limit: the download size, the number of files or
     /// the expanded size.
@@ -154,12 +166,59 @@ impl SyncError {
             Self::LockMismatch(_) => "lock-mismatch",
             Self::CacheTampered { .. } => "cache-tampered",
             Self::DigestMismatch { .. } => "digest-mismatch",
+            // A credential helper refused while fetching a signature blob is a
+            // login problem, not a bad signature.
+            Self::Sign {
+                source: SignError::Fetch(e),
+                ..
+            } if e.code().is_some() => e.code().unwrap_or("signature-invalid"),
             Self::Sign { .. } | Self::Unsigned { .. } | Self::SignatureDiffersFromLock { .. } => {
                 "signature-invalid"
             }
             Self::Revoked { .. } => "pack-revoked",
             Self::Revocation(e) => e.code(),
+            Self::Fetch { source, .. } => source.code().unwrap_or("sync-failed"),
+            Self::Launcher { .. } => "launcher-not-installed",
             _ => "sync-failed",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn refusal() -> OciError {
+        OciError::HelperUntrusted {
+            program: "docker-credential-x".into(),
+            dir: "tools".into(),
+        }
+    }
+
+    fn sign_fetch(e: OciError) -> SyncError {
+        SyncError::Sign {
+            id: "demo".parse().unwrap(),
+            source: SignError::Fetch(e),
+        }
+    }
+
+    #[test]
+    fn a_helper_refusal_while_fetching_a_signature_keeps_its_code() {
+        assert_eq!(sign_fetch(refusal()).code(), "credential-helper-untrusted");
+    }
+
+    #[test]
+    fn another_failure_while_fetching_a_signature_is_still_a_signature_failure() {
+        let err = sign_fetch(OciError::NotFound("sig".into()));
+        assert_eq!(err.code(), "signature-invalid");
+    }
+
+    #[test]
+    fn a_helper_refusal_while_fetching_a_pack_keeps_its_code() {
+        let err = SyncError::Fetch {
+            id: "demo".parse().unwrap(),
+            source: refusal(),
+        };
+        assert_eq!(err.code(), "credential-helper-untrusted");
     }
 }

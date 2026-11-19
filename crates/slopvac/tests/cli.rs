@@ -470,15 +470,15 @@ fn version_json_accepts_flags_in_any_order() {
 #[test]
 fn unreadable_project_config_exits_two_before_any_command_runs() {
     // A directory, an oversize file and (on unix) a FIFO all fail the same way and never hang.
-    let mut cases: Vec<(&str, tempfile::TempDir)> = Vec::new();
+    let mut cases: Vec<(&str, &str, tempfile::TempDir)> = Vec::new();
 
     let dir_case = tempfile::tempdir().unwrap();
     fs::create_dir(dir_case.path().join("slopvac.toml")).unwrap();
-    cases.push(("not a regular file", dir_case));
+    cases.push(("config-unreadable", "not a regular file", dir_case));
 
     let big = tempfile::tempdir().unwrap();
     fs::write(big.path().join("slopvac.toml"), vec![b'#'; 1024 * 1024 + 1]).unwrap();
-    cases.push(("larger than 1048576 bytes", big));
+    cases.push(("update-policy-too-large", "larger than 1048576 bytes", big));
 
     #[cfg(unix)]
     {
@@ -488,10 +488,10 @@ fn unreadable_project_config_exits_two_before_any_command_runs() {
             .status()
             .expect("mkfifo");
         assert!(status.success());
-        cases.push(("not a regular file", fifo_case));
+        cases.push(("config-unreadable", "not a regular file", fifo_case));
     }
 
-    for (message, dir) in &cases {
+    for (code, message, dir) in &cases {
         for args in [
             &["--version", "--json"][..],
             &["self", "update"],
@@ -503,7 +503,7 @@ fn unreadable_project_config_exits_two_before_any_command_runs() {
                 .args(args)
                 .assert()
                 .code(2)
-                .stderr(predicate::str::contains("error[config-unreadable]"))
+                .stderr(predicate::str::contains(format!("error[{code}]")))
                 .stderr(predicate::str::contains(*message));
         }
     }

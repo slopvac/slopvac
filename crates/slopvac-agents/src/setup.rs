@@ -3,13 +3,14 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Arg, ArgAction, ArgMatches, Command, builder::PossibleValuesParser};
+use slopvac_model::{Notice, NoticeLevel};
 
 use crate::block::{self, State};
 use crate::content::{self, BlockKind};
-use crate::error::AgentsError;
+use crate::error::{AgentsError, notice};
 use crate::fsx::Project;
 use crate::guidance::Guidance;
-use crate::harness::{self, Harness};
+use crate::harness::{self, AgentFormat, Harness};
 use crate::managed;
 
 /// Exit code: pass.
@@ -50,6 +51,8 @@ pub struct Outcome {
     pub lines: Vec<String>,
     /// Exit code.
     pub exit: u8,
+    /// Warnings that leave the exit code alone.
+    pub notices: Vec<Notice>,
 }
 
 /// The `setup` subcommand, for the CLI epic to mount.
@@ -120,6 +123,8 @@ struct Plan {
     block_text: String,
     skill_text: Option<String>,
     agent_text: Option<String>,
+    /// The reviewer agent is wanted but its model is unset.
+    reviewer_model_unset: bool,
 }
 
 type Paths = (PathBuf, Option<PathBuf>, Option<PathBuf>);
@@ -142,6 +147,7 @@ fn list(project: &Project) -> Result<Outcome, AgentsError> {
     Ok(Outcome {
         lines,
         exit: EXIT_OK,
+        notices: Vec::new(),
     })
 }
 
@@ -171,7 +177,18 @@ fn plan(opts: &Options) -> Result<Plan, AgentsError> {
         if !content::valid_model(m) {
             return Err(usage(&format!("invalid reviewer model {m:?}.")));
         }
+        if let Some(format) = harness.agent_format() {
+            content::check_model_format(format, m).map_err(|message| AgentsError::Coded {
+                code: "setup-reviewer-model-format",
+                message,
+            })?;
+        }
     }
+    // `inherit` leaves the choice to the harness, which is the same as no model.
+    let model = opts
+        .reviewer_model
+        .as_deref()
+        .filter(|m| *m != content::INHERIT);
     let project = Project::open(&opts.root)?;
     let (steering, skill, agent) = paths(&harness, &project)?;
     Ok(Plan {
@@ -184,12 +201,35 @@ fn plan(opts: &Options) -> Result<Plan, AgentsError> {
         agent_text: harness
             .agent_format()
             .filter(|_| opts.agent)
-            .map(|fmt| content::reviewer_agent(fmt, opts.reviewer_model.as_deref())),
+            .map(|fmt| content::reviewer_agent(fmt, model)),
+        reviewer_model_unset: opts.agent && model.is_none(),
         harness,
     })
 }
 
-fn check(p: &Plan) -> Outcome {
+fn notices(p: &Plan) -> Result<Vec<Notice>, AgentsError> {
+    if !p.reviewer_model_unset {
+        return Ok(Vec::new());
+    }
+    let picks = match p.harness.agent_format() {
+        Some(AgentFormat::Claude) => {
+            "Claude Code uses CLAUDE_CODE_SUBAGENT_MODEL when it is set and the main \
+             conversation's model otherwise"
+        }
+        _ => "OpenCode uses the parent session's model",
+    };
+    Ok(vec![notice(
+        "setup-reviewer-model-unset",
+        NoticeLevel::Warning,
+        format!(
+            "no reviewer model is set, so the harness picks it: {picks}. That can be the \
+             author's model. Pass --reviewer-model with a model from a different family \
+             than the author's."
+        ),
+    )?])
+}
+
+fn check(p: &Plan) -> Result<Outcome, AgentsError> {
     let mut states = vec![(
         block::block_state(&p.project, &p.steering, &p.block_text),
         &p.steering,
@@ -214,7 +254,11 @@ fn check(p: &Plan) -> Outcome {
         .iter()
         .map(|(s, path)| format!("{} {}", s.word(), p.project.display(path)))
         .collect();
-    Outcome { lines, exit }
+    Ok(Outcome {
+        lines,
+        exit,
+        notices: notices(p)?,
+    })
 }
 
 fn skill_in_use_elsewhere(p: &Plan) -> bool {
@@ -263,6 +307,7 @@ fn remove(p: &Plan) -> Result<Outcome, AgentsError> {
     Ok(Outcome {
         lines,
         exit: EXIT_OK,
+        notices: Vec::new(),
     })
 }
 
@@ -299,6 +344,7 @@ fn install(p: &Plan, unrequested: Unrequested) -> Result<Outcome, AgentsError> {
     Ok(Outcome {
         lines,
         exit: EXIT_OK,
+        notices: notices(p)?,
     })
 }
 
@@ -317,7 +363,7 @@ pub fn execute(opts: &Options) -> Result<Outcome, AgentsError> {
     }
     let p = plan(opts)?;
     if opts.check {
-        Ok(check(&p))
+        check(&p)
     } else if opts.remove {
         remove(&p)
     } else {

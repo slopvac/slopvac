@@ -34,6 +34,7 @@ pub mod sign;
 pub mod strict;
 pub mod sync;
 pub mod trust;
+mod trusted_path;
 pub mod update;
 
 pub use api::{DocOutcome, plan_batches};

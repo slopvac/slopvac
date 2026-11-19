@@ -1,5 +1,6 @@
 //! OCI client tests against a scripted loopback registry (threat model section 6.4).
 
+mod log_capture;
 mod oci_server;
 
 use std::collections::HashMap;
@@ -1063,6 +1064,7 @@ mod windows_helpers {
         let creds = DefaultCredentials {
             docker_config_dir: Some(dir.clone()),
             helper_search_path: Some(bin.into_os_string()),
+            project_root: Some(dir.join("project")),
             ..DefaultCredentials::default()
         };
         let msg = creds.credential("ghcr.io").unwrap_err().to_string();
@@ -1166,6 +1168,7 @@ mod windows_helpers {
         let creds = DefaultCredentials {
             docker_config_dir: Some(dir.clone()),
             helper_search_path: Some(bin.clone().into_os_string()),
+            project_root: Some(dir.join("project")),
             helper_timeout: Some(std::time::Duration::from_secs(5)),
             ..DefaultCredentials::default()
         };
@@ -1213,6 +1216,7 @@ mod helpers {
         let creds = DefaultCredentials {
             docker_config_dir: Some(dir.clone()),
             helper_search_path: Some(bin.into_os_string()),
+            project_root: Some(dir.join("project")),
             helper_timeout: Some(Duration::from_secs(8)),
             ..DefaultCredentials::default()
         };
@@ -1255,12 +1259,18 @@ mod helpers {
         assert_eq!(got.unwrap().unwrap().username, "bob");
     }
 
-    #[test]
-    fn tm38_helper_names_with_separators_or_shell_characters_are_refused() {
-        for (i, bad) in ["../evil", "a/b", "x;y", "a b", "-flag"].iter().enumerate() {
-            let err = lookup(&format!("bad{i}"), bad, None).unwrap_err();
-            assert!(matches!(err, OciError::Credential(_)), "{bad}: {err:?}");
-        }
+    #[rstest::rstest]
+    #[case::parent_directory("parent", "../evil")]
+    #[case::path_separator("separator", "a/b")]
+    #[case::semicolon("semicolon", "x;y")]
+    #[case::space("space", "a b")]
+    #[case::leading_dash("dash", "-flag")]
+    fn tm38_helper_names_with_separators_or_shell_characters_are_refused(
+        #[case] tag: &str,
+        #[case] bad: &str,
+    ) {
+        let err = lookup(&format!("bad-{tag}"), bad, None).unwrap_err();
+        assert!(matches!(err, OciError::Credential(_)), "{bad}: {err:?}");
     }
 
     #[test]
@@ -1392,6 +1402,208 @@ mod helpers {
         );
         assert_eq!(got.unwrap(), None);
     }
+
+    /// A helper that records that it ran, then answers like a good one.
+    fn marking_script(marker: &Path) -> String {
+        format!(
+            "#!/bin/sh\ntouch '{}'\ncat >/dev/null\necho '{{\"Username\":\"bob\",\"Secret\":\"tok\"}}'\n",
+            marker.display()
+        )
+    }
+
+    fn plant(dir: &Path, store: &str, marker: &Path, mode: u32) {
+        std::fs::create_dir_all(dir).unwrap();
+        let file = dir.join(format!("docker-credential-{store}"));
+        std::fs::write(&file, marking_script(marker)).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    /// Credentials whose helper is looked up through `search`, with a project
+    /// at `project`.
+    fn creds_for(scratch: &Path, store: &str, search: &str, project: &Path) -> DefaultCredentials {
+        std::fs::write(
+            scratch.join("config.json"),
+            json!({"credsStore": store}).to_string(),
+        )
+        .unwrap();
+        DefaultCredentials {
+            docker_config_dir: Some(scratch.to_path_buf()),
+            helper_search_path: Some(search.into()),
+            project_root: Some(project.to_path_buf()),
+            helper_timeout: Some(Duration::from_secs(8)),
+            ..DefaultCredentials::default()
+        }
+    }
+
+    fn scratch() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        (dir, base)
+    }
+
+    /// The lookup is refused with the typed error and the helper never ran.
+    fn refused(creds: &DefaultCredentials, marker: &Path) -> OciError {
+        use slopvac_plugins::oci::CredentialSource;
+        let err = creds.credential("ghcr.io").unwrap_err();
+        assert!(matches!(err, OciError::HelperUntrusted { .. }), "{err:?}");
+        assert!(!marker.exists(), "the planted helper ran");
+        err
+    }
+
+    #[test]
+    fn tm38_a_helper_in_a_relative_path_entry_is_not_run() {
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        plant(&base.join("rel"), "planted", &marker, 0o755);
+        // The same directory, written relative to the working directory.
+        let cwd = std::env::current_dir().unwrap();
+        let up = "../".repeat(cwd.components().count() - 1);
+        let relative = format!(
+            "{up}{}",
+            base.join("rel").strip_prefix("/").unwrap().display()
+        );
+        let creds = creds_for(&base, "planted", &relative, &base.join("project"));
+        refused(&creds, &marker);
+    }
+
+    #[test]
+    fn tm38_a_helper_in_an_empty_path_entry_is_not_run() {
+        // An empty entry means the working directory.
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        let store = format!("planted{}", std::process::id());
+        let cwd = std::env::current_dir().unwrap();
+        let file = cwd.join(format!("docker-credential-{store}"));
+        std::fs::write(&file, marking_script(&marker)).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let creds = creds_for(&base, &store, "", &base.join("project"));
+        let result = std::panic::catch_unwind(|| refused(&creds, &marker));
+        std::fs::remove_file(&file).unwrap();
+        result.unwrap();
+    }
+
+    /// `dir` is relative to the scratch base, whose `project` subdirectory is
+    /// the project. `shown` is how the refusal names the directory (policies
+    /// section 1.7: project-relative, or `<external>/<name>` outside it).
+    #[rstest::rstest]
+    #[case::project_local_directory("project/tools", 0o755, "tools")]
+    #[case::group_writable_directory("shared", 0o775, "<external>/shared")]
+    #[case::world_writable_directory("open", 0o777, "<external>/open")]
+    fn tm38_a_helper_in_an_untrusted_directory_is_not_run(
+        #[case] dir: &str,
+        #[case] mode: u32,
+        #[case] shown: &str,
+    ) {
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        let bin = base.join(dir);
+        plant(&bin, "planted", &marker, mode);
+        let creds = creds_for(
+            &base,
+            "planted",
+            bin.to_str().unwrap(),
+            &base.join("project"),
+        );
+        let err = refused(&creds, &marker);
+        assert_eq!(err.code(), Some("credential-helper-untrusted"));
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "credential helper `docker-credential-planted` was not found in a trusted \
+                 directory; it exists only in {shown}. Tighten the permissions of that \
+                 directory so that only you or root can write it, or sign in with a static \
+                 `auths` login in the Docker config, with SLOPVAC_OCI_USER and \
+                 SLOPVAC_OCI_TOKEN, or with GITHUB_TOKEN for ghcr.io"
+            )
+        );
+    }
+
+    #[test]
+    fn tm38_an_auth_file_login_wins_over_a_configured_helper_and_no_helper_starts() {
+        use slopvac_plugins::oci::CredentialSource;
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        plant(&base.join("trusted"), "planted", &marker, 0o755);
+        let mut creds = creds_for(
+            &base,
+            "planted",
+            base.join("trusted").to_str().unwrap(),
+            &base.join("project"),
+        );
+        let auth = base64_std(b"from-auth-file:pw");
+        let file = base.join("auth.json");
+        std::fs::write(
+            &file,
+            json!({"auths": {"ghcr.io": {"auth": auth}}}).to_string(),
+        )
+        .unwrap();
+        creds.auth_files = vec![file];
+        let got = creds.credential("ghcr.io").unwrap().unwrap();
+        assert_eq!(got.username, "from-auth-file");
+        assert!(!marker.exists(), "the helper started");
+    }
+
+    #[test]
+    fn tm38_without_a_project_root_no_helper_runs() {
+        use slopvac_plugins::oci::CredentialSource;
+        // A trusted directory, so only the unknown project stops the helper.
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        plant(&base.join("trusted"), "planted", &marker, 0o755);
+        let mut creds = creds_for(
+            &base,
+            "planted",
+            base.join("trusted").to_str().unwrap(),
+            &base,
+        );
+        creds.project_root = None;
+        let err = creds.credential("ghcr.io").unwrap_err();
+        assert_eq!(err.code(), Some("credential-helper-project-unknown"));
+        assert_eq!(
+            err.to_string(),
+            "credential helper `docker-credential-planted` was not run: the project \
+             directory is unknown"
+        );
+        assert!(!marker.exists(), "the helper ran");
+    }
+
+    #[test]
+    fn tm38_from_env_keeps_helpers_out_of_a_checkout_the_working_directory_is_inside() {
+        // The working directory may be a subdirectory of the checkout, so the
+        // project root comes from the caller and a sibling `tools/` inside the
+        // checkout is still inside the project.
+        let (_guard, base) = scratch();
+        let marker = base.join("ran");
+        let checkout = base.join("checkout");
+        let tools = checkout.join("tools");
+        plant(&tools, "planted", &marker, 0o755);
+        let mut creds = DefaultCredentials::from_env(&checkout);
+        creds.docker_config_dir = Some(base.clone());
+        creds.helper_search_path = Some(tools.into_os_string());
+        std::fs::write(
+            base.join("config.json"),
+            json!({"credsStore": "planted"}).to_string(),
+        )
+        .unwrap();
+        refused(&creds, &marker);
+    }
+
+    #[test]
+    fn tm38_an_untrusted_entry_does_not_hide_the_helper_in_a_trusted_one() {
+        use slopvac_plugins::oci::CredentialSource;
+        let (_guard, base) = scratch();
+        let (bad_marker, good_marker) = (base.join("bad"), base.join("good"));
+        let project = base.join("project");
+        plant(&project.join("tools"), "both", &bad_marker, 0o755);
+        plant(&base.join("trusted"), "both", &good_marker, 0o755);
+        let search = std::env::join_paths([project.join("tools"), base.join("trusted")]).unwrap();
+        let creds = creds_for(&base, "both", search.to_str().unwrap(), &project);
+        let got = creds.credential("ghcr.io").unwrap().unwrap();
+        assert_eq!(got.username, "bob");
+        assert!(good_marker.exists(), "the trusted helper did not run");
+        assert!(!bad_marker.exists(), "the planted helper ran");
+    }
 }
 
 #[test]
@@ -1431,6 +1643,295 @@ fn docker_config_auth_keys_match_the_host_case_insensitively_and_the_port_exactl
     }
 }
 
+/// Login order after the environment: the Docker config's `auths`, then the
+/// first registry auth file, then the helper the Docker config names.
+mod login_order {
+    use super::*;
+
+    fn write_config(dir: &std::path::Path, name: &str, user: &str) -> std::path::PathBuf {
+        let file = dir.join(name);
+        let auth = base64_std(format!("{user}:pw").as_bytes());
+        let cfg = json!({"auths": {"registry.example": {"auth": auth}}});
+        std::fs::write(&file, cfg.to_string()).unwrap();
+        file
+    }
+
+    fn docker_dir_with(config: &serde_json::Value) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), config.to_string()).unwrap();
+        dir
+    }
+
+    fn user_of(creds: &DefaultCredentials) -> Option<String> {
+        creds
+            .credential("registry.example")
+            .unwrap()
+            .map(|c| c.username)
+    }
+
+    #[test]
+    fn a_registry_auth_file_login_is_used_when_the_docker_config_has_none() {
+        let docker = docker_dir_with(&json!({}));
+        let other = tempfile::tempdir().unwrap();
+        let creds = DefaultCredentials {
+            docker_config_dir: Some(docker.path().to_path_buf()),
+            auth_files: vec![write_config(other.path(), "auth.json", "from-auth-file")],
+            ..DefaultCredentials::default()
+        };
+        assert_eq!(user_of(&creds).as_deref(), Some("from-auth-file"));
+    }
+
+    #[test]
+    fn the_docker_config_beats_a_registry_auth_file() {
+        let docker = tempfile::tempdir().unwrap();
+        write_config(docker.path(), "config.json", "from-docker");
+        let other = tempfile::tempdir().unwrap();
+        let creds = DefaultCredentials {
+            docker_config_dir: Some(docker.path().to_path_buf()),
+            auth_files: vec![write_config(other.path(), "auth.json", "from-auth-file")],
+            ..DefaultCredentials::default()
+        };
+        assert_eq!(user_of(&creds).as_deref(), Some("from-docker"));
+    }
+
+    #[test]
+    fn only_the_first_auth_file_that_exists_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let creds = DefaultCredentials {
+            auth_files: vec![
+                dir.path().join("missing.json"),
+                write_config(dir.path(), "first.json", "first"),
+                write_config(dir.path(), "second.json", "second"),
+            ],
+            ..DefaultCredentials::default()
+        };
+        assert_eq!(user_of(&creds).as_deref(), Some("first"));
+    }
+
+    #[test]
+    fn a_static_login_is_used_without_starting_the_helper_the_config_names() {
+        // The helper does not exist and no project root is set: running it
+        // would fail the lookup.
+        let docker = tempfile::tempdir().unwrap();
+        let auth = base64_std(b"static:pw");
+        std::fs::write(
+            docker.path().join("config.json"),
+            json!({
+                "auths": {"registry.example": {"auth": auth}},
+                "credsStore": "absent",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let creds = DefaultCredentials {
+            docker_config_dir: Some(docker.path().to_path_buf()),
+            ..DefaultCredentials::default()
+        };
+        assert_eq!(user_of(&creds).as_deref(), Some("static"));
+    }
+
+    #[test]
+    fn environment_credentials_beat_every_file() {
+        let docker = tempfile::tempdir().unwrap();
+        write_config(docker.path(), "config.json", "from-docker");
+        let creds = DefaultCredentials {
+            env: EnvCredentials {
+                user: Some("env-user".into()),
+                token: Some("t".into()),
+                ..EnvCredentials::default()
+            },
+            docker_config_dir: Some(docker.path().to_path_buf()),
+            ..DefaultCredentials::default()
+        };
+        assert_eq!(user_of(&creds).as_deref(), Some("env-user"));
+    }
+
+    #[rstest::rstest]
+    #[case::registry_auth_file_first(
+        &[("REGISTRY_AUTH_FILE", "/r/auth.json"), ("XDG_RUNTIME_DIR", "/run/u"), ("XDG_CONFIG_HOME", "/c"), ("HOME", "/h")],
+        &["/r/auth.json", "/run/u/containers/auth.json", "/c/containers/auth.json"]
+    )]
+    #[case::config_home_falls_back_to_dot_config(
+        &[("HOME", "/h")],
+        &["/h/.config/containers/auth.json"]
+    )]
+    #[case::nothing_set(&[], &[])]
+    fn auth_file_candidates_follow_the_container_tools_order(
+        #[case] vars: &[(&str, &str)],
+        #[case] want: &[&str],
+    ) {
+        let map: HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        let got =
+            DefaultCredentials::from_lookup_for_tests(|k| map.get(k).cloned(), false).auth_files;
+        let want: Vec<std::path::PathBuf> = want.iter().map(std::path::PathBuf::from).collect();
+        assert_eq!(got, want);
+    }
+}
+
+/// A credential source whose helper was refused.
+struct Refusing(OciError);
+
+impl CredentialSource for Refusing {
+    fn credential(&self, _: &str) -> Result<Option<slopvac_plugins::oci::Credential>, OciError> {
+        Err(self.0.clone())
+    }
+}
+
+fn untrusted() -> OciError {
+    OciError::HelperUntrusted {
+        program: "docker-credential-x".into(),
+        dir: "<external>/bin".into(),
+    }
+}
+
+fn project_unknown() -> OciError {
+    OciError::HelperProjectUnknown("docker-credential-x".into())
+}
+
+#[rstest::rstest]
+#[case::untrusted_helper(untrusted())]
+#[case::unknown_project(project_unknown())]
+fn a_refused_helper_does_not_stop_a_registry_that_serves_anonymous_tokens(
+    #[case] refusal: OciError,
+) {
+    let body = manifest_json(&Descriptor::for_bytes("x", b"{}"), &[]);
+    let server = Server::start(with_auth("reg", None, move |_| manifest_response(&body)));
+    let client = Client::with_loopback_http_for_tests(Box::new(Refusing(refusal.clone())));
+    let capture = log_capture::Capture::default();
+    tracing::subscriber::with_default(capture.clone(), || {
+        client.fetch_manifest(&reference(&server, "a/b:1")).unwrap();
+    });
+    let warnings: Vec<_> = capture
+        .events()
+        .into_iter()
+        .filter(|(level, _)| *level == tracing::Level::WARN)
+        .collect();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    let field = |name: &str| {
+        warnings[0]
+            .1
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default()
+    };
+    assert!(
+        field("code").contains(refusal.code().unwrap()),
+        "{warnings:?}"
+    );
+    assert!(
+        field("message").contains("continuing without a login"),
+        "{warnings:?}"
+    );
+    let token_req = server
+        .requests()
+        .into_iter()
+        .find(|q| q.path.starts_with("/token"))
+        .unwrap();
+    assert!(token_req.header("authorization").is_none());
+}
+
+#[rstest::rstest]
+#[case::untrusted_helper(untrusted(), "credential-helper-untrusted")]
+#[case::unknown_project(project_unknown(), "credential-helper-project-unknown")]
+fn a_refused_helper_is_reported_when_the_token_endpoint_needs_a_login(
+    #[case] refusal: OciError,
+    #[case] code: &str,
+) {
+    let server = Server::start(with_auth("reg", Some(("me", "s3cret")), |_| {
+        Response::new(200)
+    }));
+    let client = Client::with_loopback_http_for_tests(Box::new(Refusing(refusal.clone())));
+    let err = client
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert_eq!(err, refusal);
+    assert_eq!(err.code(), Some(code));
+}
+
+#[rstest::rstest]
+#[case::untrusted_helper(untrusted(), "credential-helper-untrusted")]
+#[case::unknown_project(project_unknown(), "credential-helper-project-unknown")]
+fn a_refused_helper_is_reported_when_a_basic_challenge_needs_a_login(
+    #[case] refusal: OciError,
+    #[case] code: &str,
+) {
+    let server =
+        Server::start(|_| Response::new(401).header("WWW-Authenticate", "Basic realm=\"reg\""));
+    let client = Client::with_loopback_http_for_tests(Box::new(Refusing(refusal.clone())));
+    let err = client
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert_eq!(err, refusal);
+    assert_eq!(err.code(), Some(code));
+}
+
+/// A registry that hands out anonymous tokens. A manifest request with the
+/// token gets `statuses[n]` on its n-th try (the last one repeats).
+fn token_then(statuses: &'static [u16]) -> Server {
+    let tries = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    Server::start(move |req| {
+        if req.path.starts_with("/token") {
+            return Response::new(200).json(&json!({"token": "T0K", "expires_in": 300}));
+        }
+        if req.header("authorization") != Some("Bearer T0K") {
+            let challenge = format!(
+                "Bearer realm=\"http://{}/token\",service=\"reg\",scope=\"repository:a/b:pull\"",
+                host(req)
+            );
+            return Response::new(401).header("WWW-Authenticate", &challenge);
+        }
+        let n = tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        match statuses[n.min(statuses.len() - 1)] {
+            200 => manifest_response(&manifest_json(&Descriptor::for_bytes("x", b"{}"), &[])),
+            status => Response::new(status),
+        }
+    })
+}
+
+fn refused_untrusted_client() -> Client {
+    Client::with_loopback_http_for_tests(Box::new(Refusing(untrusted())))
+}
+
+/// The error a failed pack fetch reports: the code and exit 2.
+fn as_sync_error(source: OciError) -> slopvac_plugins::sync::SyncError {
+    slopvac_plugins::sync::SyncError::Fetch {
+        id: "demo".parse().unwrap(),
+        source,
+    }
+}
+
+#[rstest::rstest]
+#[case::anonymous_token_then_401(&[401])]
+#[case::anonymous_token_then_403(&[403])]
+fn a_refused_helper_is_reported_when_the_registry_denies_the_anonymous_token(
+    #[case] statuses: &'static [u16],
+) {
+    let server = token_then(statuses);
+    let err = refused_untrusted_client()
+        .fetch_manifest(&reference(&server, "a/b:1"))
+        .unwrap_err();
+    assert_eq!(err, untrusted());
+    let failure = as_sync_error(err);
+    assert_eq!(failure.code(), "credential-helper-untrusted");
+    assert_eq!(failure.exit_code(), 2);
+}
+
+#[test]
+fn a_cached_anonymous_token_keeps_the_helper_refusal_for_a_later_403() {
+    // The first request is served; the next one, with the cached token, is not.
+    let server = token_then(&[200, 403]);
+    let client = refused_untrusted_client();
+    let r = reference(&server, "a/b:1");
+    client.fetch_manifest(&r).unwrap();
+    let err = client.fetch_manifest(&r).unwrap_err();
+    assert_eq!(err, untrusted());
+    assert_eq!(server.count("/token"), 1, "the token was cached");
+}
+
 mod config_key_case {
     use super::*;
 
@@ -1467,6 +1968,7 @@ mod config_key_case {
             std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         creds.helper_search_path = Some(bin.into_os_string());
+        creds.project_root = Some(dir.path().join("project"));
         creds.helper_timeout = Some(std::time::Duration::from_secs(30));
         let user = |host: &str| creds.credential(host).unwrap().unwrap().username;
         assert_eq!(user("registry.example:5000"), "from-cred-helpers");

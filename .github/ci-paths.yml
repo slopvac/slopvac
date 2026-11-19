@@ -10,6 +10,7 @@
 code:
   - '.github/workflows/**'
   - '.github/action-fixtures/**'
+  - 'CLA.md'
   - 'pyproject.toml'
   - 'uv.lock'
   - 'packages/slopvac-lint/pyproject.toml'

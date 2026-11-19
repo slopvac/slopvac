@@ -159,6 +159,8 @@ The span crates index text with 32-bit offsets and size their structures from it
 | Config file (`slopvac.toml`, each `extends` file, a 2.x config read by `migrate`) | 1 MiB | `config-too-large` | A real config is under 10 KiB. The shipped data files stay under 32 KiB. |
 | Rule or category file in a pack | 2 MiB | `rules-file-too-large` | The largest shipped rule file is about 130 KiB. 2 MiB leaves more than a tenfold margin. |
 | Style file | 1 MiB | `style-too-large` | The built-in styles are a few KiB. |
+| Update-check policy read (`slopvac.toml`, read before argument parsing) | 1 MiB | `update-policy-too-large` | Same value as the config file. The read covers two keys, and a real file is under 10 KiB. |
+| House-style detection read (`.vale.ini`, `STYLE.md`, `_STYLE.md`, `CONTRIBUTING.md`) | 1 MiB | `style-detect-file-too-large` | A real style note is a few KiB. Detection skips a larger file and does not fail. The code is emitted as an info notice that names the file. The notice is not wired yet. |
 | Terms file | 1 MiB | `terms-file-too-large` | The built-in terms file is about 30 KiB. |
 
 A per-file cap does not bound the work of many files. Two aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the config file or pack directory at which it tripped, relative to the root, or `<external>/<file name>` outside it. The list of `data.budget` values can grow. A message names only that path and the limit.
@@ -182,7 +184,7 @@ How the budgets apply:
 - A rule file reached by more than one name, such as a symlink, loads once under the first name in file-name order, and the file budget counts it once.
 - The pack loader reads and compiles one file at a time.
 
-Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`).
+Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-update` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`, plus a private cap in house-style detection).
 
 The CLI file and stdin reads enforce their cap and report `document-too-large` with exit 2. The language server and `migrate` document reads, and the `migrate` config read, enforce theirs in a later change. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and a `--diff` scoping read fails with `DiffError::FileTooLarge`. The `lint` command does not yet pass `--fix` or `--diff-base` to the engine. When it does, it reports both with `document-too-large`.
 
@@ -335,8 +337,12 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 - The exit codes keep their meaning. Slopvac uses no other exit code.
 - Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `pack-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation.
 - No code is reused, and no code changes meaning. A code that stops occurring stays in the documentation, marked retired.
+- Registry logins have two codes. Slopvac asks for a login only when a registry demands one.
+  - `credential-helper-untrusted`: the credential helper exists only in a directory that is not trusted (section 1.7 paths: relative to the project, or `<external>/<name>`). Slopvac leaves the helper unstarted and sends the request without a login. When the registry allows that, the run continues and the log carries a warning. When the registry demands a login, the operation fails with this code and exits 2. The user tightens the permissions of the directory or signs in with a static `auths` login or the environment variables.
+  - `credential-helper-project-unknown`: the caller did not name the project, so no helper starts. The credential constructors take the project, so only a caller that builds the credentials by hand can reach this code, and a user cannot. It is an internal invariant, with the same outcome.
 - Plugin protocol errors use the JSON-RPC 2.0 error object. Its numeric `code` follows the JSON-RPC ranges, and `data.slopvac_code` carries the string code. The protocol bead defines the numeric range.
 - Message text can change in any release. Codes, rule IDs, and exit codes form the interface.
+- A `fix` refusal carries its code through `Refusal::code`: `document-too-large`, `fix-outside-root`, `fix-symlink`, `fix-not-regular`, `fix-hardlinked`, `fix-not-owner`, `fix-unsafe-directory`, `fix-group-mismatch`, `fix-acl-present`, `fix-unsupported-platform` and `fix-changed`.
 
 Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnostics, `slopvac-8l4.12.1` for the CLI.
 

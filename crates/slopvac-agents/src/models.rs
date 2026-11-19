@@ -164,6 +164,10 @@ fn coverage(evals: &Evals) -> Option<String> {
     })
 }
 
+/// The line that points readers to the guide on setting models.
+const GUIDE_LINK: &str =
+    "\nTo set the models, read [Choosing models for review](guides/choosing-review-models.md).\n";
+
 /// The generated `docs/model-recommendations.md`.
 #[must_use]
 pub fn markdown(evals: &Evals) -> String {
@@ -174,6 +178,7 @@ pub fn markdown(evals: &Evals) -> String {
     if evals.status == Status::PendingReevaluation {
         out.push_str(PENDING);
         out.push('\n');
+        out.push_str(GUIDE_LINK);
         return out;
     }
     let _ = write!(out, "Eval results dated {}. ", evals.date);
@@ -181,6 +186,7 @@ pub fn markdown(evals: &Evals) -> String {
         let _ = write!(out, "{sentence} ");
     }
     out.push_str("Pick the first available model in a table. The reviewer must differ from the author's model.\n");
+    out.push_str(GUIDE_LINK);
     for kind in TYPES {
         let _ = write!(out, "\n## {}\n\n", kind.name());
         let ranked = evals.ranked(kind);

@@ -1,5 +1,44 @@
 use thiserror::Error;
 
+/// What is wrong with a term or blocklist entry, without any of the entry's text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EntryProblem {
+    /// A blocklist entry has no word, or a terms entry has an empty term.
+    MissingWord,
+    /// A blocklist entry has a part of speech that is not recognised.
+    UnknownPos,
+    /// A blocklist entry has no reason.
+    MissingReason,
+    /// Two entries name the same word and part of speech, or the same term.
+    Duplicate,
+    /// A term sets both casing modes.
+    ConflictingCasing,
+    /// A term has a kind that is not a kebab-case label.
+    BadKind,
+    /// A term has an empty variant, or lists a variant twice.
+    BadVariant,
+    /// Any other problem with an entry.
+    Other,
+}
+
+impl EntryProblem {
+    /// A fixed description that holds no user text.
+    #[must_use]
+    pub const fn describe(self) -> &'static str {
+        match self {
+            Self::MissingWord => "has no word",
+            Self::UnknownPos => "has an unrecognized part of speech",
+            Self::MissingReason => "has no reason",
+            Self::Duplicate => "is a duplicate",
+            Self::ConflictingCasing => "sets both casing modes",
+            Self::BadKind => "has a kind that is not a kebab-case label",
+            Self::BadVariant => "has an empty or repeated variant",
+            Self::Other => "is not valid",
+        }
+    }
+}
+
 /// Why a terms or blocklist file could not be loaded.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TermsError {
@@ -65,5 +104,23 @@ pub enum TermsError {
         path: String,
         /// What is wrong with which entry.
         message: String,
+        /// The one-based position of the entry in the file, when known.
+        number: Option<usize>,
+        /// The kind of problem, free of the entry's text.
+        problem: EntryProblem,
     },
+}
+
+impl TermsError {
+    /// The same error for the entry at one-based position `number`, when it is an entry error
+    /// that does not name one yet.
+    #[must_use]
+    pub fn at_entry(mut self, at: usize) -> Self {
+        if let Self::Entry { number, .. } = &mut self
+            && number.is_none()
+        {
+            *number = Some(at);
+        }
+        self
+    }
 }

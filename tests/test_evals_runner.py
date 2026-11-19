@@ -398,3 +398,32 @@ def test_precision_interval_resamples_documents_not_findings():
     assert (
         precision["wilson"][0] > 0.27
     )  # a pooled interval alone would claim far more certainty
+
+
+def test_a_report_naming_an_unknown_path_does_not_echo_it_to_stderr(
+    tmp_path, monkeypatch, capsys
+):
+    doc = make_doc("d1", "markdown")
+    cache = tmp_path / "cache"
+    write_cache(cache, doc)
+    monkeypatch.setattr(cli.lib, "load_manifest", lambda: {"documents": [doc]})
+    leaked = "/Users/alice/private-client/AKIAFAKEFAKEFAKE0000/notes.md"
+    script = tmp_path / "wrong_path.py"
+    script.write_text(
+        "import json\n"
+        f"print(json.dumps({{'documents': [{{'path': {leaked!r}, 'findings': []}}]}}))\n"
+    )
+    argv = [
+        "run",
+        "--engine",
+        f"{sys.executable} {script}",
+        "--cache",
+        str(cache),
+        "--out",
+        str(tmp_path / "out.json"),
+    ]
+    assert cli.main(argv) == 2
+    err = capsys.readouterr().err
+    assert "unknown path" in err
+    assert "alice" not in err
+    assert "AKIAFAKE" not in err
