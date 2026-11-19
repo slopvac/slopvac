@@ -360,7 +360,7 @@ jobs:
     # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
     if: ${{ always() && needs.plan.result == 'success' && needs.custom-release-provenance.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') && needs.sign.result == 'success' }}
     permissions:
-      "contents": "write"
+      "contents": "read"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG_FLAG: ${{ needs.plan.outputs.tag-flag }}
@@ -392,8 +392,19 @@ jobs:
           RELEASE_COMMIT: ${{ github.sha }}
         run: |
           python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
+      - name: Mint the release token
+        id: release-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
       - id: host
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
           dist host $TAG_FLAG --steps=upload --steps=release --output-format=json > dist-manifest.json
           echo "artifacts uploaded and released successfully"
@@ -431,6 +442,7 @@ jobs:
           find artifacts -type f ! -name '*.minisig' -print0 | xargs -0 python3 scripts/release_signing.py verify
       - name: Upload the artifacts to the draft release
         env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
         run: |
           gh release upload "$RELEASE_TAG" artifacts/*
@@ -443,6 +455,7 @@ jobs:
           python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
       - name: Publish the release
         env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
           RELEASE_COMMIT: "${{ github.sha }}"
@@ -541,7 +554,7 @@ jobs:
     if: ${{ needs.route.outputs.gated == 'false' }}
     runs-on: "ubuntu-22.04"
     permissions:
-      "contents": "write"
+      "contents": "read"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ github.ref_name }}
@@ -583,7 +596,18 @@ jobs:
         shell: bash
         run: |
           python3 scripts/release_provenance.py verify-tag "$RELEASE_TAG" "$RELEASE_COMMIT"
+      - name: Mint the release token
+        id: release-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
       - name: Publish the release
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
           gh release edit "$RELEASE_TAG" --repo "$REPO" --draft=false
