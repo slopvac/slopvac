@@ -140,10 +140,10 @@
         "category": "prose-craft",
         "errors": 0,
         "findings": 1,
-        "gating_per_100_words": 0.179,
+        "gating_per_100_words": 0.146,
         "over_budget": false,
-        "per_100_words": 0.358,
-        "score": 93.3,
+        "per_100_words": 0.292,
+        "score": 94.5,
         "suggestions": 0,
         "warnings": 1
       },
@@ -258,13 +258,13 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 18,
-        "findings": 18,
-        "gating_per_100_words": 6.452,
+        "errors": 9,
+        "findings": 20,
+        "gating_per_100_words": 2.624,
         "over_budget": true,
-        "per_100_words": 6.452,
+        "per_100_words": 5.831,
         "score": 0.0,
-        "suggestions": 0,
+        "suggestions": 11,
         "warnings": 0
       },
       {
@@ -296,22 +296,22 @@
         "category": "ste-sentences",
         "errors": 3,
         "findings": 3,
-        "gating_per_100_words": 1.075,
+        "gating_per_100_words": 0.875,
         "over_budget": true,
-        "per_100_words": 1.075,
-        "score": 43.2,
+        "per_100_words": 0.875,
+        "score": 52.5,
         "suggestions": 0,
         "warnings": 0
       },
       {
         "budget": 0.4,
         "category": "ste-verbs",
-        "errors": 1,
-        "findings": 1,
-        "gating_per_100_words": 0.358,
-        "over_budget": false,
-        "per_100_words": 0.358,
-        "score": 73.1,
+        "errors": 3,
+        "findings": 3,
+        "gating_per_100_words": 0.875,
+        "over_budget": true,
+        "per_100_words": 0.875,
+        "score": 42.3,
         "suggestions": 0,
         "warnings": 0
       },
@@ -320,15 +320,15 @@
         "category": "ste-words",
         "errors": 1,
         "findings": 1,
-        "gating_per_100_words": 0.358,
+        "gating_per_100_words": 0.292,
         "over_budget": false,
-        "per_100_words": 0.358,
-        "score": 78.5,
+        "per_100_words": 0.292,
+        "score": 82.5,
         "suggestions": 0,
         "warnings": 0
       }
     ],
-    "errors": 23,
+    "errors": 16,
     "findings": [
       {
         "ai_signal": "none",
@@ -392,7 +392,7 @@
         "message": "The condition follows the command (\"Open the client config, set the retry limit to five, set the backoff to two seconds, and then restart every worker in the pool before you run the smoke test.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 157,
           "start": 0
@@ -485,23 +485,6 @@
       },
       {
         "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
-        "end_column": 35,
-        "end_line": 19,
-        "line": 19,
-        "matched_text": "Clear the cache before the import.",
-        "message": "The condition follows the command (\"Clear the cache before the import.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
-        "span": {
-          "end": 667,
-          "start": 633
-        }
-      },
-      {
-        "ai_signal": "none",
         "category": "ste-sentences",
         "column": 1,
         "end_column": 10,
@@ -572,23 +555,6 @@
         "ai_signal": "none",
         "category": "ste-procedural",
         "column": 1,
-        "end_column": 34,
-        "end_line": 23,
-        "line": 23,
-        "matched_text": "Revoke the token after the audit.",
-        "message": "The condition follows the command (\"Revoke the token after the audit.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
-        "span": {
-          "end": 748,
-          "start": 715
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
         "end_column": 61,
         "end_line": 25,
         "line": 25,
@@ -596,7 +562,7 @@
         "message": "The condition follows the command (\"Restart the worker if the queue depth is above one thousand.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 810,
           "start": 750
@@ -613,7 +579,7 @@
         "message": "The condition follows the command (\"Clear the cache when the import completes.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 917,
           "start": 875
@@ -630,7 +596,7 @@
         "message": "The condition follows the command (\"Drain the queue before the worker shuts down.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 1009,
           "start": 964
@@ -664,7 +630,7 @@
         "message": "The condition follows the command (\"For headless servers, configure the permissions required by the workload before it starts.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 1152,
           "start": 1062
@@ -681,7 +647,7 @@
         "message": "The condition follows the command (\"Reconcile the ledger when the import completes.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 1289,
           "start": 1242
@@ -691,17 +657,119 @@
         "ai_signal": "none",
         "category": "ste-procedural",
         "column": 1,
-        "end_column": 13,
+        "end_column": 47,
         "end_line": 45,
         "line": 45,
+        "matched_text": "Remove the lock file if the worker is stopped.",
+        "message": "The condition follows the command (\"Remove the lock file if the worker is stopped.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1387,
+          "start": 1341
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 36,
+        "end_column": 46,
+        "end_line": 45,
+        "line": 45,
+        "matched_text": "is stopped",
+        "message": "Passive voice \"is stopped\". Name the actor and use the active voice.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.passive-voice",
+        "severity": "error",
+        "span": {
+          "end": 1386,
+          "start": 1376
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 49,
+        "end_line": 49,
+        "line": 49,
+        "matched_text": "Archive the report before the worker shuts down.",
+        "message": "The condition follows the command (\"Archive the report before the worker shuts down.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1493,
+          "start": 1445
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 46,
+        "end_line": 53,
+        "line": 53,
+        "matched_text": "Restart the worker if the health check fails.",
+        "message": "The condition follows the command (\"Restart the worker if the health check fails.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1582,
+          "start": 1537
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-verbs",
+        "column": 21,
+        "end_column": 31,
+        "end_line": 55,
+        "line": 55,
+        "matched_text": "is running",
+        "message": "Complex verb construction \"is running\". Use a simple present, past, or future tense.",
+        "replacement": null,
+        "rule_id": "core:ste-verbs.complex-tense",
+        "severity": "error",
+        "span": {
+          "end": 1614,
+          "start": 1604
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 56,
+        "end_line": 57,
+        "line": 57,
+        "matched_text": "Pause the job when the queue depth passes one thousand.",
+        "message": "The condition follows the command (\"Pause the job when the queue depth passes one thousand.\"). Put the condition first.",
+        "replacement": null,
+        "rule_id": "core:ste-procedural.condition-after-command",
+        "severity": "suggestion",
+        "span": {
+          "end": 1672,
+          "start": 1617
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-procedural",
+        "column": 1,
+        "end_column": 13,
+        "end_line": 61,
+        "line": 61,
         "matched_text": "NOTE: Always",
         "message": "This note gives an instruction (\"NOTE: Always\"). A note only gives information.",
         "replacement": null,
         "rule_id": "core:ste-procedural.note-gives-instruction",
         "severity": "error",
         "span": {
-          "end": 1353,
-          "start": 1341
+          "end": 1730,
+          "start": 1718
         }
       },
       {
@@ -709,16 +777,16 @@
         "category": "ste-procedural",
         "column": 1,
         "end_column": 43,
-        "end_line": 47,
-        "line": 47,
+        "end_line": 63,
+        "line": 63,
         "matched_text": "Clear the cache before you run the import.",
         "message": "The condition follows the command (\"Clear the cache before you run the import.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
-          "end": 1440,
-          "start": 1398
+          "end": 1817,
+          "start": 1775
         }
       },
       {
@@ -726,46 +794,47 @@
         "category": "ste-procedural",
         "column": 1,
         "end_column": 13,
-        "end_line": 49,
-        "line": 49,
+        "end_line": 65,
+        "line": 65,
         "matched_text": "NOTE: Do not",
         "message": "This note gives an instruction (\"NOTE: Do not\"). A note only gives information.",
         "replacement": null,
         "rule_id": "core:ste-procedural.note-gives-instruction",
         "severity": "error",
         "span": {
-          "end": 1499,
-          "start": 1487
+          "end": 1876,
+          "start": 1864
         }
       }
     ],
     "gate": {
       "passed": false,
       "reasons": [
-        "23 error(s), limit 0",
-        "8.42 severity-weighted findings per 100 words, budget 1.5",
-        "score 0.0, minimum 85.0",
-        "ste-procedural at 6.45 severity-weighted findings per 100 words, budget 0.4",
-        "ste-sentences at 1.07 severity-weighted findings per 100 words, budget 0.5"
+        "16 error(s), limit 0",
+        "4.81 severity-weighted findings per 100 words, budget 1.5",
+        "score 10.5, minimum 85.0",
+        "ste-procedural at 2.62 severity-weighted findings per 100 words, budget 0.4",
+        "ste-sentences at 0.88 severity-weighted findings per 100 words, budget 0.5",
+        "ste-verbs at 0.88 severity-weighted findings per 100 words, budget 0.4"
       ]
     },
-    "paragraphs": 26,
+    "paragraphs": 34,
     "path": "rule-examples-ste-procedural.md",
-    "per_100_words": 8.602,
+    "per_100_words": 8.163,
     "profile": "strict",
     "prose": {
-      "errors": 23,
-      "findings": 24,
-      "per_100_words": 8.602,
+      "errors": 16,
+      "findings": 28,
+      "per_100_words": 8.163,
       "warnings": 1
     },
-    "score": 0.0,
-    "sentences": 32,
-    "suggestions": 0,
-    "total_findings": 24,
+    "score": 10.5,
+    "sentences": 40,
+    "suggestions": 11,
+    "total_findings": 28,
     "unchecked": [],
     "warnings": 1,
-    "words": 279
+    "words": 343
   },
   "exit_code": 1
 }

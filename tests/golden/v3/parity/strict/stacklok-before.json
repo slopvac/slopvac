@@ -258,13 +258,13 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 8,
+        "errors": 4,
         "findings": 8,
-        "gating_per_100_words": 0.221,
+        "gating_per_100_words": 0.11,
         "over_budget": false,
         "per_100_words": 0.221,
-        "score": 83.4,
-        "suggestions": 0,
+        "score": 91.4,
+        "suggestions": 4,
         "warnings": 0
       },
       {
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 86,
+    "errors": 82,
     "findings": [
       {
         "ai_signal": "none",
@@ -423,7 +423,7 @@
         "message": "The condition follows the command (\"For headless servers and one-shot jobs, configure the permissions required by the workload before it starts.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 1615,
           "start": 1507
@@ -440,7 +440,7 @@
         "message": "The condition follows the command (\"Pass ***************** when you start *******, *******, *******, or *********.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": null
       },
       {
@@ -1199,7 +1199,7 @@
         "message": "The condition follows the command (\"Choose **** when you want the checker to block findings.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": null
       },
       {
@@ -1536,7 +1536,7 @@
         "message": "The condition follows the command (\"Use **** if the main agent must run them unattended.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": null
       },
       {
@@ -2625,9 +2625,9 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "86 error(s), limit 0",
-        "3.07 severity-weighted findings per 100 words, budget 1.5",
-        "score 45.6, minimum 85.0",
+        "82 error(s), limit 0",
+        "2.95 severity-weighted findings per 100 words, budget 1.5",
+        "score 47.1, minimum 85.0",
         "ste-descriptive at 0.47 severity-weighted findings per 100 words, budget 0.4",
         "ste-verbs at 0.69 severity-weighted findings per 100 words, budget 0.4"
       ]
@@ -2637,14 +2637,14 @@
     "per_100_words": 3.756,
     "profile": "strict",
     "prose": {
-      "errors": 84,
+      "errors": 80,
       "findings": 128,
       "per_100_words": 3.535,
       "warnings": 44
     },
-    "score": 45.6,
+    "score": 47.1,
     "sentences": 302,
-    "suggestions": 0,
+    "suggestions": 4,
     "total_findings": 136,
     "unchecked": [],
     "warnings": 50,

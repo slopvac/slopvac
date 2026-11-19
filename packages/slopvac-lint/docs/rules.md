@@ -1824,7 +1824,7 @@ Put the condition before the command
 
 - **Kind.** pattern — a regular expression
 - **Ships as.** warning
-- **strict / normal / relaxed.** enforced / advisory / advisory
+- **strict / normal / relaxed.** advisory / advisory / advisory
 - **Scope.** body-sentence
 - **Fix.** Move the condition clause to the front and follow it with a comma.
 - **Suppressible with.** `quotation`, `code-span` — any other reason is reported rather than honoured

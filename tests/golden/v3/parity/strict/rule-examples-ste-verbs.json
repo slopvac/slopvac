@@ -258,12 +258,12 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 7,
-        "findings": 7,
-        "gating_per_100_words": 2.811,
+        "errors": 3,
+        "findings": 3,
+        "gating_per_100_words": 1.205,
         "over_budget": true,
-        "per_100_words": 2.811,
-        "score": 0.0,
+        "per_100_words": 1.205,
+        "score": 23.1,
         "suggestions": 0,
         "warnings": 0
       },
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 40,
+    "errors": 36,
     "findings": [
       {
         "ai_signal": "none",
@@ -638,23 +638,6 @@
       },
       {
         "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
-        "end_column": 35,
-        "end_line": 19,
-        "line": 19,
-        "matched_text": "Rotate the token before the audit.",
-        "message": "The condition follows the command (\"Rotate the token before the audit.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
-        "span": {
-          "end": 515,
-          "start": 481
-        }
-      },
-      {
-        "ai_signal": "none",
         "category": "ste-verbs",
         "column": 11,
         "end_column": 27,
@@ -685,23 +668,6 @@
         "span": {
           "end": 543,
           "start": 533
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
-        "end_column": 36,
-        "end_line": 23,
-        "line": 23,
-        "matched_text": "Rebuild the index after the import.",
-        "message": "The condition follows the command (\"Rebuild the index after the import.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
-        "span": {
-          "end": 598,
-          "start": 563
         }
       },
       {
@@ -1012,40 +978,6 @@
       },
       {
         "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
-        "end_column": 54,
-        "end_line": 53,
-        "line": 53,
-        "matched_text": "Do a verification of the checksum after the download.",
-        "message": "The condition follows the command (\"Do a verification of the checksum after the download.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
-        "span": {
-          "end": 1375,
-          "start": 1322
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "ste-procedural",
-        "column": 1,
-        "end_column": 40,
-        "end_line": 55,
-        "line": 55,
-        "matched_text": "Verify the checksum after the download.",
-        "message": "The condition follows the command (\"Verify the checksum after the download.\"). Put the condition first.",
-        "replacement": null,
-        "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
-        "span": {
-          "end": 1416,
-          "start": 1377
-        }
-      },
-      {
-        "ai_signal": "none",
         "category": "prose-discipline",
         "column": 10,
         "end_column": 29,
@@ -1082,31 +1014,31 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "40 error(s), limit 0",
-        "16.87 severity-weighted findings per 100 words, budget 1.5",
+        "36 error(s), limit 0",
+        "15.26 severity-weighted findings per 100 words, budget 1.5",
         "score 0.0, minimum 85.0",
         "prose-craft at 0.80 severity-weighted findings per 100 words, budget 0.8",
         "prose-discipline at 1.21 severity-weighted findings per 100 words, budget 0.4",
         "prose-inflation at 0.40 severity-weighted findings per 100 words, budget 0.3",
-        "ste-procedural at 2.81 severity-weighted findings per 100 words, budget 0.4",
+        "ste-procedural at 1.21 severity-weighted findings per 100 words, budget 0.4",
         "ste-sentences at 1.21 severity-weighted findings per 100 words, budget 0.5",
         "ste-verbs at 10.44 severity-weighted findings per 100 words, budget 0.4"
       ]
     },
     "paragraphs": 30,
     "path": "rule-examples-ste-verbs.md",
-    "per_100_words": 17.671,
+    "per_100_words": 16.064,
     "profile": "strict",
     "prose": {
-      "errors": 40,
-      "findings": 44,
-      "per_100_words": 17.671,
+      "errors": 36,
+      "findings": 40,
+      "per_100_words": 16.064,
       "warnings": 4
     },
     "score": 0.0,
     "sentences": 30,
     "suggestions": 0,
-    "total_findings": 44,
+    "total_findings": 40,
     "unchecked": [],
     "warnings": 4,
     "words": 249

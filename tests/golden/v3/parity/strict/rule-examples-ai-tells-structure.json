@@ -258,13 +258,13 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 1,
+        "errors": 0,
         "findings": 1,
-        "gating_per_100_words": 0.122,
+        "gating_per_100_words": 0.0,
         "over_budget": false,
         "per_100_words": 0.122,
-        "score": 90.8,
-        "suggestions": 0,
+        "score": 99.7,
+        "suggestions": 1,
         "warnings": 0
       },
       {
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 44,
+    "errors": 43,
     "findings": [
       {
         "ai_signal": "strong",
@@ -1021,7 +1021,7 @@
         "message": "The condition follows the command (\"Restart the worker after the config is written.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 2468,
           "start": 2421
@@ -1742,8 +1742,8 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "44 error(s), limit 0",
-        "7.58 severity-weighted findings per 100 words, budget 1.5",
+        "43 error(s), limit 0",
+        "7.46 severity-weighted findings per 100 words, budget 1.5",
         "score 0.0, minimum 85.0",
         "ai-tells-structure at 4.34 severity-weighted findings per 100 words, budget 0.3",
         "ste-punctuation at 0.67 severity-weighted findings per 100 words, budget 0.5",
@@ -1755,14 +1755,14 @@
     "per_100_words": 10.147,
     "profile": "strict",
     "prose": {
-      "errors": 19,
+      "errors": 18,
       "findings": 34,
       "per_100_words": 4.156,
       "warnings": 15
     },
     "score": 0.0,
     "sentences": 111,
-    "suggestions": 3,
+    "suggestions": 4,
     "total_findings": 83,
     "unchecked": [],
     "warnings": 36,

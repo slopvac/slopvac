@@ -258,13 +258,13 @@
       {
         "budget": 0.4,
         "category": "ste-procedural",
-        "errors": 4,
+        "errors": 0,
         "findings": 4,
-        "gating_per_100_words": 2.667,
-        "over_budget": true,
+        "gating_per_100_words": 0.0,
+        "over_budget": false,
         "per_100_words": 2.667,
-        "score": 0.0,
-        "suggestions": 0,
+        "score": 93.3,
+        "suggestions": 4,
         "warnings": 0
       },
       {
@@ -328,7 +328,7 @@
         "warnings": 0
       }
     ],
-    "errors": 18,
+    "errors": 14,
     "findings": [
       {
         "ai_signal": "none",
@@ -579,7 +579,7 @@
         "message": "The condition follows the command (\"Restart worker after you edit config.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 819,
           "start": 782
@@ -596,7 +596,7 @@
         "message": "The condition follows the command (\"Restart the worker after you edit the config.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 866,
           "start": 821
@@ -630,7 +630,7 @@
         "message": "The condition follows the command (\"Delete branch when the merge completes.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 907,
           "start": 868
@@ -647,7 +647,7 @@
         "message": "The condition follows the command (\"Delete the branch when the merge completes.\"). Put the condition first.",
         "replacement": null,
         "rule_id": "core:ste-procedural.condition-after-command",
-        "severity": "error",
+        "severity": "suggestion",
         "span": {
           "end": 952,
           "start": 909
@@ -657,10 +657,9 @@
     "gate": {
       "passed": false,
       "reasons": [
-        "18 error(s), limit 0",
-        "12.33 severity-weighted findings per 100 words, budget 1.5",
+        "14 error(s), limit 0",
+        "9.67 severity-weighted findings per 100 words, budget 1.5",
         "score 0.0, minimum 85.0",
-        "ste-procedural at 2.67 severity-weighted findings per 100 words, budget 0.4",
         "ste-sentences at 8.00 severity-weighted findings per 100 words, budget 0.5",
         "ste-verbs at 1.33 severity-weighted findings per 100 words, budget 0.4"
       ]
@@ -670,14 +669,14 @@
     "per_100_words": 12.667,
     "profile": "strict",
     "prose": {
-      "errors": 18,
+      "errors": 14,
       "findings": 19,
       "per_100_words": 12.667,
       "warnings": 1
     },
     "score": 0.0,
     "sentences": 29,
-    "suggestions": 0,
+    "suggestions": 4,
     "total_findings": 19,
     "unchecked": [],
     "warnings": 1,
