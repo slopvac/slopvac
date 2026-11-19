@@ -411,8 +411,9 @@ impl Lockfile {
     /// [`Lockfile::parse`] accepts. Sorts the entries by id and each `requires`.
     /// Error pointers use the positions in `packs` as given.
     ///
-    /// `requires` may name any valid pack id, locked or not: `core` is the
-    /// built-in pack and has no entry (`packs.md`, section 2).
+    /// No entry may have the id `core`: that is the built-in plugin, which the
+    /// binary compiles in and never locks (`packs.md`, section 9). `requires`
+    /// may name any valid id, locked or not, including `core`.
     pub fn new(mut packs: Vec<LockedPack>) -> Result<Self, LockError> {
         if packs.len() > MAX_PACKS {
             return Err(LockError::new(
@@ -423,6 +424,12 @@ impl Lockfile {
         let mut seen = HashSet::with_capacity(packs.len());
         for (i, pack) in packs.iter().enumerate() {
             let at = |key: &str| format!("/packs/{i}/{key}");
+            if pack.id.as_str() == crate::sign::RESERVED_ID {
+                return Err(LockError::new(
+                    at("id"),
+                    format!("`{}` is reserved for the built-in plugin and is never locked", pack.id),
+                ));
+            }
             if !seen.insert(&pack.id) {
                 return Err(LockError::new(
                     at("id"),

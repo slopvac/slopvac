@@ -346,6 +346,12 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 - Message text can change in any release. Codes, rule IDs, and exit codes form the interface.
 - A `fix` refusal carries its code through `Refusal::code`: `document-too-large`, `fix-outside-root`, `fix-symlink`, `fix-not-regular`, `fix-hardlinked`, `fix-not-owner`, `fix-unsafe-directory`, `fix-group-mismatch`, `fix-acl-present`, `fix-unsupported-platform` and `fix-changed`.
 
+The `slopvac plugins` group adds this code. Plugin-protocol.md, section 10, lists the other plugin host codes.
+
+| Code | Meaning | Exit |
+| --- | --- | --- |
+| `plugin-not-code` | `slopvac plugins trust` or `slopvac plugins untrust` named a data plugin. A data plugin has no executable content, so trust does not apply to it ([packs.md](packs.md), section 8). The command records nothing. | 2 |
+
 Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnostics, `slopvac-8l4.12.1` for the CLI.
 
 ### 3.6 Breaking changes

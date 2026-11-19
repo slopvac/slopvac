@@ -436,6 +436,32 @@ fn a_constructed_lock_writes_text_the_reader_accepts() {
     assert_eq!(Lockfile::parse(&lock.to_toml()).unwrap(), lock);
 }
 
+// ---- the built-in core is never locked ----------------------------------------
+
+#[test]
+fn new_refuses_an_entry_with_the_id_core() {
+    let err = Lockfile::new(vec![locked("a"), locked("core")]).unwrap_err();
+    assert_eq!(err.pointer, "/packs/1/id");
+}
+
+#[test]
+fn parse_refuses_an_entry_with_the_id_core() {
+    let err = Lockfile::parse(&format!(
+        "schema_version = 3\n{}",
+        pack_text("core", "packs/x", "")
+    ))
+    .unwrap_err();
+    assert_eq!(err.pointer, "/packs/0/id");
+}
+
+#[test]
+fn an_entry_may_require_the_built_in_core_and_round_trips() {
+    let mut pack = locked("p");
+    pack.requires = vec!["core".parse().unwrap()];
+    let lock = Lockfile::new(vec![pack]).unwrap();
+    assert_eq!(Lockfile::parse(&lock.to_toml()).unwrap(), lock);
+}
+
 // ---- API version has no maximum ---------------------------------------------
 
 #[test]
