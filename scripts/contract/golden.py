@@ -583,9 +583,15 @@ def apply_run_deltas(base: dict, profile: str, deltas: list[dict]) -> dict:
 
 
 def reference_tree_hash(src: Path) -> str:
-    """Hash of the Python reference: every source and rule data file, by path."""
+    """Hash of the Python reference: its source and rule data files, by content.
+
+    The file set is every ``.py``, ``.yml``, ``.yaml``, ``.toml`` and ``.json`` file
+    under ``src``, outside ``__pycache__``. Files are visited in order of their
+    path parts relative to ``src``. Each path enters the digest in POSIX form, so the
+    host separator does not matter. Git state, timestamps and file modes do not.
+    """
     digest = hashlib.sha256()
-    for path in sorted(src.rglob("*")):
+    for path in sorted(src.rglob("*"), key=lambda p: p.relative_to(src).parts):
         if (
             path.is_file()
             and path.suffix in {".py", ".yml", ".yaml", ".toml", ".json"}
@@ -620,24 +626,11 @@ def vale_version() -> str:
     return proc.stdout.strip().removeprefix("vale version ")
 
 
-def git(*args: str) -> str:
-    proc = subprocess.run(
-        ["git", "-C", str(ROOT), *args], capture_output=True, text=True, check=False
-    )
-    return proc.stdout.strip() if proc.returncode == 0 else ""
-
-
-def reference_commit(src: Path) -> str:
-    """The last commit that changed the reference sources."""
-    return git("log", "-1", "--format=%H", "--", str(src))
-
-
 def current_pin(src: Path) -> dict:
     from importlib.metadata import version
 
     return {
         "slopvac_version": version("slopvac"),
-        "python_commit": reference_commit(src),
         "python_src_sha256": reference_tree_hash(src),
         "vale": vale_version(),
     }
@@ -649,16 +642,12 @@ REFERENCE_SRC = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac"
 def verify_pin(src: Path = REFERENCE_SRC) -> list[str]:
     """What differs between pin.toml and this checkout.
 
-    The commit is compared only in a full clone: a shallow clone does not hold the
-    commit that last changed the sources, and the source hash proves the same thing.
+    Every field is a version or a content hash, so the check reads no git state and
+    gives the same answer in a full clone, a shallow clone and an exported tree.
     """
     recorded = tomllib.loads(PIN_TOML.read_text(encoding="utf-8"))
-    now = current_pin(src)
-    shallow = git("rev-parse", "--is-shallow-repository") == "true"
     problems = []
-    for key, value in now.items():
-        if key == "python_commit" and (shallow or not value):
-            continue
+    for key, value in current_pin(src).items():
         if recorded.get(key) != value:
             problems.append(
                 f"{key}: pinned {recorded.get(key)!r}, checkout has {value!r}"

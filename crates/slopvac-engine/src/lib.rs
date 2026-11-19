@@ -84,4 +84,7 @@ pub use matcher_work::matcher_entries;
 pub use score::{CategoryInfo, Scoring, score_document};
 pub use settings::{CategoryDials, Level, Mode, Settings, Thresholds};
 pub use skip::{SkipRanges, skip_ranges};
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use tagging::take_split_visits;
 pub use terms::{TERMS_PACK, terms_rule_set};

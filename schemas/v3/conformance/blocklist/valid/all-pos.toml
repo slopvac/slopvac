@@ -1,0 +1,126 @@
+schema_version = 3
+
+[[entries]]
+word = "apple"
+pos = "n"
+reason = "Covers pos n."
+
+[[entries]]
+word = "banana"
+pos = "noun"
+reason = "Covers pos noun."
+
+[[entries]]
+word = "cherry"
+pos = "v"
+reason = "Covers pos v."
+
+[[entries]]
+word = "damson"
+pos = "verb"
+reason = "Covers pos verb."
+
+[[entries]]
+word = "elder"
+pos = "adj"
+reason = "Covers pos adj."
+
+[[entries]]
+word = "fig"
+pos = "adjective"
+reason = "Covers pos adjective."
+
+[[entries]]
+word = "grape"
+pos = "adv"
+reason = "Covers pos adv."
+
+[[entries]]
+word = "hazel"
+pos = "adverb"
+reason = "Covers pos adverb."
+
+[[entries]]
+word = "iris"
+pos = "prep"
+reason = "Covers pos prep."
+
+[[entries]]
+word = "juniper"
+pos = "preposition"
+reason = "Covers pos preposition."
+
+[[entries]]
+word = "kiwi"
+pos = "conj"
+reason = "Covers pos conj."
+
+[[entries]]
+word = "lemon"
+pos = "conjunction"
+reason = "Covers pos conjunction."
+
+[[entries]]
+word = "mango"
+pos = "pron"
+reason = "Covers pos pron."
+
+[[entries]]
+word = "nectar"
+pos = "pronoun"
+reason = "Covers pos pronoun."
+
+[[entries]]
+word = "olive"
+pos = "art"
+reason = "Covers pos art."
+
+[[entries]]
+word = "peach"
+pos = "article"
+reason = "Covers pos article."
+
+[[entries]]
+word = "quince"
+pos = "NOUN"
+reason = "Covers pos NOUN."
+
+[[entries]]
+word = "rowan"
+pos = "VERB"
+reason = "Covers pos VERB."
+
+[[entries]]
+word = "sloe"
+pos = "ADJ"
+reason = "Covers pos ADJ."
+
+[[entries]]
+word = "tamarind"
+pos = "ADV"
+reason = "Covers pos ADV."
+
+[[entries]]
+word = "ugli"
+pos = "ADP"
+reason = "Covers pos ADP."
+
+[[entries]]
+word = "vanilla"
+pos = "CCONJ"
+reason = "Covers pos CCONJ."
+
+[[entries]]
+word = "walnut"
+pos = "SCONJ"
+reason = "Covers pos SCONJ."
+
+[[entries]]
+word = "yarrow"
+pos = "PRON"
+reason = "Covers pos PRON."
+
+[[entries]]
+word = "zucchini"
+pos = "DET"
+reason = "Covers pos DET."
