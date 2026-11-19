@@ -5,9 +5,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use similar::TextDiff;
+use slopvac_engine::discover::FileKind;
 use toml_edit::{DocumentMut, Item, Value};
 
-use crate::config::{key_lines, migrate_config};
+use crate::capped::{Blockers, Capped};
+use crate::config::{key_lines, migrate_config_in};
+use crate::limits::{Budget, Kind, Limits};
+use crate::walk::{Dir, discover};
 use crate::{Dropped, Error, Options, RenameTable, rewrite_directives, rewrite_steering};
 
 /// Where `apply` keeps the files it replaced, relative to the project root.
@@ -63,36 +67,78 @@ impl Plan {
     }
 }
 
-const SKIP_DIRS: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    ".venv",
-    "venv",
-    BACKUP_DIR,
-];
+/// What planning collects: the edits, and the bounded notes and warnings.
+struct Sink {
+    changes: Vec<Change>,
+    notes: Capped,
+    warnings: Capped,
+}
 
 /// Plan the migration of the project under `root`.
 ///
 /// `steering` is the 3.0 managed block, as `slopvac setup` writes it. Reads only. Every unrepresentable setting across all files comes back together in
 /// [`Error::Dropped`].
+///
+/// # Errors
+/// A setting 3.0 cannot represent, or a file that is unreadable, not UTF-8, over its size
+/// cap, a malformed `pyproject.toml`, or over the default per-run [`Limits`].
 pub fn plan(
     root: &Path,
     renames: &RenameTable,
     options: Options,
     steering: &str,
 ) -> Result<Plan, Error> {
-    let mut plan = Plan::default();
-    let mut dropped: Vec<Dropped> = Vec::new();
-    let mut dirs = Vec::new();
-    let mut docs = Vec::new();
-    walk(root, &mut dirs, &mut docs)?;
-    for dir in dirs {
-        plan_dir(root, &dir, renames, options, &mut plan, &mut dropped)?;
+    plan_with_limits(root, renames, options, steering, Limits::default())
+}
+
+/// Like [`plan`], with explicit per-run `limits`.
+///
+/// # Errors
+/// As [`plan`]; reading more files or bytes than `limits` allow is [`Error::RunLimit`].
+pub fn plan_with_limits(
+    root: &Path,
+    renames: &RenameTable,
+    options: Options,
+    steering: &str,
+    limits: Limits,
+) -> Result<Plan, Error> {
+    let mut budget = Budget::new(limits);
+    let mut sink = Sink {
+        changes: Vec::new(),
+        notes: Capped::new("notes"),
+        warnings: Capped::new("warnings"),
+    };
+    let mut dropped = Blockers::default();
+    let tree = discover(root, &mut budget, &mut sink.warnings)?;
+    for dir in &tree.dirs {
+        plan_dir(
+            root,
+            dir,
+            renames,
+            options,
+            &mut budget,
+            &mut sink,
+            &mut dropped,
+        )?;
     }
-    for doc in docs {
-        plan_document(root, &doc, renames, steering, &mut plan, &mut dropped);
+    for (doc, kind) in &tree.docs {
+        plan_document(
+            root,
+            doc,
+            kind,
+            renames,
+            steering,
+            &mut budget,
+            &mut sink,
+            &mut dropped,
+        )?;
     }
+    let plan = Plan {
+        changes: sink.changes,
+        notes: sink.notes.finish(),
+        warnings: sink.warnings.finish(),
+    };
+    let dropped = dropped.finish();
     if dropped.is_empty() {
         Ok(plan)
     } else {
@@ -100,29 +146,7 @@ pub fn plan(
     }
 }
 
-fn walk(dir: &Path, dirs: &mut Vec<PathBuf>, docs: &mut Vec<PathBuf>) -> Result<(), Error> {
-    dirs.push(dir.to_owned());
-    let mut entries: Vec<_> = fs::read_dir(dir)
-        .map_err(|e| Error::io(dir, e))?
-        .collect::<Result<_, _>>()
-        .map_err(|e| Error::io(dir, e))?;
-    entries.sort_by_key(fs::DirEntry::file_name);
-    for entry in entries {
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let kind = entry.file_type().map_err(|e| Error::io(&path, e))?;
-        if kind.is_dir() {
-            if !SKIP_DIRS.contains(&name.as_ref()) {
-                walk(&path, dirs, docs)?;
-            }
-        } else if kind.is_file() && name.ends_with(".md") {
-            docs.push(path);
-        }
-    }
-    Ok(())
-}
-
+// Used by `restore` for the backup manifest; the restore path owns its own read hardening.
 fn read(path: &Path) -> Result<String, Error> {
     fs::read_to_string(path).map_err(|e| Error::io(path, e))
 }
@@ -133,24 +157,28 @@ fn rel(root: &Path, path: &Path) -> PathBuf {
 
 fn plan_dir(
     root: &Path,
-    dir: &Path,
+    found: &Dir,
     renames: &RenameTable,
     options: Options,
-    plan: &mut Plan,
-    dropped: &mut Vec<Dropped>,
+    budget: &mut Budget,
+    plan: &mut Sink,
+    dropped: &mut Blockers,
 ) -> Result<(), Error> {
+    let dir = &found.path;
     let main_cfg = dir.join("slopvac.toml");
     let dot = dir.join(".slopvac.toml");
     let pyproject = dir.join("pyproject.toml");
-    let py_text = if pyproject.is_file() {
-        Some(read(&pyproject)?)
+    let py_text = if found.pyproject {
+        Some(budget.read(&pyproject, Kind::Config)?)
     } else {
         None
     };
-    let py_table = py_text.as_deref().and_then(extract_tool_table);
-    let sources = usize::from(main_cfg.is_file())
-        + usize::from(dot.is_file())
-        + usize::from(py_table.is_some());
+    let py_table = match py_text.as_deref() {
+        Some(text) => extract_tool_table(text, &rel(root, &pyproject).display().to_string())?,
+        None => None,
+    };
+    let sources =
+        usize::from(found.main) + usize::from(found.dot) + usize::from(py_table.is_some());
     if sources > 1 {
         return Err(Error::Conflict(format!(
             "{}: more than one 2.x config source (slopvac.toml, .slopvac.toml, [tool.slopvac]); \
@@ -158,21 +186,30 @@ fn plan_dir(
             rel(root, dir).display()
         )));
     }
-    let (source, origin, old) = if main_cfg.is_file() {
-        (main_cfg.clone(), Origin::InPlace, read(&main_cfg)?)
-    } else if dot.is_file() {
-        (dot.clone(), Origin::Dotfile, read(&dot)?)
+    let (source, origin, old) = if found.main {
+        (
+            main_cfg.clone(),
+            Origin::InPlace,
+            budget.read(&main_cfg, Kind::Config)?,
+        )
+    } else if found.dot {
+        (
+            dot.clone(),
+            Origin::Dotfile,
+            budget.read(&dot, Kind::Config)?,
+        )
     } else if let (Some((extracted, _)), true) = (&py_table, py_text.is_some()) {
         (pyproject.clone(), Origin::Pyproject, extracted.clone())
     } else {
         return Ok(());
     };
     let label = rel(root, &source).display().to_string();
-    let rewrite = match migrate_config(&old, &label, renames, options) {
+    let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
+    let outer = py.and_then(|t| key_lines(t).ok());
+    let rewrite = match migrate_config_in(&old, &label, renames, options, outer.as_ref()) {
         Ok(rw) => rw,
         Err(Error::AlreadyMigrated { .. }) => return Ok(()),
         Err(e) => {
-            let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
             return match pyproject_lines(e, py) {
                 Error::Dropped(d) => {
                     dropped.extend(d);
@@ -182,55 +219,97 @@ fn plan_dir(
             };
         }
     };
-    plan.notes
-        .extend(rewrite.notes.into_iter().map(|n| format!("{label}: {n}")));
-    let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
-    plan.notes.extend(
-        dropped_in_pyproject(rewrite.removed_categories, py)
-            .iter()
-            .map(|d| format!("{label}: {}", d.category_removed_notice())),
-    );
-    let target = rel(root, &main_cfg);
-    match origin {
-        Origin::InPlace => plan.changes.push(Change {
-            path: target,
-            kind: ChangeKind::Write,
-            old: Some(old),
-            new: Some(rewrite.text),
-        }),
-        Origin::Dotfile => {
-            plan.notes.push(format!("{label}: renamed to slopvac.toml"));
-            plan.changes.push(Change {
+    for n in rewrite.notes {
+        plan.notes.push(format!("{label}: {n}"));
+    }
+    for d in rewrite.removed_categories {
+        plan.notes
+            .push(format!("{label}: {}", d.category_removed_notice()));
+    }
+    let moved = Moved {
+        root,
+        label: &label,
+        origin,
+        old,
+        new: rewrite.text,
+        dot: &dot,
+        pyproject: &pyproject,
+        py_text,
+        py_table,
+    };
+    moved.record(&main_cfg, plan);
+    Ok(())
+}
+
+/// The 2.x config text and the 3.0 text that replaces it.
+struct Moved<'a> {
+    root: &'a Path,
+    label: &'a str,
+    origin: Origin,
+    old: String,
+    new: String,
+    dot: &'a Path,
+    pyproject: &'a Path,
+    py_text: Option<String>,
+    py_table: Option<(String, String)>,
+}
+
+impl Moved<'_> {
+    /// Adds the changes and notes for the move to `plan`.
+    fn record(self, main_cfg: &Path, plan: &mut Sink) {
+        let Self {
+            root,
+            label,
+            origin,
+            old,
+            new,
+            dot,
+            pyproject,
+            py_text,
+            py_table,
+        } = self;
+        let rewrite_text = new;
+        let target = rel(root, main_cfg);
+        match origin {
+            Origin::InPlace => plan.changes.push(Change {
                 path: target,
                 kind: ChangeKind::Write,
-                old: None,
-                new: Some(rewrite.text),
-            });
-            plan.changes.push(Change {
-                path: rel(root, &dot),
-                kind: ChangeKind::Delete,
                 old: Some(old),
-                new: None,
-            });
-        }
-        Origin::Pyproject => {
-            plan.notes
-                .push(format!("{label}: moved [tool.slopvac] to slopvac.toml"));
-            plan.changes.push(Change {
-                path: target,
-                kind: ChangeKind::Write,
-                old: None,
-                new: Some(rewrite.text),
-            });
-            plan.changes.push(Change {
-                path: rel(root, &pyproject),
-                kind: ChangeKind::Write,
-                old: py_text,
-                new: py_table.map(|(_, stripped)| stripped),
-            });
+                new: Some(rewrite_text),
+            }),
+            Origin::Dotfile => {
+                plan.notes.push(format!("{label}: renamed to slopvac.toml"));
+                plan.changes.push(Change {
+                    path: target,
+                    kind: ChangeKind::Write,
+                    old: None,
+                    new: Some(rewrite_text),
+                });
+                plan.changes.push(Change {
+                    path: rel(root, dot),
+                    kind: ChangeKind::Delete,
+                    old: Some(old),
+                    new: None,
+                });
+            }
+            Origin::Pyproject => {
+                plan.notes
+                    .push(format!("{label}: moved [tool.slopvac] to slopvac.toml"));
+                plan.changes.push(Change {
+                    path: target,
+                    kind: ChangeKind::Write,
+                    old: None,
+                    new: Some(rewrite_text),
+                });
+                plan.changes.push(Change {
+                    path: rel(root, pyproject),
+                    kind: ChangeKind::Write,
+                    old: py_text,
+                    new: py_table.map(|(_, stripped)| stripped),
+                });
+            }
         }
     }
-    Ok(())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -244,7 +323,6 @@ enum Origin {
 /// its `[tool.slopvac]` table. `py` is the `pyproject.toml` text in that case.
 fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
     match e {
-        Error::Dropped(d) => Error::Dropped(dropped_in_pyproject(d, py)),
         Error::OverrideOverlap {
             file,
             line,
@@ -261,28 +339,46 @@ fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
                 reason,
             }
         }
+        Error::InvalidType {
+            file,
+            line,
+            message,
+        } => {
+            let line_of = py
+                .and_then(|t| key_lines(t).ok())
+                .and_then(|l| l.get("tool.slopvac.schema_version").copied());
+            Error::InvalidType {
+                line: line_of.unwrap_or(line),
+                file,
+                message,
+            }
+        }
         e => e,
     }
 }
 
-/// Point the lines of dropped settings at `pyproject.toml`, as `pyproject_lines` does
-/// for errors. `py` is `None` when the config did not come from that table.
-fn dropped_in_pyproject(mut dropped: Vec<Dropped>, py: Option<&str>) -> Vec<Dropped> {
-    let Some(lines) = py.and_then(|t| key_lines(t).ok()) else {
-        return dropped;
-    };
-    for x in &mut dropped {
-        if let Some(l) = lines.get(&format!("tool.slopvac.{}", x.key)) {
-            x.line = *l;
-        }
-    }
-    dropped
-}
-
 /// The `[tool.slopvac]` table as a standalone document, and `pyproject.toml` text
 /// without it. Unrelated content and comments in `pyproject.toml` stay as they are.
-fn extract_tool_table(text: &str) -> Option<(String, String)> {
-    let mut doc: DocumentMut = text.parse().ok()?;
+/// `None` when the file has no `[tool.slopvac]` table.
+///
+/// # Errors
+/// [`Error::Parse`] naming `file` and the line, when the text is not valid TOML.
+fn extract_tool_table(text: &str, file: &str) -> Result<Option<(String, String)>, Error> {
+    let mut doc: DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| Error::Parse {
+            file: file.to_owned(),
+            message: format!(
+                "line {}: {}",
+                e.span()
+                    .map_or(1, |s| crate::config::line_of(text, s.start)),
+                e.message()
+            ),
+        })?;
+    Ok(split_tool_table(&mut doc))
+}
+
+fn split_tool_table(doc: &mut DocumentMut) -> Option<(String, String)> {
     let table = match doc.get("tool")?.get("slopvac")? {
         Item::Table(t) => {
             let mut t = t.clone();
@@ -305,38 +401,48 @@ fn extract_tool_table(text: &str) -> Option<(String, String)> {
 /// Plan the directive and steering rewrite of one document. A directive id with no
 /// rename entry stops the migration (docs/contract/config.md, section 5.2), so it
 /// goes to `dropped` with the other blocking settings.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one planning step; the arguments are its inputs"
+)]
 fn plan_document(
     root: &Path,
     path: &Path,
+    kind: &FileKind,
     renames: &RenameTable,
     steering: &str,
-    plan: &mut Plan,
-    dropped: &mut Vec<Dropped>,
-) {
-    let Ok(old) = fs::read_to_string(path) else {
-        return;
-    };
+    budget: &mut Budget,
+    plan: &mut Sink,
+    dropped: &mut Blockers,
+) -> Result<(), Error> {
+    let old = budget.read(path, Kind::Document)?;
     let label = rel(root, path);
+    if *kind == FileKind::Mdx {
+        warn_mdx_directives(&label, &old, renames, &mut plan.warnings);
+        return Ok(());
+    }
     let (mut text, found) = rewrite_directives(&old, renames);
-    plan.notes.extend(found.removed.iter().map(|r| {
-        format!(
+    for r in &found.removed {
+        plan.notes.push(format!(
             "{}:{}: removed slopvac-allow rule={}: the rule no longer exists in 3.0",
             label.display(),
             r.line,
             r.id
-        )
-    }));
-    plan.warnings.extend(found.invalid.iter().map(|line| {
-        format!(
+        ));
+    }
+    for line in &found.invalid {
+        plan.warnings.push(format!(
             "{}:{line}: invalid 2.x directive, left as is",
             label.display()
+        ));
+    }
+    dropped.extend(found.unknown.into_iter().map(|u| {
+        Dropped::new(
+            label.display().to_string(),
+            format!("slopvac-allow rule={}", u.id),
+            u.line,
+            "directive rule id has no 3.0 name; the rename table has no entry",
         )
-    }));
-    dropped.extend(found.unknown.into_iter().map(|u| Dropped {
-        file: label.display().to_string(),
-        key: format!("slopvac-allow rule={}", u.id),
-        line: u.line,
-        reason: "directive rule id has no 3.0 name; the rename table has no entry".into(),
     }));
     match rewrite_steering(&text, steering) {
         Ok(Some(new)) => text = new,
@@ -350,6 +456,31 @@ fn plan_document(
             old: Some(old),
             new: Some(text),
         });
+    }
+    Ok(())
+}
+
+/// MDX mixes prose with code (ESM blocks, JSX, expressions), so a text rewrite could change
+/// what the page runs. Directives in MDX are left alone. Every 2.x directive the parser
+/// finds is reported at the line where it starts, whether a rewrite would have changed it
+/// or not.
+fn warn_mdx_directives(label: &Path, text: &str, renames: &RenameTable, warnings: &mut Capped) {
+    let (_, found) = rewrite_directives(text, renames);
+    let mut lines: Vec<usize> = found
+        .renamed
+        .iter()
+        .chain(&found.invalid)
+        .copied()
+        .chain(found.removed.iter().map(|r| r.line))
+        .chain(found.unknown.iter().map(|u| u.line))
+        .collect();
+    lines.sort_unstable();
+    lines.dedup();
+    for line in lines {
+        warnings.push(format!(
+            "{}:{line}: MDX is not rewritten; rename or remove this slopvac-allow directive by hand",
+            label.display(),
+        ));
     }
 }
 
