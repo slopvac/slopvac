@@ -1,0 +1,985 @@
+{
+ "description": "Inputs and the text slopvac-sanitize workflow_data returns. Shared by the Rust and Python escapers so they cannot drift.",
+ "workflow_data": [
+  {
+   "name": "newline",
+   "input": "a\nb",
+   "expected": "a%0Ab"
+  },
+  {
+   "name": "carriage return",
+   "input": "a\rb",
+   "expected": "a%0Db"
+  },
+  {
+   "name": "crlf",
+   "input": "a\r\nb",
+   "expected": "a%0D%0Ab"
+  },
+  {
+   "name": "percent",
+   "input": "100% sure",
+   "expected": "100%25 sure"
+  },
+  {
+   "name": "literal percent-0A",
+   "input": "%0A",
+   "expected": "%250A"
+  },
+  {
+   "name": "literal percent-0D-percent-25",
+   "input": "%0D%25",
+   "expected": "%250D%2525"
+  },
+  {
+   "name": "double colon",
+   "input": "::error::x",
+   "expected": "%3A%3Aerror%3A%3Ax"
+  },
+  {
+   "name": "single colon",
+   "input": "a:b",
+   "expected": "a:b"
+  },
+  {
+   "name": "triple colon",
+   "input": ":::x",
+   "expected": "%3A%3A:x"
+  },
+  {
+   "name": "quad colon",
+   "input": "::::",
+   "expected": "%3A%3A%3A%3A"
+  },
+  {
+   "name": "newline then command",
+   "input": "x\n::error::y",
+   "expected": "x%0A%3A%3Aerror%3A%3Ay"
+  },
+  {
+   "name": "set-output",
+   "input": "::set-output name=p::1",
+   "expected": "%3A%3Aset-output name=p%3A%3A1"
+  },
+  {
+   "name": "group marker",
+   "input": "##[group]g",
+   "expected": "\\u{23}#[group]g"
+  },
+  {
+   "name": "hash only",
+   "input": "## [x]",
+   "expected": "## [x]"
+  },
+  {
+   "name": "hash run before bracket",
+   "input": "###[x]",
+   "expected": "#\\u{23}#[x]"
+  },
+  {
+   "name": "colon pair split by newline",
+   "input": ":\n:",
+   "expected": ":%0A:"
+  },
+  {
+   "name": "tab kept",
+   "input": "tab\tkept",
+   "expected": "tab\tkept"
+  },
+  {
+   "name": "backslash",
+   "input": "a\\b",
+   "expected": "a\\\\b"
+  },
+  {
+   "name": "escaped-looking text",
+   "input": "\\u{202e}",
+   "expected": "\\\\u{202e}"
+  },
+  {
+   "name": "plain ascii",
+   "input": "hello, world.",
+   "expected": "hello, world."
+  },
+  {
+   "name": "empty",
+   "input": "",
+   "expected": ""
+  },
+  {
+   "name": "escape and csi",
+   "input": "a\u001b[0m",
+   "expected": "a\\u{1b}[0m"
+  },
+  {
+   "name": "nul",
+   "input": "\u0000",
+   "expected": "\\u{0}"
+  },
+  {
+   "name": "delete",
+   "input": "\u007f",
+   "expected": "\\u{7f}"
+  },
+  {
+   "name": "c1 control",
+   "input": "\u0085",
+   "expected": "\\u{85}"
+  },
+  {
+   "name": "c1 first",
+   "input": "\u0080",
+   "expected": "\\u{80}"
+  },
+  {
+   "name": "c1 last",
+   "input": "\u009f",
+   "expected": "\\u{9f}"
+  },
+  {
+   "name": "soft hyphen",
+   "input": "\u00ad",
+   "expected": "\\u{ad}"
+  },
+  {
+   "name": "bidi override",
+   "input": "\u202e",
+   "expected": "\\u{202e}"
+  },
+  {
+   "name": "bidi isolate",
+   "input": "\u2066x\u2069",
+   "expected": "\\u{2066}x\\u{2069}"
+  },
+  {
+   "name": "line separator",
+   "input": "\u2028",
+   "expected": "\\u{2028}"
+  },
+  {
+   "name": "paragraph separator",
+   "input": "\u2029",
+   "expected": "\\u{2029}"
+  },
+  {
+   "name": "zero width space",
+   "input": "a\u200bb",
+   "expected": "a\\u{200b}b"
+  },
+  {
+   "name": "bom",
+   "input": "\ufeff",
+   "expected": "\\u{feff}"
+  },
+  {
+   "name": "combining grapheme joiner",
+   "input": "\u034f",
+   "expected": "\\u{34f}"
+  },
+  {
+   "name": "variation selector",
+   "input": "a\ufe0f",
+   "expected": "a\\u{fe0f}"
+  },
+  {
+   "name": "hangul filler",
+   "input": "\u3164",
+   "expected": "\\u{3164}"
+  },
+  {
+   "name": "private use",
+   "input": "\ue000",
+   "expected": "\\u{e000}"
+  },
+  {
+   "name": "private use last",
+   "input": "\uf8ff",
+   "expected": "\\u{f8ff}"
+  },
+  {
+   "name": "supplementary private use",
+   "input": "\udb80\udc00",
+   "expected": "\\u{f0000}"
+  },
+  {
+   "name": "noncharacter",
+   "input": "\ufdd0",
+   "expected": "\\u{fdd0}"
+  },
+  {
+   "name": "noncharacter at plane end",
+   "input": "\uffff",
+   "expected": "\\u{ffff}"
+  },
+  {
+   "name": "language tag",
+   "input": "\udb40\udc01",
+   "expected": "\\u{e0001}"
+  },
+  {
+   "name": "variation selector supplement",
+   "input": "\udb40\udd00",
+   "expected": "\\u{e0100}"
+  },
+  {
+   "name": "accented letters pass",
+   "input": "caf\u00e9 \u00fc",
+   "expected": "caf\u00e9 \u00fc"
+  },
+  {
+   "name": "cjk passes",
+   "input": "\u65e5\u672c\u8a9e",
+   "expected": "\u65e5\u672c\u8a9e"
+  },
+  {
+   "name": "emoji passes",
+   "input": "\ud83d\ude00",
+   "expected": "\ud83d\ude00"
+  },
+  {
+   "name": "no-break space passes",
+   "input": "a\u00a0b",
+   "expected": "a\u00a0b"
+  },
+  {
+   "name": "arabic passes",
+   "input": "\u0627\u0644",
+   "expected": "\u0627\u0644"
+  },
+  {
+   "name": "zero width joiner in emoji",
+   "input": "\ud83d\udc68\u200d\ud83d\udc69",
+   "expected": "\ud83d\udc68\\u{200d}\ud83d\udc69"
+  },
+  {
+   "name": "ideographic space passes",
+   "input": "\u3000",
+   "expected": "\u3000"
+  },
+  {
+   "name": "edge U+001F",
+   "input": "\u001f",
+   "expected": "\\u{1f}"
+  },
+  {
+   "name": "edge U+0020",
+   "input": " ",
+   "expected": " "
+  },
+  {
+   "name": "edge U+007E",
+   "input": "~",
+   "expected": "~"
+  },
+  {
+   "name": "edge U+00A0",
+   "input": "\u00a0",
+   "expected": "\u00a0"
+  },
+  {
+   "name": "edge U+00AC",
+   "input": "\u00ac",
+   "expected": "\u00ac"
+  },
+  {
+   "name": "edge U+00AE",
+   "input": "\u00ae",
+   "expected": "\u00ae"
+  },
+  {
+   "name": "edge U+034E",
+   "input": "\u034e",
+   "expected": "\u034e"
+  },
+  {
+   "name": "edge U+0350",
+   "input": "\u0350",
+   "expected": "\u0350"
+  },
+  {
+   "name": "edge U+05FF",
+   "input": "\u05ff",
+   "expected": "\u05ff"
+  },
+  {
+   "name": "edge U+0600",
+   "input": "\u0600",
+   "expected": "\\u{600}"
+  },
+  {
+   "name": "edge U+0605",
+   "input": "\u0605",
+   "expected": "\\u{605}"
+  },
+  {
+   "name": "edge U+0606",
+   "input": "\u0606",
+   "expected": "\u0606"
+  },
+  {
+   "name": "edge U+061B",
+   "input": "\u061b",
+   "expected": "\u061b"
+  },
+  {
+   "name": "edge U+061C",
+   "input": "\u061c",
+   "expected": "\\u{61c}"
+  },
+  {
+   "name": "edge U+061D",
+   "input": "\u061d",
+   "expected": "\u061d"
+  },
+  {
+   "name": "edge U+06DC",
+   "input": "\u06dc",
+   "expected": "\u06dc"
+  },
+  {
+   "name": "edge U+06DD",
+   "input": "\u06dd",
+   "expected": "\\u{6dd}"
+  },
+  {
+   "name": "edge U+06DE",
+   "input": "\u06de",
+   "expected": "\u06de"
+  },
+  {
+   "name": "edge U+070E",
+   "input": "\u070e",
+   "expected": "\u070e"
+  },
+  {
+   "name": "edge U+070F",
+   "input": "\u070f",
+   "expected": "\\u{70f}"
+  },
+  {
+   "name": "edge U+0710",
+   "input": "\u0710",
+   "expected": "\u0710"
+  },
+  {
+   "name": "edge U+088F",
+   "input": "\u088f",
+   "expected": "\u088f"
+  },
+  {
+   "name": "edge U+0890",
+   "input": "\u0890",
+   "expected": "\\u{890}"
+  },
+  {
+   "name": "edge U+0891",
+   "input": "\u0891",
+   "expected": "\\u{891}"
+  },
+  {
+   "name": "edge U+0892",
+   "input": "\u0892",
+   "expected": "\u0892"
+  },
+  {
+   "name": "edge U+08E1",
+   "input": "\u08e1",
+   "expected": "\u08e1"
+  },
+  {
+   "name": "edge U+08E2",
+   "input": "\u08e2",
+   "expected": "\\u{8e2}"
+  },
+  {
+   "name": "edge U+08E3",
+   "input": "\u08e3",
+   "expected": "\u08e3"
+  },
+  {
+   "name": "edge U+115E",
+   "input": "\u115e",
+   "expected": "\u115e"
+  },
+  {
+   "name": "edge U+115F",
+   "input": "\u115f",
+   "expected": "\\u{115f}"
+  },
+  {
+   "name": "edge U+1160",
+   "input": "\u1160",
+   "expected": "\\u{1160}"
+  },
+  {
+   "name": "edge U+1161",
+   "input": "\u1161",
+   "expected": "\u1161"
+  },
+  {
+   "name": "edge U+17B3",
+   "input": "\u17b3",
+   "expected": "\u17b3"
+  },
+  {
+   "name": "edge U+17B4",
+   "input": "\u17b4",
+   "expected": "\\u{17b4}"
+  },
+  {
+   "name": "edge U+17B5",
+   "input": "\u17b5",
+   "expected": "\\u{17b5}"
+  },
+  {
+   "name": "edge U+17B6",
+   "input": "\u17b6",
+   "expected": "\u17b6"
+  },
+  {
+   "name": "edge U+180A",
+   "input": "\u180a",
+   "expected": "\u180a"
+  },
+  {
+   "name": "edge U+180B",
+   "input": "\u180b",
+   "expected": "\\u{180b}"
+  },
+  {
+   "name": "edge U+180F",
+   "input": "\u180f",
+   "expected": "\\u{180f}"
+  },
+  {
+   "name": "edge U+1810",
+   "input": "\u1810",
+   "expected": "\u1810"
+  },
+  {
+   "name": "edge U+200A",
+   "input": "\u200a",
+   "expected": "\u200a"
+  },
+  {
+   "name": "edge U+200B",
+   "input": "\u200b",
+   "expected": "\\u{200b}"
+  },
+  {
+   "name": "edge U+200F",
+   "input": "\u200f",
+   "expected": "\\u{200f}"
+  },
+  {
+   "name": "edge U+2010",
+   "input": "\u2010",
+   "expected": "\u2010"
+  },
+  {
+   "name": "edge U+2027",
+   "input": "\u2027",
+   "expected": "\u2027"
+  },
+  {
+   "name": "edge U+202F",
+   "input": "\u202f",
+   "expected": "\u202f"
+  },
+  {
+   "name": "edge U+205F",
+   "input": "\u205f",
+   "expected": "\u205f"
+  },
+  {
+   "name": "edge U+2060",
+   "input": "\u2060",
+   "expected": "\\u{2060}"
+  },
+  {
+   "name": "edge U+206F",
+   "input": "\u206f",
+   "expected": "\\u{206f}"
+  },
+  {
+   "name": "edge U+2070",
+   "input": "\u2070",
+   "expected": "\u2070"
+  },
+  {
+   "name": "edge U+3163",
+   "input": "\u3163",
+   "expected": "\u3163"
+  },
+  {
+   "name": "edge U+3165",
+   "input": "\u3165",
+   "expected": "\u3165"
+  },
+  {
+   "name": "edge U+F900",
+   "input": "\uf900",
+   "expected": "\uf900"
+  },
+  {
+   "name": "edge U+FDCF",
+   "input": "\ufdcf",
+   "expected": "\ufdcf"
+  },
+  {
+   "name": "edge U+FDEF",
+   "input": "\ufdef",
+   "expected": "\\u{fdef}"
+  },
+  {
+   "name": "edge U+FDF0",
+   "input": "\ufdf0",
+   "expected": "\ufdf0"
+  },
+  {
+   "name": "edge U+FDFF",
+   "input": "\ufdff",
+   "expected": "\ufdff"
+  },
+  {
+   "name": "edge U+FE00",
+   "input": "\ufe00",
+   "expected": "\\u{fe00}"
+  },
+  {
+   "name": "edge U+FE0F",
+   "input": "\ufe0f",
+   "expected": "\\u{fe0f}"
+  },
+  {
+   "name": "edge U+FE10",
+   "input": "\ufe10",
+   "expected": "\ufe10"
+  },
+  {
+   "name": "edge U+FEFE",
+   "input": "\ufefe",
+   "expected": "\ufefe"
+  },
+  {
+   "name": "edge U+FF00",
+   "input": "\uff00",
+   "expected": "\uff00"
+  },
+  {
+   "name": "edge U+FF9F",
+   "input": "\uff9f",
+   "expected": "\uff9f"
+  },
+  {
+   "name": "edge U+FFA0",
+   "input": "\uffa0",
+   "expected": "\\u{ffa0}"
+  },
+  {
+   "name": "edge U+FFA1",
+   "input": "\uffa1",
+   "expected": "\uffa1"
+  },
+  {
+   "name": "edge U+FFEF",
+   "input": "\uffef",
+   "expected": "\uffef"
+  },
+  {
+   "name": "edge U+FFF0",
+   "input": "\ufff0",
+   "expected": "\\u{fff0}"
+  },
+  {
+   "name": "edge U+FFFB",
+   "input": "\ufffb",
+   "expected": "\\u{fffb}"
+  },
+  {
+   "name": "edge U+FFFC",
+   "input": "\ufffc",
+   "expected": "\ufffc"
+  },
+  {
+   "name": "edge U+FFFD",
+   "input": "\ufffd",
+   "expected": "\ufffd"
+  },
+  {
+   "name": "edge U+FFFE",
+   "input": "\ufffe",
+   "expected": "\\u{fffe}"
+  },
+  {
+   "name": "edge U+10000",
+   "input": "\ud800\udc00",
+   "expected": "\ud800\udc00"
+  },
+  {
+   "name": "edge U+110BC",
+   "input": "\ud804\udcbc",
+   "expected": "\ud804\udcbc"
+  },
+  {
+   "name": "edge U+110BD",
+   "input": "\ud804\udcbd",
+   "expected": "\\u{110bd}"
+  },
+  {
+   "name": "edge U+110BE",
+   "input": "\ud804\udcbe",
+   "expected": "\ud804\udcbe"
+  },
+  {
+   "name": "edge U+110CC",
+   "input": "\ud804\udccc",
+   "expected": "\ud804\udccc"
+  },
+  {
+   "name": "edge U+110CD",
+   "input": "\ud804\udccd",
+   "expected": "\\u{110cd}"
+  },
+  {
+   "name": "edge U+110CE",
+   "input": "\ud804\udcce",
+   "expected": "\ud804\udcce"
+  },
+  {
+   "name": "edge U+1342F",
+   "input": "\ud80d\udc2f",
+   "expected": "\ud80d\udc2f"
+  },
+  {
+   "name": "edge U+13430",
+   "input": "\ud80d\udc30",
+   "expected": "\\u{13430}"
+  },
+  {
+   "name": "edge U+1343F",
+   "input": "\ud80d\udc3f",
+   "expected": "\\u{1343f}"
+  },
+  {
+   "name": "edge U+13440",
+   "input": "\ud80d\udc40",
+   "expected": "\ud80d\udc40"
+  },
+  {
+   "name": "edge U+1BC9F",
+   "input": "\ud82f\udc9f",
+   "expected": "\ud82f\udc9f"
+  },
+  {
+   "name": "edge U+1BCA0",
+   "input": "\ud82f\udca0",
+   "expected": "\\u{1bca0}"
+  },
+  {
+   "name": "edge U+1BCA3",
+   "input": "\ud82f\udca3",
+   "expected": "\\u{1bca3}"
+  },
+  {
+   "name": "edge U+1BCA4",
+   "input": "\ud82f\udca4",
+   "expected": "\ud82f\udca4"
+  },
+  {
+   "name": "edge U+1D172",
+   "input": "\ud834\udd72",
+   "expected": "\ud834\udd72"
+  },
+  {
+   "name": "edge U+1D173",
+   "input": "\ud834\udd73",
+   "expected": "\\u{1d173}"
+  },
+  {
+   "name": "edge U+1D17A",
+   "input": "\ud834\udd7a",
+   "expected": "\\u{1d17a}"
+  },
+  {
+   "name": "edge U+1D17B",
+   "input": "\ud834\udd7b",
+   "expected": "\ud834\udd7b"
+  },
+  {
+   "name": "edge U+1FFFD",
+   "input": "\ud83f\udffd",
+   "expected": "\ud83f\udffd"
+  },
+  {
+   "name": "edge U+1FFFE",
+   "input": "\ud83f\udffe",
+   "expected": "\\u{1fffe}"
+  },
+  {
+   "name": "edge U+1FFFF",
+   "input": "\ud83f\udfff",
+   "expected": "\\u{1ffff}"
+  },
+  {
+   "name": "edge U+20000",
+   "input": "\ud840\udc00",
+   "expected": "\ud840\udc00"
+  },
+  {
+   "name": "edge U+2FFFD",
+   "input": "\ud87f\udffd",
+   "expected": "\ud87f\udffd"
+  },
+  {
+   "name": "edge U+2FFFE",
+   "input": "\ud87f\udffe",
+   "expected": "\\u{2fffe}"
+  },
+  {
+   "name": "edge U+2FFFF",
+   "input": "\ud87f\udfff",
+   "expected": "\\u{2ffff}"
+  },
+  {
+   "name": "edge U+30000",
+   "input": "\ud880\udc00",
+   "expected": "\ud880\udc00"
+  },
+  {
+   "name": "edge U+3FFFD",
+   "input": "\ud8bf\udffd",
+   "expected": "\ud8bf\udffd"
+  },
+  {
+   "name": "edge U+3FFFE",
+   "input": "\ud8bf\udffe",
+   "expected": "\\u{3fffe}"
+  },
+  {
+   "name": "edge U+3FFFF",
+   "input": "\ud8bf\udfff",
+   "expected": "\\u{3ffff}"
+  },
+  {
+   "name": "edge U+40000",
+   "input": "\ud8c0\udc00",
+   "expected": "\ud8c0\udc00"
+  },
+  {
+   "name": "edge U+4FFFD",
+   "input": "\ud8ff\udffd",
+   "expected": "\ud8ff\udffd"
+  },
+  {
+   "name": "edge U+4FFFE",
+   "input": "\ud8ff\udffe",
+   "expected": "\\u{4fffe}"
+  },
+  {
+   "name": "edge U+4FFFF",
+   "input": "\ud8ff\udfff",
+   "expected": "\\u{4ffff}"
+  },
+  {
+   "name": "edge U+50000",
+   "input": "\ud900\udc00",
+   "expected": "\ud900\udc00"
+  },
+  {
+   "name": "edge U+5FFFD",
+   "input": "\ud93f\udffd",
+   "expected": "\ud93f\udffd"
+  },
+  {
+   "name": "edge U+5FFFE",
+   "input": "\ud93f\udffe",
+   "expected": "\\u{5fffe}"
+  },
+  {
+   "name": "edge U+5FFFF",
+   "input": "\ud93f\udfff",
+   "expected": "\\u{5ffff}"
+  },
+  {
+   "name": "edge U+60000",
+   "input": "\ud940\udc00",
+   "expected": "\ud940\udc00"
+  },
+  {
+   "name": "edge U+6FFFD",
+   "input": "\ud97f\udffd",
+   "expected": "\ud97f\udffd"
+  },
+  {
+   "name": "edge U+6FFFE",
+   "input": "\ud97f\udffe",
+   "expected": "\\u{6fffe}"
+  },
+  {
+   "name": "edge U+6FFFF",
+   "input": "\ud97f\udfff",
+   "expected": "\\u{6ffff}"
+  },
+  {
+   "name": "edge U+70000",
+   "input": "\ud980\udc00",
+   "expected": "\ud980\udc00"
+  },
+  {
+   "name": "edge U+7FFFD",
+   "input": "\ud9bf\udffd",
+   "expected": "\ud9bf\udffd"
+  },
+  {
+   "name": "edge U+7FFFE",
+   "input": "\ud9bf\udffe",
+   "expected": "\\u{7fffe}"
+  },
+  {
+   "name": "edge U+7FFFF",
+   "input": "\ud9bf\udfff",
+   "expected": "\\u{7ffff}"
+  },
+  {
+   "name": "edge U+80000",
+   "input": "\ud9c0\udc00",
+   "expected": "\ud9c0\udc00"
+  },
+  {
+   "name": "edge U+8FFFD",
+   "input": "\ud9ff\udffd",
+   "expected": "\ud9ff\udffd"
+  },
+  {
+   "name": "edge U+8FFFE",
+   "input": "\ud9ff\udffe",
+   "expected": "\\u{8fffe}"
+  },
+  {
+   "name": "edge U+8FFFF",
+   "input": "\ud9ff\udfff",
+   "expected": "\\u{8ffff}"
+  },
+  {
+   "name": "edge U+90000",
+   "input": "\uda00\udc00",
+   "expected": "\uda00\udc00"
+  },
+  {
+   "name": "edge U+9FFFD",
+   "input": "\uda3f\udffd",
+   "expected": "\uda3f\udffd"
+  },
+  {
+   "name": "edge U+9FFFE",
+   "input": "\uda3f\udffe",
+   "expected": "\\u{9fffe}"
+  },
+  {
+   "name": "edge U+9FFFF",
+   "input": "\uda3f\udfff",
+   "expected": "\\u{9ffff}"
+  },
+  {
+   "name": "edge U+A0000",
+   "input": "\uda40\udc00",
+   "expected": "\uda40\udc00"
+  },
+  {
+   "name": "edge U+AFFFD",
+   "input": "\uda7f\udffd",
+   "expected": "\uda7f\udffd"
+  },
+  {
+   "name": "edge U+AFFFE",
+   "input": "\uda7f\udffe",
+   "expected": "\\u{afffe}"
+  },
+  {
+   "name": "edge U+AFFFF",
+   "input": "\uda7f\udfff",
+   "expected": "\\u{affff}"
+  },
+  {
+   "name": "edge U+B0000",
+   "input": "\uda80\udc00",
+   "expected": "\uda80\udc00"
+  },
+  {
+   "name": "edge U+BFFFD",
+   "input": "\udabf\udffd",
+   "expected": "\udabf\udffd"
+  },
+  {
+   "name": "edge U+BFFFE",
+   "input": "\udabf\udffe",
+   "expected": "\\u{bfffe}"
+  },
+  {
+   "name": "edge U+BFFFF",
+   "input": "\udabf\udfff",
+   "expected": "\\u{bffff}"
+  },
+  {
+   "name": "edge U+C0000",
+   "input": "\udac0\udc00",
+   "expected": "\udac0\udc00"
+  },
+  {
+   "name": "edge U+CFFFD",
+   "input": "\udaff\udffd",
+   "expected": "\udaff\udffd"
+  },
+  {
+   "name": "edge U+CFFFE",
+   "input": "\udaff\udffe",
+   "expected": "\\u{cfffe}"
+  },
+  {
+   "name": "edge U+CFFFF",
+   "input": "\udaff\udfff",
+   "expected": "\\u{cffff}"
+  },
+  {
+   "name": "edge U+D0000",
+   "input": "\udb00\udc00",
+   "expected": "\udb00\udc00"
+  },
+  {
+   "name": "edge U+DFFFD",
+   "input": "\udb3f\udffd",
+   "expected": "\udb3f\udffd"
+  },
+  {
+   "name": "edge U+DFFFE",
+   "input": "\udb3f\udffe",
+   "expected": "\\u{dfffe}"
+  },
+  {
+   "name": "edge U+E0FFF",
+   "input": "\udb43\udfff",
+   "expected": "\\u{e0fff}"
+  },
+  {
+   "name": "edge U+E1000",
+   "input": "\udb44\udc00",
+   "expected": "\udb44\udc00"
+  },
+  {
+   "name": "edge U+EFFFD",
+   "input": "\udb7f\udffd",
+   "expected": "\udb7f\udffd"
+  },
+  {
+   "name": "edge U+EFFFE",
+   "input": "\udb7f\udffe",
+   "expected": "\\u{efffe}"
+  },
+  {
+   "name": "edge U+10FFFF",
+   "input": "\udbff\udfff",
+   "expected": "\\u{10ffff}"
+  }
+ ]
+}
