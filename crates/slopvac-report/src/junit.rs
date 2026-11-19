@@ -20,6 +20,7 @@ pub(crate) fn render(report: &Report) -> String {
         .iter()
         .filter(|d| !d.gate.is_passed())
         .count();
+    // ast-grep-ignore: user-text-literal
     let _ = writeln!(
         out,
         "<testsuites name=\"slopvac\" tests=\"{tests}\" failures=\"{failures}\">"
@@ -33,6 +34,7 @@ pub(crate) fn render(report: &Report) -> String {
 
 fn suite(out: &mut String, doc: &Document) {
     let path = xml_attr(doc.path.as_str());
+    // ast-grep-ignore: user-text-literal
     let _ = writeln!(
         out,
         "  <testsuite name=\"{path}\" tests=\"{}\" failures=\"{}\">",
@@ -40,6 +42,7 @@ fn suite(out: &mut String, doc: &Document) {
         usize::from(!doc.gate.is_passed())
     );
     for f in &doc.findings {
+        // ast-grep-ignore: user-text-literal
         let _ = write!(
             out,
             "    <testcase classname=\"{path}\" name=\"{} {}:{}\">",
@@ -58,9 +61,11 @@ fn suite(out: &mut String, doc: &Document) {
         );
         out.push_str("</testcase>\n");
     }
+    // ast-grep-ignore: user-text-literal
     let _ = write!(out, "    <testcase classname=\"{path}\" name=\"gate\">");
     if !doc.gate.is_passed() {
         let reasons = doc.gate.reasons().join("; ");
+        // ast-grep-ignore: user-text-literal
         let _ = write!(
             out,
             "<failure type=\"gate\" message=\"{}\">{}</failure>",

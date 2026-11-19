@@ -2720,9 +2720,9 @@ dependencies = [
  "rstest",
  "scraper",
  "serde_json",
+ "slopvac-messages",
  "slopvac-model",
  "slopvac-sanitize",
- "thiserror",
 ]
 
 [[package]]

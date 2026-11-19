@@ -10,6 +10,7 @@ note: >-
 # it migrates; the last step widens this to every crate.
 files:
   - crates/slopvac-messages/src/**
+  - crates/slopvac-report/src/**
 ignores:
   # Audit output is for contributors reading a failing test, not for users.
   - crates/slopvac-messages/src/audit.rs

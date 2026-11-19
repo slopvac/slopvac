@@ -313,12 +313,5 @@ pub(crate) enum Line {
 #[must_use]
 pub fn entries() -> &'static [Entry] {
     static ENTRIES: OnceLock<Vec<Entry>> = OnceLock::new();
-    ENTRIES.get_or_init(|| {
-        [
-            RenderError::entries(),
-            Label::entries(),
-            Line::entries(),
-        ]
-        .concat()
-    })
+    ENTRIES.get_or_init(|| [RenderError::entries(), Label::entries(), Line::entries()].concat())
 }
