@@ -11,8 +11,9 @@ use std::ffi::{OsStr, OsString};
 use std::io::{ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
 
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
-use cap_std::fs::{Dir, FollowSymlinks, OpenOptions, Permissions};
+use cap_std::fs::{Dir, OpenOptions, Permissions};
 
 use crate::error::AgentsError;
 
@@ -516,9 +517,18 @@ mod mode_tests {
             0,
         )
         .unwrap();
-        let handle = Dir::open_ambient_dir(dir.path(), ambient_authority()).unwrap();
-        let err = source_mode(&handle, std::ffi::OsStr::new("pipe.md")).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidInput);
+        // A blocked open must fail the test, not hang it: run it on a thread
+        // and bound the wait. A pass returns at once.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let path = dir.path().to_owned();
+        std::thread::spawn(move || {
+            let handle = Dir::open_ambient_dir(&path, ambient_authority()).unwrap();
+            let _ = tx.send(source_mode(&handle, std::ffi::OsStr::new("pipe.md")));
+        });
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the open blocked on a FIFO");
+        assert_eq!(got.unwrap_err().kind(), ErrorKind::InvalidInput);
     }
 
     #[test]

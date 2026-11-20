@@ -2460,6 +2460,7 @@ dependencies = [
 name = "slopvac-agents"
 version = "0.0.0"
 dependencies = [
+ "cap-fs-ext",
  "cap-std",
  "clap",
  "minijinja",
