@@ -2,6 +2,11 @@
 # Prime: review
 
 Run before you hand off prose. Someone other than the author checks the change.
+{% if review_depth == "self" %}
+Depth: `self`. You review the change yourself; no separate reviewer pass runs.
+{% elif review_depth == "adversary" %}
+Depth: `adversary`. Complete the adversary loop: rounds with a new reviewer each, until a round reports no finding you accept.
+{% endif %}
 {% if review_type == "auto" %}
 ## Pick the type
 

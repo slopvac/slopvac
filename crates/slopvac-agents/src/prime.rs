@@ -183,9 +183,15 @@ fn render_template(
         .into_iter()
         .map(|c| context! { usage => c.usage, about => c.about })
         .collect();
+    // A topic whose control is "off" leaves the index; the index line is the pointer to each
+    // enabled step, so the base guide stays within its word budget.
     let topics: Vec<Value> = TOPICS
         .iter()
-        .map(|(n, s)| context! { name => *n, summary => split_summary(s).0 })
+        .filter(|(n, _)| settings.guidance.disabled_notice(n).is_none())
+        .map(|(n, s)| {
+            let ask = *n == "review" && settings.guidance.review == Review::Ask;
+            context! { name => *n, summary => split_summary(s).0, ask => ask }
+        })
         .collect();
     let ctx = context! {
         version => env!("CARGO_PKG_VERSION"),

@@ -8,34 +8,6 @@ Slopvac {{ version }}. After compaction, a cleared context or a new session, run
 - Exit {{ exit_ok }} passes. Exit {{ exit_findings }} means a gate failed. Exit {{ exit_incomplete }} means the run is incomplete, never clean.
 - A lint pass proves no claim. Check facts against code or a source.
 
-{% if write or review != "off" %}
-## Writing and review
-
-Follow these steps for prose deliverables.
-{% set n = namespace(i=0) %}
-{% if write %}
-{% set n.i = n.i + 1 %}
-{{ n.i }}. Before you write or edit prose, run `slopvac prime write`.
-{% endif %}
-{% if review == "auto" %}
-{% set n.i = n.i + 1 %}
-{% if review_depth == "self" %}
-{{ n.i }}. Before hand-off, run `slopvac prime review` and report its verdict.
-{% else %}
-{{ n.i }}. Before hand-off, run `slopvac prime review`. Complete its workflow, including the {{ "adversary loop" if review_depth == "adversary" else "reviewer pass" }}, and report its verdict.
-{% endif %}
-{% elif review == "ask" %}
-{% set n.i = n.i + 1 %}
-{{ n.i }}. Before hand-off, ask the user whether to run `slopvac prime review`. If they agree, complete its workflow.
-{% endif %}
-{% endif %}
-{% if report %}
-
-## Reporting slopvac problems
-
-On a slopvac defect, run `slopvac prime report`. Post nothing without the user's approval.
-{% endif %}
-
 ## Commands
 {% for c in commands %}
 - `{{ c.usage }}`{{ (": " ~ c.about) if level != "minimal" }}
@@ -45,7 +17,7 @@ On a slopvac defect, run `slopvac prime report`. Post nothing without the user's
 
 Run `slopvac prime <topic>` for one.
 {% for t in topics %}
-- `{{ t.name }}`{{ (": " ~ t.summary) if level != "minimal" }}
+- `{{ t.name }}`{{ (": " ~ t.summary) if level != "minimal" }}{{ " Ask the user first." if t.ask }}
 {% endfor %}
 {% if level == "full" %}
 ## Notes

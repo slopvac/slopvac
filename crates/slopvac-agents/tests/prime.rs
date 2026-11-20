@@ -79,8 +79,7 @@ fn base_topic_fits_its_word_budget_at_every_level() {
     let minimal = words(&render(None, Level::Minimal));
     let default = words(&render(None, Level::Default));
     let full = words(&render(None, Level::Full));
-    // 250 before the writing, review and reporting steps joined the base guide.
-    assert!(default <= 320, "default base is {default} words");
+    assert!(default <= 250, "default base is {default} words");
     assert!(
         minimal < default && default < full,
         "{minimal} {default} {full}"
