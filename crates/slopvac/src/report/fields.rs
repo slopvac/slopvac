@@ -74,7 +74,7 @@ pub fn categories() -> Vec<Category> {
                 let mut fields = common(false, COMMAND);
                 fields.extend([
                     Field::new("rule-id", "Rule ID", Kind::Input),
-                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."),
+                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the profile your command ran with, from `--profile` or your config."),
                     Field::new("input", "Flagged text", Kind::Textarea).render("markdown").describe("The smallest sample that still triggers the finding. Paste the sample text itself. A local file path is not enough."),
                     Field::new("finding", "Finding", Kind::Textarea).render("json").describe("The finding object from `slopvac lint --stdin --format json`. Its path reads `<stdin>`."),
                     Field::new("why", "Why this is not slop", Kind::Textarea),
@@ -93,7 +93,7 @@ pub fn categories() -> Vec<Category> {
             fields: {
                 let mut fields = common(false, COMMAND);
                 fields.extend([
-                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."),
+                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the profile your command ran with, from `--profile` or your config."),
                     Field::new("input", "Missed text", Kind::Textarea).render("markdown").describe("Paste the sample text itself. A local file path is not enough."),
                     Field::new("expected-rule", "Rule that should fire", Kind::Input).optional().describe("Leave empty when you do not know. When no rule covers the pattern, use the new rule form."),
                     Field::new("why", "Why this is slop", Kind::Textarea),
@@ -113,7 +113,7 @@ pub fn categories() -> Vec<Category> {
                 let mut fields = common(false, COMMAND);
                 fields.extend([
                     Field::new("rule-id", "Rule ID", Kind::Input),
-                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."),
+                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the profile your command ran with, from `--profile` or your config."),
                     Field::new("input", "Flagged text", Kind::Textarea).render("markdown").describe("Paste the sample text itself. A local file path is not enough."),
                     Field::new("finding", "Finding", Kind::Textarea).render("json").describe("The finding object from `slopvac lint --stdin --format json`. Its path reads `<stdin>`."),
                     Field::new("problem", "What is wrong", Kind::Dropdown).options(&["Wrong rule", "Wrong severity", "Wrong span or location"]).multiple(),
@@ -137,7 +137,7 @@ pub fn categories() -> Vec<Category> {
                 );
                 fields.extend([
                     Field::new("rule-id", "Rule ID", Kind::Input),
-                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."),
+                    Field::new("context", "Genre and profile", Kind::Input).describe("Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the profile your command ran with, from `--profile` or your config."),
                     Field::new("input", "Flagged text", Kind::Textarea).render("markdown").describe("Paste the sample text itself. A local file path is not enough."),
                     Field::new("finding", "Finding", Kind::Textarea).render("json").describe("The finding object from `slopvac lint --stdin --format json`. Its path reads `<stdin>`."),
                     Field::new("problem", "What is wrong", Kind::Dropdown).options(&["Wrong suggested replacement", "--fix changed the meaning", "--fix produced broken text", "Misleading or unclear message", "Fix guidance does not apply here"]).multiple(),

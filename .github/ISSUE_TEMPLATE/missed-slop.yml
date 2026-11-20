@@ -80,7 +80,7 @@ body:
     id: context
     attributes:
       label: "Genre and profile"
-      description: "Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."
+      description: "Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the profile your command ran with, from `--profile` or your config."
     validations:
       required: true
   - type: textarea
