@@ -232,7 +232,7 @@ fn dispatch(
             // LSP says `exit` without `shutdown` ends the process with status 1.
             slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
         }),
-        Some(("migrate", m)) => migrate(m, out),
+        Some(("migrate", m)) => migrate(m, env, out),
         Some(("report", m)) => {
             let opener = report::github::SystemOpener;
             let gh = report::gh::SystemGh::default();
@@ -376,13 +376,20 @@ fn update_runtime(
     )
 }
 
-fn migrate(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
+fn migrate(m: &ArgMatches, env: &dyn Env, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     let linter = slopvac_migrate::EngineLinter::new(vec![crate::rule_catalog::core()?])
         .map_err(|e| CliError::new(e.code(), e.to_string()))?;
+    // The backup record lives in the per-user cache, outside the project it vouches for.
+    let state = slopvac_fs::cache_dir_with(
+        &|name| env.var(name).ok_or(std::env::VarError::NotPresent),
+        &std::env::home_dir,
+    )
+    .map_err(|e| CliError::new("migrate-io-failed", format!("cache directory: {e}")))?;
     slopvac_migrate::execute(
         m,
         &linter,
         &slopvac_agents::content::steering_block(slopvac_agents::content::BlockKind::Standard),
+        &state,
         out,
     )
     .map(|()| exit::PASS)

@@ -136,6 +136,7 @@ Migrate a 2.x project to 3.0: config, inline directives and steering blocks
 | `--write` | Apply the changes instead of previewing them |
 | `--preserve-behavior` | Reproduce the 2.x profile gates with the core:legacy-<profile> style |
 | `--restore` | Undo the last --write from the backup |
+| `--force` | With --restore, also put back files that changed since the write |
 | `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |

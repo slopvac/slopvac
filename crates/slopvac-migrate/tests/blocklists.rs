@@ -8,8 +8,8 @@ use std::path::Path;
 
 use rstest::rstest;
 use slopvac_migrate::{
-    Error, Limits, NullLinter, Options, Plan, RenameTable, apply, command, plan, plan_with_limits,
-    render_diff, run,
+    Error, Limits, NullLinter, Options, Plan, RenameTable, apply as apply_in, command, plan,
+    plan_with_limits, render_diff, run,
 };
 use slopvac_terms::{Blocklist, Pos};
 
@@ -45,6 +45,12 @@ fn plan_of(root: &Path) -> Result<Plan, Error> {
     plan(root, &RenameTable::bundled(), Options::default(), STEERING)
 }
 
+/// Apply `p` under `root`, with the restore record in a throwaway cache directory.
+fn apply(root: &Path, p: &Plan) -> Result<(), Error> {
+    let cache = tempfile::tempdir().unwrap();
+    apply_in(root, p, cache.path())
+}
+
 fn project(config: &str, blocklist: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "slopvac.toml", config);
@@ -55,7 +61,8 @@ fn project(config: &str, blocklist: &str) -> tempfile::TempDir {
 fn run_cli(args: &[&str]) -> (i32, String, String) {
     let m = command().get_matches_from(std::iter::once("migrate").chain(args.iter().copied()));
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = run(&m, &NullLinter, STEERING, &mut out, &mut err);
+    let cache = tempfile::tempdir().unwrap();
+    let code = run(&m, &NullLinter, STEERING, cache.path(), &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),

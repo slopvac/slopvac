@@ -6,6 +6,7 @@
 //!
 //! The CLI crate wires [`command`] and [`run`] into the clap tree.
 
+mod backup;
 mod blocklist;
 mod capped;
 mod cli;
@@ -28,15 +29,14 @@ use std::fmt;
 
 use slopvac_config::Code;
 
+pub use backup::{Point, Restored, apply, apply_hooked, restore, restore_hooked};
 pub use cli::{CliFailure, command, execute, run};
 pub use config::{Rewrite, migrate_config};
 pub use directives::{Found, RemovedId, UnknownId, rewrite_directives};
 pub use guide::{doc as guide_doc, prime_migrate};
 pub use limits::Limits;
 pub use lint::EngineLinter;
-pub use plan::{
-    BACKUP_DIR, Change, ChangeKind, Plan, apply, plan, plan_with_limits, render_diff, restore,
-};
+pub use plan::{BACKUP_DIR, Change, ChangeKind, Plan, plan, plan_with_limits, render_diff};
 pub use renames::RenameTable;
 pub use report::{Finding, Linter, NullLinter, Phase, RuleDelta, compare};
 pub use steering::rewrite_steering;
@@ -121,11 +121,15 @@ impl fmt::Display for Dropped {
     }
 }
 
+/// What separates the records of [`Error::Dropped`] in its message: each record on its own
+/// indented line.
+const DROPPED_SEPARATOR: &str = "\n  ";
+
 /// Failures of a migration.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Settings with no 3.0 equivalent. Nothing is written.
-    #[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n  "))]
+    #[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join(DROPPED_SEPARATOR))]
     Dropped(Vec<Dropped>),
     /// The file is not valid TOML.
     #[error("{file}: {message}")]
@@ -144,9 +148,14 @@ pub enum Error {
     /// Two config files in one directory make the result ambiguous.
     #[error("{0}")]
     Conflict(String),
-    /// A path would leave the project or cross a symbolic link, or a backup is in the way.
+    /// A path would leave the project, cross a symbolic link or share its inode, or a backup
+    /// is in the way or was not written by this tool.
     #[error("unsafe: {0}")]
     Unsafe(String),
+    /// A file changed after the migration was planned, or after it was written. Nothing
+    /// more is written.
+    #[error("changed: {0}")]
+    Changed(String),
     /// `--preserve-behavior` cannot decide how an override block overlaps the
     /// others, because its `files` pattern is outside the supported grammar.
     #[error(
@@ -251,6 +260,7 @@ impl Error {
             Self::AlreadyMigrated { .. } => "config-already-migrated",
             Self::Conflict(_) => "migrate-config-conflict",
             Self::Unsafe(_) => "migrate-unsafe-path",
+            Self::Changed(_) => "migrate-file-changed",
             Self::OverrideOverlap { .. } => "migrate-override-overlap",
             Self::RenameTable(_) => "migrate-rename-table",
             Self::Lint(_) => "migrate-lint-failed",

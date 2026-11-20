@@ -73,7 +73,7 @@ It stops, naming the file and line, for a blocklist that is outside the project,
 
 Compare `slopvac lint` with the preview report.
 
-Undo a write with `slopvac migrate --restore`. It restores the backed-up files, removes created files, and deletes the backup. To keep the migration, delete `.slopvac-migrate-backup`. A second `slopvac migrate` finds nothing to change.
+To undo a write, run `slopvac migrate --restore`. It restores backed-up files, removes created files and deletes the backup. Without `--force`, a file changed since stops it. To keep the migration, delete `.slopvac-migrate-backup`. A second `slopvac migrate` finds nothing to change.
 
 ## 6. Removed in 3.0
 
