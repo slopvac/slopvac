@@ -1430,6 +1430,26 @@ PORTABLE = r"(?![\s\S])"
         pytest.param(
             "(?m)^a$", f"(?m)^a{PORTABLE}", True, id="inline-flag-keeps-the-finding"
         ),
+        pytest.param(
+            r"^[^](?m:[$]a$)",
+            rf"^[^](?m:[$]a{PORTABLE})",
+            True,
+            id="empty-negated-class-then-flag-group",
+        ),
+        pytest.param("^[]$", f"^[]{PORTABLE}", False, id="empty-class-closes"),
+        pytest.param("^[^]$", f"^[^]{PORTABLE}", False, id="negated-empty-class-closes"),
+        pytest.param(
+            "^(?-m:a)$", f"^(?-m:a){PORTABLE}", True, id="modifier-group-keeps-finding"
+        ),
+        pytest.param(
+            "a$\\", f"a{PORTABLE}\\", True, id="trailing-backslash-keeps-finding"
+        ),
+        pytest.param(
+            "^(?<n>a)$", f"^(?<n>a){PORTABLE}", False, id="named-group-is-not-a-flag"
+        ),
+        pytest.param(
+            "^(?<=a)b$", f"^(?<=a)b{PORTABLE}", False, id="lookbehind-is-not-a-flag"
+        ),
     ],
 )
 def test_portable_end_anchor_equals_dollar(tmp_path, old, new, flagged):
