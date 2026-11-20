@@ -279,7 +279,7 @@ impl Project {
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
         };
-        let mut finish = || -> std::io::Result<()> {
+        let finish = || -> std::io::Result<()> {
             let mode = mode?;
             file.write_all(after)?;
             hook(Stage::Filled);
