@@ -13,10 +13,6 @@ use crate::errors::CliError;
 pub const MAX_SAMPLE_BYTES: u64 = 256 * 1024;
 /// Longest summary `--title` takes. GitHub caps a whole title at 256 characters.
 pub const MAX_TITLE_CHARS: usize = 200;
-/// The label an agent report carries.
-pub const AGENT_LABEL: &str = "agent-reported";
-/// The tick that marks a report as written by an agent.
-const REPORTER_FIELD: &str = "reporter";
 /// The field that holds document text.
 const TEXT_FIELD: &str = "input";
 /// What GitHub writes for an empty optional field.
@@ -59,8 +55,6 @@ pub fn read_sample(path: &Path) -> Result<String, CliError> {
 pub struct Report {
     /// The full title: prefix plus summary.
     pub title: String,
-    /// The labels.
-    pub labels: Vec<String>,
     /// The issue body in GitHub's form layout.
     pub body: String,
     /// The cleaned answers by field id, for the prefilled URL.
@@ -254,7 +248,6 @@ pub fn build(
     let mut sections = Vec::new();
     let mut cleaned: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
     let mut missing = Vec::new();
-    let mut agent = false;
     let mut warnings = Warnings::default();
     for field in &category.fields {
         let values = given.get(field.id).cloned().unwrap_or_default();
@@ -278,9 +271,6 @@ pub fn build(
         match field.kind {
             Kind::Checkboxes => {
                 let ticked = values.first().is_some_and(|v| truthy(v));
-                if field.id == REPORTER_FIELD {
-                    agent = ticked;
-                }
                 let lines: Vec<String> = field
                     .checkbox_options
                     .iter()
@@ -322,13 +312,8 @@ pub fn build(
     let title = format!("{}{}", category.title_prefix, scrubber.field(summary));
     warnings.note("title", scrubber.check(&title));
     let body = sections.join("\n\n");
-    let mut labels: Vec<String> = category.labels.iter().map(|l| (*l).to_owned()).collect();
-    if agent {
-        labels.push(AGENT_LABEL.to_owned());
-    }
     Ok(Report {
         title,
-        labels,
         body,
         answers: cleaned,
         warnings: warnings.0,
@@ -379,7 +364,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r.title, "[bug]: crash on empty input");
-        assert_eq!(r.labels, ["bug", "needs-triage", "agent-reported"]);
         let want = "### Reporter\n\n- [x] Reported by an AI agent\n\n\
 ### Agent\n\nClaude Code\n\n\
 ### Model\n\nclaude-opus\n\n\
@@ -397,11 +381,10 @@ mod tests {
     }
 
     #[test]
-    fn an_untouched_reporter_box_adds_no_agent_label() {
+    fn an_untouched_reporter_box_stays_unticked() {
         let mut a = bug_answers();
         a.retain(|s| !s.starts_with("reporter="));
         let r = build(&category("bug"), "x", &a, None, "3.0.0", &scrubber()).unwrap();
-        assert_eq!(r.labels, ["bug", "needs-triage"]);
         assert!(r.body.contains("- [ ] Reported by an AI agent"));
     }
 
