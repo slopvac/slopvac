@@ -9,7 +9,9 @@ use std::path::PathBuf;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use serde::Serialize;
 
+use slopvac_messages::Catalog;
 use slopvac_model::{Notice, NoticeLevel};
+use slopvac_update::messages::UpdateMessage;
 
 use crate::claims::{self, Report};
 use crate::error::{AgentsError, notice};
@@ -573,10 +575,13 @@ fn unchecked_notice(
 
 fn call_provider(env: &ReviewEnv<'_>, plan: &Plan) -> Result<String, AgentsError> {
     if env.offline {
-        // STUB(slopvac-8l4.21.6.3): import offline-network-needed from slopvac-update once it is registered there.
+        // The code has one home, in the `slopvac-update` catalog, with the command as a parameter.
+        let message = UpdateMessage::OfflineNetworkNeeded {
+            command: "review".to_owned(),
+        };
         return Err(AgentsError::Coded {
-            code: "offline-network-needed",
-            message: "offline: review needs the network".into(),
+            code: message.code(),
+            message: message.to_string(),
         });
     }
     let provider = env

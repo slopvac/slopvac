@@ -216,6 +216,7 @@ fn a_run_needs_a_trusted_provider_and_an_online_session() {
     };
     let err = run(&args(dir.path(), &[]), &offline).unwrap_err();
     assert_eq!(err.code(), "offline-network-needed");
+    assert_eq!(err.to_string(), "offline: review needs the network");
     assert_eq!(mock.calls.get(), 0);
 
     let online = ReviewEnv {

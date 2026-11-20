@@ -2474,6 +2474,7 @@ dependencies = [
  "slopvac-migrate",
  "slopvac-model",
  "slopvac-text",
+ "slopvac-update",
  "tempfile",
  "thiserror",
 ]
