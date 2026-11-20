@@ -539,7 +539,7 @@
       "summary": "Rule ste-practices.inconsistent-wording-for-same-step.",
       "detail": {},
       "disposition": "remove",
-      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives and prints a plain note for each drop (\"no longer exists in 3.0\"). It has no diagnostic code for this.",
+      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0.",
       "owner": "slopvac-8l4.3.43",
       "test": "n/a"
     },
@@ -549,7 +549,7 @@
       "summary": "Rule ste-safety.safety-block-missing-consequence.",
       "detail": {},
       "disposition": "remove",
-      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives and prints a plain note for each drop (\"no longer exists in 3.0\"). It has no diagnostic code for this.",
+      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0.",
       "owner": "slopvac-8l4.3.43",
       "test": "n/a"
     },
@@ -559,7 +559,7 @@
       "summary": "Rule ste-sentences.vertical-list-item-punctuation.",
       "detail": {},
       "disposition": "remove",
-      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives and prints a plain note for each drop (\"no longer exists in 3.0\"). It has no diagnostic code for this.",
+      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0.",
       "owner": "slopvac-8l4.3.43",
       "test": "n/a"
     },
@@ -569,7 +569,7 @@
       "summary": "Rule ste-sentences.vertical-list-lead-in-missing-colon.",
       "detail": {},
       "disposition": "remove",
-      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives and prints a plain note for each drop (\"no longer exists in 3.0\"). It has no diagnostic code for this.",
+      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0.",
       "owner": "slopvac-8l4.3.43",
       "test": "n/a"
     },
@@ -579,7 +579,7 @@
       "summary": "Rule ste-words.inconsistent-term-for-same-thing.",
       "detail": {},
       "disposition": "remove",
-      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives and prints a plain note for each drop (\"no longer exists in 3.0\"). It has no diagnostic code for this.",
+      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0.",
       "owner": "slopvac-8l4.3.43",
       "test": "n/a"
     },

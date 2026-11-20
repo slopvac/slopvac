@@ -288,3 +288,41 @@ fn an_absolute_blocklist_path_inside_the_project_migrates_from_the_default_root(
         "schema_version = 3\n[[entries]]\nword = \"synergize\"\npos = \"verb\"\nreason = \"Business jargon.\"\n"
     );
 }
+
+/// A 2.x config that names a removed category and a removed rule, at the top level.
+const REMOVED_CONFIG: &str = "profile = \"normal\"\n[categories]\norwell-voice = \"off\"\n[rules]\n\"ste-words.inconsistent-term-for-same-thing\" = \"error\"\n";
+
+#[test]
+fn removed_names_print_their_codes_and_the_pointer_and_exit_0() {
+    let dir = project(REMOVED_CONFIG);
+    slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(
+            "migrate-category-removed: .slopvac.toml:3: `categories.orwell-voice`: category no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml",
+        ))
+        .stdout(predicate::str::contains(
+            "migrate-rule-removed: .slopvac.toml:5: `rules.ste-words.inconsistent-term-for-same-thing`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml",
+        ));
+}
+
+#[test]
+fn a_config_with_removed_names_loads_after_migration() {
+    let dir = project(REMOVED_CONFIG);
+    fs::write(dir.path().join("doc.md"), "Plain text.\n").expect("write");
+    let cache = tempfile::tempdir().expect("tempdir");
+    slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--write")
+        .assert()
+        .code(0);
+    slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "doc.md"])
+        .assert()
+        .code(0);
+}

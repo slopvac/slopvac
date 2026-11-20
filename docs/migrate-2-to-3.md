@@ -35,7 +35,7 @@ Causes:
 
 Edit and preview again.
 
-A 2.x category with no rules is dropped with `migrate-category-removed` and exit 0.
+A 2.x category with no rules, or a rule that 3.0 removed, is dropped with `migrate-category-removed` or `migrate-rule-removed`. Both exit 0 and point to `removed-rules.toml`.
 
 These also exit 2 and write nothing:
 

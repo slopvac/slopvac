@@ -119,9 +119,37 @@ fn pyproject_removed_category_notices_report_the_pyproject_lines(#[case] preserv
     assert_eq!(
         notices,
         [
-            "pyproject.toml: migrate-category-removed: pyproject.toml:7: `categories.orwell-voice`: category no longer exists in 3.0",
-            "pyproject.toml: migrate-category-removed: pyproject.toml:12: `overrides[0].categories.orwell-voice`: category no longer exists in 3.0",
+            "pyproject.toml: migrate-category-removed: pyproject.toml:7: `categories.orwell-voice`: category no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml",
+            "pyproject.toml: migrate-category-removed: pyproject.toml:12: `overrides[0].categories.orwell-voice`: category no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml",
         ]
+    );
+}
+
+#[test]
+fn pyproject_removed_rule_is_dropped_and_its_notice_reports_the_pyproject_line() {
+    let id = "ste-words.inconsistent-term-for-same-thing";
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "pyproject.toml",
+        &format!(
+            "[project]\nname = \"x\"\n\n[tool.slopvac]\nprofile = \"normal\"\n[tool.slopvac.rules]\n\"{id}\" = \"error\"\n"
+        ),
+    );
+    let p = plan_of(dir.path()).unwrap();
+    apply(dir.path(), &p, cache().path()).unwrap();
+    let new = fs::read_to_string(dir.path().join("slopvac.toml")).unwrap();
+    assert!(!new.contains(id), "{new}");
+    let notices: Vec<&String> = p
+        .notes
+        .iter()
+        .filter(|n| n.contains("migrate-rule-removed"))
+        .collect();
+    assert_eq!(
+        notices,
+        [&format!(
+            "pyproject.toml: migrate-rule-removed: pyproject.toml:7: `rules.{id}`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml"
+        )]
     );
 }
 
@@ -185,7 +213,7 @@ fn directives_for_removed_rules_are_dropped_with_a_note() {
         assert_eq!(
             p.notes,
             vec![format!(
-                "docs/a.md:1: removed slopvac-allow rule={id}: the rule no longer exists in 3.0"
+                "migrate-rule-removed: docs/a.md:1: `slopvac-allow rule={id}`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml"
             )]
         );
     }

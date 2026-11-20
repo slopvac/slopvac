@@ -59,6 +59,9 @@ pub struct Rewrite {
     /// `text`'s source. A caller that embeds the source in a larger file maps the
     /// lines first, then renders each with [`Dropped::category_removed_notice`].
     pub removed_categories: Vec<Dropped>,
+    /// The rules that 3.0 no longer has and the rewrite dropped, with the same line
+    /// rules as `removed_categories`. Render each with [`Dropped::rule_removed_notice`].
+    pub removed_rules: Vec<Dropped>,
 }
 
 /// Rewrite 2.x config text. `file` names the source in diagnostics.
@@ -107,6 +110,7 @@ pub(crate) fn migrate_config_in(
         dropped: Blockers::default(),
         notes: Vec::new(),
         removed_categories: Vec::new(),
+        removed_rules: Vec::new(),
     };
     migrate_scope(doc.as_table_mut(), "", Scope::Project, &mut cx);
     if cx.dropped.is_empty() && options.preserve_behavior {
@@ -128,6 +132,7 @@ pub(crate) fn migrate_config_in(
             text: doc.to_string(),
             notes: cx.notes,
             removed_categories: cx.removed_categories,
+            removed_rules: cx.removed_rules,
         })
     } else {
         Err(Error::Dropped(cx.dropped.finish()))
@@ -193,6 +198,7 @@ struct Cx<'a> {
     dropped: Blockers,
     notes: Vec<String>,
     removed_categories: Vec<Dropped>,
+    removed_rules: Vec<Dropped>,
 }
 
 impl Cx<'_> {
@@ -201,6 +207,16 @@ impl Cx<'_> {
     fn drop_category_note(&mut self, path: &str, reason: &str) {
         self.removed_categories
             .push(Dropped::new(self.file, path, self.lines.of(path), reason));
+    }
+    /// Drop a rule that 3.0 no longer has and go on, with a `migrate-rule-removed`
+    /// notice and no exit 2.
+    fn drop_rule_note(&mut self, path: &str) {
+        self.removed_rules.push(Dropped::new(
+            self.file,
+            path,
+            self.lines.of(path),
+            "rule no longer exists in 3.0",
+        ));
     }
     fn drop_key(&mut self, path: &str, reason: impl AsRef<str>) {
         self.dropped
@@ -417,18 +433,13 @@ fn migrate_categories(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<
     restore(t, key, out);
 }
 
-/// The note for a reference to a rule that 3.0 removed.
-fn removed_rule_note(rule: &str, path: &str) -> String {
-    format!("removed {path}: rule {rule} no longer exists in 3.0")
-}
-
 fn migrate_rules(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<'_>) {
     let Some(entries) = drain(t, key) else { return };
     let mut out = Vec::new();
     for (k, item) in entries {
         let kp = join(path, k.get());
         if cx.renames.is_removed(k.get()) {
-            cx.notes.push(removed_rule_note(k.get(), &kp));
+            cx.drop_rule_note(&kp);
             continue;
         }
         let Some(new) = cx.renames.rule(k.get()) else {

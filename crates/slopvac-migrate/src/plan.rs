@@ -226,6 +226,10 @@ fn plan_dir(
         plan.notes
             .push(format!("{label}: {}", d.category_removed_notice()));
     }
+    for d in rewrite.removed_rules {
+        plan.notes
+            .push(format!("{label}: {}", d.rule_removed_notice()));
+    }
     let references = blocklist::references(&old);
     let lines = key_lines(&old).unwrap_or_default();
     let moved = Moved {
@@ -494,12 +498,15 @@ fn plan_document(
     }
     let (mut text, found) = rewrite_directives(&old, renames);
     for r in &found.removed {
-        plan.notes.push(format!(
-            "{}:{}: removed slopvac-allow rule={}: the rule no longer exists in 3.0",
-            label.display(),
-            r.line,
-            r.id
-        ));
+        plan.notes.push(
+            Dropped::new(
+                label.display().to_string(),
+                format!("slopvac-allow rule={}", r.id),
+                r.line,
+                "rule no longer exists in 3.0",
+            )
+            .rule_removed_notice(),
+        );
     }
     for line in &found.invalid {
         plan.warnings.push(format!(
