@@ -137,7 +137,7 @@ fn pyproject_removed_rule_is_dropped_and_its_notice_reports_the_pyproject_line()
         ),
     );
     let p = plan_of(dir.path()).unwrap();
-    apply(dir.path(), &p).unwrap();
+    apply(dir.path(), &p, cache().path()).unwrap();
     let new = fs::read_to_string(dir.path().join("slopvac.toml")).unwrap();
     assert!(!new.contains(id), "{new}");
     let notices: Vec<&String> = p

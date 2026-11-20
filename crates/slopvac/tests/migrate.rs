@@ -312,7 +312,9 @@ fn removed_names_print_their_codes_and_the_pointer_and_exit_0() {
 fn a_config_with_removed_names_loads_after_migration() {
     let dir = project(REMOVED_CONFIG);
     fs::write(dir.path().join("doc.md"), "Plain text.\n").expect("write");
+    let cache = tempfile::tempdir().expect("tempdir");
     slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
         .arg("migrate")
         .arg(dir.path())
         .arg("--write")
