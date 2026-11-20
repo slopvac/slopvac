@@ -19,6 +19,7 @@ ignore = { workspace = true }
 serde = { workspace = true }
 serde-saphyr = { workspace = true }
 slopvac-config = { workspace = true }
+slopvac-fs = { workspace = true }
 slopvac-model = { workspace = true }
 slopvac-pcre2 = { workspace = true }
 slopvac-rules = { workspace = true }

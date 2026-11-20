@@ -388,6 +388,39 @@ fn genre_error_for_an_unreadable_external_file_hides_its_directories() {
     assert_clean(&err, &outside);
 }
 
+/// The document size cap, 64 MiB (policies 1.9).
+const DOCUMENT_CAP: u64 = 64 * 1024 * 1024;
+
+fn sparse(path: &Path, len: u64) {
+    fs::File::create(path)
+        .and_then(|f| f.set_len(len))
+        .expect("sparse file");
+}
+
+#[test]
+fn genre_refuses_a_file_one_byte_over_the_document_cap() {
+    let work = tempfile::tempdir().unwrap();
+    sparse(&work.path().join("big.md"), DOCUMENT_CAP + 1);
+    slopvac(work.path())
+        .args(["genre", "big.md"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[document-too-large]: big.md: larger than the 64 MiB document limit",
+        ));
+}
+
+#[test]
+fn genre_reads_a_file_exactly_at_the_document_cap() {
+    let work = tempfile::tempdir().unwrap();
+    sparse(&work.path().join("edge.md"), DOCUMENT_CAP);
+    slopvac(work.path())
+        .args(["genre", "edge.md"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::starts_with("edge.md: "));
+}
+
 #[test]
 fn validate_names_a_missing_external_document_without_its_directories() {
     let work = tempfile::tempdir().unwrap();

@@ -3,6 +3,7 @@
 //! The CLI epic wires [`command`] and [`run`] into the clap tree.
 
 use std::fmt::Write as _;
+use std::path::Path;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use slopvac_sanitize::line;
@@ -105,10 +106,21 @@ fn explain(
     assignments: &[GenreAssignment],
 ) -> Result<String, Error> {
     // STUB(slopvac-8l4.5.11): PlainDocument stands in for the real Markdown parser.
-    let src = std::fs::read_to_string(path).map_err(|source| Error::Read {
-        path: path.to_string(),
-        source,
-    })?;
+    let src = slopvac_fs::read_text_capped(Path::new(path), slopvac_fs::MAX_DOCUMENT_BYTES)
+        .map_err(|e| match e {
+            slopvac_fs::Error::CapExceeded { cap } => Error::TooLarge {
+                path: path.to_string(),
+                cap,
+            },
+            slopvac_fs::Error::Io { source, .. } => Error::Read {
+                path: path.to_string(),
+                source,
+            },
+            other => Error::Read {
+                path: path.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, other.to_string()),
+            },
+        })?;
     let doc = PlainDocument::from_markdown(path, &src);
     let result = registry.resolve(
         &doc as &dyn DocumentView,

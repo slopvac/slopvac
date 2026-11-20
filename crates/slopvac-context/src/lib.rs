@@ -125,6 +125,14 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+    /// A file is larger than the document size cap, so none of it was read.
+    #[error("{}: larger than the {cap}-byte document limit", slopvac_sanitize::line(.path))]
+    TooLarge {
+        /// The path as given.
+        path: String,
+        /// The cap in bytes, `slopvac_fs::MAX_DOCUMENT_BYTES`.
+        cap: u64,
+    },
     /// A data file did not parse or validate.
     #[error("{}", slopvac_sanitize::line(.0))]
     Parse(String),

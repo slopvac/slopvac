@@ -2527,6 +2527,7 @@ dependencies = [
  "serde_json",
  "slopvac-config",
  "slopvac-context",
+ "slopvac-fs",
  "slopvac-model",
  "slopvac-pcre2",
  "slopvac-rules",
