@@ -10,8 +10,9 @@ use toml_edit::{DocumentMut, Item, Value};
 
 use crate::blocklist::{self, Planned};
 use crate::capped::{Blockers, Capped};
-use crate::config::{key_lines, migrate_config_in};
+use crate::config::migrate_config_in;
 use crate::limits::{Budget, Kind, Limits};
+use crate::provenance::{KeyLines, key_lines};
 use crate::walk::{Dir, discover};
 use crate::{Dropped, Error, Options, RenameTable, rewrite_directives, rewrite_steering};
 
@@ -259,8 +260,8 @@ fn plan_dir(
 struct Referrer<'a> {
     label: &'a str,
     references: &'a [blocklist::Reference],
-    lines: &'a std::collections::HashMap<String, usize>,
-    outer: Option<&'a std::collections::HashMap<String, usize>>,
+    lines: &'a KeyLines,
+    outer: Option<&'a KeyLines>,
 }
 
 /// Plan the rewrite of each blocklist the config names.
@@ -275,9 +276,8 @@ fn plan_blocklists(
     for reference in from.references {
         let line = from
             .outer
-            .and_then(|o| o.get(&format!("tool.slopvac.{}", reference.key)))
-            .or_else(|| from.lines.get(&reference.key))
-            .copied()
+            .and_then(|o| o.line(&format!("tool.slopvac.{}", reference.key)))
+            .or_else(|| from.lines.line(&reference.key))
             .unwrap_or(1);
         let planned = blocklist::plan_reference(
             root,
@@ -402,7 +402,7 @@ fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
         } => {
             let line_of = py
                 .and_then(|t| key_lines(t).ok())
-                .and_then(|l| l.get(&format!("tool.slopvac.overrides[{block}]")).copied());
+                .and_then(|l| l.line(&format!("tool.slopvac.overrides[{block}]")));
             Error::OverrideOverlap {
                 line: line_of.unwrap_or(line),
                 file,
@@ -417,7 +417,7 @@ fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
         } => {
             let line_of = py
                 .and_then(|t| key_lines(t).ok())
-                .and_then(|l| l.get("tool.slopvac.schema_version").copied());
+                .and_then(|l| l.line("tool.slopvac.schema_version"));
             Error::InvalidType {
                 line: line_of.unwrap_or(line),
                 file,

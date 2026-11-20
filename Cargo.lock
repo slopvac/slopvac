@@ -2640,6 +2640,7 @@ dependencies = [
  "cap-fs-ext",
  "cap-std",
  "clap",
+ "frontmatter-spans",
  "jsonschema",
  "rstest",
  "rustix",

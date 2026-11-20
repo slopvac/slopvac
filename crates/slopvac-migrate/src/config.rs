@@ -3,11 +3,10 @@
 //! The input is TOML text. The output keeps comments and key order. Settings with no
 //! 3.0 equivalent are collected as [`Dropped`] and block the rewrite.
 
-use std::collections::HashMap;
-
-use toml_edit::{Array, Document, DocumentMut, Item, RawString, Table, TableLike, Value, value};
+use toml_edit::{Array, DocumentMut, Item, RawString, Table, TableLike, Value, value};
 
 use crate::capped::Blockers;
+use crate::provenance::{KeyLines, key_lines};
 use crate::{Dropped, Error, Options, RenameTable, preserve_doc};
 
 const THRESHOLD_KEYS: &[&str] = &[
@@ -82,19 +81,13 @@ pub(crate) fn migrate_config_in(
     file: &str,
     renames: &RenameTable,
     options: Options,
-    outer: Option<&HashMap<String, usize>>,
+    outer: Option<&KeyLines>,
 ) -> Result<Rewrite, Error> {
-    let mut lines = key_lines(text).map_err(|e| Error::Parse {
+    let own = key_lines(text).map_err(|e| Error::Parse {
         file: file.to_owned(),
         message: e,
     })?;
-    if let Some(outer) = outer {
-        for (key, line) in &mut lines {
-            if let Some(l) = outer.get(&format!("tool.slopvac.{key}")) {
-                *line = *l;
-            }
-        }
-    }
+    let lines = Lines { own: &own, outer };
     let mut doc: DocumentMut = text
         .parse()
         .map_err(|e: toml_edit::TomlError| Error::Parse {
@@ -109,7 +102,7 @@ pub(crate) fn migrate_config_in(
     let original = doc.clone();
     let mut cx = Cx {
         file,
-        lines: &lines,
+        lines,
         renames,
         dropped: Blockers::default(),
         notes: Vec::new(),
@@ -122,7 +115,7 @@ pub(crate) fn migrate_config_in(
             &mut doc,
             &mut preserve_doc::Ctx {
                 file,
-                lines: &lines,
+                lines,
                 renames,
                 dropped: &mut cx.dropped,
                 notes: &mut cx.notes,
@@ -174,9 +167,28 @@ enum Scope {
     Override,
 }
 
+/// The lines of a config's keys. When the config came from a `[tool.slopvac]` table, a key
+/// that the holding file also has takes its line in that file.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Lines<'a> {
+    own: &'a KeyLines,
+    outer: Option<&'a KeyLines>,
+}
+
+impl Lines<'_> {
+    /// The line of the key at `path`, or 1 when the config has no such key.
+    pub(crate) fn of(&self, path: &str) -> usize {
+        self.own.line(path).map_or(1, |own| {
+            self.outer
+                .and_then(|o| o.line(&format!("tool.slopvac.{path}")))
+                .unwrap_or(own)
+        })
+    }
+}
+
 struct Cx<'a> {
     file: &'a str,
-    lines: &'a HashMap<String, usize>,
+    lines: Lines<'a>,
     renames: &'a RenameTable,
     dropped: Blockers,
     notes: Vec<String>,
@@ -187,20 +199,12 @@ impl Cx<'_> {
     /// Drop a category that 3.0 no longer has and go on, with a
     /// `migrate-category-removed` notice and no exit 2.
     fn drop_category_note(&mut self, path: &str, reason: &str) {
-        self.removed_categories.push(Dropped::new(
-            self.file,
-            path,
-            self.lines.get(path).copied().unwrap_or(1),
-            reason,
-        ));
+        self.removed_categories
+            .push(Dropped::new(self.file, path, self.lines.of(path), reason));
     }
     fn drop_key(&mut self, path: &str, reason: impl AsRef<str>) {
-        self.dropped.record(
-            self.file,
-            path,
-            self.lines.get(path).copied().unwrap_or(1),
-            reason.as_ref(),
-        );
+        self.dropped
+            .record(self.file, path, self.lines.of(path), reason.as_ref());
     }
 }
 
@@ -636,55 +640,11 @@ fn migrate_vale(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
     }
 }
 
-/// Map every key path in `text` to its one-based line. Array-of-tables elements use
-/// `name[index]`.
-pub(crate) fn key_lines(text: &str) -> Result<HashMap<String, usize>, String> {
-    let doc = Document::parse(text.to_owned()).map_err(|e| e.to_string())?;
-    let mut out = HashMap::new();
-    walk(doc.as_table(), "", text, &mut out);
-    Ok(out)
-}
-
+/// The one-based line of byte `offset` in `text`.
 pub(crate) fn line_of(text: &str, offset: usize) -> usize {
     text[..offset.min(text.len())]
         .bytes()
         .filter(|b| *b == b'\n')
         .count()
         + 1
-}
-
-fn walk(t: &dyn TableLike, prefix: &str, text: &str, out: &mut HashMap<String, usize>) {
-    for (name, item) in t.iter() {
-        let path = join(prefix, name);
-        if let Some(span) = t.key(name).and_then(toml_edit::Key::span) {
-            out.insert(path.clone(), line_of(text, span.start));
-        }
-        match item {
-            Item::ArrayOfTables(aot) => {
-                for (i, table) in aot.iter().enumerate() {
-                    let p = format!("{path}[{i}]");
-                    if let Some(span) = table.span() {
-                        out.insert(p.clone(), line_of(text, span.start));
-                    }
-                    walk(table, &p, text, out);
-                }
-            }
-            Item::Value(Value::Array(arr)) => {
-                for (i, v) in arr.iter().enumerate() {
-                    if let Some(it) = v.as_inline_table() {
-                        let p = format!("{path}[{i}]");
-                        if let Some(span) = v.span() {
-                            out.insert(p.clone(), line_of(text, span.start));
-                        }
-                        walk(it, &p, text, out);
-                    }
-                }
-            }
-            other => {
-                if let Some(tl) = other.as_table_like() {
-                    walk(tl, &path, text, out);
-                }
-            }
-        }
-    }
 }

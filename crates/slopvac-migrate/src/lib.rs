@@ -20,6 +20,7 @@ pub mod overlap;
 mod plan;
 mod preserve;
 mod preserve_doc;
+mod provenance;
 mod renames;
 mod report;
 mod steering;

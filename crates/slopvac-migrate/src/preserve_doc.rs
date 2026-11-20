@@ -7,7 +7,7 @@
 //! entry whose level changes (comments kept), and puts the profile switch blocks
 //! before and the guard blocks after the original overrides.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use toml_edit::{
     Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, TableLike, Value, value,
@@ -33,7 +33,7 @@ const DIAL_ORDER: [&str; 4] = [
 /// What the patch needs besides the documents.
 pub(crate) struct Ctx<'a> {
     pub(crate) file: &'a str,
-    pub(crate) lines: &'a HashMap<String, usize>,
+    pub(crate) lines: crate::config::Lines<'a>,
     pub(crate) renames: &'a RenameTable,
     pub(crate) dropped: &'a mut Blockers,
     pub(crate) notes: &'a mut Vec<String>,
@@ -41,12 +41,8 @@ pub(crate) struct Ctx<'a> {
 
 impl Ctx<'_> {
     fn drop_key(&mut self, path: &str, reason: &str) {
-        self.dropped.record(
-            self.file,
-            path,
-            self.lines.get(path).copied().unwrap_or(1),
-            reason,
-        );
+        self.dropped
+            .record(self.file, path, self.lines.of(path), reason);
     }
 
     fn rule(&self, qid: &str) -> String {
@@ -73,11 +69,7 @@ pub(crate) fn apply(
     };
     let expanded = expand(&config, &legacy).map_err(|e| Error::OverrideOverlap {
         file: ctx.file.to_owned(),
-        line: ctx
-            .lines
-            .get(&format!("overrides[{}]", e.block))
-            .copied()
-            .unwrap_or(1),
+        line: ctx.lines.of(&format!("overrides[{}]", e.block)),
         block: e.block,
         reason: e.reason,
     })?;

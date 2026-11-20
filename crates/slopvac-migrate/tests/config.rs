@@ -122,6 +122,30 @@ fn reports_every_dropped_setting_at_once() {
     );
 }
 
+#[rstest::rstest]
+#[case::array_tables(
+    "[thresholds]\nmax_errors = 0\n\n[[overrides]]\nfiles = [\"a\"]\n\n[[overrides]]\nfiles = [\"b\"]\nthresholds.odd = 1\n[overrides.vale]\nenabled = true\n",
+    &[("overrides[1].thresholds.odd", 9), ("overrides[1].vale.enabled", 11)],
+)]
+#[case::inline_tables(
+    "overrides = [\n  { files = [\"a\"] },\n  { files = [\"b\"], thresholds = { odd = 1 } },\n]\n[vale]\nenabled = true\n",
+    &[("overrides[1].thresholds.odd", 3), ("vale.enabled", 6)],
+)]
+#[case::quoted_name_with_a_dot(
+    "[[overrides]]\nfiles = [\"a\"]\n[[overrides]]\nfiles = [\"b\"]\n[overrides.categories]\n\"no.such\" = \"off\"\n",
+    &[("overrides[1].categories.no.such", 6)],
+)]
+fn nested_settings_are_reported_at_their_lines(
+    #[case] text: &str,
+    #[case] expected: &[(&str, usize)],
+) {
+    let expected: Vec<(String, usize)> = expected
+        .iter()
+        .map(|(key, line)| ((*key).to_owned(), *line))
+        .collect();
+    assert_eq!(dropped(text), expected);
+}
+
 #[test]
 fn unknown_names_are_dropped() {
     let cases = [
