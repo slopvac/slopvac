@@ -89,7 +89,7 @@ fn nonblocking(options: &mut OpenOptions) -> std::io::Result<()> {
 }
 
 #[cfg(not(unix))]
-#[allow(clippy::unnecessary_wraps, reason = "matches the Unix signature")]
+#[expect(clippy::unnecessary_wraps, reason = "matches the Unix signature")]
 fn nonblocking(_: &mut OpenOptions) -> std::io::Result<()> {
     Ok(())
 }
@@ -319,8 +319,8 @@ impl Project {
                 Err(e) => return Err(Self::map(&rel, e)),
             }
         };
-        // The mode comes from a handle opened on the source, never from a
-        // second lookup of the name after the temporary file exists.
+        // The mode comes from metadata on a no-follow, non-blocking source
+        // handle, not from a path stat.
         let mode = source_mode(&parent, name);
         let finish = || -> std::io::Result<()> {
             let mode = mode?;
