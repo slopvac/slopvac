@@ -11,15 +11,15 @@ use slopvac_text::TextError;
 
 use crate::error::{LoadError, LoadErrorKind, LoadErrors, PackBudget};
 use crate::matcher::{CompileOptions, LexicalMatcher, compile};
-use crate::model::{Category, LocalRuleId, MatchKind, ProfileName, Rule, Scope, Weight};
+use crate::model::{Category, LocalRuleId, Match, MatchKind, ProfileName, Rule, Scope, Weight};
 
 /// The most bytes of one rule or category file. The largest shipped file is about 130 KiB, so
 /// 2 MiB leaves more than a tenfold margin for a pack.
 pub const MAX_RULE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 
 // Budget names in `docs/contract/policies.md` section 1.9 and their constants:
-// `plugin-files` is `MAX_PACK_FILES`, `plugin-bytes` is `MAX_PACK_BYTES` and `plugin-entries` is
-// `MAX_PACK_ENTRIES`.
+// `plugin-files` is `MAX_PACK_FILES`, `plugin-bytes` is `MAX_PACK_BYTES`, `plugin-entries` is
+// `MAX_PACK_ENTRIES`, and `rule-entries` is `MAX_RULE_ENTRIES`.
 
 /// The most rule or category files one pack directory may load, after files that are the same
 /// file under several names count once. The shipped pack has 23, so 256 leaves a wide margin.
@@ -33,6 +33,10 @@ pub const MAX_PACK_ENTRIES: usize = 4 * MAX_PACK_FILES;
 /// The most bytes read in total from the files of one pack directory. The shipped pack is about
 /// 450 KiB, so 32 MiB leaves a wide margin and still holds the pack in memory at once.
 pub const MAX_PACK_BYTES: u64 = 32 * 1024 * 1024;
+
+/// The most tokens, or substitutions, one rule may list. The largest shipped list has 112, so
+/// 4096 leaves a wide margin. A rule over it is refused before any matcher is compiled.
+pub const MAX_RULE_ENTRIES: usize = 4096;
 
 /// A rule with its compiled matcher and where it came from.
 #[derive(Debug)]
@@ -383,7 +387,7 @@ fn pack_files(dir: &Path) -> Result<Vec<PathBuf>, LoadError> {
     Ok(distinct)
 }
 
-/// The refusal for a pack directory that passes `budget`. It names the directory relative to the
+/// The refusal for a pack directory (or rule file) that passes `budget`. It names the directory relative to the
 /// working directory, or `<external>/<name>` outside it, never an absolute path.
 fn over_budget(dir: &Path, budget: PackBudget, limit: u64) -> LoadError {
     let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -424,6 +428,13 @@ fn load_rules(
             errors.push(error(LoadErrorKind::DuplicateRule(local.to_string())));
             continue;
         }
+        if entry_count(&rule.match_) > MAX_RULE_ENTRIES {
+            let mut e = over_budget(file, PackBudget::RuleEntries, MAX_RULE_ENTRIES as u64);
+            e.line = line;
+            e.rule = Some(format!("{category}.{local}"));
+            errors.push(e);
+            continue;
+        }
         let matcher = match compile(&rule.match_, options) {
             Ok(m) => m,
             Err(e) => {
@@ -450,6 +461,15 @@ fn load_rules(
         });
     }
     loaded
+}
+
+/// How many tokens or substitutions a rule lists, the part of a match that grows with the file.
+fn entry_count(m: &Match) -> usize {
+    match m {
+        Match::Tokens(t) => t.tokens.len(),
+        Match::Substitution(s) => s.substitutions.entries().len(),
+        _ => 0,
+    }
 }
 
 /// Every `bad` example must match and every `good` one must not.

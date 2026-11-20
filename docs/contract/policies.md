@@ -179,7 +179,7 @@ The span crates index text with 32-bit offsets and size their structures from it
 | House-style detection read (`.vale.ini`, `STYLE.md`, `_STYLE.md`, `CONTRIBUTING.md`) | 1 MiB | `style-detect-file-too-large` | A real style note is a few KiB. Detection skips a larger file and does not fail. `slopvac init` reports the skipped file as an info notice with this code, naming the file by its root-relative label. |
 | Terms file | 1 MiB | `terms-file-too-large` | The built-in terms file is about 30 KiB. |
 
-A per-file cap does not bound the work of many files. Two aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the config file, plugin directory or document at which it tripped, relative to the root, or `<external>/<file name>` outside it. The list of `data.budget` values can grow. A message names only that path and the limit.
+A per-file cap does not bound the work of many files, or of a long list in one file. Aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the config file, plugin directory or document at which it tripped, relative to the root, or `<external>/<file name>` outside it. For `rule-entries`, `data.path` is the rule file. The list of `data.budget` values can grow. A message names only that path and the limit.
 
 | Entry point | Budget (`data.budget`) | Limit | Unit | Code | Why this value |
 |---|---|---|---|---|---|
@@ -192,6 +192,8 @@ A per-file cap does not bound the work of many files. Two aggregate budgets boun
 | Plugin directory, bytes read | `plugin-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The built-in core is about 450 KiB. |
 | Context tags on one document | tags | 1 per 64 bytes of the document, plus 65,536 | tags | context-budget-exceeded | At the 64 MiB document cap, the limit is about 1.1 million tags, an index of about 200 MiB. The densest measured prose holds about 1 tag per 44 bytes, so a document that dense and larger than about 9.5 MB is refused. The cap stops a document made of many short sentences from building an index of gigabytes. |
 | Context lookups on one document | tag-lookups | 8 per byte of the document, plus 16,384 | looks | context-budget-exceeded | A document with a few tags on a few cells looks at a few tags for each match. Many tag kinds on one cell, with rules that match across its lines, make the looks grow with kinds times matches. |
+| Rule, tokens or substitutions listed | `rule-entries` | 4096 | entries | `rules-budget-exceeded` | The longest shipped list has 112 entries. 4096 is a margin of more than thirty. The loader checks it before it compiles the matcher. |
+| Config file, `[[genres]]` and `[[overrides]]` blocks together | `file-blocks` | 256 | blocks | `config-budget-exceeded` | A real config has fewer than ten. Each block compiles a glob matcher, and the 1 MiB file cap alone allows tens of thousands. The loader checks it before the schema check. |
 
 How the budgets apply:
 
@@ -201,6 +203,7 @@ How the budgets apply:
 - An `extends` cycle is not a budget. It keeps `config-extends-cycle`, and the loader checks for a cycle before it checks the depth.
 - A rule file reached by more than one name, such as a symlink, loads once under the first name in file-name order, and the file budget counts it once.
 - The plugin loader reads and compiles one file at a time.
+- Duplicate checks on lists (unique tokens, unique substitution keys, blocks with the same `files`) use hash lookups, so their cost grows linearly with the list and a long list of distinct items is not a quadratic cost.
 
 Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-update` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`, plus a private cap in house-style detection).
 

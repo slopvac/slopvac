@@ -2,7 +2,9 @@
 //! unique lists, validated text and absent-but-never-null members.
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::fmt;
+use std::hash::Hash;
 use std::ops::Deref;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
@@ -13,7 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 ///
 /// Embed it as `#[serde(flatten)] #[schemars(skip)]` and add `additionalProperties: false`
 /// plus `patternProperties` to the struct's schema.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(crate) struct Extensions;
 
 impl<'de> Deserialize<'de> for Extensions {
@@ -76,7 +78,13 @@ impl<'a, T, const MIN: usize> IntoIterator for &'a UniqueVec<T, MIN> {
     }
 }
 
-impl<'de, T: Deserialize<'de> + PartialEq, const MIN: usize> Deserialize<'de>
+/// The index of the first item that repeats an earlier one, in one pass of hash lookups.
+fn first_repeat<T: Eq + Hash>(items: &[T]) -> Option<usize> {
+    let mut seen: HashSet<&T> = HashSet::with_capacity(items.len());
+    items.iter().position(|item| !seen.insert(item))
+}
+
+impl<'de, T: Deserialize<'de> + Eq + Hash, const MIN: usize> Deserialize<'de>
     for UniqueVec<T, MIN>
 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -87,12 +95,10 @@ impl<'de, T: Deserialize<'de> + PartialEq, const MIN: usize> Deserialize<'de>
                 items.len()
             )));
         }
-        for (i, item) in items.iter().enumerate() {
-            if items[..i].contains(item) {
-                return Err(de::Error::custom(format!(
-                    "items must be unique, item {i} repeats an earlier one"
-                )));
-            }
+        if let Some(i) = first_repeat(&items) {
+            return Err(de::Error::custom(format!(
+                "items must be unique, item {i} repeats an earlier one"
+            )));
         }
         Ok(Self(items))
     }
@@ -217,4 +223,71 @@ pub(crate) fn is_slug(s: &str, separator: char) -> bool {
     let mut chars = s.chars();
     chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == separator)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::hash::{Hash, Hasher};
+
+    use serde::Deserialize;
+
+    use super::UniqueVec;
+
+    thread_local! {
+        static HASHES: Cell<usize> = const { Cell::new(0) };
+        static COMPARES: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// An item that counts every hash and equality call made on it.
+    #[derive(Debug, Deserialize)]
+    struct Counted(usize);
+
+    impl PartialEq for Counted {
+        fn eq(&self, other: &Self) -> bool {
+            COMPARES.with(|c| c.set(c.get() + 1));
+            self.0 == other.0
+        }
+    }
+    impl Eq for Counted {}
+    impl Hash for Counted {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            HASHES.with(|c| c.set(c.get() + 1));
+            self.0.hash(state);
+        }
+    }
+
+    /// Deserialize `items` as a unique list and report the hashes and comparisons it cost.
+    fn parse(items: &[usize]) -> (Result<UniqueVec<Counted, 1>, String>, usize, usize) {
+        let text = serde_json::to_string(items).unwrap();
+        HASHES.with(|c| c.set(0));
+        COMPARES.with(|c| c.set(0));
+        let result = serde_json::from_str(&text).map_err(|e: serde_json::Error| e.to_string());
+        (result, HASHES.with(Cell::get), COMPARES.with(Cell::get))
+    }
+
+    /// A quadratic scan makes n(n-1)/2 comparisons, 5e9 for 100,000 items. A hash set hashes
+    /// each item at most once and compares only on a bucket collision.
+    #[test]
+    fn deserializing_distinct_items_costs_work_linear_in_the_list() {
+        let n = 100_000;
+        let items: Vec<usize> = (0..n).collect();
+        let (result, hashes, compares) = parse(&items);
+        assert_eq!(result.unwrap().len(), n);
+        assert!(hashes <= n, "{hashes} hashes for {n} items");
+        assert!(compares <= 2 * n, "{compares} comparisons for {n} items");
+    }
+
+    #[test]
+    fn deserializing_a_repeat_names_the_first_repeated_index() {
+        let mut items: Vec<usize> = (0..1_000).collect();
+        items.push(7);
+        items.push(8);
+        let (result, _, _) = parse(&items);
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("items must be unique, item 1000 repeats an earlier one"),
+            "{err}"
+        );
+    }
 }

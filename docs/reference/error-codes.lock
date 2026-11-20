@@ -2,6 +2,7 @@
 # Add a line when you add a code. Never edit or delete one: move a removed code to
 # RETIRED in crates/slopvac/src/messages.rs and keep its line here.
 config-budget-applied-bytes text
+config-budget-blocks text
 config-budget-bytes text
 config-budget-depth text
 config-budget-exceeded error
@@ -28,6 +29,7 @@ config-help-budget text
 config-help-did-you-mean text
 config-help-flatten-chain text
 config-help-merge-blocks text
+config-help-merge-or-split-blocks text
 config-help-migrate text
 config-help-migrate-version text
 config-help-reference-key text
@@ -80,6 +82,7 @@ config-label-range-between text
 config-label-reads-version-3 text
 config-label-repeated text
 config-label-same-files text
+config-label-too-many-blocks text
 config-label-write-key-value text
 config-legacy-dotfile text
 config-legacy-pyproject text
