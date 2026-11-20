@@ -1449,3 +1449,107 @@ def test_mark_failed_refuses_while_a_judge_holds_the_ledger_lock(
         or judgment_rows(judge_env) == before
     )
     assert mark_failed_cli(judge_env, "i0", lab.ORDERS[0]) == 0  # free again
+
+
+def judgment(item, family, model, order, verdict):
+    return {
+        "item": item,
+        "family": family,
+        "model": model,
+        "order": order,
+        "prompt_version": lab.PROMPT_VERSION,
+        "verdict": verdict,
+    }
+
+
+def write_rows(d, family, rows):
+    lab.write_jsonl(d / "judgments" / f"{family}.jsonl", rows)
+
+
+def pair_rows(item, family, model, first, second):
+    return [
+        judgment(item, family, model, lab.ORDERS[0], first),
+        judgment(item, family, model, lab.ORDERS[1], second),
+    ]
+
+
+def test_merge_uses_the_first_verdict_row_of_a_duplicated_pair_and_reports_it(
+    duplicated_item, capsys
+):
+    first, second = lab.ORDERS
+    write_rows(
+        duplicated_item,
+        "anthropic",
+        [
+            *pair_rows("i0", "anthropic", "claude-test", "tp", "tp"),
+            judgment("i0", "anthropic", "claude-test", first, "fp"),  # later duplicate
+        ],
+    )
+    write_rows(
+        duplicated_item, "openai", pair_rows("i0", "openai", "gpt-test", "tp", "tp")
+    )
+    assert merge_cli(duplicated_item) == 0
+    (label,) = lab.read_jsonl(duplicated_item / "labels.jsonl")
+    assert label["label"] == "tp" and label["item"] == "i0"
+    assert lab.read_jsonl(duplicated_item / "disputes.jsonl") == []
+    err = capsys.readouterr().err
+    assert "1 duplicate verdict rows" in err and f"i0 {first}" in err
+    assert second not in err  # only the conflicting pair is named
+
+
+def test_worksheet_shows_the_first_verdict_of_a_duplicated_pair_once(
+    duplicated_item, tmp_path
+):
+    write_rows(
+        duplicated_item,
+        "anthropic",
+        [
+            *pair_rows("i0", "anthropic", "claude-test", "tp", "tp"),
+            *pair_rows("i0", "anthropic", "claude-test", "fp", "fp"),
+        ],
+    )
+    write_rows(
+        duplicated_item, "openai", pair_rows("i0", "openai", "gpt-test", "fp", "fp")
+    )
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(duplicated_item, out, tmp_path) == 0
+    (row,) = read_sheet(out)
+    assert row["judge anthropic"] == "tp" and row["judge openai"] == "fp"
+
+
+def dedupe_cli(d):
+    return cli.main(["label", "--dir", str(d), "dedupe-check"])
+
+
+def test_dedupe_check_passes_a_clean_file(judge_env, capsys):
+    write_judgments(judge_env, "anthropic", "claude-test", ["i0"])
+    assert dedupe_cli(judge_env) == 0
+    out = capsys.readouterr().out
+    assert "anthropic\tpairs=2\tduplicates=0" in out
+    assert "conflict" not in out
+
+
+def test_dedupe_check_passes_consistent_duplicates_and_counts_them(judge_env, capsys):
+    rows = pair_rows("i0", "anthropic", "claude-test", "tp", "fp")
+    write_rows(judge_env, "anthropic", [*rows, *rows, rows[0]])
+    assert dedupe_cli(judge_env) == 0
+    assert "anthropic\tpairs=2\tduplicates=3" in capsys.readouterr().out
+
+
+def test_dedupe_check_lists_conflicting_pairs_and_exits_1(judge_env, capsys):
+    rows = pair_rows("i0", "anthropic", "claude-test", "tp", "tp")
+    extra = judgment("i0", "anthropic", "claude-test", lab.ORDERS[0], "fp")
+    write_rows(judge_env, "anthropic", [*rows, extra])
+    assert dedupe_cli(judge_env) == 1
+    out = capsys.readouterr().out
+    assert "anthropic\tpairs=2\tduplicates=1" in out
+    assert f"conflict\tanthropic\ti0\t{lab.ORDERS[0]}\ttp,fp" in out
+
+
+def test_dedupe_check_ignores_failed_rows_and_writes_nothing(judge_env, capsys):
+    skipped_env(judge_env)
+    before = {f.name: f.read_bytes() for f in (judge_env / "judgments").iterdir()}
+    assert dedupe_cli(judge_env) == 0
+    after = {f.name: f.read_bytes() for f in (judge_env / "judgments").iterdir()}
+    assert before == after
+    assert "anthropic\tpairs=1\tduplicates=0" in capsys.readouterr().out

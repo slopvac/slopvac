@@ -475,12 +475,44 @@ def command_asker(command: str) -> Callable[[str], str]:
 
 
 def family_verdict(rows: Sequence[Mapping[str, Any]]) -> str:
-    """One family's verdict: stable only if both option orders give the same answer."""
-    by_order = {r["order"]: r["verdict"] for r in rows if r.get("status") != FAILED}
+    """One family's verdict: stable only if both option orders give the same answer.
+
+    Failed attempts carry no verdict. When an order has several verdict rows, the
+    first in file order counts; `duplicate_report` lists the rest.
+    """
+    by_order: dict[str, str] = {}
+    for r in rows:
+        if r.get("status") != FAILED:
+            by_order.setdefault(r["order"], r["verdict"])
     if set(by_order) != set(ORDERS):
         return "missing"
     first, second = by_order[ORDERS[0]], by_order[ORDERS[1]]
     return first if first == second and first != "unsure" else "unstable"
+
+
+def duplicate_report(
+    judgments: Iterable[Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Per family: unique (item, order) pairs with a verdict, duplicate verdict rows
+    and the pairs whose verdict rows disagree, as (item, order, verdicts)."""
+    seen: dict[str, dict[tuple[str, str], list[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for j in judgments:
+        if j.get("status") != FAILED and "verdict" in j:
+            seen[j["family"]][(j["item"], j["order"])].append(j["verdict"])
+    return {
+        fam: {
+            "pairs": len(pairs),
+            "duplicates": sum(len(v) - 1 for v in pairs.values()),
+            "conflicts": [
+                (item, order, v)
+                for (item, order), v in pairs.items()
+                if len(set(v)) > 1
+            ],
+        }
+        for fam, pairs in sorted(seen.items())
+    }
 
 
 def cohen_kappa(pairs: Sequence[tuple[str, str]]) -> float | None:

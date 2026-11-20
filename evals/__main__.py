@@ -14,7 +14,9 @@ import json
 import os
 import sys
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 from . import ab as ab_mod
 from . import corpuslib as lib
@@ -415,6 +417,49 @@ def cmd_label_mark_failed(args: argparse.Namespace) -> int:
     return 0
 
 
+def _duplicate_notice(command: str, judgments: Sequence[Mapping[str, Any]]) -> None:
+    """Say on stderr that duplicate verdict rows exist and that the first one counted."""
+    report = labelling.duplicate_report(judgments)
+    extra = sum(r["duplicates"] for r in report.values())
+    if not extra:
+        return
+    print(
+        f"evals label {command}: {extra} duplicate verdict rows; the first row of "
+        "each (item, order) counts; run `label dedupe-check` for the details",
+        file=sys.stderr,
+    )
+    for fam, r in report.items():
+        for item, order, verdicts in r["conflicts"]:
+            print(
+                f"  {fam} {item} {order} disagrees: {', '.join(verdicts)}",
+                file=sys.stderr,
+            )
+
+
+def cmd_label_dedupe_check(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    try:
+        judgments, _ = labelling.usable_judgments(
+            [
+                r
+                for f in sorted(p["judgments"].glob("*.jsonl"))
+                for r in labelling.read_jsonl(f)
+            ]
+        )
+    except (runner.EngineError, OSError) as exc:
+        print(f"evals label dedupe-check: {exc}", file=sys.stderr)
+        return 2
+    report = labelling.duplicate_report(judgments)
+    for fam, r in report.items():
+        print(f"{fam}\tpairs={r['pairs']}\tduplicates={r['duplicates']}")
+    conflicts = 0
+    for fam, r in report.items():
+        for item, order, verdicts in r["conflicts"]:
+            conflicts += 1
+            print(f"conflict\t{fam}\t{item}\t{order}\t{','.join(verdicts)}")
+    return 1 if conflicts else 0
+
+
 def cmd_label_merge(args: argparse.Namespace) -> int:
     p = _paths(args)
     try:
@@ -434,6 +479,7 @@ def cmd_label_merge(args: argparse.Namespace) -> int:
             "from another prompt version or from an older model",
             file=sys.stderr,
         )
+    _duplicate_notice("merge", judgments)
     previous = {r["item"]: r["label"] for r in labelling.read_jsonl(p["labels"])}
     merged = labelling.merge(
         labelling.read_jsonl(p["items"]), judgments, labelling.read_jsonl(p["human"])
@@ -502,6 +548,7 @@ def cmd_label_worksheet(args: argparse.Namespace) -> int:
                 for r in labelling.read_jsonl(f)
             ]
         )
+        _duplicate_notice("worksheet", judgments)
         docs = {d["id"]: d for d in lib.load_manifest()["documents"]}
         cache = _cache(args)
         families, rows = labelling.worksheet_rows(
@@ -606,6 +653,11 @@ def build_parser() -> argparse.ArgumentParser:
     lf.add_argument("item")
     lf.add_argument("order")
     lf.set_defaults(func=cmd_label_mark_failed)
+
+    ld = lsub.add_parser(
+        "dedupe-check", help="count duplicate verdict rows and list conflicts"
+    )
+    ld.set_defaults(func=cmd_label_dedupe_check)
 
     lm = lsub.add_parser("merge", help="combine judgments into labels and disputes")
     lm.add_argument("--date", default=None)

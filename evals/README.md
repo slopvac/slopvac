@@ -120,6 +120,7 @@ python -m evals label sample results.json                 # pick findings, balan
 python -m evals label judge --family anthropic --model <name> --provider-cmd '<cmd>' --max-invocations <N>
 python -m evals label judge --family openai --model <name> --provider-cmd '<cmd>' --max-invocations <N>
 python -m evals label merge                               # labels, disputes, stats
+python -m evals label dedupe-check                        # duplicate verdict rows per family
 python -m evals label worksheet --out review.csv          # disputes and spot check, for a spreadsheet
 python -m evals label import-worksheet review.csv --reviewer <you>
 python -m evals label resolve <item> tp --reviewer <you> --reason '<why>'
@@ -131,6 +132,8 @@ python -m evals score results.json --labels evals/labels/labels.jsonl
 A failed provider call does not stop the run. The command writes a row for the pair with `"status": "failed"` and `"error": "provider-exit"`, with no verdict and no message text, and asks again. Each attempt is charged to the ledger. A pair gets 3 attempts in total, counted across runs. After the third failure the command skips the pair, goes on, prints the skipped pairs at the end and exits 0. A credential failure ("could not resolve credentials") is not retried: the command stops with exit 2. `merge` and `worksheet` treat failed rows as no judgment, so a skipped pair shows as `missing` and goes to the dispute queue.
 
 A run that died before it wrote failed rows leaves attempts in the ledger only. To count them, run `python -m evals label mark-failed --family <f> --model <name> <item> <order> --attempts <n>`. It appends `n` failed rows with `"recorded": "manual"` to `judgments/<family>.jsonl`. It checks the family against the model, the item against `items.jsonl` and the order, and it exits 2 and writes nothing on bad input. It only appends rows to the judgments file. It takes the ledger lock a judge run holds and exits 2 while a judge is running. With 3 attempts, the next `judge` run skips the pair and lists it.
+
+`label merge` and `label worksheet` give one label or one row for each unique item id. They build each family verdict from the first verdict row of every (item, order) pair in file order, and they print the number of duplicate rows on stderr. `label dedupe-check` reads the judgments without writing and runs no provider. For each family it prints `pairs` (unique pairs with a verdict) and `duplicates` (extra verdict rows). It then lists each pair whose duplicate rows disagree as `conflict`, family, item, order and verdicts. It exits 0 when no pair conflicts and 1 when one does. Failed rows are not verdict rows.
 
 `label worksheet` writes both review queues to one CSV, without needing a clean `label merge`. Disputes come first, then rows sort by rule and document, and items with a human verdict are left out. Fill the `verdict` column with `tp` or `fp` and give a `reason`. `label import-worksheet` records the filled rows in `human.jsonl`, skips blank verdicts, and exits 2 with the row number on a bad row, writing nothing. Importing a file again adds no duplicates. Cells that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading quote so a spreadsheet does not run them as formulas. The import removes that quote.
 
