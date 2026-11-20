@@ -233,16 +233,16 @@ macro_rules! id_newtype {
 }
 
 id_newtype!(
-    /// Category identifier: `^[a-z][a-z0-9-]*$`.
+    /// Category identifier: `^[a-z][a-z0-9-]*(?![\s\S])`.
     CategoryId, "category id", is_pack, "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 id_newtype!(
-    /// Genre identifier: `^[a-z][a-z0-9-]*$`.
+    /// Genre identifier: `^[a-z][a-z0-9-]*(?![\s\S])`.
     GenreId, "genre id", is_pack, "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 id_newtype!(
     /// Stable kebab-case name, such as a notice code or genre signal:
-    /// `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`.
+    /// `^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\s\S])`.
     KebabName, "kebab-case name", is_kebab, "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])"
 );
 

@@ -21,24 +21,24 @@ use slopvac_model::{
 use crate::ext::{Extensions, UniqueVec, ValueError, is_slug, present, text_newtype};
 
 text_newtype!(
-    /// Rule id inside its category: `^[a-z][a-z0-9-]*$`.
+    /// Rule id inside its category: `^[a-z][a-z0-9-]*(?![\s\S])`.
     LocalRuleId, "rule id", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 text_newtype!(
     /// A name the engine resolves: a structure or vocabulary check, an exception or a
-    /// detector. `^[a-z][a-z0-9-]*$`.
+    /// detector. `^[a-z][a-z0-9-]*(?![\s\S])`.
     Slug, "name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 text_newtype!(
-    /// A profile name, the key of a density budget: `^[a-z][a-z0-9-]*$`.
+    /// A profile name, the key of a density budget: `^[a-z][a-z0-9-]*(?![\s\S])`.
     ProfileName, "profile name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 text_newtype!(
-    /// A metric name: `^[a-z][a-z0-9_]*$`.
+    /// A metric name: `^[a-z][a-z0-9_]*(?![\s\S])`.
     MetricName, "metric name", |s| is_slug(s, '_'), "^[a-z][a-z0-9_]*(?![\\s\\S])"
 );
 text_newtype!(
-    /// A placeholder in a pattern: `^[A-Z][A-Z0-9_]*$`.
+    /// A placeholder in a pattern: `^[A-Z][A-Z0-9_]*(?![\s\S])`.
     PlaceholderName, "placeholder name", |s| {
         let mut chars = s.chars();
         chars.next().is_some_and(|c| c.is_ascii_uppercase())
