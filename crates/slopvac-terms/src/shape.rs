@@ -89,6 +89,9 @@ pub struct TermsFile {
     pub terms: Vec<TermEntry>,
 }
 
+/// The only `schema_version` of a terms file this crate reads.
+pub const TERMS_SCHEMA_VERSION: u32 = 3;
+
 #[derive(Deserialize)]
 struct RawFile {
     schema_version: u32,
@@ -140,7 +143,7 @@ impl TermsFile {
             path: path.to_owned(),
             message: e.to_string(),
         })?;
-        if raw.schema_version != 3 {
+        if raw.schema_version != TERMS_SCHEMA_VERSION {
             return Err(TermsError::SchemaVersion {
                 path: path.to_owned(),
                 found: raw.schema_version.to_string(),

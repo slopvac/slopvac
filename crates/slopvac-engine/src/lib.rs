@@ -48,6 +48,7 @@
 
 mod capitalization;
 pub mod cases;
+mod comments;
 mod commit;
 mod diagrams;
 pub mod diff_scope;

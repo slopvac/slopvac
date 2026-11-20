@@ -12,6 +12,7 @@ use slopvac_plugins::extract::{
     Evicted, ExtractError, Limits, StagedTree, TreeHash, clean_staging, evict, extract_targz,
     tree_hash, verify_tree,
 };
+mod support;
 
 const GOLDEN: &str = "sha256:649fc82b4e4db008e801244b088e12aa52921acb707eb30efdc6d60930ecdefa";
 
@@ -1179,7 +1180,7 @@ fn write(tree: &mut StagedTree, path: &str) -> Result<(), ExtractError> {
 
 #[test]
 fn a_staged_tree_stops_at_the_node_limit_before_creating_the_file() {
-    let store = tempfile::tempdir().unwrap();
+    let store = support::scratch();
     let limits = Limits {
         nodes: 3,
         ..Limits::default()
@@ -1196,7 +1197,7 @@ fn a_staged_tree_stops_at_the_node_limit_before_creating_the_file() {
 
 #[test]
 fn a_staged_tree_counts_implicit_parents_once() {
-    let store = tempfile::tempdir().unwrap();
+    let store = support::scratch();
     let limits = Limits {
         nodes: 4,
         ..Limits::default()
@@ -1209,7 +1210,7 @@ fn a_staged_tree_counts_implicit_parents_once() {
 
 #[test]
 fn a_staged_tree_refuses_a_name_that_collides_with_a_parent_before_creating_it() {
-    let store = tempfile::tempdir().unwrap();
+    let store = support::scratch();
     let mut tree = StagedTree::new(&store.path().join("trees"), Limits::default()).unwrap();
     write(&mut tree, "Dir/x").unwrap();
 

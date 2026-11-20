@@ -29,12 +29,9 @@
 //!
 //! # Hand-off
 //!
-//! Extraction is all this crate does. Running rules over fragments belongs to
-//! `slopvac-engine`.
+//! Extraction is all this crate does. `slopvac-engine` runs the rules over the fragments:
+//! see `Input::comments` there.
 
-// STUB(slopvac-8l4.3.26): `slopvac-engine` does not exist yet. When it lands, hand each
-// `Fragment` to its rule dispatch with comment-mode rule selection. Until then the only
-// consumer is the tests in this crate.
 mod extract;
 mod language;
 mod lexer;

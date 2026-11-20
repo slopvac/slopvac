@@ -32,6 +32,7 @@ import datetime as dt
 import fcntl
 import hashlib
 import json
+import logging
 import os
 import random
 import re
@@ -46,9 +47,11 @@ from functools import partial
 from pathlib import Path
 from typing import Any, NamedTuple, Self
 
+from . import build_derived, facts, metrics, procs, runner
 from . import corpuslib as lib
-from . import facts, metrics, procs, runner
-from .textops import prose_paragraphs
+from .textops import CODE_SPAN_RE, prose_paragraphs, split_sentences
+
+logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "1"
 RESULTS_SCHEMA = 1
@@ -56,6 +59,8 @@ RESULTS_DIR = lib.EVALS_DIR / "results" / "models"
 MIN_REPEATS = 3
 TYPES = ("mechanical", "update", "rewrite")
 SEED = "slopvac-evals-models-1"
+PLANT_KINDS = ("drop", "number", "negation", "entity")
+PLANT_MIN_WORDS = 6
 FALSE_ALARM_LIMIT = 1
 QUOTE_OVERLAP = 0.6
 MIN_QUOTE_WORDS = 3
@@ -102,6 +107,17 @@ Candidate:
 
 Answer with a JSON list. Each item has "quote" (the exact words from either text) and "problem". Answer [] when the candidate keeps every fact.
 """
+# The mechanical and update reviewers see the same text as the rewrite reviewer,
+# after a line that says what the candidate was asked to do. The stated change is
+# not damage, so the update prompt tells the reviewer to leave it out.
+MECHANICAL_REVIEW_PROMPT = (
+    "A model was asked to fix one prose problem in the original and change nothing else.\n\n"
+    + REVIEW_PROMPT
+)
+UPDATE_REVIEW_PROMPT = (
+    "A model was asked to replace {old} with {new} where the original states it and "
+    "change nothing else. That change is intended: do not list it.\n\n" + REVIEW_PROMPT
+)
 
 
 class ModelEvalError(Exception):
@@ -132,6 +148,7 @@ def build_tasks(
     docs = {d["id"]: d for d in manifest["documents"]}
     rng = random.Random(seed)
     tasks: list[dict[str, Any]] = []
+    skipped: Counter[str] = Counter()
 
     seeded = sorted(
         (d for d in docs.values() if d["origin"] == "seeded-defect"),
@@ -143,10 +160,7 @@ def build_tasks(
             pool.append((doc, defect))
     rng.shuffle(pool)
     for doc, defect in pool[:per_type]:
-        lines = _read(doc, cache).split("\n")
-        at = defect["line"] - 1
-        first, last = max(0, at - 2), min(len(lines), at + 3)
-        passage = "\n".join(lines[first:last])
+        passage = _mechanical_passage(doc, defect, cache)
         tasks.append(
             {
                 "id": task_id(
@@ -251,7 +265,197 @@ def build_tasks(
                 "genre": doc["genre"],
             }
         )
+
+    for doc, defect in pool[:per_type]:
+        passage = _mechanical_passage(doc, defect, cache)
+        flagged = defect["text"]
+        review = _planted_review(
+            kind="mechanical",
+            key=(doc["id"], str(defect["line"]), defect["rule"]),
+            doc=doc,
+            original=passage,
+            base=passage,
+            protected=lambda _, s, f=flagged: s in f or f in s,
+            pool=sorted(set(CODE_SPAN_RE.findall(_read(doc, cache)))),
+            prompt=MECHANICAL_REVIEW_PROMPT,
+        )
+        if review:
+            tasks.append(review)
+        else:
+            skipped["mechanical: no sentence to damage away from the flagged one"] += 1
+
+    for doc, edit, old, new in usable[:per_type]:
+        parent = docs[doc["source"]["parents"][0]]
+        text = _read(parent, cache)
+        lines = text.split("\n")
+        paragraph = next(
+            (
+                "\n".join(lines[first : last + 1])
+                for first, last in prose_paragraphs(text)
+                if first + 1 == edit["line"]
+            ),
+            None,
+        )
+        if paragraph is None or edit["original_sentence"] not in paragraph:
+            skipped["update: stated paragraph not found"] += 1
+            continue
+        base = _apply_change(paragraph, old, new)
+        before, after = split_sentences(paragraph), split_sentences(base)
+        if len(before) != len(after):
+            skipped["update: the change altered the sentence count"] += 1
+            continue
+        # The change protects the sentences it rewrote, by position: a rewritten
+        # sentence can become a copy of another one, so its text proves nothing.
+        rewritten = {i for i, (a, b) in enumerate(zip(before, after)) if a != b}
+        intended = [t[i] for i in sorted(rewritten) for t in (before, after)]
+        review = _planted_review(
+            kind="update",
+            key=(doc["id"], str(edit["line"]), old, new),
+            doc=doc,
+            original=paragraph,
+            base=base,
+            protected=lambda i, _, kept=rewritten: i in kept,
+            intended=intended,
+            distinct=partial(_apart_from, intended),
+            pool=sorted(set(CODE_SPAN_RE.findall(text))),
+            prompt=UPDATE_REVIEW_PROMPT,
+            old=old,
+            new=new,
+        )
+        if review:
+            tasks.append(review)
+        else:
+            skipped[
+                "update: no sentence to damage that the stated change leaves distinct"
+            ] += 1
+    if skipped:
+        logger.warning(
+            "skipped planted review candidates (%s)",
+            "; ".join(f"{reason} x{count}" for reason, count in skipped.items()),
+        )
     return tasks
+
+
+def plant_damage(
+    text: str,
+    protected: Callable[[int, str], bool],
+    pool: list[str],
+    rng: random.Random,
+    distinct: Callable[[str, str | None], bool] = lambda _before, _after: True,
+) -> tuple[str, dict[str, Any]] | None:
+    """Damage one fact in `text`: (candidate text, edit) or None when nothing fits.
+
+    The damage comes from `build_derived.damage_sentence`, the same one that plants
+    the rewrite pairs. `protected(index, sentence)` takes a sentence's position in its paragraph and its
+    text; a sentence for which it is true stays as it is.
+    The edit records the kind and the original sentence, like a rewrite pair's.
+    """
+    lines = text.split("\n")
+    paragraphs = prose_paragraphs(text, min_words=PLANT_MIN_WORDS)
+    rng.shuffle(paragraphs)
+    kinds = list(PLANT_KINDS)
+    rng.shuffle(kinds)
+    for first, last in paragraphs:
+        sentences = split_sentences("\n".join(lines[first : last + 1]))
+        order = list(range(len(sentences)))
+        rng.shuffle(order)
+        for kind in kinds:
+            for i in order:
+                if protected(i, sentences[i]):
+                    continue
+                damage = build_derived.damage_sentence(sentences[i], kind, pool, rng)
+                if damage is None or not distinct(sentences[i], damage[0]):
+                    continue
+                kept = [damage[0]] if damage[0] is not None else []
+                rebuilt = " ".join(sentences[:i] + kept + sentences[i + 1 :])
+                lines[first : last + 1] = [rebuilt]
+                edit: dict[str, Any] = {"kind": kind, "sentence": sentences[i]}
+                if damage[0] is not None:
+                    edit["after"] = damage[0]
+                return "\n".join(lines), edit
+    return None
+
+
+def _planted_review(
+    *,
+    kind: str,
+    key: tuple[str, ...],
+    doc: Mapping[str, Any],
+    original: str,
+    base: str,
+    protected: Callable[[int, str], bool],
+    pool: list[str],
+    prompt: str,
+    intended: Sequence[str] = (),
+    distinct: Callable[[str, str | None], bool] = lambda _before, _after: True,
+    **fields: str,
+) -> dict[str, Any] | None:
+    """A planted-damage review task for an author type, or None when no sentence fits.
+
+    `base` is the candidate before damage. `intended` lists the sentences the
+    stated change touches, on both sides of it; a finding there is not damage.
+    The random stream follows the task id
+    alone, so one task's damage never depends on another task.
+    """
+    ident = task_id("planted", kind, *key)
+    rng = random.Random(f"{SEED}|{ident}")
+    planted = plant_damage(base, protected, pool, rng, distinct)
+    if planted is None:
+        return None
+    candidate, edit = planted
+    return {
+        "id": ident,
+        "type": kind,
+        **({"intended": list(intended)} if intended else {}),
+        "role": "reviewer",
+        "variant": "planted",
+        "doc": doc["id"],
+        "prompt": prompt.format(original=original, candidate=candidate, **fields),
+        "original": original,
+        "candidate": candidate,
+        "passage": original + "\n" + candidate,
+        "edits": [edit],
+        "genre": doc["genre"],
+    }
+
+
+def _similar(a: str, b: str) -> bool:
+    """True when either sentence takes `QUOTE_OVERLAP` of its words from the other.
+
+    Such sentences cannot be told apart by the words a reviewer quotes.
+    """
+    return max(_overlap(a, b), _overlap(b, a)) >= QUOTE_OVERLAP
+
+
+def _apart_from(intended: Sequence[str], before: str, after: str | None) -> bool:
+    """True when damage to `before` (leaving `after`) cannot pass for an intended change."""
+    return not any(
+        _similar(text, i) for i in intended for text in (before, after) if text
+    )
+
+
+def _mechanical_passage(
+    doc: Mapping[str, Any], defect: Mapping[str, Any], cache: Path
+) -> str:
+    """The flagged line with two lines of context before it and after it."""
+    lines = _read(doc, cache).split("\n")
+    at = defect["line"] - 1
+    return "\n".join(lines[max(0, at - 2) : min(len(lines), at + 3)])
+
+
+def _number_token(number: str) -> str:
+    """A pattern for `number` as a whole numeric token.
+
+    The number must not sit inside a longer number ("3" in "13", "3.5", "3,500",
+    ".3" or "1,3").
+    A full stop after it that ends a sentence is fine.
+    """
+    return rf"(?<![\w.,]){re.escape(number)}(?!\w)(?![.,]\d)"
+
+
+def _apply_change(text: str, old: str, new: str) -> str:
+    """Replace every whole-token `old` number with `new`, as the update task asks."""
+    return re.sub(_number_token(old), new, text)
 
 
 def _stands_alone(passage: str, old: str) -> bool:
@@ -379,7 +583,7 @@ REVIEW_METRIC = "detection by quotation"
 AUTHOR_METRIC = "lexical retention smoke check"
 # Bump when scoring changes. Rows scored before 15.17 carry no version and are
 # "legacy": they were never rescored, so they must not take the new metric names.
-SCORER_VERSION = "15.17"
+SCORER_VERSION = "15.18"
 LEGACY_SCORER = "legacy"
 LEGACY_METRIC = "legacy (pre-15.17)"
 
@@ -455,10 +659,16 @@ def _hits(quote: str, sentence: str) -> bool:
     This is separate from `_in_passage`. A quote of fewer than MIN_QUOTE_WORDS
     words locates an edit only when it holds a fact token.
     """
-    q, s = _words(quote), _words(sentence)
-    if not q or len(q & s) / len(q) < QUOTE_OVERLAP:
+    q = _words(quote)
+    if not q or _overlap(quote, sentence) < QUOTE_OVERLAP:
         return False
     return len(q) >= MIN_QUOTE_WORDS or any(facts.extract(quote).values())
+
+
+def _overlap(quote: str, sentence: str) -> float:
+    """The share of the quote's words that come from `sentence`."""
+    q = _words(quote)
+    return len(q & _words(sentence)) / len(q) if q else 0.0
 
 
 def _mentions(fact: str, text: str) -> bool:
@@ -469,7 +679,7 @@ def _mentions(fact: str, text: str) -> bool:
     """
     body = re.escape(fact.lower())
     if re.fullmatch(r"\d+(?:[.,]\d+)*%?", fact):
-        pattern = rf"(?<![\w])(?<!\d[.,]){body}(?!\w)(?![.,]\d)"
+        pattern = _number_token(fact.lower())
     else:
         pattern = rf"(?<![\w-]){body}(?![\w-])(?!\.\w)"
     return re.search(pattern, text.lower()) is not None
@@ -500,13 +710,32 @@ def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
         edits = task["edits"]
         passage = task["passage"]
 
-        def locates(r: Mapping[str, str], e: Mapping[str, str]) -> bool:
-            return _in_passage(r["quote"], passage) and _hits(r["quote"], e["sentence"])
+        intended = task.get("intended", [])
+
+        def locates(r: Mapping[str, str], e: Mapping[str, Any]) -> bool:
+            # The planted sentence, before or after the damage. Mechanical and update
+            # damage needs the quote inside that text: shared words with a neighbour
+            # of the same wording would otherwise count. Rewrite pairs keep the
+            # word-overlap match.
+            inside = task.get("type") in ("mechanical", "update")
+            match = _in_passage if inside else _hits
+            return _in_passage(r["quote"], passage) and any(
+                match(r["quote"], text)
+                for text in (e["sentence"], e.get("after"))
+                if text
+            )
+
+        def intended_change(r: Mapping[str, str]) -> bool:
+            return _in_passage(r["quote"], passage) and any(
+                _hits(r["quote"], text) for text in intended
+            )
 
         matched = [any(locates(r, e) for r in reported) for e in edits]
         edits_total, edits_found = len(edits), sum(matched)
         alarms = len(reported) - sum(
-            1 for r in reported if any(locates(r, e) for e in edits)
+            1
+            for r in reported
+            if intended_change(r) or any(locates(r, e) for e in edits)
         )
     recall = edits_found / edits_total if edits_total else None
     return {

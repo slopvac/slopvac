@@ -1,11 +1,11 @@
 //! `slopvac self update` through the public `Runtime` interface, with an injected fetcher.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use slopvac_update::command::{self, Runtime};
+use slopvac_update::command::{self, Runtime, Supported};
 use slopvac_update::fetch::{FetchError, Fetcher};
 use slopvac_update::notice::Cache;
 use slopvac_update::verify::{
@@ -368,7 +368,8 @@ fn version_json_reports_method_and_a_cached_notice() {
             latest: "4.0.0".into(),
         })
         .unwrap();
-    let doc: serde_json::Value = serde_json::from_str(&command::version_json(&rt)).unwrap();
+    let doc: serde_json::Value =
+        serde_json::from_str(&command::version_json(&rt, &Supported::default())).unwrap();
     assert_eq!(doc["name"], "slopvac");
     assert_eq!(doc["version"], "3.0.0");
     assert_eq!(doc["install_method"], "installer");
@@ -385,11 +386,29 @@ fn version_json_reports_method_and_a_cached_notice() {
 }
 
 #[test]
+fn version_json_lists_supported_versions_per_artifact() {
+    let fx = installed();
+    let rt = runtime(&fx, server("3.1.0"), Box::new(Fixed(Ok(()))));
+    let supported = Supported {
+        schema_versions: BTreeMap::from([("alpha", vec![3]), ("beta", vec![2, 3])]),
+        slopvac_api: vec![1, 2],
+    };
+    let doc: serde_json::Value =
+        serde_json::from_str(&command::version_json(&rt, &supported)).unwrap();
+    assert_eq!(
+        doc["schema_versions"],
+        serde_json::json!({"alpha": [3], "beta": [2, 3]})
+    );
+    assert_eq!(doc["slopvac_api"], serde_json::json!([1, 2]));
+}
+
+#[test]
 fn version_json_never_starts_a_refresh() {
     let fx = installed();
     let srv = server("3.1.0");
     let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
-    let doc: serde_json::Value = serde_json::from_str(&command::version_json(&rt)).unwrap();
+    let doc: serde_json::Value =
+        serde_json::from_str(&command::version_json(&rt, &Supported::default())).unwrap();
     assert_eq!(doc["notices"], serde_json::json!([]));
     assert_eq!(srv.hits.load(Ordering::SeqCst), 0);
 }

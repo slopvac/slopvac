@@ -9,7 +9,9 @@ use globset::{GlobBuilder, GlobMatcher};
 use serde::Deserialize;
 use serde::de::{self, Visitor};
 
-use crate::schema::{Extensions, check_schema_version, is_name, is_ref, is_rule_key, present};
+use crate::schema::{
+    Extensions, GENRE_SCHEMA_VERSION, check_schema_version, is_name, is_ref, is_rule_key, present,
+};
 use crate::{BlockKind, DocumentView, Error, Pattern, normalize_path};
 
 /// The level a rule or category reports at (`RuleLevel` in `config.schema.json`).
@@ -291,7 +293,11 @@ impl GenreSpec {
     pub fn validate(&self) -> Result<(), Error> {
         let id = &self.id;
         let fail = |msg: String| Error::Parse(format!("genre `{id}`: {msg}"));
-        check_schema_version(&format!("genre `{id}`"), self.schema_version)?;
+        check_schema_version(
+            &format!("genre `{id}`"),
+            self.schema_version,
+            GENRE_SCHEMA_VERSION,
+        )?;
         if !is_name(id) {
             return Err(fail("id must be lowercase kebab-case".into()));
         }

@@ -20,8 +20,10 @@
 //! The text of an edit is written verbatim, so CRLF line endings and every byte outside the
 //! edits stay as they were.
 //!
-//! Comments in source code are not fixed yet: the engine lints Markdown, MDX, RST and
-//! diagrams only (slopvac-8l4.3.14 adds code comments).
+//! # Source code
+//!
+//! The comments of a source file are linted but not fixed. Every finding in one is refused as
+//! [`SkipReason::Protected`], and the file is returned as it is.
 //!
 //! # RST
 //!
@@ -60,7 +62,8 @@ pub enum SkipReason {
     /// since the lint run.
     Stale,
     /// The edit touches front matter, inline code, a code block or, in RST, anything but
-    /// plain prose words, or it changes the width of text in an RST table.
+    /// plain prose words, it changes the width of text in an RST table, or it sits in the
+    /// comments of a source file, which are never edited.
     Protected,
     /// A fix accepted earlier overlaps the edit.
     Overlap,
@@ -132,7 +135,11 @@ pub fn fix_document(
     changed_lines: Option<&[RangeInclusive<usize>]>,
 ) -> Result<FixReport, FixError> {
     let mut tables = Vec::new();
-    let protected = if input.kind != Kind::Rst {
+    // Comment text is not edited: every fix in a source file is refused.
+    let comments = matches!(input.kind, Kind::Comments(_));
+    let protected = if comments {
+        Vec::new()
+    } else if input.kind != Kind::Rst {
         protected_spans(input)?
     } else if doc.findings.iter().any(|f| f.fix.is_some()) {
         let parsed = engine.rst_adapter().parse(input.source)?;
@@ -153,6 +160,14 @@ pub fn fix_document(
     let mut skipped = Vec::new();
     for finding in &doc.findings {
         let Some(fix) = &finding.fix else { continue };
+        if comments {
+            skipped.push(Skipped {
+                rule_id: finding.rule_id.clone(),
+                start: finding.start,
+                reason: SkipReason::Protected,
+            });
+            continue;
+        }
         // A canonical term spelling is the fix itself: it keeps the case it declares.
         let exact = engine.is_term_casing(&finding.rule_id);
         let cased: Vec<Edit> = fix
@@ -283,7 +298,8 @@ fn protected_spans(input: &Input<'_>) -> Result<Vec<Span>, FixError> {
     let parsed: Parsed = match input.kind {
         Kind::Markdown => parse_markdown(input.source, body)?,
         Kind::Mdx => parse_mdx(input.source, body)?,
-        Kind::Diagram(_) | Kind::Rst => Parsed::default(),
+        // Source files never get here: `fix_document` refuses their findings first.
+        Kind::Diagram(_) | Kind::Rst | Kind::Comments(_) => Parsed::default(),
     };
     let parsed = with_html_prose(
         input.source,

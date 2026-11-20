@@ -23,6 +23,16 @@ Worked examples of each tool live in [`crates/slopvac/tests/testing_toolkit.rs`]
 - Never edit a snapshot or an expected value just to pass. Read the diff, decide which side is wrong, then change that side.
 - Do not snapshot text that changes with every edit, such as timestamps or absolute paths. Redact it first.
 
+## Temporary directories
+
+A test that creates files gets its directory from `tempfile` and holds the guard until the test ends. Do not call `into_path()`, `keep()` or `mem::forget`, do not bind the guard to `_`, and do not store it in a `static`, which is never dropped. A directory that every test process shares, such as an empty working directory, has one fixed name under the temp directory.
+
+The plugin extractor seals every tree it installs, with directories at `0555` and files at `0444`. `TempDir` ignores the error when it cannot delete inside a sealed directory, so the whole directory stays in the temp directory. A test in `slopvac-plugins` that installs, extracts or syncs a tree takes its directory from `support::scratch()` in `tests/support/mod.rs`. That wrapper restores owner access first and then deletes the tree.
+
+A test that removes permissions from a directory restores them with a drop guard, so the guard runs when the test panics and `TempDir` can delete the tree.
+
+Some leaks stay. A test that a timeout, `SIGKILL` or a full disk ends never runs `Drop`. Point `TMPDIR` at a directory that the runner creates for each run and removes afterwards, so these leftovers do not collect in `/tmp`. When a run passes, its `TMPDIR` should hold no `.tmp*` entry.
+
 ## Snapshots
 
 Review pending snapshots with `cargo insta review`, or accept them with `cargo insta accept`. CI never writes snapshots: insta treats a missing or different snapshot as a failure when the `CI` variable is set. Commit the `.snap` files.

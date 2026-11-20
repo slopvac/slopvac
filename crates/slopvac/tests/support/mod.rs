@@ -6,13 +6,18 @@ use std::sync::LazyLock;
 
 use serde_json::Value;
 
-static NEUTRAL: LazyLock<tempfile::TempDir> =
-    LazyLock::new(|| tempfile::tempdir().expect("tempdir"));
+static NEUTRAL: LazyLock<PathBuf> = LazyLock::new(|| {
+    // A static is never dropped, so a `TempDir` here would stay behind after every test
+    // process. One fixed empty directory, shared by all of them, leaves a single entry.
+    let dir = std::env::temp_dir().join("slopvac-test-neutral-cwd");
+    fs::create_dir_all(&dir).expect("create the neutral directory");
+    dir
+});
 
 /// A directory with no `slopvac.toml` on its path to the root. Cargo runs tests inside the
 /// repository, whose own config would otherwise apply to every `--stdin` run.
 pub(crate) fn neutral_dir() -> &'static Path {
-    NEUTRAL.path()
+    NEUTRAL.as_path()
 }
 
 /// A validator for the published `lint-report` schema.

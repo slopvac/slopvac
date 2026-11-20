@@ -95,10 +95,13 @@ struct RawEntry {
     other: BTreeMap<String, serde::de::IgnoredAny>,
 }
 
+/// The only `schema_version` of a blocklist file this crate reads.
+pub const BLOCKLIST_SCHEMA_VERSION: u32 = 3;
+
 /// Require `schema_version = 3`. A 2.x blocklist has none.
 fn check_version(path: &str, declared: Option<&serde_json::Value>) -> Result<(), TermsError> {
     match declared {
-        Some(found) if found.as_u64() == Some(3) => Ok(()),
+        Some(found) if found.as_u64() == Some(u64::from(BLOCKLIST_SCHEMA_VERSION)) => Ok(()),
         Some(found) => Err(TermsError::SchemaVersion {
             path: path.to_owned(),
             found: found.to_string(),

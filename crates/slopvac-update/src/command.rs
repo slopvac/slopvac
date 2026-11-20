@@ -2,6 +2,7 @@
 //!
 //! The CLI mounts [`command`] and calls [`run`] for `slopvac self ...`.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -9,7 +10,7 @@ use clap::{ArgMatches, Command};
 use slopvac_messages::Catalog as _;
 
 use crate::fetch::{Fetcher, UreqFetcher};
-use crate::install::{self, InstallMethod};
+use crate::install::{self, InstallMethod, RELEASES_URL};
 use crate::notice::{self, Cache, Context, Notice};
 use crate::pipeline::{self, DOWNLOAD_BASE, UpdateError};
 use crate::verify::{ArtifactVerifier, ReleaseVerifier};
@@ -184,7 +185,7 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
     let method = rt.method();
     if method != InstallMethod::Installer {
         let advice = method.upgrade_command().map_or_else(
-            || "download a release from https://github.com/slopvac/slopvac/releases".to_owned(),
+            || format!("download a release from {RELEASES_URL}"),
             |c| format!("run `{c}`"),
         );
         return Err(Failure::new(
@@ -251,14 +252,26 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
     Ok(format!("Updated slopvac {} to {latest}.\n", rt.current))
 }
 
+/// The schema and extension-API versions this build supports, which the binary takes from the
+/// crates that own them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Supported {
+    /// Supported `schema_version` values for each versioned artifact, by artifact name.
+    pub schema_versions: BTreeMap<&'static str, Vec<u64>>,
+    /// Supported `slopvac_api` values.
+    pub slopvac_api: Vec<u64>,
+}
+
 /// The `slopvac --version --json` document.
 #[must_use]
-pub fn version_json(rt: &Runtime) -> String {
+pub fn version_json(rt: &Runtime, supported: &Supported) -> String {
     let notices: Vec<Notice> = rt.notice(None).into_iter().collect();
     let doc = serde_json::json!({
         "name": "slopvac",
         "version": rt.current,
         "install_method": rt.method().id(),
+        "schema_versions": supported.schema_versions,
+        "slopvac_api": supported.slopvac_api,
         "notices": notices,
     });
     let mut text = doc.to_string();

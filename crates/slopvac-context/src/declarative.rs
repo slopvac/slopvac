@@ -10,7 +10,7 @@ use std::ops::Range;
 
 use serde::Deserialize;
 
-use crate::schema::{Extensions, check_schema_version, is_name, present};
+use crate::schema::{Extensions, TAGGER_SCHEMA_VERSION, check_schema_version, is_name, present};
 use crate::structural::{Scope, Settings, StructuralTagger, When};
 use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, TagSink, Tagger};
 
@@ -137,7 +137,11 @@ impl TaggerSpec {
     pub fn compile(self) -> Result<DeclarativeTagger, Error> {
         let id = self.id.clone();
         let fail = |msg: &str| Error::Parse(format!("tagger `{id}`: {msg}"));
-        check_schema_version(&format!("tagger `{id}`"), self.schema_version)?;
+        check_schema_version(
+            &format!("tagger `{id}`"),
+            self.schema_version,
+            TAGGER_SCHEMA_VERSION,
+        )?;
         if !is_name(&self.id) {
             return Err(fail("id must be lowercase kebab-case"));
         }

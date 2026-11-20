@@ -15,6 +15,16 @@ fn root(dir: &tempfile::TempDir) -> Dir {
     Dir::open_ambient_dir(dir.path(), ambient_authority()).unwrap()
 }
 
+/// Restores owner access to a directory on drop, so the temp directory that
+/// holds it can be deleted even when the test panics.
+struct Unlock<'a>(&'a Path);
+
+impl Drop for Unlock<'_> {
+    fn drop(&mut self) {
+        let _ = std::fs::set_permissions(self.0, std::fs::Permissions::from_mode(0o700));
+    }
+}
+
 /// A tree with a plain file, a nested file, links, a FIFO and a directory.
 fn tree() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -191,6 +201,7 @@ fn an_unreadable_leaf_directory_is_not_regular_for_both_readers() {
     let locked = t.path().join("locked");
     std::fs::create_dir(&locked).unwrap();
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let _unlock = Unlock(&locked);
     let confined = read_capped_regular_in(&root(&t), Path::new("locked"), 100).unwrap_err();
     let plain = read_capped_regular(&locked, 100, ReadOptions::new()).unwrap_err();
     assert_eq!(

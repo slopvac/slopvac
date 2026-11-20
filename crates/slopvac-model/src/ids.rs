@@ -213,20 +213,26 @@ impl From<ContextTag> for String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SchemaVersion;
 
+impl SchemaVersion {
+    /// The one `schema_version` this build reads and writes.
+    pub const VALUE: u8 = 3;
+}
+
 impl Serialize for SchemaVersion {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(3)
+        serializer.serialize_u8(Self::VALUE)
     }
 }
 
 impl<'de> Deserialize<'de> for SchemaVersion {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let n = u64::deserialize(deserializer)?;
-        if n == 3 {
+        if n == u64::from(Self::VALUE) {
             Ok(Self)
         } else {
             Err(serde::de::Error::custom(format!(
-                "schema_version must be 3, got {n}"
+                "schema_version must be {}, got {n}",
+                Self::VALUE
             )))
         }
     }
@@ -238,7 +244,7 @@ impl JsonSchema for SchemaVersion {
     }
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({ "const": 3 })
+        schemars::json_schema!({ "const": SchemaVersion::VALUE })
     }
 }
 
@@ -251,6 +257,9 @@ impl JsonSchema for SchemaVersion {
 pub struct ApiVersion(u32);
 
 impl ApiVersion {
+    /// The `slopvac_api` values this build supports.
+    pub const SUPPORTED: [u32; 1] = [1];
+
     /// Wrap a version, rejecting zero.
     pub fn new(value: u32) -> Result<Self, IdError> {
         if value >= 1 {
