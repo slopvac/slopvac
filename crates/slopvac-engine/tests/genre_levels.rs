@@ -42,15 +42,11 @@ fn engine(settings: Settings) -> Engine {
     Engine::new(vec![set], settings).unwrap()
 }
 
-fn lint_at(settings: Settings, path: &str, source: &str) -> Document {
-    engine(settings)
-        .lint(&Input::markdown(path, source))
-        .unwrap()
-}
-
 fn lint_genre(settings: Settings, genre: &str) -> Document {
     let source = format!("---\ngenre: {genre}\n---\n{BODY}");
-    lint_at(settings, "a.md", &source)
+    engine(settings)
+        .lint(&Input::markdown("a.md", &source).with_declared_genre(genre))
+        .unwrap()
 }
 
 fn severities(doc: &Document) -> Vec<Severity> {
@@ -78,7 +74,7 @@ fn documents_of_one_run_get_the_levels_of_their_own_genres() {
     let front = format!("---\ngenre: change-comms\n---\n{BODY}");
     let detected = format!("# Usage\n\n{BODY}");
     let inputs = [
-        Input::markdown("docs/readme.md", &front),
+        Input::markdown("docs/readme.md", &front).with_declared_genre("change-comms"),
         Input::markdown("docs/readme.md", &detected),
         Input::markdown("notes/a.md", BODY),
         Input::markdown("plain.md", BODY),
@@ -165,7 +161,7 @@ fn a_rule_that_is_not_the_history_rule_ignores_the_genre() {
     let source = format!("---\ngenre: change-comms\n---\n{BODY}");
     let doc = Engine::new(vec![set], settings())
         .unwrap()
-        .lint(&Input::markdown("a.md", &source))
+        .lint(&Input::markdown("a.md", &source).with_declared_genre("change-comms"))
         .unwrap();
     assert_eq!(severities(&doc), [Severity::Error]);
 }

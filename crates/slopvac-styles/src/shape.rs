@@ -6,7 +6,7 @@ use serde::Deserialize;
 use slopvac_config::flatten::{Origin, flatten};
 use slopvac_config::tree::parse_toml;
 use slopvac_config::{
-    Code, Diagnostic, Layer, Setting, SourceFile, render, validate_style, version,
+    Code, ConfigLayer, Diagnostic, Setting, SourceFile, render, validate_style, version,
 };
 
 use crate::StyleError;
@@ -91,7 +91,7 @@ impl Style {
         style.settings = flatten(
             &root,
             Origin {
-                layer: Layer::Style,
+                layer: ConfigLayer::Style,
                 file: &file,
                 text,
             },

@@ -11,7 +11,9 @@ use crate::flatten::{Origin, flatten};
 use crate::load::LoadedConfig;
 use crate::messages::{ConfigPhrase, ConfigText};
 use crate::schema::validate_frontmatter;
-use crate::source::{Layer, Setting};
+use slopvac_model::ConfigLayer;
+
+use crate::source::Setting;
 use crate::tree::{Entry, Node, Value};
 
 /// Lines with their start offsets. A line ends at LF, CRLF or a CR that does not precede LF, as
@@ -278,7 +280,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
         flatten(
             block,
             Origin {
-                layer: Layer::FrontMatter,
+                layer: ConfigLayer::FrontMatter,
                 file,
                 text: doc,
             },

@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use slopvac_config::frontmatter::{Policy, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{EngineError, Input, Kind};
@@ -624,6 +625,29 @@ fn config_for(
     }))
 }
 
+/// The genre the `slopvac:` block of the item's front matter sets, when the project's
+/// front matter policy allows it and the block is valid. A top-level `genre` key is ordinary
+/// data and never counts.
+fn declared_genre(item: &Item) -> Option<String> {
+    let policy = item
+        .config
+        .as_ref()
+        .map_or_else(Policy::core, |(config, _)| Policy::from_config(config));
+    read_front_matter(&item.text, &item.shown, &policy)
+        .settings
+        .into_iter()
+        .rfind(|s| s.path == ["genre"])
+        .and_then(|s| s.value.as_str().map(str::to_owned))
+}
+
+/// A config-relative path as the forward-slash text that `files` patterns match against.
+fn rel_text(rel: &Path) -> String {
+    rel.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Settings and the indexes of the items that share them.
 type Groups = BTreeMap<String, (slopvac_engine::Settings, TermInputs, Vec<usize>)>;
 
@@ -642,13 +666,14 @@ fn group_by_settings(
         };
         let resolved = lint_settings::resolve(config, &rel);
         let files = config_files(config);
-        let settings = lint_settings::build(
+        let mut settings = lint_settings::build(
             rules,
             &resolved,
             lint_settings::config_sources(&files),
             &request.overrides,
         )?;
         let terms = lint_terms::inputs(&resolved, &config.root);
+        settings.genre_assignments = Some(lint_settings::genre_assignments(config));
         groups
             .entry(format!("{settings:?}{terms:?}"))
             .or_insert_with(|| (settings, terms, Vec::new()))
@@ -702,9 +727,26 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
             Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
             Err(err) => return failed(request, run, &err),
         };
+        let relatives: Vec<Option<String>> = indexes
+            .iter()
+            .map(|&i| items[i].config.as_ref().map(|(_, rel)| rel_text(rel)))
+            .collect();
+        let declared: Vec<Option<String>> =
+            indexes.iter().map(|&i| declared_genre(&items[i])).collect();
         let inputs: Vec<Input<'_>> = indexes
             .iter()
-            .map(|&i| Input::new(&items[i].shown, &items[i].text).with_kind(items[i].kind))
+            .zip(relatives.iter().zip(&declared))
+            .map(|(&i, (rel, genre))| {
+                let mut input =
+                    Input::new(&items[i].shown, &items[i].text).with_kind(items[i].kind);
+                if let Some(rel) = rel {
+                    input = input.with_relative_path(rel);
+                }
+                if let Some(genre) = genre {
+                    input = input.with_declared_genre(genre);
+                }
+                input
+            })
             .collect();
         for (&index, result) in indexes.iter().zip(engine.lint_all_with_notices(&inputs)) {
             match result {
@@ -787,7 +829,12 @@ fn config_files(config: &LoadedConfig) -> Vec<(String, bool)> {
     config
         .files
         .iter()
-        .map(|f| (f.display.clone(), f.layer == slopvac_config::Layer::Extends))
+        .map(|f| {
+            (
+                f.display.clone(),
+                f.layer == slopvac_model::ConfigLayer::Extends,
+            )
+        })
         .collect()
 }
 

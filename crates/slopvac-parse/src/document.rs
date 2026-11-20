@@ -2,6 +2,8 @@
 
 use slopvac_model::{PositionError, Span};
 
+use crate::messages::ParseMessage;
+
 use crate::Projection;
 
 /// How an admonition was written.
@@ -126,22 +128,36 @@ pub struct Document {
     pub html_blocks: Vec<HtmlBlock>,
 }
 
+fn body_text(source: &PositionError) -> String {
+    ParseMessage::BodySpan {
+        reason: source.to_string(),
+    }
+    .to_string()
+}
+
+fn mdx_text(reason: &str) -> String {
+    ParseMessage::MdxSyntax {
+        reason: reason.to_owned(),
+    }
+    .to_string()
+}
+
 /// Why a document did not parse.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ParseError {
     /// The body span does not fit the source.
-    #[error("invalid body span: {0}")]
+    #[error("{}", body_text(.0))]
     Body(#[from] PositionError),
     /// MDX syntax error.
-    #[error("MDX syntax error: {0}")]
+    #[error("{}", mdx_text(.0))]
     Mdx(String),
     /// The document needs more work than the parse budget allows. The check is incomplete.
-    #[error("the document needs more work than the parse budget allows")]
+    #[error("{}", ParseMessage::Budget)]
     Budget,
     /// The segments of an HTML stream do not ascend, or they overlap.
-    #[error("the HTML segments must ascend and not overlap")]
+    #[error("{}", ParseMessage::Segments)]
     Segments,
     /// The document is longer than the parser accepts. The check is incomplete.
-    #[error("the document is longer than the parser accepts")]
+    #[error("{}", ParseMessage::TooLarge)]
     TooLarge,
 }

@@ -131,7 +131,22 @@ pub fn genre(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
         for file in m.get_many::<String>("files").into_iter().flatten() {
             message = message.replace(file.as_str(), &shown(file));
         }
-        CliError::new("genre-failed", message)
+        match e {
+            // The same code and wording as the lint path's refusal of an oversized document.
+            slopvac_context::Error::TooLarge { path, .. } => CliError::new(
+                "document-too-large",
+                format!(
+                    "{}: larger than the 64 MiB document limit",
+                    slopvac_sanitize::line(&shown(&path))
+                ),
+            ),
+            // The lint path's code and wording for a file it refuses to read.
+            slopvac_context::Error::Unreadable { path } => CliError::new(
+                "input-unreadable",
+                format!("{}: cannot read", slopvac_sanitize::line(&shown(&path))),
+            ),
+            _ => CliError::new("genre-failed", message),
+        }
     })?;
     write(out, &text)?;
     Ok(exit::PASS)

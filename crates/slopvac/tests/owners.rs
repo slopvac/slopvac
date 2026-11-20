@@ -388,6 +388,119 @@ fn genre_error_for_an_unreadable_external_file_hides_its_directories() {
     assert_clean(&err, &outside);
 }
 
+/// The document size cap, 64 MiB (policies 1.9).
+const DOCUMENT_CAP: u64 = 64 * 1024 * 1024;
+
+fn sparse(path: &Path, len: u64) {
+    fs::File::create(path)
+        .and_then(|f| f.set_len(len))
+        .expect("sparse file");
+}
+
+#[test]
+fn genre_refuses_a_file_one_byte_over_the_document_cap() {
+    let work = tempfile::tempdir().unwrap();
+    sparse(&work.path().join("big.md"), DOCUMENT_CAP + 1);
+    slopvac(work.path())
+        .args(["genre", "big.md"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[document-too-large]: big.md: larger than the 64 MiB document limit",
+        ));
+}
+
+#[test]
+fn genre_reads_a_file_exactly_at_the_document_cap() {
+    let work = tempfile::tempdir().unwrap();
+    sparse(&work.path().join("edge.md"), DOCUMENT_CAP);
+    slopvac(work.path())
+        .args(["genre", "edge.md"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::starts_with("edge.md: "));
+}
+
+#[cfg(unix)]
+#[test]
+fn genre_refuses_a_fifo_without_blocking() {
+    let work = tempfile::tempdir().unwrap();
+    let made = std::process::Command::new("mkfifo")
+        .arg(work.path().join("trap.md"))
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success());
+    slopvac(work.path())
+        .timeout(std::time::Duration::from_secs(20))
+        .args(["genre", "trap.md"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[input-unreadable]: trap.md: cannot read",
+        ));
+}
+
+/// Hostile file names and how a diagnostic must show them: each control or bidi character as
+/// a `\u{..}` escape, so the name cannot move the cursor, start a line or reorder text.
+const HOSTILE_NAMES: [(&str, &str); 3] = [
+    ("x\u{1b}[2Jy.md", "x\\u{1b}[2Jy.md"),
+    ("x\ny.md", "x\\u{a}y.md"),
+    ("x\u{202e}y.md", "x\\u{202e}y.md"),
+];
+
+fn assert_one_clean_line(err: &str) {
+    assert_eq!(err.lines().count(), 1, "{err:?}");
+    assert!(
+        !err.chars().any(|c| c.is_control() && c != '\n') && !err.contains('\u{202e}'),
+        "{err:?}"
+    );
+}
+
+#[rstest::rstest]
+#[case::escape(0)]
+#[case::newline(1)]
+#[case::bidi(2)]
+fn genre_escapes_a_hostile_name_in_the_too_large_refusal(#[case] which: usize) {
+    let (name, shown) = HOSTILE_NAMES[which];
+    let work = tempfile::tempdir().unwrap();
+    sparse(&work.path().join(name), DOCUMENT_CAP + 1);
+    let out = slopvac(work.path()).args(["genre", name]).output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        err,
+        format!("error[document-too-large]: {shown}: larger than the 64 MiB document limit\n")
+    );
+    assert_one_clean_line(&err);
+}
+
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::escape(0)]
+#[case::newline(1)]
+#[case::bidi(2)]
+fn genre_escapes_a_hostile_name_in_the_unreadable_refusal(#[case] which: usize) {
+    let (name, shown) = HOSTILE_NAMES[which];
+    let work = tempfile::tempdir().unwrap();
+    let made = std::process::Command::new("mkfifo")
+        .arg(work.path().join(name))
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success());
+    let out = slopvac(work.path())
+        .timeout(std::time::Duration::from_secs(20))
+        .args(["genre", name])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        err,
+        format!("error[input-unreadable]: {shown}: cannot read\n")
+    );
+    assert_one_clean_line(&err);
+}
+
 #[test]
 fn validate_names_a_missing_external_document_without_its_directories() {
     let work = tempfile::tempdir().unwrap();

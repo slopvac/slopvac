@@ -12,7 +12,7 @@ use std::sync::Arc;
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
 use slopvac_comments::Language;
-use slopvac_context::{GenreRegistry, ResolveOptions, TagIndex, TagRegistry};
+use slopvac_context::{DeclaredGenre, GenreRegistry, ResolveOptions, TagIndex, TagRegistry};
 use slopvac_diagrams::{
     Extraction, ExtractionStatus, Format as DiagramFormat, Signal, extract, extract_fenced,
 };
@@ -87,6 +87,13 @@ pub struct Input<'a> {
     pub kind: Kind,
     /// How a leading byte order mark counts in columns.
     pub bom: BomMode,
+    /// The path relative to the project root, for matching `[[genres]]` file patterns. When
+    /// unset, patterns match against [`Input::path`].
+    pub relative_path: Option<&'a str>,
+    /// The genre the document declares for itself, as the config reader validated it and the
+    /// project's front matter policy allows. The engine never reads a genre from the raw
+    /// front matter; without this, a document declares none.
+    pub declared_genre: Option<&'a str>,
 }
 
 impl<'a> Input<'a> {
@@ -98,7 +105,24 @@ impl<'a> Input<'a> {
             source,
             kind: Kind::Markdown,
             bom: BomMode::Disk,
+            relative_path: None,
+            declared_genre: None,
         }
+    }
+
+    /// The same input with the genre its front matter declares, already validated against
+    /// the project's policy.
+    #[must_use]
+    pub const fn with_declared_genre(mut self, genre: &'a str) -> Self {
+        self.declared_genre = Some(genre);
+        self
+    }
+
+    /// The same input with its path relative to the project root.
+    #[must_use]
+    pub const fn with_relative_path(mut self, relative_path: &'a str) -> Self {
+        self.relative_path = Some(relative_path);
+        self
     }
 
     /// The same input with another file kind.
@@ -916,6 +940,7 @@ impl Engine {
         let mut findings = run.lexical()?;
         // Code-comment mode runs the lexical rules only; `comment_notice` lists the rest.
         let mut diagram_notices = Vec::new();
+        let mut seen = tags.kinds_seen();
         if !matches!(input.kind, Kind::Comments(_)) {
             findings.extend(run.vocabulary()?);
             findings.extend(run.term_casing()?);
@@ -925,6 +950,7 @@ impl Engine {
             findings.extend(diagrams.findings);
             extra.extend(diagrams.unchecked);
             diagram_notices = diagrams.notices;
+            seen.extend(run.holds_diagram().then_some(slopvac_diagrams::CONTEXT));
         }
         findings.extend(run.invalid_directives()?);
         // Lookups that passed their budget answered nothing, so nothing found above stands.
@@ -943,7 +969,7 @@ impl Engine {
             self.not_run_notices(&genre.id)?
         };
         notices.extend(extra);
-        let document = self.document(input, &prepared, &tags, genre, findings, notices);
+        let document = self.document(input, &prepared, seen, genre, findings, notices);
         Ok((document, diagram_notices))
     }
 
@@ -979,7 +1005,8 @@ impl Engine {
         };
         let opts = ResolveOptions {
             assignments,
-            relative_path: None,
+            relative_path: input.relative_path,
+            declared: DeclaredGenre::Given(input.declared_genre),
         };
         let found = tagging::genre(
             registry,
@@ -1174,18 +1201,17 @@ impl Engine {
         &self,
         input: &Input<'_>,
         prepared: &Prepared<'_>,
-        tags: &TagIndex,
+        mut seen: Vec<&str>,
         genre: GenreResult,
         findings: Vec<Finding>,
         extra: Vec<Notice>,
     ) -> Document {
         let words = prepared.words();
-        let mut seen = tags.kinds_seen();
         if matches!(input.kind, Kind::Comments(_)) && !prepared.blocks().is_empty() {
             seen.push(COMMENT_CONTEXT);
-            seen.sort_unstable();
-            seen.dedup();
         }
+        seen.sort_unstable();
+        seen.dedup();
         let mut unchecked = extra;
         // Code-comment mode runs no vocabulary rule, so it has no vocabulary notice.
         if !matches!(input.kind, Kind::Comments(_)) {
@@ -1874,6 +1900,19 @@ impl Run<'_> {
     /// Findings of diagram rules, over diagram files and fenced diagram blocks, a warning
     /// notice for each diagram that was malformed or over a limit, and an info notice for
     /// each diagram of an unsupported type.
+    /// Whether the input is a diagram file or holds a fenced diagram, so its labels are a
+    /// context the document has. Reads the parsed fences only, whether or not a checker runs.
+    fn holds_diagram(&self) -> bool {
+        matches!(self.input.kind, Kind::Diagram(_))
+            || self.parsed.blocks.iter().any(|block| {
+                matches!(
+                    &block.kind,
+                    BlockKind::CodeBlock { lang: Some(lang), fenced: true, .. }
+                        if DiagramFormat::from_lang(lang).is_some()
+                )
+            })
+    }
+
     fn diagrams(&self) -> Result<DiagramResult, EngineError> {
         let engine = self.engine;
         // A checker none of whose rules applies to the document's genre does not run. One that

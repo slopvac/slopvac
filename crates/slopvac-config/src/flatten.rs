@@ -1,13 +1,15 @@
 //! Turn a validated tree into the leaf settings a layer contributes.
 
-use crate::source::{Layer, Setting, Source};
+use slopvac_model::ConfigLayer;
+
+use crate::source::{Setting, located_source};
 use crate::tree::{LineIndex, Node, Value};
 
 /// Where the settings of one document live.
 #[derive(Debug, Clone, Copy)]
 pub struct Origin<'a> {
     /// The layer the settings belong to.
-    pub layer: Layer,
+    pub layer: ConfigLayer,
     /// Path shown in provenance, relative to the project root.
     pub file: &'a str,
     /// The full text the tree's spans index into.
@@ -48,12 +50,7 @@ fn walk(
         }
         path.push(e.key.clone());
         let (line, column) = lines.line_col(e.key_span.start);
-        let source = Source {
-            layer: origin.layer,
-            file: Some(origin.file.to_owned()),
-            line: Some(line),
-            column: Some(column),
-        };
+        let source = located_source(origin.layer, Some(origin.file.to_owned()), line, column);
         let bare_profile = path.as_slice() == ["profile"];
         let bare_category = matches!(path.as_slice(), [c, _] if c == "categories");
         match &e.node.value {
@@ -79,6 +76,8 @@ fn walk(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use super::*;
     use crate::tree::parse_toml;
     use serde_json::json;
@@ -88,7 +87,7 @@ mod tests {
         flatten(
             &root,
             Origin {
-                layer: Layer::Project,
+                layer: ConfigLayer::Project,
                 file: "slopvac.toml",
                 text,
             },
@@ -134,7 +133,10 @@ mod tests {
     fn source_points_at_the_key() {
         let s = settings("locale = \"en-GB\"\n\n[thresholds]\nmax_errors = 2\n");
         let src = &find(&s, &["thresholds", "max_errors"]).source;
-        assert_eq!((src.line, src.column), (Some(4), Some(1)));
+        assert_eq!(
+            (src.line, src.column),
+            (NonZeroUsize::new(4), NonZeroUsize::new(1))
+        );
         assert_eq!(src.file.as_deref(), Some("slopvac.toml"));
     }
 }

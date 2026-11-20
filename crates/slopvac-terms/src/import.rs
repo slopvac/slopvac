@@ -3,6 +3,7 @@
 use serde::Deserialize;
 
 use crate::TermsError;
+use crate::messages::TermsText;
 
 /// A word list in another tool's format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,8 +119,7 @@ pub fn parse(path: &str, source: Source, text: &str) -> Result<Imported, TermsEr
             if ext.is_some_and(|e| e == "yml" || e == "yaml") {
                 return Err(TermsError::Parse {
                     path: path.to_owned(),
-                    message: "cspell YAML configs are not supported; convert the file to JSON"
-                        .to_owned(),
+                    message: TermsText::CspellYaml.to_string(),
                 });
             }
             let cfg: Cspell = serde_json::from_str(&strip_json_comments(text)).map_err(|e| {
@@ -157,21 +157,19 @@ pub fn parse(path: &str, source: Source, text: &str) -> Result<Imported, TermsEr
 /// `pyproject.toml`. An unbalanced quote or a TOML array is an error, so the
 /// import stops before it changes anything.
 fn unquote<'a>(path: &str, value: &'a str) -> Result<&'a str, TermsError> {
-    let bad = |message: &str| TermsError::Parse {
+    let bad = |message: TermsText| TermsError::Parse {
         path: path.to_owned(),
-        message: format!("ignore-words-list: {message}"),
+        message: message.to_string(),
     };
     if value.starts_with('[') {
-        return Err(bad(
-            "TOML arrays are not supported; use a comma-separated string",
-        ));
+        return Err(bad(TermsText::IgnoreWordsArray));
     }
     for q in ['"', '\''] {
         if value.starts_with(q) || value.ends_with(q) {
             return value
                 .strip_prefix(q)
                 .and_then(|v| v.strip_suffix(q))
-                .ok_or_else(|| bad("unbalanced quote"));
+                .ok_or_else(|| bad(TermsText::IgnoreWordsQuote));
         }
     }
     Ok(value)

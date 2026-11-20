@@ -5,7 +5,10 @@ use std::path::PathBuf;
 
 use slopvac_config::ConfigError;
 use slopvac_config::schema::{Shape, config_shape};
+use slopvac_messages::Catalog;
 use slopvac_model::{KebabName, NonEmptyString, Notice, NoticeLevel};
+
+use crate::messages::{self, AgentsMessage, AgentsText, codes};
 
 /// A setup or steering failure. Each variant has a stable kebab-case code.
 ///
@@ -15,24 +18,22 @@ use slopvac_model::{KebabName, NonEmptyString, Notice, NoticeLevel};
 #[derive(Debug, thiserror::Error)]
 pub enum AgentsError {
     /// The target escapes the project or is not a Markdown file.
-    #[error("unsafe steering target: {0}")]
+    #[error("{}", messages::unsafe_target(.0))]
     UnsafeTarget(String),
     /// The begin/end markers are missing one half or repeated.
-    #[error("malformed or ambiguous slopvac markers in {0}; repair the begin/end pair first")]
+    #[error("{}", messages::markers_malformed(.0))]
     MalformedMarkers(PathBuf),
     /// The file has an unterminated code fence that would hide the block.
-    #[error(
-        "{0} has an unterminated code fence that would hide the slopvac block; close the fence first"
-    )]
+    #[error("{}", messages::fence_unclosed(.0))]
     UnclosedFence(PathBuf),
     /// The file is not UTF-8.
-    #[error("steering must be UTF-8: {0}")]
+    #[error("{}", messages::not_utf8(.0))]
     NotUtf8(PathBuf),
     /// The file changed between read and write.
-    #[error("file changed during setup; retry: {0}")]
+    #[error("{}", messages::conflict(.0))]
     Conflict(PathBuf),
     /// The path holds a file slopvac did not write.
-    #[error("{0} is not a slopvac-managed file; move it aside to install it")]
+    #[error("{}", messages::not_managed(.0))]
     NotManaged(PathBuf),
     /// A usage mistake.
     #[error("{0}")]
@@ -58,10 +59,10 @@ pub enum AgentsError {
         source: ConfigFailure,
     },
     /// `slopvac-text` failed to segment or tokenize.
-    #[error("text segmentation failed: {0}")]
+    #[error("{}", messages::text_failed(.0))]
     Text(#[from] slopvac_text::TextError),
     /// A step failed after earlier files were already written.
-    #[error("{source}; already changed: {}", changed.join(", "))]
+    #[error("{}", messages::partial(.source, .changed))]
     Partial {
         /// Display paths of the files written before the failure.
         changed: Vec<String>,
@@ -70,7 +71,7 @@ pub enum AgentsError {
         source: Box<AgentsError>,
     },
     /// An I/O failure.
-    #[error("{path}: {source}")]
+    #[error("{}", messages::io_failure(.path, .source))]
     Io {
         /// The file involved.
         path: PathBuf,
@@ -166,9 +167,13 @@ impl fmt::Display for ConfigFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {
             // The path is the one the caller gave and the reason is a fixed phrase.
-            ConfigError::Io { .. } | ConfigError::TooLarge { .. } => {
-                write!(f, "error[{}]: {}", self.code(), self.0)
-            }
+            ConfigError::Io { .. } | ConfigError::TooLarge { .. } => f.write_str(
+                &AgentsText::ConfigFailureLine {
+                    code: self.code().to_owned(),
+                    message: self.0.to_string(),
+                }
+                .to_string(),
+            ),
             ConfigError::Rejected(r) => {
                 for (i, d) in r.diagnostics.iter().enumerate() {
                     if i > 0 {
@@ -176,11 +181,15 @@ impl fmt::Display for ConfigFailure {
                     }
                     let (line, col) = d.location(&r.text);
                     let key = redacted_pointer(&d.path);
-                    write!(
-                        f,
-                        "error[{}]: invalid setting {key} at {}:{line}:{col}",
-                        d.code.as_str(),
-                        r.file
+                    f.write_str(
+                        &AgentsText::ConfigInvalidSetting {
+                            code: d.code.as_str().to_owned(),
+                            key,
+                            file: r.file.clone(),
+                            line,
+                            column: col,
+                        }
+                        .to_string(),
                     )?;
                 }
                 Ok(())
@@ -212,16 +221,16 @@ impl AgentsError {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
-            Self::UnsafeTarget(_) => "steering-unsafe-target",
-            Self::MalformedMarkers(_) | Self::UnclosedFence(_) => "steering-malformed",
-            Self::NotUtf8(_) => "steering-not-utf8",
-            Self::Conflict(_) => "steering-conflict",
-            Self::NotManaged(_) => "steering-not-managed",
-            Self::Usage(_) => "setup-usage",
+            Self::UnsafeTarget(_) => codes::UNSAFE_TARGET,
+            Self::MalformedMarkers(_) | Self::UnclosedFence(_) => codes::MALFORMED,
+            Self::NotUtf8(_) => codes::NOT_UTF8,
+            Self::Conflict(_) => codes::CONFLICT,
+            Self::NotManaged(_) => codes::NOT_MANAGED,
+            Self::Usage(_) => codes::USAGE,
             Self::Coded { code, .. } | Self::Config { code, .. } => code,
             Self::Partial { source, .. } => source.code(),
-            Self::Text(_) => "claims-text-failed",
-            Self::Io { .. } => "setup-io",
+            Self::Text(_) => codes::TEXT_FAILED,
+            Self::Io { .. } => codes::IO,
         }
     }
 
@@ -235,6 +244,24 @@ impl AgentsError {
         }
     }
 
+    /// A refusal with the stable code and the rendered text of `message`.
+    pub(crate) fn coded(message: &AgentsMessage) -> Self {
+        Self::Coded {
+            code: message.code(),
+            message: message.to_string(),
+        }
+    }
+
+    /// A usage failure with the text `message`.
+    pub(crate) fn usage(message: impl Into<String>) -> Self {
+        Self::Usage(
+            AgentsMessage::Usage {
+                message: message.into(),
+            }
+            .to_string(),
+        )
+    }
+
     pub(crate) fn io(path: impl Into<PathBuf>, source: std::io::Error) -> Self {
         Self::Io {
             path: path.into(),
@@ -243,23 +270,22 @@ impl AgentsError {
     }
 }
 
-/// Build a [`Notice`] for the workflows in this crate.
+/// Build a [`Notice`] from a notice message of the catalog.
 ///
 /// # Errors
 /// The code is not kebab-case or the message is empty. Both are coding mistakes.
-pub(crate) fn notice(
-    code: &'static str,
-    level: NoticeLevel,
-    message: String,
-) -> Result<Notice, AgentsError> {
-    let invalid = |what: String| AgentsError::Coded {
-        code: "agents-notice-invalid",
-        message: format!("cannot build notice {code}: {what}"),
+pub(crate) fn notice(level: NoticeLevel, message: &AgentsMessage) -> Result<Notice, AgentsError> {
+    let code = message.code();
+    let invalid = |what: String| {
+        AgentsError::coded(&AgentsMessage::NoticeInvalid {
+            notice_code: code.to_owned(),
+            reason: what,
+        })
     };
     Ok(Notice {
         code: KebabName::new(code).map_err(|e| invalid(e.to_string()))?,
         level,
-        message: NonEmptyString::new(message).map_err(|e| invalid(e.to_string()))?,
+        message: NonEmptyString::new(message.to_string()).map_err(|e| invalid(e.to_string()))?,
         path: None,
         data: serde_json::Map::new(),
     })

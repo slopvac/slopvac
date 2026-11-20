@@ -18,12 +18,14 @@ html5ever = { workspace = true }
 html5gum = { workspace = true }
 markdown = { workspace = true }
 pulldown-cmark = { workspace = true }
+slopvac-messages = { workspace = true }
 slopvac-model = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 markup5ever_rcdom = { workspace = true }
 proptest = { workspace = true }
+rstest = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

@@ -24,6 +24,7 @@ mod jsexpr;
 mod markdown;
 mod mask;
 mod mdx;
+mod messages;
 mod projection;
 #[cfg(test)]
 mod work;
@@ -42,4 +43,5 @@ pub use html::{
 pub use html::{parse_html, parse_html_segments};
 pub use markdown::parse_markdown;
 pub use mdx::{mdx_syntax_spans, mdx_syntax_spans_counted, parse_mdx};
+pub use messages::message_entries;
 pub use projection::{ByteMapper, Projection, Token, TokenKind};

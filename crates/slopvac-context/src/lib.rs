@@ -26,9 +26,9 @@ pub use cli::{command, render, run};
 pub use declarative::{DeclarativeTagger, Matcher, TaggerSpec, Unit};
 pub use declared::{DeclaredContextTagger, context_hint};
 pub use genre::{
-    Budget, CategorySettings, CategoryTable, Detect, GenreAssignment, GenreRegistry, GenreResult,
-    GenreSource, GenreSpec, NoBudget, Profile, Reason, ResolveOptions, RuleLevel, Scalar, Signal,
-    SignalKind, files_match, parse_genres,
+    Budget, CategorySettings, CategoryTable, DeclaredGenre, Detect, GenreAssignment, GenreRegistry,
+    GenreResult, GenreSource, GenreSpec, NoBudget, Profile, Reason, ResolveOptions, RuleLevel,
+    Scalar, Signal, SignalKind, parse_genres,
 };
 pub use mixed::mixed_types_entry;
 pub use pattern::{Pattern, normalize_path};
@@ -124,6 +124,21 @@ pub enum Error {
         /// The OS error.
         #[source]
         source: std::io::Error,
+    },
+    /// A file is larger than the document size cap, so none of it was read.
+    #[error("{}: larger than the {cap}-byte document limit", slopvac_sanitize::line(.path))]
+    TooLarge {
+        /// The path as given.
+        path: String,
+        /// The cap in bytes, `slopvac_fs::MAX_DOCUMENT_BYTES`.
+        cap: u64,
+    },
+    /// A file was refused without a read: it is not a regular file, or it could not be opened
+    /// safely.
+    #[error("{}: cannot read", slopvac_sanitize::line(.path))]
+    Unreadable {
+        /// The path as given.
+        path: String,
     },
     /// A data file did not parse or validate.
     #[error("{}", slopvac_sanitize::line(.0))]

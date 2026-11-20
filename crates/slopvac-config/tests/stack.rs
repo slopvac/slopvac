@@ -3,12 +3,13 @@
 mod common;
 
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value as Json, json};
 use slopvac_config::{
-    BudgetData, Code, ConfigBudget, ConfigError, Discovery, Inputs, Layer, LoadedConfig, NoPresets,
-    PackFile, Presets, Setting, Source, load,
+    BudgetData, Code, ConfigBudget, ConfigError, ConfigLayer, ConfigSource, Discovery, Inputs,
+    LoadedConfig, NoPresets, PackFile, Presets, Setting, bare_source, load,
 };
 use tempfile::TempDir;
 
@@ -56,12 +57,12 @@ fn rejected(err: ConfigError) -> slopvac_config::Rejected {
     }
 }
 
-fn src(layer: Layer, file: &str, line: usize, column: usize) -> Source {
-    Source {
+fn src(layer: ConfigLayer, file: &str, line: usize, column: usize) -> ConfigSource {
+    ConfigSource {
         layer,
         file: Some(file.into()),
-        line: Some(line),
-        column: Some(column),
+        line: NonZeroUsize::new(line),
+        column: NonZeroUsize::new(column),
     }
 }
 
@@ -76,9 +77,9 @@ fn each_layer_wins_over_the_one_below_and_names_its_origin() {
     let front = [Setting {
         path: vec!["locale".into()],
         value: json!("und"),
-        source: src(Layer::FrontMatter, "docs/a.md", 3, 3),
+        source: src(ConfigLayer::FrontMatter, "docs/a.md", 3, 3),
     }];
-    let cli = [Setting::bare(Layer::Cli, &["locale"], json!("en-GB"))];
+    let cli = [Setting::bare(ConfigLayer::Cli, &["locale"], json!("en-GB"))];
 
     let at = |rel: &str, i: &Inputs<'_>| cfg.resolve(Path::new(rel), i);
 
@@ -86,14 +87,14 @@ fn each_layer_wins_over_the_one_below_and_names_its_origin() {
     assert_eq!(plain.get(&["locale"]), Some(&json!("en-GB")));
     assert_eq!(
         plain.source(&["locale"]),
-        Some(&src(Layer::Project, "slopvac.toml", 2, 1))
+        Some(&src(ConfigLayer::Project, "slopvac.toml", 2, 1))
     );
 
     let scoped = at("docs/a.md", &inputs(&NoPresets));
     assert_eq!(scoped.get(&["locale"]), Some(&json!("en-US")));
     assert_eq!(
         scoped.source(&["locale"]),
-        Some(&src(Layer::Override, "slopvac.toml", 6, 1))
+        Some(&src(ConfigLayer::Override, "slopvac.toml", 6, 1))
     );
 
     let with_front = at(
@@ -116,7 +117,7 @@ fn each_layer_wins_over_the_one_below_and_names_its_origin() {
     assert_eq!(with_cli.get(&["locale"]), Some(&json!("en-GB")));
     assert_eq!(
         with_cli.source(&["locale"]),
-        Some(&Source::bare(Layer::Cli))
+        Some(&bare_source(ConfigLayer::Cli))
     );
 }
 
@@ -128,7 +129,7 @@ fn core_defaults_apply_when_no_layer_sets_a_key() {
     assert_eq!(r.get(&["profile", "name"]), Some(&json!("normal")));
     assert_eq!(
         r.source(&["profile", "name"]),
-        Some(&Source::bare(Layer::Core))
+        Some(&bare_source(ConfigLayer::Core))
     );
     assert_eq!(
         r.get(&["frontmatter", "allow"]),
@@ -199,8 +200,8 @@ fn overrides_apply_in_file_order_and_the_last_writer_wins() {
     assert_eq!(both.get(&["locale"]), Some(&json!("en-US")));
     let history = both.history(&["locale"]);
     assert_eq!(history.len(), 2);
-    assert_eq!(history[0].source.line, Some(5));
-    assert_eq!(history[1].source.line, Some(9));
+    assert_eq!(history[0].source.line, NonZeroUsize::new(5));
+    assert_eq!(history[1].source.line, NonZeroUsize::new(9));
 }
 
 #[test]
@@ -253,7 +254,7 @@ fn extends_apply_in_list_order_and_the_extender_wins() {
     assert_eq!(r.get(&["thresholds", "max_warnings"]), Some(&json!(9)));
     assert_eq!(
         r.source(&["thresholds", "max_errors"]),
-        Some(&src(Layer::Extends, "../shared/b.toml", 3, 1))
+        Some(&src(ConfigLayer::Extends, "../shared/b.toml", 3, 1))
     );
     assert_eq!(r.get(&["locale"]), Some(&json!("en-US")));
 }
@@ -350,7 +351,7 @@ fn offline_is_sticky_across_every_layer() {
     );
     let cfg = load_at(&fx, "slopvac.toml");
     let cli = [Setting::bare(
-        Layer::Cli,
+        ConfigLayer::Cli,
         &["network", "offline"],
         json!(false),
     )];
@@ -364,7 +365,7 @@ fn offline_is_sticky_across_every_layer() {
     assert!(r.is_offline());
     assert_eq!(
         r.source(&["network", "offline"]),
-        Some(&src(Layer::Project, "slopvac.toml", 4, 1))
+        Some(&src(ConfigLayer::Project, "slopvac.toml", 4, 1))
     );
     assert_eq!(r.to_json()["network"]["offline"], json!(true));
 }
@@ -378,7 +379,7 @@ fn an_environment_switch_turns_offline_on_over_a_file_that_says_false() {
     );
     let cfg = load_at(&fx, "slopvac.toml");
     let env = [Setting::bare(
-        Layer::Env,
+        ConfigLayer::Env,
         &["network", "offline"],
         json!(true),
     )];
@@ -392,7 +393,7 @@ fn an_environment_switch_turns_offline_on_over_a_file_that_says_false() {
     assert!(r.is_offline());
     assert_eq!(
         r.source(&["network", "offline"]),
-        Some(&Source::bare(Layer::Env))
+        Some(&bare_source(ConfigLayer::Env))
     );
     assert!(
         !cfg.resolve(Path::new("a.md"), &inputs(&NoPresets))
@@ -433,12 +434,15 @@ fn explain_lists_the_values_a_key_replaced() {
         .find(|e| e.path == "locale")
         .unwrap();
     assert_eq!(locale.value, json!("en-US"));
-    assert_eq!(locale.source, src(Layer::Override, "slopvac.toml", 6, 1));
+    assert_eq!(
+        locale.source,
+        src(ConfigLayer::Override, "slopvac.toml", 6, 1)
+    );
     assert_eq!(locale.overridden.len(), 1);
     assert_eq!(locale.overridden[0].value, json!("en-GB"));
     assert_eq!(
         locale.overridden[0].source,
-        src(Layer::Project, "slopvac.toml", 2, 1)
+        src(ConfigLayer::Project, "slopvac.toml", 2, 1)
     );
 }
 
@@ -448,8 +452,12 @@ impl Presets for Packs {
     fn style(&self, name: &str) -> Option<Vec<Setting>> {
         (name == "acme:house").then(|| {
             vec![
-                Setting::bare(Layer::Style, &["locale"], json!("en-US")),
-                Setting::bare(Layer::Style, &["rules", "core:one"], json!("suggestion")),
+                Setting::bare(ConfigLayer::Style, &["locale"], json!("en-US")),
+                Setting::bare(
+                    ConfigLayer::Style,
+                    &["rules", "core:one"],
+                    json!("suggestion"),
+                ),
             ]
         })
     }
@@ -457,9 +465,13 @@ impl Presets for Packs {
     fn genre_chain(&self, name: &str) -> Vec<Vec<Setting>> {
         if name == "reference" {
             vec![
-                vec![Setting::bare(Layer::Genre, &["locale"], json!("en-GB"))],
                 vec![Setting::bare(
-                    Layer::Genre,
+                    ConfigLayer::Genre,
+                    &["locale"],
+                    json!("en-GB"),
+                )],
+                vec![Setting::bare(
+                    ConfigLayer::Genre,
                     &["rules", "core:one"],
                     json!("error"),
                 )],
@@ -489,7 +501,7 @@ fn styles_then_genre_sit_below_extends_and_the_project() {
     assert_eq!(plain.get(&["locale"]), Some(&json!("en-US")));
     assert_eq!(
         plain.source(&["locale"]).map(|s| s.layer),
-        Some(Layer::Style)
+        Some(ConfigLayer::Style)
     );
     assert_eq!(
         plain.get(&["rules", "core:one"]),
@@ -511,7 +523,7 @@ fn a_front_matter_genre_picks_the_genre_chain() {
     let front = [Setting {
         path: vec!["genre".into()],
         value: json!("reference"),
-        source: Source::bare(Layer::FrontMatter),
+        source: bare_source(ConfigLayer::FrontMatter),
     }];
     let r = cfg.resolve(
         Path::new("a.md"),
@@ -723,7 +735,11 @@ fn a_flag_can_pick_the_genre_before_its_chain_loads() {
     let fx = Fixture::new();
     fx.write("slopvac.toml", "schema_version = 3\n");
     let cfg = load(&fx.root().join("slopvac.toml"), &Packs).unwrap();
-    let cli = [Setting::bare(Layer::Cli, &["genre"], json!("reference"))];
+    let cli = [Setting::bare(
+        ConfigLayer::Cli,
+        &["genre"],
+        json!("reference"),
+    )];
     let r = cfg.resolve(
         Path::new("a.md"),
         &Inputs {
@@ -774,7 +790,7 @@ fn a_budget_of_none_clears_the_budget_of_a_lower_layer() {
     );
     let history = cleared.history(&["categories", "prose", "max_per_100_words"]);
     assert_eq!(history[0].value, json!(2.5));
-    assert_eq!(history[1].source.layer, Layer::Override);
+    assert_eq!(history[1].source.layer, ConfigLayer::Override);
 }
 
 struct Styled(Vec<Setting>);
@@ -794,7 +810,7 @@ impl Presets for Styled {
 }
 
 fn style_rule(path: &[&str], level: &str) -> Setting {
-    Setting::bare(Layer::Style, path, json!(level))
+    Setting::bare(ConfigLayer::Style, path, json!(level))
 }
 
 /// A name, the style settings, the config body, and the expected level with its entry kind.
@@ -873,7 +889,7 @@ fn level_precedence_follows_the_profile_contract() {
         let cfg = load(&fx.root().join("slopvac.toml"), &presets).unwrap();
         let r = cfg.resolve(Path::new("a.md"), &inputs(&presets));
         let got = r.level("core:r", Some("cat")).map(|l| (l.level, l.from));
-        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+        assert_eq!(got, want.map(|(l, f)| (named_level(l), f)), "{name}");
     }
 }
 
@@ -933,7 +949,7 @@ fn level_by_any_key_follows_layers_not_spelling() {
         let got = r
             .level_by_any(&["core:r", "r"], &["core:cat", "cat"])
             .map(|l| (l.level, l.from));
-        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+        assert_eq!(got, want.map(|(l, f)| (named_level(l), f)), "{name}");
     }
 }
 
@@ -1008,7 +1024,7 @@ fn level_by_any_breaks_ties_and_merges_floors_across_spellings() {
         let cfg = load(&fx.root().join("slopvac.toml"), &NoPresets).unwrap();
         let r = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
         let got = r.level_by_any(rules, categories).map(|l| (l.level, l.from));
-        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+        assert_eq!(got, want.map(|(l, f)| (named_level(l), f)), "{name}");
     }
 }
 
@@ -1086,7 +1102,7 @@ fn an_extends_path_in_plain_drive_form_shows_relative_to_a_verbatim_root() {
     let r = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
     assert_eq!(
         r.source(&["locale"]),
-        Some(&src(Layer::Extends, "../shared/base.toml", 2, 1))
+        Some(&src(ConfigLayer::Extends, "../shared/base.toml", 2, 1))
     );
 }
 
@@ -1602,4 +1618,16 @@ fn blocks_split_across_both_tables_count_together() {
     let p = fx.write("slopvac.toml", &text);
     let data = budget_data(load(&p, &NoPresets).unwrap_err());
     assert_eq!(data.budget, ConfigBudget::FileBlocks);
+}
+
+/// The resolved level that a case table spells as `error`, `warning`, `suggestion` or `off`.
+fn named_level(name: &str) -> slopvac_config::ConfigLevel {
+    use slopvac_config::{ConfigLevel, Severity};
+    match name {
+        "off" => ConfigLevel::Off,
+        "suggestion" => ConfigLevel::On(Severity::Suggestion),
+        "warning" => ConfigLevel::On(Severity::Warning),
+        "error" => ConfigLevel::On(Severity::Error),
+        other => panic!("unknown level {other}"),
+    }
 }

@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
+use crate::messages::TermsText;
 use crate::{EntryProblem, TermsError};
 
 /// One term.
@@ -41,24 +42,28 @@ impl TermEntry {
             problem,
         };
         if self.term.trim().is_empty() {
-            return Err(err(EntryProblem::MissingWord, "term is empty".to_owned()));
+            return Err(err(
+                EntryProblem::MissingWord,
+                TermsText::TermEmpty.to_string(),
+            ));
         }
         if self.ignore_case && self.case_sensitive {
             return Err(err(
                 EntryProblem::ConflictingCasing,
-                format!(
-                    "term `{}` sets both ignore_case and case_sensitive",
-                    self.term
-                ),
+                TermsText::ConflictingCasing {
+                    term: self.term.clone(),
+                }
+                .to_string(),
             ));
         }
         if let Some(kind) = self.kind.as_deref().filter(|k| !is_kebab_label(k)) {
             return Err(err(
                 EntryProblem::BadKind,
-                format!(
-                    "term `{}` has kind {kind:?}; use a kebab-case label such as `product`",
-                    self.term
-                ),
+                TermsText::BadKind {
+                    term: self.term.clone(),
+                    kind: format!("{kind:?}"),
+                }
+                .to_string(),
             ));
         }
         let mut variants = BTreeSet::new();
@@ -66,13 +71,20 @@ impl TermEntry {
             if v.is_empty() {
                 return Err(err(
                     EntryProblem::BadVariant,
-                    format!("term `{}` has an empty variant", self.term),
+                    TermsText::EmptyVariant {
+                        term: self.term.clone(),
+                    }
+                    .to_string(),
                 ));
             }
             if !variants.insert(v.as_str()) {
                 return Err(err(
                     EntryProblem::BadVariant,
-                    format!("term `{}` lists variant `{v}` twice", self.term),
+                    TermsText::RepeatedVariant {
+                        term: self.term.clone(),
+                        variant: v.clone(),
+                    }
+                    .to_string(),
                 ));
             }
         }
@@ -165,7 +177,7 @@ impl TermsFile {
         let Some(raw_terms) = raw.terms else {
             return Err(TermsError::Parse {
                 path: path.to_owned(),
-                message: "missing `terms` array; use `terms = []` for an empty list".to_owned(),
+                message: TermsText::MissingTermsArray.to_string(),
             });
         };
         let mut seen = BTreeSet::new();
@@ -185,7 +197,7 @@ impl TermsFile {
                 return Err(entry_err(
                     EntryProblem::MissingWord,
                     i + 1,
-                    format!("term {} is empty", i + 1),
+                    TermsText::TermEmptyAt { number: i + 1 }.to_string(),
                 ));
             }
             entry.validate(path).map_err(|e| e.at_entry(i + 1))?;
@@ -193,7 +205,10 @@ impl TermsFile {
                 return Err(entry_err(
                     EntryProblem::Duplicate,
                     i + 1,
-                    format!("duplicate term `{}`", entry.term),
+                    TermsText::DuplicateTerm {
+                        term: entry.term.clone(),
+                    }
+                    .to_string(),
                 ));
             }
             terms.push(entry);
