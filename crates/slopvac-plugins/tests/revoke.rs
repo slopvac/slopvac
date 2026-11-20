@@ -7,6 +7,7 @@
 
 mod oci_server;
 mod revocations;
+mod support;
 
 use std::collections::HashSet;
 use std::fs;
@@ -26,7 +27,9 @@ use slopvac_plugins::revoke::{
     ARTIFACT_TYPE_REVOCATIONS, MEDIA_REVOCATIONS, RevocationError, RevocationList,
     RevocationNotice, Revocations, Revoked,
 };
-use slopvac_plugins::sign::{MEDIA_MINISIG, PublicKey, RotationProof, SignError, verify_rotation};
+use slopvac_plugins::sign::{
+    MEDIA_MINISIG, PublicKey, RotationProof, SignError, plugins_key, verify_rotation,
+};
 use slopvac_plugins::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
 use slopvac_plugins::{PluginError, PluginSpec, SpawnGate};
 
@@ -111,6 +114,16 @@ fn with_no_root_key_every_list_fails_closed() {
 }
 
 #[test]
+fn the_root_can_revoke_the_compiled_plugins_key_by_its_id() {
+    let id = plugins_key().unwrap().key_id();
+    let root = Root::new();
+    let bytes = list_json(ISSUED, EXPIRES, &[id.as_str()], &[]);
+    let list = RevocationList::verify(&bytes, &root.sign(&bytes), &[root.public()]).unwrap();
+    assert!(list.revokes_key("089DF22CF142CD2B"));
+    assert!(!list.revokes_key("D9914BDB4570AC6D"));
+}
+
+#[test]
 fn a_publisher_key_cannot_sign_a_list() {
     // The old key is a valid minisign key, but not a root.
     let err = RevocationList::verify(LIST, LIST_SIG, &[key(OLD_PUB)]).unwrap_err();
@@ -178,14 +191,14 @@ fn a_canonical_list_over_one_mib_is_refused_for_its_size() {
 
 struct Env {
     root: Root,
-    state: tempfile::TempDir,
+    state: support::Scratch,
 }
 
 impl Env {
     fn new() -> Self {
         Self {
             root: Root::new(),
-            state: tempfile::tempdir().unwrap(),
+            state: support::scratch(),
         }
     }
     fn at(&self, source: Reference, now: &str) -> Revocations {
@@ -438,7 +451,7 @@ fn k6_a_refresh_compares_and_replaces_under_the_cache_lock() {
         &[],
     )));
     // The cache file another process would write for a newer list.
-    let newer_state = tempfile::tempdir().unwrap();
+    let newer_state = support::scratch();
     let newer = ListServer::start(Some(env.list(
         "2026-11-05T00:00:00Z",
         "2026-12-05T00:00:00Z",
@@ -495,7 +508,7 @@ const EQ_B_SIG: &str = include_str!("fixtures/revoke/equivocation.b.minisig");
 fn k6_a_different_list_with_the_same_issued_time_is_refused_and_the_cache_kept() {
     // Two authentic root-signed lists with one `issued` time: `a` revokes a
     // digest, `b` revokes nothing. `b` must not undo `a`.
-    let state = tempfile::tempdir().unwrap();
+    let state = support::scratch();
     let server = ListServer::start(Some(Signed {
         statement: EQ_A.to_vec(),
         minisig: EQ_A_SIG.into(),
@@ -705,7 +718,7 @@ fn tm26_a_revocation_cached_after_the_gate_was_built_stops_the_same_gate() {
     ];
     for (what, keys, digests) in cases {
         let env = Env::new();
-        let trees = tempfile::tempdir().unwrap();
+        let trees = support::scratch();
         let vp = install(trees.path(), MANIFEST, NEW_KEY_ID);
         let spec = spec_for(&vp);
         let gate = gate(&env, &vp, "2026-11-02T00:00:00Z");
@@ -736,7 +749,7 @@ fn tm26_a_revocation_cached_after_the_gate_was_built_stops_the_same_gate() {
 #[test]
 fn tm26_a_list_that_names_other_things_lets_the_plugin_run_and_flags_nothing() {
     let env = Env::new();
-    let trees = tempfile::tempdir().unwrap();
+    let trees = support::scratch();
     let vp = install(trees.path(), MANIFEST, NEW_KEY_ID);
     let spec = spec_for(&vp);
     let other = Digest::of(b"other").to_string();
@@ -751,7 +764,7 @@ fn tm26_a_list_that_names_other_things_lets_the_plugin_run_and_flags_nothing() {
 #[test]
 fn tm27_an_expired_cache_still_revokes_a_trusted_plugin() {
     let env = Env::new();
-    let trees = tempfile::tempdir().unwrap();
+    let trees = support::scratch();
     let vp = install(trees.path(), MANIFEST, NEW_KEY_ID);
     let spec = spec_for(&vp);
     let gate = gate(&env, &vp, "2027-06-01T00:00:00Z");
@@ -764,7 +777,7 @@ fn tm27_an_expired_cache_still_revokes_a_trusted_plugin() {
 #[test]
 fn a_cache_tampered_after_the_gate_was_built_refuses_the_spawn() {
     let env = Env::new();
-    let trees = tempfile::tempdir().unwrap();
+    let trees = support::scratch();
     let vp = install(trees.path(), MANIFEST, NEW_KEY_ID);
     let spec = spec_for(&vp);
     env.warm(env.list(ISSUED, EXPIRES, &[], &[MANIFEST]));
@@ -912,7 +925,7 @@ fn pinned_ids(store: &TrustStore) -> Vec<String> {
 
 #[test]
 fn rotation_replaces_the_pin_and_sets_its_not_before() {
-    let state = tempfile::tempdir().unwrap();
+    let state = support::scratch();
     let store = TrustStore::open(state.path());
     store
         .pin_key("acme", OLD_PUB.lines().nth(1).unwrap(), FETCHED)
@@ -948,7 +961,7 @@ fn rotation_replaces_the_pin_and_sets_its_not_before() {
 
 #[test]
 fn rotation_needs_an_existing_pin() {
-    let state = tempfile::tempdir().unwrap();
+    let state = support::scratch();
     let store = TrustStore::open(state.path());
     let new = key(NEW_PUB);
     let err = store
@@ -967,7 +980,7 @@ fn rotation_needs_an_existing_pin() {
 fn k5_a_revoked_old_key_cannot_rotate_to_a_new_one() {
     // The fixture list revokes the old key: whoever stole it cannot rotate away from it.
     let list = RevocationList::verify(LIST, LIST_SIG, &[key(ROOT_PUB)]).unwrap();
-    let state = tempfile::tempdir().unwrap();
+    let state = support::scratch();
     let store = TrustStore::open(state.path());
     store
         .pin_key("acme", OLD_PUB.lines().nth(1).unwrap(), FETCHED)
@@ -1027,8 +1040,8 @@ fn rotate(store: &TrustStore, old: &Root, new: &Root, not_before: &str) -> Resul
     rotate_with(store, old, new, &statement, &RevocationList::default())
 }
 
-fn pinned_store(key: &Root) -> (tempfile::TempDir, TrustStore) {
-    let state = tempfile::tempdir().unwrap();
+fn pinned_store(key: &Root) -> (support::Scratch, TrustStore) {
+    let state = support::scratch();
     let store = TrustStore::open(state.path());
     store
         .pin_key("acme", &key.public().to_base64(), FETCHED)
@@ -1123,7 +1136,7 @@ fn an_unknown_field_name_in_a_signed_list_is_escaped_once() {
 
 #[test]
 fn the_revocation_root_defaults_to_the_compiled_release_key() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     let revocations =
         Revocations::with_compiled_root(dir.path(), offline_source(), FETCHED).unwrap();
     let ids: Vec<String> = revocations.roots().iter().map(PublicKey::key_id).collect();
@@ -1158,4 +1171,33 @@ fn the_verifier_accepts_the_list_the_publisher_script_renders() {
     assert_eq!(list.expires(), Some("2026-12-17T05:17:42Z"));
     assert!(!list.revokes_key(OLD_KEY_ID));
     assert!(!list.revokes_digest(REVOKED_DIGEST));
+}
+
+// ---- The plugins key and the revocation root ----
+
+#[test]
+fn the_plugins_key_is_not_a_revocation_root() {
+    let dir = support::scratch();
+    let revocations =
+        Revocations::with_compiled_root(dir.path(), offline_source(), FETCHED).unwrap();
+    let ids: Vec<String> = revocations.roots().iter().map(PublicKey::key_id).collect();
+    assert_eq!(ids, ["D9914BDB4570AC6D"]);
+    assert!(!ids.contains(&plugins_key().unwrap().key_id()));
+}
+
+#[test]
+fn a_list_naming_the_plugins_key_stops_a_plugin_signed_by_it() {
+    let plugins_id = plugins_key().unwrap().key_id();
+    let env = Env::new();
+    let trees = support::scratch();
+    let mut vp = install(trees.path(), MANIFEST, &plugins_id);
+    vp.source = "oci:ghcr.io/slopvac/fake".into();
+    let spec = spec_for(&vp);
+    let gate = gate(&env, &vp, "2026-11-02T00:00:00Z");
+    gate.record_trust(&vp, &spec, FETCHED).unwrap();
+    gate.check(&spec).unwrap();
+
+    env.warm(env.list(ISSUED, EXPIRES, &[plugins_id.as_str()], &[]));
+    assert_eq!(gate.state(&vp, &spec).unwrap().1, TrustState::Revoked);
+    assert!(matches!(gate.check(&spec), Err(PluginError::Untrusted(_))));
 }

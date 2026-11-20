@@ -2,7 +2,7 @@
 
 # 2.x compatibility matrix
 
-Totals: migrate 3, preserve 107, remove 31, 141 rows.
+Totals: migrate 3, preserve 107, remove 36, 146 rows.
 
 | Row | Disposition | 3.0 note | Owner | Test |
 | --- | --- | --- | --- | --- |
@@ -14,7 +14,7 @@ Totals: migrate 3, preserve 107, remove 31, 141 rows.
 | `action:input:min-score` | preserve | Stays. | slopvac-8l4.13.6 | pending |
 | `action:input:paths` | preserve | Stays. | slopvac-8l4.13.6 | pending |
 | `action:input:profile` | remove | Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile. | slopvac-8l4.13.6 | n/a |
-| `action:input:rules-dir` | remove | Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry. | slopvac-8l4.13.6 | n/a |
+| `action:input:rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.13.6 | n/a |
 | `action:input:sarif` | preserve | Stays. | slopvac-8l4.13.6 | pending |
 | `action:input:sarif-file` | preserve | Stays. | slopvac-8l4.13.6 | pending |
 | `action:input:source` | preserve | Installs from a path or URL with the binary installer. | slopvac-8l4.13.6 | pending |
@@ -56,6 +56,11 @@ Totals: migrate 3, preserve 107, remove 31, 141 rows.
 | `behavior:reference-write` | preserve | reference --write regenerates the rules reference. | slopvac-8l4.12.10 | pending |
 | `behavior:report-out-open` | preserve | --out writes the report; --open shows it. | slopvac-8l4.12.2 | pending |
 | `behavior:rst-linting` | preserve | reStructuredText lints through a bundled docutils adapter. | slopvac-8l4.3.21 | pending |
+| `behavior:rule:ste-practices.inconsistent-wording-for-same-step` | remove | Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0. | slopvac-8l4.3.43 | n/a |
+| `behavior:rule:ste-safety.safety-block-missing-consequence` | remove | Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0. | slopvac-8l4.3.43 | n/a |
+| `behavior:rule:ste-sentences.vertical-list-item-punctuation` | remove | Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0. | slopvac-8l4.3.43 | n/a |
+| `behavior:rule:ste-sentences.vertical-list-lead-in-missing-colon` | remove | Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0. | slopvac-8l4.3.43 | n/a |
+| `behavior:rule:ste-words.inconsistent-term-for-same-thing` | remove | Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0. | slopvac-8l4.3.43 | n/a |
 | `behavior:setup-list-remove-check` | preserve | setup --list, --remove and --check; remove deletes only what setup wrote. | slopvac-8l4.11.2 | pending |
 | `behavior:setup-root` | preserve | setup --root targets another directory. | slopvac-8l4.11.2 | pending |
 | `behavior:stdin-invalid-utf8` | preserve | Invalid UTF-8 on stdin fails with a clear error and exit code. | slopvac-8l4.12.9 | pending |
@@ -69,7 +74,7 @@ Totals: migrate 3, preserve 107, remove 31, 141 rows.
 | `behavior:vale-subgate` | remove | The Vale sub-gate and UNCHECKED reporting go away. | slopvac-8l4.16.2 | n/a |
 | `cmd:cache` | remove | Pruned the Vale cache; removed. | slopvac-8l4.16.2 | n/a |
 | `cmd:compile` | remove | Compiled Vale styles; removed with Vale. | slopvac-8l4.16.2 | n/a |
-| `cmd:doctor` | preserve | Reports Rust binary, config and pack health instead of Python and Vale. | slopvac-8l4.12.5 | pending |
+| `cmd:doctor` | preserve | Reports Rust binary, config and plugin health instead of Python and Vale. | slopvac-8l4.12.5 | pending |
 | `cmd:explain` | preserve | Rule explanation. | slopvac-8l4.12.11 | pending |
 | `cmd:init` | preserve | Writes 3.0 config templates. | slopvac-8l4.12.8 | pending |
 | `cmd:lint` | preserve | Core command; bare paths keep linting. | slopvac-8l4.12.1 | pending |
@@ -96,8 +101,8 @@ Totals: migrate 3, preserve 107, remove 31, 141 rows.
 | `opt:explain:--config` | preserve | Same meaning. | slopvac-8l4.12.11 | pending |
 | `opt:explain:--format` | preserve | text, json and md stay. | slopvac-8l4.12.11 | pending |
 | `opt:explain:--profile` | remove | Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile. | slopvac-8l4.12.11 | n/a |
-| `opt:explain:--rules-dir` | remove | Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
-| `opt:explain:rule_id` | migrate | IDs gain the pack namespace; bare 2.x IDs error. `slopvac migrate` rewrites directive IDs. | slopvac-8l4.2.3 | n/a |
+| `opt:explain:--rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
+| `opt:explain:rule_id` | migrate | IDs gain the plugin namespace; bare 2.x IDs error. `slopvac migrate` rewrites directive IDs. | slopvac-8l4.2.3 | n/a |
 | `opt:init:--force` | preserve | Overwrites an existing file. | slopvac-8l4.12.8 | pending |
 | `opt:init:--harness` | preserve | Harness list gains OpenCode and others. | slopvac-8l4.11.2 | pending |
 | `opt:init:--no-skills` | preserve | Stays. | slopvac-8l4.11.2 | pending |
@@ -109,7 +114,7 @@ Totals: migrate 3, preserve 107, remove 31, 141 rows.
 | `opt:lint:--config` | preserve | Same flag; a 2.x config is rejected with a pointer to `slopvac migrate`. | slopvac-8l4.4.2 | pending |
 | `opt:lint:--diff-base` | preserve | Changed-lines scope. | slopvac-8l4.3.15 | pending |
 | `opt:lint:--diff-working-tree` | preserve | Staged, unstaged and untracked scope. | slopvac-8l4.3.19 | pending |
-| `opt:lint:--disable` | preserve | Rule disable stays; IDs gain the pack namespace. | slopvac-8l4.12.1 | pending |
+| `opt:lint:--disable` | preserve | Rule disable stays; IDs gain the plugin namespace. | slopvac-8l4.12.1 | pending |
 | `opt:lint:--explain-config` | preserve | Shows layered provenance for each setting. | slopvac-8l4.4.2 | pending |
 | `opt:lint:--fix` | preserve | Safe substitutions only. | slopvac-8l4.3.17 | pending |
 | `opt:lint:--format` | preserve | text, json, github, sarif and html continue; json is schema version 3; rdjsonl, codeclimate, junit, checkstyle and markdown are new. | slopvac-8l4.12.2 | pending |
@@ -123,15 +128,15 @@ Totals: migrate 3, preserve 107, remove 31, 141 rows.
 | `opt:lint:--open` | preserve | Opens the HTML report. | slopvac-8l4.12.11 | pending |
 | `opt:lint:--out` | preserve | Writes the report to a file. | slopvac-8l4.12.2 | pending |
 | `opt:lint:--profile` | remove | Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile. | slopvac-8l4.2.10 | n/a |
-| `opt:lint:--rules-dir` | remove | Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
+| `opt:lint:--rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
 | `opt:lint:--stdin` | preserve | Reads one document from stdin. | slopvac-8l4.12.9 | pending |
 | `opt:lint:--verbose` | preserve | Verbosity stays. | slopvac-8l4.12.1 | pending |
 | `opt:lint:targets` | preserve | Paths and directories, discovered with ignore rules (3.0 file discovery). | slopvac-8l4.12.1 | pending |
 | `opt:prime:--config` | preserve | Same meaning. | slopvac-8l4.11.1 | pending |
-| `opt:prime:--rules-dir` | remove | Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
+| `opt:prime:--rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
 | `opt:prime:topic` | preserve | write, review and report stay; migrate and configure are new. | slopvac-8l4.11.1 | pending |
 | `opt:reference:--check` | preserve | Stays. | slopvac-8l4.12.10 | pending |
-| `opt:reference:--rules-dir` | remove | Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
+| `opt:reference:--rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
 | `opt:reference:--write` | preserve | Stays. | slopvac-8l4.12.10 | pending |
 | `opt:root:--version` | preserve | Prints the version. | slopvac-8l4.12.1 | pending |
 | `opt:rules:--category` | preserve | Filter stays. | slopvac-8l4.12.11 | pending |
@@ -141,7 +146,7 @@ Totals: migrate 3, preserve 107, remove 31, 141 rows.
 | `opt:rules:--include-excluded` | preserve | Stays. | slopvac-8l4.12.11 | pending |
 | `opt:rules:--kind` | preserve | Kinds change with the typed match block. | slopvac-8l4.12.11 | pending |
 | `opt:rules:--profile` | remove | Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile. | slopvac-8l4.12.11 | n/a |
-| `opt:rules:--rules-dir` | remove | Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
+| `opt:rules:--rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
 | `opt:setup:--check` | preserve | Stays. | slopvac-8l4.11.2 | pending |
 | `opt:setup:--list` | preserve | Stays. | slopvac-8l4.11.2 | pending |
 | `opt:setup:--remove` | preserve | Stays. | slopvac-8l4.11.2 | pending |

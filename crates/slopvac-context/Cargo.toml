@@ -18,7 +18,9 @@ globset = { workspace = true }
 ignore = { workspace = true }
 serde = { workspace = true }
 serde-saphyr = { workspace = true }
+slopvac-model = { workspace = true }
 slopvac-pcre2 = { workspace = true }
+slopvac-rules = { workspace = true }
 slopvac-sanitize = { workspace = true }
 thiserror = { workspace = true }
 

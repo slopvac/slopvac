@@ -11,7 +11,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 
 use crate::edit::{TermsDoc, infer_ignore_case};
 use crate::import::{self, Source};
-use crate::{TermEntry, TermSet, TermsError, TermsFile};
+use crate::{EntryProblem, TermEntry, TermSet, TermsError, TermsFile};
 
 const DEFAULT_FILE: &str = ".slopvac/terms.toml";
 
@@ -422,6 +422,8 @@ fn cmd_suggest(
         return Err(TermsError::Entry {
             path: "suggest".to_owned(),
             message: format!("`{bad}` is not a suggestion; run without --accept to see them"),
+            number: None,
+            problem: EntryProblem::Other,
         });
     }
     let target = &paths[0];

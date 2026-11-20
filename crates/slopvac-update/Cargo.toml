@@ -8,9 +8,10 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-# Opens `slopvac.toml` without blocking and reads it through the handle.
+# Opens `slopvac.toml` without blocking and reads it through the handle. The update lock opens
+# its file with O_NOFOLLOW and compares the file owner with the current user.
 [target.'cfg(unix)'.dependencies]
-rustix = { workspace = true, features = ["fs"] }
+rustix = { workspace = true, features = ["fs", "process"] }
 
 [dependencies]
 clap.workspace = true
@@ -20,6 +21,9 @@ minisign-verify.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# Fingerprints the executable for the update record (already a workspace dependency).
+sha2.workspace = true
+slopvac-messages.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
@@ -28,6 +32,7 @@ ureq.workspace = true
 
 [dev-dependencies]
 minisign.workspace = true
+rstest.workspace = true
 
 [lints]
 workspace = true

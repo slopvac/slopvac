@@ -222,7 +222,7 @@ pub fn parse_error_object(v: &Value) -> Result<RpcError, PluginError> {
     Ok(RpcError {
         code,
         message: message.to_owned(),
-        slopvac_code: slopvac_code.to_owned(),
+        plugin_code: slopvac_code.to_owned(),
         data: v.get("data").cloned().unwrap_or(Value::Null),
     })
 }

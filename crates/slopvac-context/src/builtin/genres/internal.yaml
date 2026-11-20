@@ -1,0 +1,12 @@
+schema_version: 3
+id: internal
+description: Requirements and decision rationale. Specifications, decision records, contributor docs.
+profile: normal
+detect:
+  min_score: 3
+  signals:
+    - { kind: path, glob: '**/{adr,decision,decisions,rfc,rfcs,spec,specs,design}{/**,[-_]*,[-_]*/**}', weight: 3 }
+    - { kind: path, glob: '**/{contributing,development}*', weight: 3 }
+    - { kind: heading, pattern: '^\W*(?:context|decision|consequences|status|alternatives|rationale)\W*$', weight: 1.5 }
+rules:
+  docs-discipline.history-internal-reference: suggestion

@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
-use slopvac_engine::{Engine, Input, Kind};
+use slopvac_engine::{EngineError, Input, Kind};
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
@@ -20,8 +20,9 @@ use slopvac_styles::{BuiltinSource, StylePresets};
 
 use crate::errors::CliError;
 use crate::lint_settings::{self, Overrides};
+use crate::lint_terms::{self, TermInputs};
 use crate::redact;
-use crate::rule_catalog;
+use crate::rule_catalog::Catalog;
 use crate::stdin::StdinPlan;
 use crate::summary::summarize;
 
@@ -124,6 +125,20 @@ impl Run {
         });
         self.incomplete.push(error);
     }
+
+    /// Record a file the engine could not lint: not checked, so the run exits 2.
+    fn skip_engine_error(&mut self, shown: &str, err: &EngineError) {
+        // `EngineError` is `#[non_exhaustive]`, so a new variant lands in `lint-failed` until
+        // it gets a code of its own.
+        let code = match err {
+            // The check is incomplete for a reason a pack can fix, so it has a code.
+            EngineError::TagLookupBudget { .. } | EngineError::TagBuildBudget { .. } => {
+                "context-budget-exceeded"
+            }
+            _ => "lint-failed",
+        };
+        self.skip(code, shown, format!("{shown}: {err}"));
+    }
 }
 
 /// The engine kind for a discovered file, or why there is none.
@@ -211,7 +226,7 @@ fn describe_rejected(rejected: &slopvac_config::Rejected, root: &Path) -> String
         .join("\n")
 }
 
-fn config_error(err: &ConfigError, root: &Path) -> CliError {
+pub(crate) fn config_error(err: &ConfigError, root: &Path) -> CliError {
     let mut message = match err {
         ConfigError::Rejected(rejected) => describe_rejected(rejected, root),
         ConfigError::Io { path, .. } | ConfigError::TooLarge { path, .. } => {
@@ -223,7 +238,32 @@ fn config_error(err: &ConfigError, root: &Path) -> CliError {
     if err.is_legacy() {
         message.push_str("\nhelp: run `slopvac migrate` to convert it");
     }
-    CliError::new(err.code().as_str(), message)
+    let error = CliError::new(err.code().as_str(), message);
+    match budget_data(err) {
+        Some(data) => error.with_data(data),
+        None => error,
+    }
+}
+
+/// The `budget`, `limit` and `path` keys of a refused config's budget diagnostic.
+///
+/// Only `ConfigError::Rejected` carries budget data, and the loader builds it with exactly one
+/// diagnostic per refusal, so the first diagnostic with data is the only one. The path needs no
+/// further redaction: `slopvac-config` already shows it root-relative, or `<external>/<name>`
+/// outside the root, and a test pins that for an `extends` target outside the project.
+fn budget_data(err: &ConfigError) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let ConfigError::Rejected(rejected) = err else {
+        return None;
+    };
+    let budget = rejected
+        .diagnostics
+        .iter()
+        .find_map(|d| d.data.as_deref())?;
+    let mut data = serde_json::Map::new();
+    data.insert("budget".into(), budget.budget.as_str().into());
+    data.insert("limit".into(), budget.limit.into());
+    data.insert("path".into(), budget.path.as_str().into());
+    Some(data)
 }
 
 /// Finds the config of each directory once.
@@ -266,7 +306,7 @@ impl Linter for EngineLinter {
                 }
             }
         }
-        let rules = match rule_catalog::core() {
+        let rules = match Catalog::load() {
             Ok(rules) => rules,
             Err(err) => return failed(request, run, &err),
         };
@@ -286,7 +326,7 @@ impl Linter for EngineLinter {
 fn validate_configs(
     request: &LintRequest,
     configs: &Configs<'_>,
-    rules: &slopvac_rules::RuleSet,
+    rules: &Catalog,
 ) -> Result<(), CliError> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if request.stdin.is_some() {
@@ -344,7 +384,7 @@ fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome 
         message: NonEmptyString::new(error.message.clone())
             .unwrap_or_else(|_| NonEmptyString::new("lint failed").expect("not empty")),
         path: None,
-        data: serde_json::Map::new(),
+        data: error.data.clone(),
     });
     run.incomplete.push(error.clone());
     RunOutcome {
@@ -484,6 +524,7 @@ fn collect_targets(
         Selection::Prose
     };
     let mut seen = HashSet::new();
+    let shower = redact::PathShower::new(&request.root);
     for target in &request.targets {
         let shown_target = redact::shown_path(target, &request.root);
         let found = match discover(
@@ -511,11 +552,12 @@ fn collect_targets(
             );
         }
         for file in found.files {
-            let canonical = std::fs::canonicalize(&file.path).unwrap_or_else(|_| file.path.clone());
+            let resolved = std::fs::canonicalize(&file.path).ok();
+            let canonical = resolved.clone().unwrap_or_else(|| file.path.clone());
             if !seen.insert(canonical.clone()) {
                 continue;
             }
-            let shown = redact::shown_path(&file.path, &request.root);
+            let shown = shower.shown(&file.path, resolved.as_deref());
             let config = config_for(configs, &request.root, &canonical)?;
             // Exclusions apply first, whether the config was found or named with `--config`,
             // so an excluded file is never read, parsed or reported.
@@ -554,7 +596,9 @@ fn collect_targets(
     Ok(())
 }
 
-/// The config that applies to `file` and its path relative to the config root.
+/// The config that applies to `file` and its path relative to the config root. A file outside
+/// that root comes back absolute, so the config's root-relative matching rejects it. The path
+/// is for matching only; reports show the separate `shown` path.
 fn config_for(
     configs: &Configs<'_>,
     root: &Path,
@@ -575,19 +619,19 @@ fn config_for(
     Ok(found.map(|config| {
         let rel = absolute
             .strip_prefix(&config.root)
-            .map_or_else(|_| file.to_path_buf(), Path::to_path_buf);
+            .map_or_else(|_| absolute.clone(), Path::to_path_buf);
         (config, rel)
     }))
 }
 
 /// Settings and the indexes of the items that share them.
-type Groups = BTreeMap<String, (slopvac_engine::Settings, Vec<usize>)>;
+type Groups = BTreeMap<String, (slopvac_engine::Settings, TermInputs, Vec<usize>)>;
 
 /// Group the items by their settings: one engine per distinct settings.
 fn group_by_settings(
     request: &LintRequest,
     items: &[Item],
-    rules: &slopvac_rules::RuleSet,
+    rules: &Catalog,
 ) -> Result<Groups, CliError> {
     let mut groups = Groups::new();
     let none = LoadedConfig::without_files(request.root.clone());
@@ -604,10 +648,11 @@ fn group_by_settings(
             lint_settings::config_sources(&files),
             &request.overrides,
         )?;
+        let terms = lint_terms::inputs(&resolved, &config.root);
         groups
-            .entry(format!("{settings:?}"))
-            .or_insert_with(|| (settings, Vec::new()))
-            .1
+            .entry(format!("{settings:?}{terms:?}"))
+            .or_insert_with(|| (settings, terms, Vec::new()))
+            .2
             .push(index);
     }
     Ok(groups)
@@ -639,12 +684,7 @@ fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
     roots
 }
 
-fn lint_items(
-    request: &LintRequest,
-    items: Vec<Item>,
-    rules: slopvac_rules::RuleSet,
-    mut run: Run,
-) -> RunOutcome {
+fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: Run) -> RunOutcome {
     let groups = match group_by_settings(request, &items, &rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
@@ -652,32 +692,29 @@ fn lint_items(
 
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
     let mut spare = Some(rules);
-    for (settings, indexes) in groups.into_values() {
-        // The engine owns its rule set, and a set does not clone: reload it for later groups.
-        let set = match spare.take().map_or_else(rule_catalog::core, Ok) {
-            Ok(set) => set,
+    for (settings, terms, indexes) in groups.into_values() {
+        // The engine owns its rule sets, and a set does not clone: reload them for later groups.
+        let sets = match spare.take().map_or_else(Catalog::load, Ok) {
+            Ok(catalog) => catalog.into_sets(),
             Err(err) => return failed(request, run, &err),
         };
-        let engine = match Engine::new(vec![set], settings) {
+        let engine = match lint_terms::build_engine(sets, settings, &terms, &request.root) {
             Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
-            Err(err) => {
-                return failed(
-                    request,
-                    run,
-                    &CliError::new("engine-unavailable", err.to_string()),
-                );
-            }
+            Err(err) => return failed(request, run, &err),
         };
         let inputs: Vec<Input<'_>> = indexes
             .iter()
             .map(|&i| Input::new(&items[i].shown, &items[i].text).with_kind(items[i].kind))
             .collect();
-        for (&index, result) in indexes.iter().zip(engine.lint_all(&inputs)) {
+        for (&index, result) in indexes.iter().zip(engine.lint_all_with_notices(&inputs)) {
             match result {
-                Ok(document) => documents[index] = Some(document),
+                Ok((document, notices)) => {
+                    // Extraction notices of unsupported content: shown, never a failure.
+                    run.notices.extend(notices);
+                    documents[index] = Some(document);
+                }
                 Err(err) => {
-                    let shown = items[index].shown.clone();
-                    run.skip("lint-failed", &shown, format!("{shown}: {err}"));
+                    run.skip_engine_error(&items[index].shown, &err);
                 }
             }
         }
@@ -713,15 +750,14 @@ fn lint_items(
     }
 }
 
-/// The rules and the settings of the project config found from `root`, for a long-running
-/// consumer such as the language server that lints one buffer at a time.
+/// The language server's linter for the project config found from `root`: the shipped
+/// rules, the term-casing pack, the settings, the project's terms files and the blocklists,
+/// built the same way `slopvac lint` builds an engine.
 ///
 /// # Errors
-/// The config error, or `rules-unavailable`.
-pub fn project_settings(
-    root: &Path,
-) -> Result<(slopvac_rules::RuleSet, slopvac_engine::Settings), CliError> {
-    let rules = rule_catalog::core()?;
+/// The config error, `terms-invalid`, or `rules-unavailable`.
+pub fn project_linter(root: &Path) -> Result<slopvac_lsp::EngineLinter, CliError> {
+    let core = Catalog::load()?;
     let presets = StylePresets(BuiltinSource);
     let discovery = Discovery::new(&presets);
     let found = discovery
@@ -731,15 +767,19 @@ pub fn project_settings(
         Some(config) => (config.as_ref().clone(), config_files(config)),
         None => (LoadedConfig::without_files(root.to_path_buf()), Vec::new()),
     };
-    lint_settings::validate(&config, &rules)?;
+    lint_settings::validate(&config, &core)?;
     let resolved = lint_settings::resolve(&config, Path::new(""));
     let settings = lint_settings::build(
-        &rules,
+        &core,
         &resolved,
         lint_settings::config_sources(&files),
         &Overrides::default(),
     )?;
-    Ok((rules, settings))
+    let terms = lint_terms::inputs(&resolved, &config.root);
+    let sets = core.into_sets();
+    let reasons = slopvac_lsp::exception_names(&sets);
+    let engine = lint_terms::build_engine(sets, settings, &terms, root)?;
+    Ok(slopvac_lsp::EngineLinter::from_engine(engine, reasons))
 }
 
 /// The display name of each config file and whether it was pulled in by `extends`.
@@ -903,5 +943,75 @@ mod read_tests {
         let outcome = lint_within_timeout(&link, request(&root, &link), None);
         assert_eq!(outcome.incomplete.len(), 0);
         assert_eq!(outcome.documents, 1);
+    }
+
+    /// A target reached through a symlink to an external directory, which vanishes after
+    /// discovery, cannot be canonicalized. Its notice must not show the external directory.
+    #[test]
+    fn a_vanished_file_behind_an_external_symlink_hides_the_external_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(dir.path()).unwrap();
+        let root = top.join("proj");
+        let external = top.join("elsewhere").join("sentinel-private");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        std::fs::write(external.join("a.md"), "Hello there.\n").unwrap();
+        std::os::unix::fs::symlink(top.join("elsewhere"), root.join("link")).unwrap();
+        let target = root.join("link").join("sentinel-private").join("a.md");
+        let gone = external.join("a.md");
+        let outcome = lint_within_timeout(
+            &root.join("probe-fifo"),
+            request(&root, &target),
+            Some(Box::new(move || std::fs::remove_file(&gone).unwrap())),
+        );
+        let text = format!("{:?}", outcome.incomplete);
+        assert!(text.contains("<external>/a.md"), "{text}");
+        assert!(!text.contains("sentinel-private"), "{text}");
+    }
+}
+
+#[cfg(test)]
+mod skip_tests {
+    use super::*;
+    use rstest::rstest;
+    use slopvac_model::PositionError;
+    use slopvac_parse::ParseError;
+    use slopvac_pcre2::MatchError;
+    use slopvac_text::TextError;
+
+    /// Every `EngineError` variant. The enum is `#[non_exhaustive]` across crates, so the
+    /// compiler cannot force this list to grow: add a case when the engine adds a variant.
+    #[rstest]
+    #[case::parse(EngineError::from(ParseError::Mdx("x".into())), "lint-failed")]
+    #[case::text(
+        EngineError::from(TextError::from(MatchError::MatchLimit { limit: 1 })),
+        "lint-failed"
+    )]
+    #[case::context(EngineError::Context("x".into()), "lint-failed")]
+    #[case::position(EngineError::from(PositionError::PastEnd(9)), "lint-failed")]
+    #[case::bad_range(EngineError::BadRange("x".into()), "lint-failed")]
+    #[case::tag_lookup_budget(
+        EngineError::TagLookupBudget { limit: 16_384 },
+        "context-budget-exceeded"
+    )]
+    #[case::tag_build_budget(
+        EngineError::TagBuildBudget { limit: 65_536 },
+        "context-budget-exceeded"
+    )]
+    #[case::terms(EngineError::Terms("x".into()), "lint-failed")]
+    #[case::internal(EngineError::Internal("x".into()), "lint-failed")]
+    fn an_engine_error_leaves_the_file_unchecked_and_the_run_incomplete(
+        #[case] err: EngineError,
+        #[case] code: &str,
+    ) {
+        let mut run = Run::default();
+        run.skip_engine_error("docs/a.md", &err);
+
+        let codes: Vec<&str> = run.incomplete.iter().map(|e| e.code).collect();
+        assert_eq!(codes, [code]);
+        assert_eq!(run.notices.len(), 1);
+        assert_eq!(run.notices[0].code.as_str(), code);
+        assert_eq!(run.notices[0].level, NoticeLevel::Warning);
+        assert_eq!(run.notices[0].path.as_deref(), Some("docs/a.md"));
     }
 }

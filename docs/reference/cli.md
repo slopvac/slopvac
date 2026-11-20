@@ -86,7 +86,7 @@ Write a commented slopvac.toml and set up agent steering.
 
 ### `slopvac doctor`
 
-Check the binary, configuration and pack health.
+Check the binary, configuration and plugin health.
 
 | Argument | Description |
 | --- | --- |
@@ -136,6 +136,25 @@ Migrate a 2.x project to 3.0: config, inline directives and steering blocks
 | `--write` | Apply the changes instead of previewing them |
 | `--preserve-behavior` | Reproduce the 2.x profile gates with the core:legacy-<profile> style |
 | `--restore` | Undo the last --write from the backup |
+| `--force` | With --restore, also put back files that changed since the write |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+### `slopvac report`
+
+Preview an issue report, and file it with the GitHub CLI.
+
+| Argument | Description |
+| --- | --- |
+| `<CATEGORY>` | The kind of report; it picks the issue form. |
+| `--title` | The issue title, without the category prefix. |
+| `--field` | A form field. Repeat for several fields, or several dropdown options. |
+| `--include-text` | Read the document sample for the `input` field from this file. |
+| `--body-file` | Write the previewed body to this file. The write replaces the file in one step. |
+| `--gh` | Print the exact `gh issue create` command for the body file. |
+| `--yes` | With --gh: run that command after the preview. Offline mode refuses it. |
+| `--open` | Open the prefilled issue form in a browser. |
 | `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
@@ -301,6 +320,38 @@ Print guidance for agents, one topic at a time
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
+### `slopvac review`
+
+Plan or run the review of a revision
+
+| Argument | Description |
+| --- | --- |
+| `<REVISED>` | The revised document |
+| `--original` | The document before the revision |
+| `--type` | Review type; auto picks from the change |
+| `--genre` | The document's genre |
+| `--extra` | Checks to add beyond the changed claims |
+| `--scope-approved` | The user confirmed the scope |
+| `--reviewer-model` | Model that reviews; it must differ from the author's |
+| `--author-model` | Model that wrote the revision; overrides [review] author_model |
+| `--dry-run` | Print the exact payload and call no provider |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+### `slopvac claims`
+
+List the claims a revision changed, added or dropped
+
+| Argument | Description |
+| --- | --- |
+| `<REVISED>` | The revised document |
+| `--original` | The document before the revision |
+| `--format` | Output format |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
 ### `slopvac completions`
 
 Print a shell completion script.
@@ -325,17 +376,7 @@ Write man pages.
 
 ### `slopvac plugins`
 
-Manage plugins and packs: sync, trust, update.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac packs`
-
-List installed rule packs.
+Manage data plugins and code plugins: sync, trust, update.
 
 | Argument | Description |
 | --- | --- |
@@ -356,26 +397,6 @@ Print the agent onboarding text.
 ### `slopvac reference`
 
 Generate or check the rules reference.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac report`
-
-Preview or submit an issue report.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac review`
-
-Run the prose reviewer on files.
 
 | Argument | Description |
 | --- | --- |

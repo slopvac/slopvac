@@ -295,6 +295,7 @@ fn review_topic(review_type: Option<ReviewType>, approval: Approval, level: Leve
             level,
             review_type,
             review_approval: approval,
+            ..Settings::default()
         },
         &tree(),
         Path::new("/nonexistent"),

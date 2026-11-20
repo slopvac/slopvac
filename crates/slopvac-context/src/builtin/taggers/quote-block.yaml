@@ -1,0 +1,7 @@
+schema_version: 3
+id: quote-block
+tag: quote
+scope: paragraph
+confidence: 1.0
+when:
+  block_kind: quote

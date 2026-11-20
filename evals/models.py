@@ -32,6 +32,7 @@ import datetime as dt
 import fcntl
 import hashlib
 import json
+import logging
 import os
 import random
 import re
@@ -42,12 +43,15 @@ import threading
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Any, NamedTuple, Self
 
+from . import build_derived, facts, metrics, procs, runner
 from . import corpuslib as lib
-from . import facts, metrics, procs, runner
-from .textops import prose_paragraphs
+from .textops import CODE_SPAN_RE, prose_paragraphs, split_sentences
+
+logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "1"
 RESULTS_SCHEMA = 1
@@ -55,6 +59,8 @@ RESULTS_DIR = lib.EVALS_DIR / "results" / "models"
 MIN_REPEATS = 3
 TYPES = ("mechanical", "update", "rewrite")
 SEED = "slopvac-evals-models-1"
+PLANT_KINDS = ("drop", "number", "negation", "entity")
+PLANT_MIN_WORDS = 6
 FALSE_ALARM_LIMIT = 1
 QUOTE_OVERLAP = 0.6
 MIN_QUOTE_WORDS = 3
@@ -101,6 +107,17 @@ Candidate:
 
 Answer with a JSON list. Each item has "quote" (the exact words from either text) and "problem". Answer [] when the candidate keeps every fact.
 """
+# The mechanical and update reviewers see the same text as the rewrite reviewer,
+# after a line that says what the candidate was asked to do. The stated change is
+# not damage, so the update prompt tells the reviewer to leave it out.
+MECHANICAL_REVIEW_PROMPT = (
+    "A model was asked to fix one prose problem in the original and change nothing else.\n\n"
+    + REVIEW_PROMPT
+)
+UPDATE_REVIEW_PROMPT = (
+    "A model was asked to replace {old} with {new} where the original states it and "
+    "change nothing else. That change is intended: do not list it.\n\n" + REVIEW_PROMPT
+)
 
 
 class ModelEvalError(Exception):
@@ -131,6 +148,7 @@ def build_tasks(
     docs = {d["id"]: d for d in manifest["documents"]}
     rng = random.Random(seed)
     tasks: list[dict[str, Any]] = []
+    skipped: Counter[str] = Counter()
 
     seeded = sorted(
         (d for d in docs.values() if d["origin"] == "seeded-defect"),
@@ -142,10 +160,7 @@ def build_tasks(
             pool.append((doc, defect))
     rng.shuffle(pool)
     for doc, defect in pool[:per_type]:
-        lines = _read(doc, cache).split("\n")
-        at = defect["line"] - 1
-        first, last = max(0, at - 2), min(len(lines), at + 3)
-        passage = "\n".join(lines[first:last])
+        passage = _mechanical_passage(doc, defect, cache)
         tasks.append(
             {
                 "id": task_id(
@@ -242,6 +257,7 @@ def build_tasks(
                 "variant": "planted",
                 "doc": doc["id"],
                 "prompt": REVIEW_PROMPT.format(original=original, candidate=candidate),
+                "passage": original + "\n" + candidate,
                 "edits": [
                     {"kind": e["kind"], "sentence": e["original_sentence"]}
                     for e in doc["source"]["edits"]
@@ -249,7 +265,197 @@ def build_tasks(
                 "genre": doc["genre"],
             }
         )
+
+    for doc, defect in pool[:per_type]:
+        passage = _mechanical_passage(doc, defect, cache)
+        flagged = defect["text"]
+        review = _planted_review(
+            kind="mechanical",
+            key=(doc["id"], str(defect["line"]), defect["rule"]),
+            doc=doc,
+            original=passage,
+            base=passage,
+            protected=lambda _, s, f=flagged: s in f or f in s,
+            pool=sorted(set(CODE_SPAN_RE.findall(_read(doc, cache)))),
+            prompt=MECHANICAL_REVIEW_PROMPT,
+        )
+        if review:
+            tasks.append(review)
+        else:
+            skipped["mechanical: no sentence to damage away from the flagged one"] += 1
+
+    for doc, edit, old, new in usable[:per_type]:
+        parent = docs[doc["source"]["parents"][0]]
+        text = _read(parent, cache)
+        lines = text.split("\n")
+        paragraph = next(
+            (
+                "\n".join(lines[first : last + 1])
+                for first, last in prose_paragraphs(text)
+                if first + 1 == edit["line"]
+            ),
+            None,
+        )
+        if paragraph is None or edit["original_sentence"] not in paragraph:
+            skipped["update: stated paragraph not found"] += 1
+            continue
+        base = _apply_change(paragraph, old, new)
+        before, after = split_sentences(paragraph), split_sentences(base)
+        if len(before) != len(after):
+            skipped["update: the change altered the sentence count"] += 1
+            continue
+        # The change protects the sentences it rewrote, by position: a rewritten
+        # sentence can become a copy of another one, so its text proves nothing.
+        rewritten = {i for i, (a, b) in enumerate(zip(before, after)) if a != b}
+        intended = [t[i] for i in sorted(rewritten) for t in (before, after)]
+        review = _planted_review(
+            kind="update",
+            key=(doc["id"], str(edit["line"]), old, new),
+            doc=doc,
+            original=paragraph,
+            base=base,
+            protected=lambda i, _, kept=rewritten: i in kept,
+            intended=intended,
+            distinct=partial(_apart_from, intended),
+            pool=sorted(set(CODE_SPAN_RE.findall(text))),
+            prompt=UPDATE_REVIEW_PROMPT,
+            old=old,
+            new=new,
+        )
+        if review:
+            tasks.append(review)
+        else:
+            skipped[
+                "update: no sentence to damage that the stated change leaves distinct"
+            ] += 1
+    if skipped:
+        logger.warning(
+            "skipped planted review candidates (%s)",
+            "; ".join(f"{reason} x{count}" for reason, count in skipped.items()),
+        )
     return tasks
+
+
+def plant_damage(
+    text: str,
+    protected: Callable[[int, str], bool],
+    pool: list[str],
+    rng: random.Random,
+    distinct: Callable[[str, str | None], bool] = lambda _before, _after: True,
+) -> tuple[str, dict[str, Any]] | None:
+    """Damage one fact in `text`: (candidate text, edit) or None when nothing fits.
+
+    The damage comes from `build_derived.damage_sentence`, the same one that plants
+    the rewrite pairs. `protected(index, sentence)` takes a sentence's position in its paragraph and its
+    text; a sentence for which it is true stays as it is.
+    The edit records the kind and the original sentence, like a rewrite pair's.
+    """
+    lines = text.split("\n")
+    paragraphs = prose_paragraphs(text, min_words=PLANT_MIN_WORDS)
+    rng.shuffle(paragraphs)
+    kinds = list(PLANT_KINDS)
+    rng.shuffle(kinds)
+    for first, last in paragraphs:
+        sentences = split_sentences("\n".join(lines[first : last + 1]))
+        order = list(range(len(sentences)))
+        rng.shuffle(order)
+        for kind in kinds:
+            for i in order:
+                if protected(i, sentences[i]):
+                    continue
+                damage = build_derived.damage_sentence(sentences[i], kind, pool, rng)
+                if damage is None or not distinct(sentences[i], damage[0]):
+                    continue
+                kept = [damage[0]] if damage[0] is not None else []
+                rebuilt = " ".join(sentences[:i] + kept + sentences[i + 1 :])
+                lines[first : last + 1] = [rebuilt]
+                edit: dict[str, Any] = {"kind": kind, "sentence": sentences[i]}
+                if damage[0] is not None:
+                    edit["after"] = damage[0]
+                return "\n".join(lines), edit
+    return None
+
+
+def _planted_review(
+    *,
+    kind: str,
+    key: tuple[str, ...],
+    doc: Mapping[str, Any],
+    original: str,
+    base: str,
+    protected: Callable[[int, str], bool],
+    pool: list[str],
+    prompt: str,
+    intended: Sequence[str] = (),
+    distinct: Callable[[str, str | None], bool] = lambda _before, _after: True,
+    **fields: str,
+) -> dict[str, Any] | None:
+    """A planted-damage review task for an author type, or None when no sentence fits.
+
+    `base` is the candidate before damage. `intended` lists the sentences the
+    stated change touches, on both sides of it; a finding there is not damage.
+    The random stream follows the task id
+    alone, so one task's damage never depends on another task.
+    """
+    ident = task_id("planted", kind, *key)
+    rng = random.Random(f"{SEED}|{ident}")
+    planted = plant_damage(base, protected, pool, rng, distinct)
+    if planted is None:
+        return None
+    candidate, edit = planted
+    return {
+        "id": ident,
+        "type": kind,
+        **({"intended": list(intended)} if intended else {}),
+        "role": "reviewer",
+        "variant": "planted",
+        "doc": doc["id"],
+        "prompt": prompt.format(original=original, candidate=candidate, **fields),
+        "original": original,
+        "candidate": candidate,
+        "passage": original + "\n" + candidate,
+        "edits": [edit],
+        "genre": doc["genre"],
+    }
+
+
+def _similar(a: str, b: str) -> bool:
+    """True when either sentence takes `QUOTE_OVERLAP` of its words from the other.
+
+    Such sentences cannot be told apart by the words a reviewer quotes.
+    """
+    return max(_overlap(a, b), _overlap(b, a)) >= QUOTE_OVERLAP
+
+
+def _apart_from(intended: Sequence[str], before: str, after: str | None) -> bool:
+    """True when damage to `before` (leaving `after`) cannot pass for an intended change."""
+    return not any(
+        _similar(text, i) for i in intended for text in (before, after) if text
+    )
+
+
+def _mechanical_passage(
+    doc: Mapping[str, Any], defect: Mapping[str, Any], cache: Path
+) -> str:
+    """The flagged line with two lines of context before it and after it."""
+    lines = _read(doc, cache).split("\n")
+    at = defect["line"] - 1
+    return "\n".join(lines[max(0, at - 2) : min(len(lines), at + 3)])
+
+
+def _number_token(number: str) -> str:
+    """A pattern for `number` as a whole numeric token.
+
+    The number must not sit inside a longer number ("3" in "13", "3.5", "3,500",
+    ".3" or "1,3").
+    A full stop after it that ends a sentence is fine.
+    """
+    return rf"(?<![\w.,]){re.escape(number)}(?!\w)(?![.,]\d)"
+
+
+def _apply_change(text: str, old: str, new: str) -> str:
+    """Replace every whole-token `old` number with `new`, as the update task asks."""
+    return re.sub(_number_token(old), new, text)
 
 
 def _stands_alone(passage: str, old: str) -> bool:
@@ -298,7 +504,8 @@ def make_linter(engine: runner.Engine, suffix: str = ".md") -> Linter:
             str(note) for d in report["documents"] for note in d.get("unchecked") or []
         ]
         if unchecked:
-            raise LintIncomplete(f"lint incomplete: {'; '.join(unchecked)[:300]}")
+            note = procs.redact_credentials("; ".join(unchecked))[:300]
+            raise LintIncomplete(f"lint incomplete: {note}")
         return [runner._slim(f) for d in report["documents"] for f in d["findings"]]
 
     return lint
@@ -311,6 +518,10 @@ def _clean(answer: str) -> str:
     return m.group(1).strip() if m else text
 
 
+def _squash(text: str) -> str:
+    return " ".join(text.split())
+
+
 def score_author(task: Mapping[str, Any], answer: str, lint: Linter) -> dict[str, Any]:
     output = _clean(answer)
     expected = task.get("expected", [])
@@ -321,6 +532,7 @@ def score_author(task: Mapping[str, Any], answer: str, lint: Linter) -> dict[str
         "facts_lost": len(pres["lost"]),
         "words": words,
         "empty": not output,
+        "metric": AUTHOR_METRIC,
     }
     if task["type"] == "mechanical":
         fired = any(f["rule"] == task["rule"] for f in lint(output))
@@ -334,12 +546,22 @@ def score_author(task: Mapping[str, Any], answer: str, lint: Linter) -> dict[str
         after = len(lint(output)) / words
         out["slop_before_per_word"] = before
         out["slop_after_per_word"] = after
-        out["success"] = bool(output) and not pres["lost"] and after <= before
+        # Echoing the input keeps every fact and adds no slop, so it must not pass.
+        out["unchanged"] = _squash(output) == _squash(task["source"])
+        out["success"] = (
+            bool(output)
+            and not out["unchanged"]
+            and not pres["lost"]
+            and after <= before
+        )
     return out
 
 
 def _words(text: str) -> set[str]:
-    return {w for w in re.findall(r"[a-z0-9_]+", text.lower()) if len(w) > 1}
+    """Lowercase word tokens. A lone letter is noise; a lone digit is a fact."""
+    return {
+        w for w in re.findall(r"[a-z0-9_]+", text.lower()) if len(w) > 1 or w.isdigit()
+    }
 
 
 def _parse_findings(answer: str) -> list[dict[str, str]]:
@@ -357,9 +579,96 @@ def _parse_findings(answer: str) -> list[dict[str, str]]:
     ]
 
 
+REVIEW_METRIC = "detection by quotation"
+AUTHOR_METRIC = "lexical retention smoke check"
+# Bump when scoring changes. Rows scored before 15.17 carry no version and are
+# "legacy": they were never rescored, so they must not take the new metric names.
+SCORER_VERSION = "15.18"
+LEGACY_SCORER = "legacy"
+LEGACY_METRIC = "legacy (pre-15.17)"
+
+# A finding that denies the loss is not a finding. These are plain phrase lists, not
+# a meaning-level oracle. A denial counts only when nothing else in the explanation
+# asserts a change, so "still says 63, but the candidate changed it" is kept.
+_KEPT = (
+    r"(?:preserved|kept|retained|intact|unchanged|present|correct"
+    r"|says?|states?|reads?|has|contains?|includes?|keeps?|retains?|preserves?)"
+)
+NEGATED_RE = re.compile(
+    rf"(?:\bnot|\bnever|\bno\s+longer|n['\u2019]t)\s+(?:been\s+|be\s+)?{_KEPT}\b",
+    re.IGNORECASE,
+)
+CHANGE_RE = re.compile(
+    r"\b(?:chang(?:ed|es)|now|instead|replaced|became|becomes|differs?|different"
+    r"|lost|lose|loses|omit|omits|omitted|drop|drops|dropped|remove|removes|removed"
+    r"|delete|deletes|deleted|missing|altered|swapped"
+    r"|vanished|gone|wrong|incorrect|increased|decreased)\b",
+    re.IGNORECASE,
+)
+DENIAL_RE = re.compile(
+    r"\b(?:is|are|was|were|remains?|stays?|been)\s+"
+    r"(?:preserved|kept|retained|intact|correct|unchanged|present)\b"
+    r"|\bunchanged\b|\bno\s+(?:change|difference|loss|problem|issue)s?\b"
+    r"|\bnot\s+(?:changed|lost|missing|dropped|altered)\b"
+    r"|\bnothing\s+(?:is\s+)?(?:lost|missing|changed)\b"
+    r"|\bstill\s+(?:says|states|reads|has|contains|includes)\b"
+    r"|\bcandidate\s+(?:still\s+)?(?:keeps|retains|preserves|contains|includes|has)\b"
+    r"|\bsame\s+as\s+the\s+original\b",
+    re.IGNORECASE,
+)
+
+
+def _asserts_change(problem: str) -> bool:
+    """True unless the explanation only denies the loss or change.
+
+    A negated denial ("not preserved", "no longer says") asserts a change. A plain
+    denial is overruled by a contrasting assertion left once the denial is removed.
+    """
+    if NEGATED_RE.search(problem):
+        return True
+    rest = DENIAL_RE.sub(" ", problem)
+    if rest == problem:
+        return True  # no denial phrase at all
+    return CHANGE_RE.search(rest) is not None
+
+
+def _norm(text: str) -> str:
+    """Lowercase, drop markdown code ticks, unify quotes and collapse whitespace."""
+    text = text.replace("`", "").replace("\u2019", "'").replace("\u2018", "'")
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    return " ".join(text.lower().split())
+
+
+def _in_passage(quote: str, passage: str) -> bool:
+    """True when the quote appears word for word, in order, in the passage.
+
+    Matching is normalised and contiguous, and the quote must start and end on a
+    token edge, so "3" is not found inside "13". It has no minimum length: a
+    complete fact token such as `--offline` or `63` is a genuine quote.
+    """
+    needle = _norm(quote).strip(" .,;:!?\"'")
+    if not needle:
+        return False
+    pattern = rf"(?<!\w){re.escape(needle)}(?!\w)"
+    return re.search(pattern, _norm(passage)) is not None
+
+
 def _hits(quote: str, sentence: str) -> bool:
-    q, s = _words(quote), _words(sentence)
-    return len(q) >= MIN_QUOTE_WORDS and len(q & s) / len(q) >= QUOTE_OVERLAP
+    """True when the quote's words mostly come from `sentence` (edit location).
+
+    This is separate from `_in_passage`. A quote of fewer than MIN_QUOTE_WORDS
+    words locates an edit only when it holds a fact token.
+    """
+    q = _words(quote)
+    if not q or _overlap(quote, sentence) < QUOTE_OVERLAP:
+        return False
+    return len(q) >= MIN_QUOTE_WORDS or any(facts.extract(quote).values())
+
+
+def _overlap(quote: str, sentence: str) -> float:
+    """The share of the quote's words that come from `sentence`."""
+    q = _words(quote)
+    return len(q & _words(sentence)) / len(q) if q else 0.0
 
 
 def _mentions(fact: str, text: str) -> bool:
@@ -370,37 +679,63 @@ def _mentions(fact: str, text: str) -> bool:
     """
     body = re.escape(fact.lower())
     if re.fullmatch(r"\d+(?:[.,]\d+)*%?", fact):
-        pattern = rf"(?<![\w])(?<!\d[.,]){body}(?!\w)(?![.,]\d)"
+        pattern = _number_token(fact.lower())
     else:
         pattern = rf"(?<![\w-]){body}(?![\w-])(?!\.\w)"
     return re.search(pattern, text.lower()) is not None
 
 
 def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
-    reported = _parse_findings(answer)
+    """Score a review by quotation: the quote, the location and a non-denying problem.
+
+    A finding counts when its quote is in the passage, it locates the planted or
+    lost change, and its `problem` does not deny the change.
+    """
+    reported = [r for r in _parse_findings(answer) if _asserts_change(r["problem"])]
     if task.get("variant") == "authored":
         lost = task["lost"]
-        found = [
-            f
-            for f in lost
-            if any(_mentions(f, r["quote"] + " " + r["problem"]) for r in reported)
-        ]
+        passage = task["passage"]
+
+        def names(fact: str, r: Mapping[str, str]) -> bool:
+            return _in_passage(r["quote"], passage) and _mentions(
+                fact, r["quote"] + " " + r["problem"]
+            )
+
+        found = [f for f in lost if any(names(f, r) for r in reported)]
         edits_total, edits_found = len(lost), len(found)
-        alarms = sum(
-            1
-            for r in reported
-            if not any(_mentions(f, r["quote"] + " " + r["problem"]) for f in lost)
+        alarms = len(reported) - sum(
+            1 for r in reported if any(names(f, r) for f in lost)
         )
     else:
         edits = task["edits"]
-        matched = [
-            any(_hits(r["quote"], e["sentence"]) for r in reported) for e in edits
-        ]
+        passage = task["passage"]
+
+        intended = task.get("intended", [])
+
+        def locates(r: Mapping[str, str], e: Mapping[str, Any]) -> bool:
+            # The planted sentence, before or after the damage. Mechanical and update
+            # damage needs the quote inside that text: shared words with a neighbour
+            # of the same wording would otherwise count. Rewrite pairs keep the
+            # word-overlap match.
+            inside = task.get("type") in ("mechanical", "update")
+            match = _in_passage if inside else _hits
+            return _in_passage(r["quote"], passage) and any(
+                match(r["quote"], text)
+                for text in (e["sentence"], e.get("after"))
+                if text
+            )
+
+        def intended_change(r: Mapping[str, str]) -> bool:
+            return _in_passage(r["quote"], passage) and any(
+                _hits(r["quote"], text) for text in intended
+            )
+
+        matched = [any(locates(r, e) for r in reported) for e in edits]
         edits_total, edits_found = len(edits), sum(matched)
-        alarms = sum(
+        alarms = len(reported) - sum(
             1
             for r in reported
-            if not any(_hits(r["quote"], e["sentence"]) for e in edits)
+            if intended_change(r) or any(locates(r, e) for e in edits)
         )
     recall = edits_found / edits_total if edits_total else None
     return {
@@ -408,6 +743,7 @@ def score_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
         "found": edits_found,
         "planted": edits_total,
         "false_alarms": alarms,
+        "metric": REVIEW_METRIC,
         "success": edits_total > 0
         and edits_found == edits_total
         and alarms <= FALSE_ALARM_LIMIT,
@@ -435,6 +771,7 @@ def authored_review_task(
             original=author_task["source"], candidate=output
         ),
         "lost": lost,
+        "passage": author_task["source"] + "\n" + output,
         "genre": author_task["genre"],
     }
 
@@ -652,6 +989,13 @@ class Journal:
     when answers are reused, but `executions` lists every line, because each one is
     spend. A job that failed is asked again on resume, and its earlier attempts
     still count against the budget.
+
+    The stored answer is a redacted copy: credential patterns are removed, and the
+    line says `credential_suspected: true` when that changed anything. The score
+    comes from the original answer, so it is kept as a separate `kind: "score"`
+    line (job, scorer version, score). A replay reuses a score of the current
+    scorer version instead of rescoring the redacted copy. Score lines are not
+    executions and carry no spend.
     """
 
     def __init__(self, path: Path) -> None:
@@ -659,12 +1003,17 @@ class Journal:
         self._lock = threading.Lock()
         self._entries: dict[str, dict[str, Any]] = {}
         self._lines: list[dict[str, Any]] = []
+        self._scores: dict[str, dict[str, Any]] = {}
         self._attempts = 0
         if path.is_file():
             for line in path.read_text("utf-8").splitlines():
                 if line:
                     entry = json.loads(line)
+                    if entry.get("kind") == "score":
+                        self._scores[entry["job"]] = entry
+                        continue
                     self._entries[entry["job"]] = entry
+                    self._scores.pop(entry["job"], None)
                     self._lines.append(entry)
                     self._attempts += entry["attempts"]
 
@@ -703,22 +1052,50 @@ class Journal:
         model: str | None = None,
         usage: Mapping[str, int] | None = None,
     ) -> None:
+        stored = procs.redact_credentials(answer)
         entry = {
             "job": job,
             "model": model,
-            "answer": answer,
+            "answer": stored,
             "error": error,
             "attempts": attempts,
             "usage": dict(usage) if usage else None,
         }
+        if stored != answer:
+            entry["credential_suspected"] = True
+        self._append(entry)
+        with self._lock:
+            self._entries[job] = entry
+            self._lines.append(entry)
+            self._scores.pop(job, None)
+
+    def score_for(self, job: str, scorer_version: str) -> dict[str, Any] | None:
+        """The score stored for `job` by the same scorer version, or None."""
+        stored = self._scores.get(job)
+        if stored and stored.get("scorer_version") == scorer_version:
+            return stored["score"]
+        return None
+
+    def attach_score(
+        self, job: str, scorer_version: str, score: Mapping[str, Any]
+    ) -> None:
+        line = {
+            "kind": "score",
+            "job": job,
+            "scorer_version": scorer_version,
+            "score": dict(score),
+        }
+        self._append(line)
+        with self._lock:
+            self._scores[job] = line
+
+    def _append(self, line: Mapping[str, Any]) -> None:
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(entry, sort_keys=True) + "\n")
+                fh.write(json.dumps(line, sort_keys=True) + "\n")
                 fh.flush()
                 os.fsync(fh.fileno())
-            self._entries[job] = entry
-            self._lines.append(entry)
 
 
 def unjournaled(
@@ -810,8 +1187,8 @@ def command_ask(
             reports.append(procs.parse_usage_line(proc.stderr))
             if ok:
                 return Reply(proc.stdout, used, procs.sum_usage(reports))
-            detail = procs.strip_usage_lines(proc.stderr)[:300]
-            last = procs.redact(f"model command exited {proc.returncode}: {detail}")
+            detail = procs.redact(procs.strip_usage_lines(proc.stderr))[:300]
+            last = f"model command exited {proc.returncode}: {detail}"
         raise CallFailed(last, used, procs.sum_usage(reports))
 
     return ask
@@ -833,6 +1210,7 @@ def _row(
         "family": model["family"],
         "tier": model["tier"],
         "repeat": repeat,
+        "scorer_version": SCORER_VERSION,
         "output_sha256": hashlib.sha256(answer.encode()).hexdigest(),
         "usage": dict(usage) if usage else None,
     }
@@ -978,6 +1356,30 @@ def frozen_candidates(
     return found
 
 
+def score_authored_review(task: Mapping[str, Any], answer: str) -> dict[str, Any]:
+    """Score a review of another model's rewrite, noting how many facts it lost."""
+    return score_review(task, answer) | {"lost_facts": len(task["lost"])}
+
+
+def _scored(
+    journal: Journal | None,
+    job: str,
+    error: str | None,
+    compute: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    """The score of a job: the stored one of this scorer version, else computed.
+
+    A fresh score comes from the original answer and is stored with the job, so a
+    replay does not rescore the redacted copy. A failed call stores nothing.
+    """
+    if journal and (kept := journal.score_for(job, SCORER_VERSION)) is not None:
+        return kept
+    result = compute()
+    if journal and not error:
+        journal.attach_score(job, SCORER_VERSION, result)
+    return result
+
+
 def execute(
     tasks: Sequence[Mapping[str, Any]],
     models: Sequence[Mapping[str, Any]],
@@ -1028,11 +1430,14 @@ def execute(
         if only_model is None or model["name"] == only_model
     ]
 
+    def task_job(model: Mapping[str, Any], task: Mapping[str, Any], repeat: int) -> str:
+        return job_id("task", model["name"], task["prompt"], repeat)
+
     def run_first(job: tuple[Any, Any, int]) -> tuple[str, str | None, Any]:
         model, task, repeat = job
         return _safe(
             asks[model["name"]],
-            job_id("task", model["name"], task["prompt"], repeat),
+            task_job(model, task, repeat),
             task["prompt"],
             journal,
             model["name"],
@@ -1044,20 +1449,28 @@ def execute(
     for (model, task, repeat), (answer, error, usage) in zip(
         first, answers, strict=True
     ):
-        row = _row(task, model, repeat, answer, usage)
+        # Score the answer as the model wrote it. Everything stored or derived from
+        # it (the row hash, the journal, the review prompt) uses the redacted copy.
+        stored = procs.redact_credentials(answer)
+        row = _row(task, model, repeat, stored, usage)
         if error:
             row["error"] = error
+        job = task_job(model, task, repeat)
         if task["role"] == "author":
             try:
-                row["score"] = score_author(task, answer, lint)
+                row["score"] = _scored(
+                    journal, job, error, partial(score_author, task, answer, lint)
+                )
             except LintIncomplete as exc:
                 # Neither a pass nor a fail: the summary leaves the run out.
                 row["score"] = None
                 row["unscored"] = str(exc)
             if task["type"] == "rewrite":
-                rewrite_outputs.append((task, model, repeat, answer))
+                rewrite_outputs.append((task, model, repeat, stored))
         else:
-            row["score"] = score_review(task, answer)
+            row["score"] = _scored(
+                journal, job, error, partial(score_review, task, answer)
+            )
         runs.append(row)
     rewrite_outputs.extend(frozen)
     second = []
@@ -1083,20 +1496,24 @@ def execute(
     for (review_task, author, reviewer, repeat), (reply, error, usage) in zip(
         second, replies, strict=True
     ):
-        row = _row(review_task, reviewer, repeat, reply, usage)
+        row = _row(
+            review_task, reviewer, repeat, procs.redact_credentials(reply), usage
+        )
         row["task"] = f"{review_task['id']}:{author['name']}"
         row["author_model"] = author["name"]
         row["author_family"] = author["family"]
         if error:
             row["error"] = error
-        row["score"] = score_review(review_task, reply) | {
-            "lost_facts": len(review_task["lost"])
-        }
+        job = review_job_id(review_task, author["name"], reviewer["name"], repeat)
+        row["score"] = _scored(
+            journal, job, error, partial(score_authored_review, review_task, reply)
+        )
         runs.append(row)
     return {
         "schema": RESULTS_SCHEMA,
         "date": date or dt.date.today().isoformat(),
         "prompt_version": PROMPT_VERSION,
+        "scorer_version": SCORER_VERSION,
         "tasks_sha256": tasks_digest(tasks),
         "repeats": repeats,
         "only_model": only_model,
@@ -1207,11 +1624,16 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
     Repeats of one task are averaged first, so the task is the unit of resampling.
     Reviewer runs that grade a rewrite with no lost facts are excluded: there
     was nothing to find. Unscored runs (an incomplete lint) are left out too.
+    The scorer version follows the single rule of `file_scorer_version`: a row
+    inherits its file header, a headerless file is legacy, and a row that
+    disagrees with its header raises ModelEvalError.
     """
     groups: dict[tuple[str, str, str], dict[str, list[float]]] = defaultdict(
         lambda: defaultdict(list)
     )
     info: dict[str, dict[str, str]] = {m["name"]: m for m in results["models"]}
+    version = file_scorer_version(results)
+    legacy = version is None
     for run in results["runs"]:
         score = run["score"]
         if score is None:
@@ -1235,6 +1657,10 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
                 "type": rtype,
                 "role": role,
                 "model": model,
+                "metric": LEGACY_METRIC
+                if legacy
+                else (REVIEW_METRIC if role == "reviewer" else AUTHOR_METRIC),
+                "scorer_version": version or LEGACY_SCORER,
                 "family": info[model]["family"],
                 "tier": info[model]["tier"],
                 "tasks": len(per_task),
@@ -1252,7 +1678,6 @@ def summarize(results: Mapping[str, Any], *, resamples: int = 1000) -> dict[str,
             )
             if ordered:
                 ranking[f"{rtype}/{role}"] = [r["model"] for r in ordered]
-    version = file_scorer_version(results)
     carried = {"scorer_version": version} if version is not None else {}
     return carried | {
         "schema": RESULTS_SCHEMA,
@@ -1335,7 +1760,11 @@ def load_usage_records(path: Path) -> list[tuple[str, dict[str, int] | None]]:
     reservations that never reached the journal (an interrupted call).
     """
     if path.suffix == ".jsonl":
-        entries = [json.loads(x) for x in path.read_text("utf-8").splitlines() if x]
+        entries = [
+            e
+            for e in (json.loads(x) for x in path.read_text("utf-8").splitlines() if x)
+            if e.get("kind") != "score"
+        ]
         stem = path.name.removesuffix(".journal.jsonl")
         ledger = path.with_name(stem + ".ledger.jsonl")
         if path.name.endswith(".journal.jsonl") and ledger.is_file():

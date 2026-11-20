@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location(
     "schema_compat", ROOT / "scripts" / "contract" / "schema_compat.py"
 )
+assert _spec is not None and _spec.loader is not None
 compat = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = compat
 _spec.loader.exec_module(compat)
@@ -389,6 +391,128 @@ def test_header_only_allow_file_has_no_entries(tmp_path):
     path = tmp_path / "allow.toml"
     path.write_text("# reviewed exceptions\n", encoding="utf-8")
     assert compat.load_allow(path) == []
+
+
+ALLOW_A = (
+    '[[allow]]\nfile = "thing.schema.json"\npointer = "/properties/a"\n'
+    'kind = "property-removed"\nreason = "reviewed"\napproved_by = "tester"\n'
+)
+NEVER_MATCHES = (
+    '[[allow]]\nfile = "thing.schema.json"\npointer = "/properties/zzz"\n'
+    'kind = "property-removed"\nreason = "typo"\napproved_by = "tester"\n'
+)
+
+
+def git_repo(tmp_path: Path) -> tuple[Path, Callable[..., None]]:
+    import subprocess
+
+    repo = tmp_path / "repo"
+    (repo / "schemas" / "v3").mkdir(parents=True)
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                *args,
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-q")
+    return repo, git
+
+
+def commit(repo: Path, git: Callable[..., None], body: dict, allow: str) -> None:
+    write_dir(repo / "schemas" / "v3", {FILE: body})
+    (repo / "schemas" / "v3" / compat.ALLOW_FILE).write_text(allow, encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "step")
+
+
+def test_allow_entry_still_passes_once_its_change_is_on_the_base(tmp_path):
+    repo, git = git_repo(tmp_path)
+    commit(repo, git, OLD_WITH_A, "")
+    commit(repo, git, schema(properties={}), ALLOW_A)
+    assert compat.main(["--repo", str(repo), "--base", "HEAD~1"]) == 0
+    # The change has landed: the base now holds the removal and its entry.
+    assert compat.main(["--repo", str(repo), "--base", "HEAD"]) == 0
+
+
+@pytest.mark.parametrize("base", ["HEAD~1", "HEAD"], ids=["before", "after-landing"])
+def test_an_added_entry_that_matches_nothing_is_stale_on_either_base(tmp_path, base):
+    repo, git = git_repo(tmp_path)
+    commit(repo, git, OLD_WITH_A, "")
+    commit(repo, git, schema(properties={}), ALLOW_A)
+    (repo / "schemas" / "v3" / compat.ALLOW_FILE).write_text(
+        ALLOW_A + NEVER_MATCHES, encoding="utf-8"
+    )
+    findings = compat.check(
+        compat.snapshot_from_ref(repo, base),
+        repo / "schemas" / "v3",
+        compat.load_allow(repo / "schemas" / "v3" / compat.ALLOW_FILE),
+    )
+    assert kinds(findings) == [("/properties/zzz", "allow-entry-stale")]
+
+
+def test_a_landed_entry_does_not_suppress_a_new_finding_at_its_pointer(tmp_path):
+    # The base already holds this entry, so it approved an earlier, landed change.
+    # Removing `a` now is a new break and needs a new review.
+    base = write_dir(tmp_path / "old", {FILE: OLD_WITH_A})
+    (base / compat.ALLOW_FILE).write_text(ALLOW_A, encoding="utf-8")
+    new = write_dir(tmp_path / "new", {FILE: schema(properties={})})
+    findings = compat.check(
+        compat.snapshot_from_dir(base), new, compat.load_allow(base / compat.ALLOW_FILE)
+    )
+    assert kinds(findings) == [("/properties/a", "property-removed")]
+
+
+UNRESOLVED = "https://elsewhere.test/x.schema.json"
+RESOLVED = "#/$defs/D"
+ALLOW_REF = (
+    '[[allow]]\nfile = "thing.schema.json"\npointer = "/properties/p/$ref"\n'
+    'kind = "unverified"\nreason = "external"\napproved_by = "tester"\n'
+)
+
+
+def with_ref(ref: str) -> dict:
+    return schema(
+        properties={"p": {"$ref": ref}}, **{"$defs": {"D": {"type": "string"}}}
+    )
+
+
+def test_an_approved_unresolved_ref_still_passes_once_landed(tmp_path):
+    repo, git = git_repo(tmp_path)
+    commit(repo, git, with_ref(RESOLVED), "")
+    commit(repo, git, with_ref(UNRESOLVED), ALLOW_REF)
+    assert compat.main(["--repo", str(repo), "--base", "HEAD~1"]) == 0
+    # On the landed base the reference is unchanged but still unresolvable.
+    assert compat.main(["--repo", str(repo), "--base", "HEAD"]) == 0
+
+
+def test_a_landed_entry_does_not_cover_a_changed_unresolved_ref(tmp_path, capsys):
+    repo, git = git_repo(tmp_path)
+    commit(repo, git, with_ref(RESOLVED), "")
+    commit(repo, git, with_ref(UNRESOLVED), ALLOW_REF)
+    write_dir(repo / "schemas" / "v3", {FILE: with_ref(UNRESOLVED + "?v=2")})
+    assert compat.main(["--repo", str(repo), "--base", "HEAD"]) == 1
+    assert "/properties/p/$ref: unverified" in capsys.readouterr().out
+
+
+def test_an_allow_file_override_ignores_the_default_one(tmp_path):
+    old = write_dir(tmp_path / "old", {FILE: OLD_WITH_A})
+    new = write_dir(tmp_path / "new", {FILE: schema(properties={})})
+    (new / compat.ALLOW_FILE).write_text("not = [toml", encoding="utf-8")
+    chosen = tmp_path / "chosen.toml"
+    chosen.write_text(ALLOW_A, encoding="utf-8")
+    args = ["--baseline-dir", str(old), "--schemas-dir", str(new)]
+    assert compat.main([*args, "--allow-file", str(chosen)]) == 0
 
 
 def test_missing_allow_file_has_no_entries(tmp_path):
@@ -1254,9 +1378,91 @@ def test_unverified_recursion_stop_is_suppressed_by_an_allow_entry(tmp_path):
     assert run(tmp_path, old, new, allow=[allow]) == []
 
 
+@pytest.mark.parametrize(
+    ("keyword", "kind"),
+    [
+        ("enum", "enum-narrowed"),
+        ("const", "const-narrowed"),
+        ("default", "unverified"),
+    ],
+)
+def test_portable_end_anchor_equivalence_is_limited_to_pattern(tmp_path, keyword, kind):
+    """A rule regex held in another keyword compiles with PCRE2, where `$` differs."""
+
+    def body(regex: str) -> dict:
+        value = [regex] if keyword == "enum" else regex
+        return schema(properties={"s": {"type": "string", keyword: value}})
+
+    findings = run(tmp_path, body("^a$"), body(f"^a{PORTABLE}"))
+    assert kinds(findings) == [(f"/properties/s/{keyword}", kind)]
+
+
 def test_unchanged_recursive_ref_still_passes(tmp_path):
     both = schema(properties={"p": {"$ref": "#/$defs/Node"}}, **{"$defs": node_defs()})
     assert run(tmp_path, both, both) == []
+
+
+PORTABLE = r"(?![\s\S])"
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "flagged"),
+    [
+        pytest.param("^[a-z]+$", f"^[a-z]+{PORTABLE}", False, id="trailing-dollar"),
+        pytest.param(
+            r"^(?!(.*/)?\.\.(/|$))",
+            rf"^(?!(.*/)?\.\.(/|{PORTABLE}))",
+            False,
+            id="inner",
+        ),
+        pytest.param("^a$|^b$", f"^a{PORTABLE}|^b{PORTABLE}", False, id="alternation"),
+        pytest.param(f"^[a-z]+{PORTABLE}", "^[a-z]+$", False, id="reverse"),
+        pytest.param("^[a-z]+$", f"^[a-z0-9]+{PORTABLE}", True, id="anchor-and-class"),
+        pytest.param("^[a-z]+$", "^[a-z]+", True, id="anchor-dropped"),
+        pytest.param(
+            "^([$(]x)$",
+            f"^([{PORTABLE}(]x){PORTABLE}",
+            True,
+            id="token-inside-class-is-not-an-anchor",
+        ),
+        pytest.param(r"^\$$", rf"^\${PORTABLE}", False, id="escaped-dollar-kept"),
+        pytest.param("^[$]$", f"^[$]{PORTABLE}", False, id="dollar-in-class-kept"),
+        pytest.param(
+            "(?m)^a$", f"(?m)^a{PORTABLE}", True, id="inline-flag-keeps-the-finding"
+        ),
+        pytest.param(
+            r"^[^](?m:[$]a$)",
+            rf"^[^](?m:[$]a{PORTABLE})",
+            True,
+            id="empty-negated-class-then-flag-group",
+        ),
+        pytest.param("^[]$", f"^[]{PORTABLE}", False, id="empty-class-closes"),
+        pytest.param(
+            "^[^]$", f"^[^]{PORTABLE}", False, id="negated-empty-class-closes"
+        ),
+        pytest.param(
+            "^(?-m:a)$", f"^(?-m:a){PORTABLE}", True, id="modifier-group-keeps-finding"
+        ),
+        pytest.param(
+            "a$\\", f"a{PORTABLE}\\", True, id="trailing-backslash-keeps-finding"
+        ),
+        pytest.param(
+            "^(?<n>a)$", f"^(?<n>a){PORTABLE}", False, id="named-group-is-not-a-flag"
+        ),
+        pytest.param(
+            "^(?<=a)b$", f"^(?<=a)b{PORTABLE}", False, id="lookbehind-is-not-a-flag"
+        ),
+    ],
+)
+def test_portable_end_anchor_equals_dollar(tmp_path, old, new, flagged):
+    findings = run(
+        tmp_path,
+        schema(properties={"s": {"pattern": old}}),
+        schema(properties={"s": {"pattern": new}}),
+    )
+    assert kinds(findings) == (
+        [("/properties/s/pattern", "pattern-changed")] if flagged else []
+    )
 
 
 @pytest.mark.parametrize("side", ["new", "baseline"])

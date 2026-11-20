@@ -4,6 +4,7 @@
 
 mod oci_server;
 mod revocations;
+mod support;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
@@ -212,14 +213,14 @@ fn ranges(entries: &[(&str, &str)]) -> BTreeMap<PackId, VersionReq> {
 /// A lock entry for `current`, signed in the lock when `signed`.
 fn entry(id: &str, registry: &str, current: &Release, signed: bool) -> String {
     let mut text = format!(
-        "\n[[packs]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"{}\"\nslopvac_api = 1\n\
+        "\n[[plugins]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"{}\"\nslopvac_api = 1\n\
          source = \"oci://{registry}/acme/{id}:{}\"\ndigest = \"{}\"\n",
         current.tag, current.tag, current.digest
     );
     if signed {
         write!(
             text,
-            "\n[packs.signature]\nkey_id = \"{}\"\nnot_before = \"{}\"\n",
+            "\n[plugins.signature]\nkey_id = \"{}\"\nnot_before = \"{}\"\n",
             current.key_id, current.not_before
         )
         .unwrap();
@@ -228,7 +229,7 @@ fn entry(id: &str, registry: &str, current: &Release, signed: bool) -> String {
 }
 
 struct Env {
-    dir: tempfile::TempDir,
+    dir: support::Scratch,
     root: Root,
     list: ListServer,
 }
@@ -242,13 +243,13 @@ impl Env {
             list_json("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z", &[], &[]),
         );
         Self {
-            dir: tempfile::tempdir().unwrap(),
+            dir: support::scratch(),
             root,
             list: ListServer::start(Some(empty)),
         }
     }
     fn lock_path(&self) -> PathBuf {
-        self.dir.path().join(".slopvac/packs.lock")
+        self.dir.path().join(".slopvac/plugins.lock")
     }
     fn write_lock(&self, entries: &[String]) -> String {
         let mut text = String::from("schema_version = 3\n");
@@ -1563,7 +1564,7 @@ fn a_synced_updated_lock_installs_the_new_content_and_stays_unchanged() {
 fn hostile_path_characters_are_escaped_in_error_text() {
     let hostile = "evil\u{1b}[31m\n\u{202e}";
     let err = UpdateError::Write {
-        path: format!("/p/{hostile}/.slopvac/packs.lock"),
+        path: format!("/p/{hostile}/.slopvac/plugins.lock"),
         source: std::io::Error::other("disk"),
     };
     let text = err.to_string();

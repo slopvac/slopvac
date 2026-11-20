@@ -17,12 +17,17 @@ mod analysis;
 mod binary_host;
 mod convert;
 mod linter;
+mod messages;
 mod server;
 
 use clap::{ArgMatches, Command};
+use slopvac_messages::render;
 
-pub use linter::{Check, EngineLinter, LintError, Linted, Linter, Problem};
-pub use server::{Exit, Server, ServerError};
+use messages::LspMessage;
+
+pub use linter::{Check, EngineLinter, LintError, Linted, Linter, Problem, exception_names};
+pub use messages::{RunError, ServerError, entries as message_entries};
+pub use server::{Exit, Server};
 
 /// How long a clean exit waits for the stdio threads to finish.
 const IO_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -30,7 +35,7 @@ const IO_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 /// The `lsp` subcommand.
 #[must_use]
 pub fn command() -> Command {
-    Command::new("lsp").about("Run the language server on standard input and output.")
+    Command::new("lsp").about(render(&LspMessage::HelpAbout))
 }
 
 /// Run the language server on standard input and output until the client exits, linting
@@ -57,7 +62,9 @@ pub fn run(_matches: &ArgMatches, linter: EngineLinter) -> Result<Exit, RunError
                 let _ = joined_tx.send(io_threads.join());
             });
             match joined.recv_timeout(IO_WAIT) {
-                Ok(Err(e)) => Err(RunError::Io(e.to_string())),
+                Ok(Err(e)) => Err(RunError::Io {
+                    detail: e.to_string(),
+                }),
                 Ok(Ok(())) | Err(_) => Ok(exit),
             }
         }
@@ -65,21 +72,7 @@ pub fn run(_matches: &ArgMatches, linter: EngineLinter) -> Result<Exit, RunError
             // The reader thread blocks on standard input, which the client may keep open.
             // Joining it would hang the process, so let it go: the process exits anyway.
             drop(io_threads);
-            Err(RunError::Server(e))
+            Err(RunError::Server { source: e })
         }
     }
-}
-
-/// Why `slopvac lsp` stopped with an error.
-#[derive(Debug, thiserror::Error)]
-pub enum RunError {
-    /// The engine could not be built.
-    #[error("cannot start the language server: {0}")]
-    Setup(String),
-    /// The standard streams failed.
-    #[error("language server input or output failed: {0}")]
-    Io(String),
-    /// The server ended in error.
-    #[error(transparent)]
-    Server(ServerError),
 }

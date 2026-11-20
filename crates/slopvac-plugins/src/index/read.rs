@@ -136,13 +136,13 @@ impl<'de> Visitor<'de> for RootSeed<'_> {
                     }
                     schema_version = true;
                 }
-                "packs" => {
+                "plugins" => {
                     if packs.is_some() {
-                        return Err(ctx.fail("", "repeated key `packs`"));
+                        return Err(ctx.fail("", "repeated key `plugins`"));
                     }
                     packs = Some(
                         map.next_value_seed(PacksSeed { ctx })
-                            .map_err(|e| ctx.typed(e, "/packs", "packs must be an array"))?,
+                            .map_err(|e| ctx.typed(e, "/plugins", "plugins must be an array"))?,
                     );
                 }
                 k if k.starts_with("x-") => {
@@ -154,7 +154,7 @@ impl<'de> Visitor<'de> for RootSeed<'_> {
         if !schema_version {
             return Err(ctx.fail("/schema_version", "schema_version is required"));
         }
-        packs.ok_or_else(|| ctx.fail("/packs", "packs is required"))
+        packs.ok_or_else(|| ctx.fail("/plugins", "plugins is required"))
     }
 }
 
@@ -184,11 +184,11 @@ impl<'de> Visitor<'de> for PacksSeed<'_> {
             if packs.len() == MAX_ENTRIES {
                 // One more element, skipped without allocating, proves an excess.
                 if seq.next_element::<IgnoredAny>()?.is_some() {
-                    return Err(ctx.fail("/packs", format!("more than {MAX_ENTRIES} entries")));
+                    return Err(ctx.fail("/plugins", format!("more than {MAX_ENTRIES} entries")));
                 }
                 break;
             }
-            let at = format!("/packs/{}", packs.len());
+            let at = format!("/plugins/{}", packs.len());
             let next = seq
                 .next_element_seed(EntrySeed { ctx, at: &at })
                 .map_err(|e| ctx.typed(e, &at, "an entry must be an object"))?;
@@ -300,11 +300,11 @@ impl<'de> Visitor<'de> for EntrySeed<'_> {
             })?,
             kind: match kind_text.as_str() {
                 "data" => PackKind::Data,
-                "plugin" => PackKind::Plugin,
+                "code" => PackKind::Code,
                 other => {
                     return Err(ctx.fail(
                         &format!("{at}/kind"),
-                        format!("`{other}` is not a pack kind (`data` or `plugin`)"),
+                        format!("`{other}` is not a plugin kind (`data` or `code`)"),
                     ));
                 }
             },

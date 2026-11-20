@@ -338,7 +338,7 @@ fn coverage_leaves_out_an_id_that_a_later_non_lexical_definition_replaces() {
 fn a_rule_the_engine_cannot_execute_never_passes_a_zero_count_case() {
     let structure = common::rule(
         "s",
-        &json!({"kind": "structure", "check": "heading-hierarchy"}),
+        &json!({"kind": "structure", "check": "unknown-check"}),
         &json!({"cases": [{"input": "nothing to see", "want": 0}]}),
     );
     let report = run_cases(&engine(&[structure]), None).unwrap();
@@ -490,7 +490,7 @@ fn core_engine() -> Engine {
 const KNOWN_FAILURES: &[(&str, &str)] = &[];
 
 const METRIC: &str = "metric rule: no cases, and examples do not run for non-lexical rules";
-const STRUCTURE: &str = "structure rule: no cases, and the engine does not run structure checks";
+const STRUCTURE: &str = "structure rule: no cases or checkable examples";
 const VOCABULARY: &str = "vocabulary rule: no cases, and it needs a word blocklist to run";
 
 /// Core rules with no executable check, with the reason. They report `Incomplete`, so the
@@ -511,30 +511,14 @@ const NO_EXECUTABLE_CHECK: &[(&str, &str)] = &[
     ("core:ste-descriptive.sentence-too-long-descriptive", METRIC),
     ("core:ste-descriptive.paragraph-too-many-sentences", METRIC),
     ("core:ste-nouns.multiword-noun-too-long", METRIC),
-    (
-        "core:ste-practices.inconsistent-wording-for-same-step",
-        STRUCTURE,
-    ),
     ("core:ste-procedural.sentence-too-long-procedural", METRIC),
     (
         "core:ste-punctuation.colon-terminates-sentence-for-count",
         METRIC,
     ),
     (
-        "core:ste-safety.safety-block-missing-consequence",
-        STRUCTURE,
-    ),
-    (
         "core:ste-sentences.complex-text-not-in-vertical-list",
         METRIC,
-    ),
-    (
-        "core:ste-sentences.vertical-list-lead-in-missing-colon",
-        STRUCTURE,
-    ),
-    (
-        "core:ste-sentences.vertical-list-item-punctuation",
-        STRUCTURE,
     ),
     ("core:ste-verbs.verb-form-not-listed", VOCABULARY),
     (
@@ -549,7 +533,6 @@ const NO_EXECUTABLE_CHECK: &[(&str, &str)] = &[
         "core:ste-words.verb-or-adjective-form-not-permitted",
         VOCABULARY,
     ),
-    ("core:ste-words.inconsistent-term-for-same-thing", STRUCTURE),
 ];
 
 fn names(list: &[(&str, &str)]) -> Vec<String> {
@@ -646,6 +629,31 @@ fn the_command_rejects_a_pack_with_nothing_to_run() {
         err.to_string(),
         "no rule has cases or checkable examples to run"
     );
+}
+
+#[test]
+fn the_plugin_option_names_the_plugin_whose_rule_runs() {
+    let dir = pack_dir(1);
+    let (code, out) = cli(&[
+        dir.path().to_str().unwrap(),
+        "--plugin",
+        "acme",
+        "--rule",
+        "acme:cat.r",
+    ]);
+    assert_eq!(
+        (code, out.as_str()),
+        (0, "1 passed, 0 failed, 0 incomplete\n")
+    );
+}
+
+#[test]
+fn the_retired_pack_option_is_a_usage_error() {
+    let dir = pack_dir(1);
+    let err = slopvac_engine::cases::cli::command()
+        .try_get_matches_from(["cases", dir.path().to_str().unwrap(), "--pack", "acme"])
+        .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
 }
 
 #[test]

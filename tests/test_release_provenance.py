@@ -47,6 +47,21 @@ def test_bad_candidate_tags_are_rejected(tag):
         prov.parse_candidate_tag(tag)
 
 
+@pytest.mark.parametrize(
+    ("tag", "cargo", "pypi", "stable", "active"),
+    [
+        ("rc/v3.0.0-rc.1", "3.0.0-rc.1", "3.0.0rc1", False, True),
+        ("v3.0.0", "3.0.0", "3.0.0", True, True),
+        ("v3.4.12", "3.4.12", "3.4.12", True, True),
+        ("v2.9.1", "2.9.1", "2.9.1", True, False),
+    ],
+)
+def test_release_tags_map_to_versions_and_say_whether_pypi_publishing_applies(
+    tag, cargo, pypi, stable, active
+):
+    assert prov.parse_release_tag(tag) == prov.ReleaseTag(cargo, pypi, stable, active)
+
+
 def good_run(candidate: str, **overrides):
     run = {
         "conclusion": "success",
@@ -54,7 +69,7 @@ def good_run(candidate: str, **overrides):
         "event": "push",
         "head_sha": f"sha-{candidate}",
         "head_branch": candidate,
-        "path": ".github/workflows/candidate.yml",
+        "path": ".github/workflows/publish-pypi.yml",
     }
     return {**run, **overrides}
 
@@ -254,8 +269,30 @@ def test_only_stable_releases_from_major_three_are_gated(version, gated):
 def test_a_version_with_a_leading_zero_is_an_error(capsys, version):
     with pytest.raises(ValueError, match="not a version"):
         prov.requires_gate(version)
-    assert prov.main(["requires-gate", version]) == 1
+    with pytest.raises(ValueError, match="not a version"):
+        prov.is_legacy_version(version)
+    assert prov.main(["is-legacy", version]) == 1
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize(
+    ("version", "legacy"),
+    [
+        ("2.9.1", True),
+        ("0.1.0", True),
+        ("2.9.1rc2", True),
+        ("3.0.0", False),
+        ("3.1.4", False),
+        ("3.0.0rc1", False),
+        ("10.0.0", False),
+    ],
+)
+def test_publish_lint_may_publish_only_versions_below_major_three(
+    capsys, version, legacy
+):
+    assert prov.is_legacy_version(version) is legacy
+    assert prov.main(["is-legacy", version]) == 0
+    assert capsys.readouterr().out == f"{'true' if legacy else 'false'}\n"
 
 
 def test_a_malformed_version_is_an_error():

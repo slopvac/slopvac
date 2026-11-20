@@ -73,6 +73,20 @@ fn project_terms_files_come_before_the_built_in_list() {
 }
 
 #[test]
+fn entries_given_parsed_enforce_casing_and_come_before_the_built_in_list() {
+    // No file is read: the caller validated and parsed the entries already.
+    let entry = slopvac_terms::TermEntry {
+        term: "Github".to_owned(),
+        variants: Vec::new(),
+        kind: None,
+        ignore_case: false,
+        case_sensitive: false,
+    };
+    let engine = base().with_term_entries(vec![entry]);
+    assert_eq!(lint_text(&engine, "See Github and GitHub.\n"), ["GitHub"]);
+}
+
+#[test]
 fn a_missing_terms_file_is_an_error() {
     let missing = common::private_dir("terms").join("nope.toml");
     assert!(base().with_term_files(&[missing]).is_err());

@@ -1,0 +1,6 @@
+schema_version = 3
+
+# The separate packs list is retired; data plugins go under [[plugins]].
+[[packs]]
+id = "acme"
+source = "oci://ghcr.io/acme/slopvac-acme"

@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: ${{ github.workflow }}
@@ -26,6 +25,15 @@ jobs:
       ISSUE_TITLE: Tool pins have newer versions
       ISSUE_MARKER: "<!-- slopvac-pin-check -->"
     steps:
+      - name: Mint the issue token
+        id: issue-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -72,10 +80,13 @@ jobs:
           echo "OUTDATED=$outdated" >> "$GITHUB_ENV"
 
       - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ steps.issue-token.outputs.token }}
+          APP_SLUG: ${{ vars.RELEASE_APP_SLUG }}
         run: |
-          # Only open issues authored by the github-actions app and carrying the hidden
+          # Only open issues authored by the release app and carrying the hidden
           # marker count; the lowest number wins if several exist.
-          number=$(gh issue list --state open --app github-actions --limit 200 \
+          number=$(gh issue list --state open --app "$APP_SLUG" --limit 200 \
             --search "$ISSUE_MARKER in:body" --json number,body \
             --jq 'map(select(.body | contains(env.ISSUE_MARKER))) | sort_by(.number)[0].number // empty')
           if [ "$OUTDATED" = "true" ]; then

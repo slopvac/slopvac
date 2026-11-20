@@ -70,6 +70,7 @@ fn the_published_common_schema_judges_the_corpus() {
         "LineCol",
         "Edit",
         "PackId",
+        "PluginId",
         "RuleId",
         "Severity",
         "RuleProvenance",

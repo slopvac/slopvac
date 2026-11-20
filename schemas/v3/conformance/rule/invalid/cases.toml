@@ -23,6 +23,7 @@
 "id-trailing-newline.json" = "/id"
 "metric-trailing-newline.json" = "/match"
 "ste-ref-trailing-newline.json" = "/citation/ste_ref"
+"placeholder-name-trailing-newline.json" = "/match"
 "exception-name-trailing-newline.json" = "/exceptions/0/name"
 "genre-trailing-newline.json" = "/applies_to/genres/0"
 "context-tag-trailing-newline.json" = "/contexts/skip/0"

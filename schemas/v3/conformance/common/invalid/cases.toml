@@ -13,6 +13,8 @@
 "Severity--off.json" = ""
 "ConfigSource--unknown-layer.yaml" = "/layer"
 "RuleId--uppercase-pack.json" = ""
+"PluginId--trailing-newline.json" = ""
 "PackId--trailing-newline.json" = ""
 "RuleId--trailing-newline.json" = ""
 "ContextTag--trailing-newline.json" = ""
+"PluginId--core.json" = ""

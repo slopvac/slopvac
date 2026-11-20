@@ -46,8 +46,8 @@ fn read_utf8(project: &Project, rel: &Path) -> Result<Option<(Vec<u8>, String)>,
     let Some(bytes) = project.read(rel)? else {
         return Ok(None);
     };
-    let text = String::from_utf8(bytes.clone())
-        .map_err(|_| AgentsError::NotUtf8(project.display(rel).into()))?;
+    let text =
+        String::from_utf8(bytes.clone()).map_err(|_| AgentsError::NotUtf8(rel.to_path_buf()))?;
     Ok(Some((bytes, text)))
 }
 
@@ -183,9 +183,18 @@ pub fn block_state(project: &Project, rel: &Path, block: &str) -> State {
         Ok(None) => return State::Missing,
         Err(_) => return State::Malformed,
     };
-    match section(&text, &project.display(rel)) {
+    match section(&text, &rel.display().to_string()) {
         Err(_) => State::Malformed,
-        Ok(None) => State::Missing,
+        Ok(None) => {
+            // A block appended after an unterminated code fence would be hidden by it.
+            let nl = newline(&text);
+            let sep = last_terminator(&text).unwrap_or(nl);
+            let appended = format!("{text}{sep}{}", native(block.trim_end(), nl));
+            match section(&appended, "") {
+                Ok(Some(_)) => State::Missing,
+                _ => State::Malformed,
+            }
+        }
         Ok(Some((s, e))) => {
             if native(text[s..e].trim(), "\n") == block.trim() {
                 State::Current
@@ -238,7 +247,7 @@ pub fn update_block(
     };
     let nl = newline(text);
     let body = format!("{}{nl}", native(block.trim_end_matches(['\r', '\n']), nl));
-    let updated = if let Some((s, e)) = section(text, &project.display(rel))? {
+    let updated = if let Some((s, e)) = section(text, &rel.display().to_string())? {
         format!("{}{body}{}", &text[..s], &text[e..])
     } else if text.is_empty() && !preamble.is_empty() {
         let head = native(preamble.trim_end_matches(['\r', '\n']), nl);
@@ -249,7 +258,30 @@ pub fn update_block(
         let sep = last_terminator(text).unwrap_or(nl);
         format!("{text}{sep}{body}")
     };
+    // An unterminated code fence swallows the appended block, so the next run would append
+    // another. Refuse instead of writing a block that cannot be found again.
+    if section(&updated, &rel.display().to_string())?.is_none() {
+        return Err(AgentsError::UnclosedFence(rel.to_path_buf()));
+    }
     project.write_atomic(rel, before, updated.as_bytes())
+}
+
+/// Fail now if `update_block` would fail on a refused file, so a caller can check every
+/// target before it writes any. Reads only.
+pub(crate) fn preflight(project: &Project, rel: &Path, block: &str) -> Result<(), AgentsError> {
+    let Some((_, text)) = read_utf8(project, rel)? else {
+        return Ok(());
+    };
+    if section(&text, &rel.display().to_string())?.is_some() {
+        return Ok(());
+    }
+    let nl = newline(&text);
+    let sep = last_terminator(&text).unwrap_or(nl);
+    let appended = format!("{text}{sep}{}", native(block.trim_end(), nl));
+    if section(&appended, &rel.display().to_string())?.is_none() {
+        return Err(AgentsError::UnclosedFence(rel.to_path_buf()));
+    }
+    Ok(())
 }
 
 /// Remove only the managed block.
@@ -261,7 +293,7 @@ pub fn remove_block(project: &Project, rel: &Path) -> Result<bool, AgentsError> 
     let Some((bytes, text)) = read_utf8(project, rel)? else {
         return Ok(false);
     };
-    let Some((s, e)) = section(&text, &project.display(rel))? else {
+    let Some((s, e)) = section(&text, &rel.display().to_string())? else {
         return Ok(false);
     };
     let (left, right) = (&text[..s], &text[e..]);

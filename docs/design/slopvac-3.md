@@ -95,7 +95,7 @@ When 3.0 ships, a bead tracks the replies on #252 to #257 and the Slack thread.
 
 pydantic models defined the 2.x schema. In 3.0, Rust types generate the JSON Schema, which is published per API major version.
 
-- **IDs:** namespaced as `<pack>:<id>`. Built-ins live in `core`. Short names still work where they are unambiguous.
+- **IDs:** namespaced as `<plugin>:<id>`. Built-ins live in `core`. Short names still work where they are unambiguous.
 - **Rules:**
   - A typed `match:` block (`tokens`, `pattern`, `substitution`, `metric`, `structure`, `capitalization`, `vocabulary`, `judgement`).
   - Fields for `exclude_blocks`, `contexts`, `applies_to`, and named exception detectors.
@@ -104,10 +104,10 @@ pydantic models defined the 2.x schema. In 3.0, Rust types generate the JSON Sch
 - **Profiles:** set gate thresholds and a severity shift only.
 - **Styles:** ordered presets with `extends` and declared `conflicts`. The last listed style wins.
 - **Genres:** data files with detection signals. A content type such as `how-to` is a genre that extends a genre. Diátaxis types are consumer content types.
-- **Context tags:** `{kind, span, confidence, evidence}` from registered taggers. Taggers are declarative in data packs and code in plugins.
+- **Context tags:** `{kind, span, confidence, evidence}` from registered taggers. Taggers are declarative in data plugins and code in plugins.
 - **Terms:** `.slopvac/terms.toml`. Each term needs only `term`. `variants` and `kind` are optional.
 - **Config:**
-  - `slopvac.toml` with `schema_version = 3`, `extends`, `styles`, `packs`, `plugins`, `[[genres]]`, `[frontmatter]` policy, `[vale]` removed, `[guidance] level`, `[thresholds]`, and `[[overrides]]`.
+  - `slopvac.toml` with `schema_version = 3`, `extends`, `styles`, `plugins`, `[[genres]]`, `[frontmatter]` policy, `[vale]` removed, `[guidance] level`, `[thresholds]`, and `[[overrides]]`.
   - The nearest config to each file applies.
   - Front matter is an allowed-fields layer under a `slopvac:` key.
 - **Lint JSON v3:** `schema_version`, `notices`, per-document `genre` and config sources, and per-finding `pack`, `contexts`, and `end_line`.
@@ -118,20 +118,20 @@ pydantic models defined the 2.x schema. In 3.0, Rust types generate the JSON Sch
 From lowest priority to highest: core defaults, styles, the genre chain, `extends`, project config, matching `[[genres]]` and `[[overrides]]`, front matter, inline directives, CLI flags.
 `--explain-config` prints the layer, the file, and the line for each value, and what the value overrode.
 
-### Packs and plugins
+### Plugins
 
-- **Data packs** hold rules, styles, genres, terms, declarative taggers, and prime snippets. They contain no code. A `slopvac-pack.toml` manifest declares `slopvac_api`.
+- **Data plugins** hold rules, styles, genres, terms, declarative taggers, and prime snippets. They contain no code. A `slopvac-plugin.toml` manifest declares `slopvac_api`.
 - **Code plugins** speak JSON-RPC 2.0 over stdio. Framing follows LSP. The `initialize` handshake exchanges capabilities. A Python SDK ships with them, and a conformance suite tests them.
   - Hook points: taggers, extractors, reporters, harness recipes, fixers, scorers, and model providers.
   - Python plugins run in their own environment.
 - **Distribution:** OCI artifacts on GHCR or any registry is the primary channel. Release archives, local folders, and git pinned to a commit also work.
-- **Lockfile:** `.slopvac/packs.lock` records the version, source, and digest.
+- **Lockfile:** `.slopvac/plugins.lock` records the version, source, and digest.
 - **Signatures:** minisign signatures ship as manifest layers. Publisher keys are listed in the index.
 - **Trust:**
   - The plugin host refuses to load an untrusted code plugin. slopvac lists each one with the command that trusts it.
   - `slopvac plugins trust` records trust per content hash. Trust is an explicit command, not a prompt.
   - Agents and CI never trust on the user's behalf.
-- **Commands:** `plugins sync`, `outdated`, `update`, `status`, `trust`, and `search`, which reads an index that a job rebuilds automatically. `pack new`, `validate`, `test`, and `publish` complete the set.
+- **Commands:** `plugins sync`, `outdated`, `update`, `status`, `trust`, and `search`, which reads an index that a job rebuilds automatically. `plugins new`, `validate`, `test`, and `publish` complete the set.
 
 ### Agents
 
@@ -171,10 +171,10 @@ From lowest priority to highest: core defaults, styles, the genre chain, `extend
 
 slopvac generates every reference document from code and data, and CI fails when a generated file is stale:
 
-- API schemas from the Rust types: lint JSON, config, front matter, pack manifest, rules, styles, genres, terms, lockfile, and plugin protocol messages. Each schema is versioned per API major and published at a stable URL.
+- API schemas from the Rust types: lint JSON, config, front matter, plugin manifest, rules, styles, genres, terms, lockfile, and plugin protocol messages. Each schema is versioned per API major and published at a stable URL.
 - One page per rule, with examples, exceptions, contexts, severity per profile and style, and provenance. Output formats link to these pages.
 - One page per style preset and per genre or content type.
-- The plugin protocol reference, the hook points, the pack manifest reference, and a page per pack.
+- The plugin protocol reference, the hook points, the plugin manifest reference, and a page per plugin.
 - Rust API docs: crate docs in every `lib.rs`, `missing_docs` on library crates, rustdoc with warnings denied, and docs.rs for published crates.
 
 ### Evals
@@ -223,7 +223,7 @@ The review also proposed a smaller 3.0.0 that moves the new platforms to 3.1. Th
 3. Rust engine crates, behind the golden suite.
 4. Config, front matter, terms, genres, styles, and context tagger.
 5. CLI, output formats, LSP, prime, and setup.
-6. Packs and plugins: protocol, OCI, trust, signatures, and first-party packs.
+6. Plugins: protocol, OCI, trust, signatures, and first-party plugins.
 7. Diagrams, experimental.
 8. Distribution, release candidates, and migration.
 9. Evals and the precision ratchet. These start in step 2 and continue in parallel.

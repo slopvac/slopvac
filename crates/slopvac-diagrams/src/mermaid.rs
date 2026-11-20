@@ -1,12 +1,13 @@
 //! Mermaid extraction, line by line per diagram type.
 //!
 //! Supported: flowchart/graph, sequence, class, state and ER diagrams. Other types
-//! return no fragments. Known limits: a label that spans lines is not seen, and a
+//! are unsupported. Known limits: a label that spans lines is not seen, and a
 //! node that has no shape renders its id, which is not extracted.
 
 use std::collections::HashMap;
 
-use crate::{Extraction, Fragment, Role, lines};
+use crate::sink::{Sink, clip};
+use crate::{Extraction, ExtractionStatus, Fragment, Role, lines};
 
 struct Line<'a> {
     off: usize,
@@ -15,39 +16,54 @@ struct Line<'a> {
 
 struct Emitter {
     diagram: &'static str,
-    out: Vec<Fragment>,
+    out: Sink,
     /// Bytes examined by line searches, summed over the diagram.
     work: usize,
+    /// Statement lines dispatched by the outer loop, counted apart from label searches.
+    statements: usize,
 }
 
 impl Emitter {
     /// Emit the trimmed, unquoted text of `s[a..b]`. `off` is the offset of `s` in the host file.
     fn push(&mut self, off: usize, s: &str, a: usize, b: usize, role: Role, id: &str) {
+        self.emit(off, s, a, b, role, id, false);
+    }
+
+    /// Like `push`, for a quoted property value that may hold backslash escapes.
+    fn push_unescaped(&mut self, off: usize, s: &str, a: usize, b: usize, role: Role, id: &str) {
+        self.emit(off, s, a, b, role, id, true);
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one call shape for both push forms"
+    )]
+    fn emit(
+        &mut self,
+        off: usize,
+        s: &str,
+        a: usize,
+        b: usize,
+        role: Role,
+        id: &str,
+        unescape: bool,
+    ) {
+        if self.out.is_full() {
+            return;
+        }
         let (a, b) = unwrap_label(s, a, b);
         if a >= b {
             return;
         }
+        let raw = &s[a..b];
+        let text = (unescape && raw.contains('\\'))
+            .then(|| raw.replace("\\\"", "\"").replace("\\\\", "\\"));
         self.out.push(Fragment {
             span: off + a..off + b,
-            text: None,
+            text,
             role,
-            logical: format!("mermaid.{}/{}[{}]", self.diagram, role.as_str(), id),
+            logical: format!("mermaid.{}/{}[{}]", self.diagram, role.as_str(), clip(id)),
         });
-    }
-}
-
-impl Emitter {
-    /// Like `push`, for a quoted property value that may hold backslash escapes.
-    fn push_unescaped(&mut self, off: usize, s: &str, a: usize, b: usize, role: Role, id: &str) {
-        let before = self.out.len();
-        self.push(off, s, a, b, role, id);
-        if self.out.len() > before {
-            let last = self.out.last_mut().expect("just pushed");
-            let raw = &s[last.span.start - off..last.span.end - off];
-            if raw.contains('\\') {
-                last.text = Some(raw.replace("\\\"", "\"").replace("\\\\", "\\"));
-            }
-        }
     }
 }
 
@@ -73,8 +89,22 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
     extract_counted(src, base).0
 }
 
-/// Extract and also return the bytes examined by line searches.
-fn extract_counted(src: &str, base: usize) -> (Extraction, usize) {
+/// What an extraction did, kept apart so a test can see which loop kept running.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Work {
+    /// Bytes examined by line searches.
+    searched: usize,
+    /// Statement lines the outer loop dispatched.
+    statements: usize,
+}
+
+/// A failed extraction, which did no counted work.
+fn failed(status: ExtractionStatus) -> (Extraction, Work) {
+    (Extraction::failed(status), Work::default())
+}
+
+/// Extract and also return the work done.
+fn extract_counted(src: &str, base: usize) -> (Extraction, Work) {
     let lines: Vec<Line<'_>> = lines(src)
         .into_iter()
         .map(|l| Line {
@@ -86,11 +116,16 @@ fn extract_counted(src: &str, base: usize) -> (Extraction, usize) {
     let mut front = Vec::new();
     if iter.peek().is_some_and(|l| l.text.trim_end() == "---") {
         iter.next();
+        let mut closed = false;
         for l in iter.by_ref() {
             if l.text.trim_end() == "---" {
+                closed = true;
                 break;
             }
             front.push(l);
+        }
+        if !closed {
+            return failed(ExtractionStatus::Malformed("front matter is not closed"));
         }
     }
     let mut header = None;
@@ -109,14 +144,24 @@ fn extract_counted(src: &str, base: usize) -> (Extraction, usize) {
         Some("classDiagram" | "classDiagram-v2") => "class",
         Some("stateDiagram" | "stateDiagram-v2") => "state",
         Some("erDiagram") => "er",
-        _ => return (Extraction::default(), 0),
+        None => return (Extraction::default(), Work::default()),
+        Some(_) => {
+            return failed(ExtractionStatus::Unsupported(
+                "unsupported Mermaid diagram type",
+            ));
+        }
     };
     let mut em = Emitter {
         diagram,
-        out: Vec::new(),
+        out: Sink::default(),
         work: 0,
+        statements: 0,
     };
     for l in front {
+        if em.out.is_full() {
+            break;
+        }
+        em.work += l.text.len();
         if let Some(rest) = l.text.strip_prefix("title:") {
             em.push(
                 l.off,
@@ -137,15 +182,24 @@ fn extract_counted(src: &str, base: usize) -> (Extraction, usize) {
         statement(&mut em, &mut state, off + k + 1 + lead, tail.trim());
     }
     for l in iter {
+        if em.out.is_full() {
+            break;
+        }
+        em.statements += 1;
         let lead = l.text.len() - l.text.trim_start().len();
         statement(&mut em, &mut state, l.off + lead, l.text.trim());
     }
+    let (fragments, hit) = em.out.finish();
     (
         Extraction {
             diagram: Some(diagram.to_string()),
-            fragments: em.out,
+            fragments,
+            status: crate::sink::status(hit),
         },
-        em.work,
+        Work {
+            searched: em.work,
+            statements: em.statements,
+        },
     )
 }
 
@@ -355,7 +409,7 @@ fn flowchart(em: &mut Emitter, off: usize, t: &str) {
     let mut search = Search::new(t);
     let b = t.as_bytes();
     let mut i = 0;
-    while i < b.len() {
+    while i < b.len() && !em.out.is_full() {
         let c = b[i];
         if c.is_ascii_whitespace() || c == b';' || c == b'&' {
             i += 1;
@@ -539,7 +593,7 @@ fn class(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
     match word {
         "class" => {
             let name = t[word.len()..].trim().trim_end_matches('{').trim();
-            let id = name.split(['[', ' ']).next().unwrap_or(name).to_string();
+            let id = clip(name.split(['[', ' ']).next().unwrap_or(name)).into_owned();
             if let Some(a) = t.find("[\"").map(|k| k + 2)
                 && let Some(n) = t[a..].find('"')
             {
@@ -625,7 +679,7 @@ fn er(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
     }
     if t.ends_with('{') {
         let name = t.trim_end_matches('{').trim();
-        let id = name.split('[').next().unwrap_or(name).trim().to_string();
+        let id = clip(name.split('[').next().unwrap_or(name).trim()).into_owned();
         if let Some(a) = t.find("[\"").map(|k| k + 2)
             && let Some(n) = t[a..].find('"')
         {
@@ -644,7 +698,7 @@ fn er(em: &mut Emitter, st: &mut State, off: usize, t: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Format, extract as run};
+    use crate::{ExtractionStatus, Format, extract as run};
 
     fn labels(src: &str) -> Vec<(Role, String)> {
         let ex = run(Format::Mermaid, src, 0);
@@ -788,9 +842,20 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_type_yields_nothing() {
+    fn unsupported_type_is_reported() {
         let ex = run(Format::Mermaid, "gantt\n  title X\n", 0);
         assert_eq!(ex.diagram, None);
+        assert_eq!(ex.fragments, Vec::new());
+        assert_eq!(
+            ex.status,
+            ExtractionStatus::Unsupported("unsupported Mermaid diagram type")
+        );
+    }
+
+    #[test]
+    fn a_source_with_only_comments_is_ok_and_empty() {
+        let ex = run(Format::Mermaid, "%% nothing here\n", 0);
+        assert_eq!(ex.status, ExtractionStatus::Ok);
         assert_eq!(ex.fragments, Vec::new());
     }
 
@@ -855,10 +920,40 @@ mod tests {
     }
 
     #[test]
+    fn reading_stops_at_the_fragment_cap_instead_of_scanning_the_tail() {
+        use std::fmt::Write as _;
+        let mut head = String::from("flowchart TD\n");
+        for i in 0..=crate::MAX_FRAGMENTS {
+            writeln!(head, "  A{i}[L{i}]").unwrap();
+        }
+        let mut full = head.clone();
+        full.push_str(&"  B[tail]\n".repeat(50_000));
+        let (full, head) = (extract_counted(&full, 0).1, extract_counted(&head, 0).1);
+        assert_eq!(full.statements, head.statements);
+        assert_eq!(full, head);
+    }
+
+    #[test]
+    fn a_single_line_of_nodes_stops_at_the_fragment_cap() {
+        let head = format!("flowchart TD\n{}", "A[x] ".repeat(crate::MAX_FRAGMENTS + 1));
+        let full = format!("{head}{}", "B[y] ".repeat(50_000));
+        assert_eq!(extract_counted(&full, 0).1, extract_counted(&head, 0).1);
+    }
+
+    #[test]
+    fn repeated_front_matter_titles_stop_at_the_fragment_cap() {
+        let titles = |n: usize| format!("---\n{}---\nflowchart TD\n", "title: t\n".repeat(n));
+        let head = titles(crate::MAX_FRAGMENTS + 1);
+        let full = titles(crate::MAX_FRAGMENTS + 1 + 50_000);
+        assert_eq!(extract_counted(&full, 0).1, extract_counted(&head, 0).1);
+    }
+
+    #[test]
     fn malformed_repeated_openers_examine_a_linear_number_of_bytes() {
         for unit in ["A[ ", "A@{ ", "A-- ", "A[\"", "A-->|", "A[/ ", "A(("] {
             let src = format!("flowchart LR\n{}\n", unit.repeat(5_000));
             let (_, work) = extract_counted(&src, 0);
+            let work = work.searched;
             assert!(
                 work <= 4 * src.len(),
                 "{unit:?}: examined {work} bytes of {}",

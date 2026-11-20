@@ -1,5 +1,5 @@
 //! Declarative taggers from data packs: the `tagger` artifact of
-//! `schemas/v3/tagger.schema.json`, specified in `docs/contract/packs.md`, section 5.
+//! `schemas/v3/tagger.schema.json`, specified in `docs/contract/plugins.md`, section 5.
 //!
 //! A tagger with `match` sets one context tag on each text unit where a `match` entry
 //! matches and no `unless` entry matches. It reads the text of the unit and nothing else, so
@@ -10,9 +10,9 @@ use std::ops::Range;
 
 use serde::Deserialize;
 
-use crate::schema::{Extensions, check_schema_version, is_name, present};
+use crate::schema::{Extensions, TAGGER_SCHEMA_VERSION, check_schema_version, is_name, present};
 use crate::structural::{Scope, Settings, StructuralTagger, When};
-use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, Tagger};
+use crate::{BlockKind, BlockView, DocumentView, Error, Pattern, Tag, TagSink, Tagger};
 
 /// The text unit that receives the tag.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -137,7 +137,11 @@ impl TaggerSpec {
     pub fn compile(self) -> Result<DeclarativeTagger, Error> {
         let id = self.id.clone();
         let fail = |msg: &str| Error::Parse(format!("tagger `{id}`: {msg}"));
-        check_schema_version(&format!("tagger `{id}`"), self.schema_version)?;
+        check_schema_version(
+            &format!("tagger `{id}`"),
+            self.schema_version,
+            TAGGER_SCHEMA_VERSION,
+        )?;
         if !is_name(&self.id) {
             return Err(fail("id must be lowercase kebab-case"));
         }
@@ -284,12 +288,16 @@ impl DeclarativeTagger {
         }
     }
 
-    fn tag_block(&self, doc: &dyn DocumentView, b: &BlockView<'_>) -> Result<Vec<Tag>, Error> {
-        let mut out = Vec::new();
+    fn tag_block(
+        &self,
+        doc: &dyn DocumentView,
+        b: &BlockView<'_>,
+        sink: &mut TagSink,
+    ) -> Result<(), Error> {
         match self.unit().block_kind() {
             Some(kind) if b.kind == kind => {
                 if self.fires(b.text)? {
-                    out.push(self.tag_for(b.span.clone()));
+                    sink.push_with(|| self.tag_for(b.span.clone()))?;
                 }
             }
             Some(_) => {}
@@ -297,12 +305,12 @@ impl DeclarativeTagger {
             None => {
                 for s in doc.sentences(b) {
                     if self.fires(s.text)? {
-                        out.push(self.tag_for(s.span));
+                        sink.push_with(|| self.tag_for(s.span))?;
                     }
                 }
             }
         }
-        Ok(out)
+        Ok(())
     }
 }
 
@@ -312,13 +320,18 @@ impl Tagger for DeclarativeTagger {
     }
 
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
+        let mut sink = TagSink::unbounded();
+        self.tag_into(doc, &mut sink)?;
+        Ok(sink.into_tags())
+    }
+
+    fn tag_into(&self, doc: &dyn DocumentView, sink: &mut TagSink) -> Result<(), Error> {
         if let Some(structural) = &self.structural {
-            return structural.tag(doc);
+            return structural.tag(doc, sink);
         }
-        let mut out = Vec::new();
         for b in doc.blocks() {
-            out.extend(self.tag_block(doc, &b)?);
+            self.tag_block(doc, &b, sink)?;
         }
-        Ok(out)
+        Ok(())
     }
 }

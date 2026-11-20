@@ -1,0 +1,91 @@
+---
+source: crates/slopvac-report/tests/snapshots_all_formats.rs
+expression: "rendered(Format::CodeClimate)"
+---
+[
+  {
+    "categories": [
+      "Style"
+    ],
+    "check_name": "core:ai-residue.chat-leakage",
+    "description": "Remove the chat reply that leaked into the document.",
+    "fingerprint": "0665824b3c5aa246",
+    "location": {
+      "lines": {
+        "begin": 2,
+        "end": 2
+      },
+      "path": "docs/guide.md"
+    },
+    "severity": "major",
+    "type": "issue"
+  },
+  {
+    "categories": [
+      "Style"
+    ],
+    "check_name": "core:prose-inflation.slop-lexicon",
+    "description": "Replace 'delve' with a plain verb.",
+    "fingerprint": "ddcb14ae29097f5a",
+    "location": {
+      "lines": {
+        "begin": 1,
+        "end": 1
+      },
+      "path": "docs/guide.md"
+    },
+    "severity": "minor",
+    "type": "issue"
+  },
+  {
+    "categories": [
+      "Style"
+    ],
+    "check_name": "core:orwell.not-un",
+    "description": "Say 'unclear' without the 'not un' double negative.",
+    "fingerprint": "76707c62d9c575fd",
+    "location": {
+      "lines": {
+        "begin": 2,
+        "end": 2
+      },
+      "path": "docs/guide.md"
+    },
+    "severity": "info",
+    "type": "issue"
+  },
+  {
+    "categories": [
+      "Style"
+    ],
+    "check_name": "core:docs-discipline.document-length",
+    "description": "The comment block runs 80 words; keep it under 60.",
+    "fingerprint": "bbfa5e1866db7590",
+    "location": {
+      "lines": {
+        "begin": 1,
+        "end": 1
+      },
+      "path": "src/app.py"
+    },
+    "severity": "minor",
+    "type": "issue"
+  },
+  {
+    "categories": [
+      "Style"
+    ],
+    "check_name": "core:prose-inflation.slop-lexicon",
+    "description": "Replace \"wörld\" <b>& `x` | y\u0001",
+    "fingerprint": "400b51cdf40c191b",
+    "location": {
+      "lines": {
+        "begin": 2,
+        "end": 2
+      },
+      "path": "dossiers/ça & <é>.md"
+    },
+    "severity": "minor",
+    "type": "issue"
+  }
+]

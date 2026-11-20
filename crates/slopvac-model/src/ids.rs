@@ -20,7 +20,7 @@ pub(crate) fn is_pack(s: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`.
+/// `^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\s\S])`.
 pub(crate) fn is_kebab(s: &str) -> bool {
     let mut parts = s.split('-');
     let first_ok = parts.next().is_some_and(|p| {
@@ -64,7 +64,7 @@ impl PackId {
             Ok(Self(value))
         } else {
             Err(IdError {
-                kind: "pack id",
+                kind: "plugin id",
                 value,
             })
         }
@@ -96,7 +96,7 @@ impl fmt::Display for PackId {
     }
 }
 
-/// Qualified rule identifier `<pack>:<id>`. A rule from a category file has the id
+/// Qualified rule identifier `<plugin>:<id>`. A rule from a category file has the id
 /// `<category>.<rule>`, for example `core:prose-craft.acronym-periods`; a rule a plugin reports
 /// may use a bare id such as `core:passive-voice`. Short names resolve in configuration only
 /// where they are unambiguous; every output carries the qualified form.
@@ -120,7 +120,7 @@ impl RuleId {
         }
     }
 
-    /// The full `<pack>:<id>` text.
+    /// The full `<plugin>:<id>` text.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -219,20 +219,26 @@ impl From<ContextTag> for String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SchemaVersion;
 
+impl SchemaVersion {
+    /// The one `schema_version` this build reads and writes.
+    pub const VALUE: u8 = 3;
+}
+
 impl Serialize for SchemaVersion {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(3)
+        serializer.serialize_u8(Self::VALUE)
     }
 }
 
 impl<'de> Deserialize<'de> for SchemaVersion {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let n = u64::deserialize(deserializer)?;
-        if n == 3 {
+        if n == u64::from(Self::VALUE) {
             Ok(Self)
         } else {
             Err(serde::de::Error::custom(format!(
-                "schema_version must be 3, got {n}"
+                "schema_version must be {}, got {n}",
+                Self::VALUE
             )))
         }
     }
@@ -246,7 +252,7 @@ impl JsonSchema for SchemaVersion {
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
             "description": "Root artifact schema version.",
-            "const": 3,
+            "const": SchemaVersion::VALUE,
         })
     }
 }
@@ -260,6 +266,9 @@ impl JsonSchema for SchemaVersion {
 pub struct ApiVersion(u32);
 
 impl ApiVersion {
+    /// The `slopvac_api` values this build supports.
+    pub const SUPPORTED: [u32; 1] = [1];
+
     /// Wrap a version, rejecting zero.
     pub fn new(value: u32) -> Result<Self, IdError> {
         if value >= 1 {

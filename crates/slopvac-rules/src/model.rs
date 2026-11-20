@@ -8,7 +8,7 @@
 // `PlaceholderSource` has one variant today and gains more when a second source appears.
 #![allow(clippy::zero_sized_map_values)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
 use schemars::JsonSchema;
@@ -26,8 +26,8 @@ text_newtype!(
     /// Rule id inside its category: a lower-case letter, then lower-case letters, digits and
     /// hyphens.
     LocalRuleId, false,
-    "Rule id inside its category. The qualified RuleId is <pack>:<category>.<id>, built from \
-     the pack manifest, the category id and this id.",
+    "Rule id inside its category. The qualified RuleId is <plugin>:<category>.<id>, built from \
+     the plugin manifest, the category id and this id.",
     "rule id", |s| is_slug(s, '-'), SLUG
 );
 text_newtype!(
@@ -409,8 +409,9 @@ impl<'de> Deserialize<'de> for Substitutions {
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Substitutions, A::Error> {
                 let mut entries: Vec<(Pcre2Pattern, String)> = Vec::new();
+                let mut seen: HashSet<Pcre2Pattern> = HashSet::new();
                 while let Some((k, v)) = map.next_entry::<Pcre2Pattern, String>()? {
-                    if entries.iter().any(|(e, _)| *e == k) {
+                    if !seen.insert(k.clone()) {
                         return Err(de::Error::custom(format!(
                             "substitution key {:?} appears twice",
                             k.as_str()
@@ -718,7 +719,7 @@ impl TryFrom<AppliesToFields> for AppliesTo {
 /// A named, closed reason a finding may be suppressed. A suppression annotation must cite one
 /// by name. With detector, the engine drops the finding itself when the named detector, or the
 /// context tag of that name, holds at the match.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "Exception")]
 #[schemars(transform = x_extensions)]
 pub struct Exception {

@@ -3,8 +3,8 @@
 //!
 //! Allowed: literals, `^`, explicit character classes, groups, lookahead, quantifiers,
 //! alternation, escaped punctuation, `\n`-style control escapes, `\xHH` and `\uHHHH`, and the
-//! end anchor `(?![\s\S])` as the last token. Forbidden: a bare `$` (Python lets it match
-//! before a final newline), the shorthand classes `\d`, `\w`, `\s` and their negations,
+//! end anchor `(?![\s\S])` as the last token of the pattern or of a group. Forbidden: a bare
+//! `$` (Python lets it match before a final newline), the shorthand classes `\d`, `\w`, `\s` and their negations,
 //! `\p{..}`, inline flags, lookbehind, named groups, backreferences, `\b`, `\A`, `\z`, `\Z`
 //! `.` (the engines disagree on which line terminators it excludes) and `]` first in a class.
 //!
@@ -37,96 +37,24 @@ const PENDING: &[(&str, &str, &str)] = &[
         "/$defs/BlocklistEntry/properties/word",
         "slopvac-8l4.2.55",
     ),
-    ("config.schema.json", "/$defs/Ref", "slopvac-8l4.2.54"),
-    ("config.schema.json", "/$defs/RuleKey", "slopvac-8l4.2.54"),
     (
-        "doctor-report.schema.json",
-        "/$defs/PinnedKey/properties/fingerprint",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "doctor-report.schema.json",
-        "/$defs/PinnedKey/properties/namespace",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "pack-index.schema.json",
-        "/$defs/PackIndexSemver",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "pack-index.schema.json",
+        "plugin-index.schema.json",
         "/$defs/PackIndexSource",
         "slopvac-8l4.2.56",
     ),
     (
-        "pack-index.schema.json",
-        "/$defs/PublisherKey/properties/fingerprint",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "pack-index.schema.json",
-        "/$defs/PublisherKey/properties/key_id",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "pack-manifest.schema.json",
+        "plugin-manifest.schema.json",
         "/$defs/PackPath",
         "slopvac-8l4.2.52",
     ),
     (
-        "pack-manifest.schema.json",
-        "/$defs/Plugin/properties/env/items",
-        "slopvac-8l4.2.52",
-    ),
-    (
-        "pack-manifest.schema.json",
-        "/$defs/Semver",
-        "slopvac-8l4.2.52",
-    ),
-    (
-        "pack-manifest.schema.json",
-        "/$defs/VersionReq",
-        "slopvac-8l4.2.52",
-    ),
-    (
-        "packs-lock.schema.json",
-        "/$defs/Digest",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "packs-lock.schema.json",
-        "/$defs/Locked/properties/signature/properties/key_id",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "packs-lock.schema.json",
-        "/$defs/Locked/properties/signature/properties/not_before",
-        "slopvac-8l4.2.56",
-    ),
-    (
-        "packs-lock.schema.json",
+        "plugins-lock.schema.json",
         "/$defs/Locked/properties/source",
         "slopvac-8l4.2.56",
     ),
     (
         "plugin-protocol.schema.json",
-        "/$defs/ErrorObject/properties/data/properties/slopvac_code",
-        "slopvac-8l4.2.53",
-    ),
-    (
-        "plugin-protocol.schema.json",
         "/$defs/FeatureName",
-        "slopvac-8l4.2.53",
-    ),
-    (
-        "plugin-protocol.schema.json",
-        "/$defs/HookId",
-        "slopvac-8l4.2.53",
-    ),
-    (
-        "plugin-protocol.schema.json",
-        "/$defs/HookKind",
         "slopvac-8l4.2.53",
     ),
     (
@@ -140,11 +68,6 @@ const PENDING: &[(&str, &str, &str)] = &[
         "slopvac-8l4.2.53",
     ),
     ("style.schema.json", "/$defs/RelPath", "slopvac-8l4.2.54"),
-    (
-        "terms.schema.json",
-        "/$defs/Term/properties/kind",
-        "slopvac-8l4.2.55",
-    ),
 ];
 
 /// A construct outside the portable subset.
@@ -165,7 +88,8 @@ enum Violation {
 
 /// The constructs in `pattern` outside the portable subset.
 fn violations(pattern: &str) -> Vec<Violation> {
-    let body = pattern.strip_suffix(END).unwrap_or(pattern);
+    let body = pattern.replace(&format!("{END})"), ")");
+    let body = body.strip_suffix(END).unwrap_or(&body);
     let chars: Vec<char> = body.chars().collect();
     let at = |i: usize| chars.get(i).copied();
     let hex = |from: usize, n: usize| {
@@ -396,6 +320,7 @@ fn every_end_anchored_schema_pattern_has_a_trailing_newline_vector() {
 #[case::slug(r"^[a-z][a-z0-9-]*(?![\s\S])")]
 #[case::alternation_and_escaped_dot(r"^(?:[0-9]+:[0-9]+\.[0-9]+|[0-9]+:GR-[0-9]+)(?![\s\S])")]
 #[case::unanchored_prefix("^x-")]
+#[case::end_anchor_inside_a_lookahead(r"^(?!core(?![\s\S]))[a-z]+(?![\s\S])")]
 #[case::escaped_backslashes(r"^(?:[^\\]|\\[^uU])*\\[uU]")]
 #[case::lookahead_and_unicode_escapes(r"^(?!/)[^\u0000-\u001F]{1,64}(?![\s\S])")]
 fn a_portable_pattern_passes(#[case] pattern: &str) {

@@ -20,10 +20,10 @@ mod reference;
 mod shape;
 pub mod suggest;
 
-pub use blocklist::{Blocklist, BlocklistEntry, Pos};
+pub use blocklist::{BLOCKLIST_SCHEMA_VERSION, Blocklist, BlocklistEntry, Pos};
 pub use casing::{CasingFinding, TermSet};
 pub use edit::{TermsDoc, infer_ignore_case};
-pub use error::TermsError;
+pub use error::{EntryProblem, TermsError};
 pub use read::MAX_TERMS_FILE_BYTES;
 pub use reference::reference_pages;
-pub use shape::{TermEntry, TermsFile};
+pub use shape::{TERMS_SCHEMA_VERSION, TermEntry, TermsFile};

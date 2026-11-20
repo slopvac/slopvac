@@ -103,7 +103,7 @@ covers [linting and fixes](packages/slopvac-lint/README.md#lint-documents),
 ## What it checks
 
 The linter ships 169 checked rules across 26 categories. The catalog also
-carries 68 judgment rules that lint never reports. The
+carries 69 judgment rules that lint never reports. The
 [writing guidance](#writing-guidance) and [semantic review](#semantic-review)
 apply them.
 

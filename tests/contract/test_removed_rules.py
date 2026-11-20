@@ -8,6 +8,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 REMOVED_FILE = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
@@ -43,3 +45,18 @@ def test_every_removed_id_is_a_2x_rule():
 
     known = {rule.qualified_id for rule in load_ruleset().all_rules}
     assert {e["id"] for e in _entries()} - known == set()
+
+
+def test_the_converter_reads_the_contract_file_and_fails_without_it(tmp_path):
+    import importlib.util
+    import sys
+
+    path = ROOT / "scripts" / "contract" / "convert_rules_v2_to_v3.py"
+    spec = importlib.util.spec_from_file_location("convert_removed_probe", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    assert module.REMOVED_RULES == EXPECTED
+    with pytest.raises(FileNotFoundError):
+        module.load_removed_rules(tmp_path / "missing.toml")

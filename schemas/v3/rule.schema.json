@@ -301,7 +301,7 @@
       "type": "object"
     },
     "LocalRuleId": {
-      "description": "Rule id inside its category. The qualified RuleId is <pack>:<category>.<id>, built from the pack manifest, the category id and this id.",
+      "description": "Rule id inside its category. The qualified RuleId is <plugin>:<category>.<id>, built from the plugin manifest, the category id and this id.",
       "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
       "type": "string"
     },

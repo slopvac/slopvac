@@ -1,0 +1,7 @@
+schema_version: 3
+id: change-note-changelog-heading
+tag: change-note
+scope: section
+confidence: 0.9
+when:
+  heading_path: '^\W*(?:added|changed|fixed|removed)\W*$'

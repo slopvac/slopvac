@@ -18,6 +18,7 @@ import argparse
 import json
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -36,6 +37,25 @@ CHECK_KINDS = frozenset({"structure", "vocabulary"})
 # The only 2.x rule that carries an ALLOWED_WORDS placeholder; the 2.x loader
 # (rules._inject_heading_allow) substitutes it for this rule id alone.
 PLACEHOLDER_RULE_ID = "title-case-heading"
+# 2.x rules that 3.0 does not ship, as `<category>.<rule>`, from the contract's list.
+# The converter and the generators that list 2.x rules skip them.
+REMOVED_RULES_FILE = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "contract"
+    / "compat"
+    / "removed-rules.toml"
+)
+
+
+def load_removed_rules(path: Path = REMOVED_RULES_FILE) -> frozenset[str]:
+    """The removed rule ids in the contract file; a missing file raises."""
+    entries = tomllib.loads(path.read_text(encoding="utf-8"))["rules"]
+    return frozenset(entry["id"] for entry in entries)
+
+
+REMOVED_RULES = load_removed_rules()
+
 CATEGORY_ID = re.compile(r"^[a-z][a-z0-9-]*$")
 
 _UNICODE_ESCAPE = re.compile(
@@ -170,8 +190,54 @@ def _convert_exception(name: str) -> dict:
     return exception
 
 
+_REMOVED_LOCAL_IDS = frozenset(key.split(".", 1)[1] for key in REMOVED_RULES)
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def mentions_removed_rule(text: str) -> bool:
+    """Whether ``text`` names a removed rule by its id, with or without a category."""
+    return any(local in text for local in _REMOVED_LOCAL_IDS)
+
+
+def scrub_removed_rules(text: str) -> str:
+    """Drop each sentence of ``text`` that names a removed rule.
+
+    A message or note that mentions a removed rule reaches rule pages and ``explain``.
+    The remaining sentences read on their own. A text that is only such a sentence is a
+    conversion error, because it would need a human rewrite.
+    """
+    if not mentions_removed_rule(text):
+        return text
+    kept = [
+        p for p in _SENTENCE_END.split(text.strip()) if not mentions_removed_rule(p)
+    ]
+    if not kept:
+        raise ConversionError(f"text names only a removed rule: {text!r}")
+    return " ".join(kept)
+
+
+def _scrub(value):
+    if isinstance(value, str):
+        return scrub_removed_rules(value)
+    if isinstance(value, list):
+        return [_scrub(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _scrub(v) for k, v in value.items()}
+    return value
+
+
 def convert_rule(rule: dict) -> dict:
     """One 2.x rule mapping to one v3 rule mapping. ``tiers`` is dropped."""
+    out = _scrub_rule(_convert_rule(rule))
+    return out
+
+
+def _scrub_rule(out: dict) -> dict:
+    """Scrub every user-facing text of a converted rule. The rule id stays as it is."""
+    return {k: (v if k in ("id", "match") else _scrub(v)) for k, v in out.items()}
+
+
+def _convert_rule(rule: dict) -> dict:
     out: dict = {
         "id": rule["id"],
         "name": rule["name"],
@@ -219,7 +285,11 @@ def convert_category(category: dict) -> dict:
     for key in ("weight", "max_per_100_words", "recommended_for"):
         if key in category:
             out[key] = category[key]
-    out["rules"] = [convert_rule(r) for r in category["rules"]]
+    out["rules"] = [
+        convert_rule(r)
+        for r in category["rules"]
+        if f"{category['id']}.{r['id']}" not in REMOVED_RULES
+    ]
     return out
 
 
@@ -228,7 +298,7 @@ def extract_tiers(category: dict) -> dict[str, dict[str, str]]:
     return {
         f"{category['id']}.{r['id']}": dict(r["tiers"])
         for r in category["rules"]
-        if "tiers" in r
+        if "tiers" in r and f"{category['id']}.{r['id']}" not in REMOVED_RULES
     }
 
 

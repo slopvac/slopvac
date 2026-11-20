@@ -1,4 +1,4 @@
-//! Escaping for XML, HTML and GitHub workflow commands.
+//! Escaping for XML and HTML.
 
 /// Escape text for XML and HTML content and attributes.
 ///
@@ -31,18 +31,6 @@ pub(crate) fn xml_attr(text: &str) -> String {
         .replace('\r', "&#13;")
 }
 
-/// Escape a GitHub workflow-command message (`::error ::message`).
-pub(crate) fn github_data(text: &str) -> String {
-    text.replace('%', "%25")
-        .replace('\r', "%0D")
-        .replace('\n', "%0A")
-}
-
-/// Escape a GitHub workflow-command property value.
-pub(crate) fn github_property(text: &str) -> String {
-    github_data(text).replace(':', "%3A").replace(',', "%2C")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,11 +46,5 @@ mod tests {
     #[test]
     fn attribute_whitespace_becomes_character_references() {
         assert_eq!(xml_attr("a\tb\nc\rd"), "a&#9;b&#10;c&#13;d");
-    }
-
-    #[test]
-    fn github_escapes_per_the_workflow_command_rules() {
-        assert_eq!(github_data("50%\r\nnext"), "50%25%0D%0Anext");
-        assert_eq!(github_property("a:b,c%"), "a%3Ab%2Cc%25");
     }
 }

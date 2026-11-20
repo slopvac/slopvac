@@ -306,6 +306,21 @@ while True:
         if mode == "version-unsupported":
             error(id_, -32001, "protocol-version-unsupported")
             continue
+        if mode.startswith("init-error:"):
+            # init-error:CODE:LABEL answers initialize with that numeric code and label.
+            _, num, label = mode.split(":", 2)
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": id_,
+                    "error": {
+                        "code": int(num),
+                        "message": "refused",
+                        "data": {"slopvac_code": label, "supported": [3, 4]},
+                    },
+                }
+            )
+            continue
         if mode in ("hang", "stderr-after-exit") and pidfile:
             write_pids(pidfile, [os.getpid()])
         if mode == "stray-init":

@@ -620,20 +620,27 @@
       },
       "properties": {
         "label": {
-          "$ref": "#/$defs/OriginLabel",
-          "description": "Display name of the segment."
+          "description": "Display name of the segment.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])",
+          "type": "string"
         },
         "locator": {
-          "$ref": "#/$defs/OriginLocator",
-          "description": "Percent-escaped locator, unique per segment within the document."
+          "description": "Percent-escaped locator, unique per segment within the document.",
+          "maxLength": 512,
+          "minLength": 1,
+          "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])",
+          "type": "string"
         },
         "range": {
           "$ref": "#/$defs/SegmentRange",
           "description": "Extracted match range in UTF-8 bytes, local to the segment's text."
         },
         "segment": {
-          "$ref": "#/$defs/SegmentId",
-          "description": "Segment id, unique within the document."
+          "description": "Segment id, unique within the document.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])",
+          "type": "string"
         }
       },
       "required": [
@@ -643,18 +650,6 @@
         "range"
       ],
       "type": "object"
-    },
-    "OriginLabel": {
-      "maxLength": 256,
-      "minLength": 1,
-      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])",
-      "type": "string"
-    },
-    "OriginLocator": {
-      "maxLength": 512,
-      "minLength": 1,
-      "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])",
-      "type": "string"
     },
     "RunSummary": {
       "additionalProperties": false,
@@ -736,10 +731,6 @@
       "maximum": 100,
       "minimum": 0,
       "type": "number"
-    },
-    "SegmentId": {
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])",
-      "type": "string"
     },
     "SegmentRange": {
       "additionalProperties": false,

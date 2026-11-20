@@ -28,11 +28,15 @@ mod path;
 mod read;
 
 pub use dirs::{
-    CACHE_DIR_VAR, HomeFallback, Lookup, cache_dir, cache_dir_with, config_dir, config_dir_with,
+    CACHE_DIR_VAR, DirKind, HomeFallback, Lookup, ResolvedDir, cache_dir, cache_dir_with,
+    config_dir, config_dir_with, data_dir, data_dir_with, resolve_dir_with, state_dir,
+    state_dir_with,
 };
 pub use error::{Error, InputKind, Op, Reason, Result};
 pub use io::{MAX_DOCUMENT_BYTES, WriteOptions, read_capped, read_text_capped, write_atomic};
-pub use path::{EXTERNAL, display_under_root, lexical_normalize};
+pub use path::{
+    EXTERNAL, display_physical, display_under_root, lexical_normalize, resolve_physical,
+};
 pub use read::{
     ReadOptions, read_capped_regular, read_capped_regular_in, read_capped_regular_to_string,
     read_capped_regular_to_string_in,

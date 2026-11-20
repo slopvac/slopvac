@@ -105,6 +105,26 @@ pub(crate) fn comment<'a>(
     line(source, start, end, syntax)
 }
 
+/// Strip the prefix and quotes from a terminated Python string literal at `start..end`.
+pub(crate) fn docstring(source: &str, start: usize, end: usize) -> Option<Decorated<'_>> {
+    let text = source.get(start..end)?;
+    let quotes = text.trim_start_matches(|c: char| c.is_ascii_alphabetic());
+    let open = start + (text.len() - quotes.len());
+    let delim = if quotes.starts_with("\"\"\"") || quotes.starts_with("'''") {
+        3
+    } else {
+        1
+    };
+    // The lexer only reports strings it saw close, so a closer of the same length exists.
+    let content = (open + delim <= end.checked_sub(delim)?).then(|| open + delim..end - delim)?;
+    Some(Decorated {
+        kind: CommentKind::Doc,
+        marker: "",
+        groupable: false,
+        lines: interior(source, content.start, content.end, false),
+    })
+}
+
 fn block_result(
     source: &str,
     content: Range<usize>,

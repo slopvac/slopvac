@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use slopvac_cli::messages::{self, Retired};
-use slopvac_messages::{Entry, ParamKind};
+use slopvac_messages::{Entry, Kind, ParamKind};
 
 fn main() -> std::io::Result<()> {
     let out = PathBuf::from(std::env::args().nth(1).expect("usage: reference <out-dir>"));
@@ -24,15 +24,24 @@ pub(crate) fn page(catalogs: &[(&str, &[Entry])], retired: &[Retired]) -> String
          Every message the command line prints has a stable code. A code never changes meaning \
          and is never reused. Message text can change in any release, so match on the code.\n\n",
     );
-    if catalogs.iter().all(|(_, entries)| entries.is_empty()) {
+    // Text ids are not codes: the page lists errors and notices only.
+    let listed: Vec<(&str, Vec<&Entry>)> = catalogs
+        .iter()
+        .map(|(name, entries)| {
+            let kept = entries.iter().filter(|e| e.kind != Kind::Text).collect();
+            (*name, kept)
+        })
+        .filter(|(_, kept): &(&str, Vec<&Entry>)| !kept.is_empty())
+        .collect();
+    if listed.is_empty() {
         out.push_str("No codes are registered yet.\n");
     }
-    for (name, entries) in catalogs.iter().filter(|(_, entries)| !entries.is_empty()) {
+    for (name, entries) in &listed {
         let _ = writeln!(out, "## {name}\n");
         out.push_str(
             "| Code | Kind | Message | Parameters | Summary |\n| --- | --- | --- | --- | --- |\n",
         );
-        for entry in *entries {
+        for entry in entries {
             let params = entry
                 .params
                 .iter()

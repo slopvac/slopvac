@@ -8,1087 +8,279 @@
 # reason = "Why the break is acceptable."
 # approved_by = "reviewer name"
 
+
+# The plugins amendment: one plugins group, kinds data and code, reserved core, pack names renamed to plugin.
 [[allow]]
-file = "category.schema.json"
-pointer = "/properties/id/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+file = "config.schema.json"
+pointer = "/properties/packs"
+kind = "property-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames every pack key to plugins: the config packs array merges into the one plugins array, and the doctor report key packs becomes plugins. v3 is unreleased, so nothing reads the old key."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
-file = "category.schema.json"
-pointer = "/properties/max_per_100_words/propertyNames/pattern"
+file = "config.schema.json"
+pointer = "/properties/plugins/items/$ref(config.schema.json#/$defs/Source)/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
 kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
-file = "category.schema.json"
-pointer = "/properties/recommended_for/items/$ref(rule.schema.json#/$defs/Genre)/pattern"
+file = "config.schema.json"
+pointer = "/$defs/Source/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
 kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
 [[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/id/$ref(rule.schema.json#/$defs/LocalRuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+file = "doctor-report.schema.json"
+pointer = "/required/plugins"
+kind = "required-added"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the doctor report key packs to plugins, which stays required. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/properties/packs"
+kind = "property-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames every pack key to plugins: the config packs array merges into the one plugins array, and the doctor report key packs becomes plugins. v3 is unreleased, so nothing reads the old key."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/$defs/Pack"
+kind = "def-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the doctor report defs Pack and Packs to LockedPlugin and Plugins. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/$defs/Packs"
+kind = "def-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the doctor report defs Pack and Packs to LockedPlugin and Plugins. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "pack-index.schema.json"
+pointer = ""
+kind = "file-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack schemas to plugin-manifest, plugins-lock and plugin-index, with no alias, by the maintainer's decision. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "pack-manifest.schema.json"
+pointer = ""
+kind = "file-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack schemas to plugin-manifest, plugins-lock and plugin-index, with no alias, by the maintainer's decision. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "packs-lock.schema.json"
+pointer = ""
+kind = "file-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack schemas to plugin-manifest, plugins-lock and plugin-index, with no alias, by the maintainer's decision. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "config.schema.json"
+pointer = "/conformance/valid/full.toml"
+kind = "corpus-rejected"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/conformance/valid/full.json"
+kind = "corpus-rejected"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/conformance/valid/minimal.json"
+kind = "corpus-rejected"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+# The schema generator (slopvac-8l4.2.49): the Pcre2Pattern escape check drops its lookbehind.
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/placeholders/propertyNames/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "category.schema.json"
 pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/3/$ref(rule.schema.json#/$defs/MetricMatch)/properties/metric/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/4/$ref(rule.schema.json#/$defs/StructureMatch)/properties/check/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/6/$ref(rule.schema.json#/$defs/VocabularyMatch)/properties/check/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/only/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/skip/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/applies_to/$ref(rule.schema.json#/$defs/AppliesTo)/properties/genres/items/$ref(rule.schema.json#/$defs/Genre)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/name/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/detector/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "category.schema.json"
-pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "common.schema.json"
-pointer = "/$defs/PackId/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "common.schema.json"
-pointer = "/$defs/RuleId/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "common.schema.json"
-pointer = "/$defs/RuleProvenance/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "common.schema.json"
-pointer = "/$defs/ContextTag/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "config.schema.json"
-pointer = "/properties/packs/items/$ref(config.schema.json#/$defs/Source)/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "config.schema.json"
-pointer = "/properties/plugins/items/$ref(config.schema.json#/$defs/Source)/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "config.schema.json"
-pointer = "/properties/review/$ref(config.schema.json#/$defs/Review)/properties/provider/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "config.schema.json"
-pointer = "/$defs/Source/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "config.schema.json"
-pointer = "/$defs/Review/properties/provider/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "genre.schema.json"
-pointer = "/properties/id/$ref(rule.schema.json#/$defs/Genre)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "genre.schema.json"
-pointer = "/properties/contexts/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/summary/$ref(lint-report.schema.json#/$defs/RunSummary)/properties/categories/items/$ref(lint-report.schema.json#/$defs/CategorySummary)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/genre/$ref(lint-report.schema.json#/$defs/GenreResult)/properties/id/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/genre/$ref(lint-report.schema.json#/$defs/GenreResult)/properties/reasons/items/$ref(lint-report.schema.json#/$defs/GenreReason)/properties/signal/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/contexts_seen/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/rule_id/$ref(common.schema.json#/$defs/RuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/contexts/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/provenance/$ref(common.schema.json#/$defs/RuleProvenance)/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/locator/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/label/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/segment/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/categories/items/$ref(lint-report.schema.json#/$defs/CategoryScore)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/documents/items/$ref(lint-report.schema.json#/$defs/Document)/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/properties/code/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/properties/notices/items/$ref(lint-report.schema.json#/$defs/Notice)/properties/code/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/CategoryId/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Notice/properties/code/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/CategorySummary/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/RunSummary/properties/categories/items/$ref(lint-report.schema.json#/$defs/CategorySummary)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/GenreReason/properties/signal/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/GenreResult/properties/id/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/GenreResult/properties/reasons/items/$ref(lint-report.schema.json#/$defs/GenreReason)/properties/signal/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/CategoryScore/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Origin/properties/locator/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Origin/properties/label/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Origin/properties/segment/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Finding/properties/rule_id/$ref(common.schema.json#/$defs/RuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Finding/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Finding/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Finding/properties/contexts/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Finding/properties/provenance/$ref(common.schema.json#/$defs/RuleProvenance)/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Finding/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/locator/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Finding/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/label/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Finding/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/segment/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/genre/$ref(lint-report.schema.json#/$defs/GenreResult)/properties/id/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/genre/$ref(lint-report.schema.json#/$defs/GenreResult)/properties/reasons/items/$ref(lint-report.schema.json#/$defs/GenreReason)/properties/signal/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/contexts_seen/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/rule_id/$ref(common.schema.json#/$defs/RuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/contexts/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/provenance/$ref(common.schema.json#/$defs/RuleProvenance)/properties/pack/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/locator/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/label/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/findings/items/$ref(lint-report.schema.json#/$defs/Finding)/properties/origin/$ref(lint-report.schema.json#/$defs/Origin)/properties/segment/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/categories/items/$ref(lint-report.schema.json#/$defs/CategoryScore)/properties/category/$ref(lint-report.schema.json#/$defs/CategoryId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "lint-report.schema.json"
-pointer = "/$defs/Document/properties/unchecked/items/$ref(lint-report.schema.json#/$defs/Notice)/properties/code/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "pack-index.schema.json"
-pointer = "/properties/packs/items/$ref(pack-index.schema.json#/$defs/PackIndexEntry)/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "pack-index.schema.json"
-pointer = "/properties/packs/items/$ref(pack-index.schema.json#/$defs/PackIndexEntry)/properties/namespace/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "pack-index.schema.json"
-pointer = "/$defs/PackIndexEntry/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "pack-index.schema.json"
-pointer = "/$defs/PackIndexEntry/properties/namespace/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "pack-manifest.schema.json"
-pointer = "/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "pack-manifest.schema.json"
-pointer = "/properties/requires/items/$ref(pack-manifest.schema.json#/$defs/Requirement)/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "pack-manifest.schema.json"
-pointer = "/$defs/Requirement/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "packs-lock.schema.json"
-pointer = "/properties/packs/items/$ref(packs-lock.schema.json#/$defs/Locked)/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "packs-lock.schema.json"
-pointer = "/properties/packs/items/$ref(packs-lock.schema.json#/$defs/Locked)/properties/requires/items/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "packs-lock.schema.json"
-pointer = "/$defs/Locked/properties/id/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "packs-lock.schema.json"
-pointer = "/$defs/Locked/properties/requires/items/$ref(common.schema.json#/$defs/PackId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/$defs/PluginFinding/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/$defs/Tag/properties/kind/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/$defs/TagResult/properties/results/items/allOf/1/properties/tags/items/$ref(plugin-protocol.schema.json#/$defs/Tag)/properties/kind/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/$defs/Segment/properties/context/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/$defs/ExtractResult/properties/results/items/allOf/1/properties/segments/items/$ref(plugin-protocol.schema.json#/$defs/Segment)/properties/context/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/$defs/FixParams/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/$defs/ScoreParams/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/$defs/Call/allOf/8/then/properties/params/$ref(plugin-protocol.schema.json#/$defs/FixParams)/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/$defs/Call/allOf/9/then/properties/params/$ref(plugin-protocol.schema.json#/$defs/ScoreParams)/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/allOf/0/then/$ref(plugin-protocol.schema.json#/$defs/Call)/allOf/8/then/properties/params/$ref(plugin-protocol.schema.json#/$defs/FixParams)/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "plugin-protocol.schema.json"
-pointer = "/allOf/0/then/$ref(plugin-protocol.schema.json#/$defs/Call)/allOf/9/then/properties/params/$ref(plugin-protocol.schema.json#/$defs/ScoreParams)/properties/documents/items/allOf/1/properties/findings/items/$ref(plugin-protocol.schema.json#/$defs/PluginFinding)/properties/rule/$ref(common.schema.json#/$defs/RuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/id/$ref(rule.schema.json#/$defs/LocalRuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/placeholders/propertyNames/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/3/$ref(rule.schema.json#/$defs/MetricMatch)/properties/metric/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/4/$ref(rule.schema.json#/$defs/StructureMatch)/properties/check/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/6/$ref(rule.schema.json#/$defs/VocabularyMatch)/properties/check/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/only/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/skip/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/applies_to/$ref(rule.schema.json#/$defs/AppliesTo)/properties/genres/items/$ref(rule.schema.json#/$defs/Genre)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/name/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/detector/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/LocalRuleId/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Pcre2Pattern/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Genre/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/PatternMatch/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/PatternMatch/properties/placeholders/propertyNames/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/SubstitutionMatch/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/MetricMatch/properties/metric/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/StructureMatch/properties/check/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/VocabularyMatch/properties/check/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Match/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Match/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/placeholders/propertyNames/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Match/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
-pointer = "/$defs/Match/oneOf/3/$ref(rule.schema.json#/$defs/MetricMatch)/properties/metric/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+pointer = "/$defs/PatternMatch/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
-pointer = "/$defs/Match/oneOf/4/$ref(rule.schema.json#/$defs/StructureMatch)/properties/check/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Match/oneOf/6/$ref(rule.schema.json#/$defs/VocabularyMatch)/properties/check/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Contexts/properties/only/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Contexts/properties/skip/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/AppliesTo/properties/genres/items/$ref(rule.schema.json#/$defs/Genre)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Exception/properties/name/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Exception/properties/detector/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Citation/properties/ste_ref/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/id/$ref(rule.schema.json#/$defs/LocalRuleId)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+pointer = "/$defs/Pcre2Pattern/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/placeholders/propertyNames/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
 pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/3/$ref(rule.schema.json#/$defs/MetricMatch)/properties/metric/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+pointer = "/$defs/SubstitutionMatch/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/4/$ref(rule.schema.json#/$defs/StructureMatch)/properties/check/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/6/$ref(rule.schema.json#/$defs/VocabularyMatch)/properties/check/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/only/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/contexts/$ref(rule.schema.json#/$defs/Contexts)/properties/skip/items/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/applies_to/$ref(rule.schema.json#/$defs/AppliesTo)/properties/genres/items/$ref(rule.schema.json#/$defs/Genre)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/name/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/exceptions/items/$ref(rule.schema.json#/$defs/Exception)/properties/detector/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "rule.schema.json"
-pointer = "/$defs/Rule/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/properties/tag/$ref(common.schema.json#/$defs/ContextTag)/pattern"
-kind = "pattern-changed"
-reason = "portable end anchor (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/heading_path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/admonition_title/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/front_matter/$ref(tagger.schema.json#/$defs/FrontMatterCondition)/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/sentence/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/$defs/When/properties/heading_path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/$defs/When/properties/admonition_title/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/$defs/When/properties/front_matter/$ref(tagger.schema.json#/$defs/FrontMatterCondition)/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/$defs/When/properties/path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
-
-[[allow]]
-file = "tagger.schema.json"
-pointer = "/$defs/When/properties/sentence/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
-kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
 
 [[allow]]
 file = "tagger.schema.json"
 pointer = "/$defs/FrontMatterCondition/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
 kind = "constraint-added"
-reason = "portable regex subset: lookbehind replaced by a forward scan that rejects the same \\u and \\U escapes (8l4.2.58)"
-approved_by = "contract owner (8l4.2)"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/When/properties/admonition_title/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/When/properties/front_matter/$ref(tagger.schema.json#/$defs/FrontMatterCondition)/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/When/properties/heading_path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/When/properties/path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/When/properties/sentence/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/admonition_title/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/front_matter/$ref(tagger.schema.json#/$defs/FrontMatterCondition)/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/heading_path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/sentence/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+# The schema generator (slopvac-8l4.2.49): ste_ref spells its digits as [0-9], inside the portable regex subset.
+[[allow]]
+file = "category.schema.json"
+pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
+kind = "pattern-changed"
+reason = "ste_ref spells \\d as [0-9]. \\d is outside the portable regex subset: Python reads it as any Unicode digit, the Rust validator as ASCII. The Rust is_ste_ref already accepts only ASCII digits (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
+kind = "pattern-changed"
+reason = "ste_ref spells \\d as [0-9]. \\d is outside the portable regex subset: Python reads it as any Unicode digit, the Rust validator as ASCII. The Rust is_ste_ref already accepts only ASCII digits (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/Citation/properties/ste_ref/pattern"
+kind = "pattern-changed"
+reason = "ste_ref spells \\d as [0-9]. \\d is outside the portable regex subset: Python reads it as any Unicode digit, the Rust validator as ASCII. The Rust is_ste_ref already accepts only ASCII digits (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/Rule/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
+kind = "pattern-changed"
+reason = "ste_ref spells \\d as [0-9]. \\d is outside the portable regex subset: Python reads it as any Unicode digit, the Rust validator as ASCII. The Rust is_ste_ref already accepts only ASCII digits (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"

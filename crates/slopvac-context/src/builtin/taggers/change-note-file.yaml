@@ -1,0 +1,7 @@
+schema_version: 3
+id: change-note-file
+tag: change-note
+scope: document
+confidence: 0.7
+when:
+  path: '(?:^|/)(?:changelog|changes|history|news|releases?|upgrading|migration)[^/]*$'

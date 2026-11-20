@@ -10,6 +10,25 @@ went, and the rules a consumer relies on. Field descriptions live in the schema.
 - `schema_version` is 3. Lint JSON jumps from 1 to 3, so no report carries 2.
 - Consumers must branch on `notices[].code` and `unchecked[].code`, never on the message
   text. A code keeps its meaning for the whole 3.x line. Codes are kebab-case.
+- Extractors share four codes: `extract-unsupported`, `extract-malformed`, `extract-budget`
+  and `extract-output-invalid`. Unsupported content inside a supported input, such as a
+  Mermaid `gitGraph` block or a PlantUML mind map, is a root `notices` entry with the code
+  `extract-unsupported` and level `info`. The run stays complete and exits 0. Malformed
+  content (`extract-malformed`) and content over a limit (`extract-budget`) are `unchecked`
+  entries at level `warning`. They make the run incomplete and exit 2.
+- An unknown diagram type in a recognized fence, such as `gitGraph` or `@startmindmap`, is
+  unsupported. A broken diagram of a type slopvac reads, such as an unclosed `@startuml`
+  block or Mermaid front matter that never closes, is `extract-malformed`.
+- Content that slopvac skips counts toward no score and no gate. The report shows that it
+  was skipped, through the `extract-unsupported` notice.
+- Three cases exit 2 although the input may be valid. A whole input that the user names in a
+  format slopvac does not read, such as EPUB or PDF, is an error. An encrypted or
+  password-protected container is an error. A file whose name promises source but holds
+  none, such as `.drawio.png`, `.excalidraw.png` or `.drawio.svg`, is `binary-no-source` for
+  a binary file and `extract-malformed` with the reason `no diagram source` for a
+  diagram file. A plain PNG or SVG with no source is not an error. It is info and exits 0.
+- `extract-output-invalid` belongs to first-party extractors only. The result of a failed
+  third-party plugin is `plugin-output-invalid`.
 - `slopvac_version` names the tool build. It does not signal a schema change.
 - The schema is strict, because it is the producer contract. Slopvac writes only reports
   that validate, and its own tests check that. A consumer must ignore unknown fields, as
@@ -42,6 +61,13 @@ A notice may carry `data`, a JSON object whose values may be any JSON value, nes
 omits it. The schema does not constrain the keys. Each notice code documents its own
 keys, and a consumer must ignore keys it does not know.
 
+`extract-unsupported` has these keys:
+
+| Key | Meaning |
+| --- | --- |
+| `data.document` | The path of the document that holds the skipped content, as shown in the report. |
+| `data.kind` | What was skipped: the format of the diagram, such as `mermaid`, `plantuml`, `excalidraw`, `drawio`, `drawio-svg` or `drawio-png`. |
+
 `extract-budget` has these keys:
 
 | Key | Meaning |
@@ -59,10 +85,24 @@ keys, and a consumer must ignore keys it does not know.
 | `text` | UTF-8 bytes of extracted text. |
 | `in-flight` | Bytes. |
 | `frame` | Bytes, the negotiated `maxMessageBytes`. |
+| `fragments` | Count of extracted fragments. |
+| `retained-bytes` | Bytes of fragment locations and converted text. |
+| `inflated-bytes` | Bytes of a decompressed draw.io page. |
+| `xml-nodes` | Count of XML nodes in one draw.io file. |
 
 The list of budget names can grow in a later 3.x release, so a consumer must handle a
 name it does not know. The plugin protocol's error `data` for the same code uses the
 same keys.
+
+`config-budget-exceeded` has these keys:
+
+| Key | Meaning |
+| --- | --- |
+| `data.budget` | Name of the config cap that the load passed: `extends-depth`, `extends-files`, `extends-bytes`, `extends-applied-bytes` or `file-blocks`. |
+| `data.limit` | The integer limit, in the unit of that cap. |
+| `data.path` | The config file at which the budget tripped, relative to the root, or `<external>/<file name>` outside it (policies.md, sections 1.7 and 1.9). Never an absolute path. For the `extends-*` budgets it is the file whose `extends` entry passed the limit; for `extends-depth` that is the last file accepted, because its own entry would nest too deep. For `file-blocks` it is the file that holds the blocks. |
+
+A notice whose code this section does not list may still carry `data`. A consumer reads only the keys it knows and ignores the rest.
 
 ## Finding origin
 
@@ -230,15 +270,15 @@ models in `slopvac.report` and `slopvac.model`.
 | `Finding.line` | preserve | Same keys. `column` and `end_column` now follow the position rules of slopvac-8l4.2.11. `end_column` is present only with `span`. |
 | `Finding.column` | preserve | Same keys. `column` and `end_column` now follow the position rules of slopvac-8l4.2.11. `end_column` is present only with `span`. |
 | `Finding.end_column` | preserve | Same keys. `column` and `end_column` now follow the position rules of slopvac-8l4.2.11. `end_column` is present only with `span`. |
-| `Finding.rule_id` | preserve | Same key. The value uses the form `<pack>:<id>`, such as `core:orwell.not-un`. 2.x emitted `<category>.<id>`. |
+| `Finding.rule_id` | preserve | Same key. The value uses the form `<plugin>:<id>`, such as `core:orwell.not-un`. 2.x emitted `<category>.<id>`. |
 | `Finding.category` | preserve | Unchanged. |
 | `Finding.severity` | preserve | Unchanged. |
 | `Finding.message` | preserve | Unchanged. |
 | `Finding.ai_signal` | preserve | Unchanged. |
 | `Finding.matched_text` | preserve | Unchanged. |
 | `Finding.replacement` | rename | Becomes `fix.edits`, a list of byte-range edits instead of one replacement string. |
-| `Finding.ste_ref` | remove | Rule metadata, not finding data. `slopvac explain` prints it, and `provenance` names the pack and source. |
-| `Finding.orwell_ref` | remove | Rule metadata, not finding data. `slopvac explain` prints it, and `provenance` names the pack and source. |
+| `Finding.ste_ref` | remove | Rule metadata, not finding data. `slopvac explain` prints it, and `provenance` names the plugin and source. |
+| `Finding.orwell_ref` | remove | Rule metadata, not finding data. `slopvac explain` prints it, and `provenance` names the plugin and source. |
 | `AiRegisterSummary.findings` | preserve | Unchanged. |
 | `AiRegisterSummary.errors` | preserve | Unchanged. |
 | `AiRegisterSummary.warnings` | preserve | Unchanged. |

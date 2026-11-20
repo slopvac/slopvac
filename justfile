@@ -2,21 +2,30 @@ set shell := ["bash", "-cu"]
 set positional-arguments
 
 # Dispatch stable publishing for an existing version tag; approve it in GitHub.
+# 3.x and later publish the binary wheels from publish-pypi.yml, which checks for a
+# passed candidate first. Earlier versions publish from publish-lint.yml.
 release VERSION:
     #!/usr/bin/env bash
     set -euo pipefail
     version={{quote(VERSION)}}
-    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
         echo "expected stable version X.Y.Z, got $version" >&2
         exit 2
     fi
+    major="${BASH_REMATCH[1]}"
     tag="v$version"
     if ! git ls-remote --exit-code --refs origin "refs/tags/$tag" >/dev/null; then
         echo "tag $tag does not exist on origin" >&2
         exit 1
     fi
-    run_url="$(gh workflow run publish-lint.yml --ref "$tag" -f dry-run=false -f target=pypi)"
-    printf '%s\nRun waits for the pypi environment approval.\n' "$run_url"
+    if (( major >= 3 )); then
+        run_url="$(gh workflow run publish-pypi.yml --ref "$tag" -f tag="$tag" -f dry-run=false)"
+        note="Run checks for a passed candidate, then waits for the pypi environment approval."
+    else
+        run_url="$(gh workflow run publish-lint.yml --ref "$tag" -f dry-run=false -f target=pypi)"
+        note="Run waits for the pypi environment approval."
+    fi
+    printf '%s\n%s\n' "$run_url" "$note"
 
 # Rewrite the Cargo.lock extra-files in release-please-config.json for every workspace crate.
 sync-release-please:

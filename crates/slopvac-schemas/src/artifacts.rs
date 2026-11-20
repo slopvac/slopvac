@@ -74,6 +74,7 @@ fn common() -> Value {
         define::<LineCol>,
         define::<Edit>,
         define::<PackId>,
+        define::<PluginId>,
         define::<RuleId>,
         define::<Severity>,
         define::<RuleProvenance>,
@@ -96,6 +97,18 @@ fn common() -> Value {
 fn define<T: JsonSchema>(generator: &mut SchemaGenerator) {
     generator.subschema_for::<T>();
 }
+
+/// Identifier of a plugin, or of the namespace a publisher signs for. Same character set as
+/// `PackId`. `core` is reserved for the built-in plugin that is compiled into the binary, so
+/// no manifest, lock entry, index entry or config entry may use it as an id or a namespace.
+/// Semantics: docs/contract/plugins.md, section 9.
+///
+/// Schema only. No crate has a Rust type for it yet: the plugin lock and index readers and
+/// the config validator check the value themselves. The generator owns this definition until
+/// a model type replaces it.
+#[derive(JsonSchema)]
+#[schemars(with = "String", extend("pattern" = r"^(?!core(?![\s\S]))[a-z][a-z0-9-]*(?![\s\S])"))]
+struct PluginId;
 
 fn rule() -> Value {
     schema_generator()

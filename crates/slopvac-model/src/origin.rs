@@ -196,6 +196,9 @@ macro_rules! checked_string {
             fn schema_name() -> Cow<'static, str> {
                 stringify!($name).into()
             }
+            fn inline_schema() -> bool {
+                true
+            }
             fn json_schema(_: &mut SchemaGenerator) -> Schema {
                 $schema
             }

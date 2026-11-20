@@ -340,7 +340,7 @@ fn a_pack_one_file_past_the_limit_is_refused_with_its_budget() {
     write_categories(dir.path(), slopvac_rules::MAX_PACK_FILES + 1);
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
     let (budget, limit, path) = budget_error(&e);
-    assert_eq!(budget, "pack-files");
+    assert_eq!(budget, "plugin-files");
     assert_eq!(limit, slopvac_rules::MAX_PACK_FILES as u64);
     assert!(!path.starts_with('/'), "{path}");
     assert!(e.to_string().contains("[rules-budget-exceeded]"), "{e}");
@@ -373,7 +373,7 @@ fn a_pack_one_byte_past_the_byte_limit_is_refused_with_its_budget() {
     std::fs::write(dir.path().join("zz.json"), " ").unwrap();
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
     let (budget, limit, _) = budget_error(&e);
-    assert_eq!(budget, "pack-bytes");
+    assert_eq!(budget, "plugin-bytes");
     assert_eq!(limit, slopvac_rules::MAX_PACK_BYTES);
 }
 
@@ -406,7 +406,7 @@ fn a_flood_of_aliases_past_the_entry_limit_is_refused_as_too_many_entries() {
     }
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
     let (budget, limit, _) = budget_error(&e);
-    assert_eq!(budget, "pack-entries");
+    assert_eq!(budget, "plugin-entries");
     assert_eq!(limit, slopvac_rules::MAX_PACK_ENTRIES as u64);
 }
 
@@ -418,7 +418,7 @@ fn a_flood_of_unrelated_entries_past_the_entry_limit_is_refused() {
     }
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
     let (budget, limit, _) = budget_error(&e);
-    assert_eq!(budget, "pack-entries");
+    assert_eq!(budget, "plugin-entries");
     assert_eq!(limit, 1024);
 }
 
@@ -467,4 +467,81 @@ fn a_symlinked_pack_file_still_loads() {
     let path = dir.path().to_path_buf();
     let set = common::within_timeout(&link, move || load_pack_dir(&path));
     assert!(set.is_ok(), "{:?}", set.err());
+}
+
+/// A category whose one tokens rule lists `count` distinct tokens, `foo` first so its example matches.
+fn token_list_category(count: usize) -> String {
+    let tokens: Vec<String> = std::iter::once("foo".to_owned())
+        .chain((1..count).map(|i| format!("t{i}")))
+        .collect();
+    let mut rule = tokens_rule("r", "foo", &json!([{"bad": "a foo b", "good": "a bar b"}]));
+    rule["match"]["tokens"] = json!(tokens);
+    category("cat", &[rule])
+}
+
+#[test]
+fn a_rule_listing_exactly_the_entry_limit_loads() {
+    let text = token_list_category(slopvac_rules::MAX_RULE_ENTRIES);
+    let set = load(&[("a.json", text)]).unwrap();
+    assert_eq!(set.categories().len(), 1);
+}
+
+#[test]
+fn a_rule_listing_one_entry_past_the_limit_is_refused_with_its_budget() {
+    let text = token_list_category(slopvac_rules::MAX_RULE_ENTRIES + 1);
+    let e = errors(&[("a.json", text)]);
+    let (budget, limit, path) = budget_error(&e);
+    assert_eq!(budget, "rule-entries");
+    assert_eq!(limit, slopvac_rules::MAX_RULE_ENTRIES as u64);
+    assert!(path.ends_with("a.json") && !path.starts_with('/'), "{path}");
+    assert_eq!(e.errors()[0].rule.as_deref(), Some("cat.r"));
+    assert!(e.to_string().contains("[rules-budget-exceeded]"), "{e}");
+}
+
+/// A category whose one substitution rule maps `count` distinct patterns (`s1`, `s2`, ...) to a
+/// replacement. `extra` adds one more key, such as a pattern that does not compile.
+fn substitution_category(count: usize, extra: Option<&str>) -> String {
+    let mut map = serde_json::Map::new();
+    for i in 1..=count {
+        map.insert(format!("s{i}"), json!("r"));
+    }
+    if let Some(key) = extra {
+        map.insert(key.to_owned(), json!("r"));
+    }
+    let rule = json!({
+        "id": "r", "name": "n", "message": "m",
+        "match": {"kind": "substitution", "substitutions": map},
+        "examples": [{"bad": "a s1 b", "good": "a bar b"}],
+        "citation": {"source": "s"}
+    });
+    category("cat", &[rule])
+}
+
+#[test]
+fn a_rule_with_exactly_the_substitution_limit_loads() {
+    let text = substitution_category(slopvac_rules::MAX_RULE_ENTRIES, None);
+    let set = load(&[("a.json", text)]).unwrap();
+    assert_eq!(set.categories().len(), 1);
+}
+
+#[test]
+fn a_rule_with_one_substitution_past_the_limit_is_refused_with_its_budget() {
+    let text = substitution_category(slopvac_rules::MAX_RULE_ENTRIES + 1, None);
+    let e = errors(&[("a.json", text)]);
+    let (budget, limit, path) = budget_error(&e);
+    assert_eq!(budget, "rule-entries");
+    assert_eq!(limit, slopvac_rules::MAX_RULE_ENTRIES as u64);
+    assert!(path.ends_with("a.json") && !path.starts_with('/'), "{path}");
+    assert_eq!(e.errors()[0].rule.as_deref(), Some("cat.r"));
+    assert!(e.to_string().contains("[rules-budget-exceeded]"), "{e}");
+}
+
+/// The budget is checked before any pattern compiles, so the bad pattern is never reported.
+#[test]
+fn an_over_limit_substitution_map_is_refused_before_its_patterns_compile() {
+    let text = substitution_category(slopvac_rules::MAX_RULE_ENTRIES, Some("("));
+    let e = errors(&[("a.json", text)]);
+    assert_eq!(e.errors().len(), 1, "{e}");
+    let (budget, _, _) = budget_error(&e);
+    assert_eq!(budget, "rule-entries");
 }

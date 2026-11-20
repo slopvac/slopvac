@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use rstest::rstest;
 use semver::Version;
 use slopvac_plugins::index::{
     Index, IndexEntry, Listing, MAX_DESCRIPTION_CHARS, MAX_ENTRIES, MAX_INDEX_BYTES, PackKind,
@@ -38,7 +39,7 @@ fn entry(namespace: &str, id: &str) -> IndexEntry {
 
 fn corpus(kind: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../schemas/v3/conformance/pack-index")
+        .join("../../schemas/v3/conformance/plugin-index")
         .join(kind)
 }
 
@@ -83,16 +84,16 @@ fn every_invalid_conformance_document_fails_at_or_below_its_pointer() {
 
 #[test]
 fn x_keys_are_ignored_and_other_unknown_keys_are_errors() {
-    let ok = r#"{"schema_version":3,"x-job":1,"packs":[]}"#;
+    let ok = r#"{"schema_version":3,"x-job":1,"plugins":[]}"#;
     assert_eq!(Index::parse(ok.as_bytes()).unwrap().entries().len(), 0);
-    let bad = r#"{"schema_version":3,"packs":[],"extra":1}"#;
+    let bad = r#"{"schema_version":3,"plugins":[],"extra":1}"#;
     assert_eq!(Index::parse(bad.as_bytes()).unwrap_err().pointer, "");
 }
 
 #[test]
 fn a_repeated_namespace_and_id_pair_is_an_error_but_the_same_id_in_two_namespaces_is_not() {
     let twice = Index::new(vec![entry("acme", "a"), entry("acme", "a")]).unwrap_err();
-    assert_eq!(twice.pointer, "/packs/1/id");
+    assert_eq!(twice.pointer, "/plugins/1/id");
     let two_namespaces = Index::new(vec![entry("acme", "a"), entry("beta", "a")]);
     assert_eq!(two_namespaces.unwrap().entries().len(), 2);
 }
@@ -129,7 +130,7 @@ fn build_uses_the_id_as_name_when_the_manifest_gives_none() {
 #[test]
 fn output_round_trips_and_has_a_fixed_shape() {
     let mut plugin = listing("beta", "bridge", "Bridge", "Runs linters.");
-    plugin.kind = PackKind::Plugin;
+    plugin.kind = PackKind::Code;
     plugin.version = Version::parse("0.3.1-rc.1").unwrap();
     plugin.slopvac_api = 2;
     plugin.source = format!(
@@ -141,14 +142,14 @@ fn output_round_trips_and_has_a_fixed_shape() {
     assert_eq!(Index::parse(json.as_bytes()).unwrap(), index);
     let want = r#"{
   "schema_version": 3,
-  "packs": [
+  "plugins": [
     {
       "id": "bridge",
       "namespace": "beta",
       "name": "Bridge",
       "description": "Runs linters.",
       "version": "0.3.1-rc.1",
-      "kind": "plugin",
+      "kind": "code",
       "slopvac_api": 2,
       "source": "git+https://github.com/beta/bridge@0123456789012345678901234567890123456789",
       "publisher_key": {
@@ -167,7 +168,7 @@ fn build_rejects_an_invalid_listing_with_its_position() {
     let mut bad = listing("acme", "b", "B", "d");
     bad.source = "http://example.com/b".into();
     let err = build_index([listing("acme", "a", "A", "d"), bad]).unwrap_err();
-    assert_eq!(err.pointer, "/packs/1/source");
+    assert_eq!(err.pointer, "/plugins/1/source");
 }
 
 // ---- caps (N11) ----
@@ -181,7 +182,7 @@ fn an_oversized_document_is_refused_before_parsing() {
 
 #[test]
 fn a_document_at_the_size_limit_is_parsed() {
-    let mut doc = br#"{"schema_version":3,"packs":[]}"#.to_vec();
+    let mut doc = br#"{"schema_version":3,"plugins":[]}"#.to_vec();
     doc.resize(MAX_INDEX_BYTES, b' ');
     assert!(Index::parse(&doc).is_ok());
 }
@@ -197,7 +198,7 @@ fn too_many_entries_are_refused() {
         })
         .collect();
     assert_eq!(many.len(), MAX_ENTRIES + 1);
-    assert_eq!(Index::new(many).unwrap_err().pointer, "/packs");
+    assert_eq!(Index::new(many).unwrap_err().pointer, "/plugins");
 }
 
 #[test]
@@ -207,7 +208,7 @@ fn string_caps_count_characters() {
     assert!(build_index([listing("acme", "a", "A", &at_cap)]).is_ok());
     let over = "é".repeat(MAX_DESCRIPTION_CHARS + 1);
     let err = build_index([listing("acme", "a", "A", &over)]).unwrap_err();
-    assert_eq!(err.pointer, "/packs/0/description");
+    assert_eq!(err.pointer, "/plugins/0/description");
 }
 
 // ---- search ----
@@ -368,14 +369,17 @@ fn every_string_field_accepts_its_cap_and_refuses_one_more() {
         let mut over = listing("acme", "a", "A", "d");
         edit(&mut over, "a".repeat(cap + 1));
         let err = build_index([over]).unwrap_err();
-        assert_eq!(err.pointer, format!("/packs/0/{field}"));
+        assert_eq!(err.pointer, format!("/plugins/0/{field}"));
     }
     let mut at_cap = listing("acme", "a", "A", "d");
     at_cap.source = with_source_len(2048);
     assert!(build_index([at_cap]).is_ok());
     let mut over = listing("acme", "a", "A", "d");
     over.source = with_source_len(2049);
-    assert_eq!(build_index([over]).unwrap_err().pointer, "/packs/0/source");
+    assert_eq!(
+        build_index([over]).unwrap_err().pointer,
+        "/plugins/0/source"
+    );
 }
 
 #[test]
@@ -387,14 +391,14 @@ fn numeric_bounds_match_the_schema() {
     l.slopvac_api += 1;
     assert_eq!(
         build_index([l.clone()]).unwrap_err().pointer,
-        "/packs/0/slopvac_api"
+        "/plugins/0/slopvac_api"
     );
     l.slopvac_api = 1;
     l.version = Version::new(1_000_000_000, 0, 0);
-    assert_eq!(build_index([l]).unwrap_err().pointer, "/packs/0/version");
+    assert_eq!(build_index([l]).unwrap_err().pointer, "/plugins/0/version");
 }
 
-const ONE_ENTRY: &str = r#"{"schema_version":3,"packs":[{"id":"a","namespace":"b","name":"N","description":"d","version":"1.0.0","kind":"data","slopvac_api":2,"source":"oci://h/x","publisher_key":{"key_id":"0123456789ABCDEF","fingerprint":"0000000000000000000000000000000000000000000000000000000000000000"}}]}"#;
+const ONE_ENTRY: &str = r#"{"schema_version":3,"plugins":[{"id":"a","namespace":"b","name":"N","description":"d","version":"1.0.0","kind":"data","slopvac_api":2,"source":"oci://h/x","publisher_key":{"key_id":"0123456789ABCDEF","fingerprint":"0000000000000000000000000000000000000000000000000000000000000000"}}]}"#;
 
 #[test]
 fn whole_numbers_with_a_fraction_are_integers_as_in_the_schema() {
@@ -406,13 +410,13 @@ fn whole_numbers_with_a_fraction_are_integers_as_in_the_schema() {
     let fractional = ONE_ENTRY.replace("\"slopvac_api\":2", "\"slopvac_api\":2.5");
     assert_eq!(
         Index::parse(fractional.as_bytes()).unwrap_err().pointer,
-        "/packs/0/slopvac_api"
+        "/plugins/0/slopvac_api"
     );
 }
 
 #[test]
 fn a_repeated_key_is_an_error() {
-    let doc = r#"{"schema_version":3,"packs":[],"packs":[]}"#;
+    let doc = r#"{"schema_version":3,"plugins":[],"plugins":[]}"#;
     assert_eq!(Index::parse(doc.as_bytes()).unwrap_err().pointer, "");
 }
 
@@ -421,7 +425,7 @@ fn a_rejected_source_is_not_echoed_with_its_credentials() {
     let mut l = listing("acme", "a", "A", "d");
     l.source = "https://user:hunter2@example.com/a.tar.gz".into();
     let err = build_index([l]).unwrap_err();
-    assert_eq!(err.pointer, "/packs/0/source");
+    assert_eq!(err.pointer, "/plugins/0/source");
     let shown = err.to_string();
     assert!(!shown.contains("hunter2"), "{shown}");
     let doc = ONE_ENTRY.replace("oci://h/x", "https://user:hunter2@example.com/a");
@@ -473,38 +477,46 @@ fn rendered_hits_say_that_every_identity_claim_is_unverified() {
 }
 
 #[test]
-fn a_reserved_namespace_is_flagged_as_a_claim_not_shown_as_an_identity() {
-    for reserved in ["core", "slopvac"] {
-        let index = build_index([listing(reserved, "evil", "E", "d")]).unwrap();
-        let text = search(&index, "evil", 1).remove(0).render();
-        assert!(
-            text.contains(&format!(
-                "claims first-party namespace `{reserved}`; not verified"
-            )),
-            "{text}"
-        );
-    }
+fn the_first_party_namespace_is_flagged_as_a_claim_not_shown_as_an_identity() {
+    let index = build_index([listing("slopvac", "evil", "E", "d")]).unwrap();
+    let text = search(&index, "evil", 1).remove(0).render();
+    assert!(
+        text.contains("claims first-party namespace `slopvac`; not verified"),
+        "{text}"
+    );
+}
+
+#[rstest]
+#[case::namespace("core", "evil", "/plugins/0/namespace")]
+#[case::id("acme", "core", "/plugins/0/id")]
+fn the_built_in_core_is_never_listed(
+    #[case] namespace: &str,
+    #[case] id: &str,
+    #[case] pointer: &str,
+) {
+    let err = build_index([listing(namespace, id, "E", "d")]).unwrap_err();
+    assert_eq!(err.pointer, pointer);
 }
 
 #[test]
 fn a_bad_entry_is_refused_while_reading_not_after_the_whole_document_is_built() {
     // The tail is not JSON. A reader that builds the full tree first reports the
     // syntax error at the root; a streaming reader stops at the first bad entry.
-    let doc = r#"{"schema_version":3,"packs":[0, this is not json"#;
+    let doc = r#"{"schema_version":3,"plugins":[0, this is not json"#;
     assert_eq!(
         Index::parse(doc.as_bytes()).unwrap_err().pointer,
-        "/packs/0"
+        "/plugins/0"
     );
 }
 
 #[test]
 fn a_huge_ignored_x_value_and_a_huge_scalar_array_are_handled() {
     let scalars = "0,".repeat(2_000_000);
-    let skipped = format!(r#"{{"schema_version":3,"x-big":[{scalars}0],"packs":[]}}"#);
+    let skipped = format!(r#"{{"schema_version":3,"x-big":[{scalars}0],"plugins":[]}}"#);
     assert_eq!(Index::parse(skipped.as_bytes()).unwrap().entries().len(), 0);
-    let refused = format!(r#"{{"schema_version":3,"packs":[{scalars}0]}}"#);
+    let refused = format!(r#"{{"schema_version":3,"plugins":[{scalars}0]}}"#);
     assert_eq!(
         Index::parse(refused.as_bytes()).unwrap_err().pointer,
-        "/packs/0"
+        "/plugins/0"
     );
 }

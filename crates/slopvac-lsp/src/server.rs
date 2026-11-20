@@ -27,26 +27,12 @@ use lsp_types::{
 };
 use slopvac_model::{PositionEncoding, Severity, SourceIndex};
 
+use slopvac_messages::render;
+
 use crate::analysis::{Analysis, Item, analyze};
 use crate::convert::{item_range, span_range, touches};
 use crate::linter::{Check, Linter};
-
-/// A failure that ends the server.
-#[derive(Debug, thiserror::Error)]
-pub enum ServerError {
-    /// The connection broke or the client broke the protocol.
-    #[error("protocol error: {0}")]
-    Protocol(#[from] lsp_server::ProtocolError),
-    /// The client sent `initialize` parameters this server cannot read.
-    #[error("invalid initialize parameters: {0}")]
-    Initialize(#[from] serde_json::Error),
-    /// The connection closed while the server was still sending.
-    #[error("the client connection closed")]
-    Closed,
-    /// The lint worker thread panicked.
-    #[error("the lint worker panicked")]
-    WorkerPanicked,
-}
+use crate::messages::{LspMessage, ServerError};
 
 /// How long a clean exit waits for queued diagnostics to reach the client.
 const FLUSH_WAIT: Duration = Duration::from_secs(5);
@@ -103,15 +89,20 @@ impl Server {
 
     /// Serve one client until it sends `shutdown` and `exit`.
     pub fn serve(self, connection: &Connection) -> Result<Exit, ServerError> {
-        let (id, params) = connection.initialize_start()?;
-        let params: InitializeParams = serde_json::from_value(params)?;
+        let (id, params) = connection
+            .initialize_start()
+            .map_err(ServerError::protocol)?;
+        let params: InitializeParams =
+            serde_json::from_value(params).map_err(|e| ServerError::initialize(&e))?;
         let encoding = negotiate(&params);
         let capabilities = capabilities(encoding);
         let init = serde_json::json!({
             "capabilities": capabilities,
             "serverInfo": ServerInfo { name: "slopvac".to_owned(), version: None },
         });
-        connection.initialize_finish(id, init)?;
+        connection
+            .initialize_finish(id, init)
+            .map_err(ServerError::protocol)?;
 
         let shared = Arc::new(Shared {
             linter: self.linter,
@@ -339,7 +330,10 @@ fn main_loop(
     for message in &connection.receiver {
         match message {
             Message::Request(req) => {
-                if connection.handle_shutdown(&req)? {
+                if connection
+                    .handle_shutdown(&req)
+                    .map_err(ServerError::protocol)?
+                {
                     return Ok(Exit::AfterShutdown);
                 }
                 let response = handle_request(shared, req);
@@ -419,7 +413,7 @@ fn handle_request(shared: &Shared, req: Request) -> Response {
         _ => Response::new_err(
             id,
             ErrorCode::MethodNotFound as i32,
-            format!("method not supported: {method}"),
+            render(&LspMessage::MethodUnsupported { method }),
         ),
     }
 }
@@ -486,7 +480,9 @@ fn code_actions(shared: &Shared, p: &CodeActionParams) -> Vec<CodeActionOrComman
         let diagnostic = diagnostic(item, range);
         if let Some(edits) = fix_edits(&index, item, shared.encoding) {
             actions.push(action(
-                format!("Apply slopvac fix: {}", item.code),
+                render(&LspMessage::ActionFix {
+                    code: item.code.clone(),
+                }),
                 &p.text_document.uri,
                 edits,
                 &diagnostic,
@@ -504,9 +500,13 @@ fn code_actions(shared: &Shared, p: &CodeActionParams) -> Vec<CodeActionOrComman
             ) {
                 let at = Position::new(line, 0);
                 let directive =
+                    // ast-grep-ignore: user-text-literal
                     format!("<!-- slopvac-allow: rule={rule} reason={reason} -->{newline}");
                 actions.push(action(
-                    format!("Allow {rule} (reason: {reason})"),
+                    render(&LspMessage::ActionAllow {
+                        rule: rule.to_string(),
+                        reason,
+                    }),
                     &p.text_document.uri,
                     vec![TextEdit::new(Range::new(at, at), directive)],
                     &diagnostic,

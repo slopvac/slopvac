@@ -387,6 +387,37 @@ fn a_run_that_could_not_start_reports_a_notice_in_json() {
     assert_eq!(report["notices"][0]["level"], "warning");
 }
 
+/// The level of every notice in a report, whether it sits on a document or at the root.
+fn notice_levels(report: &Value) -> Vec<String> {
+    let documents = report["documents"].as_array().expect("documents");
+    documents
+        .iter()
+        .flat_map(|d| d["unchecked"].as_array().into_iter().flatten())
+        .chain(report["notices"].as_array().into_iter().flatten())
+        .map(|n| n["level"].as_str().expect("level").to_owned())
+        .collect()
+}
+
+#[rstest::rstest]
+#[case::info_notice_keeps_the_run_complete(CLEAN.as_bytes(), "info", 0)]
+#[case::unreadable_input_is_incomplete(&[0xff, 0xfe], "warning", 2)]
+fn the_exit_code_follows_the_level_of_the_unchecked_notices(
+    #[case] contents: &[u8],
+    #[case] level: &str,
+    #[case] code: i32,
+) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("doc.md");
+    fs::write(&path, contents).expect("write document");
+    fs::write(dir.path().join("slopvac.toml"), "schema_version = 3\n").expect("write config");
+    let report = json_report(&path, &[]);
+    assert!(
+        notice_levels(&report).iter().any(|l| l == level),
+        "no {level} notice in {report}"
+    );
+    slopvac().arg("lint").arg(&path).assert().code(code);
+}
+
 /// A sentinel directory outside the working directory.
 fn outside() -> (tempfile::TempDir, String) {
     let dir = tempfile::Builder::new()
@@ -797,11 +828,11 @@ fn a_config_below_a_glob_target_is_checked_even_when_it_excludes_every_match() {
 
 #[test]
 fn an_unwired_command_says_so_without_any_internal_id() {
-    let out = slopvac().arg("packs").output().expect("run");
+    let out = slopvac().arg("onboard").output().expect("run");
     assert_eq!(out.status.code(), Some(2));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
-        "error[command-not-wired]: `slopvac packs` is not available in this build yet.\n"
+        "error[command-not-wired]: `slopvac onboard` is not available in this build yet.\n"
     );
 }
 
@@ -867,5 +898,295 @@ fn the_legacy_style_alone_requires_a_score_of_70() {
     assert!(
         reasons.contains(&"score 0.0, minimum 70.0".to_owned()),
         "{reasons:?}"
+    );
+}
+
+/// A working directory `proj` beside a sentinel-named directory that stands for a private
+/// location outside the project.
+fn proj_beside_sentinel() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let proj = dir.path().join("proj");
+    fs::create_dir(&proj).expect("proj dir");
+    (dir, proj)
+}
+
+#[test]
+fn a_missing_target_reached_through_dot_dot_hides_the_external_directory() {
+    let (_dir, proj) = proj_beside_sentinel();
+    for format in ["text", "json"] {
+        let out = slopvac()
+            .current_dir(&proj)
+            .args([
+                "lint",
+                "--format",
+                format,
+                "../sentinel-outside-dir/missing.md",
+            ])
+            .output()
+            .expect("run");
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(all.contains("<external>/missing.md"), "{format}: {all}");
+        assert!(!all.contains("sentinel-outside-dir"), "{format}: {all}");
+    }
+}
+
+#[test]
+fn an_external_config_error_hides_the_external_directory() {
+    let (_dir, proj) = proj_beside_sentinel();
+    fs::write(proj.join("ok.md"), CLEAN).expect("document");
+    for format in ["text", "json"] {
+        let out = slopvac()
+            .current_dir(&proj)
+            .args([
+                "lint",
+                "--format",
+                format,
+                "--config",
+                "../sentinel-outside-dir/missing.toml",
+                "ok.md",
+            ])
+            .output()
+            .expect("run");
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(all.contains("<external>/missing.toml"), "{format}: {all}");
+        assert!(!all.contains("sentinel-outside-dir"), "{format}: {all}");
+    }
+}
+
+/// `link` points at `secret/sub`, so `link/..` is `secret`, not the directory that holds
+/// `link`. A lexical fold would turn `base/link/../proj/sentinel-private/...` into a path
+/// below the project and print the private directory name.
+#[cfg(unix)]
+#[test]
+fn a_path_through_a_symlinked_parent_still_hides_the_external_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // The canonical temp dir, so the working directory and the given paths share a prefix.
+    let top = dir.path().canonicalize().expect("canonical temp dir");
+    let base = top.join("base");
+    let proj = base.join("proj");
+    let secret_sub = top.join("secret").join("sub");
+    fs::create_dir_all(&proj).expect("proj dir");
+    fs::create_dir_all(&secret_sub).expect("secret dir");
+    std::os::unix::fs::symlink(&secret_sub, base.join("link")).expect("symlink");
+    fs::write(proj.join("ok.md"), CLEAN).expect("document");
+
+    let via_link = base
+        .join("link")
+        .join("..")
+        .join("proj")
+        .join("sentinel-private");
+    let cases: [(&[&str], &str); 2] = [(&["--config"], "missing.toml"), (&[], "missing.md")];
+    for format in ["text", "json"] {
+        for (flags, name) in cases {
+            let target = via_link.join(name);
+            let mut cmd = slopvac();
+            cmd.current_dir(&proj).args(["lint", "--format", format]);
+            if flags.is_empty() {
+                cmd.arg(&target);
+            } else {
+                cmd.args(flags).arg(&target).arg("ok.md");
+            }
+            let out = cmd.output().expect("run");
+            let all = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                all.contains(&format!("<external>/{name}")),
+                "{format} {name}: {all}"
+            );
+            assert!(!all.contains("sentinel-private"), "{format} {name}: {all}");
+        }
+    }
+}
+
+/// `shortcut` is a symlink whose target does not exist, so `shortcut/..` cannot be resolved.
+/// A fold that assumes it is a plain directory would place the path inside the project.
+#[cfg(unix)]
+#[test]
+fn a_path_through_a_dangling_symlink_hides_the_external_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let top = dir.path().canonicalize().expect("canonical temp dir");
+    let base = top.join("base");
+    let proj = base.join("proj");
+    fs::create_dir_all(&proj).expect("proj dir");
+    std::os::unix::fs::symlink(top.join("nowhere"), base.join("shortcut")).expect("symlink");
+    fs::write(proj.join("ok.md"), CLEAN).expect("document");
+
+    let via_shortcut = base
+        .join("shortcut")
+        .join("..")
+        .join("proj")
+        .join("sentinel-private");
+    for format in ["text", "json"] {
+        for (is_config, name) in [(true, "missing.toml"), (false, "missing.md")] {
+            let target = via_shortcut.join(name);
+            let mut cmd = slopvac();
+            cmd.current_dir(&proj).args(["lint", "--format", format]);
+            if is_config {
+                cmd.arg("--config").arg(&target).arg("ok.md");
+            } else {
+                cmd.arg(&target);
+            }
+            let out = cmd.output().expect("run");
+            let all = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                all.contains(&format!("<external>/{name}")),
+                "{format} {name}: {all}"
+            );
+            assert!(!all.contains("sentinel-private"), "{format} {name}: {all}");
+        }
+    }
+}
+
+/// A flag the build accepts but cannot honour must refuse before linting, not lint quietly.
+#[rstest::rstest]
+#[case::fix("--fix")]
+#[case::diff_working_tree("--diff-working-tree")]
+#[case::explain_config("--explain-config")]
+fn an_unwired_lint_flag_refuses_with_exit_2_and_no_report(#[case] flag: &str) {
+    let (dir, _) = project("a.md", "It is important to note that this works.\n", None);
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "a.md", flag])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        format!(
+            "error[command-not-wired]: `slopvac lint {flag}` is not available in this build yet.\n"
+        )
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "");
+}
+
+#[test]
+fn diff_base_refuses_with_exit_2_and_no_report() {
+    let (dir, _) = project("a.md", "It is important to note that this works.\n", None);
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "a.md", "--diff-base", "main"])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "error[command-not-wired]: `slopvac lint --diff-base` is not available in this build yet.\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "");
+}
+
+/// A project whose config starts an `extends` chain of `links` further files, so 33 links put the
+/// chain one level past the 32-level depth limit.
+fn extends_chain_project(links: usize) -> (tempfile::TempDir, PathBuf) {
+    let (dir, path) = project("doc.md", CLEAN, None);
+    let link = |i: usize| format!("link{i}.toml");
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        format!("schema_version = 3\nextends = [\"{}\"]\n", link(1)),
+    )
+    .expect("write config");
+    for i in 1..links {
+        fs::write(
+            dir.path().join(link(i)),
+            format!("schema_version = 3\nextends = [\"{}\"]\n", link(i + 1)),
+        )
+        .expect("write link");
+    }
+    fs::write(dir.path().join(link(links)), "schema_version = 3\n").expect("write last link");
+    (dir, path)
+}
+
+/// A project whose config lists the same leaf file once more than the file limit allows.
+fn extends_fan_project() -> (tempfile::TempDir, PathBuf) {
+    let (dir, path) = project("doc.md", CLEAN, None);
+    fs::write(dir.path().join("leaf.toml"), "schema_version = 3\n").expect("write leaf");
+    let entries = vec!["\"leaf.toml\""; slopvac_config::MAX_EXTENDS_FILES + 1].join(", ");
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        format!("schema_version = 3\nextends = [{entries}]\n"),
+    )
+    .expect("write config");
+    (dir, path)
+}
+
+/// Assert the notice shape of a refused config and that the report validates.
+fn assert_budget_notice(report: &Value, budget: &str, limit: u64, path: &str) {
+    let notice = &report["notices"][0];
+    assert_eq!(notice["code"], "config-budget-exceeded");
+    assert_eq!(notice["data"]["budget"], budget);
+    assert_eq!(notice["data"]["limit"], limit);
+    assert_eq!(notice["data"]["path"], path);
+    let errors: Vec<String> = support::report_validator()
+        .iter_errors(report)
+        .map(|e| format!("{e} at {}", e.instance_path()))
+        .collect();
+    assert!(errors.is_empty(), "{errors:#?}");
+}
+
+// The path is the file whose `extends` entry tripped the limit. In a chain, slopvac.toml is
+// level 0 and link32.toml is level 32: it is the last file accepted, and its own entry would be
+// a 33rd level. In the fan, slopvac.toml holds the entry that is the 257th application.
+#[rstest::rstest]
+#[case::depth(extends_chain_project(33), "extends-depth", 32, "link32.toml")]
+#[case::files(extends_fan_project(), "extends-files", 256, "slopvac.toml")]
+fn a_config_past_a_budget_reports_it_in_the_json_notice(
+    #[case] project: (tempfile::TempDir, PathBuf),
+    #[case] budget: &str,
+    #[case] limit: u64,
+    #[case] path: &str,
+) {
+    let (_dir, doc) = project;
+    assert_budget_notice(&json_report(&doc, &[]), budget, limit, path);
+}
+
+#[test]
+fn a_budget_tripped_outside_the_project_shows_no_path_of_the_outside_directory() {
+    let top = tempfile::tempdir().expect("tempdir");
+    let proj = top.path().join("proj");
+    let outside = top.path().join("zz-outside-dir");
+    fs::create_dir_all(&proj).expect("proj");
+    fs::create_dir_all(&outside).expect("outside");
+    let doc = proj.join("doc.md");
+    fs::write(&doc, CLEAN).expect("doc");
+    fs::write(
+        proj.join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"../zz-outside-dir/link1.toml\"]\n",
+    )
+    .expect("config");
+    for i in 1..33 {
+        fs::write(
+            outside.join(format!("link{i}.toml")),
+            format!("schema_version = 3\nextends = [\"link{}.toml\"]\n", i + 1),
+        )
+        .expect("link");
+    }
+    fs::write(outside.join("link33.toml"), "schema_version = 3\n").expect("last");
+    let out = slopvac()
+        .args(["lint", "--format", "json"])
+        .arg(&doc)
+        .output()
+        .expect("run");
+    let text = String::from_utf8(out.stdout).expect("utf8");
+    let report: Value = serde_json::from_str(&text).expect("a JSON report");
+    assert_budget_notice(&report, "extends-depth", 32, "<external>/link32.toml");
+    assert!(!text.contains("zz-outside-dir"), "{text}");
+    assert!(
+        !text.contains(top.path().to_str().expect("utf8 path")),
+        "{text}"
     );
 }

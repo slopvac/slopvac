@@ -37,17 +37,17 @@
     "HookKind": {
       "description": "Hook point name. The v1 kinds are tagger, extractor, reporter, fixer, scorer, provider and recipe. A reader ignores a kind it does not know, so the schema fixes only the form.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$"
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
     },
     "HookId": {
       "description": "Plugin-local hook identifier. The host qualifies it with the plugin name. Each hook kind has its own id space.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$"
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
     },
     "FeatureName": {
       "description": "Optional capability name. The v1 registry holds one name, document-path. A name with the prefix x- is a private extension and a reader ignores it unless it understands it.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$|^x-[a-z0-9-]+$"
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])|^x-[a-z0-9-]+(?![\\s\\S])"
     },
     "ProtocolVersion": {
       "description": "Protocol version. Same value space as ApiVersion in common.schema.json.",
@@ -88,7 +88,7 @@
           "properties": {
             "slopvac_code": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])"
             }
           },
           "required": [
@@ -187,7 +187,7 @@
         },
         "path": {
           "type": "string",
-          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$)).+$"
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S]))).+(?![\\s\\S])"
         }
       },
       "required": [
@@ -856,7 +856,7 @@
       "properties": {
         "path": {
           "type": "string",
-          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$)).+$"
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S]))).+(?![\\s\\S])"
         },
         "action": {
           "enum": [
@@ -1179,7 +1179,7 @@
       ]
     },
     "PluginDeclaration": {
-      "description": "Pre-spawn declaration. The plugin manifest embeds it, and the manifest is part of the content that `slopvac plugins trust` hashes (pack-manifest schema, owner slopvac-8l4.2.4). The host decides whether to spawn from this declaration, never from the initialize reply. network true allows the plugin to open connections, and the host does not spawn it in offline mode. hooks lists every hook the plugin may offer. features lists the features it may require or request. The initialize reply must stay inside the declaration.",
+      "description": "Pre-spawn declaration. The plugin manifest embeds it, and the manifest is part of the content that `slopvac plugins trust` hashes (plugin-manifest schema, owner slopvac-8l4.2.4). The host decides whether to spawn from this declaration, never from the initialize reply. network true allows the plugin to open connections, and the host does not spawn it in offline mode. hooks lists every hook the plugin may offer. features lists the features it may require or request. The initialize reply must stay inside the declaration.",
       "type": "object",
       "properties": {
         "network": {

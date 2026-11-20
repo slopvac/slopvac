@@ -471,7 +471,7 @@ impl Presets for Packs {
 
     fn pack_config(&self, name: &str) -> Option<PackFile> {
         (name == "acme:base").then(|| PackFile {
-            display: "pack:acme/base.toml".into(),
+            display: "plugin:acme/base.toml".into(),
             text: "schema_version = 3\n[thresholds]\nmax_errors = 7\n".into(),
         })
     }
@@ -536,7 +536,7 @@ fn a_pack_config_can_be_extended() {
     assert_eq!(
         r.source(&["thresholds", "max_errors"])
             .and_then(|s| s.file.clone()),
-        Some("pack:acme/base.toml".to_string())
+        Some("plugin:acme/base.toml".to_string())
     );
 }
 
@@ -1540,4 +1540,66 @@ fn a_dangling_extends_link_is_missing_as_before() {
     );
     let r = rejected(load(&p, &NoPresets).unwrap_err());
     assert_eq!(r.diagnostics[0].code, Code::ExtendsMissing);
+}
+
+/// `count` distinct blocks of `table`, each scoping `<prefix><i>/*.md`.
+fn blocks_text(table: &str, prefix: &str, extra: &str, count: usize) -> String {
+    (0..count)
+        .map(|i| {
+            [
+                "\n[[",
+                table,
+                "]]\nfiles = [\"",
+                prefix,
+                &i.to_string(),
+                "/*.md\"]\n",
+                extra,
+            ]
+            .concat()
+        })
+        .collect()
+}
+
+/// A config with `count` distinct `[[overrides]]` blocks.
+fn block_config(count: usize) -> String {
+    format!(
+        "schema_version = 3\n{}",
+        blocks_text("overrides", "dir", "", count)
+    )
+}
+
+#[test]
+fn a_file_with_exactly_the_block_limit_loads() {
+    let fx = Fixture::new();
+    let p = fx.write(
+        "slopvac.toml",
+        &block_config(slopvac_config::MAX_FILE_BLOCKS),
+    );
+    let cfg = load(&p, &NoPresets).unwrap();
+    assert_eq!(cfg.files[0].blocks.len(), slopvac_config::MAX_FILE_BLOCKS);
+}
+
+#[test]
+fn a_file_one_block_past_the_limit_is_refused_with_its_budget() {
+    let fx = Fixture::new();
+    let p = fx.write(
+        "slopvac.toml",
+        &block_config(slopvac_config::MAX_FILE_BLOCKS + 1),
+    );
+    let data = budget_data(load(&p, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::FileBlocks);
+    assert_eq!(data.budget.as_str(), "file-blocks");
+    assert_eq!(data.limit, slopvac_config::MAX_FILE_BLOCKS as u64);
+    assert_eq!(data.path, "slopvac.toml");
+}
+
+#[test]
+fn blocks_split_across_both_tables_count_together() {
+    let fx = Fixture::new();
+    let half = slopvac_config::MAX_FILE_BLOCKS / 2 + 1;
+    let mut text = block_config(half);
+    text.push_str(&blocks_text("genres", "g", "genre = \"docs\"\n", half));
+    let p = fx.write("slopvac.toml", &text);
+    let data = budget_data(load(&p, &NoPresets).unwrap_err());
+    assert_eq!(data.budget, ConfigBudget::FileBlocks);
 }

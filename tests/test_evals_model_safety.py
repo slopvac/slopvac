@@ -679,6 +679,159 @@ def test_redaction_removes_paths_and_tokens(raw, gone):
     assert gone not in procs.redact(raw)
 
 
+@pytest.mark.parametrize(
+    ("raw", "gone"),
+    [
+        ('{"token": "abc123"}', "abc123"),
+        ('{"access_token":"s3cr3tv4lue"}', "s3cr3tv4lue"),
+        ('{"Authorization": "Bearer x7"}', "x7"),
+        ('{"aws_session_token": "FwoGZXIvYXdz"}', "FwoGZXIvYXdz"),
+        ("aws_session_token = FwoGZXIvYXdz", "FwoGZXIvYXdz"),
+        ("Authorization: Bearer shorttok", "shorttok"),
+        ("{'password': 'pw1'}", "pw1"),
+        ("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI", "wJalrXUtnFEMI"),
+        ("id_token=eyJabc12", "eyJabc12"),
+        ("refresh_token: r3fr3sh", "r3fr3sh"),
+        ("api_key = k3y9", "k3y9"),
+    ],
+    ids=[
+        "quoted-token",
+        "no-space",
+        "authorization-header-json",
+        "session-token-json",
+        "session-token-env",
+        "short-bearer",
+        "single-quotes",
+        "secret-access-key",
+        "id-token",
+        "refresh-token",
+        "api-key",
+    ],
+)
+def test_redaction_removes_short_and_quoted_structured_credentials(raw, gone):
+    assert gone not in procs.redact(raw)
+    assert gone not in procs.redact_credentials(raw)
+
+
+FIELD_NAMES = [
+    "token",
+    "access_token",
+    "accessToken",
+    "AccessToken",
+    "refresh_token",
+    "refreshToken",
+    "id_token",
+    "idToken",
+    "session_token",
+    "sessionToken",
+    "SessionToken",
+    "secret",
+    "secret_access_key",
+    "secretAccessKey",
+    "SecretAccessKey",
+    "password",
+    "api_key",
+    "apiKey",
+    "API_KEY",
+    "authorization",
+    "Authorization",
+]
+
+
+@pytest.mark.parametrize("name", FIELD_NAMES)
+@pytest.mark.parametrize(
+    "shape",
+    ['{{"{n}": "FAKEsess1234"}}', "{n}=FAKEsess1234", "{n}: FAKEsess1234"],
+    ids=["json", "env", "colon"],
+)
+def test_every_listed_credential_field_loses_its_value(name, shape):
+    raw = shape.format(n=name)
+    assert "FAKEsess1234" not in procs.redact_credentials(raw)
+    assert name in procs.redact_credentials(raw)  # the field name stays
+
+
+def test_an_escaped_quote_inside_a_json_value_does_not_end_the_value_early():
+    raw = '{"password": "ab\\"cd-FAKEtail1234\\"ef", "limit": 63}'
+    cleaned = procs.redact_credentials(raw)
+    assert "FAKEtail1234" not in cleaned
+    assert '"limit": 63' in cleaned
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "max_tokens = 4096",
+        '{"max_tokens": 4096}',
+        "token_budget: 63",
+        "tokens: 63",
+        "{'tokens': 63, 'token_budget': 5}",
+        "maxToken: 5 and my_token_limit=7",
+    ],
+)
+def test_names_that_only_contain_token_are_not_credential_fields(text):
+    assert procs.redact_credentials(text) == text
+
+
+HEADER_SECRETS = [
+    ("Authorization: Bearer abcdefghij", "abcdefghij"),
+    ("curl -H 'Authorization: Bearer lowercaseonly' https://x.test", "lowercaseonly"),
+    ('curl -H "Authorization: Basic dXNlcjpwYXNz" https://x.test', "dXNlcjpwYXNz"),
+    ('{"Authorization": "Bearer x7"}', "x7"),
+    ("Authorization: token ghp_abcd1234", "ghp_abcd1234"),
+    ("authorization=Bearer lowercase", "lowercase"),
+    ('{"password": "ab\\"cd-SECRETTAIL\\"ef"}', "SECRETTAIL"),
+    ("{'token': 'it\\'s-SECRETTAIL'}", "SECRETTAIL"),
+    ('{"secret": "a\\\\\\"SECRETTAIL"}', "SECRETTAIL"),
+]
+
+
+@pytest.mark.parametrize(("raw", "gone"), HEADER_SECRETS)
+def test_redaction_removes_auth_schemes_in_a_header_and_escaped_quote_values(raw, gone):
+    assert gone not in procs.redact_credentials(raw)
+    assert gone not in procs.redact(raw)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A bearer of news arrived.",
+        "Sent Bearer abc123def to the server.",
+        "Basic dXNlcjpwYXNz was rejected.",
+        "pushed with token ghp_ab12cd34ef today",
+        "Basic usage needs no token.",
+        "Use the token to sign in.",
+        "token max_tokens",
+        "Use the token max_tokens to cap output.",
+        "Check token 63 against the budget.",
+        "The token budget is explicit.",
+    ],
+)
+def test_a_scheme_or_token_word_outside_an_authorization_header_is_not_redacted(
+    text,
+):
+    assert procs.redact_credentials(text) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "max_tokens = 4096",
+        '{"max_tokens": 4096, "temperature": 0}',
+        "Set max_tokens: 4096 and the token budget to 63.",
+        "token_budget: 63",
+        "tokens: 63",
+        "completion_tokens=1200 prompt_tokens=88",
+        "Rewrite the paragraph so the token budget is explicit.",
+        "The password policy requires 12 characters; see /Users/docs/policy.md.",
+        "Use `max_retries` 3 times, then fail. Secret sauce is optional.",
+        "A bearer of news arrived at the secret garden.",
+        'Return {"name": "queue", "limit": 63} for each request.',
+    ],
+)
+def test_credential_redaction_leaves_ordinary_text_unchanged(text):
+    assert procs.redact_credentials(text) == text
+
+
 def test_failure_messages_are_redacted_before_they_are_stored(tmp_path):
     script_path = script(
         tmp_path,

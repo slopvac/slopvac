@@ -51,7 +51,7 @@ pub enum CasesError {
 #[must_use]
 pub fn command() -> Command {
     Command::new("cases")
-        .about("Run the test cases of a rule pack")
+        .about("Run the test cases of the rules in a plugin")
         .arg(
             Arg::new("dir")
                 .required(true)
@@ -59,11 +59,11 @@ pub fn command() -> Command {
                 .help("Directory of category files"),
         )
         .arg(
-            Arg::new("pack")
-                .long("pack")
+            Arg::new("plugin")
+                .long("plugin")
                 .value_name("ID")
                 .default_value("core")
-                .help("Pack id of the rules"),
+                .help("Plugin id of the rules"),
         )
         .arg(
             Arg::new("rule")
@@ -87,8 +87,8 @@ pub fn command() -> Command {
 /// Unmatched rules in a coverage report do not change the code.
 pub fn run(matches: &ArgMatches, out: &mut dyn Write) -> Result<i32, CasesError> {
     let text = |name: &str| matches.get_one::<String>(name);
-    let pack = PackId::new(text("pack").map_or("core", String::as_str))
-        .map_err(|e| CasesError::Argument(format!("--pack: {e}")))?;
+    let pack = PackId::new(text("plugin").map_or("core", String::as_str))
+        .map_err(|e| CasesError::Argument(format!("--plugin: {e}")))?;
     let only = text("rule")
         .map(|r| RuleId::new(r.as_str()))
         .transpose()

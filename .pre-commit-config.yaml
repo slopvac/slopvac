@@ -48,3 +48,10 @@ repos:
         language: system
         pass_filenames: false
         files: ^(sgconfig\.yml|ast-grep/.*|crates/.*\.rs)$
+      - id: tag-roots
+        name: tag roots
+        entry: python3 scripts/ci/check_tag_roots.py --pre-push
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true

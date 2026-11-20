@@ -40,7 +40,7 @@ use slopvac_terms::{Blocklist, TermsError};
 /// Files the loader turns away while parsing, before its own checks, show the parser's message.
 /// That includes `no-version.toml`: unlike a blocklist, a terms file with no `schema_version`
 /// gets a generic parse error, not a "missing `schema_version`" diagnostic.
-const TERMS_REASONS: [(&str, &[&str]); 7] = [
+const TERMS_REASONS: [(&str, &[&str]); 8] = [
     (
         "both-casing-modes.toml",
         &["sets both ignore_case and case_sensitive"],
@@ -54,6 +54,10 @@ const TERMS_REASONS: [(&str, &[&str]); 7] = [
     ),
     ("empty-term.toml", &["term 1 is empty"]),
     ("kind-not-kebab.toml", &["has kind \"Brand Name\""]),
+    (
+        "kind-trailing-newline.toml",
+        &["has kind \"brand-name\\n\""],
+    ),
     (
         "no-version.toml",
         &[

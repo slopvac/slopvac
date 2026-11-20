@@ -94,7 +94,7 @@ def test_the_link_check_still_flags_a_missing_target() -> None:
 
 
 def test_the_link_check_does_not_follow_a_destination_across_table_rows() -> None:
-    pages = {"plugins/packs/p/index.md": CROSS_ROW, "plugins/protocol.md": "# P\n"}
+    pages = {"plugins/bundled/p/index.md": CROSS_ROW, "plugins/protocol.md": "# P\n"}
     assert build_site.broken_links(pages) == []
 
 
@@ -110,11 +110,11 @@ def test_starlight_keeps_code_and_rewrites_real_links(tmp_path: Path) -> None:
 
 def test_starlight_leaves_the_cross_row_attack_text_unchanged(tmp_path: Path) -> None:
     pages = {
-        "plugins/packs/p/index.md": f"# P\n\n{CROSS_ROW}",
+        "plugins/bundled/p/index.md": f"# P\n\n{CROSS_ROW}",
         "plugins/protocol.md": "# Protocol\n",
     }
     starlight.write_site(pages, tmp_path, "v3", "https://e.test", "/")
-    page = (tmp_path / "src/content/docs/v3/plugins/packs/p/index.md").read_text()
+    page = (tmp_path / "src/content/docs/v3/plugins/bundled/p/index.md").read_text()
     assert page.endswith(f"\n\n{CROSS_ROW}")
     parser = MarkdownIt("commonmark", {"html": True}).enable("table")
     tokens = [t for block in parser.parse(page) for t in (block.children or [block])]

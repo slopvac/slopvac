@@ -1,4 +1,4 @@
-//! The `.slopvac/packs.lock` file (contract: `docs/contract/packs.md`, section 7).
+//! The `.slopvac/plugins.lock` file (contract: `docs/contract/plugins.md`, section 7).
 //!
 //! # Limits
 //!
@@ -30,4 +30,5 @@ pub use model::{
     ValueError,
 };
 pub use outdated::{OutdatedPack, outdated, parse_version_req};
+pub use parse::LOCK_SCHEMA_VERSION;
 pub use semver::{Version, VersionReq};

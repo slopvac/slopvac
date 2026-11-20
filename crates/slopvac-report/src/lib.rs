@@ -11,15 +11,17 @@ mod html;
 mod junit;
 mod locate;
 mod markdown;
+mod messages;
 mod rdjsonl;
 mod sarif;
 mod text;
 
 use std::collections::HashMap;
 
-use slopvac_model::{PositionError, Report};
+use slopvac_model::Report;
 
 pub use locate::{Located, Pos};
+pub use messages::{RenderError, entries as message_entries};
 
 /// An output format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,30 +107,6 @@ impl Sources for NoSources {
     fn text(&self, _: &str) -> Option<&str> {
         None
     }
-}
-
-/// Why a report could not be rendered.
-#[derive(Debug, thiserror::Error)]
-pub enum RenderError {
-    /// The format needs the document text and the caller gave none.
-    #[error("{format} output needs the text of {path}")]
-    MissingSource {
-        /// Format that needs it.
-        format: &'static str,
-        /// Document path.
-        path: String,
-    },
-    /// A span does not fit the document text.
-    #[error("{path}: {source}")]
-    Position {
-        /// Document path.
-        path: String,
-        /// The problem.
-        source: PositionError,
-    },
-    /// Serialisation failed.
-    #[error("cannot serialise the report: {0}")]
-    Json(#[from] serde_json::Error),
 }
 
 /// Options that change rendered output without changing its structure.

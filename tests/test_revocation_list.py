@@ -414,12 +414,14 @@ import os, shutil, sys
 mode = os.environ["STUB_MODE"]
 args = sys.argv[1:]
 errors = {
-    "absent": "Error: ghcr.io/slopvac/slopvac-revocations:latest: not found",
     "auth": "Error response from registry: unauthorized: authentication required",
     "network": 'Error: Get "https://ghcr.io/v2/": dial tcp: lookup ghcr.io: no such host',
     "server": "Error: response status code 503: Service Unavailable",
 }
 if args[:2] == ["manifest", "fetch"]:
+    if mode == "stderr-file":
+        sys.stderr.write(open(os.environ["STUB_STDERR_FILE"], encoding="utf-8").read())
+        sys.exit(1)
     if mode in errors:
         print(errors[mode], file=sys.stderr)
         sys.exit(1)
@@ -433,6 +435,12 @@ else:
     sys.exit(2)
 """
 IMAGE = "ghcr.io/slopvac/slopvac-revocations:latest"
+REAL_NOT_FOUND = ROOT / "tests" / "fixtures" / "oras_manifest_fetch_not_found.stderr"
+
+
+def _real_not_found() -> str:
+    lines = REAL_NOT_FOUND.read_text(encoding="utf-8").splitlines(keepends=True)
+    return "".join(line for line in lines if not line.startswith("#"))
 
 
 @pytest.fixture
@@ -446,8 +454,14 @@ def stub_oras(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.delenv("ORAS", raising=False)
 
-    def answer(mode: str, src: Path | None = None) -> None:
-        monkeypatch.setenv("STUB_MODE", mode)
+    def answer(
+        mode: str, src: Path | None = None, *, stderr: str | None = None
+    ) -> None:
+        monkeypatch.setenv("STUB_MODE", "stderr-file" if stderr is not None else mode)
+        if stderr is not None:
+            text = tmp_path / "stub-stderr.txt"
+            text.write_text(stderr, encoding="utf-8")
+            monkeypatch.setenv("STUB_STDERR_FILE", str(text))
         if src is not None:
             monkeypatch.setenv("STUB_SRC", str(src))
 
@@ -457,7 +471,7 @@ def stub_oras(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def test_an_absent_manifest_is_refused_unless_this_is_the_first_publication(
     tmp_path: Path, stub_oras
 ) -> None:
-    stub_oras("absent")
+    stub_oras("", stderr=_real_not_found())
     with pytest.raises(lists.SigningError, match="first_publication"):
         lists.fetch_published(IMAGE, tmp_path / "published", first_publication=False)
 
@@ -465,9 +479,74 @@ def test_an_absent_manifest_is_refused_unless_this_is_the_first_publication(
 def test_an_absent_manifest_is_allowed_for_the_first_publication(
     tmp_path: Path, stub_oras
 ) -> None:
-    stub_oras("absent")
+    stub_oras("", stderr=_real_not_found())
     lists.fetch_published(IMAGE, tmp_path / "published", first_publication=True)
     assert not (tmp_path / "published").exists()
+
+
+def _not_found_for(image: str) -> str:
+    return _real_not_found().replace(IMAGE, image)
+
+
+_AUTH = "Error response from registry: unauthorized: authentication required\n"
+_5XX = "Error response from registry: 503 Service Unavailable\n"
+_DIGEST = "ghcr.io/slopvac/slopvac-revocations@sha256:" + "0" * 64
+_DOTTED = "ghcr.io/a/b:latest"
+
+
+@pytest.mark.parametrize(
+    ("image", "stderr"),
+    [
+        pytest.param(
+            IMAGE, _not_found_for("ghcr.io/slopvac/other:latest"), id="other-ref"
+        ),
+        pytest.param(IMAGE, _not_found_for(IMAGE + "2"), id="stderr-longer-tag"),
+        pytest.param(IMAGE + "2", _not_found_for(IMAGE), id="requested-longer-tag"),
+        pytest.param(IMAGE, _not_found_for(_DIGEST), id="stderr-digest"),
+        pytest.param(_DIGEST, _not_found_for(IMAGE), id="requested-digest"),
+        pytest.param(_DOTTED, _not_found_for("ghcrxio/a/b:latest"), id="dot-against-x"),
+        pytest.param(
+            IMAGE,
+            "Error response from registry: MANIFEST_UNKNOWN: manifest unknown\n",
+            id="manifest-unknown-code",
+        ),
+        pytest.param(
+            IMAGE,
+            "Error response from registry: NAME_UNKNOWN: repository not known\n",
+            id="name-unknown-code",
+        ),
+        pytest.param(IMAGE, f"Error: {IMAGE}: not found\n", id="old-short-form"),
+        pytest.param(
+            IMAGE, _real_not_found().strip() + " (retry)\n", id="trailing-text"
+        ),
+        pytest.param(IMAGE, "Error: " + _real_not_found(), id="leading-text"),
+        pytest.param(IMAGE, _AUTH, id="auth"),
+        pytest.param(
+            IMAGE, "Error response from registry: 403 not found\n", id="403-not-found"
+        ),
+        pytest.param(IMAGE, _5XX, id="5xx"),
+        pytest.param(IMAGE, _AUTH + _real_not_found(), id="auth-then-not-found"),
+        pytest.param(IMAGE, _real_not_found() + _AUTH, id="not-found-then-auth"),
+        pytest.param(IMAGE, _5XX + _real_not_found(), id="5xx-then-not-found"),
+        pytest.param(IMAGE, _real_not_found() + _5XX, id="not-found-then-5xx"),
+        pytest.param(IMAGE, _real_not_found() * 2, id="duplicated"),
+        pytest.param(IMAGE, "\n" + _real_not_found(), id="leading-blank-line"),
+        pytest.param(
+            IMAGE,
+            "body: " + _real_not_found().strip() + "\nmore body\n",
+            id="embedded-in-error-body",
+        ),
+    ],
+)
+@pytest.mark.parametrize("first_publication", [False, True])
+def test_only_orass_whole_not_found_for_the_requested_ref_is_absent(
+    tmp_path: Path, stub_oras, image: str, stderr: str, first_publication: bool
+) -> None:
+    stub_oras("", stderr=stderr)
+    with pytest.raises(lists.SigningError, match="could not resolve the manifest"):
+        lists.fetch_published(
+            image, tmp_path / "published", first_publication=first_publication
+        )
 
 
 @pytest.mark.parametrize(

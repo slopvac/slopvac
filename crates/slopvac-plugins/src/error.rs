@@ -12,10 +12,35 @@ pub struct RpcError {
     pub code: i64,
     /// Human-readable message. Not an interface.
     pub message: String,
-    /// Stable kebab-case code from `data.slopvac_code`.
-    pub slopvac_code: String,
+    /// The kebab-case `data.slopvac_code` the plugin sent. Untrusted detail: it
+    /// is never the reported code. Use [`RpcError::code_name`].
+    pub plugin_code: String,
     /// The `data` object, or null.
     pub data: serde_json::Value,
+}
+
+impl RpcError {
+    /// The code the host reports, chosen by the numeric code alone
+    /// (plugin-protocol.md section 10). The plugin's own `slopvac_code` never
+    /// decides it. A code the contract does not define, including the plugin's
+    /// own range -32050 to -32099, is `internal-error`.
+    #[must_use]
+    pub fn code_name(&self) -> &'static str {
+        match self.code {
+            -32700 => "parse-error",
+            -32600 => "invalid-request",
+            -32601 => "method-not-found",
+            -32602 => "invalid-params",
+            -32001 => "protocol-version-unsupported",
+            -32002 => "required-feature-missing",
+            -32003 => "not-initialized",
+            -32004 => "message-too-large",
+            -32005 => "request-cancelled",
+            -32006 => "document-invalid",
+            -32007 => "offline",
+            _ => "internal-error",
+        }
+    }
 }
 
 /// Everything that can go wrong when a host talks to a plugin.
@@ -27,6 +52,24 @@ pub enum PluginError {
     /// The content hash has no recorded trust.
     #[error("plugin {} is not trusted; run `slopvac plugins trust` for it", esc(.0))]
     Untrusted(String),
+    /// Trust records exist but the key they were made under is gone. The run exits 2.
+    #[error(
+        "the trust key is missing while trust records exist, so plugin {} cannot be checked; run `slopvac plugins trust` for it to trust it again",
+        esc(.0)
+    )]
+    TrustKeyMissing(String),
+    /// The trust records were made under another key than the store's. The run exits 2.
+    #[error(
+        "the trust key changed after plugin {} was trusted, so it cannot be checked; run `slopvac plugins trust` for it to trust it again",
+        esc(.0)
+    )]
+    TrustKeyMismatch(String),
+    /// The trust key file is not private to the user or does not hold a key. The run exits 2.
+    #[error(
+        "the trust key cannot be used for plugin {}; fix the file, or delete it and run `slopvac plugins trust` for each plugin",
+        esc(.0)
+    )]
+    TrustKeyUnusable(String),
     /// The installed bytes differ from the hash that trust recorded.
     #[error(
         "plugin {} changed after it was trusted; run `slopvac plugins sync` to restore the verified files, and `slopvac plugins trust` to approve new content",
@@ -60,6 +103,13 @@ pub enum PluginError {
     /// The program did not start.
     #[error("plugin failed to start: {}", esc(.0))]
     SpawnFailed(String),
+    /// The running program never called
+    /// [`launch::intercept`](crate::launch::intercept), so the host cannot
+    /// start the launcher. Nothing was spawned.
+    #[error(
+        "the running program did not install the slopvac plugin launcher, so plugins and git plugin sources cannot start"
+    )]
+    LauncherNotInstalled,
     /// The reply disagrees with the hashed manifest.
     #[error("plugin declaration mismatch: {}", esc(.0))]
     DeclarationMismatch(String),
@@ -81,7 +131,7 @@ pub enum PluginError {
     #[error("offline: {} needs the network", esc(.0))]
     Offline(String),
     /// The plugin answered a request with an error object.
-    #[error("plugin error {}: {} ({})", .0.code, esc(&.0.message), esc(&.0.slopvac_code))]
+    #[error("plugin error {}: {} ({})", .0.code, esc(&.0.message), .0.code_name())]
     Rpc(RpcError),
     /// The host cancelled the request and discarded the answer.
     #[error("request cancelled")]
@@ -100,18 +150,22 @@ impl PluginError {
     pub fn slopvac_code(&self) -> &str {
         match self {
             Self::Untrusted(_) => "plugin-untrusted",
+            Self::TrustKeyMissing(_) => "trust-key-missing",
+            Self::TrustKeyMismatch(_) => "trust-key-mismatch",
+            Self::TrustKeyUnusable(_) => "trust-key-unusable",
             Self::HashMismatch(_) => "plugin-hash-mismatch",
             Self::Timeout { .. } => "plugin-timeout",
             Self::Exited { .. } => "plugin-exited",
             Self::ProtocolViolation(_) => "plugin-protocol-violation",
             Self::OutputInvalid(_) => "plugin-output-invalid",
             Self::SpawnFailed(_) => "plugin-spawn-failed",
+            Self::LauncherNotInstalled => "launcher-not-installed",
             Self::DeclarationMismatch(_) => "plugin-declaration-mismatch",
             Self::RequestIdExhausted => "request-id-exhausted",
             Self::ProtocolVersionUnsupported { .. } => "protocol-version-unsupported",
             Self::RequiredFeatureMissing(_) => "required-feature-missing",
-            Self::Offline(_) => "offline",
-            Self::Rpc(e) => &e.slopvac_code,
+            Self::Offline(_) => "offline-network-needed",
+            Self::Rpc(e) => e.code_name(),
             Self::Cancelled => "request-cancelled",
             Self::MessageTooLarge(_) => "message-too-large",
             Self::Usage(_) => "plugin-usage",

@@ -443,8 +443,16 @@ def test_trufflehog_finds_a_secret_below_a_merge_of_main(lab: Lab):
 def trufflehog_scan(clone: Path, base: str, head: str) -> str:
     return subprocess.run(
         [
-            TRUFFLEHOG, "git", clone.as_uri(), "--since-commit", base,
-            "--branch", head, "--no-verification", "--no-update", "--json",
+            TRUFFLEHOG,
+            "git",
+            clone.as_uri(),
+            "--since-commit",
+            base,
+            "--branch",
+            head,
+            "--no-verification",
+            "--no-update",
+            "--json",
         ],
         capture_output=True,
         text=True,
@@ -470,8 +478,15 @@ def test_trufflehog_finds_a_secret_added_and_deleted_inside_the_range(lab: Lab):
     def scan(base: str) -> str:
         return subprocess.run(
             [
-                TRUFFLEHOG, "git", clone.as_uri(), "--since-commit", base,
-                "--branch", outputs["head"], "--no-verification", "--no-update",
+                TRUFFLEHOG,
+                "git",
+                clone.as_uri(),
+                "--since-commit",
+                base,
+                "--branch",
+                outputs["head"],
+                "--no-verification",
+                "--no-update",
                 "--json",
             ],
             capture_output=True,

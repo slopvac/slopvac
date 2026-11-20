@@ -3,8 +3,6 @@
   "id": "sentence-length",
   "name": "Shorten the sentence",
   "message": "sentence has {match} words",
-  "scope": "body-sentence",
-  "text_type": "procedural",
   "match": {
     "kind": "metric",
     "metric": "sentence_words",
