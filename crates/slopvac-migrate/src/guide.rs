@@ -7,6 +7,8 @@
 //! points to its heading in the generated doc. The generated doc drops the
 //! marker lines.
 
+use crate::messages::MigrateText;
+
 const GUIDE: &str = include_str!("../data/migrate-guide.md");
 
 const DOC_NOTICE: &str = "<!-- Generated from crates/slopvac-migrate/data/migrate-guide.md. \
@@ -101,17 +103,14 @@ fn render_prime(guide: &str) -> String {
             let heading = heading.trim_end();
             linked = lines.peek().and_then(|next| marker(next)) == Some(LINK);
             if linked {
-                for part in [
-                    "Read \"",
-                    heading,
-                    "\" at ",
-                    DOC_URL,
-                    "#",
-                    &anchor(heading),
-                    ".\n\n",
-                ] {
-                    out.push_str(part);
-                }
+                out.push_str(
+                    &MigrateText::GuideLink {
+                        heading: heading.to_owned(),
+                        url: DOC_URL.to_owned(),
+                        anchor: anchor(heading),
+                    }
+                    .to_string(),
+                );
                 continue;
             }
         } else if linked {

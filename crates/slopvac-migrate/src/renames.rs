@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use toml_edit::{DocumentMut, Item};
 
 use crate::Error;
+use crate::messages::MigrateText;
 
 const BUNDLED: &str = include_str!("../data/renames.toml");
 
@@ -80,27 +81,51 @@ fn read_removed(doc: &DocumentMut, key: &str) -> Result<BTreeSet<String>, Error>
     };
     array
         .as_array()
-        .ok_or_else(|| Error::RenameTable(format!("removed.{key}: expected an array")))?
+        .ok_or_else(|| {
+            Error::RenameTable(
+                MigrateText::RenameRemovedNotArray {
+                    key: key.to_owned(),
+                }
+                .to_string(),
+            )
+        })?
         .iter()
         .map(|v| {
-            v.as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| Error::RenameTable(format!("removed.{key}: expected strings")))
+            v.as_str().map(str::to_owned).ok_or_else(|| {
+                Error::RenameTable(
+                    MigrateText::RenameRemovedNotStrings {
+                        key: key.to_owned(),
+                    }
+                    .to_string(),
+                )
+            })
         })
         .collect()
 }
 
 fn read_map(doc: &DocumentMut, key: &str) -> Result<BTreeMap<String, String>, Error> {
-    let table = doc
-        .get(key)
-        .and_then(Item::as_table_like)
-        .ok_or_else(|| Error::RenameTable(format!("missing [{key}] table")))?;
+    let table = doc.get(key).and_then(Item::as_table_like).ok_or_else(|| {
+        Error::RenameTable(
+            MigrateText::RenameMissingTable {
+                key: key.to_owned(),
+            }
+            .to_string(),
+        )
+    })?;
     table
         .iter()
         .map(|(k, v)| {
             v.as_str()
                 .map(|s| (k.to_owned(), s.to_owned()))
-                .ok_or_else(|| Error::RenameTable(format!("{key}.{k}: expected a string")))
+                .ok_or_else(|| {
+                    Error::RenameTable(
+                        MigrateText::RenameNotString {
+                            key: key.to_owned(),
+                            name: k.to_owned(),
+                        }
+                        .to_string(),
+                    )
+                })
         })
         .collect()
 }

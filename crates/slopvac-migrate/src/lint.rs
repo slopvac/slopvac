@@ -8,8 +8,9 @@ use slopvac_engine::{Engine, Input, Settings};
 use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString, Notice, NoticeLevel};
 use slopvac_rules::RuleSet;
 
-use crate::capped::Capped;
+use crate::capped::{Capped, Listed};
 use crate::limits::{Budget, Kind, Limits};
+use crate::messages::MigrateText;
 use crate::walk::discover;
 use crate::{Error, Finding, Linter, Phase};
 
@@ -69,11 +70,14 @@ fn canonical(path: &Path) -> PathBuf {
 /// The first warning-level notice, as a failure: part of the document was not checked.
 fn unchecked(label: &str, notices: &[Notice]) -> Result<(), Error> {
     match notices.iter().find(|n| n.level == NoticeLevel::Warning) {
-        Some(n) => Err(Error::Lint(format!(
-            "{label}: not fully checked: {}: {}",
-            n.code.as_str(),
-            n.message.as_str()
-        ))),
+        Some(n) => Err(Error::Lint(
+            MigrateText::LintNotFullyChecked {
+                label: label.to_owned(),
+                code: n.code.as_str().to_owned(),
+                message: n.message.as_str().to_owned(),
+            }
+            .to_string(),
+        )),
         None => Ok(()),
     }
 }
@@ -88,7 +92,7 @@ impl Linter for EngineLinter {
         let base = canonical(root);
         let mut budget = Budget::new(self.limits);
         // The planner reports what discovery excludes; the lint only needs the documents.
-        let found = discover(root, &mut budget, &mut Capped::new("warnings"))?.docs;
+        let found = discover(root, &mut budget, &mut Capped::new(Listed::Warnings))?.docs;
         let rewritten: HashMap<PathBuf, &str> = match phase {
             Phase::Before => HashMap::new(),
             Phase::After => overlay
@@ -121,7 +125,15 @@ impl Linter for EngineLinter {
             .collect();
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         for (result, (label, _, _)) in self.engine.lint_all(&inputs).into_iter().zip(&docs) {
-            let doc = result.map_err(|e| Error::Lint(format!("{label}: {e}")))?;
+            let doc = result.map_err(|e| {
+                Error::Lint(
+                    MigrateText::LintDocumentFailed {
+                        label: label.clone(),
+                        detail: e.to_string(),
+                    }
+                    .to_string(),
+                )
+            })?;
             unchecked(label, &doc.unchecked)?;
             for finding in doc.findings {
                 *counts.entry(finding.rule_id.to_string()).or_default() += 1;

@@ -17,6 +17,7 @@ use toml_edit::{DocumentMut, Item, TableLike, Value};
 
 use crate::config::line_of;
 use crate::limits::{Budget, Kind, Refused};
+use crate::messages::{MigratePhrase, MigrateText};
 use crate::provenance::{KeyLines, key_lines};
 use crate::{Dropped, Error};
 
@@ -113,11 +114,14 @@ fn resolve(
     site: &(&str, usize),
 ) -> Result<Resolved, Error> {
     let outside = || {
-        Error::Unsafe(format!(
-            "{}:{}: `{}`: the blocklist is outside the project root, so migrate does not rewrite it. \
-             Move it into the project, or give it `schema_version = 3` by hand",
-            site.0, site.1, reference.key
-        ))
+        Error::Unsafe(
+            MigrateText::BlocklistOutside {
+                file: site.0.to_owned(),
+                line: site.1.to_string(),
+                key: reference.key.clone(),
+            }
+            .to_string(),
+        )
     };
     let given = Path::new(&reference.path);
     let rest: PathBuf = if given.is_absolute() {
@@ -151,11 +155,14 @@ fn resolve(
                 let so_far: PathBuf = stack.iter().map(|(n, _)| n).collect();
                 match base.symlink_metadata(&so_far) {
                     Ok(meta) if meta.is_symlink() => {
-                        return Err(Error::Unsafe(format!(
-                            "{}:{}: `{}`: the blocklist path crosses a symbolic link, so migrate cannot tell which file the project loads. \
-                             Name the file without the link",
-                            site.0, site.1, reference.key
-                        )));
+                        return Err(Error::Unsafe(
+                            MigrateText::BlocklistSymlink {
+                                file: site.0.to_owned(),
+                                line: site.1.to_string(),
+                                key: reference.key.clone(),
+                            }
+                            .to_string(),
+                        ));
                     }
                     Ok(meta) => {
                         if let Some(top) = stack.last_mut() {
@@ -194,17 +201,26 @@ pub(crate) fn plan_reference(
     budget: &mut Budget,
 ) -> Result<Planned, Error> {
     let base = Dir::open_ambient_dir(root, ambient_authority()).map_err(|e| Error::io(root, e))?;
-    let blocked = |label: &str, reason: &str| {
+    let blocked = |label: &str, reason: MigratePhrase| {
         Ok(Planned::Blocked(vec![Dropped::new(
             config,
             reference.key.as_str(),
             line,
-            format!("blocklist `{label}`: {reason}"),
+            MigrateText::BlocklistBlocked {
+                label: label.to_owned(),
+                reason: reason.as_static().to_owned(),
+            }
+            .to_string(),
         )]))
     };
     let rel = match resolve(root, &base, dir, reference, &(config, line))? {
         Resolved::Found(rel) => rel,
-        Resolved::Missing(rest) => return blocked(&rest.display().to_string(), "file not found"),
+        Resolved::Missing(rest) => {
+            return blocked(
+                &rest.display().to_string(),
+                MigratePhrase::BlocklistNotFound,
+            );
+        }
     };
     if !seen.insert(rel.clone()) {
         return Ok(Planned::Skip);
@@ -213,9 +229,9 @@ pub(crate) fn plan_reference(
     let full = root.join(&rel);
     let old = match budget.read_in(&base, &rel, &full, Kind::Terms)? {
         Ok(text) => text,
-        Err(Refused::NotFound) => return blocked(&label, "file not found"),
-        Err(Refused::NotRegular) => return blocked(&label, "not a regular file"),
-        Err(Refused::MultiplyLinked) => return blocked(&label, "has more than one hard link"),
+        Err(Refused::NotFound) => return blocked(&label, MigratePhrase::BlocklistNotFound),
+        Err(Refused::NotRegular) => return blocked(&label, MigratePhrase::BlocklistNotRegular),
+        Err(Refused::MultiplyLinked) => return blocked(&label, MigratePhrase::BlocklistHardLinks),
     };
     let format = full
         .extension()
@@ -314,13 +330,13 @@ fn rewrite(
     };
     if format != "toml" {
         let reason = if matches!(format, "json" | "yml" | "yaml") {
-            format!(
-                "3.0 refuses this .{format} blocklist ({}). migrate rewrites TOML blocklists only. \
-                 Add `schema_version: 3` and long-form `pos` values by hand, or convert it to TOML",
-                describe(&refused)
-            )
+            MigrateText::BlocklistFormatRefused {
+                format: format.to_owned(),
+                what: describe(&refused),
+            }
+            .to_string()
         } else {
-            "the suffix is not .toml, .json, .yml or .yaml, so 3.0 cannot load it".to_owned()
+            MigratePhrase::BlocklistSuffix.as_static().to_owned()
         };
         return Err(blocked(
             located(&refused, &KeyLines::default()).1,
@@ -334,7 +350,7 @@ fn rewrite(
         blocked(
             e.span().map_or(1, |s| line_of(text, s.start)),
             "entries",
-            "the file is not valid TOML".to_owned(),
+            MigratePhrase::BlocklistNotToml.as_static().to_owned(),
         )
     })?;
     let lines = key_lines(text).unwrap_or_default();
@@ -343,7 +359,10 @@ fn rewrite(
         return Err(blocked(
             line,
             &key,
-            format!("the file {}", describe(&refused)),
+            MigrateText::BlocklistFileProblem {
+                what: describe(&refused),
+            }
+            .to_string(),
         ));
     }
     let line = |key: &str| lines.line(key).unwrap_or(1);
@@ -352,13 +371,19 @@ fn rewrite(
     match doc.get("schema_version") {
         None => {
             doc.insert("schema_version", toml_edit::value(3));
-            notes.push(format!("{label}: added schema_version = 3"));
+            notes.push(
+                MigrateText::NoteAddedBlocklistVersion {
+                    label: label.to_owned(),
+                }
+                .to_string(),
+            );
         }
         Some(item) if item.as_integer() == Some(3) => {}
         Some(_) => problems.extend(blocked(
             line("schema_version"),
             "schema_version",
-            "a 2.x blocklist has no `schema_version`; this value is not 3, so migrate leaves it for you to fix"
+            MigratePhrase::BlocklistVersionNotThree
+                .as_static()
                 .to_owned(),
         )),
     }
@@ -381,14 +406,19 @@ fn rewrite(
                         }
                         *item = Item::Value(value);
                     }
-                    notes.push(format!("{label}:{pos_line}: pos rewritten to `{long}`"));
+                    notes.push(
+                        MigrateText::NotePosRewritten {
+                            label: label.to_owned(),
+                            line: pos_line.to_string(),
+                            long: long.to_owned(),
+                        }
+                        .to_string(),
+                    );
                 }
                 PosFix::Unknown => problems.extend(blocked(
                     pos_line,
                     &format!("{key}.pos"),
-                    "unrecognized part of speech; use noun, verb, adjective, adverb, \
-                     preposition, conjunction, pronoun or article"
-                        .to_owned(),
+                    MigratePhrase::BlocklistUnknownPos.as_static().to_owned(),
                 )),
             }
         }
@@ -447,7 +477,10 @@ fn blocked_by(label: &str, error: &TermsError, lines: &KeyLines) -> Vec<Dropped>
         label,
         key,
         line,
-        format!("3.0 refuses the migrated blocklist: {}", describe(error)),
+        MigrateText::BlocklistStillRefused {
+            what: describe(error),
+        }
+        .to_string(),
     )]
 }
 
@@ -460,12 +493,23 @@ fn describe(error: &TermsError) -> String {
             problem,
             number: Some(n),
             ..
-        } => format!("entry {n} {}", problem.describe()),
-        TermsError::Entry { problem, .. } => format!("an entry {}", problem.describe()),
-        TermsError::MissingSchemaVersion { .. } => "has no `schema_version`".to_owned(),
-        TermsError::SchemaVersion { .. } => "has an unsupported `schema_version`".to_owned(),
-        TermsError::UnknownKey { .. } => "has an unknown key".to_owned(),
-        TermsError::Parse { .. } => "is not valid for its format".to_owned(),
-        _ => "cannot be read".to_owned(),
+        } => MigrateText::BlocklistEntryNumbered {
+            number: n.to_string(),
+            problem: problem.describe().to_string(),
+        }
+        .to_string(),
+        TermsError::Entry { problem, .. } => MigrateText::BlocklistEntry {
+            problem: problem.describe().to_string(),
+        }
+        .to_string(),
+        TermsError::MissingSchemaVersion { .. } => {
+            MigratePhrase::BlocklistNoVersion.as_static().to_owned()
+        }
+        TermsError::SchemaVersion { .. } => {
+            MigratePhrase::BlocklistBadVersion.as_static().to_owned()
+        }
+        TermsError::UnknownKey { .. } => MigratePhrase::BlocklistUnknownKey.as_static().to_owned(),
+        TermsError::Parse { .. } => MigratePhrase::BlocklistBadFormat.as_static().to_owned(),
+        _ => MigratePhrase::BlocklistUnreadable.as_static().to_owned(),
     }
 }

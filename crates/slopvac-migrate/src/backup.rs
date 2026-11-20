@@ -46,6 +46,7 @@ use sha2::{Digest, Sha256};
 use slopvac_fs::{WriteOptions, write_atomic};
 
 use crate::Error;
+use crate::messages::{MigratePhrase, MigrateText, path_reason};
 use crate::plan::{BACKUP_DIR, ChangeKind, Plan};
 
 /// The list of backup copies, for people. Restore checks its digest and never reads it.
@@ -112,25 +113,35 @@ fn shown(path: &Path) -> String {
     path.display().to_string()
 }
 
-fn refused(path: &Path, why: &str) -> Error {
-    Error::Unsafe(format!("{}: {why}", shown(path)))
+fn refused(path: &Path, why: MigratePhrase) -> Error {
+    Error::Unsafe(path_reason(&shown(path), why.as_static()))
 }
 
-fn changed(path: &Path, why: &str) -> Error {
-    Error::Changed(format!("{}: {why}", shown(path)))
+fn changed(path: &Path, why: MigratePhrase) -> Error {
+    changed_with(path, why.as_static())
+}
+
+/// [`changed`] for a reason that carries a parameter.
+fn changed_with(path: &Path, why: &str) -> Error {
+    Error::Changed(path_reason(&shown(path), why))
 }
 
 fn unverified() -> Error {
-    Error::Unsafe(format!(
-        "{BACKUP_DIR} was not written by `slopvac migrate --write` in this checkout, or it \
-         changed since; nothing restored"
-    ))
+    Error::Unsafe(
+        MigrateText::BackupUnverified {
+            directory: BACKUP_DIR.to_owned(),
+        }
+        .to_string(),
+    )
 }
 
 fn exists() -> Error {
-    Error::Unsafe(format!(
-        "{BACKUP_DIR} exists; run `slopvac migrate --restore` or delete it first"
-    ))
+    Error::Unsafe(
+        MigrateText::BackupExists {
+            directory: BACKUP_DIR.to_owned(),
+        }
+        .to_string(),
+    )
 }
 
 /// A file or directory by device and inode.
@@ -174,7 +185,7 @@ fn nonce() -> Result<String, Error> {
 /// Open without blocking, so a FIFO swapped in after the check cannot hang the run.
 fn nonblocking(options: &mut OpenOptions) -> std::io::Result<()> {
     let flag = i32::try_from(rustix::fs::OFlags::NONBLOCK.bits())
-        .map_err(|_| std::io::Error::other("O_NONBLOCK does not fit"))?;
+        .map_err(|_| std::io::Error::other(MigratePhrase::IoNonblock.as_static()))?;
     options.custom_flags(flag);
     Ok(())
 }
@@ -197,18 +208,20 @@ fn plain(path: &Path) -> Result<Vec<&OsStr>, Error> {
     let mut names = Vec::new();
     for comp in path.components() {
         let Component::Normal(part) = comp else {
-            return Err(refused(path, "path leaves the project"));
+            return Err(refused(path, MigratePhrase::WhyPathLeaves));
         };
         if part.to_str().is_none() {
-            return Err(refused(path, "path is not valid UTF-8"));
+            return Err(refused(path, MigratePhrase::WhyPathNotUtf8));
         }
         if part.as_bytes().contains(&b'\n') {
-            return Err(refused(path, "newline in path"));
+            return Err(refused(path, MigratePhrase::WhyPathNewline));
         }
         names.push(part);
     }
     if names.is_empty() {
-        return Err(Error::Unsafe("empty path".into()));
+        return Err(Error::Unsafe(
+            MigratePhrase::WhyEmptyPath.as_static().to_owned(),
+        ));
     }
     Ok(names)
 }
@@ -218,7 +231,9 @@ fn plain(path: &Path) -> Result<Vec<&OsStr>, Error> {
 fn open_parent(dir: &Dir, rel: &Path) -> Result<Option<(Dir, OsString)>, Error> {
     let mut names = plain(rel)?;
     let Some(name) = names.pop() else {
-        return Err(Error::Unsafe("empty path".into()));
+        return Err(Error::Unsafe(
+            MigratePhrase::WhyEmptyPath.as_static().to_owned(),
+        ));
     };
     let mut parent = dir.try_clone().map_err(|e| Error::io(rel, e))?;
     for part in names {
@@ -228,11 +243,9 @@ fn open_parent(dir: &Dir, rel: &Path) -> Result<Option<(Dir, OsString)>, Error> 
                 return match parent.symlink_metadata(part) {
                     Err(m) if m.kind() == ErrorKind::NotFound => Ok(None),
                     Ok(m) if m.is_symlink() => {
-                        Err(refused(rel, "a path component is a symbolic link"))
+                        Err(refused(rel, MigratePhrase::WhyComponentSymlink))
                     }
-                    Ok(m) if !m.is_dir() => {
-                        Err(refused(rel, "a path component is not a directory"))
-                    }
+                    Ok(m) if !m.is_dir() => Err(refused(rel, MigratePhrase::WhyComponentNotDir)),
                     _ => Err(Error::io(rel, e)),
                 };
             }
@@ -252,10 +265,10 @@ fn read_entry(parent: &Dir, name: &OsStr, rel: &Path) -> Result<Option<Seen>, Er
         Err(e) => return Err(io(e)),
     };
     if entry.is_symlink() {
-        return Err(refused(rel, "is a symbolic link"));
+        return Err(refused(rel, MigratePhrase::WhySymlink));
     }
     if !entry.is_file() {
-        return Err(refused(rel, "is not a regular file"));
+        return Err(refused(rel, MigratePhrase::WhyNotRegular));
     }
     let mut options = OpenOptions::new();
     options.read(true).follow(FollowSymlinks::No);
@@ -263,14 +276,14 @@ fn read_entry(parent: &Dir, name: &OsStr, rel: &Path) -> Result<Option<Seen>, Er
     let file = parent.open_with(name, &options).map_err(io)?;
     let held = file.metadata().map_err(io)?;
     if !held.is_file() || id_of(&held) != id_of(&entry) {
-        return Err(changed(rel, "changed while it was read"));
+        return Err(changed(rel, MigratePhrase::WhyChangedWhileRead));
     }
     if held.nlink() > 1 {
-        return Err(refused(rel, "has more than one hard link"));
+        return Err(refused(rel, MigratePhrase::WhyHardLinks));
     }
     let bytes =
         slopvac_fs::read_capped(file, slopvac_fs::MAX_DOCUMENT_BYTES).map_err(|e| match e {
-            slopvac_fs::Error::CapExceeded { .. } => refused(rel, "is too large to migrate"),
+            slopvac_fs::Error::CapExceeded { .. } => refused(rel, MigratePhrase::WhyTooLarge),
             slopvac_fs::Error::Read { source, .. } => io(source),
             other => io(std::io::Error::other(other.to_string())),
         })?;
@@ -331,7 +344,7 @@ fn private_dir(parent: &Dir, name: &OsStr) -> std::io::Result<(Dir, Id)> {
     let meta = dir.dir_metadata()?;
     if meta.mode() & 0o077 != 0 || dir.entries()?.next().is_some() {
         return Err(std::io::Error::other(
-            "a directory this run created was replaced",
+            MigratePhrase::IoCreatedReplaced.as_static(),
         ));
     }
     Ok((dir, id_of(&meta)))
@@ -412,7 +425,9 @@ impl<'a> Holding<'a> {
                 Err(e) => return Err(e),
             }
         }
-        Err(std::io::Error::other("no free temporary name"))
+        Err(std::io::Error::other(
+            MigratePhrase::IoNoFreeName.as_static(),
+        ))
     }
 
     /// The path of `inner` for messages, where `at` is the parent directory below the project.
@@ -456,12 +471,12 @@ impl<'a> Holding<'a> {
     fn give_back(&mut self, to: &Dir, name: &OsStr, rel: &Path) -> Result<(), Error> {
         match self.give(OLD, to, name) {
             Ok(()) => Ok(()),
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(changed(
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(changed_with(
                 rel,
-                &format!(
-                    "was replaced twice while it was checked; the original is kept as {}",
-                    self.shown(rel.parent().unwrap_or(Path::new("")), OLD)
-                ),
+                &MigrateText::ReplacedTwice {
+                    kept: self.shown(rel.parent().unwrap_or(Path::new("")), OLD),
+                }
+                .to_string(),
             )),
             Err(e) => Err(Error::io(rel, e)),
         }
@@ -478,7 +493,9 @@ impl<'a> Holding<'a> {
             .symlink_metadata(&self.name)
             .is_ok_and(|m| m.is_dir() && id_of(&m) == self.id);
         if !same {
-            return Err(std::io::Error::other("a holding directory was replaced"));
+            return Err(std::io::Error::other(
+                MigratePhrase::IoHoldingReplaced.as_static(),
+            ));
         }
         self.parent.remove_dir(&self.name)
     }
@@ -520,12 +537,12 @@ fn remove_checked(
         hold.take(dir, name, name).map_err(|e| Error::io(&rel, e))?;
         hook(Point::Cleanup(&rel)).map_err(|e| Error::io(&rel, e))?;
         if !remove_if(&hold.dir, name, *id).map_err(|e| Error::io(&rel, e))? {
-            return Err(changed(
+            return Err(changed_with(
                 &rel,
-                &format!(
-                    "changed after it was checked, so it was not removed; it is kept as {}",
-                    shown(&at.join(&hold.name).join(name))
-                ),
+                &MigrateText::NotRemovedKept {
+                    kept: shown(&at.join(&hold.name).join(name)),
+                }
+                .to_string(),
             ));
         }
     }
@@ -550,13 +567,13 @@ impl From<Error> for Failed {
 /// Whether the taken original is the file the preflight saw, with `digest`.
 fn check_taken(hold: &Holding<'_>, rel: &Path, id: Id, digest: Option<Sha>) -> Result<(), Error> {
     let Some(seen) = read_entry(&hold.dir, OsStr::new(OLD), rel)? else {
-        return Err(changed(rel, "disappeared while it was replaced"));
+        return Err(changed(rel, MigratePhrase::WhyVanishedReplaced));
     };
     if seen.id != id {
-        return Err(changed(rel, "was replaced after it was checked"));
+        return Err(changed(rel, MigratePhrase::WhyReplacedAfterCheck));
     }
     if digest.is_some_and(|d| d != seen.digest) {
-        return Err(changed(rel, "changed after it was checked"));
+        return Err(changed(rel, MigratePhrase::WhyChangedAfterCheck));
     }
     Ok(())
 }
@@ -583,7 +600,7 @@ fn mutate(
 ) -> Result<(), Failed> {
     let io = |e| Error::io(rel, e);
     let Some((parent, name)) = open_parent(root, rel)? else {
-        return Err(changed(rel, "its directory disappeared").into());
+        return Err(changed(rel, MigratePhrase::WhyDirectoryVanished).into());
     };
     let at = rel.parent().unwrap_or(Path::new(""));
     let mut hold = Holding::create(&parent).map_err(io)?;
@@ -602,7 +619,7 @@ fn mutate(
             match hold.take(&parent, &name, OsStr::new(OLD)) {
                 Ok(()) => {}
                 Err(e) if e.kind() == ErrorKind::NotFound => {
-                    return Err(changed(rel, "disappeared after it was checked").into());
+                    return Err(changed(rel, MigratePhrase::WhyVanishedAfterCheck).into());
                 }
                 Err(e) => return Err(io(e).into()),
             }
@@ -627,7 +644,7 @@ fn mutate(
     if let Some(new_id) = new_id {
         if let Err(e) = hold.give(NEW, &parent, &name) {
             let e = if e.kind() == ErrorKind::AlreadyExists {
-                changed(rel, "appeared after it was checked")
+                changed(rel, MigratePhrase::WhyAppearedAfterCheck)
             } else {
                 io(e)
             };
@@ -641,16 +658,22 @@ fn mutate(
             .symlink_metadata(&name)
             .is_ok_and(|m| m.is_file() && id_of(&m) == new_id);
         if !placed {
-            let kept = original.map_or(String::new(), |_| {
-                format!("; the original is kept as {}", hold.shown(at, OLD))
-            });
+            let why = match original {
+                Some(_) => MigrateText::ReplacedWhileWrittenKept {
+                    kept: hold.shown(at, OLD),
+                }
+                .to_string(),
+                None => MigratePhrase::WhyReplacedWhileWritten
+                    .as_static()
+                    .to_owned(),
+            };
             return Err(Failed {
-                error: changed(rel, &format!("was replaced while it was written{kept}")),
+                error: changed_with(rel, &why),
                 committed: true,
             });
         }
     } else if original.is_none() && parent.symlink_metadata(&name).is_ok() {
-        return Err(changed(rel, "appeared after it was checked").into());
+        return Err(changed(rel, MigratePhrase::WhyAppearedAfterCheck).into());
     }
     let commit = |error| Failed {
         error,
@@ -660,12 +683,11 @@ fn mutate(
     if let Some(id) = original {
         let removed = remove_if(&hold.dir, OsStr::new(OLD), id).map_err(|e| commit(io(e)))?;
         if !removed {
-            return Err(commit(changed(
-                rel,
-                &format!(
-                    "{} changed after it was checked, so it was not removed; delete it by hand",
-                    hold.shown(at, OLD)
-                ),
+            return Err(commit(Error::Changed(
+                MigrateText::HeldChanged {
+                    path: hold.shown(at, OLD),
+                }
+                .to_string(),
             )));
         }
     }
@@ -730,6 +752,7 @@ fn parse_digest(text: &str) -> Result<Option<Sha>, ()> {
 
 impl Record {
     fn render(&self) -> String {
+        // ast-grep-ignore: user-text-literal
         let head = format!(
             "{RECORD_HEADER}\ninstance {}\nroot {}\nbackup {}\nmanifest {}\n",
             self.instance,
@@ -738,6 +761,7 @@ impl Record {
             opt_hex(self.manifest.as_ref()),
         );
         let entries = self.entries.iter().map(|e| {
+            // ast-grep-ignore: user-text-literal
             format!(
                 "entry {} {} {} {:o} {} {}\n",
                 u8::from(e.done),
@@ -979,7 +1003,7 @@ fn preflight(dir: &Dir, plan: &Plan) -> Result<(Vec<Want>, Vec<Entry>), Error> {
     for c in &plan.changes {
         let key: PathBuf = plain(&c.path)?.into_iter().collect();
         if !paths.insert(key) {
-            return Err(refused(&c.path, "the plan names this file twice"));
+            return Err(refused(&c.path, MigratePhrase::WhyNamedTwice));
         }
     }
     if dir.symlink_metadata(BACKUP_DIR).is_ok() {
@@ -991,7 +1015,7 @@ fn preflight(dir: &Dir, plan: &Plan) -> Result<(Vec<Want>, Vec<Entry>), Error> {
         let seen = look(dir, &c.path)?;
         let planned = c.old.as_deref().map(|t| sha(t.as_bytes()));
         if seen.as_ref().map(|s| s.digest) != planned {
-            return Err(changed(&c.path, "changed after the migration was planned"));
+            return Err(changed(&c.path, MigratePhrase::WhyChangedAfterPlan));
         }
         let after = match c.kind {
             ChangeKind::Write => c.new.as_deref().map(|t| sha(t.as_bytes())),
@@ -1154,10 +1178,12 @@ fn verify(root: &Path, dir: &Dir, root_id: Id, state: &Path) -> Result<(Verified
         found.insert(entry.map_err(io)?.file_name());
     }
     if found != expected {
-        return Err(Error::Unsafe(format!(
-            "{BACKUP_DIR} holds files that `slopvac migrate --write` did not write; \
-             nothing restored"
-        )));
+        return Err(Error::Unsafe(
+            MigrateText::BackupForeignFiles {
+                directory: BACKUP_DIR.to_owned(),
+            }
+            .to_string(),
+        ));
     }
     let read = |name: &OsStr| {
         read_entry(&backup, name, &Path::new(BACKUP_DIR).join(name))?.ok_or_else(unverified)
@@ -1177,10 +1203,12 @@ fn verify(root: &Path, dir: &Dir, root_id: Id, state: &Path) -> Result<(Verified
         let name = copy_name(i);
         let copy = read(&name)?;
         if copy.digest != before {
-            return Err(Error::Unsafe(format!(
-                "{}: the backup copy does not match the record; nothing restored",
-                shown(Path::new(&e.path))
-            )));
+            return Err(Error::Unsafe(
+                MigrateText::BackupCopyMismatch {
+                    path: shown(Path::new(&e.path)),
+                }
+                .to_string(),
+            ));
         }
         files.push((name, copy.id));
         copies.push(Some(copy.bytes));
@@ -1217,10 +1245,7 @@ fn decide(dir: &Dir, record: &Record, force: bool) -> Result<Vec<Step>, Error> {
         } else if !e.done {
             Step::Keep
         } else if !force {
-            return Err(changed(
-                rel,
-                "changed after the migration wrote it; rerun with --force to restore anyway",
-            ));
+            return Err(changed(rel, MigratePhrase::WhyChangedAfterWrite));
         } else if e.before.is_some() && (installed || now.is_none()) {
             // `force` relaxes only the content check: the object is still the file the
             // migration installed, edited in place, or the name is empty.
@@ -1302,18 +1327,12 @@ fn clean_up(dir: &Dir, verified: &Verified, hook: Hook<'_>) -> Result<(), Error>
         .symlink_metadata(BACKUP_DIR)
         .is_ok_and(|m| m.is_dir() && id_of(&m) == verified.backup_id);
     if !same {
-        return Err(changed(
-            shown_dir,
-            "changed during the restore; delete it by hand",
-        ));
+        return Err(changed(shown_dir, MigratePhrase::WhyChangedDuringRestore));
     }
     // Removes only an empty directory.
     dir.remove_dir(BACKUP_DIR).map_err(|e| {
         if e.kind() == ErrorKind::DirectoryNotEmpty {
-            changed(
-                shown_dir,
-                "gained files during the restore; delete it by hand",
-            )
+            changed(shown_dir, MigratePhrase::WhyGainedFiles)
         } else {
             Error::io(shown_dir, e)
         }

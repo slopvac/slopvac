@@ -7,6 +7,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command, value_parser};
 use slopvac_sanitize as sanitize;
 
 use crate::backup::{apply, restore};
+use crate::messages::{MigratePhrase, MigrateText};
 use crate::plan::{BACKUP_DIR, plan, render_diff};
 use crate::{Error, Linter, Options, Phase, RenameTable, compare};
 
@@ -14,15 +15,11 @@ use crate::{Error, Linter, Options, Phase, RenameTable, compare};
 #[must_use]
 pub fn command() -> Command {
     Command::new("migrate")
-        .about("Migrate a 2.x project to 3.0: config, inline directives and steering blocks")
-        .long_about(
-            "Shows a diff of every change by default. With --write, rewrites the files \
-             and keeps the originals in .slopvac-migrate-backup. Lints before and after \
-             and reports the change per rule.",
-        )
+        .about(MigratePhrase::HelpAbout.as_static())
+        .long_about(MigratePhrase::HelpLongAbout.as_static())
         .arg(
             Arg::new("path")
-                .help("Project root")
+                .help(MigratePhrase::HelpPath.as_static())
                 .default_value(".")
                 .value_parser(value_parser!(PathBuf)),
         )
@@ -30,27 +27,27 @@ pub fn command() -> Command {
             Arg::new("write")
                 .long("write")
                 .action(ArgAction::SetTrue)
-                .help("Apply the changes instead of previewing them"),
+                .help(MigratePhrase::HelpWrite.as_static()),
         )
         .arg(
             Arg::new("preserve-behavior")
                 .long("preserve-behavior")
                 .action(ArgAction::SetTrue)
-                .help("Reproduce the 2.x profile gates with the core:legacy-<profile> style"),
+                .help(MigratePhrase::HelpPreserveBehavior.as_static()),
         )
         .arg(
             Arg::new("restore")
                 .long("restore")
                 .action(ArgAction::SetTrue)
                 .conflicts_with_all(["write", "preserve-behavior"])
-                .help("Undo the last --write from the backup"),
+                .help(MigratePhrase::HelpRestore.as_static()),
         )
         .arg(
             Arg::new("force")
                 .long("force")
                 .action(ArgAction::SetTrue)
                 .requires("restore")
-                .help("With --restore, also put back files that changed since the write"),
+                .help(MigratePhrase::HelpForce.as_static()),
         )
 }
 
@@ -158,14 +155,15 @@ fn execute_in(
     if matches.get_flag("restore") {
         let done = restore(&root, state, matches.get_flag("force"))?;
         for kept in &done.kept {
-            writeln!(
-                out,
-                "kept {}: it changed after the migration, so the restore left it as it is",
-                slopvac_sanitize::line(&kept.display().to_string())
-            )
-            .map_err(io)?;
+            let text = MigrateText::OutKept {
+                path: sanitize::line(&kept.display().to_string()),
+            };
+            writeln!(out, "{text}").map_err(io)?;
         }
-        writeln!(out, "Restored {} files from the backup.", done.restored).map_err(io)?;
+        let text = MigrateText::OutRestored {
+            count: done.restored,
+        };
+        writeln!(out, "{text}").map_err(io)?;
         return Ok(());
     }
     let options = Options {
@@ -174,24 +172,30 @@ fn execute_in(
     let renames = RenameTable::bundled();
     let plan = plan(&root, &renames, options, steering)?;
     for warning in &plan.warnings {
-        writeln!(out, "warning: {}", sanitize::line(warning)).map_err(io)?;
+        let text = MigrateText::OutWarning {
+            message: sanitize::line(warning),
+        };
+        writeln!(out, "{text}").map_err(io)?;
     }
     if plan.is_empty() {
-        writeln!(out, "Nothing to migrate.").map_err(io)?;
+        writeln!(out, "{}", MigratePhrase::OutNothing.as_static()).map_err(io)?;
         return Ok(());
     }
     write!(out, "{}", sanitize::terminal(&render_diff(&plan))).map_err(io)?;
     for note in &plan.notes {
-        writeln!(out, "note: {}", sanitize::line(note)).map_err(io)?;
+        let text = MigrateText::OutNote {
+            message: sanitize::line(note),
+        };
+        writeln!(out, "{text}").map_err(io)?;
     }
     let before = linter.lint(&root, Phase::Before, &[])?;
     let after = linter.lint(&root, Phase::After, &plan.overlay(&root))?;
     let rows = compare(&before, &after, &renames);
     let changed: Vec<_> = rows.iter().filter(|r| r.changed()).collect();
     if changed.is_empty() {
-        writeln!(out, "Findings: no per-rule change.").map_err(io)?;
+        writeln!(out, "{}", MigratePhrase::OutNoChange.as_static()).map_err(io)?;
     } else {
-        writeln!(out, "Findings by rule (before -> after):").map_err(io)?;
+        writeln!(out, "{}", MigratePhrase::OutByRule.as_static()).map_err(io)?;
         for r in changed {
             writeln!(
                 out,
@@ -205,14 +209,13 @@ fn execute_in(
     }
     if matches.get_flag("write") {
         apply(&root, &plan, state)?;
-        writeln!(
-            out,
-            "Wrote {} files. Originals are in {BACKUP_DIR}; undo with `slopvac migrate --restore`.",
-            plan.changes.len(),
-        )
-        .map_err(io)?;
+        let text = MigrateText::OutWrote {
+            count: plan.changes.len(),
+            directory: BACKUP_DIR.to_owned(),
+        };
+        writeln!(out, "{text}").map_err(io)?;
     } else {
-        writeln!(out, "Preview only. Run again with --write to apply.").map_err(io)?;
+        writeln!(out, "{}", MigratePhrase::OutPreview.as_static()).map_err(io)?;
     }
     Ok(())
 }

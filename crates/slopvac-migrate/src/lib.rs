@@ -16,6 +16,7 @@ mod guide;
 mod legacy;
 mod limits;
 mod lint;
+mod messages;
 pub mod overlap;
 mod plan;
 mod preserve;
@@ -30,6 +31,8 @@ use std::fmt;
 
 use slopvac_config::Code;
 
+use crate::messages::{MigrateMessage, MigrateText};
+
 pub use backup::{Point, Restored, apply, apply_hooked, restore, restore_hooked};
 pub use cli::{CliFailure, command, execute, run};
 pub use config::{Rewrite, migrate_config};
@@ -37,6 +40,7 @@ pub use directives::{Found, RemovedId, UnknownId, rewrite_directives};
 pub use guide::{doc as guide_doc, prime_migrate};
 pub use limits::Limits;
 pub use lint::EngineLinter;
+pub use messages::{error_entries, phrase_entries, text_entries};
 pub use plan::{BACKUP_DIR, Change, ChangeKind, Plan, plan, plan_with_limits, render_diff};
 pub use renames::RenameTable;
 pub use report::{Finding, Linter, NullLinter, Phase, RuleDelta, compare};
@@ -49,9 +53,6 @@ pub struct Options {
     /// expand the config (docs/contract/profiles.md, section 4).
     pub preserve_behavior: bool,
 }
-
-/// Where a user finds why a rule or category is gone. Ends every removal notice.
-pub(crate) const REMOVED_RULES_POINTER: &str = "see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml";
 
 /// A 2.x setting that 3.0 cannot represent (`config-legacy-dropped`).
 ///
@@ -97,7 +98,7 @@ impl Dropped {
             file: String::new(),
             key: String::new(),
             line: 0,
-            reason: format!("{count} more blocking settings suppressed"),
+            reason: MigrateText::DroppedSuppressed { count }.to_string(),
             suppressed: count,
         }
     }
@@ -107,14 +108,20 @@ impl Dropped {
     /// migration.
     #[must_use]
     pub fn category_removed_notice(&self) -> String {
-        format!("migrate-category-removed: {self}; {REMOVED_RULES_POINTER}")
+        MigrateMessage::CategoryRemoved {
+            setting: self.to_string(),
+        }
+        .to_string()
     }
 
     /// The setting as a notice with the `migrate-rule-removed` code, for a rule that
     /// 3.0 no longer has. Unlike a blocking drop, it does not stop the migration.
     #[must_use]
     pub fn rule_removed_notice(&self) -> String {
-        format!("migrate-rule-removed: {self}; {REMOVED_RULES_POINTER}")
+        MigrateMessage::RuleRemoved {
+            setting: self.to_string(),
+        }
+        .to_string()
     }
 }
 
@@ -124,10 +131,14 @@ impl fmt::Display for Dropped {
         if self.suppressed > 0 {
             return f.write_str(&self.reason);
         }
-        write!(
-            f,
-            "{}:{}: `{}`: {}",
-            self.file, self.line, self.key, self.reason
+        f.write_str(
+            &MigrateText::DroppedAt {
+                file: self.file.clone(),
+                line: self.line.to_string(),
+                key: self.key.clone(),
+                reason: self.reason.clone(),
+            }
+            .to_string(),
         )
     }
 }
@@ -140,10 +151,10 @@ const DROPPED_SEPARATOR: &str = "\n  ";
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Settings with no 3.0 equivalent. Nothing is written.
-    #[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join(DROPPED_SEPARATOR))]
+    #[error("{}", messages::text(self))]
     Dropped(Vec<Dropped>),
-    /// The file is not valid TOML.
-    #[error("{file}: {message}")]
+    /// The file is not valid TOML. Its code is `config-parse`.
+    #[error("{}", messages::text(self))]
     Parse {
         /// The file.
         file: String,
@@ -151,29 +162,25 @@ pub enum Error {
         message: String,
     },
     /// The config already carries `schema_version = 3`.
-    #[error("{file}: already migrated (schema_version is 3 or higher)")]
+    #[error("{}", messages::text(self))]
     AlreadyMigrated {
         /// The file.
         file: String,
     },
     /// Two config files in one directory make the result ambiguous.
-    #[error("{0}")]
+    #[error("{}", messages::text(self))]
     Conflict(String),
     /// A path would leave the project, cross a symbolic link or share its inode, or a backup
     /// is in the way or was not written by this tool.
-    #[error("unsafe: {0}")]
+    #[error("{}", messages::text(self))]
     Unsafe(String),
     /// A file changed after the migration was planned, or after it was written. Nothing
     /// more is written.
-    #[error("changed: {0}")]
+    #[error("{}", messages::text(self))]
     Changed(String),
     /// `--preserve-behavior` cannot decide how an override block overlaps the
     /// others, because its `files` pattern is outside the supported grammar.
-    #[error(
-        "{file}:{line}: `overrides[{block}]`: cannot decide how this block overlaps the others: {reason}. \
-         --preserve-behavior accepts one pattern per block: an anchored path such as `docs/api` \
-         or a tree such as `docs/**`"
-    )]
+    #[error("{}", messages::text(self))]
     OverrideOverlap {
         /// The file.
         file: String,
@@ -185,13 +192,13 @@ pub enum Error {
         reason: String,
     },
     /// The rename table is malformed.
-    #[error("rename table: {0}")]
+    #[error("{}", messages::text(self))]
     RenameTable(String),
     /// The engine could not lint the project.
-    #[error("lint: {0}")]
+    #[error("{}", messages::text(self))]
     Lint(String),
     /// `schema_version` is not an integer.
-    #[error("{file}:{line}: {message}")]
+    #[error("{}", messages::text(self))]
     InvalidType {
         /// The file.
         file: String,
@@ -201,7 +208,7 @@ pub enum Error {
         message: String,
     },
     /// Reading a file failed.
-    #[error("{path}: {source}")]
+    #[error("{}", messages::text(self))]
     Read {
         /// The file.
         path: String,
@@ -210,7 +217,7 @@ pub enum Error {
         source: slopvac_fs::Error,
     },
     /// A document is larger than the document cap.
-    #[error("{path}: larger than {cap} bytes")]
+    #[error("{}", messages::text(self))]
     DocumentTooLarge {
         /// The file.
         path: String,
@@ -218,7 +225,7 @@ pub enum Error {
         cap: u64,
     },
     /// A config file is larger than the config cap.
-    #[error("{path}: larger than {cap} bytes")]
+    #[error("{}", messages::text(self))]
     ConfigTooLarge {
         /// The file.
         path: String,
@@ -226,7 +233,7 @@ pub enum Error {
         cap: u64,
     },
     /// A blocklist is larger than the terms file cap.
-    #[error("{path}: larger than {cap} bytes")]
+    #[error("{}", messages::text(self))]
     TermsFileTooLarge {
         /// The file.
         path: String,
@@ -234,7 +241,7 @@ pub enum Error {
         cap: u64,
     },
     /// A run read more files or bytes than its limits allow.
-    #[error("{path}: run limit reached: more than {limit} {what} in one run")]
+    #[error("{}", messages::text(self))]
     RunLimit {
         /// The file that crossed the limit.
         path: String,
@@ -244,13 +251,13 @@ pub enum Error {
         limit: u64,
     },
     /// A file is not valid UTF-8.
-    #[error("{path}: not valid UTF-8")]
+    #[error("{}", messages::text(self))]
     NotUtf8 {
         /// The file.
         path: String,
     },
     /// A filesystem operation failed.
-    #[error("{path}: {source}")]
+    #[error("{}", messages::text(self))]
     Io {
         /// The path.
         path: String,
@@ -262,25 +269,17 @@ pub enum Error {
 
 impl Error {
     /// The stable error code (docs/contract/policies.md, section 3.5).
+    ///
+    /// The four codes that `slopvac-config` publishes come from its [`Code`]; the others come
+    /// from this crate's catalog.
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Dropped(_) => "config-legacy-dropped",
-            Self::Parse { .. } => "config-invalid-toml",
-            Self::InvalidType { .. } => "config-invalid-type",
-            Self::AlreadyMigrated { .. } => "config-already-migrated",
-            Self::Conflict(_) => "migrate-config-conflict",
-            Self::Unsafe(_) => "migrate-unsafe-path",
-            Self::Changed(_) => "migrate-file-changed",
-            Self::OverrideOverlap { .. } => "migrate-override-overlap",
-            Self::RenameTable(_) => "migrate-rename-table",
-            Self::Lint(_) => "migrate-lint-failed",
+            Self::Parse { .. } => Code::Parse.as_str(),
+            Self::InvalidType { .. } => Code::InvalidType.as_str(),
             Self::DocumentTooLarge { .. } => Code::DocumentTooLarge.as_str(),
             Self::ConfigTooLarge { .. } => Code::TooLarge.as_str(),
-            Self::TermsFileTooLarge { .. } => "terms-file-too-large",
-            Self::RunLimit { .. } => "migrate-run-limit",
-            Self::NotUtf8 { .. } => "migrate-not-utf8",
-            Self::Io { .. } | Self::Read { .. } => "migrate-io-failed",
+            other => messages::of(other).code(),
         }
     }
 
