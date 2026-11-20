@@ -8,9 +8,11 @@ use std::time::Duration;
 
 use lsp_server::{Connection, Message, Notification, Request, RequestId};
 use serde_json::{Value, json};
-use slopvac_engine::{DIAGRAM_PACK, Settings, diagram_rule_set};
+use slopvac_config::frontmatter::Policy;
+use slopvac_engine::{DIAGRAM_PACK, Settings, TERMS_PACK, diagram_rule_set, terms_rule_set};
 use slopvac_lsp::{
-    Check, EngineLinter, Exit, LintError, Linted, Linter, Problem, Server, ServerError,
+    Check, EngineLinter, Exit, FrontMatterCheck, LintError, Linted, Linter, Problem, Server,
+    ServerError,
 };
 use slopvac_model::{
     GenreId, GenreResult, GenreSource, KebabName, NonEmptyString, Notice, NoticeLevel, PackId,
@@ -478,6 +480,58 @@ fn a_registered_check_adds_diagnostics_next_to_the_findings() {
         .map(|d| d["code"].as_str().unwrap())
         .collect();
     assert_eq!(codes, ["core:cat.swap", "front-matter-invalid"]);
+    client.finish().unwrap();
+}
+
+/// A client with front-matter validation, over an engine with the built-in term casing rules.
+fn client_with_real_checks() -> Client {
+    let terms = terms_rule_set(&PackId::new(TERMS_PACK).unwrap()).unwrap();
+    let linter =
+        EngineLinter::new(vec![core_rule_set(Vec::new()), terms], engine_settings()).unwrap();
+    let server =
+        Server::new(Arc::new(linter)).with_check(Arc::new(FrontMatterCheck::new(Policy::core())));
+    Client::start(server, None)
+}
+
+fn codes_and_ranges(published: &Value) -> Vec<(String, [u64; 4])> {
+    published["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| (d["code"].as_str().unwrap().to_owned(), range_of(d)))
+        .collect()
+}
+
+#[test]
+fn a_bad_front_matter_key_shows_with_its_validate_code_at_the_key() {
+    let mut client = client_with_real_checks();
+    // Line 3 is `  bogus: 1`: the key spans characters 2 to 7.
+    let published = client.open("---\nslopvac:\n  v: 3\n  bogus: 1\n---\nBody.\n");
+    assert_eq!(
+        codes_and_ranges(&published),
+        [("config-unknown-key".to_owned(), [3, 2, 3, 7])]
+    );
+    client.finish().unwrap();
+}
+
+#[test]
+fn the_engine_reports_a_misspelled_term_once_with_its_terms_code_at_the_term() {
+    let mut client = client_with_real_checks();
+    // `github` starts at character 7 of line 0.
+    let published = client.open("We use github daily.\n");
+    assert_eq!(
+        codes_and_ranges(&published),
+        [("terms:terms.casing".to_owned(), [0, 7, 0, 13])]
+    );
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_clean_document_publishes_neither_check() {
+    let mut client = client_with_real_checks();
+    let published =
+        client.open("---\nslopvac:\n  v: 3\n  genre: reference\n---\nWe use GitHub daily.\n");
+    assert_eq!(codes_and_ranges(&published), []);
     client.finish().unwrap();
 }
 
