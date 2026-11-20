@@ -194,5 +194,12 @@ fn an_offline_gh_run_comes_from_the_catalog() {
     assert_eq!(output.status.code(), Some(2));
     let (code, message) = error_line(&output.stderr);
     assert_eq!(code, "offline-network-needed");
-    assert_eq!(message, entry("offline-network-needed").template);
+    // The code lives in the `slopvac-update` catalog, whose template takes the command name.
+    assert!(
+        slopvac_update::error_entries()
+            .iter()
+            .any(|e| e.code == "offline-network-needed"),
+        "offline-network-needed is not registered"
+    );
+    assert_eq!(message, "offline: report --gh --yes needs the network");
 }

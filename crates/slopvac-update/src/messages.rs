@@ -1,9 +1,9 @@
 //! The messages `slopvac-update` reports: error codes, the update notice, sentences and fixed phrases.
 //!
 //! Three catalogs hold them. [`UpdateMessage`] has one entry per published code and the update
-//! notice. [`UpdateText`] holds sentences with parameters. [`UpdatePhrase`] holds fixed phrases,
-//! which callers read as `&'static str` through [`UpdatePhrase::as_static`]. The binary
-//! registers the three through `error_entries`, `text_entries` and `phrase_entries`.
+//! notice. `UpdateText` holds sentences with parameters. `UpdatePhrase` holds fixed phrases,
+//! which callers read as `&'static str` through `as_static`. The binary registers the three
+//! through `error_entries`, `text_entries` and `phrase_entries`.
 
 use std::path::PathBuf;
 
@@ -409,9 +409,8 @@ mod tests {
         assert_eq!(registered.len(), messages.len());
     }
 
-    #[test]
-    fn every_sentence_keeps_its_published_text_and_is_registered() {
-        let texts: Vec<(UpdateText, &str)> = vec![
+    fn command_texts() -> Vec<(UpdateText, &'static str)> {
+        vec![
             (
                 UpdateText::UpToDate {
                     current: s("3.1.0"),
@@ -448,6 +447,11 @@ mod tests {
                 UpdateText::FetchTooLarge { limit: 4096 },
                 "response is larger than 4096 bytes",
             ),
+        ]
+    }
+
+    fn pipeline_texts() -> Vec<(UpdateText, &'static str)> {
+        vec![
             (
                 UpdateText::DownloadFailed {
                     asset: s("a.tar.gz"),
@@ -516,7 +520,15 @@ mod tests {
                 },
                 "cannot read: denied",
             ),
-        ];
+        ]
+    }
+
+    #[test]
+    fn every_sentence_keeps_its_published_text_and_is_registered() {
+        let texts: Vec<(UpdateText, &str)> = command_texts()
+            .into_iter()
+            .chain(pipeline_texts())
+            .collect();
         let registered = text_entries();
         for (text, expected) in &texts {
             assert_eq!(text.to_string(), *expected);
