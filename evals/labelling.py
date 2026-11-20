@@ -383,7 +383,10 @@ def judge_items(
     """
     check_identity(family, model)
     docs = {d["id"]: d for d in manifest["documents"]}
-    skip = set(done)
+    skip = set(
+        done
+    )  # grows with each success, so a repeated item id asks nothing twice
+    tried_by_pair: dict[tuple[str, str], int] = dict(attempts or {})
     texts: dict[str, str] = {}
     rows: list[dict[str, Any]] = []
     for item in items:
@@ -402,14 +405,14 @@ def judge_items(
                 "order": order,
                 "prompt_version": PROMPT_VERSION,
             }
-            tried = (attempts or {}).get((item["id"], order), 0)
-            while tried < MAX_ATTEMPTS:
+            pair = (item["id"], order)
+            while tried_by_pair.get(pair, 0) < MAX_ATTEMPTS:
                 try:
                     answer = _charged_ask(ask, prompt, budget, model)
                     row = {**base, "verdict": parse_answer(answer, letters)}
                 except (CredentialFailure, runner.EngineError) as exc:
                     # The message may carry document text, so only the kind is kept.
-                    tried += 1
+                    tried_by_pair[pair] = tried_by_pair.get(pair, 0) + 1
                     kind = (
                         "credential"
                         if isinstance(exc, CredentialFailure)
@@ -425,6 +428,7 @@ def judge_items(
                 if sink:
                     sink(row)
                 rows.append(row)
+                skip.add(pair)
                 break
     return rows
 
@@ -500,7 +504,14 @@ def merge(
     spot_rate: float = SPOT_CHECK_RATE,
     seed: str = SAMPLE_SEED,
 ) -> dict[str, Any]:
-    """Combine judge and human verdicts into labels, disputes and a spot-check queue."""
+    """Combine judge and human verdicts into labels, disputes and a spot-check queue.
+
+    A repeated item id counts once: its first row wins.
+    """
+    first: dict[str, Mapping[str, Any]] = {}
+    for it in items:
+        first.setdefault(it["id"], it)
+    items = list(first.values())
     by_item: dict[str, dict[str, list[Mapping[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
     )

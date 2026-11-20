@@ -1386,3 +1386,66 @@ def test_a_read_error_while_summarising_exits_2(judge_env, tmp_path, monkeypatch
 
     monkeypatch.setattr(lab, "read_jsonl", read)
     assert judge_cli(judge_env, tmp_path, monkeypatch, [], answer=always_fail) == 2
+
+
+@pytest.fixture
+def duplicated_item(judge_env):
+    lab.write_jsonl(
+        judge_env / "items.jsonl",
+        [{**ITEM, "id": "i0", "line": 5, "split": "tuning"}] * 2,
+    )
+    return judge_env
+
+
+def test_a_duplicated_item_is_judged_once_per_order(
+    duplicated_item, tmp_path, monkeypatch
+):
+    asked = []
+    assert judge_cli(duplicated_item, tmp_path, monkeypatch, asked) == 0
+    assert len(asked) == 2  # one per order, not one per row
+    assert len(judgment_rows(duplicated_item)) == 2
+
+
+def test_a_duplicated_item_that_always_fails_is_charged_three_times_per_order(
+    duplicated_item, tmp_path, monkeypatch
+):
+    asked = []
+    assert (
+        judge_cli(duplicated_item, tmp_path, monkeypatch, asked, answer=always_fail)
+        == 0
+    )
+    assert len(asked) == 6  # 3 per order, not 6
+    assert reservations(duplicated_item, "anthropic") == 6
+
+
+def test_merge_and_worksheet_count_a_duplicated_item_id_once(duplicated_item, tmp_path):
+    write_judgments(duplicated_item, "anthropic", "claude-test", ["i0"])
+    write_judgments(duplicated_item, "openai", "gpt-test", ["i0"], verdict="fp")
+    assert merge_cli(duplicated_item) == 0
+    assert len(lab.read_jsonl(duplicated_item / "disputes.jsonl")) == 1
+    assert json.loads((duplicated_item / "stats.json").read_text())["items"] == 1
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(duplicated_item, out, tmp_path) == 0
+    assert len(read_sheet(out)) == 1
+
+
+def ledger_path(d):
+    return d / "judgments" / "anthropic.ledger.jsonl"
+
+
+def test_mark_failed_refuses_while_a_judge_holds_the_ledger_lock(
+    judge_env, tmp_path, monkeypatch
+):
+    assert judge_cli(judge_env, tmp_path, monkeypatch, [], max_invocations=0) == 2
+    before = (
+        judgment_rows(judge_env)
+        if (judge_env / "judgments" / "anthropic.jsonl").exists()
+        else []
+    )
+    with cli.models.Budget(5, ledger_path(judge_env)):
+        assert mark_failed_cli(judge_env, "i0", lab.ORDERS[0]) == 2
+    assert (
+        not (judge_env / "judgments" / "anthropic.jsonl").exists()
+        or judgment_rows(judge_env) == before
+    )
+    assert mark_failed_cli(judge_env, "i0", lab.ORDERS[0]) == 0  # free again

@@ -8,6 +8,7 @@ ab      paired comparison of two stored results
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import json
 import os
@@ -401,8 +402,13 @@ def cmd_label_mark_failed(args: argparse.Namespace) -> int:
             "error": "provider-exit",
             "recorded": "manual",
         }
-        labelling.append_jsonl(out, [row] * args.attempts)
-    except (runner.EngineError, OSError) as exc:
+        ledger = out.with_suffix(".ledger.jsonl")
+        # Take the lock a judge run holds, so a rows-only write cannot race its counts.
+        with (
+            models.ledger_lock(ledger) if ledger.exists() else contextlib.nullcontext()
+        ):
+            labelling.append_jsonl(out, [row] * args.attempts)
+    except (models.ModelEvalError, runner.EngineError, OSError) as exc:
         print(f"evals label mark-failed: {exc}", file=sys.stderr)
         return 2
     print(f"{args.attempts} failed attempts recorded in {out}")
