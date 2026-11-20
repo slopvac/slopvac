@@ -80,10 +80,10 @@ pub use diagrams::{
 pub use exceptions::{Detector, Detectors, DuplicateDetector, MatchSite, TextOrigin};
 pub use file::{FileFix, FileResult, fix_file, fix_file_hooked};
 pub use fix::{FixError, FixReport, SkipReason, Skipped, fix_document, unified_diff};
+pub use lint::{Engine, EngineError, Input, Kind, LintOutcome, extract_code};
 #[cfg(feature = "test-counters")]
 #[doc(hidden)]
-pub use lint::nearby_block_visits;
-pub use lint::{Engine, EngineError, Input, Kind, LintOutcome, extract_code};
+pub use lint::{nearby_block_visits, prose_finding_bytes};
 #[cfg(feature = "test-counters")]
 #[doc(hidden)]
 pub use matcher_work::matcher_entries;

@@ -1266,12 +1266,43 @@ struct NearbyProse<'a> {
     base: usize,
     block: &'a slopvac_parse::Block,
     projection: &'a slopvac_parse::Projection,
+    /// What the prose checks read from the paragraph, shared by every diagram beside it.
+    analysis: &'a slopvac_diagrams::ProseAnalysis<'a>,
+}
+
+/// A parsed paragraph that has prose, with its analysis. Built once per paragraph, so every
+/// [`NearbyProse`] for the paragraph shares the same text and analysis.
+struct Paragraph<'a> {
+    block: &'a slopvac_parse::Block,
+    projection: &'a slopvac_parse::Projection,
+    analysis: slopvac_diagrams::ProseAnalysis<'a>,
 }
 
 impl NearbyProse<'_> {
     fn text(&self) -> &str {
         self.projection.text()
     }
+}
+
+/// The paragraphs next to a diagram and the analysis of each, one for one in the same order.
+fn prose_inputs<'a>(
+    nearby: &'a [NearbyProse<'a>],
+) -> (
+    Vec<slopvac_diagrams::ProseBlock<'a>>,
+    Vec<&'a slopvac_diagrams::ProseAnalysis<'a>>,
+) {
+    nearby
+        .iter()
+        .map(|n| {
+            (
+                slopvac_diagrams::ProseBlock {
+                    span: n.base..n.base + n.text().len(),
+                    text: n.text(),
+                },
+                n.analysis,
+            )
+        })
+        .unzip()
 }
 
 /// A finding before it gets its position.
@@ -1312,6 +1343,28 @@ fn count_block_visit() {
 
 #[cfg(not(feature = "test-counters"))]
 fn count_block_visit() {}
+
+/// Bytes of matched text built for diagram findings on a paragraph in this process.
+#[cfg(feature = "test-counters")]
+static PROSE_FINDING_BYTES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The number of matched-text bytes built so far in this process for diagram findings on a
+/// paragraph. A test that lints many diagrams around one paragraph and reads the difference
+/// shows whether the paragraph is copied once or once per diagram.
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn prose_finding_bytes() -> usize {
+    PROSE_FINDING_BYTES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(feature = "test-counters")]
+fn count_prose_finding_bytes(bytes: usize) {
+    PROSE_FINDING_BYTES.fetch_add(bytes, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(not(feature = "test-counters"))]
+fn count_prose_finding_bytes(_bytes: usize) {}
 
 impl Run<'_> {
     fn finding(&self, c: Candidate<'_>) -> Result<Finding, EngineError> {
@@ -1818,22 +1871,15 @@ impl Run<'_> {
             return Ok(DiagramResult::default());
         }
         let mut diagrams: Vec<(DiagramFormat, Extraction, Vec<NearbyProse<'_>>)> = Vec::new();
+        // Parsed paragraphs and fences are in source order and do not overlap. A diagram file
+        // has no paragraphs. Each paragraph is analysed lazily, and at most once.
+        let paragraphs = self.paragraphs();
         if let Kind::Diagram(format) = self.input.kind {
             diagrams.push((format, extract(format, self.input.source, 0), Vec::new()));
         } else {
-            // Parsed paragraphs and fences are in source order and do not overlap.
             // Each cursor visits each paragraph once, even when there are no neighbours.
-            let paragraphs: Vec<_> = self
-                .parsed
-                .blocks
-                .iter()
-                .filter(|b| {
-                    count_block_visit();
-                    matches!(b.kind, BlockKind::Paragraph) && b.projection.is_some()
-                })
-                .collect();
-            let mut preceding = paragraphs.iter().copied().peekable();
-            let mut following = paragraphs.iter().copied().peekable();
+            let mut preceding = paragraphs.iter().peekable();
+            let mut following = paragraphs.iter().peekable();
             let mut before = None;
             for block in &self.parsed.blocks {
                 count_block_visit();
@@ -1851,14 +1897,14 @@ impl Run<'_> {
                 };
                 while preceding
                     .peek()
-                    .is_some_and(|p| p.span.end() <= block.span.start())
+                    .is_some_and(|p| p.block.span.end() <= block.span.start())
                 {
                     count_block_visit();
                     before = preceding.next();
                 }
                 while following
                     .peek()
-                    .is_some_and(|p| p.span.start() < block.span.end())
+                    .is_some_and(|p| p.block.span.start() < block.span.end())
                 {
                     count_block_visit();
                     following.next();
@@ -1870,36 +1916,41 @@ impl Run<'_> {
                 ));
             }
         }
+        let mut reported = HashSet::new();
         let mut out = Vec::new();
         let mut unchecked = Vec::new();
         let mut notices = Vec::new();
         for (format, extraction, nearby) in &diagrams {
-            if let Some(n) = self.extraction_notice(*format, extraction.status)? {
-                if n.level == NoticeLevel::Info {
-                    notices.push(n);
-                } else {
-                    unchecked.push(n);
-                }
+            match self.extraction_notice(*format, extraction.status)? {
+                Some(n) if n.level == NoticeLevel::Info => notices.push(n),
+                Some(n) => unchecked.push(n),
+                None => {}
             }
-            let prose: Vec<slopvac_diagrams::ProseBlock<'_>> = nearby
-                .iter()
-                .map(|n| slopvac_diagrams::ProseBlock {
-                    span: n.base..n.base + n.text().len(),
-                    text: n.text(),
-                })
-                .collect();
+            let (prose, prose_analysis) = prose_inputs(nearby);
             let input = DiagramInput {
                 format: *format,
                 source: self.input.source,
                 extraction,
                 prose: &prose,
+                prose_analysis: &prose_analysis,
             };
             for checker in &checkers {
                 matcher_work::entered(MatchKind::Structure);
                 for hit in checker.check(&input) {
-                    if let Some(finding) = self.diagram_finding(&hit, nearby)? {
-                        out.push(finding);
+                    // A hit on a paragraph belongs to the paragraph, not to the diagram that
+                    // found it, so the paragraphs shared by adjacent diagrams report once.
+                    // Decide that from the rule and the mapped span, before any finding with
+                    // the paragraph's text is built.
+                    if hit.span.start > self.input.source.len()
+                        && !reported
+                            .insert((hit.rule.to_string(), self.source_span(&hit.span, nearby)?))
+                    {
+                        continue;
                     }
+                    let Some(finding) = self.diagram_finding(&hit, nearby)? else {
+                        continue;
+                    };
+                    out.push(finding);
                 }
             }
         }
@@ -1956,27 +2007,47 @@ impl Run<'_> {
         Ok(Some(n.with_data(data)))
     }
 
+    /// The parsed paragraphs that have prose, each with its analysis. A diagram file has none.
+    fn paragraphs(&self) -> Vec<Paragraph<'_>> {
+        if matches!(self.input.kind, Kind::Diagram(_)) {
+            return Vec::new();
+        }
+        self.parsed
+            .blocks
+            .iter()
+            .filter(|b| {
+                count_block_visit();
+                matches!(b.kind, BlockKind::Paragraph)
+            })
+            .filter_map(|block| {
+                let projection = block.projection.as_ref()?;
+                Some(Paragraph {
+                    block,
+                    projection,
+                    analysis: slopvac_diagrams::ProseAnalysis::new(projection.text()),
+                })
+            })
+            .collect()
+    }
+
     /// The paragraphs next to a fenced block: the last one before it and the first after.
     ///
     /// Their text is projected prose, so a checker's offsets into it are not source bytes.
     /// Each paragraph gets a base past the end of the source and the paragraphs follow each
     /// other, one byte apart. [`Self::source_span`] maps a hit back through the projection.
-    fn nearby_prose<'b>(
-        &self,
-        neighbours: [Option<&'b slopvac_parse::Block>; 2],
-    ) -> Vec<NearbyProse<'b>> {
+    fn nearby_prose<'b>(&self, neighbours: [Option<&'b Paragraph<'b>>; 2]) -> Vec<NearbyProse<'b>> {
+        // The first base is past the end of the source, so a range in prose never reads as a
+        // source range: `hit.span.start > source.len()` marks a hit on a paragraph.
         let mut base = self.input.source.len() + 1;
         let mut out = Vec::new();
-        for block in neighbours.into_iter().flatten() {
-            let Some(projection) = &block.projection else {
-                continue;
-            };
+        for paragraph in neighbours.into_iter().flatten() {
             out.push(NearbyProse {
                 base,
-                block,
-                projection,
+                block: paragraph.block,
+                projection: paragraph.projection,
+                analysis: &paragraph.analysis,
             });
-            base += projection.text().len() + 1;
+            base += paragraph.projection.text().len() + 1;
         }
         out
     }
@@ -2044,6 +2115,9 @@ impl Run<'_> {
             .matched
             .clone()
             .unwrap_or_else(|| self.input.source[span.start()..span.end()].to_owned());
+        if hit.span.start > self.input.source.len() {
+            count_prose_finding_bytes(matched.len());
+        }
         if let Some(rule) = rule
             && self.guarded_with(
                 Some(slopvac_diagrams::CONTEXT),
