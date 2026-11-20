@@ -2,7 +2,8 @@
 
 use serde_json::json;
 use slopvac_config::frontmatter::{Format, Policy, extract, parse_block, read};
-use slopvac_config::{Code, Inputs, Layer, NoPresets, Source, load};
+use slopvac_config::{Code, ConfigLayer, ConfigSource, Inputs, NoPresets, load};
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 fn default_policy() -> Policy {
@@ -28,11 +29,11 @@ fn allowed_fields_become_settings_with_document_positions() {
     assert_eq!(locale.value, json!("en-GB"));
     assert_eq!(
         locale.source,
-        Source {
-            layer: Layer::FrontMatter,
+        ConfigSource {
+            layer: ConfigLayer::FrontMatter,
             file: Some("docs/guide.md".into()),
-            line: Some(5),
-            column: Some(3),
+            line: NonZeroUsize::new(5),
+            column: NonZeroUsize::new(3),
         }
     );
     let terms = out
@@ -41,7 +42,7 @@ fn allowed_fields_become_settings_with_document_positions() {
         .find(|s| s.path == ["terms", "allow"])
         .unwrap();
     assert_eq!(terms.value, json!(["colour"]));
-    assert_eq!(terms.source.line, Some(7));
+    assert_eq!(terms.source.line, NonZeroUsize::new(7));
     assert!(out.settings.iter().all(|s| s.path != ["v"]));
 }
 
@@ -150,7 +151,7 @@ fn toml_and_json_front_matter_read_the_same_block() {
         assert_eq!(out.diagnostics, [], "{doc:?}");
         let locale = out.settings.iter().find(|s| s.path == ["locale"]).unwrap();
         assert_eq!(locale.value, json!("en-GB"));
-        assert_eq!(locale.source.line, Some(line), "{doc:?}");
+        assert_eq!(locale.source.line, NonZeroUsize::new(line), "{doc:?}");
     }
 }
 
@@ -207,7 +208,7 @@ fn front_matter_settings_sit_above_overrides_and_the_policy_comes_from_the_confi
     assert_eq!(r.get(&["locale"]), Some(&json!("en-GB")));
     assert_eq!(
         r.source(&["locale"]).map(|s| s.layer),
-        Some(Layer::FrontMatter)
+        Some(ConfigLayer::FrontMatter)
     );
 
     let disabled = dir.path().join("off");
@@ -229,7 +230,7 @@ fn the_block_is_found_by_its_decoded_key() {
     assert_eq!(out.diagnostics, []);
     assert_eq!(out.settings.len(), 1);
     assert_eq!(out.settings[0].value, json!("en-GB"));
-    assert_eq!(out.settings[0].source.line, Some(4));
+    assert_eq!(out.settings[0].source.line, NonZeroUsize::new(4));
 
     let json_doc = "{\"sl\\u006fpvac\": {\"v\": 3, \"locale\": \"en-GB\"}}\n";
     assert_eq!(read(json_doc, "a.md", &default_policy()).settings.len(), 1);
@@ -278,7 +279,7 @@ fn front_matter_ended_by_lone_cr_terminators_is_read() {
     let ok = "---\rslopvac:\r  v: 3\r  locale: en-GB\r---\r";
     let out = read(ok, "a.md", &default_policy());
     assert_eq!(out.diagnostics, []);
-    assert_eq!(out.settings[0].source.line, Some(4));
+    assert_eq!(out.settings[0].source.line, NonZeroUsize::new(4));
     assert_eq!(extract("---\ra: 1\r---\r").map(|b| b.content), Some(4..9));
 }
 

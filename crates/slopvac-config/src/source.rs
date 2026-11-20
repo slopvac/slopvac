@@ -1,82 +1,51 @@
 //! Where a setting came from, and the settings a layer contributes.
 
-use serde::Serialize;
+use std::num::NonZeroUsize;
+
 use serde_json::Value as Json;
+use slopvac_model::{ConfigLayer, ConfigSource};
 
-// STUB(slopvac-8l4.4.9): `Layer` and `Source` stand in for the `ConfigSource` model type
-// (`common.schema.json#/$defs/ConfigSource`) until `slopvac-model` ships its own.
-
-/// A configuration layer, lowest priority first except `Env`, which holds sticky switches only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Layer {
-    /// Built-in defaults.
-    Core,
-    /// A style preset.
-    Style,
-    /// A genre definition.
-    Genre,
-    /// An extended config file.
-    Extends,
-    /// The nearest `slopvac.toml`.
-    Project,
-    /// A `[[genres]]` or `[[overrides]]` block.
-    Override,
-    /// The `slopvac:` block of a document.
-    FrontMatter,
-    /// An inline directive in a document.
-    Directive,
-    /// A command-line flag.
-    Cli,
-    /// An environment switch.
-    Env,
-}
-
-impl Layer {
-    /// The name used in reports, such as `front-matter`.
-    #[must_use]
-    pub fn name(self) -> &'static str {
-        match self {
-            Layer::Core => "core",
-            Layer::Style => "style",
-            Layer::Genre => "genre",
-            Layer::Extends => "extends",
-            Layer::Project => "project",
-            Layer::Override => "override",
-            Layer::FrontMatter => "front-matter",
-            Layer::Directive => "directive",
-            Layer::Cli => "cli",
-            Layer::Env => "env",
-        }
+/// A source with no file, such as `core`, `cli` or `env`.
+#[must_use]
+pub fn bare_source(layer: ConfigLayer) -> ConfigSource {
+    ConfigSource {
+        layer,
+        file: None,
+        line: None,
+        column: None,
     }
 }
 
-/// The layer and location that set a value.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
-pub struct Source {
-    /// The layer.
-    pub layer: Layer,
-    /// Path of the file, relative to the project root. Absent for core, cli and env values.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub file: Option<String>,
-    /// One-based line of the key that set the value.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub line: Option<usize>,
-    /// One-based column of the key that set the value.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub column: Option<usize>,
+/// A source at a file position. `line` and `column` are one-based; a zero leaves that part out.
+#[must_use]
+pub fn located_source(
+    layer: ConfigLayer,
+    file: Option<String>,
+    line: usize,
+    column: usize,
+) -> ConfigSource {
+    ConfigSource {
+        layer,
+        file,
+        line: NonZeroUsize::new(line),
+        column: NonZeroUsize::new(column),
+    }
 }
 
-impl Source {
-    /// A source with no file, such as `core`, `cli` or `env`.
-    #[must_use]
-    pub fn bare(layer: Layer) -> Self {
-        Self {
-            layer,
-            file: None,
-            line: None,
-            column: None,
-        }
+/// The name used in reports and `--explain` output, such as `front-matter`.
+#[must_use]
+pub fn layer_name(layer: ConfigLayer) -> &'static str {
+    match layer {
+        ConfigLayer::Core => "core",
+        ConfigLayer::Style => "style",
+        ConfigLayer::Genre => "genre",
+        ConfigLayer::Extends => "extends",
+        ConfigLayer::Project => "project",
+        ConfigLayer::Override => "override",
+        ConfigLayer::FrontMatter => "front-matter",
+        ConfigLayer::Directive => "directive",
+        ConfigLayer::Cli => "cli",
+        ConfigLayer::Env => "env",
     }
 }
 
@@ -88,17 +57,17 @@ pub struct Setting {
     /// The value.
     pub value: Json,
     /// Where it came from.
-    pub source: Source,
+    pub source: ConfigSource,
 }
 
 impl Setting {
     /// A setting with no file, for core defaults, flags and environment switches.
     #[must_use]
-    pub fn bare(layer: Layer, path: &[&str], value: Json) -> Self {
+    pub fn bare(layer: ConfigLayer, path: &[&str], value: Json) -> Self {
         Self {
             path: path.iter().map(|s| (*s).to_owned()).collect(),
             value,
-            source: Source::bare(layer),
+            source: bare_source(layer),
         }
     }
 }

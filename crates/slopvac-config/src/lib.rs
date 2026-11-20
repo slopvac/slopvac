@@ -39,4 +39,5 @@ pub use resolve::{
     Explained, Inputs, LevelFrom, Resolved, ResolvedLevel, core_defaults, describe, render_explain,
 };
 pub use schema::{validate_config, validate_frontmatter, validate_style};
-pub use source::{Layer, Setting, Source};
+pub use slopvac_model::{ConfigLayer, ConfigSource};
+pub use source::{Setting, bare_source, layer_name, located_source};

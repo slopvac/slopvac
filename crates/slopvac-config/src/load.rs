@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde_json::Value as Json;
+use slopvac_model::ConfigLayer;
 
 use crate::diag::{BudgetData, Code, ConfigBudget, Diagnostic};
 use crate::error::{ConfigError, Rejected};
@@ -19,7 +20,7 @@ use crate::read::{
     MAX_EXTENDS_FILES, MAX_FILE_BLOCKS, ReadFailure, read_text,
 };
 use crate::schema::validate_config;
-use crate::source::{Layer, Setting};
+use crate::source::Setting;
 use crate::tree::{Node, Value, parse_toml};
 use crate::version::check_version;
 
@@ -73,7 +74,7 @@ pub struct ConfigFile {
     /// Path shown in provenance.
     pub display: String,
     /// `extends` for an extended file, `project` for the nearest config.
-    pub layer: Layer,
+    pub layer: ConfigLayer,
     /// The whole-file settings, outside `overrides` and `genres`.
     pub settings: Vec<Setting>,
     /// `[[genres]]` blocks, then `[[overrides]]` blocks, each in file order.
@@ -181,7 +182,7 @@ fn load_counted(
         &Key::Path(abs.clone()),
         &relative_display(&abs, &root),
         text,
-        Layer::Project,
+        ConfigLayer::Project,
     )?;
     let exclude = build_exclude(&loader.files, &root);
     let reads = loader.reads;
@@ -359,7 +360,7 @@ impl Loader<'_> {
         key: &Key,
         display: &str,
         text: String,
-        layer: Layer,
+        layer: ConfigLayer,
     ) -> Result<(), ConfigError> {
         let label = self.error_label(key, display);
         let reject = |text: String, diagnostics: Vec<Diagnostic>| {
@@ -571,7 +572,7 @@ impl Loader<'_> {
                     settings: flatten(
                         item,
                         Origin {
-                            layer: Layer::Override,
+                            layer: ConfigLayer::Override,
                             file: display,
                             text,
                         },
@@ -690,7 +691,7 @@ impl Loader<'_> {
         let level = self.stack.len();
         let outer = std::mem::replace(&mut self.deepest, level);
         let start = self.files.len();
-        self.load_text(&target, shown, body, Layer::Extends)?;
+        self.load_text(&target, shown, body, ConfigLayer::Extends)?;
         let height = self.deepest - level + 1;
         self.deepest = self.deepest.max(outer);
         let files = self.files[start..].to_vec();
