@@ -4,7 +4,7 @@ use slopvac_messages::{Catalog, Entry};
 
 macro_rules! reason_helpers {
     ($($name:ident => $variant:ident),+ $(,)?) => {
-        $(pub(crate) fn $name(reason: impl ToString) -> EngineText {
+        $(pub(crate) fn $name(reason: &impl ToString) -> EngineText {
             EngineText::$variant { reason: reason.to_string() }
         })+
     };
@@ -21,12 +21,12 @@ reason_helpers! {
 pub(crate) fn detector(name: &str) -> EngineText {
     EngineText::DuplicateDetector { name: name.into() }
 }
-pub(crate) fn no_rule(rule: impl ToString) -> EngineText {
+pub(crate) fn no_rule(rule: &impl ToString) -> EngineText {
     EngineText::NoRule {
         rule: rule.to_string(),
     }
 }
-pub(crate) fn path_error(path: &str, reason: impl ToString) -> EngineText {
+pub(crate) fn path_error(path: &str, reason: &impl ToString) -> EngineText {
     EngineText::PathError {
         path: path.into(),
         reason: reason.to_string(),
@@ -67,13 +67,13 @@ pub(crate) fn changed_file_too_large(path: &std::path::Path, cap: u64) -> String
 pub(crate) fn discover_missing(path: &str) -> EngineText {
     EngineText::DiscoverMissing { path: path.into() }
 }
-pub(crate) fn glob_invalid(pattern: &str, reason: impl ToString) -> EngineText {
+pub(crate) fn glob_invalid(pattern: &str, reason: &impl ToString) -> EngineText {
     EngineText::GlobInvalid {
         pattern: pattern.into(),
         reason: reason.to_string(),
     }
 }
-pub(crate) fn walk_error(path: &std::path::Path, reason: impl ToString) -> EngineText {
+pub(crate) fn walk_error(path: &std::path::Path, reason: &impl ToString) -> EngineText {
     EngineText::WalkError {
         path: path.display().to_string(),
         reason: reason.to_string(),
@@ -98,7 +98,7 @@ pub(crate) fn rst_missing(detail: &str) -> EngineText {
         detail: detail.into(),
     }
 }
-pub(crate) fn rst_spawn(converter: &std::path::Path, reason: impl ToString) -> EngineText {
+pub(crate) fn rst_spawn(converter: &std::path::Path, reason: &impl ToString) -> EngineText {
     EngineText::RstSpawn {
         converter: converter.display().to_string(),
         reason: reason.to_string(),

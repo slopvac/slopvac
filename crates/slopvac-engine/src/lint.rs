@@ -409,7 +409,7 @@ fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Notice {
         // A style that cannot run would otherwise pass in silence, so the check is incomplete.
         return notice(
             NoticeLevel::Warning,
-            EngineNotice::RuleStyle {
+            &EngineNotice::RuleStyle {
                 count,
                 kind: kind.into(),
             },
@@ -426,7 +426,7 @@ fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Notice {
     )]);
     notice(
         NoticeLevel::Info,
-        EngineNotice::RuleKind {
+        &EngineNotice::RuleKind {
             count,
             kind: kind.into(),
         },
@@ -451,8 +451,8 @@ fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Se
         })
 }
 
-fn notice(level: NoticeLevel, message: EngineNotice) -> Notice {
-    Notice::from_catalog(level, &message)
+fn notice(level: NoticeLevel, message: &EngineNotice) -> Notice {
+    Notice::from_catalog(level, message)
 }
 
 impl Engine {
@@ -862,7 +862,7 @@ impl Engine {
         let parsed = match input.kind {
             Kind::Markdown => parse_markdown(input.source, body)?,
             Kind::Mdx => parse_mdx(input.source, body)?,
-            Kind::Rst => self.parse_rst(input, &mut extra)?,
+            Kind::Rst => self.parse_rst(input, &mut extra),
             Kind::Diagram(_) => Parsed::default(),
             Kind::Comments(language) => {
                 let text = comments::read(input.source, language)?;
@@ -1128,7 +1128,7 @@ impl Engine {
         Some(
             notice(
                 NoticeLevel::Info,
-                EngineNotice::CommentRules {
+                &EngineNotice::CommentRules {
                     count: skipped.len(),
                     rules: skipped.join(", "),
                 },
@@ -1139,8 +1139,8 @@ impl Engine {
 
     /// Read an RST file. A file that cannot be read is an empty document with a warning
     /// notice, so the run is incomplete and the file is never skipped silently.
-    fn parse_rst(&self, input: &Input<'_>, extra: &mut Vec<Notice>) -> Result<Parsed, EngineError> {
-        let make = |level, message: EngineNotice| {
+    fn parse_rst(&self, input: &Input<'_>, extra: &mut Vec<Notice>) -> Parsed {
+        let make = |level, message: &EngineNotice| {
             let mut notice = notice(level, message);
             notice.path = Some(input.path.to_owned());
             notice
@@ -1158,9 +1158,9 @@ impl Engine {
                     } else {
                         EngineNotice::RstLinePrecise { message: n.message }
                     };
-                    extra.push(make(level, message));
+                    extra.push(make(level, &message));
                 }
-                Ok(parsed.document)
+                parsed.document
             }
             Err(error) => {
                 let message = RstError::message(&error, &[std::path::Path::new(input.path)]);
@@ -1169,8 +1169,8 @@ impl Engine {
                 } else {
                     EngineNotice::RstUnchecked { message }
                 };
-                extra.push(make(NoticeLevel::Warning, message));
-                Ok(Parsed::default())
+                extra.push(make(NoticeLevel::Warning, &message));
+                Parsed::default()
             }
         }
     }
@@ -2026,7 +2026,7 @@ impl Run<'_> {
                 },
             ),
         };
-        let mut n = notice(level, message);
+        let mut n = notice(level, &message);
         n.path = Some(self.input.path.to_owned());
         let mut data = serde_json::Map::new();
         match status {

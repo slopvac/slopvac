@@ -107,11 +107,11 @@ impl Engine {
             }
         }
         let usable = !vocabulary.words.is_empty();
-        vocabulary.run = self.plan_for(&self.settings.genre.id, blocklist, usable)?;
+        vocabulary.run = self.plan_for(&self.settings.genre.id, blocklist, usable);
         if let Some(registry) = &self.genres {
             for id in registry.ids() {
                 let Ok(id) = GenreId::new(id) else { continue };
-                let plan = self.plan_for(&id, blocklist, usable)?;
+                let plan = self.plan_for(&id, blocklist, usable);
                 vocabulary.plans.insert(id, plan);
             }
         }
@@ -121,29 +121,24 @@ impl Engine {
 
     /// The plan for documents of `genre`. `usable` tells whether the blocklist holds an entry
     /// that the sweep can match.
-    fn plan_for(
-        &self,
-        genre: &GenreId,
-        blocklist: &Blocklist,
-        usable: bool,
-    ) -> Result<Plan, EngineError> {
+    fn plan_for(&self, genre: &GenreId, blocklist: &Blocklist, usable: bool) -> Plan {
         let mut plan = Plan::default();
         let rules: Vec<usize> = (0..self.vocabulary_rules.len())
             .filter(|&i| self.applies_to(&self.vocabulary_rules[i], genre))
             .collect();
         let count = rules.len();
         if count == 0 {
-            return Ok(plan);
+            return plan;
         }
         if blocklist.is_empty() {
             plan.notices.push(notice(
                 NoticeLevel::Info,
-                EngineNotice::VocabularyNoBlocklist { count },
+                &EngineNotice::VocabularyNoBlocklist { count },
             ));
         } else if !usable {
             plan.notices.push(notice(
                 NoticeLevel::Info,
-                EngineNotice::VocabularyNoTaggable { count },
+                &EngineNotice::VocabularyNoTaggable { count },
             ));
         } else {
             let id_of = |i: usize| {
@@ -159,7 +154,7 @@ impl Engine {
             if count > 1 {
                 plan.notices.push(notice(
                     NoticeLevel::Info,
-                    EngineNotice::VocabularyShared {
+                    &EngineNotice::VocabularyShared {
                         count: count - 1,
                         owner: id_of(owner).into(),
                     },
@@ -167,7 +162,7 @@ impl Engine {
             }
             plan.owner = Some(owner);
         }
-        Ok(plan)
+        plan
     }
 
     /// Whether the active rule applies to documents of `genre`.

@@ -263,7 +263,7 @@ fn unsupported_message(name: &str) -> String {
     };
     crate::messages::EngineDetails::DiscoverUnsupported {
         path: shown,
-        extensions: kind::supported_extensions().into(),
+        extensions: kind::supported_extensions(),
     }
     .to_string()
 }
