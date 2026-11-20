@@ -1401,10 +1401,24 @@ mod python {
     }
 
     const PLUGIN_FILES: [(&str, &str); 3] = [
-        ("slopvac-pack.toml", PLUGIN_MANIFEST),
+        ("slopvac-plugin.toml", PLUGIN_MANIFEST),
         ("plugin.py", "print('plugin')\n"),
         ("pylock.toml", EMPTY_LOCK),
     ];
+
+    #[test]
+    fn sync_and_status_find_a_manifest_under_the_name_the_contract_gives() {
+        // The literal file name from docs/contract/plugins.md, not the reader's constant.
+        let t = Setup::python(&[
+            ("slopvac-plugin.toml", PLUGIN_MANIFEST),
+            ("plugin.py", "print('plugin')\n"),
+            ("pylock.toml", EMPTY_LOCK),
+        ]);
+        let report = t.sync(Network::Offline, true).unwrap();
+        let key = EnvStore::key(&t.hash, "3.12");
+        assert_eq!(report.packs[0].python_env, Some(key.clone()));
+        assert_eq!(python_states(&t), [PythonState::Verified(key)]);
+    }
 
     #[test]
     fn sync_builds_the_manifest_selected_environment_without_the_network() {
@@ -1429,7 +1443,7 @@ mod python {
     fn sync_passes_uv_the_pep_440_form_of_a_semver_requirement() {
         let caret = PLUGIN_MANIFEST.replace("python = \"3.12\"", "python = \"^3.12\"");
         let t = Setup::python(&[
-            ("slopvac-pack.toml", caret.as_str()),
+            ("slopvac-plugin.toml", caret.as_str()),
             ("plugin.py", "print('plugin')\n"),
             ("pylock.toml", EMPTY_LOCK),
         ]);
@@ -1461,7 +1475,7 @@ mod python {
     #[test]
     fn sync_builds_no_environment_for_a_pack_that_is_not_a_python_plugin() {
         let data_manifest = "schema_version = 3\nid = \"py\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n";
-        let t = Setup::python(&[("slopvac-pack.toml", data_manifest)]);
+        let t = Setup::python(&[("slopvac-plugin.toml", data_manifest)]);
         let report = t.sync(Network::Offline, true).unwrap();
         assert_eq!(report.packs[0].python_env, None);
         assert_eq!(t.uv_log(), "");
@@ -1482,7 +1496,7 @@ mod python {
             "ab".repeat(32)
         );
         let t = Setup::python(&[
-            ("slopvac-pack.toml", PLUGIN_MANIFEST),
+            ("slopvac-plugin.toml", PLUGIN_MANIFEST),
             ("plugin.py", "x\n"),
             ("pylock.toml", &sdist),
         ]);
@@ -1575,7 +1589,7 @@ mod python {
     #[test]
     fn status_does_not_look_for_an_environment_of_a_pack_that_is_not_a_python_plugin() {
         let t = Setup::python(&[(
-            "slopvac-pack.toml",
+            "slopvac-plugin.toml",
             PLUGIN_MANIFEST
                 .replace("runtime = \"python\"\npython = \"3.12\"\n", "")
                 .as_str(),

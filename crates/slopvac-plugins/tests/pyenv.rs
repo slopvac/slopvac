@@ -492,7 +492,7 @@ fn managed_python_environments_are_refused_on_windows() {
     assert!(!s.dir("envs").exists(), "nothing was created");
 }
 
-/// A `slopvac-pack.toml` for a pack of `kind`, with `plugin` lines appended to its `[plugin]` table.
+/// A `slopvac-plugin.toml` for a pack of `kind`, with `plugin` lines appended to its `[plugin]` table.
 fn manifest(kind: &str, plugin: &str) -> String {
     format!(
         "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"{kind}\"\n\n[plugin]\nnetwork = false\nhooks = []\nfeatures = {{ required = [], optional = [] }}\n{plugin}"
@@ -559,6 +559,57 @@ fn python_plugin(extra: &str) -> String {
 fn a_manifest_that_cannot_select_an_environment_is_refused(#[case] m: String) {
     let err = read_runtime("refused", Some(&m)).unwrap_err();
     assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
+}
+
+/// Every rendering of an error: `Display` and `Debug` of it and of each error in its source chain.
+fn renderings(err: &dyn std::error::Error) -> String {
+    let mut out = String::new();
+    let mut cur: Option<&dyn std::error::Error> = Some(err);
+    while let Some(e) = cur {
+        write!(out, "{e}|{e:?}|").unwrap();
+        cur = e.source();
+    }
+    out
+}
+
+/// A rejected value, which can be a credential or a path outside the pack, never appears in the
+/// error: the manifest reader names the field and the reason only.
+#[rstest]
+#[case::credential_in_request("python", "--index-url=https://user:SENTINEL@evil.example/simple")]
+#[case::plain_request("python", "SENTINEL")]
+#[case::outside_path("command", "../../outside/SENTINEL/run.py")]
+#[case::absolute_path("command", "/home/SENTINEL/run.py")]
+#[case::unknown_runtime("runtime", "SENTINEL")]
+fn a_refused_manifest_value_never_appears_in_the_error(#[case] field: &str, #[case] value: &str) {
+    let (runtime, python, command) = match field {
+        "python" => ("python", value, "a.py"),
+        "command" => ("python", "3.12", value),
+        _ => (value, "3.12", "a.py"),
+    };
+    let m = manifest(
+        "code",
+        &format!("runtime = \"{runtime}\"\npython = \"{python}\"\ncommand = \"{command}\"\n"),
+    );
+    let err = read_runtime("sentinel-read", Some(&m)).unwrap_err();
+    let text = renderings(&err);
+    assert!(text.contains(field), "the field is named: {text}");
+    assert!(!text.contains("SENTINEL"), "{text}");
+    assert!(!text.contains("evil"), "{text}");
+    assert!(!text.contains("outside"), "{text}");
+}
+
+/// The same for a request that the translation refuses.
+#[rstest]
+#[case::pre_release("3.12.0-SENTINEL.1")]
+#[case::not_a_version("^SENTINEL")]
+#[case::number_too_large("^98765432109876543210987654321")]
+#[case::too_long("^1111111111.2222222222.3333333333,>=4444444444.5555555555.6666666666")]
+fn a_refused_request_never_appears_in_the_translation_error(#[case] req: &str) {
+    let err = pep440_specifier(req).unwrap_err();
+    let text = renderings(&err);
+    for needle in ["SENTINEL", "98765432109876543210987654321", "6666666666"] {
+        assert!(!text.contains(needle), "{text}");
+    }
 }
 
 /// The shared plugin-manifest conformance cases, the ones the schema test also reads.
@@ -639,14 +690,6 @@ fn a_manifest_that_is_a_symlink_is_refused() {
     assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
 }
 
-#[test]
-fn manifest_values_are_escaped_once_in_the_error_text() {
-    // The runtime is the text: x, backslash, y, BEL.
-    let m = manifest("code", "runtime = \"x\\\\y\\u0007\"\ncommand = \"a\"\n");
-    let err = read_runtime("escape", Some(&m)).unwrap_err();
-    let expected = r"`x\\y\u{7}` is not a runtime; use `native` or `python`";
-    assert!(err.to_string().ends_with(expected), "{err}");
-}
 // Worked out by hand from semver's rules for partial versions. A lone bare version is
 // already a uv request, and in a list a bare version means `=`.
 #[rstest]
@@ -700,12 +743,12 @@ fn version_requirements_translate_to_pep_440_specifiers(#[case] req: &str, #[cas
 #[case::v_caret_99999999999999999999("^99999999999999999999", "too large")]
 #[case::v_caret_18446744073709551615("^18446744073709551615", "too large")]
 #[case::v_gt_18446744073709551615(">18446744073709551615", "too large")]
-fn version_requirements_with_no_pep_440_form_are_refused_naming_the_value(
+fn version_requirements_with_no_pep_440_form_are_refused_without_echoing_the_value(
     #[case] req: &str,
     #[case] why: &str,
 ) {
     let err = pep440_specifier(req).unwrap_err().to_string();
-    assert!(err.contains(&format!("`{req}`")), "{req}: {err}");
+    assert!(req.is_empty() || !err.contains(req), "{req}: {err}");
     assert!(err.contains(why), "{req}: {err}");
 }
 
@@ -731,8 +774,8 @@ fn a_manifest_error_shows_the_file_not_the_cache_path() {
     let text = PythonRuntime::read(&tree).unwrap_err().to_string();
     assert_eq!(
         text,
-        "the manifest <external>/slopvac-pack.toml cannot select a Python environment: \
-         `-c` is not a relative script path inside the pack"
+        "the manifest <external>/slopvac-plugin.toml cannot select a Python environment: \
+         `command` is not a relative script path inside the pack"
     );
 }
 
@@ -838,7 +881,7 @@ fn the_manifest_reader_hands_uv_the_translated_request() {
     );
     let err = read_runtime("translate-pre", Some(&m)).unwrap_err();
     assert!(
-        matches!(&err, PyEnvError::Manifest { source, .. } if source.to_string().contains("`3.12-rc.1`")),
+        matches!(&err, PyEnvError::Manifest { source, .. } if source.to_string().contains("pre-release") && !source.to_string().contains("3.12-rc.1")),
         "{err:?}"
     );
 }
@@ -1206,6 +1249,28 @@ mod unix_only {
         let (b, _) = manifest_plugin(&s, PY_MANIFEST);
         let empty = EnvStore::open(s.dir("no-envs"));
         let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(&empty)
+            .err()
+            .unwrap();
+        assert!(
+            matches!(&err, PyEnvError::EnvMissing { plugin, python } if plugin == "fake" && python == "3.12"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn the_gate_refuses_a_python_plugin_whose_manifest_has_the_contract_file_name() {
+        // The literal file name from docs/contract/plugins.md, not the reader's constant.
+        let s = Scratch::new("u-wire-contract-name");
+        let wheels = demo();
+        let vp = install_with(
+            &s,
+            &lock_text(&wheels),
+            &wheels,
+            &[("slopvac-plugin.toml", PY_MANIFEST.as_bytes())],
+        );
+        let empty = EnvStore::open(s.dir("no-envs"));
+        let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![vp])
             .with_python_plugins(&empty)
             .err()
             .unwrap();

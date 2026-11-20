@@ -16,7 +16,7 @@ use slopvac_sanitize::line as esc;
 use super::{ManagedEnv, PyEnvError};
 
 /// File name of the manifest at the root of a pack.
-pub const MANIFEST_FILE: &str = "slopvac-pack.toml";
+pub const MANIFEST_FILE: &str = "slopvac-plugin.toml";
 
 const MAX_MANIFEST_BYTES: u64 = 1 << 20;
 
@@ -45,37 +45,19 @@ pub enum RuntimeError {
     /// `runtime = "python"` without this field.
     MissingField(&'static str),
     /// The `python` value is not a plain version request.
-    NotARequest(String),
+    NotARequest,
     /// The `command` value is not a relative script path inside the pack.
-    NotAScript(String),
+    NotAScript,
     /// The `runtime` value is neither `native` nor `python`.
-    UnknownRuntime(String),
+    UnknownRuntime,
     /// A requirement has a pre-release suffix, which PEP 440 cannot express.
-    PreRelease {
-        /// The whole requirement.
-        req: String,
-        /// The comparator with the suffix.
-        part: String,
-    },
+    PreRelease,
     /// A comparator is not a version of one to three numbers.
-    BadVersion {
-        /// The whole requirement.
-        req: String,
-        /// The comparator.
-        part: String,
-    },
+    BadVersion,
     /// A number does not fit in 64 bits.
-    NumberTooLarge {
-        /// The whole requirement.
-        req: String,
-        /// The comparator.
-        part: String,
-    },
+    NumberTooLarge,
     /// The translated requirement is over 64 bytes.
-    TooLong {
-        /// The whole requirement.
-        req: String,
-    },
+    TooLong,
 }
 
 /// Where a manifest failed to parse, and nothing else.
@@ -124,23 +106,15 @@ impl RuntimeError {
             Self::PythonWithoutRuntime => "`python` needs `runtime = \"python\"`".into(),
             Self::RuntimeNeedsCodeKind => "`runtime` belongs to a `kind = \"code\"` pack".into(),
             Self::MissingField(f) => format!("`runtime = \"python\"` needs `{f}`"),
-            Self::NotARequest(v) => format!("`{v}` is not a Python version request"),
-            Self::NotAScript(v) => {
-                format!("`{v}` is not a relative script path inside the pack")
+            Self::NotARequest => "`python` is not a Python version request".into(),
+            Self::NotAScript => "`command` is not a relative script path inside the pack".into(),
+            Self::UnknownRuntime => "`runtime` is not a runtime; use `native` or `python`".into(),
+            Self::PreRelease => "the `python` request has a pre-release suffix, which a Python version request cannot express".into(),
+            Self::BadVersion => {
+                "the `python` request has a part that is not a version of one to three numbers".into()
             }
-            Self::UnknownRuntime(v) => {
-                format!("`{v}` is not a runtime; use `native` or `python`")
-            }
-            Self::PreRelease { req, part } => format!(
-                "`{req}`: `{part}` has a pre-release suffix, which a Python version request cannot express"
-            ),
-            Self::BadVersion { req, part } => {
-                format!("`{req}`: `{part}` is not a version of one to three numbers")
-            }
-            Self::NumberTooLarge { req, part } => {
-                format!("`{req}`: `{part}` has a number that is too large")
-            }
-            Self::TooLong { req } => format!("`{req}` translates to more than 64 bytes"),
+            Self::NumberTooLarge => "the `python` request has a number that is too large".into(),
+            Self::TooLong => "the `python` request translates to more than 64 bytes".into(),
         }
     }
 }
@@ -226,17 +200,17 @@ impl PythonRuntime {
                 }
                 let python = plugin.python.ok_or(RuntimeError::MissingField("python"))?;
                 if !super::is_python_request(&python) {
-                    return Err(RuntimeError::NotARequest(python));
+                    return Err(RuntimeError::NotARequest);
                 }
                 let python = pep440_specifier(&python)?;
                 if !super::is_python_request(&python) {
-                    return Err(RuntimeError::NotARequest(python));
+                    return Err(RuntimeError::NotARequest);
                 }
                 let command = plugin
                     .command
                     .ok_or(RuntimeError::MissingField("command"))?;
                 if !is_script_path(&command) {
-                    return Err(RuntimeError::NotAScript(command));
+                    return Err(RuntimeError::NotAScript);
                 }
                 Ok(Some(Self {
                     python,
@@ -244,7 +218,7 @@ impl PythonRuntime {
                     args: plugin.args,
                 }))
             }
-            Some(other) => Err(RuntimeError::UnknownRuntime(other.to_owned())),
+            Some(_) => Err(RuntimeError::UnknownRuntime),
         }
     }
 
@@ -302,51 +276,42 @@ fn is_script_path(command: &str) -> bool {
 pub fn pep440_specifier(req: &str) -> RuntimeResult<String> {
     let parts: Vec<&str> = req.split(',').map(str::trim).collect();
     if let [only] = parts[..]
-        && let Ok((None, _)) = comparator(req, only)
+        && let Ok((None, _)) = comparator(only)
     {
         return Ok(only.to_owned());
     }
     let mut out = Vec::new();
     for part in &parts {
-        let (op, v) = comparator(req, part)?;
-        out.extend(clauses(req, part, op.unwrap_or("="), &v)?);
+        let (op, v) = comparator(part)?;
+        out.extend(clauses(op.unwrap_or("="), &v)?);
     }
     let joined = out.join(",");
     if joined.len() > 64 {
-        return Err(RuntimeError::TooLong {
-            req: req.to_owned(),
-        });
+        return Err(RuntimeError::TooLong);
     }
     Ok(joined)
 }
 
-fn comparator(req: &str, part: &str) -> RuntimeResult<(Option<&'static str>, Vec<u64>)> {
+fn comparator(part: &str) -> RuntimeResult<(Option<&'static str>, Vec<u64>)> {
     let (op, rest) = ["<=", ">=", "^", "~", "=", ">", "<"]
         .iter()
         .find_map(|o| part.strip_prefix(o).map(|r| (Some(*o), r)))
         .unwrap_or((None, part));
     let rest = rest.trim();
-    let (req, part) = (req.to_owned(), part.to_owned());
     if rest.contains('-') {
-        return Err(RuntimeError::PreRelease { req, part });
+        return Err(RuntimeError::PreRelease);
     }
     let nums: Vec<u64> = rest
         .split('.')
         .map(|n| {
             if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
-                return Err(RuntimeError::BadVersion {
-                    req: req.clone(),
-                    part: part.clone(),
-                });
+                return Err(RuntimeError::BadVersion);
             }
-            n.parse().map_err(|_| RuntimeError::NumberTooLarge {
-                req: req.clone(),
-                part: part.clone(),
-            })
+            n.parse().map_err(|_| RuntimeError::NumberTooLarge)
         })
         .collect::<RuntimeResult<_>>()?;
     if nums.is_empty() || nums.len() > 3 {
-        return Err(RuntimeError::BadVersion { req, part });
+        return Err(RuntimeError::BadVersion);
     }
     Ok((op, nums))
 }
@@ -356,21 +321,18 @@ fn dotted(v: &[u64]) -> String {
 }
 
 /// `v` with the number at `idx` raised by one and the later parts dropped.
-fn bumped(req: &str, part: &str, v: &[u64], idx: usize) -> RuntimeResult<String> {
+fn bumped(v: &[u64], idx: usize) -> RuntimeResult<String> {
     let mut head = v[..=idx].to_vec();
     head[idx] = head[idx]
         .checked_add(1)
-        .ok_or_else(|| RuntimeError::NumberTooLarge {
-            req: req.to_owned(),
-            part: part.to_owned(),
-        })?;
+        .ok_or(RuntimeError::NumberTooLarge)?;
     Ok(dotted(&head))
 }
 
-fn clauses(req: &str, part: &str, op: &str, v: &[u64]) -> RuntimeResult<Vec<String>> {
+fn clauses(op: &str, v: &[u64]) -> RuntimeResult<Vec<String>> {
     let n = v.len();
     let ver = dotted(v);
-    let bump = |idx| bumped(req, part, v, idx);
+    let bump = |idx| bumped(v, idx);
     Ok(match op {
         "=" if n == 3 => vec![format!("=={ver}")],
         "=" => vec![format!("=={ver}.*")],
