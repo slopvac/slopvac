@@ -10,7 +10,24 @@ use std::sync::OnceLock;
 
 use libfuzzer_sys::fuzz_target;
 use slopvac_config::frontmatter::{Policy, read};
-use slopvac_config::{NoPresets, load};
+use slopvac_config::{PackFile, Presets, Setting, load};
+
+/// No packs behind the loader: the target fuzzes config parsing alone.
+struct NoPresets;
+
+impl Presets for NoPresets {
+    fn style(&self, _name: &str) -> Option<Vec<Setting>> {
+        None
+    }
+
+    fn genre_chain(&self, _name: &str) -> Vec<Vec<Setting>> {
+        Vec::new()
+    }
+
+    fn pack_config(&self, _name: &str) -> Option<PackFile> {
+        None
+    }
+}
 
 /// The config file path inside a directory that this process created.
 ///

@@ -942,7 +942,25 @@ fn check_exclude(tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::presets::NoPresets;
+    use crate::presets::{PackFile, Presets};
+    use crate::source::Setting;
+
+    /// No packs behind the loader.
+    struct NoPresets;
+
+    impl Presets for NoPresets {
+        fn style(&self, _name: &str) -> Option<Vec<Setting>> {
+            None
+        }
+
+        fn genre_chain(&self, _name: &str) -> Vec<Vec<Setting>> {
+            Vec::new()
+        }
+
+        fn pack_config(&self, _name: &str) -> Option<PackFile> {
+            None
+        }
+    }
     use rstest::rstest;
 
     #[test]

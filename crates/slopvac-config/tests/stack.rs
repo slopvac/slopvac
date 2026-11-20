@@ -6,10 +6,11 @@ use std::fs;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
+use common::NoPresets;
 use serde_json::{Value as Json, json};
 use slopvac_config::{
     BudgetData, Code, ConfigBudget, ConfigError, ConfigLayer, ConfigSource, Discovery, Inputs,
-    LoadedConfig, NoPresets, PackFile, Presets, Setting, bare_source, load,
+    LoadedConfig, PackFile, Presets, Setting, bare_source, load,
 };
 use tempfile::TempDir;
 
@@ -696,12 +697,9 @@ fn explain_text_names_the_root_the_files_and_each_replaced_value() {
     );
     let cfg = load_at(&fx, "slopvac.toml");
     let r = cfg.resolve(Path::new("docs/a.md"), &inputs(&NoPresets));
-    let text = slopvac_config::render_explain(&cfg, &r.explain());
-    let head = format!(
-        "config root: {}\nconfig file: slopvac.toml (project)\n",
-        fx.root().display()
-    );
-    assert!(text.starts_with(&head), "{text}");
+    let text = slopvac_config::render_explain(&cfg, &r.explain(), ".");
+    let head = "config root: .\nconfig file: slopvac.toml (project)\n";
+    assert!(text.starts_with(head), "{text}");
     assert!(
         text.contains("locale = \"en-US\"  [override slopvac.toml:6:1]\n    replaced \"en-GB\"  [project slopvac.toml:2:1]\n"),
         "{text}"
@@ -709,6 +707,24 @@ fn explain_text_names_the_root_the_files_and_each_replaced_value() {
     assert!(
         text.contains("profile.name = \"normal\"  [core]\n"),
         "{text}"
+    );
+}
+
+#[test]
+fn explain_text_escapes_a_file_name_that_carries_a_control_character() {
+    let fx = Fixture::new();
+    fx.write("esc\u{1b}.toml", "schema_version = 3\nlocale = \"en-GB\"\n");
+    let cfg = load_at(&fx, "esc\u{1b}.toml");
+    let r = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
+    let text = slopvac_config::render_explain(&cfg, &r.explain(), ".");
+    assert!(!text.contains('\u{1b}'), "{text:?}");
+    assert!(
+        text.contains("config file: esc\\u{1b}.toml (project)\n"),
+        "{text:?}"
+    );
+    assert!(
+        text.contains("locale = \"en-GB\"  [project esc\\u{1b}.toml:2:1]\n"),
+        "{text:?}"
     );
 }
 

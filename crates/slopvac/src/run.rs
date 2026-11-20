@@ -103,11 +103,27 @@ where
     let tree = cli::command();
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
     let cwd = std::env::current_dir().unwrap_or_default();
+    // `--version --json` is read before the default `lint` command is inserted. Every other
+    // invocation parses once, before any config is read: a usage error, a help request and
+    // the `--explain-config` refusals must not depend on `slopvac.toml`.
+    let invocation = match version_json_offline_flag(&args) {
+        Some(flag) => Invocation::VersionJson { offline_flag: flag },
+        None => match parse_args(tree, args, env, err_out) {
+            Ok(invocation) => invocation,
+            Err(code) => return exit::code(code),
+        },
+    };
+    if let Invocation::Parsed(matches) = &invocation
+        && let Some(err) = explain_config_refusal(matches)
+    {
+        let _ = writeln!(err_out, "{err}");
+        return exit::code(exit::INCOMPLETE);
+    }
     let policy = match slopvac_update::policy::network_policy(&cwd) {
         Ok(policy) => policy,
         // `doctor` exists to report this state, so it runs on the default policy and its own
         // config scan shows the unreadable file (and exits 2 itself).
-        Err(_) if invokes_doctor(&args, &tree) => slopvac_update::policy::NetworkPolicy::default(),
+        Err(_) if invocation.is_doctor() => slopvac_update::policy::NetworkPolicy::default(),
         Err(err) => {
             // policies.md 1.7: a path in an error is relative to the root or `<external>/<name>`.
             let message = format!(
@@ -124,60 +140,27 @@ where
         }
     };
     let config_offline = policy.offline.then_some(true);
-    // `--version --json` is read before the default `lint` command is inserted.
-    if let Some(flag) = version_json_offline_flag(&args) {
-        let rt = update_runtime(
-            env,
-            offline::resolve(flag, env, config_offline),
-            policy.update_check,
-        );
-        return match write_stdout(
-            out,
-            slopvac_update::command::version_json(&rt, &supported_versions()).as_bytes(),
-        ) {
-            Ok(code) => exit::code(code),
-            Err(failure) => {
-                let _ = writeln!(err_out, "{failure}");
-                exit::code(exit::INCOMPLETE)
-            }
-        };
-    }
-    let args = cli::insert_default_command(args, &tree);
-    let early_color = color::resolve(scan_color_flag(&args), env);
-    let tree = tree.color(if early_color {
-        clap::ColorChoice::Always
-    } else {
-        clap::ColorChoice::Never
-    });
-    // `report` takes text that may be a pasted secret, and clap echoes the value it rejects.
-    let is_report = args.iter().skip(1).any(|a| a == "report");
-    let matches = match tree.try_get_matches_from(args) {
-        Ok(m) => m,
-        Err(err) if err.use_stderr() && is_report => {
-            let _ = writeln!(
-                err_out,
-                "error[usage]: invalid arguments for `slopvac report` ({:?}). Run `slopvac report --help`.",
-                err.kind()
+    let matches = match invocation {
+        Invocation::VersionJson { offline_flag } => {
+            let rt = update_runtime(
+                env,
+                offline::resolve(offline_flag, env, config_offline),
+                policy.update_check,
             );
-            return exit::code(exit::INCOMPLETE);
-        }
-        Err(err) if err.use_stderr() => {
-            let styled = err.render();
-            let text = if early_color {
-                styled.ansi().to_string()
-            } else {
-                styled.to_string()
+            return match write_stdout(
+                out,
+                slopvac_update::command::version_json(&rt, &supported_versions()).as_bytes(),
+            ) {
+                Ok(code) => exit::code(code),
+                Err(failure) => {
+                    let _ = writeln!(err_out, "{failure}");
+                    exit::code(exit::INCOMPLETE)
+                }
             };
-            let _ = write!(err_out, "{}", text.replacen("error:", "error[usage]:", 1));
-            return exit::code(exit::INCOMPLETE);
         }
-        Err(err) => {
-            let styled = err.render();
-            let text = if early_color {
-                styled.ansi().to_string()
-            } else {
-                styled.to_string()
-            };
+        Invocation::Parsed(matches) => matches,
+        // Help and version text wait for the config check, as every other command does.
+        Invocation::Display(text) => {
             return match write_stdout(out, text.as_bytes()) {
                 Ok(code) => exit::code(code),
                 Err(failure) => {
@@ -203,12 +186,70 @@ where
     }
 }
 
-/// Whether these arguments run `slopvac doctor`. A parse failure or help request does not.
-fn invokes_doctor(args: &[OsString], tree: &clap::Command) -> bool {
-    let args = cli::insert_default_command(args.to_vec(), tree);
-    tree.clone()
-        .try_get_matches_from(args)
-        .is_ok_and(|m| m.subcommand_name() == Some("doctor"))
+/// What the arguments ask for, decided before any config is read.
+enum Invocation {
+    /// `--version --json`, which needs the network policy to report the update state.
+    VersionJson { offline_flag: bool },
+    /// Any other invocation, parsed once.
+    Parsed(ArgMatches),
+    /// Help or version text from the parser. It prints once the config has been read.
+    Display(String),
+}
+
+impl Invocation {
+    /// Whether this runs `slopvac doctor`. A parse failure or help request does not.
+    fn is_doctor(&self) -> bool {
+        matches!(self, Self::Parsed(m) if m.subcommand_name() == Some("doctor"))
+    }
+}
+
+/// Parse the arguments. On a usage error, print it and return the exit code. Help and version
+/// text come back unprinted, so an unreadable config still stops them.
+fn parse_args(
+    tree: clap::Command,
+    args: Vec<OsString>,
+    env: &dyn Env,
+    err_out: &mut dyn std::io::Write,
+) -> Result<Invocation, u8> {
+    let args = cli::insert_default_command(args, &tree);
+    let early_color = color::resolve(scan_color_flag(&args), env);
+    let tree = tree.color(if early_color {
+        clap::ColorChoice::Always
+    } else {
+        clap::ColorChoice::Never
+    });
+    // `report` takes text that may be a pasted secret, and clap echoes the value it rejects.
+    let is_report = args.iter().skip(1).any(|a| a == "report");
+    match tree.try_get_matches_from(args) {
+        Ok(m) => Ok(Invocation::Parsed(m)),
+        Err(err) if err.use_stderr() && is_report => {
+            let _ = writeln!(
+                err_out,
+                "error[usage]: invalid arguments for `slopvac report` ({:?}). Run `slopvac report --help`.",
+                err.kind()
+            );
+            Err(exit::INCOMPLETE)
+        }
+        Err(err) if err.use_stderr() => {
+            let styled = err.render();
+            let text = if early_color {
+                styled.ansi().to_string()
+            } else {
+                styled.to_string()
+            };
+            let _ = write!(err_out, "{}", text.replacen("error:", "error[usage]:", 1));
+            Err(exit::INCOMPLETE)
+        }
+        Err(err) => {
+            let styled = err.render();
+            let text = if early_color {
+                styled.ansi().to_string()
+            } else {
+                styled.to_string()
+            };
+            Ok(Invocation::Display(text))
+        }
+    }
 }
 
 fn dispatch(
@@ -324,7 +365,7 @@ fn doctor(
 }
 
 /// Lint options that parse but have no wiring to the engine yet.
-const UNWIRED_LINT_FLAGS: [&str; 4] = ["fix", "diff-base", "diff-working-tree", "explain-config"];
+const UNWIRED_LINT_FLAGS: [&str; 3] = ["fix", "diff-base", "diff-working-tree"];
 
 /// Refuse a lint option this build cannot honour, before any file is linted.
 ///
@@ -341,6 +382,55 @@ fn reject_unwired_lint_flags(m: &ArgMatches) -> Result<(), CliError> {
         }
     }
     Ok(())
+}
+
+/// Refuse `--explain-config` with a report format, or with an option it would ignore.
+///
+/// It prints text only, from the config files. A setting flag, a rule selection or a report
+/// route has no effect on it, and the command never says so by itself.
+fn reject_explain_config_options(m: &ArgMatches) -> Result<(), CliError> {
+    use crate::lint_messages::LintOptionError;
+    if !m.get_flag("explain-config") {
+        return Ok(());
+    }
+    if let Some(format) = m.get_one::<String>("format")
+        && format != "text"
+    {
+        return Err(LintOptionError::ExplainConfigFormat {
+            format: format.clone(),
+        }
+        .into());
+    }
+    for option in EXPLAIN_CONFIG_REFUSED {
+        let given = m.try_contains_id(option).unwrap_or(false)
+            && m.value_source(option) == Some(clap::parser::ValueSource::CommandLine);
+        if given {
+            return Err(LintOptionError::ExplainConfigOption {
+                option: format!("--{option}"),
+            }
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// Options that `--explain-config` refuses: command-line settings, rule selection and the
+/// report destination. Explaining the command-line layer is separate work.
+const EXPLAIN_CONFIG_REFUSED: [&str; 8] = [
+    "min-score",
+    "max-per-100-words",
+    "locale",
+    "category",
+    "disable",
+    "out",
+    "open",
+    "verbose",
+];
+
+/// The refusal for `--explain-config`, from the matches of the one parse.
+fn explain_config_refusal(matches: &ArgMatches) -> Option<CliError> {
+    let (_, m) = matches.subcommand().filter(|(name, _)| *name == "lint")?;
+    reject_explain_config_options(m).err()
 }
 
 /// Fail with the 3.0 pointer when a removed 2.x option was given.
@@ -467,6 +557,7 @@ fn lint_with(
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     reject_removed(m, &cli::REMOVED_LINT_NAMES)?;
+    reject_explain_config_options(m)?;
     let stdin = if m.get_flag("stdin") {
         let plan = stdin::plan(m)?;
         tracing::debug!(language = plan.language, mode = plan.mode, "stdin plan");
@@ -492,7 +583,7 @@ fn lint_with(
         "lint start"
     );
     let root = std::env::current_dir().unwrap_or_default();
-    let outcome = linter.lint(&LintRequest {
+    let request = LintRequest {
         root,
         targets,
         stdin,
@@ -511,7 +602,20 @@ fn lint_with(
                 .map(|v| v.cloned().collect())
                 .unwrap_or_default(),
         },
-    });
+    };
+    if m.get_flag("explain-config") {
+        let explained = linter.explain_config(&request);
+        for err in &explained.incomplete {
+            let _ = writeln!(err_out, "{err}");
+        }
+        write_stdout(out, explained.text.as_bytes())?;
+        return Ok(if explained.incomplete.is_empty() {
+            exit::PASS
+        } else {
+            exit::INCOMPLETE
+        });
+    }
+    let outcome = linter.lint(&request);
     for err in &outcome.incomplete {
         let _ = writeln!(err_out, "{err}");
     }
@@ -589,6 +693,10 @@ mod tests {
         fn lint(&self, request: &LintRequest) -> RunOutcome {
             self.0.borrow_mut().push(request.clone());
             RunOutcome::default()
+        }
+
+        fn explain_config(&self, _request: &LintRequest) -> crate::engine::ExplainOutcome {
+            crate::engine::ExplainOutcome::default()
         }
     }
 

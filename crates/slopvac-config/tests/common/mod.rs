@@ -7,6 +7,25 @@
     reason = "shared test support; each test binary uses some of it"
 )]
 
+/// A [`Presets`](slopvac_config::Presets) with no packs behind it, for tests that cover the
+/// loader alone. Real packs live in `slopvac-packs`, which depends on this crate.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoPresets;
+
+impl slopvac_config::Presets for NoPresets {
+    fn style(&self, _name: &str) -> Option<Vec<slopvac_config::Setting>> {
+        None
+    }
+
+    fn genre_chain(&self, _name: &str) -> Vec<Vec<slopvac_config::Setting>> {
+        Vec::new()
+    }
+
+    fn pack_config(&self, _name: &str) -> Option<slopvac_config::PackFile> {
+        None
+    }
+}
+
 /// Run `f` on a worker thread and return its result, failing the test when it blocks.
 ///
 /// - The worker ends early without a result (a panic): join at once and re-raise its panic.

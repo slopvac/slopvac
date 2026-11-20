@@ -1,9 +1,12 @@
 //! `LoadedConfig::without_files`: a project that has no `slopvac.toml`.
 
+mod common;
+
 use std::path::Path;
 
+use common::NoPresets;
 use serde_json::json;
-use slopvac_config::{Inputs, LoadedConfig, NoPresets};
+use slopvac_config::{Inputs, LoadedConfig};
 
 #[test]
 fn a_config_without_files_resolves_to_the_core_defaults_and_excludes_nothing() {

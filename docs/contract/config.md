@@ -78,6 +78,19 @@ Every resolved value carries a `ConfigSource` (`common.schema.json#/$defs/Config
 
 `slopvac lint --explain-config` prints the layer, file, line and column of each value and the value it overrode. 2.x printed only a label such as `overrides[0] (docs/**)` (`provenance` in `resolve_for`). Owners: `slopvac-8l4.4.2` for the stack, `slopvac-8l4.4.7` for diagnostics.
 
+#### 1.4.1 `--explain-config` output
+
+`slopvac lint --explain-config <targets>` prints how the settings of each input resolve, then exits. It lints nothing: no report, no gate and no summary.
+
+- It writes to standard output and exits 0. A target that cannot be read, or a config that cannot be loaded, is reported on standard error as for a lint run, and the exit code is 2.
+- It prints one block per input, in argument order, with a blank line between blocks. A block is headed by the input's path as the report shows it (policies.md, section 1.7), or `<stdin>` for standard input.
+- Below the heading, a block lists `config root: <root>` and one `config file: <file> (<layer>)` line for each file of the config stack. The root is `.` for the working directory, the path relative to the working directory for a directory below it, and `<external>/<name>` for any other directory (policies.md, section 1.7). The root and the path metadata (the heading, the config files and the origins) never carry an absolute path. Values are printed as configured, except that a value that is a URL is printed without its user-info, query and fragment.
+- Every field of the output, the heading included, is escaped as one line, so a file name or a value cannot inject a control sequence or a line break.
+- Then comes each resolved key as `<key> = <value>  [<layer> <file>:<line>:<column>]`. The origin of a `core` value has no file. Each value the key replaced follows on an indented line `replaced <value>  [<origin>]`, highest layer first.
+- Until front matter takes part in resolution, a block ends with the line `front matter overrides are not shown`.
+- The output is text only. `--explain-config` with a `--format` other than `text` fails before any file is read, with the code `explain-config-format-unsupported` and exit 2.
+- `--explain-config` with `--min-score`, `--max-per-100-words`, `--locale`, `--category`, `--disable`, `--out`, `--open` or `--verbose` fails the same way, with the code `explain-config-option-unsupported` and exit 2. It does not show the command-line layer yet, and the refusal keeps it from ignoring those options.
+
 ## 2. Nearest config
 
 **2.x behavior.** `find_config` runs once from the working directory (`cli.py`, `config_path or find_config(Path.cwd())`). It checks `slopvac.toml`, then `.slopvac.toml`, then a `[tool.slopvac]` table in `pyproject.toml`, in each directory from the start upward. It stops after the first directory that contains `.git`. The docstring of `config.py` says discovery walks up from each target file. The code does not: one config applies to every file in the run.
