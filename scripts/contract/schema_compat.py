@@ -206,9 +206,11 @@ def _same(a: object, b: object) -> bool:
 
 
 _PORTABLE_END = r"(?![\s\S])"
-# An inline flag group such as ``(?m)``, ``(?i)`` or ``(?i:``: flags can change what ``$``
-# means, so a pattern that holds one is never treated as equivalent.
-_INLINE_FLAGS = re.compile(r"\(\?(?:[a-zA-Z]+(?:-[a-zA-Z]*)?|-[a-zA-Z]+)[):]")
+# Any ``(?`` followed by a letter or ``-`` opens an inline flag or modifier group such as
+# ``(?m)``, ``(?i:`` or ``(?-m:``. Flags can change what ``$`` means, so a pattern that
+# holds one is never treated as equivalent. ``(?:``, ``(?=``, ``(?!``, ``(?<=``,
+# ``(?<!`` and ``(?<name>`` do not match.
+_INLINE_FLAGS = re.compile(r"\(\?[a-zA-Z-]")
 
 
 def _with_dollar_for_end_anchors(pattern: str) -> str | None:
@@ -216,17 +218,23 @@ def _with_dollar_for_end_anchors(pattern: str) -> str | None:
 
     Only an ``(?![\\s\\S])`` outside a character class is rewritten. An escaped
     character (``\\$``) and anything inside a class (``[$]``, ``[(?![\\s\\S])]``) stay
-    as they are. A class runs from an unescaped ``[`` to the next unescaped ``]``; a
-    ``]`` right after ``[`` or ``[^`` is a literal. Returns ``None`` for a pattern with
-    an inline flag group. No tokenizer for the ECMA-262 dialect was available: the
-    checker is Python, and ``re._parser`` reads Python's dialect.
+    as they are. Classes follow ECMA-262 without the ``u`` flag: a class runs from an
+    unescaped ``[`` to the next unescaped ``]``, so ``[]`` is an empty class and
+    ``[^]`` matches any character. A backslash escapes the next character in and out of
+    a class. Returns ``None`` for a pattern with an inline flag group anywhere, or one
+    that ends in a lone backslash. No tokenizer for the ECMA-262 dialect was available:
+    the checker is Python, and ``re._parser`` reads Python's dialect.
     """
+    if _INLINE_FLAGS.search(pattern):
+        return None
     out: list[str] = []
     i, n = 0, len(pattern)
     in_class = False
     while i < n:
         char = pattern[i]
         if char == "\\":
+            if i + 1 >= n:
+                return None
             out.append(pattern[i : i + 2])
             i += 2
         elif in_class:
@@ -240,14 +248,9 @@ def _with_dollar_for_end_anchors(pattern: str) -> str | None:
             if pattern.startswith("^", i):
                 out.append("^")
                 i += 1
-            if pattern.startswith("]", i):
-                out.append("]")
-                i += 1
         elif pattern.startswith(_PORTABLE_END, i):
             out.append("$")
             i += len(_PORTABLE_END)
-        elif _INLINE_FLAGS.match(pattern, i):
-            return None
         else:
             out.append(char)
             i += 1
