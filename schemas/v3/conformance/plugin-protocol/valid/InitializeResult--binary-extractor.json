@@ -1,0 +1,30 @@
+{
+  "protocolVersion": 1,
+  "pluginInfo": {
+    "name": "office-extractor",
+    "version": "0.1.0"
+  },
+  "capabilities": {
+    "hooks": [
+      {
+        "kind": "binary-extractor",
+        "id": "office",
+        "formats": [
+          "docx",
+          "pptx",
+          "odt"
+        ]
+      }
+    ],
+    "features": {
+      "required": [],
+      "optional": []
+    },
+    "requiresNetwork": false
+  },
+  "limits": {
+    "maxMessageBytes": 16777216,
+    "maxBatchDocuments": 1,
+    "maxInFlight": 1
+  }
+}

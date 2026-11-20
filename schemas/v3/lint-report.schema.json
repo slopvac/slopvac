@@ -627,8 +627,8 @@
           "type": "string"
         },
         "locator": {
-          "description": "Percent-escaped locator, unique per segment within the document.",
-          "maxLength": 512,
+          "description": "Percent-escaped locator, unique per segment within the document. Opaque: a consumer compares it byte for byte and never parses it.",
+          "maxLength": 3072,
           "minLength": 1,
           "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])",
           "type": "string"

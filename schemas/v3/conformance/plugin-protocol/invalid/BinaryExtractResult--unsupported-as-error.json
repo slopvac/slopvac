@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "error": {
+        "code": -32008,
+        "message": "cannot read",
+        "data": {
+          "slopvac_code": "extract-unsupported",
+          "reason": "variant-unsupported"
+        }
+      }
+    }
+  ]
+}

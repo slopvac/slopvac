@@ -1,0 +1,47 @@
+{
+  "description": "Escaped locator length vectors for binary extractors (plugin-protocol.md section 5.5.5). An extractor locator holds at most sent_limit characters as sent. The host percent-escapes it as lint-report.md describes, then checks the escaped length against escaped_limit, the bound of the report's origin.locator. A longer escaped form fails that document with extract-budget (-32010), data.budget locator and data.limit equal to escaped_limit, and the run exits 2. The host never truncates, and nothing invalid reaches the report. Each case builds the sent locator from parts, a list of [character, count] pairs. sent_chars and escaped_chars are worked out by hand: a percent sign becomes 3 characters, and U+2028 (3 UTF-8 bytes) becomes 9. A host replays the file; it has no Rust host path yet, so tests/contract/test_binary_locator_escape.py checks the vectors against a reference escaper and the report schema.",
+  "sent_limit": 1024,
+  "escaped_limit": 3072,
+  "cases": [
+    {
+      "id": "ascii-at-sent-limit",
+      "parts": [["a", 1024]],
+      "sent_chars": 1024,
+      "escaped_chars": 1024,
+      "expected": "accepted"
+    },
+    {
+      "id": "escaped-at-cap",
+      "parts": [["%", 1024]],
+      "sent_chars": 1024,
+      "escaped_chars": 3072,
+      "expected": "accepted"
+    },
+    {
+      "id": "escaped-over-cap",
+      "parts": [["%", 1021], ["\u2028", 1], ["a", 1]],
+      "sent_chars": 1023,
+      "escaped_chars": 3073,
+      "expected": {
+        "code": "extract-budget",
+        "error": -32010,
+        "budget": "locator",
+        "limit": 3072,
+        "exit": 2
+      }
+    },
+    {
+      "id": "line-separators-at-sent-limit",
+      "parts": [["\u2028", 1024]],
+      "sent_chars": 1024,
+      "escaped_chars": 9216,
+      "expected": {
+        "code": "extract-budget",
+        "error": -32010,
+        "budget": "locator",
+        "limit": 3072,
+        "exit": 2
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "outcome": "empty",
+      "unsupported": [
+        {
+          "media_type": "video/mp4"
+        }
+      ]
+    }
+  ]
+}

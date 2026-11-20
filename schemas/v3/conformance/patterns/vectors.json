@@ -634,6 +634,30 @@
       "input": "tool\n",
       "python": false,
       "rust": false
+    },
+    {
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?(?![\\s\\S])",
+      "input": "QUJD",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?(?![\\s\\S])",
+      "input": "QUJD\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])",
+      "input": "word/document.xml",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069]{1,1024}(?![\\s\\S])",
+      "input": "word/document.xml\n",
+      "python": false,
+      "rust": false
     }
   ]
 }
