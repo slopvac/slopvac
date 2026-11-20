@@ -52,6 +52,21 @@ def ruleset():
 # --- generated files -------------------------------------------------------
 
 
+def test_no_shipped_legacy_preset_sets_a_removed_rule():
+    # Read both files directly, not through the generator.
+    removed_file = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
+    removed = {
+        entry["id"]
+        for entry in tomllib.loads(removed_file.read_text("utf-8"))["rules"]
+    }
+    assert removed
+    for profile in PROFILES:
+        path = ROOT / "docs" / "contract" / "compat" / "profiles" / f"legacy-{profile}.toml"
+        rules = tomllib.loads(path.read_text("utf-8")).get("rules", {})
+        assert removed & set(rules) == set(), profile
+
+
+
 def test_committed_files_equal_regenerated_output():
     for name, text in mapping.build().items():
         assert (mapping.OUT / name).read_text(encoding="utf-8") == text, name
