@@ -104,7 +104,9 @@ mod enabled {
 }
 
 #[cfg(feature = "work-counters")]
-pub(crate) use enabled::{admonition, build, heading, lookup, materialised, negation, section, text};
+pub(crate) use enabled::{
+    admonition, build, heading, lookup, materialised, negation, section, text,
+};
 #[cfg(feature = "work-counters")]
 pub use enabled::{
     take_admonition_steps, take_build_elements, take_heading_steps, take_lookup_steps,

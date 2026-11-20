@@ -8,7 +8,8 @@ use rstest::rstest;
 
 use slopvac_context::{
     BlockView, DocumentView, EnforcedInvariantTagger, PlainDocument, RequirementTagger, Tagger,
-    TaggerSpec, take_admonition_steps, take_heading_steps, take_negation_steps, take_section_steps, take_text_steps,
+    TaggerSpec, take_admonition_steps, take_heading_steps, take_negation_steps, take_section_steps,
+    take_text_steps,
 };
 
 fn doc(src: &str) -> PlainDocument {
