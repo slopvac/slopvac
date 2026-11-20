@@ -802,7 +802,7 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
 ///
 /// # Errors
 /// The config error, `terms-invalid`, or `rules-unavailable`.
-pub fn project_linter(root: &Path) -> Result<(slopvac_lsp::EngineLinter, Vec<Notice>), CliError> {
+pub fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
     let core = Catalog::load()?;
     let presets = StylePresets(BuiltinSource);
     let discovery = Discovery::new(&presets);
@@ -825,10 +825,30 @@ pub fn project_linter(root: &Path) -> Result<(slopvac_lsp::EngineLinter, Vec<Not
     let sets = core.into_sets();
     let reasons = slopvac_lsp::exception_names(&sets);
     let engine = lint_terms::build_engine(sets, settings, &terms, root)?;
-    Ok((
-        slopvac_lsp::EngineLinter::from_engine(engine, reasons),
+    let checks: Vec<Arc<dyn slopvac_lsp::Check>> = vec![
+        Arc::new(slopvac_lsp::FrontMatterCheck::new(Policy::from_config(
+            &config,
+        ))),
+        Arc::new(slopvac_lsp::TermsCheck::new(lint_terms::term_set(
+            &terms, root,
+        )?)),
+    ];
+    Ok(ProjectServer {
+        linter: slopvac_lsp::EngineLinter::from_engine(engine, reasons),
         notices,
-    ))
+        checks,
+    })
+}
+
+/// What the language server needs from the project: the engine, the config warnings and the
+/// extra checks it runs next to the engine.
+pub struct ProjectServer {
+    /// The engine linter.
+    pub linter: slopvac_lsp::EngineLinter,
+    /// Warnings about the config.
+    pub notices: Vec<Notice>,
+    /// Front-matter validation and the terms check.
+    pub checks: Vec<Arc<dyn slopvac_lsp::Check>>,
 }
 
 /// The display name of each config file and whether it was pulled in by `extends`.

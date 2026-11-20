@@ -8,15 +8,18 @@ use std::time::Duration;
 
 use lsp_server::{Connection, Message, Notification, Request, RequestId};
 use serde_json::{Value, json};
+use slopvac_config::frontmatter::Policy;
 use slopvac_engine::{DIAGRAM_PACK, Settings, diagram_rule_set};
 use slopvac_lsp::{
-    Check, EngineLinter, Exit, LintError, Linted, Linter, Problem, Server, ServerError,
+    Check, EngineLinter, Exit, FrontMatterCheck, LintError, Linted, Linter, Problem, Server,
+    ServerError, TermsCheck,
 };
 use slopvac_model::{
     GenreId, GenreResult, GenreSource, KebabName, NonEmptyString, Notice, NoticeLevel, PackId,
     RuleId, Severity, Span,
 };
 use slopvac_rules::{CompileOptions, RuleSet};
+use slopvac_terms::{TermEntry, TermSet};
 
 const URI: &str = "file:///work/doc.md";
 const WAIT: Duration = Duration::from_secs(20);
@@ -478,6 +481,63 @@ fn a_registered_check_adds_diagnostics_next_to_the_findings() {
         .map(|d| d["code"].as_str().unwrap())
         .collect();
     assert_eq!(codes, ["core:cat.swap", "front-matter-invalid"]);
+    client.finish().unwrap();
+}
+
+/// A client with front-matter validation and the terms check, over a list that holds `GitHub`.
+fn client_with_real_checks() -> Client {
+    let github = TermEntry {
+        term: "GitHub".to_owned(),
+        variants: Vec::new(),
+        kind: None,
+        ignore_case: false,
+        case_sensitive: false,
+    };
+    let server = Server::new(Arc::new(engine_linter()))
+        .with_check(Arc::new(FrontMatterCheck::new(Policy::core())))
+        .with_check(Arc::new(TermsCheck::new(TermSet::new([github]))));
+    Client::start(server, None)
+}
+
+fn codes_and_ranges(published: &Value) -> Vec<(String, [u64; 4])> {
+    published["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| (d["code"].as_str().unwrap().to_owned(), range_of(d)))
+        .collect()
+}
+
+#[test]
+fn a_bad_front_matter_key_shows_with_its_validate_code_at_the_key() {
+    let mut client = client_with_real_checks();
+    // Line 3 is `  bogus: 1`: the key spans characters 2 to 7.
+    let published = client.open("---\nslopvac:\n  v: 3\n  bogus: 1\n---\nBody.\n");
+    assert_eq!(
+        codes_and_ranges(&published),
+        [("config-unknown-key".to_owned(), [3, 2, 3, 7])]
+    );
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_misspelled_term_shows_with_its_terms_code_at_the_term() {
+    let mut client = client_with_real_checks();
+    // `github` starts at character 7 of line 0.
+    let published = client.open("We use github daily.\n");
+    assert_eq!(
+        codes_and_ranges(&published),
+        [("terms:terms.casing".to_owned(), [0, 7, 0, 13])]
+    );
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_clean_document_publishes_neither_check() {
+    let mut client = client_with_real_checks();
+    let published =
+        client.open("---\nslopvac:\n  v: 3\n  genre: reference\n---\nWe use GitHub daily.\n");
+    assert_eq!(codes_and_ranges(&published), []);
     client.finish().unwrap();
 }
 

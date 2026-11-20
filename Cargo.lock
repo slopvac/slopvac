@@ -2615,11 +2615,13 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "slopvac-config",
  "slopvac-engine",
  "slopvac-messages",
  "slopvac-model",
  "slopvac-parse",
  "slopvac-rules",
+ "slopvac-terms",
  "thiserror",
 ]
 

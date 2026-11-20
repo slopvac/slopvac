@@ -432,8 +432,9 @@ fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliErr
 /// Start the language server with the rules and the settings of the project config.
 fn lsp(m: &ArgMatches) -> Result<slopvac_lsp::Exit, CliError> {
     let root = std::env::current_dir().unwrap_or_default();
-    let (linter, notices) = engine::project_linter(&root)?;
-    slopvac_lsp::run(m, linter, notices).map_err(|e| CliError::new("lsp-failed", e.to_string()))
+    let server = engine::project_linter(&root)?;
+    slopvac_lsp::run(m, server.linter, server.notices, server.checks)
+        .map_err(|e| CliError::new("lsp-failed", e.to_string()))
 }
 
 fn man(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {

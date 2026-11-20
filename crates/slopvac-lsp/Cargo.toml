@@ -16,11 +16,13 @@ lsp-server.workspace = true
 lsp-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+slopvac-config.workspace = true
 slopvac-engine.workspace = true
 slopvac-messages.workspace = true
 slopvac-model.workspace = true
 slopvac-parse.workspace = true
 slopvac-rules.workspace = true
+slopvac-terms.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

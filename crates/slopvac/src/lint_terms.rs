@@ -13,7 +13,7 @@ use slopvac_config::Resolved;
 use slopvac_engine::{Engine, Settings, TERMS_PACK, terms_rule_set};
 use slopvac_model::PackId;
 use slopvac_rules::RuleSet;
-use slopvac_terms::{Blocklist, TermsError, TermsFile};
+use slopvac_terms::{Blocklist, TermSet, TermsError, TermsFile};
 
 use crate::errors::CliError;
 
@@ -90,6 +90,24 @@ fn failed(path: &Path, what: &str, error: &TermsError, cwd: &Path) -> CliError {
         TermsError::Entry { problem, .. } => format!("has an entry that {}", problem.describe()),
     };
     CliError::new("terms-invalid", format!("{shown}: {what}: {detail}"))
+}
+
+/// The terms the language server's terms check enforces: the project's `terms.files`, or the
+/// built-in list when the project names none, as the engine does.
+///
+/// # Errors
+/// `terms-invalid` for a terms file that cannot be read or is malformed.
+pub fn term_set(terms: &TermInputs, cwd: &Path) -> Result<TermSet, CliError> {
+    if terms.files.is_empty() {
+        return Ok(TermSet::builtin());
+    }
+    let mut entries = Vec::new();
+    for file in &terms.files {
+        let loaded = TermsFile::load(file)
+            .map_err(|e| failed(file, "cannot load the terms file", &e, cwd))?;
+        entries.extend(loaded.terms);
+    }
+    Ok(TermSet::new(entries))
 }
 
 /// Build the engine for `sets` and `settings` with the project's terms and blocklists.
