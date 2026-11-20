@@ -214,7 +214,7 @@ impl Cx<'_> {
         self.removed_rules.push(Dropped::new(
             self.file,
             path,
-            self.lines.get(path).copied().unwrap_or(1),
+            self.lines.of(path),
             "rule no longer exists in 3.0",
         ));
     }
