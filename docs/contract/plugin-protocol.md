@@ -32,6 +32,7 @@ Content-Length: 87\r\n
 - A second `Content-Length` header, even with the same value, is a framing error.
 - A sender may add a `Content-Type` header. A reader accepts and ignores every header other than `Content-Length`. A header line has at most 1024 bytes, and a header block has at most 8 lines.
 - Header names compare without regard to case. Lines end in `\r\n`. A bare `\n` is a framing error.
+- A header line with no colon is a framing error.
 - The body is a JSON object. A top-level array (JSON-RPC batch) is invalid in v1 and gets the error `invalid-request`. Batching happens inside the params of a hook (section 5.3).
 - The plugin writes nothing but frames to standard output. Any other byte there is a framing error. Logs go to standard error (section 7).
 
@@ -460,7 +461,7 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | ID | Setup | Expected |
 |---|---|---|
 | H1 | Plugin sends a body of exactly `maxMessageBytes`, then one byte more. Before `initialize` completes, the same test uses the 1 MiB limit. | The first passes. The second is a `plugin-protocol-violation` and a kill, before the body is read. |
-| H2 | Frames with a bad `Content-Length` (sign, hex, leading zero, missing, duplicate with equal or different values, a value above 2^64 or above the platform size), a bare `\n`, a long header line. | Each is a framing error. |
+| H2 | Frames with a bad `Content-Length` (sign, hex, leading zero, missing, duplicate with equal or different values, a value above 2^64 or above the platform size), a bare `\n`, a header line with no colon, a long header line. | Each is a framing error. |
 | H3 | Stray text on plugin standard output before a frame. | Framing error and kill. |
 | H4 | Plugin stays silent after `initialize`. | Kill after 10 s, `plugin-timeout`. |
 | H5 | Plugin returns a version outside the host range. | Not loaded, both ranges printed. (V4) |
