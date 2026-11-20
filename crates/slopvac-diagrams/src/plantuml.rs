@@ -367,6 +367,9 @@ fn blocks(src: &str, base: usize) -> Result<Blocks<'_>, ExtractionStatus> {
             explicit = true;
             continue;
         }
+        if opens {
+            return Err(ExtractionStatus::Malformed("missing @enduml"));
+        }
         if t.starts_with("@end") {
             if !t.eq_ignore_ascii_case("@enduml") {
                 return Err(ExtractionStatus::Malformed("mismatched terminator"));

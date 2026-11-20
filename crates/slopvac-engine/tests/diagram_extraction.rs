@@ -342,6 +342,16 @@ fn an_unclosed_plantuml_block_before_an_unsupported_start_is_malformed_not_unsup
 }
 
 #[test]
+fn a_second_plantuml_start_inside_an_open_block_is_malformed() {
+    let source = "@startuml\nA -> B : hi\n@startuml\nC -> D : hi\n@enduml\n";
+    let (doc, notices) = engine()
+        .lint_with_notices(&Input::diagram("d.puml", source, Format::PlantUml))
+        .unwrap();
+    assert_incomplete(&doc, "extract-malformed", "missing @enduml");
+    assert!(notices.is_empty(), "{notices:?}");
+}
+
+#[test]
 fn a_malformed_excalidraw_element_is_an_incomplete_run_that_keeps_earlier_findings() {
     let first = format!(
         "{{\"id\":\"r1\",\"type\":\"rectangle\"}},\
