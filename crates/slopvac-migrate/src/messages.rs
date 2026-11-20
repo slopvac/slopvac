@@ -445,7 +445,7 @@ pub(crate) enum MigrateText {
     },
     /// The reader to a section of the guide.
     #[code("migrate-guide-link")]
-    #[text("Read \"{heading}\" at {url}#{anchor}.\n\n")]
+    #[text("Read \"{heading}\" at {url}#{anchor}.")]
     GuideLink {
         heading: String,
         url: String,

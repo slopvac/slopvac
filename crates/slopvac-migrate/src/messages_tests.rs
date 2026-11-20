@@ -443,7 +443,7 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
                 url: s("u"),
                 anchor: s("h"),
             },
-            "Read \"H\" at u#h.\n\n",
+            "Read \"H\" at u#h.",
         ),
     ];
     let registered = text_entries();

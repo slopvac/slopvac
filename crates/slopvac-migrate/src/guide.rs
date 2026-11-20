@@ -111,6 +111,7 @@ fn render_prime(guide: &str) -> String {
                     }
                     .to_string(),
                 );
+                out.push_str("\n\n");
                 continue;
             }
         } else if linked {
