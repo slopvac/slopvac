@@ -8,7 +8,6 @@ ab      paired comparison of two stored results
 from __future__ import annotations
 
 import argparse
-import contextlib
 import dataclasses
 import json
 import os
@@ -405,10 +404,13 @@ def cmd_label_mark_failed(args: argparse.Namespace) -> int:
             "recorded": "manual",
         }
         ledger = out.with_suffix(".ledger.jsonl")
+        if not ledger.exists():
+            raise runner.EngineError(
+                f"{ledger.name} does not exist; run `label judge` first, so there "
+                "is a ledger lock to take"
+            )
         # Take the lock a judge run holds, so a rows-only write cannot race its counts.
-        with (
-            models.ledger_lock(ledger) if ledger.exists() else contextlib.nullcontext()
-        ):
+        with models.ledger_lock(ledger):
             labelling.append_jsonl(out, [row] * args.attempts)
     except (models.ModelEvalError, runner.EngineError, OSError) as exc:
         print(f"evals label mark-failed: {exc}", file=sys.stderr)
@@ -575,6 +577,7 @@ def cmd_label_import_worksheet(args: argparse.Namespace) -> int:
             labelling.read_jsonl(p["human"]),
             reviewer=args.reviewer,
             date=args.date or labelling.today(),
+            colliding=labelling.colliding_texts(labelling.read_jsonl(p["items"])),
         )
         labelling.append_jsonl(p["human"], rows)
     except (ValueError, OSError) as exc:

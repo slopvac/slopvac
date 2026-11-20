@@ -391,8 +391,9 @@ def judge_items(
     rows: list[dict[str, Any]] = []
     for item in items:
         for order in ORDERS:
-            if (item["id"], order) in skip:
-                continue
+            pair = (item["id"], order)
+            if pair in skip or tried_by_pair.get(pair, 0) >= MAX_ATTEMPTS:
+                continue  # settled pairs need no document and no prompt
             if item["doc"] not in texts:
                 texts[item["doc"]] = runner.text_path(
                     docs[item["doc"]], cache
@@ -405,7 +406,6 @@ def judge_items(
                 "order": order,
                 "prompt_version": PROMPT_VERSION,
             }
-            pair = (item["id"], order)
             while tried_by_pair.get(pair, 0) < MAX_ATTEMPTS:
                 try:
                     answer = _charged_ask(ask, prompt, budget, model)
@@ -528,6 +528,44 @@ def cohen_kappa(pairs: Sequence[tuple[str, str]]) -> float | None:
     return (observed - expected) / (1 - expected)
 
 
+def findings_by_id(
+    items: Iterable[Mapping[str, Any]],
+) -> dict[str, list[Mapping[str, Any]]]:
+    """Group item rows by id, keeping one row per distinct flagged text, first first.
+
+    An id is built from document, rule and line, so findings with different text on
+    one line share it. Repeated rows with the same text are plain duplicates.
+    """
+    groups: dict[str, dict[str, Mapping[str, Any]]] = {}
+    for it in items:
+        groups.setdefault(it["id"], {}).setdefault(it.get("text", ""), it)
+    return {iid: list(g.values()) for iid, g in groups.items()}
+
+
+def colliding_texts(items: Iterable[Mapping[str, Any]]) -> dict[str, list[str]]:
+    """Ids that cover several findings, with the flagged text of each."""
+    return {
+        iid: [f.get("text", "") for f in g]
+        for iid, g in findings_by_id(items).items()
+        if len(g) > 1
+    }
+
+
+def human_verdict_for(
+    human: Sequence[Mapping[str, Any]], item: str, text: str
+) -> Mapping[str, Any] | None:
+    """The newest human row for one finding: its own text row, else a whole-id row."""
+    own = whole = None
+    for h in human:
+        if h["item"] != item:
+            continue
+        if "text" not in h:
+            whole = h
+        elif h["text"] == text:
+            own = h
+    return own or whole
+
+
 def merge(
     items: Sequence[Mapping[str, Any]],
     judgments: Sequence[Mapping[str, Any]],
@@ -538,12 +576,13 @@ def merge(
 ) -> dict[str, Any]:
     """Combine judge and human verdicts into labels, disputes and a spot-check queue.
 
-    A repeated item id counts once: its first row wins.
+    A repeated item id counts once: its first row wins. An id that covers several
+    findings is never labelled from the judges, who saw only the first one: it
+    becomes a dispute until a human gave every finding the same verdict.
     """
-    first: dict[str, Mapping[str, Any]] = {}
-    for it in items:
-        first.setdefault(it["id"], it)
-    items = list(first.values())
+    groups = findings_by_id(items)
+    items = [g[0] for g in groups.values()]
+    collisions = {iid for iid, g in groups.items() if len(g) > 1}
     by_item: dict[str, dict[str, list[Mapping[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
     )
@@ -572,10 +611,21 @@ def merge(
             and len(set(verdicts.values())) == 1
             and next(iter(verdicts.values())) in ("tp", "fp")
         )
-        if agree:
+        if agree and item["id"] not in collisions:
             # The spot-check sample is drawn from every judged agreement, also
             # after a human re-checked it, so the sample stays the same.
             auto.append({**base, "label": next(iter(verdicts.values()))})
+        if item["id"] in collisions:
+            found = [
+                human_verdict_for(human, item["id"], f.get("text", ""))
+                for f in groups[item["id"]]
+            ]
+            verdict_set = {h["label"] for h in found if h}
+            if all(found) and len(verdict_set) == 1:
+                labels.append({**base, "label": verdict_set.pop(), "source": "human"})
+            else:
+                disputes.append({**base, "verdicts": verdicts, "collision": True})
+            continue
         if item["id"] in people:
             h = people[item["id"]]
             labels.append({**base, "label": h["label"], "source": "human"})
@@ -621,6 +671,7 @@ def merge(
 WORKSHEET_HEAD = (
     "queue",
     "item",
+    "collision",
     "rule",
     "doc",
     "line",
@@ -657,7 +708,7 @@ def worksheet_rows(
     writes only after a clean run. Disputes come first, then rule, then document.
     """
     merged = merge(items, judgments, human)
-    by_id = {i["id"]: i for i in items}
+    groups = findings_by_id(items)
     families = sorted({j["family"] for j in judgments})
     grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
     for j in judgments:
@@ -666,20 +717,25 @@ def worksheet_rows(
     queued += [("spot", i) for i in merged["spot_pending"]]
     rows: list[dict[str, str]] = []
     for queue, iid in queued:
-        item = by_id[iid]
-        row = {
-            "queue": queue,
-            "item": iid,
-            "rule": item["rule"],
-            "doc": item["doc"],
-            "line": str(item["line"]),
-            "flagged text": item["text"],
-            "context": context_for(doc_text(item["doc"]), item["line"])[2],
-            "rule note": notes.get(item["rule"], ""),
-        }
-        for fam in families:
-            row[f"judge {fam}"] = family_verdict(grouped[(iid, fam)])
-        rows.append(row)
+        findings = groups[iid]
+        collision = len(findings) > 1
+        for item in findings:
+            if collision and human_verdict_for(human, iid, item.get("text", "")):
+                continue  # a human already judged this finding
+            row = {
+                "queue": queue,
+                "item": iid,
+                "collision": "yes" if collision else "",
+                "rule": item["rule"],
+                "doc": item["doc"],
+                "line": str(item["line"]),
+                "flagged text": item["text"],
+                "context": context_for(doc_text(item["doc"]), item["line"])[2],
+                "rule note": notes.get(item["rule"], ""),
+            }
+            for fam in families:
+                row[f"judge {fam}"] = family_verdict(grouped[(iid, fam)])
+            rows.append(row)
     rows.sort(
         key=lambda r: (r["queue"] != "dispute", r["rule"], r["doc"], int(r["line"]))
     )
@@ -705,8 +761,12 @@ def worksheet_verdicts(
     *,
     reviewer: str,
     date: str,
+    colliding: Mapping[str, Sequence[str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Validate every filled row and return the human rows to append.
+
+    For an id in `colliding` (several findings, by flagged text) the row needs its
+    `flagged text` cell, which must match one finding, and the human row keeps it.
 
     Raises ValueError naming the spreadsheet row (the header is row 1) on the first
     problem, so a caller writes nothing. Rows with a blank verdict are skipped, and
@@ -715,8 +775,10 @@ def worksheet_verdicts(
     """
     known = set(known_items)
     seen = {
-        (h["item"], h.get("reviewer"), h["label"], h.get("reason")) for h in existing
+        (h["item"], h.get("text"), h.get("reviewer"), h["label"], h.get("reason"))
+        for h in existing
     }
+    several = colliding or {}
     with path.open(encoding="utf-8-sig", newline="") as fh:
         reader = csv.reader(fh, strict=True)
         number = 1
@@ -731,6 +793,7 @@ def worksheet_verdicts(
                     f"row 1: the worksheet has no {', '.join(sorted(missing))} column"
                 )
             at = {name: header.index(name) for name in ("item", "verdict", "reason")}
+            text_at = header.index("flagged text") if "flagged text" in header else None
             out: list[dict[str, Any]] = []
             for fields in reader:
                 number += 1
@@ -747,6 +810,18 @@ def worksheet_verdicts(
                 reason = restore_cell(fields[at["reason"]])
                 if item not in known:
                     raise ValueError(f"row {number}: unknown item {item!r}")
+                text = None
+                if item in several:
+                    if text_at is None:
+                        raise ValueError(
+                            f"row {number}: item {item!r} covers several findings, "
+                            "so the worksheet needs a flagged text column"
+                        )
+                    text = restore_cell(fields[text_at])
+                    if text not in several[item]:
+                        raise ValueError(
+                            f"row {number}: item {item!r} has no finding with this flagged text"
+                        )
                 try:
                     human = record_human(
                         item=item,
@@ -754,10 +829,11 @@ def worksheet_verdicts(
                         reviewer=reviewer,
                         reason=reason,
                         date=date,
+                        text=text,
                     )
                 except ValueError as exc:
                     raise ValueError(f"row {number}: {exc}") from None
-                key = (item, reviewer, verdict, reason)
+                key = (item, text, reviewer, verdict, reason)
                 if key not in seen:
                     seen.add(key)
                     out.append(human)
@@ -777,20 +853,33 @@ def underlabelled(
 
 
 def record_human(
-    *, item: str, label: str, reviewer: str, reason: str, date: str
+    *,
+    item: str,
+    label: str,
+    reviewer: str,
+    reason: str,
+    date: str,
+    text: str | None = None,
 ) -> dict[str, Any]:
-    """Build one human verdict row. The file is append-only; the last row wins."""
+    """Build one human verdict row. The file is append-only; the last row wins.
+
+    `text` names one finding of an id that covers several; a row without it
+    covers the whole id, as in older files.
+    """
     if label not in ("tp", "fp"):
         raise ValueError("a human verdict is tp or fp")
     if not reason.strip():
         raise ValueError("a human verdict needs a reason")
-    return {
+    row = {
         "item": item,
         "label": label,
         "reviewer": reviewer,
         "reason": reason,
         "date": date,
     }
+    if text is not None:
+        row["text"] = text
+    return row
 
 
 def revisions_for_merge(

@@ -1553,3 +1553,162 @@ def test_dedupe_check_ignores_failed_rows_and_writes_nothing(judge_env, capsys):
     after = {f.name: f.read_bytes() for f in (judge_env / "judgments").iterdir()}
     assert before == after
     assert "anthropic\tpairs=1\tduplicates=0" in capsys.readouterr().out
+
+
+# --- round 4: colliding ids, exhausted pairs and the mark-failed lock ---------------
+
+TEXTS = ("utm_campaign=", "utm_source=", "utm_medium=")
+
+
+@pytest.fixture
+def collision_env(judge_env):
+    """Three findings on one line that share one item id."""
+    lab.write_jsonl(
+        judge_env / "items.jsonl",
+        [{**ITEM, "id": "c0", "line": 5, "text": t, "split": "tuning"} for t in TEXTS],
+    )
+    for family, model in (("anthropic", "claude-test"), ("openai", "gpt-test")):
+        write_rows(
+            judge_env, family, pair_rows("c0", family, model, "tp", "tp")
+        )  # both judges agree, yet saw only the first finding
+    return judge_env
+
+
+def test_merge_never_labels_a_colliding_id_automatically(collision_env):
+    assert merge_cli(collision_env) == 0
+    assert lab.read_jsonl(collision_env / "labels.jsonl") == []
+    (dispute,) = lab.read_jsonl(collision_env / "disputes.jsonl")
+    assert dispute["item"] == "c0" and dispute["collision"] is True
+
+
+def test_the_worksheet_has_one_dispute_row_per_finding_behind_a_colliding_id(
+    collision_env, tmp_path
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(collision_env, out, tmp_path) == 0
+    rows = read_sheet(out)
+    assert [r["flagged text"] for r in rows] == list(TEXTS)
+    assert {r["queue"] for r in rows} == {"dispute"}
+    assert {r["collision"] for r in rows} == {"yes"}
+    assert {r["item"] for r in rows} == {"c0"}
+    assert all(r["judge anthropic"] == r["judge openai"] == "tp" for r in rows)
+
+
+def test_a_plain_item_has_a_blank_collision_cell(sheet_env, tmp_path):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(sheet_env, out, tmp_path) == 0
+    assert {r["collision"] for r in read_sheet(out)} == {""}
+
+
+def fill_by_text(path, answers):
+    rows = read_sheet(path)
+    for row in rows:
+        row["verdict"], row["reason"] = answers.get(row["flagged text"], ("", ""))
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        out = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        out.writeheader()
+        out.writerows(rows)
+
+
+def test_import_keys_a_colliding_verdict_by_id_and_finding_text(
+    collision_env, tmp_path
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(collision_env, out, tmp_path) == 0
+    fill_by_text(out, {TEXTS[0]: ("tp", "real"), TEXTS[1]: ("fp", "param")})
+    assert import_cli(collision_env, out) == 0
+    human = lab.read_jsonl(collision_env / "human.jsonl")
+    assert [(h["item"], h["text"], h["label"]) for h in human] == [
+        ("c0", TEXTS[0], "tp"),
+        ("c0", TEXTS[1], "fp"),
+    ]
+    out2 = tmp_path / "w2.csv"  # only the unresolved finding is left to review
+    assert worksheet_cli(collision_env, out2, tmp_path) == 0
+    assert [r["flagged text"] for r in read_sheet(out2)] == [TEXTS[2]]
+
+
+def test_a_colliding_id_stays_a_dispute_when_its_findings_disagree(
+    collision_env, tmp_path
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(collision_env, out, tmp_path) == 0
+    fill_by_text(out, {t: ("tp" if t == TEXTS[0] else "fp", "r") for t in TEXTS})
+    assert import_cli(collision_env, out) == 0
+    assert merge_cli(collision_env) == 0
+    assert lab.read_jsonl(collision_env / "labels.jsonl") == []
+    assert len(lab.read_jsonl(collision_env / "disputes.jsonl")) == 1
+
+
+def test_a_colliding_id_is_labelled_once_every_finding_has_the_same_human_verdict(
+    collision_env, tmp_path
+):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(collision_env, out, tmp_path) == 0
+    fill_by_text(out, {t: ("fp", "tracking") for t in TEXTS})
+    assert import_cli(collision_env, out) == 0
+    assert merge_cli(collision_env) == 0
+    (label,) = lab.read_jsonl(collision_env / "labels.jsonl")
+    assert (label["item"], label["label"], label["source"]) == ("c0", "fp", "human")
+    assert lab.read_jsonl(collision_env / "disputes.jsonl") == []
+
+
+def test_import_rejects_a_finding_text_the_item_does_not_have(collision_env, tmp_path):
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(collision_env, out, tmp_path) == 0
+    rows = read_sheet(out)
+    rows[0]["flagged text"] = "utm_term="
+    rows[0]["verdict"], rows[0]["reason"] = "tp", "x"
+    with open(out, "w", encoding="utf-8", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    assert import_cli(collision_env, out) == 2
+    assert not (collision_env / "human.jsonl").exists()
+
+
+def test_every_reader_takes_the_first_row_of_a_repeated_item(judge_env, tmp_path):
+    first = {**ITEM, "id": "i0", "line": 5, "split": "tuning", "rule": R}
+    later = {**first, "rule": ALPHA}  # a hand-edited later row with the same text
+    lab.write_jsonl(judge_env / "items.jsonl", [first, later])
+    write_rows(
+        judge_env, "anthropic", pair_rows("i0", "anthropic", "claude-test", "tp", "fp")
+    )
+    write_rows(judge_env, "openai", pair_rows("i0", "openai", "gpt-test", "tp", "tp"))
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(judge_env, out, tmp_path) == 0
+    (row,) = read_sheet(out)
+    assert row["rule"] == R
+
+
+def test_an_exhausted_pair_is_skipped_before_its_document_is_loaded(
+    judge_env, tmp_path, monkeypatch, capsys
+):
+    lab.write_jsonl(
+        judge_env / "items.jsonl",
+        [{**ITEM, "id": "g0", "doc": "ghost", "line": 5, "split": "tuning"}],
+    )
+    base = {
+        "item": "g0",
+        "family": "anthropic",
+        "model": "claude-test",
+        "prompt_version": lab.PROMPT_VERSION,
+        "status": "failed",
+        "error": "provider-exit",
+    }
+    write_rows(
+        judge_env,
+        "anthropic",
+        [{**base, "order": o} for o in lab.ORDERS for _ in range(3)],
+    )
+    ledger_path(judge_env).write_text("")
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 0
+    assert asked == []
+    out = capsys.readouterr().out
+    assert "skipped 2 pairs" in out and "g0" in out
+
+
+def test_mark_failed_requires_an_existing_ledger(judge_env, capsys):
+    assert mark_failed_cli(judge_env, "i0", lab.ORDERS[0]) == 2
+    assert "ledger" in capsys.readouterr().err
+    assert not (judge_env / "judgments").exists()
