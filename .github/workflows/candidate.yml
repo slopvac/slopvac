@@ -228,6 +228,10 @@ jobs:
     if: ${{ needs.validate.outputs.publish == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # The signing key lives in this environment, which only `rc/v*` tags can deploy to.
+    # `sign` runs only when `publish` is true: a push of an `rc/v*` tag, or a dispatch
+    # run on that tag with dry-run off. A dry run never reaches this job.
+    environment: candidate-signing
     permissions:
       contents: read
     steps:

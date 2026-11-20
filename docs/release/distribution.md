@@ -94,7 +94,7 @@ dist build --artifacts=local --tag v<version>
 
 A maintainer must do these once. No workflow does them.
 
-- Create the `MINISIGN_SECRET_KEY` repository secret from the key described in [maintainer setup](maintainer-setup.md#release-signing-key). Release and candidate jobs stop without the secret or the committed public key.
+- Create the `MINISIGN_SECRET_KEY` secret from the key described in [maintainer setup](maintainer-setup.md#release-signing-key) in the `release`, `candidate-signing` and `revocations` environments. No repository-level copy exists, and a test fails when a job reads a `MINISIGN_*` secret without declaring an environment. Release and candidate jobs stop without the secret or the committed public key.
 - Create the `slopvac/homebrew-tap` repository and install the release GitHub App on it (Contents: read and write). The Homebrew job mints a short-lived token from the App credentials `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY`, so no tap token secret exists.
 - Configure the release-please GitHub App, as the flow section describes, and set the repository variable `RELEASE_APP_SLUG` to the App's slug. It is required: the 2.x publish job accepts only releases authored by `github-actions[bot]` or `<slug>[bot]`, and stops otherwise.
 - Give the release GitHub App the repository permission Administration: Read-only, and accept the new permission on the organization installation. The tag ruleset check mints a token from the App with only that permission to read bypass actors. If minting fails, the release stops with a message that names the permission.
