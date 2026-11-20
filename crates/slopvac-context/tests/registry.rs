@@ -375,3 +375,17 @@ fn a_structural_tagger_without_evidence_names_itself_and_its_scope() {
     );
     assert_eq!(idx.tags()[0].evidence, "t: sentence");
 }
+
+#[rstest::rstest]
+#[case::block_condition_only("heading_path: '^notes$'", &["Notes", "First one.", "Second one."])]
+#[case::sentence_condition("heading_path: '^notes$'\n  sentence: first", &["First one."])]
+fn sentence_scope_tags_each_sentence_not_the_whole_block(
+    #[case] when: &str,
+    #[case] expected: &[&str],
+) {
+    let src = "# T\n\n## Notes\n\nFirst one. Second one.\n";
+    let yaml = format!("schema_version: 3\nid: t\ntag: k\nscope: sentence\nwhen:\n  {when}\n");
+    let idx = run(&yaml, "a.md", src);
+    let spans: Vec<&str> = idx.tags().iter().map(|t| &src[t.span.clone()]).collect();
+    assert_eq!(spans, expected);
+}
