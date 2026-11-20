@@ -28,6 +28,8 @@ pub struct Project {
 /// A point inside a write or delete where a test can change the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Stage {
+    /// The temporary file holds the new bytes, and its final mode is not set yet.
+    Filled,
     /// The new state is ready, and the final check against the expected bytes
     /// comes next.
     BeforeCommit,
@@ -252,6 +254,12 @@ impl Project {
             .ok_or_else(|| AgentsError::UnsafeTarget(rel.display().to_string()))?;
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
+        // Private until filled, so the new bytes are never readable by others.
+        #[cfg(unix)]
+        {
+            use cap_std::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.subsec_nanos());
@@ -264,10 +272,19 @@ impl Project {
                 Err(e) => return Err(Self::map(&rel, e)),
             }
         };
+        // The mode comes from a handle opened on the source, never from a
+        // second lookup of the name after the temporary file exists.
+        let mode = match parent.open(name) {
+            Ok(source) => source.metadata().map(|m| Some(m.permissions())),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e),
+        };
         let mut finish = || -> std::io::Result<()> {
+            let mode = mode?;
             file.write_all(after)?;
-            if let Ok(meta) = parent.metadata(name) {
-                file.set_permissions(meta.permissions())?;
+            hook(Stage::Filled);
+            if let Some(mode) = mode {
+                file.set_permissions(mode)?;
             }
             file.sync_all()
         };
@@ -385,5 +402,53 @@ mod tests {
 
         assert!(matches!(got, Err(AgentsError::Conflict(p)) if p == Path::new("a.md")));
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "theirs");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod mode_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn mode_of(path: &Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn the_temporary_file_is_private_while_filled_and_the_target_keeps_its_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("a.md");
+        std::fs::write(&target, "old").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let project = Project::open(dir.path()).unwrap();
+        let mut seen = Vec::new();
+        let changed = project
+            .write_atomic_staged(Path::new("a.md"), Some(b"old"), b"new", &mut |stage| {
+                if stage != Stage::Filled {
+                    return;
+                }
+                let temp = std::fs::read_dir(dir.path())
+                    .unwrap()
+                    .map(|e| e.unwrap().path())
+                    .find(|p| {
+                        p.file_name()
+                            .is_some_and(|n| n.to_string_lossy().starts_with(".slopvac-"))
+                    })
+                    .unwrap();
+                seen.push((std::fs::read(&temp).unwrap(), mode_of(&temp)));
+            })
+            .unwrap();
+        assert!(changed);
+        assert_eq!(seen, [(b"new".to_vec(), 0o600)]);
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+        assert_eq!(mode_of(&target), 0o644);
+    }
+
+    #[test]
+    fn a_new_file_ends_private() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = Project::open(dir.path()).unwrap();
+        project.write_atomic(Path::new("n.md"), None, b"x").unwrap();
+        assert_eq!(mode_of(&dir.path().join("n.md")), 0o600);
     }
 }
