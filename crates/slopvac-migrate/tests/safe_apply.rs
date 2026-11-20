@@ -636,6 +636,7 @@ fn apply_keeps_an_original_replaced_before_it_is_removed() {
     };
     let err = s.apply_hooked(&s.plan(), &mut hook).unwrap_err();
     let held = held.unwrap();
+    let held = held.strip_prefix(s.root()).unwrap();
     assert!(matches!(err, Error::Changed(_)), "{err:?}");
     assert_eq!(
         err.to_string(),
