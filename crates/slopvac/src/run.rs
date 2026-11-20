@@ -108,8 +108,8 @@ where
     // the `--explain-config` refusals must not depend on `slopvac.toml`.
     let invocation = match version_json_offline_flag(&args) {
         Some(flag) => Invocation::VersionJson { offline_flag: flag },
-        None => match parse_args(tree, args, env, out, err_out) {
-            Ok(matches) => Invocation::Parsed(matches),
+        None => match parse_args(tree, args, env, err_out) {
+            Ok(invocation) => invocation,
             Err(code) => return exit::code(code),
         },
     };
@@ -159,6 +159,16 @@ where
             };
         }
         Invocation::Parsed(matches) => matches,
+        // Help and version text wait for the config check, as every other command does.
+        Invocation::Display(text) => {
+            return match write_stdout(out, text.as_bytes()) {
+                Ok(code) => exit::code(code),
+                Err(failure) => {
+                    let _ = writeln!(err_out, "{failure}");
+                    exit::code(exit::INCOMPLETE)
+                }
+            };
+        }
     };
     let globals = resolve_globals_with(&matches, env, config_offline);
     logging::init(env, globals.color);
@@ -182,6 +192,8 @@ enum Invocation {
     VersionJson { offline_flag: bool },
     /// Any other invocation, parsed once.
     Parsed(ArgMatches),
+    /// Help or version text from the parser. It prints once the config has been read.
+    Display(String),
 }
 
 impl Invocation {
@@ -191,14 +203,14 @@ impl Invocation {
     }
 }
 
-/// Parse the arguments. On a usage error or a help request, print it and return the exit code.
+/// Parse the arguments. On a usage error, print it and return the exit code. Help and version
+/// text come back unprinted, so an unreadable config still stops them.
 fn parse_args(
     tree: clap::Command,
     args: Vec<OsString>,
     env: &dyn Env,
-    out: &mut dyn std::io::Write,
     err_out: &mut dyn std::io::Write,
-) -> Result<ArgMatches, u8> {
+) -> Result<Invocation, u8> {
     let args = cli::insert_default_command(args, &tree);
     let early_color = color::resolve(scan_color_flag(&args), env);
     let tree = tree.color(if early_color {
@@ -209,7 +221,7 @@ fn parse_args(
     // `report` takes text that may be a pasted secret, and clap echoes the value it rejects.
     let is_report = args.iter().skip(1).any(|a| a == "report");
     match tree.try_get_matches_from(args) {
-        Ok(m) => Ok(m),
+        Ok(m) => Ok(Invocation::Parsed(m)),
         Err(err) if err.use_stderr() && is_report => {
             let _ = writeln!(
                 err_out,
@@ -235,13 +247,7 @@ fn parse_args(
             } else {
                 styled.to_string()
             };
-            Err(match write_stdout(out, text.as_bytes()) {
-                Ok(code) => code,
-                Err(failure) => {
-                    let _ = writeln!(err_out, "{failure}");
-                    exit::INCOMPLETE
-                }
-            })
+            Ok(Invocation::Display(text))
         }
     }
 }
