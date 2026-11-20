@@ -412,8 +412,6 @@ struct DiagramResult {
     unchecked: Vec<Notice>,
     /// Info notices for diagrams of an unsupported type.
     notices: Vec<Notice>,
-    /// Whether the input holds a diagram, so its labels are a context the document has.
-    has_diagram: bool,
 }
 
 /// The `unrun` key of capitalization rules in a style the engine does not run.
@@ -952,7 +950,7 @@ impl Engine {
             findings.extend(diagrams.findings);
             extra.extend(diagrams.unchecked);
             diagram_notices = diagrams.notices;
-            seen.extend(diagrams.has_diagram.then_some(slopvac_diagrams::CONTEXT));
+            seen.extend(run.holds_diagram().then_some(slopvac_diagrams::CONTEXT));
         }
         findings.extend(run.invalid_directives()?);
         // Lookups that passed their budget answered nothing, so nothing found above stands.
@@ -1902,6 +1900,19 @@ impl Run<'_> {
     /// Findings of diagram rules, over diagram files and fenced diagram blocks, a warning
     /// notice for each diagram that was malformed or over a limit, and an info notice for
     /// each diagram of an unsupported type.
+    /// Whether the input is a diagram file or holds a fenced diagram, so its labels are a
+    /// context the document has. Reads the parsed fences only, whether or not a checker runs.
+    fn holds_diagram(&self) -> bool {
+        matches!(self.input.kind, Kind::Diagram(_))
+            || self.parsed.blocks.iter().any(|block| {
+                matches!(
+                    &block.kind,
+                    BlockKind::CodeBlock { lang: Some(lang), fenced: true, .. }
+                        if DiagramFormat::from_lang(lang).is_some()
+                )
+            })
+    }
+
     fn diagrams(&self) -> Result<DiagramResult, EngineError> {
         let engine = self.engine;
         // A checker none of whose rules applies to the document's genre does not run. One that
@@ -2003,7 +2014,6 @@ impl Run<'_> {
             findings: out,
             unchecked,
             notices,
-            has_diagram: !diagrams.is_empty(),
         })
     }
 
