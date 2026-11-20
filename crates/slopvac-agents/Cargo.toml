@@ -12,6 +12,11 @@ publish.workspace = true
 # Deterministic work measurements for tests; release builds leave this off.
 test-counters = []
 
+# O_NONBLOCK for the source open in `fsx`, so a FIFO swapped in at the leaf
+# cannot block it. `cap-fs-ext` supplies the public no-follow open option.
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs"] }
+
 [dependencies]
 cap-fs-ext.workspace = true
 cap-std.workspace = true
@@ -30,11 +35,6 @@ slopvac-packs.workspace = true
 slopvac-text.workspace = true
 slopvac-update.workspace = true
 thiserror.workspace = true
-
-# O_NONBLOCK for the source open in `fsx`, so a FIFO swapped in at the leaf
-# cannot block it. `cap-fs-ext` supplies the public no-follow open option.
-[target.'cfg(unix)'.dependencies]
-rustix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
 rstest.workspace = true

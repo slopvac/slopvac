@@ -78,7 +78,7 @@ pub fn target(relative: &str) -> Result<PathBuf, AgentsError> {
     Ok(clean)
 }
 
-/// Make the open return at once for a FIFO or device swapped in at the leaf.
+/// Set `O_NONBLOCK`, so an open of a FIFO or device swapped in at the leaf returns at once.
 #[cfg(unix)]
 fn nonblocking(options: &mut OpenOptions) -> std::io::Result<()> {
     use cap_std::fs::OpenOptionsExt;
@@ -94,9 +94,9 @@ fn nonblocking(_: &mut OpenOptions) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The permissions of the regular file `name`, read from a handle opened
-/// without following a symlink and without blocking; `None` if it does not
-/// exist. A FIFO, device or directory is an error.
+/// Return the permissions of the regular file `name`, read from a handle opened
+/// without following a symlink and without blocking. Return `None` if the file
+/// does not exist. A FIFO, device or directory is an error.
 ///
 /// `resolve` already rewrote every link in the path. Refusing a leaf that
 /// became a link since then keeps a swapped link from lending its target's
@@ -279,7 +279,8 @@ impl Project {
     }
 
     /// [`Project::write_atomic`], calling `hook` at each [`Stage`], so a test can
-    /// change the target there.
+    /// observe or change the target there. [`Stage::Filled`] comes once the
+    /// temporary file holds the new bytes and before the code sets its mode.
     fn write_atomic_staged(
         &self,
         rel: &Path,
@@ -517,8 +518,8 @@ mod mode_tests {
             0,
         )
         .unwrap();
-        // A blocked open must fail the test, not hang it: run it on a thread
-        // and bound the wait. A pass returns at once.
+        // Run the open on a thread and bound the wait, so a blocked open fails
+        // the test instead of hanging it. A pass returns at once.
         let (tx, rx) = std::sync::mpsc::channel();
         let path = dir.path().to_owned();
         std::thread::spawn(move || {
