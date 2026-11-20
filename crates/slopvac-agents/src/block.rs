@@ -7,6 +7,7 @@ use pulldown_cmark::{Event, Parser, Tag};
 
 use crate::error::AgentsError;
 use crate::fsx::Project;
+use crate::messages::AgentsPhrase;
 
 /// Opening marker of the managed block.
 pub const BEGIN: &str = "<!-- slopvac:begin -->";
@@ -33,12 +34,13 @@ impl State {
     #[must_use]
     pub fn word(self) -> &'static str {
         match self {
-            Self::Missing => "missing",
-            Self::Current => "current",
-            Self::Stale => "stale",
-            Self::Malformed => "malformed",
-            Self::Disabled => "disabled",
+            Self::Missing => AgentsPhrase::StateMissing,
+            Self::Current => AgentsPhrase::StateCurrent,
+            Self::Stale => AgentsPhrase::StateStale,
+            Self::Malformed => AgentsPhrase::StateMalformed,
+            Self::Disabled => AgentsPhrase::StateDisabled,
         }
+        .as_static()
     }
 }
 

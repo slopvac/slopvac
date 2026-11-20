@@ -9,6 +9,7 @@ note: >-
 # The rule applies only to crates that adopted the registry. Add a crate's glob here when
 # it migrates; the last step widens this to every crate.
 files:
+  - crates/slopvac-agents/src/**
   - crates/slopvac-config/src/**
   - crates/slopvac-messages/src/**
   - crates/slopvac-report/src/**
