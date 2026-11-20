@@ -1,12 +1,27 @@
 use slopvac_pcre2::{CompileError, MatchError, Options, Regex};
 
+use crate::messages::TextMessage;
 use crate::rewrite::compat;
 
 /// A pattern failed at match time, for example by exhausting a PCRE2 match, depth or
 /// heap limit. The text is then not fully analysed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("pattern match failed: {0}")]
+#[error("{}", match_text(.0))]
 pub struct TextError(String);
+
+fn match_text(reason: &str) -> String {
+    TextMessage::MatchFailed {
+        reason: reason.to_owned(),
+    }
+    .to_string()
+}
+
+fn invalid_text(reason: &str) -> String {
+    TextMessage::PatternInvalid {
+        reason: reason.to_owned(),
+    }
+    .to_string()
+}
 
 impl From<MatchError> for TextError {
     fn from(e: MatchError) -> Self {
@@ -39,7 +54,7 @@ fn build(pattern: &str, caseless: bool) -> Regex {
 
 /// A pattern did not compile.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("pattern does not compile: {0}")]
+#[error("{}", invalid_text(.0))]
 pub struct PatternError(String);
 
 /// A PCRE2 pattern compiled in UTF and Unicode-property mode, for rule data.

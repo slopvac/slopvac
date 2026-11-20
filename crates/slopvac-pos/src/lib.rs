@@ -29,6 +29,7 @@
 //!   rejected by [`Tagger::from_model_bytes`].
 
 mod go_unicode;
+mod messages;
 mod model;
 mod tokenize;
 mod unicode_tables;
@@ -38,6 +39,7 @@ use tokenize::work;
 use std::ops::Range;
 use std::sync::OnceLock;
 
+pub use messages::message_entries;
 pub use model::ModelError;
 
 /// The embedded English model (CC BY-SA 4.0, see `model/LICENSE-MODEL.md`).
