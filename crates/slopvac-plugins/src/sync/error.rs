@@ -7,6 +7,7 @@ use crate::error::PluginError;
 use crate::extract::ExtractError;
 use crate::lock::{LockDiff, PackId};
 use crate::oci::OciError;
+use crate::pyenv::PyEnvError;
 use crate::revoke::RevocationError;
 use crate::sign::SignError;
 
@@ -129,6 +130,15 @@ pub enum SyncError {
         /// The cause.
         #[source]
         source: ExtractError,
+    },
+    /// The managed Python environment of a plugin pack could not be built.
+    #[error("pack `{id}`: {source}")]
+    PythonEnv {
+        /// Pack id.
+        id: PackId,
+        /// The cause.
+        #[source]
+        source: PyEnvError,
     },
     /// The data directory could not be prepared or written.
     #[error("data directory: {}", esc(.0))]
