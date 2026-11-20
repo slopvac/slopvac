@@ -31,11 +31,15 @@ fn projected_ranges_map_to_the_vector_spans() {
         let mut p = Projection::new();
         for t in case["tokens"].as_array().unwrap() {
             let src = Span::new(n(&t["src"][0]), n(&t["src"][1])).unwrap();
-            p.push(
+            let (kind, text) = (
                 kind(t["kind"].as_str().unwrap()),
                 t["text"].as_str().unwrap(),
-                src,
             );
+            if case["unordered"].as_bool().unwrap_or(false) {
+                p.push_unordered(kind, text, src);
+            } else {
+                p.push(kind, text, src);
+            }
         }
         assert_eq!(
             p.text(),

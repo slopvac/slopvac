@@ -390,6 +390,21 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
   - `input-unreadable`: the reader refused the file or could not read it.
   - `input-not-utf8`: the bytes are not valid UTF-8.
   - `input-unsupported`: no reader handles this input kind. This includes a whole input that the user names in a format slopvac does not read, such as EPUB or PDF. Slopvac has no separate code for binary inputs.
+- When one `lint` or gate run holds both an incomplete input and a failed gate, exit 2 wins over exit 1. An incomplete run cannot establish its own result, and the report still lists the failed gates. This rule is for lint and gate results. The case runner orders its exits the other way: it exits 1 when any case fails, otherwise 2 when a check was incomplete, otherwise 0.
+- The engine emits these notice codes, each at the level shown. A warning makes the run incomplete and exits 2. An info notice leaves the run complete and exits 0:
+
+  | Code | Level | Meaning |
+  | --- | --- | --- |
+  | `rule-kind-not-implemented` | info | Active rules of a kind the engine does not run did not run. `data.rules` lists them. |
+  | `rule-style-not-implemented` | warning | Active capitalization rules did not run, because the engine runs only the sentence style. |
+  | `vocabulary-no-blocklist` | info | Active vocabulary rules did not run, because no word blocklist is set. |
+  | `vocabulary-no-taggable-entries` | info | Active vocabulary rules did not run, because the blocklist holds no noun, verb, adjective or adverb entry of three or more letters. |
+  | `vocabulary-sweep-shared` | info | Several vocabulary rules share one blocklist sweep, and it runs once under one of them. |
+  | `rst-converter-missing` | warning | The reStructuredText converter or its Python interpreter is missing, so the file was not checked. |
+  | `rst-unchecked` | warning | The converter failed on the file, so it was not checked. |
+  | `rst-prose-unplaced` | warning | Some reStructuredText nodes have no usable source lines, so their prose was not checked. |
+  | `rst-line-precise` | info | Some reStructuredText blocks could not be matched word by word, so findings in them point at the whole block. |
+
 - Message text can change in any release. Codes, rule IDs, and exit codes form the interface.
 - A `fix` refusal carries its code through `Refusal::code`: `document-too-large`, `fix-outside-root`, `fix-symlink`, `fix-not-regular`, `fix-hardlinked`, `fix-not-owner`, `fix-unsafe-directory`, `fix-group-mismatch`, `fix-acl-present`, `fix-unsupported-platform` and `fix-changed`.
 
@@ -415,8 +430,7 @@ Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnos
 3.0 carries no deprecation machinery. A breaking change takes effect at a major version, and the release notes list it.
 
 - Minor and patch releases of 3.x make additive changes only (section 3.2). A removal or rename needs a major version.
-- Warning periods, deprecated aliases, and flags that emit old output formats do not exist. Slopvac 3.0 rejects removed flags, options and hooks with an error and exit 2. A rule ID in config that no rule has, a removed rule included, is the warning notice `config-unknown-rule`. The notice does not make the run incomplete and does not change its exit status.
-- Plugin `slopvac_api` and code plugin `protocolVersion` follow the same rule. The host loads a plugin whose versions it supports, as section 3.4 describes. A plugin outside that range stays unloaded, and the error names both versions. No grace period applies.
+- Warning periods, deprecated aliases, and flags that emit old output formats do not exist. Slopvac 3.0 rejects removed flags, options and hooks with an error and exit 2. A rule ID in config that no rule has, a removed rule included, is the warning notice `config-unknown-rule`. The notice does not make the run incomplete and does not change its exit status. [`compat/removed-rules.toml`](compat/removed-rules.toml) lists the rule IDs that 3.0 removed.- Plugin `slopvac_api` and code plugin `protocolVersion` follow the same rule. The host loads a plugin whose versions it supports, as section 3.4 describes. A plugin outside that range stays unloaded, and the error names both versions. No grace period applies.
 
 Owners: `slopvac-8l4.12.1`, `slopvac-8l4.9.1`.
 

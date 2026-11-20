@@ -289,16 +289,24 @@ def binary_host_edit(edits: list[dict]) -> None:
 REAL_KINDS = {"identity", "entity", "backslash", "opaque", "collapse", "masked"}
 
 
-def check_tokens(doc: Doc, tokens: list[dict]) -> str:
-    """Validate a projection token list against the source and return the projected text."""
+def check_tokens(doc: Doc, tokens: list[dict], ordered: bool = True) -> str:
+    """Validate a projection token list against the source and return the projected text.
+
+    A projection of table cells is not ordered: its ranges may come out of source order,
+    but they never overlap."""
     cursor = 0
+    taken: list[tuple[int, int]] = []
     projected = []
     for token in tokens:
         kind, text = token["kind"], token["text"]
         start, end = token["src"]
         check_span(doc, start, end)
-        if start < cursor:
+        if ordered and start < cursor:
             raise PositionError("projection tokens must ascend in source order")
+        if not ordered and any(start < b and a < end for a, b in taken):
+            raise PositionError("projection token ranges must not overlap")
+        if start != end:
+            taken.append((start, end))
         source = doc.data[start:end].decode("utf-8")
         if kind == "identity" and text != source:
             raise PositionError("identity token text differs from its source")

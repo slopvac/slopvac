@@ -105,6 +105,22 @@ Under 2.x the placeholder stayed in the pattern as literal text. The effect is t
 `paragraph`, `document` or `raw`. The default is `prose`.
 `prose` leaves out code fences, inline code, URLs and front matter.
 `raw` reaches everything and is for formatting rules.
+A `raw` rule matches one line at a time, without the line terminator. A raw pattern therefore cannot match across lines, and `$` (or `(?![\s\S])`) anchors at the end of the line.
+
+These parts of a Markdown or MDX file are markup, not prose:
+
+- Each raw HTML block is one plain paragraph. It has no containers and no element kinds, so the `heading`, `list`, `table` and `quote` exclusions do not apply inside it.
+- The `:::` directive markers.
+- MDX `import` and `export` blocks.
+- The `{#id}` attribute of a heading.
+
+## Reference behavior
+
+Where this contract describes the procedural or descriptive `text_type`, the position of a metric finding, a match that spans several lines, or `match_all_caps`, it follows the native engine of 2.x, not the behavior of Vale.
+
+A word, and the class of a character, follow the Python reference as `slopvac-text` implements it. The reference is `packages/slopvac-lint/src/slopvac/analyze.py`, and [`metrics.md`](../../packages/slopvac-lint/docs/metrics.md) states the word-counting phases.
+
+Part-of-speech tags are English and use the Penn Treebank tag set. The tagger is a Rust port of the tagger of the `prose` library, version 3.3.1.
 
 `body-sentence` is a sentence that is not in a heading or a table.
 It came with the 2.x change that fixed `ste-procedural.condition-after-command`

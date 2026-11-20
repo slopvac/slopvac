@@ -126,7 +126,8 @@ def test_invalid_edit_set_is_rejected(case: dict) -> None:
 @pytest.mark.parametrize("case", VECTORS["projections"], ids=_ids("projections"))
 def test_projection_tokens_are_consistent_with_the_source(case: dict) -> None:
     doc = Doc.from_text(case["source"])
-    assert check_tokens(doc, case["tokens"]) == case["projected"]
+    ordered = not case.get("unordered", False)
+    assert check_tokens(doc, case["tokens"], ordered) == case["projected"]
 
 
 @pytest.mark.parametrize("case", VECTORS["projections"], ids=_ids("projections"))
