@@ -182,19 +182,27 @@ pub fn validate(config: &LoadedConfig, rules: &Catalog) -> Result<Vec<Notice>, C
         }
     }
     // A config that `extends` reaches twice, by a repeated entry or a diamond, is applied
-    // twice. Its keys are the same keys, so each id at each source location reports once. The
-    // source is compared before it is shown, so two files with the same name stay apart.
+    // twice. Its keys are the same keys, so each id at each source location reports once.
+    let unknown = without_repeats(unknown);
+    unknown.iter().map(unknown_rule_notice).collect()
+}
+
+/// Drop the repeats of a rule id at one source: the same layer, file, line and column. The
+/// source is compared before it is shown, so two files with the same name stay apart, and the
+/// same position in two layers stays two findings.
+fn without_repeats(mut unknown: Vec<UnknownRule>) -> Vec<UnknownRule> {
     let mut seen = HashSet::new();
     unknown.retain(|u| {
         let source = u.source();
         seen.insert((
             u.rule().to_owned(),
+            source.layer,
             source.file.clone(),
             source.line,
             source.column,
         ))
     });
-    unknown.iter().map(unknown_rule_notice).collect()
+    unknown
 }
 
 /// The name a config lists to ask for the 2.x levels of a profile: `core:legacy-normal`,
@@ -626,6 +634,33 @@ mod tests {
             level(&s, "core:orwell.unsupported-evaluative"),
             Some(Level::Off)
         );
+    }
+
+    /// `a.b` as an unknown rule at `slopvac.toml:4:1` in `layer`.
+    fn unknown_in(layer: ConfigLayer) -> Vec<UnknownRule> {
+        let mut setting = Setting::bare(layer, &["rules", "a.b"], Json::from("off"));
+        setting.source = slopvac_config::located_source(layer, Some("slopvac.toml".into()), 4, 1);
+        unknown_rules(&[setting], |_| false)
+    }
+
+    #[test]
+    fn the_same_unknown_rule_at_one_source_reports_once() {
+        let twice = [
+            unknown_in(ConfigLayer::Extends),
+            unknown_in(ConfigLayer::Extends),
+        ]
+        .concat();
+        assert_eq!(without_repeats(twice).len(), 1);
+    }
+
+    #[test]
+    fn the_same_position_in_two_layers_stays_two_findings() {
+        let both = [
+            unknown_in(ConfigLayer::Project),
+            unknown_in(ConfigLayer::Override),
+        ]
+        .concat();
+        assert_eq!(without_repeats(both).len(), 2);
     }
 
     #[test]
