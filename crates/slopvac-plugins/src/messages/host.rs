@@ -656,6 +656,10 @@ pub(crate) enum HostText {
     /// The launcher cannot become a child subreaper.
     #[code("plugins-launch-subreaper")]
     #[text("cannot become a child subreaper: {error}")]
+    #[cfg_attr(
+        not(target_os = "linux"),
+        allow(dead_code, reason = "only the Linux launcher reports this")
+    )]
     Subreaper {
         /// The OS error.
         error: String,
@@ -663,6 +667,10 @@ pub(crate) enum HostText {
     /// The launcher cannot refuse tracing.
     #[code("plugins-launch-refuse-tracing")]
     #[text("cannot refuse tracing: {error}")]
+    #[cfg_attr(
+        not(target_os = "linux"),
+        allow(dead_code, reason = "only the Linux launcher reports this")
+    )]
     RefuseTracing {
         /// The OS error.
         error: String,
@@ -670,6 +678,10 @@ pub(crate) enum HostText {
     /// The launcher lost track of the plugin.
     #[code("plugins-launch-lost-plugin")]
     #[text("lost the plugin: {error}")]
+    #[cfg_attr(
+        not(target_os = "linux"),
+        allow(dead_code, reason = "only the Linux launcher reports this")
+    )]
     LostPlugin {
         /// The OS error.
         error: String,
@@ -940,6 +952,10 @@ pub(crate) enum HostPhrase {
     /// The name of the memory limit.
     #[code("plugins-launch-limit-memory")]
     #[text("memory")]
+    #[cfg_attr(
+        not(target_os = "linux"),
+        allow(dead_code, reason = "only the Linux launcher reports this")
+    )]
     LimitMemory,
 }
 
