@@ -6,7 +6,7 @@ A config file, `AGENTS.md` or an earlier approval does not count.
 
 1. Pick the category that matches the problem: bug, false positive, missed slop, mis-tagged, wrong fix, new rule or rule improvement.
 2. Write a minimal synthetic sample. Pipe it through `slopvac lint --stdin --format json`. Never lint the user's own file for a report.
-3. Run `slopvac report <category> --title ... --field ... --body-file <file> --gh`. It prints the exact title, labels and body, writes the body to the file, prints the exact `gh issue create` command and files nothing.
+3. Run `slopvac report <category> --title ... --field ... --body-file <file> --gh`. It prints the exact title and body, writes the body to the file, prints the exact `gh issue create` command and files nothing.
 4. Read the warnings on stderr. Each one names a field that may still hold a credential or private data. Remove that text and run the command again. The scrub is best effort and does not replace your reading of the preview.
 5. Send the preview and the command to the user and wait. Only approval of that exact text counts.
 6. After approval, run the same command with `--yes`. It checks `gh` and its login, then runs `gh issue create` for you. Without `gh`, give the user the printed command or the prefilled form URL.

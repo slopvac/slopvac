@@ -190,7 +190,11 @@ fn a_plain_run_previews_and_prints_the_form_url_without_calling_gh() {
     assert!(out.contains("### What happened\n\nit crashed"), "{out}");
     assert!(!out.contains("Labels:"), "{out}");
     assert!(
-        out.contains("The issue form adds the labels: bug, needs-triage, agent-reported"),
+        !out.contains("agent-reported"),
+        "the form does not set it:\n{out}"
+    );
+    assert!(
+        out.contains("The issue form adds the labels: bug, needs-triage\n"),
         "{out}"
     );
     assert!(out.contains("Nothing was posted."), "{out}");
@@ -1629,4 +1633,53 @@ fn gh_sees_the_pinned_host_and_repository_whatever_the_caller_exports() {
         lines[1]
     );
     assert!(!recorded.contains("evil.example"));
+}
+
+#[test]
+fn a_body_file_named_dash_is_refused_because_gh_would_read_stdin() {
+    let w = World::new();
+    let (result, out) = w.run(&refs(&bug(&["--body-file", "-", "--gh"])));
+    let err = result.unwrap_err();
+    assert_eq!(err.code, "report-body-file");
+    assert!(err.message.contains("./-"), "{}", err.message);
+    assert_eq!(out, "");
+    assert!(w.gh.created.borrow().is_empty());
+}
+
+#[test]
+fn a_dash_name_with_a_directory_part_is_an_ordinary_file() {
+    let w = World::new();
+    let dir = tempfile::tempdir().unwrap();
+    let ok = dir.path().join("-");
+    let (result, _) = w.run(&refs(&bug(&["--body-file", ok.to_str().unwrap(), "--gh"])));
+    assert_eq!(result.unwrap(), 0);
+    assert!(ok.is_file());
+}
+
+/// `Deps::cwd` only feeds the redaction list, so the library harness cannot move the working
+/// directory; this runs the binary with the child's working directory set instead.
+#[test]
+fn dot_slash_dash_writes_a_file_named_dash_in_the_working_directory() {
+    let work = tempfile::tempdir().unwrap();
+    let args = bug(&["--body-file", "./-", "--gh"]);
+    let assert = slopvac()
+        .current_dir(work.path())
+        .arg("report")
+        .args(&args)
+        .assert()
+        .code(0);
+    let out = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let body = std::fs::read_to_string(work.path().join("-")).unwrap();
+    let preview_body = out
+        .split_once("\n\n")
+        .unwrap()
+        .1
+        .split_once("\n\n---\n")
+        .unwrap()
+        .0;
+    assert_eq!(body, preview_body, "{out}");
+    assert!(
+        out.contains("--title '[bug]: crash on empty input' --body-file ./-\n"),
+        "{out}"
+    );
 }
