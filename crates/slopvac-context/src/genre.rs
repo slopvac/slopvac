@@ -4,10 +4,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::path::Path;
 
 use globset::{GlobBuilder, GlobMatcher};
 use serde::Deserialize;
 use serde::de::{self, Visitor};
+use slopvac_config::{FilesError, FilesMatcher};
 
 use crate::schema::{
     Extensions, GENRE_SCHEMA_VERSION, check_schema_version, is_name, is_ref, is_rule_key, present,
@@ -505,6 +507,20 @@ pub struct ResolveOptions<'a> {
     pub assignments: &'a [GenreAssignment],
     /// Path relative to the config directory, for glob matching. Defaults to the document path.
     pub relative_path: Option<&'a str>,
+    /// Where the genre a document declares for itself comes from.
+    pub declared: DeclaredGenre<'a>,
+}
+
+/// Where [`GenreRegistry::resolve`] takes the genre that a document declares for itself.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DeclaredGenre<'a> {
+    /// The top-level `genre` key of the document's front matter.
+    #[default]
+    FromFrontMatter,
+    /// A genre the host has already read, validated and checked against the project policy,
+    /// or none. The document's own front matter is not consulted.
+    Given(Option<&'a str>),
 }
 
 /// Validated set of genres.
@@ -671,7 +687,10 @@ impl GenreRegistry {
         doc: &dyn DocumentView,
         opts: &ResolveOptions<'_>,
     ) -> Result<GenreResult, Error> {
-        let rel = normalize_path(opts.relative_path.unwrap_or_else(|| doc.path()));
+        // Assignments match the path as given, like the config stack does; only the path
+        // signals below read a normalized copy.
+        let native = opts.relative_path.unwrap_or_else(|| doc.path());
+        let rel = normalize_path(native);
         let rel = rel.as_str();
         let candidates = self.score(doc, rel)?;
         let mut scores: Vec<(String, f64)> = candidates
@@ -692,12 +711,16 @@ impl GenreRegistry {
                 scores: scores.clone(),
             })
         };
-        if let Some(id) = doc.front_matter("genre") {
+        let declared = match opts.declared {
+            DeclaredGenre::FromFrontMatter => doc.front_matter("genre"),
+            DeclaredGenre::Given(id) => id,
+        };
+        if let Some(id) = declared {
             return explicit(id, "front-matter", format!("`genre: {id}`"));
         }
         let mut assigned = None;
         for (i, a) in opts.assignments.iter().enumerate() {
-            if files_match(&a.files, rel)? {
+            if files_match(&a.files, native)? {
                 assigned = Some((i, a));
             }
         }
@@ -833,24 +856,15 @@ fn ref_name(r: &str) -> &str {
 
 type Candidate<'a> = (&'a Genre, f64, Vec<Reason>);
 
-/// Whether a `files` list matches a path relative to the config directory. Patterns use
-/// gitignore semantics (`docs/config.md`, `exclude` and `files`): a leading `!` negates and
-/// the last matching pattern wins, so a later `!pattern` re-includes a file.
-///
-/// STUB(slopvac-8l4.5.11): replace with the config crate's matcher once it lands.
-pub fn files_match(patterns: &[String], rel: &str) -> Result<bool, Error> {
-    let mut b = ignore::gitignore::GitignoreBuilder::new("");
-    for p in patterns {
-        b.add_line(None, p.trim()).map_err(|source| Error::Glob {
-            pattern: p.clone(),
-            source,
-        })?;
-    }
-    let set = b.build().map_err(Error::GlobSet)?;
-    let rel = normalize_path(rel);
-    Ok(set
-        .matched_path_or_any_parents(rel.as_str(), false)
-        .is_ignore())
+/// Whether a `files` list matches a path relative to the config directory. The config crate
+/// owns the matching, so a `[[genres]]` block selects the same files here and in the config
+/// stack.
+fn files_match(patterns: &[String], native: &str) -> Result<bool, Error> {
+    let matcher = FilesMatcher::new(patterns, Path::new("")).map_err(|e| match e {
+        FilesError::Pattern { pattern, source } => Error::Glob { pattern, source },
+        FilesError::Set(source) => Error::GlobSet(source),
+    })?;
+    Ok(matcher.is_match(Path::new(native)))
 }
 
 fn compile(spec: GenreSpec) -> Result<Genre, Error> {

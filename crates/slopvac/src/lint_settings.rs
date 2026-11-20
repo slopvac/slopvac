@@ -18,6 +18,7 @@ use std::sync::OnceLock;
 use serde_json::Value as Json;
 use slopvac_config::{Inputs, Layer, PackFile, Presets};
 use slopvac_config::{LevelFrom, LoadedConfig, Resolved, Setting, describe};
+use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
     CategoryId, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, NonEmptyString,
@@ -206,6 +207,20 @@ impl Presets for ShippedStyles {
     fn pack_config(&self, name: &str) -> Option<PackFile> {
         self.styles.pack_config(name)
     }
+}
+
+/// The `[[genres]]` assignments of `config`, in the order they apply, for the engine to match
+/// against each document's root-relative path.
+#[must_use]
+pub fn genre_assignments(config: &LoadedConfig) -> Vec<GenreAssignment> {
+    config
+        .genre_assignments()
+        .into_iter()
+        .map(|(files, genre)| GenreAssignment {
+            files: files.to_vec(),
+            genre: genre.to_owned(),
+        })
+        .collect()
 }
 
 /// The merged settings of the file at `rel`.

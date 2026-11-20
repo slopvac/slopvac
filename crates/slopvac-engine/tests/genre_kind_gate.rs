@@ -142,7 +142,9 @@ fn per_document() -> Settings {
 fn entries(engine: &Engine, kind: MatchKind, genre: &str, body: &str) -> usize {
     let before = matcher_entries(kind);
     let source = format!("---\ngenre: {genre}\n---\n{body}");
-    engine.lint(&Input::markdown("a.md", &source)).unwrap();
+    engine
+        .lint(&Input::markdown("a.md", &source).with_declared_genre(genre))
+        .unwrap();
     matcher_entries(kind) - before
 }
 

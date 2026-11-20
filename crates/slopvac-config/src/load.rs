@@ -10,6 +10,7 @@ use serde_json::Value as Json;
 
 use crate::diag::{BudgetData, Code, ConfigBudget, Diagnostic};
 use crate::error::{ConfigError, Rejected};
+use crate::files::{FilesError, FilesMatcher, is_under_root};
 use crate::flatten::{Origin, flatten};
 use crate::messages::{ConfigPhrase, ConfigText};
 use crate::presets::Presets;
@@ -43,18 +44,14 @@ pub struct Block {
     /// The settings it patches in, in layer `override`.
     pub settings: Vec<Setting>,
     order: usize,
-    matcher: Gitignore,
+    matcher: FilesMatcher,
 }
 
 impl Block {
     /// Whether the block applies to `rel`, a path relative to the project root.
     #[must_use]
     pub fn matches(&self, rel: &Path) -> bool {
-        is_under_root(rel)
-            && self
-                .matcher
-                .matched_path_or_any_parents(rel, false)
-                .is_ignore()
+        self.matcher.is_match(rel)
     }
 
     /// The genre this block assigns, if it is a `[[genres]]` block.
@@ -110,6 +107,18 @@ impl LoadedConfig {
             })
     }
 
+    /// The `[[genres]]` blocks of every file as `(files, genre)` pairs, in the order they
+    /// apply: extended files first, each file in block order. The last block whose `files`
+    /// match a path assigns its genre, as in [`LoadedConfig::resolve`].
+    #[must_use]
+    pub fn genre_assignments(&self) -> Vec<(&[String], &str)> {
+        self.files
+            .iter()
+            .flat_map(|f| f.blocks.iter())
+            .filter_map(|b| Some((b.files.as_slice(), b.genre()?)))
+            .collect()
+    }
+
     /// A config with no files, for a project that has none: only the core defaults apply and
     /// nothing is excluded. `root` is the directory that stands in for the project root.
     #[must_use]
@@ -131,28 +140,6 @@ impl LoadedConfig {
                 .matched_path_or_any_parents(rel, false)
                 .is_ignore()
     }
-}
-
-/// Whether `rel` can be matched against root-relative patterns. A path that is absolute, or
-/// that climbs above the root at any point (`a/../../x`), is outside the root and matches no
-/// pattern. The matcher panics on such a path, so every call into it goes through this check.
-/// The walk is lexical and touches no filesystem.
-fn is_under_root(rel: &Path) -> bool {
-    let mut depth = 0usize;
-    for component in rel.components() {
-        match component {
-            Component::Prefix(_) | Component::RootDir => return false,
-            Component::CurDir => {}
-            Component::Normal(_) => depth += 1,
-            Component::ParentDir => {
-                let Some(up) = depth.checked_sub(1) else {
-                    return false;
-                };
-                depth = up;
-            }
-        }
-    }
-    true
 }
 
 /// Load the config at `path` and everything it extends.
@@ -557,12 +544,15 @@ impl Loader<'_> {
                     continue;
                 }
                 seen.insert(scope, index);
-                let matcher = match compile(&files, self.root) {
+                let matcher = match FilesMatcher::new(&files, self.root) {
                     Ok(m) => m,
                     Err(msg) => {
                         diagnostics.push(Diagnostic {
                             code: Code::InvalidValue,
-                            message: ConfigText::FilesPatternBad { detail: msg }.to_string(),
+                            message: ConfigText::FilesPatternBad {
+                                detail: reason(&msg),
+                            }
+                            .to_string(),
                             label: ConfigPhrase::LabelBadPattern.text(),
                             span,
                             help: None,
@@ -872,6 +862,12 @@ fn strings(node: Option<&Node>) -> Vec<String> {
             .filter_map(|i| i.as_str().map(str::to_owned))
             .collect(),
         _ => Vec::new(),
+    }
+}
+
+fn reason(err: &FilesError) -> String {
+    match err {
+        FilesError::Pattern { source, .. } | FilesError::Set(source) => source.to_string(),
     }
 }
 
