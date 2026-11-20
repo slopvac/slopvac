@@ -96,39 +96,44 @@ pub fn strip_url_userinfo(text: &str) -> String {
     out
 }
 
-/// Remove the query string of every URL in `text`: from the `?` to the `#` or the end of the URL.
+/// A config value that is a URL, as the explain output shows it: no user-info, no query string.
 ///
-/// A URL starts at a `://` and ends at whitespace or a quote. Callers strip the user-info first.
-#[must_use]
-pub fn strip_url_query(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(pos) = rest.find("://") {
-        let (head, tail) = rest.split_at(pos + 3);
-        out.push_str(head);
-        let end = tail
-            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`'))
-            .unwrap_or(tail.len());
-        let (url, after) = tail.split_at(end);
-        match url.find('?') {
-            Some(q) => {
-                out.push_str(&url[..q]);
-                if let Some(frag) = url[q..].find('#') {
-                    out.push_str(&url[q + frag..]);
-                }
-            }
-            None => out.push_str(url),
-        }
-        rest = after;
-    }
-    out.push_str(rest);
-    out
-}
-
-/// A URL in a config value as the explain output shows it: no user-info and no query string.
+/// The whole value is the URL when it starts with an RFC 3986 scheme (`ALPHA *( ALPHA / DIGIT /
+/// "+" / "-" / "." ) ":"`). A value without a scheme comes back unchanged, and so does a URL
+/// inside a longer string. The value splits by component: the fragment starts at the first
+/// `#` and stays, the query runs from the first `?` before the fragment and goes, and the
+/// user-info goes only when an authority (`//`) is present: everything up to the last `@`
+/// before the first `/` of the authority.
 #[must_use]
 pub fn redact_url_value(text: &str) -> String {
-    strip_url_query(&strip_url_userinfo(text))
+    let scheme_len = text
+        .char_indices()
+        .find(|&(i, c)| {
+            let allowed = if i == 0 {
+                c.is_ascii_alphabetic()
+            } else {
+                c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')
+            };
+            !allowed
+        })
+        .map(|(i, c)| (i, c == ':'));
+    let Some((colon, true)) = scheme_len.filter(|&(i, _)| i > 0) else {
+        return text.to_owned();
+    };
+    let (scheme, rest) = text.split_at(colon + 1);
+    let (before_fragment, fragment) = rest.split_at(rest.find('#').unwrap_or(rest.len()));
+    let hier = before_fragment
+        .split_once('?')
+        .map_or(before_fragment, |(hier, _query)| hier);
+    let hier = match hier.strip_prefix("//") {
+        Some(after) => {
+            let (authority, path) = after.split_at(after.find('/').unwrap_or(after.len()));
+            let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+            format!("//{host}{path}")
+        }
+        None => hier.to_owned(),
+    };
+    format!("{scheme}{hier}{fragment}")
 }
 
 #[must_use]
@@ -345,6 +350,52 @@ mod tests {
             ),
             "cannot read <external>/x.toml: no such file"
         );
+    }
+
+    #[rstest]
+    #[case::user_info_and_query("https://user:SECRET@host/x?token=SECRET", "https://host/x")]
+    #[case::apostrophe_in_path("https://user:SECRET@host/x'y?token=SECRET", "https://host/x'y")]
+    #[case::apostrophe_in_query("https://host/x?a='SECRET'&b=1", "https://host/x")]
+    #[case::mailto_query("mailto:user@host?subject=SECRET", "mailto:user@host")]
+    #[case::fragment_only("https://host/x#frag", "https://host/x#frag")]
+    #[case::query_and_fragment("https://host/x?token=SECRET#frag", "https://host/x#frag")]
+    #[case::question_mark_in_fragment(
+        "https://host/x#frag?not-a-query",
+        "https://host/x#frag?not-a-query"
+    )]
+    #[case::uppercase_scheme("HTTPS://user:SECRET@host/x?q=SECRET", "HTTPS://host/x")]
+    #[case::ipv6("http://user:SECRET@[::1]:8080/x?q=SECRET", "http://[::1]:8080/x")]
+    #[case::at_sign_in_path("https://host/a@b?q=SECRET", "https://host/a@b")]
+    #[case::no_path("https://u:SECRET@host?q=SECRET", "https://host")]
+    #[case::empty_authority("file:///etc/x?q=SECRET", "file:///etc/x")]
+    #[case::last_at_sign_ends_user_info("https://a@b:SECRET@host/x", "https://host/x")]
+    #[case::no_scheme("plain?x@y", "plain?x@y")]
+    #[case::not_a_scheme("1http://u:SECRET@host/x?q=1", "1http://u:SECRET@host/x?q=1")]
+    fn redact_url_value_splits_a_value_that_starts_with_a_scheme(
+        #[case] given: &str,
+        #[case] want: &str,
+    ) {
+        assert_eq!(redact_url_value(given), want);
+    }
+
+    proptest::proptest! {
+        /// User-info and query carry unique markers that no other part can hold, so the
+        /// result must equal the URL without them.
+        #[test]
+        fn redact_url_value_drops_user_info_and_query_and_keeps_the_rest(
+            scheme in "[a-z][a-z0-9+.-]{0,6}",
+            user in "UIN[a-z0-9:'_~!$&()*+,;=%.-]{0,8}",
+            host in "[a-z]{1,8}\\.example",
+            path in "(/[a-z0-9'@:_~!$&()*+,;=%.-]{0,6}){0,3}",
+            query in "QRY[a-z0-9/'?=&:@_~!$()*+,;%.-]{0,8}",
+            fragment in "[a-z0-9/'?@:_~!$&()*+,;=%.-]{0,8}",
+        ) {
+            let given = format!("{scheme}://{user}@{host}{path}?{query}#{fragment}");
+            let want = format!("{scheme}://{host}{path}#{fragment}");
+            let got = redact_url_value(&given);
+            proptest::prop_assert!(!got.contains("UIN") && !got.contains("QRY"), "{got}");
+            proptest::prop_assert_eq!(got, want);
+        }
     }
 
     #[test]
