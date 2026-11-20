@@ -33,7 +33,7 @@ pub const REMOVED_LINT_OPTIONS: [(&str, &str); 4] = [
     ),
     (
         "rules-dir",
-        "--rules-dir is removed in 3.0. Declare a local pack in slopvac.toml; `slopvac migrate` writes the entry.",
+        "--rules-dir is removed in 3.0. Declare a local plugin in slopvac.toml; `slopvac migrate` writes the entry.",
     ),
     ("no-vale", "--no-vale is removed in 3.0. Vale is gone."),
     (
@@ -67,9 +67,11 @@ fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
 
 /// Commands whose implementation another crate has not exposed yet.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str); 5] = [
-    ("plugins", "Manage plugins and packs: sync, trust, update."),
-    ("packs", "List installed rule packs."),
+pub const PLACEHOLDERS: [(&str, &str); 4] = [
+    (
+        "plugins",
+        "Manage data plugins and code plugins: sync, trust, update.",
+    ),
     ("onboard", "Print the agent onboarding text."),
     ("reference", "Generate or check the rules reference."),
     ("report", "Preview or submit an issue report."),
@@ -305,7 +307,7 @@ fn init() -> Command {
 
 fn doctor() -> Command {
     Command::new("doctor")
-        .about("Check the binary, configuration and pack health.")
+        .about("Check the binary, configuration and plugin health.")
         .arg(format_arg(&["text", "json"], "Output format."))
         .arg(config_arg())
 }

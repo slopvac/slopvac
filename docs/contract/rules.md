@@ -8,22 +8,22 @@ Field descriptions live in the schemas. This page states the semantics the schem
 ## Files and ids
 
 A category file holds one category and its rules.
-A pack ships many category files.
+A plugin ships many category files.
 A rule can also stand alone in its own file, which then carries `schema_version`.
 
 A rule has a local `id` ([`LocalRuleId`](../../schemas/v3/rule.schema.json#/$defs/LocalRuleId)).
 Its qualified form is [`RuleId`](../../schemas/v3/common.schema.json#/$defs/RuleId):
-`<pack>:<category>.<rule>` for a rule from a category file, for example `core:prose-craft.acronym-periods`.
-The schema accepts any `<pack>:<id>`, because a plugin can report a rule with a bare id such as `core:passive-voice`.
-The pack id comes from the pack manifest.
-Built-in rules live in the reserved pack `core`.
-The pack and category come from the manifest and the file, so a rule file does not restate them.
+`<plugin>:<category>.<rule>` for a rule from a category file, for example `core:prose-craft.acronym-periods`.
+The schema accepts any `<plugin>:<id>`, because a plugin can report a rule with a bare id such as `core:passive-voice`.
+The plugin id comes from the plugin manifest.
+Built-in rules live in the reserved plugin `core`.
+The plugin and category come from the manifest and the file, so a rule file does not restate them.
 
 Every output carries the qualified id.
 Configuration accepts a short name where it is unambiguous.
 An ambiguous short name is a configuration error that lists the candidates.
 
-[`RuleProvenance`](../../schemas/v3/common.schema.json#/$defs/RuleProvenance) records which pack supplied a rule at run time.
+[`RuleProvenance`](../../schemas/v3/common.schema.json#/$defs/RuleProvenance) records which plugin supplied a rule at run time.
 It appears in reports and in `slopvac rules`.
 It is not the same as `citation`, which is the rule author's note on where the idea comes from.
 2.x called the author's note `provenance`; the converter renames it.
@@ -119,7 +119,7 @@ It equals `sentence` with `exclude_blocks: [heading, table]`, and the scope stay
 ([`ContextTag`](../../schemas/v3/common.schema.json#/$defs/ContextTag)).
 `only` runs the rule on text that carries at least one listed tag.
 `skip` silences it on text that carries any listed tag.
-The tags are registered by taggers and are defined with the data packs (slopvac-8l4.2.4).
+The tags are registered by taggers and are defined with the data plugins (slopvac-8l4.2.4).
 
 `applies_to` narrows the rule by lint `modes` and by `genres`.
 An absent key means no restriction.

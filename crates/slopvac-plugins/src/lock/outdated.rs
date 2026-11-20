@@ -20,7 +20,7 @@ pub struct OutdatedPack {
 }
 
 /// Parses a config version requirement under the contract grammar
-/// (`VersionReq` in `pack-manifest.schema.json`): comma-separated comparators,
+/// (`VersionReq` in `plugin-manifest.schema.json`): comma-separated comparators,
 /// each an optional operator (`^ ~ = > >= < <=`) and a version with one to
 /// three numeric parts. Wildcards are not part of the grammar.
 pub fn parse_version_req(text: &str) -> Result<VersionReq, LockError> {

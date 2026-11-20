@@ -23,7 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--manifest",
         type=Path,
-        help="pack manifest (TOML) or declaration (JSON), for P19",
+        help="plugin manifest (TOML) or declaration (JSON), for P19",
     )
     parser.add_argument(
         "--inputs", type=Path, help="JSON file with per-hook sample requests"

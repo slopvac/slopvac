@@ -12,7 +12,7 @@ Look for:
 
 - `.slopvac.toml`, or a `slopvac.toml` with no `schema_version = 3`.
 - A `[tool.slopvac]` table in `pyproject.toml`.
-- `slopvac-allow` comments whose `rule=` value has no pack prefix, such as `rule=prose-format.no-unicode-dash`.
+- `slopvac-allow` comments whose `rule=` value has no plugin prefix, such as `rule=prose-format.no-unicode-dash`.
 - Steering blocks between `<!-- slopvac:begin -->` and `<!-- slopvac:end -->` in agent instruction files.
 
 ## 2. Preview
@@ -82,11 +82,11 @@ These 2.x surfaces fail with exit 2. Update scripts, CI and hooks by hand.
 | Surface | What to do |
 |---|---|
 | `--profile` on `lint`, `rules`, `explain` and `init` | Set the style preset in `slopvac.toml`. |
-| `--rules-dir` on `lint`, `rules`, `explain`, `prime` and `reference` | Declare a local pack in `slopvac.toml`. |
+| `--rules-dir` on `lint`, `rules`, `explain`, `prime` and `reference` | Declare a local plugin in `slopvac.toml`. |
 | `--no-vale`, `doctor --binary` | Delete the flag. Vale is removed. |
 | `--comments` | Use `--mode code-comments`. |
 | `compile` and its options (`--outdir`, `--profile`, `--config`, `--rules-dir`, `--no-validate`, `--format`) | Delete the call. Vale styles are removed. |
 | `cache` and its options (`--prune`, `--all`) | Delete the call. The Vale cache is removed. |
-| Action inputs `profile`, `vale`, `vale-version` and `rules-dir` | Delete the input. Set the style preset and packs in `slopvac.toml`. |
+| Action inputs `profile`, `vale`, `vale-version` and `rules-dir` | Delete the input. Set the style preset and plugins in `slopvac.toml`. |
 | Hook id `slopvac-no-vale` | Delete the hook. |
 | Hook id `slopvac-strict` | Use the `slopvac` hook with `profile = "strict"` and `styles = ["core:legacy-strict"]` in `slopvac.toml`. |

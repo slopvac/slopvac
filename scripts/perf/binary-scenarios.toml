@@ -9,7 +9,7 @@
 # outside the root currently panics the binary). fixtures/readme.md is a copy of
 # the slopvac-lint README, kept as a realistic long document.
 #
-# No plugin start-up scenario yet: `slopvac plugins` and `packs` still exit 2
+# No plugin start-up scenario yet: `slopvac plugins` still exits 2
 # with command-not-wired (slopvac-8l4.9). The scenario is tracked in the bead
 # that wires them.
 

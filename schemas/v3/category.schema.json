@@ -7,7 +7,7 @@
   "properties": {
     "schema_version": {"$ref": "common.schema.json#/$defs/SchemaVersion"},
     "id": {
-      "description": "Category id. The qualified rule id is <pack>:<category>.<rule>.",
+      "description": "Category id. The qualified rule id is <plugin>:<category>.<rule>.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$"
     },

@@ -13,7 +13,7 @@ author-side ``$id`` prefix. Publishing rewrites that prefix to the configured
 site URL, so changing ``site_url`` (for example for a custom domain) needs no
 edit to the committed schemas.
 
-Rules, schemas, the plugin protocol and pack manifest references, the pack
+Rules, schemas, the plugin protocol and plugin manifest references, the plugin
 pages, styles, terms and genres come from real data. The styles, terms and
 genres pages come from each crate's ``reference`` example, which the builder
 runs through cargo.
@@ -51,8 +51,8 @@ RULES_DIR = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac" / "rules"
 SCHEMAS_DIR = ROOT / "schemas" / "v3"
 REMOVED_RULES_FILE = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
 DEFAULT_OUT = ROOT / "build" / "site-src"
-# Pack manifests to document. The example plugin pack is the only committed one
-# until the pack loader and the bundled core pack exist.
+# Plugin manifests to document. The example plugin is the only committed one
+# until the plugin loader and the bundled core plugin exist.
 PACKS_DIR = ROOT / "packages" / "slopvac-plugin" / "examples"
 CONTRACT_DIR = ROOT / "docs" / "contract"
 SITE_CONFIG = ROOT / "docs" / "site.toml"
@@ -424,8 +424,8 @@ SECTIONS = (
     ("Genres", "genres/index.md"),
     ("Built-in terms", "terms/index.md"),
     ("Plugin protocol", "plugins/protocol.md"),
-    ("Pack manifest", "plugins/manifest.md"),
-    ("Packs", "plugins/packs/index.md"),
+    ("Plugin manifest", "plugins/manifest.md"),
+    ("Bundled plugins", "plugins/bundled/index.md"),
     ("Command line", "cli/index.md"),
     ("Error codes", "reference/error-codes.md"),
     ("Configuration", "config/index.md"),
@@ -529,7 +529,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=SITE_CONFIG)
     parser.add_argument("--rules-dir", type=Path, default=RULES_DIR)
     parser.add_argument("--schemas-dir", type=Path, default=SCHEMAS_DIR)
-    parser.add_argument("--packs-dir", type=Path, default=PACKS_DIR)
+    parser.add_argument("--plugins-dir", type=Path, default=PACKS_DIR)
     parser.add_argument("--contract-dir", type=Path, default=CONTRACT_DIR)
     parser.add_argument(
         "--check",
@@ -545,7 +545,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     site = load_site(args.config)
     pages = build(
-        site, args.rules_dir, args.schemas_dir, args.packs_dir, args.contract_dir
+        site, args.rules_dir, args.schemas_dir, args.plugins_dir, args.contract_dir
     )
     problems = broken_links(pages) + schema_id_problems(pages, site)
     if args.check:

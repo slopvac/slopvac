@@ -1,0 +1,20 @@
+schema_version = 3
+id = "fence-tagger"
+version = "0.1.0"
+slopvac_api = 1
+kind = "code"
+description = "Example tagger plugin that marks fenced code blocks."
+license = "Apache-2.0"
+
+[plugin]
+command = "python"
+args = ["plugin.py"]
+network = false
+
+[[plugin.hooks]]
+kind = "tagger"
+id = "fences"
+
+[plugin.features]
+required = []
+optional = []

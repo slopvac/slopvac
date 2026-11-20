@@ -405,7 +405,7 @@ def test_stderr_that_is_not_utf8_is_shown_not_dropped(sync, capfd):
 
 @pytest.fixture
 def sync(tmp_path, binary):
-    lock = tmp_path / ".slopvac" / "packs.lock"
+    lock = tmp_path / ".slopvac" / "plugins.lock"
 
     def go(*, locked: bool, **extra):
         if locked:
@@ -444,8 +444,8 @@ def _steps():
 
 def test_sync_is_a_named_step_before_the_lint_step():
     names = [step["name"] for step in _steps()]
-    assert names.index("Sync packs") < names.index("Lint")
-    sync_step = _steps()[names.index("Sync packs")]
+    assert names.index("Sync plugins") < names.index("Lint")
+    sync_step = _steps()[names.index("Sync plugins")]
     assert sync_step["run"].endswith('action_v3.py" sync')
     assert "continue-on-error" not in sync_step
 

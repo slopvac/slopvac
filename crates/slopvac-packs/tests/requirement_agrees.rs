@@ -1,5 +1,5 @@
 //! The parser and the schema agree on which version requirements are valid. The schema's
-//! `VersionReq` pattern is read from `schemas/v3/pack-manifest.schema.json`, not copied here.
+//! `VersionReq` pattern is read from `schemas/v3/plugin-manifest.schema.json`, not copied here.
 
 use std::fs;
 use std::path::PathBuf;
@@ -15,7 +15,7 @@ fn repo() -> PathBuf {
 /// ECMAScript anchor `(?![\s\S])`, a lookahead that `regex` lacks; `\z` means the same.
 fn schema_pattern() -> Regex {
     let schema: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(repo().join("schemas/v3/pack-manifest.schema.json")).unwrap(),
+        &fs::read_to_string(repo().join("schemas/v3/plugin-manifest.schema.json")).unwrap(),
     )
     .unwrap();
     let pattern = schema["$defs"]["VersionReq"]["pattern"]
@@ -24,12 +24,12 @@ fn schema_pattern() -> Regex {
     Regex::new(&pattern.replace(r"(?![\s\S])", r"\z")).expect("the pattern compiles")
 }
 
-/// Every `[[requires]]` version in the pack-manifest corpus.
+/// Every `[[requires]]` version in the plugin-manifest corpus.
 fn corpus_requirements() -> Vec<String> {
     let mut found = Vec::new();
     for dir in ["valid", "invalid"] {
         let dir = repo()
-            .join("schemas/v3/conformance/pack-manifest")
+            .join("schemas/v3/conformance/plugin-manifest")
             .join(dir);
         for entry in fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();

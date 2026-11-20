@@ -216,7 +216,7 @@ fn a_locked_source_in_the_lock_mismatch_is_escaped() {
     let msg = check_lock(&lock, &[resolved]).unwrap_err().to_string();
     assert_eq!(
         msg,
-        "the lock does not match the resolved packs:\n\
+        "the lock does not match the resolved plugins:\n\
          changed: p source https://example.org/a\\u{23}#[error]x.tgz \
          -> https://example.org/b\\u{23}#[add-mask]y.tgz\n"
     );

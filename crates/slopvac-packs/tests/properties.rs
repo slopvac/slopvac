@@ -9,7 +9,7 @@ const VALID: &str = r#"schema_version = 3
 id = "acme-docs"
 version = "1.2.0"
 slopvac_api = 1
-kind = "plugin"
+kind = "code"
 description = "House style."
 
 [provides]

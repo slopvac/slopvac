@@ -4,7 +4,7 @@
 //! rule with `contexts` add a file, or cases, here instead of writing a Rust test. The
 //! format is Markdown with directives in single-line HTML comments:
 //!
-//! - `<!-- rule: <pack>:<category>.<rule> -->` (once, first): the rule under test.
+//! - `<!-- rule: <plugin>:<category>.<rule> -->` (once, first): the rule under test.
 //! - `<!-- synthetic: {json} -->` (optional): the rule is a test-only rule. The object holds
 //!   a `match` and any other rule keys (`contexts`, `scope`, ...). It becomes the rule `<rule>`
 //!   in an engine of its own. Without it, the rule comes from the shipped core rules.
@@ -111,7 +111,7 @@ fn engine_for(fixture: &Fixture) -> Engine {
     let Some(synthetic) = &fixture.synthetic else {
         return core_engine();
     };
-    // The shared builder puts the rule in category `cat`, so the fixture names it `<pack>:cat.<id>`.
+    // The shared builder puts the rule in category `cat`, so the fixture names it `<plugin>:cat.<id>`.
     let local = fixture
         .rule
         .strip_prefix("core:cat.")

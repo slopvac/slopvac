@@ -73,7 +73,7 @@ fn the_written_config_is_commented_so_a_reader_sees_every_setting() {
     for section in [
         "# [thresholds]",
         "# [guidance]",
-        "# [[packs]]",
+        "# [[plugins]]",
         "# [[overrides]]",
     ] {
         assert!(text.contains(section), "missing {section}");

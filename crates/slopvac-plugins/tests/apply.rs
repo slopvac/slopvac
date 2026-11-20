@@ -527,7 +527,7 @@ fn h22_a_symlink_target_outside_the_root_is_refused_and_nothing_is_written() {
 const DENIED: [&str; 16] = [
     ".git/config",
     ".git/hooks/pre-commit",
-    ".slopvac/packs.lock",
+    ".slopvac/plugins.lock",
     ".slopvac/trust.toml",
     ".github/workflows/ci.yml",
     ".env",

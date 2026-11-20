@@ -121,7 +121,7 @@ impl Remote {
 
     fn lock_at(commit: &str, digest: &str) -> Lockfile {
         let text = format!(
-            "schema_version = 3\n\n[[packs]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
+            "schema_version = 3\n\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
              slopvac_api = 1\nsource = \"git+{LOCKED_HOST}repo@{commit}\"\ndigest = \"{digest}\"\n",
         );
         Lockfile::parse(&text).unwrap()
@@ -349,8 +349,8 @@ fn a_program_without_the_launcher_entry_point_syncs_no_git_source() {
     assert_eq!(err.exit_code(), 2);
     assert_eq!(
         err.to_string(),
-        "pack `style`: the running program did not install the slopvac plugin launcher, \
-         so plugins and git pack sources cannot start"
+        "plugin `style`: the running program did not install the slopvac plugin launcher, \
+         so plugins and git plugin sources cannot start"
     );
     env.assert_no_trees();
     // A refused sync has no side effects: no revocation fetch, no store, no
@@ -392,7 +392,7 @@ fn offline_with_a_cold_cache_names_the_pack_and_digest() {
 
     let err = env.sync(Network::Offline, &remote, &lock).unwrap_err();
 
-    assert_eq!(err.code(), "offline-pack-missing");
+    assert_eq!(err.code(), "offline-plugin-missing");
     assert!(err.to_string().contains(&digest), "{err}");
     env.assert_no_trees();
 }
@@ -801,11 +801,11 @@ fn git_error_text_is_escaped_once_with_a_doubled_backslash() {
 
     assert_eq!(
         git.to_string(),
-        format!("pack `style`: git source: {HOSTILE_SHOWN}")
+        format!("plugin `style`: git source: {HOSTILE_SHOWN}")
     );
     assert_eq!(
         limit.to_string(),
-        format!("pack `style`: git source passes a limit: {HOSTILE_SHOWN}")
+        format!("plugin `style`: git source passes a limit: {HOSTILE_SHOWN}")
     );
 }
 
@@ -826,7 +826,7 @@ fn a_hostile_path_in_a_refused_commit_is_escaped_exactly_once() {
 
     assert_eq!(
         err.to_string(),
-        "pack `style`: git source: `a\\u{1b}[31m\\\\b` is a symbolic link"
+        "plugin `style`: git source: `a\\u{1b}[31m\\\\b` is a symbolic link"
     );
 }
 

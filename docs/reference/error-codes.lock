@@ -34,6 +34,7 @@ config-help-reference-key text
 config-help-relative-to-entry text
 config-help-remove-or-split text
 config-help-remove-repeated-files text
+config-help-remove-repeated-key text
 config-help-remove-repeated-large text
 config-help-split-file text
 config-help-upgrade text
@@ -45,6 +46,7 @@ config-key-missing text
 config-key-missing-label text
 config-key-project-wide text
 config-key-project-wide-help text
+config-key-repeated text
 config-key-unknown text
 config-kind-array text
 config-kind-boolean text
@@ -87,6 +89,7 @@ config-list-too-short text
 config-missing-key error
 config-no-schema-version text
 config-noun-pack-id text
+config-noun-plugin-id text
 config-noun-reference text
 config-noun-relative-path text
 config-noun-rule-key text

@@ -1,7 +1,7 @@
 //! Pack manifests and the namespaced registries that hold what packs provide.
 //!
 //! [`Manifest::parse`] reads a `slopvac-pack.toml` under the contract in
-//! `docs/contract/packs.md`, and [`Registry`] keeps named items by qualified
+//! `docs/contract/plugins.md`, and [`Registry`] keeps named items by qualified
 //! name (`<pack>:<name>`) with the [`Provenance`] that supplied each one.
 
 mod manifest;

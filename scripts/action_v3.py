@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Entry points for the slopvac 3.0 composite GitHub Action (action-v3/action.yml).
 
-``sync``      run ``slopvac plugins sync`` when the project has a pack lockfile.
+``sync``      run ``slopvac plugins sync`` when the project has a plugin lockfile.
 ``lint``      run the binary once per report format and keep its gate exit code.
 ``report``    post the rdjsonl findings with reviewdog; never gates the job.
 
@@ -32,7 +32,7 @@ OK = 0
 FINDINGS = 1
 INCOMPLETE = 2
 
-LOCKFILE = ".slopvac/packs.lock"
+LOCKFILE = ".slopvac/plugins.lock"
 
 _SUMMARY_KEYS = ("score", "findings", "errors", "warnings", "suggestions", "passed")
 
@@ -191,7 +191,7 @@ def _run(command: Sequence[str], env: Mapping[str, str]) -> int:
 def sync(env: Mapping[str, str] = os.environ) -> int:
     """Run ``plugins sync`` from the lockfile, as its own step before the lint.
 
-    A project with no lockfile needs no packs, so there is nothing to sync.
+    A project with no lockfile needs no plugins, so there is nothing to sync.
     Any failure (the binary exits 2 on a missing or mismatched digest) fails
     the action.
     """

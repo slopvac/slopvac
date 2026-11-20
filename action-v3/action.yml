@@ -139,10 +139,10 @@ runs:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
       run: python3 "$ACTION_PATH/../scripts/action_entry.py" resolve-targets
 
-    # policies.md 1.4: packs come from the lockfile in a named step of their
+    # policies.md 1.4: plugins come from the lockfile in a named step of their
     # own, so the lint step below can run offline. A failed sync fails the
     # action. Without a lockfile the step does nothing.
-    - name: Sync packs
+    - name: Sync plugins
       id: sync
       shell: bash
       env:

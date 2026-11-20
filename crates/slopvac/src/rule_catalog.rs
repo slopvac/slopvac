@@ -124,7 +124,7 @@ const FILES: [(&str, &str); 26] = [
 /// # Errors
 /// `rules-unavailable` when an embedded file fails to load.
 pub fn core() -> Result<RuleSet, CliError> {
-    let pack = PackId::new("core").expect("core is a valid pack id");
+    let pack = PackId::new("core").expect("core is a valid plugin id");
     let sources = FILES
         .iter()
         .map(|(name, text)| (PathBuf::from(name), (*text).to_owned()));

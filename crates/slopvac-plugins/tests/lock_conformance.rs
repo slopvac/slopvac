@@ -1,5 +1,5 @@
-//! Conformance for `.slopvac/packs.lock`, run against the shared corpus in
-//! `schemas/v3/conformance/packs-lock/`.
+//! Conformance for `.slopvac/plugins.lock`, run against the shared corpus in
+//! `schemas/v3/conformance/plugins-lock/`.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use slopvac_plugins::lock::Lockfile;
 
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance/packs-lock")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance/plugins-lock")
 }
 
 fn toml_files(dir: &Path) -> Vec<String> {

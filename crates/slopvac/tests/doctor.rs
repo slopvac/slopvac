@@ -11,7 +11,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{Value, json};
 
-const LOCK: &str = include_str!("../../../schemas/v3/conformance/packs-lock/valid/full.toml");
+const LOCK: &str = include_str!("../../../schemas/v3/conformance/plugins-lock/valid/full.toml");
 
 /// An isolated world: a project directory, a home with no state, and a sentinel name that must
 /// never reach the output.
@@ -177,8 +177,8 @@ fn a_clean_project_reports_ok_with_the_documented_shape() {
     assert_eq!(doc["platform"]["os"], std::env::consts::OS);
     assert_eq!(doc["platform"]["arch"], std::env::consts::ARCH);
     assert_eq!(doc["config"], json!({"ok": true, "sources": []}));
-    assert_eq!(doc["packs"]["lockfile"]["status"], "absent");
-    assert_eq!(doc["packs"]["items"], json!([]));
+    assert_eq!(doc["plugins"]["lockfile"]["status"], "absent");
+    assert_eq!(doc["plugins"]["items"], json!([]));
     assert_eq!(doc["trust"]["status"], "absent");
     assert_eq!(doc["offline"], json!({"effective": false, "sources": []}));
 }
@@ -421,14 +421,14 @@ fn update_checks_report_why_they_are_off() {
 #[test]
 fn the_lockfile_lists_each_pack_with_its_state() {
     let w = World::new();
-    w.write(".slopvac/packs.lock", LOCK);
+    w.write(".slopvac/plugins.lock", LOCK);
     let (code, doc) = w.json(&[], |c| w.place_dirs(c));
     assert_eq!(code, 0);
     assert_eq!(
-        doc["packs"]["lockfile"],
-        json!({"file": ".slopvac/packs.lock", "status": "ok", "error": null})
+        doc["plugins"]["lockfile"],
+        json!({"file": ".slopvac/plugins.lock", "status": "ok", "error": null})
     );
-    let items = doc["packs"]["items"].as_array().unwrap();
+    let items = doc["plugins"]["items"].as_array().unwrap();
     let ids: Vec<&str> = items.iter().map(|p| p["id"].as_str().unwrap()).collect();
     let mut sorted = ids.clone();
     sorted.sort_unstable();
@@ -437,7 +437,7 @@ fn the_lockfile_lists_each_pack_with_its_state() {
     let tagger = items.iter().find(|p| p["id"] == "acme-tagger").unwrap();
     assert_eq!(
         *tagger,
-        json!({"id": "acme-tagger", "version": "0.3.1", "kind": "plugin", "state": "not-installed"})
+        json!({"id": "acme-tagger", "version": "0.3.1", "kind": "code", "state": "not-installed"})
     );
 }
 
@@ -445,15 +445,15 @@ fn the_lockfile_lists_each_pack_with_its_state() {
 fn an_invalid_lockfile_fails_the_check() {
     let w = World::new();
     w.write(
-        ".slopvac/packs.lock",
-        "schema_version = 3\n[[packs]]\nid = \"BAD ID\"\n",
+        ".slopvac/plugins.lock",
+        "schema_version = 3\n[[plugins]]\nid = \"BAD ID\"\n",
     );
     let (code, doc) = w.json(&[], |_| {});
     assert_eq!(code, 2);
     assert_eq!(doc["ok"], false);
-    assert_eq!(doc["packs"]["lockfile"]["status"], "invalid");
-    assert_eq!(doc["packs"]["items"], json!([]));
-    assert!(doc["packs"]["lockfile"]["error"].as_str().is_some());
+    assert_eq!(doc["plugins"]["lockfile"]["status"], "invalid");
+    assert_eq!(doc["plugins"]["items"], json!([]));
+    assert!(doc["plugins"]["lockfile"]["error"].as_str().is_some());
 }
 
 #[test]
@@ -558,7 +558,7 @@ fn without_a_home_the_directories_are_unresolved() {
 fn doctor_changes_nothing_on_disk() {
     let w = World::new();
     w.write("slopvac.toml", "schema_version = 3\n");
-    w.write(".slopvac/packs.lock", LOCK);
+    w.write(".slopvac/plugins.lock", LOCK);
     let snapshot = |dir: &Path| -> Vec<PathBuf> {
         let mut found = Vec::new();
         let mut stack = vec![dir.to_owned()];
@@ -590,22 +590,22 @@ fn both_formats(w: &World) -> (Value, String) {
 fn lockfile_errors_say_where_and_never_echo_file_content() {
     const LEAK: &str = "LEAKME-4242";
     let bad_digest = format!(
-        "schema_version = 3\n[[packs]]\nid = \"acme\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\nsource = \"oci://ghcr.io/acme/p:1\"\ndigest = \"sha256:{LEAK}\"\n"
+        "schema_version = 3\n[[plugins]]\nid = \"acme\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\nsource = \"oci://ghcr.io/acme/p:1\"\ndigest = \"sha256:{LEAK}\"\n"
     );
-    let bad_id = format!("schema_version = 3\n[[packs]]\nid = \"{LEAK} BAD\"\n");
-    let unknown_key = format!("schema_version = 3\n[[packs]]\n{LEAK} = 1\n");
+    let bad_id = format!("schema_version = 3\n[[plugins]]\nid = \"{LEAK} BAD\"\n");
+    let unknown_key = format!("schema_version = 3\n[[plugins]]\n{LEAK} = 1\n");
     let syntax = format!("schema_version = 3\n{LEAK} = = =\n");
     let w = World::new();
     for (body, want) in [
-        (bad_digest, "invalid value at /packs/0/digest"),
-        (bad_id, "invalid value at /packs/0"),
-        (unknown_key, "invalid value at /packs/0"),
+        (bad_digest, "invalid value at /plugins/0/digest"),
+        (bad_id, "invalid value at /plugins/0"),
+        (unknown_key, "invalid value at /plugins/0"),
         (syntax, "not a valid lockfile"),
     ] {
-        w.write(".slopvac/packs.lock", &body);
+        w.write(".slopvac/plugins.lock", &body);
         let (doc, text) = both_formats(&w);
-        assert_eq!(doc["packs"]["lockfile"]["status"], "invalid", "{body}");
-        assert_eq!(doc["packs"]["lockfile"]["error"], want, "{body}");
+        assert_eq!(doc["plugins"]["lockfile"]["status"], "invalid", "{body}");
+        assert_eq!(doc["plugins"]["lockfile"]["error"], want, "{body}");
         assert!(!doc.to_string().contains(LEAK), "json leaked for {body}");
         assert!(!text.contains(LEAK), "text leaked for {body}");
         assert!(text.contains(want), "text: {text}");
@@ -637,11 +637,11 @@ const ACME_DOCS_DIGEST_HEX: &str =
 #[test]
 fn an_intact_installed_pack_is_recorded_and_a_tampered_one_fails_the_check() {
     let w = World::new();
-    w.write(".slopvac/packs.lock", LOCK);
+    w.write(".slopvac/plugins.lock", LOCK);
     let tree = install_pack(&w.data_root(), ACME_DOCS_DIGEST_HEX);
     let with_data = |c: &mut Command| w.place_dirs(c);
     let state_of = |doc: &Value, id: &str| -> String {
-        doc["packs"]["items"]
+        doc["plugins"]["items"]
             .as_array()
             .unwrap()
             .iter()

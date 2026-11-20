@@ -1,5 +1,5 @@
 //! Genres as data: the `genre` artifact of `schemas/v3/genre.schema.json`, specified in
-//! `docs/contract/packs.md`, section 4. This module holds the definitions, a registry with
+//! `docs/contract/plugins.md`, section 4. This module holds the definitions, a registry with
 //! an `extends` chain, detection with reasons, and resolution of the genre for one document.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -698,7 +698,7 @@ impl GenreRegistry {
             );
         }
         let mut best: Option<&(&Genre, f64, Vec<Reason>)> = None;
-        // packs.md section 4: a tie goes to the genre listed last in the config, then to the
+        // plugins.md section 4: a tie goes to the genre listed last in the config, then to the
         // lexically smaller qualified id. The registry holds the genres in the order the
         // host registered them, which is the order the config lists its packs and genre
         // files, so a later position is a genre listed later. Positions are unique, so a tie
@@ -815,7 +815,7 @@ fn lossy(text: &str, range: std::ops::Range<usize>) -> std::borrow::Cow<'_, str>
 }
 
 /// The genre name in a `Ref`. A registry holds one set of genres, so the pack prefix of a
-/// qualified `<pack>:<name>` only names where the genre came from.
+/// qualified `<plugin>:<name>` only names where the genre came from.
 fn ref_name(r: &str) -> &str {
     r.rsplit_once(':').map_or(r, |(_, name)| name)
 }

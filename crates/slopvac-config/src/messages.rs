@@ -283,10 +283,18 @@ pub(crate) enum ConfigText {
     #[code("config-extended-unreadable")]
     #[text("cannot read the extended config `{path}`: {detail}")]
     ExtendedUnreadable { path: String, detail: String },
-    /// A pack reference that no active pack provides.
+    /// A plugin reference that no active plugin provides.
     #[code("config-extends-no-pack")]
-    #[text("no active pack provides the config `{name}`")]
+    #[text("no active plugin provides the config `{name}`")]
     NoPackConfig { name: String },
+    /// A value repeated under a key that must differ between list items.
+    #[code("config-key-repeated")]
+    #[text("`{value}` is listed more than once; each `{key}` appears once")]
+    KeyRepeated { value: String, key: String },
+    /// Help for a repeated key value.
+    #[code("config-help-remove-repeated-key")]
+    #[text("remove the repeated `{key}`, or merge the entries")]
+    HelpRemoveRepeatedKey { key: String },
     /// An `extends` chain that loops.
     #[code("config-extends-loop")]
     #[text("`extends` loops: {chain}")]
@@ -421,13 +429,19 @@ pub(crate) enum ConfigPhrase {
     #[code("config-scope-directive")]
     #[text("an inline directive")]
     ScopeDirective,
-    /// Names a pack id in a message.
+    /// Names a plugin id in a message.
     #[code("config-noun-pack-id")]
-    #[text("pack id (lowercase letters, digits and hyphens)")]
+    #[text("plugin id (lowercase letters, digits and hyphens)")]
     NounPackId,
+    /// Names a plugin id that may not be `core`, in a message.
+    #[code("config-noun-plugin-id")]
+    #[text(
+        "plugin id (lowercase letters, digits and hyphens; `core` is reserved for the built-in plugin)"
+    )]
+    NounPluginId,
     /// Names a genre or style reference in a message.
     #[code("config-noun-reference")]
-    #[text("name, bare or as `<pack>:<name>`")]
+    #[text("name, bare or as `<plugin>:<name>`")]
     NounReference,
     /// Names a rule or category key in a message.
     #[code("config-noun-rule-key")]
@@ -555,7 +569,7 @@ pub(crate) enum ConfigPhrase {
     HelpBudget,
     /// Help for a malformed rule or category key.
     #[code("config-help-reference-key")]
-    #[text("use `<pack>:<id>` with a lowercase pack, or a bare name")]
+    #[text("use `<plugin>:<id>` with a lowercase plugin id, or a bare name")]
     HelpReferenceKey,
     /// Help for a table where a rule level belongs.
     #[code("config-help-bare-level")]
