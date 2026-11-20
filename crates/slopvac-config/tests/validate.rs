@@ -1,11 +1,14 @@
 //! `slopvac validate` through its command definition.
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 
 use slopvac_config::validate::{CONFIG_SCHEMA, FRONTMATTER_SCHEMA, command, run};
-use slopvac_config::{Code, NoPresets};
+use slopvac_config::Code;
 use tempfile::TempDir;
+use common::NoPresets;
 
 struct Project {
     dir: TempDir,

@@ -85,6 +85,7 @@ slopvac-messages = { path = "crates/slopvac-messages" }
 slopvac-messages-derive = { path = "crates/slopvac-messages-derive" }
 slopvac-migrate = { path = "crates/slopvac-migrate" }
 slopvac-model = { path = "crates/slopvac-model" }
+slopvac-packs = { path = "crates/slopvac-packs" }
 slopvac-parse = { path = "crates/slopvac-parse" }
 slopvac-pcre2 = { path = "crates/slopvac-pcre2" }
 slopvac-plugins = { path = "crates/slopvac-plugins" }

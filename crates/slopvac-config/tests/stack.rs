@@ -2,6 +2,8 @@
 
 mod common;
 
+mod common;
+
 use std::fs;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -9,9 +11,10 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value as Json, json};
 use slopvac_config::{
     BudgetData, Code, ConfigBudget, ConfigError, ConfigLayer, ConfigSource, Discovery, Inputs,
-    LoadedConfig, NoPresets, PackFile, Presets, Setting, bare_source, load,
+    LoadedConfig, PackFile, Presets, Setting, bare_source, load,
 };
 use tempfile::TempDir;
+use common::NoPresets;
 
 struct Fixture {
     dir: TempDir,
