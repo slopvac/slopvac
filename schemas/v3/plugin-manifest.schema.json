@@ -196,7 +196,7 @@
           "description": "The Python version request for the managed environment, for example 3.12. Required with runtime python and invalid otherwise. It is a VersionReq without whitespace, so it can never start with a dash that uv would read as an option.",
           "$ref": "#/$defs/VersionReq",
           "maxLength": 64,
-          "pattern": "^\\S+$"
+          "pattern": "^\\S+(?![\\s\\S])"
         },
         "args": {
           "type": "array",

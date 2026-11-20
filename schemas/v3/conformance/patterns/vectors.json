@@ -630,9 +630,9 @@
       "rust": false
     },
     {
-      "pattern": "^\\S+$",
+      "pattern": "^\\S+(?![\\s\\S])",
       "input": "tool\n",
-      "python": true,
+      "python": false,
       "rust": false
     }
   ]
