@@ -80,29 +80,28 @@ pub fn target(relative: &str) -> Result<PathBuf, AgentsError> {
 
 /// Set `O_NONBLOCK`, so an open of a FIFO or device swapped in at the leaf returns at once.
 #[cfg(unix)]
-fn nonblocking(options: &mut OpenOptions) -> std::io::Result<()> {
+fn nonblocking(options: &mut OpenOptions) {
     use cap_std::fs::OpenOptionsExt;
-    let flag = i32::try_from(rustix::fs::OFlags::NONBLOCK.bits())
-        .map_err(|_| std::io::Error::other("O_NONBLOCK does not fit"))?;
-    options.custom_flags(flag);
-    Ok(())
+    // `cast_signed` keeps every bit; the flag is a small positive value.
+    options.custom_flags(rustix::fs::OFlags::NONBLOCK.bits().cast_signed());
 }
 
 #[cfg(not(unix))]
-#[expect(clippy::unnecessary_wraps, reason = "matches the Unix signature")]
-fn nonblocking(_: &mut OpenOptions) -> std::io::Result<()> {
-    Ok(())
-}
+fn nonblocking(_: &mut OpenOptions) {}
 
 /// Return the permissions of the regular file `name`, read from a handle opened
 /// without following a symlink and without blocking. Return `None` if the file
-/// does not exist. A symlink, FIFO, device or directory is an unsafe target.
+/// does not exist. A symlink, FIFO, socket, device or directory is an unsafe target.
 /// Any other failure keeps its I/O cause.
 ///
 /// `resolve` already rewrote every link in the path. Refusing a leaf that
 /// became a link since then keeps a swapped link from lending its target's
 /// mode (CWE-59, CWE-367). The cap-std handle still confines the open to the
 /// project. `rel` is the path shown in an error.
+///
+/// The mode and the content come from separate opens of the name. A process
+/// of the same user that swaps the file between them changes the mode this
+/// copies. The project accepts that race for a same-user CLI.
 fn source_mode(
     parent: &Dir,
     name: &std::ffi::OsStr,
@@ -111,7 +110,7 @@ fn source_mode(
     let unsafe_target = || AgentsError::UnsafeTarget(rel.display().to_string());
     let mut options = OpenOptions::new();
     options.read(true).follow(FollowSymlinks::No);
-    nonblocking(&mut options).map_err(|e| Project::map(rel, e))?;
+    nonblocking(&mut options);
     match parent.open_with(name, &options) {
         Ok(source) => {
             let meta = source.metadata().map_err(|e| Project::map(rel, e))?;
@@ -123,11 +122,10 @@ fn source_mode(
         }
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
         Err(e) => {
-            // The no-follow open fails on a link; tell that apart from other causes.
-            let swapped = parent
-                .symlink_metadata(name)
-                .is_ok_and(|m| m.file_type().is_symlink());
-            Err(if swapped {
+            // The open fails on a link, and on a socket. Any entry that is not a
+            // regular file is an unsafe target. A regular file keeps its I/O cause.
+            let not_regular = parent.symlink_metadata(name).is_ok_and(|m| !m.is_file());
+            Err(if not_regular {
                 unsafe_target()
             } else {
                 Project::map(rel, e)
@@ -500,26 +498,38 @@ mod mode_tests {
         assert_eq!(mode_of(&target), 0o644);
     }
 
-    #[test]
-    fn the_source_mode_is_not_taken_through_a_symlink() {
+    /// What `source_mode` decided, reduced to the data a case compares.
+    fn verdict(dir: &Path, name: &str) -> &'static str {
+        let handle = Dir::open_ambient_dir(dir, ambient_authority()).unwrap();
+        match source_mode(&handle, OsStr::new(name), Path::new(name)) {
+            Ok(Some(_)) => "mode",
+            Ok(None) => "absent",
+            Err(AgentsError::UnsafeTarget(_)) => "unsafe",
+            Err(_) => "other",
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::regular_file("real.md", "mode")]
+    #[case::missing("gone.md", "absent")]
+    #[case::symlink_to_a_file("link.md", "unsafe")]
+    #[case::directory("dir.md", "unsafe")]
+    fn the_source_mode_is_taken_only_from_a_regular_file(
+        #[case] name: &str,
+        #[case] expected: &str,
+    ) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("real.md"), "x").unwrap();
+        std::fs::create_dir(dir.path().join("dir.md")).unwrap();
         std::os::unix::fs::symlink("real.md", dir.path().join("link.md")).unwrap();
-        let handle = Dir::open_ambient_dir(dir.path(), ambient_authority()).unwrap();
-        assert!(matches!(
-            source_mode(&handle, OsStr::new("link.md"), Path::new("link.md")),
-            Err(AgentsError::UnsafeTarget(_))
-        ));
-        assert!(
-            source_mode(&handle, OsStr::new("real.md"), Path::new("real.md"))
-                .unwrap()
-                .is_some()
-        );
-        assert!(
-            source_mode(&handle, OsStr::new("gone.md"), Path::new("gone.md"))
-                .unwrap()
-                .is_none()
-        );
+        assert_eq!(verdict(dir.path(), name), expected);
+    }
+
+    #[test]
+    fn a_socket_at_the_source_is_an_unsafe_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let _listener = std::os::unix::net::UnixListener::bind(dir.path().join("sock.md")).unwrap();
+        assert_eq!(verdict(dir.path(), "sock.md"), "unsafe");
     }
 
     #[test]
@@ -540,6 +550,7 @@ mod mode_tests {
         let path = dir.path().to_owned();
         std::thread::spawn(move || {
             let handle = Dir::open_ambient_dir(&path, ambient_authority()).unwrap();
+            // The receiver may have timed out and gone; the send result does not matter.
             let _ = tx.send(source_mode(
                 &handle,
                 OsStr::new("pipe.md"),
