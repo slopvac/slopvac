@@ -152,7 +152,7 @@ pub struct ConfigSource {
     /// Layer name, lowest priority first: core, style, genre, extends, project, override,
     /// front-matter, directive, cli. env marks the sticky environment switches.
     pub layer: ConfigLayer,
-    /// Path relative to the project root, or `pack:<id>/<path>` for a pack file. Absent where no
+    /// Path relative to the project root, or `plugin:<id>/<path>` for a plugin file. Absent where no
     /// file holds the value: core, cli and env.
     #[serde(
         default,

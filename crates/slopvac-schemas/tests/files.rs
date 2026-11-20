@@ -1,6 +1,6 @@
 //! `write` and `check` against a scratch repository root.
 
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 use std::fs;
 

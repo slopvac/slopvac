@@ -1,6 +1,6 @@
 //! Inlining a definition, through the public generation boundary.
 
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 use rstest::rstest;
 use serde_json::{Value, json};

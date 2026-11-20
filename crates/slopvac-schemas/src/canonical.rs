@@ -4,6 +4,15 @@ use serde_json::Value;
 
 const INDENT: &str = "  ";
 
+/// Append formatted text to `out`.
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a `String` cannot fail"
+)]
+fn push_fmt(out: &mut String, args: std::fmt::Arguments<'_>) {
+    let _ = out.write_fmt(args);
+}
+
 /// Write `value` as canonical JSON: object keys sorted by their UTF-8 bytes, two-space
 /// indent, one member or element per line and a trailing newline.
 ///
@@ -50,10 +59,7 @@ fn write_value(out: &mut String, value: &Value, depth: usize) {
         Value::Object(_) => out.push_str("{}"),
         Value::Array(_) => out.push_str("[]"),
         Value::String(text) => write_string(out, text),
-        Value::Number(number) => {
-            // Writing to a `String` cannot fail.
-            let _ = write!(out, "{number}");
-        }
+        Value::Number(number) => push_fmt(out, format_args!("{number}")),
         Value::Bool(flag) => out.push_str(if *flag { "true" } else { "false" }),
         Value::Null => out.push_str("null"),
     }
@@ -78,10 +84,7 @@ fn write_string(out: &mut String, text: &str) {
             '\t' => out.push_str("\\t"),
             '\u{08}' => out.push_str("\\b"),
             '\u{0C}' => out.push_str("\\f"),
-            c if u32::from(c) < 0x20 => {
-                // Writing to a `String` cannot fail.
-                let _ = write!(out, "\\u{:04x}", u32::from(c));
-            }
+            c if u32::from(c) < 0x20 => push_fmt(out, format_args!("\\u{:04x}", u32::from(c))),
             c => out.push(c),
         }
     }

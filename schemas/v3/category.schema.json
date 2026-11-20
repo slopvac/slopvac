@@ -13,7 +13,7 @@
       "type": "string"
     },
     "id": {
-      "description": "Category id. The qualified rule id is `<pack>:<category>.<rule>`.",
+      "description": "Category id. The qualified rule id is `<plugin>:<category>.<rule>`.",
       "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
       "type": "string"
     },

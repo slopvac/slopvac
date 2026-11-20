@@ -3,7 +3,7 @@
 //! check` keeps the published files equal to what the Rust types generate. The
 //! plugin-protocol corpus belongs to the plugin host's types, not to this crate.
 
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 mod common;
 

@@ -18,7 +18,7 @@
           "type": "integer"
         },
         "file": {
-          "description": "Path relative to the project root, or `pack:<id>/<path>` for a pack file. Absent where no file holds the value: core, cli and env.",
+          "description": "Path relative to the project root, or `plugin:<id>/<path>` for a plugin file. Absent where no file holds the value: core, cli and env.",
           "type": "string"
         },
         "layer": {
@@ -99,7 +99,7 @@
       "type": "string"
     },
     "PluginId": {
-      "description": "Identifier of a plugin, or of the namespace a publisher signs for. Same character set as `PackId`. `core` is reserved for the built-in plugin that is compiled into the binary, so no manifest, lock entry, index entry or config entry may use it as an id or a namespace. Semantics: docs/contract/plugins.md, section 9.\n\nSchema only. No crate has a Rust type for it yet: the plugin lock and index readers and the config validator check the value themselves. The generator owns this definition until a model type replaces it.",
+      "description": "Identifier of a plugin, or of the namespace a publisher signs for. Same character set as `PackId`. `core` is reserved for the built-in plugin that is compiled into the binary, so no manifest, lock entry, index entry or config entry may use it as an id or a namespace. Semantics: docs/contract/plugins.md, section 9.",
       "pattern": "^(?!core(?![\\s\\S]))[a-z][a-z0-9-]*(?![\\s\\S])",
       "type": "string"
     },

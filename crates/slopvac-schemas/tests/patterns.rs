@@ -11,7 +11,7 @@
 //! `schemas/v3/conformance/patterns/vectors.json` holds inputs with both validators'
 //! verdicts; the Python half of the check is `tests/contract/test_pattern_vectors.py`.
 
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 use std::collections::BTreeSet;
 use std::fs;

@@ -1,7 +1,7 @@
 //! The `slopvac-schemas` binary's exit codes: 0 when the committed files match, 1 when one
 //! differs, 2 when the check could not run.
 
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 use std::fs;
 use std::path::Path;

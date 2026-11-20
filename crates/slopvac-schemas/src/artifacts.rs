@@ -102,11 +102,10 @@ fn define<T: JsonSchema>(generator: &mut SchemaGenerator) {
 /// `PackId`. `core` is reserved for the built-in plugin that is compiled into the binary, so
 /// no manifest, lock entry, index entry or config entry may use it as an id or a namespace.
 /// Semantics: docs/contract/plugins.md, section 9.
-///
-/// Schema only. No crate has a Rust type for it yet: the plugin lock and index readers and
-/// the config validator check the value themselves. The generator owns this definition until
-/// a model type replaces it.
 #[derive(JsonSchema)]
+// Schema only. No crate has a Rust type for it yet: the plugin lock and index readers and the
+// config validator check the value themselves. The generator owns this definition until a model
+// type replaces it.
 #[schemars(with = "String", extend("pattern" = r"^(?!core(?![\s\S]))[a-z][a-z0-9-]*(?![\s\S])"))]
 struct PluginId;
 

@@ -1229,7 +1229,7 @@ fn default_weight() -> Weight {
 pub struct Category {
     /// Always 3.
     pub schema_version: SchemaVersion,
-    /// Category id. The qualified rule id is `<pack>:<category>.<rule>`.
+    /// Category id. The qualified rule id is `<plugin>:<category>.<rule>`.
     pub id: CategoryId,
     /// Display title.
     pub title: NonEmptyString,
