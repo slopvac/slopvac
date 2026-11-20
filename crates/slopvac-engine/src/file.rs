@@ -153,7 +153,9 @@ pub fn fix_file_in(
     hook: &mut dyn FnMut(Step) -> std::io::Result<()>,
 ) -> Result<FileFix, FixError> {
     let kind = context.kind;
-    let shown = context.shown.map_or_else(|| path.to_string_lossy().into_owned(), str::to_owned);
+    let shown = context
+        .shown
+        .map_or_else(|| path.to_string_lossy().into_owned(), str::to_owned);
     let io = |source| FixError::Io {
         path: shown.clone(),
         source,
