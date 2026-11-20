@@ -100,12 +100,20 @@ pub fn strip_url_userinfo(text: &str) -> String {
 ///
 /// The whole value is the URL when it starts with an RFC 3986 scheme (`ALPHA *( ALPHA / DIGIT /
 /// "+" / "-" / "." ) ":"`). A value without a scheme comes back unchanged, and so does a URL
-/// inside a longer string. The value splits by component, user-info first. With an authority
-/// (`//`), the candidate runs to the first `/`, and a `?` or `#` in it does not end it. When
-/// the candidate holds an `@`, everything up to the last `@` goes. This over-redacts on
-/// purpose: `https://host#frag@x/p` prints as `https://x/p`, because a `#` or `?` inside
-/// user-info must not cut the secret short. Then the fragment goes with everything after the
-/// first `#`, and the query goes from the first `?`.
+/// inside a longer string. The rule is conservative, so it over-redacts where it cannot tell.
+///
+/// With an authority (`//`), the candidate runs from after `//` to the first `/`, and a `?`
+/// or `#` in it does not end it.
+/// - An `@` in the candidate whose part before the last `@` holds a `?` or `#` is ambiguous:
+///   the `@` may sit in a query or fragment, or the user-info may hold the `?` or `#`. The
+///   value prints as `<scheme>://` and nothing else, so `https://host#frag@x/p` prints as
+///   `https://`.
+/// - Any other `@` in the candidate ends the user-info, and everything through the last `@`
+///   goes.
+/// - Then the fragment goes with everything after the first `#`, and the query goes from the
+///   first `?`.
+///
+/// Without an authority (`mailto:`), only the fragment and the query go.
 #[must_use]
 pub fn redact_url_value(text: &str) -> String {
     let scheme_len = text
@@ -126,8 +134,11 @@ pub fn redact_url_value(text: &str) -> String {
     let rest = match rest.strip_prefix("//") {
         Some(after) => {
             let (candidate, path) = after.split_at(after.find('/').unwrap_or(after.len()));
-            let host = candidate.rsplit_once('@').map_or(candidate, |(_, h)| h);
-            format!("//{host}{path}")
+            match candidate.rsplit_once('@') {
+                Some((before, _)) if before.contains(['?', '#']) => return format!("{scheme}//"),
+                Some((_, host)) => format!("//{host}{path}"),
+                None => rest.to_owned(),
+            }
         }
         None => rest.to_owned(),
     };
@@ -367,9 +378,14 @@ mod tests {
     #[case::question_mark_in_fragment("https://host/x#frag?not-a-query", "https://host/x")]
     #[case::oauth_fragment("https://host/cb#access_token=SECRET", "https://host/cb")]
     #[case::fragment_without_path("https://host#access_token=SECRET", "https://host")]
-    #[case::fragment_char_in_user_info("https://user:SECRET#suffix@host/x", "https://host/x")]
-    #[case::query_char_in_user_info("https://user:SECRET?x@host/p", "https://host/p")]
-    #[case::over_redacts_an_at_sign_after_a_fragment("https://host#frag@x/p", "https://x/p")]
+    #[case::fragment_char_in_user_info("https://user:SECRET#suffix@host/x", "https://")]
+    #[case::query_char_in_user_info("https://user:SECRET?x@host/p", "https://")]
+    #[case::at_sign_after_a_fragment("https://host#frag@x/p", "https://")]
+    #[case::at_sign_after_a_fragment_to_the_end("https://host#frag@SECRET/p", "https://")]
+    #[case::at_sign_in_a_fragment_token("https://host#tok=x@SECRET", "https://")]
+    #[case::at_sign_in_a_query("https://host?a=x@SECRET", "https://")]
+    #[case::user_info_then_at_sign_in_a_query("https://u:p@host?a=x@y@SECRET", "https://")]
+    #[case::empty_host_then_at_sign_in_a_query("file://?token=x@SECRET", "file://")]
     #[case::uppercase_scheme("HTTPS://user:SECRET@host/x?q=SECRET", "HTTPS://host/x")]
     #[case::ipv6("http://user:SECRET@[::1]:8080/x?q=SECRET", "http://[::1]:8080/x")]
     #[case::at_sign_in_path("https://host/a@b?q=SECRET", "https://host/a@b")]
@@ -386,12 +402,12 @@ mod tests {
     }
 
     proptest::proptest! {
-        /// User-info, query and fragment carry unique markers that no other part can hold, so
-        /// the result must equal the URL without them.
+        /// With a path and user-info free of `?` and `#`, the result equals the URL without
+        /// user-info, query and fragment. Each carries a unique marker no other part can hold.
         #[test]
         fn redact_url_value_drops_user_info_query_and_fragment_and_keeps_the_rest(
             scheme in "[a-z][a-z0-9+.-]{0,6}",
-            user in "UIN[a-z0-9:'_~!$&()*+,;=%.#?-]{0,8}",
+            user in "UIN[a-z0-9:'_~!$&()*+,;=%.-]{0,8}",
             host in "[a-z]{1,8}\\.example",
             path in "(/[a-z0-9'@:_~!$&()*+,;=%.-]{0,6}){1,3}",
             query in "QRY[a-z0-9/'?=&:@_~!$()*+,;%.-]{0,8}",
@@ -405,6 +421,25 @@ mod tests {
                 "{got}"
             );
             proptest::prop_assert_eq!(got, want);
+        }
+
+        /// Without a path, or with `?` or `#` inside the user-info, the value may be ambiguous
+        /// and print as the bare scheme. None of the three markers may survive either way.
+        #[test]
+        fn redact_url_value_never_leaks_a_marker_when_the_value_is_ambiguous(
+            scheme in "[a-z][a-z0-9+.-]{0,6}",
+            user in "UIN[a-z0-9:'_~!$&()*+,;=%.#?-]{0,8}",
+            host in "[a-z]{1,8}\\.example",
+            path in "(/[a-z0-9'@:_~!$&()*+,;=%.-]{0,6}){0,3}",
+            query in "QRY[a-z0-9/'?=&:@_~!$()*+,;%.#-]{0,8}",
+            fragment in "FRG[a-z0-9/'?@:_~!$&()*+,;=%.-]{0,8}",
+        ) {
+            let given = format!("{scheme}://{user}@{host}{path}?{query}#{fragment}");
+            let got = redact_url_value(&given);
+            proptest::prop_assert!(
+                !got.contains("UIN") && !got.contains("QRY") && !got.contains("FRG"),
+                "{got}"
+            );
         }
     }
 
