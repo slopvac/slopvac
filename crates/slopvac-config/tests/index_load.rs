@@ -183,3 +183,68 @@ fn an_extended_file_with_seventeen_extra_indexes_is_refused_and_sixteen_plus_six
     assert_eq!(data.budget, ConfigBudget::IndexExtra);
     assert_eq!(data.path, "big.toml");
 }
+
+#[rstest]
+#[case::escaped_key("\"sour\\u0063e\" = \"https://user:SECRET@h.example/x?token=SECRET\"")]
+#[case::quoted_key("'source' = \"https://user:SECRET@h.example/x?token=SECRET\"")]
+#[case::array_value("source = [\"https://user:SECRET@h.example/x?token=SECRET\"]")]
+#[case::inline_table_value("source = { url = \"https://user:SECRET@h.example/?token=SECRET\" }")]
+fn every_source_spelling_and_value_type_is_masked_in_output(#[case] line: &str) {
+    let p = Project::new();
+    let text = format!("schema_version = 3\n\n[[index.extra]]\nname = \"acme\"\n{line}\n");
+    p.write("slopvac.toml", &text);
+    let (code, out) = p.validate();
+    assert_eq!(code, 2, "{out}");
+    assert!(!out.contains("SECRET"), "{out}");
+    assert!(out.contains("slopvac.toml:5:"), "{out}");
+
+    let diags = validate_config(&parse_toml(&text).unwrap(), &text);
+    let rendered = render(
+        SourceFile {
+            name: "slopvac.toml",
+            text: &text,
+        },
+        &diags,
+    );
+    assert!(!rendered.contains("SECRET"), "{rendered}");
+}
+
+#[test]
+fn a_config_that_does_not_parse_shows_its_location_and_no_excerpt() {
+    let p = Project::new();
+    let text = "schema_version = 3\n\n[[index.extra]]\nname = \"acme\"\nsource = \"https://user:SECRET@h.example/x?token=SECRET\"\nbroken = = 1\n";
+    let path = p.write("slopvac.toml", text);
+
+    let (code, out) = p.validate();
+    assert_eq!(code, 2, "{out}");
+    assert!(!out.contains("SECRET"), "{out}");
+    assert!(out.contains("slopvac.toml:6:"), "{out}");
+    assert!(out.contains("not valid TOML"), "{out}");
+
+    let ConfigError::Rejected(r) = load(&path, &NoPresets).unwrap_err() else {
+        panic!("expected a rejection");
+    };
+    let rendered = r.render();
+    assert!(!rendered.contains("SECRET"), "{rendered}");
+    assert!(rendered.contains("slopvac.toml:6:"), "{rendered}");
+
+    let at = text.find("broken").unwrap();
+    let d = slopvac_config::Diagnostic {
+        code: Code::InvalidValue,
+        message: "bad".into(),
+        label: "here".into(),
+        span: at..at + 6,
+        help: None,
+        path: vec![],
+        data: None,
+    };
+    let public = render(
+        SourceFile {
+            name: "slopvac.toml",
+            text,
+        },
+        &[d],
+    );
+    assert!(!public.contains("SECRET"), "{public}");
+    assert!(public.contains("slopvac.toml:6:1"), "{public}");
+}
