@@ -634,6 +634,30 @@
       "input": "tool\n",
       "python": false,
       "rust": false
+    },
+    {
+      "pattern": "^(?!(core|slopvac)(?![\\s\\S]))[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "acme",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^(?!(core|slopvac)(?![\\s\\S]))[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "acme\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(oci|https)://[^\\s/?#@]+([/?#]\\S*)?(?![\\s\\S])",
+      "input": "https://plugins.acme.example/index.json",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^(oci|https)://[^\\s/?#@]+([/?#]\\S*)?(?![\\s\\S])",
+      "input": "https://plugins.acme.example/index.json\n",
+      "python": false,
+      "rust": false
     }
   ]
 }
