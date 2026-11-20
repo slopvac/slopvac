@@ -296,6 +296,10 @@ The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/commo
 - A schema's `$id` never changes within a version. The published URL has the form `https://slopvac.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
 - `ApiVersion` is a positive integer for the plugin extension API. The first plugin manifest declares `slopvac_api = 1`. It names the host capabilities a plugin needs. `schema_version` names the shape of one file. The two are independent.
 - The binary version is independent of both. A release that adds optional fields keeps `schema_version`. `slopvac --version --json` lists the binary version, each supported `schema_version`, and each supported `slopvac_api`.
+  - `schema_versions` is an object. Each key is the name of a versioned artifact's schema under `schemas/v3`, without `.schema.json`. Each value lists the `schema_version` numbers the binary reads or writes for that artifact.
+  - The artifacts are `blocklist`, `category`, `config`, `doctor-report`, `genre`, `lint-report`, `plugins-lock`, `style`, `tagger` and `terms`. The list grows when the binary starts to read or write another versioned artifact, such as a plugin manifest, a plugin index or a standalone rule file. Adding a key, or a number to a list, is additive. Removing either is a breaking change.
+  - `slopvac_api` is a list of the extension API numbers the binary supports.
+  - The same document also carries `name`, `version`, `install_method` and `notices`.
 - A config file without `schema_version` is a 2.x config and is rejected (section 3.7). Any other 3.0 artifact without a version is an error.
 - A version higher than the binary supports is an error. The message names the file, the version found, and the versions supported. It also prints the upgrade command for the install method, built as `upgrade_hint` builds it in 2.x.
 

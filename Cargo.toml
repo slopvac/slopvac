@@ -35,7 +35,7 @@ hmac = "0.12"
 html5ever = "0.40"
 html5gum = "0.9"
 ignore = "0.4"
-insta = "1.49"
+insta = { version = "1.49", features = ["json"] }
 # No default features: they pull reqwest and tokio, which ADR 0001 bans (cargo-deny).
 jsonschema = { version = "0.61.2", default-features = false }
 lsp-server = "0.10"

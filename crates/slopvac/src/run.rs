@@ -130,7 +130,10 @@ where
             offline::resolve(flag, env, config_offline),
             policy.update_check,
         );
-        return match write_stdout(out, slopvac_update::command::version_json(&rt).as_bytes()) {
+        return match write_stdout(
+            out,
+            slopvac_update::command::version_json(&rt, &supported_versions()).as_bytes(),
+        ) {
             Ok(code) => exit::code(code),
             Err(failure) => {
                 let _ = writeln!(err_out, "{failure}");
@@ -465,6 +468,53 @@ fn lint_with(
     } else {
         exit::PASS
     })
+}
+
+/// The versions this build supports, taken from the crates that own them. Keys are the file
+/// names under `schemas/v3`, without the `.schema.json` suffix.
+fn supported_versions() -> slopvac_update::command::Supported {
+    // A config-style file is checked by `slopvac-config`, which owns its version; styles share it.
+    // Both owners declare an `i64`. The assertion below makes `unsigned_abs` exact for them.
+    const _: () = assert!(
+        slopvac_config::version::SUPPORTED > 0 && slopvac_plugins::lock::LOCK_SCHEMA_VERSION > 0,
+        "schema versions are positive"
+    );
+    let config = slopvac_config::version::SUPPORTED.unsigned_abs();
+    let lock = slopvac_plugins::lock::LOCK_SCHEMA_VERSION.unsigned_abs();
+    let report = u64::from(slopvac_model::SchemaVersion::VALUE);
+    slopvac_update::command::Supported {
+        schema_versions: std::collections::BTreeMap::from([
+            (
+                "blocklist",
+                vec![u64::from(slopvac_terms::BLOCKLIST_SCHEMA_VERSION)],
+            ),
+            ("category", vec![report]),
+            ("config", vec![config]),
+            (
+                "doctor-report",
+                vec![u64::from(crate::doctor::SCHEMA_VERSION)],
+            ),
+            (
+                "genre",
+                vec![u64::from(slopvac_context::GENRE_SCHEMA_VERSION)],
+            ),
+            ("lint-report", vec![report]),
+            ("plugins-lock", vec![lock]),
+            ("style", vec![config]),
+            (
+                "tagger",
+                vec![u64::from(slopvac_context::TAGGER_SCHEMA_VERSION)],
+            ),
+            (
+                "terms",
+                vec![u64::from(slopvac_terms::TERMS_SCHEMA_VERSION)],
+            ),
+        ]),
+        slopvac_api: slopvac_model::ApiVersion::SUPPORTED
+            .iter()
+            .map(|v| u64::from(*v))
+            .collect(),
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 use std::fmt::Write as _;
 
 use super::model::Lockfile;
+use super::parse::LOCK_SCHEMA_VERSION;
 
 /// A TOML basic string.
 fn quote(s: &str) -> String {
@@ -24,7 +25,7 @@ fn quote(s: &str) -> String {
 }
 
 pub(super) fn write(lock: &Lockfile) -> String {
-    let mut out = String::from("schema_version = 3\n");
+    let mut out = format!("schema_version = {LOCK_SCHEMA_VERSION}\n");
     if lock.packs().is_empty() {
         out.push_str("plugins = []\n");
     }
