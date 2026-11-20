@@ -1262,3 +1262,62 @@ def test_the_worksheet_shows_missing_for_a_skipped_pair(judge_env, tmp_path):
     (row,) = read_sheet(out)
     assert row["queue"] == "dispute"
     assert row["judge anthropic"] == "missing" and row["judge openai"] == "tp"
+
+
+def mark_failed_cli(d, item, order, *, attempts="3", family="anthropic", **kw):
+    model = kw.get("model", "claude-test")
+    return cli.main(
+        ["label", "--dir", str(d), "mark-failed", "--family", family]
+        + ["--model", model, item, order, "--attempts", str(attempts)]
+    )
+
+
+def test_a_pair_marked_failed_three_times_is_skipped_without_a_call(
+    three_items, tmp_path, monkeypatch, capsys
+):
+    # An empty ledger (a run stopped at once) exists, as it does on a live run.
+    assert judge_cli(three_items, tmp_path, monkeypatch, [], max_invocations=0) == 2
+    assert mark_failed_cli(three_items, "i0", lab.ORDERS[0]) == 0
+    marks = judgment_rows(three_items)
+    assert len(marks) == 3
+    assert all(
+        r["status"] == "failed"
+        and r["error"] == "provider-exit"
+        and r["recorded"] == "manual"
+        and "verdict" not in r
+        for r in marks
+    )
+    asked = []
+    assert judge_cli(three_items, tmp_path, monkeypatch, asked) == 0
+    assert len(asked) == 5  # the marked pair is not asked
+    assert reservations(three_items, "anthropic") == 5
+    out = capsys.readouterr().out
+    assert "skipped 1 pair" in out and f"i0 {lab.ORDERS[0]}" in out
+
+
+def test_marking_fewer_attempts_leaves_the_rest_to_the_judge_run(
+    judge_env, tmp_path, monkeypatch
+):
+    assert judge_cli(judge_env, tmp_path, monkeypatch, [], max_invocations=0) == 2
+    assert mark_failed_cli(judge_env, "i0", lab.ORDERS[0], attempts=2) == 0
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=always_fail) == 0
+    assert len(asked) == 1 + 3  # one more for the marked pair, three for the other
+
+
+@pytest.mark.parametrize(
+    ("item", "order", "attempts", "model"),
+    [
+        pytest.param("nope", lab.ORDERS[0], 3, "claude-test", id="unknown-item"),
+        pytest.param("i0", "sideways", 3, "claude-test", id="unknown-order"),
+        pytest.param("i0", lab.ORDERS[0], 0, "claude-test", id="zero-attempts"),
+        pytest.param("i0", lab.ORDERS[0], -1, "claude-test", id="negative-attempts"),
+        pytest.param("i0", lab.ORDERS[0], 3, "gpt-5", id="family-mismatch"),
+    ],
+)
+def test_mark_failed_rejects_bad_input_and_writes_nothing(
+    judge_env, item, order, attempts, model
+):
+    rc = mark_failed_cli(judge_env, item, order, attempts=attempts, model=model)
+    assert rc == 2
+    assert not (judge_env / "judgments").exists()

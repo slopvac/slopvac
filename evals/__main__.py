@@ -375,6 +375,38 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_label_mark_failed(args: argparse.Namespace) -> int:
+    """Record failed attempts that no judgments row holds, so `judge` counts them."""
+    p = _paths(args)
+    out = p["judgments"] / f"{args.family}.jsonl"
+    try:
+        labelling.check_identity(args.family, args.model)
+        if args.attempts < 1:
+            raise runner.EngineError("--attempts must be at least 1")
+        if args.order not in labelling.ORDERS:
+            raise runner.EngineError(
+                f"unknown order {args.order!r}; use one of {', '.join(labelling.ORDERS)}"
+            )
+        if args.item not in {i["id"] for i in labelling.read_jsonl(p["items"])}:
+            raise runner.EngineError(f"unknown item {args.item!r}")
+        row = {
+            "item": args.item,
+            "family": args.family,
+            "model": args.model,
+            "order": args.order,
+            "prompt_version": labelling.PROMPT_VERSION,
+            "status": labelling.FAILED,
+            "error": "provider-exit",
+            "recorded": "manual",
+        }
+        labelling.append_jsonl(out, [row] * args.attempts)
+    except (runner.EngineError, OSError) as exc:
+        print(f"evals label mark-failed: {exc}", file=sys.stderr)
+        return 2
+    print(f"{args.attempts} failed attempts recorded in {out}")
+    return 0
+
+
 def cmd_label_merge(args: argparse.Namespace) -> int:
     p = _paths(args)
     try:
@@ -556,6 +588,16 @@ def build_parser() -> argparse.ArgumentParser:
     lj.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
     lj.add_argument("--cache")
     lj.set_defaults(func=cmd_label_judge)
+
+    lf = lsub.add_parser(
+        "mark-failed", help="record failed judge attempts that no judgment row holds"
+    )
+    lf.add_argument("--family", required=True)
+    lf.add_argument("--model", required=True)
+    lf.add_argument("--attempts", required=True, type=int)
+    lf.add_argument("item")
+    lf.add_argument("order")
+    lf.set_defaults(func=cmd_label_mark_failed)
 
     lm = lsub.add_parser("merge", help="combine judgments into labels and disputes")
     lm.add_argument("--date", default=None)
