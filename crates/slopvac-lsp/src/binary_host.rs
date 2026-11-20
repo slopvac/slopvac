@@ -1,6 +1,9 @@
 //! Binary container documents, which the editor does not lint.
 
+use slopvac_messages::{Catalog, render};
 use slopvac_model::{KebabName, NonEmptyString, Notice, NoticeLevel};
+
+use crate::messages::LspMessage;
 
 /// Extensions of binary containers, matched case-insensitively at the end of the path:
 /// PNG with embedded source, OOXML and ODF documents and their templates.
@@ -40,9 +43,9 @@ pub(crate) fn is_binary_host(path: &str) -> bool {
 /// notices that mark a document as not fully checked.
 pub(crate) fn unchecked_notice() -> Option<Notice> {
     Some(Notice {
-        code: KebabName::new("binary-host-unchecked").ok()?,
+        code: KebabName::new(LspMessage::BinaryHostUnchecked.code()).ok()?,
         level: NoticeLevel::Warning,
-        message: NonEmptyString::new("binary host not linted in the editor; run the CLI").ok()?,
+        message: NonEmptyString::new(render(&LspMessage::BinaryHostUnchecked)).ok()?,
         path: None,
         data: serde_json::Map::new(),
     })

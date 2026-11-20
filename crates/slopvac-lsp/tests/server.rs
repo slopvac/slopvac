@@ -450,7 +450,7 @@ fn a_document_that_cannot_be_linted_is_not_reported_clean() {
     let mut client = Client::start(Server::new(Arc::new(Failing)), None);
     let published = client.open("Anything.\n");
     let d = &published["diagnostics"][0];
-    assert_eq!(d["code"], "lint-incomplete");
+    assert_eq!(d["code"], "lsp-lint-incomplete");
     assert!(d["message"].as_str().unwrap().contains("the engine broke"));
     client.finish().unwrap();
 }
@@ -943,10 +943,11 @@ fn a_fatal_error_returns_at_once_although_the_transport_is_blocked() {
         .done
         .recv_timeout(Duration::from_secs(4))
         .expect("serve returns although the transport is blocked");
-    assert!(
-        matches!(result, Err(ServerError::Protocol(_))),
-        "{result:?}"
-    );
+    let Err(error @ ServerError::Protocol) = result else {
+        panic!("expected a protocol error, got {result:?}");
+    };
+    // The message is fixed: the protocol error's text can quote a client message.
+    assert_eq!(error.to_string(), "language server protocol error");
 }
 
 /// Prose the swap rule would flag, so a document that is linted anyway shows a finding.
@@ -973,7 +974,7 @@ fn only_diagnostic(published: &Value) -> &Value {
 
 fn assert_binary_host_diagnostic(published: &Value) {
     let d = only_diagnostic(published);
-    assert_eq!(d["code"], "binary-host-unchecked");
+    assert_eq!(d["code"], "lsp-binary-unchecked");
     assert_eq!(d["severity"], 2);
     assert_eq!(d["source"], "slopvac");
     assert!(

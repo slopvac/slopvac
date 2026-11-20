@@ -2602,6 +2602,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slopvac-engine",
+ "slopvac-messages",
  "slopvac-model",
  "slopvac-parse",
  "slopvac-rules",
