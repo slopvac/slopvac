@@ -1021,3 +1021,57 @@ fn an_oversize_install_receipt_is_ignored() {
     });
     assert_eq!(doc["slopvac"]["install_method"], "unknown");
 }
+
+/// Doctor reports the directories the shared resolver gives the plugin store and the trust store:
+/// same location (found through the bytes planted there), same source, path redacted.
+#[rstest::rstest]
+#[case::absolute_xdg(false)]
+#[case::relative_xdg_is_ignored(true)]
+fn directories_are_the_ones_the_shared_resolver_gives(#[case] relative_xdg: bool) {
+    use slopvac_fs::{DirKind, resolve_dir_with};
+    let w = World::new();
+    let xdg = |dir: &str| {
+        if relative_xdg {
+            format!("rel-{dir}")
+        } else {
+            w.root.path().join(dir).display().to_string()
+        }
+    };
+    let vars = [
+        ("HOME", w.home().display().to_string()),
+        ("SLOPVAC_CACHE_DIR", w.cache().display().to_string()),
+        ("XDG_DATA_HOME", xdg("xdg-data")),
+        ("XDG_STATE_HOME", xdg("xdg-state")),
+    ];
+    let lookup = |name: &str| {
+        vars.iter()
+            .find(|(k, _)| *k == name)
+            .map(|(_, v)| v.clone())
+            .ok_or(std::env::VarError::NotPresent)
+    };
+    let kinds = [
+        ("cache", DirKind::Cache),
+        ("data", DirKind::Data),
+        ("state", DirKind::State),
+    ];
+    for (i, (_, kind)) in kinds.iter().enumerate() {
+        let want = resolve_dir_with(*kind, &lookup, &|| None).unwrap();
+        fs::create_dir_all(&want.path).unwrap();
+        fs::write(want.path.join("planted"), vec![0u8; 10 + i]).unwrap();
+    }
+    let mut cmd = w.doctor();
+    cmd.args(["--format", "json"]);
+    for (k, v) in &vars {
+        cmd.env(k, v);
+    }
+    let doc: Value = serde_json::from_slice(&cmd.output().unwrap().stdout).unwrap();
+    for (i, (name, kind)) in kinds.iter().enumerate() {
+        let want = resolve_dir_with(*kind, &lookup, &|| None).unwrap();
+        let got = &doc["directories"][*name];
+        assert_eq!(got["source"], want.source, "{name}");
+        assert_eq!(got["exists"], true, "{name}");
+        assert_eq!(got["bytes"], 10 + i, "{name}");
+        let leaf = want.path.file_name().unwrap().to_str().unwrap();
+        assert_eq!(got["path"], format!("<external>/{leaf}"), "{name}");
+    }
+}

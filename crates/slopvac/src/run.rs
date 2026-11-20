@@ -295,7 +295,8 @@ fn doctor(
     env: &dyn Env,
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    use crate::doctor::stubs::{EnvDirs, LocalConfigSources};
+    use crate::doctor::dirs::SharedDirs;
+    use crate::doctor::stubs::LocalConfigSources;
     use crate::doctor::update::InstalledUpdateProbe;
     let cwd = std::env::current_dir().unwrap_or_default();
     let report = crate::doctor::build(&crate::doctor::Inputs {
@@ -306,7 +307,7 @@ fn doctor(
         version: env!("CARGO_PKG_VERSION"),
         update: &InstalledUpdateProbe::new(),
         config: &LocalConfigSources,
-        dirs: &EnvDirs,
+        dirs: &SharedDirs,
         walk_limit: crate::doctor::WALK_LIMIT,
     });
     let text = if m.get_one::<String>("format").is_some_and(|f| f == "json") {

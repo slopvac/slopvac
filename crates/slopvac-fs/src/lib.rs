@@ -28,7 +28,9 @@ mod path;
 mod read;
 
 pub use dirs::{
-    CACHE_DIR_VAR, HomeFallback, Lookup, cache_dir, cache_dir_with, config_dir, config_dir_with,
+    CACHE_DIR_VAR, DirKind, HomeFallback, Lookup, ResolvedDir, cache_dir, cache_dir_with,
+    config_dir, config_dir_with, data_dir, data_dir_with, resolve_dir_with, state_dir,
+    state_dir_with,
 };
 pub use error::{Error, InputKind, Op, Reason, Result};
 pub use io::{MAX_DOCUMENT_BYTES, WriteOptions, read_capped, read_text_capped, write_atomic};

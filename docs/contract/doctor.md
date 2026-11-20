@@ -87,10 +87,9 @@ A path in the report is relative to the working directory, or `<external>/<file 
 
 ## 4. Build status
 
-Two inputs come from local stand-ins until the beads that own them land:
+Configuration discovery comes from a local stand-in until the config layer lands. It handles one `slopvac.toml` and ignores `extends`.
 
-- Configuration discovery handles one `slopvac.toml` and ignores `extends`. `slopvac-8l4.12.23` swaps in the config layer.
-- The directory locations come from the environment. `slopvac-8l4.12.24` swaps in the shared resolver.
+The directory locations come from the shared resolver in `slopvac-fs`, the same one the plugin store and the trust store use.
 
 ## 5. Conformance
 
