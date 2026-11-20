@@ -71,6 +71,11 @@ const PENDING: &[(&str, &str, &str)] = &[
     ),
     (
         "plugin-protocol.schema.json",
+        "/$defs/BinaryDocument/properties/path",
+        "slopvac-8l4.2.53",
+    ),
+    (
+        "plugin-protocol.schema.json",
         "/$defs/PluginDocument/properties/path",
         "slopvac-8l4.2.53",
     ),

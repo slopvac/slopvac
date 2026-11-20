@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "outcome": "extracted",
+      "segments": [
+        {
+          "locator": "w:p[@w14:paraId=3F2A0B1C]",
+          "span": {
+            "start": 0,
+            "end": 8
+          },
+          "text": "We must never fail.",
+          "context": "prose",
+          "role": "body"
+        }
+      ]
+    }
+  ]
+}

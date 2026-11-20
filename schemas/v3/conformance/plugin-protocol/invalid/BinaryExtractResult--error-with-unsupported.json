@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "unsupported": [
+        {
+          "part": "word/embeddings/oleObject1.bin"
+        }
+      ],
+      "error": {
+        "code": -32009,
+        "message": "broken central directory",
+        "data": {
+          "slopvac_code": "extract-malformed"
+        }
+      }
+    }
+  ]
+}

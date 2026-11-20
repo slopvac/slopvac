@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "outcome": "no-source",
+      "unsupported": [
+        {
+          "part": "word/embeddings/oleObject1.bin"
+        }
+      ]
+    }
+  ]
+}

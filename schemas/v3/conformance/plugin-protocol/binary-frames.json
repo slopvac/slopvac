@@ -1,0 +1,212 @@
+{
+  "description": "Frame admissibility vectors for binary-extractor/extract (plugin-protocol.md section 5.5.6). Each case fills the request template: documents[0].id is document_id, byte_length is the case value, and bytes is the standard base64 of that many zero bytes. Sizes count compact JSON (no whitespace) in template key order, with / unescaped. envelope_bytes is the same request with bytes set to the empty string, and base64_length is 4 * ceil(n / 3). preflight cases are decided from the length alone, before any byte is read or encoded: preflight_bytes is envelope_bytes plus base64_length, admissible is preflight_bytes <= max_message_bytes, and reservation_bytes (raw plus base64 plus frame) is what an admitted request holds against in_flight_budget_bytes, the in-flight budget. A reservation larger than that budget fails with extract-budget, data.budget in-flight and data.limit equal to in_flight_budget_bytes. frames cases encode and serialize for real: request_bytes is the final gate and equals the preflight size for this template. A host measures the output of its own serializer, so its envelope may differ; the base64 rule and the comparison may not. reservations cases are admissible at preflight but hold more than the in-flight budget, so the host rejects them at once, before it reads the file, with extract-budget, data.budget in-flight and data.limit equal to in_flight_budget_bytes; rejected is true and reservation_bytes is raw plus base64 plus frame.",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "binary-extractor/extract",
+    "params": {
+      "extractor": "office",
+      "documents": [
+        {
+          "id": "d1",
+          "format": "docx",
+          "byte_length": 0,
+          "bytes": ""
+        }
+      ]
+    }
+  },
+  "in_flight_budget_bytes": 67108864,
+  "base64_lengths": [
+    {
+      "bytes": 0,
+      "length": 0
+    },
+    {
+      "bytes": 1,
+      "length": 4
+    },
+    {
+      "bytes": 2,
+      "length": 4
+    },
+    {
+      "bytes": 3,
+      "length": 4
+    },
+    {
+      "bytes": 4,
+      "length": 8
+    },
+    {
+      "bytes": 12582909,
+      "length": 16777212
+    },
+    {
+      "bytes": 12582910,
+      "length": 16777216
+    },
+    {
+      "bytes": 12582911,
+      "length": 16777216
+    },
+    {
+      "bytes": 12582912,
+      "length": 16777216
+    },
+    {
+      "bytes": 12582913,
+      "length": 16777220
+    }
+  ],
+  "preflight": [
+    {
+      "id": "default-limit-preflight-admits-exactly-full",
+      "max_message_bytes": 16777216,
+      "document_id": "d1",
+      "byte_length": 12582786,
+      "envelope_bytes": 168,
+      "base64_length": 16777048,
+      "preflight_bytes": 16777216,
+      "admissible": true,
+      "reservation_bytes": 46137050
+    },
+    {
+      "id": "default-limit-preflight-rejects-one-payload-byte-over",
+      "max_message_bytes": 16777216,
+      "document_id": "d1",
+      "byte_length": 12582787,
+      "envelope_bytes": 168,
+      "base64_length": 16777052,
+      "preflight_bytes": 16777220,
+      "admissible": false,
+      "reservation_bytes": null
+    },
+    {
+      "id": "default-limit-preflight-rejects-256-mib-without-reading",
+      "max_message_bytes": 16777216,
+      "document_id": "d1",
+      "byte_length": 268435456,
+      "envelope_bytes": 169,
+      "base64_length": 357913944,
+      "preflight_bytes": 357914113,
+      "admissible": false,
+      "reservation_bytes": null
+    },
+    {
+      "id": "default-limit-preflight-max-safe-integer",
+      "max_message_bytes": 16777216,
+      "document_id": "d1",
+      "byte_length": 9007199254740991,
+      "envelope_bytes": 176,
+      "base64_length": 12009599006321324,
+      "preflight_bytes": 12009599006321500,
+      "admissible": false,
+      "reservation_bytes": null
+    },
+    {
+      "id": "floor-limit-preflight-admits-exactly-full",
+      "max_message_bytes": 65536,
+      "document_id": "d",
+      "byte_length": 49029,
+      "envelope_bytes": 164,
+      "base64_length": 65372,
+      "preflight_bytes": 65536,
+      "admissible": true,
+      "reservation_bytes": 179937
+    },
+    {
+      "id": "floor-limit-preflight-rejects-one-envelope-byte-over",
+      "max_message_bytes": 65536,
+      "document_id": "d1",
+      "byte_length": 49029,
+      "envelope_bytes": 165,
+      "base64_length": 65372,
+      "preflight_bytes": 65537,
+      "admissible": false,
+      "reservation_bytes": null
+    }
+  ],
+  "frames": [
+    {
+      "id": "default-limit-12-mib-file-never-fits",
+      "max_message_bytes": 16777216,
+      "document_id": "d1",
+      "byte_length": 12582912,
+      "envelope_bytes": 168,
+      "base64_length": 16777216,
+      "request_bytes": 16777384,
+      "admissible": false
+    },
+    {
+      "id": "default-limit-exactly-full",
+      "max_message_bytes": 16777216,
+      "document_id": "d1",
+      "byte_length": 12582786,
+      "envelope_bytes": 168,
+      "base64_length": 16777048,
+      "request_bytes": 16777216,
+      "admissible": true
+    },
+    {
+      "id": "default-limit-one-envelope-byte-over",
+      "max_message_bytes": 16777216,
+      "document_id": "d12",
+      "byte_length": 12582786,
+      "envelope_bytes": 169,
+      "base64_length": 16777048,
+      "request_bytes": 16777217,
+      "admissible": false
+    },
+    {
+      "id": "default-limit-one-payload-byte-over",
+      "max_message_bytes": 16777216,
+      "document_id": "d1",
+      "byte_length": 12582787,
+      "envelope_bytes": 168,
+      "base64_length": 16777052,
+      "request_bytes": 16777220,
+      "admissible": false
+    },
+    {
+      "id": "floor-limit-exactly-full",
+      "max_message_bytes": 65536,
+      "document_id": "d",
+      "byte_length": 49029,
+      "envelope_bytes": 164,
+      "base64_length": 65372,
+      "request_bytes": 65536,
+      "admissible": true
+    },
+    {
+      "id": "floor-limit-one-envelope-byte-over",
+      "max_message_bytes": 65536,
+      "document_id": "d1",
+      "byte_length": 49029,
+      "envelope_bytes": 165,
+      "base64_length": 65372,
+      "request_bytes": 65537,
+      "admissible": false
+    }
+  ],
+  "reservations": [
+    {
+      "id": "reservation-over-the-in-flight-budget-is-rejected",
+      "max_message_bytes": 33554432,
+      "document_id": "d1",
+      "byte_length": 18874368,
+      "envelope_bytes": 168,
+      "base64_length": 25165824,
+      "preflight_bytes": 25165992,
+      "admissible": true,
+      "reservation_bytes": 69206184,
+      "rejected": true,
+      "error": {
+        "code": -32010,
+        "slopvac_code": "extract-budget",
+        "budget": "in-flight",
+        "limit": 67108864
+      }
+    }
+  ]
+}

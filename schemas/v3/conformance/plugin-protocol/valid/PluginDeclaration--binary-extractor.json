@@ -1,0 +1,18 @@
+{
+  "network": false,
+  "hooks": [
+    {
+      "kind": "binary-extractor",
+      "id": "office",
+      "formats": [
+        "docx",
+        "pptx",
+        "odt"
+      ]
+    }
+  ],
+  "features": {
+    "required": [],
+    "optional": []
+  }
+}

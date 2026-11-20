@@ -1,0 +1,64 @@
+{
+  "description": "Consumer rule for an unknown format id (plugin-protocol.md section 5.5.1). BinaryFormat is marked x-slopvac-extensible, so a later host may send an id that an older plugin does not know. The plugin declines that document with binary-input-declined (-32008), data.reason unknown-format, and answers the others; it does not fail the request with invalid-params. A strict schema check of the request reports an error only at unknown_format_pointer, the extensible position. Manifest validation stays strict: a manifest that declares the same id is refused at manifest_pointer. The host adds binary-input-declined to the unchecked list of d2, so that run exits 2; this vector checks the plugin side.",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 9,
+    "method": "binary-extractor/extract",
+    "params": {
+      "extractor": "office",
+      "documents": [
+        {
+          "id": "d1",
+          "format": "docx",
+          "byte_length": 8,
+          "bytes": "UEsDBBQABgA="
+        },
+        {
+          "id": "d2",
+          "format": "vsdx",
+          "byte_length": 8,
+          "bytes": "UEsDBBQABgA="
+        }
+      ]
+    }
+  },
+  "unknown_format_pointer": "/params/documents/1/format",
+  "reply": {
+    "results": [
+      {
+        "document": "d1",
+        "outcome": "empty"
+      },
+      {
+        "document": "d2",
+        "error": {
+          "code": -32008,
+          "message": "format vsdx is not one this extractor knows",
+          "data": {
+            "slopvac_code": "binary-input-declined",
+            "reason": "unknown-format"
+          }
+        }
+      }
+    ]
+  },
+  "declined_document": "d2",
+  "manifest": {
+    "network": false,
+    "hooks": [
+      {
+        "kind": "binary-extractor",
+        "id": "office",
+        "formats": [
+          "docx",
+          "vsdx"
+        ]
+      }
+    ],
+    "features": {
+      "required": [],
+      "optional": []
+    }
+  },
+  "manifest_pointer": "/hooks/0/formats/1"
+}
