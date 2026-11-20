@@ -91,7 +91,7 @@
     "Ref": {
       "description": "A style or genre name. A bare name resolves against the active plugins and must be unambiguous; `<plugin>:<name>` is exact.",
       "type": "string",
-      "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*$"
+      "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])"
     },
     "RuleLevel": {
       "description": "The level a rule or category reports at. `off` disables it.",
@@ -105,7 +105,7 @@
     "RuleKey": {
       "description": "A rule or category name: qualified `<plugin>:<id>` or a bare name that is unambiguous across the active plugins. Keys of maps in this file are data, so the `x-` convention does not apply to them.",
       "type": "string",
-      "pattern": "^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*$"
+      "pattern": "^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"
     },
     "Locale": {
       "description": "Spelling target. `und` disables the spelling check.",

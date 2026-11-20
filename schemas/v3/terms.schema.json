@@ -43,7 +43,7 @@
         "kind": {
           "description": "What the term is, as a kebab-case label. Known values: product, language, protocol, acronym, proper-noun, identifier and jargon. A check may treat acronyms and identifiers differently from prose words.",
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*$"
+          "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
         },
         "ignore_case": {
           "description": "Accept any casing. The term then works as an allow-list entry and no casing finding fires for it.",

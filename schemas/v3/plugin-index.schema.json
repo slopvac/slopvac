@@ -29,13 +29,13 @@
     "PackIndexSemver": {
       "description": "Semantic version 2.0.0 without build metadata. Major, minor and patch have at most nine digits (at most 999999999), which is the bound the reader enforces. Otherwise the pattern is the Semver def of plugin-manifest.schema.json, repeated here until that schema is on main.",
       "type": "string",
-      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\\s\\S])"
     },
     "PackIndexSource": {
       "description": "Where to fetch the plugin: an oci:// reference, an https:// release archive URL, or a git+https:// URL pinned to a full commit hash after @. The URL carries no user-info. http:// and path sources are invalid: a public listing has no project root.",
       "type": "string",
       "maxLength": 2048,
-      "pattern": "^((oci|https)://[^\\s/?#@]+([/?#]\\S*)?|git\\+https://[^\\s/?#@]+([/?#]\\S*)?@[0-9a-f]{40})$"
+      "pattern": "^((oci|https)://[^\\s/?#@]+([/?#]\\S*)?|git\\+https://[^\\s/?#@]+([/?#]\\S*)?@[0-9a-f]{40})(?![\\s\\S])"
     },
     "PublisherKey": {
       "description": "The key the publisher signs with, for display. Never a trust anchor: a first install shows the fingerprint and waits for the explicit pinning command, and a pinned key wins over this value.",
@@ -44,12 +44,12 @@
         "key_id": {
           "description": "Minisign key id, 16 uppercase hex digits.",
           "type": "string",
-          "pattern": "^[0-9A-F]{16}$"
+          "pattern": "^[0-9A-F]{16}(?![\\s\\S])"
         },
         "fingerprint": {
           "description": "SHA-256 of the raw public key bytes, 64 lowercase hex digits. This is the value that `slopvac plugins pin` takes.",
           "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
         }
       },
       "required": [

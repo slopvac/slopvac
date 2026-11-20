@@ -28,3 +28,8 @@
 "kind-plugin-retired.json" = "/plugins/0/kind"
 "namespace-core.json" = "/plugins/0/namespace"
 "id-core.json" = "/plugins/0/id"
+"id-trailing-newline.json" = "/plugins/0/id"
+"version-trailing-newline.json" = "/plugins/0/version"
+"source-trailing-newline.json" = "/plugins/0/source"
+"key-id-trailing-newline.json" = "/plugins/0/publisher_key/key_id"
+"fingerprint-trailing-newline.json" = "/plugins/0/publisher_key/fingerprint"

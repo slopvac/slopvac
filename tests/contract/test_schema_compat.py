@@ -1378,9 +1378,91 @@ def test_unverified_recursion_stop_is_suppressed_by_an_allow_entry(tmp_path):
     assert run(tmp_path, old, new, allow=[allow]) == []
 
 
+@pytest.mark.parametrize(
+    ("keyword", "kind"),
+    [
+        ("enum", "enum-narrowed"),
+        ("const", "const-narrowed"),
+        ("default", "unverified"),
+    ],
+)
+def test_portable_end_anchor_equivalence_is_limited_to_pattern(tmp_path, keyword, kind):
+    """A rule regex held in another keyword compiles with PCRE2, where `$` differs."""
+
+    def body(regex: str) -> dict:
+        value = [regex] if keyword == "enum" else regex
+        return schema(properties={"s": {"type": "string", keyword: value}})
+
+    findings = run(tmp_path, body("^a$"), body(f"^a{PORTABLE}"))
+    assert kinds(findings) == [(f"/properties/s/{keyword}", kind)]
+
+
 def test_unchanged_recursive_ref_still_passes(tmp_path):
     both = schema(properties={"p": {"$ref": "#/$defs/Node"}}, **{"$defs": node_defs()})
     assert run(tmp_path, both, both) == []
+
+
+PORTABLE = r"(?![\s\S])"
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "flagged"),
+    [
+        pytest.param("^[a-z]+$", f"^[a-z]+{PORTABLE}", False, id="trailing-dollar"),
+        pytest.param(
+            r"^(?!(.*/)?\.\.(/|$))",
+            rf"^(?!(.*/)?\.\.(/|{PORTABLE}))",
+            False,
+            id="inner",
+        ),
+        pytest.param("^a$|^b$", f"^a{PORTABLE}|^b{PORTABLE}", False, id="alternation"),
+        pytest.param(f"^[a-z]+{PORTABLE}", "^[a-z]+$", False, id="reverse"),
+        pytest.param("^[a-z]+$", f"^[a-z0-9]+{PORTABLE}", True, id="anchor-and-class"),
+        pytest.param("^[a-z]+$", "^[a-z]+", True, id="anchor-dropped"),
+        pytest.param(
+            "^([$(]x)$",
+            f"^([{PORTABLE}(]x){PORTABLE}",
+            True,
+            id="token-inside-class-is-not-an-anchor",
+        ),
+        pytest.param(r"^\$$", rf"^\${PORTABLE}", False, id="escaped-dollar-kept"),
+        pytest.param("^[$]$", f"^[$]{PORTABLE}", False, id="dollar-in-class-kept"),
+        pytest.param(
+            "(?m)^a$", f"(?m)^a{PORTABLE}", True, id="inline-flag-keeps-the-finding"
+        ),
+        pytest.param(
+            r"^[^](?m:[$]a$)",
+            rf"^[^](?m:[$]a{PORTABLE})",
+            True,
+            id="empty-negated-class-then-flag-group",
+        ),
+        pytest.param("^[]$", f"^[]{PORTABLE}", False, id="empty-class-closes"),
+        pytest.param(
+            "^[^]$", f"^[^]{PORTABLE}", False, id="negated-empty-class-closes"
+        ),
+        pytest.param(
+            "^(?-m:a)$", f"^(?-m:a){PORTABLE}", True, id="modifier-group-keeps-finding"
+        ),
+        pytest.param(
+            "a$\\", f"a{PORTABLE}\\", True, id="trailing-backslash-keeps-finding"
+        ),
+        pytest.param(
+            "^(?<n>a)$", f"^(?<n>a){PORTABLE}", False, id="named-group-is-not-a-flag"
+        ),
+        pytest.param(
+            "^(?<=a)b$", f"^(?<=a)b{PORTABLE}", False, id="lookbehind-is-not-a-flag"
+        ),
+    ],
+)
+def test_portable_end_anchor_equals_dollar(tmp_path, old, new, flagged):
+    findings = run(
+        tmp_path,
+        schema(properties={"s": {"pattern": old}}),
+        schema(properties={"s": {"pattern": new}}),
+    )
+    assert kinds(findings) == (
+        [("/properties/s/pattern", "pattern-changed")] if flagged else []
+    )
 
 
 @pytest.mark.parametrize("side", ["new", "baseline"])

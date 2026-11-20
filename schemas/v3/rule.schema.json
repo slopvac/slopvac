@@ -9,7 +9,7 @@
     "LocalRuleId": {
       "description": "Rule id inside its category. The qualified RuleId is <plugin>:<category>.<id>, built from the plugin manifest, the category id and this id.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$"
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
     },
     "Pcre2Pattern": {
       "description": "A PCRE2 pattern (10.43 or later). The pattern may not contain a \\uXXXX or \\UXXXXXXXX escape: write the literal character, or \\x{X...} in rule data written for v3. A lookbehind must have a finite maximum length of at most 255 characters, so + , * and {n,} are not allowed inside one. The schema rejects the \\u and \\U escapes; the loader compiles the rest.",
@@ -38,7 +38,7 @@
     "Genre": {
       "description": "Genre id. Genre data files are defined by slopvac-8l4.2.4.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*$"
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"
     },
     "TokensMatch": {
       "description": "Literal phrases, matched at word boundaries.",
@@ -71,7 +71,7 @@
         "placeholders": {
           "description": "Maps a literal placeholder string in the pattern to a configuration source. The only source is allowed-words: the loader replaces the placeholder with an alternation of the escaped ASCII alphabetic words from the locale allow list, sorted case-insensitively. With no words it becomes (?!), which never matches.",
           "type": "object",
-          "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"},
+          "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])"},
           "additionalProperties": {"enum": ["allowed-words"]},
           "minProperties": 1
         },
@@ -108,7 +108,7 @@
         "metric": {
           "description": "Metric name. The names the 2.x engine measures are listed in docs/contract/rules.md.",
           "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*$"
+          "pattern": "^[a-z][a-z0-9_]*(?![\\s\\S])"
         },
         "threshold": {"type": "number"},
         "comparison": {"enum": ["gt", "gte", "lt", "lte"], "default": "gt"}
@@ -122,7 +122,7 @@
       "type": "object",
       "properties": {
         "kind": {"const": "structure"},
-        "check": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+        "check": {"type": "string", "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"}
       },
       "required": ["kind", "check"],
       "additionalProperties": false,
@@ -150,7 +150,7 @@
       "type": "object",
       "properties": {
         "kind": {"const": "vocabulary"},
-        "check": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+        "check": {"type": "string", "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"}
       },
       "required": ["kind", "check"],
       "additionalProperties": false,
@@ -210,8 +210,8 @@
       "description": "A named, closed reason a finding may be suppressed. A suppression annotation must cite one by name. With detector, the engine drops the finding itself when the named detector, or the context tag of that name, holds at the match.",
       "type": "object",
       "properties": {
-        "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
-        "detector": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"},
+        "detector": {"type": "string", "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"},
         "description": {"type": "string"}
       },
       "required": ["name"],
@@ -281,7 +281,7 @@
         "ste_ref": {
           "description": "Issue-qualified STE rule number such as 9:1.2 or 9:GR-2. A citation only.",
           "type": "string",
-          "pattern": "^\\d+:\\d+\\.\\d+$|^\\d+:GR-\\d+$"
+          "pattern": "^\\d+:\\d+\\.\\d+(?![\\s\\S])|^\\d+:GR-\\d+(?![\\s\\S])"
         },
         "orwell_ref": {"type": "string"},
         "url": {"type": "string"},

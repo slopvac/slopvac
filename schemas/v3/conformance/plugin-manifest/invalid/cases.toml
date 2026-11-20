@@ -24,3 +24,6 @@
 "requires-trailing-newline.toml" = "/requires/0/version"
 "requires-leading-zero.toml" = "/requires/0/version"
 "requires-empty-prerelease-segment.toml" = "/requires/0/version"
+"id-trailing-newline.toml" = "/id"
+"version-trailing-newline.toml" = "/version"
+"env-name-trailing-newline.toml" = "/plugin/env/0"

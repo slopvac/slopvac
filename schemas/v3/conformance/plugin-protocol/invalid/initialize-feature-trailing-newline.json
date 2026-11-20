@@ -1,0 +1,24 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": 1,
+    "minProtocolVersion": 1,
+    "hostInfo": {
+      "name": "slopvac",
+      "version": "3.0.0"
+    },
+    "capabilities": {
+      "hooks": [],
+      "features": [
+        "document-path\n"
+      ]
+    },
+    "offline": false,
+    "limits": {
+      "maxMessageBytes": 16777216,
+      "maxBatchDocuments": 64
+    }
+  }
+}

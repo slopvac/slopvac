@@ -6,7 +6,11 @@ Usage: python scripts/contract/schema_compat.py --base <git-ref>
 The baseline is a git ref (read through ``git show``) or a directory with the same
 layout as schemas/v3 (``*.schema.json`` plus ``conformance/``). The working tree
 is compared against it. A change within one schema_version may add, never remove
-or tighten (docs/contract/policies.md, section 3.9).
+or tighten (docs/contract/policies.md, section 3.9). A ``pattern`` that differs only
+by ``(?![\\s\\S])`` against ``$`` is unchanged, where the anchor is a real end assertion
+(not escaped, not inside a character class, no inline flag group): Python's ``re`` (the
+reference validator) and PCRE2 read ``$`` as also matching before a final newline;
+JSON Schema ``pattern`` uses ECMA-262, where it does not.
 
 Each finding prints as ``file:json-pointer: kind: old -> new``. The kind is a stable
 kebab-case code; a code is never reused and never changes meaning. An entry in
@@ -55,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -198,6 +203,69 @@ def _canon(value: object) -> str:
 
 def _same(a: object, b: object) -> bool:
     return _canon(a) == _canon(b)
+
+
+_PORTABLE_END = r"(?![\s\S])"
+# Any ``(?`` followed by a letter or ``-`` opens an inline flag or modifier group such as
+# ``(?m)``, ``(?i:`` or ``(?-m:``. Flags can change what ``$`` means, so a pattern that
+# holds one is never treated as equivalent. ``(?:``, ``(?=``, ``(?!``, ``(?<=``,
+# ``(?<!`` and ``(?<name>`` do not match.
+_INLINE_FLAGS = re.compile(r"\(\?[a-zA-Z-]")
+
+
+def _with_dollar_for_end_anchors(pattern: str) -> str | None:
+    """Return ``pattern`` with each real end assertion spelled ``$``.
+
+    Only an ``(?![\\s\\S])`` outside a character class is rewritten. An escaped
+    character (``\\$``) and anything inside a class (``[$]``, ``[(?![\\s\\S])]``) stay
+    as they are. Classes follow ECMA-262 without the ``u`` flag: a class runs from an
+    unescaped ``[`` to the next unescaped ``]``, so ``[]`` is an empty class and
+    ``[^]`` matches any character. A backslash escapes the next character in and out of
+    a class. Returns ``None`` for a pattern with an inline flag group anywhere, or one
+    that ends in a lone backslash. No tokenizer for the ECMA-262 dialect was available:
+    the checker is Python, and ``re._parser`` reads Python's dialect.
+    """
+    if _INLINE_FLAGS.search(pattern):
+        return None
+    out: list[str] = []
+    i, n = 0, len(pattern)
+    in_class = False
+    while i < n:
+        char = pattern[i]
+        if char == "\\":
+            if i + 1 >= n:
+                return None
+            out.append(pattern[i : i + 2])
+            i += 2
+        elif in_class:
+            in_class = char != "]"
+            out.append(char)
+            i += 1
+        elif char == "[":
+            in_class = True
+            out.append(char)
+            i += 1
+            if pattern.startswith("^", i):
+                out.append("^")
+                i += 1
+        elif pattern.startswith(_PORTABLE_END, i):
+            out.append("$")
+            i += len(_PORTABLE_END)
+        else:
+            out.append(char)
+            i += 1
+    return "".join(out)
+
+
+def _same_pattern(old: object, new: object) -> bool:
+    """Equal patterns, treating the portable end anchor as ``$`` (see the module docstring)."""
+    if old == new:
+        return True
+    if isinstance(old, str) and isinstance(new, str):
+        old_norm = _with_dollar_for_end_anchors(old)
+        new_norm = _with_dollar_for_end_anchors(new)
+        return old_norm is not None and old_norm == new_norm
+    return False
 
 
 # --- structural comparison -------------------------------------------------------
@@ -613,7 +681,9 @@ def _compare_scalars(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]
     for key in _MAX_KEYWORDS:
         if key in n and not (_is_number(o.get(key)) and n[key] >= o[key]):
             yield find(key, "bound-tightened")
-    if ("pattern" in o or "pattern" in n) and o.get("pattern") != n.get("pattern"):
+    if ("pattern" in o or "pattern" in n) and not _same_pattern(
+        o.get("pattern"), n.get("pattern")
+    ):
         yield find("pattern", "pattern-changed")
     for key in ("format", "multipleOf"):
         if key in n and not _same(o.get(key), n[key]):

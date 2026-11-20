@@ -18,7 +18,7 @@ pub(crate) fn is_pack(s: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`.
+/// `^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\s\S])`.
 pub(crate) fn is_kebab(s: &str) -> bool {
     let mut parts = s.split('-');
     let first_ok = parts.next().is_some_and(|p| {
@@ -46,12 +46,12 @@ impl IdError {
     }
 }
 
-/// Pack identifier: `^[a-z][a-z0-9-]*$`.
+/// Pack identifier: `^[a-z][a-z0-9-]*(?![\s\S])`.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "String", into = "String")]
-#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*$"))]
+#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*(?![\\s\\S])"))]
 pub struct PackId(String);
 
 impl PackId {
@@ -99,7 +99,7 @@ impl fmt::Display for PackId {
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "String", into = "String")]
-#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*$"))]
+#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"))]
 pub struct RuleId(String);
 
 impl RuleId {
@@ -167,12 +167,12 @@ pub enum Severity {
     Error,
 }
 
-/// Text-context label such as `prose` or `code-fence`: `^[a-z][a-z0-9-]*$`.
+/// Text-context label such as `prose` or `code-fence`: `^[a-z][a-z0-9-]*(?![\s\S])`.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "String", into = "String")]
-#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*$"))]
+#[schemars(with = "String", extend("pattern" = "^[a-z][a-z0-9-]*(?![\\s\\S])"))]
 pub struct ContextTag(String);
 
 impl ContextTag {

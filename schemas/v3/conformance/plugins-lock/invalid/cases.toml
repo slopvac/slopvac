@@ -19,3 +19,7 @@
 "nb-minute-60.toml" = "/plugins/0/signature/not_before"
 "kind-plugin-retired.toml" = "/plugins/0/kind"
 "id-core.toml" = "/plugins/0/id"
+"digest-trailing-newline.toml" = "/plugins/0/digest"
+"source-trailing-newline.toml" = "/plugins/0/source"
+"key-id-trailing-newline.toml" = "/plugins/0/signature/key_id"
+"not-before-trailing-newline.toml" = "/plugins/0/signature/not_before"
