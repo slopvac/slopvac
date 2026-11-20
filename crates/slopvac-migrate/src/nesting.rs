@@ -30,11 +30,9 @@ pub(crate) struct TooDeep {
     pub(crate) line: usize,
 }
 
-impl TooDeep {
-    /// The message for a diagnostic, without the file and line.
-    pub(crate) fn message(self) -> String {
-        format!("tables nest more than {MAX_DEPTH} levels deep")
-    }
+/// The message for a diagnostic, without the file and line.
+pub(crate) fn message() -> String {
+    format!("tables nest more than {MAX_DEPTH} levels deep")
 }
 
 enum Node<'a> {

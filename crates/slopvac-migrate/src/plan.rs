@@ -452,7 +452,7 @@ fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
 fn extract_tool_table(text: &str, file: &str) -> Result<Option<(String, String)>, Error> {
     crate::nesting::check(text).map_err(|e| Error::Parse {
         file: file.to_owned(),
-        message: format!("line {}: {}", e.line, e.message()),
+        message: format!("line {}: {}", e.line, crate::nesting::message()),
     })?;
     let mut doc: DocumentMut = text
         .parse()

@@ -329,10 +329,10 @@ fn rewrite(
 ) -> Result<Option<(String, Vec<String>)>, Vec<Dropped>> {
     let blocked =
         |line: usize, key: &str, reason: String| vec![Dropped::new(label, key, line, reason)];
-    if format == "toml" {
-        if let Err(e) = nesting::check(text) {
-            return Err(blocked(e.line, "entries", e.message()));
-        }
+    if format == "toml"
+        && let Err(e) = nesting::check(text)
+    {
+        return Err(blocked(e.line, "entries", nesting::message()));
     }
     let Err(refused) = Blocklist::parse(label, format, text) else {
         return Ok(None);
