@@ -75,13 +75,29 @@ pub(crate) enum LockError {
     #[error(transparent)]
     Refused(#[from] UpdateMessage),
     /// The lock file or the executable could not be opened, read, written or locked.
-    #[error("cannot use the update lock {file}: {source}")]
+    #[error("{}", io_text(.file, .source))]
     Io {
         /// Lock file name.
         file: String,
         /// The failure.
         source: std::io::Error,
     },
+}
+
+fn io_text(file: &str, source: &std::io::Error) -> String {
+    UpdateText::LockIo {
+        file: file.to_owned(),
+        detail: source.to_string(),
+    }
+    .to_string()
+}
+
+fn version_reason(name: &str, reason: &str) -> String {
+    UpdateText::VersionReason {
+        name: name.to_owned(),
+        reason: reason.to_owned(),
+    }
+    .to_string()
 }
 
 impl LockError {
@@ -227,13 +243,13 @@ fn handle_problem(file: &File) -> std::io::Result<Option<&'static str>> {
     use std::os::unix::fs::MetadataExt;
     let meta = file.metadata()?;
     Ok(if !meta.is_file() {
-        Some("it is not a regular file")
+        Some(UpdatePhrase::LockNotRegular.as_static())
     } else if meta.nlink() != 1 {
-        Some("it has more than one hard link")
+        Some(UpdatePhrase::LockHardLinks.as_static())
     } else if meta.uid() != rustix::process::getuid().as_raw() {
-        Some("it is owned by another user")
+        Some(UpdatePhrase::LockOtherOwner.as_static())
     } else if meta.mode() & 0o177 != 0 {
-        Some("its mode is looser than 0600")
+        Some(UpdatePhrase::LockLooseMode.as_static())
     } else {
         None
     })
@@ -241,7 +257,7 @@ fn handle_problem(file: &File) -> std::io::Result<Option<&'static str>> {
 
 #[cfg(not(unix))]
 fn handle_problem(file: &File) -> std::io::Result<Option<&'static str>> {
-    Ok((!file.metadata()?.is_file()).then_some("it is not a regular file"))
+    Ok((!file.metadata()?.is_file()).then_some(UpdatePhrase::LockNotRegular.as_static()))
 }
 
 /// What to tell the user after [`UpdateMessage::Interrupted`], decided by trying the lock.
@@ -295,7 +311,7 @@ impl UpdateLock {
                 let is_link =
                     std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink());
                 return Err(if is_link {
-                    unsafe_file("it is a symbolic link")
+                    unsafe_file(UpdatePhrase::LockSymlink.as_static())
                 } else {
                     io(e)
                 });
@@ -424,8 +440,9 @@ impl UpdateLock {
         }
         let version = match floor {
             Some(version) => version,
-            None => crate::probe::installed_version(&self.exe, probe_timeout)
-                .map_err(|e| LockError::version_unknown(format!("{}: {e}", self.name_of_exe())))?,
+            None => crate::probe::installed_version(&self.exe, probe_timeout).map_err(|e| {
+                LockError::version_unknown(version_reason(&self.name_of_exe(), &e.to_string()))
+            })?,
         };
         Ok(Installed { version, sha: now })
     }
@@ -447,10 +464,7 @@ impl UpdateLock {
         to: &semver::Version,
         new_binary: &[u8],
     ) -> Result<String, LockError> {
-        self.require_on_disk(
-            &installed.sha,
-            "the installed binary changed after its version was checked",
-        )?;
+        self.require_on_disk(&installed.sha, UpdatePhrase::LockBinaryChanged.as_static())?;
         let new_sha = fingerprint_bytes(new_binary);
         self.write_record(&Record::Pending {
             to: to.clone(),
@@ -467,10 +481,7 @@ impl UpdateLock {
         version: &semver::Version,
         payload_sha: &str,
     ) -> Result<(), LockError> {
-        self.require_on_disk(
-            payload_sha,
-            "the installed binary is not the build this update wrote",
-        )?;
+        self.require_on_disk(payload_sha, UpdatePhrase::LockBinaryNotWritten.as_static())?;
         self.write_record(&Record::Installed {
             version: version.clone(),
             sha: payload_sha.to_owned(),
@@ -483,9 +494,9 @@ impl UpdateLock {
         if self.exe_fingerprint()? == sha {
             return Ok(());
         }
-        Err(LockError::version_unknown(format!(
-            "{}: {reason}",
-            self.name_of_exe()
+        Err(LockError::version_unknown(version_reason(
+            &self.name_of_exe(),
+            reason,
         )))
     }
 }

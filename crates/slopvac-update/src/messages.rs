@@ -191,6 +191,37 @@ pub(crate) enum UpdateText {
         path: PathBuf,
         problem: String,
     },
+    /// The update lock file could not be opened, read, written or locked.
+    #[code("update-lock-io")]
+    #[text("cannot use the update lock {file}: {detail}")]
+    LockIo { file: String, detail: String },
+    /// Why the installed version is unknown: the executable's name and the reason.
+    #[code("update-version-reason")]
+    #[text("{name}: {reason}")]
+    VersionReason { name: String, reason: String },
+    /// The installed executable did not start.
+    #[code("update-probe-spawn")]
+    #[text("it did not start: {detail}")]
+    ProbeSpawn { detail: String },
+    /// The installed executable did not report its version in time.
+    #[code("update-probe-timeout")]
+    #[text("it did not answer within {seconds} s")]
+    ProbeTimeout { seconds: String },
+    /// The installed executable exited with a failure.
+    #[code("update-probe-failed")]
+    #[text("it exited with {status}")]
+    ProbeFailed { status: String },
+    /// The installed executable wrote more than the output cap.
+    #[code("update-probe-too-large")]
+    #[text("its output is larger than {limit} bytes")]
+    ProbeTooLarge {
+        #[count]
+        limit: u64,
+    },
+    /// The output of the installed executable could not be read.
+    #[code("update-probe-read")]
+    #[text("cannot read its output: {detail}")]
+    ProbeRead { detail: String },
     /// Advice after an interrupted update when no other update runs.
     #[code("update-hint-remove-lock")]
     #[text("No other update is running, so remove {name} beside it and run the update again.")]
@@ -276,6 +307,38 @@ pub(crate) enum UpdatePhrase {
     #[code("update-pipeline-no-parent")]
     #[text("no parent directory")]
     NoParentDirectory,
+    /// The lock file is not a regular file.
+    #[code("update-lock-not-regular")]
+    #[text("it is not a regular file")]
+    LockNotRegular,
+    /// The lock file has more than one hard link.
+    #[code("update-lock-hard-links")]
+    #[text("it has more than one hard link")]
+    LockHardLinks,
+    /// Another user owns the lock file.
+    #[code("update-lock-other-owner")]
+    #[text("it is owned by another user")]
+    LockOtherOwner,
+    /// The lock file mode is looser than 0600.
+    #[code("update-lock-loose-mode")]
+    #[text("its mode is looser than 0600")]
+    LockLooseMode,
+    /// The lock file is a symbolic link.
+    #[code("update-lock-symlink")]
+    #[text("it is a symbolic link")]
+    LockSymlink,
+    /// The installed binary changed between the version check and the record write.
+    #[code("update-lock-binary-changed")]
+    #[text("the installed binary changed after its version was checked")]
+    LockBinaryChanged,
+    /// The installed binary is not the build the update wrote.
+    #[code("update-lock-binary-not-written")]
+    #[text("the installed binary is not the build this update wrote")]
+    LockBinaryNotWritten,
+    /// The installed executable's output is not a slopvac version document.
+    #[code("update-probe-unparseable")]
+    #[text("its output is not a slopvac version document")]
+    ProbeUnparseable,
     /// Advice after an interrupted update when another update holds the lock.
     #[code("update-hint-wait")]
     #[text("Another slopvac update is running; wait for it to finish, then run the update again.")]
@@ -514,6 +577,49 @@ mod tests {
                 },
                 "Make sure that no slopvac update is running before you remove slopvac.update.lock, then run the update again.",
             ),
+        ]
+    }
+
+    fn lock_texts() -> Vec<(UpdateText, &'static str)> {
+        vec![
+            (
+                UpdateText::LockIo {
+                    file: s("slopvac.update.lock"),
+                    detail: s("denied"),
+                },
+                "cannot use the update lock slopvac.update.lock: denied",
+            ),
+            (
+                UpdateText::VersionReason {
+                    name: s("slopvac"),
+                    reason: s("it exited with exit status: 1"),
+                },
+                "slopvac: it exited with exit status: 1",
+            ),
+            (
+                UpdateText::ProbeSpawn {
+                    detail: s("denied"),
+                },
+                "it did not start: denied",
+            ),
+            (
+                UpdateText::ProbeTimeout { seconds: s("0.05") },
+                "it did not answer within 0.05 s",
+            ),
+            (
+                UpdateText::ProbeFailed {
+                    status: s("exit status: 1"),
+                },
+                "it exited with exit status: 1",
+            ),
+            (
+                UpdateText::ProbeTooLarge { limit: 65536 },
+                "its output is larger than 65536 bytes",
+            ),
+            (
+                UpdateText::ProbeRead { detail: s("eof") },
+                "cannot read its output: eof",
+            ),
             (
                 UpdateText::PolicyUnreadable {
                     reason: s("denied"),
@@ -528,6 +634,7 @@ mod tests {
         let texts: Vec<(UpdateText, &str)> = command_texts()
             .into_iter()
             .chain(pipeline_texts())
+            .chain(lock_texts())
             .collect();
         let registered = text_entries();
         for (text, expected) in &texts {
@@ -583,6 +690,26 @@ mod tests {
             ),
             (UpdatePhrase::BinaryTooLarge, "binary is too large"),
             (UpdatePhrase::NoParentDirectory, "no parent directory"),
+            (UpdatePhrase::LockNotRegular, "it is not a regular file"),
+            (
+                UpdatePhrase::LockHardLinks,
+                "it has more than one hard link",
+            ),
+            (UpdatePhrase::LockOtherOwner, "it is owned by another user"),
+            (UpdatePhrase::LockLooseMode, "its mode is looser than 0600"),
+            (UpdatePhrase::LockSymlink, "it is a symbolic link"),
+            (
+                UpdatePhrase::LockBinaryChanged,
+                "the installed binary changed after its version was checked",
+            ),
+            (
+                UpdatePhrase::LockBinaryNotWritten,
+                "the installed binary is not the build this update wrote",
+            ),
+            (
+                UpdatePhrase::ProbeUnparseable,
+                "its output is not a slopvac version document",
+            ),
             (
                 UpdatePhrase::HintWait,
                 "Another slopvac update is running; wait for it to finish, then run the update again.",

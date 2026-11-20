@@ -230,6 +230,14 @@ update-hint-remove-lock text
 update-hint-wait text
 update-in-progress error
 update-interrupted error
+update-lock-binary-changed text
+update-lock-binary-not-written text
+update-lock-hard-links text
+update-lock-io text
+update-lock-loose-mode text
+update-lock-not-regular text
+update-lock-other-owner text
+update-lock-symlink text
 update-lock-unsafe error
 update-notice-advice-and-hint text
 update-notice-migrate-hint text
@@ -250,6 +258,12 @@ update-policy-not-regular text
 update-policy-too-large error
 update-policy-unreadable text
 update-prerelease-refused error
+update-probe-failed text
+update-probe-read text
+update-probe-spawn text
+update-probe-timeout text
+update-probe-too-large text
+update-probe-unparseable text
 update-registry-unexpected text
 update-verification-failed error
 update-verify-invalid text
@@ -257,4 +271,5 @@ update-verify-missing text
 update-verify-not-utf8 text
 update-verify-rejected text
 update-verify-wrong-release text
+update-version-reason text
 update-version-unknown error
