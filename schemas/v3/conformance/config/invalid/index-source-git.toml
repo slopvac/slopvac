@@ -1,0 +1,5 @@
+schema_version = 3
+
+[[index.extra]]
+name = "acme"
+source = "git+https://github.com/acme/index@0123456789abcdef0123456789abcdef01234567"

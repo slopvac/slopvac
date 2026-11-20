@@ -42,6 +42,17 @@ version = "1.2.0"
 id = "acme-tagger"
 source = "../plugins/acme-tagger"
 
+[index]
+default = false
+
+[[index.extra]]
+name = "acme"
+source = "https://plugins.acme.example/index.json"
+
+[[index.extra]]
+name = "mirror"
+source = "oci://ghcr.io/acme/slopvac-index@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 [[genres]]
 genre = "reference"
 files = ["docs/reference/**"]

@@ -37,6 +37,12 @@ const PENDING: &[(&str, &str, &str)] = &[
         "/$defs/BlocklistEntry/properties/word",
         "slopvac-8l4.2.55",
     ),
+    // Pending only because of `\s` and `\S`, which the subset forbids. The end anchor is portable.
+    (
+        "config.schema.json",
+        "/$defs/IndexExtraSource",
+        "slopvac-8l4.2.54",
+    ),
     (
         "plugin-index.schema.json",
         "/$defs/PackIndexSource",

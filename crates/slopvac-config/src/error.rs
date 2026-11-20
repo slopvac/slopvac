@@ -4,7 +4,7 @@ use std::io;
 
 use slopvac_messages::Catalog;
 
-use crate::diag::{Code, Diagnostic, SourceFile, render};
+use crate::diag::{Code, Diagnostic, SourceFile, render_config};
 use crate::messages::{ConfigMessage, ConfigPhrase, ConfigText};
 
 /// A file whose text slopvac refused, with the reasons.
@@ -22,7 +22,7 @@ impl Rejected {
     /// Render every diagnostic as plain text.
     #[must_use]
     pub fn render(&self) -> String {
-        render(
+        render_config(
             SourceFile {
                 name: &self.file,
                 text: &self.text,

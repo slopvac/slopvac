@@ -1,0 +1,5 @@
+schema_version = 3
+
+[[index.extra]]
+name = "slopvac"
+source = "https://plugins.acme.example/index.json"

@@ -45,6 +45,7 @@ config-budget-bytes text
 config-budget-depth text
 config-budget-exceeded error
 config-budget-files text
+config-budget-index-extra text
 config-directive-empty text
 config-duplicate-scope error
 config-expected-one-of text
@@ -72,6 +73,7 @@ config-help-migrate text
 config-help-migrate-version text
 config-help-reference-key text
 config-help-relative-to-entry text
+config-help-remove-indexes text
 config-help-remove-or-split text
 config-help-remove-repeated-files text
 config-help-remove-repeated-key text
@@ -121,14 +123,17 @@ config-label-reads-version-3 text
 config-label-repeated text
 config-label-same-files text
 config-label-too-many-blocks text
+config-label-too-many-indexes text
 config-label-write-key-value text
 config-legacy-dotfile text
 config-legacy-pyproject text
 config-legacy-version error
 config-list-repeats text
+config-list-too-long text
 config-list-too-short text
 config-missing-key error
 config-no-schema-version text
+config-noun-index-name text
 config-noun-pack-id text
 config-noun-plugin-id text
 config-noun-reference text
@@ -144,6 +149,11 @@ config-reason-directory text
 config-reason-not-found text
 config-reason-not-utf8 text
 config-reason-permission-denied text
+config-reason-source-host text
+config-reason-source-scheme text
+config-reason-source-space text
+config-reason-source-too-long text
+config-reason-source-user-info text
 config-reason-unreadable text
 config-rejected-many text
 config-rejected-one text
@@ -155,6 +165,7 @@ config-scope-front-matter text
 config-scope-genre-block text
 config-scope-override text
 config-scope-repeats text
+config-source-refused text
 config-too-large error
 config-type-mismatch text
 config-type-mismatch-label text

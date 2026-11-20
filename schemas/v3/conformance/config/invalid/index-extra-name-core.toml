@@ -1,0 +1,5 @@
+schema_version = 3
+
+[[index.extra]]
+name = "core"
+source = "https://plugins.acme.example/index.json"

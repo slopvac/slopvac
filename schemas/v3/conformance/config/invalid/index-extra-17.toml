@@ -1,0 +1,69 @@
+schema_version = 3
+
+[[index.extra]]
+name = "i01"
+source = "https://i01.example/index.json"
+
+[[index.extra]]
+name = "i02"
+source = "https://i02.example/index.json"
+
+[[index.extra]]
+name = "i03"
+source = "https://i03.example/index.json"
+
+[[index.extra]]
+name = "i04"
+source = "https://i04.example/index.json"
+
+[[index.extra]]
+name = "i05"
+source = "https://i05.example/index.json"
+
+[[index.extra]]
+name = "i06"
+source = "https://i06.example/index.json"
+
+[[index.extra]]
+name = "i07"
+source = "https://i07.example/index.json"
+
+[[index.extra]]
+name = "i08"
+source = "https://i08.example/index.json"
+
+[[index.extra]]
+name = "i09"
+source = "https://i09.example/index.json"
+
+[[index.extra]]
+name = "i10"
+source = "https://i10.example/index.json"
+
+[[index.extra]]
+name = "i11"
+source = "https://i11.example/index.json"
+
+[[index.extra]]
+name = "i12"
+source = "https://i12.example/index.json"
+
+[[index.extra]]
+name = "i13"
+source = "https://i13.example/index.json"
+
+[[index.extra]]
+name = "i14"
+source = "https://i14.example/index.json"
+
+[[index.extra]]
+name = "i15"
+source = "https://i15.example/index.json"
+
+[[index.extra]]
+name = "i16"
+source = "https://i16.example/index.json"
+
+[[index.extra]]
+name = "i17"
+source = "https://i17.example/index.json"

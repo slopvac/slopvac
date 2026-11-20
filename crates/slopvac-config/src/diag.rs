@@ -3,7 +3,7 @@
 use std::fmt;
 use std::ops::Range;
 
-use annotate_snippets::{AnnotationKind, Group, Level, Renderer, Snippet};
+use annotate_snippets::{AnnotationKind, Group, Level, Origin, Renderer, Snippet};
 
 use slopvac_messages::Catalog;
 
@@ -116,6 +116,8 @@ pub enum ConfigBudget {
     /// `[[genres]]` and `[[overrides]]` blocks in one file, in blocks:
     /// [`crate::MAX_FILE_BLOCKS`].
     FileBlocks,
+    /// `[[index.extra]]` entries in one file, in indexes: [`crate::MAX_INDEX_EXTRA`].
+    IndexExtra,
 }
 
 impl ConfigBudget {
@@ -128,6 +130,7 @@ impl ConfigBudget {
             Self::ExtendsBytes => "extends-bytes",
             Self::ExtendsAppliedBytes => "extends-applied-bytes",
             Self::FileBlocks => "file-blocks",
+            Self::IndexExtra => "index-extra",
         }
     }
 }
@@ -191,14 +194,141 @@ pub struct SourceFile<'a> {
 }
 
 /// Render every diagnostic as plain text, separated by blank lines.
+///
+/// The value of every `index.extra[*].source` is masked in the quoted text. A file whose name
+/// ends in `.toml` that does not parse gets no excerpt at all, only its location, because the
+/// masking needs a parsed document.
 #[must_use]
 pub fn render(source: SourceFile<'_>, diagnostics: &[Diagnostic]) -> String {
+    let is_toml = std::path::Path::new(source.name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"));
+    render_as(source, diagnostics, is_toml)
+}
+
+/// Render the diagnostics of a TOML config, which gets no excerpt when it does not parse.
+pub(crate) fn render_config(source: SourceFile<'_>, diagnostics: &[Diagnostic]) -> String {
+    render_as(source, diagnostics, true)
+}
+
+fn render_as(source: SourceFile<'_>, diagnostics: &[Diagnostic], toml_config: bool) -> String {
     let renderer = Renderer::plain();
-    diagnostics
-        .iter()
-        .map(|d| render_one(&renderer, source, d))
-        .collect::<Vec<_>>()
-        .join("\n")
+    match redact_index_sources(source.text) {
+        Some(masked) => {
+            let source = SourceFile {
+                name: source.name,
+                text: &masked,
+            };
+            diagnostics
+                .iter()
+                .map(|d| render_one(&renderer, source, d))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        None if toml_config => diagnostics
+            .iter()
+            .map(|d| render_located(&renderer, source, d))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        None => diagnostics
+            .iter()
+            .map(|d| render_one(&renderer, source, d))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    }
+}
+
+/// One diagnostic with its file, line and column and no excerpt of the text.
+fn render_located(renderer: &Renderer, source: SourceFile<'_>, d: &Diagnostic) -> String {
+    let (line, column) = d.location(source.text);
+    let mut report = vec![
+        Level::ERROR
+            .primary_title(d.message.clone())
+            .id(d.code.as_str())
+            .element(Origin::path(source.name).line(line).char_column(column)),
+    ];
+    if let Some(help) = &d.help {
+        report.push(Group::with_title(Level::HELP.secondary_title(help.clone())));
+    }
+    renderer.render(&report)
+}
+
+/// The text with the value of every `index.extra[*].source` masked, because a source may carry a
+/// credential and the snippet quotes the whole line. `None` when the text is not TOML.
+///
+/// The mask covers the span of the value under `source` of each entry, whatever the spelling of
+/// the key and whatever the type of the value. It keeps the quotes of a string, line breaks and
+/// byte length, so every span, line and column stays where it was. Each other byte becomes `*`.
+fn redact_index_sources(text: &str) -> Option<std::borrow::Cow<'_, str>> {
+    use crate::tree::{Node, Value, parse_toml};
+
+    let root = parse_toml(text).ok()?;
+    let mut nodes: Vec<&Node> = Vec::new();
+    if let Some(extra) = root.get("index").and_then(|index| index.get("extra")) {
+        match &extra.value {
+            Value::Array(items) => nodes.extend(items.iter().filter_map(|item| item.get("source"))),
+            Value::Table(_) => nodes.extend(extra.get("source")),
+            _ => {}
+        }
+    }
+    let mut spans: Vec<(Range<usize>, bool)> = nodes
+        .into_iter()
+        .map(|node| (node.span.clone(), matches!(node.value, Value::Str(_))))
+        .filter(|(span, _)| {
+            span.end <= text.len()
+                && text.is_char_boundary(span.start)
+                && text.is_char_boundary(span.end)
+        })
+        .collect();
+    if spans.is_empty() {
+        return Some(std::borrow::Cow::Borrowed(text));
+    }
+    spans.sort_by_key(|(s, _)| s.start);
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    for (span, is_string) in spans {
+        if span.start < at {
+            continue;
+        }
+        out.push_str(&text[at..span.start]);
+        let literal = &text[span.clone()];
+        if is_string {
+            out.push_str(&mask_literal(literal));
+        } else {
+            out.extend(literal.chars().map(|c| star(c, true)));
+        }
+        at = span.end;
+    }
+    out.push_str(&text[at..]);
+    Some(std::borrow::Cow::Owned(out))
+}
+
+/// A TOML string literal with its quotes kept and the rest replaced by `*`, byte for byte.
+fn mask_literal(literal: &str) -> String {
+    let quote = literal.chars().next().filter(|c| matches!(c, '"' | '\''));
+    let Some(q) = quote else {
+        return literal.chars().map(|c| star(c, false)).collect();
+    };
+    let width = if literal.starts_with(&q.to_string().repeat(3)) && literal.len() >= 6 {
+        3
+    } else {
+        1
+    };
+    let inner_end = literal.len().saturating_sub(width).max(width);
+    let (head, rest) = literal.split_at(width);
+    let (inner, tail) = rest.split_at(inner_end - width);
+    let masked: String = inner.chars().map(|c| star(c, true)).collect();
+    format!("{head}{masked}{tail}")
+}
+
+/// `*` repeated for the bytes of `c`, so a masked line keeps its byte offsets. Line breaks stay
+/// when `keep_breaks` is set.
+fn star(c: char, keep_breaks: bool) -> String {
+    if keep_breaks && matches!(c, '\n' | '\r') {
+        c.to_string()
+    } else {
+        "*".repeat(c.len_utf8())
+    }
 }
 
 /// The text as `annotate-snippets` should see it, and how far its offsets moved.
