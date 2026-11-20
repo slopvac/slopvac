@@ -83,6 +83,28 @@ pub struct Notice {
 }
 
 impl Notice {
+    /// Render a notice from a compiled catalog. The catalog's code must be a kebab-case
+    /// identifier, as checked by `#[derive(Catalog)]`. An empty rendering uses the entry's
+    /// nonempty summary instead.
+    #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "codes and summaries are validated compiled catalog data"
+    )]
+    pub fn from_catalog(level: NoticeLevel, catalog: &impl slopvac_messages::Catalog) -> Self {
+        let message = slopvac_messages::render(catalog);
+        Self {
+            code: KebabName::new(catalog.code()).expect("compiled catalog code is valid"),
+            level,
+            message: NonEmptyString::new(message).unwrap_or_else(|_| {
+                NonEmptyString::new(catalog.entry().summary)
+                    .expect("compiled catalog summary is nonempty")
+            }),
+            path: None,
+            data: serde_json::Map::new(),
+        }
+    }
+
     /// Returns the notice with `data` attached.
     #[must_use]
     pub fn with_data(mut self, data: serde_json::Map<String, Value>) -> Self {
@@ -200,7 +222,7 @@ struct FixWire {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum FixError {
     /// A fix needs at least one edit.
-    #[error("a fix needs at least one edit")]
+    #[error("{}", crate::messages::ModelText::FixEmpty)]
     Empty,
     /// Two edits overlap.
     #[error(transparent)]
@@ -253,10 +275,10 @@ pub enum FindingError {
     #[error(transparent)]
     Position(#[from] LineColError),
     /// `span`, `end_line` and `end_column` must all be present or all absent.
-    #[error("span, end_line and end_column must all be present or all absent")]
+    #[error("{}", crate::messages::ModelText::FindingRange)]
     PartialExtent,
     /// A binary-host finding (one with an `origin`) cannot carry a `fix`.
-    #[error("a finding with an origin cannot carry a fix")]
+    #[error("{}", crate::messages::ModelText::FindingOriginFix)]
     OriginWithFix,
 }
 
@@ -649,13 +671,13 @@ struct GateWire {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum GateError {
     /// A failed gate names at least one reason.
-    #[error("a failed gate needs at least one reason")]
+    #[error("{}", crate::messages::ModelText::GateEmpty)]
     NoReasons,
     /// A reason is an empty string.
-    #[error("a gate reason must not be empty")]
+    #[error("{}", crate::messages::ModelText::GateEmptyReason)]
     EmptyReason,
     /// `passed` disagrees with the reasons.
-    #[error("passed is {passed} but there are {count} reasons")]
+    #[error("{}", crate::messages::ModelText::GateInconsistent { passed: .passed.to_string(), count: *.count })]
     Mismatch {
         /// The `passed` value given.
         passed: bool,

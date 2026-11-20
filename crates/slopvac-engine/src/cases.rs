@@ -169,21 +169,39 @@ impl fmt::Display for CaseReport {
             match &r.outcome {
                 Outcome::Failed(reasons) => {
                     for reason in reasons {
-                        writeln!(f, "{} {}: {reason}", r.rule, r.origin)?;
+                        writeln!(
+                            f,
+                            "{}",
+                            crate::messages::EngineDetails::CaseFailedLine {
+                                rule: r.rule.to_string(),
+                                origin: r.origin.to_string(),
+                                reason: reason.clone()
+                            }
+                        )?;
                     }
                 }
                 Outcome::Incomplete(reason) => {
-                    writeln!(f, "{} {}: incomplete: {reason}", r.rule, r.origin)?;
+                    writeln!(
+                        f,
+                        "{}",
+                        crate::messages::EngineDetails::CaseIncompleteLine {
+                            rule: r.rule.to_string(),
+                            origin: r.origin.to_string(),
+                            reason: reason.clone()
+                        }
+                    )?;
                 }
                 Outcome::Passed => {}
             }
         }
         write!(
             f,
-            "{} passed, {} failed, {} incomplete",
-            self.passed(),
-            self.failures().count(),
-            self.incomplete().count()
+            "{}",
+            crate::messages::EngineDetails::CaseSummary {
+                passed: self.passed(),
+                failed: self.failures().count(),
+                incomplete: self.incomplete().count()
+            }
         )
     }
 }
@@ -193,10 +211,10 @@ impl fmt::Display for CaseReport {
 #[non_exhaustive]
 pub enum CasesError {
     /// The selected id names no rule of the engine.
-    #[error("no rule {0}")]
+    #[error("{}", crate::messages::EngineText::NoRule { rule: .0.to_string() })]
     UnknownRule(RuleId),
     /// The engine holds no rule with cases or checkable examples, so nothing would run.
-    #[error("no rule has cases or checkable examples to run")]
+    #[error("{}", crate::messages::EngineText::NoCases)]
     NothingToRun,
     /// The engine failed.
     #[error(transparent)]
@@ -249,30 +267,48 @@ fn check_case(case: &Case, seen: &Seen) -> Vec<String> {
     let mut why = Vec::new();
     match &case.want {
         Some(Want::Count(n)) if seen.count != *n as usize => {
-            why.push(format!("want {n} finding(s), got {}", seen.count));
+            why.push(
+                crate::messages::EngineDetails::CaseCount {
+                    want: *n,
+                    got: seen.count,
+                }
+                .to_string(),
+            );
         }
         Some(Want::Range(r))
             if r.min.is_some_and(|min| seen.count < min as usize)
                 || r.max.is_some_and(|max| seen.count > max as usize) =>
         {
             let bound = |b: Option<u32>| b.map_or_else(|| "-".into(), |v| v.to_string());
-            why.push(format!(
-                "want {}..={} finding(s), got {}",
-                bound(r.min),
-                bound(r.max),
-                seen.count
-            ));
+            why.push(
+                crate::messages::EngineDetails::CaseRange {
+                    min: bound(r.min),
+                    max: bound(r.max),
+                    got: seen.count,
+                }
+                .to_string(),
+            );
         }
         _ => {}
     }
     for needle in case.contains.iter().flatten() {
         if !seen.has(needle.as_str()) {
-            why.push(format!("no finding contains {:?}", needle.as_str()));
+            why.push(
+                crate::messages::EngineDetails::CaseContains {
+                    needle: format!("{:?}", needle.as_str()),
+                }
+                .to_string(),
+            );
         }
     }
     for needle in case.absent.iter().flatten() {
         if seen.has(needle.as_str()) {
-            why.push(format!("a finding contains {:?}", needle.as_str()));
+            why.push(
+                crate::messages::EngineDetails::CaseAbsent {
+                    needle: format!("{:?}", needle.as_str()),
+                }
+                .to_string(),
+            );
         }
     }
     why
@@ -320,7 +356,7 @@ fn checks_of(rule: &LoadedRule) -> Vec<Check<'_>> {
                 text: as_example(&example.bad),
                 judge: Box::new(|s| {
                     if s.count == 0 {
-                        vec!["the bad text has no finding".to_owned()]
+                        vec![crate::messages::EnginePhrase::CaseBadEmpty.text()]
                     } else {
                         Vec::new()
                     }
@@ -334,7 +370,10 @@ fn checks_of(rule: &LoadedRule) -> Vec<Check<'_>> {
                         if s.count == 0 {
                             Vec::new()
                         } else {
-                            vec![format!("the good text has {} finding(s)", s.count)]
+                            vec![
+                                crate::messages::EngineDetails::CaseGoodCount { count: s.count }
+                                    .to_string(),
+                            ]
                         }
                     }),
                 });
@@ -363,12 +402,12 @@ fn run_rule(
         if rule.kind() != MatchKind::Judgement {
             push(
                 Origin::Missing,
-                Outcome::Incomplete("the rule has no cases or checkable examples".to_owned()),
+                Outcome::Incomplete(crate::messages::EnginePhrase::CaseNoExamples.text()),
             );
         } else if selected {
             push(
                 Origin::Missing,
-                Outcome::Incomplete("a judgement rule has nothing to execute".to_owned()),
+                Outcome::Incomplete(crate::messages::EnginePhrase::CaseJudgement.text()),
             );
         }
         return Ok(());
@@ -381,7 +420,12 @@ fn run_rule(
         } else {
             match findings_of(&isolated, rule.id(), &check.text) {
                 Ok(seen) => verdict((check.judge)(&seen)),
-                Err(e) => Outcome::Failed(vec![format!("the engine failed: {e}")]),
+                Err(e) => Outcome::Failed(vec![
+                    crate::messages::EngineDetails::CaseEngineFailed {
+                        reason: e.to_string(),
+                    }
+                    .to_string(),
+                ]),
             }
         };
         push(check.origin, outcome);
@@ -447,13 +491,23 @@ impl fmt::Display for Coverage {
         let total = self.findings.len();
         let unmatched = self.unmatched().count();
         for rule in self.unmatched() {
-            writeln!(f, "{rule}: matched nothing")?;
+            writeln!(
+                f,
+                "{}",
+                crate::messages::EngineDetails::CoverageUnmatched {
+                    rule: rule.to_string()
+                }
+            )?;
         }
         write!(
             f,
-            "{} of {total} rules matched in {} document(s); {unmatched} matched nothing",
-            total - unmatched,
-            self.documents,
+            "{}",
+            crate::messages::EngineDetails::CoverageSummary {
+                matched: total - unmatched,
+                total,
+                documents: self.documents,
+                unmatched
+            },
         )
     }
 }

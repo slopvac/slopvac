@@ -55,8 +55,14 @@ pub(crate) fn read(source: &str, language: Language) -> Result<CommentText, Engi
         parsed.blocks.push(block(fragment)?);
     }
     blank(&mut masked, kept, source.len());
-    let masked = String::from_utf8(masked)
-        .map_err(|e| EngineError::Internal(format!("masked comment text: {e}")))?;
+    let masked = String::from_utf8(masked).map_err(|e| {
+        EngineError::Internal(
+            crate::messages::EngineText::MaskedComment {
+                reason: e.to_string(),
+            }
+            .to_string(),
+        )
+    })?;
     let lexical = blank_html_comments(&masked);
     Ok(CommentText {
         parsed,

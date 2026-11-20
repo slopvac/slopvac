@@ -149,13 +149,13 @@ pub struct RstParse {
 #[non_exhaustive]
 pub enum RstError {
     /// No trusted interpreter can import docutils.
-    #[error("no Python interpreter with docutils 0.21 or later: {detail}")]
+    #[error("{}", crate::messages::EngineText::RstMissing { detail: .detail.clone() })]
     ConverterMissing {
         /// What was searched and what was passed over.
         detail: String,
     },
     /// The interpreter could not start, or its pipes failed.
-    #[error("cannot run the RST converter {}: {source}", .converter.display())]
+    #[error("{}", crate::messages::EngineText::RstSpawn { converter: .converter.display().to_string(), reason: .source.to_string() })]
     Spawn {
         /// The interpreter.
         converter: PathBuf,
@@ -163,7 +163,7 @@ pub enum RstError {
         source: std::io::Error,
     },
     /// The driver did not finish in time.
-    #[error("the RST converter {} took longer than {timeout:?}", .converter.display())]
+    #[error("{}", crate::messages::EngineText::RstTimeout { converter: .converter.display().to_string(), timeout: format!("{:?}", .timeout) })]
     Timeout {
         /// The interpreter.
         converter: PathBuf,
@@ -171,7 +171,7 @@ pub enum RstError {
         timeout: Duration,
     },
     /// The driver wrote more output than allowed.
-    #[error("the RST converter {} wrote more than {limit} bytes", .converter.display())]
+    #[error("{}", crate::messages::EngineText::RstOutputLimit { converter: .converter.display().to_string(), limit: *.limit })]
     OutputTooLarge {
         /// The interpreter.
         converter: PathBuf,
@@ -179,7 +179,7 @@ pub enum RstError {
         limit: usize,
     },
     /// The driver exited with an error.
-    #[error("the RST converter {} failed ({status}): {stderr}", .converter.display())]
+    #[error("{}", crate::messages::EngineText::RstFailed { converter: .converter.display().to_string(), status: .status.clone(), stderr: .stderr.clone() })]
     Failed {
         /// The interpreter.
         converter: PathBuf,
@@ -189,7 +189,7 @@ pub enum RstError {
         stderr: String,
     },
     /// The driver wrote output that is not the expected JSON.
-    #[error("the RST converter {} wrote output that is not valid: {reason}", .converter.display())]
+    #[error("{}", crate::messages::EngineText::RstInvalidOutput { converter: .converter.display().to_string(), reason: .reason.clone() })]
     InvalidOutput {
         /// The interpreter.
         converter: PathBuf,

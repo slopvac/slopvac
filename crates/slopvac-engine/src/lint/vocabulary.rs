@@ -21,6 +21,7 @@ use slopvac_terms::{Blocklist, Pos};
 use super::{Active, Candidate, Engine, EngineError, Kind, Run, notice};
 use crate::matcher_work;
 use crate::matching::format_message;
+use crate::messages::EngineNotice;
 use crate::skip;
 
 /// The rules that may own the sweep, most preferred first. STE 1.1 is the clause that a
@@ -136,19 +137,14 @@ impl Engine {
         }
         if blocklist.is_empty() {
             plan.notices.push(notice(
-                "vocabulary-no-blocklist",
                 NoticeLevel::Info,
-                format!("{count} active vocabulary rule(s) did not run: no word blocklist is set"),
-            )?);
+                EngineNotice::VocabularyNoBlocklist { count },
+            ));
         } else if !usable {
             plan.notices.push(notice(
-                "vocabulary-no-taggable-entries",
                 NoticeLevel::Info,
-                format!(
-                    "{count} active vocabulary rule(s) did not run: the blocklist holds no \
-                     noun, verb, adjective or adverb entry of three or more letters"
-                ),
-            )?);
+                EngineNotice::VocabularyNoTaggable { count },
+            ));
         } else {
             let id_of = |i: usize| {
                 let active = &self.vocabulary_rules[i];
@@ -162,15 +158,12 @@ impl Engine {
                 .unwrap_or(rules[0]);
             if count > 1 {
                 plan.notices.push(notice(
-                    "vocabulary-sweep-shared",
                     NoticeLevel::Info,
-                    format!(
-                        "{} other vocabulary rule(s) did not run separately: the blocklist \
-                         sweep runs once, under {}",
-                        count - 1,
-                        id_of(owner)
-                    ),
-                )?);
+                    EngineNotice::VocabularyShared {
+                        count: count - 1,
+                        owner: id_of(owner).into(),
+                    },
+                ));
             }
             plan.owner = Some(owner);
         }
@@ -295,11 +288,12 @@ impl Run<'_> {
                 let message = if sweep.loaded.id().local() == OWNER_PREFERENCE[0] {
                     format_message(rule.message.as_str(), matched, "")
                 } else {
-                    format!(
-                        "\"{matched}\" is on this project's word blocklist as {} {}.",
-                        article(pos),
-                        pos_name(pos)
-                    )
+                    crate::messages::EngineDetails::VocabularyMatch {
+                        matched: matched.into(),
+                        article: article(pos).into(),
+                        pos: pos_name(pos).into(),
+                    }
+                    .to_string()
                 };
                 out.push(self.finding(Candidate {
                     rule_id: sweep.loaded.id(),

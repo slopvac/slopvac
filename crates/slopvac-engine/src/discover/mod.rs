@@ -138,10 +138,10 @@ pub struct Discovery {
 #[derive(Debug, thiserror::Error)]
 pub enum DiscoverError {
     /// A target is not a file, a directory or a pattern with a match.
-    #[error("no such file or directory: {0}")]
+    #[error("{}", crate::messages::EngineText::DiscoverMissing { path: .0.clone() })]
     NoSuchTarget(String),
     /// An explicit file is not a supported source language in comment mode.
-    #[error("{path}: {message}")]
+    #[error("{}", crate::messages::EngineText::PathError { path: .path.clone(), reason: .message.clone() })]
     UnsupportedSource {
         /// The offending file.
         path: PathBuf,
@@ -149,7 +149,7 @@ pub enum DiscoverError {
         message: String,
     },
     /// A glob target holds more brace alternatives than discovery will expand.
-    #[error("glob {pattern} expands to more than {limit} alternatives")]
+    #[error("{}", crate::messages::EngineText::GlobLimit { pattern: .pattern.clone(), limit: *.limit })]
     TooManyAlternatives {
         /// The pattern as given.
         pattern: String,
@@ -157,7 +157,7 @@ pub enum DiscoverError {
         limit: usize,
     },
     /// A glob target does not parse.
-    #[error("invalid glob {pattern}: {source}")]
+    #[error("{}", crate::messages::EngineText::GlobInvalid { pattern: .pattern.clone(), reason: .source.to_string() })]
     InvalidGlob {
         /// The pattern as given.
         pattern: String,
@@ -165,7 +165,7 @@ pub enum DiscoverError {
         source: globset::Error,
     },
     /// The directory walk hit an I/O error.
-    #[error("walking {path}: {source}")]
+    #[error("{}", crate::messages::EngineText::WalkError { path: .path.clone(), reason: .source.to_string() })]
     Walk {
         /// The walk root.
         path: PathBuf,

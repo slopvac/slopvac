@@ -360,11 +360,7 @@ pub(crate) fn scan_lines<'a>(
             .expect("a directive ends after it starts");
             let mut invalid = |message: String| out.invalid.push(Invalid { span, message });
             let Some((rule, reason)) = parse_allow(raw) else {
-                invalid(
-                    "invalid suppression; expected \
-                     <!-- slopvac-allow: rule=<plugin>:<rule-id> reason=<reason> -->."
-                        .to_owned(),
-                );
+                invalid(crate::messages::EnginePhrase::SuppressionSyntax.text());
                 continue;
             };
             for target in targets_for(number) {
@@ -374,32 +370,36 @@ pub(crate) fn scan_lines<'a>(
                 });
             }
             if !rule.contains(':') {
-                invalid(format!(
-                    "suppression names {rule}, a 2.x rule id with no plugin. Run `slopvac migrate` \
-                     to qualify it as <plugin>:{rule}."
-                ));
+                invalid(crate::messages::EngineDetails::SuppressionLegacy { rule }.to_string());
                 continue;
             }
             let exceptions = match lookup(&rule) {
                 Target::Unknown => {
-                    invalid(format!("suppression names unknown rule {rule}."));
+                    invalid(
+                        crate::messages::EngineDetails::SuppressionUnknown { rule }.to_string(),
+                    );
                     continue;
                 }
                 Target::Inactive => continue,
                 Target::Active(exceptions) => exceptions,
             };
             let valid = if exceptions.is_empty() {
-                "none defined".to_owned()
+                crate::messages::EnginePhrase::NoExceptions.text()
             } else {
                 exceptions.join(", ")
             };
             match reason {
-                None => invalid(format!(
-                    "suppression of {rule} names no reason. Add reason=<one of: {valid}>."
-                )),
-                Some(reason) if !exceptions.contains(&reason.as_str()) => invalid(format!(
-                    "reason \"{reason}\" is not an exception of {rule}. Valid: {valid}."
-                )),
+                None => invalid(
+                    crate::messages::EngineDetails::SuppressionNoReason { rule, valid }.to_string(),
+                ),
+                Some(reason) if !exceptions.contains(&reason.as_str()) => invalid(
+                    crate::messages::EngineDetails::SuppressionReason {
+                        reason,
+                        rule,
+                        valid,
+                    }
+                    .to_string(),
+                ),
                 Some(_) => {}
             }
         }

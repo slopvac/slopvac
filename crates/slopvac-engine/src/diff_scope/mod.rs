@@ -61,32 +61,32 @@ pub enum DiffScope {
 #[derive(Debug, Error)]
 pub enum DiffError {
     /// The `git` program did not start.
-    #[error("could not run git: {0}")]
+    #[error("{}", crate::messages::EngineText::GitSpawn { reason: .0.to_string() })]
     Spawn(#[source] std::io::Error),
     /// The directory is not inside a git work tree.
-    #[error("Git repository required: {0}")]
+    #[error("{}", crate::messages::EngineText::GitRepository { reason: .0.clone() })]
     NotRepository(String),
     /// Git ran and failed. The text is its standard error.
-    #[error("{0}")]
+    #[error("{}", crate::messages::EngineText::GitError { reason: .0.clone() })]
     Git(String),
     /// The base is not a commit, or is not a usable revision name.
-    #[error("invalid Git revision: {0}")]
+    #[error("{}", crate::messages::EngineText::GitRevision { reason: .0.clone() })]
     InvalidBase(String),
     /// Git printed a patch this parser does not accept.
-    #[error("malformed Git diff: {0}")]
+    #[error("{}", crate::messages::EngineText::GitMalformed { reason: .0.clone() })]
     Malformed(String),
     /// Git needs an object this clone does not have, and fetching is off. Fetch it, then
     /// run again. The check is incomplete.
-    #[error("Git object missing from this clone: {0}")]
+    #[error("{}", crate::messages::EngineText::GitObjectMissing { reason: .0.clone() })]
     MissingObject(String),
     /// Git printed more than the output cap. The check is incomplete.
-    #[error("git output exceeded {0} bytes")]
+    #[error("{}", crate::messages::EngineText::GitOutputLimit { limit: *.0 })]
     OutputTooLarge(usize),
     /// Git ran past the deadline and was stopped. The check is incomplete.
-    #[error("git did not finish within {0:?}")]
+    #[error("{}", crate::messages::EngineText::GitTimeout { timeout: format!("{:?}", .0) })]
     TimedOut(std::time::Duration),
     /// A changed file is larger than [`Limits::max_file`], so it was not read.
-    #[error("[document-too-large] changed file {} is larger than {limit} bytes", .path.display())]
+    #[error("{}", crate::messages::document_too_large(crate::messages::EngineText::ChangedFileLabel { path: .path.display().to_string() }.to_string(), *.limit))]
     FileTooLarge {
         /// The file.
         path: PathBuf,
@@ -94,13 +94,13 @@ pub enum DiffError {
         limit: u64,
     },
     /// A changed file is no longer a regular file (a FIFO or a device now).
-    #[error("changed path is not a regular file: {}", .0.display())]
+    #[error("{}", crate::messages::EngineText::GitNotRegular { path: .0.display().to_string() })]
     NotRegularFile(PathBuf),
     /// A changed path is a symlink.
-    #[error("symlinked changed path is not supported: {}", .0.display())]
+    #[error("{}", crate::messages::EngineText::GitSymlink { path: .0.display().to_string() })]
     Symlink(PathBuf),
     /// A changed path is absolute or climbs out of the repository.
-    #[error("changed path escapes Git root: {}", .0.display())]
+    #[error("{}", crate::messages::EngineText::GitEscape { path: .0.display().to_string() })]
     Escape(PathBuf),
 }
 
@@ -233,8 +233,14 @@ pub fn changed_lines_with(
             other => other,
         })?;
     let toplevel = patch::to_path(trim_newline(&toplevel))?;
-    let root = std::fs::canonicalize(&toplevel)
-        .map_err(|e| DiffError::Git(format!("cannot resolve the Git root: {e}")))?;
+    let root = std::fs::canonicalize(&toplevel).map_err(|e| {
+        DiffError::Git(
+            crate::messages::EngineText::GitResolveRoot {
+                reason: e.to_string(),
+            }
+            .to_string(),
+        )
+    })?;
 
     let range;
     let mut diff_args: Vec<&str> = git::DIFF_ARGS.to_vec();

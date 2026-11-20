@@ -35,7 +35,7 @@ struct SpanRepr {
 
 /// A span whose start is after its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-#[error("span start {start} is after end {end}")]
+#[error("{}", crate::messages::ModelText::SpanReversed { start: *.start, end: *.end })]
 pub struct SpanError {
     /// Start offset.
     pub start: usize,
@@ -123,7 +123,7 @@ struct LineColRepr {
 
 /// A line or column of zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-#[error("line and column are one-based, got {line}:{column}")]
+#[error("{}", crate::messages::ModelText::LineColumn { line: *.line, column: *.column })]
 pub struct LineColError {
     /// Line given.
     pub line: usize,
@@ -165,15 +165,15 @@ impl LineCol {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum PositionError {
     /// The offset is past the end of the file.
-    #[error("offset {0} is past the end of the file")]
+    #[error("{}", crate::messages::ModelText::OffsetPastEnd { offset: *.0 })]
     PastEnd(usize),
     /// The offset is inside the byte order mark.
-    #[error("offset {0} is inside the byte order mark")]
+    #[error("{}", crate::messages::ModelText::OffsetBom { offset: *.0 })]
     InsideBom(usize),
     /// The offset is not on a code point boundary.
-    #[error("offset {0} is inside a code point")]
+    #[error("{}", crate::messages::ModelText::OffsetCodePoint { offset: *.0 })]
     InsideCodePoint(usize),
     /// The offset is between the CR and LF of one CRLF.
-    #[error("offset {0} is between the CR and LF of one CRLF")]
+    #[error("{}", crate::messages::ModelText::OffsetCrlf { offset: *.0 })]
     InsideCrlf(usize),
 }

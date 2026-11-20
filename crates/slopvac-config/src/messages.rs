@@ -8,6 +8,12 @@
 
 use slopvac_messages::{Catalog, Entry};
 
+/// The document size-cap message, for readers that enforce the same cap.
+#[must_use]
+pub fn document_size_message(path: String, cap: u64) -> impl Catalog + std::fmt::Display {
+    ConfigMessage::DocumentTooLarge { path, cap }
+}
+
 /// The error codes of configuration loading and validation.
 #[derive(Debug, Clone, PartialEq, Eq, Catalog)]
 pub(crate) enum ConfigMessage {

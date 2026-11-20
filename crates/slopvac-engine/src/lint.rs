@@ -35,6 +35,7 @@ use crate::matcher_work;
 use crate::matching::{
     LazyReplacements, allowlisted, format_message, is_all_caps, is_single_replacement,
 };
+use crate::messages::EngineNotice;
 use crate::metrics::{self, Subject};
 use crate::prepare::{Prepared, Unit, with_html_prose};
 use crate::rst::{RstAdapter, RstError, RstOptions};
@@ -222,42 +223,40 @@ pub enum EngineError {
     #[error(transparent)]
     Text(#[from] TextError),
     /// A context tagger failed.
-    #[error("context tagger failed: {0}")]
+    #[error("{}", crate::messages::EngineText::Context { reason: .0.clone() })]
     Context(String),
     /// A computed position was not valid for the file.
     #[error(transparent)]
     Position(#[from] PositionError),
     /// A diagram checker returned a range that is reversed or outside the file and the
     /// prose it was given.
-    #[error("diagram checker returned a bad range: {0}")]
+    #[error("{}", crate::messages::EngineText::BadRange { reason: .0.clone() })]
     BadRange(String),
     /// Context lookups looked at more tags than the document allows, so the findings that
     /// depend on them cannot be trusted and the document is not checked. A pack that puts many
     /// kinds of tag on one table cell, with rules that match across the cell's lines, causes
     /// it.
-    #[error(
-        "context lookups passed their budget of {limit} tag looks: the document is not checked"
-    )]
+    #[error("{}", crate::messages::EngineText::TagLookupBudget { limit: *.limit })]
     TagLookupBudget {
         /// The looks the document was allowed.
         limit: usize,
     },
     /// The document holds more context tags than its size allows, so no index was built and
     /// the document is not checked. A very large document of very short sentences causes it.
-    #[error("the document has more than {limit} context tags: the document is not checked")]
+    #[error("{}", crate::messages::EngineText::TagBuildBudget { limit: *.limit })]
     TagBuildBudget {
         /// The tags the document was allowed.
         limit: usize,
     },
     /// A terms file could not be read or is not valid.
-    #[error("terms file: {0}")]
+    #[error("{}", crate::messages::EngineText::Terms { reason: .0.clone() })]
     Terms(String),
     /// The comments of a source file could not be extracted within the work limits of
     /// `slopvac-comments`, so the file is incomplete.
-    #[error("comment extraction: {0}")]
+    #[error("{}", crate::messages::EngineText::Comments { reason: .0.clone() })]
     Comments(String),
     /// A value the engine built broke a model invariant. This is a bug.
-    #[error("internal error: {0}")]
+    #[error("{}", crate::messages::EngineText::Internal { reason: .0.clone() })]
     Internal(String),
 }
 
@@ -417,17 +416,16 @@ struct DiagramResult {
 /// The `unrun` key of capitalization rules in a style the engine does not run.
 const CAPITALIZATION: &str = "capitalization";
 
-fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Result<Notice, EngineError> {
+fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Notice {
     let count = rules.len();
     if kind == CAPITALIZATION {
         // A style that cannot run would otherwise pass in silence, so the check is incomplete.
         return notice(
-            "rule-style-not-implemented",
             NoticeLevel::Warning,
-            format!(
-                "{count} active {kind} rule(s) did not run: the engine runs only the sentence \
-                 style"
-            ),
+            EngineNotice::RuleStyle {
+                count,
+                kind: kind.into(),
+            },
         );
     }
     // The rules are an info notice's data: the run read the input, so it stays complete.
@@ -439,14 +437,14 @@ fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Result<Notice, EngineError> 
             .map(|id| serde_json::Value::String((*id).to_owned()))
             .collect(),
     )]);
-    Ok(notice(
-        "rule-kind-not-implemented",
+    notice(
         NoticeLevel::Info,
-        format!(
-            "{count} active {kind} rule(s) did not run: the engine does not run {kind} rules yet"
-        ),
-    )?
-    .with_data(data))
+        EngineNotice::RuleKind {
+            count,
+            kind: kind.into(),
+        },
+    )
+    .with_data(data)
 }
 
 fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Severity) -> Level {
@@ -466,14 +464,8 @@ fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Se
         })
 }
 
-fn notice(code: &str, level: NoticeLevel, message: String) -> Result<Notice, EngineError> {
-    Ok(Notice {
-        code: KebabName::new(code).map_err(|e| EngineError::Internal(e.to_string()))?,
-        level,
-        message: NonEmptyString::new(message).map_err(|e| EngineError::Internal(e.to_string()))?,
-        path: None,
-        data: serde_json::Map::new(),
-    })
+fn notice(level: NoticeLevel, message: EngineNotice) -> Notice {
+    Notice::from_catalog(level, &message)
 }
 
 impl Engine {
@@ -964,7 +956,7 @@ impl Engine {
         // Notices about rules that cannot run come first, then the ones the parse raised.
         // Code-comment mode lists every rule it cannot read in one notice of its own.
         let mut notices = if matches!(input.kind, Kind::Comments(_)) {
-            self.comment_notice()?.into_iter().collect()
+            self.comment_notice().into_iter().collect()
         } else {
             self.not_run_notices(&genre.id)?
         };
@@ -975,7 +967,7 @@ impl Engine {
 
     /// The notices about active rules the engine does not run and that apply to a document of
     /// `genre`.
-    fn not_run_notices(&self, genre: &GenreId) -> Result<Vec<Notice>, EngineError> {
+    fn not_run_notices(&self, genre: &GenreId) -> Vec<Notice> {
         let mut ids: std::collections::BTreeMap<&str, Vec<&RuleId>> =
             std::collections::BTreeMap::new();
         for n in &self.not_run {
@@ -1110,7 +1102,7 @@ impl Engine {
     /// (an incomplete run) when the user enabled such a rule by name, but the engine sees one
     /// level per rule and not the configuration layer it came from, so it cannot tell that
     /// apart from a rule the profile or a style turns on.
-    fn comment_notice(&self) -> Result<Option<Notice>, EngineError> {
+    fn comment_notice(&self) -> Option<Notice> {
         let runs: HashSet<&RuleId> = self
             .active
             .iter()
@@ -1139,26 +1131,23 @@ impl Engine {
         custom.sort_unstable();
         skipped.extend(custom);
         if skipped.is_empty() {
-            return Ok(None);
+            return None;
         }
         let rules = skipped
             .iter()
             .map(|id| serde_json::Value::String((*id).to_owned()))
             .collect();
         let data = serde_json::Map::from_iter([("rules".to_owned(), rules)]);
-        Ok(Some(
+        Some(
             notice(
-                "comment-rules-not-run",
                 NoticeLevel::Info,
-                format!(
-                    "{} active rule(s) do not run on code comments, which only the tokens, \
-                     pattern, substitution and capitalization rules read: {}",
-                    skipped.len(),
-                    skipped.join(", ")
-                ),
-            )?
+                EngineNotice::CommentRules {
+                    count: skipped.len(),
+                    rules: skipped.join(", "),
+                },
+            )
             .with_data(data),
-        ))
+        )
     }
 
     /// Read an RST file. A file that cannot be read is an empty document with a warning

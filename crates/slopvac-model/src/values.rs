@@ -12,7 +12,7 @@ use crate::schema;
 
 /// A number or text that breaks its constraint.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("invalid {kind}: {value}")]
+#[error("{}", crate::messages::invalid_value(.kind, .value))]
 pub struct ValueError {
     kind: &'static str,
     value: String,

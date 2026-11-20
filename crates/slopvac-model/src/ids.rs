@@ -8,7 +8,7 @@ use crate::schema;
 
 /// A malformed identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("invalid {kind} {value:?}")]
+#[error("{}", crate::messages::invalid_id(.kind, .value))]
 pub struct IdError {
     kind: &'static str,
     value: String,
@@ -236,10 +236,12 @@ impl<'de> Deserialize<'de> for SchemaVersion {
         if n == u64::from(Self::VALUE) {
             Ok(Self)
         } else {
-            Err(serde::de::Error::custom(format!(
-                "schema_version must be {}, got {n}",
-                Self::VALUE
-            )))
+            Err(serde::de::Error::custom(
+                crate::messages::ModelText::SchemaVersion {
+                    expected: Self::VALUE.to_string(),
+                    actual: n.to_string(),
+                },
+            ))
         }
     }
 }
@@ -307,7 +309,7 @@ pub struct Contexts(Vec<ContextTag>);
 
 /// A context tag listed twice.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("context tag {0:?} is listed twice")]
+#[error("{}", crate::messages::duplicate_context(.0))]
 pub struct DuplicateContext(String);
 
 impl Contexts {
