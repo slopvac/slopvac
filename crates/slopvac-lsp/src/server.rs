@@ -21,11 +21,12 @@ use lsp_types::{
     CodeActionProviderCapability, Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams, Hover,
     HoverContents, HoverParams, HoverProviderCapability, InitializeParams, MarkupContent,
-    MarkupKind, NumberOrString, Position, PositionEncodingKind, PublishDiagnosticsParams, Range,
-    SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, TextDocumentSyncSaveOptions, TextEdit, Uri, WorkspaceEdit,
+    MarkupKind, MessageType, NumberOrString, Position, PositionEncodingKind,
+    PublishDiagnosticsParams, Range, SaveOptions, ServerCapabilities, ServerInfo,
+    ShowMessageParams, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+    TextDocumentSyncSaveOptions, TextEdit, Uri, WorkspaceEdit,
 };
-use slopvac_model::{PositionEncoding, Severity, SourceIndex};
+use slopvac_model::{Notice, PositionEncoding, Severity, SourceIndex};
 
 use slopvac_messages::render;
 
@@ -52,6 +53,7 @@ pub struct Server {
     linter: Arc<dyn Linter>,
     checks: Vec<Arc<dyn Check>>,
     hook: Option<PublishHook>,
+    startup: Vec<Notice>,
 }
 
 /// Called with the document uri while the document lock is held, after a diagnostics
@@ -66,7 +68,17 @@ impl Server {
             linter,
             checks: Vec::new(),
             hook: None,
+            startup: Vec::new(),
         }
+    }
+
+    /// Show `notices` to the client once, as `window/showMessage` warnings, right after the
+    /// handshake. They are the facts about the config the linter was built from, such as
+    /// a rule id that no rule has. Linting goes on.
+    #[must_use]
+    pub fn with_startup_notices(mut self, notices: Vec<Notice>) -> Self {
+        self.startup = notices;
+        self
     }
 
     /// Run `hook` with the document uri between the freshness check and queueing a
@@ -139,6 +151,17 @@ impl Server {
                 .spawn(move || worker(&shared, &jobs_rx, &out))
                 .map_err(|_| ServerError::WorkerPanicked)?
         };
+        // `initialize_finish` has taken the client's `initialized`, so the client is ready.
+        for notice in &self.startup {
+            notify(
+                &queue_tx,
+                "window/showMessage",
+                &ShowMessageParams {
+                    typ: MessageType::WARNING,
+                    message: notice.message.as_str().to_owned(),
+                },
+            );
+        }
         let result = main_loop(&shared, connection, &jobs_tx, &queue_tx);
         drop(jobs_tx);
         worker.join().map_err(|_| ServerError::WorkerPanicked)?;

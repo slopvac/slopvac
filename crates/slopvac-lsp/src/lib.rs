@@ -39,18 +39,25 @@ pub fn command() -> Command {
 }
 
 /// Run the language server on standard input and output until the client exits, linting
-/// with `linter`.
+/// with `linter`. The client sees `startup_notices` once, as warnings, right after the
+/// handshake.
 ///
 /// The exit status follows the protocol: 0 after `shutdown` and `exit`, 1 for an `exit`
 /// with no `shutdown` ([`Exit::WithoutShutdown`]).
-pub fn run(_matches: &ArgMatches, linter: EngineLinter) -> Result<Exit, RunError> {
+pub fn run(
+    _matches: &ArgMatches,
+    linter: EngineLinter,
+    startup_notices: Vec<slopvac_model::Notice>,
+) -> Result<Exit, RunError> {
     // STUB(slopvac-8l4.12.15): the caller builds `linter` from the project config found at
     // startup. A document in an `[[overrides]]` block still gets the project settings, and a
     // config change shows only after a restart.
     let (connection, io_threads) = lsp_server::Connection::stdio();
     // STUB(slopvac-8l4.12.16): no `Check` is registered. Front-matter validation
     // (slopvac-8l4.4.6) and the terms check plug in through `Server::with_check`.
-    let served = Server::new(std::sync::Arc::new(linter)).serve(&connection);
+    let served = Server::new(std::sync::Arc::new(linter))
+        .with_startup_notices(startup_notices)
+        .serve(&connection);
     drop(connection);
     match served {
         Ok(exit) => {

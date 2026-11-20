@@ -323,6 +323,10 @@ pub(crate) enum ConfigText {
         #[count]
         column: usize,
     },
+    /// A rule id in a config layer that no loaded rule has. The run goes on without it.
+    #[code("config-unknown-rule")]
+    #[notice("{place}: unknown rule {rule}; use a rule id from `slopvac rules`")]
+    UnknownRule { place: String, rule: String },
     /// The closing line of `validate`.
     #[code("config-validate-summary")]
     #[text("checked {checked} file(s): {problems} problem(s)")]

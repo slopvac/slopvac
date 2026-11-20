@@ -125,6 +125,22 @@ impl Client {
         }
     }
 
+    /// The next notification of any kind.
+    fn next_notification(&mut self) -> Notification {
+        if let Some(n) = self.queued.pop_front() {
+            return n;
+        }
+        match self
+            .conn
+            .receiver
+            .recv_timeout(WAIT)
+            .expect("a notification")
+        {
+            Message::Notification(n) => n,
+            other => panic!("unexpected message {other:?}"),
+        }
+    }
+
     /// The params of the next `publishDiagnostics`.
     fn diagnostics(&mut self) -> Value {
         if let Some(n) = self.queued.pop_front() {
@@ -187,6 +203,31 @@ fn range_of(diagnostic: &Value) -> [u64; 4] {
         r["end"]["line"].as_u64().unwrap(),
         r["end"]["character"].as_u64().unwrap(),
     ]
+}
+
+#[test]
+fn a_startup_notice_reaches_the_client_as_one_warning_message_and_linting_goes_on() {
+    let notice = Notice {
+        code: KebabName::new("config-unknown-rule").unwrap(),
+        level: NoticeLevel::Warning,
+        message: NonEmptyString::new("project slopvac.toml:4:1: unknown rule a.b").unwrap(),
+        path: Some("slopvac.toml".to_owned()),
+        data: serde_json::Map::new(),
+    };
+    let server = Server::new(Arc::new(engine_linter())).with_startup_notices(vec![notice]);
+    let mut client = Client::start(server, None);
+    let shown = client.next_notification();
+    assert_eq!(shown.method, "window/showMessage");
+    // LSP message type 2 is Warning.
+    assert_eq!(
+        shown.params,
+        json!({"type": 2, "message": "project slopvac.toml:4:1: unknown rule a.b"})
+    );
+    let published = client.open("We utilize it.\n");
+    assert_eq!(published["diagnostics"].as_array().map(Vec::len), Some(1));
+    client.barrier();
+    assert!(client.queued.is_empty(), "{:?}", client.queued);
+    client.finish().unwrap();
 }
 
 #[test]

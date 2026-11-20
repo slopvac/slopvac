@@ -311,8 +311,9 @@ impl Linter for EngineLinter {
             Ok(rules) => rules,
             Err(err) => return failed(request, run, &err),
         };
-        if let Err(err) = validate_configs(request, &configs, &rules) {
-            return failed(request, run, &err);
+        match validate_configs(request, &configs, &rules) {
+            Ok(notices) => run.notices.extend(notices),
+            Err(err) => return failed(request, run, &err),
         }
         let items = match collect(request, &configs, &mut run) {
             Ok(items) => items,
@@ -324,11 +325,12 @@ impl Linter for EngineLinter {
 
 /// Check every config the run reaches against the catalogue, even when no input is left to
 /// lint: the config of each target, of standard input and the one named with `--config`.
+/// Returns the warning notice of each unknown rule id.
 fn validate_configs(
     request: &LintRequest,
     configs: &Configs<'_>,
     rules: &Catalog,
-) -> Result<(), CliError> {
+) -> Result<Vec<Notice>, CliError> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if request.stdin.is_some() {
         dirs.push(request.root.clone());
@@ -362,6 +364,7 @@ fn validate_configs(
         dirs.push(request.root.clone());
     }
     let mut seen = HashSet::new();
+    let mut notices = Vec::new();
     for dir in dirs {
         let found = configs
             .of(&dir)
@@ -369,10 +372,10 @@ fn validate_configs(
         if let Some(config) = found
             && seen.insert(config.root.clone())
         {
-            lint_settings::validate(&config, rules)?;
+            notices.extend(lint_settings::validate(&config, rules)?);
         }
     }
-    Ok(())
+    Ok(notices)
 }
 
 /// An outcome for a run that could not start.
@@ -794,11 +797,12 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
 
 /// The language server's linter for the project config found from `root`: the shipped
 /// rules, the term-casing pack, the settings, the project's terms files and the blocklists,
-/// built the same way `slopvac lint` builds an engine.
+/// built the same way `slopvac lint` builds an engine. The notices are the warnings about the
+/// config, which the language server shows to the client.
 ///
 /// # Errors
 /// The config error, `terms-invalid`, or `rules-unavailable`.
-pub fn project_linter(root: &Path) -> Result<slopvac_lsp::EngineLinter, CliError> {
+pub fn project_linter(root: &Path) -> Result<(slopvac_lsp::EngineLinter, Vec<Notice>), CliError> {
     let core = Catalog::load()?;
     let presets = StylePresets(BuiltinSource);
     let discovery = Discovery::new(&presets);
@@ -809,7 +813,7 @@ pub fn project_linter(root: &Path) -> Result<slopvac_lsp::EngineLinter, CliError
         Some(config) => (config.as_ref().clone(), config_files(config)),
         None => (LoadedConfig::without_files(root.to_path_buf()), Vec::new()),
     };
-    lint_settings::validate(&config, &core)?;
+    let notices = lint_settings::validate(&config, &core)?;
     let resolved = lint_settings::resolve(&config, Path::new(""));
     let settings = lint_settings::build(
         &core,
@@ -821,7 +825,10 @@ pub fn project_linter(root: &Path) -> Result<slopvac_lsp::EngineLinter, CliError
     let sets = core.into_sets();
     let reasons = slopvac_lsp::exception_names(&sets);
     let engine = lint_terms::build_engine(sets, settings, &terms, root)?;
-    Ok(slopvac_lsp::EngineLinter::from_engine(engine, reasons))
+    Ok((
+        slopvac_lsp::EngineLinter::from_engine(engine, reasons),
+        notices,
+    ))
 }
 
 /// The display name of each config file and whether it was pulled in by `extends`.
