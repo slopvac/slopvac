@@ -50,7 +50,7 @@ fn refused(text: &str) -> Error {
 #[case::dotted_keys_in_inline_tables(dotted_in_inline(70))]
 fn migrate_config_refuses_with_a_located_parse_error(#[case] body: String) {
     let text = format!("profile = \"normal\"\n{body}");
-    assert!(text.len() < slopvac_config::MAX_CONFIG_BYTES as usize);
+    assert!(u64::try_from(text.len()).unwrap() < slopvac_config::MAX_CONFIG_BYTES);
     let error = refused(&text);
     assert_eq!(error.code(), "config-invalid-toml");
     assert_eq!(
