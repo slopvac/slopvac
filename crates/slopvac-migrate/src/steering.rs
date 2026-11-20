@@ -1,6 +1,7 @@
 //! Managed steering blocks between `<!-- slopvac:begin -->` and `<!-- slopvac:end -->`.
 
 use crate::directives::fence_step;
+use crate::messages::MigratePhrase;
 
 const BEGIN: &str = "<!-- slopvac:begin -->";
 const END: &str = "<!-- slopvac:end -->";
@@ -49,7 +50,7 @@ pub fn rewrite_steering(text: &str, block: &str) -> Result<Option<String>, Strin
             out.push_str(&text[*end..]);
             Ok(Some(out))
         }
-        _ => Err("malformed or ambiguous slopvac markers; repair the begin/end pair first".into()),
+        _ => Err(MigratePhrase::SteeringMarkers.as_static().to_owned()),
     }
 }
 

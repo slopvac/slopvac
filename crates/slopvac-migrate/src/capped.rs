@@ -1,6 +1,7 @@
 //! Bounded collection of the warnings, notes and blocking records a run reports.
 
 use crate::Dropped;
+use crate::messages::MigrateText;
 
 /// Most records kept per list.
 const MAX_MESSAGES: usize = 100;
@@ -30,20 +31,29 @@ fn clip_owned(mut text: String) -> String {
     text
 }
 
+/// What a [`Capped`] list holds, which names the messages in its closing line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Listed {
+    /// Notes about changes the run made.
+    Notes,
+    /// Warnings about files the run did not check.
+    Warnings,
+}
+
 /// A list of messages that keeps the first [`MAX_MESSAGES`], cuts each to
 /// [`MAX_MESSAGE_CHARS`] characters, and counts the rest.
 #[derive(Debug)]
 pub(crate) struct Capped {
-    what: &'static str,
+    listed: Listed,
     items: Vec<String>,
     suppressed: usize,
 }
 
 impl Capped {
-    /// An empty list; `what` names the messages in the suppressed line.
-    pub(crate) fn new(what: &'static str) -> Self {
+    /// An empty list; `listed` names the messages in the suppressed line.
+    pub(crate) fn new(listed: Listed) -> Self {
         Self {
-            what,
+            listed,
             items: Vec::new(),
             suppressed: 0,
         }
@@ -61,7 +71,14 @@ impl Capped {
     pub(crate) fn finish(self) -> Vec<String> {
         let mut items = self.items;
         if self.suppressed > 0 {
-            items.push(format!("{} more {} suppressed", self.suppressed, self.what));
+            let count = self.suppressed;
+            items.push(
+                match self.listed {
+                    Listed::Notes => MigrateText::SuppressedNotes { count },
+                    Listed::Warnings => MigrateText::SuppressedWarnings { count },
+                }
+                .to_string(),
+            );
         }
         items
     }
@@ -131,7 +148,7 @@ mod tests {
 
     #[test]
     fn a_cut_message_does_not_keep_the_big_allocation() {
-        let mut list = Capped::new("warnings");
+        let mut list = Capped::new(Listed::Warnings);
         list.push(long());
         let kept = list.finish();
         assert_eq!(kept[0].chars().count(), MAX_MESSAGE_CHARS + 1);

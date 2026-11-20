@@ -19,6 +19,7 @@ similar.workspace = true
 slopvac-config.workspace = true
 slopvac-engine.workspace = true
 slopvac-fs.workspace = true
+slopvac-messages.workspace = true
 slopvac-model.workspace = true
 slopvac-rules.workspace = true
 slopvac-sanitize.workspace = true

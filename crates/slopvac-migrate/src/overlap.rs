@@ -10,6 +10,8 @@
 
 use std::collections::BTreeSet;
 
+use crate::messages::MigrateText;
+
 /// One accepted override pattern: its path segments and whether it is a tree.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Glob {
@@ -56,12 +58,18 @@ pub struct Region {
 /// backslash, or be `.` or `..`.
 pub fn parse_glob(files: &[String]) -> Result<Glob, String> {
     let [glob] = files else {
-        return Err(format!(
-            "a block with {} patterns: {files:?}; use one pattern per block",
-            files.len()
-        ));
+        return Err(MigrateText::OverlapManyPatterns {
+            count: files.len(),
+            patterns: format!("{files:?}"),
+        }
+        .to_string());
     };
-    let unsupported = || format!("unsupported pattern {glob:?}");
+    let unsupported = || {
+        MigrateText::OverlapUnsupported {
+            pattern: format!("{glob:?}"),
+        }
+        .to_string()
+    };
     let (body, tree) = match glob.strip_suffix("/**") {
         Some(body) => (body, true),
         None => (glob.as_str(), false),

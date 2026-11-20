@@ -20,6 +20,7 @@ files:
   - crates/slopvac-sanitize/src/**
   - crates/slopvac-terms/src/**
   - crates/slopvac-text/src/**
+  - crates/slopvac-migrate/src/**
 ignores:
   # Audit output is for contributors reading a failing test, not for users.
   - crates/slopvac-messages/src/audit.rs

@@ -9,6 +9,7 @@ use slopvac_config::{MAX_CONFIG_BYTES, MAX_DOCUMENT_BYTES};
 use slopvac_terms::MAX_TERMS_FILE_BYTES;
 
 use crate::Error;
+use crate::messages::{MigratePhrase, path_reason};
 
 /// Ceilings on one migrate run, on top of the per-file caps.
 ///
@@ -147,13 +148,13 @@ impl Budget {
                     Some(InputKind::NotRegular) => Ok(Err(Refused::NotRegular)),
                     Some(InputKind::MultiplyLinked) => Ok(Err(Refused::MultiplyLinked)),
                     Some(InputKind::TooLarge) => Err(kind.too_large(shown)),
-                    Some(InputKind::Symlink) => Err(Error::Unsafe(format!(
-                        "{}: a path component is a symbolic link",
-                        rel.display()
+                    Some(InputKind::Symlink) => Err(Error::Unsafe(path_reason(
+                        &rel.display().to_string(),
+                        MigratePhrase::WhyComponentSymlink.as_static(),
                     ))),
-                    Some(InputKind::UnsafePath) => Err(Error::Unsafe(format!(
-                        "{}: path leaves the project",
-                        rel.display()
+                    Some(InputKind::UnsafePath) => Err(Error::Unsafe(path_reason(
+                        &rel.display().to_string(),
+                        MigratePhrase::WhyPathLeaves.as_static(),
                     ))),
                     _ => Err(Error::read(shown, e)),
                 };

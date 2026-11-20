@@ -6,6 +6,7 @@
 use toml_edit::{Array, DocumentMut, Item, RawString, Table, TableLike, Value, value};
 
 use crate::capped::Blockers;
+use crate::messages::{MigratePhrase, MigrateText};
 use crate::provenance::{KeyLines, key_lines};
 use crate::{Dropped, Error, Options, RenameTable, preserve_doc};
 
@@ -157,7 +158,9 @@ fn is_legacy(text: &str, file: &str) -> Result<bool, Error> {
         return Err(Error::InvalidType {
             file: file.to_owned(),
             line: line_of(text, entry.node.span.start),
-            message: "`schema_version` must be an integer".to_owned(),
+            message: MigratePhrase::ReasonVersionNotInteger
+                .as_static()
+                .to_owned(),
         });
     }
     Ok(matches!(
@@ -215,7 +218,7 @@ impl Cx<'_> {
             self.file,
             path,
             self.lines.of(path),
-            "rule no longer exists in 3.0",
+            MigratePhrase::ReasonRuleGone.as_static(),
         ));
     }
     fn drop_key(&mut self, path: &str, reason: impl AsRef<str>) {
@@ -246,15 +249,12 @@ fn migrate_scope(t: &mut dyn TableLike, path: &str, scope: Scope, cx: &mut Cx<'_
         let kp = join(path, &key);
         if scope == Scope::Project && key == "schema_version" {
             if t.get("schema_version").and_then(Item::as_integer) != Some(2) {
-                cx.drop_key(&kp, "expected 2 in a 2.x config");
+                cx.drop_key(&kp, MigratePhrase::ReasonExpectedTwo.as_static());
             }
             continue;
         }
         if !allowed.contains(&key.as_str()) {
-            cx.drop_key(
-                &kp,
-                "no 3.0 equivalent; remove the key or rewrite it by hand",
-            );
+            cx.drop_key(&kp, MigratePhrase::ReasonNoEquivalentRewrite.as_static());
             continue;
         }
         match key.as_str() {
@@ -266,10 +266,7 @@ fn migrate_scope(t: &mut dyn TableLike, path: &str, scope: Scope, cx: &mut Cx<'_
             "vale" => migrate_vale(t, &kp, cx),
             "guidance" => {
                 if scope == Scope::Override {
-                    cx.drop_key(
-                        &kp,
-                        "2.x rejected guidance inside an override, and 3.0 does too",
-                    );
+                    cx.drop_key(&kp, MigratePhrase::ReasonGuidanceOverride.as_static());
                 } else {
                     check_keys(t, &key, &kp, GUIDANCE_KEYS, cx);
                 }
@@ -287,7 +284,10 @@ fn check_keys(t: &mut dyn TableLike, key: &str, path: &str, known: &[&str], cx: 
     };
     for k in keys_of(sub) {
         if !known.contains(&k.as_str()) {
-            cx.drop_key(&join(path, &k), "no 3.0 equivalent");
+            cx.drop_key(
+                &join(path, &k),
+                MigratePhrase::ReasonNoEquivalent.as_static(),
+            );
         }
     }
 }
@@ -390,13 +390,16 @@ fn level_only(item: Item, path: &str, allowed: &[&str], cx: &mut Cx<'_>) -> Opti
         return Some((item, String::new()));
     }
     let Some(tl) = item.as_table_like() else {
-        cx.drop_key(path, "expected a level or a table");
+        cx.drop_key(path, MigratePhrase::ReasonExpectedLevelOrTable.as_static());
         return None;
     };
     let mut ok = true;
     for (k, _) in tl.iter() {
         if !allowed.contains(&k) {
-            cx.drop_key(&join(path, k), "no 3.0 equivalent");
+            cx.drop_key(
+                &join(path, k),
+                MigratePhrase::ReasonNoEquivalent.as_static(),
+            );
             ok = false;
         }
     }
@@ -415,17 +418,22 @@ fn migrate_categories(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<
     for (k, item) in entries {
         let kp = join(path, k.get());
         if cx.renames.is_removed_category(k.get()) {
-            cx.drop_category_note(&kp, "category no longer exists in 3.0");
+            cx.drop_category_note(&kp, MigratePhrase::ReasonCategoryGone.as_static());
             continue;
         }
         let Some(new) = cx.renames.category(k.get()) else {
-            cx.drop_key(&kp, "unknown 2.x category; the rename table has no entry");
+            cx.drop_key(&kp, MigratePhrase::ReasonUnknownCategory.as_static());
             continue;
         };
         if let Some((item, carried)) = level_only(item, &kp, CATEGORY_KEYS, cx) {
             if new != k.get() {
-                cx.notes
-                    .push(format!("renamed category {} to {new}", k.get()));
+                cx.notes.push(
+                    MigrateText::NoteRenamedCategory {
+                        from: k.get().to_owned(),
+                        to: new.clone(),
+                    }
+                    .to_string(),
+                );
             }
             out.push((new, k, item, carried));
         }
@@ -443,22 +451,19 @@ fn migrate_rules(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<'_>) 
             continue;
         }
         let Some(new) = cx.renames.rule(k.get()) else {
-            cx.drop_key(&kp, "unknown 2.x rule id; the rename table has no entry");
+            cx.drop_key(&kp, MigratePhrase::ReasonUnknownRuleId.as_static());
             continue;
         };
         if item.is_table_like() {
             let Some((sev, carried)) = collapse_severity(&item) else {
-                cx.drop_key(
-                    &kp,
-                    "a rule takes a level only; 3.0 has no other rule field",
-                );
+                cx.drop_key(&kp, MigratePhrase::ReasonRuleLevelOnly.as_static());
                 continue;
             };
             out.push((new, k, sev, carried));
         } else if item.is_str() {
             out.push((new, k, item, String::new()));
         } else {
-            cx.drop_key(&kp, "expected a level");
+            cx.drop_key(&kp, MigratePhrase::ReasonExpectedLevel.as_static());
         }
     }
     restore(t, key, out);
@@ -530,9 +535,12 @@ fn migrate_locale(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
     for (k, _) in tl.iter() {
         if k.starts_with("x-") {
             cx.notes
-                .push(format!("dropped extension key {}", join(path, k)));
+                .push(MigrateText::NoteDroppedExtensionKey { key: join(path, k) }.to_string());
         } else if k != "default" && k != "allow" {
-            cx.drop_key(&join(path, k), "no 3.0 equivalent");
+            cx.drop_key(
+                &join(path, k),
+                MigratePhrase::ReasonNoEquivalent.as_static(),
+            );
             ok = false;
         }
     }
@@ -552,14 +560,24 @@ fn migrate_locale(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
     if let Some(d) = default {
         t.insert("locale", d);
         set_leading(t, "locale", &default_lead);
-        cx.notes.push(format!("moved {path}.default to {path}"));
+        cx.notes.push(
+            MigrateText::NoteMovedDefault {
+                path: path.to_owned(),
+            }
+            .to_string(),
+        );
     }
     if let Some(a) = allow {
         if let Some(terms) = terms_table(t) {
             terms.insert("allow", a);
             set_leading(terms, "allow", &allow_lead);
         }
-        cx.notes.push(format!("moved {path}.allow to terms.allow"));
+        cx.notes.push(
+            MigrateText::NoteMovedAllow {
+                path: path.to_owned(),
+            }
+            .to_string(),
+        );
     }
 }
 
@@ -574,9 +592,12 @@ fn migrate_vocabulary(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
     for (k, _) in tl.iter() {
         if k.starts_with("x-") {
             cx.notes
-                .push(format!("dropped extension key {}", join(path, k)));
+                .push(MigrateText::NoteDroppedExtensionKey { key: join(path, k) }.to_string());
         } else if k != "path" {
-            cx.drop_key(&join(path, k), "no 3.0 equivalent");
+            cx.drop_key(
+                &join(path, k),
+                MigratePhrase::ReasonNoEquivalent.as_static(),
+            );
             ok = false;
         }
     }
@@ -603,8 +624,12 @@ fn migrate_vocabulary(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
             terms.insert("blocklists", Item::Value(v));
             set_leading(terms, "blocklists", &lead);
         }
-        cx.notes
-            .push(format!("moved {path}.path to terms.blocklists"));
+        cx.notes.push(
+            MigrateText::NoteMovedBlocklistPath {
+                path: path.to_owned(),
+            }
+            .to_string(),
+        );
     }
 }
 
@@ -618,36 +643,34 @@ fn migrate_vale(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
         let kp = join(path, k);
         match (k, enabled) {
             ("enabled", Some(true)) => {
-                cx.drop_key(
-                    &kp,
-                    "Vale is removed in 3.0; set enabled = false or delete the table",
-                );
+                cx.drop_key(&kp, MigratePhrase::ReasonValeEnabled.as_static());
                 ok = false;
             }
             ("enabled", None) => {
-                cx.drop_key(&kp, "expected a boolean");
+                cx.drop_key(&kp, MigratePhrase::ReasonExpectedBoolean.as_static());
                 ok = false;
             }
             ("enabled" | "binary" | "config" | "styles", Some(false)) => {}
             ("binary" | "config" | "styles", _) => {
-                cx.drop_key(
-                    &kp,
-                    "Vale is removed in 3.0; set vale.enabled = false in the same table or delete it",
-                );
+                cx.drop_key(&kp, MigratePhrase::ReasonValeSetting.as_static());
                 ok = false;
             }
             _ => {
-                cx.drop_key(&kp, "no 3.0 equivalent");
+                cx.drop_key(&kp, MigratePhrase::ReasonNoEquivalent.as_static());
                 ok = false;
             }
         }
     }
     if ok && enabled == Some(false) {
         t.remove("vale");
-        cx.notes
-            .push(format!("deleted {path} (Vale is removed in 3.0)"));
+        cx.notes.push(
+            MigrateText::NoteDeletedVale {
+                path: path.to_owned(),
+            }
+            .to_string(),
+        );
     } else if ok {
-        cx.drop_key(path, "Vale is removed in 3.0; delete the table");
+        cx.drop_key(path, MigratePhrase::ReasonValeTable.as_static());
     }
 }
 

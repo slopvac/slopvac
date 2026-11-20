@@ -15,6 +15,7 @@ use toml_edit::{
 
 use crate::capped::Blockers;
 use crate::legacy::{Dials, Layer, Legacy, PROFILES, Scalar, read_dials};
+use crate::messages::{MigratePhrase, MigrateText};
 use crate::preserve::{Block2, Block3, Config2, DropReason, Expanded, expand};
 use crate::{Error, RenameTable};
 
@@ -130,10 +131,7 @@ fn read_profile(t: &dyn TableLike, path: &str, ctx: &mut Ctx<'_>) -> Option<Stri
     match item.as_str() {
         Some(p) if PROFILES.contains(&p) => Some(p.to_owned()),
         _ => {
-            ctx.drop_key(
-                path,
-                "unknown 2.x profile; expected strict, normal or relaxed",
-            );
+            ctx.drop_key(path, MigratePhrase::ReasonUnknownProfile.as_static());
             None
         }
     }
@@ -155,7 +153,7 @@ fn read_layer(t: &dyn TableLike, prefix: &str, legacy: &Legacy, ctx: &mut Ctx<'_
             if ctx.renames.is_removed_category(name) {
                 // Dropped with a note by the plain migration; nothing to expand.
             } else if ctx.renames.category(name).is_none() {
-                ctx.drop_key(&path, "unknown 2.x category; 2.x rejected it");
+                ctx.drop_key(&path, MigratePhrase::ReasonRejectedCategory.as_static());
             } else if let Some(d) = read_dials(item) {
                 layer.categories.insert(name.to_owned(), d);
             }
@@ -170,7 +168,7 @@ fn read_layer(t: &dyn TableLike, prefix: &str, legacy: &Legacy, ctx: &mut Ctx<'_
                     .and_then(Item::as_str)
             });
             if !legacy.rules.contains_key(qid) {
-                ctx.drop_key(&path, "unknown 2.x rule; 2.x rejected it");
+                ctx.drop_key(&path, MigratePhrase::ReasonRejectedRule.as_static());
             } else if let Some(level) = level {
                 layer.rules.insert(qid.to_owned(), level.to_owned());
             }
@@ -186,12 +184,8 @@ fn note_dropped(expanded: &Expanded, ctx: &mut Ctx<'_>) {
             None => format!("rules.{}", d.rule),
         };
         ctx.notes.push(match d.reason {
-            DropReason::Judgement => format!(
-                "dropped {path}: a judgement rule takes its review level from the legacy style"
-            ),
-            DropReason::Ignored => {
-                format!("dropped {path}: 2.x ignored it for every file it applies to")
-            }
+            DropReason::Judgement => MigrateText::NoteDroppedJudgement { path }.to_string(),
+            DropReason::Ignored => MigrateText::NoteDroppedIgnored { path }.to_string(),
         });
     }
 }
@@ -204,10 +198,13 @@ fn write(doc: &mut DocumentMut, config: &Config2, expanded: &Expanded, ctx: &mut
     let mut styles = Array::new();
     styles.push(style.as_str());
     doc.insert("styles", value(styles));
-    ctx.notes.push(format!(
-        "added styles = [\"{style}\"] to reproduce the 2.x {} profile",
-        config.profile
-    ));
+    ctx.notes.push(
+        MigrateText::NoteAddedStyle {
+            style,
+            profile: config.profile.clone(),
+        }
+        .to_string(),
+    );
     note_dropped(expanded, ctx);
     let first_override = first_override_position(doc);
     patch_layer(
@@ -240,36 +237,28 @@ fn write(doc: &mut DocumentMut, config: &Config2, expanded: &Expanded, ctx: &mut
     let switches: Vec<Table> = expanded
         .switches
         .iter()
-        .map(|b| {
-            block_table(
-                b,
-                "Added by `slopvac migrate --preserve-behavior`: switch these files to the 2.x\n# profile that the block below with the same files selects.",
-                ctx,
-            )
-        })
+        .map(|b| block_table(b, MigratePhrase::CommentSwitchBlocks.as_static(), ctx))
         .collect();
     let guards: Vec<Table> = expanded
         .guards
         .iter()
-        .map(|b| {
-            block_table(
-                b,
-                "Added by `slopvac migrate --preserve-behavior`: 2.x ignored these rule entries\n# for these files.",
-                ctx,
-            )
-        })
+        .map(|b| block_table(b, MigratePhrase::CommentGuardBlocks.as_static(), ctx))
         .collect();
     if !switches.is_empty() {
-        ctx.notes.push(format!(
-            "added {} before the others that switch files to another 2.x profile",
-            override_blocks(switches.len())
-        ));
+        ctx.notes.push(
+            MigrateText::NoteAddedSwitchBlocks {
+                blocks: override_blocks(switches.len()),
+            }
+            .to_string(),
+        );
     }
     if !guards.is_empty() {
-        ctx.notes.push(format!(
-            "added {} after the others that turn off rule entries 2.x ignored",
-            override_blocks(guards.len())
-        ));
+        ctx.notes.push(
+            MigrateText::NoteAddedGuardBlocks {
+                blocks: override_blocks(guards.len()),
+            }
+            .to_string(),
+        );
     }
     if inline {
         if let Some(arr) = doc.get_mut("overrides").and_then(Item::as_array_mut) {
@@ -311,9 +300,9 @@ fn first_override_position(doc: &DocumentMut) -> Option<isize> {
 
 fn override_blocks(n: usize) -> String {
     if n == 1 {
-        "1 override block".to_owned()
+        MigratePhrase::OverrideBlockOne.as_static().to_owned()
     } else {
-        format!("{n} override blocks")
+        MigrateText::OverrideBlocks { count: n }.to_string()
     }
 }
 
@@ -428,23 +417,31 @@ fn reconcile_rules(
                 } else {
                     format!("{prefix}.rules.{key}")
                 };
-                ctx.notes.push(format!(
-                    "set {at} to \"{level}\": the 2.x profile default replaces an entry 2.x ignored"
-                ));
+                ctx.notes.push(
+                    MigrateText::NoteSetRuleLevel {
+                        at,
+                        level: level.clone(),
+                    }
+                    .to_string(),
+                );
             }
             Some(_) => {}
         }
     }
     if added > 0 {
         let at = if prefix.is_empty() {
-            "the top level".to_owned()
+            MigratePhrase::PlaceTopLevel.as_static().to_owned()
         } else {
             prefix.to_owned()
         };
-        ctx.notes.push(format!(
-            "added {added} rule {} at {at}: 2.x applied these profile defaults over the authored category level",
-            if added == 1 { "entry" } else { "entries" }
-        ));
+        ctx.notes.push(
+            if added == 1 {
+                MigrateText::NoteAddedRuleEntry { count: added, at }
+            } else {
+                MigrateText::NoteAddedRuleEntries { count: added, at }
+            }
+            .to_string(),
+        );
     }
 }
 
