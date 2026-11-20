@@ -459,6 +459,10 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one table of every published text, which reads best in one place"
+)]
 fn every_phrase_keeps_its_published_text_and_is_registered() {
     use MigratePhrase as P;
     let phrases = [
