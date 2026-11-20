@@ -86,19 +86,33 @@ fn sign_manifest(
     not_before: &str,
     payload: &[(&str, &[u8])],
 ) -> Signed {
+    sign_manifest_naming(
+        key,
+        &key.public().key_id(),
+        ns,
+        id,
+        version,
+        not_before,
+        payload,
+    )
+}
+
+/// Sign with `key` while the statement names `key_id`, which may be another key's.
+fn sign_manifest_naming(
+    key: &Key,
+    key_id: &str,
+    ns: &str,
+    id: &str,
+    version: &str,
+    not_before: &str,
+    payload: &[(&str, &[u8])],
+) -> Signed {
     let mut manifest = base_manifest(payload);
     manifest.annotations.insert(ANNOTATION_ID.into(), id.into());
     manifest
         .annotations
         .insert(ANNOTATION_VERSION.into(), version.into());
-    let st = Statement::for_manifest(
-        ns,
-        id,
-        version,
-        &key.public().key_id(),
-        not_before,
-        &manifest,
-    );
+    let st = Statement::for_manifest(ns, id, version, key_id, not_before, &manifest);
     let statement = st.canonical_bytes();
     let minisig = key.sign(&statement);
     manifest
@@ -1002,18 +1016,73 @@ fn the_compiled_policy_verifies_the_slopvac_namespace_with_the_plugins_key() {
     assert_eq!(compiled_first_party_ids(), [PLUGINS_KEY_ID]);
 }
 
+/// A `slopvac` statement that names `key_id`, signed by a test key.
+fn slopvac_naming(key_id: &str) -> Signed {
+    sign_manifest_naming(
+        &Key::new(),
+        key_id,
+        "slopvac",
+        ID,
+        "1.2.0",
+        "2026-11-01T00:00:00Z",
+        &[(LAYER, b"x")],
+    )
+}
+
+fn slopvac_expect() -> Expectation<'static> {
+    Expectation {
+        namespace: "slopvac",
+        ..expect()
+    }
+}
+
 #[test]
-fn the_compiled_policy_refuses_the_release_key_for_the_slopvac_namespace() {
-    assert!(!compiled_first_party_ids().contains(&release_key().unwrap().key_id()));
+fn a_slopvac_statement_naming_the_release_key_is_refused_by_the_compiled_policy() {
+    let s = slopvac_naming(&release_key().unwrap().key_id());
+    assert!(matches!(
+        run(&s, &KeyPolicy::compiled().unwrap(), &slopvac_expect()),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[test]
+fn a_slopvac_statement_naming_the_release_key_is_refused_with_no_first_party_key() {
+    // The release key sits in the pin table for `slopvac`, which never opens it.
+    let release = release_key().unwrap();
+    let policy = KeyPolicy {
+        first_party: Vec::new(),
+        first_party_namespaces: vec!["slopvac".into()],
+        pinned: BTreeMap::from([("slopvac".to_owned(), vec![release.clone()])]),
+    };
+    assert!(matches!(
+        run(
+            &slopvac_naming(&release.key_id()),
+            &policy,
+            &slopvac_expect()
+        ),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[test]
+fn a_slopvac_statement_naming_the_plugins_key_with_a_bad_signature_is_refused() {
+    let s = slopvac_naming(PLUGINS_KEY_ID);
+    assert_eq!(
+        run(&s, &KeyPolicy::compiled().unwrap(), &slopvac_expect()),
+        Err(SignError::BadSignature)
+    );
 }
 
 #[rstest]
 #[case::unpinned(None)]
 #[case::another_key_pinned(Some(Key::new()))]
-fn a_third_party_namespace_does_not_verify_through_the_compiled_policy(
+fn a_third_party_namespace_does_not_verify_through_the_first_party_list(
     #[case] pinned: Option<Key>,
 ) {
+    // The signer is in the first-party list, so only the namespace check can refuse it.
+    let signer = Key::new();
     let mut policy = KeyPolicy::compiled().unwrap();
+    policy.first_party.push(signer.public());
     if let Some(p) = &pinned {
         policy.pinned.insert("acme".into(), vec![p.public()]);
     }
@@ -1022,7 +1091,7 @@ fn a_third_party_namespace_does_not_verify_through_the_compiled_policy(
         ..expect()
     };
     assert!(matches!(
-        run(&signed_in(&Key::new(), "acme"), &policy, &e),
+        run(&signed_in(&signer, "acme"), &policy, &e),
         Err(SignError::KeyNotPinned { .. })
     ));
 }

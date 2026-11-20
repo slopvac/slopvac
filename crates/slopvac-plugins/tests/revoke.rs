@@ -1177,7 +1177,7 @@ fn the_verifier_accepts_the_list_the_publisher_script_renders() {
 
 #[test]
 fn the_plugins_key_is_not_a_revocation_root() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     let revocations =
         Revocations::with_compiled_root(dir.path(), offline_source(), FETCHED).unwrap();
     let ids: Vec<String> = revocations.roots().iter().map(PublicKey::key_id).collect();
@@ -1189,8 +1189,9 @@ fn the_plugins_key_is_not_a_revocation_root() {
 fn a_list_naming_the_plugins_key_stops_a_plugin_signed_by_it() {
     let plugins_id = plugins_key().unwrap().key_id();
     let env = Env::new();
-    let trees = tempfile::tempdir().unwrap();
-    let vp = install(trees.path(), MANIFEST, &plugins_id);
+    let trees = support::scratch();
+    let mut vp = install(trees.path(), MANIFEST, &plugins_id);
+    vp.source = "oci:ghcr.io/slopvac/fake".into();
     let spec = spec_for(&vp);
     let gate = gate(&env, &vp, "2026-11-02T00:00:00Z");
     gate.record_trust(&vp, &spec, FETCHED).unwrap();
