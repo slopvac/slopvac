@@ -2,26 +2,37 @@
 //!
 //! Text elements become fragments. A text bound to an arrow is an edge label, a
 //! text bound to another shape is a node label, and a free text is a text box.
-//! Frame names are groups. Deleted elements are skipped.
+//! Frame names are groups. Deleted elements are skipped. An entry that is not an object, or a
+//! live text element without a string `text`, makes the scene malformed. The fragments of the
+//! elements before it are kept.
 
 use std::collections::HashMap;
 
 use crate::json::{Json, parse};
-use crate::{Extraction, Fragment, Role};
+use crate::sink::{Sink, clip};
+use crate::{Extraction, ExtractionStatus, Fragment, Role};
 
 pub(crate) fn extract(src: &str, base: usize) -> Extraction {
     let Some(root) = parse(src) else {
-        return Extraction::default();
+        return Extraction::failed(ExtractionStatus::Malformed("invalid JSON"));
     };
     let Some(Json::Arr(elements)) = root.get("elements") else {
-        return Extraction::default();
+        return Extraction::failed(ExtractionStatus::Malformed("no elements array"));
     };
     let types: HashMap<&str, &str> = elements
         .iter()
         .filter_map(|e| Some((e.get("id")?.as_str()?, e.get("type")?.as_str()?)))
         .collect();
-    let mut fragments = Vec::new();
+    let mut fragments = Sink::default();
+    let mut malformed = None;
     for e in elements {
+        if fragments.is_full() {
+            break;
+        }
+        if !matches!(e, Json::Obj(_)) {
+            malformed = Some("element is not an object");
+            break;
+        }
         if matches!(e.get("isDeleted"), Some(Json::Bool(true))) {
             continue;
         }
@@ -40,6 +51,10 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
             _ => continue,
         };
         let Some(Json::Str { span, value }) = e.get(key) else {
+            if key == "text" {
+                malformed = Some("text element has no text");
+                break;
+            }
             continue;
         };
         let id = e.get("id").and_then(Json::as_str).unwrap_or("?");
@@ -48,18 +63,20 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
             span: base + span.start..base + span.end,
             text: (raw != value).then(|| value.clone()),
             role,
-            logical: format!("excalidraw/{}[{id}]", role.as_str()),
+            logical: format!("excalidraw/{}[{}]", role.as_str(), clip(id)),
         });
     }
+    let (fragments, hit) = fragments.finish();
     Extraction {
         diagram: Some("excalidraw".to_string()),
         fragments,
+        status: malformed.map_or_else(|| crate::sink::status(hit), ExtractionStatus::Malformed),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Extraction, Format, Role, extract};
+    use crate::{Extraction, ExtractionStatus, Format, Role, extract};
 
     const SCENE: &str = r#"{"type":"excalidraw","elements":[
 {"id":"r1","type":"rectangle","isDeleted":false},
@@ -110,7 +127,25 @@ mod tests {
     }
 
     #[test]
-    fn invalid_json_yields_nothing() {
-        assert_eq!(extract(Format::Excalidraw, "{", 0), Extraction::default());
+    fn invalid_json_is_malformed() {
+        assert_eq!(
+            extract(Format::Excalidraw, "{", 0),
+            Extraction::failed(ExtractionStatus::Malformed("invalid JSON"))
+        );
+    }
+
+    #[test]
+    fn a_scene_without_elements_is_malformed() {
+        assert_eq!(
+            extract(Format::Excalidraw, "{}", 0).status,
+            ExtractionStatus::Malformed("no elements array")
+        );
+    }
+
+    #[test]
+    fn a_scene_with_no_elements_is_ok_and_empty() {
+        let ex = extract(Format::Excalidraw, r#"{"elements":[]}"#, 0);
+        assert_eq!(ex.status, ExtractionStatus::Ok);
+        assert_eq!(ex.fragments, Vec::new());
     }
 }
