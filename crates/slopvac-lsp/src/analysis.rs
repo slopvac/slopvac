@@ -3,6 +3,7 @@
 use std::fmt::Write as _;
 use std::sync::Arc;
 
+use slopvac_engine::extract_code;
 use slopvac_messages::{Catalog, render};
 use slopvac_model::{Edit, Finding, Notice, NoticeLevel, RuleId, Severity, Span};
 
@@ -36,6 +37,14 @@ pub(crate) struct Analysis {
     /// The client's version of that text.
     pub(crate) version: i32,
     pub(crate) items: Vec<Item>,
+}
+
+/// The diagnostic severity of a notice level.
+const fn severity_of(level: NoticeLevel) -> Severity {
+    match level {
+        NoticeLevel::Info => Severity::Suggestion,
+        NoticeLevel::Warning => Severity::Warning,
+    }
 }
 
 impl Item {
@@ -101,10 +110,7 @@ impl Item {
         Self {
             span: None,
             line: 0,
-            severity: match n.level {
-                NoticeLevel::Info => Severity::Suggestion,
-                NoticeLevel::Warning => Severity::Warning,
-            },
+            severity: severity_of(n.level),
             code: n.code.to_string(),
             hover: message.clone(),
             message,
@@ -113,21 +119,25 @@ impl Item {
         }
     }
 
-    /// A run-level notice that leaves the run complete, such as unsupported content in a
-    /// supported input. The notice has no position, so the item sits at the document start.
-    /// It shows the notice message as is, with the notice code.
-    fn from_root_notice(n: &Notice) -> Self {
+    /// A root notice that is published: only `extract-unsupported` (unsupported content in
+    /// a supported input). Any other root notice is not published, and `None` says so. The
+    /// notice has no position, so the item sits at the document start. It shows the notice
+    /// message as is, with the notice code, at the severity of the notice level.
+    fn from_root_notice(n: &Notice) -> Option<Self> {
+        if n.code.as_str() != extract_code::UNSUPPORTED {
+            return None;
+        }
         let message = n.message.to_string();
-        Self {
+        Some(Self {
             span: None,
             line: 0,
-            severity: Severity::Suggestion,
+            severity: severity_of(n.level),
             code: n.code.to_string(),
             hover: message.clone(),
             message,
             fix: None,
             rule: None,
-        }
+        })
     }
 
     /// The check could not finish. An unlinted buffer must not look clean (exit 2 semantics).
@@ -164,7 +174,7 @@ pub(crate) fn analyze(
             .into_iter()
             .map(Item::from_finding)
             .chain(linted.unchecked.into_iter().map(|n| Item::from_notice(&n)))
-            .chain(linted.notices.iter().map(Item::from_root_notice))
+            .chain(linted.notices.iter().filter_map(Item::from_root_notice))
             .collect(),
         Err(e) => vec![Item::incomplete(&e.0)],
     };

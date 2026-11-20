@@ -23,9 +23,10 @@ pub struct Linted {
     /// What did not run, and why (`Document.unchecked`). An editor must not show a buffer
     /// as clean when part of the check was skipped.
     pub unchecked: Vec<Notice>,
-    /// Run-level notices that leave the run complete, such as `extract-unsupported` for a
-    /// diagram type the engine does not read. They have no position, so an editor shows
-    /// them at the start of the document.
+    /// Root notices of the run, which leave it complete. The server publishes only
+    /// `extract-unsupported` (a diagram type the engine does not read), at the start of the
+    /// document because a notice has no position. It drops any other code when it builds
+    /// diagnostics, so this field can hold more than the editor shows.
     pub notices: Vec<Notice>,
 }
 

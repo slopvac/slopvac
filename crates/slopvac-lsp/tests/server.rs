@@ -625,6 +625,36 @@ fn a_document_without_unsupported_content_has_no_information_diagnostic() {
     client.finish().unwrap();
 }
 
+struct OtherRootNotice;
+
+impl Linter for OtherRootNotice {
+    fn lint(&self, _path: &str, _text: &str) -> Result<Linted, LintError> {
+        Ok(Linted {
+            findings: Vec::new(),
+            unchecked: Vec::new(),
+            notices: vec![Notice {
+                code: KebabName::new("some-other-notice").unwrap(),
+                level: NoticeLevel::Info,
+                message: NonEmptyString::new("something else").unwrap(),
+                path: None,
+                data: serde_json::Map::new(),
+            }],
+        })
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+#[test]
+fn a_root_notice_with_another_code_is_not_published() {
+    let mut client = Client::start(Server::new(Arc::new(OtherRootNotice)), None);
+    let published = client.open("Clean prose.\n");
+    assert_eq!(published["diagnostics"], json!([]));
+    client.finish().unwrap();
+}
+
 /// Insert `new_text` at `(line, 0)` of `text`.
 fn insert_at_line(text: &str, line: usize, new_text: &str) -> String {
     let at: usize = text.split_inclusive('\n').take(line).map(str::len).sum();
