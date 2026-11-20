@@ -179,21 +179,21 @@ pub fn is_reserved_namespace(namespace: &str) -> bool {
     RESERVED_NAMESPACES.contains(&namespace)
 }
 
-/// The compiled plugins key file. Not yet issued: the maintainer generates the
-/// key pair and keeps the secret half in a protected environment. Until the key
-/// ceremony puts the public half here, the slot is `None` and
-/// [`plugins_key`] returns no key. First-party plugins verify against
-/// [`release_key`] meanwhile.
-const PLUGINS_KEY_FILE: Option<&str> = None;
+/// The compiled plugins key file, `keys/slopvac-plugins.pub`. The secret half
+/// lives in a protected release environment. The release key, which is the
+/// revocation root, can revoke this key by listing its ID.
+const PLUGINS_KEY_FILE: &str = include_str!("../../../keys/slopvac-plugins.pub");
 
-/// The compiled plugins key, which will verify the first-party namespace after
-/// the key ceremony. Not yet issued, so this returns `Ok(None)`. No caller may
-/// treat a missing key as a match.
+/// The compiled plugins key, separate from [`release_key`]. It verifies plugin
+/// artifacts in the [`FIRST_PARTY_NAMESPACE`] and the first-party plugin index,
+/// and nothing else: not `core`, not a third-party namespace, not the
+/// revocation list and not release archives. [`KeyPolicy::compiled`] lists it
+/// as the only first-party key.
 ///
 /// # Errors
-/// [`SignError::InvalidKey`] when a compiled file is present and is not a minisign key.
-pub fn plugins_key() -> Result<Option<PublicKey>, SignError> {
-    PLUGINS_KEY_FILE.map(PublicKey::from_pub_file).transpose()
+/// [`SignError::InvalidKey`] when the compiled file is not a minisign key.
+pub fn plugins_key() -> Result<PublicKey, SignError> {
+    PublicKey::from_pub_file(PLUGINS_KEY_FILE)
 }
 
 /// The id and namespace of the built-in plugin. It is reserved: the binary
@@ -202,13 +202,12 @@ pub fn plugins_key() -> Result<Option<PublicKey>, SignError> {
 /// reader refuses one that does.
 pub const RESERVED_ID: &str = "core";
 
-/// The compiled release key, which signs the revocation list. First-party
-/// plugin verification uses it for now, through the temporary fallback in
-/// [`KeyPolicy::compiled`].
+/// The compiled release key. It signs release archives and the revocation list,
+/// and it is the revocation root. It signs no plugin.
 ///
 /// # Errors
-/// [`SignError::InvalidKey`] when the compiled file is not a minisign key. Callers
-/// then have no first-party key, so first-party verification refuses.
+/// [`SignError::InvalidKey`] when the compiled file is not a minisign key. The
+/// revocation root is then missing, so no revocation list verifies.
 pub fn release_key() -> Result<PublicKey, SignError> {
     release_key_from(RELEASE_KEY_FILE)
 }
@@ -230,19 +229,20 @@ pub struct KeyPolicy {
 }
 
 impl KeyPolicy {
-    /// The shipped policy: the compiled release key for [`FIRST_PARTY_NAMESPACES`],
-    /// and no pinned keys. Tests build the struct directly to inject other keys.
+    /// The shipped policy: the compiled plugins key for [`FIRST_PARTY_NAMESPACES`],
+    /// and no pinned keys. The release key is not listed. Tests build the struct
+    /// directly to inject other keys.
     ///
     /// # Errors
     /// [`SignError::InvalidKey`] when the compiled key does not parse. There is then
     /// no policy, so nothing verifies as first-party.
     pub fn compiled() -> Result<Self, SignError> {
-        Self::compiled_from(RELEASE_KEY_FILE)
+        Self::compiled_from(PLUGINS_KEY_FILE)
     }
 
     fn compiled_from(key_file: &str) -> Result<Self, SignError> {
         Ok(Self {
-            first_party: vec![release_key_from(key_file)?],
+            first_party: vec![PublicKey::from_pub_file(key_file)?],
             first_party_namespaces: FIRST_PARTY_NAMESPACES
                 .iter()
                 .map(|n| (*n).to_owned())

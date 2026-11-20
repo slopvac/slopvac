@@ -27,7 +27,9 @@ use slopvac_plugins::revoke::{
     ARTIFACT_TYPE_REVOCATIONS, MEDIA_REVOCATIONS, RevocationError, RevocationList,
     RevocationNotice, Revocations, Revoked,
 };
-use slopvac_plugins::sign::{MEDIA_MINISIG, PublicKey, RotationProof, SignError, verify_rotation};
+use slopvac_plugins::sign::{
+    MEDIA_MINISIG, PublicKey, RotationProof, SignError, plugins_key, verify_rotation,
+};
 use slopvac_plugins::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
 use slopvac_plugins::{PluginError, PluginSpec, SpawnGate};
 
@@ -109,6 +111,16 @@ fn a_legacy_signature_is_refused() {
 fn with_no_root_key_every_list_fails_closed() {
     let err = RevocationList::verify(LIST, LIST_SIG, &[]).unwrap_err();
     assert!(matches!(err, RevocationError::NoRootKey), "{err:?}");
+}
+
+#[test]
+fn the_root_can_revoke_the_compiled_plugins_key_by_its_id() {
+    let id = plugins_key().unwrap().key_id();
+    let root = Root::new();
+    let bytes = list_json(ISSUED, EXPIRES, &[id.as_str()], &[]);
+    let list = RevocationList::verify(&bytes, &root.sign(&bytes), &[root.public()]).unwrap();
+    assert!(list.revokes_key("089DF22CF142CD2B"));
+    assert!(!list.revokes_key("D9914BDB4570AC6D"));
 }
 
 #[test]
@@ -1159,4 +1171,33 @@ fn the_verifier_accepts_the_list_the_publisher_script_renders() {
     assert_eq!(list.expires(), Some("2026-12-17T05:17:42Z"));
     assert!(!list.revokes_key(OLD_KEY_ID));
     assert!(!list.revokes_digest(REVOKED_DIGEST));
+}
+
+// ---- The plugins key and the revocation root ----
+
+#[test]
+fn the_plugins_key_is_not_a_revocation_root() {
+    let dir = support::scratch();
+    let revocations =
+        Revocations::with_compiled_root(dir.path(), offline_source(), FETCHED).unwrap();
+    let ids: Vec<String> = revocations.roots().iter().map(PublicKey::key_id).collect();
+    assert_eq!(ids, ["D9914BDB4570AC6D"]);
+    assert!(!ids.contains(&plugins_key().unwrap().key_id()));
+}
+
+#[test]
+fn a_list_naming_the_plugins_key_stops_a_plugin_signed_by_it() {
+    let plugins_id = plugins_key().unwrap().key_id();
+    let env = Env::new();
+    let trees = support::scratch();
+    let mut vp = install(trees.path(), MANIFEST, &plugins_id);
+    vp.source = "oci:ghcr.io/slopvac/fake".into();
+    let spec = spec_for(&vp);
+    let gate = gate(&env, &vp, "2026-11-02T00:00:00Z");
+    gate.record_trust(&vp, &spec, FETCHED).unwrap();
+    gate.check(&spec).unwrap();
+
+    env.warm(env.list(ISSUED, EXPIRES, &[plugins_id.as_str()], &[]));
+    assert_eq!(gate.state(&vp, &spec).unwrap().1, TrustState::Revoked);
+    assert!(matches!(gate.check(&spec), Err(PluginError::Untrusted(_))));
 }

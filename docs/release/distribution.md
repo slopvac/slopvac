@@ -40,7 +40,7 @@ A tag with major version below 3 does not go through dist. The `publish-legacy-r
 
 ## Signatures
 
-Releases carry minisign signatures next to the GitHub build attestations. The release key has the id `D9914BDB4570AC6D` and no password. Its public half is `keys/slopvac-release.pub` in this repository.
+Releases carry minisign signatures next to the GitHub build attestations. The release key has the id `D9914BDB4570AC6D` and no password. Its public half is `keys/slopvac-release.pub` in this repository. The plugins key has the id `089DF22CF142CD2B`. Its public half is `keys/slopvac-plugins.pub`, compiled into the binary, and it signs first-party plugins and the first-party plugin index.
 
 Verify a download:
 
