@@ -89,13 +89,12 @@ keys, and a consumer must ignore keys it does not know.
 | `locator` | Unicode code points. |
 | `text` | UTF-8 bytes of extracted text. |
 | `in-flight` | Bytes. |
-| `frame` | Bytes, the negotiated `maxMessageBytes`. |
 | `fragments` | Count of extracted fragments. |
 | `retained-bytes` | Bytes of fragment locations and converted text. |
 | `inflated-bytes` | Bytes of a decompressed draw.io page. |
 | `xml-nodes` | Count of XML nodes in one draw.io file. |
 
-The binary extraction budgets are `segments`, `part`, `locator`, `text` and `in-flight`; the [`BinaryBudget`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryBudget) enum in the plugin protocol schema lists them. A binary extractor never trips `frame` here: a frame overflow is the protocol error `message-too-large`.
+The binary extraction budgets are `segments`, `part`, `locator`, `text` and `in-flight`; the [`BinaryBudget`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryBudget) enum in the plugin protocol schema lists them. A frame overflow is not a budget breach: it is the protocol error `message-too-large`.
 
 The list of budget names can grow in a later 3.x release, so a consumer must handle a
 name it does not know. The plugin protocol's error `data` for the same code uses the
