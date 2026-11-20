@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -33,7 +34,8 @@ def load(name: str) -> dict:
 
 
 def test_every_path_class_is_a_changes_output_and_vice_versa():
-    assert set(JOBS["changes"]["outputs"]) - {"force_all"} == set(CLASSES)
+    scope_outputs = {"force_all", "rust_scope", "rust_modified", "rust_affected"}
+    assert set(JOBS["changes"]["outputs"]) - scope_outputs == set(CLASSES)
 
 
 def test_gate_needs_every_job_except_itself_and_its_compat_shims():
@@ -446,12 +448,19 @@ ALWAYS = {"changes", "quick-lint"}
 
 
 def run_gate(
-    flags: set[str], results: dict[str, str], *, draft: bool = False
+    flags: set[str],
+    results: dict[str, str],
+    *,
+    draft: bool = False,
+    event: str = "pull_request",
+    scope: tuple[str, str, str] = ("all", "--workspace", "--workspace"),
 ) -> subprocess.CompletedProcess:
     needs = {name: {"result": results.get(name, "skipped")} for name in GATE_NEEDS}
     env = {k: "true" if v in flags else "false" for k, v in FLAG_ENV.items()}
     env["RESULTS"] = json.dumps(needs)
     env["DRAFT"] = "true" if draft else "false"
+    env["EVENT_NAME"] = event
+    env["RUST_SCOPE"], env["RUST_MODIFIED"], env["RUST_AFFECTED"] = scope
     return subprocess.run(
         [sys.executable, "-c", GATE_SCRIPT],
         env={**os.environ, **env},
@@ -466,7 +475,9 @@ def ok(*names: str) -> dict[str, str]:
 
 
 def test_gate_step_declares_an_env_for_every_flag():
-    assert set(GATE_STEP["env"]) >= set(FLAG_ENV) | {"RESULTS", "DRAFT"}
+    declared = set(FLAG_ENV) | {"RESULTS", "DRAFT", "EVENT_NAME"}
+    declared |= {"RUST_SCOPE", "RUST_MODIFIED", "RUST_AFFECTED"}
+    assert set(GATE_STEP["env"]) >= declared
 
 
 def test_gate_needs_include_the_folded_jobs():
@@ -644,3 +655,193 @@ def test_a_change_outside_the_filesystem_class_still_gets_the_secret_scan(path):
     )
     scan_job = load("security.yml")["jobs"]["trivy-secret"]
     assert scan_job["if"] == "${{ inputs.secrets }}"
+
+
+# --- Rust scope in the Tests gate -------------------------------------------
+
+SCOPED = ("scoped", "-p slopvac-fs", "-p slopvac -p slopvac-fs")
+RUST_RUN = ok("rust-static", "rust", "rust-msrv", "rust-supply-chain")
+
+
+@pytest.mark.parametrize(
+    ("flags", "event", "scope"),
+    [
+        ({"rust"}, "pull_request", SCOPED),
+        ({"rust"}, "pull_request", ("all", "--workspace", "--workspace")),
+        ({"rust", "force_all"}, "merge_group", ("all", "--workspace", "--workspace")),
+        ({"rust", "force_all"}, "push", ("all", "--workspace", "--workspace")),
+    ],
+)
+def test_gate_accepts_the_scopes_each_event_may_use(flags, event, scope):
+    results = RUST_RUN if flags == {"rust"} else ok(*(set(GATE_NEEDS) - ALWAYS))
+    proc = run_gate(flags, results, event=event, scope=scope)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize(
+    ("flags", "event", "scope", "message"),
+    [
+        # A queue or main run must never test less than the whole workspace.
+        ({"rust", "force_all"}, "merge_group", SCOPED, "scoped where the whole"),
+        ({"rust", "force_all"}, "push", SCOPED, "scoped where the whole"),
+        ({"rust"}, "push", SCOPED, "scoped where the whole"),
+        # A routing edit forces everything even on a pull request.
+        ({"rust", "force_all"}, "pull_request", SCOPED, "scoped where the whole"),
+        # Scope outputs that are missing or contradict each other fail the gate.
+        ({"rust"}, "pull_request", ("", "", ""), "expected all or scoped"),
+        (
+            {"rust"},
+            "pull_request",
+            ("all", "-p slopvac-fs", "-p slopvac-fs"),
+            "arguments are not --workspace",
+        ),
+        (
+            {"rust"},
+            "pull_request",
+            ("scoped", "--workspace", "-p slopvac-fs"),
+            "scoped where the whole",
+        ),
+    ],
+)
+def test_gate_fails_a_scope_that_narrows_what_must_run_in_full(
+    flags, event, scope, message
+):
+    results = RUST_RUN if flags == {"rust"} else ok(*(set(GATE_NEEDS) - ALWAYS))
+    proc = run_gate(flags, results, event=event, scope=scope)
+    assert proc.returncode == 1
+    assert message in proc.stdout
+
+
+# --- the Rust jobs take their scope from the changes job ---------------------
+
+
+def step_runs(job: str) -> str:
+    return "\n".join(s.get("run", "") for s in JOBS[job]["steps"])
+
+
+@pytest.mark.parametrize(
+    ("job", "variable", "output"),
+    [
+        ("rust-static", "RUST_MODIFIED", "rust_modified"),
+        ("rust", "RUST_AFFECTED", "rust_affected"),
+    ],
+)
+def test_rust_jobs_read_their_scope_from_the_changes_job(job, variable, output):
+    assert JOBS[job]["env"][variable] == f"${{{{ needs.changes.outputs.{output} }}}}"
+    assert f"${variable}" in step_runs(job)
+
+
+# --- inputs the Rust crates embed or read from outside crates/ ----------------
+
+INCLUDE = re.compile(
+    r"include_(?:str|bytes)!\(\s*"
+    r'(?:"(?P<plain>[^"]+)"'
+    r'|concat!\(\s*env!\("CARGO_MANIFEST_DIR"\)\s*,\s*"(?P<tail>[^"]+)"\s*,?\s*\))',
+)
+PARENT_LITERAL = re.compile(r'"(?P<path>(?:\.\./)+[\w./-]+)"')
+
+
+def crate_sources() -> list[Path]:
+    listed = subprocess.run(
+        ["git", "ls-files", "--", "crates/*.rs"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    return [ROOT / name for name in listed]
+
+
+def crate_of(source: Path) -> Path:
+    return ROOT / "crates" / source.relative_to(ROOT / "crates").parts[0]
+
+
+def embedded_inputs() -> set[str]:
+    """Repository paths outside crates/ that a crate source embeds or reads.
+
+    `include_str!`/`include_bytes!` resolve against the including file. Other
+    `../` literals (manifest-dir reads in tests and build scripts) resolve
+    against the crate directory.
+    """
+    found: set[str] = set()
+    for source in crate_sources():
+        text = source.read_text(encoding="utf-8")
+        resolved: list[Path] = []
+        for match in INCLUDE.finditer(text):
+            if match["plain"]:
+                resolved.append(source.parent / match["plain"])
+            else:
+                resolved.append(crate_of(source) / match["tail"].lstrip("/"))
+        resolved += [
+            crate_of(source) / m["path"] for m in PARENT_LITERAL.finditer(text)
+        ]
+        for path in resolved:
+            normal = Path(os.path.normpath(path))
+            if (
+                normal == ROOT
+                or not normal.exists()
+                or normal.is_relative_to(ROOT / "crates")
+            ):
+                continue
+            found.add(normal.relative_to(ROOT).as_posix())
+    return found
+
+
+def covered(patterns: list[str], path: str) -> bool:
+    # A directory is covered when a file inside it is.
+    probe = f"{path}/x" if (ROOT / path).is_dir() else path
+    return any(glob_to_regex(p).match(probe) for p in patterns)
+
+
+def test_the_scan_finds_the_known_embedded_inputs():
+    # Guards the scanner itself: a broken regex would make the routing tests vacuous.
+    assert {
+        "keys/slopvac-release.pub",
+        "docs/contract/compat/profiles/legacy-strict.toml",
+        "packages/slopvac-lint/examples/blocklist.toml",
+        "tests/fixtures/workflow-escape-vectors.json",
+        "docs/site.toml",
+        "docs/reference/error-codes.lock",
+        "Cargo.lock",
+    } <= embedded_inputs()
+
+
+@pytest.mark.parametrize("path", sorted(embedded_inputs()))
+def test_every_input_a_crate_embeds_routes_to_rust(path):
+    assert covered(CLASSES["rust"], path)
+
+
+# The root manifest and lockfile are scoped by cargo-delta itself, by design.
+SCOPED_BY_DELTA = {"Cargo.toml", "Cargo.lock"}
+
+
+@pytest.mark.parametrize("path", sorted(embedded_inputs() - SCOPED_BY_DELTA))
+def test_every_input_a_crate_embeds_trips_a_cargo_delta_wire(path):
+    wires = tomllib.loads((ROOT / ".github" / "cargo-delta.toml").read_text())[
+        "trip_wire_patterns"
+    ]
+    # cargo-delta follows include macros inside crates only, so outside paths need a wire.
+    assert covered(wires, path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".cargo/config.toml",
+        "docs/contract/compat/dispositions.toml",
+        "docs/contract/compat/removed-rules.toml",
+        "packages/slopvac-lint/src/slopvac/rules/prose-craft.yaml",
+        "packages/slopvac-lint/tests/fixtures/regression/issues/x.md",
+        "docs/reference/cli.md",
+        "docs/migrate-2-to-3.md",
+        "docs/model-recommendations.md",
+        "packages/slopvac-plugin/pyproject.toml",
+        "scripts/revocation_list.py",
+        "tests/golden/v3/inputs.toml",
+        "evals/corpus/x.md",
+        ".github/ISSUE_TEMPLATE/bug.yml",
+    ],
+)
+def test_files_the_crate_tests_read_by_path_route_to_rust(path):
+    # Reads built from CARGO_MANIFEST_DIR or a repository root are not include macros.
+    assert in_class("rust", path)

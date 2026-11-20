@@ -140,7 +140,6 @@ _NO_RUST_GROUPS = {
         ("release-provenance.yml", "provenance"),
         ("release-smoke.yml", "resolve"),
         ("test.yml", "quick-lint"),
-        ("test.yml", "changes"),
         ("release.yml", "route"),
         ("release.yml", "publish-legacy-release"),
     ],

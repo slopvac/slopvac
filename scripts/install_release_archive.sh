@@ -32,7 +32,7 @@ release_target() {
 
 # install_release_archive TOOL URL SHA256 MEMBER
 #   TOOL    name of the installed executable
-#   URL     https URL of the .tar.xz archive
+#   URL     https URL of the .tar.xz or .tar.gz archive
 #   SHA256  committed digest of that archive
 #   MEMBER  path of the executable inside the archive
 # Installs into "${CARGO_HOME:-$HOME/.cargo}/bin" and adds that directory to GITHUB_PATH
@@ -47,7 +47,7 @@ install_release_archive() {
 	work="$(mktemp -d "${RUNNER_TEMP:?RUNNER_TEMP must be set}/pinned-${tool}.XXXXXX")"
 	# shellcheck disable=SC2064 # expand $work now: the trap must outlive this function's locals
 	trap "rm -rf '$work'" RETURN
-	archive="$work/archive.tar.xz"
+	archive="$work/archive"
 	curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$archive" "$url"
 
 	if command -v sha256sum >/dev/null 2>&1; then
@@ -61,7 +61,7 @@ install_release_archive() {
 	fi
 
 	mkdir "$work/out"
-	tar -xJf "$archive" -C "$work/out" "$member"
+	tar -xf "$archive" -C "$work/out" "$member"
 	# A regular file with one link: a symlink or hard link could point outside the archive.
 	if [[ -z "$(find "$work/out/$member" -maxdepth 0 -type f -links 1 2>/dev/null)" ]]; then
 		echo "${tool}: the archive member ${member} is not a plain regular file" >&2
