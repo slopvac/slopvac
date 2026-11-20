@@ -195,7 +195,10 @@ pub(crate) enum PyenvText {
     /// A link target is not UTF-8.
     #[code("plugins-pyenv-link-target-not-utf8")]
     #[text("`{rel}` has a link target that is not UTF-8")]
-    LinkTargetNotUtf8 { rel: String },
+    LinkTargetNotUtf8 {
+        #[display_path]
+        rel: String,
+    },
     /// The lock version is not 1.x.
     #[code("plugins-pyenv-lock-version-unsupported")]
     #[text("lock-version {version} is not supported; 1.x is")]
@@ -242,6 +245,7 @@ pub(crate) enum PyenvText {
     WheelHolds {
         #[display_path]
         path: String,
+        #[display_path]
         name: String,
         why: String,
     },
@@ -277,11 +281,17 @@ pub(crate) enum PyenvText {
     /// A wheel has no sha256.
     #[code("plugins-pyenv-no-sha256")]
     #[text("`{path}` has no sha256")]
-    NoSha256 { path: String },
+    NoSha256 {
+        #[display_path]
+        path: String,
+    },
     /// A wheel sha256 is malformed.
     #[code("plugins-pyenv-bad-sha256")]
     #[text("`{path}` has a malformed sha256")]
-    BadSha256 { path: String },
+    BadSha256 {
+        #[display_path]
+        path: String,
+    },
     /// `runtime = "python"` without a required field.
     #[code("plugins-pyenv-missing-field")]
     #[text("`runtime = \"python\"` needs `{field}`")]

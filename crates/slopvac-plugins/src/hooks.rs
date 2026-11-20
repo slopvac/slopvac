@@ -419,10 +419,7 @@ pub fn parse_edits(
             .filter(|&i| i < findings.len());
         let Some(idx) = idx else {
             return Err(invalid(
-                HostText::EditMissingFinding {
-                    finding: e.finding.to_string(),
-                }
-                .to_string(),
+                HostText::EditMissingFinding { finding: e.finding }.to_string(),
             ));
         };
         if !e.span.fits(text) {

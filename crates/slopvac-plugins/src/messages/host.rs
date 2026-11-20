@@ -520,7 +520,8 @@ pub(crate) enum HostText {
     #[text("edit names missing finding {finding}")]
     EditMissingFinding {
         /// The finding index.
-        finding: String,
+        #[count]
+        finding: u64,
     },
     /// An edit lies outside its finding.
     #[code("plugins-hooks-edit-outside-finding")]
@@ -1523,7 +1524,7 @@ mod tests {
                 "9 edits exceed the limit of 8",
             ),
             (
-                HostText::EditMissingFinding { finding: s("3") },
+                HostText::EditMissingFinding { finding: 3 },
                 "edit names missing finding 3",
             ),
             (

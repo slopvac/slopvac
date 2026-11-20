@@ -63,7 +63,11 @@ pub(crate) enum TransportText {
     /// An HTTP status was unexpected.
     #[code("plugins-oci-status")]
     #[text("unexpected status {status} from {url}")]
-    OciStatus { status: String, url: String },
+    OciStatus {
+        #[count]
+        status: u16,
+        url: String,
+    },
     /// A response exceeded its size limit.
     #[code("plugins-oci-too-large")]
     #[text("{what} exceeds the limit of {limit} bytes")]
@@ -958,7 +962,7 @@ pub(crate) fn oci_not_found(url: &str) -> String {
 
 pub(crate) fn oci_status(status: u16, url: &str) -> String {
     TransportText::OciStatus {
-        status: status.to_string(),
+        status,
         url: esc(url),
     }
     .to_string()
@@ -1164,7 +1168,7 @@ mod tests {
             ),
             (
                 T::OciStatus {
-                    status: s("503"),
+                    status: 503,
                     url: s("https://example.test/a"),
                 },
                 "unexpected status 503 from https://example.test/a",
