@@ -386,6 +386,17 @@ mod tests {
     #[case::at_sign_in_a_query("https://host?a=x@SECRET", "https://")]
     #[case::user_info_then_at_sign_in_a_query("https://u:p@host?a=x@y@SECRET", "https://")]
     #[case::empty_host_then_at_sign_in_a_query("file://?token=x@SECRET", "file://")]
+    #[case::user_info_then_query_marker_then_at("https://UIN@h.example?QRY@x#FRG", "https://")]
+    #[case::user_info_then_fragment_marker_then_at("https://UIN@h.example?QRY#FRG@x", "https://")]
+    #[case::user_info_and_at_sign_in_a_query_without_a_path(
+        "https://UIN@h.example?a=x@QRY",
+        "https://"
+    )]
+    #[case::at_sign_in_a_fragment_without_user_info_or_a_path(
+        "https://h.example#x@FRG",
+        "https://"
+    )]
+    #[case::at_sign_in_a_query_after_a_path("https://host/p?q=x@SECRET", "https://host/p")]
     #[case::uppercase_scheme("HTTPS://user:SECRET@host/x?q=SECRET", "HTTPS://host/x")]
     #[case::ipv6("http://user:SECRET@[::1]:8080/x?q=SECRET", "http://[::1]:8080/x")]
     #[case::at_sign_in_path("https://host/a@b?q=SECRET", "https://host/a@b")]
@@ -423,18 +434,22 @@ mod tests {
             proptest::prop_assert_eq!(got, want);
         }
 
-        /// Without a path, or with `?` or `#` inside the user-info, the value may be ambiguous
-        /// and print as the bare scheme. None of the three markers may survive either way.
+        /// Secrets placed after an `@` in the query or the fragment, the form that once got
+        /// promoted into the host. The user-info is absent or holds `?` or `#`, and the path
+        /// may be empty. No marker may survive, and the bare scheme is an allowed result.
         #[test]
-        fn redact_url_value_never_leaks_a_marker_when_the_value_is_ambiguous(
+        fn redact_url_value_never_leaks_a_marker_placed_after_an_at_sign(
             scheme in "[a-z][a-z0-9+.-]{0,6}",
-            user in "UIN[a-z0-9:'_~!$&()*+,;=%.#?-]{0,8}",
+            user in proptest::option::of("UIN[a-z0-9:'_~!$&()*+,;=%.#?-]{0,8}"),
             host in "[a-z]{1,8}\\.example",
             path in "(/[a-z0-9'@:_~!$&()*+,;=%.-]{0,6}){0,3}",
-            query in "QRY[a-z0-9/'?=&:@_~!$()*+,;%.#-]{0,8}",
-            fragment in "FRG[a-z0-9/'?@:_~!$&()*+,;=%.-]{0,8}",
+            query in proptest::option::of("[a-z0-9=&]{0,4}@QRY[a-z0-9/'?=&:_~!$()*+,;%.#-]{0,8}"),
+            fragment in proptest::option::of("[a-z0-9=&]{0,4}@FRG[a-z0-9/'?:_~!$&()*+,;=%.-]{0,8}"),
         ) {
-            let given = format!("{scheme}://{user}@{host}{path}?{query}#{fragment}");
+            let user = user.map_or_else(String::new, |u| format!("{u}@"));
+            let query = query.map_or_else(String::new, |q| format!("?{q}"));
+            let fragment = fragment.map_or_else(String::new, |f| format!("#{f}"));
+            let given = format!("{scheme}://{user}{host}{path}{query}{fragment}");
             let got = redact_url_value(&given);
             proptest::prop_assert!(
                 !got.contains("UIN") && !got.contains("QRY") && !got.contains("FRG"),
