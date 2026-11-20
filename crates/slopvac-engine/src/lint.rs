@@ -961,21 +961,27 @@ impl Engine {
     ) -> Result<(GenreResult, TagIndex), EngineError> {
         let (genre, assigned) = self.genre_of(input, parsed, front_matter)?;
         let declared = match (&self.genres, &self.run_declared) {
-            (Some(registry), _) => declared_tagger(registry, genre.id.as_str(), assigned.as_deref())?,
+            (Some(registry), _) => {
+                declared_tagger(registry, genre.id.as_str(), assigned.as_deref())?
+            }
             (None, run) => run.clone(),
         };
-        let tags = match input.kind {
-            Kind::Diagram(_) => TagIndex::default(),
-            _ => tagging::tag(
-                &self.tagger,
-                input.path,
-                input.source,
-                parsed,
-                front_matter,
-                declared.as_ref(),
-            )
-            .map_err(EngineError::from_tag)?,
+        // A standalone diagram has no structure to tag, but its genre's contexts still hold.
+        let none = TagRegistry::new();
+        let registry = if matches!(input.kind, Kind::Diagram(_)) {
+            &none
+        } else {
+            &self.tagger
         };
+        let tags = tagging::tag(
+            registry,
+            input.path,
+            input.source,
+            parsed,
+            front_matter,
+            declared.as_ref(),
+        )
+        .map_err(EngineError::from_tag)?;
         Ok((genre, tags))
     }
 
