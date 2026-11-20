@@ -17,14 +17,27 @@ ROOT = Path(__file__).resolve().parents[1]
 PLACEHOLDER = "<full commit SHA of the v3.0.0 tag>"
 
 _USES = re.compile(
-    r"uses:\s*slopvac/slopvac(?:/[^@\s]*)?@(?P<ref><[^>]+>|[^\s#]+)(?P<rest>[^\n]*)"
+    r"""uses:\s*["']?slopvac/slopvac(?:/[^@\s"']*)?@(?P<ref><[^>]+>|[^\s#"']+)["']?(?P<rest>[^\n]*)"""
 )
 # The 2.x surface (README.md until the 3.0 cutover) still names its release tag.
 _LEGACY = re.compile(r"v[12]\.\d+\.\d+")
 _SHA = re.compile(r"[0-9a-f]{40}")
 _VERSION_COMMENT = re.compile(r"\s+# v\d+\.\d+\.\d+\s*$")
 
-_EXCLUDED_PARTS = {"golden", "node_modules", ".venv", "target"}
+# Directories that hold generated output, fixtures or sample text, not docs.
+# "tests", "fixtures" and "action-fixtures" hold sample input text that may
+# quote a floating reference on purpose; "evals" holds labelled sample text.
+_EXCLUDED_PARTS = {
+    "golden",
+    "tests",
+    "fixtures",
+    "action-fixtures",
+    "evals",
+    "node_modules",
+    ".venv",
+    "target",
+    ".git",
+}
 
 
 def problems(text: str) -> list[str]:
@@ -43,11 +56,11 @@ def problems(text: str) -> list[str]:
 
 
 def doc_files() -> list[Path]:
-    paths = [*ROOT.glob("README*.md"), *ROOT.glob("docs/**/*.md"), *ROOT.glob("action-v3/**/*.md")]
     return sorted(
         p
-        for p in paths
-        if not p.name.startswith("CHANGELOG") and not _EXCLUDED_PARTS & set(p.relative_to(ROOT).parts)
+        for p in ROOT.glob("**/*.md")
+        if not p.name.startswith("CHANGELOG")
+        and not _EXCLUDED_PARTS & set(p.relative_to(ROOT).parts)
     )
 
 
@@ -66,6 +79,10 @@ SHA = "0123456789abcdef0123456789abcdef01234567"
         f"- uses: slopvac/slopvac@{SHA} # latest",
         "- uses: slopvac/slopvac/action-v3@v3",
         f"- uses: slopvac/slopvac@{SHA.upper()} # v3.0.0",
+        '- uses: "slopvac/slopvac@v3"',
+        "- uses: 'slopvac/slopvac@v3'",
+        f'- uses: "slopvac/slopvac@{SHA}" # latest',
+        f"- uses: 'slopvac/slopvac@{SHA}'",
     ],
 )
 def test_rejects_unpinned_or_uncommented_reference(line: str) -> None:
@@ -78,6 +95,8 @@ def test_rejects_unpinned_or_uncommented_reference(line: str) -> None:
         f"- uses: slopvac/slopvac@{SHA} # v3.0.0",
         f"      uses: slopvac/slopvac/action-v3@{SHA} # v3.1.12",
         f"- uses: slopvac/slopvac@{PLACEHOLDER} # v3.0.0",
+        f'- uses: "slopvac/slopvac@{SHA}" # v3.0.0',
+        f"- uses: 'slopvac/slopvac@{SHA}' # v3.0.0",
         "- uses: actions/checkout@v7",
         "- uses: slopvac/slopvac@v2.18.1 # x-release-please-version",
     ],
