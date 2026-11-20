@@ -23,7 +23,8 @@ pub use problem::{ArtifactFault, RuleFault, RuleProblem};
 pub use source::{DirSource, EmbeddedSource, FileTable, MANIFEST_FILE, PackSource, SourceError};
 
 pub use manifest::{
-    HookDecl, Manifest, ManifestError, PackKind, PackPath, PluginTable, Provides, Requirement,
+    HookDecl, Manifest, ManifestError, PackKind, PackPath, PluginRuntime, PluginTable, Provides,
+    Requirement,
 };
 pub use name::{NameError, QualifiedName};
 pub use pack_id::{PackIdError, from_lock_id, to_lock_id};
