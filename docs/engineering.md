@@ -55,8 +55,8 @@ Each rule gives a source. A repository source is a link. A source written as ski
 ## Dependencies and crate layout
 
 `slopvac-messages` depends only on its derive crate. `slopvac-model` uses it for validation
-text and catalog-backed notices. `slopvac-engine` uses both catalogs and imports the document
-size-cap message from `slopvac-config`, which depends on the model, not the engine.
+text and catalog-backed notices. `slopvac-engine` uses both catalogs. Its document size-cap
+message comes from `slopvac-config`. That crate depends on the model, not the engine.
 
 - Dependencies point downward. A leaf crate depends on no crate above it. The `slopvac` binary wires the libraries together. Dev-dependency cycles are also not allowed. Target for the existing `slopvac-migrate` to `slopvac-agents` dev cycle: after `slopvac-8l4.14.26`. Source: skill `lang-rust-packaging`.
 - A library may expose a clap `command()` and `run()` for the CLI to wire. The CLI relies on that pattern. Sources: [`cli.rs`](../crates/slopvac/src/cli.rs), bead `slopvac-8l4.12.13`.

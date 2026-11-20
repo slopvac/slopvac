@@ -73,10 +73,24 @@ pub(crate) fn glob_invalid(pattern: &str, reason: impl ToString) -> EngineText {
         reason: reason.to_string(),
     }
 }
-pub(crate) fn walk_error(path: &str, reason: impl ToString) -> EngineText {
+pub(crate) fn walk_error(path: &std::path::Path, reason: impl ToString) -> EngineText {
     EngineText::WalkError {
-        path: path.into(),
+        path: path.display().to_string(),
         reason: reason.to_string(),
+    }
+}
+
+pub(crate) fn unsupported_source(path: &std::path::Path, reason: &str) -> EngineText {
+    EngineText::PathError {
+        path: path.display().to_string(),
+        reason: reason.into(),
+    }
+}
+
+pub(crate) fn glob_limit(pattern: &str, limit: usize) -> EngineText {
+    EngineText::GlobLimit {
+        pattern: pattern.into(),
+        limit,
     }
 }
 pub(crate) fn rst_missing(detail: &str) -> EngineText {

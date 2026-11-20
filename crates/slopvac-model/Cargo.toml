@@ -15,9 +15,9 @@ test-counters = []
 
 [dependencies]
 schemars = { workspace = true }
-slopvac-messages = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+slopvac-messages = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

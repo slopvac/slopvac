@@ -141,7 +141,7 @@ pub enum DiscoverError {
     #[error("{}", crate::messages::discover_missing(.0))]
     NoSuchTarget(String),
     /// An explicit file is not a supported source language in comment mode.
-    #[error("{}", crate::messages::path_error(.path, .message))]
+    #[error("{}", crate::messages::unsupported_source(.path, .message))]
     UnsupportedSource {
         /// The offending file.
         path: PathBuf,
@@ -149,7 +149,7 @@ pub enum DiscoverError {
         message: String,
     },
     /// A glob target holds more brace alternatives than discovery will expand.
-    #[error("{}", crate::messages::EngineText::GlobLimit { pattern: .pattern.clone(), limit: *.limit })]
+    #[error("{}", crate::messages::glob_limit(.pattern, *.limit))]
     TooManyAlternatives {
         /// The pattern as given.
         pattern: String,
