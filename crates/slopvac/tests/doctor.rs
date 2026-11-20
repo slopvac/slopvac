@@ -1075,3 +1075,25 @@ fn directories_are_the_ones_the_shared_resolver_gives(#[case] relative_xdg: bool
         assert_eq!(got["path"], format!("<external>/{leaf}"), "{name}");
     }
 }
+
+#[rstest::rstest]
+#[case::data("XDG_DATA_HOME", "data", ".local/share")]
+#[case::state("XDG_STATE_HOME", "state", ".local/state")]
+fn a_relative_xdg_value_falls_back_to_the_home_default(
+    #[case] var: &str,
+    #[case] name: &str,
+    #[case] home_default: &str,
+) {
+    let w = World::new();
+    let dir = w.home().join(home_default).join("slopvac");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("planted"), [0u8; 7]).unwrap();
+    let (_, doc) = w.json(&[], |c| {
+        c.env(var, "relative/dir");
+    });
+    let got = &doc["directories"][name];
+    assert_eq!(got["source"], "default");
+    assert_eq!(got["exists"], true);
+    assert_eq!(got["bytes"], 7);
+    assert_eq!(got["path"], "<external>/slopvac");
+}

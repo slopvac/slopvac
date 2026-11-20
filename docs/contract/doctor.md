@@ -71,19 +71,21 @@ Doctor reads the trust file like every other project file: without blocking, onl
 
 `directories` has `cache`, `data` and `state`. Each entry gives the `path`, the `source` of the choice (an environment variable name, `default` or `unresolved`), whether it exists, and the total size of the regular files below it. The size walk stops after 10000 entries. It then sets `truncated`, so `bytes` is a lower bound. Links are not followed. The working directory itself shows as `.`. A directory shows `<unresolved>` when the environment has no home to derive it from.
 
-The cache directory is `SLOPVAC_CACHE_DIR` when set, on every platform. Otherwise the locations are:
+The cache directory is `SLOPVAC_CACHE_DIR` when set and not empty. Otherwise each location follows the XDG base directory specification. An `XDG_*` variable counts only when it holds an absolute path:
 
-| Directory | Unix | Windows |
-|---|---|---|
-| cache | `$XDG_CACHE_HOME/slopvac`, else `~/.cache/slopvac` | `%LOCALAPPDATA%\slopvac\cache` |
-| data | `$XDG_DATA_HOME/slopvac`, else `~/.local/share/slopvac` | `%LOCALAPPDATA%\slopvac\data` |
-| state | `$XDG_STATE_HOME/slopvac`, else `~/.local/state/slopvac` | `%LOCALAPPDATA%\slopvac\state` |
+| Directory | Location |
+|---|---|
+| cache | `$XDG_CACHE_HOME/slopvac`, else `~/.cache/slopvac` |
+| data | `$XDG_DATA_HOME/slopvac`, else `~/.local/share/slopvac` |
+| state | `$XDG_STATE_HOME/slopvac`, else `~/.local/state/slopvac` |
+
+The same locations apply on macOS and under WSL. 3.0 has no native Windows build.
 
 The data directory is the plugin store, and the state directory holds the trust store.
 
 ## 3. Redaction
 
-A path in the report is relative to the working directory, or `<external>/<file name>` outside it (policies.md, section 1.7). The separator is `/` on every platform. Messages hold no absolute path and no file content. A per-user directory therefore shows as `<external>/slopvac` on Unix and `<external>/cache`, `<external>/data` or `<external>/state` on Windows, and `source` says how the location was chosen.
+A path in the report is relative to the working directory, or `<external>/<file name>` outside it (policies.md, section 1.7). The separator is `/` on every platform. Messages hold no absolute path and no file content. A per-user directory therefore shows as `<external>/slopvac`, and `source` says how the location was chosen.
 
 ## 4. Build status
 
