@@ -16,7 +16,7 @@ Paragraphs and bullets labeled **2.x behavior** describe `packages/slopvac-lint`
 2. Every network feature is a named command or hook in the table in section 1.2. No other code path opens a connection.
 3. Document text, finding text, file paths, and rule hit counts stay local. The update-check request is the only usage-like traffic, and it carries no document data. Slopvac has no telemetry.
 4. A failed or refused connection never changes a lint verdict. It prints an error, and it exits 2 (incomplete) only when the user asked for the network operation.
-5. Slopvac has no prompts, so consent is an explicit command or flag. A guard such as `--submit` binds a command and cannot tell who ran it. The prime text therefore tells agents to get the user's approval of the previewed output first.
+5. Slopvac has no prompts, so consent is an explicit command or flag. A flag such as `--yes` binds a command and cannot tell who ran it. The prime text therefore tells agents to get the user's approval of the previewed output first.
 
 ### 1.2 Inventory of network features
 
@@ -24,12 +24,12 @@ Paragraphs and bullets labeled **2.x behavior** describe `packages/slopvac-lint`
 |---|---|---|---|
 | Update check | A detached process asks `https://pypi.org/pypi/slopvac/json` for the latest version and caches the result for 24 hours (`update_notice.py`). Any command except `prime` may start it. Machine-readable output or a report file prevents it (`cli.py`). It runs only when stderr is a TTY. | Check the registry that matches the install method (`update-informer`). Only `lint`, `doctor`, `prime`, and `self update` may start it. Cache the result for 24 hours. Show it in `prime`, in JSON `notices`, and in `--version --json`, so agents see it. | `slopvac-8l4.12.4` |
 | `self update` | None. | Runs only for installs from the slopvac installer. It downloads the release archive, verifies the minisign signature, and then replaces the binary. | `slopvac-8l4.12.4`, `slopvac-8l4.13.3` |
-| OCI pack and plugin fetch | None. 2.x has no packs. | `plugins sync`, `plugins update`, and `pack publish` pull or push OCI artifacts. The client is hand-written on `ureq`. Initial support covers the documented GHCR flows (anonymous and basic tokens). `docker_credential` helpers extend this to other registries within the tested scope of the owning bead. | `slopvac-8l4.9.2`, `slopvac-8l4.9.3`, `slopvac-8l4.9.9` |
-| Release-archive packs | None. | `plugins sync` downloads a pack or plugin archive over HTTPS and checks the digest that the lockfile pins. | `slopvac-8l4.9.3` |
-| Git packs | None. | A pack pinned to a git commit clones during `plugins sync` only. | `slopvac-8l4.9.3` |
+| OCI plugin fetch | None. 2.x has no plugins. | `plugins sync`, `plugins update`, and `plugins publish` pull or push OCI artifacts. The client is hand-written on `ureq`. Initial support covers the documented GHCR flows (anonymous and basic tokens). `docker_credential` helpers extend this to other registries within the tested scope of the owning bead. | `slopvac-8l4.9.2`, `slopvac-8l4.9.3`, `slopvac-8l4.9.9` |
+| Release-archive plugins | None. | `plugins sync` downloads a plugin archive over HTTPS and checks the digest that the lockfile pins. | `slopvac-8l4.9.3` |
+| Git plugins | None. | A plugin pinned to a git commit clones during `plugins sync` only. | `slopvac-8l4.9.3` |
 | Outdated check | None. | `plugins outdated` lists newer digests and versions from the pinned sources. | `slopvac-8l4.9.3` |
-| Pack index search | None. | `packs search` reads the published index over HTTPS. | `slopvac-8l4.9.8` |
-| Issue submission | `prime report` prints a workflow that tells an agent to run `gh issue create` after the user approves the exact post (`guidance.py`). The `gh` program connects. | `slopvac report` reads a token from `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token` and posts the issue. Without a token it opens a prefilled issue-form URL. Both paths need the consent step in section 1.5. | `slopvac-8l4.12.6` |
+| Plugin index search | None. | `plugins search` reads the published index over HTTPS. | `slopvac-8l4.9.8` |
+| Issue submission | `prime report` prints a workflow that tells an agent to run `gh issue create` after the user approves the exact post (`guidance.py`). The `gh` program connects. | `slopvac report` posts nothing itself. It prints the exact `gh issue create` command, and `--gh --yes` runs it through the GitHub CLI, which holds the login. Slopvac never reads a token. Without `gh`, the user opens a prefilled issue-form URL. Both paths need the consent step in section 1.5. | `slopvac-8l4.12.6` |
 | Model-provider hooks | None. | A plugin that implements the model-provider hook may contact a model service. Slopvac core does not. Consent rules apply (section 1.5). | `slopvac-8l4.9.6`, `slopvac-8l4.11.3` |
 | LSP server | None. | `slopvac lsp` talks to the editor over stdio and opens no connection. | `slopvac-8l4.12.7` |
 | Code plugins in general | None. | A plugin process is a separate program, and 3.0 leaves its network access unsandboxed. The trust command (section 1.6) is the control. The threat model records the residual risk. | `slopvac-8l4.9.4`, `slopvac-8l4.9.11` |
@@ -60,9 +60,9 @@ Offline is sticky. If any source sets it, no other source can unset it, and no f
 In offline mode:
 
 - A command that needs the network exits 2 with the code `offline-network-needed` and the message `offline: <command> needs the network`. It does not retry or fall back.
-- Packs that the lockfile pins and that sit in the local cache load normally.
-- A pack missing from the cache exits 2 with the code `offline-pack-missing`. The message names the pack and the digest.
-- `plugins sync` succeeds from the cache alone. It verifies digests against `.slopvac/packs.lock` and reports each missing pack.
+- Plugins that the lockfile pins and that sit in the local cache load normally.
+- A plugin missing from the cache exits 2 with the code `offline-plugin-missing`. The message names the plugin and the digest.
+- `plugins sync` succeeds from the cache alone. It verifies digests against `.slopvac/plugins.lock` and reports each missing plugin.
 
 These opt-outs apply to the update check only:
 
@@ -80,7 +80,7 @@ Owners: `slopvac-8l4.12.1` for the global flag and environment, `slopvac-8l4.4.2
 - In CI the update check stays off.
 - No code path prompts, in CI or anywhere else.
 - `plugins sync` in CI runs from the lockfile. It fails with exit 2 when the lockfile is missing or a digest differs, and it leaves the lockfile as it found it.
-- A GitHub Action run that needs packs runs `plugins sync` as a separate, named step. The lint step runs with `--offline`.
+- A GitHub Action run that needs plugins runs `plugins sync` as a separate, named step. The lint step runs with `--offline`.
 
 Owners: `slopvac-8l4.9.3` for lockfile behavior, `slopvac-8l4.13.6` for the Action.
 
@@ -90,9 +90,23 @@ Two features need consent beyond installing slopvac: issue submission and model-
 
 **Issue submission.**
 
-- `slopvac report` prints the exact title, labels, and body it would post, then exits. Posting needs `--submit`.
+- `slopvac report` prints the exact title and body it would file, then exits. Filing needs `--gh --yes`.
 - The body omits local paths, file names, user names, host names, repository names, and organization names. The body includes document text only when the user passes `--include-text <file>`, and the preview shows that text.
 - Environment fields come from the CLI, never from environment variables, as `CONTRIBUTING.md` requires for agent reports.
+- `slopvac report <category> --title TEXT --field ID=VALUE ...` builds the report from the issue form of that category. The field ids are the form ids, and a missing required field exits 2 with the code `report-incomplete`. Document text comes only from `--include-text FILE`, which reads a regular UTF-8 file of at most 256 KiB.
+- Every field goes through a scrub before the preview: the working directory, the home directory, the user name and the host name, path-shaped words (Unix, drive and UNC paths, and relative paths), file names, repository and organization names on GitHub, GitLab and Bitbucket URLs (the slopvac repository stays), GitHub tokens (also when a line break splits one), the value of every `Authorization` header, `Bearer`, `Basic`, `Token` and `Digest` credentials and URL user-info. Percent-escapes in a repository URL are decoded before the check, and only a URL host, a leading host or an scp-style `git@host:` counts as a forge address. Document text gets the exact-string and secret steps only, so the sample stays intact.
+- `--body-file FILE` writes the previewed body to `FILE`. The name `-` is refused with `report-body-file`, because `gh` reads it as standard input; `./-` names a file. The write goes to a temporary file in the same directory and then renames over `FILE`, so a reader never sees half a body.
+- `--gh` requires `--body-file` and prints the command `gh issue create -R github.com/slopvac/slopvac --title TITLE --body-file FILE`, with each word quoted for a POSIX shell. `gh` has no title-file option, so the title is a quoted argument. The host and repository are constants in the binary. No flag or config key changes them, and slopvac clears `GH_HOST` and `GH_REPO` from the environment of `gh`. A body path that is not UTF-8, or that holds a control character, cannot be printed in the command, so `--gh` exits 2 with `report-body-file`.
+- `--gh --yes` runs that command after the preview. Slopvac finds `gh` by a plain lookup in the directories of `PATH`, so a `gh` earlier on `PATH` wins; the threat model records this as a residual risk. It starts `gh` with an argument list and no shell. It first runs `gh auth status --hostname github.com`. When `gh` is missing, the command exits 2 with `report-gh-missing`. When the login check fails, it exits 2 with `report-gh-not-logged-in`. When `gh issue create` fails or runs longer than 60 seconds, it exits 2 with `report-gh-failed`. Slopvac never reads, stores or logs a token, and it prints none of the output of `gh` except the issue URL. Offline mode makes `--gh --yes` exit 2 with `offline-network-needed` before anything is written or printed. `--gh` alone is offline-safe.
+- Without `--gh`, the command is offline-safe and prints a prefilled issue-form URL. `--open` starts the browser, except in offline mode, where the URL is only printed.
+- The preview shows the target, the title and the body, and no labels, because `gh issue create` would not apply them. The prefilled-form path prints the labels the issue form sets (the category label and `needs-triage`). The form never sets `agent-reported`, so the command never promises it.
+- `report` reads no token and no secret from the environment. The scrub works on the supplied text and on the working directory, home directory, user name and host name only.
+- A control character other than a tab or a newline in the title, a field or the document sample is refused with `report-invalid` (a CRLF pair becomes a newline first). Text with an escape sequence could otherwise act on the terminal that shows the preview. The error does not echo the text.
+- An unknown `--field` id is not echoed back.
+- The scrub is best effort and never refuses a report. After it runs, a check over the title, each field, the document sample and the body looks for text that may still hold a credential or private data. For each hit it prints a warning on stderr that names only the field and the kind (``warning: possible credential in field `steps`: review it before posting``), never the matched text. The check looks for a GitHub token prefix (also when whitespace splits it), a long mixed letter-and-digit run, an `Authorization` line (also when folded), `Basic`, `Bearer`, `Token` or `Digest` followed by a credential, a forge address other than `slopvac/slopvac` (after decoding escapes, ignoring a trailing dot in the host and resolving `..`), an absolute path, and the working directory, home directory, user name and host name. It also checks the text as typed, before the scrub, because a partial scrub can leave a fragment. Placeholders such as `<token>` and ordinary prose such as `Basic authentication.` draw no warning. The warning does not stop the run, so the reader of the preview decides.
+- A usage error for `report` (a bad category or argument) does not echo what was typed.
+- The URL carries the title and every answer that fits in 7000 bytes, keyed by form id. It carries no labels, because GitHub answers 404 when the reader may not set them, and the form sets them. Checkboxes stay unticked. The preview names any field that did not fit. A title over 200 characters is refused.
+- The issue forms in `.github/ISSUE_TEMPLATE` are generated from the field definitions in `crates/slopvac/src/report/fields.rs`. A test regenerates them and fails on any difference.
 - 2.x already requires the agent to get the user's approval of the exact post (`guidance.py`, the `prime report` workflow). 3.0 keeps that rule in the prime text and adds the command-level guard above.
 
 **Model-provider hooks.**
@@ -112,6 +126,8 @@ Owners: `slopvac-8l4.12.6`, `slopvac-8l4.9.6`, `slopvac-8l4.11.3`.
 - CI has one explicit exception: the `SLOPVAC_TRUST` environment variable, which `slopvac-8l4.9.4` defines. A person writes it into the CI configuration, and it names what to trust. It is configuration, not a prompt, and no tool sets it on its own.
 - OCI artifacts carry minisign signatures as manifest layers. Slopvac verifies the signature before extraction, and a missing or invalid signature makes `sync` fail with exit 2.
 - Release archives verify against the release signature (`self update`).
+- The binary compiles in two keys. The release key signs release archives and the revocation list, and it is the revocation root. The plugins key signs first-party plugins in the `slopvac` namespace and the first-party plugin index. The release key can revoke the plugins key ([plugins.md](plugins.md), section 10).
+- The namespace `slopvac` verifies against the compiled plugins key only, and no user pin applies to it. `core` is reserved for the built-in plugin and fails closed ([plugins.md](plugins.md), section 9).
 - Local folders and git commits carry no signature. A git pin names a commit, and the trust hash covers the content.
 
 Owners: `slopvac-8l4.9.4`, `slopvac-8l4.9.5`, `slopvac-8l4.9.11`.
@@ -129,7 +145,7 @@ Owners: `slopvac-8l4.9.4`, `slopvac-8l4.9.5`, `slopvac-8l4.9.11`.
 - Logs never contain document text, finding text, matched spans, front matter values, or terms.
 - Logs record document paths relative to the project root. A path outside the root appears as `<external>/<file name>`. Stdin appears as `<stdin>` everywhere, including logs, panics, and error chains.
 - Logs never contain tokens, `Authorization` headers, or URL credentials. Before it logs a URL, slopvac strips the user-info part.
-- Rule IDs, pack IDs, digests, durations, and counts may appear in logs.
+- Rule IDs, plugin IDs, digests, durations, and counts may appear in logs.
 - Panic and error output follow the same rules.
 - `SLOPVAC_LOG=trace` lifts none of these rules.
 
@@ -142,6 +158,62 @@ Owners: `slopvac-8l4.12.1` for the logging setup, `slopvac-8l4.12.9` for stdin.
 - Slopvac writes only to the cache directory, the project's `.slopvac/` directory, and paths the user names.
 
 Owners: `slopvac-8l4.9.3`, `slopvac-8l4.9.4`.
+
+### 1.9 Input size caps
+
+**3.0 requirement.** Every entry point that reads text enforces a size cap before it hands the text to a parser, an index or a matcher. An input over its cap is refused whole, and its text never reaches a parser. The run is incomplete and exits 2, and the error or notice carries the stable code from the table.
+
+The span crates index text with 32-bit offsets and size their structures from its length, and they do not cap their input. Their documentation states the 64 MiB limit as a rule for callers. Memory per read stays bounded by the cap plus one byte, because the reader stops at the cap.
+
+| Entry point | Cap | Code | Why this value |
+|---|---|---|---|
+| Document: CLI file lint, `validate` documents, `cases --coverage` corpus files, `fix` | 64 MiB | `document-too-large` | The largest size every span crate accepts. A real document is a few hundred KiB. |
+| Document from stdin | 64 MiB | `document-too-large` | Same as a file. |
+| Document in the language server (`didOpen`, `didChange`), per document | 64 MiB | `document-too-large` | Same as a file. The server drops the document and publishes the notice instead of findings. |
+| Document read for `migrate` | 64 MiB | `document-too-large` | Same as a file. |
+| Changed file read for `--diff` scoping | 64 MiB | `document-too-large` | Uses the same constant as the lint read. |
+| Config file (`slopvac.toml`, each `extends` file, a 2.x config read by `migrate`) | 1 MiB | `config-too-large` | A real config is under 10 KiB. The shipped data files stay under 32 KiB. |
+| Rule or category file in a plugin | 2 MiB | `rules-file-too-large` | The largest shipped rule file is about 130 KiB. 2 MiB leaves more than a tenfold margin. |
+| Style file | 1 MiB | `style-too-large` | The built-in styles are a few KiB. |
+| Update-check policy read (`slopvac.toml`, read before argument parsing) | 1 MiB | `update-policy-too-large` | Same value as the config file. The read covers two keys, and a real file is under 10 KiB. |
+| House-style detection read (`.vale.ini`, `STYLE.md`, `_STYLE.md`, `CONTRIBUTING.md`) | 1 MiB | `style-detect-file-too-large` | A real style note is a few KiB. Detection skips a larger file and does not fail. `slopvac init` reports the skipped file as an info notice with this code, naming the file by its root-relative label. |
+| Terms file | 1 MiB | `terms-file-too-large` | The built-in terms file is about 30 KiB. |
+
+A per-file cap does not bound the work of many files, or of a long list in one file. Aggregate budgets bound it, and the same error rules apply: the input is refused whole, the run is incomplete and exits 2. Each refusal carries `data.budget`, the name of the budget that tripped, `data.limit`, the limit in the unit below, and `data.path`, the config file, plugin directory or document at which it tripped, relative to the root, or `<external>/<file name>` outside it. For `rule-entries`, `data.path` is the rule file. The list of `data.budget` values can grow. A message names only that path and the limit.
+
+| Entry point | Budget (`data.budget`) | Limit | Unit | Code | Why this value |
+|---|---|---|---|---|---|
+| `extends` nesting, from the nearest config down | `extends-depth` | 32 | levels | `config-budget-exceeded` | A real chain is two or three levels. |
+| `extends` graph, files applied | `extends-files` | 256 | files | `config-budget-exceeded` | A real graph has fewer than ten files. A file that more than one file extends counts once for each time it applies, because it applies each time. |
+| `extends` graph, bytes read | `extends-bytes` | 8 MiB | bytes | `config-budget-exceeded` | A real graph is under 100 KiB. Eight files at the 1 MiB cap fit. |
+| `extends` graph, bytes of config applied | `extends-applied-bytes` | 64 MiB | bytes | `config-budget-exceeded` | A real graph applies under 100 KiB. A file that more than one file extends counts its size once for each time it applies, so 64 MiB stops a small graph from repeating a large file hundreds of times. |
+| Plugin directory, rule and category files | `plugin-files` | 256 | files | `rules-budget-exceeded` | The built-in core has 23 files. |
+| Plugin directory, entries of any kind | `plugin-entries` | 1024 | entries | `rules-budget-exceeded` | Bounds directory scanning before the loader resolves any file. |
+| Plugin directory, bytes read | `plugin-bytes` | 32 MiB | bytes | `rules-budget-exceeded` | The built-in core is about 450 KiB. |
+| Context tags on one document | tags | 1 per 64 bytes of the document, plus 65,536 | tags | context-budget-exceeded | At the 64 MiB document cap, the limit is about 1.1 million tags, an index of about 200 MiB. The densest measured prose holds about 1 tag per 44 bytes, so a document that dense and larger than about 9.5 MB is refused. The cap stops a document made of many short sentences from building an index of gigabytes. |
+| Context lookups on one document | tag-lookups | 8 per byte of the document, plus 16,384 | looks | context-budget-exceeded | A document with a few tags on a few cells looks at a few tags for each match. Many tag kinds on one cell, with rules that match across its lines, make the looks grow with kinds times matches. |
+| Rule, tokens or substitutions listed | `rule-entries` | 4096 | entries | `rules-budget-exceeded` | The longest shipped list has 112 entries. 4096 is a margin of more than thirty. The loader checks it before it compiles the matcher. |
+| Config file, `[[genres]]` and `[[overrides]]` blocks together | `file-blocks` | 256 | blocks | `config-budget-exceeded` | A real config has fewer than ten. Each block compiles a glob matcher, and the 1 MiB file cap alone allows tens of thousands. The loader checks it before the schema check. |
+
+How the budgets apply:
+
+- A config file that more than one file extends is read and parsed once. The loader shares that parsed copy between its applications, so the order of settings and their provenance do not change.
+- The `extends` counters differ on purpose. Files applied counts every application, and so bounds the merge work. Bytes read counts each read once, and so bounds the I/O. Bytes applied counts every application by size, and so bounds the settings the result holds.
+- An extended file whose ancestor is still waiting to apply counts against the file budget. The loader checks the depth of a reused subtree at each place it applies again, and checks every budget before it adds an application.
+- An `extends` cycle is not a budget. It keeps `config-extends-cycle`, and the loader checks for a cycle before it checks the depth.
+- A rule file reached by more than one name, such as a symlink, loads once under the first name in file-name order, and the file budget counts it once.
+- The plugin loader reads and compiles one file at a time.
+- Duplicate checks on lists (unique tokens, unique substitution keys, blocks with the same `files`) use hash lookups, so their cost grows linearly with the list and a long list of distinct items is not a quadratic cost.
+
+Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-update` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`) and `slopvac-styles` (`MAX_STYLE_BYTES`, plus a private cap in house-style detection).
+
+The CLI file and stdin reads enforce their cap and report `document-too-large` with exit 2. The language server and `migrate` document reads, and the `migrate` config read, enforce theirs in a later change. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and a `--diff` scoping read fails with `DiffError::FileTooLarge`. The `lint` command does not yet pass `--fix` or `--diff-base` to the engine. When it does, it reports both with `document-too-large`.
+
+A capped file read opens the file without blocking and accepts only a regular file. A FIFO, device, socket or directory at the path is refused at once, so a repository entry cannot hang a run. The refusal reports through the entry point's existing read-failure error, such as `input-unreadable` for a document, and not through a new code. Stdin is the exception: it reads a pipe by design.
+
+Output and protocol caps are separate and already hold: plugin frames 16 MiB, reStructuredText converter output 16 MiB, and fixer edits 1 MiB.
+
+Owner: `slopvac-8l4.21.8`.
 
 ## 2. Accessibility
 
@@ -221,8 +293,8 @@ Owners: `slopvac-8l4.12.1` for CLI messages, `slopvac-8l4.4.7` for config diagno
 | Config file | `schema_version` (integer) | `slopvac.toml` root | `config` | `slopvac-8l4.2.5` |
 | Front matter block | `v` | `slopvac:` key | `frontmatter` | `slopvac-8l4.2.5` |
 | Rule, category, style, genre, and terms files | `schema_version` (integer) | File root | One per artifact | `slopvac-8l4.2.3`, `slopvac-8l4.2.4` |
-| Pack manifest | `slopvac_api` (integer) | `slopvac-pack.toml` | `pack-manifest` | `slopvac-8l4.2.4` |
-| Lockfile | `schema_version` (integer) | `.slopvac/packs.lock` | `packs-lock` | `slopvac-8l4.2.4` |
+| Plugin manifest | `slopvac_api` (integer) | `slopvac-plugin.toml` | `plugin-manifest` | `slopvac-8l4.2.4` |
+| Lockfile | `schema_version` (integer) | `.slopvac/plugins.lock` | `plugins-lock` | `slopvac-8l4.2.4` |
 | Plugin protocol | `protocolVersion` (integer) | `initialize` request and response | `plugin-protocol` | `slopvac-8l4.2.6` |
 
 The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/common.schema.json`. The scaffold bead `slopvac-8l4.2.19` freezes their shape, and `slopvac-8l4.2.12` owns their meaning (section 3.2).
@@ -235,12 +307,16 @@ The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/commo
 
 - `SchemaVersion` is a positive integer. It counts breaking changes to one artifact's shape and has no minor or patch part.
 - Every root instance of a versioned artifact carries `schema_version` with the constant 3. Lint JSON jumps from 1 to 3 so that all artifacts share one number at first. The migration guide states this jump. A later breaking change raises only the number of the artifact it affects, so numbers can diverge after 3.0.
-- Changes within one `schema_version` are additive only.
+- Changes within one `schema_version` are additive only. Section 3.9 describes the check that enforces this.
   - Allowed: a new optional field, a new optional section, and a new value of an output-only enum that the schema marks as extensible.
   - Not allowed: removing or renaming a field, changing a type, tightening a constraint, or giving a field a new meaning.
 - A schema's `$id` never changes within a version. The published URL has the form `https://slopvac.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
-- `ApiVersion` is a positive integer for the pack and plugin extension API. The first pack manifest declares `slopvac_api = 1`. It names the host capabilities a pack needs. `schema_version` names the shape of one file. The two are independent.
+- `ApiVersion` is a positive integer for the plugin extension API. The first plugin manifest declares `slopvac_api = 1`. It names the host capabilities a plugin needs. `schema_version` names the shape of one file. The two are independent.
 - The binary version is independent of both. A release that adds optional fields keeps `schema_version`. `slopvac --version --json` lists the binary version, each supported `schema_version`, and each supported `slopvac_api`.
+  - `schema_versions` is an object. Each key is the name of a versioned artifact's schema under `schemas/v3`, without `.schema.json`. Each value lists the `schema_version` numbers the binary reads or writes for that artifact.
+  - The artifacts are `blocklist`, `category`, `config`, `doctor-report`, `genre`, `lint-report`, `plugins-lock`, `style`, `tagger` and `terms`. The list grows when the binary starts to read or write another versioned artifact, such as a plugin manifest, a plugin index or a standalone rule file. Adding a key, or a number to a list, is additive. Removing either is a breaking change.
+  - `slopvac_api` is a list of the extension API numbers the binary supports.
+  - The same document also carries `name`, `version`, `install_method` and `notices`.
 - A config file without `schema_version` is a 2.x config and is rejected (section 3.7). Any other 3.0 artifact without a version is an error.
 - A version higher than the binary supports is an error. The message names the file, the version found, and the versions supported. It also prints the upgrade command for the install method, built as `upgrade_hint` builds it in 2.x.
 
@@ -252,7 +328,7 @@ The rule depends on who wrote the file.
 
 | Reader | Writer | Unknown field | Reason |
 |---|---|---|---|
-| Slopvac | A user (config, front matter, rules, packs) | Error with file, line, and column, plus the nearest valid key | A misspelled key would silently disable a setting. 2.x already forbids unknown keys. |
+| Slopvac | A user (config, front matter, rules, plugins) | Error with file, line, and column, plus the nearest valid key | A misspelled key would silently disable a setting. 2.x already forbids unknown keys. |
 | Slopvac | A plugin (protocol messages) | Ignored, logged at debug level | A plugin can be newer than the host within one API version. |
 | A consumer of slopvac output | Slopvac | The consumer must ignore it | Additive changes do not bump `schema_version`. |
 | A plugin | Slopvac (protocol messages) | The plugin must ignore it | Same reason. |
@@ -271,7 +347,7 @@ The plugin protocol follows LSP. The `initialize` request carries the host's `pr
 - The host calls only the hooks that the plugin declared.
 - If the host lacks a required feature, the load stops with an error that names the feature. The host skips an optional feature it lacks.
 - Both sides ignore unknown capability names (section 3.3).
-- A data pack has no handshake. The host compares `slopvac_api` with the range it supports. It loads the pack only if the value is in range.
+- A data plugin has no handshake. The host compares `slopvac_api` with the range it supports. It loads the plugin only if the value is in range.
 
 The plugin protocol bead defines the message shapes.
 
@@ -284,10 +360,24 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 **3.0 requirement.**
 
 - The exit codes keep their meaning. Slopvac uses no other exit code.
-- Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `pack-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation.
+- Exit 2 (incomplete) means slopvac did not read or did not check part of the input: a file refused over a cap or budget, a file that is malformed or unreadable, or content the engine could not extract. Those notices are warnings. In 3.0, a notice that lists active rules the engine did not run on input it did read (`rule-kind-not-implemented`, `comment-rules-not-run`) is an info notice: the run stays complete and exits 0, and the notice names the rules in `data.rules`.
+- Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `plugin-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation.
+- The `report` command uses these codes, and each exits 2: `report-incomplete` (a required form field is missing), `report-body-file` (the `--body-file` path is refused or cannot be written), `report-gh-missing` (`gh` is not found), `report-gh-not-logged-in` (`gh` is not logged in to github.com), `report-gh-failed` (`gh issue create` failed or ran longer than 60 seconds), `report-invalid` (a title, field or sample holds a control character) and `report-sample-unreadable` (the `--include-text` file cannot be read).
 - No code is reused, and no code changes meaning. A code that stops occurring stays in the documentation, marked retired.
+- Registry logins have two codes. Slopvac asks for a login only when a registry demands one.
+  - `credential-helper-untrusted`: the credential helper exists only in a directory that is not trusted (section 1.7 paths: relative to the project, or `<external>/<name>`). Slopvac leaves the helper unstarted and sends the request without a login. When the registry allows that, the run continues and the log carries a warning. When the registry demands a login, the operation fails with this code and exits 2. The user tightens the permissions of the directory or signs in with a static `auths` login or the environment variables.
+  - `credential-helper-project-unknown`: the caller did not name the project, so no helper starts. The credential constructors take the project, so only a caller that builds the credentials by hand can reach this code, and a user cannot. It is an internal invariant, with the same outcome.
 - Plugin protocol errors use the JSON-RPC 2.0 error object. Its numeric `code` follows the JSON-RPC ranges, and `data.slopvac_code` carries the string code. The protocol bead defines the numeric range.
+- Extractors share four codes. `extract-unsupported` covers unsupported content inside a supported input, such as a diagram type that no extractor reads. It is an `info` notice at the root of the report and exits 0, because the input is valid. Skipped content counts toward no score or gate, and the report shows that it was skipped. `extract-malformed` and `extract-budget` are `warning` notices in `unchecked` and exit 2, because the result cannot establish a pass. A broken diagram of a type slopvac reads is malformed, and an unknown type in a recognized fence is unsupported. `extract-output-invalid` belongs to first-party extractors. The failed output of a third-party plugin is `plugin-output-invalid`.
+- Three cases exit 2 although the input may be valid: a whole input that the user names in a format slopvac does not read (EPUB, PDF), an encrypted or password-protected container, and a file whose name promises source but holds none (`.drawio.png`, `.excalidraw.png`, `.drawio.svg`; the code is `binary-no-source` for a binary file). A plain PNG or SVG with no source is info and exits 0.
 - Message text can change in any release. Codes, rule IDs, and exit codes form the interface.
+- A `fix` refusal carries its code through `Refusal::code`: `document-too-large`, `fix-outside-root`, `fix-symlink`, `fix-not-regular`, `fix-hardlinked`, `fix-not-owner`, `fix-unsafe-directory`, `fix-group-mismatch`, `fix-acl-present`, `fix-unsupported-platform` and `fix-changed`.
+
+The `slopvac plugins` group adds this code. Plugin-protocol.md, section 10, lists the other plugin host codes.
+
+| Code | Meaning | Exit |
+| --- | --- | --- |
+| `plugin-not-code` | `slopvac plugins trust` or `slopvac plugins untrust` named a data plugin. A data plugin has no executable content, so trust does not apply to it ([plugins.md](plugins.md), section 8). The command records nothing. | 2 |
 
 Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnostics, `slopvac-8l4.12.1` for the CLI.
 
@@ -297,7 +387,7 @@ Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnos
 
 - Minor and patch releases of 3.x make additive changes only (section 3.2). A removal or rename needs a major version.
 - Warning periods, deprecated aliases, and flags that emit old output formats do not exist. Slopvac 3.0 rejects removed flags, options, hooks, and rule IDs with an error and exit 2.
-- Pack `slopvac_api` and plugin `protocolVersion` follow the same rule. The host loads a pack or plugin whose version it supports, as section 3.4 describes. A pack or plugin outside that range stays unloaded, and the error names both versions. No grace period applies.
+- Plugin `slopvac_api` and code plugin `protocolVersion` follow the same rule. The host loads a plugin whose versions it supports, as section 3.4 describes. A plugin outside that range stays unloaded, and the error names both versions. No grace period applies.
 
 Owners: `slopvac-8l4.12.1`, `slopvac-8l4.9.1`.
 
@@ -324,6 +414,39 @@ Owners: `slopvac-8l4.4.5` for the version check, `slopvac-8l4.2.5` for the mappi
 
 Owners: `slopvac-8l4.9.7`, `slopvac-8l4.19.1`.
 
+### 3.9 Schema source
+
+**Generation.** The files in `schemas/v3/` are generated from the Rust types by the `slopvac-schemas` crate. CI regenerates them and fails on any difference. Edit the Rust types, never the generated files. The conformance corpus under `schemas/v3/conformance/` is hand-written and stays the referee: the Python and Rust implementations must accept and reject it exactly as each `cases.toml` says. Each artifact moves to generation in its own change.
+
+**Additive-only check.** `scripts/contract/schema_compat.py` compares `schemas/v3/*.schema.json` with a baseline and enforces section 3.2. It fails on these changes:
+
+- a removed file, or a changed `$id`
+- a removed property or `$defs` entry, at any depth
+- a new `required` entry
+- a narrowed `type`, `enum` or `const`
+- a raised `min*` bound or a lowered `max*` bound
+- a changed `pattern`
+- `additionalProperties` that is newly `false`, or newly a narrower schema
+
+It then validates every `valid/` instance of the baseline corpus against the new schema and fails on any rejection. Added optional properties, widened enums, new `$defs` entries and new files pass. Each finding prints as `file:json-pointer: kind: old -> new`. The `kind` is a stable kebab-case code. A code is never reused and never changes meaning (see section 3.5 and `docs/engineering.md`). Exit code 0 means compatible, 1 means a breaking finding, and 2 means a usage or read error, which is never a pass.
+
+**Baseline.** Before the first 3.0 release candidate, the baseline is the pull request's merge-base with `origin/main` (`--base <git-ref>`). This catches accidental breaks in each change. At the release candidate, a snapshot is committed under `schemas/v3/baseline/` and replaces the ref (`--baseline-dir`).
+
+**Limits.** The check fails closed where it cannot decide. Each case below needs an allow entry.
+
+- A `$ref` resolves across every file in `schemas/v3`, on both sides. A change to a shared definition is reported against each referrer, as `file:/properties/p/$ref(common.schema.json#/$defs/D)/minLength`. A reference that does not resolve is `unverified`. A schema file without a string `$id` is a read error.
+- Proving that a recursive schema and its inlined expansion accept the same instances is out of scope. When a reference was added or removed and the same target recurs, the check stops at that point and reports `unverified`. The corpus re-validation is the backstop.
+- `allOf`, `anyOf`, `oneOf` and `prefixItems` compare by position. A list that keeps all its members in another order is `list-reordered`. A new `anyOf` or `oneOf`, and an appended `oneOf` or `prefixItems` member, are `narrowing-possible`.
+- A keyword the check does not model is `unverified` when it is added, removed or changed. Only these annotations never count: `description`, `title`, `examples`, `$comment`, `deprecated`, `readOnly` and `writeOnly`. A changed `default` does count, because it changes what consumers see.
+- Each added `required` field is its own finding, located by field name, so one allow entry covers one field.
+- The check compares `enum` and `const` as JSON values: a Boolean is not a number.
+- If the corpus needs a definition that the new schema deleted, the check exits 2.
+- A merge-queue entry uses the base commit that the queue built it on as its baseline.
+
+**Allow-file.** `schemas/v3/compat-allow.toml` is the path for a reviewed breaking change. Each `[[allow]]` entry names the `file`, `pointer` and `kind` of one finding, a `reason`, and the reviewer in `approved_by`. Only the entries that the change adds can go stale. An entry that the baseline's allow file already holds approved a change that has landed, so it never counts as stale. It still suppresses a finding that the baseline also has against itself, unchanged, such as a `$ref` that does not resolve on either side. It suppresses nothing else. So an entry keeps passing after its change reaches the base. A different finding at the same pointer, such as a changed reference, needs a new entry and a new review. An added entry that matches a finding suppresses it. An added entry that matches no finding fails the check, so stale entries cannot pile up. `--allow-file` replaces the tree's allow file. The baseline's allow file is always read from the baseline. The file starts empty.
+
+Owner: `slopvac-8l4.2.50`.
+
 ## 4. Conformance tests
 
 The 3.0 binary must pass these tests. Each runs the installed binary with an isolated home and cache directory. `slopvac-8l4.13.9` blocks the release until all pass.
@@ -331,14 +454,14 @@ The 3.0 binary must pass these tests. Each runs the installed binary with an iso
 | ID | Test | Owner |
 |---|---|---|
 | N1 | With the update check disabled, `lint`, `validate`, `rules`, `explain`, `prime`, `reference`, and `claims` each finish under a network sandbox that fails any connection. | `slopvac-8l4.12.1` |
-| N2 | `--offline`, `SLOPVAC_OFFLINE=1`, and `[network] offline = true` each make `plugins sync` exit 2 with the code `offline-pack-missing` when the cache lacks a pack. A command with no network path exits 2 with `offline-network-needed`. | `slopvac-8l4.9.3` |
+| N2 | `--offline`, `SLOPVAC_OFFLINE=1`, and `[network] offline = true` each make `plugins sync` exit 2 with the code `offline-plugin-missing` when the cache lacks a plugin. A command with no network path exits 2 with `offline-network-needed`. | `slopvac-8l4.9.3` |
 | N3 | `SLOPVAC_OFFLINE=1` with `[network] offline = false` in the config stays offline. The CLI help lists no flag that turns offline mode off. | `slopvac-8l4.12.1` |
 | N4 | With a populated cache and a lockfile, `plugins sync --offline` succeeds and verifies digests. | `slopvac-8l4.9.3` |
 | N5 | No update check starts under `CI`, `NO_UPDATE_NOTIFIER`, `SLOPVAC_NO_UPDATE_CHECK`, `DO_NOT_TRACK`, `update_check = false`, or `--offline`. The test extends the 2.x test `test_environment_suppression_prevents_refresh_and_notice`. | `slopvac-8l4.12.4` |
 | N6 | Machine formats keep stdout free of update notices, and JSON carries the notice in `notices`. | `slopvac-8l4.12.4` |
 | N7 | `plugins sync` in CI exits 2 on a missing lockfile or a digest mismatch and leaves the lockfile unchanged. | `slopvac-8l4.9.3` |
 | N8 | `sync` and `update` never record trust, with or without `--yes`. Only `plugins trust` and `SLOPVAC_TRUST` do. | `slopvac-8l4.9.4` |
-| N9 | `slopvac report` without `--submit` sends zero requests and prints the full body. Against a mock server, `--submit` posts exactly the previewed body. | `slopvac-8l4.12.6` |
+| N9 | `slopvac report` without `--gh --yes` starts no process and sends zero requests, and it prints the full body. With `--gh --yes`, a fake `gh` on `PATH` receives exactly the arguments of the printed command. | `slopvac-8l4.12.6` |
 | N10 | The issue body for a run in a directory with a unique marker path and user name contains neither. | `slopvac-8l4.12.6` |
 | N11 | A review run with a model provider and `--dry-run` leaves the provider uncalled and prints the payload. A `lint` run leaves every provider uncalled. | `slopvac-8l4.11.3` |
 | N12 | A model provider that is untrusted or absent from the config never starts. | `slopvac-8l4.9.6` |
@@ -357,7 +480,7 @@ The 3.0 binary must pass these tests. Each runs the installed binary with an iso
 | V2 | An artifact with a `schema_version` above the supported range fails with the code, the versions, and the upgrade command. | `slopvac-8l4.4.5` |
 | V3 | A user-written file with an unknown key fails with file, line, and column, and an `x-` key passes. A plugin message with an unknown field is ignored. | `slopvac-8l4.2.5`, `slopvac-8l4.2.6` |
 | V4 | A handshake with no common protocol version, a missing required feature, or an unknown capability produces the behavior in section 3.4. | `slopvac-8l4.9.6` |
-| V5 | A pack with an unsupported `slopvac_api` stays unloaded, and the error names both versions. | `slopvac-8l4.9.1` |
+| V5 | A plugin with an unsupported `slopvac_api` stays unloaded, and the error names both versions. | `slopvac-8l4.9.1` |
 | V6 | Every error code in the generated docs is unique and kebab-case, and a later release keeps every code of the earlier one. | `slopvac-8l4.19.1` |
 | V7 | A config without `schema_version`, or with a 2.x value, exits 2 with `config-legacy-version` and a pointer to `slopvac migrate`, and lints nothing. | `slopvac-8l4.4.5` |
 | V8 | Each removed 2.x flag, option, and hook fails with an error and exit 2. No 2.x JSON format flag exists. | `slopvac-8l4.2.9` |
@@ -374,7 +497,6 @@ The Python 2.x tests that cover current behavior sit in `packages/slopvac-lint/t
 
 ## 5. Follow-up for bead owners
 
-- `slopvac-8l4.12.6` adds the preview and `--submit` behavior from section 1.5.
+- `slopvac-8l4.12.6` adds the preview and `--gh --yes` behavior from section 1.5.
 - `slopvac-8l4.13.6` is the Action bead. Its description lists reviewdog, SARIF, and CodeClimate, so it needs the `plugins sync` step and the `--offline` lint step from section 1.4.
-- `slopvac-8l4.9.8` is named "Pack index and slopvac packs search". The plan lists `search` under `plugins`, so the plan or the bead needs one name for the command.
 - `slopvac-8l4.12.4` confirms which commands may start the update check (section 1.2).

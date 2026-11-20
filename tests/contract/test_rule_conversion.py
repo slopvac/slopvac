@@ -245,6 +245,44 @@ def test_rule_conversion_carries_allowlist_comparison_exceptions_and_drops_nulls
     assert convert.convert_rule(source) == want
 
 
+def test_context_gate_is_carried_into_the_v3_rule_and_validates() -> None:
+    rule = convert.convert_rule(
+        {
+            "id": "r",
+            "name": "n",
+            "kind": "pattern",
+            "message": "m",
+            "pattern": "x",
+            "contexts": {"only": ["requirement"], "skip": None},
+            "tiers": {"strict": "enforced"},
+            "provenance": {"source": "s"},
+        }
+    )
+    assert rule["contexts"] == {"only": ["requirement"]}
+    assert _errors(_validator("Rule"), rule) == []
+
+
+@pytest.mark.parametrize(
+    "contexts",
+    [{"only": []}, {"only": [], "skip": ["code-fence"]}, {"skip": []}],
+)
+def test_empty_context_lists_are_kept_and_validate(contexts: dict) -> None:
+    rule = convert.convert_rule(
+        {
+            "id": "r",
+            "name": "n",
+            "kind": "pattern",
+            "message": "m",
+            "pattern": "x",
+            "contexts": contexts,
+            "tiers": {"strict": "enforced"},
+            "provenance": {"source": "s"},
+        }
+    )
+    assert rule["contexts"] == contexts
+    assert _errors(_validator("Rule"), rule) == []
+
+
 def test_lexical_options_move_into_match() -> None:
     rule = convert.convert_rule(
         {
@@ -310,3 +348,26 @@ def test_tiers_are_extracted_for_the_profile_mapping() -> None:
     assert convert.extract_tiers(category) == {
         "c.r": {"strict": "enforced", "normal": "advisory"}
     }
+
+
+def test_no_generated_text_names_a_removed_rule() -> None:
+    removed = sorted(convert.REMOVED_RULES)
+    text = json.dumps(
+        [
+            convert.convert_category(c)
+            for c in convert.load_categories(convert.DEFAULT_RULES_DIR)
+        ]
+    )
+    assert [r for r in removed if r.split(".", 1)[1] in text] == []
+
+
+def test_a_sentence_that_names_a_removed_rule_is_dropped() -> None:
+    removed = min(convert.REMOVED_RULES).replace(".", "/")
+    note = f"The half overlaps {removed}, which is mechanical. What is unique here is the key word."
+    assert convert.scrub_removed_rules(note) == "What is unique here is the key word."
+
+
+def test_text_that_names_only_a_removed_rule_fails_conversion() -> None:
+    removed = min(convert.REMOVED_RULES).split(".", 1)[1]
+    with pytest.raises(convert.ConversionError):
+        convert.scrub_removed_rules(f"See {removed}.")

@@ -6,11 +6,12 @@
 //! carries a fix that writes the canonical spelling.
 
 use slopvac_model::{Edit, Finding, Fix};
-use slopvac_rules::Scope;
+use slopvac_rules::{MatchKind, Scope};
 use slopvac_text::TextType;
 
 use super::{Candidate, Run};
 use crate::lint::EngineError;
+use crate::matcher_work;
 use crate::matching::{allowlisted, format_message};
 use crate::skip::{self, SkipRanges};
 
@@ -30,6 +31,9 @@ impl Run<'_> {
             let set = &engine.sets[active.set];
             let loaded = &set.categories()[active.category].rules()[active.rule];
             let rule = loaded.rule();
+            if !self.applies(rule) {
+                continue;
+            }
             // As for lexical rules: raw text has no inline code to skip, and a rule that names
             // no excluded blocks still skips inline code in prose.
             let skip = match (&rule.exclude_blocks, rule.scope) {
@@ -46,6 +50,7 @@ impl Run<'_> {
                 .filter_map(|e| e.detector.as_ref().map(slopvac_rules::Slug::as_str))
                 .collect();
             for unit in self.prepared.units(rule.scope)? {
+                matcher_work::entered(MatchKind::Vocabulary);
                 for hit in engine.terms.check_casing(unit.text, &[]) {
                     if rule.text_type != TextType::Any {
                         let at = unit.base() + hit.span.start;

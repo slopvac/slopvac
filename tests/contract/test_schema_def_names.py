@@ -13,7 +13,9 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-SCHEMA_FILES = sorted((Path(__file__).resolve().parents[2] / "schemas" / "v3").glob("*.schema.json"))
+SCHEMA_FILES = sorted(
+    (Path(__file__).resolve().parents[2] / "schemas" / "v3").glob("*.schema.json")
+)
 
 # def name -> the artifact file names whose identical copies are intended.
 INTENTIONAL_COPIES: dict[str, tuple[str, ...]] = {}
@@ -38,5 +40,7 @@ def test_def_names_are_unique_across_schemas():
         if len(bodies) > 1:
             conflicts.append(f"{name}: {', '.join(files)} differ")
         elif tuple(files) != INTENTIONAL_COPIES.get(name):
-            conflicts.append(f"{name}: identical copies in {', '.join(files)} not allowed")
+            conflicts.append(
+                f"{name}: identical copies in {', '.join(files)} not allowed"
+            )
     assert not conflicts, "\n".join(conflicts)

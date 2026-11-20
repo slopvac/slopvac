@@ -1,0 +1,12 @@
+schema_version: 3
+id: reference
+description: Exact operations and dated facts for use or verification. API docs, runbooks, procedures, safety text.
+profile: strict
+detect:
+  min_score: 3
+  signals:
+    - { kind: path, glob: '**/{reference,api,runbook,runbooks,procedure,procedures,man}/**', weight: 3 }
+    - { kind: heading, pattern: '^\W*(?:parameters|returns|options|flags|arguments|exit codes?|synopsis|errors)\W*$', weight: 1.5 }
+    - { kind: heading, pattern: '\b(?:runbook|procedure|safety)\b', weight: 2 }
+rules:
+  docs-discipline.history-internal-reference: warning

@@ -8,8 +8,11 @@ use serde::de::{self, IgnoredAny, MapAccess, Visitor};
 
 use crate::Error;
 
-/// The only schema version this crate reads.
-const SCHEMA_VERSION: u32 = 3;
+/// The only `schema_version` of a genre file this crate reads.
+pub const GENRE_SCHEMA_VERSION: u32 = 3;
+
+/// The only `schema_version` of a declarative tagger file this crate reads.
+pub const TAGGER_SCHEMA_VERSION: u32 = 3;
 
 /// Keys that no field claims. Keys with the prefix `x-` are ignored; any other key is an
 /// error, as in the schemas (`patternProperties` `^x-` with `additionalProperties: false`).
@@ -50,12 +53,12 @@ where
     T::deserialize(d).map(Some)
 }
 
-pub(crate) fn check_schema_version(what: &str, v: u32) -> Result<(), Error> {
-    if v == SCHEMA_VERSION {
+pub(crate) fn check_schema_version(what: &str, v: u32, expected: u32) -> Result<(), Error> {
+    if v == expected {
         Ok(())
     } else {
         Err(Error::Parse(format!(
-            "{what}: schema_version is {v}, expected {SCHEMA_VERSION}"
+            "{what}: schema_version is {v}, expected {expected}"
         )))
     }
 }

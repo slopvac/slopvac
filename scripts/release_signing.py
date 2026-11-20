@@ -39,7 +39,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 PUBKEY = Path(__file__).resolve().parents[1] / "keys" / "slopvac-release.pub"
@@ -121,6 +122,20 @@ def artifacts(directory: Path) -> list[Path]:
     return files
 
 
+@contextmanager
+def secret_key_file(secret: str, runner_temp: str | None) -> Iterator[Path]:
+    """The secret key in a mode 600 file that is removed on exit, even on failure."""
+    key_dir = Path(tempfile.mkdtemp(prefix="minisign-", dir=runner_temp))
+    try:
+        key_file = key_dir / "release.key"
+        descriptor = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(secret.rstrip("\n") + "\n")
+        yield key_file
+    finally:
+        shutil.rmtree(key_dir, ignore_errors=True)
+
+
 def sign(
     directory: Path, pubkey: Path, environ: dict[str, str], version: str
 ) -> list[Path]:
@@ -132,20 +147,13 @@ def sign(
     comments = {f: trusted_comment(f.name, version) for f in files}
     binary = minisign_binary()
 
-    key_dir = Path(tempfile.mkdtemp(prefix="minisign-", dir=environ.get("RUNNER_TEMP")))
-    try:
-        key_file = key_dir / "release.key"
-        descriptor = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(secret.rstrip("\n") + "\n")
+    with secret_key_file(secret, environ.get("RUNNER_TEMP")) as key_file:
         for file in files:
             signature = file.with_name(file.name + SIGNATURE_SUFFIX)
             argv = [binary, "-S", "-s", str(key_file), "-m", str(file)]
             argv += ["-x", str(signature), "-t", comments[file]]
             # -W reads the key as unencrypted; an encrypted key then fails instead of prompting.
             _run([*argv, "-W"])
-    finally:
-        shutil.rmtree(key_dir, ignore_errors=True)
 
     verify(files, pubkey)
     return [f.with_name(f.name + SIGNATURE_SUFFIX) for f in files]

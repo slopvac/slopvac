@@ -2,6 +2,8 @@
 
 The action installs slopvac, lints the files you choose, and reports the findings. The exit code of `slopvac lint` is the gate: the job passes or fails on it, whatever the reporters do. Until the 3.0 cutover the action lives in `action-v3/`; at release it moves to the repository root and the examples below apply as written.
 
+Pin the action to a full commit SHA, with the version as a trailing comment. The repository publishes no moving major tag such as `v3`, and its `v*` tags are immutable. Replace the placeholder with a SHA from `git ls-remote https://github.com/slopvac/slopvac 'refs/tags/v3.0.0' 'refs/tags/v3.0.0^{}'`. Copy it from the `^{}` row when that row is present (an annotated tag), otherwise from the plain row. Dependabot and Renovate update a SHA pin and its version comment together.
+
 ```yaml
 permissions:
   contents: read
@@ -15,7 +17,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: slopvac/slopvac@v3
+      - uses: slopvac/slopvac@<full commit SHA of the v3.0.0 tag> # v3.0.0
         with:
           paths: README.md docs/
           changed-files-only: true
@@ -31,9 +33,9 @@ jobs:
 
 The `reporter` input takes `auto`, `review`, `annotations` or `none`. With `auto`, the action tries a review with suggestions on a pull request from the same repository that Dependabot did not open. The action cannot see the token's permissions, so if reviewdog fails to post the review, for example on a read-only token, it logs a warning and posts annotations instead. In every other pull request it uses annotations, which need no write permission. On pushes it uses a check run. A reviewdog install or post failure only warns; the slopvac exit code stays the gate.
 
-When the project has a `.slopvac/packs.lock` lockfile, a separate `Sync packs` step runs `slopvac plugins sync` before the lint. A failed sync fails the action.
+When the project has a `.slopvac/plugins.lock` lockfile, a separate `Sync plugins` step runs `slopvac plugins sync` before the lint. A failed sync fails the action.
 
-The lint steps always run with `--offline`, so they never reach the network. Installing slopvac and syncing packs still do.
+The lint steps always run with `--offline`, so they never reach the network. Installing slopvac and syncing plugins still do.
 
 Set `fail-on-findings: false` to report without failing the job. That softens only exit 1. An incomplete check (exit 2), any other exit status and a crash from a signal always fail the job.
 
@@ -52,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: slopvac
-        uses: slopvac/slopvac@v3
+        uses: slopvac/slopvac@<full commit SHA of the v3.0.0 tag> # v3.0.0
         with:
           reporter: none
           sarif: false

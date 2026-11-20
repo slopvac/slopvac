@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import re
 import sys
 import tomllib
 from pathlib import Path
@@ -109,9 +108,66 @@ def test_pin_matches_the_reference_in_use():
     assert golden.verify_pin() == []
 
 
-def test_pin_records_the_reference_commit():
+def test_pin_records_no_commit():
     recorded = tomllib.loads(golden.PIN_TOML.read_text("utf-8"))
-    assert re.fullmatch(r"[0-9a-f]{40}", recorded["python_commit"])
+    assert set(recorded) == {"slopvac_version", "python_src_sha256", "vale"}
+
+
+def test_verify_pin_runs_no_subprocess(monkeypatch):
+    def refuse(*args, **kwargs):
+        raise AssertionError("a subprocess ran")
+
+    recorded = tomllib.loads(golden.PIN_TOML.read_text("utf-8"))
+    monkeypatch.setattr(golden, "vale_version", lambda: recorded["vale"])
+    monkeypatch.setattr(golden.subprocess, "run", refuse)
+    assert golden.verify_pin() == []
+
+
+def _tree(root, files):
+    for name, text in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return root
+
+
+SOURCES = {"a.py": "x = 1\n", "rules/r.yml": "k: v\n", "rules/a-b.yml": "k: w\n"}
+
+
+def test_source_hash_ignores_creation_order(tmp_path):
+    forward = _tree(tmp_path / "f", SOURCES)
+    backward = _tree(tmp_path / "b", dict(reversed(SOURCES.items())))
+    assert golden.reference_tree_hash(forward) == golden.reference_tree_hash(backward)
+
+
+def test_source_hash_ignores_files_outside_the_reference_set(tmp_path):
+    base = golden.reference_tree_hash(_tree(tmp_path / "a", SOURCES))
+    extra = _tree(
+        tmp_path / "b",
+        {**SOURCES, "notes.md": "n", "__pycache__/a.py": "junk", ".git": "gitdir"},
+    )
+    assert golden.reference_tree_hash(extra) == base
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"a.py": "x = 2\n"},
+        {"rules/r.yml": "k: other\n"},
+        {"new.json": "{}"},
+    ],
+    ids=["source-edit", "rule-data-edit", "added-file"],
+)
+def test_source_hash_changes_with_a_reference_file(tmp_path, change):
+    base = golden.reference_tree_hash(_tree(tmp_path / "a", SOURCES))
+    changed = golden.reference_tree_hash(_tree(tmp_path / "b", {**SOURCES, **change}))
+    assert changed != base
+
+
+def test_source_hash_changes_when_a_file_moves(tmp_path):
+    base = golden.reference_tree_hash(_tree(tmp_path / "a", {"a.py": "x"}))
+    moved = golden.reference_tree_hash(_tree(tmp_path / "b", {"sub/a.py": "x"}))
+    assert moved != base
 
 
 def test_verify_pin_names_a_source_hash_mismatch(monkeypatch):
@@ -216,7 +272,7 @@ def test_staged_files_keep_their_real_extension(captured):
 # --- replay and runner -----------------------------------------------------
 
 
-@pytest.mark.parametrize("mode", ["parity", "policy"])
+@pytest.mark.parametrize("mode", ["parity"])
 def test_the_python_reference_matches_its_golden(mode):
     assert golden.compare(mode, REFERENCE, flavor="2x") == []
 
@@ -506,10 +562,111 @@ def test_a_run_delta_patches_the_run_summary_and_exit_status():
     }
 
 
+def _mode_deltas(monkeypatch, *deltas):
+    monkeypatch.setattr(golden, "load_deltas", lambda: list(deltas))
+
+
+@pytest.mark.parametrize(
+    ("mode", "applies"),
+    [("parity", False), ("preserve", False), ("policy", True)],
+)
+def test_a_delta_without_modes_applies_to_policy_only(monkeypatch, mode, applies):
+    _mode_deltas(monkeypatch, _delta())
+    assert bool(golden.deltas_for(mode, "3x")) is applies
+
+
+@pytest.mark.parametrize(
+    ("mode", "applies"),
+    [("parity", True), ("preserve", False), ("policy", True)],
+)
+def test_a_delta_applies_to_the_modes_it_lists(monkeypatch, mode, applies):
+    _mode_deltas(monkeypatch, _delta(modes=["parity", "policy"]))
+    assert bool(golden.deltas_for(mode, "3x")) is applies
+
+
+@pytest.mark.parametrize("mode", ["parity", "preserve", "policy"])
+def test_the_2x_reference_never_gets_a_delta(monkeypatch, mode):
+    _mode_deltas(monkeypatch, _delta(modes=["parity", "preserve", "policy"]))
+    assert golden.deltas_for(mode, "2x") == []
+
+
+# --- flavor isolation through compare ---------------------------------------
+
+
+def _parity_binary(monkeypatch, deltas):
+    """A fake binary that reports exactly the parity golden, plus fixed deltas."""
+    inputs = golden.load_inputs()
+    profile = "normal"
+    source = next(
+        e["id"]
+        for e in inputs
+        if json.loads(golden.golden_path(profile, e["id"]).read_text("utf-8"))[
+            "document"
+        ]["findings"]
+    )
+    parity = {
+        e["id"]: json.loads(golden.golden_path(profile, e["id"]).read_text("utf-8"))
+        for e in inputs
+    }
+    runs = json.loads(golden.runs_path(profile).read_text("utf-8"))
+    extra = json.loads(json.dumps(parity[source]["document"]["findings"][0]))
+    extra["column"] += 1000
+    delta = {
+        "input": source,
+        "profile": profile,
+        "kind": "added",
+        "finding": extra,
+        "reason": "r",
+        "approved_by": "a",
+        "run": {"group": next(iter(runs)), "summary": {"score": -1.0}},
+        **deltas,
+    }
+    monkeypatch.setattr(golden, "load_deltas", lambda: [delta])
+    monkeypatch.setattr(
+        golden,
+        "run_binary",
+        lambda command, mode, prof, ins, flavor="3x": (parity, runs),
+    )
+
+
+def _compare(mode, flavor):
+    return golden.compare(mode, "unused", only_profile="normal", flavor=flavor)
+
+
+@pytest.mark.parametrize("mode", ["parity", "preserve", "policy"])
+def test_the_2x_reference_is_compared_without_deltas_in_every_mode(monkeypatch, mode):
+    _parity_binary(monkeypatch, {"modes": ["parity", "preserve", "policy"]})
+    assert _compare(mode, "2x") == []
+
+
+@pytest.mark.parametrize(
+    ("modes", "mode", "reported"),
+    [
+        (None, "policy", True),
+        (None, "parity", False),
+        (["parity"], "parity", True),
+        (["parity"], "policy", False),
+        (["parity", "preserve", "policy"], "preserve", True),
+    ],
+)
+def test_a_3x_candidate_is_compared_with_the_deltas_of_its_mode(
+    monkeypatch, modes, mode, reported
+):
+    _parity_binary(monkeypatch, {"modes": modes} if modes else {})
+    problems = _compare(mode, "3x")
+    # A parity-only candidate differs from the delta-adjusted expectation in the
+    # document (the added finding) and in the run summary (the patched score).
+    assert bool(problems) is reported
+    if reported:
+        assert any("differs in" in p and "/normal/" in p for p in problems)
+        assert any("summary differs in ['score']" in p for p in problems)
+
+
 def test_every_recorded_delta_has_a_reason_and_an_approver():
     for delta in golden.load_deltas():
         assert delta["reason"].strip()
         assert delta["approved_by"].strip()
+        assert set(delta.get("modes", ["policy"])) <= {"parity", "preserve", "policy"}
 
 
 def test_vale_is_resolved_on_the_path_a_run_uses(tmp_path, monkeypatch):

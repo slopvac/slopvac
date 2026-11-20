@@ -9,9 +9,34 @@ use serde::de::DeserializeOwned;
 use slopvac_model::{CategoryId, Density, GenreId, NonEmptyString, PackId, RuleId};
 use slopvac_text::TextError;
 
-use crate::error::{LoadError, LoadErrorKind, LoadErrors};
+use crate::error::{LoadError, LoadErrorKind, LoadErrors, PackBudget};
 use crate::matcher::{CompileOptions, LexicalMatcher, compile};
-use crate::model::{Category, LocalRuleId, MatchKind, ProfileName, Rule, Scope, Weight};
+use crate::model::{Category, LocalRuleId, Match, MatchKind, ProfileName, Rule, Scope, Weight};
+
+/// The most bytes of one rule or category file. The largest shipped file is about 130 KiB, so
+/// 2 MiB leaves more than a tenfold margin for a pack.
+pub const MAX_RULE_FILE_BYTES: u64 = 2 * 1024 * 1024;
+
+// Budget names in `docs/contract/policies.md` section 1.9 and their constants:
+// `plugin-files` is `MAX_PACK_FILES`, `plugin-bytes` is `MAX_PACK_BYTES`, `plugin-entries` is
+// `MAX_PACK_ENTRIES`, and `rule-entries` is `MAX_RULE_ENTRIES`.
+
+/// The most rule or category files one pack directory may load, after files that are the same
+/// file under several names count once. The shipped pack has 23, so 256 leaves a wide margin.
+pub const MAX_PACK_FILES: usize = 256;
+
+/// The most directory entries one pack directory may hold, whatever their names. It bounds the
+/// scan before any file is sorted or resolved, and leaves room for aliases and other files
+/// beside the pack: four times [`MAX_PACK_FILES`].
+pub const MAX_PACK_ENTRIES: usize = 4 * MAX_PACK_FILES;
+
+/// The most bytes read in total from the files of one pack directory. The shipped pack is about
+/// 450 KiB, so 32 MiB leaves a wide margin and still holds the pack in memory at once.
+pub const MAX_PACK_BYTES: u64 = 32 * 1024 * 1024;
+
+/// The most tokens, or substitutions, one rule may list. The largest shipped list has 112, so
+/// 4096 leaves a wide margin. A rule over it is refused before any matcher is compiled.
+pub const MAX_RULE_ENTRIES: usize = 4096;
 
 /// A rule with its compiled matcher and where it came from.
 #[derive(Debug)]
@@ -25,7 +50,7 @@ pub struct LoadedRule {
 }
 
 impl LoadedRule {
-    /// The qualified id, `<pack>:<category>.<rule>`.
+    /// The qualified id, `<plugin>:<category>.<rule>`.
     #[must_use]
     pub fn id(&self) -> &RuleId {
         &self.id
@@ -156,26 +181,41 @@ impl RuleSet {
         dir: &Path,
         options: &CompileOptions,
     ) -> Result<Self, LoadErrors> {
-        let read_error = |path: &Path, e: &std::io::Error| LoadError {
-            file: path.to_path_buf(),
-            line: None,
-            rule: None,
-            kind: LoadErrorKind::Read(e.to_string()),
-        };
-        let mut files: Vec<PathBuf> = fs::read_dir(dir)
-            .map_err(|e| read_error(dir, &e))?
-            .map(|entry| entry.map(|e| e.path()).map_err(|e| read_error(dir, &e)))
-            .collect::<Result<_, _>>()?;
-        files.retain(|p| Format::of(p).is_some());
-        files.sort();
-        let sources = files
-            .into_iter()
-            .map(|p| {
-                let text = fs::read_to_string(&p).map_err(|e| read_error(&p, &e))?;
-                Ok((p, text))
-            })
-            .collect::<Result<Vec<_>, LoadError>>()?;
-        Self::from_sources(pack, sources, options)
+        let distinct = pack_files(dir)?;
+        let mut bytes = 0_u64;
+        // Read one file at a time, so the texts of a large pack are never all in memory.
+        let sources = distinct.into_iter().map(move |p| {
+            let read_error = |message: String| LoadError {
+                file: p.clone(),
+                line: None,
+                rule: None,
+                kind: LoadErrorKind::Read(message),
+            };
+            // The reader refuses a symlink, and a symlinked pack file is supported, so
+            // resolve the link first. A FIFO or device then fails as not regular, without
+            // blocking.
+            let resolved = fs::canonicalize(&p).map_err(|e| read_error(e.to_string()))?;
+            let text = slopvac_fs::read_capped_regular_to_string(
+                &resolved,
+                MAX_RULE_FILE_BYTES,
+                slopvac_fs::ReadOptions::new(),
+            )
+            .map_err(|e| match e.input_kind() {
+                Some(slopvac_fs::InputKind::TooLarge) => LoadError {
+                    file: p.clone(),
+                    line: None,
+                    rule: None,
+                    kind: LoadErrorKind::TooLarge(MAX_RULE_FILE_BYTES),
+                },
+                _ => read_error(e.to_string()),
+            })?;
+            bytes += text.len() as u64;
+            if bytes > MAX_PACK_BYTES {
+                return Err(over_budget(dir, PackBudget::Bytes, MAX_PACK_BYTES));
+            }
+            Ok((p, text))
+        });
+        Self::build(pack, sources, options)
     }
 
     /// Load category files already read into memory. The extension of each path selects the
@@ -188,10 +228,20 @@ impl RuleSet {
         sources: impl IntoIterator<Item = (PathBuf, String)>,
         options: &CompileOptions,
     ) -> Result<Self, LoadErrors> {
+        Self::build(pack, sources.into_iter().map(Ok), options)
+    }
+
+    /// Compile sources one at a time. A source that fails to arrive stops the load at once.
+    fn build(
+        pack: &PackId,
+        sources: impl IntoIterator<Item = Result<(PathBuf, String), LoadError>>,
+        options: &CompileOptions,
+    ) -> Result<Self, LoadErrors> {
         let mut errors = Vec::new();
         let mut categories: Vec<LoadedCategory> = Vec::new();
         let mut seen: HashSet<CategoryId> = HashSet::new();
-        for (file, text) in sources {
+        for source in sources {
+            let (file, text) = source?;
             let mut category = match parse::<Category>(&file, &text) {
                 Ok(c) => c,
                 Err(e) => {
@@ -291,6 +341,69 @@ impl RuleSet {
     }
 }
 
+/// The rule and category files of `dir`, each file once, in file-name order.
+///
+/// The work is bounded before it starts: the scan stops at [`MAX_PACK_ENTRIES`] directory
+/// entries, only the bounded set is sorted, and the scan stops at the first distinct file past
+/// [`MAX_PACK_FILES`]. A file reached by several names is read once, under the first name in
+/// file-name order.
+fn pack_files(dir: &Path) -> Result<Vec<PathBuf>, LoadError> {
+    let read_error = |path: &Path, e: &std::io::Error| LoadError {
+        file: path.to_path_buf(),
+        line: None,
+        rule: None,
+        kind: LoadErrorKind::Read(e.to_string()),
+    };
+    let too_many_files = || over_budget(dir, PackBudget::Files, MAX_PACK_FILES as u64);
+    let mut files: Vec<PathBuf> = Vec::new();
+    for (seen, entry) in fs::read_dir(dir)
+        .map_err(|e| read_error(dir, &e))?
+        .enumerate()
+    {
+        if seen >= MAX_PACK_ENTRIES {
+            return Err(over_budget(
+                dir,
+                PackBudget::Entries,
+                MAX_PACK_ENTRIES as u64,
+            ));
+        }
+        let path = entry.map_err(|e| read_error(dir, &e))?.path();
+        if Format::of(&path).is_some() {
+            files.push(path);
+        }
+    }
+    files.sort();
+    let mut identities: HashSet<PathBuf> = HashSet::new();
+    let mut distinct = Vec::new();
+    for p in files {
+        let id = fs::canonicalize(&p).map_err(|e| read_error(&p, &e))?;
+        if identities.insert(id) {
+            if distinct.len() >= MAX_PACK_FILES {
+                return Err(too_many_files());
+            }
+            distinct.push(p);
+        }
+    }
+    Ok(distinct)
+}
+
+/// The refusal for a pack directory (or rule file) that passes `budget`. It names the directory relative to the
+/// working directory, or `<external>/<name>` outside it, never an absolute path.
+fn over_budget(dir: &Path, budget: PackBudget, limit: u64) -> LoadError {
+    let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let path = slopvac_fs::display_under_root(dir, &root);
+    LoadError {
+        file: PathBuf::from(&path),
+        line: None,
+        rule: None,
+        kind: LoadErrorKind::BudgetExceeded {
+            budget,
+            limit,
+            path,
+        },
+    }
+}
+
 fn load_rules(
     pack: &PackId,
     category: &CategoryId,
@@ -315,6 +428,13 @@ fn load_rules(
             errors.push(error(LoadErrorKind::DuplicateRule(local.to_string())));
             continue;
         }
+        if entry_count(&rule.match_) > MAX_RULE_ENTRIES {
+            let mut e = over_budget(file, PackBudget::RuleEntries, MAX_RULE_ENTRIES as u64);
+            e.line = line;
+            e.rule = Some(format!("{category}.{local}"));
+            errors.push(e);
+            continue;
+        }
         let matcher = match compile(&rule.match_, options) {
             Ok(m) => m,
             Err(e) => {
@@ -330,7 +450,7 @@ fn load_rules(
             }
         }
         let id = RuleId::new(format!("{pack}:{category}.{local}"))
-            .expect("pack, category and rule ids are valid slugs");
+            .expect("plugin, category and rule ids are valid slugs");
         loaded.push(LoadedRule {
             id,
             category: category.clone(),
@@ -341,6 +461,15 @@ fn load_rules(
         });
     }
     loaded
+}
+
+/// How many tokens or substitutions a rule lists, the part of a match that grows with the file.
+fn entry_count(m: &Match) -> usize {
+    match m {
+        Match::Tokens(t) => t.tokens.len(),
+        Match::Substitution(s) => s.substitutions.entries().len(),
+        _ => 0,
+    }
 }
 
 /// Every `bad` example must match and every `good` one must not.

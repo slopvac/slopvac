@@ -5,6 +5,9 @@ use std::ops::Range;
 
 use annotate_snippets::{AnnotationKind, Group, Level, Renderer, Snippet};
 
+use slopvac_messages::Catalog;
+
+use crate::messages::ConfigMessage;
 use crate::tree::LineIndex;
 
 /// Stable identifier of a diagnostic, printed in brackets and matched by tests.
@@ -12,6 +15,12 @@ use crate::tree::LineIndex;
 pub enum Code {
     /// A file could not be read.
     Io,
+    /// A config file is larger than [`crate::MAX_CONFIG_BYTES`].
+    TooLarge,
+    /// A style file is larger than the style cap.
+    StyleTooLarge,
+    /// A document is larger than [`crate::MAX_DOCUMENT_BYTES`].
+    DocumentTooLarge,
     /// The file is not valid TOML or YAML.
     Parse,
     /// A key the schema does not define.
@@ -28,6 +37,9 @@ pub enum Code {
     UnsupportedVersion,
     /// An `extends` chain that loops back on itself.
     ExtendsCycle,
+    /// A config that passes a budget: `extends` depth, files applied or bytes read, or blocks in
+    /// one file. The diagnostic's `data` names which.
+    BudgetExceeded,
     /// An `extends` entry that names no readable config.
     ExtendsMissing,
     /// Two `[[overrides]]` or `[[genres]]` blocks with the same `files` set.
@@ -37,22 +49,47 @@ pub enum Code {
 }
 
 impl Code {
-    /// The identifier text, such as `config-unknown-key`.
+    /// The identifier text, such as `config-unknown-key`. The message catalog owns it.
     #[must_use]
     pub fn as_str(self) -> &'static str {
+        let text = String::new;
         match self {
-            Code::Io => "config-io",
-            Code::Parse => "config-parse",
-            Code::UnknownKey => "config-unknown-key",
-            Code::InvalidType => "config-invalid-type",
-            Code::InvalidValue => "config-invalid-value",
-            Code::MissingKey => "config-missing-key",
-            Code::LegacyVersion => "config-legacy-version",
-            Code::UnsupportedVersion => "config-unsupported-version",
-            Code::ExtendsCycle => "config-extends-cycle",
-            Code::ExtendsMissing => "config-extends-missing",
-            Code::DuplicateScope => "config-duplicate-scope",
-            Code::FrontmatterFieldDenied => "config-frontmatter-field-denied",
+            Code::Io => ConfigMessage::Io {
+                path: text(),
+                reason: text(),
+            }
+            .code(),
+            Code::TooLarge => ConfigMessage::TooLarge {
+                path: text(),
+                cap: 0,
+            }
+            .code(),
+            Code::StyleTooLarge => ConfigMessage::StyleTooLarge {
+                path: text(),
+                cap: 0,
+            }
+            .code(),
+            Code::DocumentTooLarge => ConfigMessage::DocumentTooLarge {
+                path: text(),
+                cap: 0,
+            }
+            .code(),
+            Code::Parse => ConfigMessage::Parse { message: text() }.code(),
+            Code::UnknownKey => ConfigMessage::UnknownKey { message: text() }.code(),
+            Code::InvalidType => ConfigMessage::InvalidType { message: text() }.code(),
+            Code::InvalidValue => ConfigMessage::InvalidValue { message: text() }.code(),
+            Code::MissingKey => ConfigMessage::MissingKey { message: text() }.code(),
+            Code::LegacyVersion => ConfigMessage::LegacyVersion { message: text() }.code(),
+            Code::UnsupportedVersion => {
+                ConfigMessage::UnsupportedVersion { message: text() }.code()
+            }
+            Code::ExtendsCycle => ConfigMessage::ExtendsCycle { message: text() }.code(),
+            Code::BudgetExceeded => ConfigMessage::BudgetExceeded { message: text() }.code(),
+            Code::ExtendsMissing => ConfigMessage::ExtendsMissing { message: text() }.code(),
+            Code::DuplicateScope => ConfigMessage::DuplicateScope { message: text() }.code(),
+            Code::FrontmatterFieldDenied => {
+                ConfigMessage::FrontmatterFieldDenied { message: text() }.code()
+            }
         }
     }
 }
@@ -61,6 +98,49 @@ impl fmt::Display for Code {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
+}
+
+/// Which `extends` budget a run passed. The list can grow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConfigBudget {
+    /// Nesting depth, in levels: [`crate::MAX_EXTENDS_DEPTH`].
+    ExtendsDepth,
+    /// Files applied, in files: [`crate::MAX_EXTENDS_FILES`].
+    ExtendsFiles,
+    /// Bytes read, in bytes: [`crate::MAX_EXTENDS_BYTES`].
+    ExtendsBytes,
+    /// Bytes of config text applied, counting each application, in bytes:
+    /// [`crate::MAX_EXTENDS_APPLIED_BYTES`].
+    ExtendsAppliedBytes,
+    /// `[[genres]]` and `[[overrides]]` blocks in one file, in blocks:
+    /// [`crate::MAX_FILE_BLOCKS`].
+    FileBlocks,
+}
+
+impl ConfigBudget {
+    /// The `data.budget` text, such as `extends-depth`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExtendsDepth => "extends-depth",
+            Self::ExtendsFiles => "extends-files",
+            Self::ExtendsBytes => "extends-bytes",
+            Self::ExtendsAppliedBytes => "extends-applied-bytes",
+            Self::FileBlocks => "file-blocks",
+        }
+    }
+}
+
+/// The machine-readable detail of a `config-budget-exceeded` diagnostic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BudgetData {
+    /// The budget that was passed.
+    pub budget: ConfigBudget,
+    /// The limit, in the unit of `budget`.
+    pub limit: u64,
+    /// The config file at which the limit tripped, relative to the root.
+    pub path: String,
 }
 
 /// One problem, anchored to a byte range of one source text.
@@ -79,6 +159,8 @@ pub struct Diagnostic {
     pub help: Option<String>,
     /// Key path from the document root to the offending key or value.
     pub path: Vec<String>,
+    /// Machine-readable detail, set only for a budget diagnostic.
+    pub data: Option<Box<BudgetData>>,
 }
 
 impl Diagnostic {
@@ -206,8 +288,40 @@ mod tests {
             span: 0..0,
             help: None,
             path: vec!["rules".into(), "a/b~c".into()],
+            data: None,
         };
         assert_eq!(d.pointer(), "/rules/a~1b~0c");
+    }
+
+    #[test]
+    fn every_code_keeps_its_published_text_and_is_registered() {
+        let published = [
+            (Code::Io, "config-io"),
+            (Code::TooLarge, "config-too-large"),
+            (Code::StyleTooLarge, "style-too-large"),
+            (Code::DocumentTooLarge, "document-too-large"),
+            (Code::Parse, "config-parse"),
+            (Code::UnknownKey, "config-unknown-key"),
+            (Code::InvalidType, "config-invalid-type"),
+            (Code::InvalidValue, "config-invalid-value"),
+            (Code::MissingKey, "config-missing-key"),
+            (Code::LegacyVersion, "config-legacy-version"),
+            (Code::UnsupportedVersion, "config-unsupported-version"),
+            (Code::ExtendsCycle, "config-extends-cycle"),
+            (Code::BudgetExceeded, "config-budget-exceeded"),
+            (Code::ExtendsMissing, "config-extends-missing"),
+            (Code::DuplicateScope, "config-duplicate-scope"),
+            (
+                Code::FrontmatterFieldDenied,
+                "config-frontmatter-field-denied",
+            ),
+        ];
+        let registered = crate::messages::error_entries();
+        for (code, text) in published {
+            assert_eq!(code.as_str(), text);
+            assert!(registered.iter().any(|e| e.code == text), "{text}");
+        }
+        assert_eq!(registered.len(), published.len());
     }
 
     #[test]
@@ -219,6 +333,7 @@ mod tests {
             span: 50..60,
             help: None,
             path: vec![],
+            data: None,
         };
         let out = render(
             SourceFile {

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Entry points for the slopvac 3.0 composite GitHub Action (action-v3/action.yml).
 
-``sync``      run ``slopvac plugins sync`` when the project has a pack lockfile.
+``sync``      run ``slopvac plugins sync`` when the project has a plugin lockfile.
 ``lint``      run the binary once per report format and keep its gate exit code.
 ``report``    post the rdjsonl findings with reviewdog; never gates the job.
 
@@ -32,7 +32,7 @@ OK = 0
 FINDINGS = 1
 INCOMPLETE = 2
 
-LOCKFILE = ".slopvac/packs.lock"
+LOCKFILE = ".slopvac/plugins.lock"
 
 _SUMMARY_KEYS = ("score", "findings", "errors", "warnings", "suggestions", "passed")
 
@@ -117,14 +117,81 @@ def _command(
     return [*command, "--", *targets]
 
 
+# Inclusive code point ranges that slopvac-sanitize escapes (`UNSAFE` in
+# crates/slopvac-sanitize/src/tables.rs). tests/fixtures/workflow-escape-vectors.json
+# holds both edges of every range and is checked by the Rust and the Python side.
+_UNSAFE_RANGES = (
+    (0x0, 0x1F), (0x7F, 0x9F), (0xAD, 0xAD), (0x34F, 0x34F), (0x600, 0x605),
+    (0x61C, 0x61C), (0x6DD, 0x6DD), (0x70F, 0x70F), (0x890, 0x891), (0x8E2, 0x8E2),
+    (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F), (0x200B, 0x200F),
+    (0x2028, 0x202E), (0x2060, 0x206F), (0x3164, 0x3164), (0xE000, 0xF8FF),
+    (0xFDD0, 0xFDEF), (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFFB), (0xFFFE, 0xFFFF), (0x110BD, 0x110BD), (0x110CD, 0x110CD),
+    (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A),
+    *((plane << 16 | 0xFFFE, plane << 16 | 0xFFFF) for plane in range(1, 15)),
+    (0xE0000, 0xE0FFF), (0xEFFFE, 0x10FFFF),
+)  # fmt: skip
+
+
+def _is_unsafe(char: str) -> bool:
+    code = ord(char)
+    return any(low <= code <= high for low, high in _UNSAFE_RANGES)
+
+
+def escape_workflow_data(text: str) -> str:
+    r"""Escape untrusted text so the runner reads no workflow command in it.
+
+    The same function as ``workflow_data`` in crates/slopvac-sanitize
+    (TM-13/O4): ``%`` becomes ``%25``, CR ``%0D``, LF ``%0A``, ``::`` becomes
+    ``%3A%3A``, ``##[`` is neutralised, a backslash is doubled, and an unsafe
+    character becomes ``\u{..}``. Tab stays. The shared vectors in
+    tests/fixtures/workflow-escape-vectors.json keep the two in step.
+    """
+    out = []
+    for char in text:
+        if char == "%":
+            out.append("%25")
+        elif char == "\r":
+            out.append("%0D")
+        elif char == "\n":
+            out.append("%0A")
+        elif char == "\\":
+            out.append("\\\\")
+        elif char != "\t" and _is_unsafe(char):
+            out.append(f"\\u{{{ord(char):x}}}")
+        else:
+            out.append(char)
+    return "".join(out).replace("::", "%3A%3A").replace("##[", "\\u{23}#[")
+
+
+def _relay_stderr(raw: bytes) -> None:
+    """Re-emit the binary's stderr line by line through ``escape_workflow_data``.
+
+    The binary echoes PR-controlled text (a file name may hold a newline and
+    ``::error::``), so its stderr must never reach the job log raw.
+    """
+    records = raw.decode("utf-8", errors="replace").split("\n")
+    if records[-1] == "":  # the final newline ends a record, it does not start one
+        records.pop()
+    for record in records:
+        # CRLF is one line ending; a lone CR stays and is escaped as %0D.
+        text = record.removesuffix("\r")
+        print(escape_workflow_data(text), file=sys.stderr)
+
+
 def _run(command: Sequence[str], env: Mapping[str, str]) -> int:
-    return subprocess.run(command, check=False, env={**os.environ, **env}).returncode
+    """Run the binary, relay its stderr escaped, and return its exit code."""
+    done = subprocess.run(
+        command, check=False, env={**os.environ, **env}, stderr=subprocess.PIPE
+    )
+    _relay_stderr(done.stderr)
+    return done.returncode
 
 
 def sync(env: Mapping[str, str] = os.environ) -> int:
     """Run ``plugins sync`` from the lockfile, as its own step before the lint.
 
-    A project with no lockfile needs no packs, so there is nothing to sync.
+    A project with no lockfile needs no plugins, so there is nothing to sync.
     Any failure (the binary exits 2 on a missing or mismatched digest) fails
     the action.
     """

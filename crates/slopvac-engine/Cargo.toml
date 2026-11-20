@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# Counts the block visits that find the prose near each diagram, for tests that check the
+# lookup is linear. Off in ordinary builds, which then carry no shared atomic.
+test-counters = []
+
 [dependencies]
 cap-fs-ext.workspace = true
 cap-std.workspace = true
@@ -21,8 +26,10 @@ rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 similar.workspace = true
+slopvac-comments = { workspace = true }
 slopvac-context = { workspace = true }
 slopvac-diagrams = { workspace = true }
+slopvac-fs = { workspace = true }
 slopvac-model = { workspace = true }
 slopvac-parse = { workspace = true }
 slopvac-pos = { workspace = true }
@@ -39,8 +46,17 @@ rustix = { workspace = true, features = ["fs", "process"] }
 
 [dev-dependencies]
 proptest.workspace = true
+rstest.workspace = true
+# The lint work test counts the steps the section, heading and sentence taggers take.
+slopvac-context = { workspace = true, features = ["work-counters"] }
+# The prose work test counts the paragraphs the diagram signals analyse.
+slopvac-diagrams = { workspace = true, features = ["test-counters"] }
+# The nearby-prose work test counts block visits.
+slopvac-engine = { path = ".", features = ["test-counters"] }
 # The work-counter tests count the indexes a lint builds.
 slopvac-model = { workspace = true, features = ["test-counters"] }
+# The tagging work test counts the tokens visited to map sentences to source.
+slopvac-parse = { workspace = true, features = ["test-counters"] }
 toml.workspace = true
 
 [lints]

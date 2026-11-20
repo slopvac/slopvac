@@ -12,7 +12,8 @@ use crate::engine::{self, EngineLinter, LintRequest, Linter};
 use crate::env::Env;
 use crate::errors::CliError;
 use crate::{
-    exit, generate, init, inspect, lint_settings, logging, offline, output, redact, stdin,
+    exit, generate, init, inspect, lint_settings, logging, offline, output, owners, redact, report,
+    stdin,
 };
 
 /// Settings every command shares, resolved once.
@@ -114,7 +115,11 @@ where
                 redact::path_for_log(err.path(), &cwd),
                 err.problem()
             );
-            let _ = writeln!(err_out, "{}", CliError::new("config-unreadable", message));
+            let _ = writeln!(
+                err_out,
+                "{}",
+                CliError::new(err.code().unwrap_or("config-unreadable"), message)
+            );
             return exit::code(exit::INCOMPLETE);
         }
     };
@@ -126,7 +131,10 @@ where
             offline::resolve(flag, env, config_offline),
             policy.update_check,
         );
-        return match write_stdout(out, slopvac_update::command::version_json(&rt).as_bytes()) {
+        return match write_stdout(
+            out,
+            slopvac_update::command::version_json(&rt, &supported_versions()).as_bytes(),
+        ) {
             Ok(code) => exit::code(code),
             Err(failure) => {
                 let _ = writeln!(err_out, "{failure}");
@@ -141,8 +149,18 @@ where
     } else {
         clap::ColorChoice::Never
     });
+    // `report` takes text that may be a pasted secret, and clap echoes the value it rejects.
+    let is_report = args.iter().skip(1).any(|a| a == "report");
     let matches = match tree.try_get_matches_from(args) {
         Ok(m) => m,
+        Err(err) if err.use_stderr() && is_report => {
+            let _ = writeln!(
+                err_out,
+                "error[usage]: invalid arguments for `slopvac report` ({:?}). Run `slopvac report --help`.",
+                err.kind()
+            );
+            return exit::code(exit::INCOMPLETE);
+        }
         Err(err) if err.use_stderr() => {
             let styled = err.render();
             let text = if early_color {
@@ -214,7 +232,23 @@ fn dispatch(
             // LSP says `exit` without `shutdown` ends the process with status 1.
             slopvac_lsp::Exit::WithoutShutdown => exit::GATE_FAILED,
         }),
-        Some(("migrate", m)) => migrate(m, out),
+        Some(("migrate", m)) => migrate(m, env, out),
+        Some(("report", m)) => {
+            let opener = report::github::SystemOpener;
+            let gh = report::gh::SystemGh::default();
+            report::run(
+                m,
+                &report::Deps {
+                    env,
+                    offline: globals.offline,
+                    cwd: std::env::current_dir().unwrap_or_default(),
+                    opener: &opener,
+                    gh: &gh,
+                },
+                out,
+                err_out,
+            )
+        }
         Some(("completions", m)) => {
             let shell = *m
                 .get_one::<clap_complete::Shell>("shell")
@@ -230,6 +264,13 @@ fn dispatch(
             reject_removed(m, &cli::REMOVED_INSPECT_OPTIONS)?;
             inspect::explain(m, out)
         }
+        Some(("terms", m)) => owners::terms(m, out),
+        Some(("genre", m)) => owners::genre(m, out),
+        Some(("validate", m)) => owners::validate(m, out),
+        Some(("setup", m)) => owners::setup(m, out),
+        Some(("prime", m)) => owners::prime(m, out),
+        Some(("review", m)) => owners::review(m, globals.offline, out),
+        Some(("claims", m)) => owners::claims(m, out),
         Some(("man", m)) => man(m, out),
         Some(("doctor", m)) => doctor(matches, m, env, out),
         Some(("cli-reference", _)) => write_stdout(
@@ -254,7 +295,9 @@ fn doctor(
     env: &dyn Env,
     out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
-    use crate::doctor::stubs::{EnvDirs, LocalConfigSources, LocalUpdateProbe};
+    use crate::doctor::dirs::SharedDirs;
+    use crate::doctor::stubs::LocalConfigSources;
+    use crate::doctor::update::InstalledUpdateProbe;
     let cwd = std::env::current_dir().unwrap_or_default();
     let report = crate::doctor::build(&crate::doctor::Inputs {
         env,
@@ -262,9 +305,9 @@ fn doctor(
         offline_flag: root.get_flag("offline"),
         explicit_config: m.get_one::<PathBuf>("config").map(PathBuf::as_path),
         version: env!("CARGO_PKG_VERSION"),
-        update: &LocalUpdateProbe,
+        update: &InstalledUpdateProbe::new(),
         config: &LocalConfigSources,
-        dirs: &EnvDirs,
+        dirs: &SharedDirs,
         walk_limit: crate::doctor::WALK_LIMIT,
     });
     let text = if m.get_one::<String>("format").is_some_and(|f| f == "json") {
@@ -278,6 +321,26 @@ fn doctor(
     } else {
         exit::INCOMPLETE
     })
+}
+
+/// Lint options that parse but have no wiring to the engine yet.
+const UNWIRED_LINT_FLAGS: [&str; 4] = ["fix", "diff-base", "diff-working-tree", "explain-config"];
+
+/// Refuse a lint option this build cannot honour, before any file is linted.
+///
+/// Running an ordinary lint instead would let `--fix` or a diff scope pass unnoticed.
+fn reject_unwired_lint_flags(m: &ArgMatches) -> Result<(), CliError> {
+    for name in UNWIRED_LINT_FLAGS {
+        let given = m.try_contains_id(name).unwrap_or(false)
+            && m.value_source(name) == Some(clap::parser::ValueSource::CommandLine);
+        if given {
+            return Err(CliError::new(
+                "command-not-wired",
+                format!("`slopvac lint --{name}` is not available in this build yet."),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Fail with the 3.0 pointer when a removed 2.x option was given.
@@ -334,13 +397,20 @@ fn update_runtime(
     )
 }
 
-fn migrate(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
+fn migrate(m: &ArgMatches, env: &dyn Env, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
     let linter = slopvac_migrate::EngineLinter::new(vec![crate::rule_catalog::core()?])
         .map_err(|e| CliError::new(e.code(), e.to_string()))?;
+    // The backup record lives in the per-user cache, outside the project it vouches for.
+    let state = slopvac_fs::cache_dir_with(
+        &|name| env.var(name).ok_or(std::env::VarError::NotPresent),
+        &std::env::home_dir,
+    )
+    .map_err(|e| CliError::new("migrate-io-failed", format!("cache directory: {e}")))?;
     slopvac_migrate::execute(
         m,
         &linter,
         &slopvac_agents::content::steering_block(slopvac_agents::content::BlockKind::Standard),
+        &state,
         out,
     )
     .map(|()| exit::PASS)
@@ -362,9 +432,7 @@ fn write_stdout(out: &mut dyn std::io::Write, bytes: &[u8]) -> Result<u8, CliErr
 /// Start the language server with the rules and the settings of the project config.
 fn lsp(m: &ArgMatches) -> Result<slopvac_lsp::Exit, CliError> {
     let root = std::env::current_dir().unwrap_or_default();
-    let (rules, settings) = engine::project_settings(&root)?;
-    let linter = slopvac_lsp::EngineLinter::new(vec![rules], settings)
-        .map_err(|e| CliError::new("engine-unavailable", e.to_string()))?;
+    let linter = engine::project_linter(&root)?;
     slopvac_lsp::run(m, linter).map_err(|e| CliError::new("lsp-failed", e.to_string()))
 }
 
@@ -410,6 +478,7 @@ fn lint_with(
         Some((plan, bytes)) => (Some(plan), Some(bytes)),
         None => (None, None),
     };
+    reject_unwired_lint_flags(m)?;
     let targets: Vec<PathBuf> = m
         .get_many::<PathBuf>("targets")
         .map(|v| v.cloned().collect())
@@ -455,6 +524,53 @@ fn lint_with(
     } else {
         exit::PASS
     })
+}
+
+/// The versions this build supports, taken from the crates that own them. Keys are the file
+/// names under `schemas/v3`, without the `.schema.json` suffix.
+fn supported_versions() -> slopvac_update::command::Supported {
+    // A config-style file is checked by `slopvac-config`, which owns its version; styles share it.
+    // Both owners declare an `i64`. The assertion below makes `unsigned_abs` exact for them.
+    const _: () = assert!(
+        slopvac_config::version::SUPPORTED > 0 && slopvac_plugins::lock::LOCK_SCHEMA_VERSION > 0,
+        "schema versions are positive"
+    );
+    let config = slopvac_config::version::SUPPORTED.unsigned_abs();
+    let lock = slopvac_plugins::lock::LOCK_SCHEMA_VERSION.unsigned_abs();
+    let report = u64::from(slopvac_model::SchemaVersion::VALUE);
+    slopvac_update::command::Supported {
+        schema_versions: std::collections::BTreeMap::from([
+            (
+                "blocklist",
+                vec![u64::from(slopvac_terms::BLOCKLIST_SCHEMA_VERSION)],
+            ),
+            ("category", vec![report]),
+            ("config", vec![config]),
+            (
+                "doctor-report",
+                vec![u64::from(crate::doctor::SCHEMA_VERSION)],
+            ),
+            (
+                "genre",
+                vec![u64::from(slopvac_context::GENRE_SCHEMA_VERSION)],
+            ),
+            ("lint-report", vec![report]),
+            ("plugins-lock", vec![lock]),
+            ("style", vec![config]),
+            (
+                "tagger",
+                vec![u64::from(slopvac_context::TAGGER_SCHEMA_VERSION)],
+            ),
+            (
+                "terms",
+                vec![u64::from(slopvac_terms::TERMS_SCHEMA_VERSION)],
+            ),
+        ]),
+        slopvac_api: slopvac_model::ApiVersion::SUPPORTED
+            .iter()
+            .map(|v| u64::from(*v))
+            .collect(),
+    }
 }
 
 #[cfg(test)]

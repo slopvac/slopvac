@@ -3,7 +3,7 @@
 //! `behavior:inspection-filters`, `behavior:inspection-formats`).
 //!
 //! Expected counts come from the converted 2.x core files under
-//! `crates/slopvac-rules/tests/fixtures/core-v3`, counted with `jq`, not from
+//! `crates/slopvac-rules/tests/fixtures/core-v3` and the term-casing pack data, not from
 //! the code under test. The rules are embedded by STUB(slopvac-8l4.12.27).
 
 use assert_cmd::Command;
@@ -42,14 +42,57 @@ fn json(args: &[&str]) -> Value {
     serde_json::from_str(&stdout(args)).expect("json output")
 }
 
+/// The category files `slopvac rules` lists: the converted core files and the term-casing
+/// pack, which the binary loads from the engine crate's data file.
+fn category_files() -> Vec<std::path::PathBuf> {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = vec![manifest.join("../slopvac-engine/data/terms-pack.json")];
+    for entry in std::fs::read_dir(manifest.join("../slopvac-rules/tests/fixtures/core-v3"))
+        .expect("fixture dir")
+    {
+        let path = entry.expect("entry").path();
+        if path.extension().is_some_and(|e| e == "json") {
+            files.push(path);
+        }
+    }
+    files
+}
+
+/// The number of categories `slopvac rules` lists.
+fn fixture_categories() -> usize {
+    category_files().len()
+}
+
+/// Every listed rule as `(recommended_for, match kind)`.
+fn fixture_rules() -> Vec<(Vec<String>, String)> {
+    let mut out = Vec::new();
+    for path in category_files() {
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).expect("read"))
+            .expect("fixture json");
+        let genres: Vec<String> = v["recommended_for"]
+            .as_array()
+            .expect("recommended_for")
+            .iter()
+            .map(|g| g.as_str().expect("genre").to_owned())
+            .collect();
+        for rule in v["rules"].as_array().expect("rules") {
+            let kind = rule["match"]["kind"].as_str().expect("kind").to_owned();
+            out.push((genres.clone(), kind));
+        }
+    }
+    out
+}
+
 const CHAT_LEAKAGE: &str = "core:ai-residue.chat-leakage";
 
 #[test]
 fn rules_lists_every_core_rule_with_a_count_line() {
     let text = stdout(&["rules"]);
-    assert_eq!(text.lines().count(), 238, "237 rules and the count line");
+    let n = fixture_rules().len();
+    assert_eq!(text.lines().count(), n + 1, "{n} rules and the count line");
+    let categories = fixture_categories();
     assert!(
-        text.ends_with("237 rule(s) in 26 category(ies)\n"),
+        text.ends_with(&format!("{n} rule(s) in {categories} category(ies)\n")),
         "{text}"
     );
 }
@@ -88,13 +131,29 @@ fn category_may_repeat() {
 #[test]
 fn kind_filter_counts_match_the_data() {
     let v = json(&["rules", "--kind", "judgement", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 68);
+    let expected = fixture_rules()
+        .iter()
+        .filter(|(_, kind)| kind == "judgement")
+        .count();
+    assert_eq!(v["rules"].as_array().unwrap().len(), expected);
+    assert!(
+        v["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == "core:prose-scope.mixed-content-types"),
+        "the mixed content types rule is a judgement rule"
+    );
 }
 
 #[test]
 fn genre_keeps_only_rules_in_categories_recommended_for_it() {
     let v = json(&["rules", "--genre", "consumer", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 232);
+    let expected = fixture_rules()
+        .iter()
+        .filter(|(genres, _)| genres.iter().any(|g| g == "consumer"))
+        .count();
+    assert_eq!(v["rules"].as_array().unwrap().len(), expected);
 }
 
 #[test]
@@ -104,10 +163,13 @@ fn a_genre_no_category_recommends_lists_nothing() {
 }
 
 #[test]
-fn rules_json_has_pack_categories_and_linked_rules() {
+fn rules_json_has_plugin_categories_and_linked_rules() {
     let v = json(&["rules", "--format", "json"]);
-    assert_eq!(v["pack"], "core");
-    assert_eq!(v["categories"].as_array().unwrap().len(), 26);
+    assert_eq!(v["plugin"], "core");
+    assert_eq!(
+        v["categories"].as_array().unwrap().len(),
+        fixture_categories()
+    );
     let rule = &v["rules"][0];
     assert_eq!(rule["id"], CHAT_LEAKAGE);
     assert_eq!(rule["category"], "ai-residue");
@@ -787,4 +849,53 @@ fn an_extends_cycle_through_an_external_file_hides_its_directories() {
     ] {
         assert!(!err.contains(leaked), "{leaked} leaked: {err}");
     }
+}
+
+const TERM_CASING: &str = "terms:terms.casing";
+
+#[test]
+fn a_terms_only_listing_names_the_terms_plugin() {
+    let v = json(&["rules", "--category", "terms", "--format", "json"]);
+    assert_eq!(v["plugin"], "terms");
+    assert_eq!(v["plugins"], serde_json::json!(["terms"]));
+    let rules = v["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0]["plugin"], "terms");
+}
+
+#[test]
+fn a_mixed_listing_names_every_plugin_and_each_entry_its_own() {
+    let v = json(&["rules", "--format", "json"]);
+    assert_eq!(v["plugins"], serde_json::json!(["core", "terms"]));
+    let plugin_of = |list: &str, id: &str| {
+        v[list]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == id)
+            .unwrap_or_else(|| panic!("{id} is listed"))["plugin"]
+            .clone()
+    };
+    assert_eq!(plugin_of("rules", CHAT_LEAKAGE), "core");
+    assert_eq!(plugin_of("rules", TERM_CASING), "terms");
+    assert_eq!(plugin_of("categories", "ai-residue"), "core");
+    assert_eq!(plugin_of("categories", "terms"), "terms");
+}
+
+#[test]
+fn rules_lists_the_term_casing_rule() {
+    let v = json(&["rules", "--format", "json"]);
+    let rule = v["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == TERM_CASING)
+        .expect("the term-casing rule is listed");
+    assert_eq!(rule["category"], "terms");
+}
+
+#[test]
+fn explain_finds_the_term_casing_rule() {
+    let text = stdout(&["explain", TERM_CASING]);
+    assert!(text.starts_with(TERM_CASING), "{text}");
 }

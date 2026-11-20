@@ -20,10 +20,22 @@ Rules of the procedure
 3. A human also checks a seeded sample of the automatic labels. A human verdict
    always wins over judges.
 4. Every change of a label appends a revision. Nothing is overwritten.
+5. A judge's family must match its model id (`model_family`), so rule 1 holds.
+   The recorded model id is the identity; the `--family` flag is only a claim.
+6. A checkpoint is keyed by item, order, model and prompt version. Rows without a
+   model or prompt version, or with another prompt version, are unusable and
+   `merge` ignores them (it does not migrate them); `judge` asks those questions
+   again. When a family has rows from several models, `merge` uses only the
+   model of the newest row.
+   Every judgment records `model` exactly as `--model` gave it, and every
+   automatic label copies those ids into `models` (family -> model id).
+7. `merge` writes no labels while a spot-check item has no human verdict, and
+   exits 2. Sets that hold human verdicts only have nothing to spot-check.
 """
 
 from __future__ import annotations
 
+import csv
 import datetime as dt
 import hashlib
 import json
@@ -37,7 +49,7 @@ from pathlib import Path
 from typing import Any
 
 from . import corpuslib as lib
-from . import runner
+from . import models, procs, runner
 from .splits import split_of
 
 LABELS_DIR = lib.EVALS_DIR / "labels"
@@ -72,6 +84,73 @@ OPTION_TEXT = {
     "fp": "The flagged text is not an instance, or the pattern is acceptable here; the rule is wrong.",
     "unsure": "The text alone does not settle it.",
 }
+
+
+# Patterns for the vendor named inside a model id. A model id that matches no
+# vendor, or more than one, has no usable identity and fails the check.
+FAMILY_PATTERNS = {
+    "anthropic": r"claude|anthropic",
+    "openai": r"gpt|openai|(?<![a-z0-9])o[134](?![a-z0-9])",
+    "google": r"gemini|gemma",
+    "meta": r"llama",
+    "mistral": r"mistral|mixtral|codestral",
+    "amazon": r"(?<![a-z])nova(?![a-z])|titan",
+    "deepseek": r"deepseek",
+    "qwen": r"qwen",
+}
+
+
+def model_family(model: str) -> str | None:
+    """The one vendor family a model id names, or None when it names none or several."""
+    found = [
+        fam for fam, pat in FAMILY_PATTERNS.items() if re.search(pat, model.lower())
+    ]
+    return found[0] if len(found) == 1 else None
+
+
+def check_identity(family: str, model: str) -> None:
+    """Raise unless `model` names `family`; the two-family rule depends on it."""
+    actual = model_family(model)
+    if actual != family:  # exact: a second spelling would fork the files and ledger
+        seen = actual or "no single known family"
+        raise runner.EngineError(
+            f"judge family {family!r} does not match model {model!r} ({seen})"
+        )
+
+
+def completed(
+    rows: Iterable[Mapping[str, Any]], model: str, prompt_version: str | None = None
+) -> set[tuple[str, str]]:
+    """(item, order) pairs already judged by this model under this prompt version."""
+    version = PROMPT_VERSION if prompt_version is None else prompt_version
+    return {
+        (r["item"], r["order"])
+        for r in rows
+        if r.get("model") == model and r.get("prompt_version") == version
+    }
+
+
+def usable_judgments(
+    rows: Sequence[Mapping[str, Any]],
+) -> tuple[list[Mapping[str, Any]], int]:
+    """Keep rows that merge may trust, in order, and count the rest.
+
+    A row is usable with a model, the current prompt version and a family that
+    matches the model. Per family, only the newest row's model counts.
+    """
+    fresh = [
+        r for r in rows if r.get("model") and r.get("prompt_version") == PROMPT_VERSION
+    ]
+    for r in fresh:
+        if not isinstance(r.get("model"), str) or not isinstance(r.get("family"), str):
+            raise runner.EngineError(
+                "a recorded judgment has a family or model that is not text: "
+                f"family={r.get('family')!r}, model={r.get('model')!r}"
+            )
+        check_identity(r["family"], r["model"])
+    newest = {r["family"]: r["model"] for r in fresh}
+    usable = [r for r in fresh if r["model"] == newest[r["family"]]]
+    return usable, len(rows) - len(usable)
 
 
 def today() -> str:
@@ -246,13 +325,18 @@ def judge_items(
     notes: Mapping[str, str],
     done: Iterable[tuple[str, str]] = (),
     sink: Callable[[dict[str, Any]], None] | None = None,
+    budget: models.Budget | None = None,
 ) -> list[dict[str, Any]]:
     """Judge every pending (item, order) pair. `ask` maps a prompt to an answer.
+
+    With a `budget`, each call is charged before it runs. `models.BudgetExceeded`
+    then stops the run, and the rows already passed to `sink` stay.
 
     `sink` receives each judgment as soon as it exists, so a caller can persist it
     before the next paid call. A run that stops half way then resumes without
     asking the same question twice.
     """
+    check_identity(family, model)
     docs = {d["id"]: d for d in manifest["documents"]}
     skip = set(done)
     texts: dict[str, str] = {}
@@ -272,12 +356,32 @@ def judge_items(
                 "model": model,
                 "order": order,
                 "prompt_version": PROMPT_VERSION,
-                "verdict": parse_answer(ask(prompt), letters),
+                "verdict": parse_answer(
+                    _charged_ask(ask, prompt, budget, model), letters
+                ),
             }
             if sink:
                 sink(row)
             rows.append(row)
     return rows
+
+
+def _charged_ask(
+    ask: Callable[[str], str],
+    prompt: str,
+    budget: models.Budget | None,
+    model: str,
+) -> str:
+    if budget is None:
+        return ask(prompt)
+    number = budget.reserve(model)
+    try:
+        answer = ask(prompt)
+    except BaseException:
+        budget.finish(number, "failed", model)
+        raise
+    budget.finish(number, "ok", model)
+    return answer
 
 
 def command_asker(command: str) -> Callable[[str], str]:
@@ -289,7 +393,7 @@ def command_asker(command: str) -> Callable[[str], str]:
         )
         if proc.returncode != 0:
             raise runner.EngineError(
-                f"provider command exited {proc.returncode}: {proc.stderr[:300]}"
+                f"provider command exited {proc.returncode}: {procs.redact(proc.stderr)[:300]}"
             )
         return proc.stdout
 
@@ -341,6 +445,8 @@ def merge(
     auto: list[dict[str, Any]] = []
     pairs: list[tuple[str, str]] = []
     families = sorted({j["family"] for j in judgments})
+    # Exact model ids as recorded in the judgments, copied to automatic labels.
+    models = {j["family"]: j.get("model") for j in judgments}
     for item in items:
         verdicts = {
             fam: family_verdict(by_item[item["id"]].get(fam, [])) for fam in families
@@ -351,25 +457,28 @@ def merge(
                 pairs.append((a, b))
         base = {k: item[k] for k in ("doc", "rule", "line", "split")}
         base["item"] = item["id"]
-        if item["id"] in people:
-            h = people[item["id"]]
-            labels.append({**base, "label": h["label"], "source": "human"})
-            continue
         agree = (
             len(families) >= 2
             and len(set(verdicts.values())) == 1
             and next(iter(verdicts.values())) in ("tp", "fp")
         )
         if agree:
-            row = {**base, "label": next(iter(verdicts.values())), "source": "judges"}
-            labels.append(row)
-            auto.append(row)
+            # The spot-check sample is drawn from every judged agreement, also
+            # after a human re-checked it, so the sample stays the same.
+            auto.append({**base, "label": next(iter(verdicts.values()))})
+        if item["id"] in people:
+            h = people[item["id"]]
+            labels.append({**base, "label": h["label"], "source": "human"})
+            continue
+        if agree:
+            labels.append({**auto[-1], "source": "judges", "models": dict(models)})
         else:
             disputes.append({**base, "verdicts": verdicts})
     rng = random.Random(f"{seed}|spot")
     spot = sorted((a["item"] for a in auto), key=lambda i: (rng.random(), i))[
         : round(len(auto) * spot_rate)
     ]
+    pending = [i for i in spot if i not in people]
     stats = {
         "items": len(items),
         "labelled": len(labels),
@@ -388,7 +497,163 @@ def merge(
             )
         ),
     }
-    return {"labels": labels, "disputes": disputes, "spot_check": spot, "stats": stats}
+    return {
+        "labels": labels,
+        "disputes": disputes,
+        "spot_check": spot,
+        "spot_pending": pending,
+        "stats": stats,
+    }
+
+
+# --- the human review worksheet ---------------------------------------------------
+
+WORKSHEET_HEAD = (
+    "queue",
+    "item",
+    "rule",
+    "doc",
+    "line",
+    "flagged text",
+    "context",
+    "rule note",
+)
+WORKSHEET_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def neutralize_cell(value: str) -> str:
+    """Stop a spreadsheet reading a cell as a formula (CWE-1236) with a leading quote."""
+    return "'" + value if value.startswith(WORKSHEET_FORMULA_STARTS) else value
+
+
+def restore_cell(value: str) -> str:
+    """Undo `neutralize_cell`: drop the quote only where it shields a formula start."""
+    if value.startswith("'") and value[1:].startswith(WORKSHEET_FORMULA_STARTS):
+        return value[1:]
+    return value
+
+
+def worksheet_rows(
+    items: Sequence[Mapping[str, Any]],
+    judgments: Sequence[Mapping[str, Any]],
+    human: Sequence[Mapping[str, Any]],
+    *,
+    doc_text: Callable[[str], str],
+    notes: Mapping[str, str],
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Rows for every item that still needs a human verdict, and the family names.
+
+    Both queues come from `merge` on the inputs, not from files that `label merge`
+    writes only after a clean run. Disputes come first, then rule, then document.
+    """
+    merged = merge(items, judgments, human)
+    by_id = {i["id"]: i for i in items}
+    families = sorted({j["family"] for j in judgments})
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for j in judgments:
+        grouped[(j["item"], j["family"])].append(j)
+    queued = [("dispute", d["item"]) for d in merged["disputes"]]
+    queued += [("spot", i) for i in merged["spot_pending"]]
+    rows: list[dict[str, str]] = []
+    for queue, iid in queued:
+        item = by_id[iid]
+        row = {
+            "queue": queue,
+            "item": iid,
+            "rule": item["rule"],
+            "doc": item["doc"],
+            "line": str(item["line"]),
+            "flagged text": item["text"],
+            "context": context_for(doc_text(item["doc"]), item["line"])[2],
+            "rule note": notes.get(item["rule"], ""),
+        }
+        for fam in families:
+            row[f"judge {fam}"] = family_verdict(grouped[(iid, fam)])
+        rows.append(row)
+    rows.sort(
+        key=lambda r: (r["queue"] != "dispute", r["rule"], r["doc"], int(r["line"]))
+    )
+    return families, rows
+
+
+def write_worksheet(
+    path: Path, families: Sequence[str], rows: Sequence[Mapping[str, str]]
+) -> None:
+    head = [*WORKSHEET_HEAD, *(f"judge {f}" for f in families), "verdict", "reason"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        out = csv.DictWriter(fh, fieldnames=head, restval="")
+        out.writeheader()
+        for row in rows:
+            out.writerow({k: neutralize_cell(v) for k, v in row.items()})
+
+
+def worksheet_verdicts(
+    path: Path,
+    known_items: Iterable[str],
+    existing: Sequence[Mapping[str, Any]],
+    *,
+    reviewer: str,
+    date: str,
+) -> list[dict[str, Any]]:
+    """Validate every filled row and return the human rows to append.
+
+    Raises ValueError naming the spreadsheet row (the header is row 1) on the first
+    problem, so a caller writes nothing. Rows with a blank verdict are skipped, and
+    so is a row that repeats a human entry with the same item, reviewer, verdict
+    and reason.
+    """
+    known = set(known_items)
+    seen = {
+        (h["item"], h.get("reviewer"), h["label"], h.get("reason")) for h in existing
+    }
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        reader = csv.reader(fh, strict=True)
+        number = 1
+        try:
+            header = next(reader, [])
+            if len(set(header)) != len(header):
+                dupes = sorted({h for h in header if header.count(h) > 1})
+                raise ValueError(f"row 1: duplicate columns {', '.join(dupes)}")
+            missing = {"item", "verdict", "reason"} - set(header)
+            if missing:
+                raise ValueError(
+                    f"row 1: the worksheet has no {', '.join(sorted(missing))} column"
+                )
+            at = {name: header.index(name) for name in ("item", "verdict", "reason")}
+            out: list[dict[str, Any]] = []
+            for fields in reader:
+                number += 1
+                if not fields:  # a blank line, as spreadsheets leave at the end
+                    continue
+                if len(fields) != len(header):
+                    raise ValueError(
+                        f"row {number}: {len(fields)} fields, the header has {len(header)}"
+                    )
+                verdict = restore_cell(fields[at["verdict"]]).strip().lower()
+                if not verdict:
+                    continue
+                item = restore_cell(fields[at["item"]]).strip()
+                reason = restore_cell(fields[at["reason"]])
+                if item not in known:
+                    raise ValueError(f"row {number}: unknown item {item!r}")
+                try:
+                    human = record_human(
+                        item=item,
+                        label=verdict,
+                        reviewer=reviewer,
+                        reason=reason,
+                        date=date,
+                    )
+                except ValueError as exc:
+                    raise ValueError(f"row {number}: {exc}") from None
+                key = (item, reviewer, verdict, reason)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(human)
+        except csv.Error as exc:
+            raise ValueError(f"row {number + 1}: malformed CSV ({exc})") from None
+    return out
 
 
 def underlabelled(

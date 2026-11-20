@@ -158,6 +158,25 @@ impl std::fmt::Debug for ReadHook {
     }
 }
 
+/// Test seam: called by [`Plugin::shutdown`] once the leader is reaped,
+/// just before it starts the wait for the output readers.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct DrainHook(Arc<dyn Fn() + Send + Sync>);
+
+impl DrainHook {
+    /// Wrap `f`.
+    pub fn new(f: impl Fn() + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+}
+
+impl std::fmt::Debug for DrainHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DrainHook")
+    }
+}
+
 /// What the host offers and proposes.
 #[derive(Debug, Clone)]
 pub struct HostConfig {
@@ -201,6 +220,9 @@ pub struct HostConfig {
     /// Test seam for the standard error reader; production code never sets it.
     #[doc(hidden)]
     pub stderr_read_hook: Option<ReadHook>,
+    /// Test seam for the start of the shutdown drain; production code never sets it.
+    #[doc(hidden)]
+    pub drain_hook: Option<DrainHook>,
 }
 
 impl Default for HostConfig {
@@ -222,6 +244,7 @@ impl Default for HostConfig {
             launcher_sweep: Duration::from_secs(2),
             limits_pause: Duration::ZERO,
             stderr_read_hook: None,
+            drain_hook: None,
         }
     }
 }
@@ -313,6 +336,7 @@ struct Shared {
     caps: RunCaps,
     budget: Arc<RunBudget>,
     stderr_read_hook: Option<ReadHook>,
+    drain_hook: Option<DrainHook>,
     exit_timeout: Duration,
     stream: Activity,
 }
@@ -1070,7 +1094,7 @@ impl Plugin {
         });
         let result = match conn.request("initialize", Some(params), cfg.timeouts.initialize, true) {
             Ok(v) => v,
-            Err(PluginError::Rpc(e)) if e.slopvac_code == "protocol-version-unsupported" => {
+            Err(PluginError::Rpc(e)) if e.code_name() == "protocol-version-unsupported" => {
                 return Err(PluginError::ProtocolVersionUnsupported {
                     host: format!("{MIN_PROTOCOL_VERSION}..={PROTOCOL_VERSION}"),
                     plugin: e
@@ -1209,6 +1233,9 @@ impl Plugin {
         shared.group.kill();
         // The waiter reaps a killed leader; its status belongs in the report.
         let _ = shared.group.wait_done(REAP_WAIT);
+        if let Some(hook) = &shared.drain_hook {
+            (hook.0)();
+        }
         // Output that is still in the pipes counts against the caps, so read
         // both streams to the end before the verdict.
         // A reader that is still running when the wait ends has not finished
@@ -1360,7 +1387,7 @@ fn limit_hit(_status: ExitStatus, _caps: &RunCaps) -> Option<String> {
         reason = "only the Unix launcher path can fail"
     )
 )]
-fn plugin_command(spec: &PluginSpec, cfg: &HostConfig) -> io::Result<Command> {
+fn plugin_command(spec: &PluginSpec, cfg: &HostConfig) -> Result<Command, PluginError> {
     let env = [("PATH", spec.path_env.as_str()), ("LANG", "C.UTF-8")]
         .into_iter()
         .chain(spec.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
@@ -1373,7 +1400,12 @@ fn plugin_command(spec: &PluginSpec, cfg: &HostConfig) -> io::Result<Command> {
             file_size: c.file_size,
             memory: c.memory,
         };
-        let launcher = cfg.launcher.path()?;
+        let launcher = cfg.launcher.path().map_err(|e| match e {
+            crate::launch::LaunchError::NotInstalled => PluginError::LauncherNotInstalled,
+            e @ crate::launch::LaunchError::CurrentExe(_) => {
+                PluginError::SpawnFailed(format!("{}: {e}", spec.name))
+            }
+        })?;
         Ok(crate::launch::command(
             &launcher,
             limits,
@@ -1397,7 +1429,10 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         error: PluginError::SpawnFailed(format!("{}: {e}", spec.name)),
         teardown: Teardown::default(),
     };
-    let mut cmd = plugin_command(spec, cfg).map_err(spawn_failed)?;
+    let mut cmd = plugin_command(spec, cfg).map_err(|error| StartError {
+        error,
+        teardown: Teardown::default(),
+    })?;
     cmd.current_dir(&spec.cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1436,6 +1471,7 @@ fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
         caps: cfg.caps,
         budget: Arc::clone(&cfg.budget),
         stderr_read_hook: cfg.stderr_read_hook.clone(),
+        drain_hook: cfg.drain_hook.clone(),
         exit_timeout: cfg.timeouts.exit,
         stream: Activity::new(),
     });

@@ -16,11 +16,11 @@ mod source;
 mod stack;
 mod types;
 
-pub use detect::{Evidence, Suggestion, detect_house_styles};
+pub use detect::{Detection, Evidence, SkippedFile, Suggestion, detect_house_styles};
 pub use error::StyleError;
 pub use reference::reference_pages;
 pub use resolve::{Conflict, Resolution, resolve};
 pub use shape::Style;
-pub use source::{BuiltinSource, DirSource, MapSource, StyleSource};
+pub use source::{BuiltinSource, DirSource, MAX_STYLE_BYTES, MapSource, StyleSource};
 pub use stack::StylePresets;
 pub use types::{Budget, CategoryDials, CategoryPatch, Level, Terms};

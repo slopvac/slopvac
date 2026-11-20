@@ -165,12 +165,14 @@ fn logging_emits_on_stderr_and_leaves_stdout_unchanged() {
 }
 
 #[test]
-fn unwired_commands_exit_2_naming_the_owner() {
+fn unwired_commands_exit_2_without_naming_anyone() {
     slopvac()
-        .arg("packs")
+        .arg("onboard")
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("not available in this build yet"));
+        .stderr(predicate::str::contains(
+            "is not available in this build yet.",
+        ));
 }
 
 #[test]
@@ -237,7 +239,7 @@ fn failures_carry_stable_bracketed_codes() {
             vec!["lint".into(), "--no-vale".into(), "x".into()],
             "error[removed-option]: ",
         ),
-        (vec!["packs".into()], "error[command-not-wired]: "),
+        (vec!["onboard".into()], "error[command-not-wired]: "),
         (vec!["lint".into(), "--bogus".into()], "error[usage]: "),
     ];
     for (args, prefix) in cases {
@@ -381,6 +383,54 @@ fn cache_with_newer_release() -> tempfile::TempDir {
     dir
 }
 
+/// The `--offline --version --json` document, parsed.
+fn offline_version_document() -> serde_json::Value {
+    let cache = tempfile::tempdir().unwrap();
+    let out = slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .args(["--offline", "--version", "--json"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&out).unwrap()
+}
+
+#[test]
+fn version_json_lists_supported_versions_from_the_owning_crates() {
+    let doc = offline_version_document();
+    assert_eq!(
+        doc["schema_versions"],
+        serde_json::json!({
+            "blocklist": [slopvac_terms::BLOCKLIST_SCHEMA_VERSION],
+            "category": [slopvac_model::SchemaVersion::VALUE],
+            "config": [slopvac_config::version::SUPPORTED],
+            "doctor-report": [slopvac_cli::doctor::SCHEMA_VERSION],
+            "genre": [slopvac_context::GENRE_SCHEMA_VERSION],
+            "lint-report": [slopvac_model::SchemaVersion::VALUE],
+            "plugins-lock": [slopvac_plugins::lock::LOCK_SCHEMA_VERSION],
+            "style": [slopvac_config::version::SUPPORTED],
+            "tagger": [slopvac_context::TAGGER_SCHEMA_VERSION],
+            "terms": [slopvac_terms::TERMS_SCHEMA_VERSION],
+        })
+    );
+    assert_eq!(
+        doc["slopvac_api"],
+        serde_json::json!(slopvac_model::ApiVersion::SUPPORTED)
+    );
+}
+
+/// insta: the whole document, with the two values that vary by build and install redacted.
+/// Review changes with `cargo insta review`.
+#[test]
+fn version_json_snapshot() {
+    let mut doc = offline_version_document();
+    doc["version"] = "[version]".into();
+    doc["install_method"] = "[method]".into();
+    insta::assert_json_snapshot!(doc);
+}
+
 fn version_json(cmd: &mut Command, cache: &std::path::Path) -> serde_json::Value {
     let out = cmd
         .env("SLOPVAC_CACHE_DIR", cache)
@@ -457,15 +507,15 @@ fn version_json_accepts_flags_in_any_order() {
 #[test]
 fn unreadable_project_config_exits_two_before_any_command_runs() {
     // A directory, an oversize file and (on unix) a FIFO all fail the same way and never hang.
-    let mut cases: Vec<(&str, tempfile::TempDir)> = Vec::new();
+    let mut cases: Vec<(&str, &str, tempfile::TempDir)> = Vec::new();
 
     let dir_case = tempfile::tempdir().unwrap();
     fs::create_dir(dir_case.path().join("slopvac.toml")).unwrap();
-    cases.push(("not a regular file", dir_case));
+    cases.push(("config-unreadable", "not a regular file", dir_case));
 
     let big = tempfile::tempdir().unwrap();
     fs::write(big.path().join("slopvac.toml"), vec![b'#'; 1024 * 1024 + 1]).unwrap();
-    cases.push(("larger than 1048576 bytes", big));
+    cases.push(("update-policy-too-large", "larger than 1048576 bytes", big));
 
     #[cfg(unix)]
     {
@@ -475,10 +525,10 @@ fn unreadable_project_config_exits_two_before_any_command_runs() {
             .status()
             .expect("mkfifo");
         assert!(status.success());
-        cases.push(("not a regular file", fifo_case));
+        cases.push(("config-unreadable", "not a regular file", fifo_case));
     }
 
-    for (message, dir) in &cases {
+    for (code, message, dir) in &cases {
         for args in [
             &["--version", "--json"][..],
             &["self", "update"],
@@ -490,7 +540,7 @@ fn unreadable_project_config_exits_two_before_any_command_runs() {
                 .args(args)
                 .assert()
                 .code(2)
-                .stderr(predicate::str::contains("error[config-unreadable]"))
+                .stderr(predicate::str::contains(format!("error[{code}]")))
                 .stderr(predicate::str::contains(*message));
         }
     }

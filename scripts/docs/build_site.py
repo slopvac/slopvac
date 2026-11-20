@@ -13,7 +13,7 @@ author-side ``$id`` prefix. Publishing rewrites that prefix to the configured
 site URL, so changing ``site_url`` (for example for a custom domain) needs no
 edit to the committed schemas.
 
-Rules, schemas, the plugin protocol and pack manifest references, the pack
+Rules, schemas, the plugin protocol and plugin manifest references, the plugin
 pages, styles, terms and genres come from real data. The styles, terms and
 genres pages come from each crate's ``reference`` example, which the builder
 runs through cargo.
@@ -49,9 +49,10 @@ from mdtext import text as _text
 ROOT = Path(__file__).resolve().parents[2]
 RULES_DIR = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac" / "rules"
 SCHEMAS_DIR = ROOT / "schemas" / "v3"
+REMOVED_RULES_FILE = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
 DEFAULT_OUT = ROOT / "build" / "site-src"
-# Pack manifests to document. The example plugin pack is the only committed one
-# until the pack loader and the bundled core pack exist.
+# Plugin manifests to document. The example plugin is the only committed one
+# until the plugin loader and the bundled core plugin exist.
 PACKS_DIR = ROOT / "packages" / "slopvac-plugin" / "examples"
 CONTRACT_DIR = ROOT / "docs" / "contract"
 SITE_CONFIG = ROOT / "docs" / "site.toml"
@@ -178,12 +179,26 @@ def load_categories(rules_dir: Path = RULES_DIR) -> list[dict]:
     return [doc for text in texts for doc in yaml.safe_load_all(text) if doc]
 
 
+def removed_rules() -> frozenset[str]:
+    """The 2.x rules that 3.0 does not ship, as ``<category>.<rule>``."""
+    text = REMOVED_RULES_FILE.read_text(encoding="utf-8")
+    return frozenset(entry["id"] for entry in tomllib.loads(text)["rules"])
+
+
 def generate_rules(rules_dir: Path = RULES_DIR) -> Pages:
     # STUB(slopvac-8l4.19.8): reads the Python reference rule YAML; swap for the slopvac-rules loader.
     pages: Pages = {}
     index = ["# Rules", "", "One page per rule, grouped by category.", ""]
+    removed = removed_rules()
     for category in sorted(load_categories(rules_dir), key=lambda c: c["id"]):
-        rules = sorted(category.get("rules", []), key=lambda r: r["id"])
+        rules = sorted(
+            (
+                r
+                for r in category.get("rules", [])
+                if f"{category['id']}.{r['id']}" not in removed
+            ),
+            key=lambda r: r["id"],
+        )
         cat_lines = [
             f"# {_text(category['title'])}",
             "",
@@ -269,6 +284,10 @@ def generate_cli() -> Pages:
     return rust_reference("slopvac", "cli-reference")
 
 
+def generate_error_codes() -> Pages:
+    return rust_reference("slopvac")
+
+
 class _ConfigSchema:
     """Walks ``config.schema.json`` into one row per key path."""
 
@@ -292,7 +311,10 @@ class _ConfigSchema:
         """The node and every schema merged into it by ``allOf`` or ``then``."""
         node = self.resolve(node)
         parts = [node]
-        for sub in [*node.get("allOf", []), *([node["then"]] if "then" in node else [])]:
+        for sub in [
+            *node.get("allOf", []),
+            *([node["then"]] if "then" in node else []),
+        ]:
             parts += self._parts(sub)
         return parts
 
@@ -307,7 +329,9 @@ class _ConfigSchema:
 
     @staticmethod
     def literal(value: object) -> str:
-        return code(value if isinstance(value, str) else json.dumps(value), in_table=True)
+        return code(
+            value if isinstance(value, str) else json.dumps(value), in_table=True
+        )
 
     def kind(self, node: dict) -> str:
         node = self.resolve(node)
@@ -388,7 +412,9 @@ def generate_config(schemas_dir: Path = SCHEMAS_DIR) -> Pages:
     for path, kind, default, description in _ConfigSchema(config, common).rows(config):
         key, _, note = path.partition(" ")
         label = code(key, in_table=True) + (" " + note if note else "")
-        lines.append(f"| {label} | {kind} | {default} | {untrusted_cell(description)} |")
+        lines.append(
+            f"| {label} | {kind} | {default} | {untrusted_cell(description)} |"
+        )
     return {"config/index.md": "\n".join(lines) + "\n"}
 
 
@@ -398,9 +424,10 @@ SECTIONS = (
     ("Genres", "genres/index.md"),
     ("Built-in terms", "terms/index.md"),
     ("Plugin protocol", "plugins/protocol.md"),
-    ("Pack manifest", "plugins/manifest.md"),
-    ("Packs", "plugins/packs/index.md"),
+    ("Plugin manifest", "plugins/manifest.md"),
+    ("Bundled plugins", "plugins/bundled/index.md"),
     ("Command line", "cli/index.md"),
+    ("Error codes", "reference/error-codes.md"),
     ("Configuration", "config/index.md"),
     ("Schemas", "schemas/index.md"),
 )
@@ -431,6 +458,7 @@ def build(
         generate_genres(),
         plugin_pages.generate_packs(schemas, packs_dir),
         generate_cli(),
+        generate_error_codes(),
         generate_config(schemas_dir),
         {"index.md": index_page()},
     )
@@ -501,7 +529,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=SITE_CONFIG)
     parser.add_argument("--rules-dir", type=Path, default=RULES_DIR)
     parser.add_argument("--schemas-dir", type=Path, default=SCHEMAS_DIR)
-    parser.add_argument("--packs-dir", type=Path, default=PACKS_DIR)
+    parser.add_argument("--plugins-dir", type=Path, default=PACKS_DIR)
     parser.add_argument("--contract-dir", type=Path, default=CONTRACT_DIR)
     parser.add_argument(
         "--check",
@@ -517,7 +545,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     site = load_site(args.config)
     pages = build(
-        site, args.rules_dir, args.schemas_dir, args.packs_dir, args.contract_dir
+        site, args.rules_dir, args.schemas_dir, args.plugins_dir, args.contract_dir
     )
     problems = broken_links(pages) + schema_id_problems(pages, site)
     if args.check:

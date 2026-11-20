@@ -11,7 +11,8 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::TermsError;
+use crate::messages::{TermsPhrase, TermsText};
+use crate::{EntryProblem, TermsError};
 
 /// Parts of speech a blocklist entry can name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -35,20 +36,21 @@ pub enum Pos {
 }
 
 impl Pos {
-    /// Parse the abbreviations 2.x accepted, including spaCy-style tags.
+    /// Parse a part of speech exactly as the blocklist schema lists it.
+    ///
+    /// The match is case-sensitive and does not trim: the lowercase short and
+    /// long forms, and the uppercase spaCy tags.
     #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
-        let raw = raw.trim();
-        let lower = raw.to_ascii_lowercase();
-        Some(match lower.as_str() {
-            "n" | "noun" => Self::Noun,
-            "v" | "verb" => Self::Verb,
-            "adj" | "adjective" => Self::Adjective,
-            "adv" | "adverb" => Self::Adverb,
-            "prep" | "preposition" | "adp" => Self::Preposition,
-            "conj" | "conjunction" | "cconj" | "sconj" => Self::Conjunction,
-            "pron" | "pronoun" => Self::Pronoun,
-            "art" | "article" | "det" => Self::Article,
+        Some(match raw {
+            "n" | "noun" | "NOUN" => Self::Noun,
+            "v" | "verb" | "VERB" => Self::Verb,
+            "adj" | "adjective" | "ADJ" => Self::Adjective,
+            "adv" | "adverb" | "ADV" => Self::Adverb,
+            "prep" | "preposition" | "ADP" => Self::Preposition,
+            "conj" | "conjunction" | "CCONJ" | "SCONJ" => Self::Conjunction,
+            "pron" | "pronoun" | "PRON" => Self::Pronoun,
+            "art" | "article" | "DET" => Self::Article,
             _ => return None,
         })
     }
@@ -94,10 +96,13 @@ struct RawEntry {
     other: BTreeMap<String, serde::de::IgnoredAny>,
 }
 
+/// The only `schema_version` of a blocklist file this crate reads.
+pub const BLOCKLIST_SCHEMA_VERSION: u32 = 3;
+
 /// Require `schema_version = 3`. A 2.x blocklist has none.
 fn check_version(path: &str, declared: Option<&serde_json::Value>) -> Result<(), TermsError> {
     match declared {
-        Some(found) if found.as_u64() == Some(3) => Ok(()),
+        Some(found) if found.as_u64() == Some(u64::from(BLOCKLIST_SCHEMA_VERSION)) => Ok(()),
         Some(found) => Err(TermsError::SchemaVersion {
             path: path.to_owned(),
             found: found.to_string(),
@@ -108,7 +113,46 @@ fn check_version(path: &str, declared: Option<&serde_json::Value>) -> Result<(),
     }
 }
 
+/// Read the text of a blocklist file into its raw records.
+fn read_raw(path: &str, format: &str, text: &str) -> Result<Raw, TermsError> {
+    let parse_err = |message: String| TermsError::Parse {
+        path: path.to_owned(),
+        message,
+    };
+    let raw: Raw = match format {
+        "toml" => toml::from_str(text).map_err(|e| parse_err(e.to_string()))?,
+        "json" => serde_json::from_str(text).map_err(|e| parse_err(e.to_string()))?,
+        // `no_schema` rejects unquoted numbers and booleans in string fields,
+        // as TOML and JSON do.
+        "yml" | "yaml" => {
+            let mut options = serde_saphyr::Options::default();
+            options.no_schema = true;
+            // `n` and `v` are part-of-speech codes, not YAML 1.1 booleans.
+            options.strict_booleans = true;
+            serde_saphyr::from_str_with_options(text, options)
+                .map_err(|e| parse_err(e.to_string()))?
+        }
+        other => {
+            return Err(parse_err(
+                TermsText::BadSuffix {
+                    suffix: other.to_owned(),
+                }
+                .to_string(),
+            ));
+        }
+    };
+    Ok(raw)
+}
+
 impl Blocklist {
+    /// Add the entries of `other` that this blocklist does not have. An entry for the same word
+    /// and part of speech that is already here wins, so list the most specific file first.
+    pub fn merge(&mut self, other: Self) {
+        for (key, entry) in other.entries {
+            self.entries.entry(key).or_insert(entry);
+        }
+    }
+
     /// Number of entries.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -137,11 +181,17 @@ impl Blocklist {
     /// # Errors
     /// Unreadable or malformed files and invalid entries.
     pub fn load(path: &Path) -> Result<Self, TermsError> {
-        let shown = path.display().to_string();
-        let text = std::fs::read_to_string(path).map_err(|e| TermsError::Io {
-            path: shown.clone(),
-            message: e.to_string(),
-        })?;
+        Self::load_labeled(path, &path.display().to_string())
+    }
+
+    /// Like [`Blocklist::load`], naming the file `shown` in errors. Pass a label that is
+    /// relative to the project root, so an error never carries an absolute path.
+    ///
+    /// # Errors
+    /// As [`Blocklist::load`].
+    pub fn load_labeled(path: &Path, shown: &str) -> Result<Self, TermsError> {
+        let shown = shown.to_owned();
+        let text = crate::read::read_existing(path, &shown, crate::MAX_TERMS_FILE_BYTES)?;
         let suffix = path
             .extension()
             .and_then(|e| e.to_str())
@@ -155,29 +205,7 @@ impl Blocklist {
     /// # Errors
     /// As [`Blocklist::load`].
     pub fn parse(path: &str, format: &str, text: &str) -> Result<Self, TermsError> {
-        let parse_err = |message: String| TermsError::Parse {
-            path: path.to_owned(),
-            message,
-        };
-        let raw: Raw = match format {
-            "toml" => toml::from_str(text).map_err(|e| parse_err(e.to_string()))?,
-            "json" => serde_json::from_str(text).map_err(|e| parse_err(e.to_string()))?,
-            // `no_schema` rejects unquoted numbers and booleans in string fields,
-            // as TOML and JSON do.
-            "yml" | "yaml" => {
-                let mut options = serde_saphyr::Options::default();
-                options.no_schema = true;
-                // `n` and `v` are part-of-speech codes, not YAML 1.1 booleans.
-                options.strict_booleans = true;
-                serde_saphyr::from_str_with_options(text, options)
-                    .map_err(|e| parse_err(e.to_string()))?
-            }
-            other => {
-                return Err(parse_err(format!(
-                    "unrecognized suffix `{other}`; use .toml, .json, .yml or .yaml"
-                )));
-            }
-        };
+        let raw = read_raw(path, format, text)?;
         check_version(path, raw.schema_version.as_ref())?;
         let Some(records) = raw.entries else {
             let named = raw
@@ -186,13 +214,14 @@ impl Blocklist {
                 .map(|k| format!("`{k}`"))
                 .collect::<Vec<_>>();
             let named = if named.is_empty() {
-                "nothing".to_owned()
+                TermsPhrase::DefinesNothing.as_static().to_owned()
             } else {
                 named.join(", ")
             };
-            return Err(parse_err(format!(
-                "no `entries` array; it defines {named}. Each word is an `[[entries]]` table"
-            )));
+            return Err(TermsError::Parse {
+                path: path.to_owned(),
+                message: TermsText::MissingEntries { named }.to_string(),
+            });
         };
         let unknown = |key: String| TermsError::UnknownKey {
             path: path.to_owned(),
@@ -201,9 +230,11 @@ impl Blocklist {
         if let Some(key) = raw.other.keys().find(|k| !k.starts_with("x-")) {
             return Err(unknown(key.clone()));
         }
-        let entry_err = |message: String| TermsError::Entry {
+        let entry_err = |problem: EntryProblem, number: usize, message: String| TermsError::Entry {
             path: path.to_owned(),
             message,
+            number: Some(number),
+            problem,
         };
         let mut entries = BTreeMap::new();
         let mut at: BTreeMap<(String, Pos), usize> = BTreeMap::new();
@@ -214,26 +245,49 @@ impl Blocklist {
             }
             let word = record.word.unwrap_or_default().trim().to_lowercase();
             if word.is_empty() {
-                return Err(entry_err(format!("entry {number} has no `word`")));
+                return Err(entry_err(
+                    EntryProblem::MissingWord,
+                    number,
+                    TermsText::EntryNoWord { number }.to_string(),
+                ));
             }
             let raw_pos = record.pos.unwrap_or_default();
             let Some(pos) = Pos::parse(&raw_pos) else {
-                return Err(entry_err(format!(
-                    "entry `{word}` has an unrecognized `pos` {raw_pos:?}; use noun, verb, \
-                     adjective, adverb, preposition, conjunction, pronoun or article"
-                )));
+                return Err(entry_err(
+                    EntryProblem::UnknownPos,
+                    number,
+                    TermsText::EntryUnknownPos {
+                        word,
+                        pos: format!("{raw_pos:?}"),
+                    }
+                    .to_string(),
+                ));
             };
             let reason = record.reason.unwrap_or_default().trim().to_owned();
             if reason.is_empty() {
-                return Err(entry_err(format!(
-                    "entry `{word}` ({pos:?}) has no `reason`; every refused word needs one"
-                )));
+                return Err(entry_err(
+                    EntryProblem::MissingReason,
+                    number,
+                    TermsText::EntryNoReason {
+                        word,
+                        pos: format!("{pos:?}"),
+                    }
+                    .to_string(),
+                ));
             }
             let key = (word.clone(), pos);
             if let Some(first) = at.get(&key) {
-                return Err(entry_err(format!(
-                    "duplicate entry `{word}` ({pos:?}) at entries {first} and {number}"
-                )));
+                return Err(entry_err(
+                    EntryProblem::Duplicate,
+                    number,
+                    TermsText::EntryDuplicate {
+                        word,
+                        pos: format!("{pos:?}"),
+                        first: *first,
+                        number,
+                    }
+                    .to_string(),
+                ));
             }
             at.insert(key.clone(), number);
             entries.insert(

@@ -302,3 +302,6 @@ pub fn scratch(name: &str) -> PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
+
+#[cfg(unix)]
+pub mod fake_uv;

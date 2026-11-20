@@ -1,15 +1,42 @@
 //! The mixed-type judgement item.
 
+use std::path::Path;
+
 use slopvac_context::{
-    ChecklistEntry, MIXED_TYPES_RULE_ID, PlainDocument, builtin_genres, mixed_types_entry,
+    ChecklistEntry, PlainDocument, builtin_genres, checklist_rules, mixed_types_entry,
 };
+use slopvac_model::{PackId, RuleId};
+use slopvac_rules::{CompileOptions, RuleSet};
+
+/// The shipped rules, as the rule crate converts them from the packaged YAML.
+fn core() -> RuleSet {
+    RuleSet::load_dir(
+        &PackId::new("core").unwrap(),
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../slopvac-rules/tests/fixtures/core-v3"),
+        &CompileOptions::default(),
+    )
+    .unwrap_or_else(|e| panic!("core rules must load:\n{e}"))
+}
+
+const RULE_ID: &str = "core:prose-scope.mixed-content-types";
 
 fn entry(path: &str, src: &str) -> Option<ChecklistEntry> {
+    let set = core();
+    let rule = set.get(&RuleId::new(RULE_ID).unwrap()).unwrap();
     mixed_types_entry(
         &builtin_genres().unwrap(),
         &PlainDocument::from_markdown(path, src),
+        rule,
     )
     .unwrap()
+}
+
+#[test]
+fn loader_supplies_the_rule_with_no_gate() {
+    let rules = checklist_rules(&core());
+    let rule = rules.iter().find(|r| r.id == RULE_ID).unwrap();
+    assert!(rule.gate.only.is_empty() && rule.gate.skip.is_empty());
+    assert!(rule.core.is_none());
 }
 
 #[test]
@@ -29,11 +56,11 @@ fn tutorial_with_how_to_heading_fires_and_names_both_types() {
         "# Deploy\n\n## How to deploy\n\nSteps.\n",
     )
     .unwrap();
-    assert_eq!(got.id, MIXED_TYPES_RULE_ID);
+    assert_eq!(got.id, RULE_ID);
     assert_eq!(
         got.hints,
         vec![
-            "This page mixes content types (tutorial, how-to). Split it so each page serves one reader need."
+            "mixed content types: split the page so each page serves one reader need (tutorial, how-to)"
         ]
     );
 }

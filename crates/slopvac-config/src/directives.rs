@@ -20,6 +20,7 @@ use crate::comments::{Family, comments, family_of, family_of_name};
 use crate::diag::{Code, Diagnostic};
 use crate::flatten::{Origin, flatten};
 use crate::frontmatter::{Policy, Read, denied};
+use crate::messages::ConfigPhrase;
 use crate::schema::validate_directive;
 use crate::source::Layer;
 use crate::tree::{Entry, Node, Value};
@@ -433,11 +434,12 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
         {
             diagnostics.push(Diagnostic {
                 code: Code::MissingKey,
-                message: "the directive sets nothing".into(),
-                label: "write `key=value` after `slopvac:`".into(),
+                message: ConfigPhrase::DirectiveEmpty.text(),
+                label: ConfigPhrase::LabelWriteKeyValue.text(),
                 span: d.payload.clone(),
                 help: None,
                 path: vec!["directive".into()],
+                data: None,
             });
         }
     }

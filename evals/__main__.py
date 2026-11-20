@@ -12,11 +12,12 @@ import dataclasses
 import json
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 
 from . import ab as ab_mod
 from . import corpuslib as lib
-from . import gate, labelling, models, runner, scoring
+from . import gate, labelling, models, procs, runner, scoring
 
 
 def _cache(args: argparse.Namespace) -> Path:
@@ -111,12 +112,14 @@ def cmd_gate(args: argparse.Namespace) -> int:
     except (OSError, ValueError, runner.EngineError) as exc:
         print(f"evals gate: {exc}", file=sys.stderr)
         return 2
-    result = gate.compare(baseline, cards)
+    verdicts = scoring.load_verdicts(Path(args.labels)) if args.labels else {}
+    rows = [{"rule": key[1], "label": label} for key, label in verdicts.items()]
+    result = gate.compare(baseline, cards, labels=rows)
     text = gate.markdown(result, mode)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
     sys.stdout.write(text)
-    return 1 if result["regressions"] and mode == "enforce" else 0
+    return 1 if not result["passed"] and mode == "enforce" else 0
 
 
 def _model_tasks(args: argparse.Namespace) -> tuple[list[dict], list[dict]]:
@@ -133,8 +136,15 @@ def _model_tasks(args: argparse.Namespace) -> tuple[list[dict], list[dict]]:
 def cmd_models(args: argparse.Namespace) -> int:
     try:
         if args.models_command == "summarize":
-            summary = models.summarize(models.load(Path(args.results)))
+            docs = [models.load(Path(path)) for path in args.results]
+            summary = models.summarize(
+                models.merge_results(*docs) if len(docs) > 1 else docs[0]
+            )
             _emit(summary, args.out)
+            return 0
+        if args.models_command == "recommend":
+            results = models.load(Path(args.results))
+            _emit(models.recommendations(results, publish=args.publish), args.out)
             return 0
         if args.models_command == "cost":
             report = models.estimate_cost(
@@ -144,7 +154,17 @@ def cmd_models(args: argparse.Namespace) -> int:
             _emit(report, args.out)
             return 0
         tasks, roster = _model_tasks(args)
-        counted = models.plan(tasks, roster, args.repeats)
+        if bool(args.only_model) != bool(args.candidates_from):
+            raise models.ModelEvalError(
+                "--only-model and --candidates-from go together"
+            )
+        candidates = (
+            models.Journal(Path(args.candidates_from)) if args.candidates_from else None
+        )
+        counted = models.plan(tasks, roster, args.repeats, args.only_model)
+        models.frozen_candidates(  # fail before any call if a candidate is missing
+            tasks, roster, args.repeats, args.only_model, candidates
+        )
         if args.models_command == "plan":
             _emit(counted, None)
             return 0
@@ -159,6 +179,14 @@ def cmd_models(args: argparse.Namespace) -> int:
         out = Path(args.out) if args.out else models.default_output(models.today())
         journal_path = out.with_suffix(".journal.jsonl")
         ledger_path = out.with_suffix(".ledger.jsonl")
+        if args.candidates_from:
+            models.reject_aliases(
+                Path(args.candidates_from),
+                out=out,
+                journal=journal_path,
+                ledger=ledger_path,
+                lock=Path(str(ledger_path) + ".lock"),
+            )
         if (
             journal_path.is_file()
             and journal_path.stat().st_size
@@ -181,6 +209,8 @@ def cmd_models(args: argparse.Namespace) -> int:
                     workers=args.workers,
                     budget=budget,
                     journal=journal,
+                    only_model=args.only_model,
+                    candidates=candidates,
                 )
         except models.BudgetExceeded as exc:
             print(
@@ -190,7 +220,11 @@ def cmd_models(args: argparse.Namespace) -> int:
             return 2
         models.dump(results, out)
         return 0
-    except (models.ModelEvalError, runner.EngineError) as exc:
+    except (
+        models.ModelEvalError,
+        runner.EngineError,
+        procs.UnsupportedPlatform,
+    ) as exc:
         print(f"evals models: {exc}", file=sys.stderr)
         return 2
 
@@ -246,28 +280,82 @@ def cmd_label_sample(args: argparse.Namespace) -> int:
         per_rule=args.per_rule,
         existing=[i["id"] for i in existing],
     )
+    if args.dry_run:
+        per_rule = Counter(i["rule"] for i in new)
+        for rule in sorted(per_rule):
+            print(f"{rule}\t{per_rule[rule]}")
+        print(f"total\t{len(new)}")
+        return 0
     labelling.write_jsonl(p["items"], [*existing, *new])
     print(f"{len(new)} new items, {len(existing) + len(new)} total")
     return 0
 
 
+def _judge_start_refusal(judgments: Path, out: Path, ledger: Path) -> str | None:
+    """Why a judge run must not start, or None. The ledger holds the spent count.
+
+    Every artifact an earlier run leaves (the judgments file of any size and the
+    ledger lock) with no ledger would let a fresh ledger reset the ceiling.
+    """
+    wanted = {out.name, ledger.name, ledger.name + ".lock"}
+    folded = {w.lower() for w in wanted}
+    if judgments.is_dir():
+        strays = sorted(
+            f.name
+            for f in judgments.iterdir()
+            if f.name not in wanted and f.name.lower() in folded
+        )
+        if strays:
+            return (
+                f"{', '.join(strays)} differs from the family files only in letter "
+                "case, so a ledger could fork; rename or remove it"
+            )
+    if not ledger.exists():
+        lock = ledger.with_name(ledger.name + ".lock")
+        left = [f.name for f in (out, lock) if f.exists()]
+        if left:
+            return (
+                f"{' and '.join(left)} exists without {ledger.name}, so its spent "
+                "invocations are unknown; start with a fresh --dir"
+            )
+    return None
+
+
 def cmd_label_judge(args: argparse.Namespace) -> int:
     p = _paths(args)
     out = p["judgments"] / f"{args.family}.jsonl"
-    done = {(r["item"], r["order"]) for r in labelling.read_jsonl(out)}
     try:
-        rows = labelling.judge_items(
-            labelling.read_jsonl(p["items"]),
-            labelling.command_asker(args.provider_cmd),
-            family=args.family,
-            model=args.model,
-            manifest=lib.load_manifest(),
-            cache=_cache(args),
-            notes=labelling.rule_notes(Path(args.rules_dir)),
-            done=done,
-            sink=lambda row: labelling.append_jsonl(out, [row]),
-        )
+        labelling.check_identity(args.family, args.model)  # before any ledger exists
     except runner.EngineError as exc:
+        print(f"evals label judge: {exc}", file=sys.stderr)
+        return 2
+    ledger = out.with_suffix(".ledger.jsonl")
+    try:
+        refusal = _judge_start_refusal(p["judgments"], out, ledger)
+        if refusal:
+            print(f"evals label judge: {refusal}", file=sys.stderr)
+            return 2
+        done = labelling.completed(labelling.read_jsonl(out), args.model)
+        with models.Budget(args.max_invocations, ledger) as budget:
+            rows = labelling.judge_items(
+                labelling.read_jsonl(p["items"]),
+                labelling.command_asker(args.provider_cmd),
+                family=args.family,
+                model=args.model,
+                manifest=lib.load_manifest(),
+                cache=_cache(args),
+                notes=labelling.rule_notes(Path(args.rules_dir)),
+                done=done,
+                sink=lambda row: labelling.append_jsonl(out, [row]),
+                budget=budget,
+            )
+    except models.BudgetExceeded as exc:
+        print(
+            f"evals label judge: {exc}; {out} keeps the finished judgments",
+            file=sys.stderr,
+        )
+        return 2
+    except (models.ModelEvalError, runner.EngineError, OSError) as exc:
         print(f"evals label judge: {exc}", file=sys.stderr)
         return 2
     print(f"{len(rows)} judgments written to {out}")
@@ -276,15 +364,39 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
 
 def cmd_label_merge(args: argparse.Namespace) -> int:
     p = _paths(args)
-    judgments = [
-        r
-        for f in sorted(p["judgments"].glob("*.jsonl"))
-        for r in labelling.read_jsonl(f)
-    ]
+    try:
+        judgments, ignored = labelling.usable_judgments(
+            [
+                r
+                for f in sorted(p["judgments"].glob("*.jsonl"))
+                for r in labelling.read_jsonl(f)
+            ]
+        )
+    except runner.EngineError as exc:
+        print(f"evals label merge: {exc}", file=sys.stderr)
+        return 2
+    if ignored:
+        print(
+            f"evals label merge: ignored {ignored} judgments without a model, "
+            "from another prompt version or from an older model",
+            file=sys.stderr,
+        )
     previous = {r["item"]: r["label"] for r in labelling.read_jsonl(p["labels"])}
     merged = labelling.merge(
         labelling.read_jsonl(p["items"]), judgments, labelling.read_jsonl(p["human"])
     )
+    p["spot"].parent.mkdir(parents=True, exist_ok=True)
+    p["spot"].write_text(
+        json.dumps(merged["spot_check"], indent=1) + "\n", encoding="utf-8"
+    )
+    if merged["spot_pending"]:
+        print(
+            f"evals label merge: {len(merged['spot_pending'])} of "
+            f"{len(merged['spot_check'])} spot-check items have no human verdict; "
+            f"record them with `label resolve` (see {p['spot']}), then merge again",
+            file=sys.stderr,
+        )
+        return 2
     labelling.write_jsonl(p["labels"], merged["labels"])
     labelling.write_jsonl(p["disputes"], merged["disputes"])
     labelling.append_jsonl(
@@ -295,9 +407,6 @@ def cmd_label_merge(args: argparse.Namespace) -> int:
             args.date or labelling.today(),
             labelling.read_jsonl(p["human"]),
         ),
-    )
-    p["spot"].write_text(
-        json.dumps(merged["spot_check"], indent=1) + "\n", encoding="utf-8"
     )
     p["stats"].write_text(
         json.dumps(merged["stats"], indent=1, sort_keys=True) + "\n", encoding="utf-8"
@@ -327,6 +436,51 @@ def cmd_label_resolve(args: argparse.Namespace) -> int:
         print(f"evals label resolve: {exc}", file=sys.stderr)
         return 2
     labelling.append_jsonl(p["human"], [row])
+    return 0
+
+
+def cmd_label_worksheet(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    try:
+        judgments, _ = labelling.usable_judgments(
+            [
+                r
+                for f in sorted(p["judgments"].glob("*.jsonl"))
+                for r in labelling.read_jsonl(f)
+            ]
+        )
+        docs = {d["id"]: d for d in lib.load_manifest()["documents"]}
+        cache = _cache(args)
+        families, rows = labelling.worksheet_rows(
+            labelling.read_jsonl(p["items"]),
+            judgments,
+            labelling.read_jsonl(p["human"]),
+            doc_text=lambda doc: runner.text_path(docs[doc], cache).read_text("utf-8"),
+            notes=labelling.rule_notes(Path(args.rules_dir)),
+        )
+        labelling.write_worksheet(Path(args.out), families, rows)
+    except (runner.EngineError, OSError) as exc:
+        print(f"evals label worksheet: {exc}", file=sys.stderr)
+        return 2
+    print(f"{len(rows)} rows written to {args.out}")
+    return 0
+
+
+def cmd_label_import_worksheet(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    try:
+        rows = labelling.worksheet_verdicts(
+            Path(args.csv),
+            {i["id"] for i in labelling.read_jsonl(p["items"])},
+            labelling.read_jsonl(p["human"]),
+            reviewer=args.reviewer,
+            date=args.date or labelling.today(),
+        )
+        labelling.append_jsonl(p["human"], rows)
+    except (ValueError, OSError) as exc:
+        print(f"evals label import-worksheet: {exc}", file=sys.stderr)
+        return 2
+    print(f"{len(rows)} human verdicts recorded")
     return 0
 
 
@@ -369,12 +523,23 @@ def build_parser() -> argparse.ArgumentParser:
     ls = lsub.add_parser("sample", help="pick findings to label")
     ls.add_argument("results")
     ls.add_argument("--per-rule", type=int, default=40)
+    ls.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the new item count per rule and in total; write nothing",
+    )
     ls.set_defaults(func=cmd_label_sample)
 
     lj = lsub.add_parser("judge", help="ask one model family about every pending item")
     lj.add_argument("--family", required=True)
     lj.add_argument("--model", required=True)
     lj.add_argument("--provider-cmd", required=True, help="reads a prompt on stdin")
+    lj.add_argument(
+        "--max-invocations",
+        type=int,
+        required=True,
+        help="hard cap on provider calls, counted in the family ledger across resumes",
+    )
     lj.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
     lj.add_argument("--cache")
     lj.set_defaults(func=cmd_label_judge)
@@ -390,6 +555,22 @@ def build_parser() -> argparse.ArgumentParser:
     lr.add_argument("--reason", required=True)
     lr.add_argument("--date", default=None)
     lr.set_defaults(func=cmd_label_resolve)
+
+    lw = lsub.add_parser(
+        "worksheet", help="write the disputes and spot-check items as one CSV"
+    )
+    lw.add_argument("--out", required=True)
+    lw.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
+    lw.add_argument("--cache")
+    lw.set_defaults(func=cmd_label_worksheet)
+
+    li = lsub.add_parser(
+        "import-worksheet", help="record the tp and fp rows of a filled worksheet"
+    )
+    li.add_argument("csv")
+    li.add_argument("--reviewer", required=True)
+    li.add_argument("--date", default=None)
+    li.set_defaults(func=cmd_label_import_worksheet)
 
     b = sub.add_parser("baseline", help="write a ratchet baseline from stored results")
     b.add_argument("results")
@@ -418,6 +599,15 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--repeats", type=int, default=models.MIN_REPEATS)
         sp.add_argument("--per-type", type=int, default=12)
         sp.add_argument("--cache")
+        sp.add_argument(
+            "--only-model",
+            help="run only the jobs this model adds to an earlier run",
+        )
+        sp.add_argument(
+            "--candidates-from",
+            help="journal of the earlier run, read-only; supplies the other "
+            "models' rewrites for --only-model",
+        )
         sp.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
         sp.set_defaults(func=cmd_models)
     run_parser = msub.choices["run"]
@@ -432,9 +622,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--out")
     sm = msub.add_parser("summarize", help="summarise a results file")
-    sm.add_argument("results")
+    sm.add_argument(
+        "results", nargs="+", help="results files of one task set, joined in order"
+    )
     sm.add_argument("--out")
     sm.set_defaults(func=cmd_models)
+    rc = msub.add_parser(
+        "recommend",
+        help="write the reviewer rows that feed the agents crate and the docs",
+    )
+    rc.add_argument("results")
+    rc.add_argument(
+        "--publish",
+        action="store_true",
+        help="write the rows; without it the file is pending re-evaluation, with no rows",
+    )
+    rc.add_argument("--out")
+    rc.set_defaults(func=cmd_models)
     cs = msub.add_parser(
         "cost",
         help="tokens and estimated cost per model from a results file or journal",

@@ -45,19 +45,10 @@ severity = "error"
 max_per_100_words = 0.2
 weight = 1.2
 
-[categories.meta]
-severity = "error"
-max_per_100_words = 0.0
-weight = 1.0
-
 [categories.orwell]
 severity = "error"
 max_per_100_words = 0.4
 weight = 1.5
-
-[categories.orwell-voice]
-severity = "warning"
-weight = 0.5
 
 [categories.prose-agency]
 severity = "error"
@@ -68,11 +59,6 @@ weight = 1.2
 severity = "warning"
 max_per_100_words = 0.8
 weight = 1.0
-
-[categories.prose-density]
-severity = "warning"
-max_per_100_words = 0.5
-weight = 0.8
 
 [categories.prose-discipline]
 severity = "error"
@@ -144,11 +130,6 @@ severity = "error"
 max_per_100_words = 0.4
 weight = 1.2
 
-[categories.ste-vocabulary]
-severity = "warning"
-max_per_100_words = 2.0
-weight = 0.8
-
 [categories.ste-words]
 severity = "error"
 max_per_100_words = 0.5
@@ -214,6 +195,7 @@ weight = 1.2
 "prose-inclusive.device-assumption" = "off"
 "prose-inclusive.exclusive" = "off"
 "prose-scope.code-change-prose-scope" = "error"
+"prose-scope.mixed-content-types" = "error"
 "ste-descriptive.information-not-gradual" = "error"
 "ste-descriptive.missing-key-word-structure" = "error"
 "ste-descriptive.paragraph-without-related-information" = "suggestion"

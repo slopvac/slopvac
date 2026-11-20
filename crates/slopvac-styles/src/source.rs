@@ -3,6 +3,10 @@ use std::path::PathBuf;
 
 use crate::{Style, StyleError};
 
+/// The most bytes of one style file. The built-in styles are a few KiB, so 1 MiB leaves a wide
+/// margin.
+pub const MAX_STYLE_BYTES: u64 = 1024 * 1024;
+
 /// Where styles come from. Packs implement this once they exist.
 pub trait StyleSource {
     /// Load one style by name.
@@ -91,15 +95,32 @@ impl StyleSource for DirSource {
             return Err(StyleError::InvalidName(name.to_owned()));
         }
         let path = self.0.join(format!("{name}.toml"));
-        match std::fs::read_to_string(&path) {
-            Ok(text) => Style::parse(name, &text),
+        // The reader refuses a symlink; resolve one first so a linked style still loads.
+        // A missing file or a dangling link is an unknown style, as it was before this read.
+        let resolved = match std::fs::canonicalize(&path) {
+            Ok(resolved) => resolved,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Err(StyleError::NotFound(name.to_owned()))
+                return Err(StyleError::NotFound(name.to_owned()));
             }
-            Err(e) => Err(StyleError::Io {
-                style: name.to_owned(),
-                message: e.to_string(),
-            }),
+            Err(_) => path,
+        };
+        match slopvac_fs::read_capped_regular_to_string(
+            &resolved,
+            MAX_STYLE_BYTES,
+            slopvac_fs::ReadOptions::new(),
+        ) {
+            Ok(text) => Style::parse(name, &text),
+            Err(e) => match e.input_kind() {
+                Some(slopvac_fs::InputKind::TooLarge) => Err(StyleError::TooLarge {
+                    style: name.to_owned(),
+                    cap: MAX_STYLE_BYTES,
+                }),
+                Some(slopvac_fs::InputKind::NotFound) => Err(StyleError::NotFound(name.to_owned())),
+                _ => Err(StyleError::Io {
+                    style: name.to_owned(),
+                    message: e.to_string(),
+                }),
+            },
         }
     }
 }

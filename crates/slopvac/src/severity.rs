@@ -105,7 +105,7 @@ fn describe_rejected(rejected: &Rejected, cwd: &Path) -> String {
 fn config_error(err: &ConfigError, cwd: &Path) -> CliError {
     let message = match err {
         ConfigError::Rejected(rejected) => describe_rejected(rejected, cwd),
-        other @ ConfigError::Io { .. } => other.to_string(),
+        other @ (ConfigError::Io { .. } | ConfigError::TooLarge { .. }) => other.to_string(),
     };
     CliError::new(err.code().as_str(), message)
 }

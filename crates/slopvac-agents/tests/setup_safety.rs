@@ -1,9 +1,7 @@
 //! Safety and fidelity tests for `slopvac setup`: containment, scale, line endings.
 
-use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 use slopvac_agents::content::BlockKind;
 use slopvac_agents::setup::{Options, execute};
@@ -200,32 +198,6 @@ mod containment {
 }
 
 #[test]
-fn marker_scan_stays_linear_on_many_code_blocks() {
-    let project = tempfile::tempdir().unwrap();
-    let mut text = String::new();
-    for i in 0..20_000 {
-        write!(text, "```\ncode {i}\n```\n\nline {i}\n\n").unwrap();
-    }
-    for i in 0..60_000 {
-        writeln!(text, "filler {i}").unwrap();
-    }
-    fs::write(project.path().join("CLAUDE.md"), &text).unwrap();
-    let start = Instant::now();
-    execute(&opts(project.path(), "claude")).unwrap();
-    execute(&Options {
-        remove: true,
-        ..opts(project.path(), "claude")
-    })
-    .unwrap();
-    let took = start.elapsed();
-    assert!(took < Duration::from_secs(5), "scan took {took:?}");
-    assert_eq!(
-        fs::read_to_string(project.path().join("CLAUDE.md")).unwrap(),
-        text
-    );
-}
-
-#[test]
 fn remove_restores_the_original_bytes_for_every_line_ending() {
     let cases = [
         "",
@@ -325,4 +297,59 @@ fn a_lone_cr_after_lf_lines_does_not_merge_into_crlf() {
     assert!(installed.starts_with(b"a\nb\r\r<!-- slopvac:begin -->"));
     execute(&Options { remove: true, ..o }).unwrap();
     assert_eq!(fs::read(&file).unwrap(), b"a\nb\r");
+}
+
+mod all_or_nothing {
+    use super::*;
+    use slopvac_agents::AgentsError;
+    use slopvac_agents::harness::SKILL_NAME;
+
+    #[test]
+    fn a_foreign_skill_file_stops_install_before_the_steering_file_is_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill = dir.path().join(".claude/skills").join(SKILL_NAME);
+        fs::create_dir_all(&skill).unwrap();
+        fs::write(skill.join("SKILL.md"), "mine\n").unwrap();
+        let err = execute(&opts(dir.path(), "claude")).unwrap_err();
+        assert_eq!(err.code(), "steering-not-managed");
+        assert_eq!(
+            err.to_string(),
+            format!(
+                ".claude/skills/{SKILL_NAME}/SKILL.md is not a slopvac-managed file; \
+                 move it aside to install it"
+            )
+        );
+        assert!(!dir.path().join("CLAUDE.md").exists());
+        assert!(!dir.path().join(".claude/agents").exists());
+        assert_eq!(
+            fs::read_to_string(skill.join("SKILL.md")).unwrap(),
+            "mine\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_late_write_failure_lists_the_files_already_changed() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let skill = dir.path().join(".claude/skills").join(SKILL_NAME);
+        fs::create_dir_all(&skill).unwrap();
+        fs::set_permissions(&skill, fs::Permissions::from_mode(0o555)).unwrap();
+        let result = execute(&opts(dir.path(), "claude"));
+        fs::set_permissions(&skill, fs::Permissions::from_mode(0o755)).unwrap();
+        let err = result.unwrap_err();
+        assert_eq!(err.code(), "setup-io");
+        let AgentsError::Partial { changed, .. } = &err else {
+            panic!("expected a partial install, got {err:?}");
+        };
+        assert_eq!(changed, &["CLAUDE.md".to_owned()]);
+        let mut cause = std::error::Error::source(&err);
+        let mut reaches_io = false;
+        while let Some(e) = cause {
+            reaches_io |= e.is::<std::io::Error>();
+            cause = e.source();
+        }
+        assert!(reaches_io, "the chain keeps the io cause");
+        assert!(dir.path().join("CLAUDE.md").exists());
+    }
 }

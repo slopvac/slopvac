@@ -2,14 +2,12 @@
 //! `opt:init:--force`, `--path`, `--skip-agents`, `--harness`, `--no-skills`,
 //! `--profile` (removed), `behavior:init-flags`, `behavior:init-idempotence`).
 //!
-//! The output is validated against the published config schema.
-//! STUB(slopvac-8l4.12.25): swap to `slopvac validate` when 8l4.4.6 lands.
+//! The written file is checked with `slopvac validate`.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use serde_json::Value;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 fn slopvac(dir: &Path) -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
@@ -25,47 +23,43 @@ fn slopvac(dir: &Path) -> Command {
     cmd
 }
 
-fn schemas() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3")
-}
-
-fn validator() -> jsonschema::Validator {
-    let read = |name: &str| -> Value {
-        serde_json::from_str(&fs::read_to_string(schemas().join(name)).expect("schema"))
-            .expect("schema json")
-    };
-    let registry = jsonschema::Registry::new()
-        .add(
-            "https://slopvac.github.io/slopvac/schemas/v3/common.schema.json",
-            read("common.schema.json"),
-        )
-        .expect("register common")
-        .prepare()
-        .expect("prepare registry");
-    jsonschema::options()
-        .with_registry(&registry)
-        .build(&read("config.schema.json"))
-        .expect("schema compiles")
-}
-
 #[test]
-fn init_writes_a_config_that_validates_against_the_schema() {
+fn init_writes_a_config_that_slopvac_validate_accepts() {
     let dir = tempfile::tempdir().unwrap();
     slopvac(dir.path())
         .args(["init", "--skip-agents"])
         .assert()
         .code(0)
         .stdout("wrote slopvac.toml\nnext: slopvac prime\n");
+    slopvac(dir.path())
+        .args(["validate", "--config", "slopvac.toml"])
+        .assert()
+        .code(0)
+        .stdout("checked 1 file(s): 0 problem(s)\n");
     let text = fs::read_to_string(dir.path().join("slopvac.toml")).unwrap();
-    let value: toml::Value = toml::from_str(&text).expect("the template is TOML");
-    let json = serde_json::to_value(&value).unwrap();
-    let problems: Vec<String> = validator()
-        .iter_errors(&json)
-        .map(|e| e.to_string())
-        .collect();
-    assert!(problems.is_empty(), "{problems:?}");
-    assert_eq!(json["schema_version"], 3);
-    assert_eq!(json["profile"], "normal");
+    assert!(text.contains("\nschema_version = 3\n"));
+    assert!(text.contains("\nprofile = \"normal\"\n"));
+}
+
+#[test]
+fn validate_flags_a_broken_value_in_the_written_config() {
+    let dir = tempfile::tempdir().unwrap();
+    slopvac(dir.path())
+        .args(["init", "--skip-agents"])
+        .assert()
+        .code(0);
+    let path = dir.path().join("slopvac.toml");
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(
+        &path,
+        text.replace("profile = \"normal\"", "profile = \"nope\""),
+    )
+    .unwrap();
+    slopvac(dir.path())
+        .args(["validate", "--config", "slopvac.toml"])
+        .assert()
+        .code(2)
+        .stdout(predicate::str::starts_with("error[config-invalid-value]: "));
 }
 
 #[test]
@@ -79,7 +73,7 @@ fn the_written_config_is_commented_so_a_reader_sees_every_setting() {
     for section in [
         "# [thresholds]",
         "# [guidance]",
-        "# [[packs]]",
+        "# [[plugins]]",
         "# [[overrides]]",
     ] {
         assert!(text.contains(section), "missing {section}");
@@ -427,7 +421,47 @@ fn a_setup_error_under_an_external_path_prints_no_absolute_path() {
         !stderr.contains(&target.path().display().to_string()),
         "{stderr}"
     );
-    assert!(stderr.contains("<external>"), "{stderr}");
+    assert!(stderr.contains("in <external>/AGENTS.md;"), "{stderr}");
+}
+
+#[test]
+fn a_setup_error_under_the_run_root_names_the_path_relative_to_it() {
+    // On macOS the temp dir is `/var/...`, an alias of the `/private/var/...` the process
+    // reports as its working directory, so this also covers a non-canonical argument there.
+    let work = tempfile::tempdir().unwrap();
+    fs::write(work.path().join("AGENTS.md"), "<!-- slopvac:begin -->\n").unwrap();
+    let out = slopvac(work.path())
+        .args(["init", "--path"])
+        .arg(work.path().join("slopvac.toml"))
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr.contains("in AGENTS.md;"), "{stderr}");
+    assert!(
+        !stderr.contains(&work.path().display().to_string()),
+        "{stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_setup_error_under_a_symlinked_run_root_is_not_reported_as_external() {
+    let base = tempfile::tempdir().unwrap();
+    let real = base.path().canonicalize().unwrap().join("real");
+    fs::create_dir(&real).unwrap();
+    fs::write(real.join("AGENTS.md"), "<!-- slopvac:begin -->\n").unwrap();
+    let alias = base.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    // The process runs in `real`; the project is named through the alias.
+    let out = slopvac(&real)
+        .args(["init", "--path"])
+        .arg(alias.join("slopvac.toml"))
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr.contains("in AGENTS.md;"), "{stderr}");
 }
 
 /// Run `slopvac init --skip-agents [extra]` in `dir` under the given umask.
@@ -498,4 +532,20 @@ fn init_suggests_the_google_preset_for_a_vale_google_repo() {
              house style: Google developer documentation style guide: suggest the \"google\" preset (.vale.ini:2)\n\
              next: slopvac prime\n",
         );
+}
+
+#[test]
+fn init_reports_an_oversized_style_file_as_an_info_notice_and_still_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("STYLE.md"), "x".repeat(1024 * 1024 + 1)).unwrap();
+    slopvac(dir.path())
+        .args(["init", "--skip-agents"])
+        .assert()
+        .code(0)
+        .stdout(
+            "wrote slopvac.toml\n\
+             notice[style-detect-file-too-large]: STYLE.md is over the 1 MiB style detection limit; house-style detection skipped it.\n\
+             next: slopvac prime\n",
+        );
+    assert!(dir.path().join("slopvac.toml").is_file());
 }

@@ -1,6 +1,7 @@
 //! The `schema_version` gate. It runs before validation so a 2.x file gets one clear error.
 
 use crate::diag::{Code, Diagnostic};
+use crate::messages::{ConfigPhrase, ConfigText};
 use crate::tree::{Node, Value};
 
 /// The schema version this build reads.
@@ -10,34 +11,50 @@ pub const SUPPORTED: i64 = 3;
 ///
 /// A missing `schema_version` and a version below 3 both mean a 2.x config. Anything that is
 /// not an integer is left to the schema, which reports the wrong type.
+#[expect(
+    clippy::result_large_err,
+    reason = "the boxed `data` field on `Diagnostic` brings it to 128 bytes, and it is the public error type of this function and of its callers"
+)]
 pub fn check_version(root: &Node, text: &str) -> Result<(), Diagnostic> {
     let path = vec!["schema_version".to_owned()];
     let Some(entry) = root.entry("schema_version") else {
         return Err(Diagnostic {
             code: Code::LegacyVersion,
-            message: "this file has no `schema_version`, so it is a 2.x config".into(),
-            label: "slopvac 3 reads only version 3 files".into(),
+            message: ConfigPhrase::NoSchemaVersion.text(),
+            label: ConfigPhrase::LabelOnlyVersion3.text(),
             span: first_line(text),
-            help: Some("run `slopvac migrate` to convert it".into()),
+            help: Some(ConfigPhrase::HelpMigrate.text()),
             path,
+            data: None,
         });
     };
     match entry.node.value {
         Value::Int(n) if n < SUPPORTED => Err(Diagnostic {
             code: Code::LegacyVersion,
-            message: format!("`schema_version = {n}` marks a 2.x config"),
-            label: "slopvac 3 reads only version 3 files".into(),
+            message: ConfigText::SchemaVersionLegacy {
+                version: n.to_string(),
+            }
+            .to_string(),
+            label: ConfigPhrase::LabelOnlyVersion3.text(),
             span: entry.node.span.clone(),
-            help: Some("run `slopvac migrate` to convert it".into()),
+            help: Some(ConfigPhrase::HelpMigrate.text()),
             path,
+            data: None,
         }),
         Value::Int(n) if n > SUPPORTED => Err(Diagnostic {
             code: Code::UnsupportedVersion,
-            message: format!("`schema_version = {n}` is newer than this slopvac reads"),
-            label: format!("this build reads version {SUPPORTED}"),
+            message: ConfigText::SchemaVersionNewer {
+                version: n.to_string(),
+            }
+            .to_string(),
+            label: ConfigText::SchemaVersionNewerLabel {
+                supported: SUPPORTED.to_string(),
+            }
+            .to_string(),
             span: entry.node.span.clone(),
-            help: Some("upgrade slopvac".into()),
+            help: Some(ConfigPhrase::HelpUpgrade.text()),
             path,
+            data: None,
         }),
         _ => Ok(()),
     }

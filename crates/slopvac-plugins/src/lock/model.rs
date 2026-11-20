@@ -46,7 +46,7 @@ fn bad<T>(message: impl AsRef<str>) -> Result<T, ValueError> {
 }
 
 /// A lock file error. `pointer` is a JSON Pointer into the file
-/// (for example `/packs/0/digest`); it is empty for a whole-file error.
+/// (for example `/plugins/0/digest`); it is empty for a whole-file error.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{}: {message}", if pointer.is_empty() { "/" } else { pointer })]
 pub struct LockError {
@@ -110,7 +110,9 @@ impl FromStr for PackId {
 
     fn from_str(s: &str) -> Result<Self, ValueError> {
         if s.len() > MAX_STRING_BYTES {
-            return bad(format!("a pack id is longer than {MAX_STRING_BYTES} bytes"));
+            return bad(format!(
+                "a plugin id is longer than {MAX_STRING_BYTES} bytes"
+            ));
         }
         let mut chars = s.chars();
         let ok = chars.next().is_some_and(|c| c.is_ascii_lowercase())
@@ -119,7 +121,7 @@ impl FromStr for PackId {
             Ok(Self(s.to_owned()))
         } else {
             bad(format!(
-                "`{s}` is not a pack id (lowercase letters, digits and `-`, starting with a letter)"
+                "`{s}` is not a plugin id (lowercase letters, digits and `-`, starting with a letter)"
             ))
         }
     }
@@ -202,13 +204,13 @@ impl FromStr for NotBefore {
     }
 }
 
-/// What a pack is: data only, or data plus a plugin command.
+/// What a plugin is: a data plugin, or a code plugin that also runs a command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PackKind {
-    /// Rules, styles, genres, terms and taggers. No code.
+    /// A data plugin: rules, styles, genres, terms and taggers. No code.
     Data,
-    /// Adds a command for the host to run.
-    Plugin,
+    /// A code plugin: adds a command for the host to run as a subprocess.
+    Code,
 }
 
 impl PackKind {
@@ -217,7 +219,7 @@ impl PackKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Data => "data",
-            Self::Plugin => "plugin",
+            Self::Code => "code",
         }
     }
 }
@@ -228,8 +230,8 @@ impl FromStr for PackKind {
     fn from_str(s: &str) -> Result<Self, ValueError> {
         match s {
             "data" => Ok(Self::Data),
-            "plugin" => Ok(Self::Plugin),
-            _ => bad(format!("`{s}` is not a pack kind (`data` or `plugin`)")),
+            "code" => Ok(Self::Code),
+            _ => bad(format!("`{s}` is not a plugin kind (`data` or `code`)")),
         }
     }
 }
@@ -396,7 +398,7 @@ pub struct LockedPack {
     pub requires: Vec<PackId>,
 }
 
-/// A parsed `.slopvac/packs.lock`.
+/// A parsed `.slopvac/plugins.lock`.
 ///
 /// `packs` is sorted by id and ids are unique, so the model is already in
 /// canonical form: `Lockfile::parse(&lock.to_toml()) == Ok(lock)`.
@@ -411,22 +413,32 @@ impl Lockfile {
     /// [`Lockfile::parse`] accepts. Sorts the entries by id and each `requires`.
     /// Error pointers use the positions in `packs` as given.
     ///
-    /// `requires` may name any valid pack id, locked or not: `core` is the
-    /// built-in pack and has no entry (`packs.md`, section 2).
+    /// No entry may have the id `core`: that is the built-in plugin, which the
+    /// binary compiles in and never locks (`plugins.md`, section 9). `requires`
+    /// may name any valid id, locked or not, including `core`.
     pub fn new(mut packs: Vec<LockedPack>) -> Result<Self, LockError> {
         if packs.len() > MAX_PACKS {
             return Err(LockError::new(
-                "/packs",
-                format!("more than {MAX_PACKS} packs"),
+                "/plugins",
+                format!("more than {MAX_PACKS} plugins"),
             ));
         }
         let mut seen = HashSet::with_capacity(packs.len());
         for (i, pack) in packs.iter().enumerate() {
-            let at = |key: &str| format!("/packs/{i}/{key}");
+            let at = |key: &str| format!("/plugins/{i}/{key}");
+            if pack.id.as_str() == crate::sign::RESERVED_ID {
+                return Err(LockError::new(
+                    at("id"),
+                    format!(
+                        "`{}` is reserved for the built-in plugin and is never locked",
+                        pack.id
+                    ),
+                ));
+            }
             if !seen.insert(&pack.id) {
                 return Err(LockError::new(
                     at("id"),
-                    format!("pack id `{}` is locked twice", pack.id),
+                    format!("plugin id `{}` is locked twice", pack.id),
                 ));
             }
             if !pack.version.build.is_empty() {
@@ -491,7 +503,7 @@ impl Lockfile {
             .map(|i| &self.packs[i])
     }
 
-    /// Reads `.slopvac/packs.lock` text. Unknown keys are errors and `x-` keys
+    /// Reads `.slopvac/plugins.lock` text. Unknown keys are errors and `x-` keys
     /// are ignored.
     pub fn parse(text: &str) -> Result<Self, LockError> {
         super::parse::parse(text)

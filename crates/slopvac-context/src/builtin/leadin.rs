@@ -1,6 +1,6 @@
 //! A paragraph that ends with a colon and names a version leads a list of changes.
 
-use crate::{BlockKind, DocumentView, Error, Pattern, Tag, Tagger};
+use crate::{BlockKind, DocumentView, Error, Pattern, Tag, TagSink, Tagger};
 
 const VERSION: &str = r"\bv\d+(?:\.\d+)*\b|\b\d+\.\d+(?:\.\d+)?\b";
 
@@ -24,17 +24,22 @@ impl Tagger for ListLeadInTagger {
     }
 
     fn tag(&self, doc: &dyn DocumentView) -> Result<Vec<Tag>, Error> {
+        let mut sink = TagSink::unbounded();
+        self.tag_into(doc, &mut sink)?;
+        Ok(sink.into_tags())
+    }
+
+    fn tag_into(&self, doc: &dyn DocumentView, sink: &mut TagSink) -> Result<(), Error> {
         let blocks = doc.blocks();
-        let mut out = Vec::new();
         let mut leading = false;
         for b in &blocks {
             match b.kind {
-                BlockKind::ListItem if leading => out.push(Tag {
+                BlockKind::ListItem if leading => sink.push_with(|| Tag {
                     kind: "change-note".to_string(),
                     span: b.span.clone(),
                     confidence: 0.6,
                     evidence: "change-note-list-lead-in: list under a version lead-in".to_string(),
-                }),
+                })?,
                 BlockKind::ListItem => {}
                 BlockKind::Paragraph => {
                     let t = b.text.trim_end();
@@ -43,6 +48,6 @@ impl Tagger for ListLeadInTagger {
                 _ => leading = false,
             }
         }
-        Ok(out)
+        Ok(())
     }
 }

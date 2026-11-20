@@ -176,7 +176,9 @@ impl RevocationError {
             | Self::Invalid(_)
             | Self::BadSignature
             | Self::Layout(_) => "revocation-list-invalid",
-            Self::Fetch(_) => "revocation-list-unavailable",
+            // A refused credential helper is a login problem, not an
+            // unavailable list.
+            Self::Fetch(e) => e.code().unwrap_or("revocation-list-unavailable"),
             Self::Expired { .. } => "revocation-list-expired",
             Self::Rollback { .. } => "revocation-list-rollback",
             Self::Equivocation { .. } => "revocation-list-equivocation",
@@ -737,5 +739,28 @@ mod tests {
                 Revocations::with_root_text(text, "unused", source.clone(), "2026-11-01T00:00:00Z");
             assert!(matches!(r, Err(RevocationError::RootKey(_))), "{text:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod refusal_code_tests {
+    use super::*;
+
+    #[test]
+    fn a_helper_refusal_during_the_list_fetch_keeps_its_code() {
+        let refusal = OciError::HelperUntrusted {
+            program: "docker-credential-x".into(),
+            dir: "tools".into(),
+        };
+        assert_eq!(
+            RevocationError::Fetch(refusal).code(),
+            "credential-helper-untrusted"
+        );
+    }
+
+    #[test]
+    fn another_fetch_failure_stays_revocation_list_unavailable() {
+        let err = RevocationError::Fetch(OciError::NotFound("list".into()));
+        assert_eq!(err.code(), "revocation-list-unavailable");
     }
 }

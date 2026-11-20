@@ -11,6 +11,12 @@
 //! [`TaggedToken`] per token with its byte span in the input. Stripping other
 //! Markdown or HTML markup is the caller's job; this crate sees only prose.
 //!
+//! # Input size
+//!
+//! The crate does not cap its input. The caller must pass at most
+//! 64 MiB (`slopvac_fs::MAX_DOCUMENT_BYTES`) of text, and each slopvac entry point enforces
+//! that cap before it calls in. The caps are listed in `docs/contract/policies.md`.
+//!
 //! # Licensing
 //!
 //! The code is Apache-2.0. The embedded model, `model/en.bin`, is derived from
@@ -23,6 +29,7 @@
 //!   rejected by [`Tagger::from_model_bytes`].
 
 mod go_unicode;
+mod messages;
 mod model;
 mod tokenize;
 mod unicode_tables;
@@ -32,6 +39,7 @@ use tokenize::work;
 use std::ops::Range;
 use std::sync::OnceLock;
 
+pub use messages::message_entries;
 pub use model::ModelError;
 
 /// The embedded English model (CC BY-SA 4.0, see `model/LICENSE-MODEL.md`).

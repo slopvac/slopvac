@@ -1,0 +1,8 @@
+# change-note: headings, version headings, admonitions, version tokens, files.
+schema_version: 3
+id: change-note-heading
+tag: change-note
+scope: section
+confidence: 0.9
+when:
+  heading_path: '\b(?:breaking|upgrad\w*|migrat\w*|what.?s new|release notes?|changelog|changes? in|deprecat\w*|compatibility notes?|version history)\b'

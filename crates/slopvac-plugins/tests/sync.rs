@@ -1,8 +1,10 @@
 //! Sync, status, offline cache and CI lock check (bead 8l4.9.3; threat model
 //! TM-22, TM-39, TM-46, TM-48; policies.md N2, N4, N7).
 
+mod common;
 mod oci_server;
 mod revocations;
+mod support;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -13,6 +15,7 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
+use rstest::rstest;
 use slopvac_plugins::lock::{
     Lockfile, PackId, ResolvedPack, Source, Version, VersionReq, parse_version_req,
 };
@@ -179,9 +182,9 @@ fn lock_text(entries: &[String]) -> Lockfile {
 
 fn oci_entry(id: &str, registry: &str, digest: &str, key_id: &str) -> String {
     format!(
-        "\n[[packs]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+        "\n[[plugins]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
          source = \"oci://{registry}/acme/style:1.2.0\"\ndigest = \"{digest}\"\n\n\
-         [packs.signature]\nkey_id = \"{key_id}\"\nnot_before = \"{NOT_BEFORE}\"\n"
+         [plugins.signature]\nkey_id = \"{key_id}\"\nnot_before = \"{NOT_BEFORE}\"\n"
     )
 }
 
@@ -190,8 +193,8 @@ fn oci_lock(registry: &str, p: &Published) -> Lockfile {
 }
 
 struct Env {
-    data: tempfile::TempDir,
-    project: tempfile::TempDir,
+    data: support::Scratch,
+    project: support::Scratch,
     root: Root,
     list: ListServer,
 }
@@ -205,8 +208,8 @@ impl Env {
             list_json("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z", &[], &[]),
         );
         Self {
-            data: tempfile::tempdir().unwrap(),
-            project: tempfile::tempdir().unwrap(),
+            data: support::scratch(),
+            project: support::scratch(),
             root,
             list: ListServer::start(Some(empty)),
         }
@@ -403,7 +406,7 @@ fn a_lock_entry_without_a_signature_is_refused() {
     let p = publish(&key, "acme", FILES);
     let server = registry(&[&p]);
     let mut entry = oci_entry("style", &server.registry(), &p.digest, &p.key_id);
-    entry.truncate(entry.find("\n[packs.signature]").unwrap());
+    entry.truncate(entry.find("\n[plugins.signature]").unwrap());
     let env = Env::new();
     let c = client();
     let err = run(
@@ -512,7 +515,7 @@ fn offline_sync_from_a_cold_cache_names_the_missing_pack_and_digest() {
     let env = Env::new();
     let lock = oci_lock("127.0.0.1:9", &p);
     let err = run(&env, Network::Offline, &policy("acme", &[&key]), &lock).unwrap_err();
-    assert_eq!(err.code(), "offline-pack-missing");
+    assert_eq!(err.code(), "offline-plugin-missing");
     assert_eq!(err.exit_code(), 2);
     let text = err.to_string();
     assert!(text.contains("style") && text.contains(&p.digest), "{text}");
@@ -537,7 +540,7 @@ fn offline_sync_rechecks_a_cached_blob_and_refuses_a_swapped_one() {
         .join(p.digest.trim_start_matches("sha256:"));
     fs::write(&blob, b"{}").unwrap();
     let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
-    assert_eq!(err.code(), "offline-pack-missing", "{err:?}");
+    assert_eq!(err.code(), "offline-plugin-missing", "{err:?}");
 }
 
 fn tamper_edit(tree: &Path) {
@@ -628,7 +631,7 @@ fn status_reports_missing_then_installed() {
 
 fn path_archive_entry(digest: &str) -> String {
     format!(
-        "\n[[packs]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+        "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
          source = \"dist/style.tar.gz\"\ndigest = \"{digest}\"\n"
     )
 }
@@ -672,7 +675,7 @@ fn download_reads_up_to_the_limit_and_production_clients_refuse_http() {
         matches!(err, OciError::TooLarge { limit: 99, .. }),
         "{err:?}"
     );
-    let err = Client::new()
+    let err = Client::new(std::env::temp_dir())
         .download(&url, 100, &mut Vec::new())
         .unwrap_err();
     assert!(matches!(err, OciError::InsecureUrl(_)), "{err:?}");
@@ -688,7 +691,7 @@ fn a_path_source_directory_is_checked_by_tree_hash_and_used_in_place() {
     let hash = slopvac_plugins::extract::tree_hash(&dir).unwrap();
     let entry = |digest: &str| {
         format!(
-            "\n[[packs]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
+            "\n[[plugins]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
              source = \"packs/local\"\ndigest = \"{digest}\"\n"
         )
     };
@@ -744,8 +747,8 @@ fn update_notices_separate_in_range_updates_from_out_of_range_releases() {
     assert_eq!(
         update_notices(&lock, &ranges, &available),
         vec![
-            "pack style: 1.3.0 is available (locked 1.2.0); run `slopvac plugins update`",
-            "pack style: 2.0.0 is available but outside the configured range; change the range to use it",
+            "plugin style: 1.3.0 is available (locked 1.2.0); run `slopvac plugins update`",
+            "plugin style: 2.0.0 is available but outside the configured range; change the range to use it",
         ]
     );
     let none: BTreeMap<PackId, VersionReq> = BTreeMap::new();
@@ -773,7 +776,7 @@ fn available_versions_lists_semver_tags_in_order() {
 
 fn archive_entry(id: &str, url: &str, digest: &str) -> String {
     format!(
-        "\n[[packs]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
+        "\n[[plugins]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"1.2.0\"\nslopvac_api = 1\n\
          source = \"{url}\"\ndigest = \"{digest}\"\n"
     )
 }
@@ -790,12 +793,46 @@ fn local_archive(env: &Env, id: &str, files: &[(&str, &[u8])]) -> String {
     )
 }
 
+/// A lock whose one plugin pack has `source` and a placeholder digest.
+fn git_pin_lock(source: &str) -> String {
+    format!(
+        "schema_version = 3\n\n[[plugins]]\nid = \"tagger\"\nkind = \"code\"\n\
+         version = \"0.3.1\"\nslopvac_api = 1\nsource = \"{source}\"\n\
+         digest = \"sha256:{}\"\n",
+        "00".repeat(32)
+    )
+}
+
+#[test]
+fn tm31_a_full_lowercase_commit_hash_is_accepted_as_a_git_pin() {
+    let pinned = "0123456789abcdef0123456789abcdef01234567";
+    let lock = git_pin_lock(&format!("git+https://github.com/acme/tagger@{pinned}"));
+    assert!(Lockfile::parse(&lock).is_ok(), "the control lock parses");
+}
+
+/// Each pin is not a full lowercase 40-digit commit hash.
+#[rstest]
+#[case::branch("main")]
+#[case::tag("v1.2.0")]
+#[case::head("HEAD")]
+#[case::short_hash("0123456")]
+#[case::thirty_nine_digits("0123456789abcdef0123456789abcdef0123456")]
+#[case::forty_one_digits("0123456789abcdef0123456789abcdef012345670")]
+#[case::uppercase("0123456789ABCDEF0123456789ABCDEF01234567")]
+fn tm31_a_branch_or_short_name_is_refused_as_a_git_pin(#[case] pin: &str) {
+    let err = Lockfile::parse(&git_pin_lock(&format!(
+        "git+https://github.com/acme/tagger@{pin}"
+    )))
+    .unwrap_err();
+    assert_eq!(err.pointer, "/plugins/0/source", "{pin}: {err}");
+}
+
 #[cfg(unix)]
 #[test]
 fn a_planted_trees_link_cannot_redirect_extraction_outside_the_store() {
     // CWE-59: `trees` is a link to a directory the attacker chose.
     let env = Env::new();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = support::scratch();
     fs::create_dir_all(env.data.path().join("slopvac")).unwrap();
     std::os::unix::fs::symlink(outside.path(), env.data.path().join("slopvac/trees")).unwrap();
     let lock = lock_text(&[local_archive(&env, "style", FILES)]);
@@ -809,13 +846,13 @@ fn a_planted_trees_link_cannot_redirect_extraction_outside_the_store() {
 #[test]
 fn a_path_source_through_a_link_is_refused() {
     let env = Env::new();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = support::scratch();
     fs::write(outside.path().join("pack.toml"), b"x").unwrap();
-    fs::create_dir_all(env.project.path().join("packs")).unwrap();
-    std::os::unix::fs::symlink(outside.path(), env.project.path().join("packs/link")).unwrap();
+    fs::create_dir_all(env.project.path().join("plugins")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), env.project.path().join("plugins/link")).unwrap();
     let lock = lock_text(&[format!(
-        "\n[[packs]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
-         source = \"packs/link\"\ndigest = \"sha256:{}\"\n",
+        "\n[[plugins]]\nid = \"local\"\nkind = \"data\"\nversion = \"0.0.1\"\nslopvac_api = 1\n\
+         source = \"plugins/link\"\ndigest = \"sha256:{}\"\n",
         "00".repeat(32)
     )]);
     let err = run(&env, Network::Offline, &KeyPolicy::default(), &lock).unwrap_err();
@@ -927,7 +964,7 @@ fn an_https_archive_with_the_wrong_digest_installs_and_caches_nothing() {
     env.assert_no_trees();
     // Nothing was cached either: an offline run finds the pack missing.
     let err = run(&env, Network::Offline, &pol, &lock).unwrap_err();
-    assert_eq!(err.code(), "offline-pack-missing", "{err:?}");
+    assert_eq!(err.code(), "offline-plugin-missing", "{err:?}");
 }
 
 #[test]
@@ -1031,7 +1068,7 @@ fn tm26_a_revoked_manifest_digest_fails_sync_before_any_request_for_it() {
     .unwrap_err();
     assert!(matches!(err, SyncError::Revoked { .. }), "{err:?}");
     assert_eq!(err.exit_code(), 2);
-    assert_eq!(err.code(), "pack-revoked");
+    assert_eq!(err.code(), "plugin-revoked");
     assert_eq!(server.requests().len(), 0);
     env.assert_no_trees();
 }
@@ -1280,5 +1317,284 @@ mod io_boundary {
         let tail = format!("/{ROOT_SHOWN}/trees/{name}: Not a directory (os error 20)");
         assert!(msg.starts_with("data directory: removing "), "{msg}");
         assert!(msg.ends_with(&tail), "{msg}");
+    }
+}
+
+/// Managed Python environments (bead 8l4.9.34), built with a scripted fake uv.
+#[cfg(unix)]
+mod python {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+    use crate::common::fake_uv::{Fake, fake_uv};
+    use slopvac_plugins::extract::{TreeHash, tree_hash};
+    use slopvac_plugins::pyenv::{EnvStore, PyEnvError};
+    use slopvac_plugins::sync::{PythonBuild, PythonState, status_with_python};
+
+    const PLUGIN_MANIFEST: &str = "schema_version = 3\nid = \"py\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+    const EMPTY_LOCK: &str = "lock-version = \"1.0\"\ncreated-by = \"test\"\n";
+
+    /// A project with one in-place pack `py`, a fake uv and an environment store.
+    struct Setup {
+        env: Env,
+        hash: TreeHash,
+        lock: Lockfile,
+        uv: PathBuf,
+        envs: EnvStore,
+    }
+
+    impl Setup {
+        fn new(fake: &Fake<'_>, files: &[(&str, &str)]) -> Self {
+            let env = Env::new();
+            let dir = env.project.path().join("packs/py");
+            fs::create_dir_all(&dir).unwrap();
+            for (name, text) in files {
+                fs::write(dir.join(name), text).unwrap();
+            }
+            let hash = tree_hash(&dir).unwrap();
+            let lock = lock_text(&[format!(
+                "\n[[plugins]]\nid = \"py\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+                 source = \"packs/py\"\ndigest = \"{hash}\"\n"
+            )]);
+            let uv = fake_uv(&env.data.path().join("uv-bin"), fake);
+            let envs = EnvStore::open(env.data.path().join("envs"));
+            Self {
+                env,
+                hash,
+                lock,
+                uv,
+                envs,
+            }
+        }
+
+        fn python(files: &[(&str, &str)]) -> Self {
+            Self::new(&Fake::real(), files)
+        }
+
+        fn build(&self) -> PythonBuild<'_> {
+            PythonBuild {
+                envs: &self.envs,
+                uv: &self.uv,
+                python_install_dir: Path::new("/nonexistent/uv-python"),
+            }
+        }
+
+        fn sync(
+            &self,
+            network: Network<'_>,
+            with_python: bool,
+        ) -> Result<slopvac_plugins::sync::SyncReport, SyncError> {
+            let (store, revs) = (self.env.store(), self.env.revocations(NOW));
+            let pol = KeyPolicy::default();
+            let syncer = Syncer::new(&store, network, &pol, self.env.project.path(), &revs);
+            let syncer = if with_python {
+                syncer.with_python(self.build())
+            } else {
+                syncer
+            };
+            syncer.sync(&self.lock)
+        }
+
+        fn uv_log(&self) -> String {
+            fs::read_to_string(self.env.data.path().join("uv-bin/uv.log")).unwrap_or_default()
+        }
+    }
+
+    const PLUGIN_FILES: [(&str, &str); 3] = [
+        ("slopvac-plugin.toml", PLUGIN_MANIFEST),
+        ("plugin.py", "print('plugin')\n"),
+        ("pylock.toml", EMPTY_LOCK),
+    ];
+
+    #[test]
+    fn sync_and_status_find_a_manifest_under_the_name_the_contract_gives() {
+        // The literal file name from docs/contract/plugins.md, not the reader's constant.
+        let t = Setup::python(&[
+            ("slopvac-plugin.toml", PLUGIN_MANIFEST),
+            ("plugin.py", "print('plugin')\n"),
+            ("pylock.toml", EMPTY_LOCK),
+        ]);
+        let report = t.sync(Network::Offline, true).unwrap();
+        let key = EnvStore::key(&t.hash, "3.12");
+        assert_eq!(report.packs[0].python_env, Some(key.clone()));
+        assert_eq!(python_states(&t), [PythonState::Verified(key)]);
+    }
+
+    #[test]
+    fn sync_builds_the_manifest_selected_environment_without_the_network() {
+        // The fake exits 99 on any uv call that could download.
+        let t = Setup::new(
+            &Fake {
+                offline_only: true,
+                ..Fake::real()
+            },
+            &PLUGIN_FILES,
+        );
+        let report = t.sync(Network::Offline, true).unwrap();
+        assert_eq!(
+            report.packs[0].python_env,
+            Some(EnvStore::key(&t.hash, "3.12"))
+        );
+        assert!(t.envs.load(&t.hash, "3.12").unwrap().is_some());
+        assert!(t.uv_log().contains("ARGS venv"), "uv built the environment");
+    }
+
+    #[test]
+    fn sync_passes_uv_the_pep_440_form_of_a_semver_requirement() {
+        let caret = PLUGIN_MANIFEST.replace("python = \"3.12\"", "python = \"^3.12\"");
+        let t = Setup::python(&[
+            ("slopvac-plugin.toml", caret.as_str()),
+            ("plugin.py", "print('plugin')\n"),
+            ("pylock.toml", EMPTY_LOCK),
+        ]);
+        let report = t.sync(Network::Offline, true).unwrap();
+        let log = t.uv_log();
+        assert!(
+            log.contains("--python >=3.12,<4\n") || log.contains("--python >=3.12,<4 "),
+            "{log}"
+        );
+        assert!(!log.contains("^3.12"), "{log}");
+        let key = EnvStore::key(&t.hash, ">=3.12,<4");
+        assert_eq!(report.packs[0].python_env, Some(key.clone()));
+        // Status finds the same environment, and a second sync reuses it.
+        assert_eq!(python_states(&t), [PythonState::Verified(key)]);
+        t.sync(Network::Offline, true).unwrap();
+        assert_eq!(t.uv_log(), log, "uv ran again");
+    }
+
+    #[test]
+    fn a_repeated_sync_keeps_a_sound_environment() {
+        let t = Setup::python(&PLUGIN_FILES);
+        t.sync(Network::Offline, true).unwrap();
+        let after_first = t.uv_log();
+        assert_ne!(after_first, "");
+        t.sync(Network::Offline, true).unwrap();
+        assert_eq!(t.uv_log(), after_first, "uv ran again");
+    }
+
+    #[test]
+    fn sync_builds_no_environment_for_a_pack_that_is_not_a_python_plugin() {
+        let data_manifest = "schema_version = 3\nid = \"py\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n";
+        let t = Setup::python(&[("slopvac-plugin.toml", data_manifest)]);
+        let report = t.sync(Network::Offline, true).unwrap();
+        assert_eq!(report.packs[0].python_env, None);
+        assert_eq!(t.uv_log(), "");
+    }
+
+    #[test]
+    fn sync_without_a_python_build_configured_builds_nothing() {
+        let t = Setup::python(&PLUGIN_FILES);
+        let report = t.sync(Network::Offline, false).unwrap();
+        assert_eq!(report.packs[0].python_env, None);
+        assert_eq!(t.uv_log(), "");
+    }
+
+    #[test]
+    fn a_failed_environment_build_fails_the_sync() {
+        let sdist = format!(
+            "lock-version = \"1.0\"\n\n[[packages]]\nname = \"demo\"\nversion = \"1.0\"\nsdist = {{ path = \"demo-1.0.tar.gz\", hashes = {{ sha256 = \"{}\" }} }}\n",
+            "ab".repeat(32)
+        );
+        let t = Setup::python(&[
+            ("slopvac-plugin.toml", PLUGIN_MANIFEST),
+            ("plugin.py", "x\n"),
+            ("pylock.toml", &sdist),
+        ]);
+        let err = t.sync(Network::Offline, true).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                SyncError::PythonEnv {
+                    source: PyEnvError::SourceOnly { .. },
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert_eq!(err.exit_code(), 2);
+        assert_eq!(t.uv_log(), "", "uv never ran");
+    }
+
+    #[test]
+    fn offline_sync_without_an_installed_interpreter_fails_instead_of_downloading() {
+        let t = Setup::new(
+            &Fake {
+                find_exit: 1,
+                ..Fake::real()
+            },
+            &PLUGIN_FILES,
+        );
+        let err = t.sync(Network::Offline, true).unwrap_err();
+        assert!(
+            matches!(&err, SyncError::PythonEnv { source: PyEnvError::OfflinePythonMissing(r), .. } if r == "3.12"),
+            "{err:?}"
+        );
+    }
+
+    fn python_states(t: &Setup) -> Vec<PythonState> {
+        status_with_python(&t.env.store(), &t.envs, t.env.project.path(), &t.lock)
+            .unwrap()
+            .into_iter()
+            .map(|p| p.python)
+            .collect()
+    }
+
+    #[test]
+    fn status_verifies_a_built_environment_with_the_full_check() {
+        let t = Setup::python(&PLUGIN_FILES);
+        t.sync(Network::Offline, true).unwrap();
+        assert_eq!(
+            python_states(&t),
+            [PythonState::Verified(EnvStore::key(&t.hash, "3.12"))]
+        );
+        let plain = status(&t.env.store(), t.env.project.path(), &t.lock).unwrap();
+        assert_eq!(plain[0].python, PythonState::NotChecked);
+    }
+
+    #[test]
+    fn status_reports_a_missing_environment() {
+        let t = Setup::python(&PLUGIN_FILES);
+        t.sync(Network::Offline, false).unwrap();
+        assert_eq!(python_states(&t), [PythonState::Missing]);
+    }
+
+    #[test]
+    fn status_reports_an_edit_that_only_the_full_check_sees() {
+        let t = Setup::python(&PLUGIN_FILES);
+        t.sync(Network::Offline, true).unwrap();
+        let env = t.envs.load(&t.hash, "3.12").unwrap().unwrap();
+        let file = env.root().join("pyvenv.cfg");
+        let (before, text) = (
+            fs::metadata(&file).unwrap(),
+            fs::read_to_string(&file).unwrap(),
+        );
+        // Same size, same modification time: a different first letter.
+        let edited = format!("H{}", &text[1..]);
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&file, edited).unwrap();
+        let f = fs::File::options().write(true).open(&file).unwrap();
+        f.set_modified(before.modified().unwrap()).unwrap();
+        drop(f);
+        fs::set_permissions(&file, before.permissions()).unwrap();
+        assert_eq!(fs::metadata(&file).unwrap().len(), before.len());
+
+        env.check_quick().unwrap();
+        let states = python_states(&t);
+        assert!(
+            matches!(&states[..], [PythonState::Failed(why)] if why.contains("pyvenv.cfg")),
+            "{states:?}"
+        );
+    }
+
+    #[test]
+    fn status_does_not_look_for_an_environment_of_a_pack_that_is_not_a_python_plugin() {
+        let t = Setup::python(&[(
+            "slopvac-plugin.toml",
+            PLUGIN_MANIFEST
+                .replace("runtime = \"python\"\npython = \"3.12\"\n", "")
+                .as_str(),
+        )]);
+        t.sync(Network::Offline, true).unwrap();
+        assert_eq!(python_states(&t), [PythonState::NotChecked]);
     }
 }

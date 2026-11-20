@@ -64,6 +64,11 @@
         "pattern": "\\b(previously|formerly|used to (be|do|have)|has been (refactored|migrated|renamed|rewritten)|was (refactored|migrated|renamed|rewritten|extracted)|renamed from|moved (over )?from|we (dropped|removed|changed|switched|migrated)|instead of the old)\\b",
         "ignore_case": true
       },
+      "contexts": {
+        "skip": [
+          "change-note"
+        ]
+      },
       "exceptions": [
         {
           "name": "quotation",

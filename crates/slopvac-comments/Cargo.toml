@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[package.metadata.cargo-shear]
+ignored-paths = ["tests/fixtures/**"]
+
 [features]
 default = ["all-languages"]
 # Tree-sitter grammars. Each is a language whose grammar has no external scanner; every
@@ -27,6 +30,7 @@ tree-sitter-java = { workspace = true, optional = true }
 tree-sitter-proto = { workspace = true, optional = true }
 
 [dev-dependencies]
+rstest.workspace = true
 toml.workspace = true
 
 [lints]

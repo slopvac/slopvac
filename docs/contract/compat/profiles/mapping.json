@@ -8,7 +8,7 @@
   },
   "profiles": {
     "normal": {
-      "categories": 30,
+      "categories": 26,
       "rule_defaults": {
         "ai-tells-structure.definitional-negation-pair": "warning",
         "ai-tells-structure.negative-guarantee-core": "warning",
@@ -21,7 +21,7 @@
         "ste-practices.latin-abbreviation": "off",
         "ste-practices.unclear-pronoun": "off"
       },
-      "rule_entries": 120,
+      "rule_entries": 121,
       "severity_shift": 0,
       "style": "core:legacy-normal",
       "thresholds": {
@@ -32,7 +32,7 @@
       }
     },
     "relaxed": {
-      "categories": 30,
+      "categories": 26,
       "rule_defaults": {
         "prose-craft.latinisms": "off",
         "prose-inclusive.ableist": "off",
@@ -42,7 +42,7 @@
         "ste-practices.latin-abbreviation": "off",
         "ste-practices.unclear-pronoun": "off"
       },
-      "rule_entries": 157,
+      "rule_entries": 159,
       "severity_shift": 0,
       "style": "core:legacy-relaxed",
       "thresholds": {
@@ -51,7 +51,7 @@
       }
     },
     "strict": {
-      "categories": 30,
+      "categories": 26,
       "rule_defaults": {
         "ai-tells-structure.contrastive-appositive": "warning",
         "ai-tells-structure.definitional-negation-pair": "warning",
@@ -64,7 +64,7 @@
         "ste-practices.latin-abbreviation": "off",
         "ste-practices.unclear-pronoun": "off"
       },
-      "rule_entries": 84,
+      "rule_entries": 85,
       "severity_shift": 0,
       "style": "core:legacy-strict",
       "thresholds": {

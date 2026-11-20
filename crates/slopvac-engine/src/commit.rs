@@ -12,7 +12,6 @@
 //! exists in safe Rust today (bead slopvac-8l4.3.35).
 
 use std::ffi::{OsStr, OsString};
-use std::io::Read;
 use std::path::Path;
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
@@ -20,7 +19,7 @@ use cap_std::ambient_authority;
 use cap_std::fs::{Dir, File, OpenOptions};
 
 /// The largest file [`fix_file`](crate::fix_file) reads.
-pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_FILE_BYTES: u64 = slopvac_fs::MAX_DOCUMENT_BYTES;
 
 /// Why [`fix_file`](crate::fix_file) left a file alone. A refused file is never read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +52,28 @@ pub enum Refusal {
     Changed,
 }
 
+impl Refusal {
+    /// The stable code of the refusal, in kebab-case. `document-too-large` is the code the
+    /// input size caps use for [`Refusal::TooLarge`]. The other refusals each have a code
+    /// that starts with `fix-`.
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            Refusal::OutsideRoot => "fix-outside-root",
+            Refusal::Symlink => "fix-symlink",
+            Refusal::NotRegular => "fix-not-regular",
+            Refusal::Hardlinked => "fix-hardlinked",
+            Refusal::NotOwner => "fix-not-owner",
+            Refusal::TooLarge => "document-too-large",
+            Refusal::UnsafeDirectory => "fix-unsafe-directory",
+            Refusal::GroupMismatch => "fix-group-mismatch",
+            Refusal::AclPresent => "fix-acl-present",
+            Refusal::UnsupportedPlatform => "fix-unsupported-platform",
+            Refusal::Changed => "fix-changed",
+        }
+    }
+}
+
 /// Where in a write a hook runs, before the step it names.
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,10 +102,81 @@ fn link_or_error(dir: &Dir, name: &OsStr, error: std::io::Error) -> std::io::Res
     }
 }
 
-fn read_all(file: &mut File) -> std::io::Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    Read::take(file, MAX_FILE_BYTES + 1).read_to_end(&mut bytes)?;
-    Ok(bytes)
+/// The cap on a file this module reads or writes: [`MAX_FILE_BYTES`], except in unit tests,
+/// which lower it so a few bytes cross it.
+fn max_bytes() -> u64 {
+    #[cfg(test)]
+    {
+        seam::cap()
+    }
+    #[cfg(not(test))]
+    {
+        MAX_FILE_BYTES
+    }
+}
+
+/// The size the metadata check sees for a file of `len` bytes. In unit tests a seam can pin it,
+/// which stands in for a file that grew after the check and before the read.
+fn checked_len(len: u64) -> u64 {
+    #[cfg(test)]
+    {
+        seam::stale_len().unwrap_or(len)
+    }
+    #[cfg(not(test))]
+    {
+        len
+    }
+}
+
+/// Whether `text` fits in a file under the cap.
+fn fits(text: &str) -> bool {
+    u64::try_from(text.len()).is_ok_and(|len| len <= max_bytes())
+}
+
+#[cfg(test)]
+mod seam {
+    use std::cell::Cell;
+
+    thread_local! {
+        static CAP: Cell<u64> = const { Cell::new(super::MAX_FILE_BYTES) };
+        static STALE_LEN: Cell<Option<u64>> = const { Cell::new(None) };
+    }
+
+    pub(super) fn cap() -> u64 {
+        CAP.with(Cell::get)
+    }
+
+    pub(super) fn stale_len() -> Option<u64> {
+        STALE_LEN.with(Cell::get)
+    }
+
+    /// Lower the cap, and optionally pin the size the metadata check sees, until dropped.
+    pub(super) struct Guard;
+
+    pub(super) fn set(cap: u64, stale_len: Option<u64>) -> Guard {
+        CAP.with(|c| c.set(cap));
+        STALE_LEN.with(|c| c.set(stale_len));
+        Guard
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            CAP.with(|c| c.set(super::MAX_FILE_BYTES));
+            STALE_LEN.with(|c| c.set(None));
+        }
+    }
+}
+
+/// Read the open file, or `None` when it holds more than [`MAX_FILE_BYTES`]. The size check
+/// on the metadata can be out of date by the time the read happens, so the read enforces the
+/// cap itself.
+fn read_all(file: &mut File) -> std::io::Result<Option<Vec<u8>>> {
+    match slopvac_fs::read_capped(file, max_bytes()) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(slopvac_fs::Error::CapExceeded { .. }) => Ok(None),
+        Err(slopvac_fs::Error::Read { source, .. }) => Err(source),
+        Err(e) => Err(std::io::Error::other(e.to_string())),
+    }
 }
 
 #[cfg(unix)]
@@ -147,7 +239,7 @@ pub(crate) use other::open;
 mod other {
     use std::path::Path;
 
-    use super::{MAX_FILE_BYTES, Refusal, open_file, read_all};
+    use super::{Refusal, checked_len, max_bytes, open_file, read_all};
 
     /// Nothing to commit with: this platform does not write in place.
     pub(crate) struct Handle;
@@ -176,10 +268,12 @@ mod other {
         if !meta.is_file() {
             return Ok(Err(Refusal::NotRegular));
         }
-        if meta.len() > MAX_FILE_BYTES {
+        if checked_len(meta.len()) > max_bytes() {
             return Ok(Err(Refusal::TooLarge));
         }
-        let bytes = read_all(&mut file)?;
+        let Some(bytes) = read_all(&mut file)? else {
+            return Ok(Err(Refusal::TooLarge));
+        };
         Ok(Ok((Handle, bytes)))
     }
 }
@@ -196,7 +290,9 @@ mod unix {
     use cap_std::fs::{Dir, File, Metadata, MetadataExt, OpenOptions, OpenOptionsExt, Permissions};
     use rustix::io::Errno;
 
-    use super::{Hook, MAX_FILE_BYTES, Refusal, Step, nonblocking, open_file, read_all};
+    use super::{
+        Hook, Refusal, Step, checked_len, fits, max_bytes, nonblocking, open_file, read_all,
+    };
 
     /// What names a file: device and inode, size and modification time.
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -285,11 +381,13 @@ mod unix {
         if !owner_trusted(held.uid(), rustix::process::geteuid().as_raw()) {
             return Ok(Err(Refusal::NotOwner));
         }
-        if held.len() > MAX_FILE_BYTES {
+        if checked_len(held.len()) > max_bytes() {
             return Ok(Err(Refusal::TooLarge));
         }
         let before = identity(&held);
-        let bytes = read_all(&mut file)?;
+        let Some(bytes) = read_all(&mut file)? else {
+            return Ok(Err(Refusal::TooLarge));
+        };
         Ok(Ok((
             Handle {
                 parent,
@@ -338,6 +436,11 @@ mod unix {
             original: &[u8],
             hook: Hook<'_>,
         ) -> std::io::Result<Option<Refusal>> {
+            // The scan found the text within the cap, but a replacement over it would be
+            // refused by the staged check, which reads at most the cap. Refuse it up front.
+            if !fits(text) {
+                return Ok(Some(Refusal::TooLarge));
+            }
             let dir = self.parent.dir_metadata()?;
             let me = rustix::process::geteuid().as_raw();
             if !directory_trusted(dir.mode() & 0o7777, dir.uid(), me) {
@@ -441,7 +544,7 @@ mod unix {
                 return Ok(false);
             }
             self.file.rewind()?;
-            Ok(read_all(&mut self.file)? == original)
+            Ok(read_all(&mut self.file)?.is_some_and(|b| b == original))
         }
 
         /// Whether the temporary name still holds the file we staged: the same file, with
@@ -462,7 +565,7 @@ mod unix {
             if !meta.is_file() || identity(&meta) != *staged {
                 return Ok(false);
             }
-            Ok(read_all(&mut file)? == text.as_bytes())
+            Ok(read_all(&mut file)?.is_some_and(|b| b == text.as_bytes()))
         }
     }
 
@@ -470,7 +573,55 @@ mod unix {
     mod tests {
         use rustix::io::Errno;
 
-        use super::{acl_decision, directory_trusted, owner_trusted};
+        use std::path::Path;
+
+        use super::{acl_decision, directory_trusted, open, owner_trusted};
+        use crate::commit::{Refusal, seam};
+
+        fn project(text: &str) -> tempfile::TempDir {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(dir.path().join("doc.md"), text).unwrap();
+            dir
+        }
+
+        #[test]
+        fn a_file_that_grows_after_the_size_check_is_refused_not_read_as_a_prefix() {
+            let dir = project("12345");
+            // The check sees 0 bytes, as if the file had been empty when it ran.
+            let _seam = seam::set(4, Some(0));
+            let opened = open(dir.path(), Path::new("doc.md")).unwrap();
+            assert_eq!(opened.err(), Some(Refusal::TooLarge));
+        }
+
+        #[test]
+        fn a_file_exactly_at_the_cap_is_read_whole() {
+            let dir = project("1234");
+            let _seam = seam::set(4, None);
+            let (_, bytes) = open(dir.path(), Path::new("doc.md")).unwrap().unwrap();
+            assert_eq!(bytes, b"1234");
+        }
+
+        #[test]
+        fn a_replacement_over_the_cap_is_refused_before_staging() {
+            let dir = project("1234");
+            let _seam = seam::set(4, None);
+            let (mut handle, bytes) = open(dir.path(), Path::new("doc.md")).unwrap().unwrap();
+            let refusal = handle.commit("12345", &bytes, &mut |_| Ok(())).unwrap();
+            assert_eq!(refusal, Some(Refusal::TooLarge));
+            assert_eq!(std::fs::read(dir.path().join("doc.md")).unwrap(), b"1234");
+            let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+            assert_eq!(names.len(), 1, "no temporary file is left");
+        }
+
+        #[test]
+        fn a_replacement_at_the_cap_is_written() {
+            let dir = project("1234");
+            let _seam = seam::set(4, None);
+            let (mut handle, bytes) = open(dir.path(), Path::new("doc.md")).unwrap().unwrap();
+            let refusal = handle.commit("abcd", &bytes, &mut |_| Ok(())).unwrap();
+            assert_eq!(refusal, None);
+            assert_eq!(std::fs::read(dir.path().join("doc.md")).unwrap(), b"abcd");
+        }
 
         #[test]
         fn a_directory_is_trusted_when_only_its_owner_can_write() {

@@ -5,10 +5,19 @@ use crate::source::Setting;
 /// A config file that a pack ships.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackFile {
-    /// Path shown in provenance, `pack:<id>/<path>`.
+    /// Path shown in provenance, `plugin:<id>/<path>`.
     pub display: String,
     /// The file text.
     pub text: String,
+}
+
+/// A failure that a provider reports for the `styles` list, such as a file over its size cap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetFailure {
+    /// The stable code of the failure.
+    pub code: crate::Code,
+    /// One-line statement of the problem.
+    pub message: String,
 }
 
 /// Source of the layers that come from packs.
@@ -24,15 +33,26 @@ pub trait Presets {
         listed.iter().filter_map(|n| self.style(n)).collect()
     }
 
+    /// Check that every style in the `styles` list can be loaded, for the failures that must
+    /// stop a run. [`Presets::style_layers`] has no error channel, so a provider reports such a
+    /// failure here and the loader rejects the config at the `styles` key. The default accepts
+    /// every list.
+    ///
+    /// # Errors
+    /// The failure to report, such as a style file over its size cap.
+    fn check_styles(&self, _listed: &[String]) -> Result<(), PresetFailure> {
+        Ok(())
+    }
+
     /// The settings of a genre and of the genres it extends, lowest first, in layer `genre`.
     fn genre_chain(&self, name: &str) -> Vec<Vec<Setting>>;
 
-    /// A config that a pack ships, named by an `extends = ["<pack>:<name>"]` entry.
+    /// A config that a pack ships, named by an `extends = ["<plugin>:<name>"]` entry.
     fn pack_config(&self, name: &str) -> Option<PackFile>;
 }
 
 // STUB(slopvac-8l4.4.10): no pack supplies anything until the pack loader lands, so styles,
-// genres and `<pack>:<name>` extends targets all resolve to nothing.
+// genres and `<plugin>:<name>` extends targets all resolve to nothing.
 /// A [`Presets`] with no packs behind it.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoPresets;

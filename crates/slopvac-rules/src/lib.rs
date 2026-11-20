@@ -16,9 +16,12 @@ mod model;
 mod ruleset;
 mod schema;
 
-pub use error::{LoadError, LoadErrorKind, LoadErrors};
+pub use error::{LoadError, LoadErrorKind, LoadErrors, PackBudget};
 pub use ext::{UniqueVec, ValueError};
 pub use matcher::{CompileError, CompileOptions, LexicalMatcher};
 pub use model::*;
-pub use ruleset::{LoadedCategory, LoadedRule, RuleSet};
+pub use ruleset::{
+    LoadedCategory, LoadedRule, MAX_PACK_BYTES, MAX_PACK_ENTRIES, MAX_PACK_FILES, MAX_RULE_ENTRIES,
+    MAX_RULE_FILE_BYTES, RuleSet,
+};
 pub use schema::{category_schema, rule_file_schema, rule_schema};

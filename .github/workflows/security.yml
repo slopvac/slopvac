@@ -54,26 +54,119 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
+      # fetch-depth: 0 pulled every head and tag (hundreds of MiB) and stalled
+      # past the job timeout before any scan began. Fetch only the history of the
+      # commits under test, deepening until their merge base is in, and fail
+      # unless every commit in the scanned range is present. Scheduled and manual
+      # runs still scan the full history.
+      - name: Fetch the commits under test
+        id: range
+        timeout-minutes: 11
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          BASE=""
+          HEAD=""
+          case "$EVENT_NAME" in
+            pull_request) BASE="$PR_BASE"; HEAD="$PR_HEAD" ;;
+            merge_group) BASE="$MG_BASE"; HEAD="$MG_HEAD" ;;
+            push)
+              if [[ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+                BASE="$PUSH_BEFORE"; HEAD="$PUSH_AFTER"
+              fi
+              ;;
+          esac
+          emit() { printf 'base=%s\nhead=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
+          unshallow() { timeout 600 git fetch --no-tags --no-recurse-submodules --unshallow origin; }
+          if [[ -z "$BASE" ]]; then
+            # schedule, workflow_dispatch, or a push that creates a branch.
+            unshallow
+            emit "" ""
+            exit 0
+          fi
+          for sha in "$BASE" "$HEAD"; do
+            if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::not a 40-hex commit id: $sha"
+              exit 1
+            fi
+          done
+          # The base of a pull request is the tip of its target branch, which the
+          # head often does not contain; scan from the merge base. For a push or a
+          # queue entry the base is an ancestor, so the merge base is the base.
+          # A merge base alone is not enough: a merge of the target branch into the
+          # head exposes it at a shallow depth while older commits stay cut off.
+          # check_range succeeds only when every commit in MB..HEAD is present.
+          MB=""
+          REASON=""
+          KIND=missing
+          check_range() {
+            KIND=missing
+            REASON="no merge base between $BASE and $HEAD"
+            MB="$(git merge-base "$BASE" "$HEAD")" || return 1
+            git cat-file -e "$MB^{commit}" || return 1
+            git cat-file -e "$HEAD^{commit}" || return 1
+            RANGE="$(git rev-list "$MB..$HEAD")" || return 1
+            SHALLOW="$(git rev-parse --git-path shallow)"
+            if [[ -n "$RANGE" && -f "$SHALLOW" ]] \
+              && grep -Fxqf <(printf '%s\n' "$RANGE") "$SHALLOW"; then
+              KIND=incomplete
+              REASON="history of $MB..$HEAD is incomplete (shallow boundary inside the range)"
+              return 1
+            fi
+          }
+          found=""
+          for depth in 50 200 1000; do
+            if timeout 300 git fetch --no-tags --no-recurse-submodules --depth="$depth" origin "$BASE" "$HEAD" \
+              && check_range; then
+              found=1
+              break
+            fi
+            echo "::warning::$REASON at depth $depth; deepening"
+          done
+          if [[ -z "$found" ]]; then
+            unshallow
+            KIND=missing
+            REASON="cannot fetch $BASE and $HEAD"
+            if timeout 300 git fetch --no-tags --no-recurse-submodules origin "$BASE" "$HEAD" \
+              && check_range; then
+              :
+            elif [[ "$EVENT_NAME" == "push" && "$KIND" == "missing" ]]; then
+              # A force push can leave the old tip unreachable; scan all history.
+              echo "::warning::previous tip is unavailable; scanning all history"
+              emit "" ""
+              exit 0
+            else
+              echo "::error::$REASON"
+              exit 1
+            fi
+          fi
+          emit "$MB" "$HEAD"
       - name: Scan pull request diff
         if: github.event_name == 'pull_request'
-        uses: trufflesecurity/trufflehog@ea68ca03c865c5f324e86e849ced20ed3cf9dbbb # v3.99.8
+        uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # v3.99.9
         with:
           path: ./
-          base: ${{ github.event.pull_request.base.sha }}
-          head: ${{ github.event.pull_request.head.sha }}
+          base: ${{ steps.range.outputs.base }}
+          head: ${{ steps.range.outputs.head }}
           version: 3.99.8
           extra_args: --results=verified
       # A queue entry has no pull_request payload; without an explicit range the
       # action would scan the whole history.
       - name: Scan merge queue entry
         if: github.event_name == 'merge_group'
-        uses: trufflesecurity/trufflehog@ea68ca03c865c5f324e86e849ced20ed3cf9dbbb # v3.99.8
+        uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # v3.99.9
         with:
           path: ./
-          base: ${{ github.event.merge_group.base_sha }}
-          head: ${{ github.event.merge_group.head_sha }}
+          base: ${{ steps.range.outputs.base }}
+          head: ${{ steps.range.outputs.head }}
           version: 3.99.8
           extra_args: --results=verified
       - name: Scan pushed commits
@@ -82,14 +175,16 @@ jobs:
           github.event_name != 'merge_group' &&
           github.event_name != 'schedule' &&
           github.event_name != 'workflow_dispatch'
-        uses: trufflesecurity/trufflehog@ea68ca03c865c5f324e86e849ced20ed3cf9dbbb # v3.99.8
+        uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # v3.99.9
         with:
           path: ./
+          base: ${{ steps.range.outputs.base }}
+          head: ${{ steps.range.outputs.head }}
           version: 3.99.8
           extra_args: --results=verified
       - name: Scan full tree
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        uses: trufflesecurity/trufflehog@ea68ca03c865c5f324e86e849ced20ed3cf9dbbb # v3.99.8
+        uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # v3.99.9
         with:
           path: ./
           version: 3.99.8
@@ -179,17 +274,54 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           exit-code: "1"
+          trivyignores: .trivyignore.yaml
+      - name: Print Trivy findings
+        if: failure()
+        run: |
+          jq -r '
+            .runs[].results[]?
+            | "\(.ruleId) [\(.level)] \(.message.text | split("\n")[0])"
+              + " @ \(.locations[0].physicalLocation.artifactLocation.uri // "?")"
+          ' trivy-results.sarif
       - name: Upload Trivy SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: trivy-results.sarif
 
+  # Secrets can sit in any file, so this scan follows the `secrets` class, which
+  # matches every path. The full scan below is gated on the narrower `filesystem`
+  # class and would skip a change to crates/, docs/ or other paths outside it.
+  trivy-secret:
+    if: ${{ inputs.secrets }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The table format prints each finding in the job log, so a failure names
+      # the file and rule without a SARIF upload (which needs security-events).
+      - name: Scan filesystem for secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.0
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: "1"
+          trivyignores: .trivyignore.yaml
+
   security-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
-    needs: [dependency-review, trufflehog, codeql, osv, trivy]
+    needs: [dependency-review, trufflehog, codeql, osv, trivy, trivy-secret]
     if: always()
     steps:
       - name: Verify required scanners and valid skips
@@ -219,6 +351,7 @@ jobs:
               "codeql": full or flag("CODE"),
               "osv": full or flag("DEPENDENCIES"),
               "trivy": full or flag("FILESYSTEM"),
+              "trivy-secret": flag("SECRETS"),
           }
 
           problems = []

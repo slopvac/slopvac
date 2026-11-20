@@ -44,7 +44,7 @@ fn a_signal_counts_once_however_many_headings_match() {
         ("consumer", GenreSource::Default)
     );
     let internal = r.scores.iter().find(|(id, _)| id == "internal").unwrap();
-    assert!((internal.1 - 1.5).abs() < f32::EPSILON);
+    assert!((internal.1 - 1.5).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn below_threshold_falls_back_to_the_default() {
     );
     assert_eq!(r.reasons[0].signal, "default");
     let consumer = r.scores.iter().find(|(id, _)| id == "consumer").unwrap();
-    assert!((consumer.1 - 2.0).abs() < f32::EPSILON);
+    assert!((consumer.1 - 2.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -111,6 +111,7 @@ fn assignments_apply_in_file_order_and_the_last_match_wins() {
             &ResolveOptions {
                 assignments: &assignments,
                 relative_path: None,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -139,6 +140,7 @@ fn assignments_use_the_relative_path() {
             &ResolveOptions {
                 assignments: &assignments,
                 relative_path: Some("docs/a.md"),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -371,9 +373,9 @@ fn front_matter_signals_compare_the_exact_value() {
         let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
         r.scores[0].1
     };
-    assert!((score("type: guide\n") - 1.0).abs() < f32::EPSILON);
-    assert!(score("type: guides\n").abs() < f32::EPSILON);
-    assert!((score("draft: true\nowner: me\n") - 2.0).abs() < f32::EPSILON);
+    assert!((score("type: guide\n") - 1.0).abs() < f64::EPSILON);
+    assert!(score("type: guides\n").abs() < f64::EPSILON);
+    assert!((score("draft: true\nowner: me\n") - 2.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -449,4 +451,294 @@ fn the_built_in_security_genre_declares_the_security_context() {
     let reg = slopvac_context::builtin_genres().unwrap();
     assert_eq!(reg.contexts("security").unwrap(), ["security"]);
     assert!(reg.contexts("consumer").unwrap().is_empty());
+}
+
+#[test]
+fn a_tie_goes_to_the_genre_defined_last_in_either_order() {
+    let genre = |id: &str| {
+        format!(
+            "- {{schema_version: 3, id: {id}, detect: {{signals: [{{kind: text, pattern: tie}}]}}}}\n"
+        )
+    };
+    let base = "- {schema_version: 3, id: base}\n";
+    let doc = PlainDocument::from_markdown("a.md", "tie\n");
+    for (first, last) in [("alpha", "beta"), ("beta", "alpha")] {
+        let y = format!("{base}{}{}", genre(first), genre(last));
+        let reg = GenreRegistry::new(parse_genres(&y).unwrap(), "base").unwrap();
+        let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
+        assert_eq!(r.id, last, "defined order {first}, {last}");
+        assert_eq!(r.source, GenreSource::Detected);
+    }
+}
+
+#[test]
+fn a_tiny_min_score_does_not_make_every_genre_a_candidate() {
+    // 1e-50 is above 0, so the schema allows it. Narrowed to f32 it would be 0 and every
+    // genre would reach it, so a document with no match must still get the default.
+    let y = "
+- {schema_version: 3, id: base}
+- {schema_version: 3, id: a, detect: {min_score: 1e-50, signals: [{kind: text, pattern: zzz}]}}
+";
+    let reg = GenreRegistry::new(parse_genres(y).unwrap(), "base").unwrap();
+    let doc = PlainDocument::from_markdown("a.md", "nothing here\n");
+    let r = reg.resolve(&doc, &ResolveOptions::default()).unwrap();
+    assert_eq!((r.id.as_str(), r.source), ("base", GenreSource::Default));
+}
+
+#[test]
+fn non_finite_numbers_are_errors_everywhere() {
+    let bad = [
+        "- {schema_version: 3, id: a, detect: {min_score: .nan, signals: [{kind: path, glob: x}]}}\n",
+        "- {schema_version: 3, id: a, detect: {min_score: .inf, signals: [{kind: path, glob: x}]}}\n",
+        "- {schema_version: 3, id: a, detect: {signals: [{kind: path, glob: x, weight: .nan}]}}\n",
+        "- {schema_version: 3, id: a, detect: {signals: [{kind: path, glob: x, weight: .inf}]}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {weight: .nan}}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {weight: .inf}}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {max_per_100_words: .nan}}}\n",
+        "- {schema_version: 3, id: a, categories: {c: {max_per_100_words: .inf}}}\n",
+    ];
+    for y in bad {
+        let r = parse_genres(y).and_then(|s| GenreRegistry::new(s, "a"));
+        assert!(r.is_err(), "{y}");
+    }
+}
+
+const HOSTILE: &str = "a\u{1b}[31m\u{202e}b.md";
+const HOSTILE_ESCAPED: &str = "a\\u{1b}[31m\\u{202e}b.md";
+
+#[test]
+fn render_escapes_control_and_bidi_characters() {
+    let r = slopvac_context::GenreResult {
+        id: "g".to_string(),
+        source: GenreSource::Detected,
+        reasons: vec![slopvac_context::Reason {
+            signal: "heading".to_string(),
+            detail: format!("heading `{HOSTILE}`"),
+        }],
+        scores: vec![(HOSTILE.to_string(), 1.0)],
+    };
+    let text = slopvac_context::render(HOSTILE, &r);
+    assert_eq!(
+        text,
+        format!(
+            "{HOSTILE_ESCAPED}: g (detected)\n  heading: heading `{HOSTILE_ESCAPED}`\n  scores: {HOSTILE_ESCAPED} 1\n"
+        )
+    );
+}
+
+#[test]
+fn a_read_error_escapes_the_path() {
+    let m = slopvac_context::command()
+        .try_get_matches_from(["genre", "no\u{1b}]8;;\u{202e}/such.md"])
+        .unwrap();
+    let msg = slopvac_context::run(&m).unwrap_err().to_string();
+    assert!(msg.starts_with("no\\u{1b}]8;;\\u{202e}/such.md: "), "{msg}");
+    assert!(!msg.contains(['\u{1b}', '\u{202e}']), "{msg:?}");
+}
+
+#[test]
+fn an_assign_error_escapes_the_argument() {
+    let m = slopvac_context::command()
+        .try_get_matches_from(["genre", "a.md", "--assign", "x\u{1b}\u{202e}"])
+        .unwrap();
+    let msg = slopvac_context::run(&m).unwrap_err().to_string();
+    assert!(!msg.contains(['\u{1b}', '\u{202e}']), "{msg:?}");
+}
+
+/// Whether a `[[genres]]` block with `patterns` assigns its genre to `path`.
+fn files_match(patterns: &[String], path: &str) -> Result<bool, slopvac_context::Error> {
+    let reg = slopvac_context::GenreRegistry::new(
+        slopvac_context::parse_genres(
+            "- {schema_version: 3, id: base}\n- {schema_version: 3, id: hit}\n",
+        )
+        .unwrap(),
+        "base",
+    )
+    .unwrap();
+    let assignments = [slopvac_context::GenreAssignment {
+        files: patterns.to_vec(),
+        genre: "hit".into(),
+    }];
+    let doc = slopvac_context::PlainDocument::from_markdown(path, "t\n");
+    let opts = slopvac_context::ResolveOptions {
+        assignments: &assignments,
+        relative_path: None,
+        ..Default::default()
+    };
+    Ok(reg.resolve(&doc, &opts)?.id == "hit")
+}
+
+mod error_sources {
+    use std::error::Error as _;
+
+    use slopvac_context::{Error, GenreSpec, Pattern, TaggerSpec, parse_genres};
+
+    use super::files_match;
+
+    const BAD_YAML: &str = "{ unclosed";
+    const BAD_GLOB_GENRE: &str = "- schema_version: 3\n  id: a\n  detect:\n    signals:\n      - { kind: path, glob: '[' }\n";
+
+    fn has_source(e: &Error) -> bool {
+        e.source().is_some()
+    }
+
+    #[test]
+    fn yaml_errors_keep_their_source() {
+        assert!(has_source(&GenreSpec::from_yaml(BAD_YAML).unwrap_err()));
+        assert!(has_source(&parse_genres(BAD_YAML).unwrap_err()));
+        assert!(has_source(&TaggerSpec::from_yaml(BAD_YAML).unwrap_err()));
+        assert!(has_source(
+            &TaggerSpec::list_from_yaml(BAD_YAML).unwrap_err()
+        ));
+    }
+
+    #[test]
+    fn glob_errors_keep_their_source() {
+        let config = files_match(&["{a".to_string()], "a.md");
+        let config = config.unwrap_err();
+        assert!(has_source(&config), "{config:?}");
+        let signal =
+            slopvac_context::GenreRegistry::new(parse_genres(BAD_GLOB_GENRE).unwrap(), "a")
+                .err()
+                .unwrap();
+        assert!(has_source(&signal), "{signal:?}");
+    }
+
+    #[test]
+    fn a_glob_set_that_fails_to_build_keeps_its_source() {
+        // Each pattern parses, but the combined matcher is too large to build.
+        let huge = "?".repeat(3_000_000);
+        let err = files_match(&[huge], "a.md").unwrap_err();
+        assert!(matches!(err, Error::GlobSet(_)), "{err:?}");
+        assert!(has_source(&err));
+    }
+
+    #[test]
+    fn pattern_errors_keep_their_source() {
+        assert!(has_source(&Pattern::new("(").unwrap_err()));
+        let p = Pattern::new("^(a+)+$").unwrap();
+        let text = format!("{}b", "a".repeat(64));
+        assert!(has_source(&p.is_match(&text).unwrap_err()));
+        assert!(has_source(&p.find(&text).unwrap_err()));
+    }
+
+    #[test]
+    fn a_read_error_keeps_the_io_source() {
+        let m = slopvac_context::command()
+            .try_get_matches_from(["genre", "no-such-file.md"])
+            .unwrap();
+        let err = slopvac_context::run(&m).unwrap_err();
+        assert!(has_source(&err), "{err:?}");
+        assert!(err.to_string().starts_with("no-such-file.md: "), "{err}");
+    }
+}
+
+mod display_escaping {
+    use slopvac_context::{
+        Error, GenreAssignment, GenreRegistry, GenreSpec, Pattern, PlainDocument, ResolveOptions,
+        parse_genres,
+    };
+
+    use super::files_match;
+
+    const BAD: &str = "x\u{1b}[31m\u{202e}y";
+
+    fn clean(e: &Error) {
+        let msg = e.to_string();
+        assert!(msg.contains("x\\u{1b}[31m\\u{202e}y"), "{msg}");
+        assert!(!msg.contains(['\u{1b}', '\u{202e}']), "{msg:?}");
+    }
+
+    #[test]
+    fn an_unknown_assigned_genre_is_escaped() {
+        let reg = GenreRegistry::new(
+            parse_genres("- {schema_version: 3, id: base}\n").unwrap(),
+            "base",
+        )
+        .unwrap();
+        let assignments = [GenreAssignment {
+            files: vec!["*".to_string()],
+            genre: BAD.to_string(),
+        }];
+        let opts = ResolveOptions {
+            assignments: &assignments,
+            relative_path: None,
+            ..Default::default()
+        };
+        let err = reg
+            .resolve(&PlainDocument::from_markdown("a.md", "t\n"), &opts)
+            .unwrap_err();
+        assert!(matches!(err, Error::UnknownGenre(_)));
+        clean(&err);
+    }
+
+    #[test]
+    fn an_unknown_default_genre_is_escaped() {
+        let err = GenreRegistry::new(Vec::new(), BAD).err().unwrap();
+        clean(&err);
+    }
+
+    #[test]
+    fn pattern_errors_are_escaped() {
+        clean(&Pattern::new(&format!("(?#{BAD}")).unwrap_err());
+        let p = Pattern::new(&format!("(?#{BAD})^(a+)+$")).unwrap();
+        let text = format!("{}b", "a".repeat(64));
+        clean(&p.is_match(&text).unwrap_err());
+    }
+
+    #[test]
+    fn parse_errors_are_escaped() {
+        let spec = GenreSpec::from_yaml("schema_version: 3\nid: \"x\\e[31m\\u202ey\"\n").unwrap();
+        clean(&spec.validate().unwrap_err());
+    }
+
+    #[test]
+    fn a_duplicate_tagger_id_is_escaped() {
+        struct Named;
+        impl slopvac_context::Tagger for Named {
+            fn id(&self) -> &str {
+                BAD
+            }
+            fn tag(
+                &self,
+                _: &dyn slopvac_context::DocumentView,
+            ) -> Result<Vec<slopvac_context::Tag>, Error> {
+                Ok(Vec::new())
+            }
+        }
+        let mut reg = slopvac_context::TagRegistry::new();
+        reg.register(Box::new(Named)).unwrap();
+        let err = reg.register(Box::new(Named)).unwrap_err();
+        assert!(matches!(err, Error::DuplicateTagger(_)));
+        clean(&err);
+    }
+
+    #[test]
+    fn a_yaml_error_that_echoes_input_is_escaped() {
+        let y = "schema_version: 3\nid: a\nprofile: \"x\\e[31m\\u202ey\"\n";
+        let err = GenreSpec::from_yaml(y).unwrap_err();
+        assert!(matches!(err, Error::Yaml(_)));
+        // The parser prints its own escapes next to raw input text, so only the absence of
+        // raw characters is stable.
+        assert!(
+            !err.to_string().contains(['\u{1b}', '\u{202e}']),
+            "{:?}",
+            err.to_string()
+        );
+    }
+
+    #[test]
+    fn a_path_signal_glob_error_is_escaped() {
+        let y = "- schema_version: 3\n  id: a\n  detect:\n    signals:\n      - { kind: path, glob: \"{x\\e[31m\\u202ey\" }\n";
+        let err = GenreRegistry::new(parse_genres(y).unwrap(), "a")
+            .err()
+            .unwrap();
+        assert!(matches!(err, Error::SignalGlob { .. }), "{err:?}");
+        clean(&err);
+    }
+
+    #[test]
+    fn glob_errors_are_escaped() {
+        clean(&files_match(&[format!("{BAD}\\")], "a.md").unwrap_err());
+    }
 }

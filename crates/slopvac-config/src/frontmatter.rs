@@ -9,6 +9,7 @@ use frontmatter_spans::{FrontMatter, Limits};
 use crate::diag::{Code, Diagnostic};
 use crate::flatten::{Origin, flatten};
 use crate::load::LoadedConfig;
+use crate::messages::{ConfigPhrase, ConfigText};
 use crate::schema::validate_frontmatter;
 use crate::source::{Layer, Setting};
 use crate::tree::{Entry, Node, Value};
@@ -102,7 +103,10 @@ pub fn parse_block(doc: &str, block: &Block) -> Result<Node, crate::tree::ParseE
         })?;
     match first_duplicate(&node) {
         Some(entry) => Err(crate::tree::ParseError {
-            message: format!("duplicate key `{}`", entry.key),
+            message: ConfigText::DuplicateKey {
+                key: entry.key.clone(),
+            }
+            .to_string(),
             span: Some(entry.key_span.clone()),
         }),
         None => Ok(node),
@@ -246,11 +250,12 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
                 settings: Vec::new(),
                 diagnostics: vec![Diagnostic {
                     code: Code::Parse,
-                    message: format!("the front matter does not parse: {}", e.message),
-                    label: "the parser stopped here".into(),
+                    message: ConfigText::FrontMatterUnparsed { detail: e.message }.to_string(),
+                    label: ConfigPhrase::LabelParserStopped.text(),
                     span: at..at,
                     help: None,
                     path: Vec::new(),
+                    data: None,
                 }],
             };
         }
@@ -290,10 +295,11 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
 /// (`slopvac` or `directive`), and it also names the source in the message.
 pub(crate) fn denied(block: &Node, policy: &Policy, root: &str) -> Vec<Diagnostic> {
     let what = if root == "directive" {
-        "an inline directive"
+        ConfigPhrase::ScopeDirective
     } else {
-        "front matter"
-    };
+        ConfigPhrase::ScopeFrontMatter
+    }
+    .as_static();
     let Value::Table(entries) = &block.value else {
         return Vec::new();
     };
@@ -303,14 +309,16 @@ pub(crate) fn denied(block: &Node, policy: &Policy, root: &str) -> Vec<Diagnosti
         .filter(|e| !policy.allow.contains(&e.key))
         .map(|e| Diagnostic {
             code: Code::FrontmatterFieldDenied,
-            message: format!("the project does not let {what} set `{}`", e.key),
-            label: "not in `[frontmatter] allow`".into(),
+            message: ConfigText::FieldDenied {
+                what: what.to_owned(),
+                key: e.key.clone(),
+            }
+            .to_string(),
+            label: ConfigPhrase::NotInAllow.text(),
             span: e.key_span.clone(),
-            help: Some(format!(
-                "to allow `{}`, add it to `[frontmatter] allow` in slopvac.toml",
-                e.key
-            )),
+            help: Some(ConfigText::FieldDeniedHelp { key: e.key.clone() }.to_string()),
             path: vec![root.to_owned(), e.key.clone()],
+            data: None,
         })
         .collect()
 }

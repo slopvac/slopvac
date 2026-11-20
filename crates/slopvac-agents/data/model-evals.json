@@ -1,5 +1,7 @@
 {
-  "schema_version": 1,
-  "date": "2026-11-14",
-  "runs": []
+ "date": "2026-11-14",
+ "repeats": 3,
+ "rows": [],
+ "schema_version": 2,
+ "status": "pending-reevaluation"
 }

@@ -7,13 +7,14 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use oci_server::{Response, Server};
+use rstest::rstest;
 use serde_json::json;
 use slopvac_plugins::oci::{
     Anonymous, Client, Descriptor, MEDIA_MANIFEST, Manifest, OciError, Reference,
 };
 use slopvac_plugins::sign::{
     ANNOTATION_ID, ANNOTATION_VERSION, Expectation, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT,
-    PublicKey, SignError, Statement, canonical_json, fetch_and_verify, release_key,
+    PublicKey, SignError, Statement, canonical_json, fetch_and_verify, plugins_key, release_key,
     signature_layers, verify,
 };
 
@@ -85,19 +86,33 @@ fn sign_manifest(
     not_before: &str,
     payload: &[(&str, &[u8])],
 ) -> Signed {
+    sign_manifest_naming(
+        key,
+        &key.public().key_id(),
+        ns,
+        id,
+        version,
+        not_before,
+        payload,
+    )
+}
+
+/// Sign with `key` while the statement names `key_id`, which may be another key's.
+fn sign_manifest_naming(
+    key: &Key,
+    key_id: &str,
+    ns: &str,
+    id: &str,
+    version: &str,
+    not_before: &str,
+    payload: &[(&str, &[u8])],
+) -> Signed {
     let mut manifest = base_manifest(payload);
     manifest.annotations.insert(ANNOTATION_ID.into(), id.into());
     manifest
         .annotations
         .insert(ANNOTATION_VERSION.into(), version.into());
-    let st = Statement::for_manifest(
-        ns,
-        id,
-        version,
-        &key.public().key_id(),
-        not_before,
-        &manifest,
-    );
+    let st = Statement::for_manifest(ns, id, version, key_id, not_before, &manifest);
     let statement = st.canonical_bytes();
     let minisig = key.sign(&statement);
     manifest
@@ -413,7 +428,7 @@ fn the_requested_id_version_and_type_must_match_the_signed_ones() {
             ..expect()
         },
         Expectation {
-            artifact_type: "application/vnd.slopvac.plugin.v1",
+            artifact_type: "application/vnd.slopvac.revocations.v1",
             ..expect()
         },
     ] {
@@ -821,6 +836,9 @@ fn the_compiled_release_key_has_the_published_key_id() {
     assert_eq!(release_key().unwrap().key_id(), "D9914BDB4570AC6D");
 }
 
+const PLUGINS_PUB_FILE: &str = include_str!("../../../keys/slopvac-plugins.pub");
+const PLUGINS_KEY_ID: &str = "089DF22CF142CD2B";
+
 fn first_party_signed(key: &Key) -> Signed {
     sign_manifest(
         key,
@@ -841,10 +859,8 @@ fn first_party_expect() -> Expectation<'static> {
 }
 
 #[test]
-fn the_compiled_policy_binds_the_first_party_namespace_to_the_release_key() {
+fn the_compiled_policy_fixes_the_namespace_list_and_pins_nothing() {
     let policy = KeyPolicy::compiled().unwrap();
-    assert_eq!(policy.first_party.len(), 1);
-    assert_eq!(policy.first_party[0].key_id(), "D9914BDB4570AC6D");
     assert_eq!(policy.first_party_namespaces, ["slopvac"]);
     assert!(policy.pinned.is_empty());
 }
@@ -868,4 +884,230 @@ fn a_first_party_pack_verifies_only_when_the_signing_key_is_injected() {
         ..KeyPolicy::compiled().unwrap()
     };
     assert_eq!(run(&s, &injected, &first_party_expect()), Ok(()));
+}
+
+fn reserved_policy(compiled: &Key, pinned_for: &str, pinned: &Key) -> KeyPolicy {
+    KeyPolicy {
+        first_party: vec![compiled.public()],
+        first_party_namespaces: vec!["slopvac".into()],
+        pinned: BTreeMap::from([(pinned_for.to_owned(), vec![pinned.public()])]),
+    }
+}
+
+fn signed_in(key: &Key, namespace: &str) -> Signed {
+    sign_manifest(
+        key,
+        namespace,
+        ID,
+        "1.2.0",
+        "2026-11-01T00:00:00Z",
+        &[(LAYER, b"x")],
+    )
+}
+
+#[test]
+fn a_core_artifact_is_refused_whatever_key_signed_it() {
+    let compiled = Key::new();
+    let pinned = Key::new();
+    let policy = reserved_policy(&compiled, "core", &pinned);
+    let e = Expectation {
+        namespace: "core",
+        ..expect()
+    };
+    for (who, key) in [("pinned", &pinned), ("compiled", &compiled)] {
+        assert!(
+            matches!(
+                run(&signed_in(key, "core"), &policy, &e),
+                Err(SignError::KeyNotPinned { .. })
+            ),
+            "core signed by the {who} key"
+        );
+    }
+    // A policy that lists core as first-party does not open it either.
+    let listed = KeyPolicy {
+        first_party_namespaces: vec!["slopvac".into(), "core".into()],
+        ..policy
+    };
+    assert!(matches!(
+        run(&signed_in(&compiled, "core"), &listed, &e),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[test]
+fn a_slopvac_artifact_signed_by_a_pinned_key_is_refused_even_without_the_first_party_list() {
+    let compiled = Key::new();
+    let pinned = Key::new();
+    let e = Expectation {
+        namespace: "slopvac",
+        ..expect()
+    };
+    let bare = KeyPolicy {
+        first_party: vec![compiled.public()],
+        first_party_namespaces: Vec::new(),
+        pinned: BTreeMap::from([("slopvac".to_owned(), vec![pinned.public()])]),
+    };
+    assert!(matches!(
+        run(&signed_in(&pinned, "slopvac"), &bare, &e),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+    assert_eq!(run(&signed_in(&compiled, "slopvac"), &bare, &e), Ok(()));
+}
+
+#[test]
+fn the_compiled_plugins_key_parses_with_the_issued_key_id() {
+    // Bytes 2..10 of the decoded key line, little-endian, worked out by hand from
+    // the key ID in the file's comment line: 2B CD 42 F1 2C F2 9D 08.
+    let comment = PLUGINS_PUB_FILE.lines().next().unwrap();
+    assert!(comment.ends_with(PLUGINS_KEY_ID), "{comment}");
+    let line = PLUGINS_PUB_FILE.lines().nth(1).unwrap();
+    let raw = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, line).unwrap();
+    assert_eq!(raw[2..10], [0x2B, 0xCD, 0x42, 0xF1, 0x2C, 0xF2, 0x9D, 0x08]);
+    assert_eq!(plugins_key().unwrap().key_id(), PLUGINS_KEY_ID);
+}
+
+#[test]
+fn the_plugins_key_is_not_the_release_key() {
+    let plugins = plugins_key().unwrap();
+    let release = release_key().unwrap();
+    assert_ne!(plugins.key_id(), release.key_id());
+    assert_ne!(plugins.fingerprint(), release.fingerprint());
+}
+
+#[rstest]
+#[case::built_in("core")]
+#[case::third_party("acme")]
+fn the_first_party_key_list_gives_no_trust_outside_the_first_party_namespace(
+    #[case] namespace: &str,
+) {
+    // A key in the first-party list, here a test key beside the plugins key, signs
+    // nothing in `core` or a third-party namespace. The secret half of the plugins
+    // key is not available to tests, so a positive check for `slopvac` is not
+    // possible; the existing first-party tests cover that path with injected keys.
+    let signer = Key::new();
+    let policy = KeyPolicy {
+        first_party: vec![plugins_key().unwrap(), signer.public()],
+        first_party_namespaces: vec!["slopvac".into()],
+        pinned: BTreeMap::new(),
+    };
+    let e = Expectation {
+        namespace,
+        ..expect()
+    };
+    assert!(matches!(
+        run(&signed_in(&signer, namespace), &policy, &e),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+// ---- The compiled policy binds `slopvac` to the plugins key ----
+
+fn compiled_first_party_ids() -> Vec<String> {
+    KeyPolicy::compiled()
+        .unwrap()
+        .first_party
+        .iter()
+        .map(PublicKey::key_id)
+        .collect()
+}
+
+#[test]
+fn the_compiled_policy_verifies_the_slopvac_namespace_with_the_plugins_key() {
+    assert_eq!(compiled_first_party_ids(), [PLUGINS_KEY_ID]);
+}
+
+/// A `slopvac` statement that names `key_id`, signed by a test key.
+fn slopvac_naming(key_id: &str) -> Signed {
+    sign_manifest_naming(
+        &Key::new(),
+        key_id,
+        "slopvac",
+        ID,
+        "1.2.0",
+        "2026-11-01T00:00:00Z",
+        &[(LAYER, b"x")],
+    )
+}
+
+fn slopvac_expect() -> Expectation<'static> {
+    Expectation {
+        namespace: "slopvac",
+        ..expect()
+    }
+}
+
+#[test]
+fn a_slopvac_statement_naming_the_release_key_is_refused_by_the_compiled_policy() {
+    let s = slopvac_naming(&release_key().unwrap().key_id());
+    assert!(matches!(
+        run(&s, &KeyPolicy::compiled().unwrap(), &slopvac_expect()),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[test]
+fn a_slopvac_statement_naming_the_release_key_is_refused_with_no_first_party_key() {
+    // The release key sits in the pin table for `slopvac`, which never opens it.
+    let release = release_key().unwrap();
+    let policy = KeyPolicy {
+        first_party: Vec::new(),
+        first_party_namespaces: vec!["slopvac".into()],
+        pinned: BTreeMap::from([("slopvac".to_owned(), vec![release.clone()])]),
+    };
+    assert!(matches!(
+        run(
+            &slopvac_naming(&release.key_id()),
+            &policy,
+            &slopvac_expect()
+        ),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[test]
+fn a_slopvac_statement_naming_the_plugins_key_with_a_bad_signature_is_refused() {
+    let s = slopvac_naming(PLUGINS_KEY_ID);
+    assert_eq!(
+        run(&s, &KeyPolicy::compiled().unwrap(), &slopvac_expect()),
+        Err(SignError::BadSignature)
+    );
+}
+
+#[rstest]
+#[case::unpinned(None)]
+#[case::another_key_pinned(Some(Key::new()))]
+fn a_third_party_namespace_does_not_verify_through_the_first_party_list(
+    #[case] pinned: Option<Key>,
+) {
+    // The signer is in the first-party list, so only the namespace check can refuse it.
+    let signer = Key::new();
+    let mut policy = KeyPolicy::compiled().unwrap();
+    policy.first_party.push(signer.public());
+    if let Some(p) = &pinned {
+        policy.pinned.insert("acme".into(), vec![p.public()]);
+    }
+    let e = Expectation {
+        namespace: "acme",
+        ..expect()
+    };
+    assert!(matches!(
+        run(&signed_in(&signer, "acme"), &policy, &e),
+        Err(SignError::KeyNotPinned { .. })
+    ));
+}
+
+#[test]
+fn a_core_statement_is_refused_under_the_compiled_policy_whichever_key_signed_it() {
+    let e = Expectation {
+        namespace: "core",
+        ..expect()
+    };
+    assert!(matches!(
+        run(
+            &signed_in(&Key::new(), "core"),
+            &KeyPolicy::compiled().unwrap(),
+            &e
+        ),
+        Err(SignError::KeyNotPinned { .. })
+    ));
 }

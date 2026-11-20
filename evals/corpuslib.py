@@ -108,6 +108,28 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# Where `date` comes from. Commit documents use the committer date of the
+# document's own commit. File and JSON documents use the committer date of the
+# pinned content revision. Pull requests have no content revision (the text is
+# the title and body that the API returns at fetch time), so `date` is the day
+# the PR was opened; later edits of the body are not excluded by it.
+DATE_SOURCES = ("commit.committer.date", "pull_request.created_at")
+
+
+class NotPublicError(Exception):
+    """A source repository is not public, so none of its text may be curated."""
+
+
+def public_record(repo: str, meta: dict[str, Any], today: str) -> dict[str, Any]:
+    """Return the `repos` fields that record a passed public check.
+
+    `meta` is the `repos/{repo}` API answer. Both `private` and `visibility`
+    must say public; a missing `private` field is not a pass.
+    """
+    if meta.get("private") is not False or meta.get("visibility", "public") != "public":
+        raise NotPublicError(f"{repo}: repository is not public")
+    return {"public": True, "public_checked_at": today}
+
 
 def normalise(text: str) -> str:
     """Line endings are the only change between upstream bytes and corpus bytes."""
@@ -148,8 +170,52 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
     repos = manifest.get("repos", {})
     docs = manifest.get("documents", [])
     seen: set[str] = set()
+    for name, repo in repos.items():
+        errors.extend(_validate_repo(name, repo))
     for doc in docs:
         errors.extend(_validate_doc(doc, repos, seen))
+    return errors
+
+
+def _validate_repo(name: str, repo: dict[str, Any]) -> list[str]:
+    """`public` and `public_checked_at` are optional, but travel together."""
+    errors: list[str] = []
+    if not isinstance(repo, dict):
+        return [f"{name}: repos entry must be an object"]
+    if "public" in repo and repo["public"] is not True:
+        errors.append(f"{name}: repository is not public")
+    if "public" in repo or "public_checked_at" in repo:
+        checked = repo.get("public_checked_at")
+        if not (isinstance(checked, str) and DATE_RE.match(checked)):
+            errors.append(f"{name}: public_checked_at must be YYYY-MM-DD")
+    return errors
+
+
+def _source_commit(doc: dict[str, Any], default: str) -> str:
+    """The pinned commit, or `default` when the source is absent or mistyped.
+
+    A mistyped `source` is reported by its own check.
+    """
+    source = doc.get("source")
+    return source.get("commit", default) if isinstance(source, dict) else default
+
+
+def _validate_provenance(ident: str, doc: dict[str, Any]) -> list[str]:
+    """`provenance` is optional so records from before it existed stay valid."""
+    prov = doc.get("provenance")
+    if prov is None:
+        return []
+    if not isinstance(prov, dict):
+        return [f"{ident}: provenance must be an object"]
+    errors: list[str] = []
+    if "date_source" in prov and prov["date_source"] not in DATE_SOURCES:
+        errors.append(f"{ident}: date_source must be one of {DATE_SOURCES}")
+    if "license_revision" in prov:
+        revision = prov["license_revision"]
+        if not (isinstance(revision, str) and COMMIT_RE.match(revision)):
+            errors.append(f"{ident}: license_revision must be a 40-digit commit id")
+        elif revision != _source_commit(doc, revision):
+            errors.append(f"{ident}: licence must be read at the content revision")
     return errors
 
 
@@ -193,6 +259,7 @@ def _validate_doc(
             errors.append(f"{ident}: date must be YYYY-MM-DD")
         elif origin == "human" and date >= HUMAN_CUTOFF:
             errors.append(f"{ident}: human text must predate {HUMAN_CUTOFF}")
+    errors.extend(_validate_provenance(ident, doc))
     committed = _need(doc, "committed", errors, bool)
 
     source = _need(doc, "source", errors, dict)

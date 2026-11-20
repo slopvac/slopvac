@@ -8,6 +8,8 @@ use slopvac_model::{BomMode, Finding, Notice, RuleId, Span};
 use slopvac_parse::{BlockKind, parse_markdown};
 use slopvac_rules::RuleSet;
 
+use crate::binary_host::{is_binary_host, unchecked_notice};
+
 /// Why a buffer could not be linted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
@@ -21,6 +23,11 @@ pub struct Linted {
     /// What did not run, and why (`Document.unchecked`). An editor must not show a buffer
     /// as clean when part of the check was skipped.
     pub unchecked: Vec<Notice>,
+    /// Root notices of the run, which leave it complete. The server publishes only
+    /// `extract-unsupported` (a diagram type the engine does not read), at the start of the
+    /// document because a notice has no position. It drops any other code when it builds
+    /// diagnostics, so this field can hold more than the editor shows.
+    pub notices: Vec<Notice>,
 }
 
 /// Lints the text of one editor buffer.
@@ -66,27 +73,42 @@ pub struct EngineLinter {
     reasons: HashMap<RuleId, Vec<String>>,
 }
 
+/// The exception names of each rule in `sets`, for the allow-directive code action.
+#[must_use]
+pub fn exception_names<'a>(
+    sets: impl IntoIterator<Item = &'a RuleSet>,
+) -> HashMap<RuleId, Vec<String>> {
+    sets.into_iter()
+        .flat_map(RuleSet::rules)
+        .map(|loaded| {
+            let names = loaded
+                .rule()
+                .exceptions()
+                .iter()
+                .map(|e| e.name.to_string())
+                .collect();
+            (loaded.id().clone(), names)
+        })
+        .collect()
+}
+
 impl EngineLinter {
     /// Build the engine from `sets` and `settings`, and record the exception names of each
     /// rule for the allow-directive code action.
     pub fn new(sets: Vec<RuleSet>, settings: Settings) -> Result<Self, EngineError> {
-        let reasons = sets
-            .iter()
-            .flat_map(RuleSet::rules)
-            .map(|loaded| {
-                let names = loaded
-                    .rule()
-                    .exceptions()
-                    .iter()
-                    .map(|e| e.name.to_string())
-                    .collect();
-                (loaded.id().clone(), names)
-            })
-            .collect();
+        let reasons = exception_names(&sets);
         Ok(Self {
             engine: Engine::new(sets, settings)?,
             reasons,
         })
+    }
+
+    /// Serve an engine that the caller built, with the exception names of its rules (see
+    /// [`exception_names`]). The caller sets everything the engine needs, such as terms and
+    /// the blocklist.
+    #[must_use]
+    pub fn from_engine(engine: Engine, reasons: HashMap<RuleId, Vec<String>>) -> Self {
+        Self { engine, reasons }
     }
 }
 
@@ -123,14 +145,22 @@ fn kind_of(path: &str) -> Kind {
 
 impl Linter for EngineLinter {
     fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
+        if is_binary_host(path) {
+            return Ok(Linted {
+                findings: Vec::new(),
+                unchecked: unchecked_notice().into_iter().collect(),
+                notices: Vec::new(),
+            });
+        }
         let input = Input::new(path, text)
             .with_kind(kind_of(path))
             .with_bom(BomMode::Buffer);
         self.engine
-            .lint(&input)
-            .map(|document| Linted {
+            .lint_with_notices(&input)
+            .map(|(document, notices)| Linted {
                 findings: document.findings,
                 unchecked: document.unchecked,
+                notices,
             })
             .map_err(|e| LintError(e.to_string()))
     }

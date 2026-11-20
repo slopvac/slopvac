@@ -1,0 +1,7 @@
+schema_version: 3
+id: safety-admonition
+tag: safety
+scope: paragraph
+confidence: 0.95
+when:
+  admonition_title: '^\W*(?:warning|danger|caution)\b'

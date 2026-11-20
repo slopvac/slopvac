@@ -1,0 +1,20 @@
+id: derive-without-catalog
+language: rust
+severity: error
+message: Derive `Catalog` instead of `thiserror::Error`; `Catalog` supplies `Display`, `Error` and `From`.
+note: >-
+  A type that derives `Error` and `Catalog` has conflicting impls, and an `Error` derive with
+  no `Catalog` keeps its code and text out of the registry. Give each variant
+  `#[code("kebab-case")]` and a `#[message("…")]` template, and derive `Catalog` alone. Files
+  under tests, benches and examples are exempt. The rule reads every identifier in each
+  `#[derive(...)]`, so a split or multi-line derive is covered.
+files:
+  - crates/slopvac-messages/src/**
+  - crates/slopvac-messages-derive/src/**
+ignores:
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/examples/**"
+rule:
+  kind: attribute_item
+  regex: (?s)derive\(.*\bError\b

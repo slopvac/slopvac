@@ -28,6 +28,8 @@ from referencing import Registry, Resource
 
 SCHEMAS = ROOT / "schemas" / "v3"
 PROFILES = mapping.PROFILES
+# Categories that the 2.x profile tables name but no 2.x rule belongs to.
+NO_RULE_CATEGORIES = {"meta", "orwell-voice", "prose-density", "ste-vocabulary"}
 
 
 def _style(profile: str) -> dict:
@@ -169,10 +171,36 @@ def test_checklist_selection_matches_2x(truth):
 def test_category_budgets_and_weights_match_2x(truth):
     profile, _, resolved, _ = truth
     dials = _style(profile)["categories"]
-    assert set(dials) == set(resolved.categories)
-    for name, settings in resolved.categories.items():
+    assert set(dials) == set(resolved.categories) - NO_RULE_CATEGORIES
+    for name in dials:
+        settings = resolved.categories[name]
         assert dials[name].get("max_per_100_words") == settings.max_per_100_words, name
         assert dials[name].get("weight") == settings.weight, name
+
+
+def test_a_legacy_style_names_exactly_the_2x_rules_and_categories(truth):
+    profile, ruleset, resolved, _ = truth
+    style = _style(profile)
+    rule_ids = {rule.qualified_id for rule in ruleset.all_rules}
+    categories_with_rules = {rule.category for rule in ruleset.all_rules}
+    # No category without rules, and none of the categories with rules left out.
+    assert set(style["categories"]) == categories_with_rules
+    assert NO_RULE_CATEGORIES <= set(resolved.categories) - categories_with_rules
+    # A rule entry names a 2.x rule only.
+    assert set(style["rules"]) - rule_ids == set()
+    # The generated spelling rule is part of the catalogue, resolved like any rule.
+    assert "ste-words.spelling" in rule_ids
+
+
+@pytest.mark.parametrize(
+    ("profile", "level"), [("strict", None), ("normal", None), ("relaxed", "off")]
+)
+def test_spelling_follows_the_2x_tier(profile, level):
+    # 2.x tiers `spelling` enforced at strict and normal and excluded at relaxed.
+    entries = _style(profile)["rules"]
+    states = mapping.engine_states(profile)[2]
+    assert entries.get("ste-words.spelling") == level
+    assert (states["ste-words.spelling"][1] == "off") is (profile == "relaxed")
 
 
 def test_mapping_json_thresholds_match_2x(truth):
@@ -186,13 +214,6 @@ def test_mapping_json_thresholds_match_2x(truth):
     }
     assert entry["severity_shift"] == 0
     assert entry["style"] == f"core:legacy-{profile}"
-
-
-def test_inversions_the_2x_docstring_names_survive():
-    strict, normal = _style("strict"), _style("normal")
-    assert strict["categories"]["orwell-voice"]["severity"] == "warning"
-    assert normal["categories"]["orwell-voice"]["severity"] == "error"
-    assert _style("relaxed")["categories"]["meta"]["severity"] == "error"
 
 
 def test_per_rule_default_under_an_error_category_keeps_its_warning():
@@ -476,7 +497,7 @@ def test_expansion_reproduces_2x_for_each_file(name, ruleset):
                 wrong[rule.qualified_id] = (got, states[rule.qualified_id][1])
         assert wrong == {}, path
         for cat, settings in resolved.categories.items():
-            if settings.severity.value == "off":
+            if settings.severity.value == "off" or cat in NO_RULE_CATEGORIES:
                 continue
             budget = category_dial(layers, cat, "max_per_100_words")
             assert budget == settings.max_per_100_words, (path, cat)
@@ -494,13 +515,16 @@ def test_ignored_2x_rule_entry_is_dropped(ruleset):
 
 
 def test_a_profile_override_clears_a_budget_with_none(ruleset):
-    # orwell-voice has a 0.5 budget at normal and none at strict.
+    # ai-tells-agentic has a budget at normal and none at relaxed.
     config3 = expand(
-        {"profile": "normal", "overrides": [{"files": ["docs/**"], "profile": "strict"}]},
+        {
+            "profile": "normal",
+            "overrides": [{"files": ["docs/**"], "profile": "relaxed"}],
+        },
         ruleset,
     )
     block = config3["overrides"][0]
-    assert block["categories"]["orwell-voice"]["max_per_100_words"] == "none"
+    assert block["categories"]["ai-tells-agentic"]["max_per_100_words"] == "none"
 
 
 @pytest.mark.parametrize(
@@ -515,7 +539,16 @@ def test_a_profile_override_clears_a_budget_with_none(ruleset):
         ["/docs/**"],
         ["docs/../x/**"],
     ],
-    ids=["wildcard", "wildcard-before-tree", "basename", "negated", "class", "any-depth", "leading-slash", "dot-dot"],
+    ids=[
+        "wildcard",
+        "wildcard-before-tree",
+        "basename",
+        "negated",
+        "class",
+        "any-depth",
+        "leading-slash",
+        "dot-dot",
+    ],
 )
 def test_expansion_stops_on_globs_outside_the_grammar(ruleset, files):
     from preserve_expansion import AmbiguousOverlap
@@ -563,13 +596,22 @@ REGION_PATHS = [
         [["docs/api"], ["docs/api/**"]],
         [["docs/api/**"], ["docs/api"], ["docs/**"]],
     ],
-    ids=["nested", "reversed", "forest", "equal-and-file", "path-and-tree", "tree-path-and-parent"],
+    ids=[
+        "nested",
+        "reversed",
+        "forest",
+        "equal-and-file",
+        "path-and-tree",
+        "tree-path-and-parent",
+    ],
 )
 def test_each_path_falls_in_exactly_one_region_that_names_its_blocks(blocks):
     from preserve_expansion import build_regions, matches_files
 
     regions = build_regions(blocks)
     for path in REGION_PATHS:
-        matching = frozenset(i for i, files in enumerate(blocks) if matches_files(files, path))
+        matching = frozenset(
+            i for i, files in enumerate(blocks) if matches_files(files, path)
+        )
         hit = [scope for scope, files in regions if matches_files(files, path)]
         assert hit == [matching], path

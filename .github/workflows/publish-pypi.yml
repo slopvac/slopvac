@@ -1,0 +1,405 @@
+name: Publish to PyPI
+
+# The single publisher of the slopvac 3.x binary wheels. It handles two tag kinds
+# (bead slopvac-8l4.13.45):
+#
+# * `rc/vX.Y.Z-rc.N` publishes the candidate `X.Y.ZrcN` and cuts a GitHub
+#   prerelease with the archives, wheels and signatures.
+# * `vX.Y.Z` of major 3 or later publishes the stable `X.Y.Z`, but only after the
+#   release-provenance gate shows that a passed candidate tested the same tree.
+#   Stable tags of major 2 and earlier are not handled here.
+#
+# Pushing the tag runs the offline accuracy gate and the migration end-to-end
+# tests, builds the wheels, and uploads to PyPI after approval in the `pypi`
+# environment. `workflow_dispatch` is a dry run by default: it builds and tests
+# the tag you name and never publishes unless dry-run is false and the run
+# starts on that tag.
+#
+# The cargo-dist workflow (release.yml) also starts on `vX.Y.Z`. It owns the GitHub
+# release, the archives and the Homebrew formula and never touches PyPI; this
+# workflow owns PyPI and never touches the GitHub release of a stable tag. They
+# share nothing to race on, and each runs the same provenance gate. The wheels
+# are built from the tagged commit, the commit the provenance job checked.
+#
+# PyPI Trusted Publishing is bound to this file name and the `pypi` environment
+# (owner slopvac, repo slopvac). Nothing here changes PyPI or repository settings.
+
+on:
+  push:
+    tags:
+      - "rc/v*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag the version comes from, for example rc/v3.0.0-rc.1 or v3.0.0"
+        required: true
+        type: string
+      dry-run:
+        description: "Build and test only; never publish"
+        required: true
+        type: boolean
+        default: true
+
+# Every job declares its own permissions; the default grants none.
+permissions: {}
+
+concurrency:
+  group: publish-pypi-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate the tag
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    outputs:
+      cargo-version: ${{ steps.parse.outputs.cargo }}
+      pypi-version: ${{ steps.parse.outputs.pypi }}
+      stable: ${{ steps.parse.outputs.stable }}
+      active: ${{ steps.parse.outputs.active }}
+      publish: ${{ steps.mode.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Parse the tag
+        id: parse
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: python3 scripts/release_provenance.py parse-tag "$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether this run may publish
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          publish=false
+          if [[ "$EVENT" == "push" ]]; then
+            publish=true
+          elif [[ "$DRY_RUN" == "false" ]]; then
+            # A real dispatch run must be started on the tag itself.
+            if [[ "$REF_TYPE" != "tag" || "$REF_NAME" != "$INPUT_TAG" ]]; then
+              echo "dry-run is off: run this workflow on the tag $INPUT_TAG, not on $REF_NAME" >&2
+              exit 1
+            fi
+            publish=true
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+      - name: Require the commit to be on main or the release PR branch
+        if: ${{ steps.mode.outputs.publish == 'true' && steps.parse.outputs.active == 'true' }}
+        run: |
+          set -euo pipefail
+          allowed='^\s*origin/(main|release-please--branches--main)\s*$'
+          if ! git branch -r --contains "$GITHUB_SHA" | grep -Eq "$allowed"; then
+            echo "tagged commit is not on main or a release-please branch" >&2
+            exit 1
+          fi
+
+      # A release must not ship unsigned, and the PyPI upload below cannot be undone.
+      # Stop early when the public key that checks the signatures is not committed.
+      - name: Require the release public key
+        if: ${{ steps.mode.outputs.publish == 'true' && steps.parse.outputs.active == 'true' }}
+        run: python3 scripts/release_signing.py require-key
+
+  evals:
+    name: Offline evals and migration end-to-end
+    needs: validate
+    if: ${{ needs.validate.outputs.active == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: nextest@0.9.152
+
+      - name: Set the candidate version
+        env:
+          VERSION: ${{ needs.validate.outputs.cargo-version }}
+        run: python3 scripts/set_workspace_version.py "$VERSION"
+
+      # --no-tests=fail: a suite that does not exist yet blocks the candidate.
+      - name: Offline accuracy gate
+        run: cargo nextest run --workspace --no-tests=fail -E 'test(/^accuracy::/)'
+
+      - name: Migration end-to-end
+        run: cargo nextest run --workspace --no-tests=fail -E 'test(/^migration_e2e::/)'
+
+  wheels:
+    name: Wheels
+    needs: validate
+    if: ${{ needs.validate.outputs.active == 'true' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/wheels.yml
+    with:
+      version: ${{ needs.validate.outputs.cargo-version }}
+
+  # One native runner per target, so cargo-dist needs no cross-compile wrapper.
+  # The SBOM is a global artifact in cargo-dist and is left out of candidates.
+  # Candidates only: a stable release gets its archives from release.yml.
+  archives:
+    name: Archive (${{ matrix.target }})
+    needs: validate
+    if: ${{ needs.validate.outputs.stable != 'true' && needs.validate.outputs.active == 'true' }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
+      - name: Add the build target
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "$TARGET"
+
+      - name: Install musl tools
+        if: ${{ endsWith(matrix.target, '-musl') }}
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          # A publishing workflow must not restore caches another run could write.
+          enable-cache: false
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@5885714d0a40a14b2535c6ffc051fd8e49aa9665 # v1.27.0
+        env:
+          BINSTALL_DISABLE_TELEMETRY: "true"
+
+      - name: Install cargo-dist and cargo-auditable
+        shell: bash
+        run: cargo binstall cargo-dist@0.34.0 cargo-auditable --no-confirm
+
+      - name: Set the candidate version
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.cargo-version }}
+        run: uv run --no-project python scripts/set_workspace_version.py "$VERSION"
+
+      - name: Build the archive
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.cargo-version }}
+          TARGET: ${{ matrix.target }}
+        run: dist build --artifacts=local --target "$TARGET" --tag "v$VERSION"
+
+      - name: Upload archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archive-${{ matrix.target }}
+          path: |
+            target/distrib/*.tar.gz
+            target/distrib/*.sha256
+          if-no-files-found: error
+
+  # Signs before the PyPI upload, which cannot be undone, so a signing failure stops
+  # the candidate first. Only this job reads the secret; the prerelease job attaches
+  # the signatures it uploads.
+  sign:
+    name: Sign the candidate assets
+    needs: [validate, wheels, archives]
+    if: ${{ needs.validate.outputs.publish == 'true' && needs.validate.outputs.stable != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The signing key lives in this environment, which only `rc/v*` tags can deploy to.
+    # `sign` runs only when `publish` is true: a push of an `rc/v*` tag, or a dispatch
+    # run on that tag with dry-run off. A dry run never reaches this job.
+    environment: candidate-signing
+    permissions:
+      contents: read
+    steps:
+      # The signing script and public key come from the tagged tree.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download archives and wheels
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{archive,wheels}-*"
+          merge-multiple: true
+          path: artifacts
+
+      - name: Install minisign
+        run: bash scripts/install_minisign.sh
+
+      # Signs archives, checksums and wheels, and verifies each signature.
+      - name: Sign the release artifacts
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          VERSION: ${{ needs.validate.outputs.cargo-version }}
+        run: python3 scripts/release_signing.py sign artifacts --version "$VERSION"
+
+      - name: Upload signatures
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signatures-candidate
+          path: artifacts/*.minisig
+          if-no-files-found: error
+
+  # A stable release reaches the PyPI upload only through the provenance gate: a
+  # passed candidate tested this tree and the tag still points at this commit.
+  provenance:
+    name: Stable release has a passed candidate
+    needs: validate
+    if: >-
+      ${{ needs.validate.outputs.publish == 'true' &&
+      needs.validate.outputs.active == 'true' &&
+      needs.validate.outputs.stable == 'true' }}
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/release-provenance.yml
+    secrets:
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+  # The job that uploads to PyPI holds only id-token. The prerelease job below has
+  # broader rights and stays separate. No skip-existing: re-running an
+  # already-published version must fail, not pass silently.
+  publish:
+    name: Publish to PyPI
+    needs: [validate, evals, wheels, archives, sign, provenance]
+    # Skipped jobs stand for "not this tag kind", so name the results that must hold.
+    if: >-
+      ${{ !cancelled() && needs.validate.outputs.publish == 'true' &&
+      needs.validate.outputs.active == 'true' &&
+      needs.evals.result == 'success' && needs.wheels.result == 'success' &&
+      (needs.validate.outputs.stable == 'true' &&
+      needs.provenance.result == 'success' ||
+      needs.validate.outputs.stable != 'true' &&
+      needs.archives.result == 'success' && needs.sign.result == 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/slopvac/${{ needs.validate.outputs.pypi-version }}/
+    permissions:
+      contents: read
+      id-token: write # exchanged for a PyPI Trusted Publishing upload token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A tag moved after the provenance check must not release other code.
+      - name: Require the tag to still point at the built commit
+        if: ${{ needs.validate.outputs.stable == 'true' }}
+        env:
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: python3 scripts/release_provenance.py verify-tag "$TAG" "$SHA"
+
+      - name: Download wheels
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+
+      # The wheels came from build jobs, so the upload trusts no file name. The
+      # directory must hold exactly one wheel per build target listed in wheels.yml,
+      # judged by platform tag, and each wheel's own metadata must name slopvac and
+      # this version.
+      - name: Check the wheel versions
+        env:
+          EXPECTED: ${{ needs.validate.outputs.pypi-version }}
+        run: >-
+          python3 scripts/release_provenance.py check-dist dist
+          --version "$EXPECTED"
+          --wheel-targets-from .github/workflows/wheels.yml
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+
+  # Runs after the PyPI approval, so one approval covers the whole candidate.
+  prerelease:
+    name: GitHub prerelease
+    needs: [validate, publish, wheels, archives, sign]
+    if: ${{ needs.validate.outputs.publish == 'true' && needs.validate.outputs.stable != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # sign build provenance
+      attestations: write
+    steps:
+      - name: Download archives and wheels
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{archive,wheels,signatures}-*"
+          merge-multiple: true
+          path: artifacts
+
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            artifacts/*.tar.gz
+            artifacts/*.whl
+
+      # Draft first, then publish: with immutable releases on, a published release
+      # accepts no new assets.
+      - name: Mint the release token
+        id: release-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Create the prerelease
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+          TAG: ${{ github.ref_name }}
+          PYPI_VERSION: ${{ needs.validate.outputs.pypi-version }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease \
+            --title "slopvac $PYPI_VERSION (release candidate)" \
+            --notes "Release candidate. Install with \`uvx slopvac==$PYPI_VERSION\`. Not a stable release." \
+            artifacts/*
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease

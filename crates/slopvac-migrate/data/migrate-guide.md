@@ -1,77 +1,96 @@
 # Migrate from 2.x to 3.0
 
-Slopvac 3.0 has no 2.x compatibility mode. A 2.x config makes every command that reads config exit 2 with `config-legacy-version`. Nothing is linted until you migrate. `slopvac migrate` is the only path.
+3.0 has no 2.x compatibility mode: a 2.x config makes every command that reads config exit 2 with `config-legacy-version`. `slopvac migrate` is the only path.
 
-Migrations chain from the version it detects. One step exists: 2.x to 3.0. A config with no `schema_version`, or with `schema_version = 2`, starts at that step. A config with `schema_version = 3` needs no migration, and `slopvac migrate` reports it as already migrated.
+A config with no `schema_version`, or `schema_version = 2`, needs migrating. `schema_version = 3` is reported as already migrated.
 
 ## 1. Find the 2.x surfaces
+<!-- prime: include -->
 
-Look for these in the project:
+Look for:
 
 - `.slopvac.toml`, or a `slopvac.toml` with no `schema_version = 3`.
 - A `[tool.slopvac]` table in `pyproject.toml`.
-- `slopvac-allow` comments whose `rule=` value has no pack prefix, such as `rule=prose-format.no-unicode-dash`.
+- `slopvac-allow` comments whose `rule=` value has no plugin prefix, such as `rule=prose-format.no-unicode-dash`.
 - Steering blocks between `<!-- slopvac:begin -->` and `<!-- slopvac:end -->` in agent instruction files.
-- Scripts, CI jobs and hooks that use a removed flag, command, action input or hook id (section 6).
 
 ## 2. Preview
+<!-- prime: include -->
 
 ```sh
 slopvac migrate
 ```
 
-The command prints a diff of every file it would change and exits 0. It writes nothing. It lints the project before and after, and lists the rules whose finding counts change.
+It prints a diff and rules with changed finding counts, exits 0, and writes nothing.
 
 ## 3. Resolve blockers
+<!-- prime: include -->
 
-Some 2.x settings have no 3.0 equivalent. The command stops with exit 2 and prints one `config-legacy-dropped` line for each, with the file, line, key and reason. It lists all of them in one run and writes nothing.
+A 2.x setting with no 3.0 equivalent stops the command with exit 2 and one `config-legacy-dropped` line per setting (file, line, key, reason), and writes nothing.
 
-Common causes:
+Causes:
 
-- `[vale]` with `enabled = true`, or with `binary`, `config` or `styles` and no `enabled = false`. Vale is removed in 3.0. Delete the table or set `enabled = false`.
+- `[vale]` with `enabled = true`, or with `binary`, `config` or `styles` and no `enabled = false`. Delete the table or set `enabled = false`.
 - A rule or category name that is not in the rename table.
-- A key 3.0 does not know, or a `guidance` table inside an override.
+- An unknown key, or a `guidance` table inside an override.
 
-Edit the file, then run the preview again.
+Edit and preview again.
+
+A 2.x category with no rules, or a rule that 3.0 removed, is dropped with `migrate-category-removed` or `migrate-rule-removed`. Both exit 0 and point to `removed-rules.toml`.
+
+These also exit 2 and write nothing:
+
+- `document-too-large`: a document is over 64 MiB. Split it.
+- `config-too-large`: a config is over 1 MiB. Shorten it.
+- `migrate-run-limit`: too many files or bytes. Use a smaller directory.
+- `migrate-not-utf8`: a file is not UTF-8. Convert it.
+- `config-invalid-toml`: a config is not valid TOML. The message gives the line.
+- `config-invalid-type`: `schema_version` is not an integer. Fix it.
+- `migrate-lint-failed`: the lint could not finish. Fix the file named.
 
 ## 4. Apply
+<!-- prime: link -->
 
 ```sh
 slopvac migrate --write
 ```
 
-The command copies each file it replaces to `.slopvac-migrate-backup` and then rewrites it. Config comments and key order stay. It does the following:
+It copies each replaced file to `.slopvac-migrate-backup`, then rewrites it. Config comments and key order stay. It:
 
-- Moves `.slopvac.toml` and `[tool.slopvac]` into `slopvac.toml`, and adds `schema_version = 3`. Other content in `pyproject.toml` stays.
-- Renames categories and rules to their 3.0 names, and writes a rule that had only a `severity` as a bare level.
+- Moves `.slopvac.toml` and `[tool.slopvac]` into `slopvac.toml` and adds `schema_version = 3`.
+- Renames categories and rules to 3.0 names. A rule with only a `severity` becomes a bare level.
 - Moves `locale.default` to `locale`, `locale.allow` to `terms.allow`, and `vocabulary.path` to `terms.blocklists`.
+- Rewrites each TOML blocklist it names: adds `schema_version = 3` and long-form `pos` values (`Noun` to `noun`).
 - Deletes a `[vale]` table that has `enabled = false`.
-- Qualifies the rule id in each `slopvac-allow` comment. Comments inside code fences and code spans are examples and stay.
+- Qualifies the rule id in each `slopvac-allow` comment, except in code fences and code spans.
 - Replaces each steering block with the 3.0 text.
 
-The command stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml` and `[tool.slopvac]`. 2.x read only one of them. Remove the ones you do not use and run again.
+It stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml` and `[tool.slopvac]`. Remove the unused ones.
 
-To keep the 2.x gates, add `--preserve-behavior`. It selects the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Other patterns fail with `migrate-override-overlap`.
+It stops, naming the file and line, for a blocklist that is outside the project, missing, 2.x JSON or YAML, or has a `pos` 2.x rejected.
+
+`--preserve-behavior` keeps the 2.x gates with the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Others fail with `migrate-override-overlap`.
 
 ## 5. Verify and undo
+<!-- prime: include -->
 
-Run `slopvac lint` on the project. Compare the result with the per-rule report from the preview.
+Compare `slopvac lint` with the preview report.
 
-To undo a write, run `slopvac migrate --restore`. It puts the backed-up files back, removes the files the write created, and deletes the backup directory. If you keep the migration, delete `.slopvac-migrate-backup`.
-
-A second `slopvac migrate` finds nothing to change.
+To undo a write, run `slopvac migrate --restore`. It restores backed-up files, removes created files and deletes the backup. Without `--force`, a file changed since stops it. To keep the migration, delete `.slopvac-migrate-backup`. A second `slopvac migrate` finds nothing to change.
 
 ## 6. Removed in 3.0
+<!-- prime: link -->
 
-These 2.x surfaces fail with exit 2. Update scripts, CI and hooks by hand. `slopvac migrate` does not edit them.
+These 2.x surfaces fail with exit 2. Update scripts, CI and hooks by hand.
 
 | Surface | What to do |
 |---|---|
 | `--profile` on `lint`, `rules`, `explain` and `init` | Set the style preset in `slopvac.toml`. |
-| `--rules-dir` on `lint`, `rules`, `explain`, `prime` and `reference` | Declare a local pack in `slopvac.toml`. |
+| `--rules-dir` on `lint`, `rules`, `explain`, `prime` and `reference` | Declare a local plugin in `slopvac.toml`. |
 | `--no-vale`, `doctor --binary` | Delete the flag. Vale is removed. |
 | `--comments` | Use `--mode code-comments`. |
-| `compile` and its options (`--outdir`, `--profile`, `--config`, `--rules-dir`, `--no-validate`, `--format`) | Delete the call. Compiled Vale styles are removed. |
+| `compile` and its options (`--outdir`, `--profile`, `--config`, `--rules-dir`, `--no-validate`, `--format`) | Delete the call. Vale styles are removed. |
 | `cache` and its options (`--prune`, `--all`) | Delete the call. The Vale cache is removed. |
-| Action inputs `profile`, `vale`, `vale-version` and `rules-dir` | Delete the input. Set the style preset and packs in `slopvac.toml`. |
+| Action inputs `profile`, `vale`, `vale-version` and `rules-dir` | Delete the input. Set the style preset and plugins in `slopvac.toml`. |
 | Hook id `slopvac-no-vale` | Delete the hook. |
+| Hook id `slopvac-strict` | Use the `slopvac` hook with `profile = "strict"` and `styles = ["core:legacy-strict"]` in `slopvac.toml`. |

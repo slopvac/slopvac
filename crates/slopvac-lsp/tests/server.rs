@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use lsp_server::{Connection, Message, Notification, Request, RequestId};
 use serde_json::{Value, json};
-use slopvac_engine::Settings;
+use slopvac_engine::{DIAGRAM_PACK, Settings, diagram_rule_set};
 use slopvac_lsp::{
     Check, EngineLinter, Exit, LintError, Linted, Linter, Problem, Server, ServerError,
 };
@@ -28,6 +28,22 @@ fn engine_linter() -> EngineLinter {
 
 /// [`engine_linter`] plus `extra` rules in the same category.
 fn engine_linter_with(extra: Vec<Value>) -> EngineLinter {
+    EngineLinter::new(vec![core_rule_set(extra)], engine_settings()).unwrap()
+}
+
+fn engine_settings() -> Settings {
+    Settings::new(
+        NonEmptyString::new("normal").unwrap(),
+        GenreResult {
+            id: GenreId::new("reference").unwrap(),
+            source: GenreSource::Default,
+            reasons: Vec::new(),
+        },
+    )
+}
+
+/// The `swap` rule plus `extra` rules, in one category.
+fn core_rule_set(extra: Vec<Value>) -> RuleSet {
     let rule = json!({
         "id": "swap", "name": "n", "message": "Found {match}.", "severity": "warning",
         "match": {"kind": "substitution", "substitutions": {"utilize": "use"}},
@@ -38,21 +54,12 @@ fn engine_linter_with(extra: Vec<Value>) -> EngineLinter {
     let category = json!({
         "schema_version": 3, "id": "cat", "title": "t", "description": "d", "rules": rules
     });
-    let set = RuleSet::from_sources(
+    RuleSet::from_sources(
         &PackId::new("core").unwrap(),
         vec![("cat.json".into(), category.to_string())],
         &CompileOptions::default(),
     )
-    .unwrap_or_else(|e| panic!("{e}"));
-    let settings = Settings::new(
-        NonEmptyString::new("normal").unwrap(),
-        GenreResult {
-            id: GenreId::new("reference").unwrap(),
-            source: GenreSource::Default,
-            reasons: Vec::new(),
-        },
-    );
-    EngineLinter::new(vec![set], settings).unwrap()
+    .unwrap_or_else(|e| panic!("{e}"))
 }
 
 struct Client {
@@ -450,7 +457,7 @@ fn a_document_that_cannot_be_linted_is_not_reported_clean() {
     let mut client = Client::start(Server::new(Arc::new(Failing)), None);
     let published = client.open("Anything.\n");
     let d = &published["diagnostics"][0];
-    assert_eq!(d["code"], "lint-incomplete");
+    assert_eq!(d["code"], "lsp-lint-incomplete");
     assert!(d["message"].as_str().unwrap().contains("the engine broke"));
     client.finish().unwrap();
 }
@@ -558,7 +565,9 @@ impl Linter for Unchecked {
                 level: NoticeLevel::Warning,
                 message: NonEmptyString::new("no RST converter found").unwrap(),
                 path: None,
+                data: serde_json::Map::new(),
             }],
+            notices: Vec::new(),
         })
     }
 
@@ -580,6 +589,69 @@ fn what_the_engine_did_not_check_shows_as_a_diagnostic() {
             .unwrap()
             .contains("no RST converter found")
     );
+    client.finish().unwrap();
+}
+
+/// The engine with the built-in diagram checkers next to the `swap` rule.
+fn diagram_engine_linter() -> EngineLinter {
+    let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    EngineLinter::new(vec![core_rule_set(Vec::new()), pack], engine_settings()).unwrap()
+}
+
+const UNSUPPORTED_DIAGRAM: &str = "Intro.\n\n```mermaid\ngitGraph\n  commit\n```\n";
+
+#[test]
+fn an_unsupported_diagram_shows_as_an_information_diagnostic_without_actions() {
+    let mut client = Client::start(Server::new(Arc::new(diagram_engine_linter())), None);
+    let published = client.open(UNSUPPORTED_DIAGRAM);
+    let d = only_diagnostic(&published);
+    assert_eq!(d["code"], "extract-unsupported");
+    assert_eq!(d["severity"], 3);
+    assert_eq!(
+        d["message"],
+        "unsupported Mermaid diagram type; the diagram was not checked"
+    );
+    assert_eq!(d["range"]["start"], json!({"line": 0, "character": 0}));
+    assert_eq!(d["range"]["end"], json!({"line": 0, "character": 0}));
+    assert_eq!(actions(&mut client, &d["range"]), Vec::<Value>::new());
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_document_without_unsupported_content_has_no_information_diagnostic() {
+    let mut client = Client::start(Server::new(Arc::new(diagram_engine_linter())), None);
+    let published = client.open("Intro.\n\n```mermaid\nflowchart TD\n  A --> B\n```\n");
+    assert_eq!(published["diagnostics"], json!([]));
+    client.finish().unwrap();
+}
+
+struct OtherRootNotice;
+
+impl Linter for OtherRootNotice {
+    fn lint(&self, _path: &str, _text: &str) -> Result<Linted, LintError> {
+        Ok(Linted {
+            findings: Vec::new(),
+            unchecked: Vec::new(),
+            notices: vec![Notice {
+                code: KebabName::new("some-other-notice").unwrap(),
+                level: NoticeLevel::Info,
+                message: NonEmptyString::new("something else").unwrap(),
+                path: None,
+                data: serde_json::Map::new(),
+            }],
+        })
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+#[test]
+fn a_root_notice_with_another_code_is_not_published() {
+    let mut client = Client::start(Server::new(Arc::new(OtherRootNotice)), None);
+    let published = client.open("Clean prose.\n");
+    assert_eq!(published["diagnostics"], json!([]));
     client.finish().unwrap();
 }
 
@@ -942,8 +1014,131 @@ fn a_fatal_error_returns_at_once_although_the_transport_is_blocked() {
         .done
         .recv_timeout(Duration::from_secs(4))
         .expect("serve returns although the transport is blocked");
+    let Err(error @ ServerError::Protocol) = result else {
+        panic!("expected a protocol error, got {result:?}");
+    };
+    // The message is fixed: the protocol error's text can quote a client message.
+    assert_eq!(error.to_string(), "language server protocol error");
+}
+
+/// Prose the swap rule would flag, so a document that is linted anyway shows a finding.
+const FLAGGED: &str = "We utilize it.\n";
+
+/// The `codeAction` result over the whole first line of `uri`.
+fn actions_at(client: &mut Client, uri: &str) -> Value {
+    client.request(
+        "textDocument/codeAction",
+        &json!({
+            "textDocument": {"uri": uri},
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 14}},
+            "context": {"diagnostics": []}
+        }),
+    )
+}
+
+/// The single diagnostic of `published`, asserting there is exactly one.
+fn only_diagnostic(published: &Value) -> &Value {
+    let all = published["diagnostics"].as_array().unwrap();
+    assert_eq!(all.len(), 1, "{all:?}");
+    &all[0]
+}
+
+fn assert_binary_host_diagnostic(published: &Value) {
+    let d = only_diagnostic(published);
+    assert_eq!(d["code"], "lsp-binary-unchecked");
+    assert_eq!(d["severity"], 2);
+    assert_eq!(d["source"], "slopvac");
     assert!(
-        matches!(result, Err(ServerError::Protocol(_))),
-        "{result:?}"
+        d["message"]
+            .as_str()
+            .unwrap()
+            .contains("binary host not linted in the editor; run the CLI")
     );
+}
+
+#[rstest::rstest]
+#[case::docx("file:///work/a.docx")]
+#[case::docm("file:///work/a.docm")]
+#[case::dotx("file:///work/a.dotx")]
+#[case::dotm("file:///work/a.dotm")]
+#[case::pptx("file:///work/a.pptx")]
+#[case::pptm("file:///work/a.pptm")]
+#[case::potx("file:///work/a.potx")]
+#[case::potm("file:///work/a.potm")]
+#[case::ppsx("file:///work/a.ppsx")]
+#[case::ppsm("file:///work/a.ppsm")]
+#[case::xlsx("file:///work/a.xlsx")]
+#[case::xlsm("file:///work/a.xlsm")]
+#[case::xltx("file:///work/a.xltx")]
+#[case::xltm("file:///work/a.xltm")]
+#[case::odt("file:///work/a.odt")]
+#[case::ott("file:///work/a.ott")]
+#[case::odp("file:///work/a.odp")]
+#[case::otp("file:///work/a.otp")]
+#[case::ods("file:///work/a.ods")]
+#[case::ots("file:///work/a.ots")]
+#[case::drawio_png("file:///work/a.drawio.png")]
+#[case::excalidraw_png("file:///work/a.excalidraw.png")]
+#[case::upper_case("file:///work/A.DOCX")]
+fn opening_a_binary_container_publishes_one_diagnostic_and_offers_no_action(#[case] uri: &str) {
+    let mut client = Client::engine(None);
+    client.open_at(uri, FLAGGED);
+    assert_binary_host_diagnostic(&client.diagnostics());
+    assert_eq!(actions_at(&mut client, uri), json!([]));
+    client.finish().unwrap();
+}
+
+#[rstest::rstest]
+#[case::docx("file:///work/a.docx")]
+#[case::drawio_png("file:///work/a.drawio.png")]
+fn changing_or_saving_a_binary_container_keeps_the_one_diagnostic(#[case] uri: &str) {
+    let mut client = Client::engine(None);
+    client.open_at(uri, "text\n");
+    assert_binary_host_diagnostic(&client.diagnostics());
+    client.notify(
+        "textDocument/didChange",
+        &json!({
+            "textDocument": {"uri": uri, "version": 2},
+            "contentChanges": [{"text": FLAGGED}]
+        }),
+    );
+    assert_binary_host_diagnostic(&client.diagnostics());
+    client.notify(
+        "textDocument/didSave",
+        &json!({"textDocument": {"uri": uri}}),
+    );
+    assert_binary_host_diagnostic(&client.diagnostics());
+    assert_eq!(actions_at(&mut client, uri), json!([]));
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_markdown_file_is_still_linted_next_to_binary_containers() {
+    let mut client = Client::engine(None);
+    let published = client.open(FLAGGED);
+    assert_eq!(only_diagnostic(&published)["code"], "core:cat.swap");
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_registered_check_adds_nothing_to_a_binary_container() {
+    let server = Server::new(Arc::new(engine_linter())).with_check(Arc::new(Shouting));
+    let mut client = Client::start(server, None);
+    let uri = "file:///work/a.docx";
+    client.open_at(uri, "We utilize NOPE.\n");
+    assert_binary_host_diagnostic(&client.diagnostics());
+    client.notify(
+        "textDocument/didChange",
+        &json!({
+            "textDocument": {"uri": uri, "version": 2},
+            "contentChanges": [{"text": "NOPE again.\n"}]
+        }),
+    );
+    assert_binary_host_diagnostic(&client.diagnostics());
+    client.notify(
+        "textDocument/didSave",
+        &json!({"textDocument": {"uri": uri}}),
+    );
+    assert_binary_host_diagnostic(&client.diagnostics());
+    client.finish().unwrap();
 }

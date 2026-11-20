@@ -2,19 +2,22 @@
 #![cfg(unix)]
 
 mod common;
+mod log_capture;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::*;
+use rstest::rstest;
 use serde_json::{Value, json};
 use slopvac_plugins::hooks::{
     CompleteItem, Completion, Document, Finding, FindingsDocument, RecipeAction, RecipeFile,
     Rendered, Segment, Span,
 };
 use slopvac_plugins::{
-    BudgetCaps, HookKind, HostConfig, Plugin, PluginError, PluginSpec, ReadHook, RunBudget,
-    SpawnGate,
+    BudgetCaps, DrainHook, HookKind, HostConfig, Plugin, PluginError, PluginSpec, ReadHook,
+    RunBudget, SpawnGate,
 };
 
 #[test]
@@ -56,6 +59,56 @@ fn h5_version_outside_the_host_range_is_not_loaded() {
         &Allow,
     );
     assert_eq!(code(&r), "protocol-version-unsupported");
+}
+
+/// Start against a plugin that answers `initialize` with an error object.
+fn init_error(numeric: i64, label: &str) -> PluginError {
+    let mode = format!("init-error:{numeric}:{label}");
+    Plugin::start(&spec(&mode), &cfg(), &Allow)
+        .unwrap_err()
+        .error
+}
+
+#[rstest]
+#[case::plugin_range_claims_the_version_label(-32060, "protocol-version-unsupported")]
+#[case::host_reserved_claims_the_version_label(-32010, "protocol-version-unsupported")]
+fn h5b_an_initialize_error_with_another_number_is_not_a_version_refusal(
+    #[case] numeric: i64,
+    #[case] label: &str,
+) {
+    let err = init_error(numeric, label);
+    let PluginError::Rpc(e) = &err else {
+        panic!("expected the plain RPC error, got {err:?}");
+    };
+    assert_eq!(e.code, numeric);
+    assert_eq!(err.slopvac_code(), "internal-error");
+}
+
+#[rstest]
+#[case::another_valid_label("my-own-label")]
+#[case::a_host_label("plugin-untrusted")]
+fn h5c_minus_32001_is_a_version_refusal_whatever_label_it_carries(#[case] label: &str) {
+    assert_eq!(
+        init_error(-32001, label),
+        PluginError::ProtocolVersionUnsupported {
+            host: "1..=1".into(),
+            plugin: "[3,4]".into(),
+        }
+    );
+}
+
+#[rstest]
+#[case::plugin_range(-32060, "plugin-untrusted", "plugin error -32060: m (internal-error)")]
+#[case::offline(-32007, "my-own-label", "plugin error -32007: m (offline)")]
+#[case::undefined(5, "plugin-hash-mismatch", "plugin error 5: m (internal-error)")]
+fn a_displayed_rpc_error_names_the_contract_code_never_the_plugins_label(
+    #[case] numeric: i64,
+    #[case] label: &str,
+    #[case] want: &str,
+) {
+    let obj = json!({"code": numeric, "message": "m", "data": {"slopvac_code": label}});
+    let e = slopvac_plugins::hooks::parse_error_object(&obj).unwrap();
+    assert_eq!(PluginError::Rpc(e).to_string(), want);
 }
 
 #[test]
@@ -428,6 +481,7 @@ fn h19_a_network_plugin_does_not_spawn_in_offline_mode() {
     let err = Plugin::start(&s, &c, &Allow).unwrap_err().error;
     assert_eq!(err, PluginError::Offline("fake".into()));
     assert_eq!(err.to_string(), "offline: fake needs the network");
+    assert_eq!(err.slopvac_code(), "offline-network-needed");
 }
 
 #[test]
@@ -598,6 +652,93 @@ fn tm8_the_plugin_environment_holds_only_the_allowlist() {
     assert_eq!(env["PATH"], "/usr/bin:/bin");
 }
 
+const TM20_KEYS: [(&str, &str); 2] = [
+    ("OPENAI_API_KEY", "sk-tm20-openai-secret"),
+    ("ANTHROPIC_API_KEY", "sk-tm20-anthropic-secret"),
+];
+
+/// Names and values of the environment a plugin reported, as one text.
+fn reported_env(evidence: &str) -> String {
+    let env: Value = serde_json::from_str(evidence).unwrap();
+    env.to_string()
+}
+
+/// Threat model O11 (TM-20), host path. The inner half of the test below: it
+/// runs in a child test process whose environment holds the provider keys, and
+/// does nothing in any other run. The library forbids `unsafe`, so a test
+/// cannot set the keys in its own process.
+#[test]
+fn tm20_inner_the_host_does_not_pass_its_provider_keys_to_a_plugin() {
+    if std::env::var_os("SLOPVAC_TM20_INNER").is_none() {
+        return;
+    }
+    for (k, v) in TM20_KEYS {
+        assert_eq!(std::env::var(k).as_deref(), Ok(v), "the child holds {k}");
+    }
+    let p = start("env");
+    let out = p.tag("main", &docs(1)).unwrap();
+    let seen = reported_env(&out[0].outcome.as_ref().unwrap()[0].evidence);
+    for (k, v) in TM20_KEYS {
+        assert!(!seen.contains(k) && !seen.contains(v), "{k} leaked: {seen}");
+    }
+    assert!(seen.contains("ALLOWED_VAR"), "the plugin ran: {seen}");
+    println!("tm20-inner-ran");
+}
+
+#[test]
+fn tm20_provider_keys_in_the_host_environment_never_reach_a_plugin() {
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args([
+        "--exact",
+        "tm20_inner_the_host_does_not_pass_its_provider_keys_to_a_plugin",
+        "--nocapture",
+    ])
+    .env("SLOPVAC_TM20_INNER", "1")
+    .envs(TM20_KEYS);
+    let out = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("tm20-inner-ran"),
+        "the inner test ran: {stdout}"
+    );
+}
+
+/// Threat model O11 (TM-20), launcher path: keys in the launcher's own
+/// environment are dropped, and only the prefixed entries reach the plugin.
+#[test]
+fn tm20_the_launcher_passes_only_the_plugins_own_entries() {
+    let script = "import json, os; print(json.dumps(dict(os.environ)))";
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_slopvac-plugin-launcher"))
+        .args([
+            slopvac_plugins::launch::FLAG,
+            "cpu=60",
+            "nofile=256",
+            "fsize=1048576",
+            "data=1073741824",
+            "sweep=0",
+            "--",
+            python().to_str().unwrap(),
+            "-c",
+            script,
+        ])
+        .env_clear()
+        .envs(TM20_KEYS)
+        .env("SLOPVAC_PLUGIN_ENV_ALLOWED_VAR", "1")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let seen = reported_env(String::from_utf8_lossy(&out.stdout).trim());
+    for (k, v) in TM20_KEYS {
+        assert!(!seen.contains(k) && !seen.contains(v), "{k} leaked: {seen}");
+    }
+    assert!(seen.contains("\"ALLOWED_VAR\""), "{seen}");
+}
+
 #[test]
 fn h15_an_exit_is_reported_at_once_when_a_child_keeps_standard_output_open() {
     let dir = scratch("h15-orphan");
@@ -692,14 +833,87 @@ fn tm11_hostile_stderr_reaches_the_error_as_visible_escapes() {
     assert!(text.ends_with(want), "{text:?}");
 }
 
+/// Threat model P14 (TM-10): a plugin's stderr reaches the user only inside
+/// the error of a failed run, as its last 4 KiB. The mode writes 20,000 lines
+/// of 11 bytes, so the 4,096-byte tail loses its trailing newline to the trim.
 #[test]
-fn h16_only_the_tail_of_a_long_stderr_reaches_the_error() {
+fn tm10_a_failed_run_shows_only_the_last_4_kib_of_stderr() {
     let p = start("stderr-tail");
     let text = p.tag("main", &docs(1)).unwrap_err().to_string();
-    assert!(text.contains("line-19999"), "the newest line is kept");
+    let shown = text.split_once("\nstderr:\n").expect("a stderr section").1;
+    assert_eq!(shown.len(), 4096 - 1, "{} bytes", shown.len());
+    assert!(shown.ends_with("line-19999"), "the newest line is last");
     assert!(!text.contains("line-00000"), "the oldest line is dropped");
-    // 4 KiB shown at 11 bytes a line, plus the header text.
+    // The header text around the tail stays short.
     assert!(text.len() < 4096 + 200, "{} bytes", text.len());
+}
+
+/// A subscriber that records only the events at `max` or more severe, as the
+/// level in `SLOPVAC_LOG` selects.
+struct AtMost(tracing::Level, log_capture::Capture);
+
+impl tracing::Subscriber for AtMost {
+    fn enabled(&self, m: &tracing::Metadata<'_>) -> bool {
+        *m.level() <= self.0
+    }
+    fn new_span(&self, a: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        self.1.new_span(a)
+    }
+    fn record(&self, i: &tracing::span::Id, v: &tracing::span::Record<'_>) {
+        self.1.record(i, v);
+    }
+    fn record_follows_from(&self, a: &tracing::span::Id, b: &tracing::span::Id) {
+        self.1.record_follows_from(a, b);
+    }
+    fn event(&self, e: &tracing::Event<'_>) {
+        self.1.event(e);
+    }
+    fn enter(&self, i: &tracing::span::Id) {
+        self.1.enter(i);
+    }
+    fn exit(&self, i: &tracing::span::Id) {
+        self.1.exit(i);
+    }
+}
+
+/// A clean run of a plugin that writes `first line` to stderr, under a
+/// subscriber at `level`. Returns every text the run produced for the user:
+/// the tag results, the shutdown report and the logged event fields.
+fn clean_run_with_stderr(level: tracing::Level) -> Vec<String> {
+    let capture = log_capture::Capture::default();
+    let mut shown = Vec::new();
+    tracing::subscriber::with_default(AtMost(level, capture.clone()), || {
+        let p = start("stderr-lines");
+        shown.push(format!("{:?}", p.tag("main", &docs(1)).unwrap()));
+        let down = p.shutdown();
+        assert!(down.clean(), "{down:?}");
+        shown.push(format!("{down:?}"));
+    });
+    shown.extend(
+        capture
+            .events()
+            .into_iter()
+            .map(|(level, fields)| format!("{level} {fields:?}")),
+    );
+    shown
+}
+
+#[test]
+fn tm10_the_stderr_of_a_clean_run_is_in_no_output_without_debug_logging() {
+    let shown = clean_run_with_stderr(tracing::Level::INFO);
+    assert!(
+        shown.iter().all(|t| !t.contains("first line")),
+        "stderr leaked: {shown:?}"
+    );
+}
+
+#[test]
+fn tm10_the_stderr_of_a_clean_run_is_logged_when_debug_logging_is_on() {
+    let shown = clean_run_with_stderr(tracing::Level::DEBUG);
+    assert!(
+        shown.iter().any(|t| t.contains("first line")),
+        "stderr not logged: {shown:?}"
+    );
 }
 
 #[test]
@@ -814,7 +1028,8 @@ fn h34_a_cancelled_request_id_is_not_reused() {
 fn standard_output_ending_before_the_exit_does_not_spoil_a_clean_shutdown() {
     // The fixture closes standard output, then exits only after the host has
     // closed standard input, so the reader sees end of stream first.
-    assert!(start("eof-before-exit").shutdown().clean());
+    let out = start("eof-before-exit").shutdown();
+    assert!(out.clean(), "{out:?}");
 }
 
 /// plugin-protocol.md section 3: after `shutdown` and `exit` a plugin exits with status 0.
@@ -1046,7 +1261,7 @@ fn complete_returns_an_answer_or_an_error_per_item() {
             model: "m1-echo".into(),
         })
     );
-    assert_eq!(out[1].as_ref().unwrap_err().slopvac_code, "offline");
+    assert_eq!(out[1].as_ref().unwrap_err().code_name(), "offline");
     assert_eq!(
         sent,
         json!({"provider": "main", "task": "rewrite", "model": "m1", "items": [
@@ -1291,20 +1506,19 @@ fn tm2b_a_cap_crossing_charge_that_lands_during_the_drain_is_reported() {
         ..BudgetCaps::default()
     });
     c.stderr_read_hook = Some(hold_final_stderr_read(release));
-    let dir = scratch("tm2b-drain");
-    let pidfile = dir.join("pid");
-    let spec = spec_with("stderr-after-exit", &json!({}), Some(&pidfile), decl());
-    let p = Plugin::start(&spec, &c, &Allow).unwrap();
-    // Release once the leader is gone, with margin on both sides of the
-    // 500 ms drain wait that the shutdown is in by then.
-    let releaser = std::thread::spawn(move || {
-        let pid = pids_n(&pidfile, 1);
-        assert!(wait_gone(&pid), "the plugin never left");
-        std::thread::sleep(Duration::from_millis(100));
+    // The shutdown has reaped the leader and is entering the drain: release
+    // the held read, and start the drain wait only once the run budget shows
+    // the crossing charge.
+    let budget = Arc::clone(&c.budget);
+    c.drain_hook = Some(DrainHook::new(move || {
         release_tx.send(()).unwrap();
-    });
+        let end = Instant::now() + NO_HANG;
+        while budget.breach().is_none() && Instant::now() < end {
+            std::thread::yield_now();
+        }
+    }));
+    let p = Plugin::start(&spec("stderr-after-exit"), &c, &Allow).unwrap();
     let out = p.shutdown();
-    releaser.join().unwrap();
     assert!(
         out.acknowledged && out.left,
         "the exit was voluntary: {out:?}"

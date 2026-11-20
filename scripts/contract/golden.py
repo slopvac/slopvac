@@ -499,18 +499,31 @@ def load_deltas() -> list[dict]:
     return tomllib.loads(DELTAS_TOML.read_text(encoding="utf-8")).get("delta", [])
 
 
-def expected(mode: str, profile: str, input_id: str) -> dict:
+DEFAULT_DELTA_MODES = ["policy"]
+
+
+def deltas_for(mode: str, flavor: str) -> list[dict]:
+    """The reviewed deltas that move the expectation for ``mode``.
+
+    A delta lists the modes it applies to in ``modes`` (default ``["policy"]``).
+    The 2.x reference never gets a delta: it produces the parity output by
+    definition, and a delta describes how a 3.0 binary differs from it.
+    """
+    if flavor == "2x":
+        return []
+    return [
+        d for d in load_deltas() if mode in d.get("modes", DEFAULT_DELTA_MODES)
+    ]
+
+
+def expected(mode: str, profile: str, input_id: str, flavor: str = "3x") -> dict:
     base = json.loads(golden_path(profile, input_id).read_text(encoding="utf-8"))
-    if mode != "policy":
-        return base
-    return apply_deltas(base, profile, input_id, load_deltas())
+    return apply_deltas(base, profile, input_id, deltas_for(mode, flavor))
 
 
-def expected_runs(mode: str, profile: str) -> dict:
+def expected_runs(mode: str, profile: str, flavor: str = "3x") -> dict:
     base = json.loads(runs_path(profile).read_text(encoding="utf-8"))
-    if mode != "policy":
-        return base
-    return apply_run_deltas(base, profile, load_deltas())
+    return apply_run_deltas(base, profile, deltas_for(mode, flavor))
 
 
 def apply_deltas(base: dict, profile: str, input_id: str, deltas: list[dict]) -> dict:
@@ -570,9 +583,15 @@ def apply_run_deltas(base: dict, profile: str, deltas: list[dict]) -> dict:
 
 
 def reference_tree_hash(src: Path) -> str:
-    """Hash of the Python reference: every source and rule data file, by path."""
+    """Hash of the Python reference: its source and rule data files, by content.
+
+    The file set is every ``.py``, ``.yml``, ``.yaml``, ``.toml`` and ``.json`` file
+    under ``src``, outside ``__pycache__``. Files are visited in order of their
+    path parts relative to ``src``. Each path enters the digest in POSIX form, so the
+    host separator does not matter. Git state, timestamps and file modes do not.
+    """
     digest = hashlib.sha256()
-    for path in sorted(src.rglob("*")):
+    for path in sorted(src.rglob("*"), key=lambda p: p.relative_to(src).parts):
         if (
             path.is_file()
             and path.suffix in {".py", ".yml", ".yaml", ".toml", ".json"}
@@ -607,24 +626,11 @@ def vale_version() -> str:
     return proc.stdout.strip().removeprefix("vale version ")
 
 
-def git(*args: str) -> str:
-    proc = subprocess.run(
-        ["git", "-C", str(ROOT), *args], capture_output=True, text=True, check=False
-    )
-    return proc.stdout.strip() if proc.returncode == 0 else ""
-
-
-def reference_commit(src: Path) -> str:
-    """The last commit that changed the reference sources."""
-    return git("log", "-1", "--format=%H", "--", str(src))
-
-
 def current_pin(src: Path) -> dict:
     from importlib.metadata import version
 
     return {
         "slopvac_version": version("slopvac"),
-        "python_commit": reference_commit(src),
         "python_src_sha256": reference_tree_hash(src),
         "vale": vale_version(),
     }
@@ -636,16 +642,12 @@ REFERENCE_SRC = ROOT / "packages" / "slopvac-lint" / "src" / "slopvac"
 def verify_pin(src: Path = REFERENCE_SRC) -> list[str]:
     """What differs between pin.toml and this checkout.
 
-    The commit is compared only in a full clone: a shallow clone does not hold the
-    commit that last changed the sources, and the source hash proves the same thing.
+    Every field is a version or a content hash, so the check reads no git state and
+    gives the same answer in a full clone, a shallow clone and an exported tree.
     """
     recorded = tomllib.loads(PIN_TOML.read_text(encoding="utf-8"))
-    now = current_pin(src)
-    shallow = git("rev-parse", "--is-shallow-repository") == "true"
     problems = []
-    for key, value in now.items():
-        if key == "python_commit" and (shallow or not value):
-            continue
+    for key, value in current_pin(src).items():
         if recorded.get(key) != value:
             problems.append(
                 f"{key}: pinned {recorded.get(key)!r}, checkout has {value!r}"
@@ -698,14 +700,14 @@ def compare(
             continue
         results, runs = run_binary(command, mode, profile, inputs, flavor)
         for entry in inputs:
-            want = expected(mode, profile, entry["id"])
+            want = expected(mode, profile, entry["id"], flavor)
             got = mask_unverified(want, results.get(entry["id"]))
             if got != want:
                 problems.append(
                     f"{mode}/{profile}/{entry['id']}: {describe(want, got)}"
                 )
         problems += describe_runs(
-            f"{mode}/{profile}", expected_runs(mode, profile), runs
+            f"{mode}/{profile}", expected_runs(mode, profile, flavor), runs
         )
     return problems
 

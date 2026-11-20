@@ -7,6 +7,7 @@
 use std::ops::Range;
 
 use crate::diag::{Code, Diagnostic, closest};
+use crate::messages::{ConfigPhrase, ConfigText};
 use crate::tree::{Entry, Node, Value};
 
 /// The shape a value must have.
@@ -16,7 +17,7 @@ pub enum Shape {
     NonEmptyStr,
     /// A string that `check` accepts. `name` completes "a valid ...".
     Pattern {
-        /// Name of the accepted form, such as "pack id".
+        /// Name of the accepted form, such as "plugin id".
         name: &'static str,
         /// The accept test.
         check: fn(&str) -> bool,
@@ -56,6 +57,8 @@ pub enum Shape {
         min_items: usize,
         /// Whether items must differ.
         unique: bool,
+        /// A key of table items that must differ between items, such as `id`.
+        unique_key: Option<&'static str>,
     },
     /// A closed table.
     Table(TableShape),
@@ -93,7 +96,6 @@ const PROJECT_WIDE: &[&str] = &[
     "guidance",
     "network",
     "review",
-    "packs",
     "plugins",
     "styles",
     "extends",
@@ -134,6 +136,7 @@ fn list(item: Shape) -> Shape {
         item: Box::new(item),
         min_items: 0,
         unique: false,
+        unique_key: None,
     }
 }
 
@@ -167,14 +170,28 @@ fn is_rule_key(s: &str) -> bool {
 
 fn pack_id() -> Shape {
     Shape::Pattern {
-        name: "pack id (lowercase letters, digits and hyphens)",
+        name: ConfigPhrase::NounPackId.as_static(),
         check: is_pack_id,
+    }
+}
+
+/// The id of the built-in plugin. It is compiled into the binary, so no config entry may name it.
+const BUILT_IN_PLUGIN: &str = "core";
+
+fn is_plugin_id(s: &str) -> bool {
+    is_pack_id(s) && s != BUILT_IN_PLUGIN
+}
+
+fn plugin_id() -> Shape {
+    Shape::Pattern {
+        name: ConfigPhrase::NounPluginId.as_static(),
+        check: is_plugin_id,
     }
 }
 
 fn reference() -> Shape {
     Shape::Pattern {
-        name: "name, bare or as `<pack>:<name>`",
+        name: ConfigPhrase::NounReference.as_static(),
         check: is_ref,
     }
 }
@@ -199,7 +216,7 @@ fn level() -> Shape {
 fn rule_level() -> Shape {
     Shape::Choice {
         values: LEVELS,
-        table_help: Some("a rule takes a bare level, such as `\"core:no-dash\" = \"off\"`"),
+        table_help: Some(ConfigPhrase::HelpBareLevel.as_static()),
     }
 }
 
@@ -270,7 +287,7 @@ fn category_settings() -> Shape {
 fn keyed(value: Shape) -> Shape {
     Shape::Map {
         key: is_rule_key,
-        key_name: "rule or category name",
+        key_name: ConfigPhrase::NounRuleKey.as_static(),
         value: Box::new(value),
     }
 }
@@ -302,13 +319,14 @@ fn files() -> Shape {
         item: Box::new(Shape::NonEmptyStr),
         min_items: 1,
         unique: false,
+        unique_key: None,
     }
 }
 
 fn source() -> Shape {
     table(
         vec![
-            ("id", pack_id()),
+            ("id", plugin_id()),
             ("source", Shape::NonEmptyStr),
             ("version", Shape::NonEmptyStr),
         ],
@@ -331,11 +349,22 @@ pub fn config_shape() -> Shape {
             ("extends", strings()),
             ("styles", list(reference())),
             ("exclude", strings()),
-            ("packs", list(source())),
-            ("plugins", list(source())),
+            (
+                "plugins",
+                Shape::List {
+                    item: Box::new(source()),
+                    min_items: 0,
+                    unique: false,
+                    unique_key: Some("id"),
+                },
+            ),
             (
                 "genres",
-                list(scoped("a genre block", genre_fields, &["genre", "files"])),
+                list(scoped(
+                    ConfigPhrase::ScopeGenreBlock.as_static(),
+                    genre_fields,
+                    &["genre", "files"],
+                )),
             ),
             (
                 "frontmatter",
@@ -348,6 +377,7 @@ pub fn config_shape() -> Shape {
                                 item: Box::new(choice(SETTINGS_KEYS)),
                                 min_items: 0,
                                 unique: true,
+                                unique_key: None,
                             },
                         ),
                     ],
@@ -369,7 +399,11 @@ pub fn config_shape() -> Shape {
             ),
             (
                 "overrides",
-                list(scoped("an override", override_fields, &["files"])),
+                list(scoped(
+                    ConfigPhrase::ScopeOverride.as_static(),
+                    override_fields,
+                    &["files"],
+                )),
             ),
             (
                 "network",
@@ -420,6 +454,7 @@ pub fn style_shape() -> Shape {
                     item: Box::new(reference()),
                     min_items: 0,
                     unique: true,
+                    unique_key: None,
                 },
             ),
             (
@@ -428,6 +463,7 @@ pub fn style_shape() -> Shape {
                     item: Box::new(reference()),
                     min_items: 0,
                     unique: true,
+                    unique_key: None,
                 },
             ),
             ("categories", keyed(category_settings())),
@@ -440,7 +476,7 @@ pub fn style_shape() -> Shape {
                         (
                             "blocklists",
                             list(Shape::Pattern {
-                                name: "path relative to the style file",
+                                name: ConfigPhrase::NounRelativePath.as_static(),
                                 check: is_rel_path,
                             }),
                         ),
@@ -457,7 +493,7 @@ pub fn style_shape() -> Shape {
 #[must_use]
 pub fn block_shape() -> Shape {
     scoped(
-        "front matter",
+        ConfigPhrase::ScopeFrontMatter.as_static(),
         vec![
             ("v", Shape::Version),
             ("genre", reference()),
@@ -480,7 +516,7 @@ pub fn directive_shape() -> Shape {
     };
     t.fields.retain(|(name, _)| *name != "v");
     t.required.clear();
-    t.scope = Some("an inline directive");
+    t.scope = Some(ConfigPhrase::ScopeDirective.as_static());
     Shape::Table(t)
 }
 
@@ -506,6 +542,7 @@ impl Ctx<'_> {
             span,
             help,
             path: path.to_vec(),
+            data: None,
         });
     }
 
@@ -515,8 +552,15 @@ impl Ctx<'_> {
             Code::InvalidType,
             node.span.clone(),
             path,
-            format!("expected {expected}, found {found}"),
-            format!("{found} here"),
+            ConfigText::TypeMismatch {
+                expected: expected.to_owned(),
+                found: found.to_owned(),
+            }
+            .to_string(),
+            ConfigText::FoundHere {
+                found: found.to_owned(),
+            }
+            .to_string(),
             help,
         );
     }
@@ -526,7 +570,7 @@ impl Ctx<'_> {
         node: &Node,
         path: &[String],
         message: String,
-        label: &str,
+        label: String,
         help: Option<String>,
     ) {
         self.push(
@@ -534,7 +578,7 @@ impl Ctx<'_> {
             node.span.clone(),
             path,
             message,
-            label.to_owned(),
+            label,
             help,
         );
     }
@@ -563,28 +607,32 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
                 ctx.value_error(
                     node,
                     path,
-                    "the string is empty".into(),
-                    "empty string",
+                    ConfigPhrase::EmptyString.text(),
+                    ConfigPhrase::LabelEmptyString.text(),
                     None,
                 );
             }
             Value::Str(_) => {}
-            _ => ctx.type_error(node, path, "a string", None),
+            _ => ctx.type_error(node, path, ConfigPhrase::KindString.as_static(), None),
         },
         Shape::Pattern { name, check } => match &node.value {
             Value::Str(s) if check(s) => {}
             Value::Str(s) => ctx.value_error(
                 node,
                 path,
-                format!("`{s}` is not a valid {name}"),
-                "not valid here",
+                ConfigText::NotValid {
+                    value: s.clone(),
+                    name: (*name).to_owned(),
+                }
+                .to_string(),
+                ConfigPhrase::LabelNotValidHere.text(),
                 None,
             ),
-            _ => ctx.type_error(node, path, "a string", None),
+            _ => ctx.type_error(node, path, ConfigPhrase::KindString.as_static(), None),
         },
         Shape::Bool => {
             if !matches!(node.value, Value::Bool(_)) {
-                ctx.type_error(node, path, "a boolean", None);
+                ctx.type_error(node, path, ConfigPhrase::KindBoolean.as_static(), None);
             }
         }
         Shape::Int { min, max } => check_int(ctx, node, *min, *max, path),
@@ -593,61 +641,27 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
             Value::Str(s) => ctx.value_error(
                 node,
                 path,
-                format!("`{s}` is not a budget"),
-                "not accepted",
-                Some("use a number, or `none` to clear the budget".into()),
+                ConfigText::NotBudget { value: s.clone() }.to_string(),
+                ConfigPhrase::LabelNotAccepted.text(),
+                Some(ConfigPhrase::HelpBudget.text()),
             ),
             _ => check_num(ctx, node, Some(0.0), None, path),
         },
         Shape::Num { min, max } => check_num(ctx, node, *min, *max, path),
         Shape::Choice { values, table_help } => check_choice(ctx, node, values, *table_help, path),
-        Shape::Version => match node.value {
-            Value::Int(3) => {}
-            Value::Int(n) if n > 3 => ctx.value_error(
-                node,
-                path,
-                format!("version {n} is newer than this slopvac reads"),
-                "this build reads version 3",
-                Some("upgrade slopvac".into()),
-            ),
-            Value::Int(n) => ctx.value_error(
-                node,
-                path,
-                format!("version {n} is not supported; this build reads version 3"),
-                "must be 3",
-                Some("run `slopvac migrate` for a 2.x config".into()),
-            ),
-            _ => ctx.type_error(node, path, "the integer 3", None),
-        },
+        Shape::Version => check_version_value(ctx, node, path),
         Shape::List {
             item,
             min_items,
             unique,
-        } => check_list(ctx, node, item, *min_items, *unique, path),
+            unique_key,
+        } => check_list(ctx, node, item, *min_items, (*unique, *unique_key), path),
         Shape::Table(t) => check_table(ctx, node, t, path),
         Shape::Map {
             key,
             key_name,
             value,
-        } => match &node.value {
-            Value::Table(entries) => {
-                for e in entries {
-                    let p = child(path, &e.key);
-                    if !key(&e.key) {
-                        ctx.push(
-                            Code::InvalidValue,
-                            e.key_span.clone(),
-                            &p,
-                            format!("`{}` is not a valid {key_name}", e.key),
-                            "not valid here".into(),
-                            Some("use `<pack>:<id>` with a lowercase pack, or a bare name".into()),
-                        );
-                    }
-                    check(ctx, &e.node, value, &p);
-                }
-            }
-            _ => ctx.type_error(node, path, "a table", None),
-        },
+        } => check_map(ctx, node, (*key, key_name), value, path),
         Shape::Either { scalar, table } => {
             if matches!(node.value, Value::Table(_)) {
                 check(ctx, node, table, path);
@@ -658,6 +672,64 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
     }
 }
 
+fn check_map(
+    ctx: &mut Ctx<'_>,
+    node: &Node,
+    (key, key_name): (fn(&str) -> bool, &str),
+    value: &Shape,
+    path: &[String],
+) {
+    let Value::Table(entries) = &node.value else {
+        ctx.type_error(node, path, ConfigPhrase::KindTable.as_static(), None);
+        return;
+    };
+    for e in entries {
+        let p = child(path, &e.key);
+        if !key(&e.key) {
+            ctx.push(
+                Code::InvalidValue,
+                e.key_span.clone(),
+                &p,
+                ConfigText::NotValid {
+                    value: e.key.clone(),
+                    name: key_name.to_owned(),
+                }
+                .to_string(),
+                ConfigPhrase::LabelNotValidHere.text(),
+                Some(ConfigPhrase::HelpReferenceKey.text()),
+            );
+        }
+        check(ctx, &e.node, value, &p);
+    }
+}
+
+fn check_version_value(ctx: &mut Ctx<'_>, node: &Node, path: &[String]) {
+    match node.value {
+        Value::Int(3) => {}
+        Value::Int(n) if n > 3 => ctx.value_error(
+            node,
+            path,
+            ConfigText::VersionNewer {
+                version: n.to_string(),
+            }
+            .to_string(),
+            ConfigPhrase::LabelReadsVersion3.text(),
+            Some(ConfigPhrase::HelpUpgrade.text()),
+        ),
+        Value::Int(n) => ctx.value_error(
+            node,
+            path,
+            ConfigText::VersionUnsupported {
+                version: n.to_string(),
+            }
+            .to_string(),
+            ConfigPhrase::LabelMustBe3.text(),
+            Some(ConfigPhrase::HelpMigrateVersion.text()),
+        ),
+        _ => ctx.type_error(node, path, ConfigPhrase::KindIntegerThree.as_static(), None),
+    }
+}
+
 #[allow(clippy::cast_precision_loss)]
 fn as_f64(i: i64) -> f64 {
     i as f64
@@ -665,15 +737,18 @@ fn as_f64(i: i64) -> f64 {
 
 fn check_int(ctx: &mut Ctx<'_>, node: &Node, min: Option<i64>, max: Option<i64>, path: &[String]) {
     let Value::Int(i) = node.value else {
-        ctx.type_error(node, path, "an integer", None);
+        ctx.type_error(node, path, ConfigPhrase::KindInteger.as_static(), None);
         return;
     };
     if min.is_some_and(|m| i < m) || max.is_some_and(|m| i > m) {
         ctx.value_error(
             node,
             path,
-            format!("{i} is out of range"),
-            &range_label(min.map(as_f64), max.map(as_f64)),
+            ConfigText::OutOfRange {
+                value: i.to_string(),
+            }
+            .to_string(),
+            range_label(min.map(as_f64), max.map(as_f64)),
             None,
         );
     }
@@ -684,7 +759,7 @@ fn check_num(ctx: &mut Ctx<'_>, node: &Node, min: Option<f64>, max: Option<f64>,
         Value::Int(i) => as_f64(i),
         Value::Float(f) => f,
         _ => {
-            ctx.type_error(node, path, "a number", None);
+            ctx.type_error(node, path, ConfigPhrase::KindNumber.as_static(), None);
             return;
         }
     };
@@ -692,16 +767,22 @@ fn check_num(ctx: &mut Ctx<'_>, node: &Node, min: Option<f64>, max: Option<f64>,
         ctx.value_error(
             node,
             path,
-            format!("{n} is not a finite number"),
-            "must be finite",
+            ConfigText::NotFinite {
+                value: n.to_string(),
+            }
+            .to_string(),
+            ConfigPhrase::LabelMustBeFinite.text(),
             None,
         );
     } else if min.is_some_and(|m| n < m) || max.is_some_and(|m| n > m) {
         ctx.value_error(
             node,
             path,
-            format!("{n} is out of range"),
-            &range_label(min, max),
+            ConfigText::OutOfRange {
+                value: n.to_string(),
+            }
+            .to_string(),
+            range_label(min, max),
             None,
         );
     }
@@ -714,19 +795,32 @@ fn check_choice(
     table_help: Option<&str>,
     path: &[String],
 ) {
-    let expected = format!("one of {}", join_ticks(values));
+    let expected = ConfigText::ExpectedOneOf {
+        values: join_ticks(values),
+    }
+    .to_string();
     match &node.value {
         Value::Str(s) if values.contains(&s.as_str()) => {}
         Value::Str(s) => {
             let help = closest(s, values.iter().copied()).map_or_else(
-                || format!("use {expected}"),
-                |c| format!("did you mean `{c}`?"),
+                || {
+                    ConfigText::UseOneOf {
+                        expected: expected.clone(),
+                    }
+                    .to_string()
+                },
+                |c| {
+                    ConfigText::DidYouMean {
+                        suggestion: c.to_owned(),
+                    }
+                    .to_string()
+                },
             );
             ctx.value_error(
                 node,
                 path,
-                format!("`{s}` is not an accepted value"),
-                "not accepted",
+                ConfigText::NotAccepted { value: s.clone() }.to_string(),
+                ConfigPhrase::LabelNotAccepted.text(),
                 Some(help),
             );
         }
@@ -740,19 +834,19 @@ fn check_list(
     node: &Node,
     item: &Shape,
     min_items: usize,
-    unique: bool,
+    (unique, unique_key): (bool, Option<&'static str>),
     path: &[String],
 ) {
     let Value::Array(items) = &node.value else {
-        ctx.type_error(node, path, "an array", None);
+        ctx.type_error(node, path, ConfigPhrase::KindArray.as_static(), None);
         return;
     };
     if items.len() < min_items {
         ctx.value_error(
             node,
             path,
-            format!("the list needs at least {min_items} item"),
-            "empty list",
+            ConfigText::ListTooShort { min_items }.to_string(),
+            ConfigPhrase::LabelEmptyList.text(),
             None,
         );
     }
@@ -762,17 +856,47 @@ fn check_list(
             ctx.value_error(
                 it,
                 &child(path, &i.to_string()),
-                "the list repeats an entry".into(),
-                "repeated",
+                ConfigPhrase::ListRepeats.text(),
+                ConfigPhrase::LabelRepeated.text(),
                 None,
             );
         }
+        if let Some(key) = unique_key {
+            check_unique_key(ctx, &items[..i], it, key, &child(path, &i.to_string()));
+        }
+    }
+}
+
+/// Flags `item` when an earlier item holds the same string under `key`.
+fn check_unique_key(ctx: &mut Ctx<'_>, earlier: &[Node], item: &Node, key: &str, path: &[String]) {
+    let Some(value) = item.get(key) else { return };
+    let Some(text) = value.as_str() else { return };
+    if earlier
+        .iter()
+        .any(|prev| prev.get(key).and_then(Node::as_str) == Some(text))
+    {
+        ctx.value_error(
+            value,
+            &child(path, key),
+            ConfigText::KeyRepeated {
+                value: text.to_owned(),
+                key: key.to_owned(),
+            }
+            .to_string(),
+            ConfigPhrase::LabelRepeated.text(),
+            Some(
+                ConfigText::HelpRemoveRepeatedKey {
+                    key: key.to_owned(),
+                }
+                .to_string(),
+            ),
+        );
     }
 }
 
 fn check_table(ctx: &mut Ctx<'_>, node: &Node, shape: &TableShape, path: &[String]) {
     let Value::Table(entries) = &node.value else {
-        ctx.type_error(node, path, "a table", None);
+        ctx.type_error(node, path, ConfigPhrase::KindTable.as_static(), None);
         return;
     };
     for e in entries {
@@ -784,8 +908,14 @@ fn check_table(ctx: &mut Ctx<'_>, node: &Node, shape: &TableShape, path: &[Strin
                 Code::MissingKey,
                 ctx.head(node),
                 path,
-                format!("missing required key `{req}`"),
-                format!("`{req}` is required here"),
+                ConfigText::MissingKeyMessage {
+                    key: (*req).to_owned(),
+                }
+                .to_string(),
+                ConfigText::MissingKeyLabel {
+                    key: (*req).to_owned(),
+                }
+                .to_string(),
                 None,
             );
         }
@@ -803,16 +933,21 @@ fn check_entry(ctx: &mut Ctx<'_>, e: &Entry, shape: &TableShape, path: &[String]
     }
     let (message, help) = match shape.scope {
         Some(scope) if PROJECT_WIDE.contains(&e.key.as_str()) => (
-            format!(
-                "`{}` applies to the whole run and cannot be set in {scope}",
-                e.key
-            ),
-            Some(format!("set `{}` in the project config", e.key)),
+            ConfigText::ProjectWideKey {
+                key: e.key.clone(),
+                scope: scope.to_owned(),
+            }
+            .to_string(),
+            Some(ConfigText::ProjectWideHelp { key: e.key.clone() }.to_string()),
         ),
         _ => (
-            format!("unknown key `{}`", e.key),
-            closest(&e.key, shape.fields.iter().map(|(n, _)| *n))
-                .map(|c| format!("did you mean `{c}`?")),
+            ConfigText::UnknownKeyMessage { key: e.key.clone() }.to_string(),
+            closest(&e.key, shape.fields.iter().map(|(n, _)| *n)).map(|c| {
+                ConfigText::DidYouMean {
+                    suggestion: c.to_owned(),
+                }
+                .to_string()
+            }),
         ),
     };
     ctx.push(
@@ -820,7 +955,7 @@ fn check_entry(ctx: &mut Ctx<'_>, e: &Entry, shape: &TableShape, path: &[String]
         e.key_span.clone(),
         &p,
         message,
-        "not a known key".into(),
+        ConfigPhrase::LabelNotKnownKey.text(),
         help,
     );
 }
@@ -835,10 +970,20 @@ fn join_ticks(values: &[&str]) -> String {
 
 fn range_label(min: Option<f64>, max: Option<f64>) -> String {
     match (min, max) {
-        (Some(lo), Some(hi)) => format!("must be between {lo} and {hi}"),
-        (Some(lo), None) => format!("must be at least {lo}"),
-        (None, Some(hi)) => format!("must be at most {hi}"),
-        (None, None) => "out of range".into(),
+        (Some(lo), Some(hi)) => ConfigText::RangeBetween {
+            min: lo.to_string(),
+            max: hi.to_string(),
+        }
+        .to_string(),
+        (Some(lo), None) => ConfigText::RangeAtLeast {
+            min: lo.to_string(),
+        }
+        .to_string(),
+        (None, Some(hi)) => ConfigText::RangeAtMost {
+            max: hi.to_string(),
+        }
+        .to_string(),
+        (None, None) => ConfigPhrase::LabelOutOfRange.text(),
     }
 }
 
@@ -880,7 +1025,7 @@ pub fn validate_frontmatter(root: &Node, text: &str) -> Vec<Diagnostic> {
         if shown.span.is_empty() {
             shown.span = 0..text.find('\n').unwrap_or(text.len());
         }
-        ctx.type_error(&shown, &[], "a mapping", None);
+        ctx.type_error(&shown, &[], ConfigPhrase::KindMapping.as_static(), None);
         return ctx.out;
     }
     let Some(block) = root.get("slopvac") else {

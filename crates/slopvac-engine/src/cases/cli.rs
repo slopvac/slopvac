@@ -29,6 +29,14 @@ pub enum CasesError {
     /// The run could not start, for example on an unknown rule id.
     #[error(transparent)]
     Cases(#[from] super::CasesError),
+    /// A corpus file is larger than the document cap. Its stable code is `document-too-large`.
+    #[error("[document-too-large] {path} is larger than {cap} bytes")]
+    TooLarge {
+        /// The file.
+        path: String,
+        /// The cap that the file exceeded, in bytes.
+        cap: u64,
+    },
     /// A corpus file or the output failed.
     #[error("{path}: {source}")]
     Io {
@@ -43,7 +51,7 @@ pub enum CasesError {
 #[must_use]
 pub fn command() -> Command {
     Command::new("cases")
-        .about("Run the test cases of a rule pack")
+        .about("Run the test cases of the rules in a plugin")
         .arg(
             Arg::new("dir")
                 .required(true)
@@ -51,11 +59,11 @@ pub fn command() -> Command {
                 .help("Directory of category files"),
         )
         .arg(
-            Arg::new("pack")
-                .long("pack")
+            Arg::new("plugin")
+                .long("plugin")
                 .value_name("ID")
                 .default_value("core")
-                .help("Pack id of the rules"),
+                .help("Plugin id of the rules"),
         )
         .arg(
             Arg::new("rule")
@@ -79,8 +87,8 @@ pub fn command() -> Command {
 /// Unmatched rules in a coverage report do not change the code.
 pub fn run(matches: &ArgMatches, out: &mut dyn Write) -> Result<i32, CasesError> {
     let text = |name: &str| matches.get_one::<String>(name);
-    let pack = PackId::new(text("pack").map_or("core", String::as_str))
-        .map_err(|e| CasesError::Argument(format!("--pack: {e}")))?;
+    let pack = PackId::new(text("plugin").map_or("core", String::as_str))
+        .map_err(|e| CasesError::Argument(format!("--plugin: {e}")))?;
     let only = text("rule")
         .map(|r| RuleId::new(r.as_str()))
         .transpose()
@@ -100,9 +108,47 @@ pub fn run(matches: &ArgMatches, out: &mut dyn Write) -> Result<i32, CasesError>
         let sources = files
             .iter()
             .map(|p| {
-                std::fs::read_to_string(p).map_err(|source| CasesError::Io {
-                    path: (*p).clone(),
+                let shown = (*p).clone();
+                // The reader refuses a symlink, but a linked corpus file is supported. Resolve
+                // the link first; a missing file or a dangling link is a not-found error.
+                let resolved = std::fs::canonicalize(p).map_err(|source| CasesError::Io {
+                    path: shown.clone(),
                     source,
+                })?;
+                slopvac_fs::read_capped_regular_to_string(
+                    &resolved,
+                    crate::MAX_FILE_BYTES,
+                    slopvac_fs::ReadOptions::new(),
+                )
+                .map_err(|e| match e {
+                    slopvac_fs::Error::Input {
+                        kind: slopvac_fs::InputKind::TooLarge,
+                        ..
+                    } => CasesError::TooLarge {
+                        path: shown,
+                        cap: crate::MAX_FILE_BYTES,
+                    },
+                    slopvac_fs::Error::Input {
+                        kind: slopvac_fs::InputKind::NotFound,
+                        ..
+                    } => CasesError::Io {
+                        path: shown,
+                        source: std::io::ErrorKind::NotFound.into(),
+                    },
+                    slopvac_fs::Error::Input {
+                        source: Some(source),
+                        ..
+                    } => CasesError::Io {
+                        path: shown,
+                        source,
+                    },
+                    other => CasesError::Io {
+                        path: shown,
+                        source: std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            other.to_string(),
+                        ),
+                    },
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;

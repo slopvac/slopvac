@@ -19,7 +19,7 @@ use slopvac_plugins::extract::{Limits, TreeHash, evict, extract_targz};
 use slopvac_plugins::oci::Digest;
 use slopvac_plugins::protocol::{FeatureSet, HookDecl};
 use slopvac_plugins::trust::{
-    DeclSummary, Revocation, TrustError, TrustGate, TrustInputs, TrustRecord, TrustState,
+    DeclSummary, Revocation, TrustError, TrustGate, TrustInputs, TrustKey, TrustRecord, TrustState,
     TrustStore, VerifiedPlugin, is_forbidden_env_name, parse_trust_env, trust_hash,
 };
 use slopvac_plugins::{PluginDeclaration, PluginError, PluginSpec, SpawnGate};
@@ -124,6 +124,7 @@ fn record(hash: &str, name: &str) -> TrustRecord {
         key_fingerprint: None,
         manifest_digest: None,
         key_id: None,
+        trust_key_id: None,
         declaration: DeclSummary::of(&decl()),
         recorded_at: NOW.into(),
     }
@@ -484,19 +485,23 @@ fn tm6_the_hash_carries_a_kind_tag_and_the_tree_relative_path() {
     outside.program = s.dir("interp");
     let g = gate(&s, &vp).with_external_programs([outside.program.clone()]);
     let expect = |program: &str, spec: &PluginSpec| {
-        trust_hash(&TrustInputs {
-            name: &vp.name,
-            tree: &vp.tree,
-            declaration: &spec.declaration,
-            program,
-            args: &spec.args,
-            env: &spec.env,
-            path_env: &spec.path_env,
-            manifest_digest: vp.manifest_digest.as_deref(),
-            key_fingerprint: vp.key_fingerprint.as_deref(),
-            interpreter: None,
-            environment: None,
-        })
+        let key = TrustStore::open(s.dir("state")).key().unwrap();
+        trust_hash(
+            &TrustInputs {
+                name: &vp.name,
+                tree: &vp.tree,
+                declaration: &spec.declaration,
+                program,
+                args: &spec.args,
+                env: &spec.env,
+                path_env: &spec.path_env,
+                manifest_digest: vp.manifest_digest.as_deref(),
+                key_fingerprint: vp.key_fingerprint.as_deref(),
+                interpreter: None,
+                environment: None,
+            },
+            &key,
+        )
     };
     assert_eq!(hash_of(&g, &vp, &inside), expect("tree:plugin.py", &inside));
     let abs = format!("external:{}", outside.program.display());
@@ -658,8 +663,9 @@ fn every_trust_input_changes_the_hash() {
         interpreter: Some("py3.12"),
         environment: Some("env1"),
     };
-    let h = trust_hash(&base);
-    assert_eq!(h, trust_hash(&base.clone()), "deterministic");
+    let key = TrustKey::from_bytes([3; 32]);
+    let h = trust_hash(&base, &key);
+    assert_eq!(h, trust_hash(&base.clone(), &key), "deterministic");
     let variants = [
         TrustInputs {
             name: "q",
@@ -718,7 +724,10 @@ fn every_trust_input_changes_the_hash() {
             ..base.clone()
         },
     ];
-    let hashes: HashSet<String> = variants.iter().map(|v| trust_hash(v).to_string()).collect();
+    let hashes: HashSet<String> = variants
+        .iter()
+        .map(|v| trust_hash(v, &key).to_string())
+        .collect();
     assert_eq!(hashes.len(), variants.len());
     assert!(!hashes.contains(h.as_str()));
 }
@@ -727,13 +736,16 @@ fn every_trust_input_changes_the_hash() {
 fn the_trust_hash_matches_an_independently_derived_vector() {
     // CI users pin these hashes in SLOPVAC_TRUST, so the format is an interface.
     // The canonical input below was written by hand (sorted keys, no spaces) and
-    // hashed with Python: hashlib.sha256(canonical.encode()).hexdigest().
+    // hashed with Python: hashlib.sha256(canonical.encode()).hexdigest(). Each env
+    // value is committed as hmac.new(key, b"slopvac trust env v1\0" + name + b"\0"
+    // + value, sha256).hexdigest() under the key `bytes([7]) * 32`.
     //
     // {"args":["a","b"],"declaration":{"features":{"optional":[],"required":[]},
     // "hooks":[{"id":"main","kind":"tagger"}],"network":false},
-    // "env":[["A","1"],["B","2"]],"environment":null,"interpreter":null,
+    // "env":[["A","b7b8edb0...fb884a"],["B","7f6614d5...23ad7a"]],
+    // "environment":null,"interpreter":null,
     // "key":"fp","manifest":"sha256:<64 x a>","name":"p","path":"/usr/bin:/bin",
-    // "program":"tree:bin/run","tree":"sha256:<64 x 1>","v":1}
+    // "program":"tree:bin/run","tree":"sha256:<64 x 1>","v":2}
     let tree = TreeHash::parse(&format!("sha256:{}", "11".repeat(32))).unwrap();
     let mut d = decl();
     d.hooks.truncate(1);
@@ -744,7 +756,8 @@ fn the_trust_hash_matches_an_independently_derived_vector() {
         ("A".to_owned(), "1".to_owned()),
     ];
     let manifest = format!("sha256:{}", "aa".repeat(32));
-    let h = trust_hash(&TrustInputs {
+    let key = TrustKey::from_bytes([7; 32]);
+    let inputs = TrustInputs {
         name: "p",
         tree: &tree,
         declaration: &d,
@@ -756,10 +769,20 @@ fn the_trust_hash_matches_an_independently_derived_vector() {
         key_fingerprint: Some("fp"),
         interpreter: None,
         environment: None,
-    });
+    };
     assert_eq!(
-        h.as_str(),
-        "sha256:6912f92de3655db4395228d51803e91433919c59dc1fe3eec010b64b6c992946"
+        trust_hash(&inputs, &key).as_str(),
+        "sha256:a075e43084781ef86f03ae8dabda11221b5bea2e4ced58aa6f42653be6bb4439"
+    );
+    assert_eq!(key.id(), "eea214704cf428bf", "hmac(key, key-id label)[..8]");
+    // Without env the document has `"env":[]` and the key does not enter the hash.
+    let bare = TrustInputs { env: &[], ..inputs };
+    let expected = "sha256:5ea1cd683c5128cc4f122211a7dd6694f7df7213974086b1d36d13a91b7f5061";
+    assert_eq!(trust_hash(&bare, &key).as_str(), expected);
+    assert_eq!(
+        trust_hash(&bare, &TrustKey::from_bytes([9; 32])).as_str(),
+        expected,
+        "a plugin with no environment hashes the same under any key"
     );
 }
 
@@ -922,6 +945,105 @@ fn tm22_key_pins_bind_a_namespace_and_feed_the_verifier() {
     };
     assert_eq!(policy.pinned["other"].len(), 1);
     assert!(store.pin_key("acme", "garbage", NOW).is_err());
+}
+
+fn with_env(mut spec: PluginSpec, name: &str, value: &str) -> PluginSpec {
+    spec.env = vec![(name.to_owned(), value.to_owned())];
+    spec
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    Digest::of(bytes).as_str()["sha256:".len()..].to_owned()
+}
+
+#[test]
+fn the_same_env_value_under_two_keys_gives_two_hashes() {
+    let tree = TreeHash::parse(&Digest::of(b"1").to_string()).unwrap();
+    let d = decl();
+    let env = [("API_KEY".to_owned(), "hunter2".to_owned())];
+    let inputs = TrustInputs {
+        name: "p",
+        tree: &tree,
+        declaration: &d,
+        program: "tree:run",
+        args: &[],
+        env: &env,
+        path_env: "/usr/bin",
+        manifest_digest: None,
+        key_fingerprint: None,
+        interpreter: None,
+        environment: None,
+    };
+    let a = trust_hash(&inputs, &TrustKey::from_bytes([1; 32]));
+    let b = trust_hash(&inputs, &TrustKey::from_bytes([2; 32]));
+    assert_ne!(a, b);
+}
+
+#[test]
+fn a_changed_env_value_revokes_trust_under_the_same_key() {
+    let s = Scratch::new("env-change");
+    let vp = install(&s, "1.0.0", "");
+    let g = gate(&s, &vp);
+    let old = with_env(spec_for(&vp, decl()), "API_KEY", "hunter2");
+    trust(&g, &vp, &old);
+    g.check(&old).unwrap();
+    let new = with_env(spec_for(&vp, decl()), "API_KEY", "hunter3");
+    assert!(matches!(g.check(&new), Err(PluginError::Untrusted(_))));
+}
+
+#[test]
+fn nothing_stored_or_shown_carries_an_env_value_or_a_plain_digest_of_it() {
+    // The attack in the finding: guess a low-entropy secret, hash the guess, compare.
+    let s = Scratch::new("no-disclosure");
+    let vp = install(&s, "1.0.0", "");
+    let g = gate(&s, &vp);
+    let spec = with_env(spec_for(&vp, decl()), "API_KEY", "hunter2");
+    let shown = g.check(&spec).unwrap_err().to_string();
+    trust(&g, &vp, &spec);
+    let mut seen = vec![shown];
+    for entry in fs::read_dir(s.dir("state")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.file_name().is_some_and(|n| n != "trust.key") {
+            seen.push(fs::read_to_string(path).unwrap_or_default());
+        }
+    }
+    let hash = hash_of(&g, &vp, &spec);
+    seen.push(hash.to_string());
+    let guesses = [
+        "hunter2".to_owned(),
+        hex_sha256(b"hunter2"),
+        hex_sha256(b"API_KEY=hunter2"),
+        hex_sha256(b"API_KEYhunter2"),
+    ];
+    for text in &seen {
+        for guess in &guesses {
+            assert!(!text.contains(guess), "`{guess}` appears in: {text}");
+        }
+    }
+}
+
+#[test]
+fn the_key_debug_output_does_not_show_its_bytes() {
+    let key = TrustKey::from_bytes([0xab; 32]);
+    let shown = format!("{key:?}");
+    assert!(!shown.contains("abab"), "{shown}");
+    assert!(shown.contains(key.id()), "{shown}");
+}
+
+#[test]
+fn trusting_twice_keeps_one_key_and_records_its_id() {
+    let s = Scratch::new("one-key");
+    let vp = install(&s, "1.0.0", "");
+    let spec = spec_for(&vp, decl());
+    let g = gate(&s, &vp);
+    trust(&g, &vp, &spec);
+    let first = TrustStore::open(s.dir("state")).key().unwrap();
+    trust(&g, &vp, &spec);
+    let second = TrustStore::open(s.dir("state")).key().unwrap();
+    assert_eq!(first.id(), second.id());
+    let rec = TrustStore::open(s.dir("state")).records().unwrap();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(rec[0].trust_key_id.as_deref(), Some(first.id()));
 }
 
 #[cfg(unix)]
@@ -1280,4 +1402,305 @@ mod unix_only {
         assert_eq!(mode(&s.dir("state")), 0o700);
         assert_eq!(mode(&s.dir("state/trust.json")), 0o600);
     }
+
+    fn mode(p: &Path) -> u32 {
+        fs::metadata(p).unwrap().permissions().mode() & 0o777
+    }
+
+    /// Replace the key file the way a user restoring a backup would: right mode, other bytes.
+    fn write_key(s: &Scratch, byte: u8) -> TrustKey {
+        let path = s.dir("state/trust.key");
+        fs::remove_file(&path).ok();
+        fs::write(&path, format!("{}\n", format!("{byte:02x}").repeat(32))).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        TrustKey::from_bytes([byte; 32])
+    }
+
+    fn trusted(name: &str) -> (Scratch, VerifiedPlugin, PluginSpec, TrustGate) {
+        let s = Scratch::new(name);
+        let vp = install(&s, "1.0.0", "");
+        let spec = spec_for(&vp, decl());
+        let g = gate(&s, &vp);
+        trust(&g, &vp, &spec);
+        (s, vp, spec, g)
+    }
+
+    #[test]
+    fn the_first_trust_creates_the_key_with_owner_only_mode_and_a_check_does_not() {
+        let s = Scratch::new("u-key-create");
+        let vp = install(&s, "1.0.0", "");
+        let spec = spec_for(&vp, decl());
+        let g = gate(&s, &vp);
+        let _ = g.check(&spec);
+        assert!(!s.dir("state/trust.key").exists(), "a check writes nothing");
+        trust(&g, &vp, &spec);
+        assert_eq!(mode(&s.dir("state/trust.key")), 0o600);
+        let raw = fs::read_to_string(s.dir("state/trust.key")).unwrap();
+        assert_eq!(raw.trim().len(), 64, "32 bytes as hex");
+    }
+
+    #[test]
+    fn two_stores_draw_different_keys() {
+        let (a, ..) = trusted("u-key-a");
+        let (b, ..) = trusted("u-key-b");
+        let id = |s: &Scratch| {
+            TrustStore::open(s.dir("state"))
+                .key()
+                .unwrap()
+                .id()
+                .to_owned()
+        };
+        assert_ne!(id(&a), id(&b));
+    }
+
+    #[test]
+    fn a_fifo_in_place_of_the_key_is_refused_without_blocking() {
+        let (s, _vp, spec, g) = trusted("u-key-fifo");
+        let path = s.dir("state/trust.key");
+        fs::remove_file(&path).unwrap();
+        let made = std::process::Command::new("mkfifo")
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-unusable", "{err}");
+    }
+
+    #[test]
+    fn a_directory_in_place_of_the_key_is_refused() {
+        let (s, _vp, spec, g) = trusted("u-key-dir");
+        let path = s.dir("state/trust.key");
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-unusable", "{err}");
+    }
+
+    #[rstest::rstest]
+    #[case::lost_key(None)]
+    #[case::replaced_key(Some(0x42))]
+    fn a_trust_that_fails_validation_leaves_the_old_records_and_key(
+        #[case] replacement: Option<u8>,
+    ) {
+        let (s, vp, spec, g) = trusted("u-key-failed-trust");
+        match replacement {
+            None => fs::remove_file(s.dir("state/trust.key")).unwrap(),
+            Some(byte) => {
+                write_key(&s, byte);
+            }
+        }
+        let key_before = fs::read(s.dir("state/trust.key")).ok();
+        let before = TrustStore::open(s.dir("state")).records().unwrap();
+        let mut bad = spec.clone();
+        bad.env = vec![("LD_PRELOAD".into(), "x".into())];
+        assert!(matches!(
+            g.record_trust(&vp, &bad, NOW),
+            Err(TrustError::Environment(_))
+        ));
+        assert_eq!(TrustStore::open(s.dir("state")).records().unwrap(), before);
+        assert_eq!(fs::read(s.dir("state/trust.key")).ok(), key_before);
+    }
+
+    #[rstest::rstest]
+    #[case::missing(0)]
+    #[case::wrong_mode(1)]
+    #[case::bad_contents(2)]
+    #[case::not_a_file(3)]
+    fn key_errors_show_no_absolute_path_in_display_or_debug(#[case] which: u8) {
+        let (s, _vp, spec, g) = trusted("u-key-redact");
+        let path = s.dir("state/trust.key");
+        match which {
+            0 => fs::remove_file(&path).unwrap(),
+            1 => fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap(),
+            2 => fs::write(&path, "nope").unwrap(),
+            _ => {
+                fs::remove_file(&path).unwrap();
+                fs::create_dir(&path).unwrap();
+            }
+        }
+        let root = s.dir("").to_string_lossy().into_owned();
+        let store_err = TrustStore::open(s.dir("state")).key().unwrap_err();
+        let plugin_err = g.check(&spec).unwrap_err();
+        for text in [
+            store_err.to_string(),
+            format!("{store_err:?}"),
+            plugin_err.to_string(),
+            format!("{plugin_err:?}"),
+        ] {
+            assert!(!text.contains(&root), "{text}");
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::group_readable(0o640)]
+    #[case::world_readable(0o644)]
+    #[case::read_only(0o400)]
+    #[case::executable(0o700)]
+    fn a_key_with_the_wrong_mode_is_refused(#[case] bits: u32) {
+        let (s, vp, spec, g) = trusted("u-key-mode");
+        let path = s.dir("state/trust.key");
+        fs::set_permissions(&path, fs::Permissions::from_mode(bits)).unwrap();
+        let store = TrustStore::open(s.dir("state"));
+        assert!(matches!(store.key(), Err(TrustError::KeyUnusable { .. })));
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-unusable", "{err}");
+        // Trusting again must not quietly replace a key someone else could have read.
+        assert!(matches!(
+            g.record_trust(&vp, &spec, NOW),
+            Err(TrustError::KeyUnusable { .. })
+        ));
+        assert_eq!(mode(&path), bits, "the file is left as found");
+    }
+
+    #[test]
+    fn a_key_behind_a_symlink_is_refused() {
+        let (s, _vp, spec, g) = trusted("u-key-link");
+        let path = s.dir("state/trust.key");
+        let real = s.dir("state/elsewhere");
+        fs::rename(&path, &real).unwrap();
+        std::os::unix::fs::symlink(&real, &path).unwrap();
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-unusable", "{err}");
+    }
+
+    #[rstest::rstest]
+    #[case::too_short("abcd\n")]
+    #[case::not_hex(&"zz".repeat(32))]
+    #[case::empty("")]
+    fn a_key_file_with_bad_contents_is_refused(#[case] contents: &str) {
+        let (s, _vp, spec, g) = trusted("u-key-bad");
+        fs::write(s.dir("state/trust.key"), contents).unwrap();
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-unusable", "{err}");
+    }
+
+    #[test]
+    fn a_missing_key_with_records_fails_closed_and_is_not_recreated() {
+        let (s, _vp, spec, g) = trusted("u-key-missing");
+        fs::remove_file(s.dir("state/trust.key")).unwrap();
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-missing", "{err}");
+        assert!(err.to_string().contains("slopvac plugins trust"), "{err}");
+        assert!(matches!(
+            TrustStore::open(s.dir("state")).key(),
+            Err(TrustError::KeyMissing { .. })
+        ));
+        assert!(!s.dir("state/trust.key").exists(), "no silent re-create");
+    }
+
+    #[test]
+    fn a_key_with_another_key_id_than_the_records_fails_closed() {
+        let (s, _vp, spec, g) = trusted("u-key-mismatch");
+        let other = write_key(&s, 0x42);
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-mismatch", "{err}");
+        assert!(err.to_string().contains("slopvac plugins trust"), "{err}");
+        assert!(matches!(
+            TrustStore::open(s.dir("state")).key(),
+            Err(TrustError::KeyMismatch)
+        ));
+        let rec = TrustStore::open(s.dir("state")).records().unwrap();
+        assert_ne!(rec[0].trust_key_id.as_deref(), Some(other.id()));
+    }
+
+    #[test]
+    fn a_record_that_names_no_key_fails_closed() {
+        let s = Scratch::new("u-key-legacy");
+        let vp = install(&s, "1.0.0", "");
+        let spec = spec_for(&vp, decl());
+        let store = TrustStore::open(s.dir("state"));
+        store
+            .record(record(&Digest::of(b"old").to_string(), "fake"))
+            .unwrap();
+        let err = gate(&s, &vp).check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-missing", "{err}");
+    }
+
+    #[test]
+    fn a_record_that_names_no_key_fails_closed_even_when_a_key_exists() {
+        let (s, _vp, spec, g) = trusted("u-key-legacy-with-key");
+        let store = TrustStore::open(s.dir("state"));
+        store
+            .record(record(&Digest::of(b"old").to_string(), "other"))
+            .unwrap();
+        let err = g.check(&spec).unwrap_err();
+        assert_eq!(err.slopvac_code(), "trust-key-mismatch", "{err}");
+    }
+
+    #[rstest::rstest]
+    #[case::lost_key(None)]
+    #[case::replaced_key(Some(0x42))]
+    fn trusting_again_re_establishes_trust_after_a_key_change(#[case] replacement: Option<u8>) {
+        let (s, vp, spec, g) = trusted("u-key-reestablish");
+        let mut stale = decl();
+        stale.network = true;
+        let other = spec_for(&vp, stale);
+        trust(&g, &vp, &other);
+        match replacement {
+            None => fs::remove_file(s.dir("state/trust.key")).unwrap(),
+            Some(byte) => {
+                write_key(&s, byte);
+            }
+        }
+        assert!(g.check(&spec).is_err());
+        g.record_trust(&vp, &spec, NOW).unwrap();
+        g.check(&spec).unwrap();
+        let store = TrustStore::open(s.dir("state"));
+        let key = store.key().unwrap();
+        let records = store.records().unwrap();
+        assert_eq!(
+            records.len(),
+            1,
+            "records made under the old key are dropped"
+        );
+        assert_eq!(records[0].trust_key_id.as_deref(), Some(key.id()));
+        assert!(
+            matches!(g.check(&other), Err(PluginError::Untrusted(_))),
+            "an old approval does not come back with the new key"
+        );
+        assert_eq!(mode(&s.dir("state/trust.key")), 0o600);
+    }
+}
+
+#[test]
+fn pin_key_refuses_reserved_and_first_party_namespaces_with_a_code() {
+    let s = Scratch::new("reserved-pins");
+    let store = TrustStore::open(s.dir("state"));
+    let key = minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk
+        .to_base64();
+    for ns in ["core", "slopvac"] {
+        let err = store.pin_key(ns, &key, NOW).unwrap_err();
+        assert!(
+            matches!(&err, TrustError::ReservedNamespace { namespace } if namespace == ns),
+            "{err:?}"
+        );
+        assert_eq!(err.code(), Some("namespace-reserved"));
+    }
+    assert!(
+        store.pinned_map().unwrap().is_empty(),
+        "nothing was written"
+    );
+}
+
+#[test]
+fn a_store_that_pins_a_reserved_namespace_is_refused_on_load() {
+    let s = Scratch::new("reserved-load");
+    let dir = s.dir("state");
+    let store = TrustStore::open(&dir);
+    let key = minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk
+        .to_base64();
+    store.pin_key("acme", &key, NOW).unwrap();
+    let file = dir.join("trust.json");
+    let text = fs::read_to_string(&file).unwrap();
+    fs::write(&file, text.replace("\"acme\"", "\"core\"")).unwrap();
+    let err = store.pinned_map().unwrap_err();
+    assert!(
+        matches!(&err, TrustError::ReservedNamespace { namespace } if namespace == "core"),
+        "{err:?}"
+    );
 }

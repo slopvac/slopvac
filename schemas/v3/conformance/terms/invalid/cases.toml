@@ -1,5 +1,6 @@
 "term-missing.toml" = "/terms/0"
 "kind-not-kebab.toml" = "/terms/0/kind"
+"kind-trailing-newline.toml" = "/terms/0/kind"
 "empty-term.toml" = "/terms/0/term"
 "unknown-key.toml" = "/terms/0"
 "no-version.toml" = ""

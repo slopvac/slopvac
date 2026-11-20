@@ -37,12 +37,6 @@
  "expansions": {
   "authored-budget-survives-a-switch": {
    "expected": {
-    "categories": {
-     "core:orwell-voice": {
-      "max_per_100_words": 2.0,
-      "severity": "error"
-     }
-    },
     "overrides": [
      {
       "categories": {
@@ -86,19 +80,10 @@
         "severity": "error",
         "weight": 1.2
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "severity": "warning",
-        "weight": 0.5
        },
        "core:prose-agency": {
         "max_per_100_words": 0.4,
@@ -109,11 +94,6 @@
         "max_per_100_words": 0.8,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:prose-density": {
-        "max_per_100_words": 0.5,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.4,
@@ -184,11 +164,6 @@
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.2
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": 2.0,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:ste-words": {
         "max_per_100_words": 0.5,
@@ -332,6 +307,7 @@
        "core:prose-scope.epigram": "error",
        "core:prose-scope.formulaic-subject-verb-slogan": "error",
        "core:prose-scope.implementation-leak": "error",
+       "core:prose-scope.mixed-content-types": "error",
        "core:prose-scope.rejected-alternative": "error",
        "core:ste-descriptive.information-not-gradual": "error",
        "core:ste-descriptive.missing-key-word-structure": "error",
@@ -369,6 +345,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "error",
        "core:ste-words.obligation-word-substitution": "error",
+       "core:ste-words.spelling": "error",
        "core:ste-words.unapproved-word-not-a-domain-noun": "error",
        "core:ste-words.verb-or-adjective-form-not-permitted": "error",
        "core:ste-words.word-outside-controlled-vocabulary": "error",
@@ -494,19 +471,10 @@
         "max_per_100_words": "none",
         "severity": "off"
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 2.0,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:prose-agency": {
         "max_per_100_words": 2.0,
@@ -514,10 +482,6 @@
         "weight": 0.5
        },
        "core:prose-craft": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:prose-density": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -581,10 +545,6 @@
         "weight": 0.8
        },
        "core:ste-verbs": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:ste-vocabulary": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -729,6 +689,7 @@
        "core:prose-scope.epigram": "off",
        "core:prose-scope.formulaic-subject-verb-slogan": "off",
        "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.mixed-content-types": "off",
        "core:prose-scope.rejected-alternative": "off",
        "core:ste-descriptive.information-not-gradual": "off",
        "core:ste-descriptive.missing-key-word-structure": "off",
@@ -766,6 +727,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "off",
        "core:ste-words.domain-verb-category-membership": "off",
        "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.spelling": "off",
        "core:ste-words.unapproved-word-not-a-domain-noun": "off",
        "core:ste-words.verb-or-adjective-form-not-permitted": "off",
        "core:ste-words.word-outside-controlled-vocabulary": "off",
@@ -853,20 +815,10 @@
         "severity": "warning",
         "weight": 1.0
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.8,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": 0.5,
-        "severity": "error",
-        "weight": 1.0
        },
        "core:prose-agency": {
         "max_per_100_words": 0.8,
@@ -877,11 +829,6 @@
         "max_per_100_words": 1.5,
         "severity": "warning",
         "weight": 0.8
-       },
-       "core:prose-density": {
-        "max_per_100_words": 1.0,
-        "severity": "suggestion",
-        "weight": 0.5
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.8,
@@ -952,10 +899,6 @@
         "max_per_100_words": 1.0,
         "severity": "warning",
         "weight": 0.8
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:ste-words": {
         "max_per_100_words": 1.5,
@@ -1099,6 +1042,7 @@
        "core:prose-scope.epigram": "suggestion",
        "core:prose-scope.formulaic-subject-verb-slogan": "warning",
        "core:prose-scope.implementation-leak": "warning",
+       "core:prose-scope.mixed-content-types": "suggestion",
        "core:prose-scope.rejected-alternative": "warning",
        "core:ste-descriptive.information-not-gradual": "suggestion",
        "core:ste-descriptive.missing-key-word-structure": "suggestion",
@@ -1136,6 +1080,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "suggestion",
        "core:ste-words.obligation-word-substitution": "suggestion",
+       "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
        "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
        "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
@@ -1185,20 +1130,10 @@
         "severity": "error",
         "weight": 1.2
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "warning",
-        "weight": 0.5
        },
        "core:prose-agency": {
         "max_per_100_words": 0.4,
@@ -1209,11 +1144,6 @@
         "max_per_100_words": 0.8,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:prose-density": {
-        "max_per_100_words": 0.5,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.4,
@@ -1284,11 +1214,6 @@
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.2
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": 2.0,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:ste-words": {
         "max_per_100_words": 0.5,
@@ -1432,6 +1357,7 @@
        "core:prose-scope.epigram": "error",
        "core:prose-scope.formulaic-subject-verb-slogan": "error",
        "core:prose-scope.implementation-leak": "error",
+       "core:prose-scope.mixed-content-types": "error",
        "core:prose-scope.rejected-alternative": "error",
        "core:ste-descriptive.information-not-gradual": "error",
        "core:ste-descriptive.missing-key-word-structure": "error",
@@ -1469,6 +1395,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "error",
        "core:ste-words.obligation-word-substitution": "error",
+       "core:ste-words.spelling": "error",
        "core:ste-words.unapproved-word-not-a-domain-noun": "error",
        "core:ste-words.verb-or-adjective-form-not-permitted": "error",
        "core:ste-words.word-outside-controlled-vocabulary": "error",
@@ -1541,20 +1468,10 @@
         "severity": "warning",
         "weight": 1.0
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.8,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": 0.5,
-        "severity": "error",
-        "weight": 1.0
        },
        "core:prose-agency": {
         "max_per_100_words": 0.8,
@@ -1565,11 +1482,6 @@
         "max_per_100_words": 1.5,
         "severity": "warning",
         "weight": 0.8
-       },
-       "core:prose-density": {
-        "max_per_100_words": 1.0,
-        "severity": "suggestion",
-        "weight": 0.5
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.8,
@@ -1640,10 +1552,6 @@
         "max_per_100_words": 1.0,
         "severity": "warning",
         "weight": 0.8
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:ste-words": {
         "max_per_100_words": 1.5,
@@ -1787,6 +1695,7 @@
        "core:prose-scope.epigram": "suggestion",
        "core:prose-scope.formulaic-subject-verb-slogan": "warning",
        "core:prose-scope.implementation-leak": "warning",
+       "core:prose-scope.mixed-content-types": "suggestion",
        "core:prose-scope.rejected-alternative": "warning",
        "core:ste-descriptive.information-not-gradual": "suggestion",
        "core:ste-descriptive.missing-key-word-structure": "suggestion",
@@ -1824,6 +1733,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "suggestion",
        "core:ste-words.obligation-word-substitution": "suggestion",
+       "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
        "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
        "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
@@ -1952,19 +1862,10 @@
         "max_per_100_words": "none",
         "severity": "off"
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 2.0,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:prose-agency": {
         "max_per_100_words": 2.0,
@@ -1972,10 +1873,6 @@
         "weight": 0.5
        },
        "core:prose-craft": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:prose-density": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -2039,10 +1936,6 @@
         "weight": 0.8
        },
        "core:ste-verbs": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:ste-vocabulary": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -2187,6 +2080,7 @@
        "core:prose-scope.epigram": "off",
        "core:prose-scope.formulaic-subject-verb-slogan": "off",
        "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.mixed-content-types": "off",
        "core:prose-scope.rejected-alternative": "off",
        "core:ste-descriptive.information-not-gradual": "off",
        "core:ste-descriptive.missing-key-word-structure": "off",
@@ -2224,6 +2118,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "off",
        "core:ste-words.domain-verb-category-membership": "off",
        "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.spelling": "off",
        "core:ste-words.unapproved-word-not-a-domain-noun": "off",
        "core:ste-words.verb-or-adjective-form-not-permitted": "off",
        "core:ste-words.word-outside-controlled-vocabulary": "off",
@@ -2295,20 +2190,10 @@
         "severity": "error",
         "weight": 1.2
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "warning",
-        "weight": 0.5
        },
        "core:prose-agency": {
         "max_per_100_words": 0.4,
@@ -2319,11 +2204,6 @@
         "max_per_100_words": 0.8,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:prose-density": {
-        "max_per_100_words": 0.5,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.4,
@@ -2394,11 +2274,6 @@
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.2
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": 2.0,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:ste-words": {
         "max_per_100_words": 0.5,
@@ -2542,6 +2417,7 @@
        "core:prose-scope.epigram": "error",
        "core:prose-scope.formulaic-subject-verb-slogan": "error",
        "core:prose-scope.implementation-leak": "error",
+       "core:prose-scope.mixed-content-types": "error",
        "core:prose-scope.rejected-alternative": "error",
        "core:ste-descriptive.information-not-gradual": "error",
        "core:ste-descriptive.missing-key-word-structure": "error",
@@ -2579,6 +2455,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "error",
        "core:ste-words.obligation-word-substitution": "error",
+       "core:ste-words.spelling": "error",
        "core:ste-words.unapproved-word-not-a-domain-noun": "error",
        "core:ste-words.verb-or-adjective-form-not-permitted": "error",
        "core:ste-words.word-outside-controlled-vocabulary": "error",
@@ -2681,19 +2558,10 @@
         "max_per_100_words": "none",
         "severity": "off"
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 2.0,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:prose-agency": {
         "max_per_100_words": 2.0,
@@ -2701,10 +2569,6 @@
         "weight": 0.5
        },
        "core:prose-craft": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:prose-density": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -2768,10 +2632,6 @@
         "weight": 0.8
        },
        "core:ste-verbs": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:ste-vocabulary": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -2916,6 +2776,7 @@
        "core:prose-scope.epigram": "off",
        "core:prose-scope.formulaic-subject-verb-slogan": "off",
        "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.mixed-content-types": "off",
        "core:prose-scope.rejected-alternative": "off",
        "core:ste-descriptive.information-not-gradual": "off",
        "core:ste-descriptive.missing-key-word-structure": "off",
@@ -2953,6 +2814,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "off",
        "core:ste-words.domain-verb-category-membership": "off",
        "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.spelling": "off",
        "core:ste-words.unapproved-word-not-a-domain-noun": "off",
        "core:ste-words.verb-or-adjective-form-not-permitted": "off",
        "core:ste-words.word-outside-controlled-vocabulary": "off",
@@ -3002,20 +2864,10 @@
         "severity": "error",
         "weight": 1.2
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "warning",
-        "weight": 0.5
        },
        "core:prose-agency": {
         "max_per_100_words": 0.4,
@@ -3026,11 +2878,6 @@
         "max_per_100_words": 0.8,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:prose-density": {
-        "max_per_100_words": 0.5,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.4,
@@ -3101,11 +2948,6 @@
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.2
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": 2.0,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:ste-words": {
         "max_per_100_words": 0.5,
@@ -3249,6 +3091,7 @@
        "core:prose-scope.epigram": "error",
        "core:prose-scope.formulaic-subject-verb-slogan": "error",
        "core:prose-scope.implementation-leak": "error",
+       "core:prose-scope.mixed-content-types": "error",
        "core:prose-scope.rejected-alternative": "error",
        "core:ste-descriptive.information-not-gradual": "error",
        "core:ste-descriptive.missing-key-word-structure": "error",
@@ -3286,6 +3129,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "error",
        "core:ste-words.obligation-word-substitution": "error",
+       "core:ste-words.spelling": "error",
        "core:ste-words.unapproved-word-not-a-domain-noun": "error",
        "core:ste-words.verb-or-adjective-form-not-permitted": "error",
        "core:ste-words.word-outside-controlled-vocabulary": "error",
@@ -3415,19 +3259,10 @@
         "max_per_100_words": "none",
         "severity": "off"
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 2.0,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:prose-agency": {
         "max_per_100_words": 2.0,
@@ -3435,10 +3270,6 @@
         "weight": 0.5
        },
        "core:prose-craft": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:prose-density": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -3502,10 +3333,6 @@
         "weight": 0.8
        },
        "core:ste-verbs": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:ste-vocabulary": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -3650,6 +3477,7 @@
        "core:prose-scope.epigram": "off",
        "core:prose-scope.formulaic-subject-verb-slogan": "off",
        "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.mixed-content-types": "off",
        "core:prose-scope.rejected-alternative": "off",
        "core:ste-descriptive.information-not-gradual": "off",
        "core:ste-descriptive.missing-key-word-structure": "off",
@@ -3687,6 +3515,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "off",
        "core:ste-words.domain-verb-category-membership": "off",
        "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.spelling": "off",
        "core:ste-words.unapproved-word-not-a-domain-noun": "off",
        "core:ste-words.verb-or-adjective-form-not-permitted": "off",
        "core:ste-words.word-outside-controlled-vocabulary": "off",
@@ -3753,20 +3582,10 @@
         "severity": "error",
         "weight": 1.2
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "warning",
-        "weight": 0.5
        },
        "core:prose-agency": {
         "max_per_100_words": 0.4,
@@ -3777,11 +3596,6 @@
         "max_per_100_words": 0.8,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:prose-density": {
-        "max_per_100_words": 0.5,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.4,
@@ -3852,11 +3666,6 @@
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.2
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": 2.0,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:ste-words": {
         "max_per_100_words": 0.5,
@@ -4000,6 +3809,7 @@
        "core:prose-scope.epigram": "error",
        "core:prose-scope.formulaic-subject-verb-slogan": "error",
        "core:prose-scope.implementation-leak": "error",
+       "core:prose-scope.mixed-content-types": "error",
        "core:prose-scope.rejected-alternative": "error",
        "core:ste-descriptive.information-not-gradual": "error",
        "core:ste-descriptive.missing-key-word-structure": "error",
@@ -4037,6 +3847,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "error",
        "core:ste-words.obligation-word-substitution": "error",
+       "core:ste-words.spelling": "error",
        "core:ste-words.unapproved-word-not-a-domain-noun": "error",
        "core:ste-words.verb-or-adjective-form-not-permitted": "error",
        "core:ste-words.word-outside-controlled-vocabulary": "error",
@@ -4105,19 +3916,10 @@
         "max_per_100_words": "none",
         "severity": "off"
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 2.0,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:prose-agency": {
         "max_per_100_words": 2.0,
@@ -4126,10 +3928,6 @@
        },
        "core:prose-craft": {
         "max_per_100_words": "none"
-       },
-       "core:prose-density": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:prose-discipline": {
         "max_per_100_words": 2.0,
@@ -4191,10 +3989,6 @@
         "weight": 0.8
        },
        "core:ste-verbs": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:ste-vocabulary": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -4333,6 +4127,7 @@
        "core:prose-scope.epigram": "off",
        "core:prose-scope.formulaic-subject-verb-slogan": "off",
        "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.mixed-content-types": "off",
        "core:prose-scope.rejected-alternative": "off",
        "core:ste-descriptive.information-not-gradual": "off",
        "core:ste-descriptive.missing-key-word-structure": "off",
@@ -4370,6 +4165,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "off",
        "core:ste-words.domain-verb-category-membership": "off",
        "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.spelling": "off",
        "core:ste-words.unapproved-word-not-a-domain-noun": "off",
        "core:ste-words.verb-or-adjective-form-not-permitted": "off",
        "core:ste-words.word-outside-controlled-vocabulary": "off",
@@ -4435,19 +4231,10 @@
         "max_per_100_words": "none",
         "severity": "off"
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 2.0,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:prose-agency": {
         "max_per_100_words": 2.0,
@@ -4455,10 +4242,6 @@
         "weight": 0.5
        },
        "core:prose-craft": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:prose-density": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -4522,10 +4305,6 @@
         "weight": 0.8
        },
        "core:ste-verbs": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:ste-vocabulary": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -4670,6 +4449,7 @@
        "core:prose-scope.epigram": "off",
        "core:prose-scope.formulaic-subject-verb-slogan": "off",
        "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.mixed-content-types": "off",
        "core:prose-scope.rejected-alternative": "off",
        "core:ste-descriptive.information-not-gradual": "off",
        "core:ste-descriptive.missing-key-word-structure": "off",
@@ -4707,6 +4487,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "off",
        "core:ste-words.domain-verb-category-membership": "off",
        "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.spelling": "off",
        "core:ste-words.unapproved-word-not-a-domain-noun": "off",
        "core:ste-words.verb-or-adjective-form-not-permitted": "off",
        "core:ste-words.word-outside-controlled-vocabulary": "off",
@@ -4784,20 +4565,10 @@
         "severity": "error",
         "weight": 1.2
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "warning",
-        "weight": 0.5
        },
        "core:prose-agency": {
         "max_per_100_words": 0.4,
@@ -4808,11 +4579,6 @@
         "max_per_100_words": 0.8,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:prose-density": {
-        "max_per_100_words": 0.5,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.4,
@@ -4883,11 +4649,6 @@
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.2
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": 2.0,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:ste-words": {
         "max_per_100_words": 0.5,
@@ -5031,6 +4792,7 @@
        "core:prose-scope.epigram": "error",
        "core:prose-scope.formulaic-subject-verb-slogan": "error",
        "core:prose-scope.implementation-leak": "error",
+       "core:prose-scope.mixed-content-types": "error",
        "core:prose-scope.rejected-alternative": "error",
        "core:ste-descriptive.information-not-gradual": "error",
        "core:ste-descriptive.missing-key-word-structure": "error",
@@ -5068,6 +4830,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "error",
        "core:ste-words.obligation-word-substitution": "error",
+       "core:ste-words.spelling": "error",
        "core:ste-words.unapproved-word-not-a-domain-noun": "error",
        "core:ste-words.verb-or-adjective-form-not-permitted": "error",
        "core:ste-words.word-outside-controlled-vocabulary": "error",
@@ -5076,11 +4839,6 @@
       }
      },
      {
-      "categories": {
-       "core:orwell-voice": {
-        "severity": "error"
-       }
-      },
       "files": [
        "docs/**"
       ],
@@ -5158,20 +4916,10 @@
         "severity": "error",
         "weight": 1.2
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "warning",
-        "weight": 0.5
        },
        "core:prose-agency": {
         "max_per_100_words": 0.4,
@@ -5182,11 +4930,6 @@
         "max_per_100_words": 0.8,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:prose-density": {
-        "max_per_100_words": 0.5,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.4,
@@ -5257,11 +5000,6 @@
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.2
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": 2.0,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:ste-words": {
         "max_per_100_words": 0.5,
@@ -5405,6 +5143,7 @@
        "core:prose-scope.epigram": "error",
        "core:prose-scope.formulaic-subject-verb-slogan": "error",
        "core:prose-scope.implementation-leak": "error",
+       "core:prose-scope.mixed-content-types": "error",
        "core:prose-scope.rejected-alternative": "error",
        "core:ste-descriptive.information-not-gradual": "error",
        "core:ste-descriptive.missing-key-word-structure": "error",
@@ -5442,6 +5181,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "error",
        "core:ste-words.obligation-word-substitution": "error",
+       "core:ste-words.spelling": "error",
        "core:ste-words.unapproved-word-not-a-domain-noun": "error",
        "core:ste-words.verb-or-adjective-form-not-permitted": "error",
        "core:ste-words.word-outside-controlled-vocabulary": "error",
@@ -5520,20 +5260,10 @@
         "severity": "warning",
         "weight": 1.0
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.8,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": 0.5,
-        "severity": "error",
-        "weight": 1.0
        },
        "core:prose-agency": {
         "max_per_100_words": 0.8,
@@ -5544,11 +5274,6 @@
         "max_per_100_words": 1.5,
         "severity": "warning",
         "weight": 0.8
-       },
-       "core:prose-density": {
-        "max_per_100_words": 1.0,
-        "severity": "suggestion",
-        "weight": 0.5
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.8,
@@ -5619,10 +5344,6 @@
         "max_per_100_words": 1.0,
         "severity": "warning",
         "weight": 0.8
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:ste-words": {
         "max_per_100_words": 1.5,
@@ -5766,6 +5487,7 @@
        "core:prose-scope.epigram": "suggestion",
        "core:prose-scope.formulaic-subject-verb-slogan": "warning",
        "core:prose-scope.implementation-leak": "warning",
+       "core:prose-scope.mixed-content-types": "suggestion",
        "core:prose-scope.rejected-alternative": "warning",
        "core:ste-descriptive.information-not-gradual": "suggestion",
        "core:ste-descriptive.missing-key-word-structure": "suggestion",
@@ -5803,6 +5525,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "suggestion",
        "core:ste-words.obligation-word-substitution": "suggestion",
+       "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
        "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
        "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
@@ -5848,19 +5571,10 @@
         "max_per_100_words": "none",
         "severity": "off"
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 2.0,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:prose-agency": {
         "max_per_100_words": 2.0,
@@ -5868,10 +5582,6 @@
         "weight": 0.5
        },
        "core:prose-craft": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:prose-density": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -5935,10 +5645,6 @@
         "weight": 0.8
        },
        "core:ste-verbs": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:ste-vocabulary": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -6083,6 +5789,7 @@
        "core:prose-scope.epigram": "off",
        "core:prose-scope.formulaic-subject-verb-slogan": "off",
        "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.mixed-content-types": "off",
        "core:prose-scope.rejected-alternative": "off",
        "core:ste-descriptive.information-not-gradual": "off",
        "core:ste-descriptive.missing-key-word-structure": "off",
@@ -6120,6 +5827,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "off",
        "core:ste-words.domain-verb-category-membership": "off",
        "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.spelling": "off",
        "core:ste-words.unapproved-word-not-a-domain-noun": "off",
        "core:ste-words.verb-or-adjective-form-not-permitted": "off",
        "core:ste-words.word-outside-controlled-vocabulary": "off",
@@ -6199,19 +5907,10 @@
         "max_per_100_words": "none",
         "severity": "off"
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 2.0,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:prose-agency": {
         "max_per_100_words": 2.0,
@@ -6219,10 +5918,6 @@
         "weight": 0.5
        },
        "core:prose-craft": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:prose-density": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -6286,10 +5981,6 @@
         "weight": 0.8
        },
        "core:ste-verbs": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:ste-vocabulary": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -6434,6 +6125,7 @@
        "core:prose-scope.epigram": "off",
        "core:prose-scope.formulaic-subject-verb-slogan": "off",
        "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.mixed-content-types": "off",
        "core:prose-scope.rejected-alternative": "off",
        "core:ste-descriptive.information-not-gradual": "off",
        "core:ste-descriptive.missing-key-word-structure": "off",
@@ -6471,6 +6163,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "off",
        "core:ste-words.domain-verb-category-membership": "off",
        "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.spelling": "off",
        "core:ste-words.unapproved-word-not-a-domain-noun": "off",
        "core:ste-words.verb-or-adjective-form-not-permitted": "off",
        "core:ste-words.word-outside-controlled-vocabulary": "off",
@@ -6544,19 +6237,10 @@
         "max_per_100_words": "none",
         "severity": "off"
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 2.0,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "off"
        },
        "core:prose-agency": {
         "max_per_100_words": 2.0,
@@ -6564,10 +6248,6 @@
         "weight": 0.5
        },
        "core:prose-craft": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:prose-density": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -6631,10 +6311,6 @@
         "weight": 0.8
        },
        "core:ste-verbs": {
-        "max_per_100_words": "none",
-        "severity": "off"
-       },
-       "core:ste-vocabulary": {
         "max_per_100_words": "none",
         "severity": "off"
        },
@@ -6779,6 +6455,7 @@
        "core:prose-scope.epigram": "off",
        "core:prose-scope.formulaic-subject-verb-slogan": "off",
        "core:prose-scope.implementation-leak": "off",
+       "core:prose-scope.mixed-content-types": "off",
        "core:prose-scope.rejected-alternative": "off",
        "core:ste-descriptive.information-not-gradual": "off",
        "core:ste-descriptive.missing-key-word-structure": "off",
@@ -6816,6 +6493,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "off",
        "core:ste-words.domain-verb-category-membership": "off",
        "core:ste-words.obligation-word-substitution": "off",
+       "core:ste-words.spelling": "off",
        "core:ste-words.unapproved-word-not-a-domain-noun": "off",
        "core:ste-words.verb-or-adjective-form-not-permitted": "off",
        "core:ste-words.word-outside-controlled-vocabulary": "off",
@@ -6865,20 +6543,10 @@
         "severity": "error",
         "weight": 1.2
        },
-       "core:meta": {
-        "max_per_100_words": 0.0,
-        "severity": "error",
-        "weight": 1.0
-       },
        "core:orwell": {
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.5
-       },
-       "core:orwell-voice": {
-        "max_per_100_words": "none",
-        "severity": "warning",
-        "weight": 0.5
        },
        "core:prose-agency": {
         "max_per_100_words": 0.4,
@@ -6889,11 +6557,6 @@
         "max_per_100_words": 0.8,
         "severity": "warning",
         "weight": 1.0
-       },
-       "core:prose-density": {
-        "max_per_100_words": 0.5,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:prose-discipline": {
         "max_per_100_words": 0.4,
@@ -6964,11 +6627,6 @@
         "max_per_100_words": 0.4,
         "severity": "error",
         "weight": 1.2
-       },
-       "core:ste-vocabulary": {
-        "max_per_100_words": 2.0,
-        "severity": "warning",
-        "weight": 0.8
        },
        "core:ste-words": {
         "max_per_100_words": 0.5,
@@ -7112,6 +6770,7 @@
        "core:prose-scope.epigram": "error",
        "core:prose-scope.formulaic-subject-verb-slogan": "error",
        "core:prose-scope.implementation-leak": "error",
+       "core:prose-scope.mixed-content-types": "error",
        "core:prose-scope.rejected-alternative": "error",
        "core:ste-descriptive.information-not-gradual": "error",
        "core:ste-descriptive.missing-key-word-structure": "error",
@@ -7149,6 +6808,7 @@
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
        "core:ste-words.domain-verb-category-membership": "error",
        "core:ste-words.obligation-word-substitution": "error",
+       "core:ste-words.spelling": "error",
        "core:ste-words.unapproved-word-not-a-domain-noun": "error",
        "core:ste-words.verb-or-adjective-form-not-permitted": "error",
        "core:ste-words.word-outside-controlled-vocabulary": "error",

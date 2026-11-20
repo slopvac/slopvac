@@ -17,6 +17,12 @@
       "family": "openai",
       "tier": "frontier",
       "command": "python -m evals.opencode_model --model amazon-bedrock/global.openai.gpt-6.1-sol"
+    },
+    {
+      "name": "gpt-6-luna",
+      "family": "openai",
+      "tier": "fast",
+      "command": "python -m evals.opencode_model --model amazon-bedrock/global.openai.gpt-6-luna"
     }
   ]
 }

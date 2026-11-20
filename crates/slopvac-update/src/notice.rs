@@ -11,10 +11,12 @@ use std::time::Duration;
 
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use slopvac_messages::Catalog;
 use thiserror::Error;
 
 use crate::fetch::{FetchError, Fetcher};
 use crate::install::InstallMethod;
+use crate::messages::{UpdateMessage, UpdatePhrase, UpdateText};
 
 /// Commands that may start a refresh.
 pub const REFRESH_COMMANDS: [&str; 4] = ["lint", "doctor", "prime", "self update"];
@@ -71,27 +73,31 @@ pub fn notice_for(current: &str, latest: &str, method: InstallMethod) -> Option<
         return None;
     }
     let upgrade_command = method.upgrade_command().map(str::to_owned);
-    let migrate_hint = (new.major > cur.major).then(|| {
-        "This is a new major version. Run `slopvac migrate` to update your configuration."
-            .to_owned()
-    });
-    let mut message = format!("slopvac {latest} is available (you have {current}).");
-    match &upgrade_command {
-        Some(cmd) => {
-            message.push_str(" Upgrade with `");
-            message.push_str(cmd);
-            message.push_str("`.");
+    let migrate_hint =
+        (new.major > cur.major).then(|| UpdatePhrase::MigrateHint.as_static().to_owned());
+    let mut advice = match &upgrade_command {
+        Some(command) => UpdateText::UpgradeWith {
+            command: command.clone(),
         }
-        None => message.push_str(" See https://github.com/slopvac/slopvac/releases."),
-    }
+        .to_string(),
+        None => UpdatePhrase::SeeReleases.as_static().to_owned(),
+    };
     if let Some(hint) = &migrate_hint {
-        message.push(' ');
-        message.push_str(hint);
+        advice = UpdateText::AdviceAndHint {
+            advice,
+            hint: hint.clone(),
+        }
+        .to_string();
     }
+    let message = UpdateMessage::UpdateAvailable {
+        latest: latest.to_owned(),
+        current: current.to_owned(),
+        advice,
+    };
     Some(Notice {
-        code: "update-available",
+        code: message.code(),
         level: "info",
-        message,
+        message: message.to_string(),
         current: current.to_owned(),
         latest: latest.to_owned(),
         upgrade_command,
@@ -140,7 +146,7 @@ impl Cache {
     /// The cached entry, or `None` when missing or unreadable.
     #[must_use]
     pub fn read(&self) -> Option<Entry> {
-        serde_json::from_slice(&std::fs::read(&self.path).ok()?).ok()
+        serde_json::from_slice(&crate::bounded::read_regular(&self.path, MAX_CACHE_BYTES)?).ok()
     }
 
     /// Store an entry. The caller may ignore the error.
@@ -180,6 +186,9 @@ impl Cache {
         &self.path
     }
 }
+
+/// Largest cache file read. A real entry is a few dozen bytes.
+const MAX_CACHE_BYTES: u64 = 64 * 1024;
 
 /// How often a rename that Windows refuses for a moment is retried.
 const PERSIST_RETRIES: u32 = 20;
@@ -243,7 +252,7 @@ pub enum RegistryError {
     #[error(transparent)]
     Fetch(#[from] FetchError),
     /// The answer is not what the registry documents.
-    #[error("unexpected registry response")]
+    #[error("{}", UpdatePhrase::RegistryUnexpected.as_static())]
     Shape,
 }
 
@@ -669,6 +678,40 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
         assert_eq!(calls, 1);
         assert!(dir_is_empty(dir.path()), "the temp file is cleaned up");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_cache_reads_as_missing_without_blocking() {
+        let (dir, cache) = cache();
+        std::fs::create_dir_all(dir.path().join("c")).unwrap();
+        let status = std::process::Command::new("mkfifo")
+            .arg(cache.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(cache.read().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_cache_that_links_to_an_endless_device_reads_as_missing() {
+        let (dir, cache) = cache();
+        std::fs::create_dir_all(dir.path().join("c")).unwrap();
+        std::os::unix::fs::symlink("/dev/zero", cache.path()).unwrap();
+        assert!(cache.read().is_none());
+    }
+
+    #[test]
+    fn an_oversize_cache_reads_as_missing() {
+        let (dir, cache) = cache();
+        std::fs::create_dir_all(dir.path().join("c")).unwrap();
+        let big = format!(
+            "{{\"checked_at\":1,\"latest\":\"9.9.9\",\"pad\":\"{}\"}}",
+            "x".repeat(usize::try_from(MAX_CACHE_BYTES).unwrap())
+        );
+        std::fs::write(cache.path(), big).unwrap();
+        assert!(cache.read().is_none());
     }
 
     /// Fail the rename `failures` times with `PermissionDenied`, then do the real rename.

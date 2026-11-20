@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use crate::go_unicode;
+use crate::messages::PosMessage;
 use crate::tokenize::work;
 
 /// Why a model file was rejected.
@@ -11,20 +12,41 @@ use crate::tokenize::work;
 #[non_exhaustive]
 pub enum ModelError {
     /// The file does not start with the `PROSETAG` magic.
-    #[error("not a prose tagger model (bad magic)")]
+    #[error("{}", PosMessage::BadMagic)]
     BadMagic,
     /// The file ends before a field it declares.
-    #[error("model file is truncated")]
+    #[error("{}", PosMessage::Truncated)]
     Truncated,
     /// A field holds a value the format does not allow.
-    #[error("model file is corrupt: {0}")]
+    #[error("{}", corrupt_text(.0))]
     Corrupt(&'static str),
     /// The model uses a feature template this port does not implement.
-    #[error("unsupported feature template {0:?}; only the rune template (1) is implemented")]
+    #[error("{}", template_text(.0))]
     UnsupportedTemplate(String),
     /// The model emits a tag set other than Penn Treebank.
-    #[error("unsupported tag set {0:?}; only \"penn\" is implemented")]
+    #[error("{}", tagset_text(.0))]
     UnsupportedTagset(String),
+}
+
+fn corrupt_text(reason: &str) -> String {
+    PosMessage::Corrupt {
+        reason: reason.to_owned(),
+    }
+    .to_string()
+}
+
+fn template_text(template: &str) -> String {
+    PosMessage::UnsupportedTemplate {
+        template: format!("{template:?}"),
+    }
+    .to_string()
+}
+
+fn tagset_text(tagset: &str) -> String {
+    PosMessage::UnsupportedTagset {
+        tagset: format!("{tagset:?}"),
+    }
+    .to_string()
 }
 
 /// A trained tagger model.

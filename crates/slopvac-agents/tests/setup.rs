@@ -420,3 +420,171 @@ fn keeping_install_refuses_list_remove_and_check_and_changes_nothing() {
         );
     }
 }
+const PLACEHOLDER: &str = "# model: <a model from a different family than the author's>";
+
+fn agent_opts(root: &Path, harness: &str, model: Option<&str>) -> Options {
+    Options {
+        agent: true,
+        reviewer_model: model.map(Into::into),
+        ..opts(root, harness)
+    }
+}
+
+#[test]
+fn an_unset_or_inherited_reviewer_model_writes_a_placeholder_and_warns() {
+    for harness in ["claude", "opencode"] {
+        for model in [None, Some("inherit")] {
+            let dir = tempfile::tempdir().unwrap();
+            let out = execute(&agent_opts(dir.path(), harness, model)).unwrap();
+            assert_eq!(out.exit, EXIT_OK, "{harness} {model:?}");
+            let codes: Vec<&str> = out.notices.iter().map(|n| n.code.as_str()).collect();
+            assert_eq!(codes, ["setup-reviewer-model-unset"], "{harness} {model:?}");
+            let text = fs::read_to_string(
+                dir.path()
+                    .join(format!(".{harness}/agents/slopvac-reviewer.md")),
+            )
+            .unwrap();
+            assert!(text.contains(&format!("{PLACEHOLDER}\n")), "{harness}");
+            assert!(!text.contains("\nmodel:"), "{harness}: no live model line");
+        }
+    }
+}
+
+#[test]
+fn a_set_reviewer_model_gives_no_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = execute(&agent_opts(dir.path(), "claude", Some("opus"))).unwrap();
+    assert_eq!(out.notices, vec![]);
+}
+
+#[test]
+fn installing_without_the_agent_gives_no_model_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = execute(&opts(dir.path(), "claude")).unwrap();
+    assert_eq!(out.notices, vec![]);
+}
+
+#[test]
+fn check_reports_an_unset_model_as_a_warning_not_as_stale() {
+    let dir = tempfile::tempdir().unwrap();
+    execute(&agent_opts(dir.path(), "claude", None)).unwrap();
+    let out = execute(&Options {
+        check: true,
+        ..agent_opts(dir.path(), "claude", None)
+    })
+    .unwrap();
+    assert_eq!(out.exit, EXIT_OK);
+    assert!(
+        out.lines.iter().all(|l| l.starts_with("current")),
+        "{:?}",
+        out.lines
+    );
+    assert_eq!(out.notices.len(), 1);
+    assert_eq!(out.notices[0].code.as_str(), "setup-reviewer-model-unset");
+}
+
+#[test]
+fn claude_accepts_an_alias_a_claude_id_or_inherit() {
+    for model in [
+        "sonnet",
+        "opus",
+        "haiku",
+        "fable",
+        "claude-opus-5-5",
+        "inherit",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        execute(&agent_opts(dir.path(), "claude", Some(model)))
+            .unwrap_or_else(|e| panic!("{model}: {e}"));
+    }
+}
+
+#[test]
+fn claude_refuses_any_other_model_with_the_format_code() {
+    for model in [
+        "gpt-5",
+        "anthropic/claude-sonnet-5-5",
+        "sonet",
+        "claude-",
+        "Sonnet",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let err = execute(&agent_opts(dir.path(), "claude", Some(model))).unwrap_err();
+        assert_eq!(err.code(), "setup-reviewer-model-format", "{model}");
+        assert!(
+            !dir.path().join(".claude").exists(),
+            "{model}: nothing written"
+        );
+    }
+}
+
+#[test]
+fn opencode_keeps_provider_model_and_variant() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = execute(&agent_opts(
+        dir.path(),
+        "opencode",
+        Some("openai/gpt-5#high"),
+    ))
+    .unwrap();
+    assert_eq!(out.notices, vec![]);
+}
+#[test]
+fn the_unset_warning_names_what_each_harness_falls_back_to() {
+    let claude = tempfile::tempdir().unwrap();
+    let out = execute(&agent_opts(claude.path(), "claude", None)).unwrap();
+    assert_eq!(out.notices[0].level, slopvac_model::NoticeLevel::Warning);
+    let message = out.notices[0].message.as_str();
+    assert!(message.contains("CLAUDE_CODE_SUBAGENT_MODEL"), "{message}");
+    assert!(message.contains("main conversation's model"), "{message}");
+
+    let opencode = tempfile::tempdir().unwrap();
+    let out = execute(&agent_opts(opencode.path(), "opencode", None)).unwrap();
+    let message = out.notices[0].message.as_str();
+    assert!(message.contains("parent session's model"), "{message}");
+    assert!(!message.contains("CLAUDE_CODE"), "{message}");
+}
+
+#[test]
+fn unterminated_fence_before_the_block_is_refused_and_leaves_the_file_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("CLAUDE.md");
+    let original = "# Notes\n\n```sh\nopen fence with no end\n";
+    fs::write(&file, original).unwrap();
+    for _ in 0..2 {
+        let err = execute(&opts(dir.path(), "claude")).unwrap_err();
+        assert_eq!(err.code(), "steering-malformed");
+        assert_eq!(
+            err.to_string(),
+            "CLAUDE.md has an unterminated code fence that would hide the slopvac block; \
+             close the fence first"
+        );
+        assert_eq!(fs::read_to_string(&file).unwrap(), original);
+    }
+    assert_eq!(check(dir.path(), "claude"), EXIT_INCOMPLETE);
+}
+
+#[test]
+fn managed_markers_inside_an_unterminated_fence_are_refused_and_never_duplicated() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("CLAUDE.md");
+    let original =
+        "```md\n<!-- slopvac:begin -->\nold\n<!-- slopvac:end -->\nno closing fence follows\n";
+    fs::write(&file, original).unwrap();
+    assert_eq!(check(dir.path(), "claude"), EXIT_INCOMPLETE);
+    for _ in 0..3 {
+        let err = execute(&opts(dir.path(), "claude")).unwrap_err();
+        assert_eq!(err.code(), "steering-malformed");
+        assert_eq!(
+            err.to_string(),
+            "CLAUDE.md has an unterminated code fence that would hide the slopvac block; \
+             close the fence first"
+        );
+        assert_eq!(fs::read(&file).unwrap(), original.as_bytes());
+        assert_eq!(check(dir.path(), "claude"), EXIT_INCOMPLETE);
+    }
+    assert!(
+        !dir.path().join(".claude").exists(),
+        "nothing else is written"
+    );
+}

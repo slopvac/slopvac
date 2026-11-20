@@ -1,0 +1,12 @@
+schema_version: 3
+id: consumer
+description: Shipped behavior and reader use. README, docs, guides.
+profile: normal
+detect:
+  min_score: 3
+  signals:
+    - { kind: path, glob: '**/readme*', weight: 2 }
+    - { kind: path, glob: '**/{doc,docs,guide,guides,manual}/**', weight: 1.5 }
+    - { kind: heading, pattern: '^\W*(?:installation|usage|getting started|quick ?start|features)\W*$', weight: 1.5 }
+rules:
+  docs-discipline.history-internal-reference: warning

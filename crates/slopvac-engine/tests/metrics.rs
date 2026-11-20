@@ -11,6 +11,7 @@
 mod common;
 
 use common::{engine, rule};
+use rstest::rstest;
 use serde_json::{Value, json};
 use slopvac_model::{Document, Severity};
 
@@ -136,6 +137,41 @@ fn a_raw_html_block_is_one_paragraph_for_the_paragraph_metrics() {
         "<table>\n<tr><td>One. Two.</td><td>Three. Four.</td></tr>\n</table>\n",
     );
     assert_eq!(hits(&doc), [(2, "Got 4 over 2.".to_owned())]);
+}
+
+/// A one-cell table with `cell` as its body row, written with the line ending `eol`.
+fn one_cell_table(cell: &str, eol: &str) -> String {
+    format!("|H|{eol}|-|{eol}|{cell}|{eol}")
+}
+
+#[rstest]
+#[case::plain_lf("Stop it. Wait now.", "\n")]
+#[case::plain_crlf("Stop it. Wait now.", "\r\n")]
+#[case::inline_code_lf("Stop `x`. Wait now.", "\n")]
+#[case::inline_code_crlf("Stop `x`. Wait now.", "\r\n")]
+fn a_table_cell_is_one_sentence_for_a_sentence_metric(#[case] cell: &str, #[case] eol: &str) {
+    // 2.x measures the cell as one sentence of four words, not two sentences of two.
+    let rule = gt("sentence_words", 3.0);
+    let doc = lint(&rule, &one_cell_table(cell, eol));
+    assert_eq!(hits(&doc), [(3, "Got 4 over 3.".to_owned())]);
+}
+
+#[rstest]
+#[case::plain_lf("The valve opens. Close the door now.", "\n")]
+#[case::plain_crlf("The valve opens. Close the door now.", "\r\n")]
+#[case::inline_code_lf("The `valve` opens. Close the door now.", "\n")]
+#[case::inline_code_crlf("The `valve` opens. Close the door now.", "\r\n")]
+fn a_table_cell_takes_its_text_type_from_its_opening(#[case] cell: &str, #[case] eol: &str) {
+    // The cell opens with a descriptive sentence, so the whole cell is descriptive and a
+    // procedural limit skips it, although its second sentence is an instruction alone.
+    let rule = metric(
+        "sentence_words",
+        1.0,
+        "gt",
+        &json!({"scope": "sentence", "text_type": "procedural"}),
+    );
+    let doc = lint(&rule, &one_cell_table(cell, eol));
+    assert_eq!(hits(&doc), []);
 }
 
 #[test]

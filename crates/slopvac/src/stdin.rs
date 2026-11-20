@@ -109,16 +109,23 @@ pub fn plan(m: &ArgMatches) -> Result<StdinPlan, CliError> {
     })
 }
 
-/// Read the whole document and require UTF-8.
+/// Read the whole document under the document size cap and require UTF-8.
 ///
 /// # Errors
+/// `document-too-large` when the input is over the cap (nothing is truncated),
 /// `input-unreadable` when the read fails, `input-not-utf8` with the offset
 /// of the first bad byte otherwise.
 pub fn read(source: &mut dyn Read) -> Result<Vec<u8>, CliError> {
-    let mut buf = Vec::new();
-    source
-        .read_to_end(&mut buf)
-        .map_err(|_| CliError::new("input-unreadable", format!("{STDIN_NAME}: cannot read")))?;
+    let buf =
+        slopvac_fs::read_capped(source, slopvac_fs::MAX_DOCUMENT_BYTES).map_err(
+            |err| match err {
+                slopvac_fs::Error::CapExceeded { .. } => CliError::new(
+                    "document-too-large",
+                    format!("{STDIN_NAME}: larger than the 64 MiB document limit"),
+                ),
+                _ => CliError::new("input-unreadable", format!("{STDIN_NAME}: cannot read")),
+            },
+        )?;
     if let Err(err) = std::str::from_utf8(&buf) {
         return Err(CliError::new(
             "input-not-utf8",

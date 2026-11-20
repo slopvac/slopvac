@@ -4,7 +4,12 @@
 # follow the clap tree in crates/slopvac/src/cli.rs; tests/test_binary_bench.py
 # runs every scenario against a built binary and rejects exit 2.
 #
-# No plugin start-up scenario yet: `slopvac plugins` and `packs` still exit 2
+# Every scenario except --version passes the fixture config explicitly. The
+# project root is the config directory, so lint targets live beside it (a path
+# outside the root currently panics the binary). fixtures/readme.md is a copy of
+# the slopvac-lint README, kept as a realistic long document.
+#
+# No plugin start-up scenario yet: `slopvac plugins` still exits 2
 # with command-not-wired (slopvac-8l4.9). The scenario is tracked in the bead
 # that wires them.
 
@@ -14,35 +19,74 @@ args = ["--version"]
 
 [[scenario]]
 name = "startup rules json"
-args = ["rules", "--format", "json"]
+args = [
+  "rules",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "--format",
+  "json",
+]
 
 [[scenario]]
 name = "startup rules judgement json"
-args = ["rules", "--kind", "judgement", "--format", "json"]
+args = [
+  "rules",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "--kind",
+  "judgement",
+  "--format",
+  "json",
+]
 
 [[scenario]]
 name = "startup explain"
-args = ["explain", "core:ai-residue.chat-leakage"]
+args = [
+  "explain",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "core:ai-residue.chat-leakage",
+]
 
 [[scenario]]
 name = "lint fixture warm"
-args = ["lint", "{root}/scripts/perf/fixtures/clean.md"]
+args = [
+  "lint",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "{root}/scripts/perf/fixtures/clean.md",
+]
 accept_exits = [0, 1]
 
 [[scenario]]
 name = "lint fixture cold"
-args = ["lint", "{root}/scripts/perf/fixtures/clean.md"]
+args = [
+  "lint",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "{root}/scripts/perf/fixtures/clean.md",
+]
 accept_exits = [0, 1]
 cold = true
 
 [[scenario]]
 name = "lint README warm"
-args = ["lint", "{root}/packages/slopvac-lint/README.md"]
+args = [
+  "lint",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "{root}/scripts/perf/fixtures/readme.md",
+]
 accept_exits = [0, 1]
 
 [[scenario]]
 name = "lint README cold"
-args = ["lint", "{root}/packages/slopvac-lint/README.md"]
+args = [
+  "lint",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
+  "{root}/scripts/perf/fixtures/readme.md",
+]
 accept_exits = [0, 1]
 cold = true
 
@@ -50,6 +94,8 @@ cold = true
 name = "lint comments source"
 args = [
   "lint",
+  "--config",
+  "{root}/scripts/perf/fixtures/slopvac.toml",
   "--mode",
   "code-comments",
   "{root}/scripts/perf/fixtures/comments/example.py",

@@ -33,7 +33,7 @@ pub const REMOVED_LINT_OPTIONS: [(&str, &str); 4] = [
     ),
     (
         "rules-dir",
-        "--rules-dir is removed in 3.0. Declare a local pack in slopvac.toml; `slopvac migrate` writes the entry.",
+        "--rules-dir is removed in 3.0. Declare a local plugin in slopvac.toml; `slopvac migrate` writes the entry.",
     ),
     ("no-vale", "--no-vale is removed in 3.0. Vale is gone."),
     (
@@ -65,55 +65,15 @@ fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
     cmd
 }
 
-/// Commands whose implementation another epic owns, with their owner bead.
+/// Commands whose implementation another crate has not exposed yet.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str, &str); 10] = [
-    (
-        "terms",
-        "Check and list the project terms.",
-        "slopvac-8l4.4",
-    ),
-    (
-        "genre",
-        "Show or detect the document genre.",
-        "slopvac-8l4.4",
-    ),
-    (
-        "validate",
-        "Validate configuration, packs and front matter.",
-        "slopvac-8l4.4",
-    ),
+pub const PLACEHOLDERS: [(&str, &str); 3] = [
     (
         "plugins",
-        "Manage plugins and packs: sync, trust, update.",
-        "slopvac-8l4.9",
+        "Manage data plugins and code plugins: sync, trust, update.",
     ),
-    ("packs", "List installed rule packs.", "slopvac-8l4.9"),
-    (
-        "setup",
-        "Install slopvac guidance into agent harnesses.",
-        "slopvac-8l4.11",
-    ),
-    (
-        "prime",
-        "Print guidance for agents, by topic.",
-        "slopvac-8l4.11",
-    ),
-    (
-        "onboard",
-        "Print the agent onboarding text.",
-        "slopvac-8l4.12.10",
-    ),
-    (
-        "reference",
-        "Generate or check the rules reference.",
-        "slopvac-8l4.12.10",
-    ),
-    (
-        "report",
-        "Preview or submit an issue report.",
-        "slopvac-8l4.12.6",
-    ),
+    ("onboard", "Print the agent onboarding text."),
+    ("reference", "Generate or check the rules reference."),
 ];
 
 fn placeholder(name: &'static str, about: &'static str) -> Command {
@@ -346,7 +306,7 @@ fn init() -> Command {
 
 fn doctor() -> Command {
     Command::new("doctor")
-        .about("Check the binary, configuration and pack health.")
+        .about("Check the binary, configuration and plugin health.")
         .arg(format_arg(&["text", "json"], "Output format."))
         .arg(config_arg())
 }
@@ -417,10 +377,18 @@ pub fn command() -> Command {
         .subcommand(self_cmd())
         .subcommand(slopvac_lsp::command())
         .subcommand(slopvac_migrate::command())
+        .subcommand(crate::report::command())
+        .subcommand(slopvac_terms::cli::command())
+        .subcommand(slopvac_context::command())
+        .subcommand(slopvac_config::validate::command())
+        .subcommand(slopvac_agents::setup::command())
+        .subcommand(slopvac_agents::prime::command())
+        .subcommand(slopvac_agents::review::command())
+        .subcommand(slopvac_agents::claims::command())
         .subcommand(completions())
         .subcommand(man())
         .subcommand(Command::new("cli-reference").about("Print the Markdown CLI reference.").hide(true));
-    for (name, about, _owner) in PLACEHOLDERS {
+    for (name, about) in PLACEHOLDERS {
         cmd = cmd.subcommand(placeholder(name, about));
     }
     cmd

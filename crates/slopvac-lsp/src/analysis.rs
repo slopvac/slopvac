@@ -3,9 +3,13 @@
 use std::fmt::Write as _;
 use std::sync::Arc;
 
+use slopvac_engine::extract_code;
+use slopvac_messages::{Catalog, render};
 use slopvac_model::{Edit, Finding, Notice, NoticeLevel, RuleId, Severity, Span};
 
+use crate::binary_host::is_binary_host;
 use crate::linter::{Check, Linter, Problem};
+use crate::messages::LspMessage;
 
 /// One diagnostic-worthy item: a finding, a check problem or a failure notice.
 #[derive(Debug, Clone)]
@@ -35,14 +39,27 @@ pub(crate) struct Analysis {
     pub(crate) items: Vec<Item>,
 }
 
+/// The diagnostic severity of a notice level.
+const fn severity_of(level: NoticeLevel) -> Severity {
+    match level {
+        NoticeLevel::Info => Severity::Suggestion,
+        NoticeLevel::Warning => Severity::Warning,
+    }
+}
+
 impl Item {
     fn from_finding(f: Finding) -> Self {
-        let mut hover = format!(
-            "**{}** ({:?}, category `{}`)\n\n{}",
-            f.rule_id, f.severity, f.category, f.message
-        );
+        let mut hover = render(&LspMessage::HoverFinding {
+            rule: f.rule_id.to_string(),
+            severity: format!("{:?}", f.severity),
+            category: f.category.to_string(),
+            message: f.message.to_string(),
+        });
         if !f.matched_text.is_empty() {
-            let _ = write!(hover, "\n\nMatched: `{}`", f.matched_text.replace('`', "'"));
+            let matched = render(&LspMessage::HoverMatched {
+                text: f.matched_text.replace('`', "'"),
+            });
+            let _ = write!(hover, "\n\n{matched}");
         }
         if let Some(fix) = &f.fix {
             let texts: Vec<String> = fix
@@ -50,7 +67,10 @@ impl Item {
                 .iter()
                 .map(|e| format!("`{}`", e.text.replace('`', "'")))
                 .collect();
-            let _ = write!(hover, "\n\nFix: replace with {}", texts.join(", "));
+            let fix = render(&LspMessage::HoverFix {
+                replacements: texts.join(", "),
+            });
+            let _ = write!(hover, "\n\n{fix}");
         }
         Self {
             span: f.extent.map(|e| e.span),
@@ -65,7 +85,10 @@ impl Item {
     }
 
     fn from_problem(p: Problem) -> Self {
-        let hover = format!("**{}**\n\n{}", p.code, p.message);
+        let hover = render(&LspMessage::HoverProblem {
+            code: p.code.clone(),
+            message: p.message.clone(),
+        });
         Self {
             span: Some(p.span),
             line: 0,
@@ -81,14 +104,13 @@ impl Item {
     /// A part of the check did not run, such as a skipped rule kind or a missing RST
     /// converter. The buffer must not look fully checked.
     fn from_notice(n: &Notice) -> Self {
-        let message = format!("slopvac did not fully check this document: {}", n.message);
+        let message = render(&LspMessage::Unchecked {
+            message: n.message.to_string(),
+        });
         Self {
             span: None,
             line: 0,
-            severity: match n.level {
-                NoticeLevel::Info => Severity::Suggestion,
-                NoticeLevel::Warning => Severity::Warning,
-            },
+            severity: severity_of(n.level),
             code: n.code.to_string(),
             hover: message.clone(),
             message,
@@ -97,14 +119,38 @@ impl Item {
         }
     }
 
+    /// A root notice that is published: only `extract-unsupported` (unsupported content in
+    /// a supported input). Any other root notice is not published, and `None` says so. The
+    /// notice has no position, so the item sits at the document start. It shows the notice
+    /// message as is, with the notice code, at the severity of the notice level.
+    fn from_root_notice(n: &Notice) -> Option<Self> {
+        if n.code.as_str() != extract_code::UNSUPPORTED {
+            return None;
+        }
+        let message = n.message.to_string();
+        Some(Self {
+            span: None,
+            line: 0,
+            severity: severity_of(n.level),
+            code: n.code.to_string(),
+            hover: message.clone(),
+            message,
+            fix: None,
+            rule: None,
+        })
+    }
+
     /// The check could not finish. An unlinted buffer must not look clean (exit 2 semantics).
     fn incomplete(reason: &str) -> Self {
-        let message = format!("slopvac could not lint this document: {reason}");
+        let notice = LspMessage::LintIncomplete {
+            reason: reason.to_owned(),
+        };
+        let message = render(&notice);
         Self {
             span: None,
             line: 0,
             severity: Severity::Warning,
-            code: "lint-incomplete".to_owned(),
+            code: notice.code().to_owned(),
             hover: message.clone(),
             message,
             fix: None,
@@ -128,10 +174,12 @@ pub(crate) fn analyze(
             .into_iter()
             .map(Item::from_finding)
             .chain(linted.unchecked.into_iter().map(|n| Item::from_notice(&n)))
+            .chain(linted.notices.iter().filter_map(Item::from_root_notice))
             .collect(),
         Err(e) => vec![Item::incomplete(&e.0)],
     };
-    for check in checks {
+    // A binary container is not text: its checks would read bytes as prose.
+    for check in checks.iter().filter(|_| !is_binary_host(path)) {
         items.extend(check.check(path, text).into_iter().map(Item::from_problem));
     }
     Analysis {

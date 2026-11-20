@@ -13,22 +13,23 @@ Commands:
   explain      Explain a rule.
   rules        List rules.
   init         Write a commented slopvac.toml and set up agent steering.
-  doctor       Check the binary, configuration and pack health.
+  doctor       Check the binary, configuration and plugin health.
   self         Manage this installation.
   lsp          Run the language server on standard input and output.
   migrate      Migrate a 2.x project to 3.0: config, inline directives and steering blocks
+  report       Preview an issue report, and file it with the GitHub CLI.
+  terms        Manage project terms
+  genre        Print the genre of each file, with scores and the reasons for the choice
+  validate     Check config, front matter and inline directives without linting
+  setup        Install or remove project-local steering for a harness
+  prime        Print guidance for agents, one topic at a time
+  review       Plan or run the review of a revision
+  claims       List the claims a revision changed, added or dropped
   completions  Print a shell completion script.
   man          Write man pages.
-  terms        Check and list the project terms.
-  genre        Show or detect the document genre.
-  validate     Validate configuration, packs and front matter.
-  plugins      Manage plugins and packs: sync, trust, update.
-  packs        List installed rule packs.
-  setup        Install slopvac guidance into agent harnesses.
-  prime        Print guidance for agents, by topic.
+  plugins      Manage data plugins and code plugins: sync, trust, update.
   onboard      Print the agent onboarding text.
   reference    Generate or check the rules reference.
-  report       Preview or submit an issue report.
   help         Print this message or the help of the given subcommand(s)
 
 Options:

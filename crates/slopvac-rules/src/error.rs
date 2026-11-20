@@ -3,12 +3,66 @@
 use std::fmt;
 use std::path::PathBuf;
 
+/// Which pack budget a load passed. The list can grow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PackBudget {
+    /// Rule and category files, in files: [`MAX_PACK_FILES`](crate::MAX_PACK_FILES).
+    Files,
+    /// Directory entries of any kind, in entries: [`MAX_PACK_ENTRIES`](crate::MAX_PACK_ENTRIES).
+    Entries,
+    /// Bytes read, in bytes: [`MAX_PACK_BYTES`](crate::MAX_PACK_BYTES).
+    Bytes,
+    /// Tokens or substitutions in one rule, in entries:
+    /// [`MAX_RULE_ENTRIES`](crate::MAX_RULE_ENTRIES).
+    RuleEntries,
+}
+
+impl PackBudget {
+    /// The `data.budget` text, such as `plugin-files`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Files => "plugin-files",
+            Self::Entries => "plugin-entries",
+            Self::Bytes => "plugin-bytes",
+            Self::RuleEntries => "rule-entries",
+        }
+    }
+
+    /// The unit of the limit.
+    #[must_use]
+    pub fn unit(self) -> &'static str {
+        match self {
+            Self::Files => "files",
+            Self::Entries | Self::RuleEntries => "entries",
+            Self::Bytes => "bytes",
+        }
+    }
+}
+
 /// What went wrong with one file or rule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LoadErrorKind {
     /// The file or directory could not be read.
     Read(String),
+    /// The file is larger than [`MAX_RULE_FILE_BYTES`](crate::MAX_RULE_FILE_BYTES), the given
+    /// number of bytes. Its stable code is `rules-file-too-large`.
+    TooLarge(u64),
+    /// The pack directory holds more files, or more bytes in total, than
+    /// [`MAX_PACK_FILES`](crate::MAX_PACK_FILES) or [`MAX_PACK_BYTES`](crate::MAX_PACK_BYTES)
+    /// allow, or one rule lists more than [`MAX_RULE_ENTRIES`](crate::MAX_RULE_ENTRIES) tokens or
+    /// substitutions. Its stable code is `rules-budget-exceeded`.
+    BudgetExceeded {
+        /// The budget that was passed.
+        budget: PackBudget,
+        /// The limit, in the unit of `budget`.
+        limit: u64,
+        /// The pack directory, or for `rule-entries` the rule file, as a display path, never
+        /// absolute: relative to the working directory, or `<external>/<name>` outside it.
+        path: String,
+    },
     /// The file does not parse as a rule or category file.
     Parse(String),
     /// The extension names no supported format (`json`, `yaml`, `yml`, `toml`).
@@ -41,6 +95,15 @@ impl fmt::Display for LoadErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Read(e) => write!(f, "cannot read: {e}"),
+            Self::TooLarge(cap) => {
+                write!(f, "[rules-file-too-large] file is larger than {cap} bytes")
+            }
+            Self::BudgetExceeded { budget, limit, .. } => write!(
+                f,
+                "[rules-budget-exceeded] the input passes the limit of {limit} {} ({})",
+                budget.unit(),
+                budget.as_str()
+            ),
             Self::Parse(e) => f.write_str(e),
             Self::UnsupportedFormat => {
                 f.write_str("unsupported file type (expected json, yaml, yml or toml)")

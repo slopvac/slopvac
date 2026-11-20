@@ -8,9 +8,10 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
+use rstest::rstest;
 use serde_json::{Map, Value, json};
 use slopvac_migrate::overlap::build_regions;
-use slopvac_migrate::{Error, Options, RenameTable, Rewrite, migrate_config};
+use slopvac_migrate::{Dropped, Error, Options, RenameTable, Rewrite, migrate_config};
 
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -327,4 +328,57 @@ fn the_overlap_error_gives_the_line_of_the_block() {
             other => panic!("expected OverrideOverlap, got {other:?}"),
         }
     }
+}
+
+/// 2.x categories that no rule belongs to: 3.0 has none of them.
+#[rstest]
+#[case::meta_plain("meta", false)]
+#[case::meta_preserve("meta", true)]
+#[case::orwell_voice_plain("orwell-voice", false)]
+#[case::orwell_voice_preserve("orwell-voice", true)]
+#[case::prose_density_plain("prose-density", false)]
+#[case::prose_density_preserve("prose-density", true)]
+#[case::ste_vocabulary_plain("ste-vocabulary", false)]
+#[case::ste_vocabulary_preserve("ste-vocabulary", true)]
+fn a_rule_less_category_is_dropped_with_one_notice_per_use(
+    #[case] name: &str,
+    #[case] preserve_behavior: bool,
+) {
+    let text = format!(
+        "profile = \"strict\"\n[categories]\n{name} = \"error\"\nprose-format = \"warning\"\n\
+         [[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\n{name} = \"off\"\n"
+    );
+    let rewrite = migrate_config(
+        &text,
+        "slopvac.toml",
+        &RenameTable::bundled(),
+        Options { preserve_behavior },
+    )
+    .unwrap();
+    assert!(
+        !rewrite.text.contains(&format!("core:{name}")),
+        "{}",
+        rewrite.text
+    );
+    let notices: Vec<String> = rewrite
+        .removed_categories
+        .iter()
+        .map(Dropped::category_removed_notice)
+        .collect();
+    assert_eq!(
+        notices,
+        [
+            format!(
+                "migrate-category-removed: slopvac.toml:3: `categories.{name}`: category no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml"
+            ),
+            format!(
+                "migrate-category-removed: slopvac.toml:8: `overrides[0].categories.{name}`: category no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml"
+            ),
+        ]
+    );
+    let errors: Vec<String> = config_validator()
+        .iter_errors(&as_json(&rewrite.text))
+        .map(|e| e.to_string())
+        .collect();
+    assert!(errors.is_empty(), "{errors:?}");
 }

@@ -1,0 +1,5 @@
+schema_version = 3
+id = "core"
+version = "3.0.0"
+slopvac_api = 1
+kind = "data"

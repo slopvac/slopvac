@@ -16,6 +16,7 @@ fn tags_for(doc: &PlainDocument, assignments: &[GenreAssignment]) -> (String, Ve
             &ResolveOptions {
                 assignments,
                 relative_path: None,
+                ..Default::default()
             },
         )
         .unwrap();

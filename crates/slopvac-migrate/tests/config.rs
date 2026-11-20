@@ -122,6 +122,30 @@ fn reports_every_dropped_setting_at_once() {
     );
 }
 
+#[rstest::rstest]
+#[case::array_tables(
+    "[thresholds]\nmax_errors = 0\n\n[[overrides]]\nfiles = [\"a\"]\n\n[[overrides]]\nfiles = [\"b\"]\nthresholds.odd = 1\n[overrides.vale]\nenabled = true\n",
+    &[("overrides[1].thresholds.odd", 9), ("overrides[1].vale.enabled", 11)],
+)]
+#[case::inline_tables(
+    "overrides = [\n  { files = [\"a\"] },\n  { files = [\"b\"], thresholds = { odd = 1 } },\n]\n[vale]\nenabled = true\n",
+    &[("overrides[1].thresholds.odd", 3), ("vale.enabled", 6)],
+)]
+#[case::quoted_name_with_a_dot(
+    "[[overrides]]\nfiles = [\"a\"]\n[[overrides]]\nfiles = [\"b\"]\n[overrides.categories]\n\"no.such\" = \"off\"\n",
+    &[("overrides[1].categories.no.such", 6)],
+)]
+fn nested_settings_are_reported_at_their_lines(
+    #[case] text: &str,
+    #[case] expected: &[(&str, usize)],
+) {
+    let expected: Vec<(String, usize)> = expected
+        .iter()
+        .map(|(key, line)| ((*key).to_owned(), *line))
+        .collect();
+    assert_eq!(dropped(text), expected);
+}
+
 #[test]
 fn unknown_names_are_dropped() {
     let cases = [
@@ -156,12 +180,13 @@ fn migration_is_idempotent() {
 
 #[test]
 fn a_config_the_version_gate_accepts_or_finds_newer_is_already_migrated() {
-    for text in ["schema_version = 4\n", "schema_version = \"3\"\n"] {
-        assert!(
-            matches!(migrate(text), Err(Error::AlreadyMigrated { .. })),
-            "{text}"
-        );
-    }
+    assert!(
+        matches!(
+            migrate("schema_version = 4\n"),
+            Err(Error::AlreadyMigrated { .. })
+        ),
+        "a newer version counts as migrated"
+    );
 }
 
 #[test]
@@ -220,36 +245,77 @@ fn locale_comments_follow_their_values() {
     );
     assert!(out.contains("# skip these\nallow = [\"x\"]"), "{out}");
 }
-const REMOVED: [&str; 5] = [
-    "ste-practices.inconsistent-wording-for-same-step",
-    "ste-safety.safety-block-missing-consequence",
-    "ste-sentences.vertical-list-item-punctuation",
-    "ste-sentences.vertical-list-lead-in-missing-colon",
-    "ste-words.inconsistent-term-for-same-thing",
-];
+/// The ids in the contract file, which is the one list of removed 2.x rules.
+fn removed_ids() -> Vec<String> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/contract/compat/removed-rules.toml");
+    let doc: toml::Table = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    doc["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["id"].as_str().unwrap().to_owned())
+        .collect()
+}
 
-#[test]
-fn removed_rules_leave_the_top_level_and_overrides_with_a_note() {
-    for id in REMOVED {
-        let text = format!(
-            "[rules]\n\"{id}\" = \"error\"\n\"prose-format.no-unicode-dash\" = \"warning\"\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"{id}\" = \"off\"\n"
-        );
+fn removed_rule_text(id: &str) -> String {
+    format!(
+        "[rules]\n\"{id}\" = \"error\"\n\"prose-format.no-unicode-dash\" = \"warning\"\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"{id}\" = \"off\"\n"
+    )
+}
+
+#[rstest::rstest]
+#[case::plain(false)]
+#[case::preserve(true)]
+fn removed_rules_leave_the_top_level_and_overrides(#[case] preserve_behavior: bool) {
+    for id in removed_ids() {
         let r = migrate_config(
-            &text,
+            &removed_rule_text(&id),
             "slopvac.toml",
             &RenameTable::bundled(),
-            Options::default(),
+            Options { preserve_behavior },
         )
         .unwrap_or_else(|e| panic!("{id}: {e:?}"));
-        assert!(!r.text.contains(id), "{id}: {}", r.text);
+        assert!(!r.text.contains(&id), "{id}: {}", r.text);
         assert!(
             r.text
                 .contains("\"core:prose-format.no-unicode-dash\" = \"warning\""),
             "{id}: {}",
             r.text
         );
-        let notes: Vec<_> = r.notes.iter().filter(|n| n.contains(id)).collect();
-        assert_eq!(notes.len(), 2, "{id}: {:?}", r.notes);
-        assert!(notes.iter().all(|n| n.contains("no longer exists in 3.0")));
+    }
+}
+
+#[rstest::rstest]
+#[case::plain(false)]
+#[case::preserve(true)]
+fn each_removed_rule_gives_one_migrate_rule_removed_notice_per_use(
+    #[case] preserve_behavior: bool,
+) {
+    for id in removed_ids() {
+        let r = migrate_config(
+            &removed_rule_text(&id),
+            "slopvac.toml",
+            &RenameTable::bundled(),
+            Options { preserve_behavior },
+        )
+        .unwrap();
+        let notices: Vec<String> = r
+            .removed_rules
+            .iter()
+            .map(slopvac_migrate::Dropped::rule_removed_notice)
+            .collect();
+        assert_eq!(
+            notices,
+            [
+                format!(
+                    "migrate-rule-removed: slopvac.toml:2: `rules.{id}`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml"
+                ),
+                format!(
+                    "migrate-rule-removed: slopvac.toml:7: `overrides[0].rules.{id}`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml"
+                ),
+            ],
+            "{id}"
+        );
     }
 }

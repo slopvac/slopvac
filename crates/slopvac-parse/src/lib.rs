@@ -8,19 +8,30 @@
 //! Front matter detection is a separate concern. The caller passes the body span and the
 //! parser reads only that range, but every position it returns is relative to the whole
 //! source.
+//!
+//! # Input size
+//!
+//! The crate does not cap its input. The caller must pass at most
+//! 64 MiB (`slopvac_fs::MAX_DOCUMENT_BYTES`) of text, and each slopvac entry point enforces
+//! that cap before it calls in. The caps are listed in `docs/contract/policies.md`.
 
 mod align;
 mod code;
+mod counters;
 mod document;
 mod html;
 mod jsexpr;
 mod markdown;
 mod mask;
 mod mdx;
+mod messages;
 mod projection;
 #[cfg(test)]
 mod work;
 
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use counters::scan_work;
 pub use document::{
     Admonition, AdmonitionSyntax, Block, BlockKind, Container, Document, HtmlBlock, ParseError,
 };
@@ -32,4 +43,5 @@ pub use html::{
 pub use html::{parse_html, parse_html_segments};
 pub use markdown::parse_markdown;
 pub use mdx::{mdx_syntax_spans, mdx_syntax_spans_counted, parse_mdx};
-pub use projection::{Projection, Token, TokenKind};
+pub use messages::message_entries;
+pub use projection::{ByteMapper, Projection, Token, TokenKind};

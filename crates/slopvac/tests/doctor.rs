@@ -11,7 +11,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{Value, json};
 
-const LOCK: &str = include_str!("../../../schemas/v3/conformance/packs-lock/valid/full.toml");
+const LOCK: &str = include_str!("../../../schemas/v3/conformance/plugins-lock/valid/full.toml");
 
 /// An isolated world: a project directory, a home with no state, and a sentinel name that must
 /// never reach the output.
@@ -87,7 +87,11 @@ impl World {
 
     /// `slopvac doctor` with a clean environment.
     fn doctor(&self) -> Command {
-        let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+        self.doctor_with(Command::cargo_bin("slopvac").expect("binary builds"))
+    }
+
+    /// `doctor` on `cmd`, a command for some copy of the binary, with a clean environment.
+    fn doctor_with(&self, mut cmd: Command) -> Command {
         for var in [
             "SLOPVAC_OFFLINE",
             "SLOPVAC_LOG",
@@ -173,8 +177,8 @@ fn a_clean_project_reports_ok_with_the_documented_shape() {
     assert_eq!(doc["platform"]["os"], std::env::consts::OS);
     assert_eq!(doc["platform"]["arch"], std::env::consts::ARCH);
     assert_eq!(doc["config"], json!({"ok": true, "sources": []}));
-    assert_eq!(doc["packs"]["lockfile"]["status"], "absent");
-    assert_eq!(doc["packs"]["items"], json!([]));
+    assert_eq!(doc["plugins"]["lockfile"]["status"], "absent");
+    assert_eq!(doc["plugins"]["items"], json!([]));
     assert_eq!(doc["trust"]["status"], "absent");
     assert_eq!(doc["offline"], json!({"effective": false, "sources": []}));
 }
@@ -417,14 +421,14 @@ fn update_checks_report_why_they_are_off() {
 #[test]
 fn the_lockfile_lists_each_pack_with_its_state() {
     let w = World::new();
-    w.write(".slopvac/packs.lock", LOCK);
+    w.write(".slopvac/plugins.lock", LOCK);
     let (code, doc) = w.json(&[], |c| w.place_dirs(c));
     assert_eq!(code, 0);
     assert_eq!(
-        doc["packs"]["lockfile"],
-        json!({"file": ".slopvac/packs.lock", "status": "ok", "error": null})
+        doc["plugins"]["lockfile"],
+        json!({"file": ".slopvac/plugins.lock", "status": "ok", "error": null})
     );
-    let items = doc["packs"]["items"].as_array().unwrap();
+    let items = doc["plugins"]["items"].as_array().unwrap();
     let ids: Vec<&str> = items.iter().map(|p| p["id"].as_str().unwrap()).collect();
     let mut sorted = ids.clone();
     sorted.sort_unstable();
@@ -433,7 +437,7 @@ fn the_lockfile_lists_each_pack_with_its_state() {
     let tagger = items.iter().find(|p| p["id"] == "acme-tagger").unwrap();
     assert_eq!(
         *tagger,
-        json!({"id": "acme-tagger", "version": "0.3.1", "kind": "plugin", "state": "not-installed"})
+        json!({"id": "acme-tagger", "version": "0.3.1", "kind": "code", "state": "not-installed"})
     );
 }
 
@@ -441,15 +445,15 @@ fn the_lockfile_lists_each_pack_with_its_state() {
 fn an_invalid_lockfile_fails_the_check() {
     let w = World::new();
     w.write(
-        ".slopvac/packs.lock",
-        "schema_version = 3\n[[packs]]\nid = \"BAD ID\"\n",
+        ".slopvac/plugins.lock",
+        "schema_version = 3\n[[plugins]]\nid = \"BAD ID\"\n",
     );
     let (code, doc) = w.json(&[], |_| {});
     assert_eq!(code, 2);
     assert_eq!(doc["ok"], false);
-    assert_eq!(doc["packs"]["lockfile"]["status"], "invalid");
-    assert_eq!(doc["packs"]["items"], json!([]));
-    assert!(doc["packs"]["lockfile"]["error"].as_str().is_some());
+    assert_eq!(doc["plugins"]["lockfile"]["status"], "invalid");
+    assert_eq!(doc["plugins"]["items"], json!([]));
+    assert!(doc["plugins"]["lockfile"]["error"].as_str().is_some());
 }
 
 #[test]
@@ -471,6 +475,7 @@ fn trust_reports_counts_and_fingerprints_but_never_keys() {
             key_fingerprint: None,
             manifest_digest: None,
             key_id: None,
+            trust_key_id: None,
             declaration: DeclSummary {
                 network: false,
                 hooks: vec![],
@@ -553,7 +558,7 @@ fn without_a_home_the_directories_are_unresolved() {
 fn doctor_changes_nothing_on_disk() {
     let w = World::new();
     w.write("slopvac.toml", "schema_version = 3\n");
-    w.write(".slopvac/packs.lock", LOCK);
+    w.write(".slopvac/plugins.lock", LOCK);
     let snapshot = |dir: &Path| -> Vec<PathBuf> {
         let mut found = Vec::new();
         let mut stack = vec![dir.to_owned()];
@@ -585,22 +590,22 @@ fn both_formats(w: &World) -> (Value, String) {
 fn lockfile_errors_say_where_and_never_echo_file_content() {
     const LEAK: &str = "LEAKME-4242";
     let bad_digest = format!(
-        "schema_version = 3\n[[packs]]\nid = \"acme\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\nsource = \"oci://ghcr.io/acme/p:1\"\ndigest = \"sha256:{LEAK}\"\n"
+        "schema_version = 3\n[[plugins]]\nid = \"acme\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\nsource = \"oci://ghcr.io/acme/p:1\"\ndigest = \"sha256:{LEAK}\"\n"
     );
-    let bad_id = format!("schema_version = 3\n[[packs]]\nid = \"{LEAK} BAD\"\n");
-    let unknown_key = format!("schema_version = 3\n[[packs]]\n{LEAK} = 1\n");
+    let bad_id = format!("schema_version = 3\n[[plugins]]\nid = \"{LEAK} BAD\"\n");
+    let unknown_key = format!("schema_version = 3\n[[plugins]]\n{LEAK} = 1\n");
     let syntax = format!("schema_version = 3\n{LEAK} = = =\n");
     let w = World::new();
     for (body, want) in [
-        (bad_digest, "invalid value at /packs/0/digest"),
-        (bad_id, "invalid value at /packs/0"),
-        (unknown_key, "invalid value at /packs/0"),
+        (bad_digest, "invalid value at /plugins/0/digest"),
+        (bad_id, "invalid value at /plugins/0"),
+        (unknown_key, "invalid value at /plugins/0"),
         (syntax, "not a valid lockfile"),
     ] {
-        w.write(".slopvac/packs.lock", &body);
+        w.write(".slopvac/plugins.lock", &body);
         let (doc, text) = both_formats(&w);
-        assert_eq!(doc["packs"]["lockfile"]["status"], "invalid", "{body}");
-        assert_eq!(doc["packs"]["lockfile"]["error"], want, "{body}");
+        assert_eq!(doc["plugins"]["lockfile"]["status"], "invalid", "{body}");
+        assert_eq!(doc["plugins"]["lockfile"]["error"], want, "{body}");
         assert!(!doc.to_string().contains(LEAK), "json leaked for {body}");
         assert!(!text.contains(LEAK), "text leaked for {body}");
         assert!(text.contains(want), "text: {text}");
@@ -632,11 +637,11 @@ const ACME_DOCS_DIGEST_HEX: &str =
 #[test]
 fn an_intact_installed_pack_is_recorded_and_a_tampered_one_fails_the_check() {
     let w = World::new();
-    w.write(".slopvac/packs.lock", LOCK);
+    w.write(".slopvac/plugins.lock", LOCK);
     let tree = install_pack(&w.data_root(), ACME_DOCS_DIGEST_HEX);
     let with_data = |c: &mut Command| w.place_dirs(c);
     let state_of = |doc: &Value, id: &str| -> String {
-        doc["packs"]["items"]
+        doc["plugins"]["items"]
             .as_array()
             .unwrap()
             .iter()
@@ -831,4 +836,264 @@ fn a_cached_version_that_is_not_semver_counts_as_unknown() {
         assert_eq!(doc["update"]["latest"], Value::Null, "{garbage:?}");
         assert_eq!(doc["update"]["checked_at"], Value::Null, "{garbage:?}");
     }
+}
+
+/// A cargo-dist install receipt for `slopvac` in `dir/slopvac-receipt.json`.
+fn write_receipt(dir: &Path, prefix: &Path) {
+    fs::create_dir_all(dir).unwrap();
+    fs::write(
+        dir.join("slopvac-receipt.json"),
+        json!({
+            "binaries": ["slopvac"],
+            "install_layout": "flat",
+            "install_prefix": prefix,
+            "provider": {"source": "cargo-dist", "version": "0.34.0"},
+            "source": {"app_name": "slopvac", "name": "slopvac", "owner": "slopvac", "release_type": "github"},
+            "version": "3.0.0",
+        })
+        .to_string(),
+    )
+    .unwrap();
+}
+
+/// The directory that holds the binary these tests run.
+fn binary_dir() -> PathBuf {
+    let exe = assert_cmd::cargo::cargo_bin("slopvac");
+    fs::canonicalize(exe)
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
+#[test]
+fn an_installer_receipt_names_the_install_method_and_its_upgrade_command() {
+    let w = World::new();
+    let receipts = w.root.path().join("receipts");
+    write_receipt(&receipts, &binary_dir());
+    let (code, doc) = w.json(&[], |c| {
+        c.env("AXOUPDATER_CONFIG_PATH", &receipts);
+    });
+    assert_eq!(code, 0);
+    assert_eq!(doc["slopvac"]["install_method"], "installer");
+    assert_eq!(doc["slopvac"]["upgrade_command"], "slopvac self update");
+}
+
+#[test]
+fn a_receipt_for_another_location_leaves_the_method_unknown() {
+    let w = World::new();
+    let receipts = w.root.path().join("receipts");
+    write_receipt(&receipts, &w.root.path().join("elsewhere"));
+    let (_, doc) = w.json(&[], |c| {
+        c.env("AXOUPDATER_CONFIG_PATH", &receipts);
+    });
+    assert_eq!(doc["slopvac"]["install_method"], "unknown");
+    assert_eq!(doc["slopvac"]["upgrade_command"], Value::Null);
+}
+
+#[test]
+fn the_text_report_gives_the_upgrade_command_when_an_update_is_cached() {
+    let w = World::new();
+    let receipts = w.root.path().join("receipts");
+    write_receipt(&receipts, &binary_dir());
+    cache_entry(&w, "99.0.0");
+    let out = w
+        .doctor()
+        .env("AXOUPDATER_CONFIG_PATH", &receipts)
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("installer"), "{text}");
+    assert!(text.contains("slopvac self update"), "{text}");
+    assert!(text.contains("99.0.0"), "{text}");
+}
+
+#[test]
+fn the_text_report_points_a_cargo_install_at_the_releases_page_when_an_update_is_cached() {
+    let w = World::new();
+    // A binary under `<CARGO_HOME>/bin` with no receipt is classed as a cargo install.
+    let cargo_home = fs::canonicalize(w.root.path()).unwrap().join("cargo-home");
+    let bin = cargo_home.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let exe = bin.join(assert_cmd::cargo::cargo_bin("slopvac").file_name().unwrap());
+    fs::copy(assert_cmd::cargo::cargo_bin("slopvac"), &exe).unwrap();
+    cache_entry(&w, "99.0.0");
+    let out = w
+        .doctor_with(Command::new(&exe))
+        .env("CARGO_HOME", &cargo_home)
+        .env_remove("AXOUPDATER_CONFIG_PATH")
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("(cargo)"), "{text}");
+    assert!(
+        text.contains(
+            "update: 99.0.0 is available. See https://github.com/slopvac/slopvac/releases.\n"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn doctor_never_writes_the_update_cache() {
+    let w = World::new();
+    let (_, _) = w.json(&[], |_| {});
+    assert!(!w.cache().join("update-check.json").exists());
+}
+
+/// Make a FIFO with no writer at `path`.
+#[cfg(unix)]
+fn fifo(path: &Path) {
+    let status = std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_as_the_update_cache_does_not_hang_doctor() {
+    let w = World::new();
+    fifo(&w.cache().join("update-check.json"));
+    let (code, doc) = w.json(&[], |c| {
+        c.timeout(std::time::Duration::from_secs(20));
+    });
+    assert_eq!(code, 0);
+    assert_eq!(doc["update"]["state"], "unknown");
+    assert_eq!(doc["update"]["latest"], Value::Null);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_to_an_endless_device_as_the_update_cache_is_not_read() {
+    let w = World::new();
+    std::os::unix::fs::symlink("/dev/zero", w.cache().join("update-check.json")).unwrap();
+    let (code, doc) = w.json(&[], |c| {
+        c.timeout(std::time::Duration::from_secs(20));
+    });
+    assert_eq!(code, 0);
+    assert_eq!(doc["update"]["state"], "unknown");
+}
+
+#[test]
+fn an_oversize_update_cache_is_reported_unknown() {
+    let w = World::new();
+    let padding = "x".repeat(70 * 1024);
+    fs::write(
+        w.cache().join("update-check.json"),
+        json!({"checked_at": 1u64, "latest": "99.0.0", "pad": padding}).to_string(),
+    )
+    .unwrap();
+    let (_, doc) = w.json(&[], |_| {});
+    assert_eq!(doc["update"]["state"], "unknown");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_install_receipt_does_not_hang_doctor() {
+    let w = World::new();
+    let receipts = w.root.path().join("receipts");
+    fs::create_dir_all(&receipts).unwrap();
+    fifo(&receipts.join("slopvac-receipt.json"));
+    let (code, doc) = w.json(&[], |c| {
+        c.env("AXOUPDATER_CONFIG_PATH", &receipts)
+            .timeout(std::time::Duration::from_secs(20));
+    });
+    assert_eq!(code, 0);
+    assert_eq!(doc["slopvac"]["install_method"], "unknown");
+}
+
+#[test]
+fn an_oversize_install_receipt_is_ignored() {
+    let w = World::new();
+    let receipts = w.root.path().join("receipts");
+    write_receipt(&receipts, &binary_dir());
+    let path = receipts.join("slopvac-receipt.json");
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.insert_str(
+        text.len() - 1,
+        &format!(",\"pad\":\"{}\"", "x".repeat(80 * 1024)),
+    );
+    fs::write(&path, text).unwrap();
+    let (_, doc) = w.json(&[], |c| {
+        c.env("AXOUPDATER_CONFIG_PATH", &receipts);
+    });
+    assert_eq!(doc["slopvac"]["install_method"], "unknown");
+}
+
+/// Doctor reports the directories the shared resolver gives the plugin store and the trust store:
+/// same location (found through the bytes planted there), same source, path redacted.
+#[rstest::rstest]
+#[case::absolute_xdg(false)]
+#[case::relative_xdg_is_ignored(true)]
+fn directories_are_the_ones_the_shared_resolver_gives(#[case] relative_xdg: bool) {
+    use slopvac_fs::{DirKind, resolve_dir_with};
+    let w = World::new();
+    let xdg = |dir: &str| {
+        if relative_xdg {
+            format!("rel-{dir}")
+        } else {
+            w.root.path().join(dir).display().to_string()
+        }
+    };
+    let vars = [
+        ("HOME", w.home().display().to_string()),
+        ("SLOPVAC_CACHE_DIR", w.cache().display().to_string()),
+        ("XDG_DATA_HOME", xdg("xdg-data")),
+        ("XDG_STATE_HOME", xdg("xdg-state")),
+    ];
+    let lookup = |name: &str| {
+        vars.iter()
+            .find(|(k, _)| *k == name)
+            .map(|(_, v)| v.clone())
+            .ok_or(std::env::VarError::NotPresent)
+    };
+    let kinds = [
+        ("cache", DirKind::Cache),
+        ("data", DirKind::Data),
+        ("state", DirKind::State),
+    ];
+    for (i, (_, kind)) in kinds.iter().enumerate() {
+        let want = resolve_dir_with(*kind, &lookup, &|| None).unwrap();
+        fs::create_dir_all(&want.path).unwrap();
+        fs::write(want.path.join("planted"), vec![0u8; 10 + i]).unwrap();
+    }
+    let mut cmd = w.doctor();
+    cmd.args(["--format", "json"]);
+    for (k, v) in &vars {
+        cmd.env(k, v);
+    }
+    let doc: Value = serde_json::from_slice(&cmd.output().unwrap().stdout).unwrap();
+    for (i, (name, kind)) in kinds.iter().enumerate() {
+        let want = resolve_dir_with(*kind, &lookup, &|| None).unwrap();
+        let got = &doc["directories"][*name];
+        assert_eq!(got["source"], want.source, "{name}");
+        assert_eq!(got["exists"], true, "{name}");
+        assert_eq!(got["bytes"], 10 + i, "{name}");
+        let leaf = want.path.file_name().unwrap().to_str().unwrap();
+        assert_eq!(got["path"], format!("<external>/{leaf}"), "{name}");
+    }
+}
+
+#[rstest::rstest]
+#[case::data("XDG_DATA_HOME", "data", ".local/share")]
+#[case::state("XDG_STATE_HOME", "state", ".local/state")]
+fn a_relative_xdg_value_falls_back_to_the_home_default(
+    #[case] var: &str,
+    #[case] name: &str,
+    #[case] home_default: &str,
+) {
+    let w = World::new();
+    let dir = w.home().join(home_default).join("slopvac");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("planted"), [0u8; 7]).unwrap();
+    let (_, doc) = w.json(&[], |c| {
+        c.env(var, "relative/dir");
+    });
+    let got = &doc["directories"][name];
+    assert_eq!(got["source"], "default");
+    assert_eq!(got["exists"], true);
+    assert_eq!(got["bytes"], 7);
+    assert_eq!(got["path"], "<external>/slopvac");
 }

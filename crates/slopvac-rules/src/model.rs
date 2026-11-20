@@ -8,7 +8,7 @@
 // `PlaceholderSource` has one variant today and gains more when a second source appears.
 #![allow(clippy::zero_sized_map_values)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
 use schemars::JsonSchema;
@@ -21,33 +21,33 @@ use slopvac_model::{
 use crate::ext::{Extensions, UniqueVec, ValueError, is_slug, present, text_newtype};
 
 text_newtype!(
-    /// Rule id inside its category: `^[a-z][a-z0-9-]*$`.
-    LocalRuleId, "rule id", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*$"
+    /// Rule id inside its category: `^[a-z][a-z0-9-]*(?![\s\S])`.
+    LocalRuleId, "rule id", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 text_newtype!(
     /// A name the engine resolves: a structure or vocabulary check, an exception or a
-    /// detector. `^[a-z][a-z0-9-]*$`.
-    Slug, "name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*$"
+    /// detector. `^[a-z][a-z0-9-]*(?![\s\S])`.
+    Slug, "name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 text_newtype!(
-    /// A profile name, the key of a density budget: `^[a-z][a-z0-9-]*$`.
-    ProfileName, "profile name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*$"
+    /// A profile name, the key of a density budget: `^[a-z][a-z0-9-]*(?![\s\S])`.
+    ProfileName, "profile name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
 );
 text_newtype!(
-    /// A metric name: `^[a-z][a-z0-9_]*$`.
-    MetricName, "metric name", |s| is_slug(s, '_'), "^[a-z][a-z0-9_]*$"
+    /// A metric name: `^[a-z][a-z0-9_]*(?![\s\S])`.
+    MetricName, "metric name", |s| is_slug(s, '_'), "^[a-z][a-z0-9_]*(?![\\s\\S])"
 );
 text_newtype!(
-    /// A placeholder in a pattern: `^[A-Z][A-Z0-9_]*$`.
+    /// A placeholder in a pattern: `^[A-Z][A-Z0-9_]*(?![\s\S])`.
     PlaceholderName, "placeholder name", |s| {
         let mut chars = s.chars();
         chars.next().is_some_and(|c| c.is_ascii_uppercase())
             && chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-    }, "^[A-Z][A-Z0-9_]*$"
+    }, "^[A-Z][A-Z0-9_]*(?![\\s\\S])"
 );
 text_newtype!(
     /// An issue-qualified STE rule number such as `9:1.2` or `9:GR-2`.
-    SteRef, "STE reference", is_ste_ref, "^\\d+:\\d+\\.\\d+$|^\\d+:GR-\\d+$"
+    SteRef, "STE reference", is_ste_ref, "^\\d+:\\d+\\.\\d+(?![\\s\\S])|^\\d+:GR-\\d+(?![\\s\\S])"
 );
 
 fn is_ste_ref(s: &str) -> bool {
@@ -372,8 +372,9 @@ impl<'de> Deserialize<'de> for Substitutions {
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Substitutions, A::Error> {
                 let mut entries: Vec<(Pcre2Pattern, String)> = Vec::new();
+                let mut seen: HashSet<Pcre2Pattern> = HashSet::new();
                 while let Some((k, v)) = map.next_entry::<Pcre2Pattern, String>()? {
-                    if entries.iter().any(|(e, _)| *e == k) {
+                    if !seen.insert(k.clone()) {
                         return Err(de::Error::custom(format!(
                             "substitution key {:?} appears twice",
                             k.as_str()
@@ -649,7 +650,7 @@ impl TryFrom<AppliesToFields> for AppliesTo {
 }
 
 /// A named, closed reason a finding may be suppressed.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "Exception")]
 #[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 pub struct Exception {

@@ -16,10 +16,11 @@ use std::path::{Path, PathBuf};
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
+use rstest::rstest;
 use sha2::{Digest as _, Sha256};
 use slopvac_plugins::extract::{Limits, evict, extract_targz};
 use slopvac_plugins::oci::Digest;
-use slopvac_plugins::pyenv::{PyEnvError, PyLock};
+use slopvac_plugins::pyenv::{MANIFEST_FILE, PyEnvError, PyLock, PythonRuntime, pep440_specifier};
 use slopvac_plugins::trust::VerifiedPlugin;
 
 const PLUGIN_PY: &str = include_str!("fixtures/fake_plugin.py");
@@ -204,10 +205,21 @@ fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
 
 /// Extract a Python plugin tree with `lock` and `wheels`, as sync would.
 fn install(s: &Scratch, lock: &str, wheels: &[Wheel<'_>]) -> VerifiedPlugin {
+    install_with(s, lock, wheels, &[])
+}
+
+/// [`install`], plus `extra` files in the tree.
+fn install_with(
+    s: &Scratch,
+    lock: &str,
+    wheels: &[Wheel<'_>],
+    extra: &[(&str, &[u8])],
+) -> VerifiedPlugin {
     let mut files: Vec<(&str, &[u8])> = vec![
         ("plugin.py", PLUGIN_PY.as_bytes()),
         ("pylock.toml", lock.as_bytes()),
     ];
+    files.extend_from_slice(extra);
     for w in wheels {
         files.push((w.path.as_str(), w.bytes.as_slice()));
     }
@@ -480,6 +492,400 @@ fn managed_python_environments_are_refused_on_windows() {
     assert!(!s.dir("envs").exists(), "nothing was created");
 }
 
+/// A `slopvac-plugin.toml` for a pack of `kind`, with `plugin` lines appended to its `[plugin]` table.
+fn manifest(kind: &str, plugin: &str) -> String {
+    format!(
+        "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"{kind}\"\n\n[plugin]\nnetwork = false\nhooks = []\nfeatures = {{ required = [], optional = [] }}\n{plugin}"
+    )
+}
+
+fn read_runtime(name: &str, manifest: Option<&str>) -> Result<Option<PythonRuntime>, PyEnvError> {
+    let s = Scratch::new(&format!("rt-{name}"));
+    fs::create_dir_all(s.dir("tree")).unwrap();
+    if let Some(m) = manifest {
+        fs::write(s.dir("tree").join(MANIFEST_FILE), m).unwrap();
+    }
+    PythonRuntime::read(&s.dir("tree"))
+}
+
+#[test]
+fn a_python_runtime_in_the_manifest_selects_a_managed_environment() {
+    let m = manifest(
+        "code",
+        "runtime = \"python\"\npython = \"3.12\"\ncommand = \"bin/tagger.py\"\nargs = [\"--stdio\"]\n",
+    );
+    let rt = read_runtime("python", Some(&m)).unwrap().unwrap();
+    assert_eq!(
+        rt,
+        PythonRuntime {
+            python: "3.12".into(),
+            command: "bin/tagger.py".into(),
+            args: vec!["--stdio".into()],
+        }
+    );
+}
+
+const DATA_MANIFEST: &str =
+    "schema_version = 3\nid = \"d\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n";
+
+#[rstest]
+#[case::no_manifest(None)]
+#[case::data(Some(DATA_MANIFEST.to_owned()))]
+#[case::default(Some(manifest("code", "command = \"bin/x\"\n")))]
+#[case::native(Some(manifest("code", "command = \"bin/x\"\nruntime = \"native\"\n")))]
+fn a_tree_that_asks_for_no_python_environment_selects_none(#[case] m: Option<String>) {
+    assert_eq!(read_runtime("none", m.as_deref()).unwrap(), None);
+}
+
+fn python_plugin(extra: &str) -> String {
+    manifest("code", &format!("runtime = \"python\"\n{extra}"))
+}
+
+#[rstest]
+#[case::no_request(python_plugin("command = \"a.py\"\n"))]
+#[case::no_command(python_plugin("python = \"3.12\"\n"))]
+#[case::option_request(python_plugin("python = \"--index-url=x\"\ncommand = \"a.py\"\n"))]
+#[case::dash_command(python_plugin("python = \"3.12\"\ncommand = \"-c\"\n"))]
+#[case::parent_command(python_plugin("python = \"3.12\"\ncommand = \"../a.py\"\n"))]
+#[case::absolute_command(python_plugin("python = \"3.12\"\ncommand = \"/bin/sh\"\n"))]
+#[case::backslash_command(python_plugin("python = \"3.12\"\ncommand = 'a\\b.py'\n"))]
+#[case::unknown_runtime(manifest("code", "runtime = \"node\"\ncommand = \"a.js\"\n"))]
+#[case::request_on_native(manifest("code", "python = \"3.12\"\ncommand = \"a\"\n"))]
+#[case::python_in_a_data_pack(manifest(
+    "data",
+    "runtime = \"python\"\npython = \"3.12\"\ncommand = \"a.py\"\n"
+))]
+#[case::not_toml("[plugin\n".to_owned())]
+fn a_manifest_that_cannot_select_an_environment_is_refused(#[case] m: String) {
+    let err = read_runtime("refused", Some(&m)).unwrap_err();
+    assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
+}
+
+/// Every rendering of an error: `Display` and `Debug` of it and of each error in its source chain.
+fn renderings(err: &dyn std::error::Error) -> String {
+    let mut out = String::new();
+    let mut cur: Option<&dyn std::error::Error> = Some(err);
+    while let Some(e) = cur {
+        write!(out, "{e}|{e:?}|").unwrap();
+        cur = e.source();
+    }
+    out
+}
+
+/// A rejected value, which can be a credential or a path outside the pack, never appears in the
+/// error: the manifest reader names the field and the reason only.
+#[rstest]
+#[case::credential_in_request("python", "--index-url=https://user:SENTINEL@evil.example/simple")]
+#[case::plain_request("python", "SENTINEL")]
+#[case::outside_path("command", "../../outside/SENTINEL/run.py")]
+#[case::absolute_path("command", "/home/SENTINEL/run.py")]
+#[case::unknown_runtime("runtime", "SENTINEL")]
+fn a_refused_manifest_value_never_appears_in_the_error(#[case] field: &str, #[case] value: &str) {
+    let (runtime, python, command) = match field {
+        "python" => ("python", value, "a.py"),
+        "command" => ("python", "3.12", value),
+        _ => (value, "3.12", "a.py"),
+    };
+    let m = manifest(
+        "code",
+        &format!("runtime = \"{runtime}\"\npython = \"{python}\"\ncommand = \"{command}\"\n"),
+    );
+    let err = read_runtime("sentinel-read", Some(&m)).unwrap_err();
+    let text = renderings(&err);
+    assert!(text.contains(field), "the field is named: {text}");
+    assert!(!text.contains("SENTINEL"), "{text}");
+    assert!(!text.contains("evil"), "{text}");
+    assert!(!text.contains("outside"), "{text}");
+}
+
+/// The same for a request that the translation refuses.
+#[rstest]
+#[case::pre_release("3.12.0-SENTINEL.1")]
+#[case::not_a_version("^SENTINEL")]
+#[case::number_too_large("^98765432109876543210987654321")]
+#[case::too_long("^1111111111.2222222222.3333333333,>=4444444444.5555555555.6666666666")]
+fn a_refused_request_never_appears_in_the_translation_error(#[case] req: &str) {
+    let err = pep440_specifier(req).unwrap_err();
+    let text = renderings(&err);
+    for needle in ["SENTINEL", "98765432109876543210987654321", "6666666666"] {
+        assert!(!text.contains(needle), "{text}");
+    }
+}
+
+/// The shared plugin-manifest conformance cases, the ones the schema test also reads.
+fn manifest_cases(dir: &str) -> Vec<(String, String)> {
+    let root =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance/plugin-manifest");
+    let mut out: Vec<_> = fs::read_dir(root.join(dir))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.extension().is_some_and(|e| e == "toml") && p.file_name().unwrap() != "cases.toml"
+        })
+        .map(|p| {
+            (
+                p.file_name().unwrap().to_string_lossy().into_owned(),
+                fs::read_to_string(&p).unwrap(),
+            )
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn the_reader_accepts_every_valid_manifest_case_of_the_schema() {
+    let valid = manifest_cases("valid");
+    assert!(valid.iter().any(|(n, _)| n == "plugin-python-caret.toml"));
+    assert!(
+        valid
+            .iter()
+            .any(|(n, _)| n == "plugin-python-dot-slash.toml")
+    );
+    for (name, text) in valid {
+        let rt = read_runtime(&name, Some(&text));
+        assert!(rt.is_ok(), "{name}: {rt:?}");
+    }
+}
+
+#[test]
+fn the_reader_refuses_every_invalid_runtime_case_of_the_schema() {
+    let cases: Vec<_> = manifest_cases("invalid")
+        .into_iter()
+        .filter(|(n, _)| n.starts_with("plugin-python-") || n.starts_with("plugin-runtime-"))
+        .collect();
+    assert!(cases.len() >= 5, "{} cases", cases.len());
+    for (name, text) in cases {
+        let err = read_runtime(&name, Some(&text)).unwrap_err();
+        assert!(
+            matches!(err, PyEnvError::Manifest { .. }),
+            "{name}: {err:?}"
+        );
+    }
+}
+
+const PY_PLUGIN: &str = "runtime = \"python\"\npython = \"3.12\"\ncommand = \"a.py\"\n";
+
+#[test]
+fn a_manifest_over_one_mebibyte_is_refused_even_when_it_is_valid_toml() {
+    let m = manifest("code", PY_PLUGIN);
+    let at_limit = format!("{m}#{}\n", "x".repeat((1 << 20) - m.len() - 2));
+    assert_eq!(at_limit.len(), 1 << 20);
+    assert!(read_runtime("limit", Some(&at_limit)).unwrap().is_some());
+    let over = format!("{at_limit}\n");
+    assert_eq!(over.len(), (1 << 20) + 1);
+    let err = read_runtime("over", Some(&over)).unwrap_err();
+    assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_manifest_that_is_a_symlink_is_refused() {
+    let s = Scratch::new("rt-symlink");
+    fs::create_dir_all(s.dir("tree")).unwrap();
+    let real = s.dir("real.toml");
+    fs::write(&real, manifest("code", PY_PLUGIN)).unwrap();
+    std::os::unix::fs::symlink(&real, s.dir("tree").join(MANIFEST_FILE)).unwrap();
+    let err = PythonRuntime::read(&s.dir("tree")).unwrap_err();
+    assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
+}
+
+// Worked out by hand from semver's rules for partial versions. A lone bare version is
+// already a uv request, and in a list a bare version means `=`.
+#[rstest]
+#[case::v_3("3", "3")]
+#[case::v_3_12("3.12", "3.12")]
+#[case::v_3_12_4("3.12.4", "3.12.4")]
+#[case::v_eq_3("=3", "==3.*")]
+#[case::v_eq_3_12("=3.12", "==3.12.*")]
+#[case::v_eq_3_12_4("=3.12.4", "==3.12.4")]
+#[case::v_caret_3("^3", ">=3,<4")]
+#[case::v_caret_3_12("^3.12", ">=3.12,<4")]
+#[case::v_caret_3_12_4("^3.12.4", ">=3.12.4,<4")]
+#[case::v_caret_0("^0", ">=0,<1")]
+#[case::v_caret_0_0("^0.0", ">=0.0,<0.1")]
+#[case::v_caret_0_2("^0.2", ">=0.2,<0.3")]
+#[case::v_caret_0_2_3("^0.2.3", ">=0.2.3,<0.3")]
+#[case::v_caret_0_0_3("^0.0.3", ">=0.0.3,<0.0.4")]
+#[case::v_caret_0_0_0("^0.0.0", ">=0.0.0,<0.0.1")]
+#[case::v_tilde_3("~3", ">=3,<4")]
+#[case::v_tilde_3_12("~3.12", ">=3.12,<3.13")]
+#[case::v_tilde_3_12_4("~3.12.4", ">=3.12.4,<3.13")]
+#[case::v_ge_3(">=3", ">=3")]
+#[case::v_ge_3_12(">=3.12", ">=3.12")]
+#[case::v_ge_3_12_4(">=3.12.4", ">=3.12.4")]
+#[case::v_lt_4("<4", "<4")]
+#[case::v_lt_3_13("<3.13", "<3.13")]
+#[case::v_lt_3_13_1("<3.13.1", "<3.13.1")]
+#[case::v_gt_3(">3", ">=4")]
+#[case::v_gt_3_12(">3.12", ">=3.13")]
+#[case::v_gt_3_12_4(">3.12.4", ">3.12.4")]
+#[case::v_le_3("<=3", "<4")]
+#[case::v_le_3_12("<=3.12", "<3.13")]
+#[case::v_le_3_12_4("<=3.12.4", "<=3.12.4")]
+#[case::v_ge_3_11_and_lt_3_13(">=3.11,<3.13", ">=3.11,<3.13")]
+#[case::v_ge_3_11_and_le_3_12(">=3.11,<=3.12", ">=3.11,<3.13")]
+#[case::v_caret_3_11_and_lt_3_13("^3.11,<3.13", ">=3.11,<4,<3.13")]
+#[case::v_3_12_and_ge_3_12_1("3.12,>=3.12.1", "==3.12.*,>=3.12.1")]
+fn version_requirements_translate_to_pep_440_specifiers(#[case] req: &str, #[case] expected: &str) {
+    assert_eq!(pep440_specifier(req).unwrap(), expected);
+}
+
+#[rstest]
+#[case::v_caret_3_12_dash_rc_1("^3.12-rc.1", "pre-release")]
+#[case::v_3_12_dash_rc1("3.12-rc1", "pre-release")]
+#[case::v_ge_3_12_and_lt_3_13_dash_beta(">=3.12,<3.13-beta", "pre-release")]
+#[case::v_empty("", "one to three numbers")]
+#[case::v_caret("^", "one to three numbers")]
+#[case::v_ge_3_12_and_lt_4_empty_part(">=3.12,,<4", "one to three numbers")]
+#[case::v_3_12_4_1("3.12.4.1", "one to three numbers")]
+#[case::v_3_4("3..4", "one to three numbers")]
+#[case::v_caret_99999999999999999999("^99999999999999999999", "too large")]
+#[case::v_caret_18446744073709551615("^18446744073709551615", "too large")]
+#[case::v_gt_18446744073709551615(">18446744073709551615", "too large")]
+fn version_requirements_with_no_pep_440_form_are_refused_without_echoing_the_value(
+    #[case] req: &str,
+    #[case] why: &str,
+) {
+    let err = pep440_specifier(req).unwrap_err().to_string();
+    assert!(req.is_empty() || !err.contains(req), "{req}: {err}");
+    assert!(err.contains(why), "{req}: {err}");
+}
+
+#[test]
+fn a_translation_past_64_bytes_is_refused() {
+    // Five caret comparators of `^10.10.10` translate to 5 x 2 clauses.
+    let long = ["^10.10.10"; 5].join(",");
+    let err = pep440_specifier(&long).unwrap_err().to_string();
+    assert!(err.contains("more than 64 bytes"), "{err}");
+}
+
+#[test]
+fn a_manifest_error_shows_the_file_not_the_cache_path() {
+    let s = Scratch::new("rt-redact");
+    let tree = s.dir("cache/trees/tree-abc");
+    fs::create_dir_all(&tree).unwrap();
+    assert!(tree.is_absolute());
+    fs::write(
+        tree.join(MANIFEST_FILE),
+        python_plugin("python = \"3.12\"\ncommand = \"-c\"\n"),
+    )
+    .unwrap();
+    let text = PythonRuntime::read(&tree).unwrap_err().to_string();
+    assert_eq!(
+        text,
+        "the manifest <external>/slopvac-plugin.toml cannot select a Python environment: \
+         `command` is not a relative script path inside the pack"
+    );
+}
+
+/// Display and Debug text of every link of an error chain, outermost first.
+fn chain_texts(err: &(dyn std::error::Error + 'static)) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = cur {
+        out.push(e.to_string());
+        out.push(format!("{e:?}"));
+        cur = e.source();
+    }
+    out
+}
+
+/// The innermost link of the chain.
+fn root_cause<'a>(
+    err: &'a (dyn std::error::Error + 'static),
+) -> &'a (dyn std::error::Error + 'static) {
+    let mut cur = err;
+    while let Some(next) = cur.source() {
+        cur = next;
+    }
+    cur
+}
+
+const SENTINEL: &str = "SENTINEL-s3cr3t-\u{1b}[31m-\u{202e}";
+
+/// Write `bytes` as the manifest of a fresh tree and read it.
+fn read_bytes(name: &str, bytes: &[u8]) -> PyEnvError {
+    let s = Scratch::new(&format!("rt-chain-{name}"));
+    fs::create_dir_all(s.dir("tree")).unwrap();
+    fs::write(s.dir("tree").join(MANIFEST_FILE), bytes).unwrap();
+    PythonRuntime::read(&s.dir("tree")).unwrap_err()
+}
+
+#[test]
+fn no_link_of_a_manifest_error_chain_carries_manifest_text() {
+    let toml = format!("[plugin {SENTINEL}\n");
+    let utf8 = [SENTINEL.as_bytes(), &[0xff, 0xfe]].concat();
+    let big = format!("# {SENTINEL}\n{}", "x".repeat(1 << 20));
+    for (name, bytes) in [
+        ("toml", toml.into_bytes()),
+        ("utf8", utf8),
+        ("big", big.into_bytes()),
+    ] {
+        let err = read_bytes(name, &bytes);
+        for text in chain_texts(&err) {
+            assert!(!text.contains("SENTINEL"), "{name}: {text}");
+            assert!(
+                !text.contains('\u{1b}') && !text.contains('\u{202e}'),
+                "{name}: {text}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_manifest_error_chain_names_the_cause_kind() {
+    use slopvac_plugins::pyenv::TomlCause;
+    use std::error::Error as _;
+
+    let err = read_bytes(
+        "kind-toml",
+        format!("ok = 1\n[plugin\n# {SENTINEL}\n").as_bytes(),
+    );
+    let cause = root_cause(&err)
+        .downcast_ref::<TomlCause>()
+        .expect("TOML cause");
+    assert_eq!(cause.line, 2);
+
+    let err = read_bytes("kind-utf8", &[b'a', 0xff]);
+    assert!(root_cause(&err).is::<std::str::Utf8Error>(), "{err:?}");
+
+    let err = read_bytes("kind-big", "#".repeat((1 << 20) + 1).as_bytes());
+    let cause = root_cause(&err)
+        .downcast_ref::<Box<slopvac_fs::Error>>()
+        .expect("capped read");
+    assert!(
+        matches!(**cause, slopvac_fs::Error::CapExceeded { cap } if cap == 1 << 20),
+        "{cause:?}"
+    );
+
+    // A tree path below a file fails the metadata call with an I/O error.
+    let s = Scratch::new("rt-chain-io");
+    fs::write(s.dir("file"), "x").unwrap();
+    let err = PythonRuntime::read(&s.dir("file")).unwrap_err();
+    assert!(root_cause(&err).is::<std::io::Error>(), "{err:?}");
+    assert!(err.source().is_some());
+}
+
+#[test]
+fn the_manifest_reader_hands_uv_the_translated_request() {
+    let m = manifest(
+        "code",
+        "runtime = \"python\"\npython = \"^3.12\"\ncommand = \"a.py\"\n",
+    );
+    let rt = read_runtime("translate", Some(&m)).unwrap().unwrap();
+    assert_eq!(rt.python, ">=3.12,<4");
+    let m = manifest(
+        "code",
+        "runtime = \"python\"\npython = \"3.12-rc.1\"\ncommand = \"a.py\"\n",
+    );
+    let err = read_runtime("translate-pre", Some(&m)).unwrap_err();
+    assert!(
+        matches!(&err, PyEnvError::Manifest { source, .. } if source.to_string().contains("pre-release") && !source.to_string().contains("3.12-rc.1")),
+        "{err:?}"
+    );
+}
+
 #[test]
 fn a_lock_field_that_could_inject_an_installer_option_is_refused() {
     let wheel = format!(
@@ -636,138 +1042,13 @@ mod unix_only {
     use std::time::Duration;
 
     use super::*;
+    use crate::common::fake_uv::{Fake, Tamper, fake_uv, write_exec};
     use crate::common::{cfg, decl, docs, python};
     use slopvac_plugins::pyenv::{EnvStore, InstallNetwork, Installer, ManagedEnv};
     use slopvac_plugins::trust::{TrustError, TrustGate, TrustStore};
     use slopvac_plugins::{Plugin, PluginError, PluginSpec, SpawnGate};
 
     const NOW: &str = "2026-11-15T12:00:00Z";
-
-    /// Knobs of the fake uv.
-    struct Fake<'a> {
-        /// What `bin/python` links to.
-        interpreter: PathBuf,
-        /// Written into the environment as `payload.py`.
-        payload: &'a str,
-        /// Exit status of `uv python find`.
-        find_exit: i32,
-        /// When set, `pip install` also writes a `.pth` file that appends to this marker.
-        hook: Option<PathBuf>,
-        /// When set, `pip install` acts like a wheel that overwrites the
-        /// interpreter (`Tamper::Python`, whose replacement touches the
-        /// marker) or `pyvenv.cfg` (`Tamper::Config`).
-        tamper: Option<Tamper>,
-        /// Shell run at the end of `pip install`, with `$site` set: extra output.
-        pip_extra: &'a str,
-        /// `uv venv` hangs instead of creating the environment.
-        hang: bool,
-        /// Shell run at the start of `uv venv`.
-        venv_extra: &'a str,
-        /// Exit 99 when a run could download: any call without both
-        /// `--offline` and `--no-python-downloads`, or with `--python-downloads`.
-        offline_only: bool,
-    }
-
-    #[derive(Clone)]
-    enum Tamper {
-        Python(PathBuf),
-        Config,
-    }
-
-    impl Fake<'_> {
-        fn real() -> Self {
-            Self {
-                interpreter: python(),
-                payload: "VALUE = 1",
-                find_exit: 0,
-                hook: None,
-                tamper: None,
-                pip_extra: "",
-                hang: false,
-                venv_extra: "",
-                offline_only: false,
-            }
-        }
-    }
-
-    fn write_exec(path: &Path, text: &str) {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, text).unwrap();
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
-    /// Write the fake uv into `dir` and return its path. Each run appends its
-    /// arguments and environment to `dir/uv.log`.
-    fn fake_uv(dir: &Path, fake: &Fake<'_>) -> PathBuf {
-        let uv = dir.join("uv");
-        let home = fs::canonicalize(&fake.interpreter).unwrap();
-        let home = home.parent().unwrap();
-        write_exec(
-            &uv,
-            &format!(
-                r#"#!/bin/sh
-log='{log}'
-{{ printf 'ARGS'; for a; do printf ' %s' "$a"; done; printf '\n'; env | sed 's/^/ENV /'; }} >> "$log"
-ver=$('{py}' -I -S -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-{offline}
-case "$1" in
-python) exit {find} ;;
-venv)
-  {hang}
-  {venv_extra}
-  for a; do dir=$a; done
-  mkdir -p "$dir/bin" "$dir/lib/python$ver/site-packages"
-  ln -s '{py}' "$dir/bin/python"
-  printf 'home = %s\ninclude-system-site-packages = false\n' '{home}' > "$dir/pyvenv.cfg"
-  ;;
-pip)
-  prev=; py=; req=
-  for a; do case "$prev" in --python) py=$a ;; -r) req=$a ;; esac; prev=$a; done
-  site="${{py%/bin/python}}/lib/python$ver/site-packages"
-  cp "$req" "$site/installed.txt"
-  printf '%s\n' '{payload}' > "$site/payload.py"
-  {hook}
-  {tamper}
-  # Like uv: --compile-bytecode starts the environment's interpreter with site
-  # enabled, so a .pth file in it runs.
-  case " $* " in *" --compile-bytecode "*) "$py" -c pass ;; esac
-  {pip_extra}
-  ;;
-esac
-"#,
-                log = dir.join("uv.log").display(),
-                offline = if fake.offline_only {
-                    r#"case " $* " in *" --python-downloads"*) echo "download-capable: $*" >&2; exit 99 ;; esac
-case " $* " in *" --offline "*) ;; *) echo "download-capable: $*" >&2; exit 99 ;; esac
-case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&2; exit 99 ;; esac"#
-                } else {
-                    ""
-                },
-                hang = if fake.hang { "exec sleep 30" } else { "" },
-                venv_extra = fake.venv_extra,
-                pip_extra = fake.pip_extra,
-                find = fake.find_exit,
-                py = fake.interpreter.display(),
-                home = home.display(),
-                payload = fake.payload,
-                hook = fake.hook.as_ref().map_or(String::new(), |m| format!(
-                    r#"printf '%s\n' "import os; open('{}', 'a').write('x')" > "$site/hook.pth""#,
-                    m.display()
-                )),
-                tamper = match &fake.tamper {
-                    None => String::new(),
-                    Some(Tamper::Python(m)) => format!(
-                        "rm \"$py\"; printf '#!/bin/sh\\ntouch %s\\nexec %s \"$@\"\\n' '{}' '{}' > \"$py\"; chmod 755 \"$py\"",
-                        m.display(),
-                        fake.interpreter.display()
-                    ),
-                    Some(Tamper::Config) =>
-                        r#"printf 'home = /tmp\n' >> "${py%/bin/python}/pyvenv.cfg""#.to_owned(),
-                },
-            ),
-        );
-        uv
-    }
 
     fn installer(uv: PathBuf, network: InstallNetwork) -> Installer {
         Installer {
@@ -890,6 +1171,137 @@ case " $* " in *" --no-python-downloads "*) ;; *) echo "download-capable: $*" >&
         let p = Plugin::start(&sp, &cfg(), &g).unwrap();
         assert_eq!(p.tag("main", &docs(1)).unwrap().len(), 1);
         assert!(p.shutdown().clean());
+    }
+
+    const PY_MANIFEST: &str = "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nargs = [\"ok\", \"{}\"]\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+
+    /// A plugin tree whose manifest selects a Python environment, with that
+    /// environment built in the store `envs`.
+    fn manifest_plugin(s: &Scratch, manifest: &str) -> (Built, EnvStore) {
+        let wheels = demo();
+        let vp = install_with(
+            s,
+            &lock_text(&wheels),
+            &wheels,
+            &[(MANIFEST_FILE, manifest.as_bytes())],
+        );
+        let uv = fake_uv(&s.dir("envs-bin"), &Fake::real());
+        let store = EnvStore::open(s.dir("envs"));
+        let env = store
+            .build(&installer(uv, InstallNetwork::Online), &vp.root, &vp.tree)
+            .unwrap();
+        (Built { vp, env }, store)
+    }
+
+    fn wired(s: &Scratch, b: &Built, store: &EnvStore) -> TrustGate {
+        TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(store)
+            .unwrap()
+    }
+
+    /// The spec a caller builds from the gate's launch: the managed interpreter.
+    fn wired_spec(g: &TrustGate, b: &Built) -> PluginSpec {
+        let (program, args) = g.python_launch(&b.vp.name).unwrap();
+        PluginSpec {
+            program,
+            args,
+            ..spec(b, "/usr/bin:/bin")
+        }
+    }
+
+    #[test]
+    fn a_manifest_selected_python_plugin_starts_through_the_managed_interpreter() {
+        let s = Scratch::new("u-wire-start");
+        let (b, store) = manifest_plugin(&s, PY_MANIFEST);
+        let g = wired(&s, &b, &store);
+        let sp = wired_spec(&g, &b);
+        assert_eq!(sp.program, b.env.python());
+        assert_eq!(
+            sp.args,
+            b.env.args(&["plugin.py".into(), "ok".into(), "{}".into()])
+        );
+        let err = Plugin::start(&sp, &cfg(), &g).unwrap_err().error;
+        assert!(matches!(err, PluginError::Untrusted(_)), "{err:?}");
+        g.record_trust(&b.vp, &sp, NOW).unwrap();
+        let p = Plugin::start(&sp, &cfg(), &g).unwrap();
+        assert_eq!(p.tag("main", &docs(1)).unwrap().len(), 1);
+        assert!(p.shutdown().clean());
+    }
+
+    #[test]
+    fn a_wired_plugin_is_refused_after_its_environment_changes() {
+        let s = Scratch::new("u-wire-quick");
+        let (b, store) = manifest_plugin(&s, PY_MANIFEST);
+        let g = wired(&s, &b, &store);
+        let sp = wired_spec(&g, &b);
+        g.record_trust(&b.vp, &sp, NOW).unwrap();
+        g.check(&sp).unwrap();
+        let file = site(&b).join("payload.py");
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&file, "VALUE = 'changed, and longer'\n").unwrap();
+        let err = g.check(&sp).unwrap_err();
+        assert!(matches!(err, PluginError::HashMismatch(_)), "{err:?}");
+    }
+
+    #[test]
+    fn wiring_fails_closed_for_a_python_plugin_without_an_environment() {
+        let s = Scratch::new("u-wire-missing");
+        let (b, _) = manifest_plugin(&s, PY_MANIFEST);
+        let empty = EnvStore::open(s.dir("no-envs"));
+        let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(&empty)
+            .err()
+            .unwrap();
+        assert!(
+            matches!(&err, PyEnvError::EnvMissing { plugin, python } if plugin == "fake" && python == "3.12"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn the_gate_refuses_a_python_plugin_whose_manifest_has_the_contract_file_name() {
+        // The literal file name from docs/contract/plugins.md, not the reader's constant.
+        let s = Scratch::new("u-wire-contract-name");
+        let wheels = demo();
+        let vp = install_with(
+            &s,
+            &lock_text(&wheels),
+            &wheels,
+            &[("slopvac-plugin.toml", PY_MANIFEST.as_bytes())],
+        );
+        let empty = EnvStore::open(s.dir("no-envs"));
+        let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![vp])
+            .with_python_plugins(&empty)
+            .err()
+            .unwrap();
+        assert!(
+            matches!(&err, PyEnvError::EnvMissing { plugin, python } if plugin == "fake" && python == "3.12"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn wiring_leaves_a_native_plugin_alone() {
+        let s = Scratch::new("u-wire-native");
+        let native = PY_MANIFEST.replace("runtime = \"python\"\npython = \"3.12\"\n", "");
+        let (b, _) = manifest_plugin(&s, &native);
+        let empty = EnvStore::open(s.dir("no-envs"));
+        let g = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(&empty)
+            .unwrap();
+        assert_eq!(g.python_launch(&b.vp.name), None);
+    }
+
+    #[test]
+    fn wiring_refuses_a_manifest_that_cannot_select_an_environment() {
+        let s = Scratch::new("u-wire-bad");
+        let bad = PY_MANIFEST.replace("python = \"3.12\"\n", "");
+        let (b, store) = manifest_plugin(&s, &bad);
+        let err = TrustGate::new(TrustStore::open(s.dir("state")), vec![], vec![b.vp.clone()])
+            .with_python_plugins(&store)
+            .err()
+            .unwrap();
+        assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
     }
 
     #[test]
@@ -1796,6 +2208,28 @@ mod live {
         assert!(p.shutdown().clean());
         // Running the plugin wrote nothing into the environment.
         b.env.verify_full().unwrap();
+    }
+
+    #[test]
+    fn live_a_caret_requirement_from_the_manifest_builds_an_environment() {
+        let Some(uv) = uv() else { return };
+        let s = Scratch::new("live-caret");
+        let wheels = [wheel("demo-pkg", "1.0", "one", &[])];
+        let vp = install(&s, &lock_text(&wheels), &wheels);
+        let request = pep440_specifier("^3.11").unwrap();
+        assert_eq!(request, ">=3.11,<4");
+        let env = EnvStore::open(s.dir("envs"))
+            .build(
+                &Installer {
+                    python: request,
+                    ..installer(uv)
+                },
+                &vp.root,
+                &vp.tree,
+            )
+            .unwrap_or_else(|e| panic!("uv is present but the build failed: {e}"));
+        assert_eq!(import_value(&env, "demo_pkg"), "one");
+        env.verify_full().unwrap();
     }
 
     #[test]

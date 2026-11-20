@@ -96,6 +96,18 @@ def test_schema_is_valid_draft_2020_12_with_stable_id(path: Path) -> None:
     assert schema["$id"] == f"{BASE}v3/{path.name}"
 
 
+def _reject_repeated_key(pairs: list[tuple[str, object]]) -> dict:
+    keys = [key for key, _ in pairs]
+    repeated = sorted({key for key in keys if keys.count(key) > 1})
+    assert not repeated, f"repeated keys: {repeated}"
+    return dict(pairs)
+
+
+@pytest.mark.parametrize("path", SCHEMA_FILES, ids=lambda p: p.name)
+def test_schema_has_no_repeated_object_key(path: Path) -> None:
+    json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_reject_repeated_key)
+
+
 @pytest.mark.parametrize("path", SCHEMA_FILES, ids=lambda p: p.name)
 def test_refs_resolve_offline(path: Path) -> None:
     schema = _load_schema(path)

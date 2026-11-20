@@ -1,11 +1,11 @@
 //! `slopvac self update` through the public `Runtime` interface, with an injected fetcher.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use slopvac_update::command::{self, Runtime};
+use slopvac_update::command::{self, Runtime, Supported};
 use slopvac_update::fetch::{FetchError, Fetcher};
 use slopvac_update::notice::Cache;
 use slopvac_update::verify::{
@@ -368,7 +368,8 @@ fn version_json_reports_method_and_a_cached_notice() {
             latest: "4.0.0".into(),
         })
         .unwrap();
-    let doc: serde_json::Value = serde_json::from_str(&command::version_json(&rt)).unwrap();
+    let doc: serde_json::Value =
+        serde_json::from_str(&command::version_json(&rt, &Supported::default())).unwrap();
     assert_eq!(doc["name"], "slopvac");
     assert_eq!(doc["version"], "3.0.0");
     assert_eq!(doc["install_method"], "installer");
@@ -385,11 +386,29 @@ fn version_json_reports_method_and_a_cached_notice() {
 }
 
 #[test]
+fn version_json_lists_supported_versions_per_artifact() {
+    let fx = installed();
+    let rt = runtime(&fx, server("3.1.0"), Box::new(Fixed(Ok(()))));
+    let supported = Supported {
+        schema_versions: BTreeMap::from([("alpha", vec![3]), ("beta", vec![2, 3])]),
+        slopvac_api: vec![1, 2],
+    };
+    let doc: serde_json::Value =
+        serde_json::from_str(&command::version_json(&rt, &supported)).unwrap();
+    assert_eq!(
+        doc["schema_versions"],
+        serde_json::json!({"alpha": [3], "beta": [2, 3]})
+    );
+    assert_eq!(doc["slopvac_api"], serde_json::json!([1, 2]));
+}
+
+#[test]
 fn version_json_never_starts_a_refresh() {
     let fx = installed();
     let srv = server("3.1.0");
     let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
-    let doc: serde_json::Value = serde_json::from_str(&command::version_json(&rt)).unwrap();
+    let doc: serde_json::Value =
+        serde_json::from_str(&command::version_json(&rt, &Supported::default())).unwrap();
     assert_eq!(doc["notices"], serde_json::json!([]));
     assert_eq!(srv.hits.load(Ordering::SeqCst), 0);
 }
@@ -412,4 +431,217 @@ fn unknown_installs_point_to_the_slopvac_org_releases() {
         err.message
     );
     assert_eq!(srv.hits.load(Ordering::SeqCst), 0);
+}
+
+/// A release server for `version`, signed like release CI signs it.
+fn signed_release(keys: &minisign::KeyPair, version: &str, binary: &[u8]) -> Server {
+    let url = format!("{BASE}/v{version}/slopvac-{TARGET}.tar.gz");
+    let bytes = archive(binary);
+    let sig = sign_with(keys, &bytes, Some(&comment(TARGET, version)));
+    Server {
+        files: HashMap::from([
+            (
+                LATEST.to_owned(),
+                format!(r#"{{"tag_name":"v{version}"}}"#).into_bytes(),
+            ),
+            (format!("{url}.minisig"), sig.into_bytes()),
+            (url, bytes),
+        ]),
+        hits: AtomicUsize::new(0),
+    }
+}
+
+/// Serves `inner`, and stops the first archive download until the test lets it go.
+///
+/// The download happens while the update holds the lock, so the test controls exactly when the
+/// holder finishes without any sleep.
+struct Gate {
+    inner: Server,
+    entered: std::sync::Mutex<std::sync::mpsc::Sender<()>>,
+    release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+    held: std::sync::atomic::AtomicBool,
+}
+
+impl Fetcher for Gate {
+    fn get(&self, url: &str, limit: u64) -> Result<Vec<u8>, FetchError> {
+        if url != LATEST && !self.held.swap(true, Ordering::SeqCst) {
+            self.entered.lock().unwrap().send(()).unwrap();
+            self.release.lock().unwrap().recv().unwrap();
+        }
+        self.inner.get(url, limit)
+    }
+}
+
+type Outcome = Result<String, command::Failure>;
+
+/// What the second update of a [`race`] reports to the test.
+enum Event {
+    /// It found the lock held and is waiting for it.
+    Waiting,
+    /// It ended, which is only possible without a lock to wait for.
+    Finished,
+}
+
+/// Two `self update` runs on one installed binary. The first stops inside its download, so it
+/// holds the lock. The second starts then. The test lets the first go only after the second
+/// reports that it is waiting for the lock, or has finished because nothing made it wait, so the
+/// order of the two runs never depends on timing. Returns the install and each run's outcome,
+/// first then second.
+fn race(first: (&str, &[u8]), second: (&str, &[u8])) -> (Fixture, Outcome, Outcome) {
+    use std::sync::mpsc::channel;
+
+    let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    let fx = installed();
+    let build = |version: &str, fetcher: Arc<dyn Fetcher + Send + Sync>| {
+        let verifier = MinisignVerifier::from_base64(&keys.pk.to_base64()).unwrap();
+        let mut rt = runtime(&fx, server(version), Box::new(verifier));
+        rt.fetcher = fetcher;
+        rt
+    };
+    let (entered_tx, entered_rx) = channel();
+    let (release_tx, release_rx) = channel();
+    let (event_tx, event_rx) = channel();
+    let (first_out, second_out) = std::thread::scope(|scope| {
+        let first_run = scope.spawn(|| {
+            // `Runtime` is not `Send`, so each thread builds its own.
+            let gate = Gate {
+                inner: signed_release(&keys, first.0, first.1),
+                entered: std::sync::Mutex::new(entered_tx),
+                release: std::sync::Mutex::new(release_rx),
+                held: false.into(),
+            };
+            update(&build(first.0, Arc::new(gate)))
+        });
+        entered_rx.recv().unwrap();
+        let second_run = scope.spawn(|| {
+            let plain = signed_release(&keys, second.0, second.1);
+            let mut rt = build(second.0, Arc::new(plain));
+            let waiting = std::sync::Mutex::new(event_tx.clone());
+            rt.on_lock_wait = Some(Arc::new(move || {
+                let _ = waiting.lock().unwrap().send(Event::Waiting); // The test may be past it.
+            }));
+            let outcome = update(&rt);
+            let _ = event_tx.send(Event::Finished); // The test may be past it.
+            outcome
+        });
+        event_rx.recv().unwrap();
+        release_tx.send(()).unwrap();
+        (first_run.join().unwrap(), second_run.join().unwrap())
+    });
+    (fx, first_out, second_out)
+}
+
+#[test]
+fn racing_updates_end_on_the_newer_release_when_the_older_holds_the_lock_first() {
+    let (fx, older, newer) = race(("3.1.0", b"binary 3.1.0"), ("3.2.0", b"binary 3.2.0"));
+    assert_eq!(older.unwrap(), "Updated slopvac 3.0.0 to 3.1.0.\n");
+    assert_eq!(newer.unwrap(), "Updated slopvac 3.0.0 to 3.2.0.\n");
+    assert_eq!(content(&fx.exe), b"binary 3.2.0");
+}
+
+#[test]
+fn a_waiting_older_update_does_not_roll_back_a_newer_install() {
+    let (fx, newer, older) = race(("3.2.0", b"binary 3.2.0"), ("3.1.0", b"binary 3.1.0"));
+    assert_eq!(newer.unwrap(), "Updated slopvac 3.0.0 to 3.2.0.\n");
+    let refused = older.unwrap_err();
+    assert_eq!(refused.code, "self-update-failed");
+    assert!(
+        refused
+            .message
+            .contains("refusing to install 3.1.0: it is not newer than the running 3.2.0"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(content(&fx.exe), b"binary 3.2.0");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_planted_lock_symlink_fails_with_its_own_code_and_leaves_the_target_alone() {
+    let fx = installed();
+    let victim = fx.dir.path().join("victim");
+    std::fs::write(&victim, b"precious").unwrap();
+    let lock = fx.exe.with_file_name("slopvac.update.lock");
+    std::os::unix::fs::symlink(&victim, lock).unwrap();
+    let rt = runtime(&fx, server("3.1.0"), Box::new(Fixed(Ok(()))));
+    let failure = update(&rt).unwrap_err();
+    assert_eq!(failure.code, "update-lock-unsafe");
+    assert_eq!(content(&victim), b"precious");
+    assert_eq!(content(&fx.exe), b"old binary");
+}
+
+/// Another installer puts a script at the install path that prints `body`. Returns the
+/// fingerprint of the binary that this process "started" as.
+#[cfg(unix)]
+fn replaced_by_other_installer(fx: &Fixture, body: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let started_as = slopvac_update::pipeline::running_fingerprint(&fx.exe).unwrap();
+    std::fs::write(&fx.exe, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(&fx.exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    started_as
+}
+
+#[cfg(unix)]
+#[test]
+fn an_installed_binary_with_an_unknown_version_fails_with_its_own_code() {
+    let fx = installed();
+    let started_as = replaced_by_other_installer(&fx, "echo not json");
+    let before = content(&fx.exe);
+    let mut rt = runtime(&fx, server("3.2.0"), Box::new(Fixed(Ok(()))));
+    rt.running_sha = Some(started_as);
+    let failure = update(&rt).unwrap_err();
+    assert_eq!(failure.code, "update-version-unknown");
+    assert_eq!(content(&fx.exe), before);
+}
+
+/// Serves `inner`, and runs `during_lookup` when the latest version is asked for, which is the
+/// first network call `self update` makes.
+#[cfg(unix)]
+struct SwapDuringLookup<F: Fn() + Send + Sync> {
+    inner: Arc<Server>,
+    during_lookup: F,
+}
+
+#[cfg(unix)]
+impl<F: Fn() + Send + Sync> Fetcher for SwapDuringLookup<F> {
+    fn get(&self, url: &str, limit: u64) -> Result<Vec<u8>, FetchError> {
+        if url == LATEST {
+            (self.during_lookup)();
+        }
+        self.inner.get(url, limit)
+    }
+}
+
+// The runtime takes no fingerprint up front here (`running_sha` is `None`, as in the real
+// process). Another installer swaps in 3.3.0 while the update asks for the latest version. The
+// update must not credit that new file to the running 3.0.0 and install 3.2.0 over it.
+#[cfg(unix)]
+#[test]
+fn a_binary_swapped_during_the_version_lookup_is_not_taken_for_the_running_one() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = installed();
+    let exe = fx.exe.clone();
+    let mut rt = runtime(&fx, server("3.2.0"), Box::new(Fixed(Ok(()))));
+    assert!(rt.running_sha.is_none());
+    rt.fetcher = Arc::new(SwapDuringLookup {
+        inner: server("3.2.0"),
+        during_lookup: move || {
+            std::fs::write(
+                &exe,
+                "#!/bin/sh\necho '{\"name\":\"slopvac\",\"version\":\"3.3.0\"}'\n",
+            )
+            .unwrap();
+            std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        },
+    });
+    let failure = update(&rt).unwrap_err();
+    assert_eq!(failure.code, "self-update-failed");
+    assert!(
+        failure
+            .message
+            .contains("refusing to install 3.2.0: it is not newer than the running 3.3.0"),
+        "{}",
+        failure.message
+    );
+    assert_ne!(content(&fx.exe), b"new binary");
 }

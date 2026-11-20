@@ -19,10 +19,14 @@
 //! line and no source range, as 2.x did.
 //!
 //! The settings come from the resolved configuration as plain data ([`Settings`]). Rule
-//! kinds the engine does not run yet (structure checks and the metrics it does not measure)
-//! are skipped, and each document says so in an `info` notice. A capitalization rule in a
+//! kinds the engine does not run yet (the metrics it does not measure) are skipped, and each
+//! document says so in an `info` notice. A capitalization rule in a
 //! style other than sentence is skipped with a `warning` notice, which makes the check
 //! incomplete.
+//!
+//! Structure rules run by check name. `heading-hierarchy` flags a skipped heading level. A
+//! structure check the engine does not know is reported in the `info` notice of rules that
+//! did not run.
 //!
 //! Vocabulary rules enforce a word blocklist ([`Engine::with_blocklist`]) on the
 //! part-of-speech tagger of `slopvac-pos`. One rule owns the sweep. Without a blocklist
@@ -44,6 +48,7 @@
 
 mod capitalization;
 pub mod cases;
+mod comments;
 mod commit;
 mod diagrams;
 pub mod diff_scope;
@@ -54,6 +59,7 @@ mod file;
 mod fix;
 mod lint;
 pub mod locale;
+mod matcher_work;
 mod matching;
 mod metrics;
 mod prepare;
@@ -62,6 +68,7 @@ pub mod rst;
 mod score;
 mod settings;
 mod skip;
+mod structure;
 mod tagging;
 mod terms;
 
@@ -73,8 +80,17 @@ pub use diagrams::{
 pub use exceptions::{Detector, Detectors, DuplicateDetector, MatchSite, TextOrigin};
 pub use file::{FileFix, FileResult, fix_file, fix_file_hooked};
 pub use fix::{FixError, FixReport, SkipReason, Skipped, fix_document, unified_diff};
-pub use lint::{Engine, EngineError, Input, Kind};
+pub use lint::{Engine, EngineError, Input, Kind, LintOutcome, extract_code};
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use lint::{nearby_block_visits, prose_finding_bytes};
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use matcher_work::matcher_entries;
 pub use score::{CategoryInfo, Scoring, score_document};
 pub use settings::{CategoryDials, Level, Mode, Settings, Thresholds};
 pub use skip::{SkipRanges, skip_ranges};
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use tagging::take_split_visits;
 pub use terms::{TERMS_PACK, terms_rule_set};

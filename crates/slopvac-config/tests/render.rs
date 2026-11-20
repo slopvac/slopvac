@@ -105,6 +105,7 @@ fn a_lone_cr_ends_a_rendered_line() {
             span: at..at + 2,
             help: None,
             path: vec![],
+            data: None,
         };
         let out = render(SourceFile { name: "f.md", text }, &[d]);
         assert!(out.contains("--> f.md:3:1"), "{label}: {out}");

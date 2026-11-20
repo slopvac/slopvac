@@ -1,0 +1,7 @@
+# Declared, never detected: it has no `detect`. Its `contexts` tag every document of the
+# genre as security.
+schema_version: 3
+id: security
+extends: [reference]
+contexts: [security]
+description: Security guidance, threat models and policies. Declared, never detected.

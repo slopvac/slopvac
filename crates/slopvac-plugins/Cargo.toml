@@ -36,12 +36,15 @@ cap-std.workspace = true
 caseless.workspace = true
 crossbeam-channel.workspace = true
 flate2.workspace = true
+getrandom.workspace = true
+hmac.workspace = true
 minisign-verify.workspace = true
 rustix.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+slopvac-fs.workspace = true
 slopvac-sanitize.workspace = true
 tar.workspace = true
 tempfile.workspace = true
@@ -54,8 +57,16 @@ ureq.workspace = true
 [dev-dependencies]
 base64.workspace = true
 minisign.workspace = true
+rstest.workspace = true
+rustls.workspace = true
 tempfile.workspace = true
 toml.workspace = true
+
+# This test binary calls `launch::intercept` itself and runs the launcher
+# through `Launcher::CurrentExe`, so it brings its own `main`.
+[[test]]
+name = "launcher_installed"
+harness = false
 
 [lints]
 workspace = true

@@ -12,9 +12,10 @@ use sha2::{Digest as _, Sha256};
 use ureq::Body;
 use ureq::http::Response;
 
-use super::auth::{Challenge, CredentialSource, DefaultCredentials};
+use super::auth::{Challenge, Credential, CredentialSource, DefaultCredentials};
 use super::http::{
-    Req, Timeouts, Transport, bare_host, host_of, is_loopback_host, origin_of, resolve, url_allowed,
+    Req, TestNet, Timeouts, Transport, bare_host, host_of, is_loopback_host, origin_of, read_error,
+    resolve, url_allowed, wire_bytes_used,
 };
 use super::reference::{Reference, Target};
 use super::types::{
@@ -41,6 +42,9 @@ const TOKEN_SERVICES: &[(&str, &str)] = &[
 struct CachedToken {
     value: String,
     expires: Instant,
+    /// Why a credential helper was not used when this token was fetched
+    /// anonymously. A later denial with the token reports it.
+    refused: Option<OciError>,
 }
 
 #[derive(Deserialize)]
@@ -132,15 +136,17 @@ pub struct Client {
 
 impl Client {
     /// Client with credentials from the environment and the Docker config.
+    /// `project_root` is the enclosing project, where no credential helper may
+    /// run from.
     #[must_use]
-    pub fn new() -> Self {
-        Self::with_credentials(Box::new(DefaultCredentials::from_env()))
+    pub fn new(project_root: impl Into<std::path::PathBuf>) -> Self {
+        Self::with_credentials(Box::new(DefaultCredentials::from_env(project_root)))
     }
 
     /// Client with a given credential source.
     #[must_use]
     pub fn with_credentials(creds: Box<dyn CredentialSource>) -> Self {
-        Self::build(creds, false, Timeouts::default())
+        Self::build(creds, false, Timeouts::default(), &TestNet::default())
     }
 
     /// Test seam: like [`Client::with_credentials`] but speaks plain HTTP to
@@ -152,7 +158,7 @@ impl Client {
     #[doc(hidden)]
     #[must_use]
     pub fn with_loopback_http_for_tests(creds: Box<dyn CredentialSource>) -> Self {
-        Self::build(creds, true, Timeouts::default())
+        Self::build(creds, true, Timeouts::default(), &TestNet::default())
     }
 
     /// Test seam: like [`Client::with_loopback_http_for_tests`] with a short limit
@@ -167,16 +173,37 @@ impl Client {
             send_body,
             ..Timeouts::default()
         };
-        Self::build(creds, true, timeouts)
+        Self::build(creds, true, timeouts, &TestNet::default())
+    }
+
+    /// Test seam: an HTTPS-only client that trusts the DER certificate `root`
+    /// instead of the platform roots and, when `proxy` is set, reaches
+    /// registries through that `CONNECT` proxy (for example
+    /// `http://127.0.0.1:3128`).
+    ///
+    /// Production code never calls this.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_tls_root_for_tests(
+        creds: Box<dyn CredentialSource>,
+        root: &[u8],
+        proxy: Option<&str>,
+    ) -> Self {
+        let net = TestNet {
+            root: Some(root.to_vec()),
+            proxy: proxy.map(str::to_owned),
+        };
+        Self::build(creds, false, Timeouts::default(), &net)
     }
 
     fn build(
         creds: Box<dyn CredentialSource>,
         allow_loopback_http: bool,
         timeouts: Timeouts,
+        net: &TestNet,
     ) -> Self {
         Self {
-            transport: Transport::new(allow_loopback_http, timeouts),
+            transport: Transport::with_test_net(allow_loopback_http, timeouts, net),
             creds,
             tokens: Mutex::new(HashMap::new()),
             allow_loopback_http,
@@ -215,13 +242,13 @@ impl Client {
         })
     }
 
-    fn cached(&self, scope: &str) -> Option<String> {
+    fn cached(&self, scope: &str) -> Option<(String, Option<OciError>)> {
         let mut t = self
             .tokens
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match t.get(scope) {
-            Some(c) if c.expires > Instant::now() => Some(c.value.clone()),
+            Some(c) if c.expires > Instant::now() => Some((c.value.clone(), c.refused.clone())),
             Some(_) => {
                 t.remove(scope);
                 None
@@ -230,7 +257,37 @@ impl Client {
         }
     }
 
-    fn fetch_token(&self, r: &Reference, ch: &Challenge, scope: &str) -> Result<String, OciError> {
+    /// The login for `registry`. A refusal to start a credential helper does not
+    /// fail the request: anonymous access may still work. The refusal goes to
+    /// `refused`, and the caller reports it when the registry then denies access.
+    /// Each lookup starts clean, so a refusal from an earlier lookup (inherited
+    /// with a cached token) never describes this one.
+    fn login(
+        &self,
+        registry: &str,
+        refused: &mut Option<OciError>,
+    ) -> Result<Option<Credential>, OciError> {
+        *refused = None;
+        match self.creds.credential(registry) {
+            Err(e) if e.code().is_some() => {
+                tracing::warn!(
+                    code = e.code(),
+                    "a credential helper was refused; continuing without a login"
+                );
+                *refused = Some(e);
+                Ok(None)
+            }
+            other => other,
+        }
+    }
+
+    fn fetch_token(
+        &self,
+        r: &Reference,
+        ch: &Challenge,
+        scope: &str,
+        refused: &mut Option<OciError>,
+    ) -> Result<String, OciError> {
         let realm = ch
             .param("realm")
             .ok_or_else(|| OciError::Invalid("bearer challenge without realm".into()))?;
@@ -243,10 +300,11 @@ impl Client {
             let _ = write!(url, "service={}&", encode(service));
         }
         let _ = write!(url, "scope={}", encode(scope));
-        let cred = self.creds.credential(&r.registry)?;
+        let cred = self.login(&r.registry, refused)?;
         let mut resp = self.transport.send(&Req {
             method: "GET",
             url: url.clone(),
+            max_body: MAX_TOKEN_BYTES as u64,
             headers: vec![("Accept", "application/json".into())],
             authorization: cred.map(|c| c.basic_header()),
             body: None,
@@ -254,7 +312,9 @@ impl Client {
         let status = resp.status().as_u16();
         if status != 200 {
             return Err(if matches!(status, 401 | 403) {
-                OciError::Denied(redact_url(&url))
+                refused
+                    .take()
+                    .unwrap_or_else(|| OciError::Denied(redact_url(&url)))
             } else {
                 OciError::Status {
                     status,
@@ -279,12 +339,14 @@ impl Client {
                 CachedToken {
                     value: value.clone(),
                     expires: Instant::now() + ttl,
+                    refused: refused.clone(),
                 },
             );
         Ok(value)
     }
 
     /// Send a request with lazy token acquisition and one retry after a 401.
+    /// The response is a manifest-sized document at most.
     fn call(
         &self,
         r: &Reference,
@@ -294,19 +356,49 @@ impl Client {
         headers: &[(&'static str, String)],
         body: Option<&[u8]>,
     ) -> Result<Response<Body>, OciError> {
+        self.call_capped(
+            r,
+            actions,
+            MAX_MANIFEST_BYTES as u64,
+            &Req {
+                method,
+                url: url.to_owned(),
+                max_body: 0,
+                headers: headers.to_vec(),
+                authorization: None,
+                body,
+            },
+        )
+    }
+
+    /// [`Client::call`] for a response body of up to `max_body` bytes; the raw
+    /// bytes read are capped relative to it.
+    fn call_capped(
+        &self,
+        r: &Reference,
+        actions: &str,
+        max_body: u64,
+        template: &Req<'_>,
+    ) -> Result<Response<Body>, OciError> {
         let scope = format!("repository:{}:{actions}", r.repository);
         let make = |authorization: Option<String>| Req {
-            method,
-            url: url.to_owned(),
-            headers: headers.to_vec(),
+            max_body,
             authorization,
-            body,
+            ..template.clone()
         };
-        let first = self
-            .cached(&self.token_key(r, &scope))
-            .map(|t| format!("Bearer {t}"));
+        let (first, mut refused) = match self.cached(&self.token_key(r, &scope)) {
+            Some((token, refused)) => (Some(format!("Bearer {token}")), refused),
+            None => (None, None),
+        };
         let resp = self.transport.send(&make(first))?;
-        if resp.status().as_u16() != 401 {
+        let status = resp.status().as_u16();
+        if status == 403
+            && let Some(e) = refused
+        {
+            // The cached token is anonymous because a helper was refused.
+            return Err(e);
+        }
+        if status != 401 {
             return Ok(resp);
         }
         let challenge = resp
@@ -318,14 +410,22 @@ impl Client {
             return Ok(resp);
         };
         let auth = match challenge.scheme.as_str() {
-            "bearer" => format!("Bearer {}", self.fetch_token(r, &challenge, &scope)?),
-            "basic" => match self.creds.credential(&r.registry)? {
+            "bearer" => format!(
+                "Bearer {}",
+                self.fetch_token(r, &challenge, &scope, &mut refused)?
+            ),
+            "basic" => match self.login(&r.registry, &mut refused)? {
                 Some(c) => c.basic_header(),
-                None => return Ok(resp),
+                // Anonymous access was refused already, so the refusal is why.
+                None => return refused.map_or(Ok(resp), Err),
             },
             _ => return Ok(resp),
         };
-        self.transport.send(&make(Some(auth)))
+        let resp = self.transport.send(&make(Some(auth)))?;
+        match refused {
+            Some(e) if matches!(resp.status().as_u16(), 401 | 403) => Err(e),
+            _ => Ok(resp),
+        }
     }
 
     fn deny_or_status(url: &str, status: u16) -> OciError {
@@ -411,6 +511,7 @@ impl Client {
         let mut resp = self.transport.send(&Req {
             method: "GET",
             url: url.to_owned(),
+            max_body: max,
             headers: vec![],
             authorization: None,
             body: None,
@@ -421,10 +522,7 @@ impl Client {
         }
         let shown = redact_url(url);
         let mut reader = resp.body_mut().with_config().limit(max + 1).reader();
-        let copied = std::io::copy(&mut reader, out).map_err(|e| OciError::Network {
-            url: shown,
-            message: e.to_string(),
-        })?;
+        let copied = std::io::copy(&mut reader, out).map_err(|e| read_error(&shown, &e))?;
         if copied > max {
             return Err(OciError::TooLarge {
                 what: "archive".into(),
@@ -455,7 +553,19 @@ impl Client {
             });
         }
         let url = format!("{}/v2/{}/blobs/{}", self.base(r), r.repository, desc.digest);
-        let mut resp = self.call(r, "pull", "GET", &url, &[], None)?;
+        let mut resp = self.call_capped(
+            r,
+            "pull",
+            desc.size,
+            &Req {
+                method: "GET",
+                url: url.clone(),
+                max_body: 0,
+                headers: vec![],
+                authorization: None,
+                body: None,
+            },
+        )?;
         let status = resp.status().as_u16();
         if status != 200 {
             return Err(Self::deny_or_status(&url, status));
@@ -466,10 +576,9 @@ impl Client {
         let mut buf = vec![0u8; 64 * 1024];
         let mut total: u64 = 0;
         loop {
-            let n = reader.read(&mut buf).map_err(|e| OciError::Network {
-                url: redact_url(&url),
-                message: e.to_string(),
-            })?;
+            let n = reader
+                .read(&mut buf)
+                .map_err(|e| read_error(&redact_url(&url), &e))?;
             if n == 0 {
                 break;
             }
@@ -600,12 +709,14 @@ impl Client {
         self.list_tags_within(r, &AtomicU64::new(u64::MAX))
     }
 
-    /// Like [`Client::list_tags`], but every page body read is charged to
-    /// `allowance`, a byte count shared by several listings. Bytes are charged
-    /// as they are read, so a listing that fails on a later page (parse,
-    /// pagination or transport) has still used its share. A page read stops
-    /// when the allowance runs out, and a listing started with none left fails
-    /// at once without a request.
+    /// Like [`Client::list_tags`], but every page is charged to `allowance`, a
+    /// byte count shared by several listings. The charge is the raw bytes read
+    /// from the socket for the page (headers, TLS, chunk framing and trailers
+    /// included), taken whether the page parses, fails or is refused, so a
+    /// listing that fails on a later page has still used its share. A page read
+    /// stops when the allowance runs out, and a listing started with none left
+    /// fails at once without a request. Bytes of a request that fails before a
+    /// response arrives are not charged; the per-exchange cap bounds them.
     ///
     /// # Errors
     /// Any [`OciError`]; [`OciError::TooLarge`] when the allowance is used up.
@@ -627,13 +738,37 @@ impl Client {
                     limit: 0,
                 });
             }
-            let mut resp = self.call(r, "pull", "GET", &url, &[], None)?;
+            let page_max = allowance
+                .load(Ordering::Relaxed)
+                .min(MAX_MANIFEST_BYTES as u64);
+            let called = self.call_capped(
+                r,
+                "pull",
+                page_max,
+                &Req {
+                    method: "GET",
+                    url: url.clone(),
+                    max_body: 0,
+                    headers: vec![],
+                    authorization: None,
+                    body: None,
+                },
+            );
+            // A refused redirect has no response to read the meter from.
+            if let Err(OciError::BadRedirect { wire_bytes, .. }) = &called {
+                charge(allowance, *wire_bytes);
+            }
+            let mut resp = called?;
             let status = resp.status().as_u16();
             if status != 200 {
+                charge(allowance, wire_bytes_used(&resp));
                 return Err(Self::deny_or_status(&url, status));
             }
             let next = next_link(&resp, &url);
-            let body = read_charged(resp.body_mut(), MAX_MANIFEST_BYTES, "tag list", allowance)?;
+            let limit = usize::try_from(page_max).unwrap_or(MAX_MANIFEST_BYTES);
+            let read = read_limited(resp.body_mut(), limit, "tag list");
+            charge(allowance, wire_bytes_used(&resp));
+            let body = read?;
             let page: Tags = serde_json::from_slice(&body)
                 .map_err(|e| OciError::Invalid(format!("tag list: {e}")))?;
             all.extend(page.tags.unwrap_or_default());
@@ -695,6 +830,7 @@ impl Client {
             return Err(OciError::BadRedirect {
                 url: redact_url(&start),
                 why: "upload target is on another host".into(),
+                wire_bytes: 0,
             });
         }
         let put = format!(
@@ -752,12 +888,6 @@ impl Client {
             return Err(Self::deny_or_status(&url, status));
         }
         Ok(Digest::of(body))
-    }
-}
-
-impl Default for Client {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -854,10 +984,7 @@ fn read_limited(body: &mut Body, limit: usize, what: &str) -> Result<Vec<u8>, Oc
         .limit(limit as u64 + 1)
         .reader()
         .read_to_end(&mut buf)
-        .map_err(|e| OciError::Network {
-            url: what.to_owned(),
-            message: e.to_string(),
-        })?;
+        .map_err(|e| read_error(what, &e))?;
     if buf.len() > limit {
         return Err(OciError::TooLarge {
             what: what.into(),
@@ -867,37 +994,11 @@ fn read_limited(body: &mut Body, limit: usize, what: &str) -> Result<Vec<u8>, Oc
     Ok(buf)
 }
 
-/// [`read_limited`] with the page capped at what is left of `allowance`; the
-/// bytes actually read are charged whether or not the read succeeds.
-fn read_charged(
-    body: &mut Body,
-    limit: usize,
-    what: &str,
-    allowance: &AtomicU64,
-) -> Result<Vec<u8>, OciError> {
-    let left = allowance.load(Ordering::Relaxed);
-    let cap = u64::try_from(limit).unwrap_or(u64::MAX).min(left);
-    let mut buf = Vec::new();
-    let read = body
-        .with_config()
-        .limit(cap.saturating_add(1))
-        .reader()
-        .read_to_end(&mut buf);
-    let used = buf.len() as u64;
+/// Take `used` bytes from the shared `allowance`, down to zero.
+fn charge(allowance: &AtomicU64, used: u64) {
     let _ = allowance.try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
         Some(v.saturating_sub(used))
     });
-    read.map_err(|e| OciError::Network {
-        url: what.to_owned(),
-        message: e.to_string(),
-    })?;
-    if used > cap {
-        return Err(OciError::TooLarge {
-            what: what.into(),
-            limit: cap,
-        });
-    }
-    Ok(buf)
 }
 
 fn encode(s: &str) -> String {

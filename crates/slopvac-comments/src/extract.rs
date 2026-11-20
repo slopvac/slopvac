@@ -4,6 +4,7 @@ use std::ops::Range;
 
 use thiserror::Error;
 
+use crate::docstring;
 use crate::language::{Language, Syntax};
 use crate::lexer;
 use crate::span::{Projection, Span, TokenKind};
@@ -153,6 +154,13 @@ pub fn extract_lexical(
     let scan =
         lexer::scan(source, syntax, budget).map_err(|_| ExtractError::WalkBudget { budget })?;
     let mut pieces = Vec::new();
+    if syntax.docstrings {
+        for range in docstring::find(source, &scan.comments, &scan.strings) {
+            if let Some(decorated) = strip::docstring(source, range.start, range.end) {
+                pieces.push(Piece::new(source, &range, decorated));
+            }
+        }
+    }
     for range in scan.comments {
         let range = trimmed(source, range);
         push_comment(source, range, syntax, &mut pieces);

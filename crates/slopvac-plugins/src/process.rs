@@ -24,13 +24,20 @@
 //!    outside the group whose parent is stopped and is the leader, a member
 //!    of the group or a descendant already held. On Linux the walk opens a
 //!    pidfd for it, checks its parent through `/proc`, stops it and looks
-//!    again, until a round finds nothing new. A process whose parent `/proc`
+//!    again, until a round finds nothing new. Once a held process shows as
+//!    stopped in `/proc` and its pidfd shows no exit, the walk binds its
+//!    children from the same table without another read, since a stopped
+//!    process cannot fork. A tree that was static when the table was read
+//!    thus costs two reads at any depth, and the deadline stays the bound.
+//!    A process whose parent `/proc`
 //!    does not confirm counts as gone only if its pidfd shows an exit, and
 //!    one that a pidfd call fails on only if the call fails with `ESRCH`.
 //!    The walk records every other one as escaped. Elsewhere it records
 //!    every such descendant as escaped. The table comes from `/bin/ps`,
 //!    never from `PATH`, run with a scrubbed environment, a deadline and an
-//!    output limit, and parsed strictly. A helper that fails, hangs or
+//!    output limit, and parsed strictly. A well-formed row for a process
+//!    that the kernel is releasing (state `X`) is left out: it can no longer
+//!    fork or be signalled. A helper that fails, hangs or
 //!    prints anything unexpected ends the walk, as do the deadline and a
 //!    cap on held descendants, and the walk is then reported incomplete.
 //! 3. Kill the held descendants, deepest first, then the group and the
@@ -857,40 +864,40 @@ mod unix {
             let settling = table
                 .values()
                 .any(|e| ours(e) && !e.stopped() && !e.zombie());
-            let mut found: Vec<&Entry> = table
-                .values()
-                .filter(|e| {
-                    e.pgid != leader
-                        && e.pid != leader
-                        && stopped.contains(&e.ppid)
-                        && e.pid > 1
-                        && e.pid != me
-                        && !held.iter().any(|s| s.pid == e.pid)
-                        && !left.escaped.contains(&e.pid)
-                })
-                .collect();
-            found.sort_by_key(|e| e.pid);
             let mut grew = false;
-            for e in found {
-                match Stray::reach(e, source.and_then(|s| s.signals.as_ref())) {
-                    Reach::Held(s) if held.len() < cap => match s.signal(Signal::STOP) {
-                        Ok(()) => {
-                            held.push(s);
-                            grew = true;
-                        }
-                        Err(err) if gone(err) => {}
-                        // For example `EPERM`: it runs as another user.
-                        Err(_) => left.escaped.push(e.pid),
-                    },
-                    Reach::Held(_) => {
-                        left.incomplete = true;
-                        break 'rounds;
-                    }
-                    Reach::Skip => {}
-                    Reach::Escaped => left.escaped.push(e.pid),
+            let mut parents = stopped;
+            // Descendants of a process held in this round that the same table
+            // already shows are bound at once, once the parent is confirmed
+            // stopped, so a static tree costs two reads at any depth.
+            loop {
+                let first = held.len();
+                let Some(added) = bind_children(
+                    &table,
+                    &parents,
+                    leader,
+                    me,
+                    cap,
+                    source.and_then(|s| s.signals.as_ref()),
+                    deadline,
+                    &mut held,
+                    &mut left,
+                ) else {
+                    left.incomplete = true;
+                    break 'rounds;
+                };
+                grew |= added;
+                parents = confirmed_stopped(&held[first..], deadline);
+                // Past the deadline no stop counts, so nothing widens the
+                // walk: it ends incomplete and kills what it holds.
+                if Instant::now() >= deadline {
+                    left.incomplete = true;
+                    break 'rounds;
+                }
+                if parents.is_empty() {
+                    break;
                 }
             }
-            // A process held in this round has children only the next one sees.
+            // Children forked before the stop landed show only in the next table.
             if !grew && !settling {
                 break;
             }
@@ -899,6 +906,116 @@ mod unix {
             }
         }
         Walk { held, left }
+    }
+
+    /// Hold and stop each row of `table` outside the group whose parent is in
+    /// `parents` and not held yet. Returns whether it held any, or `None` when
+    /// the cap on held descendants is reached or `deadline` has passed, before
+    /// the first row or between two.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one walk step, split out of `walk`"
+    )]
+    pub(super) fn bind_children(
+        table: &HashMap<u32, Entry>,
+        parents: &HashSet<u32>,
+        leader: u32,
+        me: u32,
+        cap: usize,
+        hook: Option<&SignalHook>,
+        deadline: Instant,
+        held: &mut Vec<Stray>,
+        left: &mut Teardown,
+    ) -> Option<bool> {
+        // The deadline bounds the scan of a large table too, not only the binding.
+        if Instant::now() >= deadline {
+            return None;
+        }
+        let mut found: Vec<&Entry> = Vec::new();
+        for e in table.values() {
+            if Instant::now() >= deadline {
+                return None;
+            }
+            if e.pgid != leader
+                && e.pid != leader
+                && parents.contains(&e.ppid)
+                && e.pid > 1
+                && e.pid != me
+                && !held.iter().any(|s| s.pid == e.pid)
+                && !left.escaped.contains(&e.pid)
+            {
+                found.push(e);
+            }
+        }
+        found.sort_by_key(|e| e.pid);
+        let mut grew = false;
+        for e in found {
+            if Instant::now() >= deadline {
+                return None;
+            }
+            match Stray::reach(e, hook) {
+                Reach::Held(s) if held.len() < cap => match s.signal(Signal::STOP) {
+                    Ok(()) => {
+                        held.push(s);
+                        grew = true;
+                    }
+                    Err(err) if gone(err) => {}
+                    // For example `EPERM`: it runs as another user.
+                    Err(_) => left.escaped.push(e.pid),
+                },
+                Reach::Held(_) => return None,
+                Reach::Skip => {}
+                Reach::Escaped => left.escaped.push(e.pid),
+            }
+        }
+        Some(grew)
+    }
+
+    /// The strays among `strays` that are stopped now and have not exited.
+    ///
+    /// A stray was just sent `SIGSTOP`, which lands asynchronously. This waits
+    /// for each one to show as stopped in `/proc`. Once `deadline` has passed
+    /// it confirms nothing, so a late stop cannot widen the walk. A stopped
+    /// parent cannot fork, so confirming it allows binding the children the
+    /// table already shows. A fork between the table read and the stop is
+    /// possible, and the next snapshot finds that child. Without a pidfd (the
+    /// test hook, or off Linux) nothing is confirmed and the next table read
+    /// does the work.
+    #[cfg(target_os = "linux")]
+    pub(super) fn confirmed_stopped(strays: &[Stray], deadline: Instant) -> HashSet<u32> {
+        let mut out = HashSet::new();
+        for s in strays {
+            let Link::Fd(fd) = &s.link else { continue };
+            loop {
+                if Instant::now() >= deadline {
+                    return HashSet::new();
+                }
+                match proc_state(s.pid) {
+                    Some(b'T' | b't') if !exited(fd) => {
+                        out.insert(s.pid);
+                        break;
+                    }
+                    Some(b'R' | b'S' | b'D' | b'I' | b'W' | b'P') if !exited(fd) => {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    _ => break,
+                }
+            }
+        }
+        out
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn confirmed_stopped(_strays: &[Stray], _deadline: Instant) -> HashSet<u32> {
+        HashSet::new()
+    }
+
+    /// The state letter of `pid` from `/proc/<pid>/stat`.
+    #[cfg(target_os = "linux")]
+    fn proc_state(pid: u32) -> Option<u8> {
+        let stat = std::fs::read(format!("/proc/{pid}/stat")).ok()?;
+        let end = stat.iter().rposition(|&b| b == b')')?;
+        stat.get(end + 2).copied()
     }
 
     fn snapshot(source: Option<&TableSource>, deadline: Instant) -> Option<HashMap<u32, Entry>> {
@@ -981,11 +1098,14 @@ mod unix {
     }
 
     /// Parse `ps -A -o pid=,ppid=,pgid=,stat=,lstart=` output, all or nothing.
+    /// A well-formed row for a process that is being released is left out.
     pub(super) fn parse_table(out: &[u8]) -> Option<HashMap<u32, Entry>> {
         let text = std::str::from_utf8(out).ok()?;
         let mut table = HashMap::new();
         for line in text.lines() {
-            let entry = parse_row(line)?;
+            let Row::Live(entry) = parse_row(line)? else {
+                continue;
+            };
             if table.insert(entry.pid, entry).is_some() {
                 return None;
             }
@@ -993,8 +1113,17 @@ mod unix {
         (!table.is_empty()).then_some(table)
     }
 
+    /// What one well-formed row shows.
+    enum Row {
+        Live(Entry),
+        /// State `X`: the process has exited and the kernel is releasing it,
+        /// so it can no longer fork, reap or be signalled. procps shows its
+        /// parent as 0 and its group as -1, printed as 4294967295.
+        Exiting,
+    }
+
     /// One row: three ids, a state and a C-locale `lstart` such as `Sat Nov 14 23:00:07 2026`.
-    fn parse_row(line: &str) -> Option<Entry> {
+    fn parse_row(line: &str) -> Option<Row> {
         let fields: Vec<&str> = line.split_ascii_whitespace().collect();
         let [own, parent, group, state, lstart @ ..] = &fields[..] else {
             return None;
@@ -1021,13 +1150,18 @@ mod unix {
         if !(state_ok && when_ok) {
             return None;
         }
-        Some(Entry {
-            pid: id(own).filter(|&p| p > 0)?,
+        let pid = id(own).filter(|&p| p > 0)?;
+        if state.starts_with('X') {
+            let released = |s: &str| id(s).is_some() || s == "4294967295";
+            return (released(parent) && released(group)).then_some(Row::Exiting);
+        }
+        Some(Row::Live(Entry {
+            pid,
             ppid: id(parent)?,
             pgid: id(group)?,
             stat: (*state).to_owned(),
             start: lstart.join(" "),
-        })
+        }))
     }
 
     /// A process id in decimal digits only, within the range of `pid_t`.
@@ -1109,6 +1243,130 @@ mod tests {
         child.wait().unwrap();
         assert!(!before, "a running process showed an exit");
         assert!(after, "an exited process showed no exit");
+    }
+
+    /// A stop confirmed after the deadline must not widen the walk, so the
+    /// confirmation yields nothing once the deadline has passed. The deadline
+    /// is already past, so no timing decides the outcome.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_stop_is_not_confirmed_after_the_deadline() {
+        use super::unix::{Entry, Reach, Stray, confirmed_stopped};
+        use rustix::process::Signal;
+        use std::collections::HashSet;
+        let mut child = std::process::Command::new("/bin/sleep")
+            .arg("300")
+            .spawn()
+            .unwrap();
+        let e = Entry {
+            pid: child.id(),
+            ppid: std::process::id(),
+            pgid: 0,
+            stat: "S".into(),
+            start: String::new(),
+        };
+        let Reach::Held(s) = Stray::reach(&e, None) else {
+            panic!("a live child of this process is not held");
+        };
+        s.signal(Signal::STOP).unwrap();
+        let live = Instant::now() + Duration::from_secs(30);
+        let confirmed = confirmed_stopped(std::slice::from_ref(&s), live);
+        let late = confirmed_stopped(std::slice::from_ref(&s), Instant::now());
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert_eq!(
+            confirmed,
+            HashSet::from([e.pid]),
+            "control: a live deadline"
+        );
+        assert!(late.is_empty(), "confirmed after the deadline: {late:?}");
+    }
+
+    /// Signals a hook recorded, in order.
+    #[cfg(unix)]
+    type Sent = Vec<(u32, HookSignal)>;
+
+    /// Two children of one stopped parent, bound through a recording hook.
+    /// `stall` makes each stop outlast the deadline, which `bind_children`
+    /// then meets between two rows. Returns the result, the recorded
+    /// signals and what teardown signals afterwards.
+    #[cfg(unix)]
+    fn bind_two(deadline: Instant, stall: bool) -> (Option<bool>, Sent, Sent) {
+        use super::unix::{Entry, Walk, bind_children};
+        use std::collections::{HashMap, HashSet};
+        use std::sync::{Arc, Mutex};
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&sent);
+        let hook = SignalHook(Arc::new(move |pid, sig| {
+            log.lock().unwrap().push((pid, sig));
+            if stall && sig == HookSignal::Stop {
+                while Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+            Ok(())
+        }));
+        let row = |pid| Entry {
+            pid,
+            ppid: 4_000_000,
+            pgid: 4_000_100,
+            stat: "S".into(),
+            start: String::new(),
+        };
+        let table = HashMap::from([(4_000_001, row(4_000_001)), (4_000_002, row(4_000_002))]);
+        let parents = HashSet::from([4_000_000]);
+        let (mut held, mut left) = (Vec::new(), Teardown::default());
+        let bound = bind_children(
+            &table,
+            &parents,
+            1,
+            2,
+            8,
+            Some(&hook),
+            deadline,
+            &mut held,
+            &mut left,
+        );
+        let binding = sent.lock().unwrap().clone();
+        sent.lock().unwrap().clear();
+        Walk { held, left }.kill();
+        let killing = sent.lock().unwrap().clone();
+        (bound, binding, killing)
+    }
+
+    /// Control for the deadline tests: with a live deadline both children are
+    /// bound, and teardown kills both, deepest first.
+    #[cfg(unix)]
+    #[test]
+    fn children_are_bound_and_killed_while_the_deadline_is_live() {
+        let (bound, binding, killing) = bind_two(Instant::now() + Duration::from_secs(60), false);
+        assert_eq!(bound, Some(true));
+        assert_eq!(
+            binding,
+            [(4_000_001, HookSignal::Stop), (4_000_002, HookSignal::Stop)]
+        );
+        assert_eq!(
+            killing,
+            [(4_000_002, HookSignal::Kill), (4_000_001, HookSignal::Kill)]
+        );
+    }
+
+    /// The deadline passes while the first child is stopped: the second is
+    /// never bound, the walk reports no further growth, and teardown still
+    /// kills the first.
+    #[cfg(unix)]
+    #[test]
+    fn expiry_during_expansion_stops_the_next_binding_and_still_kills_what_is_held() {
+        let (bound, binding, killing) = bind_two(Instant::now() + Duration::from_millis(100), true);
+        assert_eq!(bound, None);
+        // Under load the deadline may pass before even the first row, so the
+        // first child may be unbound. The second never is.
+        assert!(
+            binding.iter().all(|&(pid, _)| pid == 4_000_001),
+            "{binding:?}"
+        );
+        assert_eq!(killing.len(), binding.len(), "{killing:?}");
+        assert!(killing.iter().all(|&(_, sig)| sig == HookSignal::Kill));
     }
 
     /// Off the graceful path `taskkill` runs, and it exits 128 when the
@@ -1321,6 +1579,35 @@ mod tests {
             }
             assert!(parse_table(b"").is_none());
             assert!(parse_table(b"1 0 1 S Sat Nov 14 23:00:07 2026\n\xff\n").is_none());
+        }
+
+        /// procps shows a process that is being released (state `X`) with
+        /// parent 0 and group -1 printed unsigned, as seen under load on
+        /// Linux: `1661612 0 4294967295 XN+ ...`. It can no longer fork or be
+        /// signalled, so the table leaves it out instead of failing.
+        #[test]
+        fn a_process_mid_exit_is_left_out_of_the_table() {
+            let text = format!("1 0 1 Ss {ROW}\n1661612       0 4294967295 XN+  {ROW}\n");
+            let t = parse_table(text.as_bytes()).unwrap();
+            assert_eq!(t.keys().copied().collect::<Vec<_>>(), [1]);
+        }
+
+        #[test]
+        fn a_malformed_row_mid_exit_is_still_refused() {
+            let good = format!("1 0 1 Ss {ROW}");
+            for bad in [
+                format!("4294967295 0 4294967295 X {ROW}"),
+                format!("0 0 4294967295 X {ROW}"),
+                format!("5 0 -1 X {ROW}"),
+                format!("5 0 4294967296 X {ROW}"),
+                format!("5 4294967294 1 X {ROW}"),
+                "5 0 4294967295 X Sat Nov 14 23:00:07".to_owned(),
+            ] {
+                let text = format!("{good}\n{bad}\n");
+                assert!(parse_table(text.as_bytes()).is_none(), "{bad:?}");
+            }
+            // Left out, the rows leave an empty table, which is refused.
+            assert!(parse_table(format!("5 0 4294967295 X {ROW}\n").as_bytes()).is_none());
         }
     }
 }

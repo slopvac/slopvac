@@ -5,6 +5,7 @@
 use std::fmt::Write as _;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use slopvac_sanitize::line;
 
 use crate::{
     DocumentView, Error, GenreAssignment, GenreRegistry, GenreResult, GenreSource, PlainDocument,
@@ -31,7 +32,8 @@ pub fn command() -> Command {
         )
 }
 
-/// Render one result as text.
+/// Render one result as text. Paths, genre ids and reason details come from the document or
+/// the config, so each is escaped for a terminal.
 #[must_use]
 pub fn render(path: &str, r: &GenreResult) -> String {
     let source = match r.source {
@@ -39,11 +41,15 @@ pub fn render(path: &str, r: &GenreResult) -> String {
         GenreSource::Detected => "detected",
         GenreSource::Default => "default",
     };
-    let mut out = format!("{path}: {} ({source})\n", r.id);
+    let mut out = format!("{}: {} ({source})\n", line(path), line(&r.id));
     for reason in &r.reasons {
-        let _ = writeln!(out, "  {}: {}", reason.signal, reason.detail);
+        let _ = writeln!(out, "  {}: {}", line(&reason.signal), line(&reason.detail));
     }
-    let scores: Vec<String> = r.scores.iter().map(|(id, s)| format!("{id} {s}")).collect();
+    let scores: Vec<String> = r
+        .scores
+        .iter()
+        .map(|(id, s)| format!("{} {s}", line(id)))
+        .collect();
     let _ = writeln!(out, "  scores: {}", scores.join(", "));
     out
 }
@@ -76,19 +82,40 @@ fn parse_assignments(matches: &ArgMatches) -> Result<Vec<GenreAssignment>, Error
         .collect()
 }
 
+/// The path relative to the working directory, else the file name. Assignments match
+/// relative paths, and a path outside the working directory has no relative form.
+fn relative_to_cwd(path: &str) -> String {
+    let path = std::path::Path::new(path);
+    let relative = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| {
+            path.strip_prefix(cwd)
+                .ok()
+                .map(std::path::Path::to_path_buf)
+        })
+        .or_else(|| path.is_relative().then(|| path.to_path_buf()))
+        .or_else(|| path.file_name().map(std::path::PathBuf::from))
+        .unwrap_or_default();
+    relative.to_string_lossy().into_owned()
+}
+
 fn explain(
     registry: &GenreRegistry,
     path: &str,
     assignments: &[GenreAssignment],
 ) -> Result<String, Error> {
     // STUB(slopvac-8l4.5.11): PlainDocument stands in for the real Markdown parser.
-    let src = std::fs::read_to_string(path).map_err(|e| Error::Parse(format!("{path}: {e}")))?;
+    let src = std::fs::read_to_string(path).map_err(|source| Error::Read {
+        path: path.to_string(),
+        source,
+    })?;
     let doc = PlainDocument::from_markdown(path, &src);
     let result = registry.resolve(
         &doc as &dyn DocumentView,
         &ResolveOptions {
             assignments,
-            relative_path: None,
+            relative_path: Some(&relative_to_cwd(path)),
+            ..Default::default()
         },
     )?;
     Ok(render(path, &result))

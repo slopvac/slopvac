@@ -1,15 +1,19 @@
 //! Genres as data: the `genre` artifact of `schemas/v3/genre.schema.json`, specified in
-//! `docs/contract/packs.md`, section 4. This module holds the definitions, a registry with
+//! `docs/contract/plugins.md`, section 4. This module holds the definitions, a registry with
 //! an `extends` chain, detection with reasons, and resolution of the genre for one document.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::path::Path;
 
 use globset::{GlobBuilder, GlobMatcher};
 use serde::Deserialize;
 use serde::de::{self, Visitor};
+use slopvac_config::{FilesError, FilesMatcher};
 
-use crate::schema::{Extensions, check_schema_version, is_name, is_ref, is_rule_key, present};
+use crate::schema::{
+    Extensions, GENRE_SCHEMA_VERSION, check_schema_version, is_name, is_ref, is_rule_key, present,
+};
 use crate::{BlockKind, DocumentView, Error, Pattern, normalize_path};
 
 /// The level a rule or category reports at (`RuleLevel` in `config.schema.json`).
@@ -185,7 +189,12 @@ pub enum Scalar {
 }
 
 impl Scalar {
-    fn to_text(&self) -> String {
+    /// The text a front matter value is compared as: `true`, `42`, `1.5`, or the string.
+    ///
+    /// Signals compile their expected value through this, and the engine renders the
+    /// scalars of a document's front matter through it, so both sides compare one text.
+    #[must_use]
+    pub fn to_text(&self) -> String {
         match self {
             Self::Bool(b) => b.to_string(),
             Self::Int(i) => i.to_string(),
@@ -202,7 +211,7 @@ pub struct Signal {
     pub kind: SignalKind,
     /// Score added when the signal matches. Defaults to 1.
     #[serde(default = "default_weight")]
-    pub weight: f32,
+    pub weight: f64,
     /// `path`: glob over the path.
     #[serde(default, deserialize_with = "present")]
     pub glob: Option<String>,
@@ -219,11 +228,11 @@ pub struct Signal {
     _extensions: Extensions,
 }
 
-fn default_weight() -> f32 {
+fn default_weight() -> f64 {
     1.0
 }
 
-fn default_min_score() -> f32 {
+fn default_min_score() -> f64 {
     1.0
 }
 
@@ -233,7 +242,7 @@ fn default_min_score() -> f32 {
 pub struct Detect {
     /// Score a genre needs to be a candidate. Defaults to 1.
     #[serde(default = "default_min_score")]
-    pub min_score: f32,
+    pub min_score: f64,
     /// Detection signals, at least one.
     pub signals: Vec<Signal>,
     #[serde(flatten)]
@@ -284,14 +293,18 @@ pub struct GenreSpec {
 impl GenreSpec {
     /// Parse one genre from YAML.
     pub fn from_yaml(text: &str) -> Result<Self, Error> {
-        serde_saphyr::from_str(text).map_err(|e| Error::Parse(e.to_string()))
+        serde_saphyr::from_str(text).map_err(Error::Yaml)
     }
 
     /// Check the rules that the schema states beyond field types.
     pub fn validate(&self) -> Result<(), Error> {
         let id = &self.id;
         let fail = |msg: String| Error::Parse(format!("genre `{id}`: {msg}"));
-        check_schema_version(&format!("genre `{id}`"), self.schema_version)?;
+        check_schema_version(
+            &format!("genre `{id}`"),
+            self.schema_version,
+            GENRE_SCHEMA_VERSION,
+        )?;
         if !is_name(id) {
             return Err(fail("id must be lowercase kebab-case".into()));
         }
@@ -333,8 +346,8 @@ impl GenreSpec {
         }
         for c in self.categories.values() {
             if let CategorySettings::Table(t) = c
-                && (matches!(t.max_per_100_words, Some(Budget::Limit(n)) if n < 0.0)
-                    || t.weight.is_some_and(|w| w < 0.0))
+                && (matches!(t.max_per_100_words, Some(Budget::Limit(n)) if !at_least_zero(n))
+                    || t.weight.is_some_and(|w| !at_least_zero(w)))
             {
                 return Err(fail("budgets and weights are at least 0".into()));
             }
@@ -349,14 +362,14 @@ impl GenreSpec {
 impl Detect {
     fn validate(&self, genre: &str) -> Result<(), Error> {
         let fail = |msg: &str| Error::Parse(format!("genre `{genre}`: {msg}"));
-        if self.min_score <= 0.0 || self.min_score.is_nan() {
+        if !above_zero(self.min_score) {
             return Err(fail("`min_score` must be greater than 0"));
         }
         if self.signals.is_empty() {
             return Err(fail("`detect.signals` needs at least one signal"));
         }
         for s in &self.signals {
-            if s.weight <= 0.0 || s.weight.is_nan() {
+            if !above_zero(s.weight) {
                 return Err(fail("signal weight must be greater than 0"));
             }
             let (own, others) = s.fields();
@@ -382,6 +395,16 @@ impl Detect {
         }
         Ok(())
     }
+}
+
+/// A finite number of at least 0. NaN and infinity fail, as does anything below 0.
+fn at_least_zero(n: f64) -> bool {
+    n.is_finite() && n >= 0.0
+}
+
+/// A finite number above 0 (`exclusiveMinimum: 0`).
+fn above_zero(n: f64) -> bool {
+    n.is_finite() && n > 0.0
 }
 
 impl Signal {
@@ -414,12 +437,12 @@ impl Signal {
 
 /// Parse a YAML list of genre definitions.
 pub fn parse_genres(yaml: &str) -> Result<Vec<GenreSpec>, Error> {
-    serde_saphyr::from_str(yaml).map_err(|e| Error::Parse(e.to_string()))
+    serde_saphyr::from_str(yaml).map_err(Error::Yaml)
 }
 
 struct CompiledSignal {
     matcher: Matcher,
-    weight: f32,
+    weight: f64,
 }
 
 enum Matcher {
@@ -431,7 +454,7 @@ enum Matcher {
 
 struct Genre {
     spec: GenreSpec,
-    min_score: f32,
+    min_score: f64,
     signals: Vec<CompiledSignal>,
 }
 
@@ -465,7 +488,7 @@ pub struct GenreResult {
     /// Signals behind the choice.
     pub reasons: Vec<Reason>,
     /// Detection score for every concrete genre, best first.
-    pub scores: Vec<(String, f32)>,
+    pub scores: Vec<(String, f64)>,
 }
 
 /// A `[[genres]]` block reduced to what assignment needs.
@@ -484,6 +507,20 @@ pub struct ResolveOptions<'a> {
     pub assignments: &'a [GenreAssignment],
     /// Path relative to the config directory, for glob matching. Defaults to the document path.
     pub relative_path: Option<&'a str>,
+    /// Where the genre a document declares for itself comes from.
+    pub declared: DeclaredGenre<'a>,
+}
+
+/// Where [`GenreRegistry::resolve`] takes the genre that a document declares for itself.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DeclaredGenre<'a> {
+    /// The top-level `genre` key of the document's front matter.
+    #[default]
+    FromFrontMatter,
+    /// A genre the host has already read, validated and checked against the project policy,
+    /// or none. The document's own front matter is not consulted.
+    Given(Option<&'a str>),
 }
 
 /// Validated set of genres.
@@ -650,10 +687,13 @@ impl GenreRegistry {
         doc: &dyn DocumentView,
         opts: &ResolveOptions<'_>,
     ) -> Result<GenreResult, Error> {
-        let rel = normalize_path(opts.relative_path.unwrap_or_else(|| doc.path()));
+        // Assignments match the path as given, like the config stack does; only the path
+        // signals below read a normalized copy.
+        let native = opts.relative_path.unwrap_or_else(|| doc.path());
+        let rel = normalize_path(native);
         let rel = rel.as_str();
         let candidates = self.score(doc, rel)?;
-        let mut scores: Vec<(String, f32)> = candidates
+        let mut scores: Vec<(String, f64)> = candidates
             .iter()
             .map(|(g, s, _)| (g.spec.id.clone(), *s))
             .collect();
@@ -671,12 +711,16 @@ impl GenreRegistry {
                 scores: scores.clone(),
             })
         };
-        if let Some(id) = doc.front_matter("genre") {
+        let declared = match opts.declared {
+            DeclaredGenre::FromFrontMatter => doc.front_matter("genre"),
+            DeclaredGenre::Given(id) => id,
+        };
+        if let Some(id) = declared {
             return explicit(id, "front-matter", format!("`genre: {id}`"));
         }
         let mut assigned = None;
         for (i, a) in opts.assignments.iter().enumerate() {
-            if files_match(&a.files, rel)? {
+            if files_match(&a.files, native)? {
                 assigned = Some((i, a));
             }
         }
@@ -687,9 +731,15 @@ impl GenreRegistry {
                 format!("`[[genres]]` block {i} matches `{rel}`"),
             );
         }
-        let mut best: Option<&(&Genre, f32, Vec<Reason>)> = None;
+        let mut best: Option<&(&Genre, f64, Vec<Reason>)> = None;
+        // plugins.md section 4: a tie goes to the genre listed last in the config, then to the
+        // lexically smaller qualified id. The registry holds the genres in the order the
+        // host registered them, which is the order the config lists its packs and genre
+        // files, so a later position is a genre listed later. Positions are unique, so a tie
+        // always resolves on the first rule; the id rule would only apply to two genres at
+        // one position, and `new` rejects a repeated id. `>=` lets the later candidate win.
         for c in candidates.iter().filter(|(g, s, _)| g.is_candidate(*s)) {
-            if best.is_none_or(|b| c.1 > b.1) {
+            if best.is_none_or(|b| c.1 >= b.1) {
                 best = Some(c);
             }
         }
@@ -719,7 +769,7 @@ impl GenreRegistry {
         &self,
         doc: &dyn DocumentView,
         parent: &str,
-    ) -> Result<Vec<(String, f32)>, Error> {
+    ) -> Result<Vec<(String, f64)>, Error> {
         let mut out = Vec::new();
         let rel = normalize_path(doc.path());
         for (g, score, _) in self.score(doc, &rel)? {
@@ -788,7 +838,7 @@ impl GenreRegistry {
 
 impl Genre {
     /// A genre with detection signals is a candidate when its score reaches `min_score`.
-    fn is_candidate(&self, score: f32) -> bool {
+    fn is_candidate(&self, score: f64) -> bool {
         !self.signals.is_empty() && score >= self.min_score
     }
 }
@@ -799,29 +849,22 @@ fn lossy(text: &str, range: std::ops::Range<usize>) -> std::borrow::Cow<'_, str>
 }
 
 /// The genre name in a `Ref`. A registry holds one set of genres, so the pack prefix of a
-/// qualified `<pack>:<name>` only names where the genre came from.
+/// qualified `<plugin>:<name>` only names where the genre came from.
 fn ref_name(r: &str) -> &str {
     r.rsplit_once(':').map_or(r, |(_, name)| name)
 }
 
-type Candidate<'a> = (&'a Genre, f32, Vec<Reason>);
+type Candidate<'a> = (&'a Genre, f64, Vec<Reason>);
 
-/// Whether a `files` list matches a path relative to the config directory. Patterns use
-/// gitignore semantics (`docs/config.md`, `exclude` and `files`): a leading `!` negates and
-/// the last matching pattern wins, so a later `!pattern` re-includes a file.
-///
-/// STUB(slopvac-8l4.5.11): replace with the config crate's matcher once it lands.
-pub fn files_match(patterns: &[String], rel: &str) -> Result<bool, Error> {
-    let mut b = ignore::gitignore::GitignoreBuilder::new("");
-    for p in patterns {
-        b.add_line(None, p.trim())
-            .map_err(|e| Error::Parse(format!("glob `{p}`: {e}")))?;
-    }
-    let set = b.build().map_err(|e| Error::Parse(e.to_string()))?;
-    let rel = normalize_path(rel);
-    Ok(set
-        .matched_path_or_any_parents(rel.as_str(), false)
-        .is_ignore())
+/// Whether a `files` list matches a path relative to the config directory. The config crate
+/// owns the matching, so a `[[genres]]` block selects the same files here and in the config
+/// stack.
+fn files_match(patterns: &[String], native: &str) -> Result<bool, Error> {
+    let matcher = FilesMatcher::new(patterns, Path::new("")).map_err(|e| match e {
+        FilesError::Pattern { pattern, source } => Error::Glob { pattern, source },
+        FilesError::Set(source) => Error::GlobSet(source),
+    })?;
+    Ok(matcher.is_match(Path::new(native)))
 }
 
 fn compile(spec: GenreSpec) -> Result<Genre, Error> {
@@ -840,8 +883,10 @@ fn compile(spec: GenreSpec) -> Result<Genre, Error> {
                         .case_insensitive(true)
                         .literal_separator(true)
                         .build()
-                        .map_err(|e| {
-                            Error::Parse(format!("genre `{}`: glob `{glob}`: {e}", spec.id))
+                        .map_err(|source| Error::SignalGlob {
+                            genre: spec.id.clone(),
+                            glob: glob.clone(),
+                            source,
                         })?;
                     Matcher::Path(g.compile_matcher())
                 }

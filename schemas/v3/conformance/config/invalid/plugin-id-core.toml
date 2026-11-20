@@ -1,0 +1,5 @@
+schema_version = 3
+
+[[plugins]]
+id = "core"
+source = "oci://ghcr.io/acme/core"

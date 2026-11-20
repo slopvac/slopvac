@@ -75,10 +75,18 @@ fn generated_common_schemas_match_the_corpus() {
         assert!(n > 0, "no corpus instance for {name}");
         total += n;
     }
+    // `PluginId` has no type in this crate: the plugin lock and index readers and the
+    // config validator enforce it, and their own tests cover it.
     let all: usize = ["valid", "invalid"]
         .iter()
-        .map(|s| instances(&common.join(s)).len())
-        .sum();
+        .flat_map(|s| instances(&common.join(s)))
+        .filter(|p| {
+            !p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("PluginId--")
+        })
+        .count();
     assert_eq!(
         total, all,
         "every common corpus instance must map to a generated schema"

@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::Path;
 
+use rstest::rstest;
+
 use slopvac_migrate::{
     Error, Finding, Linter, NullLinter, Options, Phase, RenameTable, apply, command, plan,
     render_diff, restore, run,
@@ -16,6 +18,11 @@ fn write(root: &Path, name: &str, text: &str) {
     fs::write(p, text).unwrap();
 }
 
+/// A per-user cache directory for the backup record, apart from the project.
+fn cache() -> tempfile::TempDir {
+    tempfile::tempdir().unwrap()
+}
+
 fn plan_of(root: &Path) -> Result<slopvac_migrate::Plan, Error> {
     plan(root, &RenameTable::bundled(), Options::default(), STEERING)
 }
@@ -25,7 +32,7 @@ fn dotfile_becomes_slopvac_toml() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), ".slopvac.toml", "profile = \"strict\"\n");
     let p = plan_of(dir.path()).unwrap();
-    apply(dir.path(), &p).unwrap();
+    apply(dir.path(), &p, cache().path()).unwrap();
     assert!(!dir.path().join(".slopvac.toml").exists());
     let new = fs::read_to_string(dir.path().join("slopvac.toml")).unwrap();
     assert_eq!(new, "profile = \"strict\"\nschema_version = 3\n");
@@ -40,7 +47,7 @@ fn pyproject_table_moves_and_other_content_stays() {
         "[project]\nname = \"x\" # keep\n\n[tool.ruff]\nline-length = 88\n\n[tool.slopvac]\nprofile = \"normal\"\n[tool.slopvac.thresholds]\nmax_errors = 1\n",
     );
     let p = plan_of(dir.path()).unwrap();
-    apply(dir.path(), &p).unwrap();
+    apply(dir.path(), &p, cache().path()).unwrap();
     let py = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
     assert!(py.contains("name = \"x\" # keep"), "{py}");
     assert!(py.contains("line-length = 88"), "{py}");
@@ -89,6 +96,63 @@ fn pyproject_overlap_error_reports_the_pyproject_line() {
     }
 }
 
+#[rstest]
+#[case::plain(false)]
+#[case::preserve_behavior(true)]
+fn pyproject_removed_category_notices_report_the_pyproject_lines(#[case] preserve_behavior: bool) {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "pyproject.toml",
+        "[project]\nname = \"x\"\n\n[tool.slopvac]\nprofile = \"normal\"\n\
+         [tool.slopvac.categories]\norwell-voice = \"off\"\n\n\
+         [[tool.slopvac.overrides]]\nfiles = [\"docs/**\"]\n\
+         [tool.slopvac.overrides.categories]\norwell-voice = \"error\"\n",
+    );
+    let options = Options { preserve_behavior };
+    let p = plan(dir.path(), &RenameTable::bundled(), options, STEERING).unwrap();
+    let notices: Vec<&String> = p
+        .notes
+        .iter()
+        .filter(|n| n.contains("migrate-category-removed"))
+        .collect();
+    assert_eq!(
+        notices,
+        [
+            "pyproject.toml: migrate-category-removed: pyproject.toml:7: `categories.orwell-voice`: category no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml",
+            "pyproject.toml: migrate-category-removed: pyproject.toml:12: `overrides[0].categories.orwell-voice`: category no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml",
+        ]
+    );
+}
+
+#[test]
+fn pyproject_removed_rule_is_dropped_and_its_notice_reports_the_pyproject_line() {
+    let id = "ste-words.inconsistent-term-for-same-thing";
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "pyproject.toml",
+        &format!(
+            "[project]\nname = \"x\"\n\n[tool.slopvac]\nprofile = \"normal\"\n[tool.slopvac.rules]\n\"{id}\" = \"error\"\n"
+        ),
+    );
+    let p = plan_of(dir.path()).unwrap();
+    apply(dir.path(), &p, cache().path()).unwrap();
+    let new = fs::read_to_string(dir.path().join("slopvac.toml")).unwrap();
+    assert!(!new.contains(id), "{new}");
+    let notices: Vec<&String> = p
+        .notes
+        .iter()
+        .filter(|n| n.contains("migrate-rule-removed"))
+        .collect();
+    assert_eq!(
+        notices,
+        [&format!(
+            "pyproject.toml: migrate-rule-removed: pyproject.toml:7: `rules.{id}`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml"
+        )]
+    );
+}
+
 #[test]
 fn two_config_sources_in_one_directory_conflict() {
     let dir = tempfile::tempdir().unwrap();
@@ -120,7 +184,7 @@ fn documents_get_directive_ids_and_steering_rewritten() {
         "<!-- slopvac-allow: rule=prose-format.no-unicode-dash reason=quotation -->\nText\n",
     );
     let p = plan_of(dir.path()).unwrap();
-    apply(dir.path(), &p).unwrap();
+    apply(dir.path(), &p, cache().path()).unwrap();
     let agents = fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
     assert!(!agents.contains("old text"));
     let a = fs::read_to_string(dir.path().join("docs/a.md")).unwrap();
@@ -143,13 +207,13 @@ fn directives_for_removed_rules_are_dropped_with_a_note() {
             &format!("<!-- slopvac-allow: rule={id} reason=x -->\nText\n"),
         );
         let p = plan_of(dir.path()).unwrap_or_else(|e| panic!("{id}: {e:?}"));
-        apply(dir.path(), &p).unwrap();
+        apply(dir.path(), &p, cache().path()).unwrap();
         let a = fs::read_to_string(dir.path().join("docs/a.md")).unwrap();
         assert_eq!(a, "Text\n", "{id}");
         assert_eq!(
             p.notes,
             vec![format!(
-                "docs/a.md:1: removed slopvac-allow rule={id}: the rule no longer exists in 3.0"
+                "migrate-rule-removed: docs/a.md:1: `slopvac-allow rule={id}`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml"
             )]
         );
     }
@@ -175,7 +239,7 @@ fn second_run_finds_nothing_to_do() {
         "a.md",
         "<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n",
     );
-    apply(dir.path(), &plan_of(dir.path()).unwrap()).unwrap();
+    apply(dir.path(), &plan_of(dir.path()).unwrap(), cache().path()).unwrap();
     assert!(plan_of(dir.path()).unwrap().is_empty());
 }
 
@@ -188,8 +252,10 @@ fn restore_undoes_apply() {
         "a.md",
         "<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n",
     );
-    apply(dir.path(), &plan_of(dir.path()).unwrap()).unwrap();
-    assert_eq!(restore(dir.path()).unwrap(), 3);
+    let cache = cache();
+    apply(dir.path(), &plan_of(dir.path()).unwrap(), cache.path()).unwrap();
+    let done = restore(dir.path(), cache.path(), false).unwrap();
+    assert_eq!((done.restored, done.kept.len()), (3, 0));
     assert_eq!(
         fs::read_to_string(dir.path().join(".slopvac.toml")).unwrap(),
         "profile = \"strict\"\n"
@@ -254,7 +320,8 @@ impl Linter for FakeLinter {
 fn run_cli(args: &[&str], linter: &dyn Linter) -> (i32, String, String) {
     let m = command().get_matches_from(std::iter::once("migrate").chain(args.iter().copied()));
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = run(&m, linter, STEERING, &mut out, &mut err);
+    let cache = cache();
+    let code = run(&m, linter, STEERING, cache.path(), &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),
@@ -309,35 +376,37 @@ fn cli_exits_2_and_names_each_dropped_setting() {
     assert!(err.contains("slopvac.toml:3: `vale.enabled`"), "{err}");
 }
 
-fn backup_with(dir: &Path, manifest: &str) {
-    let b = dir.join(slopvac_migrate::BACKUP_DIR);
-    fs::create_dir_all(&b).unwrap();
-    fs::write(b.join("manifest.txt"), manifest).unwrap();
-}
-
 #[test]
-fn restore_rejects_paths_that_leave_the_project() {
+fn apply_rejects_paths_that_leave_the_project() {
     let outer = tempfile::tempdir().unwrap();
     let root = outer.path().join("proj");
     fs::create_dir_all(&root).unwrap();
     fs::write(outer.path().join("victim.txt"), "keep").unwrap();
-    let abs = format!("C {}\n", outer.path().join("victim.txt").display());
-    for manifest in [
-        "C ../victim.txt\n",
-        abs.as_str(),
-        "M ../victim.txt\n",
-        "C a/../../victim.txt\n",
+    let abs = outer.path().join("victim.txt");
+    for path in [
+        Path::new("../victim.txt"),
+        abs.as_path(),
+        Path::new("a/../../victim.txt"),
     ] {
-        backup_with(&root, manifest);
+        let p = slopvac_migrate::Plan {
+            changes: vec![slopvac_migrate::Change {
+                path: path.to_owned(),
+                kind: slopvac_migrate::ChangeKind::Write,
+                old: Some("keep".into()),
+                new: Some("gone".into()),
+            }],
+            ..slopvac_migrate::Plan::default()
+        };
         assert!(
-            matches!(restore(&root), Err(Error::Unsafe(_))),
-            "{manifest}"
+            matches!(apply(&root, &p, cache().path()), Err(Error::Unsafe(_))),
+            "{}",
+            path.display()
         );
         assert_eq!(
             fs::read_to_string(outer.path().join("victim.txt")).unwrap(),
             "keep"
         );
-        fs::remove_dir_all(root.join(slopvac_migrate::BACKUP_DIR)).unwrap();
+        assert!(!root.join(slopvac_migrate::BACKUP_DIR).exists());
     }
 }
 
@@ -347,22 +416,25 @@ fn restore_rejects_a_symlinked_directory() {
     let outer = tempfile::tempdir().unwrap();
     let root = outer.path().join("proj");
     let elsewhere = outer.path().join("elsewhere");
-    fs::create_dir_all(&root).unwrap();
-    fs::create_dir_all(&elsewhere).unwrap();
-    fs::write(elsewhere.join("victim.txt"), "keep").unwrap();
-    std::os::unix::fs::symlink(&elsewhere, root.join("link")).unwrap();
-    backup_with(&root, "C link/victim.txt\n");
-    assert!(matches!(restore(&root), Err(Error::Unsafe(_))));
-    assert!(elsewhere.join("victim.txt").exists());
-}
-
-#[test]
-fn restore_checks_every_entry_before_touching_any_file() {
-    let dir = tempfile::tempdir().unwrap();
-    write(dir.path(), "made.toml", "new");
-    backup_with(dir.path(), "C made.toml\nC ../escape\n");
-    assert!(restore(dir.path()).is_err());
-    assert!(dir.path().join("made.toml").exists());
+    write(
+        &root,
+        "docs/a.md",
+        "<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n",
+    );
+    let cache = cache();
+    apply(&root, &plan_of(&root).unwrap(), cache.path()).unwrap();
+    // The migrated directory moves out of the project and a link to it takes its place.
+    fs::rename(root.join("docs"), &elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, root.join("docs")).unwrap();
+    let migrated = fs::read_to_string(elsewhere.join("a.md")).unwrap();
+    assert!(matches!(
+        restore(&root, cache.path(), true),
+        Err(Error::Unsafe(_))
+    ));
+    assert_eq!(
+        fs::read_to_string(elsewhere.join("a.md")).unwrap(),
+        migrated
+    );
 }
 
 #[test]
@@ -370,9 +442,12 @@ fn apply_refuses_while_a_backup_exists() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "slopvac.toml", "profile = \"strict\"\n");
     let p = plan_of(dir.path()).unwrap();
-    apply(dir.path(), &p).unwrap();
+    apply(dir.path(), &p, cache().path()).unwrap();
     write(dir.path(), "slopvac.toml", "profile = \"normal\"\n");
-    assert!(matches!(apply(dir.path(), &p), Err(Error::Unsafe(_))));
+    assert!(matches!(
+        apply(dir.path(), &p, cache().path()),
+        Err(Error::Unsafe(_))
+    ));
 }
 
 #[test]
@@ -383,7 +458,7 @@ fn inline_tool_slopvac_table_migrates() {
         "pyproject.toml",
         "[project]\nname = \"x\"\n\n[tool]\nruff = { line-length = 88 }\nslopvac = { profile = \"strict\", exclude = [\"a\"] }\n",
     );
-    apply(dir.path(), &plan_of(dir.path()).unwrap()).unwrap();
+    apply(dir.path(), &plan_of(dir.path()).unwrap(), cache().path()).unwrap();
     let py = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
     assert!(py.contains("ruff = { line-length = 88 }"), "{py}");
     assert!(!py.contains("slopvac"), "{py}");
@@ -400,7 +475,7 @@ fn dotted_tool_slopvac_keys_migrate() {
         "pyproject.toml",
         "[tool]\nslopvac.profile = \"strict\"\n",
     );
-    apply(dir.path(), &plan_of(dir.path()).unwrap()).unwrap();
+    apply(dir.path(), &plan_of(dir.path()).unwrap(), cache().path()).unwrap();
     let new = fs::read_to_string(dir.path().join("slopvac.toml")).unwrap();
     assert!(new.contains("profile = \"strict\""), "{new}");
     let py = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();

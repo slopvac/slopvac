@@ -41,4 +41,8 @@ Use before you draft or edit prose that readers act on.
 - `--mode code-comments` lints comments in source files.
 - `--fix` applies safe substitutions only.
 {% endif %}
+{% if review == "auto" %}
 Before hand-off, run `slopvac prime review`.
+{% elif review == "ask" %}
+Before hand-off, ask the user whether to run `slopvac prime review`.
+{% endif %}

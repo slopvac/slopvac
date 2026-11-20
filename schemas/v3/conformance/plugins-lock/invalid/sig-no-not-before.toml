@@ -1,0 +1,12 @@
+schema_version = 3
+
+[[plugins]]
+id = "p"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "oci://ghcr.io/a/b:1"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[plugins.signature]
+key_id = "A1B2C3D4E5F60718"

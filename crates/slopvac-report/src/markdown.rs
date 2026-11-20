@@ -4,7 +4,8 @@ use std::fmt::Write as _;
 
 use slopvac_model::{Document, Report};
 
-use crate::text::severity_word;
+use crate::messages::{Label, Line};
+use crate::text::{score_text, severity_word, verdict_word};
 
 fn cell(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -23,22 +24,31 @@ fn cell(text: &str) -> String {
 
 pub(crate) fn render(report: &Report) -> String {
     let s = &report.summary;
-    let mut out = String::from("# slopvac report\n\n");
+    let mut out = format!("{}\n\n", Label::MarkdownTitle.as_static());
     let _ = writeln!(
         out,
-        "**{}**: {} documents, {} findings ({} errors, {} warnings, {} suggestions), score {:.1}.\n",
-        if s.passed { "PASS" } else { "FAIL" },
-        s.documents,
-        s.findings,
-        s.errors,
-        s.warnings,
-        s.suggestions,
-        f64::from(s.score)
+        "{}\n",
+        Line::MarkdownSummary {
+            verdict: verdict_word(s.passed).to_owned(),
+            documents: s.documents,
+            findings: s.findings,
+            errors: s.errors,
+            warnings: s.warnings,
+            suggestions: s.suggestions,
+            score: score_text(s.score),
+        }
     );
     if !report.notices.is_empty() {
-        out.push_str("## Notices\n\n");
+        let _ = write!(out, "{}\n\n", Label::MarkdownNoticesHeading.as_static());
         for n in &report.notices {
-            let _ = writeln!(out, "- `{}`: {}", n.code, cell(n.message.as_str()));
+            let _ = writeln!(
+                out,
+                "{}",
+                Line::MarkdownNotice {
+                    code: n.code.to_string(),
+                    message: cell(n.message.as_str()),
+                }
+            );
         }
         out.push('\n');
     }
@@ -49,24 +59,40 @@ pub(crate) fn render(report: &Report) -> String {
 }
 
 fn document(out: &mut String, doc: &Document) {
-    let verdict = if doc.gate.is_passed() { "PASS" } else { "FAIL" };
-    let _ = writeln!(out, "## {} {verdict}\n", cell(doc.path.as_str()));
     let _ = writeln!(
         out,
-        "Score {:.1}, {} words, {} findings.\n",
-        f64::from(doc.score),
-        doc.words,
-        doc.total_findings
+        "{}\n",
+        Line::MarkdownDocumentHeading {
+            path: cell(doc.path.as_str()),
+            verdict: verdict_word(doc.gate.is_passed()).to_owned(),
+        }
+    );
+    let _ = writeln!(
+        out,
+        "{}\n",
+        Line::MarkdownDocumentStats {
+            score: score_text(doc.score),
+            words: doc.words,
+            findings: doc.total_findings,
+        }
     );
     for reason in doc.gate.reasons() {
-        let _ = writeln!(out, "- {}", cell(reason));
+        let _ = writeln!(
+            out,
+            "{}",
+            Line::MarkdownReason {
+                reason: cell(reason)
+            }
+        );
     }
     for n in &doc.unchecked {
         let _ = writeln!(
             out,
-            "- UNCHECKED `{}`: {}",
-            n.code,
-            cell(n.message.as_str())
+            "{}",
+            Line::MarkdownUnchecked {
+                code: n.code.to_string(),
+                message: cell(n.message.as_str()),
+            }
         );
     }
     if !doc.gate.reasons().is_empty() || !doc.unchecked.is_empty() {
@@ -75,16 +101,18 @@ fn document(out: &mut String, doc: &Document) {
     if doc.findings.is_empty() {
         return;
     }
-    out.push_str("| Location | Severity | Rule | Message |\n| --- | --- | --- | --- |\n");
+    let _ = writeln!(out, "{}", Label::MarkdownTableHeader.as_static());
     for f in &doc.findings {
         let _ = writeln!(
             out,
-            "| {}:{} | {} | {} | {} |",
-            f.start.line(),
-            f.start.column(),
-            severity_word(f.severity),
-            cell(f.rule_id.as_str()),
-            cell(f.message.as_str())
+            "{}",
+            Line::MarkdownRow {
+                line: f.start.line(),
+                column: f.start.column(),
+                severity: severity_word(f.severity).to_owned(),
+                rule: cell(f.rule_id.as_str()),
+                message: cell(f.message.as_str()),
+            }
         );
     }
     out.push('\n');

@@ -1,126 +1,106 @@
-name: Slop that slopvac missed
-description: Report slop that no finding reports.
+# Generated from crates/slopvac/src/report/fields.rs. Do not edit by hand.
+# Regenerate with: SLOPVAC_UPDATE_FORMS=1 cargo test -p slopvac --test report_forms
+name: "Slop that slopvac missed"
+description: "Report slop that no finding reports."
 title: "[missed slop]: "
-labels: [false-negative, needs-triage]
+labels: ["false-negative", "needs-triage"]
 body:
   - type: markdown
     attributes:
-      value: >-
-        An AI agent filing a report MUST disclose itself: tick Reported by an AI
-        agent and fill in Agent, Model, and Harness and version.
-        Reports must not contain paths or file names. Do not include user names,
-        host names, repository names, organization names, or other private data.
-        For security vulnerabilities, use the private vulnerability report on
-        the Security tab.
+      value: "An AI agent filing a report MUST disclose itself: tick Reported by an AI agent and fill in Agent, Model, and Harness and version. Reports must not contain paths or file names. Do not include user names, host names, repository names, organization names, or other private data. For security vulnerabilities, use the private vulnerability report on the Security tab."
   - type: checkboxes
     id: reporter
     attributes:
-      label: Reporter
+      label: "Reporter"
       options:
-        - label: Reported by an AI agent
+        - label: "Reported by an AI agent"
           required: false
   - type: input
     id: agent
     attributes:
-      label: Agent
-      description: >-
-        Agent product name, for example Claude Code, Codex, omp, Kiro, or Cursor. Write N/A when unknown.
+      label: "Agent"
+      description: "Agent product name, for example Claude Code, Codex, omp, Kiro, or Cursor. Write N/A when unknown."
     validations:
       required: true
   - type: input
     id: model
     attributes:
-      label: Model
-      description: >-
-        Record the active model name exactly as the harness reports it in its
-        system prompt, context, or /model selection.
-        Do not use self-description or config defaults. Write N/A when unavailable.
+      label: "Model"
+      description: "Record the active model name exactly as the harness reports it in its system prompt, context, or /model selection. Do not use self-description or config defaults. Write N/A when unavailable."
     validations:
       required: true
   - type: input
     id: harness
     attributes:
-      label: Harness and version
-      description: >-
-        Use the harness's version command, for example claude --version, codex --version, or omp --version.
-        Write N/A when unavailable.
+      label: "Harness and version"
+      description: "Use the harness's version command, for example claude --version, codex --version, or omp --version. Write N/A when unavailable."
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: slopvac version
+      label: "slopvac version"
       description: "Output of `slopvac --version`."
     validations:
       required: true
   - type: dropdown
     id: latest
     attributes:
-      label: Reproduces on the latest release
-      description: >-
-        Rerun the command with `uvx --from slopvac@latest
-        slopvac ...`. If the latest release fixes it, upgrade instead of filing.
+      label: "Reproduces on the latest release"
+      description: "Rerun the command with `uvx --from slopvac@latest slopvac ...`. If the latest release fixes it, upgrade instead of filing."
       options:
         - "Yes"
-        - Not checked
+        - "Not checked"
     validations:
       required: true
   - type: checkboxes
     id: duplicates
     attributes:
-      label: Duplicate search
+      label: "Duplicate search"
       options:
-        - label: I searched existing issues for duplicates
+        - label: "I searched existing issues for duplicates"
           required: true
   - type: textarea
     id: environment
     attributes:
-      label: Environment
-      description: >-
-        Output of `slopvac doctor --format json`, which contains no paths.
-      render: json
+      label: "Environment"
+      description: "Output of `slopvac doctor --format json`, which contains no paths."
+      render: "json"
     validations:
       required: true
   - type: textarea
     id: command
     attributes:
-      label: Command
-      description: >-
-        The exact command or commands you ran. Pipe the sample into
-        `slopvac lint --stdin`. Do not include paths or file names.
-      render: shell
+      label: "Command"
+      description: "The exact command or commands you ran. Pipe the sample into `slopvac lint --stdin`. Do not include paths or file names."
+      render: "shell"
     validations:
       required: true
   - type: input
     id: context
     attributes:
-      label: Genre and profile
-      description: >-
-        Genre: the genre name from the matching row of the Genres and profiles table
-        in `slopvac prime`. Profile: the value of the top `profile:` line that
-        `slopvac lint --stdin --explain-config` prints with the same `--profile`,
-        `--config`, and `--mode` flags as your command.
+      label: "Genre and profile"
+      description: "Genre: the genre name from the matching row of the Genres and profiles table in `slopvac prime`. Profile: the value of the top `profile:` line that `slopvac lint --stdin --explain-config` prints with the same `--profile`, `--config`, and `--mode` flags as your command."
     validations:
       required: true
   - type: textarea
     id: input
     attributes:
-      label: Missed text
-      description: >-
-        Paste the sample text itself. A local file path is not enough.
-      render: markdown
+      label: "Missed text"
+      description: "Paste the sample text itself. A local file path is not enough."
+      render: "markdown"
     validations:
       required: true
   - type: input
     id: expected-rule
     attributes:
-      label: Rule that should fire
-      description: Leave empty when you do not know. When no rule covers the pattern, use the new rule form.
+      label: "Rule that should fire"
+      description: "Leave empty when you do not know. When no rule covers the pattern, use the new rule form."
     validations:
       required: false
   - type: textarea
     id: why
     attributes:
-      label: Why this is slop
+      label: "Why this is slop"
     validations:
       required: true

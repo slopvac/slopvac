@@ -155,6 +155,7 @@ fn a_file_over_the_size_cap_is_refused_unread_and_unchanged() {
     drop(file);
     let out = run(root.path(), "big.md", false);
     assert_eq!(refused(&out), Refusal::TooLarge);
+    assert_eq!(Refusal::TooLarge.code(), "document-too-large");
     assert_eq!(
         std::fs::metadata(&path).unwrap().len(),
         slopvac_engine::MAX_FILE_BYTES + 1
@@ -181,6 +182,7 @@ fn a_path_outside_the_root_is_refused() {
         )
         .unwrap();
         assert_eq!(refused(&out), Refusal::OutsideRoot, "{path}");
+        assert_eq!(refused(&out).code(), "fix-outside-root", "{path}");
     }
     assert_eq!(read(outside.path().join("doc.md")), DOC);
 }
@@ -214,6 +216,7 @@ fn a_file_edited_before_the_commit_is_left_as_the_editor_saved_it() {
     })
     .unwrap();
     assert_eq!(refused(&out), Refusal::Changed);
+    assert_eq!(refused(&out).code(), "fix-changed");
     assert_eq!(read(&path), "Use gamma here.\n");
     assert_eq!(names(root.path()), ["doc.md"], "no temporary file is left");
 }
@@ -254,6 +257,10 @@ fn a_write_is_refused_but_a_dry_run_and_a_diff_work() {
         refused(&run(root.path(), "doc.md", false)),
         Refusal::UnsupportedPlatform
     );
+    assert_eq!(
+        refused(&run(root.path(), "doc.md", false)).code(),
+        "fix-unsupported-platform"
+    );
     assert_eq!(read(root.path().join("doc.md")), DOC);
     assert_eq!(names(root.path()), ["doc.md"]);
 }
@@ -279,6 +286,46 @@ mod unix {
         symlink(outside.path().join("doc.md"), root.path().join("link.md")).unwrap();
         let out = run(root.path(), "link.md", false);
         assert_eq!(refused(&out), Refusal::Symlink);
+        assert_eq!(refused(&out).code(), "fix-symlink");
+        assert_eq!(read(outside.path().join("doc.md")), DOC);
+    }
+
+    #[test]
+    fn a_refused_file_in_a_batch_stays_unchanged_while_the_others_are_fixed() {
+        let root = project();
+        std::fs::write(root.path().join("b.md"), DOC).unwrap();
+        let outside = project();
+        symlink(outside.path().join("doc.md"), root.path().join("link.md")).unwrap();
+
+        let outcomes: Vec<(&str, FileFix)> = ["doc.md", "link.md", "b.md"]
+            .into_iter()
+            .map(|name| (name, run(root.path(), name, false)))
+            .collect();
+
+        let reported: Vec<(&str, Option<&str>)> = outcomes
+            .iter()
+            .map(|(name, out)| match out {
+                FileFix::Refused(why) => (*name, Some(why.code())),
+                FileFix::Done(_) => (*name, None),
+            })
+            .collect();
+        assert_eq!(
+            reported,
+            [
+                ("doc.md", None),
+                ("link.md", Some("fix-symlink")),
+                ("b.md", None)
+            ]
+        );
+        assert_eq!(read(root.path().join("doc.md")), FIXED);
+        assert_eq!(read(root.path().join("b.md")), FIXED);
+        let link = root.path().join("link.md");
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(
+            std::fs::read_link(&link).unwrap(),
+            outside.path().join("doc.md")
+        );
+        assert_eq!(read(&link), DOC);
         assert_eq!(read(outside.path().join("doc.md")), DOC);
     }
 
@@ -289,6 +336,7 @@ mod unix {
         symlink(outside.path(), root.path().join("linked")).unwrap();
         let out = run(root.path(), "linked/doc.md", false);
         assert_eq!(refused(&out), Refusal::Symlink);
+        assert_eq!(refused(&out).code(), "fix-symlink");
         assert_eq!(read(outside.path().join("doc.md")), DOC);
         assert_eq!(names(outside.path()), ["doc.md"]);
     }
@@ -303,8 +351,16 @@ mod unix {
             Refusal::NotRegular
         );
         assert_eq!(
+            refused(&run(root.path(), "pipe.md", false)).code(),
+            "fix-not-regular"
+        );
+        assert_eq!(
             refused(&run(root.path(), "viapipe.md", false)),
             Refusal::Symlink
+        );
+        assert_eq!(
+            refused(&run(root.path(), "viapipe.md", false)).code(),
+            "fix-symlink"
         );
     }
 
@@ -314,6 +370,7 @@ mod unix {
         std::fs::hard_link(root.path().join("doc.md"), root.path().join("b.md")).unwrap();
         let out = run(root.path(), "doc.md", false);
         assert_eq!(refused(&out), Refusal::Hardlinked);
+        assert_eq!(refused(&out).code(), "fix-hardlinked");
         assert_eq!(read(root.path().join("b.md")), DOC);
     }
 
@@ -325,6 +382,10 @@ mod unix {
         assert_eq!(
             refused(&run(root.path(), "doc.md", false)),
             Refusal::UnsafeDirectory
+        );
+        assert_eq!(
+            refused(&run(root.path(), "doc.md", false)).code(),
+            "fix-unsafe-directory"
         );
         assert_eq!(read(root.path().join("doc.md")), DOC);
         assert_eq!(names(root.path()), ["doc.md"]);
@@ -360,6 +421,7 @@ mod unix {
         let root = project();
         let out = at(root.path(), Step::Group, || Err(Error::other("injected"))).unwrap();
         assert_eq!(refused(&out), Refusal::GroupMismatch);
+        assert_eq!(refused(&out).code(), "fix-group-mismatch");
         assert_eq!(read(root.path().join("doc.md")), DOC);
         assert_eq!(
             names(root.path()),
@@ -403,6 +465,10 @@ mod unix {
                 refused(&run(root.path(), "doc.md", false)),
                 Refusal::AclPresent
             );
+            assert_eq!(
+                refused(&run(root.path(), "doc.md", false)).code(),
+                "fix-acl-present"
+            );
             assert_eq!(read(root.path().join("doc.md")), DOC);
             assert_eq!(names(root.path()), ["doc.md"]);
         }
@@ -445,6 +511,7 @@ mod unix {
         })
         .unwrap();
         assert_eq!(refused(&out), Refusal::Changed);
+        assert_eq!(refused(&out).code(), "fix-changed");
         assert_eq!(read(&secret), DOC);
         assert_eq!(names(root.path()), ["doc.md"]);
     }
@@ -460,6 +527,7 @@ mod unix {
         })
         .unwrap();
         assert_eq!(refused(&out), Refusal::Changed);
+        assert_eq!(refused(&out).code(), "fix-changed");
         assert_eq!(read(&path), DOC);
         assert_eq!(names(root.path()), ["doc.md"]);
     }
@@ -473,6 +541,7 @@ mod unix {
         })
         .unwrap();
         assert_eq!(refused(&out), Refusal::Changed);
+        assert_eq!(refused(&out).code(), "fix-changed");
         assert_eq!(read(root.path().join("alias.md")), DOC);
         assert_eq!(names(root.path()), ["alias.md", "doc.md"]);
     }
@@ -498,7 +567,24 @@ mod unix {
         })
         .unwrap();
         assert_eq!(refused(&out), Refusal::Changed);
+        assert_eq!(refused(&out).code(), "fix-changed");
         assert_eq!(read(dir.join("doc.md")), DOC);
         assert_eq!(read(&secret), DOC);
     }
+}
+
+#[rstest::rstest]
+#[case::outside_root(Refusal::OutsideRoot, "fix-outside-root")]
+#[case::symlink(Refusal::Symlink, "fix-symlink")]
+#[case::not_regular(Refusal::NotRegular, "fix-not-regular")]
+#[case::hardlinked(Refusal::Hardlinked, "fix-hardlinked")]
+#[case::not_owner(Refusal::NotOwner, "fix-not-owner")]
+#[case::too_large(Refusal::TooLarge, "document-too-large")]
+#[case::unsafe_directory(Refusal::UnsafeDirectory, "fix-unsafe-directory")]
+#[case::group_mismatch(Refusal::GroupMismatch, "fix-group-mismatch")]
+#[case::acl_present(Refusal::AclPresent, "fix-acl-present")]
+#[case::unsupported_platform(Refusal::UnsupportedPlatform, "fix-unsupported-platform")]
+#[case::changed(Refusal::Changed, "fix-changed")]
+fn each_refusal_has_its_stable_code(#[case] refusal: Refusal, #[case] code: &str) {
+    assert_eq!(refusal.code(), code);
 }

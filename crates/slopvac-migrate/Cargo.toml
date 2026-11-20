@@ -9,17 +9,26 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+cap-fs-ext.workspace = true
+cap-std.workspace = true
 clap.workspace = true
+frontmatter-spans.workspace = true
+rustix = { workspace = true, features = ["fs"] }
+sha2.workspace = true
 similar.workspace = true
 slopvac-config.workspace = true
 slopvac-engine.workspace = true
+slopvac-fs.workspace = true
 slopvac-model.workspace = true
 slopvac-rules.workspace = true
+slopvac-sanitize.workspace = true
+slopvac-terms.workspace = true
 thiserror.workspace = true
 toml_edit.workspace = true
 
 [dev-dependencies]
 jsonschema.workspace = true
+rstest.workspace = true
 serde_json.workspace = true
 slopvac-agents.workspace = true
 slopvac-engine.workspace = true

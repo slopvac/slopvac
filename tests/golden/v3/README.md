@@ -35,13 +35,19 @@ Each run of a binary has a process exit status and a summary that the document g
 
 ## Pin
 
-`pin.toml` records the reference: the package version, the last commit that changed its sources, a hash of its source and rule data, and the Vale version. `record` refuses to run when the checkout does not match the pin. The pin test fails when the reference changes. A fix to rule data lands in the Python package first, then `golden.py pin` moves the pin, and then the golden is recorded again. The commit is compared only in a full clone, because the source hash proves the same thing.
+`pin.toml` records the reference: the package version, a hash of its source and rule data, and the Vale version. `record` refuses to run when the checkout does not match the pin. The pin test fails when the reference changes. A fix to rule data lands in the Python package first, then `golden.py pin` moves the pin, and then the golden is recorded again. The pin holds no commit, because a branch commit disappears at squash-merge. Every field is a version or a content hash, so the check reads no git state and gives the same result in a shallow clone. The source hash covers the `.py`, `.yml`, `.yaml`, `.toml` and `.json` files under `packages/slopvac-lint/src/slopvac`, outside `__pycache__`, in order of relative path, with POSIX path separators. The inputs, including the corpus subset, are pinned by hash in `inputs.toml` and checked by the inputs test.
 
 ## Approved changes
 
 A golden file changes only with an approved reason. Record the reason in the pull request that changes the file, name the rules and inputs it touches, and get a maintainer's approval before merge. A mechanical re-record, such as a pin update after a rule fix, lists the changed findings in the pull request.
 
 Policy deltas are different: each entry in `policy/deltas.toml` needs `reason` and `approved_by`, and a test rejects an entry without them. A delta names its finding by rule id, line and column. A delta that changes a gate also changes the expected exit status, and one that moves a run summary records it in a `run` table.
+
+### Delta modes
+
+A delta applies to the `policy` mode unless it lists other modes in `modes`. The list holds any of `parity`, `preserve` and `policy`. Use a wider list for a change that a 3.0 binary makes under every configuration, such as a rule that a context tag gates. The 2.x reference has no context taggers, so it still reports those findings, and the parity golden keeps them.
+
+The runner applies deltas only when it checks a 3.0 binary. A 2.x reference run (`--flavor 2x`) gets none, in every mode, so the Python reference is checked against the parity golden alone.
 
 ## Run
 

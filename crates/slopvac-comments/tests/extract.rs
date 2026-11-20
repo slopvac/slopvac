@@ -336,15 +336,6 @@ fn only_grammars_without_an_external_scanner_use_tree_sitter() {
 }
 
 #[test]
-fn python_docstrings_are_strings_and_not_comments() {
-    let got = pairs(
-        Language::Python,
-        "def f():\n    \"\"\"A docstring.\"\"\"\n    x = \"# not a comment\"\n",
-    );
-    assert!(got.is_empty(), "{got:?}");
-}
-
-#[test]
 fn a_comment_marker_inside_a_string_is_not_a_comment() {
     let mut wrong = Vec::new();
     for (language, source) in [

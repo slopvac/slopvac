@@ -25,39 +25,56 @@ use std::path::{Path, PathBuf};
 
 mod common;
 
-use common::{legacy_engine, read_json, root};
+use common::{core_set, legacy_engine, legacy_settings, read_json, root};
 
 use serde_json::{Value, json};
+use slopvac_comments::Language;
+use slopvac_engine::locale::spelling_rules;
 use slopvac_engine::rst::{RstAdapter, RstOptions};
-use slopvac_engine::{Engine, Input};
-use slopvac_model::Document;
+use slopvac_engine::{Engine, Input, Level};
+use slopvac_model::{Document, PackId};
+use slopvac_rules::{CompileOptions, MatchKind};
 
 const PROFILES: [&str; 3] = ["strict", "normal", "relaxed"];
 
 /// Inputs that no engine entry point reads yet: input id, the owning bead and why.
-const SKIPPED: [(&str, &str, &str); 3] = [
-    (
-        "format-html",
-        "slopvac-8l4.3.42",
-        "the engine has no standalone HTML file kind (`Kind` stops at Markdown, MDX, RST and diagrams)",
-    ),
-    (
-        "format-python-comments",
-        "slopvac-8l4.3.26",
-        "code-comment mode: comments are not extracted from source files yet",
-    ),
-    (
-        "format-javascript-comments",
-        "slopvac-8l4.3.26",
-        "code-comment mode: comments are not extracted from source files yet",
-    ),
-];
+const SKIPPED: [(&str, &str, &str); 1] = [(
+    "format-html",
+    "slopvac-8l4.3.42",
+    "the engine has no standalone HTML file kind (`Kind` stops at Markdown, MDX, RST and diagrams)",
+)];
 
 /// The repository is the project: an interpreter inside it is never used.
 fn rst_options() -> RstOptions {
     let mut options = RstOptions::default();
     options.project_roots = vec![root()];
     options
+}
+
+/// The engine for one golden profile, set up as the 2.x reference ran: the golden runs use an
+/// empty config, so the project locale is the default (`en-US`, no `locale.allow`) and 2.x
+/// generated the spelling rule from it (`inject_locale_rule`). `core` ships no blocklist and
+/// the empty config sets none, so 2.x runs no vocabulary rule.
+fn golden_engine(profile: &str) -> Engine {
+    let base = core_set();
+    let locale = spelling_rules(
+        &PackId::new("core").unwrap(),
+        &base,
+        slopvac_engine::locale::Locale::default_locale().tag(),
+        &[],
+        &CompileOptions::default(),
+    )
+    .unwrap()
+    .expect("the default locale checks spelling");
+    // The generated set comes after the core data: it replaces any `spelling` rule there.
+    // 2.x compiles no vocabulary rule without a blocklist and says nothing about it. The
+    // engine has no such silent state: a vocabulary rule that is on reports a notice. Turning
+    // the rules off is the same configuration, so the golden's empty `unchecked` list holds.
+    let mut settings = legacy_settings(profile);
+    for rule in base.rules().filter(|r| r.kind() == MatchKind::Vocabulary) {
+        settings.rule_levels.insert(rule.id().clone(), Level::Off);
+    }
+    Engine::new(vec![base, locale], settings).unwrap()
 }
 
 struct Entry {
@@ -117,7 +134,11 @@ fn lint(engine: &Engine, entry: &Entry) -> Option<Value> {
             }
             Input::rst(name, &text)
         }
-        other => panic!("{}: no entry point for {other}", entry.id),
+        // A source file whose comments are the prose (`--mode code-comments`).
+        other => match Language::from_name(other) {
+            Some(language) => Input::comments(name, &text, language),
+            None => panic!("{}: no entry point for {other}", entry.id),
+        },
     };
     Some(project(
         &engine
@@ -426,27 +447,129 @@ fn classes_of(diff: &serde_json::Map<String, Value>) -> Vec<&'static str> {
     classes
 }
 
+/// The golden modes a delta can list (`tests/golden/v3/README.md`).
+const MODES: [&str; 3] = ["parity", "preserve", "policy"];
+
+/// The deltas of `source` that apply in `mode`. A delta without `modes` applies to
+/// `policy`. Every entry is validated first, so a misspelled mode is an error even when
+/// no listed mode would select the entry.
+fn deltas_for(source: &str, mode: &str) -> Result<Vec<toml::Table>, String> {
+    let doc: toml::Table = source.parse().map_err(|e| format!("{e}"))?;
+    let all: Vec<toml::Table> = doc
+        .get("delta")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|d| d.as_table().unwrap().clone())
+        .collect();
+    for d in &all {
+        let Some(list) = d.get("modes") else { continue };
+        for m in list.as_array().ok_or("`modes` is not a list")? {
+            let m = m.as_str().ok_or("a mode is not a string")?;
+            if !MODES.contains(&m) {
+                return Err(format!("unknown mode `{m}`"));
+            }
+        }
+    }
+    Ok(all
+        .into_iter()
+        .filter(|d| match d.get("modes") {
+            None => mode == "policy",
+            Some(list) => list
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m.as_str() == Some(mode)),
+        })
+        .collect())
+}
+
+/// The expectation of the engine run: the parity golden with the reviewed deltas that list
+/// `parity` applied, as `scripts/contract/golden.py` does for a 3.0 candidate.
+fn apply_deltas(want: &mut Value, deltas: &[toml::Table], profile: &str, input: &str) {
+    for d in deltas {
+        if d["input"].as_str() != Some(input) || d["profile"].as_str() != Some(profile) {
+            continue;
+        }
+        let delta = serde_json::to_value(d).unwrap();
+        let doc = &mut want["document"];
+        let findings = doc["findings"].as_array_mut().unwrap();
+        if delta["kind"] == "added" {
+            findings.push(delta["finding"].clone());
+        } else {
+            let hit: Vec<usize> = findings
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| {
+                    f["rule_id"] == delta["rule_id"]
+                        && f["line"] == delta["line"]
+                        && f["column"] == delta["column"]
+                })
+                .map(|(i, _)| i)
+                .collect();
+            assert_eq!(hit.len(), 1, "delta does not match one finding: {delta}");
+            if delta["kind"] == "removed" {
+                findings.remove(hit[0]);
+            } else {
+                for (k, v) in delta["set"].as_object().unwrap() {
+                    findings[hit[0]][k] = v.clone();
+                }
+            }
+        }
+        for (k, v) in delta
+            .get("document")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            doc[k] = v.clone();
+        }
+        want["exit_code"] = json!(exit_of(&want["document"]));
+    }
+}
+
+fn recorded_deltas(mode: &str) -> Vec<toml::Table> {
+    let text = std::fs::read_to_string(root().join("tests/golden/v3/policy/deltas.toml")).unwrap();
+    deltas_for(&text, mode).unwrap_or_else(|e| panic!("deltas.toml: {e}"))
+}
+
 fn divergence_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden-divergences.json")
+}
+
+/// The difference between one engine document and the parity golden of `profile/id` with the
+/// reviewed `deltas` applied. This is the comparison every run goes through.
+fn compare_run(
+    profile: &str,
+    id: &str,
+    deltas: &[toml::Table],
+    mut got: Value,
+) -> serde_json::Map<String, Value> {
+    let path = format!("tests/golden/v3/parity/{profile}/{id}.json");
+    let mut want = read_json(&root().join(path));
+    apply_deltas(&mut want, deltas, profile, id);
+    mask(&mut want, &mut got);
+    differences(&want, &got)
 }
 
 /// Lint every input of `tier` at every profile and return the differences, by `profile/id`.
 /// Runs that the engine skips (RST without docutils) are absent.
 fn compute(tier: &str) -> BTreeMap<String, serde_json::Map<String, Value>> {
     let mut runs = BTreeMap::new();
+    let deltas = recorded_deltas("parity");
     for profile in PROFILES {
-        let engine = legacy_engine(profile).with_rst(rst_options());
+        let engine = golden_engine(profile).with_rst(rst_options());
         for entry in inputs()
             .iter()
             .filter(|e| e.tier == tier && !skipped(&e.id))
         {
-            let path = format!("tests/golden/v3/parity/{profile}/{}.json", entry.id);
-            let mut want = read_json(&root().join(path));
-            let Some(mut got) = lint(&engine, entry) else {
+            let Some(got) = lint(&engine, entry) else {
                 continue;
             };
-            mask(&mut want, &mut got);
-            runs.insert(format!("{profile}/{}", entry.id), differences(&want, &got));
+            runs.insert(
+                format!("{profile}/{}", entry.id),
+                compare_run(profile, &entry.id, &deltas, got),
+            );
         }
     }
     runs
@@ -743,4 +866,130 @@ fn a_sentence_with_inline_code_and_a_parenthesis_matches_whole() {
             "Install the snapshot reviewer with `cargo binstall cargo-insta` (or `cargo install cargo-insta --locked`) before you change a snapshot."
         ]
     );
+}
+
+const SAMPLE: &str = r#"
+[[delta]]
+input = "a"
+[[delta]]
+input = "b"
+modes = ["parity", "policy"]
+[[delta]]
+input = "c"
+modes = ["parity", "preserve", "policy"]
+"#;
+
+fn sample_inputs(mode: &str) -> Vec<String> {
+    deltas_for(SAMPLE, mode)
+        .unwrap()
+        .iter()
+        .map(|d| d["input"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn a_delta_without_modes_applies_to_policy_only() {
+    assert_eq!(sample_inputs("preserve"), ["c"]);
+    assert!(sample_inputs("policy").contains(&"a".to_owned()));
+    assert!(!sample_inputs("parity").contains(&"a".to_owned()));
+}
+
+#[test]
+fn a_delta_applies_to_the_modes_it_lists() {
+    assert_eq!(sample_inputs("parity"), ["b", "c"]);
+    assert_eq!(sample_inputs("policy"), ["a", "b", "c"]);
+}
+
+#[test]
+fn a_delta_that_lists_only_a_misspelled_mode_is_an_error() {
+    let source = "[[delta]]\ninput = \"a\"\nmodes = [\"not-a-mode\"]\n";
+    for mode in MODES {
+        assert_eq!(
+            deltas_for(source, mode).unwrap_err(),
+            "unknown mode `not-a-mode`"
+        );
+    }
+}
+
+#[test]
+fn every_recorded_delta_names_known_modes() {
+    for mode in MODES {
+        recorded_deltas(mode);
+    }
+}
+
+/// A delta fixture for `issue-254` at `normal`, built from the golden itself: the golden
+/// document, the first finding, and a parity delta of `kind` for it.
+fn delta_fixture(kind: &str, extra: &str) -> (Value, Value, Vec<toml::Table>) {
+    let (want, document) = base_pair();
+    assert!(document["findings"].as_array().unwrap().len() >= 2);
+    let first = &document["findings"][0];
+    let source = format!(
+        "[[delta]]\ninput = \"issue-254\"\nprofile = \"normal\"\nkind = \"{kind}\"\nrule_id = {}\nline = {}\ncolumn = {}\nmodes = [\"parity\"]\n{extra}",
+        first["rule_id"], first["line"], first["column"]
+    );
+    let deltas = deltas_for(&source, "parity").unwrap();
+    (want, document, deltas)
+}
+
+fn without_first(document: &Value) -> Value {
+    let mut out = document.clone();
+    out["findings"].as_array_mut().unwrap().remove(0);
+    out
+}
+
+#[test]
+fn a_removed_delta_makes_the_comparison_expect_the_finding_gone() {
+    let (_, document, deltas) = delta_fixture("removed", "");
+    // The engine no longer reports the finding: that agrees with the delta.
+    let diff = compare_run("normal", "issue-254", &deltas, without_first(&document));
+    assert!(diff.is_empty(), "{diff:?}");
+    // The engine still reports it: the comparison names exactly that finding.
+    let diff = compare_run("normal", "issue-254", &deltas, document.clone());
+    assert_eq!(diff["extra"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        identity(&diff["extra"][0]),
+        identity(&document["findings"][0])
+    );
+    assert_eq!(diff.len(), 1, "{diff:?}");
+}
+
+#[test]
+fn a_removed_delta_leaves_the_other_findings_expected() {
+    let (_, document, deltas) = delta_fixture("removed", "");
+    let mut got = without_first(&document);
+    got["findings"].as_array_mut().unwrap().remove(0);
+    let diff = compare_run("normal", "issue-254", &deltas, got);
+    let missing = diff["missing"].as_array().unwrap();
+    assert_eq!(missing.len(), 1);
+    assert_eq!(missing[0], identity(&document["findings"][1]));
+    assert_eq!(diff.len(), 1, "{diff:?}");
+}
+
+#[test]
+fn drift_unrelated_to_a_delta_is_still_rejected() {
+    let (_, document, deltas) = delta_fixture("removed", "");
+    let mut got = without_first(&document);
+    got["findings"][0]["message"] = json!("a different message");
+    let diff = compare_run("normal", "issue-254", &deltas, got);
+    let changed = diff["changed"].as_array().unwrap();
+    assert_eq!(changed.len(), 1);
+    assert_eq!(identity(&changed[0]), identity(&document["findings"][1]));
+    assert_eq!(changed[0]["rust"]["message"], "a different message");
+    assert_eq!(diff.len(), 1, "{diff:?}");
+}
+
+#[test]
+fn a_changed_delta_makes_the_comparison_expect_the_new_value() {
+    let (_, document, deltas) =
+        delta_fixture("changed", "set = { message = \"reviewed wording\" }\n");
+    let mut got = document.clone();
+    got["findings"][0]["message"] = json!("reviewed wording");
+    assert!(compare_run("normal", "issue-254", &deltas, got).is_empty());
+    // The golden wording no longer matches: only the targeted finding differs.
+    let diff = compare_run("normal", "issue-254", &deltas, document.clone());
+    let changed = diff["changed"].as_array().unwrap();
+    assert_eq!(changed.len(), 1);
+    assert_eq!(identity(&changed[0]), identity(&document["findings"][0]));
+    assert_eq!(diff.len(), 1, "{diff:?}");
 }

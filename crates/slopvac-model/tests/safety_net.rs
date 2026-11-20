@@ -34,6 +34,20 @@ const IGNORED_MEMBER_ONLY: &[&str] = &[
     "finding-origin-range-extension-key.json",
 ];
 
+/// The common fixtures that have a Rust type. `PluginId` has none in this crate: the plugin
+/// lock and index readers and the config validator enforce it, and their own tests cover it.
+fn typed_common_instances(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    instances(dir)
+        .into_iter()
+        .filter(|p| {
+            !p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("PluginId--")
+        })
+        .collect()
+}
+
 fn decodes_as(name: &str, value: &Value) -> bool {
     let prefix = name.split("--").next().unwrap();
     let v = value.clone();
@@ -56,7 +70,7 @@ fn decodes_as(name: &str, value: &Value) -> bool {
 #[test]
 fn every_invalid_common_fixture_is_rejected_by_deserialize() {
     let dir = corpus().join("common/invalid");
-    let files = instances(&dir);
+    let files = typed_common_instances(&dir);
     assert!(files.len() >= 12, "only {} fixtures found", files.len());
     for path in files {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
@@ -69,7 +83,7 @@ fn every_invalid_common_fixture_is_rejected_by_deserialize() {
 
 #[test]
 fn every_valid_common_fixture_is_accepted_by_deserialize() {
-    for path in instances(&corpus().join("common/valid")) {
+    for path in typed_common_instances(&corpus().join("common/valid")) {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         assert!(
             decodes_as(&name, &load(&path)),
@@ -451,6 +465,7 @@ fn built_report(p: &Params) -> Report {
                 level: NoticeLevel::Info,
                 message: NonEmptyString::new("n").unwrap(),
                 path: None,
+                data: serde_json::Map::new(),
             }],
             ai_register: register,
             prose: summary(density, count),

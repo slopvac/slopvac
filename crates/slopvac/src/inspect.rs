@@ -2,7 +2,7 @@
 //! (compat rows `cmd:rules`, `cmd:explain`, `opt:rules:*`, `opt:explain:*`,
 //! `behavior:inspection-filters`, `behavior:inspection-formats`).
 //!
-//! Output order is deterministic: category, then rule, as the pack lists them.
+//! Output order is deterministic: category, then rule, as the plugin lists them.
 
 use std::fmt::Write as _;
 
@@ -11,11 +11,11 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use slopvac_model::GenreId;
 use slopvac_report::RenderOptions;
-use slopvac_rules::{Example, LoadedCategory, LoadedRule, Match, MatchKind, RuleSet};
+use slopvac_rules::{Example, LoadedCategory, LoadedRule, Match, MatchKind};
 
 use crate::errors::CliError;
 use crate::exit;
-use crate::rule_catalog;
+use crate::rule_catalog::Catalog;
 use crate::severity::{Effective, Severities};
 
 /// Generated catalogue prose is not written to the lint profile, so Markdown output
@@ -65,9 +65,9 @@ fn clean(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn load(m: &ArgMatches) -> Result<(RuleSet, Severities), CliError> {
+fn load(m: &ArgMatches) -> Result<(Catalog, Severities), CliError> {
     let severities = Severities::load(m)?;
-    Ok((rule_catalog::core()?, severities))
+    Ok((Catalog::load()?, severities))
 }
 
 fn url_of(rule: &LoadedRule) -> Option<String> {
@@ -141,9 +141,8 @@ impl Filter {
     }
 }
 
-fn selected<'a>(set: &'a RuleSet, filter: &Filter) -> Vec<(&'a LoadedCategory, &'a LoadedRule)> {
+fn selected<'a>(set: &'a Catalog, filter: &Filter) -> Vec<(&'a LoadedCategory, &'a LoadedRule)> {
     set.categories()
-        .iter()
         .flat_map(|c| c.rules().iter().map(move |r| (c, r)))
         .filter(|(c, r)| filter.keeps(c, r))
         .collect()
@@ -235,6 +234,7 @@ fn rule_json(category: &LoadedCategory, rule: &LoadedRule, sev: &Severities) -> 
     if let Value::Object(map) = &mut value {
         map.insert("id".into(), json!(rule.id().as_str()));
         map.insert("category".into(), json!(category.id().as_str()));
+        map.insert("plugin".into(), json!(rule.id().pack()));
         map.insert("kind".into(), json!(kind_name(rule.kind())));
         let eff = effective(sev, rule);
         map.insert("effective_severity".into(), json!(eff.level));
@@ -249,16 +249,16 @@ fn rule_json(category: &LoadedCategory, rule: &LoadedRule, sev: &Severities) -> 
 }
 
 fn rules_json(
-    set: &RuleSet,
+    set: &Catalog,
     picked: &[(&LoadedCategory, &LoadedRule)],
     sev: &Severities,
 ) -> String {
     let categories: Vec<Value> = set
         .categories()
-        .iter()
         .map(|c| {
             json!({
                 "id": c.id().as_str(),
+                "plugin": c.rules().first().map_or("core", |r| r.id().pack()),
                 "title": c.title().as_str(),
                 "description": c.description().as_str(),
                 "weight": c.weight(),
@@ -267,7 +267,20 @@ fn rules_json(
         })
         .collect();
     let rules: Vec<Value> = picked.iter().map(|(c, r)| rule_json(c, r, sev)).collect();
-    let payload = json!({"pack": set.pack().as_str(), "categories": categories, "rules": rules});
+    // The plugins that own the listed rules, in catalogue order. `plugin` names the first of
+    // them; `plugins` and the `plugin` of each entry are the complete answer.
+    let mut plugins: Vec<&str> = Vec::new();
+    for (_, rule) in picked {
+        if !plugins.contains(&rule.id().pack()) {
+            plugins.push(rule.id().pack());
+        }
+    }
+    let payload = json!({
+        "plugin": plugins.first().copied().unwrap_or("core"),
+        "plugins": plugins,
+        "categories": categories,
+        "rules": rules,
+    });
     pretty(&payload)
 }
 
@@ -452,7 +465,7 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
         let hint = if id.contains(':') {
             ""
         } else {
-            " Rule IDs carry a pack prefix in 3.0, such as `core:ste-words.spelling`; `slopvac migrate` rewrites 2.x IDs."
+            " Rule IDs carry a plugin prefix in 3.0, such as `core:ste-words.spelling`; `slopvac migrate` rewrites 2.x IDs."
         };
         return Err(CliError::new(
             "unknown-rule",
@@ -461,7 +474,6 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
     };
     let category = set
         .categories()
-        .iter()
         .find(|c| c.id() == rule.category())
         .expect("a rule has a category");
     let text = match format_of(m) {
@@ -550,7 +562,7 @@ fn explain_text(rule: &LoadedRule, sev: &Severities) -> String {
 mod tests {
     use super::*;
     use slopvac_model::PackId;
-    use slopvac_rules::CompileOptions;
+    use slopvac_rules::{CompileOptions, RuleSet};
     use std::path::PathBuf;
 
     /// A category recommended for `consumer`, with one rule limited to `reference`.
@@ -583,7 +595,7 @@ mod tests {
             genre: Some(GenreId::new("consumer").unwrap()),
             include_excluded,
         };
-        selected(&set(), &filter).len()
+        selected(&Catalog::from_sets(vec![set()]), &filter).len()
     }
 
     #[test]

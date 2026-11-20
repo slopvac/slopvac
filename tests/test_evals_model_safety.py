@@ -679,6 +679,159 @@ def test_redaction_removes_paths_and_tokens(raw, gone):
     assert gone not in procs.redact(raw)
 
 
+@pytest.mark.parametrize(
+    ("raw", "gone"),
+    [
+        ('{"token": "abc123"}', "abc123"),
+        ('{"access_token":"s3cr3tv4lue"}', "s3cr3tv4lue"),
+        ('{"Authorization": "Bearer x7"}', "x7"),
+        ('{"aws_session_token": "FwoGZXIvYXdz"}', "FwoGZXIvYXdz"),
+        ("aws_session_token = FwoGZXIvYXdz", "FwoGZXIvYXdz"),
+        ("Authorization: Bearer shorttok", "shorttok"),
+        ("{'password': 'pw1'}", "pw1"),
+        ("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI", "wJalrXUtnFEMI"),
+        ("id_token=eyJabc12", "eyJabc12"),
+        ("refresh_token: r3fr3sh", "r3fr3sh"),
+        ("api_key = k3y9", "k3y9"),
+    ],
+    ids=[
+        "quoted-token",
+        "no-space",
+        "authorization-header-json",
+        "session-token-json",
+        "session-token-env",
+        "short-bearer",
+        "single-quotes",
+        "secret-access-key",
+        "id-token",
+        "refresh-token",
+        "api-key",
+    ],
+)
+def test_redaction_removes_short_and_quoted_structured_credentials(raw, gone):
+    assert gone not in procs.redact(raw)
+    assert gone not in procs.redact_credentials(raw)
+
+
+FIELD_NAMES = [
+    "token",
+    "access_token",
+    "accessToken",
+    "AccessToken",
+    "refresh_token",
+    "refreshToken",
+    "id_token",
+    "idToken",
+    "session_token",
+    "sessionToken",
+    "SessionToken",
+    "secret",
+    "secret_access_key",
+    "secretAccessKey",
+    "SecretAccessKey",
+    "password",
+    "api_key",
+    "apiKey",
+    "API_KEY",
+    "authorization",
+    "Authorization",
+]
+
+
+@pytest.mark.parametrize("name", FIELD_NAMES)
+@pytest.mark.parametrize(
+    "shape",
+    ['{{"{n}": "FAKEsess1234"}}', "{n}=FAKEsess1234", "{n}: FAKEsess1234"],
+    ids=["json", "env", "colon"],
+)
+def test_every_listed_credential_field_loses_its_value(name, shape):
+    raw = shape.format(n=name)
+    assert "FAKEsess1234" not in procs.redact_credentials(raw)
+    assert name in procs.redact_credentials(raw)  # the field name stays
+
+
+def test_an_escaped_quote_inside_a_json_value_does_not_end_the_value_early():
+    raw = '{"password": "ab\\"cd-FAKEtail1234\\"ef", "limit": 63}'
+    cleaned = procs.redact_credentials(raw)
+    assert "FAKEtail1234" not in cleaned
+    assert '"limit": 63' in cleaned
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "max_tokens = 4096",
+        '{"max_tokens": 4096}',
+        "token_budget: 63",
+        "tokens: 63",
+        "{'tokens': 63, 'token_budget': 5}",
+        "maxToken: 5 and my_token_limit=7",
+    ],
+)
+def test_names_that_only_contain_token_are_not_credential_fields(text):
+    assert procs.redact_credentials(text) == text
+
+
+HEADER_SECRETS = [
+    ("Authorization: Bearer abcdefghij", "abcdefghij"),
+    ("curl -H 'Authorization: Bearer lowercaseonly' https://x.test", "lowercaseonly"),
+    ('curl -H "Authorization: Basic dXNlcjpwYXNz" https://x.test', "dXNlcjpwYXNz"),
+    ('{"Authorization": "Bearer x7"}', "x7"),
+    ("Authorization: token ghp_abcd1234", "ghp_abcd1234"),
+    ("authorization=Bearer lowercase", "lowercase"),
+    ('{"password": "ab\\"cd-SECRETTAIL\\"ef"}', "SECRETTAIL"),
+    ("{'token': 'it\\'s-SECRETTAIL'}", "SECRETTAIL"),
+    ('{"secret": "a\\\\\\"SECRETTAIL"}', "SECRETTAIL"),
+]
+
+
+@pytest.mark.parametrize(("raw", "gone"), HEADER_SECRETS)
+def test_redaction_removes_auth_schemes_in_a_header_and_escaped_quote_values(raw, gone):
+    assert gone not in procs.redact_credentials(raw)
+    assert gone not in procs.redact(raw)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A bearer of news arrived.",
+        "Sent Bearer abc123def to the server.",
+        "Basic dXNlcjpwYXNz was rejected.",
+        "pushed with token ghp_ab12cd34ef today",
+        "Basic usage needs no token.",
+        "Use the token to sign in.",
+        "token max_tokens",
+        "Use the token max_tokens to cap output.",
+        "Check token 63 against the budget.",
+        "The token budget is explicit.",
+    ],
+)
+def test_a_scheme_or_token_word_outside_an_authorization_header_is_not_redacted(
+    text,
+):
+    assert procs.redact_credentials(text) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "max_tokens = 4096",
+        '{"max_tokens": 4096, "temperature": 0}',
+        "Set max_tokens: 4096 and the token budget to 63.",
+        "token_budget: 63",
+        "tokens: 63",
+        "completion_tokens=1200 prompt_tokens=88",
+        "Rewrite the paragraph so the token budget is explicit.",
+        "The password policy requires 12 characters; see /Users/docs/policy.md.",
+        "Use `max_retries` 3 times, then fail. Secret sauce is optional.",
+        "A bearer of news arrived at the secret garden.",
+        'Return {"name": "queue", "limit": 63} for each request.',
+    ],
+)
+def test_credential_redaction_leaves_ordinary_text_unchanged(text):
+    assert procs.redact_credentials(text) == text
+
+
 def test_failure_messages_are_redacted_before_they_are_stored(tmp_path):
     script_path = script(
         tmp_path,
@@ -1342,3 +1495,116 @@ def test_one_execution_behind_several_rows_is_charged_once(tmp_path, spawn_log):
     assert len(results["runs"]) == 6 and spawns(tmp_path) == 3
     for path in (journal_path, out):
         assert cost_of(path)["models"]["m"]["tokens"] == {"input": 21}
+
+
+# --- an interrupted run's spend stays in the cost report ---------------------------------
+
+INTERRUPTS_FIRST_RUN = """\
+import os, pathlib, signal, sys, time
+marker = pathlib.Path(os.environ["MARKER"])
+sys.stdin.read()
+if not marker.exists():
+    marker.write_text("x")
+    os.kill(os.getppid(), signal.SIGINT)
+    time.sleep(60)
+print('slopvac-usage {"input": 5}', file=sys.stderr)
+print("[]")
+"""
+
+
+def test_cost_after_ctrl_c_and_resume_counts_the_reservation_with_no_journal_line(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MARKER", str(tmp_path / "marker"))
+    cmd = f"{sys.executable} {script(tmp_path, 'once.py', INTERRUPTS_FIRST_RUN)}"
+    journal_path, ledger = tmp_path / "r.journal.jsonl", tmp_path / "r.ledger.jsonl"
+    with models.Budget(10, ledger) as budget, pytest.raises(KeyboardInterrupt):
+        models.execute(
+            author_tasks(1),
+            roster(cmd),
+            3,
+            no_findings,
+            workers=1,
+            budget=budget,
+            journal=models.Journal(journal_path),
+        )
+    with models.Budget(10, ledger) as budget:
+        results = models.execute(
+            author_tasks(1),
+            roster(cmd),
+            3,
+            no_findings,
+            workers=1,
+            budget=budget,
+            journal=models.Journal(journal_path),
+        )
+    # The ledger holds four reservations of "m": one interrupted, then three on
+    # the resume. The journal holds three lines, so one reservation is spend
+    # with no usage on record.
+    from_journal = cost_of(journal_path)
+    assert from_journal["complete"] is False
+    assert from_journal["models"]["m"]["invocations"] == 4
+    assert from_journal["models"]["m"]["missing_usage"] == 1
+    assert sorted((e["model"], e["usage"] is None) for e in results["executions"]) == [
+        ("m", False),
+        ("m", False),
+        ("m", False),
+        ("m", True),
+    ]
+    scratch = tmp_path / "results.json"
+    models.dump(results, scratch)
+    assert cost_of(scratch) == from_journal
+
+
+# --- a Python without os.waitid is refused before anything spawns ------------------------
+
+
+def test_without_os_waitid_the_harness_refuses_before_spawning_or_reserving(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delattr(os, "waitid")
+    marker = tmp_path / "spawned"
+    body = f"import pathlib; pathlib.Path({str(marker)!r}).write_text('x')\n"
+    cmd = f"{sys.executable} {script(tmp_path, 'touch.py', body)}"
+    with pytest.raises(procs.UnsupportedPlatform, match="Python 3.13"):
+        procs.run_group(cmd.split(), timeout=5)
+    ledger = tmp_path / "l.jsonl"
+    with (
+        models.Budget(5, ledger) as budget,
+        pytest.raises(procs.UnsupportedPlatform, match="Python 3.13"),
+    ):
+        models.command_ask(cmd, budget=budget)
+    assert not marker.exists()
+    assert ledger.read_text() == ""
+
+
+def test_models_run_without_os_waitid_exits_2_and_spawns_and_reserves_nothing(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.delattr(os, "waitid")
+    marker = tmp_path / "spawned"
+    body = f"import pathlib; pathlib.Path({str(marker)!r}).write_text('x')\n"
+    command = f"{sys.executable} {script(tmp_path, 'touch.py', body)}"
+    tasks, roster_ = author_tasks(2), roster(command)
+    monkeypatch.setattr(cli, "_model_tasks", lambda args: (tasks, roster_))
+    out = tmp_path / "r.json"
+    code = cli.main(
+        [
+            "models",
+            "run",
+            "--confirm-calls",
+            str(models.plan(tasks, roster_, 3)["total_calls"]),
+            "--out",
+            str(out),
+            "--models",
+            "unused.json",
+            "--max-invocations",
+            "100",
+        ]
+    )
+    assert code == 2
+    assert "Python 3.13" in capsys.readouterr().err
+    assert not marker.exists()
+    ledger = out.with_suffix(".ledger.jsonl")
+    reserved = [x for x in ledger.read_text().splitlines() if '"reserve"' in x]
+    assert reserved == [] and not out.exists()

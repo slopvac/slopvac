@@ -13,7 +13,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/slopvac)](https://pypi.org/project/slopvac/)
 
 [Install](#install) · [Quick start](#quick-start) · [What it checks](#what-it-checks) ·
-[Agent setup](#agent-setup) · [CI](#ci-integration) · [Packs and plugins](#packs-and-plugins) ·
+[Agent setup](#agent-setup) · [CI](#ci-integration) · [Plugins](#plugins) ·
 [Upgrade from 2.x](#upgrade-from-2x) · [Reference](https://slopvac.github.io/slopvac/)
 
 `slopvac` lints prose and source comments. Its rules cover AI writing patterns and general prose
@@ -110,7 +110,7 @@ Settings live in `slopvac.toml`, which starts with `schema_version = 3`. The nea
 file applies. The file can set:
 
 - `styles` and `extends`, which choose the rule presets and base configs
-- `packs` and `plugins`, which add data packs and code plugins
+- `plugins`, which adds data plugins and code plugins
 - `[thresholds]`, which set the gates that fail a run
 - `[[overrides]]`, which change settings for matching paths
 - `[guidance]`, which sets how much detail `prime` prints
@@ -130,7 +130,7 @@ Terms live in `.slopvac/terms.toml`. Each term needs only `term`.
 ## Network use
 
 The update check is the only network use of `lint`. It runs only for `lint`, `doctor`, `prime`, and
-`self update`, and it caches its result for 24 hours. Pack commands such as `plugins sync` connect
+`self update`, and it caches its result for 24 hours. Plugin commands such as `plugins sync` connect
 only when you run them.
 
 These settings stop the update check:
@@ -182,7 +182,7 @@ repos:
 
 ```yaml
 - uses: actions/checkout@v7
-- uses: slopvac/slopvac@v3.0.0 # x-release-please-version
+- uses: slopvac/slopvac@<full commit SHA of the v3.0.0 tag> # v3.0.0
   with:
     paths: README.md docs/
 ```
@@ -191,16 +191,58 @@ The action has no `profile` input in 3.0. Choose styles and thresholds in `slopv
 the action at the file with the `config` input. It posts review comments with reviewdog by default,
 or uploads SARIF. See [action.yml](action.yml) for the inputs and outputs.
 
-## Packs and plugins
+## Plugins
 
-A data pack holds rules, styles, genres, terms, and declarative taggers. It contains no code. A code
+A data plugin holds rules, styles, genres, terms, and declarative taggers. It contains no code. A code
 plugin speaks JSON-RPC 2.0 over stdio and can add taggers, extractors, reporters, fixers, scorers,
 and model providers.
 
-Packs are OCI artifacts on GHCR or any registry. Release archives, local folders, and git commits
-also work. `.slopvac/packs.lock` records the version, source, and digest of each pack.
+Plugins are OCI artifacts on GHCR or any registry. Release archives, local folders, and git commits
+also work. `.slopvac/plugins.lock` records the version, source, and digest of each plugin.
 
-A minisign signature covers each published OCI pack, and `plugins sync` fails with exit 2 when the
+### Registry logins
+
+For a private registry, slopvac takes the first login it finds, in this order: environment
+variables, Docker config logins, then container auth files, then credential helpers.
+
+1. `SLOPVAC_OCI_USER` plus `SLOPVAC_OCI_TOKEN`.
+2. `GITHUB_TOKEN`, for `ghcr.io` only.
+3. A static `auths` entry in `$DOCKER_CONFIG/config.json`, or `~/.docker/config.json` when
+   `DOCKER_CONFIG` is unset.
+4. A static `auths` entry in the first of these files that exists: `$REGISTRY_AUTH_FILE`,
+   `$XDG_RUNTIME_DIR/containers/auth.json`, `$XDG_CONFIG_HOME/containers/auth.json`
+   (`~/.config` when unset).
+5. The credential helper that the Docker config names, through `credHelpers` for the registry or
+   else `credsStore`.
+
+go-containerregistry, the library behind crane, reads the container auth files only when no Docker
+config exists. Slopvac also reads them when the Docker config has no entry for the registry. It
+still prefers a static login over running a helper.
+
+With none of these, access is anonymous. Slopvac reads logins from your environment and home
+directory, not from the project. Slopvac asks for a login only when the registry demands one.
+
+Slopvac looks for `docker-credential-<name>` on `PATH`, but only in safe directories. It skips
+relative and empty entries, entries inside the project, and directories that others can write.
+Root or you must own the helper and every directory above it. A directory that a group can write
+is refused, with one exception: the `admin` group, when you belong to it. Slopvac refuses every
+other group, even when you look like its only member.
+
+If the helper exists only in an unsafe directory, slopvac does not start it. It tries the registry
+without a login and continues when the registry allows that. When the registry demands a login,
+the run stops with exit 2 and the code `credential-helper-untrusted`. The message names the
+directory, relative to the project or as `<external>/<name>`. Tighten the permissions of that
+directory, or sign in with a static `auths` login, `SLOPVAC_OCI_USER` plus `SLOPVAC_OCI_TOKEN`,
+or `GITHUB_TOKEN` for `ghcr.io`.
+
+#### Docker Desktop on macOS
+
+Docker Desktop keeps `docker-credential-desktop` under `/Applications`, which the `admin` group
+can write. That directory passes the check for a member of `admin`. A registry that `docker login`
+set up then works with no extra setup. The `docker-credential-desktop` link that Docker Desktop
+installs must sit in a `PATH` directory that you or root own.
+
+A minisign signature covers each published OCI plugin, and `plugins sync` fails with exit 2 when the
 signature is missing or invalid. Local folders and git commits carry no signature. A git pin names a
 commit, and the trust hash covers the content.
 
@@ -212,8 +254,8 @@ slopvac plugins trust <name>
 
 Trust is recorded per content hash. Two things record trust: `plugins trust`, and a `SLOPVAC_TRUST`
 variable that a person wrote into the CI configuration. `plugins sync` and `plugins update` never
-record trust. Agents never trust on your behalf. `pack new`, `validate`, `test`, and `publish` build
-and release your own packs.
+record trust. Agents never trust on your behalf. `plugins new`, `validate`, `test`, and `publish` build
+and release your own plugins.
 
 ## Upgrade from 2.x
 

@@ -1,23 +1,26 @@
 //! The [`Linter`] over `slopvac-engine`.
 
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
 use std::path::{Path, PathBuf};
 
-use slopvac_engine::discover::{self, FileKind};
+use slopvac_engine::discover::FileKind;
 use slopvac_engine::{Engine, Input, Settings};
 use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString, Notice, NoticeLevel};
 use slopvac_rules::RuleSet;
 
-use crate::{BACKUP_DIR, Error, Finding, Linter, Phase};
+use crate::capped::Capped;
+use crate::limits::{Budget, Kind, Limits};
+use crate::walk::discover;
+use crate::{Error, Finding, Linter, Phase};
 
 /// Lints the Markdown and MDX documents of a project with the engine.
 ///
 /// `Before` reads every document from disk. `After` reads a document from the overlay
-/// when the plan rewrites it. Files under [`BACKUP_DIR`] are never linted. A document
+/// when the plan rewrites it. Files under [`crate::BACKUP_DIR`] are never linted. A document
 /// the engine cannot read, or one it could not check in full, fails the lint.
 pub struct EngineLinter {
     engine: Engine,
+    limits: Limits,
 }
 
 impl EngineLinter {
@@ -37,7 +40,19 @@ impl EngineLinter {
             },
         );
         let engine = Engine::new(sets, settings).map_err(|e| Error::Lint(e.to_string()))?;
-        Ok(Self { engine })
+        Ok(Self {
+            engine,
+            limits: Limits::default(),
+        })
+    }
+}
+
+impl EngineLinter {
+    /// The same linter under other per-run limits.
+    #[must_use]
+    pub fn with_limits(mut self, limits: Limits) -> Self {
+        self.limits = limits;
+        self
     }
 }
 
@@ -48,39 +63,7 @@ impl std::fmt::Debug for EngineLinter {
 }
 
 fn canonical(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| path.to_owned())
-}
-
-/// Collect the Markdown and MDX files under `dir`, files before sub-directories, each
-/// sorted by name. Like the planner, the walk never enters [`BACKUP_DIR`], at any depth,
-/// or a directory the engine's discovery skips. Symbolic links are not followed.
-fn walk(dir: &Path, out: &mut Vec<(PathBuf, FileKind)>) -> Result<(), Error> {
-    let mut entries: Vec<_> = fs::read_dir(dir)
-        .map_err(|e| Error::io(dir, e))?
-        .collect::<Result<_, _>>()
-        .map_err(|e| Error::io(dir, e))?;
-    entries.sort_by_key(fs::DirEntry::file_name);
-    let mut dirs = Vec::new();
-    for entry in entries {
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let kind = entry.file_type().map_err(|e| Error::io(&path, e))?;
-        if kind.is_dir() {
-            if name != BACKUP_DIR && !discover::SKIP_DIRS.contains(&name.as_ref()) {
-                dirs.push(path);
-            }
-        } else if kind.is_file()
-            && let Some(kind @ (FileKind::Markdown | FileKind::Mdx)) =
-                FileKind::from_file_name(&name)
-        {
-            out.push((path, kind));
-        }
-    }
-    for dir in dirs {
-        walk(&dir, out)?;
-    }
-    Ok(())
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned())
 }
 
 /// The first warning-level notice, as a failure: part of the document was not checked.
@@ -103,8 +86,9 @@ impl Linter for EngineLinter {
         overlay: &[(PathBuf, String)],
     ) -> Result<Vec<Finding>, Error> {
         let base = canonical(root);
-        let mut found = Vec::new();
-        walk(root, &mut found)?;
+        let mut budget = Budget::new(self.limits);
+        // The planner reports what discovery excludes; the lint only needs the documents.
+        let found = discover(root, &mut budget, &mut Capped::new("warnings"))?.docs;
         let rewritten: HashMap<PathBuf, &str> = match phase {
             Phase::Before => HashMap::new(),
             Phase::After => overlay
@@ -116,9 +100,15 @@ impl Linter for EngineLinter {
         for (file, kind) in found {
             let path = canonical(&file);
             let label = path.strip_prefix(&base).unwrap_or(&path).to_owned();
+            let shown = root.join(&label);
             let text = match rewritten.get(&path) {
-                Some(text) => (*text).to_owned(),
-                None => fs::read_to_string(&path).map_err(|e| Error::io(&root.join(&label), e))?,
+                Some(text) => {
+                    budget.check_text(&shown, Kind::Document, text)?;
+                    (*text).to_owned()
+                }
+                None => budget
+                    .read(&path, Kind::Document)
+                    .map_err(|e| e.at(&shown))?,
             };
             docs.push((label.display().to_string(), kind, text));
         }

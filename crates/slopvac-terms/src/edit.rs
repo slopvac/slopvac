@@ -10,7 +10,9 @@ use std::path::Path;
 
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value, value};
 
-use crate::{TermEntry, TermsError};
+use crate::messages::TermsText;
+use crate::shape::TERMS_SCHEMA_VERSION;
+use crate::{EntryProblem, TermEntry, TermsError};
 
 /// A terms file open for editing. Comments and layout survive an edit.
 #[derive(Debug)]
@@ -22,13 +24,15 @@ fn err(path: &str, message: impl Into<String>) -> TermsError {
     TermsError::Entry {
         path: path.to_owned(),
         message: message.into(),
+        number: None,
+        problem: EntryProblem::Duplicate,
     }
 }
 
 impl Default for TermsDoc {
     fn default() -> Self {
         let mut doc = DocumentMut::new();
-        doc["schema_version"] = value(3);
+        doc["schema_version"] = value(i64::from(TERMS_SCHEMA_VERSION));
         Self { doc }
     }
 }
@@ -64,8 +68,17 @@ impl TermsDoc {
     /// # Errors
     /// Read or parse failures.
     pub fn open(path: &Path) -> Result<Self, TermsError> {
-        let shown = path.display().to_string();
-        match std::fs::read_to_string(path) {
+        Self::open_labeled(path, &path.display().to_string())
+    }
+
+    /// Like [`TermsDoc::open`], naming the file `shown` in errors. Pass a label that is
+    /// relative to the project root, so an error never carries an absolute path.
+    ///
+    /// # Errors
+    /// As [`TermsDoc::open`].
+    pub fn open_labeled(path: &Path, shown: &str) -> Result<Self, TermsError> {
+        let shown = shown.to_owned();
+        match crate::read::read(path, &shown, crate::MAX_TERMS_FILE_BYTES) {
             Ok(text) => {
                 crate::TermsFile::parse(&shown, &text)?;
                 let doc = text.parse::<DocumentMut>().map_err(|e| TermsError::Parse {
@@ -74,11 +87,8 @@ impl TermsDoc {
                 })?;
                 Ok(Self { doc })
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(e) => Err(TermsError::Io {
-                path: shown,
-                message: e.to_string(),
-            }),
+            Err(crate::read::ReadFailure::Missing(_)) => Ok(Self::default()),
+            Err(crate::read::ReadFailure::Error(e)) => Err(e),
         }
     }
 
@@ -92,7 +102,18 @@ impl TermsDoc {
     /// # Errors
     /// Write failures; the original file is left as it was.
     pub fn save(&self, path: &Path) -> Result<(), TermsError> {
-        self.save_with(path, |f, bytes| f.write_all(bytes))
+        self.save_labeled(path, &path.display().to_string())
+    }
+
+    /// Like [`TermsDoc::save`], naming the file `shown` in errors. Pass a label that is
+    /// relative to the project root, so an error never carries an absolute path. The cause of
+    /// a failure is reduced to its OS code or kind, because a library error can embed the
+    /// path.
+    ///
+    /// # Errors
+    /// As [`TermsDoc::save`].
+    pub fn save_labeled(&self, path: &Path, shown: &str) -> Result<(), TermsError> {
+        self.save_inner(path, shown, |f, bytes| f.write_all(bytes))
     }
 
     /// [`TermsDoc::save`] with the byte writer supplied by the caller, so a
@@ -106,9 +127,18 @@ impl TermsDoc {
         path: &Path,
         write: impl FnOnce(&mut dyn Write, &[u8]) -> std::io::Result<()>,
     ) -> Result<(), TermsError> {
+        self.save_inner(path, &path.display().to_string(), write)
+    }
+
+    fn save_inner(
+        &self,
+        path: &Path,
+        shown: &str,
+        write: impl FnOnce(&mut dyn Write, &[u8]) -> std::io::Result<()>,
+    ) -> Result<(), TermsError> {
         let io = |e: &std::io::Error| TermsError::Io {
-            path: path.display().to_string(),
-            message: e.to_string(),
+            path: shown.to_owned(),
+            message: crate::read::scrub(e),
         };
         let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         let dir = target
@@ -121,7 +151,11 @@ impl TermsDoc {
             .suffix(".tmp")
             .tempfile_in(dir)
             .map_err(|e| io(&e))?;
-        write(&mut tmp, self.render().as_bytes()).map_err(|e| io(&e))?;
+        // The writer is the caller's own, so its message cannot hold our path.
+        write(&mut tmp, self.render().as_bytes()).map_err(|e| TermsError::Io {
+            path: shown.to_owned(),
+            message: e.to_string(),
+        })?;
         tmp.as_file().sync_all().map_err(|e| io(&e))?;
         if let Ok(meta) = std::fs::metadata(&target) {
             std::fs::set_permissions(tmp.path(), meta.permissions()).map_err(|e| io(&e))?;
@@ -179,7 +213,10 @@ impl TermsDoc {
         if self.contains(&entry.term) {
             return Err(err(
                 "terms",
-                format!("term `{}` already exists", entry.term),
+                TermsText::TermExists {
+                    term: entry.term.clone(),
+                }
+                .to_string(),
             ));
         }
         match self.doc.get_mut("terms") {

@@ -8,17 +8,24 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# Counts the projection tokens visited to map text to source, for tests that check the
+# mapping is linear. Off in ordinary builds, which then carry no shared atomic.
+test-counters = []
+
 [dependencies]
 html5ever = { workspace = true }
 html5gum = { workspace = true }
 markdown = { workspace = true }
 pulldown-cmark = { workspace = true }
+slopvac-messages = { workspace = true }
 slopvac-model = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 markup5ever_rcdom = { workspace = true }
 proptest = { workspace = true }
+rstest = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

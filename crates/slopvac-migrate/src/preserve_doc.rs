@@ -7,15 +7,16 @@
 //! entry whose level changes (comments kept), and puts the profile switch blocks
 //! before and the guard blocks after the original overrides.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use toml_edit::{
     Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, TableLike, Value, value,
 };
 
+use crate::capped::Blockers;
 use crate::legacy::{Dials, Layer, Legacy, PROFILES, Scalar, read_dials};
 use crate::preserve::{Block2, Block3, Config2, DropReason, Expanded, expand};
-use crate::{Dropped, Error, RenameTable};
+use crate::{Error, RenameTable};
 
 /// The pack that ships the legacy styles (docs/contract/profiles.md, E1).
 const STYLE_PREFIX: &str = "core:legacy-";
@@ -32,20 +33,16 @@ const DIAL_ORDER: [&str; 4] = [
 /// What the patch needs besides the documents.
 pub(crate) struct Ctx<'a> {
     pub(crate) file: &'a str,
-    pub(crate) lines: &'a HashMap<String, usize>,
+    pub(crate) lines: crate::config::Lines<'a>,
     pub(crate) renames: &'a RenameTable,
-    pub(crate) dropped: &'a mut Vec<Dropped>,
+    pub(crate) dropped: &'a mut Blockers,
     pub(crate) notes: &'a mut Vec<String>,
 }
 
 impl Ctx<'_> {
     fn drop_key(&mut self, path: &str, reason: &str) {
-        self.dropped.push(Dropped {
-            file: self.file.to_owned(),
-            key: path.to_owned(),
-            line: self.lines.get(path).copied().unwrap_or(1),
-            reason: reason.to_owned(),
-        });
+        self.dropped
+            .record(self.file, path, self.lines.of(path), reason);
     }
 
     fn rule(&self, qid: &str) -> String {
@@ -72,11 +69,7 @@ pub(crate) fn apply(
     };
     let expanded = expand(&config, &legacy).map_err(|e| Error::OverrideOverlap {
         file: ctx.file.to_owned(),
-        line: ctx
-            .lines
-            .get(&format!("overrides[{}]", e.block))
-            .copied()
-            .unwrap_or(1),
+        line: ctx.lines.of(&format!("overrides[{}]", e.block)),
         block: e.block,
         reason: e.reason,
     })?;
@@ -103,7 +96,7 @@ fn override_tables(doc: &DocumentMut) -> Vec<&dyn TableLike> {
 /// Read the 2.x settings the expansion uses. Returns `None` after recording an
 /// unknown profile, category or rule.
 fn read_config(doc: &DocumentMut, legacy: &Legacy, ctx: &mut Ctx<'_>) -> Option<Config2> {
-    let before = ctx.dropped.len();
+    let before = ctx.dropped.total();
     let profile =
         read_profile(doc.as_table(), "profile", ctx).unwrap_or_else(|| DEFAULT_PROFILE.to_owned());
     let layer = read_layer(doc.as_table(), "", legacy, ctx);
@@ -125,7 +118,7 @@ fn read_config(doc: &DocumentMut, legacy: &Legacy, ctx: &mut Ctx<'_>) -> Option<
             layer: read_layer(t, &path, legacy, ctx),
         });
     }
-    (ctx.dropped.len() == before).then_some(Config2 {
+    (ctx.dropped.total() == before).then_some(Config2 {
         profile,
         layer,
         overrides,
@@ -159,7 +152,9 @@ fn read_layer(t: &dyn TableLike, prefix: &str, legacy: &Legacy, ctx: &mut Ctx<'_
     if let Some(cats) = t.get("categories").and_then(Item::as_table_like) {
         for (name, item) in cats.iter() {
             let path = join(&join(prefix, "categories"), name);
-            if !legacy.style(DEFAULT_PROFILE).categories.contains_key(name) {
+            if ctx.renames.is_removed_category(name) {
+                // Dropped with a note by the plain migration; nothing to expand.
+            } else if ctx.renames.category(name).is_none() {
                 ctx.drop_key(&path, "unknown 2.x category; 2.x rejected it");
             } else if let Some(d) = read_dials(item) {
                 layer.categories.insert(name.to_owned(), d);

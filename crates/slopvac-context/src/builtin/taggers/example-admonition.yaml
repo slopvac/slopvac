@@ -1,0 +1,7 @@
+schema_version: 3
+id: example-admonition
+tag: example
+scope: paragraph
+confidence: 0.9
+when:
+  admonition_title: '^\W*examples?\b'

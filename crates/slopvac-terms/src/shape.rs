@@ -8,7 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
-use crate::TermsError;
+use crate::messages::TermsText;
+use crate::{EntryProblem, TermsError};
 
 /// One term.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,35 +35,57 @@ impl TermEntry {
     /// # Errors
     /// [`TermsError::Entry`] naming the first problem.
     pub(crate) fn validate(&self, path: &str) -> Result<(), TermsError> {
-        let err = |message: String| TermsError::Entry {
+        let err = |problem: EntryProblem, message: String| TermsError::Entry {
             path: path.to_owned(),
             message,
+            number: None,
+            problem,
         };
         if self.term.trim().is_empty() {
-            return Err(err("term is empty".to_owned()));
+            return Err(err(
+                EntryProblem::MissingWord,
+                TermsText::TermEmpty.to_string(),
+            ));
         }
         if self.ignore_case && self.case_sensitive {
-            return Err(err(format!(
-                "term `{}` sets both ignore_case and case_sensitive",
-                self.term
-            )));
+            return Err(err(
+                EntryProblem::ConflictingCasing,
+                TermsText::ConflictingCasing {
+                    term: self.term.clone(),
+                }
+                .to_string(),
+            ));
         }
         if let Some(kind) = self.kind.as_deref().filter(|k| !is_kebab_label(k)) {
-            return Err(err(format!(
-                "term `{}` has kind {kind:?}; use a kebab-case label such as `product`",
-                self.term
-            )));
+            return Err(err(
+                EntryProblem::BadKind,
+                TermsText::BadKind {
+                    term: self.term.clone(),
+                    kind: format!("{kind:?}"),
+                }
+                .to_string(),
+            ));
         }
         let mut variants = BTreeSet::new();
         for v in &self.variants {
             if v.is_empty() {
-                return Err(err(format!("term `{}` has an empty variant", self.term)));
+                return Err(err(
+                    EntryProblem::BadVariant,
+                    TermsText::EmptyVariant {
+                        term: self.term.clone(),
+                    }
+                    .to_string(),
+                ));
             }
             if !variants.insert(v.as_str()) {
-                return Err(err(format!(
-                    "term `{}` lists variant `{v}` twice",
-                    self.term
-                )));
+                return Err(err(
+                    EntryProblem::BadVariant,
+                    TermsText::RepeatedVariant {
+                        term: self.term.clone(),
+                        variant: v.clone(),
+                    }
+                    .to_string(),
+                ));
             }
         }
         Ok(())
@@ -77,6 +100,9 @@ pub struct TermsFile {
     /// The terms, in file order.
     pub terms: Vec<TermEntry>,
 }
+
+/// The only `schema_version` of a terms file this crate reads.
+pub const TERMS_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Deserialize)]
 struct RawFile {
@@ -129,15 +155,17 @@ impl TermsFile {
             path: path.to_owned(),
             message: e.to_string(),
         })?;
-        if raw.schema_version != 3 {
+        if raw.schema_version != TERMS_SCHEMA_VERSION {
             return Err(TermsError::SchemaVersion {
                 path: path.to_owned(),
                 found: raw.schema_version.to_string(),
             });
         }
-        let entry_err = |message: String| TermsError::Entry {
+        let entry_err = |problem: EntryProblem, number: usize, message: String| TermsError::Entry {
             path: path.to_owned(),
             message,
+            number: Some(number),
+            problem,
         };
         let unknown = |key: &str| TermsError::UnknownKey {
             path: path.to_owned(),
@@ -149,7 +177,7 @@ impl TermsFile {
         let Some(raw_terms) = raw.terms else {
             return Err(TermsError::Parse {
                 path: path.to_owned(),
-                message: "missing `terms` array; use `terms = []` for an empty list".to_owned(),
+                message: TermsText::MissingTermsArray.to_string(),
             });
         };
         let mut seen = BTreeSet::new();
@@ -166,11 +194,22 @@ impl TermsFile {
                 case_sensitive: t.case_sensitive,
             };
             if entry.term.trim().is_empty() {
-                return Err(entry_err(format!("term {} is empty", i + 1)));
+                return Err(entry_err(
+                    EntryProblem::MissingWord,
+                    i + 1,
+                    TermsText::TermEmptyAt { number: i + 1 }.to_string(),
+                ));
             }
-            entry.validate(path)?;
+            entry.validate(path).map_err(|e| e.at_entry(i + 1))?;
             if !seen.insert(entry.term.clone()) {
-                return Err(entry_err(format!("duplicate term `{}`", entry.term)));
+                return Err(entry_err(
+                    EntryProblem::Duplicate,
+                    i + 1,
+                    TermsText::DuplicateTerm {
+                        term: entry.term.clone(),
+                    }
+                    .to_string(),
+                ));
             }
             terms.push(entry);
         }
@@ -185,11 +224,17 @@ impl TermsFile {
     /// # Errors
     /// As [`TermsFile::parse`], plus read failures.
     pub fn load(path: &std::path::Path) -> Result<Self, TermsError> {
-        let shown = path.display().to_string();
-        let text = std::fs::read_to_string(path).map_err(|e| TermsError::Io {
-            path: shown.clone(),
-            message: e.to_string(),
-        })?;
+        Self::load_labeled(path, &path.display().to_string())
+    }
+
+    /// Like [`TermsFile::load`], naming the file `shown` in errors. Pass a label that is
+    /// relative to the project root, so an error never carries an absolute path.
+    ///
+    /// # Errors
+    /// As [`TermsFile::load`].
+    pub fn load_labeled(path: &std::path::Path, shown: &str) -> Result<Self, TermsError> {
+        let shown = shown.to_owned();
+        let text = crate::read::read_existing(path, &shown, crate::MAX_TERMS_FILE_BYTES)?;
         Self::parse(&shown, &text)
     }
 }

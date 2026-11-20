@@ -2,6 +2,7 @@
 
 #![allow(dead_code, unreachable_pub, missing_docs)]
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
@@ -150,12 +151,21 @@ fn core_sources() -> Vec<(PathBuf, String)> {
 /// The engine for one profile: the category dials and rule levels of `core:legacy-<profile>`
 /// and the thresholds of the profile, both from the profile mapping contract.
 pub fn legacy_engine(profile: &str) -> Engine {
-    let set = RuleSet::from_sources(
+    Engine::new(vec![core_set()], legacy_settings(profile)).unwrap()
+}
+
+/// The core data with the title-case swap, as the engine reads it.
+pub fn core_set() -> RuleSet {
+    RuleSet::from_sources(
         &PackId::new("core").unwrap(),
         core_sources(),
         &CompileOptions::default(),
     )
-    .unwrap_or_else(|e| panic!("{e}"));
+    .unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// The settings of `core:legacy-<profile>` and the profile thresholds.
+pub fn legacy_settings(profile: &str) -> Settings {
     let mut settings = Settings::new(
         NonEmptyString::new(profile).unwrap(),
         GenreResult {
@@ -197,11 +207,112 @@ pub fn legacy_engine(profile: &str) -> Engine {
     settings.thresholds.max_unicode_dashes = count("max_unicode_dashes");
     settings.thresholds.max_total_per_100_words = t["max_total_per_100_words"].as_f64();
     settings.thresholds.min_score = t["min_score"].as_f64();
-    Engine::new(vec![set], settings).unwrap()
+    settings
 }
 
 /// An engine over the one category file `category` with `settings`.
 pub fn engine_with(category: &Value, settings: Settings) -> Engine {
     let files = vec![(PathBuf::from("cat.json"), category.to_string())];
     Engine::new(vec![ruleset(files)], settings).unwrap()
+}
+
+/// Run `f` on a worker thread and return its result, failing the test when it blocks.
+///
+/// - The worker ends early without a result (a panic): join at once and re-raise its panic.
+/// - Five seconds pass with no result: open the FIFO's write end without blocking, which wakes a
+///   reader stuck in `open`. `ENXIO` means no reader is waiting, so there is nothing to wake.
+///   Then wait once more, join the worker and fail; a worker that is still stuck is left behind,
+///   so recovery never hangs.
+pub fn within_timeout<T: Send + 'static>(
+    fifo: &std::path::Path,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> T {
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::sync::mpsc::{self, RecvTimeoutError};
+    use std::time::Duration;
+
+    const O_NONBLOCK: i32 = if cfg!(target_os = "linux") {
+        0o4000
+    } else {
+        0x4
+    };
+    const LIMIT: Duration = Duration::from_secs(5);
+
+    let (tx, rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    match rx.recv_timeout(LIMIT) {
+        Ok(value) => {
+            worker.join().expect("the worker finished");
+            value
+        }
+        Err(RecvTimeoutError::Disconnected) => match worker.join() {
+            Err(panic) => std::panic::resume_unwind(panic),
+            Ok(()) => panic!("the worker ended without a result"),
+        },
+        Err(RecvTimeoutError::Timeout) => {
+            let _writer = std::fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(O_NONBLOCK)
+                .open(fifo);
+            match rx.recv_timeout(LIMIT) {
+                Ok(_) | Err(RecvTimeoutError::Disconnected) => {
+                    let _ = worker.join();
+                    panic!("the read blocked on a FIFO until it was woken");
+                }
+                Err(RecvTimeoutError::Timeout) => panic!("the read blocked on a FIFO"),
+            }
+        }
+    }
+}
+
+/// The table: a left cell of `lines` lines that each read `Must go.`, and `x` beside the first.
+/// An RST grid table with a left cell of `lines` lines that each read `Must go.`, and `x`
+/// beside the first line.
+pub fn wrapped_table(lines: usize) -> String {
+    let border = format!("+{}+{}+\n", "-".repeat(12), "-".repeat(5));
+    let mut source = border.clone();
+    for line in 0..lines {
+        let right = if line == 0 { "x" } else { " " };
+        writeln!(source, "| Must go.   | {right}   |").unwrap();
+    }
+    source.push_str(&border);
+    source
+}
+
+/// The driver output for the table.
+fn wrapped_driver_output(lines: usize) -> String {
+    let left = vec!["Must go."; lines].join("\\n");
+    let cell = |end: usize, column: usize, text: &str| {
+        format!(
+            r#"{{"tag":"paragraph","start":2,"end":{end},"containers":[],"cell":[0,{column},1],"pieces":[{{"k":"t","t":"{text}"}}]}}"#
+        )
+    };
+    format!(
+        r#"{{"docutils":"0.21.2","nodes":[{{"tag":"table","table":true,"start":1,"end":{},"containers":[]}},{},{}]}}"#,
+        lines + 2,
+        cell(lines + 1, 0, &left),
+        cell(2, 1, "x"),
+    )
+}
+
+/// RST options whose interpreter prints the driver output for [`wrapped_table`]. Both cells
+/// are paragraphs, and the left one wraps over `lines` lines.
+#[cfg(unix)]
+pub fn wrapped_rst(lines: usize) -> slopvac_engine::rst::RstOptions {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = private_dir("rst-split");
+    let json_path = dir.join(format!("wrapped-{lines}.json"));
+    std::fs::write(&json_path, wrapped_driver_output(lines)).unwrap();
+    let python = dir.join(format!("wrapped-python-{lines}"));
+    std::fs::write(
+        &python,
+        format!("#!/bin/sh\ncat >/dev/null\ncat '{}'\n", json_path.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut options = slopvac_engine::rst::RstOptions::default();
+    options.interpreter = Some(python);
+    options
 }

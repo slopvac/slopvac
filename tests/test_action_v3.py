@@ -13,9 +13,10 @@ import yaml
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
+pytest_plugins = ["real_binary"]  # the real-binary fixtures
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "action_v3.py"
-FAKE_SLOPVAC = ROOT / ".github" / "action-fixtures" / "fake-slopvac.py"
 ACTION = ROOT / "action-v3" / "action.yml"
 SCHEMAS = ROOT / "schemas" / "v3"
 SPEC = importlib.util.spec_from_file_location("action_v3", SCRIPT)
@@ -59,11 +60,35 @@ def test_unknown_reporter_is_an_error():
 FORMATS = ["json", "rdjsonl", "sarif", "codeclimate"]
 
 
+# A process double for what the real binary cannot be told to do: die from a
+# signal, exit 70, fail `plugins sync` (not wired in the binary yet) and log
+# the exact argv it received. It writes no report content; every test of report
+# content runs the real binary (see real_binary.py).
+PROCESS_DOUBLE = """#!/usr/bin/env python3
+import json, os, signal, sys
+
+args = sys.argv[1:]
+if os.environ.get("FAKE_LOG"):
+    with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(args) + "\\n")
+if os.environ.get("FAKE_STDERR"):
+    sys.stderr.buffer.write(os.environ["FAKE_STDERR"].encode("utf-8", "surrogateescape"))
+if "plugins" in args and "sync" in args:
+    sys.exit(int(os.environ.get("FAKE_EXIT_SYNC", "0")))
+fmt = args[args.index("--format") + 1]
+with open(args[args.index("--out") + 1], "w", encoding="utf-8") as handle:
+    handle.write("{}\\n")
+if os.environ.get("FAKE_SIGNAL_" + fmt.upper()):
+    os.kill(os.getpid(), signal.Signals(int(os.environ["FAKE_SIGNAL_" + fmt.upper()])))
+sys.exit(int(os.environ.get("FAKE_EXIT_" + fmt.upper(), "1")))
+"""
+
+
 @pytest.fixture
 def binary(tmp_path):
-    """The stand-in binary, with every format exiting 0 unless a test says otherwise."""
+    """The process double, with every format exiting 0 unless a test says otherwise."""
     target = tmp_path / "slopvac"
-    target.write_text(FAKE_SLOPVAC.read_text(encoding="utf-8"), encoding="utf-8")
+    target.write_text(PROCESS_DOUBLE, encoding="utf-8")
     target.chmod(target.stat().st_mode | stat.S_IXUSR)
     return target
 
@@ -107,7 +132,7 @@ def _format(argv):
 
 
 def test_each_report_is_rendered_and_arguments_stay_whole(run, tmp_path):
-    code, log, outputs = run(FAKE_EXIT_JSON="1")
+    _, log, outputs = run(FAKE_EXIT_JSON="1")
     assert [_format(argv) for argv in log] == FORMATS
     for argv in log:
         assert argv[: argv.index("--format")] == ["--offline", "lint"]
@@ -117,12 +142,6 @@ def test_each_report_is_rendered_and_arguments_stay_whole(run, tmp_path):
             "docs/b c.md",
             "--odd.md",
         ]
-    assert (code, outputs["findings"], outputs["passed"], outputs["score"]) == (
-        1,
-        "1",
-        "false",
-        "96.0",
-    )
     assert outputs["sarif-file"] == str(tmp_path / "x.sarif")
 
 
@@ -161,14 +180,15 @@ def test_default_report_destinations_land_in_the_workspace_not_the_runner_temp(
     assert not (temp / "slopvac.rdjsonl").exists()
 
 
-def test_rdjsonl_is_written_to_a_nested_workspace_path(run, tmp_path):
-    target = tmp_path / "reports" / "sub" / "slopvac.rdjsonl"
-    code, _, outputs = run(RDJSONL_FILE=str(target))
+def test_rdjsonl_is_written_to_a_nested_workspace_path(real_run):
+    target = real_run.workspace / "reports" / "sub" / "slopvac.rdjsonl"
+    code, outputs = real_run(
+        "slop.md", RDJSONL_FILE="reports/sub/slopvac.rdjsonl", FAIL_ON_FINDINGS="false"
+    )
     assert code == 0
     assert outputs["rdjsonl-file"] == str(target)
-    assert json.loads(target.read_text(encoding="utf-8"))["source"] == {
-        "name": "slopvac"
-    }
+    first = json.loads(target.read_text(encoding="utf-8").splitlines()[0])
+    assert first["source"] == {"name": "slopvac"}
 
 
 def test_rdjsonl_survives_a_findings_failure_at_the_requested_path(run, tmp_path):
@@ -308,12 +328,84 @@ def test_no_targets_passes_without_running_the_binary(tmp_path):
     assert (code, out.read_text(encoding="utf-8")) == (0, "passed=true\n")
 
 
+# ---- binary stderr never reaches the job log as a workflow command -----------
+
+# A target path with a newline reaches the binary's stderr verbatim. Expected
+# values are worked out by hand from GitHub's workflow-command rules: `::`
+# becomes %3A%3A, `%` becomes %25, `##[` is neutralised, a bell is shown as
+# \u{7}, and each line stays a line.
+HOSTILE_STDERR = (
+    "cannot read a.md\n::error::x %0A\n::set-output name=p::1\n##[group]g\a\n"
+)
+ESCAPED_STDERR = (
+    "cannot read a.md\n"
+    "%3A%3Aerror%3A%3Ax %250A\n"
+    "%3A%3Aset-output name=p%3A%3A1\n"
+    "\\u{23}#[group]g\\u{7}\n"
+)
+
+
+VECTORS = json.loads(
+    (ROOT / "tests" / "fixtures" / "workflow-escape-vectors.json").read_text(
+        encoding="utf-8"
+    )
+)["workflow_data"]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [pytest.param(v["input"], v["expected"], id=v["name"]) for v in VECTORS],
+)
+def test_the_escaper_agrees_with_slopvac_sanitize_on_the_shared_vectors(text, expected):
+    assert action.escape_workflow_data(text) == expected
+
+
+def _assert_no_workflow_command(text):
+    assert not [ln for ln in text.splitlines() if ln.lstrip().startswith("::")]
+
+
+def test_lint_stderr_is_escaped_before_it_reaches_the_job_log(run, capfd):
+    run(FAKE_STDERR=HOSTILE_STDERR)
+    err = capfd.readouterr().err
+    _assert_no_workflow_command(err)
+    # one copy per report format: the four runs each emit the same text
+    assert err == ESCAPED_STDERR * len(FORMATS)
+
+
+def test_sync_stderr_is_escaped_before_it_reaches_the_job_log(sync, capfd):
+    sync(locked=True, FAKE_STDERR=HOSTILE_STDERR)
+    err = capfd.readouterr().err
+    _assert_no_workflow_command(err)
+    assert err == ESCAPED_STDERR
+
+
+# Only LF ends a record. NEL, LS, FS and the like stay in their line, shown as
+# the visible escape that names them; CRLF loses its CR, a lone CR is escaped.
+SEPARATOR_STDERR = "cannot read a\x85b\u2028c\x1cd.md\r\nnext\rline\n"
+SEPARATOR_SHOWN = "cannot read a\\u{85}b\\u{2028}c\\u{1c}d.md\nnext%0Dline\n"
+
+
+def test_lint_stderr_keeps_unicode_separators_in_their_line(run, capfd):
+    run(FAKE_STDERR=SEPARATOR_STDERR)
+    assert capfd.readouterr().err == SEPARATOR_SHOWN * len(FORMATS)
+
+
+def test_sync_stderr_keeps_unicode_separators_in_their_line(sync, capfd):
+    sync(locked=True, FAKE_STDERR=SEPARATOR_STDERR)
+    assert capfd.readouterr().err == SEPARATOR_SHOWN
+
+
+def test_stderr_that_is_not_utf8_is_shown_not_dropped(sync, capfd):
+    sync(locked=True, FAKE_STDERR="bad \udcff byte\n")
+    assert capfd.readouterr().err == "bad \ufffd byte\n"
+
+
 # ---- plugins sync ------------------------------------------------------------
 
 
 @pytest.fixture
 def sync(tmp_path, binary):
-    lock = tmp_path / ".slopvac" / "packs.lock"
+    lock = tmp_path / ".slopvac" / "plugins.lock"
 
     def go(*, locked: bool, **extra):
         if locked:
@@ -352,8 +444,8 @@ def _steps():
 
 def test_sync_is_a_named_step_before_the_lint_step():
     names = [step["name"] for step in _steps()]
-    assert names.index("Sync packs") < names.index("Lint")
-    sync_step = _steps()[names.index("Sync packs")]
+    assert names.index("Sync plugins") < names.index("Lint")
+    sync_step = _steps()[names.index("Sync plugins")]
     assert sync_step["run"].endswith('action_v3.py" sync')
     assert "continue-on-error" not in sync_step
 
@@ -459,15 +551,79 @@ def test_reviewdog_install_failure_does_not_fail_the_action():
     assert install["continue-on-error"] is True
 
 
-# ---- reports are contract-valid and reach their consumers --------------------
+# ---- the real binary: reports are contract-valid and reach their consumers ----
 
 
 @pytest.fixture
-def reports(tmp_path, run):
-    _, _, outputs = run(FAKE_EXIT_JSON="1")
-    return {
+def real_run(slop_project, slopvac_binary, tmp_path, monkeypatch):
+    """Run ``action.lint`` with the real binary on documents of ``slop_project``."""
+    monkeypatch.chdir(slop_project)
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+
+    def go(*documents, **extra):
+        paths = tmp_path / "paths"
+        paths.write_bytes("".join(f"{d}\0" for d in documents).encode())
+        github_output = tmp_path / "out"
+        github_output.unlink(missing_ok=True)
+        env = {
+            "BINARY": str(slopvac_binary),
+            "PATH_LIST": str(paths),
+            "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_WORKSPACE": str(workspace),
+            "GITHUB_OUTPUT": str(github_output),
+            **extra,
+        }
+        code = action.lint(env)
+        outputs = dict(
+            line.split("=", 1)
+            for line in github_output.read_text(encoding="utf-8").splitlines()
+        )
+        return code, outputs
+
+    go.workspace = workspace
+    return go
+
+
+@pytest.fixture
+def reports(real_run):
+    code, outputs = real_run("slop.md")
+    assert code == 1
+    return outputs, {
         fmt: Path(outputs[f"{fmt}-file"]).read_text(encoding="utf-8") for fmt in FORMATS
     }
+
+
+def test_a_sloppy_document_fails_the_gate_with_the_json_summary(reports):
+    outputs, texts = reports
+    summary = json.loads(texts["json"])["summary"]
+    assert summary["passed"] is False
+    assert summary["findings"] == int(outputs["findings"]) > 0
+    assert outputs["passed"] == "false"
+
+
+@pytest.mark.parametrize("document", ["slop.md", "clean.md"])
+def test_the_action_forwards_the_score_of_the_json_summary(real_run, document):
+    _, outputs = real_run(document, FAIL_ON_FINDINGS="false")
+    report = json.loads(Path(outputs["json-file"]).read_text(encoding="utf-8"))
+    assert float(outputs["score"]) == report["summary"]["score"]
+
+
+def test_a_clean_document_passes_the_gate(real_run):
+    code, outputs = real_run("clean.md")
+    assert (code, outputs["passed"]) == (0, "true")
+
+
+def test_every_format_reports_the_same_number_of_findings(reports):
+    outputs, texts = reports
+    (run_,) = json.loads(texts["sarif"])["runs"]
+    counts = {
+        "json": int(outputs["findings"]),
+        "rdjsonl": len(texts["rdjsonl"].splitlines()),
+        "sarif": len(run_["results"]),
+        "codeclimate": len(json.loads(texts["codeclimate"])),
+    }
+    assert set(counts.values()) == {counts["json"]}
 
 
 def test_the_json_report_matches_the_lint_report_schema(reports):
@@ -478,39 +634,68 @@ def test_the_json_report_matches_the_lint_report_schema(reports):
     schema = json.loads((SCHEMAS / "lint-report.schema.json").read_text("utf-8"))
     errors = list(
         Draft202012Validator(schema, registry=registry).iter_errors(
-            json.loads(reports["json"])
+            json.loads(reports[1]["json"])
         )
     )
     assert errors == []
 
 
-def test_the_rdjsonl_report_is_one_diagnostic_per_line(reports):
-    lines = reports["rdjsonl"].splitlines()
-    assert len(lines) == 1
-    diagnostic = json.loads(lines[0])
-    assert diagnostic["location"]["path"] == "docs/a.md"
-    assert diagnostic["location"]["range"]["start"] == {"line": 4, "column": 12}
-    assert diagnostic["message"] and diagnostic["severity"] == "WARNING"
+# "This groundbreaking solution ...": the promotional phrase spans columns 6-29
+# of line 1 of the sloppy fixture, counted by hand from the text.
+PROMOTION_RANGE = {"start": {"line": 1, "column": 6}, "end": {"line": 1, "column": 29}}
 
 
-def test_the_sarif_report_has_one_result(reports):
-    sarif = json.loads(reports["sarif"])
+def test_the_rdjsonl_report_is_what_reviewdog_reads(reports):
+    diagnostics = [json.loads(line) for line in reports[1]["rdjsonl"].splitlines()]
+    assert diagnostics
+    for diagnostic in diagnostics:
+        assert diagnostic["source"] == {"name": "slopvac"}
+        assert diagnostic["severity"] in {"ERROR", "WARNING", "INFO"}
+        assert diagnostic["location"]["path"] == "slop.md"
+        assert diagnostic["message"] and diagnostic["code"]["value"]
+    promoted = next(
+        d for d in diagnostics if d["code"]["value"].startswith("core:prose-promotion.")
+    )
+    assert promoted["location"]["range"] == PROMOTION_RANGE
+
+
+def test_the_sarif_report_is_what_code_scanning_reads(reports):
+    sarif = json.loads(reports[1]["sarif"])
     assert sarif["version"] == "2.1.0"
     (run_,) = sarif["runs"]
     assert run_["tool"]["driver"]["name"] == "slopvac"
-    (result,) = run_["results"]
-    region = result["locations"][0]["physicalLocation"]["region"]
-    assert (result["ruleId"], region["startLine"]) == (
-        "core:prose-inflation.slop-lexicon",
-        4,
+    promoted = next(
+        r for r in run_["results"] if r["ruleId"].startswith("core:prose-promotion.")
     )
+    assert promoted["locations"][0]["physicalLocation"] == {
+        "artifactLocation": {"uri": "slop.md"},
+        "region": {"startLine": 1, "startColumn": 6, "endLine": 1, "endColumn": 29},
+    }
 
 
 def test_the_codeclimate_report_is_an_issue_array(reports):
-    (issue,) = json.loads(reports["codeclimate"])
-    assert issue["type"] == "issue"
-    assert issue["location"] == {"path": "docs/a.md", "lines": {"begin": 4, "end": 4}}
-    assert re.fullmatch(r"[0-9a-f]{32}", issue["fingerprint"])
+    issues = json.loads(reports[1]["codeclimate"])
+    assert issues
+    for issue in issues:
+        assert issue["type"] == "issue"
+        assert issue["location"]["path"] == "slop.md"
+        assert re.fullmatch(r"[0-9a-f]{16}", issue["fingerprint"])
+
+
+@pytest.mark.parametrize(
+    ("env", "reporters"),
+    [
+        pytest.param(PR, ["github-pr-review"], id="same-repo"),
+        pytest.param(FORK, ["github-pr-annotations"], id="fork"),
+    ],
+)
+def test_reviewdog_receives_the_real_rdjsonl_on_same_repo_and_fork_prs(
+    report, reports, env, reporters
+):
+    rdjsonl = reports[1]["rdjsonl"]
+    _, seen, calls = report(env, RDJSONL=reports[0]["rdjsonl-file"])
+    assert seen == reporters
+    assert calls[0]["stdin"] == rdjsonl
 
 
 def _step(name):

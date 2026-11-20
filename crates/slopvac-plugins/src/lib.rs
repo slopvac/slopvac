@@ -6,7 +6,7 @@
 //! `crossbeam-channel` deadlines. Threat-model controls are in
 //! `docs/contract/threat-model.md`.
 //!
-//! The other modules: the OCI client ([`oci`]), the `.slopvac/packs.lock`
+//! The other modules: the OCI client ([`oci`]), the `.slopvac/plugins.lock`
 //! model ([`lock`]: strict reader, canonical writer, drift diff and the
 //! `outdated` query), [`sync`] (install the lock, status, CI check), the pack
 //! [`index`] reader, builder and search, the [`trust`] store and spawn
@@ -34,11 +34,14 @@ pub mod sign;
 pub mod strict;
 pub mod sync;
 pub mod trust;
+mod trusted_path;
 pub mod update;
 
 pub use api::{DocOutcome, plan_batches};
 pub use budget::{BudgetCaps, RunBudget};
 pub use error::{PluginError, RpcError, StartError};
-pub use host::{HostConfig, Plugin, PluginSpec, ReadHook, RunCaps, Shutdown, SpawnGate, Timeouts};
+pub use host::{
+    DrainHook, HostConfig, Plugin, PluginSpec, ReadHook, RunCaps, Shutdown, SpawnGate, Timeouts,
+};
 pub use process::{Teardown, kill_all_live};
 pub use protocol::{HookKind, PluginDeclaration};

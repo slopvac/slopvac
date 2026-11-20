@@ -19,9 +19,11 @@ include = [
 ]
 
 [dependencies]
+slopvac-messages.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+rstest.workspace = true
 serde.workspace = true
 toml.workspace = true
 

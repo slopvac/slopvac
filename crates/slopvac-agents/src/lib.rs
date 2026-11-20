@@ -10,9 +10,16 @@ pub mod fsx;
 pub mod guidance;
 pub mod harness;
 pub mod managed;
+mod messages;
+pub use messages::message_entries;
 pub mod models;
 pub mod prime;
 pub mod review;
+pub mod reviewers;
 pub mod setup;
 
 pub use error::AgentsError;
+
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use block::marker_scan_steps;

@@ -162,15 +162,52 @@ impl PublicKey {
 /// The secret half lives in release CI; see `docs/release/maintainer-setup.md`.
 pub(crate) const RELEASE_KEY_FILE: &str = include_str!("../../../keys/slopvac-release.pub");
 
-/// Namespaces that only the first-party release key may sign.
-pub const FIRST_PARTY_NAMESPACES: &[&str] = &["slopvac"];
+/// The only first-party namespace. Only a compiled key verifies an artifact in it.
+pub const FIRST_PARTY_NAMESPACE: &str = "slopvac";
 
-/// The compiled first-party release key. It signs first-party packs and the
-/// revocation list.
+/// Namespaces that only the compiled first-party key may sign.
+pub const FIRST_PARTY_NAMESPACES: &[&str] = &[FIRST_PARTY_NAMESPACE];
+
+/// Every namespace nobody can pin a key for: the first-party and the built-in
+/// one. Search flags them, `pin_key` refuses them and the trust store never
+/// loads a pin for them. This is the one list; do not copy it.
+pub const RESERVED_NAMESPACES: &[&str] = &[RESERVED_ID, FIRST_PARTY_NAMESPACE];
+
+/// Whether `namespace` is in [`RESERVED_NAMESPACES`].
+#[must_use]
+pub fn is_reserved_namespace(namespace: &str) -> bool {
+    RESERVED_NAMESPACES.contains(&namespace)
+}
+
+/// The compiled plugins key file, `keys/slopvac-plugins.pub`. The secret half
+/// lives in a protected release environment. The release key, which is the
+/// revocation root, can revoke this key by listing its ID.
+const PLUGINS_KEY_FILE: &str = include_str!("../../../keys/slopvac-plugins.pub");
+
+/// The compiled plugins key, separate from [`release_key`]. It verifies plugin
+/// artifacts in the [`FIRST_PARTY_NAMESPACE`] and the first-party plugin index,
+/// and nothing else: not `core`, not a third-party namespace, not the
+/// revocation list and not release archives. [`KeyPolicy::compiled`] lists it
+/// as the only first-party key.
 ///
 /// # Errors
-/// [`SignError::InvalidKey`] when the compiled file is not a minisign key. Callers
-/// then have no first-party key, so first-party verification refuses.
+/// [`SignError::InvalidKey`] when the compiled file is not a minisign key.
+pub fn plugins_key() -> Result<PublicKey, SignError> {
+    PublicKey::from_pub_file(PLUGINS_KEY_FILE)
+}
+
+/// The id and namespace of the built-in plugin. It is reserved: the binary
+/// compiles it in and never fetches it, so no lock entry or index entry may use
+/// it, no key, compiled or pinned, verifies a fetched artifact in it, and a
+/// reader refuses one that does.
+pub const RESERVED_ID: &str = "core";
+
+/// The compiled release key. It signs release archives and the revocation list,
+/// and it is the revocation root. It signs no plugin.
+///
+/// # Errors
+/// [`SignError::InvalidKey`] when the compiled file is not a minisign key. The
+/// revocation root is then missing, so no revocation list verifies.
 pub fn release_key() -> Result<PublicKey, SignError> {
     release_key_from(RELEASE_KEY_FILE)
 }
@@ -192,19 +229,20 @@ pub struct KeyPolicy {
 }
 
 impl KeyPolicy {
-    /// The shipped policy: the compiled release key for [`FIRST_PARTY_NAMESPACES`],
-    /// and no pinned keys. Tests build the struct directly to inject other keys.
+    /// The shipped policy: the compiled plugins key for [`FIRST_PARTY_NAMESPACES`],
+    /// and no pinned keys. The release key is not listed. Tests build the struct
+    /// directly to inject other keys.
     ///
     /// # Errors
     /// [`SignError::InvalidKey`] when the compiled key does not parse. There is then
     /// no policy, so nothing verifies as first-party.
     pub fn compiled() -> Result<Self, SignError> {
-        Self::compiled_from(RELEASE_KEY_FILE)
+        Self::compiled_from(PLUGINS_KEY_FILE)
     }
 
     fn compiled_from(key_file: &str) -> Result<Self, SignError> {
         Ok(Self {
-            first_party: vec![release_key_from(key_file)?],
+            first_party: vec![PublicKey::from_pub_file(key_file)?],
             first_party_namespaces: FIRST_PARTY_NAMESPACES
                 .iter()
                 .map(|n| (*n).to_owned())
@@ -214,7 +252,12 @@ impl KeyPolicy {
     }
 
     fn candidates(&self, namespace: &str) -> &[PublicKey] {
-        if self.first_party_namespaces.iter().any(|n| n == namespace) {
+        if namespace == RESERVED_ID {
+            // Fails closed: the built-in pack is never fetched.
+            &[]
+        } else if namespace == FIRST_PARTY_NAMESPACE
+            || self.first_party_namespaces.iter().any(|n| n == namespace)
+        {
             &self.first_party
         } else {
             self.pinned.get(namespace).map_or(&[], Vec::as_slice)
@@ -641,7 +684,7 @@ pub struct RotationStatement {
     /// Always [`ROTATION_TYPE`], so no other signed document can pass as a rotation.
     #[serde(rename = "type")]
     pub kind: String,
-    /// The pack namespace whose key changes.
+    /// The namespace whose key changes.
     pub namespace: String,
     /// Key id of the pinned key.
     #[serde(rename = "oldKeyId")]

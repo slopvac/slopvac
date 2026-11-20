@@ -30,8 +30,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Cache Vale download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vale-cache
+          key: vale-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_vale.py') }}
       - name: Install Vale
-        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin"
+        run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
       - name: Add Vale to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
@@ -56,8 +61,9 @@ jobs:
           import json
           rules = json.load(open('/tmp/rules.json'))
           kinds = [rule['kind'] for rule in rules['rules']]
-          assert len(rules['rules']) == 238, len(rules['rules'])
-          assert kinds.count('judgement') == 68, kinds.count('judgement')
+          ids = [f"{rule['category']}.{rule['id']}" for rule in rules['rules']]
+          assert len(ids) == len(set(ids)), 'duplicate rule ids'
+          assert kinds[ids.index('prose-scope.mixed-content-types')] == 'judgement'
           assert len(rules['categories']) == 26, len(rules['categories'])
           PY
           slopvac explain orwell.stale-figure --format json > /tmp/explain.json
@@ -139,7 +145,8 @@ jobs:
           python3 - <<'PY'
           import json
           rules = json.load(open('/tmp/judgement-rules.json'))['rules']
-          assert len(rules) == 68 and all(r['kind'] == 'judgement' for r in rules)
+          assert rules and all(r['kind'] == 'judgement' for r in rules)
+          assert 'prose-scope.mixed-content-types' in [f"{r['category']}.{r['id']}" for r in rules]
           explained = json.load(open('/tmp/judgement-explain.json'))
           assert explained['judgement_question'] and explained['fix']
           assert explained['examples']
@@ -263,7 +270,7 @@ jobs:
 
           # Reference, compiled routing, and cache are usable from the wheel.
           slopvac reference > /tmp/reference.md
-          grep -q '169 checked rules' /tmp/reference.md
+          grep -qE '[0-9]+ checked rules' /tmp/reference.md
           rm -rf /tmp/compiled-vale
           slopvac compile \
             --config /tmp/slopvac-project/slopvac.toml \
@@ -443,8 +450,11 @@ jobs:
           python - <<'PY'
           import json
           rules = json.load(open("/tmp/rules.json"))
-          assert len(rules["rules"]) == 238
-          assert sum(r["kind"] == "judgement" for r in rules["rules"]) == 68
+          mixed = [
+              r for r in rules["rules"]
+              if (r["category"], r["id"]) == ("prose-scope", "mixed-content-types")
+          ]
+          assert [r["kind"] for r in mixed] == ["judgement"]
           assert len(rules["categories"]) == 26
           PY
 

@@ -40,7 +40,7 @@ A tag with major version below 3 does not go through dist. The `publish-legacy-r
 
 ## Signatures
 
-Releases carry minisign signatures next to the GitHub build attestations. The release key has the id `D9914BDB4570AC6D` and no password. Its public half is `keys/slopvac-release.pub` in this repository.
+Releases carry minisign signatures next to the GitHub build attestations. The release key has the id `D9914BDB4570AC6D` and no password. Its public half is `keys/slopvac-release.pub` in this repository. The plugins key has the id `089DF22CF142CD2B`. Its public half is `keys/slopvac-plugins.pub`, compiled into the binary, and it signs first-party plugins and the first-party plugin index.
 
 Verify a download:
 
@@ -56,21 +56,27 @@ When `slopvac self update` refuses or fails, it exits 2, leaves the installed bi
 
 | Code | When |
 | --- | --- |
-| `self-update-unmanaged` | The binary was not installed by the slopvac shell installer. The message names the upgrade command for a known install method, or the releases page otherwise. |
+| `self-update-unmanaged` | The binary was not installed by the slopvac shell installer. The message names the upgrade command for a known install method. Cargo-style installs and unknown ones get the releases page, because slopvac is not published on crates.io. |
 | `offline-network-needed` | Offline mode is on. Self update needs the network. |
 | `update-check-failed` | The latest-release lookup failed. |
 | `update-prerelease-refused` | The latest release is a candidate (`X.Y.Z-rc.N`). Self update installs stable releases only. |
 | `update-verification-failed` | The signature does not parse, does not verify against the embedded key, or names another file or version. |
+| `update-in-progress` | Another `self update` held the update lock for the whole 60-second wait. Run it again when the other update finishes. |
+| `update-lock-unsafe` | The lock file `slopvac.update.lock` beside the binary is a symbolic link, has more than one hard link, belongs to another user, or has a mode looser than `0600`. Nothing is written through it. Remove the file after you check why it is there, then run the update again. |
+| `update-interrupted` | An earlier update died part-way, and the installed binary matches neither the build it replaced nor the build it was installing, or the update record is unreadable. The update refuses to install over it. The message first tries the update lock. If no update holds it, the message says to remove `slopvac.update.lock` beside the binary after you check the installed `slopvac`, and to run the update again. If another update holds it, the message says to wait for that update to finish, and never to remove the file. |
+| `update-version-unknown` | No update record vouches for the installed binary, the binary is not the one that is running the update, and it did not report a version when run with `--offline --version --json` (it failed, printed something else, or took longer than 10 seconds). The update refuses to install over a binary of unknown version. Check that the installed `slopvac` runs, then run the update again. |
 | `self-update-failed` | The download of the archive or its `.minisig` failed (a missing signature lands here), or extraction or replacement failed, or the platform has no self-update support. |
 
 If the latest release is not newer than the running binary, `slopvac self update` reports that it is up to date and exits 0.
+
+Before it replaces the binary, the update takes the lock `slopvac.update.lock` beside it and works out which version is installed there. The running version counts only while the file on disk still has the same SHA-256 as the running binary, so another installer that replaced the file since the process started cannot be overwritten with an older release. The update uses the highest version that the file's fingerprint vouches for: a matching record in the lock file, or the running version. When nothing vouches for the file, the update runs it with `--offline --version --json` and reads the version from the output. It refuses when that fails.
 
 How the workflows sign:
 
 - `scripts/install_minisign.sh` installs a pinned minisign release and checks its sha256 before it runs anything.
 - `scripts/release_signing.py sign` writes the secret from `MINISIGN_SECRET_KEY` to a mode 600 file under `RUNNER_TEMP`, signs every file in the artifact directory with the trusted comment for the version in `--version`, deletes the key file, and verifies each signature against `keys/slopvac-release.pub`. Only the signing step sees the secret. The step never prompts, so an encrypted key fails the job.
-- Both workflows pass the version from the validated tag through an environment variable. The `host` job signs in `release.yml`, before it uploads to the unpublished release. In `candidate.yml` the `sign` job signs the archives, checksums and wheels before the PyPI upload, and the `prerelease` job attaches the signatures. A published release holds no unsigned asset.
-- The step fails closed. Without the public key file or the secret, the job stops before it uploads. `candidate.yml` also checks for the key in `validate`. Candidate wheels on PyPI carry no `.minisig`; the signed copies are on the GitHub prerelease. A stable release has no wheels on GitHub, so its wheels have no minisign signature.
+- Both workflows pass the version from the validated tag through an environment variable. The `host` job signs in `release.yml`, before it uploads to the unpublished release. In `publish-pypi.yml` the `sign` job signs the archives, checksums and wheels before the PyPI upload, and the `prerelease` job attaches the signatures. A published release holds no unsigned asset.
+- The step fails closed. Without the public key file or the secret, the job stops before it uploads. `publish-pypi.yml` also checks for the key in `validate`. Candidate wheels on PyPI carry no `.minisig`; the signed copies are on the GitHub prerelease. A stable release has no wheels on GitHub, so its wheels have no minisign signature.
 
 To rotate the key, follow [Rotate the key](maintainer-setup.md#rotate-the-key). Releases already published keep verifying against the key that signed them, so keep the old public key under `keys/` with its key id in the file name, and record the change in the release notes.
 
@@ -88,14 +94,14 @@ dist build --artifacts=local --tag v<version>
 
 A maintainer must do these once. No workflow does them.
 
-- Create the `MINISIGN_SECRET_KEY` repository secret from the key described in [maintainer setup](maintainer-setup.md#release-signing-key). Release and candidate jobs stop without the secret or the committed public key.
+- Create the `MINISIGN_SECRET_KEY` secret from the key described in [maintainer setup](maintainer-setup.md#release-signing-key) in the `release`, `candidate-signing` and `revocations` environments. No repository-level copy exists, and a test fails when a job reads a `MINISIGN_*` secret without declaring an environment. Release and candidate jobs stop without the secret or the committed public key.
 - Create the `slopvac/homebrew-tap` repository and install the release GitHub App on it (Contents: read and write). The Homebrew job mints a short-lived token from the App credentials `RELEASE_APP_CLIENT_ID` and `RELEASE_APP_PRIVATE_KEY`, so no tap token secret exists.
 - Configure the release-please GitHub App, as the flow section describes, and set the repository variable `RELEASE_APP_SLUG` to the App's slug. It is required: the 2.x publish job accepts only releases authored by `github-actions[bot]` or `<slug>[bot]`, and stops otherwise.
-- Create the `RULESET_READ_TOKEN` repository secret: a fine-grained personal access token limited to this repository, with the single repository permission Administration: read. The tag ruleset check uses it to read bypass actors. Without it the check uses `GITHUB_TOKEN`, GitHub omits `bypass_actors` from the response, and the release stops with a message that names this secret.
+- Give the release GitHub App the repository permission Administration: Read-only, and accept the new permission on the organization installation. The tag ruleset check mints a token from the App with only that permission to read bypass actors. If minting fails, the release stops with a message that names the permission.
 - Create the tag ruleset described next.
 - Enable GitHub immutable releases in the repository settings. Once a release is published, its tag and assets then cannot change. The flow above fits this: assets attach before the release is published.
 
-A pushed version tag starts the workflow, so only maintainers tag. The workflow starts only on plain `v<major>.<minor>.<patch>` tags, so it never publishes a prerelease. [Release candidates](candidates.md) run from a separate workflow on `rc/vX.Y.Z-rc.N` tags; this workflow does not handle them.
+A pushed version tag starts the workflow, so only maintainers tag. The workflow starts only on plain `v<major>.<minor>.<patch>` tags, so it never publishes a prerelease. `publish-pypi.yml` also starts on the same tag. It publishes the binary wheels to PyPI, behind the same provenance gate, and never touches the GitHub release. This workflow never uploads to PyPI, so the two cannot publish the same thing. [Release candidates](candidates.md) run from `publish-pypi.yml` on `rc/vX.Y.Z-rc.N` tags; this workflow does not handle them.
 
 ### Protect version tags
 
@@ -106,13 +112,17 @@ Create a repository ruleset with these settings:
 - Rules: restrict updates, restrict deletions, and block force pushes. In the API these are `update`, `deletion`, and `non_fast_forward`.
 - Bypass list: empty, or only the repository admin role. Any other bypass actor (a write role, a team, an app, a user, or a deploy key) lets that actor move the tag, so the check rejects the ruleset whatever the bypass mode.
 
+The release flow creates only immutable `vX.Y.Z` tags, plus the release candidate and plugin tags, and never creates or moves a major tag such as `v3`. The ruleset would block moving one anyway. Documentation therefore pins the Action to a full commit SHA with the version as a trailing comment, for example `slopvac/slopvac@<SHA> # v3.0.0`. Before the `v3.0.0` tag exists, the docs show a placeholder in place of the SHA, and `tests/test_action_pin_docs.py` checks both forms.
+
 Without this ruleset, someone who can write tags could move a tag after the checks pass. The `verify-tag` check narrows that window, and the ruleset closes it.
 
-`release-provenance.yml` runs `scripts/release_ruleset.py check` on every `vX.Y.Z` tag of major 3 and later, and the 2.x publish job runs it too. The script is read-only. It lists the tag rulesets (`GET /repos/{owner}/{repo}/rulesets`), reads each active one (`GET /repos/{owner}/{repo}/rulesets/{id}`), and requires that the active rulesets that cover the tag together enforce all three rules. It also reads each covering ruleset's `bypass_actors` and counts the ruleset only when that list is present and holds nothing but the repository admin role (role id 5) or organization admins. It fails the release when the ruleset is missing, inactive, too narrow, has another bypass actor, or is unreadable.
+`release-provenance.yml` runs `scripts/release_ruleset.py check` on every `vX.Y.Z` tag of major 3 and later, and the 2.x publish job runs it too. The script is read-only. It lists the tag rulesets (`GET /repos/{owner}/{repo}/rulesets`) and reads each one (`GET /repos/{owner}/{repo}/rulesets/{id}`). It trusts a ruleset that covers the tag only when all of these hold: the ruleset is active, `current_user_can_bypass` is `never` for the reading token, and its ID and `updated_at` match an entry in `scripts/release_ruleset_pins.json`. The active, trusted rulesets that cover the tag must together enforce the update, deletion and non-fast-forward rules. If the ruleset was edited, the check fails until a maintainer reviews it and updates the pin. When GitHub shows `bypass_actors`, the script also requires them to be the repository admin role (role id 5) or organization admins. It fails the release when the ruleset is missing, inactive, too narrow, changed since it was pinned, bypassable, or unreadable.
 
 GitHub matches ref patterns with `fnmatch` under `File::FNM_PATHNAME` and adds the `~ALL` and `~DEFAULT_BRANCH` tokens (see [Creating rulesets for a repository](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository)). The check does not reimplement that matching. It counts an include only if it is `~ALL`, `refs/tags/*`, `refs/tags/**`, `refs/tags/**/*`, `refs/tags/v*`, or the exact tag ref, so use one of these. It treats an exclude as excluding the tag unless it provably cannot match.
 
-The ruleset endpoints are documented in the GitHub REST reference for [repository rules](https://docs.github.com/en/rest/repos/rules). GitHub returns `bypass_actors` only to a token that can administer the repository, which `GITHUB_TOKEN` cannot, so the workflow passes `RULESET_READ_TOKEN` as `GH_TOKEN` to this one step and falls back to `GITHUB_TOKEN` when the secret is unset. The secret reaches only the check step, through the environment. The REST page names no permission for the list endpoints, and it is not confirmed that `GITHUB_TOKEN` can read them at all. If the first release fails with a 403 or 404 although the ruleset exists, the check failed closed as designed; set `RULESET_READ_TOKEN`.
+The ruleset endpoints are documented in the GitHub REST reference for [repository rules](https://docs.github.com/en/rest/repos/rules). GitHub returns `bypass_actors` only to a caller that can write the ruleset, which the release token cannot, so the pin stands in for reading them. `updated_at` changes on every edit of a ruleset, and `current_user_can_bypass` tells the reading token whether it can bypass the ruleset. The workflow mints a token from the release App (`actions/create-github-app-token`), scoped to this repository with `permission-administration: read` and nothing else. That token is `GH_TOKEN` for this one step only. If the first release fails with a 403 or 404 although the ruleset exists, the check failed closed as designed; confirm that the App has Administration: Read-only on the installation.
+
+To test the token and the check without a release, a maintainer dispatches `release-provenance.yml` with a `tag` input (for example `gh workflow run release-provenance.yml -f tag=v2.9.1`). That run mints the token and runs only the ruleset check against the tag. It skips the candidate checks and publishes nothing. The workflow must exist on the default branch before it can be dispatched.
 
 ## Tag safety
 
@@ -121,15 +131,26 @@ A git tag name can hold `$(...)` or backticks, and the generated workflow pastes
 - Only tags that match `v<digits>.<digits>.<digits>` start the workflow.
 - The first step of the plan job rejects any tag that is not exactly `vX.Y.Z`, before dist runs.
 - The tag reaches every shell step through an environment variable, never through `${{ }}` inside the script.
-- The `custom-release-provenance` plan job runs `release-provenance.yml` and passes it only the optional `RULESET_READ_TOKEN` secret, never `secrets: inherit`. The `host` job needs it, so a failed gate cannot let a release through when dist skips the build jobs. The gate runs on every `vX.Y.Z` tag of major 3 and later. It can pass only when a passed [candidate](candidates.md) run exists.
+- The `custom-release-provenance` plan job runs `release-provenance.yml` and passes it only the `RELEASE_APP_PRIVATE_KEY` secret, never `secrets: inherit`. The `host` job needs it, so a failed gate cannot let a release through when dist skips the build jobs. The gate runs on every `vX.Y.Z` tag of major 3 and later. It can pass only when a passed [candidate](candidates.md) run exists.
 - The gate binds to the commit. `release_provenance.py check-stable` takes the commit the workflow runs on (`$GITHUB_SHA`) and fails when the tag points anywhere else. It reads the candidate runs page by page, up to 1000 runs, and fails closed beyond that.
 - The host job re-resolves the tag on the remote (`release_provenance.py verify-tag`, peeled for annotated tags) before dist runs and again right before it publishes the release. It fails unless the tag still equals `$GITHUB_SHA`. The tag and commit reach the script through environment variables only.
 - The build step runs under bash, and the dist flags reach it through environment variables.
 - The CycloneDX step output is read as `outputs.paths`, so the SBOM reaches the upload. dist 0.34.0 writes `output`, which is a typo.
-- The stable PyPI job in `publish-lint.yml` uses the same gate for versions 3.0.0 and later only. The `build` job decides this with `release_provenance.py requires-gate`. A 2.x release keeps its flow without the gate, because 2.x candidates are untagged branch builds that no candidate tag can prove.
+- The stable PyPI upload of 3.0.0 and later is the `publish` job in `publish-pypi.yml`. Its `provenance` job calls the same `release-provenance.yml`, and the upload needs it to pass. The wheels are built from the tagged commit that the gate checked, and the upload job runs `verify-tag` first. Both PyPI publishers also run `release_provenance.py check-dist` before each upload: the files must be exactly the expected set, and the project name and version in each file's metadata must match, so a build step cannot add a file that the version check never saw. `publish-lint.yml` builds the pure-Python 2.x package and refuses any version from 3.0.0 on: its upload jobs need `release_provenance.py is-legacy` to print true. A 2.x release keeps its flow without the gate, because 2.x candidates are untagged branch builds that no candidate tag can prove.
 - The workflow token is read-only. Only the host job and the 2.x publish job can write contents.
 
 `dist-workspace.toml` sets `allow-dirty = ["ci"]` so dist accepts the hardened file. The script fails if a dist upgrade changes the template, and `tests/test_patch_release_workflow.py` hardens dist's raw output, `tests/fixtures/release.generated.yml`, and requires the result to equal the committed workflow byte for byte. After changing `dist-workspace.toml` or upgrading dist, run `scripts/dist_generate.sh --save-raw tests/fixtures/release.generated.yml` and commit both files.
+
+### Pinned jobs
+
+`scripts/release_workflow_pins.json` holds a sha256 for every job in `release.yml` and for each workflow-level block (`name`, `on` and `permissions`). Generation fails when a job changes, appears, disappears or gets a new name. It also fails when one of those blocks changes. The error names the job or block. The pins exist because no pattern list can recognize every way a shell step hides a command, so every change to the workflow needs a person to read it.
+
+When a pin fails:
+
+1. Run `git diff .github/workflows/release.yml`. The generator writes the hardened file before it checks the pins, so the diff shows the change.
+2. Read the diff for each job the error names. Treat it as you would any change to a release workflow.
+3. Run `scripts/dist_generate.sh --update-pins`. This rewrites the pin file. No other command writes it.
+4. Commit the workflow and the pin file together. After a dist upgrade, add the raw fixture.
 
 ## Publish order and recovery
 

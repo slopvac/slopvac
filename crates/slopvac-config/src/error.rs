@@ -2,7 +2,10 @@
 
 use std::io;
 
+use slopvac_messages::Catalog;
+
 use crate::diag::{Code, Diagnostic, SourceFile, render};
+use crate::messages::{ConfigMessage, ConfigPhrase, ConfigText};
 
 /// A file whose text slopvac refused, with the reasons.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,10 +33,12 @@ impl Rejected {
 }
 
 /// Why configuration could not be loaded.
+///
+/// Each variant's text comes from the message catalog through the helpers below.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     /// A file could not be read.
-    #[error("cannot read {path}: {}", reason(.source))]
+    #[error("{}", io_text(.path, .source))]
     Io {
         /// The path as the caller gave it, or relative to the project root. Never an absolute
         /// path that the caller did not supply.
@@ -42,26 +47,69 @@ pub enum ConfigError {
         #[source]
         source: io::Error,
     },
+    /// A config file is larger than [`crate::MAX_CONFIG_BYTES`].
+    #[error("{}", too_large_text(.path, *.cap))]
+    TooLarge {
+        /// The path as the caller gave it, or relative to the project root.
+        path: String,
+        /// The cap that the file exceeded, in bytes.
+        cap: u64,
+    },
     /// A file was read and refused.
-    #[error("{}: {}", .0.file, summary(&.0.diagnostics))]
+    #[error("{}", summary(.0))]
     Rejected(Box<Rejected>),
+}
+
+fn io_text(path: &str, source: &io::Error) -> String {
+    ConfigMessage::Io {
+        path: path.to_owned(),
+        reason: reason(source).to_owned(),
+    }
+    .to_string()
+}
+
+fn too_large_text(path: &str, cap: u64) -> String {
+    ConfigMessage::TooLarge {
+        path: path.to_owned(),
+        cap,
+    }
+    .to_string()
 }
 
 /// A fixed phrase per error kind, so the message does not change with the operating system.
 pub(crate) fn reason(e: &io::Error) -> &'static str {
     match e.kind() {
-        io::ErrorKind::NotFound => "no such file",
-        io::ErrorKind::PermissionDenied => "permission denied",
-        io::ErrorKind::InvalidData => "not valid UTF-8",
-        _ => "the file cannot be read",
+        io::ErrorKind::NotFound => ConfigPhrase::ReasonNotFound,
+        io::ErrorKind::PermissionDenied => ConfigPhrase::ReasonPermissionDenied,
+        io::ErrorKind::InvalidData => ConfigPhrase::ReasonNotUtf8,
+        _ => ConfigPhrase::ReasonUnreadable,
+    }
+    .as_static()
+}
+
+fn summary(rejected: &Rejected) -> String {
+    let file = rejected.file.clone();
+    match rejected.diagnostics.as_slice() {
+        [only] => ConfigText::RejectedOne {
+            file,
+            diagnostic: only.to_string(),
+        }
+        .to_string(),
+        many => ConfigText::RejectedMany {
+            file,
+            problems: many.len(),
+        }
+        .to_string(),
     }
 }
 
-fn summary(diagnostics: &[Diagnostic]) -> String {
-    match diagnostics {
-        [only] => only.to_string(),
-        many => format!("{} problems", many.len()),
-    }
+/// One `error[code]: message` line, the form every non-snippet report uses.
+pub(crate) fn error_line(code: Code, message: &dyn Catalog) -> String {
+    format!(
+        "error[{}]: {}",
+        code.as_str(),
+        slopvac_messages::render(message)
+    )
 }
 
 impl ConfigError {
@@ -74,11 +122,25 @@ impl ConfigError {
         }
     }
 
+    /// Read the config file at `path`, naming it `label` in errors, within
+    /// [`crate::MAX_CONFIG_BYTES`].
+    pub(crate) fn read_config(path: &std::path::Path, label: &str) -> Result<String, Self> {
+        use crate::read::{MAX_CONFIG_BYTES, ReadFailure, read_text};
+        read_text(path, MAX_CONFIG_BYTES).map_err(|e| match e {
+            ReadFailure::TooLarge(cap) => ConfigError::TooLarge {
+                path: label.to_owned(),
+                cap,
+            },
+            ReadFailure::Io(source) => ConfigError::io(label, source),
+        })
+    }
+
     /// The stable error class: the first diagnostic's code, or `config-io` for a read failure.
     #[must_use]
     pub fn code(&self) -> Code {
         match self {
             ConfigError::Io { .. } => Code::Io,
+            ConfigError::TooLarge { .. } => Code::TooLarge,
             ConfigError::Rejected(r) => r.diagnostics.first().map_or(Code::Parse, |d| d.code),
         }
     }
@@ -99,7 +161,9 @@ impl ConfigError {
     #[must_use]
     pub fn render(&self) -> String {
         match self {
-            ConfigError::Io { .. } => format!("error[{}]: {self}", Code::Io.as_str()),
+            ConfigError::Io { .. } | ConfigError::TooLarge { .. } => {
+                format!("error[{}]: {self}", self.code().as_str())
+            }
             ConfigError::Rejected(r) => r.render(),
         }
     }

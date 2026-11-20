@@ -1,6 +1,6 @@
 # 0001. Slopvac 3.0 architecture
 
-- Status: accepted, 2026-11-14. Every decision holds for 3.0, and no item is open. Decision 26 (2026-11-16) amends decisions 12 and 24 and the PCRE2 build note in the consequences. Decision 27 (2026-11-16) adds binary container inputs.
+- Status: accepted, 2026-11-14. Every decision holds for 3.0, and no item is open. Decision 26 (2026-11-16) amends decisions 12 and 24 and the PCRE2 build note in the consequences. Decision 27 (2026-11-16) adds binary container inputs. Decision 28 (2026-11-18) supersedes decision 13.
 - Deciders: slopvac maintainers
 - Tracking: bead `slopvac-8l4.2.1`, epic `slopvac-8l4`
 - Detail: [Slopvac 3.0 plan](slopvac-3.md)
@@ -102,7 +102,7 @@ Framing follows LSP. An `initialize` handshake exchanges capabilities. A Python 
 
 ### 9. OCI artifacts, minisign, and mise-style trust
 
-Distribute packs and plugins as OCI artifacts on GHCR or any registry. Ship minisign signatures as manifest layers, and verify them with `minisign-verify`. The host loads a code plugin only after `slopvac plugins trust` records its content hash, and it prints that command for an untrusted plugin. No code path prompts, so an agent or CI job cannot answer a prompt on a user's behalf.
+Distribute data and code plugins as OCI artifacts on GHCR or any registry. Ship minisign signatures as manifest layers, and verify them with `minisign-verify`. The host loads a code plugin only after `slopvac plugins trust` records its content hash, and it prints that command for an untrusted plugin. No code path prompts, so an agent or CI job cannot answer a prompt on a user's behalf.
 
 - Evidence: GHCR returns 404 for the referrers API, so signatures cannot attach as referrers. The tag-schema fallback works (`slopvac-8l4.2.17`).
 - Rejected: Sigstore verification in 3.0, which moves to the backlog.
@@ -124,6 +124,8 @@ cargo-dist builds archives and installers and feeds a Homebrew tap (`slopvac/hom
 ### 13. Dependabot only
 
 Remove Renovate and use Dependabot for cargo and workflow updates. Patch and security updates merge automatically through `dependabot/fetch-metadata`. This landed for 2.x in [#260](https://github.com/slopvac/slopvac/pull/260), together with a weekly check of the mise and Vale pins. The Vale pin check ends when Vale is removed.
+
+Superseded 2026-11-18 by decision 28: the repository moves to Renovate.
 
 ### 14. reviewdog for PR reporting
 
@@ -148,7 +150,7 @@ Each rule has a stable documentation page that formats link to. The formats foll
 Generate every reference document from code and data. CI fails when a generated file is stale. The generated set:
 
 - JSON Schemas from Rust types;
-- one page per rule, style, genre, and pack;
+- one page per rule, style, genre, and plugin;
 - the plugin protocol reference;
 - Rust API docs.
 
@@ -174,7 +176,7 @@ Confirmed 2026-11-14. An adversarial review proposed a smaller 3.0.0 with new pl
 
 Rust types generate versioned JSON Schemas, published per API major version.
 
-- IDs are namespaced as `<pack>:<id>`, with built-ins in `core`.
+- IDs are namespaced as `<plugin>:<id>`, with built-ins in `core`.
 - Rules use a typed `match:` block, and `tiers` is removed.
 - Profiles set gate thresholds and a severity shift only.
 - Styles are ordered presets with `extends` and declared `conflicts`.
@@ -223,7 +225,7 @@ Markdown uses `pulldown-cmark` and MDX uses `markdown-rs`. HTML uses `html5ever`
 - Reason: a scanner is hand-written C that keeps its own state in raw memory. Review found hangs and memory corruption in the F#, Kotlin and Swift scanners on hostile input. The Dart scanner also crashed on a multi-byte character at a read edge. Rust safety rules and parse budgets cannot contain C code.
 - Checks: the lexer is linear. The crate has a fuzz target, and a test fails if a linked grammar gains a scanner.
 - Rejected: tree-sitter with every grammar. It added 60 MiB to a release binary and put unaudited C scanners on the path of every source file.
-- Cost: Python, Elixir and Julia docstrings are strings, as in 2.x, so the lexer does not extract them. A scanner-free parser for them can come later.
+- Cost: Elixir and Julia docstrings are strings, as in 2.x, so the lexer does not extract them. A scanner-free parser for them can come later. Python is the exception: the lexer extracts the string that opens a module, class or function body.
 
 ### 23. Agent review
 
@@ -296,7 +298,7 @@ Native Windows is a 3.x feature (epic `slopvac-8l4.18.8`, label `release:3.x`).
 Decided 2026-11-16. 3.0 lints text inside Office and OpenDocument containers and inside PNG images that embed a diagram source. Formats: `docx`, `pptx`, `xlsx` and their macro and template variants (read-only), `odt`, `odp`, `ods`, and draw.io, Excalidraw and PlantUML PNG. EPUB and PDF are out of scope, as are Mermaid, tldraw and Inkscape images and encrypted files.
 
 - Engine: `Engine::lint_binary` takes `BinaryInput { path, bytes, format }`. Text input stays `&str`.
-- Extraction contract: a new plugin hook kind, `binary-extractor/extract`, sends bytes inline as base64. First-party extractors use the same contract in process, and wire conformance tests run them too. One validator separates valid-empty, no-source, unsupported, malformed and over-budget. A malformed payload exits 2.
+- Extraction contract: a new plugin hook kind, `binary-extractor/extract`, sends bytes inline as base64. First-party extractors use the same contract in process, and wire conformance tests run them too. One validator separates valid-empty, no-source, unsupported, malformed and over-budget. Unsupported content inside a supported input is an `info` notice with exit 0, and the run stays complete. A malformed payload exits 2.
 - Positions: segment-local coordinates drive matching, contexts, exclusions and fingerprints. The container byte range is provenance only. `Finding.origin` is an optional structure that carries the locator, label, segment id and local range.
 - Fix: `--fix` skips binary hosts with `SkipReason::BinaryHost`.
 - Limits: 256 MiB input, ZIP entry-count, size and ratio caps checked before expensive work, DTD off, and bounded PNG chunks. A breach exits 2.
@@ -304,6 +306,16 @@ Decided 2026-11-16. 3.0 lints text inside Office and OpenDocument containers and
 - Evidence: a crate survey (`zip` has no read-side bomb guards; `roxmltree` can disable the DTD) and an adversarial review whose revisions are all adopted. No spike measured extraction speed. The PlantUML PNG value encoding is unverified.
 - Rejected: bundled subprocess plugins for first-party formats (a spawn plus base64 per file, in return for crash and memory isolation and host-enforced deadlines that the in-process extractors give up), sniffing every PNG, and a container byte offset as the finding position.
 - Tracking: epic `slopvac-8l4.20`, bead `slopvac-8l4.2.31`. Detail: [Binary container inputs](binary-inputs.md).
+
+### 28. Renovate for dependency updates
+
+Decided 2026-11-18. Supersedes decision 13. Renovate opens the version-update and security-update pull requests for cargo, workflows, mise tools and the site packages. Dependabot only raises alerts, and its version updates and automated security fixes stay off.
+
+- Auto-merge: minor, patch, digest and lock file updates merge once the CI gate passes. Majors and 0.x versions never do.
+- Removed: `.github/dependabot.yml` and the `dependabot/fetch-metadata` auto-merge workflow.
+- Config: `.github/renovate.json5`.
+
+- Rejected: keeping decision 13. One tool owns both the version and the security update PRs, and Renovate groups and schedules them in one config.
 
 ## Consequences
 
