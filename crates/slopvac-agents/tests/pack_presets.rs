@@ -78,7 +78,10 @@ fn a_project_rule_beats_the_core_genre_which_beats_the_core_style() {
         [ConfigLayer::Genre, ConfigLayer::Project],
         "the tutorial genre sets the rule off, the project file overrides it"
     );
-    assert_eq!(resolved.get(&["rules", FUTURE_TENSE]), Some(&json!("warning")));
+    assert_eq!(
+        resolved.get(&["rules", FUTURE_TENSE]),
+        Some(&json!("warning"))
+    );
 
     let style_rule = resolved.source(&["rules", "ste-nouns.multiword-noun-too-long"]);
     assert_eq!(style_rule.map(|s| s.layer), Some(ConfigLayer::Style));

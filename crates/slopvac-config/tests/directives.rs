@@ -2,13 +2,13 @@
 
 mod common;
 
+use common::NoPresets;
 use serde_json::json;
 use slopvac_config::directives::{find, read};
 use slopvac_config::frontmatter::Policy;
 use slopvac_config::{Code, ConfigLayer, Inputs, load};
 use std::num::NonZeroUsize;
 use std::path::Path;
-use common::NoPresets;
 
 fn default_policy() -> Policy {
     Policy {
