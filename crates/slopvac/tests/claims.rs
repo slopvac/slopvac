@@ -1,5 +1,5 @@
 //! `slopvac claims` through the installed binary: the report, the errors that stop a run,
-//! paths kept out of messages, and no network use.
+//! paths kept out of messages, and no traffic through a configured proxy.
 
 use assert_cmd::Command;
 use serde_json::Value;
