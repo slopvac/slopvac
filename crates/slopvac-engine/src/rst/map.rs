@@ -121,25 +121,30 @@ pub(super) fn project(source: &str, bom: usize, nodes: &[Node]) -> Mapped {
     code_spans.sort_by_key(Span::start);
     let mut notices = Vec::new();
     if !unplaced.is_empty() {
+        let message = crate::messages::EngineNotice::RstUnplaced {
+            message: crate::messages::EngineDetails::RstUnplaced {
+                count: unplaced.len(),
+                first: unplaced[0].into(),
+            }
+            .to_string(),
+        };
         notices.push(RstNotice {
-            code: "rst-prose-unplaced",
+            code: slopvac_messages::Catalog::code(&message),
             warning: true,
-            message: format!(
-                "{} RST node(s) have no usable source lines, so their prose was not checked \
-                 (first: {})",
-                unplaced.len(),
-                unplaced[0]
-            ),
+            message: message.to_string(),
         });
     }
     if line_precise > 0 {
+        let message = crate::messages::EngineNotice::RstLinePrecise {
+            message: crate::messages::EngineDetails::RstLinePrecise {
+                count: line_precise,
+            }
+            .to_string(),
+        };
         notices.push(RstNotice {
-            code: "rst-line-precise",
+            code: slopvac_messages::Catalog::code(&message),
             warning: false,
-            message: format!(
-                "{line_precise} RST block(s) could not be matched word by word, so findings in \
-                 them point at the whole block"
-            ),
+            message: message.to_string(),
         });
     }
     Mapped {

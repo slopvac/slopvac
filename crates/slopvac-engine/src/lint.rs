@@ -372,20 +372,7 @@ fn runs_lexically(kind: MatchKind, m: &Match) -> bool {
     }
 }
 
-/// Notice codes for input that an extractor could not read in full. All extractors share
-/// the family, and this table is the one place that spells the strings.
-pub mod extract_code {
-    /// Valid content inside a supported input that the extractor does not read, such as a
-    /// diagram type. An info notice at the root of the report; the run stays complete.
-    pub const UNSUPPORTED: &str = "extract-unsupported";
-    /// The input is not well formed. A warning in `unchecked`; the run is incomplete.
-    pub const MALFORMED: &str = "extract-malformed";
-    /// A size or work limit stopped the read. A warning in `unchecked`; the run is incomplete.
-    pub const BUDGET: &str = "extract-budget";
-    /// An extractor plugin returned output that breaks the protocol. Reserved: the
-    /// built-in extractors never emit it.
-    pub const OUTPUT_INVALID: &str = "extract-output-invalid";
-}
+pub use crate::messages::extract_code;
 
 /// A linted document and its run-level notices, or why the input could not be linted.
 pub type LintOutcome = Result<(Document, Vec<Notice>), EngineError>;
@@ -796,7 +783,7 @@ impl Engine {
             self.sets[a.set].categories()[a.category].rules()[a.rule].id() == id
         };
         if !self.running.contains(id.as_str()) {
-            return Some("the rule is switched off or does not apply under the engine settings");
+            return Some(crate::messages::EnginePhrase::RuleInactive.as_static());
         }
         let owns =
             |plan: &vocabulary::Plan| plan.owner.is_some_and(|i| at(&&self.vocabulary_rules[i]));
@@ -808,9 +795,9 @@ impl Engine {
         if executes {
             None
         } else if rule.kind() == MatchKind::Vocabulary {
-            Some("a vocabulary rule needs a usable word blocklist")
+            Some(crate::messages::EnginePhrase::RuleNeedsBlocklist.as_static())
         } else {
-            Some("the engine does not run this kind, style or metric of rule")
+            Some(crate::messages::EnginePhrase::RuleNotRun.as_static())
         }
     }
 
@@ -958,7 +945,7 @@ impl Engine {
         let mut notices = if matches!(input.kind, Kind::Comments(_)) {
             self.comment_notice().into_iter().collect()
         } else {
-            self.not_run_notices(&genre.id)?
+            self.not_run_notices(&genre.id)
         };
         notices.extend(extra);
         let document = self.document(input, &prepared, seen, genre, findings, notices);
@@ -1153,10 +1140,10 @@ impl Engine {
     /// Read an RST file. A file that cannot be read is an empty document with a warning
     /// notice, so the run is incomplete and the file is never skipped silently.
     fn parse_rst(&self, input: &Input<'_>, extra: &mut Vec<Notice>) -> Result<Parsed, EngineError> {
-        let make = |code: &str, level, message: String| -> Result<Notice, EngineError> {
-            let mut notice = notice(code, level, message)?;
+        let make = |level, message: EngineNotice| {
+            let mut notice = notice(level, message);
             notice.path = Some(input.path.to_owned());
-            Ok(notice)
+            notice
         };
         match self.rst.parse(input.source) {
             Ok(parsed) => {
@@ -1166,21 +1153,23 @@ impl Engine {
                     } else {
                         NoticeLevel::Info
                     };
-                    extra.push(make(n.code, level, n.message)?);
+                    let message = if n.warning {
+                        EngineNotice::RstUnplaced { message: n.message }
+                    } else {
+                        EngineNotice::RstLinePrecise { message: n.message }
+                    };
+                    extra.push(make(level, message));
                 }
                 Ok(parsed.document)
             }
             Err(error) => {
-                let code = if error.is_missing() {
-                    "rst-converter-missing"
+                let message = RstError::message(&error, &[std::path::Path::new(input.path)]);
+                let message = if error.is_missing() {
+                    EngineNotice::RstConverterMissing { message }
                 } else {
-                    "rst-unchecked"
+                    EngineNotice::RstUnchecked { message }
                 };
-                extra.push(make(
-                    code,
-                    NoticeLevel::Warning,
-                    RstError::message(&error, &[std::path::Path::new(input.path)]),
-                )?);
+                extra.push(make(NoticeLevel::Warning, message));
                 Ok(Parsed::default())
             }
         }
@@ -1966,7 +1955,7 @@ impl Run<'_> {
         let mut unchecked = Vec::new();
         let mut notices = Vec::new();
         for (format, extraction, nearby) in &diagrams {
-            match self.extraction_notice(*format, extraction.status)? {
+            match self.extraction_notice(*format, extraction.status) {
                 Some(n) if n.level == NoticeLevel::Info => notices.push(n),
                 Some(n) => unchecked.push(n),
                 None => {}
@@ -2011,31 +2000,33 @@ impl Run<'_> {
     /// A diagram that is malformed or over a limit gets a warning: the result cannot
     /// establish a pass, so the run is incomplete. A diagram of an unsupported type gets an
     /// info notice: valid content that the extractor does not read.
-    fn extraction_notice(
-        &self,
-        format: DiagramFormat,
-        status: ExtractionStatus,
-    ) -> Result<Option<Notice>, EngineError> {
-        let (code, message) = match status {
-            ExtractionStatus::Ok => return Ok(None),
-            ExtractionStatus::Unsupported(r) => (extract_code::UNSUPPORTED, r.to_owned()),
-            ExtractionStatus::Malformed(r) => (extract_code::MALFORMED, r.to_owned()),
+    fn extraction_notice(&self, format: DiagramFormat, status: ExtractionStatus) -> Option<Notice> {
+        let (level, message) = match status {
+            ExtractionStatus::Ok => return None,
+            ExtractionStatus::Unsupported(r) => (
+                NoticeLevel::Info,
+                EngineNotice::ExtractUnsupported { reason: r.into() },
+            ),
+            ExtractionStatus::Malformed(r) => (
+                NoticeLevel::Warning,
+                EngineNotice::ExtractMalformed { reason: r.into() },
+            ),
             ExtractionStatus::BudgetExhausted(hit) => (
-                extract_code::BUDGET,
-                format!("the {} limit of {} was reached", hit.cap, hit.limit),
+                NoticeLevel::Warning,
+                EngineNotice::ExtractBudget {
+                    cap: hit.cap.into(),
+                    limit: hit.limit,
+                },
             ),
             // A status added later is a failure until this match learns its code.
             _ => (
-                extract_code::MALFORMED,
-                "diagram extraction failed".to_owned(),
+                NoticeLevel::Warning,
+                EngineNotice::ExtractMalformed {
+                    reason: crate::messages::EnginePhrase::ExtractionFailed.text(),
+                },
             ),
         };
-        let (level, tail) = if code == extract_code::UNSUPPORTED {
-            (NoticeLevel::Info, "the diagram was not checked")
-        } else {
-            (NoticeLevel::Warning, "the diagram was not fully checked")
-        };
-        let mut n = notice(code, level, format!("{message}; {tail}"))?;
+        let mut n = notice(level, message);
         n.path = Some(self.input.path.to_owned());
         let mut data = serde_json::Map::new();
         match status {
@@ -2049,7 +2040,7 @@ impl Run<'_> {
             }
             _ => {}
         }
-        Ok(Some(n.with_data(data)))
+        Some(n.with_data(data))
     }
 
     /// The parsed paragraphs that have prose, each with its analysis. A diagram file has none.
@@ -2104,27 +2095,37 @@ impl Run<'_> {
         hit: &Range<usize>,
         nearby: &[NearbyProse<'_>],
     ) -> Result<Span, EngineError> {
-        let bad = |why: &str| EngineError::BadRange(format!("{hit:?}: {why}"));
+        let bad = |why: &str| {
+            EngineError::BadRange(
+                crate::messages::EngineDetails::RangeInvalid {
+                    range: format!("{hit:?}"),
+                    reason: why.into(),
+                }
+                .to_string(),
+            )
+        };
         if hit.start > hit.end {
-            return Err(bad("the range is reversed"));
+            return Err(bad(crate::messages::EnginePhrase::RangeReversed.as_static()));
         }
         let span = if hit.start <= self.input.source.len() {
             if hit.end > self.input.source.len() {
-                return Err(bad("the range ends past the file"));
+                return Err(bad(crate::messages::EnginePhrase::RangePastEnd.as_static()));
             }
             Span::new(hit.start, hit.end).map_err(|e| bad(&e.to_string()))?
         } else {
             let prose = nearby
                 .iter()
                 .find(|n| n.base <= hit.start && hit.end <= n.base + n.text().len())
-                .ok_or_else(|| bad("the range is outside the prose"))?;
+                .ok_or_else(|| bad(crate::messages::EnginePhrase::RangeOutside.as_static()))?;
             let (from, to) = (hit.start - prose.base, hit.end - prose.base);
             if from == 0 && to == prose.text().len() {
                 prose.block.span
             } else if prose.text().is_char_boundary(from) && prose.text().is_char_boundary(to) {
                 prose.projection.span_for_bytes(from, to)
             } else {
-                return Err(bad("the range splits a character"));
+                return Err(bad(
+                    crate::messages::EnginePhrase::RangeCharacter.as_static()
+                ));
             }
         };
         self.index.check_span(span)?;

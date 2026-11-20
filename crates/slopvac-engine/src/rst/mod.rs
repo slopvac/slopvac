@@ -208,13 +208,19 @@ impl RstError {
         let list: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
         let list = list.join(", ");
         match self {
-            Self::ConverterMissing { detail } => format!(
-                "RST target(s) skipped: rst2html or rst2html.py not found on PATH ({list}); \
-                 install with `pip install docutils`. slopvac 3.0 reads RST through a Python \
-                 interpreter that can import docutils 0.21 or later ({detail}). Set \
-                 {OVERRIDE_VARIABLE} to an absolute interpreter path to choose one."
-            ),
-            other => format!("RST target(s) not checked ({list}): {other}"),
+            Self::ConverterMissing { detail } => {
+                crate::messages::EngineDetails::RstMissingTargets {
+                    paths: list,
+                    detail: detail.clone(),
+                    variable: OVERRIDE_VARIABLE.into(),
+                }
+                .to_string()
+            }
+            other => crate::messages::EngineDetails::RstUncheckedTargets {
+                paths: list,
+                reason: other.to_string(),
+            }
+            .to_string(),
         }
     }
 
@@ -266,18 +272,21 @@ impl RstAdapter {
 
     fn resolve(&self) -> Result<PathBuf, String> {
         if let Some(path) = &self.options.interpreter {
-            return trust::check_override(path, &self.options.project_roots)
-                .map_err(|e: OverrideError| format!("{OVERRIDE_VARIABLE} is unusable: {e}"));
+            return trust::check_override(path, &self.options.project_roots).map_err(
+                |e: OverrideError| {
+                    crate::messages::EngineDetails::RstOverride {
+                        variable: OVERRIDE_VARIABLE.into(),
+                        reason: e.to_string(),
+                    }
+                    .to_string()
+                },
+            );
         }
         if self.options.project_roots.is_empty() {
             // Without the project and target directories nothing tells a repository
             // directory from a user directory, so no PATH entry can be trusted, and
             // probing would already run the candidate.
-            return Err(
-                "the project boundaries are unknown, so no PATH entry can be trusted; the \
-                 caller must give the project and target directories"
-                    .to_owned(),
-            );
+            return Err(crate::messages::EnginePhrase::RstUnknownBoundaries.text());
         }
         let from_env;
         let search = if let Some(path) = &self.options.search_path {
@@ -331,11 +340,18 @@ impl RstAdapter {
 
 /// Why the search found nothing.
 fn describe(skipped: &[Skipped]) -> String {
-    let mut text = String::from("no python3 or python with docutils on a trusted PATH entry");
+    let mut text = crate::messages::EnginePhrase::RstSearchEmpty.text();
     for item in skipped {
         let note = match &item.reason {
-            SkipReason::NoDocutils => format!("{} has no docutils", item.path.display()),
-            other => format!("skipped {}: {other}", item.path.display()),
+            SkipReason::NoDocutils => crate::messages::EngineDetails::RstNoDocutils {
+                path: item.path.display().to_string(),
+            }
+            .to_string(),
+            other => crate::messages::EngineDetails::RstSkipped {
+                path: item.path.display().to_string(),
+                reason: other.to_string(),
+            }
+            .to_string(),
         };
         text.push_str("; ");
         text.push_str(&note);

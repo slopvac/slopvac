@@ -255,6 +255,49 @@ pub(crate) enum EngineText {
 
 #[derive(Debug, Catalog)]
 pub(crate) enum EngineDetails {
+    /// A diff repeats a path.
+    #[code("engine-diff-duplicate-path")]
+    #[text("ambiguous Git diff: duplicate path {path}")]
+    DiffDuplicatePath { path: String },
+    /// A hunk header is malformed.
+    #[code("engine-diff-hunk-header")]
+    #[text("malformed hunk header: {header}")]
+    DiffHunkHeader { header: String },
+    /// A hunk range is invalid.
+    #[code("engine-diff-hunk-range")]
+    #[text("invalid hunk range: {header}")]
+    DiffHunkRange { header: String },
+    /// A path marker is malformed.
+    #[code("engine-diff-path-marker")]
+    #[text("malformed path marker: {marker}")]
+    DiffPathMarker { marker: String },
+    /// A path escape is ambiguous.
+    #[code("engine-diff-path-escape")]
+    #[text("ambiguous path escape: {path}")]
+    DiffPathEscape { path: String },
+    /// The generated locale rule's source label.
+    #[code("engine-locale-source-label")]
+    #[text("<generated locale {tag}>.json")]
+    LocaleSourceLabel { tag: String },
+    /// RST nodes have no usable source lines.
+    #[code("engine-rst-unplaced-detail")]
+    #[text(
+        "{count} RST node(s) have no usable source lines, so their prose was not checked (first: {first})"
+    )]
+    RstUnplaced {
+        #[count]
+        count: usize,
+        first: String,
+    },
+    /// RST blocks could only be placed by line.
+    #[code("engine-rst-line-precise-detail")]
+    #[text(
+        "{count} RST block(s) could not be matched word by word, so findings in them point at the whole block"
+    )]
+    RstLinePrecise {
+        #[count]
+        count: usize,
+    },
     /// A rule case found the wrong count.
     #[code("engine-case-count")]
     #[text("want {want} finding(s), got {got}")]
@@ -446,6 +489,73 @@ pub(crate) enum EngineDetails {
 
 #[derive(Debug, Catalog)]
 pub(crate) enum EnginePhrase {
+    /// A hunk has no body.
+    #[code("engine-diff-no-body")]
+    #[text("hunk has no body")]
+    DiffNoBody,
+    /// A file section lacks its new path.
+    #[code("engine-diff-no-new-path")]
+    #[text("file section has no new path")]
+    DiffNoNewPath,
+    /// The diff format is ambiguous.
+    #[code("engine-diff-format")]
+    #[text("ambiguous Git diff format")]
+    DiffFormat,
+    /// Content precedes the file header.
+    #[code("engine-diff-before-header")]
+    #[text("content before file header")]
+    DiffBeforeHeader,
+    /// A hunk precedes its paths.
+    #[code("engine-diff-before-paths")]
+    #[text("hunk before file paths")]
+    DiffBeforePaths,
+    /// A hunk range overflows.
+    #[code("engine-diff-range-overflow")]
+    #[text("hunk range overflows")]
+    DiffRangeOverflow,
+    /// A newline marker has no hunk.
+    #[code("engine-diff-newline-marker")]
+    #[text("newline marker without hunk")]
+    DiffNewlineMarker,
+    /// A diff repeats its old path.
+    #[code("engine-diff-old-path")]
+    #[text("duplicate old path")]
+    DiffOldPath,
+    /// A new path is misplaced.
+    #[code("engine-diff-new-path")]
+    #[text("misplaced new path")]
+    DiffNewPath,
+    /// A quoted path is malformed.
+    #[code("engine-diff-quoted-path")]
+    #[text("malformed quoted path")]
+    DiffQuotedPath,
+    /// A path escape exceeds the byte range.
+    #[code("engine-diff-escape-range")]
+    #[text("path escape out of range")]
+    DiffEscapeRange,
+    /// A path is not UTF-8.
+    #[code("engine-diff-not-utf8")]
+    #[text("path is not valid UTF-8")]
+    #[cfg_attr(
+        unix,
+        expect(
+            dead_code,
+            reason = "the existing non-Unix path reader rejects non-UTF-8 paths"
+        )
+    )]
+    DiffNotUtf8,
+    /// Interpreter discovery lacks project boundaries.
+    #[code("engine-rst-unknown-boundaries")]
+    #[text(
+        "the project boundaries are unknown, so no PATH entry can be trusted; the caller must give the project and target directories"
+    )]
+    RstUnknownBoundaries,
+    /// The generated spelling rule's citation note.
+    #[code("engine-locale-citation")]
+    #[text(
+        "Generated from the locale table rather than written as a rule, because the correct spelling depends on the project and a rule's substitution map has only one direction. Rule 1.14 asks for American spelling; that is `locale = \"en-US\"`, the default, rather than a rule a British English project cannot turn off."
+    )]
+    LocaleCitation,
     /// Help for the cases command.
     #[code("engine-cases-about")]
     #[text("Run the test cases of the rules in a plugin")]
@@ -576,6 +686,8 @@ impl EnginePhrase {
     }
 }
 
+macro_rules! notices {
+    ($unsupported:literal, $malformed:literal, $budget:literal, $invalid:literal) => {
 #[derive(Debug, Catalog)]
 pub(crate) enum EngineNotice {
     /// Active capitalization rules use an unsupported style.
@@ -632,23 +744,12 @@ pub(crate) enum EngineNotice {
     },
     /// RST nodes have no usable source lines.
     #[code("rst-prose-unplaced")]
-    #[notice(
-        "{count} RST node(s) have no usable source lines, so their prose was not checked (first: {first})"
-    )]
-    RstUnplaced {
-        #[count]
-        count: usize,
-        first: String,
-    },
+    #[notice("{message}")]
+    RstUnplaced { message: String },
     /// RST blocks could only be placed by line.
     #[code("rst-line-precise")]
-    #[notice(
-        "{count} RST block(s) could not be matched word by word, so findings in them point at the whole block"
-    )]
-    RstLinePrecise {
-        #[count]
-        count: usize,
-    },
+    #[notice("{message}")]
+    RstLinePrecise { message: String },
     /// No RST converter was available.
     #[code("rst-converter-missing")]
     #[notice("{message}")]
@@ -658,26 +759,48 @@ pub(crate) enum EngineNotice {
     #[notice("{message}")]
     RstUnchecked { message: String },
     /// Valid diagram content is unsupported.
-    #[code("extract-unsupported")]
+    #[code($unsupported)]
     #[notice("{reason}; the diagram was not checked")]
     ExtractUnsupported { reason: String },
     /// A diagram is malformed.
-    #[code("extract-malformed")]
+    #[code($malformed)]
     #[notice("{reason}; the diagram was not fully checked")]
     ExtractMalformed { reason: String },
     /// A diagram extractor reached a limit.
-    #[code("extract-budget")]
+    #[code($budget)]
     #[notice("the {cap} limit of {limit} was reached; the diagram was not fully checked")]
     ExtractBudget {
         cap: String,
         #[count]
-        limit: usize,
+        limit: u64,
     },
     /// An extractor plugin returned invalid output.
-    #[code("extract-output-invalid")]
+    #[code($invalid)]
     #[notice("{reason}")]
+    #[expect(dead_code, reason = "reserved for extractor plugin protocol failures; built-in extractors do not emit this notice")]
     ExtractOutputInvalid { reason: String },
 }
+
+/// Notice codes for input an extractor could not read in full.
+pub mod extract_code {
+    /// Valid content that the extractor does not support; the run stays complete.
+    pub const UNSUPPORTED: &str = $unsupported;
+    /// Malformed input; the run is incomplete.
+    pub const MALFORMED: &str = $malformed;
+    /// A size or work limit stopped extraction; the run is incomplete.
+    pub const BUDGET: &str = $budget;
+    /// A plugin returned invalid output. Reserved for plugin extractors.
+    pub const OUTPUT_INVALID: &str = $invalid;
+}
+    };
+}
+
+notices!(
+    "extract-unsupported",
+    "extract-malformed",
+    "extract-budget",
+    "extract-output-invalid"
+);
 
 /// Engine text registered by the binary.
 #[must_use]

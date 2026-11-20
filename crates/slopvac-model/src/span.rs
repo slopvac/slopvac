@@ -15,10 +15,7 @@ use crate::schema::x_extensions;
 #[serde(try_from = "SpanRepr")]
 #[schemars(
     with = "SpanRepr",
-    description = "Half-open range [start, end) of byte offsets into the original file bytes, \
-        BOM included. The end is exclusive, start is at most end, and both offsets fall on code \
-        point boundaries and never between the CR and LF of one CRLF. See \
-        docs/contract/positions.md."
+    transform = crate::messages::span_description
 )]
 pub struct Span {
     start: usize,
@@ -102,9 +99,7 @@ impl Span {
 #[serde(try_from = "LineColRepr")]
 #[schemars(
     with = "LineColRepr",
-    description = "One-based line and column. The column counts Unicode code points from the \
-        line start, after any BOM, and a tab counts as one. Output formats that need another \
-        unit convert from the span. See docs/contract/positions.md."
+    transform = crate::messages::position_description
 )]
 pub struct LineCol {
     line: usize,

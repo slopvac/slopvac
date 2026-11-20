@@ -64,7 +64,7 @@ impl PackId {
             Ok(Self(value))
         } else {
             Err(IdError {
-                kind: "plugin id",
+                kind: crate::messages::ModelPhrase::PluginId.as_static(),
                 value,
             })
         }
@@ -114,7 +114,7 @@ impl RuleId {
         match value.split_once(':') {
             Some((pack, local)) if is_pack(pack) && is_local(local) => Ok(Self(value)),
             _ => Err(IdError {
-                kind: "rule id",
+                kind: crate::messages::ModelPhrase::RuleId.as_static(),
                 value,
             }),
         }
@@ -189,7 +189,7 @@ impl ContextTag {
             Ok(Self(value))
         } else {
             Err(IdError {
-                kind: "context tag",
+                kind: crate::messages::ModelPhrase::ContextTag.as_static(),
                 value,
             })
         }
@@ -253,7 +253,7 @@ impl JsonSchema for SchemaVersion {
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
-            "description": "Root artifact schema version.",
+            "description": crate::messages::ModelPhrase::SchemaVersionDescription.as_static(),
             "const": SchemaVersion::VALUE,
         })
     }
@@ -277,7 +277,7 @@ impl ApiVersion {
             Ok(Self(value))
         } else {
             Err(IdError {
-                kind: "api version",
+                kind: crate::messages::ModelPhrase::ApiVersion.as_static(),
                 value: value.to_string(),
             })
         }

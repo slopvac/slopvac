@@ -49,16 +49,20 @@ pub type Result<T> = std::result::Result<T, OriginError>;
 
 fn check_locator(s: &str) -> Result<()> {
     if s.is_empty() {
-        return Err(OriginError::Locator("empty"));
+        return Err(OriginError::Locator(
+            crate::messages::ModelPhrase::Empty.as_static(),
+        ));
     }
     if s.chars().count() > LOCATOR_MAX_CHARS {
-        return Err(OriginError::Locator("too long"));
+        return Err(OriginError::Locator(
+            crate::messages::ModelPhrase::TooLong.as_static(),
+        ));
     }
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
         if forbidden(c) {
             return Err(OriginError::Locator(
-                "forbidden character, percent-escape it",
+                crate::messages::ModelPhrase::LocatorCharacter.as_static(),
             ));
         }
         if c == '%' {
@@ -69,7 +73,7 @@ fn check_locator(s: &str) -> Result<()> {
             });
             if !ok {
                 return Err(OriginError::Locator(
-                    "`%` must start %XX with uppercase hex",
+                    crate::messages::ModelPhrase::LocatorEscape.as_static(),
                 ));
             }
         }
@@ -79,11 +83,17 @@ fn check_locator(s: &str) -> Result<()> {
 
 fn check_label(s: &str) -> Result<()> {
     if s.is_empty() {
-        Err(OriginError::Label("empty"))
+        Err(OriginError::Label(
+            crate::messages::ModelPhrase::Empty.as_static(),
+        ))
     } else if s.chars().count() > LABEL_MAX_CHARS {
-        Err(OriginError::Label("too long"))
+        Err(OriginError::Label(
+            crate::messages::ModelPhrase::TooLong.as_static(),
+        ))
     } else if s.chars().any(forbidden) {
-        Err(OriginError::Label("forbidden character"))
+        Err(OriginError::Label(
+            crate::messages::ModelPhrase::LabelCharacter.as_static(),
+        ))
     } else {
         Ok(())
     }

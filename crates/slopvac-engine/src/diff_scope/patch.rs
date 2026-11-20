@@ -60,10 +60,14 @@ struct Section {
 impl Section {
     fn finish(&self) -> Result<(), DiffError> {
         if self.saw_hunk && !self.hunk_body {
-            return Err(malformed("hunk has no body"));
+            return Err(malformed(
+                crate::messages::EnginePhrase::DiffNoBody.as_static(),
+            ));
         }
         if self.open && !self.new_seen && !self.metadata {
-            return Err(malformed("file section has no new path"));
+            return Err(malformed(
+                crate::messages::EnginePhrase::DiffNoNewPath.as_static(),
+            ));
         }
         Ok(())
     }
@@ -85,28 +89,36 @@ pub(super) fn parse(patch: &[u8]) -> Result<Parsed, DiffError> {
             continue;
         }
         if line.starts_with(b"diff --") {
-            return Err(malformed("ambiguous Git diff format"));
+            return Err(malformed(
+                crate::messages::EnginePhrase::DiffFormat.as_static(),
+            ));
         }
         if !section.open {
             if line.iter().all(u8::is_ascii_whitespace) {
                 continue;
             }
-            return Err(malformed("content before file header"));
+            return Err(malformed(
+                crate::messages::EnginePhrase::DiffBeforeHeader.as_static(),
+            ));
         }
         if line.starts_with(b"@@") {
             if !section.new_seen {
-                return Err(malformed("hunk before file paths"));
+                return Err(malformed(
+                    crate::messages::EnginePhrase::DiffBeforePaths.as_static(),
+                ));
             }
             if section.saw_hunk && !section.hunk_body {
-                return Err(malformed("hunk has no body"));
+                return Err(malformed(
+                    crate::messages::EnginePhrase::DiffNoBody.as_static(),
+                ));
             }
             let (start, count) = parse_hunk_header(line)?;
             section.saw_hunk = true;
             section.hunk_body = false;
             if let (Some(path), true) = (&section.current, count > 0) {
-                let end = start
-                    .checked_add(count - 1)
-                    .ok_or_else(|| malformed("hunk range overflows"))?;
+                let end = start.checked_add(count - 1).ok_or_else(|| {
+                    malformed(crate::messages::EnginePhrase::DiffRangeOverflow.as_static())
+                })?;
                 if let Some(ranges) = found.get_mut(path) {
                     ranges.push(start..=end);
                 }
@@ -122,27 +134,35 @@ pub(super) fn parse(patch: &[u8]) -> Result<Parsed, DiffError> {
             continue;
         }
         if line.starts_with(b"\\ No newline at end of file") {
-            return Err(malformed("newline marker without hunk"));
+            return Err(malformed(
+                crate::messages::EnginePhrase::DiffNewlineMarker.as_static(),
+            ));
         }
         if let Some(old) = line.strip_prefix(b"--- ") {
             if section.old_seen {
-                return Err(malformed("duplicate old path"));
+                return Err(malformed(
+                    crate::messages::EnginePhrase::DiffOldPath.as_static(),
+                ));
             }
             decode_path(old, b"a/")?;
             section.old_seen = true;
         } else if let Some(new) = line.strip_prefix(b"+++ ") {
             if !section.old_seen || section.new_seen {
-                return Err(malformed("misplaced new path"));
+                return Err(malformed(
+                    crate::messages::EnginePhrase::DiffNewPath.as_static(),
+                ));
             }
             section.current = decode_path(new, b"b/")?;
             section.new_seen = true;
             if let Some(path) = &section.current
                 && found.insert(path.clone(), Vec::new()).is_some()
             {
-                return Err(malformed(format!(
-                    "ambiguous Git diff: duplicate path {}",
-                    path.display()
-                )));
+                return Err(malformed(
+                    crate::messages::EngineDetails::DiffDuplicatePath {
+                        path: path.display().to_string(),
+                    }
+                    .to_string(),
+                ));
             }
         } else if EXTENDED_HEADERS.iter().any(|h| line.starts_with(h)) {
             section.metadata = true;
@@ -176,10 +196,12 @@ fn merge(mut ranges: Vec<RangeInclusive<u32>>) -> Vec<RangeInclusive<u32>> {
 /// Read `@@ -a[,b] +c[,d] @@` and return the new side `(start, count)`.
 fn parse_hunk_header(line: &[u8]) -> Result<(u32, u32), DiffError> {
     let bad = || {
-        malformed(format!(
-            "malformed hunk header: {}",
-            String::from_utf8_lossy(line)
-        ))
+        malformed(
+            crate::messages::EngineDetails::DiffHunkHeader {
+                header: String::from_utf8_lossy(line).into(),
+            }
+            .to_string(),
+        )
     };
     let rest = line.strip_prefix(b"@@ -").ok_or_else(bad)?;
     let (_, rest) = take_range(rest).ok_or_else(bad)?;
@@ -190,10 +212,12 @@ fn parse_hunk_header(line: &[u8]) -> Result<(u32, u32), DiffError> {
     }
     let count = count.unwrap_or(1);
     if count > 0 && start < 1 {
-        return Err(malformed(format!(
-            "invalid hunk range: {}",
-            String::from_utf8_lossy(line)
-        )));
+        return Err(malformed(
+            crate::messages::EngineDetails::DiffHunkRange {
+                header: String::from_utf8_lossy(line).into(),
+            }
+            .to_string(),
+        ));
     }
     Ok((start, count))
 }
@@ -239,10 +263,12 @@ fn decode_path(value: &[u8], prefix: &[u8]) -> Result<Option<PathBuf>, DiffError
         value.to_vec()
     };
     let relative = bytes.strip_prefix(prefix).ok_or_else(|| {
-        malformed(format!(
-            "malformed path marker: {}",
-            String::from_utf8_lossy(value)
-        ))
+        malformed(
+            crate::messages::EngineDetails::DiffPathMarker {
+                marker: String::from_utf8_lossy(value).into(),
+            }
+            .to_string(),
+        )
     })?;
     to_path(relative).map(Some)
 }
@@ -258,7 +284,7 @@ fn unquote(body: &[u8], whole: &[u8]) -> Result<Vec<u8>, DiffError> {
         }
         let marker = *body
             .get(index + 1)
-            .ok_or_else(|| malformed("malformed quoted path"))?;
+            .ok_or_else(|| malformed(crate::messages::EnginePhrase::DiffQuotedPath.as_static()))?;
         let simple = match marker {
             b'\\' => Some(b'\\'),
             b'"' => Some(b'"'),
@@ -280,15 +306,21 @@ fn unquote(body: &[u8], whole: &[u8]) -> Result<Vec<u8>, DiffError> {
             .get(index + 1..index + 4)
             .filter(|digits| digits.iter().all(|d| (b'0'..=b'7').contains(d)))
             .ok_or_else(|| {
-                malformed(format!(
-                    "ambiguous path escape: {}",
-                    String::from_utf8_lossy(whole)
-                ))
+                malformed(
+                    crate::messages::EngineDetails::DiffPathEscape {
+                        path: String::from_utf8_lossy(whole).into(),
+                    }
+                    .to_string(),
+                )
             })?;
         let value = octal
             .iter()
             .fold(0u32, |acc, d| acc * 8 + u32::from(d - b'0'));
-        out.push(u8::try_from(value).map_err(|_| malformed("path escape out of range"))?);
+        out.push(
+            u8::try_from(value).map_err(|_| {
+                malformed(crate::messages::EnginePhrase::DiffEscapeRange.as_static())
+            })?,
+        );
         index += 4;
     }
     Ok(out)
@@ -305,7 +337,7 @@ pub(super) fn to_path(bytes: &[u8]) -> Result<PathBuf, DiffError> {
 pub(super) fn to_path(bytes: &[u8]) -> Result<PathBuf, DiffError> {
     std::str::from_utf8(bytes)
         .map(PathBuf::from)
-        .map_err(|_| malformed("path is not valid UTF-8"))
+        .map_err(|_| malformed(crate::messages::EnginePhrase::DiffNotUtf8.as_static()))
 }
 
 #[cfg(test)]

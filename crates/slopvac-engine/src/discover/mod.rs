@@ -237,7 +237,7 @@ fn explicit(path: &Path, options: &Options, out: &mut Discovery) -> Result<(), D
     if is_excluded(options, path) {
         out.skipped.push(Skipped {
             path: path.to_path_buf(),
-            reason: "matches an exclude pattern".to_owned(),
+            reason: crate::messages::EnginePhrase::DiscoverExcluded.text(),
         });
         return Ok(());
     }
@@ -248,7 +248,7 @@ fn explicit(path: &Path, options: &Options, out: &mut Discovery) -> Result<(), D
         }),
         None => out.skipped.push(Skipped {
             path: path.to_path_buf(),
-            reason: "not a file kind this run lints".to_owned(),
+            reason: crate::messages::EnginePhrase::DiscoverKindSkipped.text(),
         }),
     }
     Ok(())
@@ -261,10 +261,11 @@ fn unsupported_message(name: &str) -> String {
         None if lower.is_empty() => "<extensionless>".to_owned(),
         None => lower,
     };
-    format!(
-        "unsupported source language for '{shown}'; supported extensions: {}",
-        kind::supported_extensions()
-    )
+    crate::messages::EngineDetails::DiscoverUnsupported {
+        path: shown,
+        extensions: kind::supported_extensions().into(),
+    }
+    .to_string()
 }
 
 fn walk_dir(root: &Path, options: &Options, out: &mut Discovery) -> Result<(), DiscoverError> {
@@ -313,11 +314,13 @@ fn walk_dir(root: &Path, options: &Options, out: &mut Discovery) -> Result<(), D
         if let Some(kind) = select(&name, options.selection) {
             out.files.push(DiscoveredFile { path, kind });
         } else if options.selection != Selection::Prose && FileKind::prose(&name).is_none() {
-            out.notes.push(format!(
-                "unsupported source language skipped: {} ({})",
-                path.display(),
-                unsupported_message(&name)
-            ));
+            out.notes.push(
+                crate::messages::EngineDetails::DiscoverSkipped {
+                    path: path.display().to_string(),
+                    extensions: unsupported_message(&name),
+                }
+                .to_string(),
+            );
         }
     }
     Ok(())

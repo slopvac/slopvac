@@ -234,7 +234,7 @@ pub(super) fn run(cwd: &Path, args: &[&str], options: &Options) -> Result<Vec<u8
         return Err(DiffError::OutputTooLarge(limits.max_stdout));
     }
     if status.success() {
-        out.ok_or_else(|| DiffError::Git("git output could not be read".to_owned()))
+        out.ok_or_else(|| DiffError::Git(crate::messages::EnginePhrase::GitUnreadable.text()))
     } else {
         let text = String::from_utf8_lossy(&err.unwrap_or_default())
             .trim()

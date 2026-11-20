@@ -167,7 +167,7 @@ pub(super) fn run(
         kill(&mut child);
         return Err(RstError::Failed {
             converter: interpreter.to_owned(),
-            status: "no pipes".to_owned(),
+            status: crate::messages::EnginePhrase::RstNoPipes.text(),
             stderr: String::new(),
         });
     };
@@ -246,12 +246,18 @@ fn finish(
     match status.code() {
         Some(EXIT_NO_DOCUTILS) => {
             return Err(RstError::ConverterMissing {
-                detail: format!("docutils is not installed for {}", interpreter.display()),
+                detail: crate::messages::EngineDetails::RstDocutilsAbsent {
+                    path: interpreter.display().to_string(),
+                }
+                .to_string(),
             });
         }
         Some(EXIT_OLD_DOCUTILS) => {
             return Err(RstError::ConverterMissing {
-                detail: format!("docutils for {} is older than 0.21", interpreter.display()),
+                detail: crate::messages::EngineDetails::RstDocutilsOld {
+                    path: interpreter.display().to_string(),
+                }
+                .to_string(),
             });
         }
         _ => {}
@@ -263,8 +269,13 @@ fn finish(
     Err(RstError::Failed {
         converter: interpreter.to_owned(),
         status: status.code().map_or_else(
-            || "terminated by a signal".to_owned(),
-            |code| format!("exit status {code}"),
+            || crate::messages::EnginePhrase::RstSignal.text(),
+            |code| {
+                crate::messages::EngineDetails::RstExit {
+                    code: code.to_string(),
+                }
+                .to_string()
+            },
         ),
         stderr,
     })
