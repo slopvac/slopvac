@@ -50,13 +50,6 @@ fn every_code_keeps_its_published_text_and_is_registered() {
         ),
         (MigrateMessage::LintFailed { detail: s("d") }, s("lint: d")),
         (
-            MigrateMessage::TermsFileTooLarge {
-                path: s("terms.toml"),
-                cap: 1_048_576,
-            },
-            s("terms.toml: larger than 1048576 bytes"),
-        ),
-        (
             MigrateMessage::RunLimit {
                 path: s("docs"),
                 limit: 5000,

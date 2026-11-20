@@ -626,15 +626,24 @@ fn apply_refuses_a_staged_file_replaced_before_it_takes_the_name(#[case] symlink
 fn apply_keeps_an_original_replaced_before_it_is_removed() {
     let s = Setup::new(&[("slopvac.toml", OLD)]);
     fs::write(s.outside(), "outside\n").unwrap();
+    let mut held = None;
     let mut hook = |point: Point<'_>| {
         if point == Point::Discard(Path::new("slopvac.toml")) {
-            link_outside(&s, &holding(&s.root()).join("old"));
+            let old = holding(&s.root()).join("old");
+            link_outside(&s, &old);
+            held = Some(old);
         }
     };
-    assert!(matches!(
-        s.apply_hooked(&s.plan(), &mut hook),
-        Err(Error::Changed(_))
-    ));
+    let err = s.apply_hooked(&s.plan(), &mut hook).unwrap_err();
+    let held = held.unwrap();
+    assert!(matches!(err, Error::Changed(_)), "{err:?}");
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "changed: slopvac.toml: {} changed after it was checked, so it was not removed; delete it by hand",
+            held.display()
+        )
+    );
     assert_eq!(s.read("slopvac.toml"), NEW);
     assert_eq!(outside_links(&s), 2, "the swapped-in link was removed");
 }

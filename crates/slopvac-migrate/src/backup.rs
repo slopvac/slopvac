@@ -683,8 +683,9 @@ fn mutate(
     if let Some(id) = original {
         let removed = remove_if(&hold.dir, OsStr::new(OLD), id).map_err(|e| commit(io(e)))?;
         if !removed {
-            return Err(commit(Error::Changed(
-                MigrateText::HeldChanged {
+            return Err(commit(changed_with(
+                rel,
+                &MigrateText::HeldChanged {
                     path: hold.shown(at, OLD),
                 }
                 .to_string(),

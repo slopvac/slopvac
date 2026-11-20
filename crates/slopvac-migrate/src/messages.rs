@@ -58,14 +58,6 @@ pub(crate) enum MigrateMessage {
     #[code("migrate-lint-failed")]
     #[message("lint: {detail}")]
     LintFailed { detail: String },
-    /// A blocklist is larger than the terms file cap.
-    #[code("terms-file-too-large")]
-    #[message("{path}: larger than {cap} bytes")]
-    TermsFileTooLarge {
-        path: String,
-        #[count]
-        cap: u64,
-    },
     /// A run read more files or bytes than its limits allow. `what` is `files` or `bytes`.
     #[code("migrate-run-limit")]
     #[message("{path}: run limit reached: more than {limit} {what} in one run")]
@@ -113,7 +105,7 @@ pub(crate) enum MigrateText {
         line: String,
         message: String,
     },
-    /// A document or config is larger than its cap. Reported as `document-too-large` or `config-too-large`.
+    /// A document or config is larger than its cap. Reported as `document-too-large`, `config-too-large` or `terms-file-too-large`.
     #[code("migrate-path-too-large")]
     #[text("{path}: larger than {cap} bytes")]
     PathTooLarge {
@@ -859,13 +851,9 @@ pub(crate) fn of(error: &Error) -> Box<dyn Catalog> {
             path: path.clone(),
             reason: source.to_string(),
         }),
-        Error::DocumentTooLarge { path, cap } | Error::ConfigTooLarge { path, cap } => {
-            Box::new(MigrateText::PathTooLarge {
-                path: path.clone(),
-                cap: *cap,
-            })
-        }
-        Error::TermsFileTooLarge { path, cap } => Box::new(MigrateMessage::TermsFileTooLarge {
+        Error::DocumentTooLarge { path, cap }
+        | Error::ConfigTooLarge { path, cap }
+        | Error::TermsFileTooLarge { path, cap } => Box::new(MigrateText::PathTooLarge {
             path: path.clone(),
             cap: *cap,
         }),
