@@ -309,10 +309,10 @@ fn each_removed_rule_gives_one_migrate_rule_removed_notice_per_use(
             notices,
             [
                 format!(
-                    "migrate-rule-removed: slopvac.toml:2: `rules.{id}`: rule no longer exists in 3.0; see removed-rules.toml"
+                    "migrate-rule-removed: slopvac.toml:2: `rules.{id}`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml"
                 ),
                 format!(
-                    "migrate-rule-removed: slopvac.toml:7: `overrides[0].rules.{id}`: rule no longer exists in 3.0; see removed-rules.toml"
+                    "migrate-rule-removed: slopvac.toml:7: `overrides[0].rules.{id}`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml"
                 ),
             ],
             "{id}"

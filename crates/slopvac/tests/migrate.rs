@@ -301,10 +301,10 @@ fn removed_names_print_their_codes_and_the_pointer_and_exit_0() {
         .assert()
         .code(0)
         .stdout(predicate::str::contains(
-            "migrate-category-removed: .slopvac.toml:3: `categories.orwell-voice`: category no longer exists in 3.0; see removed-rules.toml",
+            "migrate-category-removed: .slopvac.toml:3: `categories.orwell-voice`: category no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml",
         ))
         .stdout(predicate::str::contains(
-            "migrate-rule-removed: .slopvac.toml:5: `rules.ste-words.inconsistent-term-for-same-thing`: rule no longer exists in 3.0; see removed-rules.toml",
+            "migrate-rule-removed: .slopvac.toml:5: `rules.ste-words.inconsistent-term-for-same-thing`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml",
         ));
 }
 
