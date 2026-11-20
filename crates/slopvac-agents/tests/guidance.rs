@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use rstest::rstest;
 use slopvac_agents::AgentsError;
 use slopvac_agents::guidance::Guidance;
 use slopvac_agents::harness::SKILL_NAME;
@@ -31,7 +32,7 @@ fn no_config_gives_the_schema_defaults() {
     fs::create_dir(dir.path().join(".git")).unwrap();
     let g = Guidance::load(dir.path(), None).unwrap();
     assert_eq!(g.level, Level::Default);
-    assert!(g.write);
+    assert_eq!(g.write, slopvac_agents::guidance::Write::Auto);
 }
 
 #[test]
@@ -86,11 +87,116 @@ fn missing_explicit_config_is_a_config_io_error() {
     assert_eq!(err.code(), "config-io");
 }
 
-#[test]
-fn level_flag_skips_loading_the_config() {
+/// Prime output for a project whose `[guidance]` holds `guidance`.
+fn prime_with(guidance: &str, args: &[&str]) -> String {
     let dir = tempfile::tempdir().unwrap();
-    write_config(dir.path(), "slopvac.toml", "level = \"loud\"");
-    assert!(prime_out(dir.path(), &["--level", "full"]).is_ok());
+    write_config(dir.path(), "slopvac.toml", guidance);
+    prime_out(dir.path(), args).unwrap()
+}
+
+const WRITE_STEP: &str = "run `slopvac prime write`";
+const REVIEW_STEP: &str = "run `slopvac prime review`";
+const REPORT_SECTION: &str = "## Reporting slopvac problems";
+
+#[test]
+fn write_auto_points_the_base_guide_at_the_write_topic() {
+    assert!(prime_with("write = \"auto\"", &[]).contains(WRITE_STEP));
+}
+
+#[test]
+fn write_off_drops_the_write_step_from_the_base_guide() {
+    assert!(!prime_with("write = \"off\"", &[]).contains(WRITE_STEP));
+}
+
+#[test]
+fn write_off_disables_the_write_topic_and_names_the_config_file() {
+    assert_eq!(
+        prime_with("write = \"off\"", &["write"]).trim_end(),
+        "slopvac prime write is disabled by [guidance] write = \"off\" in slopvac.toml."
+    );
+}
+
+#[test]
+fn review_auto_makes_the_hand_off_step_mandatory() {
+    let out = prime_with("review = \"auto\"", &[]);
+    assert!(out.contains("Before hand-off, run `slopvac prime review`"));
+}
+
+#[test]
+fn review_ask_has_the_agent_ask_the_user_first() {
+    let out = prime_with("review = \"ask\"", &[]);
+    assert!(out.contains("ask the user whether to run `slopvac prime review`"));
+    assert!(!out.contains("Before hand-off, run `slopvac prime review`"));
+}
+
+#[test]
+fn review_off_drops_the_hand_off_step_and_disables_the_topic() {
+    assert!(!prime_with("review = \"off\"", &[]).contains("Before hand-off"));
+    assert_eq!(
+        prime_with("review = \"off\"", &["review"]).trim_end(),
+        "slopvac prime review is disabled by [guidance] review = \"off\" in slopvac.toml."
+    );
+}
+
+#[test]
+fn review_off_removes_the_hand_off_line_of_the_write_topic() {
+    assert!(prime_with("review = \"auto\"", &["write"]).contains(REVIEW_STEP));
+    assert!(!prime_with("review = \"off\"", &["write"]).contains(REVIEW_STEP));
+}
+
+#[rstest]
+#[case::self_review("self", "`slopvac prime review` and report its verdict")]
+#[case::subagent("subagent", "including the reviewer pass")]
+#[case::adversary("adversary", "including the adversary loop")]
+fn review_depth_sets_the_hand_off_wording(#[case] depth: &str, #[case] expected: &str) {
+    let out = prime_with(&format!("review_depth = \"{depth}\""), &[]);
+    assert!(out.contains(expected), "{depth}: {out}");
+}
+
+#[rstest]
+#[case::self_review("self", "yourself")]
+#[case::subagent("subagent", "one fresh-context reviewer")]
+#[case::adversary("adversary", "rounds")]
+fn review_depth_sets_the_reviewer_pass_of_the_review_topic(
+    #[case] depth: &str,
+    #[case] expected: &str,
+) {
+    let out = prime_with(
+        &format!("review_depth = \"{depth}\""),
+        &["review", "--type", "update"],
+    );
+    assert!(out.contains(expected), "{depth}: {out}");
+}
+
+#[test]
+fn report_ask_keeps_the_reporting_section_in_the_base_guide() {
+    assert!(prime_with("report = \"ask\"", &[]).contains(REPORT_SECTION));
+}
+
+#[test]
+fn report_off_drops_the_section_and_disables_the_topic() {
+    assert!(!prime_with("report = \"off\"", &[]).contains(REPORT_SECTION));
+    assert_eq!(
+        prime_with("report = \"off\"", &["report"]).trim_end(),
+        "slopvac prime report is disabled by [guidance] report = \"off\" in slopvac.toml."
+    );
+}
+
+#[test]
+fn the_notice_names_the_extended_file_that_set_the_control() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("base.toml"),
+        "schema_version = 3\n\n[guidance]\nreport = \"off\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"./base.toml\"]\n",
+    )
+    .unwrap();
+    let out = prime_out(dir.path(), &["report"]).unwrap();
+    assert!(out.contains("in base.toml."), "{out}");
 }
 
 fn run_setup(root: &Path, extra: &[&str]) -> Result<setup::Outcome, AgentsError> {

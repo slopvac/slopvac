@@ -24,11 +24,11 @@ Run `slopvac prime review --type <type>` for the steps of one type.
 {% elif review_type == "update" %}
 3. Check each changed and added claim against code or a source. Skip unchanged claims.
 4. For each `fact_candidate` in `dropped`, restore the fact or justify the removal.
-5. Reviewer pass: give one fresh-context reviewer the changed passages, not the whole document.
+5. {{ reviewer_pass }} the changed passages, not the whole document.
 {% else %}
 3. List the facts in the original. Confirm that each one survived or was wrong.
 4. Check every present-tense claim in the new document against code or a source.
-5. Reviewer pass: give one fresh-context reviewer the whole document and the original.
+5. {{ reviewer_pass }} the whole document and the original.
 {% endif %}
 {% endif %}
 ## Scope

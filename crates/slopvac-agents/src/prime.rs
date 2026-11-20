@@ -13,7 +13,7 @@ use minijinja::syntax::SyntaxConfig;
 use minijinja::{Environment, UndefinedBehavior, Value, context};
 
 use crate::error::AgentsError;
-use crate::guidance::Guidance;
+use crate::guidance::{Guidance, Report, Review, ReviewDepth, Write};
 use crate::harness;
 use crate::models::{self, Evals};
 use crate::review::{Approval, ReviewType};
@@ -64,6 +64,8 @@ impl Level {
 /// Guidance settings for one render.
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
+    /// The `[guidance]` controls. `level` here wins over `guidance.level`.
+    pub guidance: Guidance,
     /// Detail level.
     pub level: Level,
     /// Render the review topic for one type; `None` shows how to pick.
@@ -196,6 +198,23 @@ fn render_template(
         model_guidance => models::prime_guidance(&Evals::embedded()?, settings.review_type),
         migrate_guide => slopvac_migrate::prime_migrate(),
         review_type => settings.review_type.map_or("auto", ReviewType::name),
+        write => settings.guidance.write == Write::Auto,
+        review => match settings.guidance.review {
+            Review::Auto => "auto",
+            Review::Ask => "ask",
+            Review::Off => "off",
+        },
+        review_depth => match settings.guidance.review_depth {
+            ReviewDepth::SelfReview => "self",
+            ReviewDepth::Subagent => "subagent",
+            ReviewDepth::Adversary => "adversary",
+        },
+        report => settings.guidance.report == Report::Ask,
+        reviewer_pass => match settings.guidance.review_depth {
+            ReviewDepth::SelfReview => "Review it yourself, with no separate reviewer (`review_depth = self`). Check",
+            ReviewDepth::Subagent => "Reviewer pass: give one fresh-context reviewer",
+            ReviewDepth::Adversary => "Reviewer pass: run rounds, each with a new fresh-context reviewer, until a round reports no finding you accept. Give each round",
+        },
         review_approval => if settings.review_approval == Approval::Auto { "auto" } else { "ask" },
         commands => commands,
         topics => topics,
@@ -214,6 +233,9 @@ pub fn render(
     root: &Path,
 ) -> Result<String, AgentsError> {
     let name = topic.unwrap_or("");
+    if let Some(notice) = settings.guidance.disabled_notice(name) {
+        return Ok(notice);
+    }
     let source = if name.is_empty() {
         BASE
     } else {
@@ -334,17 +356,17 @@ pub fn command() -> Command {
 /// Run the parsed `prime` command. `cli` is the root command, so the base
 /// topic lists its subcommands. `root` is the project directory.
 pub fn run(matches: &ArgMatches, cli: &Command, root: &Path) -> Result<String, AgentsError> {
+    let config = matches.get_one::<PathBuf>("config").map(PathBuf::as_path);
+    let guidance = Guidance::load(root, config)?;
     let level = match matches.get_one::<String>("level").map(String::as_str) {
         Some("minimal") => Level::Minimal,
         Some("full") => Level::Full,
         Some(_) => Level::Default,
-        None => {
-            let config = matches.get_one::<PathBuf>("config").map(PathBuf::as_path);
-            Guidance::load(root, config)?.level
-        }
+        None => guidance.level,
     };
     let settings = Settings {
         level,
+        guidance,
         review_type: matches
             .get_one::<String>("type")
             .and_then(|t| ReviewType::parse(t)),
