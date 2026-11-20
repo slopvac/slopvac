@@ -448,14 +448,22 @@ GATE_SCRIPT = "\n".join(
 )
 
 
-def run_security_gate(event: str, dependencies: bool, review: str) -> int:
+def run_security_gate(
+    event: str,
+    dependencies: bool,
+    review: str,
+    secrets: bool = False,
+    secret_scan: str = "skipped",
+    trufflehog: str = "skipped",
+) -> int:
     expected_osv = "success" if dependencies else "skipped"
     needs = {
         "dependency-review": {"result": review},
-        "trufflehog": {"result": "skipped"},
+        "trufflehog": {"result": trufflehog},
         "codeql": {"result": "skipped"},
         "osv": {"result": expected_osv},
         "trivy": {"result": "skipped"},
+        "trivy-secret": {"result": secret_scan},
     }
     env = {
         "RESULTS": json.dumps(needs),
@@ -463,7 +471,7 @@ def run_security_gate(event: str, dependencies: bool, review: str) -> int:
         "CODE": "false",
         "DEPENDENCIES": "true" if dependencies else "false",
         "FILESYSTEM": "false",
-        "SECRETS": "false",
+        "SECRETS": "true" if secrets else "false",
     }
     return subprocess.run(
         [sys.executable, "-c", GATE_SCRIPT],
@@ -482,6 +490,24 @@ def test_security_gate_requires_dependency_review_exactly_when_classified(
 ):
     accepted = review == ("success" if dependencies else "skipped")
     assert (run_security_gate(event, dependencies, review) == 0) is accepted
+
+
+@pytest.mark.parametrize("event", ["pull_request", "merge_group"])
+@pytest.mark.parametrize("secret_scan", ["success", "skipped", "failure"])
+def test_security_gate_requires_the_trivy_secret_scan_when_secrets_are_classified(
+    event, secret_scan
+):
+    # trufflehog is also due when SECRETS is true; give it a pass so only the scan varies.
+    assert "trivy-secret" in load("security.yml")["jobs"]["security-gate"]["needs"]
+    accepted = secret_scan == "success"
+    gate = run_security_gate(
+        event, False, "skipped", True, secret_scan, trufflehog="success"
+    )
+    assert (gate == 0) is accepted
+
+
+def test_security_gate_rejects_a_trivy_secret_scan_that_was_not_classified():
+    assert run_security_gate("pull_request", False, "skipped", False, "success") == 1
 
 
 def test_security_gate_expects_dependency_review_skipped_on_push():

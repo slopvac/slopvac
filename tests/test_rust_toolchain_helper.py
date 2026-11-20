@@ -154,6 +154,7 @@ _NO_RUST_GROUPS = {
         ("security.yml", "codeql"),
         ("security.yml", "osv"),
         ("security.yml", "trivy"),
+        ("security.yml", "trivy-secret"),
         ("reviewdog.yml", "comment-v3"),
     ],
     "handles released artifacts, git or the API only; builds nothing": [

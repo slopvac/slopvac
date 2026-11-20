@@ -289,11 +289,39 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
+  # Secrets can sit in any file, so this scan follows the `secrets` class, which
+  # matches every path. The full scan below is gated on the narrower `filesystem`
+  # class and would skip a change to crates/, docs/ or other paths outside it.
+  trivy-secret:
+    if: ${{ inputs.secrets }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The table format prints each finding in the job log, so a failure names
+      # the file and rule without a SARIF upload (which needs security-events).
+      - name: Scan filesystem for secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.0
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: "1"
+          trivyignores: .trivyignore.yaml
+
   security-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
-    needs: [dependency-review, trufflehog, codeql, osv, trivy]
+    needs: [dependency-review, trufflehog, codeql, osv, trivy, trivy-secret]
     if: always()
     steps:
       - name: Verify required scanners and valid skips
@@ -323,6 +351,7 @@ jobs:
               "codeql": full or flag("CODE"),
               "osv": full or flag("DEPENDENCIES"),
               "trivy": full or flag("FILESYSTEM"),
+              "trivy-secret": flag("SECRETS"),
           }
 
           problems = []
