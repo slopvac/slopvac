@@ -137,6 +137,10 @@ pub fn genre(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
                 "document-too-large",
                 format!("{}: larger than the 64 MiB document limit", shown(&path)),
             ),
+            // The lint path's code and wording for a file it refuses to read.
+            slopvac_context::Error::Unreadable { path } => {
+                CliError::new("input-unreadable", format!("{}: cannot read", shown(&path)))
+            }
             _ => CliError::new("genre-failed", message),
         }
     })?;

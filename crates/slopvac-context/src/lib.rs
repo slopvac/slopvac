@@ -133,6 +133,13 @@ pub enum Error {
         /// The cap in bytes, `slopvac_fs::MAX_DOCUMENT_BYTES`.
         cap: u64,
     },
+    /// A file was refused without a read: it is not a regular file, or it could not be opened
+    /// safely.
+    #[error("{}: cannot read", slopvac_sanitize::line(.path))]
+    Unreadable {
+        /// The path as given.
+        path: String,
+    },
     /// A data file did not parse or validate.
     #[error("{}", slopvac_sanitize::line(.0))]
     Parse(String),

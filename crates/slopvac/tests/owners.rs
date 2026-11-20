@@ -421,6 +421,25 @@ fn genre_reads_a_file_exactly_at_the_document_cap() {
         .stdout(predicate::str::starts_with("edge.md: "));
 }
 
+#[cfg(unix)]
+#[test]
+fn genre_refuses_a_fifo_without_blocking() {
+    let work = tempfile::tempdir().unwrap();
+    let made = std::process::Command::new("mkfifo")
+        .arg(work.path().join("trap.md"))
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success());
+    slopvac(work.path())
+        .timeout(std::time::Duration::from_secs(20))
+        .args(["genre", "trap.md"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[input-unreadable]: trap.md: cannot read",
+        ));
+}
+
 #[test]
 fn validate_names_a_missing_external_document_without_its_directories() {
     let work = tempfile::tempdir().unwrap();
