@@ -109,7 +109,7 @@ The block is the mapping under the `slopvac:` key of a document's front matter. 
 
 - Every `slopvac.toml` carries `schema_version = 3`. A file without it, or with 2, is a 2.x config.
 - Unknown keys are errors with file, line and column, and the nearest valid key. Keys that start with `x-` are ignored. The exception is a map keyed by rule or category name (`rules`, `categories`). Its keys are data, so `x-` has no special meaning there ([policies.md](policies.md), section 3.3).
-- A rule or category key is qualified (`<plugin>:<id>`) or a bare name that is unambiguous across the active plugins. An ambiguous or unknown name is an error from the resolver. The schema checks only the form.
+- A rule or category key is qualified (`<plugin>:<id>`) or a bare name that is unambiguous across the active plugins. An ambiguous name is an error from the resolver. An unknown rule id is the warning notice `config-unknown-rule`. The notice does not make the run incomplete and does not change its exit status ([lint-report.md](lint-report.md), Notice data). An unknown category is an error. The schema checks only the form.
 - `rules` takes a bare level. The 2.x table form `[rules."x"] severity = "off"` is not valid, because a level is the only field.
 - Two blocks in `[[overrides]]` or `[[genres]]` with the same `files` set are an error: `config-duplicate-scope`. This keeps `Config._reject_duplicate_scopes` from 2.x. The patterns compare as a set after whitespace is trimmed.
 - A `[[genres]]` block assigns a genre to the files it matches and patches their settings. The genre itself is defined in a genre file (`genre.schema.json`, owned by another bead).
