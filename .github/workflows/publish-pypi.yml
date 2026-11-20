@@ -294,7 +294,7 @@ jobs:
       actions: read
     uses: ./.github/workflows/release-provenance.yml
     secrets:
-      RULESET_READ_TOKEN: ${{ secrets.RULESET_READ_TOKEN }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
   # The job that uploads to PyPI holds only id-token. The prerelease job below has
   # broader rights and stays separate. No skip-existing: re-running an
