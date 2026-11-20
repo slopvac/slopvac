@@ -952,9 +952,7 @@ impl Engine {
             findings.extend(diagrams.findings);
             extra.extend(diagrams.unchecked);
             diagram_notices = diagrams.notices;
-            if diagrams.has_diagram {
-                seen.push(slopvac_diagrams::CONTEXT);
-            }
+            seen.extend(diagrams.has_diagram.then_some(slopvac_diagrams::CONTEXT));
         }
         findings.extend(run.invalid_directives()?);
         // Lookups that passed their budget answered nothing, so nothing found above stands.
