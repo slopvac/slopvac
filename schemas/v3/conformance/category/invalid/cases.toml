@@ -5,3 +5,5 @@
 "upper-id.json" = "/id"
 "id-trailing-newline.json" = "/id"
 "profile-budget-negative.json" = "/max_per_100_words/strict"
+"profile-trailing-newline.json" = "/max_per_100_words"
+"genre-trailing-newline.json" = "/recommended_for/0"

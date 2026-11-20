@@ -2,6 +2,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::schema::x_extensions;
+
 /// Half-open range `[start, end)` of byte offsets into the original file bytes.
 ///
 /// A span is never reversed: every constructor and `Deserialize` reject `start > end`.
@@ -11,7 +13,13 @@ use thiserror::Error;
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "SpanRepr")]
-#[schemars(with = "SpanRepr")]
+#[schemars(
+    with = "SpanRepr",
+    description = "Half-open range [start, end) of byte offsets into the original file bytes, \
+        BOM included. The end is exclusive, start is at most end, and both offsets fall on code \
+        point boundaries and never between the CR and LF of one CRLF. See \
+        docs/contract/positions.md."
+)]
 pub struct Span {
     start: usize,
     end: usize,
@@ -19,10 +27,7 @@ pub struct Span {
 
 /// Wire shape of [`Span`].
 #[derive(Serialize, Deserialize, JsonSchema)]
-#[schemars(
-    rename = "Span",
-    extend("additionalProperties" = false, "patternProperties" = {"^x-": {}})
-)]
+#[schemars(rename = "Span", transform = x_extensions)]
 struct SpanRepr {
     start: usize,
     end: usize,
@@ -95,7 +100,12 @@ impl Span {
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(try_from = "LineColRepr")]
-#[schemars(with = "LineColRepr")]
+#[schemars(
+    with = "LineColRepr",
+    description = "One-based line and column. The column counts Unicode code points from the \
+        line start, after any BOM, and a tab counts as one. Output formats that need another \
+        unit convert from the span. See docs/contract/positions.md."
+)]
 pub struct LineCol {
     line: usize,
     column: usize,

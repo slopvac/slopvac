@@ -160,7 +160,7 @@ impl ValueError {
 
 /// Define a validated text newtype with a schema `pattern`.
 macro_rules! text_newtype {
-    ($(#[$meta:meta])* $name:ident, $kind:literal, $check:expr, $pattern:literal) => {
+    ($(#[$meta:meta])* $name:ident, $inline:literal, $description:literal, $kind:literal, $check:expr, $pattern:expr) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
         #[serde(try_from = "String", into = "String")]
@@ -209,8 +209,16 @@ macro_rules! text_newtype {
                 stringify!($name).into()
             }
 
+            fn inline_schema() -> bool {
+                $inline
+            }
+
             fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-                schemars::json_schema!({ "type": "string", "pattern": $pattern })
+                let mut schema = schemars::json_schema!({ "type": "string", "pattern": $pattern });
+                if !$description.is_empty() {
+                    schema.insert("description".into(), $description.into());
+                }
+                schema
             }
         }
     };

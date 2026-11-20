@@ -2813,6 +2813,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "slopvac-schemas"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "jsonschema",
+ "rstest",
+ "schemars",
+ "serde_json",
+ "similar 3.2.1",
+ "slopvac-model",
+ "slopvac-rules",
+ "snapbox",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "slopvac-styles"
 version = "0.0.0"
 dependencies = [

@@ -27,6 +27,7 @@
 "id-trailing-newline.toml" = "/id"
 "version-trailing-newline.toml" = "/version"
 "env-name-trailing-newline.toml" = "/plugin/env/0"
+"plugin-python-request-trailing-newline.toml" = "/plugin/python"
 "plugin-python-without-request.toml" = "/plugin"
 "plugin-python-request-on-native.toml" = "/plugin"
 "plugin-runtime-unknown.toml" = "/plugin/runtime"
