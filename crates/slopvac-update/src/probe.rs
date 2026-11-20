@@ -34,7 +34,7 @@ pub(crate) enum ProbeError {
     #[error("{}", timeout_text(*.0))]
     Timeout(Duration),
     /// The executable exited with a failure.
-    #[error("{}", failed_text(.0))]
+    #[error("{}", failed_text(*.0))]
     Failed(std::process::ExitStatus),
     /// The output was larger than the cap.
     #[error("{}", too_large_text())]
@@ -61,7 +61,7 @@ fn timeout_text(timeout: Duration) -> String {
     .to_string()
 }
 
-fn failed_text(status: &std::process::ExitStatus) -> String {
+fn failed_text(status: std::process::ExitStatus) -> String {
     UpdateText::ProbeFailed {
         status: status.to_string(),
     }
