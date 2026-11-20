@@ -182,3 +182,27 @@ fn an_allowed_slopvac_block_genre_wins_over_the_assignment() {
     );
     assert_eq!(history_levels(doc), ["warning"], "{doc}");
 }
+
+#[test]
+fn a_project_that_drops_genre_from_the_allow_list_keeps_the_assignment() {
+    let config = format!("{ASSIGNED}\n[frontmatter]\nallow = [\"locale\"]\n");
+    let text = format!("---\nslopvac:\n  v: 3\n  genre: reference\n---\n{HISTORY}");
+    let (_, report) = lint_note(&config, &text);
+    let doc = document(&report, "n.md");
+    assert_eq!(doc["genre"]["id"], "internal", "{doc}");
+    assert_eq!(doc["genre"]["reasons"][0]["signal"], "path-glob", "{doc}");
+    assert_eq!(history_levels(doc), ["suggestion"], "{doc}");
+}
+
+#[test]
+fn a_front_matter_genre_records_the_assignment_it_displaced() {
+    let text = format!("---\nslopvac:\n  v: 3\n  genre: reference\n---\n{HISTORY}");
+    let (_, report) = lint_note(ASSIGNED, &text);
+    let reasons = &document(&report, "n.md")["genre"]["reasons"];
+    assert_eq!(reasons[0]["signal"], "front-matter", "{reasons}");
+    assert_eq!(reasons[1]["signal"], "path-glob", "{reasons}");
+    assert_eq!(
+        reasons[1]["detail"], "`[[genres]]` block 0 matches `notes/n.md` and assigns `internal`",
+        "{reasons}"
+    );
+}

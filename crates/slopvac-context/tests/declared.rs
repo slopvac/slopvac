@@ -31,7 +31,7 @@ fn tags_for(doc: &PlainDocument, assignments: &[GenreAssignment]) -> (String, Ve
 
 #[test]
 fn front_matter_genre_declares_security() {
-    let src = format!("---\ngenre: security\n---\n{SECURITY_TEXT}");
+    let src = format!("---\nslopvac:\n  v: 3\n  genre: security\n---\n{SECURITY_TEXT}");
     let (genre, kinds) = tags_for(&PlainDocument::from_markdown("a.md", &src), &[]);
     assert_eq!(genre, "security");
     assert!(kinds.contains(&"security".to_string()), "{kinds:?}");
@@ -80,7 +80,7 @@ fn security_context_carries_the_name_the_enforcement_hint() {
 
 #[test]
 fn security_span_covers_every_original_byte_including_front_matter() {
-    let src = "---\ngenre: security\n---\n# Überblick\n\nDer Zugriff ist nur über Token erlaubt.\n";
+    let src = "---\nslopvac:\n  v: 3\n  genre: security\n---\n# Überblick\n\nDer Zugriff ist nur über Token erlaubt.\n";
     let doc = PlainDocument::from_markdown("a.md", src);
     let genres = builtin_genres().unwrap();
     let result = genres.resolve(&doc, &ResolveOptions::default()).unwrap();
@@ -101,4 +101,39 @@ fn security_span_covers_every_original_byte_including_front_matter() {
     assert_eq!(idx.kinds_at(&last_char), vec!["security"]);
     assert_eq!(idx.kinds_at(&(src.len()..src.len())), vec!["security"]);
     assert!(idx.kinds_at(&(0..src.len() + 1)).is_empty());
+}
+
+fn security_policy() -> [GenreAssignment; 1] {
+    [GenreAssignment {
+        files: vec!["policies/**".into()],
+        genre: "security".into(),
+    }]
+}
+
+#[test]
+fn a_path_assigned_context_survives_a_front_matter_genre() {
+    let src = format!("---\nslopvac:\n  v: 3\n  genre: consumer\n---\n{SECURITY_TEXT}");
+    let doc = PlainDocument::from_markdown("policies/access.md", &src);
+    let (genre, kinds) = tags_for(&doc, &security_policy());
+    assert_eq!(genre, "consumer");
+    assert!(kinds.contains(&"security".to_string()), "{kinds:?}");
+}
+
+#[test]
+fn a_front_matter_context_adds_to_the_path_assigned_one() {
+    let src = format!("---\nslopvac:\n  v: 3\n  genre: security\n---\n{SECURITY_TEXT}");
+    let doc = PlainDocument::from_markdown("docs/access.md", &src);
+    let (genre, kinds) = tags_for(&doc, &security_policy());
+    assert_eq!(genre, "security");
+    assert!(kinds.contains(&"security".to_string()), "{kinds:?}");
+}
+
+#[rstest::rstest]
+#[case::top_level_key("---\ngenre: security\n---\n")]
+#[case::unversioned_block("---\nslopvac:\n  genre: security\n---\n")]
+fn a_genre_outside_a_versioned_block_is_not_declared(#[case] front: &str) {
+    let doc = PlainDocument::from_markdown("docs/a.md", &format!("{front}{SECURITY_TEXT}"));
+    let (genre, kinds) = tags_for(&doc, &[]);
+    assert_eq!(genre, "consumer");
+    assert!(!kinds.contains(&"security".to_string()), "{kinds:?}");
 }

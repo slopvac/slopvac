@@ -79,7 +79,10 @@ fn adr_path_detects_internal() {
 
 #[test]
 fn front_matter_beats_detection() {
-    let r = resolve("CHANGELOG.md", "---\ngenre: reference\n---\n# T\n\nBody.\n");
+    let r = resolve(
+        "CHANGELOG.md",
+        "---\nslopvac:\n  v: 3\n  genre: reference\n---\n# T\n\nBody.\n",
+    );
     assert_eq!(
         (r.id.as_str(), r.source),
         ("reference", GenreSource::Explicit)
@@ -150,7 +153,10 @@ fn assignments_use_the_relative_path() {
 #[test]
 fn unknown_genre_is_an_error() {
     let reg = builtin_genres().unwrap();
-    let doc = PlainDocument::from_markdown("a.md", "---\ngenre: nope\n---\n# T\n\nBody.\n");
+    let doc = PlainDocument::from_markdown(
+        "a.md",
+        "---\nslopvac:\n  v: 3\n  genre: nope\n---\n# T\n\nBody.\n",
+    );
     assert!(matches!(
         reg.resolve(&doc, &ResolveOptions::default()),
         Err(Error::UnknownGenre(id)) if id == "nope"
@@ -516,6 +522,7 @@ fn render_escapes_control_and_bidi_characters() {
             detail: format!("heading `{HOSTILE}`"),
         }],
         scores: vec![(HOSTILE.to_string(), 1.0)],
+        assigned: None,
     };
     let text = slopvac_context::render(HOSTILE, &r);
     assert_eq!(

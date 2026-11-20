@@ -16,7 +16,16 @@ pub struct DeclaredContextTagger {
 impl DeclaredContextTagger {
     /// Build the tagger for a resolved genre. `None` when the genre declares no context.
     pub fn for_genre(registry: &GenreRegistry, genre: &GenreResult) -> Result<Option<Self>, Error> {
-        let contexts = registry.contexts(&genre.id)?;
+        let mut contexts = registry.contexts(&genre.id)?;
+        // Contexts from a path or config assignment are additive: a front matter genre
+        // changes the genre but never removes them.
+        if let Some(assigned) = &genre.assigned {
+            for c in registry.contexts(assigned)? {
+                if !contexts.contains(&c) {
+                    contexts.push(c);
+                }
+            }
+        }
         if contexts.is_empty() {
             return Ok(None);
         }

@@ -58,6 +58,12 @@ pub trait DocumentView {
     fn title(&self) -> Option<&str>;
     /// Value of a top-level front matter key, as text.
     fn front_matter(&self, key: &str) -> Option<&str>;
+    /// Value of a field in the document's versioned `slopvac:` front matter block
+    /// (`docs/contract/config.md`, section 3), as text. A document with no valid block, and
+    /// a host that does not read one, answer `None`.
+    fn slopvac_block(&self, _key: &str) -> Option<&str> {
+        None
+    }
     /// Length in bytes of the original file, BOM and front matter included.
     fn source_len(&self) -> usize;
     /// Blocks in document order.
@@ -125,6 +131,8 @@ pub struct PlainDocument {
     pub title: Option<String>,
     /// Front matter pairs.
     pub front_matter: Vec<(String, String)>,
+    /// Fields of the `slopvac:` block, when it declares `v: 3`.
+    pub block: Vec<(String, String)>,
     /// Length in bytes of the source text.
     pub source_len: usize,
     /// Owned blocks.
@@ -166,11 +174,29 @@ impl PlainDocument {
         if let Some(rest) = src.strip_prefix("---\n")
             && let Some(end) = rest.find("\n---")
         {
+            let mut in_block = false;
+            let mut block = Vec::new();
             for line in rest[..end].lines() {
-                if let Some((k, v)) = line.split_once(':') {
-                    doc.front_matter
-                        .push((k.trim().to_string(), v.trim().trim_matches('"').to_string()));
+                let Some((k, v)) = line.split_once(':') else {
+                    continue;
+                };
+                let pair = (k.trim().to_string(), v.trim().trim_matches('"').to_string());
+                if line.starts_with([' ', '\t']) {
+                    // An indented line belongs to the mapping above it.
+                    if in_block {
+                        block.push(pair);
+                    } else {
+                        doc.front_matter.push(pair);
+                    }
+                } else {
+                    in_block = pair.0 == "slopvac" && pair.1.is_empty();
+                    if !in_block {
+                        doc.front_matter.push(pair);
+                    }
                 }
+            }
+            if block.iter().any(|(k, v)| k == "v" && v == "3") {
+                doc.block = block;
             }
             front_end = 4 + end + 4;
         }
@@ -264,6 +290,12 @@ impl DocumentView for PlainDocument {
     }
     fn front_matter(&self, key: &str) -> Option<&str> {
         self.front_matter
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    }
+    fn slopvac_block(&self, key: &str) -> Option<&str> {
+        self.block
             .iter()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_str())
