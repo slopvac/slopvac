@@ -418,15 +418,15 @@ pub(crate) enum SyncText {
     DiffChanged { id: String },
     /// A changed version.
     #[code("plugins-lock-diff-version")]
-    #[text(" version {locked} -> {resolved}")]
+    #[text("version {locked} -> {resolved}")]
     DiffVersion { locked: String, resolved: String },
     /// A changed source.
     #[code("plugins-lock-diff-source")]
-    #[text(" source {locked} -> {resolved}")]
+    #[text("source {locked} -> {resolved}")]
     DiffSource { locked: String, resolved: String },
     /// A changed digest.
     #[code("plugins-lock-diff-digest")]
-    #[text(" digest {locked} -> {resolved}")]
+    #[text("digest {locked} -> {resolved}")]
     DiffDigest { locked: String, resolved: String },
     /// A version comparator has the wrong shape.
     #[code("plugins-lock-comparator-invalid")]
@@ -1260,29 +1260,29 @@ pub(crate) fn diff_changed(id: &impl Display) -> String {
 
 /// A changed version.
 pub(crate) fn diff_version(locked: &impl Display, resolved: &impl Display) -> String {
-    SyncText::DiffVersion {
+    let text = SyncText::DiffVersion {
         locked: s(locked),
         resolved: s(resolved),
-    }
-    .to_string()
+    };
+    format!(" {text}")
 }
 
 /// A changed source. A source is free text, so both sides are escaped.
 pub(crate) fn diff_source(locked: &str, resolved: &str) -> String {
-    SyncText::DiffSource {
+    let text = SyncText::DiffSource {
         locked: esc(locked),
         resolved: esc(resolved),
-    }
-    .to_string()
+    };
+    format!(" {text}")
 }
 
 /// A changed digest.
 pub(crate) fn diff_digest(locked: &impl Display, resolved: &impl Display) -> String {
-    SyncText::DiffDigest {
+    let text = SyncText::DiffDigest {
         locked: s(locked),
         resolved: s(resolved),
-    }
-    .to_string()
+    };
+    format!(" {text}")
 }
 
 /// A version comparator has the wrong shape.
@@ -1840,21 +1840,21 @@ mod tests {
                     locked: s("1.0.0"),
                     resolved: s("1.1.0"),
                 },
-                " version 1.0.0 -> 1.1.0",
+                "version 1.0.0 -> 1.1.0",
             ),
             (
                 SyncText::DiffSource {
                     locked: s("x"),
                     resolved: s("y"),
                 },
-                " source x -> y",
+                "source x -> y",
             ),
             (
                 SyncText::DiffDigest {
                     locked: s("sha256:aa"),
                     resolved: s("sha256:bb"),
                 },
-                " digest sha256:aa -> sha256:bb",
+                "digest sha256:aa -> sha256:bb",
             ),
             (
                 SyncText::ComparatorInvalid {

@@ -238,7 +238,7 @@ pub(crate) enum HostText {
     },
     /// The stderr tail of a plugin, after a line break.
     #[code("plugins-host-stderr-tail")]
-    #[text("\nstderr:\n{text}")]
+    #[text("stderr:\n{text}")]
     StderrTail {
         /// The last lines of standard error.
         text: String,
@@ -1097,11 +1097,12 @@ pub(crate) fn current_exe_failed(error: &io::Error) -> String {
     .to_string()
 }
 
+/// The stderr tail after the line break that separates it from the status.
 pub(crate) fn stderr_tail(text: &str) -> String {
-    HostText::StderrTail {
+    let tail = HostText::StderrTail {
         text: text.to_owned(),
-    }
-    .to_string()
+    };
+    format!("\n{tail}")
 }
 
 pub(crate) fn status_with_limit(status: &str, limit: &str) -> String {
@@ -1325,7 +1326,7 @@ mod tests {
                 },
                 "p: d",
             ),
-            (HostText::StderrTail { text: s("boom") }, "\nstderr:\nboom"),
+            (HostText::StderrTail { text: s("boom") }, "stderr:\nboom"),
             (
                 HostText::StatusLimit {
                     status: s("signal: 24"),

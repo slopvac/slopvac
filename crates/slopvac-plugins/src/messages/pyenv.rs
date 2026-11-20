@@ -359,19 +359,19 @@ pub(crate) enum PyenvText {
     },
     /// An indented line of a search hit.
     #[code("plugins-index-search-indented")]
-    #[text("  {text}")]
+    #[text("{text}")]
     SearchIndented { text: String },
     /// The source line of a search hit.
     #[code("plugins-index-search-source")]
-    #[text("  source: {source}")]
+    #[text("source: {source}")]
     SearchSource { source: String },
     /// The publisher key line of a search hit.
     #[code("plugins-index-search-key")]
-    #[text("  publisher key: {key_id} (fingerprint {fingerprint})")]
+    #[text("publisher key: {key_id} (fingerprint {fingerprint})")]
     SearchKey { key_id: String, fingerprint: String },
     /// The warning for a hit that claims a first-party namespace.
     #[code("plugins-index-search-reserved")]
-    #[text("  warning: claims first-party namespace `{namespace}`; not verified")]
+    #[text("warning: claims first-party namespace `{namespace}`; not verified")]
     SearchReserved { namespace: String },
 }
 
@@ -793,7 +793,7 @@ pub(crate) enum PyenvPhrase {
     /// The note that index claims are unverified.
     #[code("plugins-index-search-unverified")]
     #[text(
-        "  unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`"
+        "unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`"
     )]
     SearchUnverified,
 }
@@ -1230,28 +1230,25 @@ mod tests {
                 },
                 "namespace-63/id-63 version-63 (kind-63, needs slopvac API 70)",
             ),
-            (
-                PyenvText::SearchIndented { text: s("text-64") },
-                "  text-64",
-            ),
+            (PyenvText::SearchIndented { text: s("text-64") }, "text-64"),
             (
                 PyenvText::SearchSource {
                     source: s("source-65"),
                 },
-                "  source: source-65",
+                "source: source-65",
             ),
             (
                 PyenvText::SearchKey {
                     key_id: s("key_id-66"),
                     fingerprint: s("fingerprint-66"),
                 },
-                "  publisher key: key_id-66 (fingerprint fingerprint-66)",
+                "publisher key: key_id-66 (fingerprint fingerprint-66)",
             ),
             (
                 PyenvText::SearchReserved {
                     namespace: s("namespace-67"),
                 },
-                "  warning: claims first-party namespace `namespace-67`; not verified",
+                "warning: claims first-party namespace `namespace-67`; not verified",
             ),
         ];
         let registered = PyenvText::entries();
@@ -1492,7 +1489,7 @@ mod tests {
             ),
             (
                 PyenvPhrase::SearchUnverified,
-                "  unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`",
+                "unverified: the namespace, source and key come from the index; pin a key with `slopvac plugins trust --key <fingerprint>`",
             ),
         ];
         let registered = PyenvPhrase::entries();

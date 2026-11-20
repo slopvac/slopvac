@@ -103,6 +103,7 @@ impl SearchHit<'_> {
             out.push_str(&text);
             out.push('\n');
         };
+        let indent = |text: String| format!("  {text}");
         line(
             PyenvText::SearchHead {
                 namespace: s(&e.namespace),
@@ -113,35 +114,37 @@ impl SearchHit<'_> {
             }
             .to_string(),
         );
-        line(PyenvText::SearchIndented { text: s(&e.name) }.to_string());
-        line(
+        line(indent(
+            PyenvText::SearchIndented { text: s(&e.name) }.to_string(),
+        ));
+        line(indent(
             PyenvText::SearchIndented {
                 text: s(&e.description),
             }
             .to_string(),
-        );
-        line(
+        ));
+        line(indent(
             PyenvText::SearchSource {
                 source: s(&e.source),
             }
             .to_string(),
-        );
-        line(
+        ));
+        line(indent(
             PyenvText::SearchKey {
                 key_id: s(&e.publisher_key.key_id),
                 fingerprint: s(&e.publisher_key.fingerprint),
             }
             .to_string(),
-        );
+        ));
         if is_reserved_namespace(&e.namespace) {
-            line(
+            line(indent(
                 PyenvText::SearchReserved {
                     namespace: s(&e.namespace),
                 }
                 .to_string(),
-            );
+            ));
         }
-        line(PyenvPhrase::SearchUnverified.as_static().to_owned());
+        line(indent(PyenvPhrase::SearchUnverified.as_static().to_owned()));
         out
     }
 }
