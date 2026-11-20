@@ -51,10 +51,7 @@ pub fn cache_dir() -> Result<PathBuf> {
 /// [`cache_dir`] reading `SLOPVAC_CACHE_DIR`, `XDG_CACHE_HOME` and `HOME` through `lookup`, and
 /// asking `home_fallback` when `HOME` is unset or empty.
 pub fn cache_dir_with(lookup: Lookup<'_>, home_fallback: HomeFallback<'_>) -> Result<PathBuf> {
-    if let Some(dir) = value(lookup, CACHE_DIR_VAR)?.filter(|v| !v.is_empty()) {
-        return Ok(PathBuf::from(dir));
-    }
-    xdg(lookup, home_fallback, "XDG_CACHE_HOME", ".cache")
+    resolve(DirKind::Cache, lookup, home_fallback)
 }
 
 /// The configuration directory: `XDG_CONFIG_HOME` (absolute), else `~/.config`, plus `slopvac`.
@@ -65,24 +62,103 @@ pub fn config_dir() -> Result<PathBuf> {
 /// [`config_dir`] reading `XDG_CONFIG_HOME` and `HOME` through `lookup`, and asking
 /// `home_fallback` when `HOME` is unset or empty.
 pub fn config_dir_with(lookup: Lookup<'_>, home_fallback: HomeFallback<'_>) -> Result<PathBuf> {
-    xdg(lookup, home_fallback, "XDG_CONFIG_HOME", ".config")
+    resolve(DirKind::Config, lookup, home_fallback)
 }
 
-/// An XDG base directory: the variable when it is an absolute path, else `$HOME/<default>`.
-fn xdg(
+/// The data directory, which is the plugin store root: `XDG_DATA_HOME` (absolute), else
+/// `~/.local/share`, plus `slopvac`.
+pub fn data_dir() -> Result<PathBuf> {
+    data_dir_with(&process_env, &process_home)
+}
+
+/// [`data_dir`] reading `XDG_DATA_HOME` and `HOME` through `lookup`, and asking `home_fallback`
+/// when `HOME` is unset or empty.
+pub fn data_dir_with(lookup: Lookup<'_>, home_fallback: HomeFallback<'_>) -> Result<PathBuf> {
+    resolve(DirKind::Data, lookup, home_fallback)
+}
+
+/// The state directory, which holds the trust store: `XDG_STATE_HOME` (absolute), else
+/// `~/.local/state`, plus `slopvac`.
+pub fn state_dir() -> Result<PathBuf> {
+    state_dir_with(&process_env, &process_home)
+}
+
+/// [`state_dir`] reading `XDG_STATE_HOME` and `HOME` through `lookup`, and asking
+/// `home_fallback` when `HOME` is unset or empty.
+pub fn state_dir_with(lookup: Lookup<'_>, home_fallback: HomeFallback<'_>) -> Result<PathBuf> {
+    resolve(DirKind::State, lookup, home_fallback)
+}
+
+/// Which per-user directory to resolve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DirKind {
+    /// Data that can be rebuilt.
+    Cache,
+    /// User configuration.
+    Config,
+    /// Durable data, such as the plugin store.
+    Data,
+    /// Durable state, such as the trust store.
+    State,
+}
+
+impl DirKind {
+    /// The XDG variable and the home-relative default for this kind.
+    const fn xdg(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Cache => ("XDG_CACHE_HOME", ".cache"),
+            Self::Config => ("XDG_CONFIG_HOME", ".config"),
+            Self::Data => ("XDG_DATA_HOME", ".local/share"),
+            Self::State => ("XDG_STATE_HOME", ".local/state"),
+        }
+    }
+}
+
+/// A resolved per-user directory and how it was chosen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ResolvedDir {
+    /// The directory.
+    pub path: PathBuf,
+    /// The environment variable that chose it, or `default` for the home-relative location.
+    pub source: &'static str,
+}
+
+/// Resolve `kind` reading the environment through `lookup`, and asking `home_fallback` when
+/// `HOME` is unset or empty. Only the cache directory honours an override variable
+/// (`SLOPVAC_CACHE_DIR`). An XDG value counts only when it is an absolute path.
+pub fn resolve_dir_with(
+    kind: DirKind,
     lookup: Lookup<'_>,
     home_fallback: HomeFallback<'_>,
-    var: &'static str,
-    default: &str,
-) -> Result<PathBuf> {
-    let base = match value(lookup, var)?
+) -> Result<ResolvedDir> {
+    if kind == DirKind::Cache
+        && let Some(dir) = value(lookup, CACHE_DIR_VAR)?.filter(|v| !v.is_empty())
+    {
+        return Ok(ResolvedDir {
+            path: PathBuf::from(dir),
+            source: CACHE_DIR_VAR,
+        });
+    }
+    let (var, default) = kind.xdg();
+    match value(lookup, var)?
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
     {
-        Some(dir) => dir,
-        None => home(lookup, home_fallback)?.join(default),
-    };
-    Ok(base.join(APP))
+        Some(dir) => Ok(ResolvedDir {
+            path: dir.join(APP),
+            source: var,
+        }),
+        None => Ok(ResolvedDir {
+            path: home(lookup, home_fallback)?.join(default).join(APP),
+            source: "default",
+        }),
+    }
+}
+
+fn resolve(kind: DirKind, lookup: Lookup<'_>, home_fallback: HomeFallback<'_>) -> Result<PathBuf> {
+    resolve_dir_with(kind, lookup, home_fallback).map(|d| d.path)
 }
 
 /// `HOME` through the lookup. When `HOME` is unset or empty, `home_fallback` answers.
@@ -247,5 +323,44 @@ mod tests {
             config_dir_with(&e, &no_home).unwrap(),
             Path::new("/xc/slopvac")
         );
+    }
+
+    #[rstest::rstest]
+    #[case::data_xdg(DirKind::Data, &[("XDG_DATA_HOME", "/xd"), ("HOME", "/h")], "/xd/slopvac", "XDG_DATA_HOME")]
+    #[case::data_default(DirKind::Data, &[("HOME", "/h")], "/h/.local/share/slopvac", "default")]
+    #[case::data_relative_xdg(DirKind::Data, &[("XDG_DATA_HOME", "rel"), ("HOME", "/h")], "/h/.local/share/slopvac", "default")]
+    #[case::data_ignores_cache_override(DirKind::Data, &[(CACHE_DIR_VAR, "/c"), ("HOME", "/h")], "/h/.local/share/slopvac", "default")]
+    #[case::state_xdg(DirKind::State, &[("XDG_STATE_HOME", "/xs"), ("HOME", "/h")], "/xs/slopvac", "XDG_STATE_HOME")]
+    #[case::state_default(DirKind::State, &[("HOME", "/h")], "/h/.local/state/slopvac", "default")]
+    #[case::state_empty_xdg(DirKind::State, &[("XDG_STATE_HOME", ""), ("HOME", "/h")], "/h/.local/state/slopvac", "default")]
+    #[case::cache_override(DirKind::Cache, &[(CACHE_DIR_VAR, "/c"), ("XDG_CACHE_HOME", "/x")], "/c", "SLOPVAC_CACHE_DIR")]
+    #[case::cache_xdg(DirKind::Cache, &[("XDG_CACHE_HOME", "/x")], "/x/slopvac", "XDG_CACHE_HOME")]
+    #[case::config_default(DirKind::Config, &[("HOME", "/h")], "/h/.config/slopvac", "default")]
+    fn resolve_dir_names_the_path_and_its_source(
+        #[case] kind: DirKind,
+        #[case] vars: &[(&str, &str)],
+        #[case] path: &str,
+        #[case] source: &str,
+    ) {
+        let got = resolve_dir_with(kind, &env(vars), &no_home).unwrap();
+        assert_eq!(got.path, Path::new(path));
+        assert_eq!(got.source, source);
+    }
+
+    #[test]
+    fn data_and_state_wrappers_follow_the_xdg_rules() {
+        let e = env(&[("XDG_DATA_HOME", "/xd"), ("HOME", "/h")]);
+        assert_eq!(
+            data_dir_with(&e, &no_home).unwrap(),
+            Path::new("/xd/slopvac")
+        );
+        assert_eq!(
+            state_dir_with(&e, &no_home).unwrap(),
+            Path::new("/h/.local/state/slopvac")
+        );
+        assert!(matches!(
+            state_dir_with(&env(&[]), &no_home),
+            Err(Error::NoHomeDir)
+        ));
     }
 }

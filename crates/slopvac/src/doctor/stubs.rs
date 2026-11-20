@@ -4,15 +4,11 @@
 //! - [`LocalConfigSources`]: STUB(slopvac-8l4.12.23). `slopvac-config` (slopvac-8l4.4.2) owns
 //!   layered config. This finds one `slopvac.toml`, checks `schema_version`, and reads
 //!   `[network] offline` and `update_check`.
-//! - [`EnvDirs`]: STUB(slopvac-8l4.12.24). The plugin beads own the per-user directories. This
-//!   derives them from the environment and treats the data directory as the pack store root and
-//!   the state directory as the trust store.
 
 use std::path::{Path, PathBuf};
 
 use super::read::{ReadProblem, read_bounded};
-use super::{ConfigScan, ConfigSources, Dirs, Located, RawSource, SourceStatus};
-use crate::env::Env;
+use super::{ConfigScan, ConfigSources, RawSource, SourceStatus};
 
 const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
@@ -131,63 +127,5 @@ fn inspect(path: &Path) -> (SourceStatus, Option<String>, Network) {
             Some("unsupported schema_version".into()),
             net,
         ),
-    }
-}
-
-/// Per-user directories from the environment: XDG on Unix, `LOCALAPPDATA` on Windows.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct EnvDirs;
-
-impl EnvDirs {
-    fn locate(
-        env: &dyn Env,
-        override_var: Option<&str>,
-        xdg_var: &str,
-        home_fallback: &str,
-        windows_leaf: &str,
-    ) -> Located {
-        let get = |n: &str| env.var(n).filter(|v| !v.is_empty());
-        if let Some(name) = override_var
-            && let Some(v) = get(name)
-        {
-            return Located::at(PathBuf::from(v), name);
-        }
-        if cfg!(windows) {
-            return get("LOCALAPPDATA").map_or_else(Located::unresolved, |v| {
-                Located::at(
-                    PathBuf::from(v).join("slopvac").join(windows_leaf),
-                    "default",
-                )
-            });
-        }
-        if let Some(v) = get(xdg_var) {
-            return Located::at(PathBuf::from(v).join("slopvac"), xdg_var);
-        }
-        get("HOME").map_or_else(Located::unresolved, |h| {
-            Located::at(
-                PathBuf::from(h).join(home_fallback).join("slopvac"),
-                "default",
-            )
-        })
-    }
-}
-
-impl Dirs for EnvDirs {
-    fn cache(&self, env: &dyn Env) -> Located {
-        Self::locate(
-            env,
-            Some("SLOPVAC_CACHE_DIR"),
-            "XDG_CACHE_HOME",
-            ".cache",
-            "cache",
-        )
-    }
-
-    fn data(&self, env: &dyn Env) -> Located {
-        Self::locate(env, None, "XDG_DATA_HOME", ".local/share", "data")
-    }
-
-    fn state(&self, env: &dyn Env) -> Located {
-        Self::locate(env, None, "XDG_STATE_HOME", ".local/state", "state")
     }
 }

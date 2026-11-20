@@ -4,6 +4,7 @@
 //! it. Doctor opens no connection and changes no file. Data owned by other beads comes through
 //! the traits below; [`stubs`] holds the local stand-ins.
 
+pub mod dirs;
 pub mod read;
 pub mod stubs;
 pub mod update;
@@ -740,7 +741,7 @@ mod tests {
             version,
             update: &Fixed(cached.map(|v| (v.to_owned(), 7))),
             config: &stubs::LocalConfigSources,
-            dirs: &stubs::EnvDirs,
+            dirs: &dirs::SharedDirs,
             walk_limit: WALK_LIMIT,
         })
     }
