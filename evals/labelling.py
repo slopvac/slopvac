@@ -374,7 +374,8 @@ def judge_items(
     A provider failure (`runner.EngineError`) becomes a row with `status: failed`
     and no verdict, and the pair is asked again until `attempts` (failed calls
     from earlier runs) plus this run's reach `MAX_ATTEMPTS`; then it is skipped.
-    A `CredentialFailure` is never retried and propagates.
+    A `CredentialFailure` also leaves a failed row (`error: credential`), is never
+    retried, and then propagates.
 
     `sink` receives each judgment as soon as it exists, so a caller can persist it
     before the next paid call. A run that stops half way then resumes without
@@ -406,16 +407,25 @@ def judge_items(
                 try:
                     answer = _charged_ask(ask, prompt, budget, model)
                     row = {**base, "verdict": parse_answer(answer, letters)}
-                except CredentialFailure:
-                    raise
-                except runner.EngineError:  # the message may carry document text
+                except (CredentialFailure, runner.EngineError) as exc:
+                    # The message may carry document text, so only the kind is kept.
                     tried += 1
-                    row = {**base, "status": FAILED, "error": "provider-exit"}
+                    kind = (
+                        "credential"
+                        if isinstance(exc, CredentialFailure)
+                        else "provider-exit"
+                    )
+                    row = {**base, "status": FAILED, "error": kind}
+                    if sink:
+                        sink(row)
+                    rows.append(row)
+                    if kind == "credential":
+                        raise  # the charged attempt is on file; a retry cannot help
+                    continue
                 if sink:
                     sink(row)
                 rows.append(row)
-                if row.get("status") != FAILED:
-                    break
+                break
     return rows
 
 

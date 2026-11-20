@@ -335,10 +335,12 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
         if refusal:
             print(f"evals label judge: {refusal}", file=sys.stderr)
             return 2
-        earlier = labelling.read_jsonl(out)
-        done = labelling.completed(earlier, args.model)
-        spent = labelling.failed_attempts(earlier, args.model)
         with models.Budget(args.max_invocations, ledger) as budget:
+            # Read the attempts only once the ledger lock is held, so a run that
+            # finished just before cannot be missed and a pair cannot pass 3.
+            earlier = labelling.read_jsonl(out)
+            done = labelling.completed(earlier, args.model)
+            spent = labelling.failed_attempts(earlier, args.model)
             rows = labelling.judge_items(
                 labelling.read_jsonl(p["items"]),
                 labelling.command_asker(args.provider_cmd),
@@ -352,6 +354,7 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
                 sink=lambda row: labelling.append_jsonl(out, [row]),
                 budget=budget,
             )
+            skipped = labelling.skipped_pairs(labelling.read_jsonl(out), args.model)
     except models.BudgetExceeded as exc:
         print(
             f"evals label judge: {exc}; {out} keeps the finished judgments",
@@ -363,7 +366,6 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
         return 2
     written = sum(r.get("status") != labelling.FAILED for r in rows)
     print(f"{written} judgments written to {out}")
-    skipped = labelling.skipped_pairs(labelling.read_jsonl(out), args.model)
     if skipped:
         print(
             f"skipped {len(skipped)} pair{'s' if len(skipped) != 1 else ''} after "

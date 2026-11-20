@@ -1227,7 +1227,9 @@ def test_a_credential_failure_stops_the_run_without_a_retry(judge_env, tmp_path)
     )
     assert rc == 2
     assert counter.read_text() == "x"  # one call, no retry
-    assert not [r for r in judgment_rows(judge_env) if r.get("status") == "failed"]
+    (failed,) = judgment_rows(judge_env)  # the charged attempt is on file
+    assert failed["status"] == "failed" and failed["error"] == "credential"
+    assert "verdict" not in failed and "credentials" not in json.dumps(failed)
 
 
 def skipped_env(d):
@@ -1321,3 +1323,66 @@ def test_mark_failed_rejects_bad_input_and_writes_nothing(
     rc = mark_failed_cli(judge_env, item, order, attempts=attempts, model=model)
     assert rc == 2
     assert not (judge_env / "judgments").exists()
+
+
+def credential_failure(prompt):
+    raise lab.CredentialFailure("provider command exited 1: could not resolve")
+
+
+def test_credential_failures_count_as_attempts_and_the_fourth_run_skips_the_pair(
+    judge_env, tmp_path, monkeypatch, capsys
+):
+    first = lab.ORDERS[0]
+    for _ in range(3):
+        asked = []
+        rc = judge_cli(
+            judge_env, tmp_path, monkeypatch, asked, answer=credential_failure
+        )
+        assert rc == 2 and len(asked) == 1
+    asked = []
+    rc = judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=credential_failure)
+    assert rc == 2  # the next pair fails the same way
+    assert len(asked) == 1
+    rows = judgment_rows(judge_env)
+    assert sum(r["order"] == first for r in rows) == 3  # never a fourth attempt
+    assert sum(r["order"] != first for r in rows) == 1
+
+
+def test_attempt_counts_are_read_under_the_ledger_lock(
+    judge_env, tmp_path, monkeypatch
+):
+    """Another run finishes between this run's start and its lock: its rows count."""
+    real = cli.models.Budget
+    inner = []
+    calls = []  # both runs share one provider fake, so every call lands here
+
+    class Racing(real):
+        def __init__(self, *args, **kw):
+            if not inner:
+                inner.append(True)
+                rc = judge_cli(
+                    judge_env, tmp_path, monkeypatch, calls, answer=always_fail
+                )
+                assert rc == 0
+            super().__init__(*args, **kw)
+
+    monkeypatch.setattr(cli.models, "Budget", Racing)
+    assert judge_cli(judge_env, tmp_path, monkeypatch, calls, answer=always_fail) == 0
+    assert len(calls) == 6  # the other run's 6 calls; this run adds none
+    assert reservations(judge_env, "anthropic") == 6
+    assert sum(r.get("status") == "failed" for r in judgment_rows(judge_env)) == 6
+
+
+def test_a_read_error_while_summarising_exits_2(judge_env, tmp_path, monkeypatch):
+    real = lab.read_jsonl
+    reads = []
+
+    def read(path):
+        if path.name == "anthropic.jsonl":
+            reads.append(path)
+            if len(reads) == 2:  # the read after the run
+                raise OSError("disk went away")
+        return real(path)
+
+    monkeypatch.setattr(lab, "read_jsonl", read)
+    assert judge_cli(judge_env, tmp_path, monkeypatch, [], answer=always_fail) == 2
