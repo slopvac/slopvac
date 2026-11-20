@@ -22,7 +22,6 @@ slopvac-messages.workspace = true
 slopvac-model.workspace = true
 slopvac-parse.workspace = true
 slopvac-rules.workspace = true
-slopvac-terms.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

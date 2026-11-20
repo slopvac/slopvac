@@ -2621,7 +2621,6 @@ dependencies = [
  "slopvac-model",
  "slopvac-parse",
  "slopvac-rules",
- "slopvac-terms",
  "thiserror",
 ]
 

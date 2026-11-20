@@ -825,14 +825,9 @@ pub fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
     let sets = core.into_sets();
     let reasons = slopvac_lsp::exception_names(&sets);
     let engine = lint_terms::build_engine(sets, settings, &terms, root)?;
-    let checks: Vec<Arc<dyn slopvac_lsp::Check>> = vec![
-        Arc::new(slopvac_lsp::FrontMatterCheck::new(Policy::from_config(
-            &config,
-        ))),
-        Arc::new(slopvac_lsp::TermsCheck::new(lint_terms::term_set(
-            &terms, root,
-        )?)),
-    ];
+    let checks: Vec<Arc<dyn slopvac_lsp::Check>> = vec![Arc::new(
+        slopvac_lsp::FrontMatterCheck::new(Policy::from_config(&config)),
+    )];
     Ok(ProjectServer {
         linter: slopvac_lsp::EngineLinter::from_engine(engine, reasons),
         notices,
@@ -841,13 +836,13 @@ pub fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
 }
 
 /// What the language server needs from the project: the engine, the config warnings and the
-/// extra checks it runs next to the engine.
+/// extra checks it runs next to the engine. Term casing comes from the engine.
 pub struct ProjectServer {
     /// The engine linter.
     pub linter: slopvac_lsp::EngineLinter,
     /// Warnings about the config.
     pub notices: Vec<Notice>,
-    /// Front-matter validation and the terms check.
+    /// Front-matter validation.
     pub checks: Vec<Arc<dyn slopvac_lsp::Check>>,
 }
 

@@ -9,17 +9,16 @@ use std::time::Duration;
 use lsp_server::{Connection, Message, Notification, Request, RequestId};
 use serde_json::{Value, json};
 use slopvac_config::frontmatter::Policy;
-use slopvac_engine::{DIAGRAM_PACK, Settings, diagram_rule_set};
+use slopvac_engine::{DIAGRAM_PACK, Settings, TERMS_PACK, diagram_rule_set, terms_rule_set};
 use slopvac_lsp::{
     Check, EngineLinter, Exit, FrontMatterCheck, LintError, Linted, Linter, Problem, Server,
-    ServerError, TermsCheck,
+    ServerError,
 };
 use slopvac_model::{
     GenreId, GenreResult, GenreSource, KebabName, NonEmptyString, Notice, NoticeLevel, PackId,
     RuleId, Severity, Span,
 };
 use slopvac_rules::{CompileOptions, RuleSet};
-use slopvac_terms::{TermEntry, TermSet};
 
 const URI: &str = "file:///work/doc.md";
 const WAIT: Duration = Duration::from_secs(20);
@@ -484,18 +483,13 @@ fn a_registered_check_adds_diagnostics_next_to_the_findings() {
     client.finish().unwrap();
 }
 
-/// A client with front-matter validation and the terms check, over a list that holds `GitHub`.
+/// A client with front-matter validation, over an engine with the built-in term casing rules.
 fn client_with_real_checks() -> Client {
-    let github = TermEntry {
-        term: "GitHub".to_owned(),
-        variants: Vec::new(),
-        kind: None,
-        ignore_case: false,
-        case_sensitive: false,
-    };
-    let server = Server::new(Arc::new(engine_linter()))
-        .with_check(Arc::new(FrontMatterCheck::new(Policy::core())))
-        .with_check(Arc::new(TermsCheck::new(TermSet::new([github]))));
+    let terms = terms_rule_set(&PackId::new(TERMS_PACK).unwrap()).unwrap();
+    let linter =
+        EngineLinter::new(vec![core_rule_set(Vec::new()), terms], engine_settings()).unwrap();
+    let server =
+        Server::new(Arc::new(linter)).with_check(Arc::new(FrontMatterCheck::new(Policy::core())));
     Client::start(server, None)
 }
 
@@ -521,7 +515,7 @@ fn a_bad_front_matter_key_shows_with_its_validate_code_at_the_key() {
 }
 
 #[test]
-fn a_misspelled_term_shows_with_its_terms_code_at_the_term() {
+fn the_engine_reports_a_misspelled_term_once_with_its_terms_code_at_the_term() {
     let mut client = client_with_real_checks();
     // `github` starts at character 7 of line 0.
     let published = client.open("We use github daily.\n");

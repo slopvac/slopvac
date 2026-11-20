@@ -843,3 +843,31 @@ fn lsp_publishes_findings_from_the_shipped_rules() {
             "core:prose-inflation.slop-lexicon",
         ));
 }
+
+/// The server runs its engine from the project config path, which loads the term-casing
+/// rules. One misspelled built-in term must reach the editor once, not once from the engine
+/// and once from a second check.
+#[test]
+fn lsp_reports_a_misspelled_term_exactly_once() {
+    let open = r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///work/doc.md","languageId":"markdown","version":1,"text":"We use github daily.\n"}}}"#;
+    let input = [
+        INITIALIZE,
+        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+        open,
+        r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]
+    .map(frame)
+    .concat();
+    let output = slopvac()
+        .arg("lsp")
+        .write_stdin(input)
+        .timeout(std::time::Duration::from_secs(60))
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(output).expect("utf-8");
+    assert_eq!(stdout.matches(r#""code":"terms:terms.casing""#).count(), 1);
+}
