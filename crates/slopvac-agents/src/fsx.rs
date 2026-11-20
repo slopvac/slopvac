@@ -12,7 +12,7 @@ use std::io::{ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
 
 use cap_std::ambient_authority;
-use cap_std::fs::{Dir, OpenOptions};
+use cap_std::fs::{Dir, FollowSymlinks, OpenOptions, Permissions};
 
 use crate::error::AgentsError;
 
@@ -75,6 +75,33 @@ pub fn target(relative: &str) -> Result<PathBuf, AgentsError> {
         return Err(bad());
     }
     Ok(clean)
+}
+
+/// The permissions of the regular file `name`, read from a handle opened
+/// without following a symlink; `None` if it does not exist.
+///
+/// `resolve` already rewrote every link in the path. Refusing a leaf that
+/// became a link since then keeps a swapped link from lending its target's
+/// mode (CWE-59, CWE-367). The cap-std handle still confines the open to the
+/// project.
+fn source_mode(parent: &Dir, name: &std::ffi::OsStr) -> std::io::Result<Option<Permissions>> {
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    match parent.open_with(name, &options) {
+        Ok(source) => {
+            let meta = source.metadata()?;
+            if meta.is_file() {
+                Ok(Some(meta.permissions()))
+            } else {
+                Err(std::io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "not a regular file",
+                ))
+            }
+        }
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 impl Project {
@@ -274,11 +301,7 @@ impl Project {
         };
         // The mode comes from a handle opened on the source, never from a
         // second lookup of the name after the temporary file exists.
-        let mode = match parent.open(name) {
-            Ok(source) => source.metadata().map(|m| Some(m.permissions())),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e),
-        };
+        let mode = source_mode(&parent, name);
         let finish = || -> std::io::Result<()> {
             let mode = mode?;
             file.write_all(after)?;
@@ -442,6 +465,25 @@ mod mode_tests {
         assert_eq!(seen, [(b"new".to_vec(), 0o600)]);
         assert_eq!(std::fs::read(&target).unwrap(), b"new");
         assert_eq!(mode_of(&target), 0o644);
+    }
+
+    #[test]
+    fn the_source_mode_is_not_taken_through_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("real.md"), "x").unwrap();
+        std::os::unix::fs::symlink("real.md", dir.path().join("link.md")).unwrap();
+        let handle = Dir::open_ambient_dir(dir.path(), ambient_authority()).unwrap();
+        assert!(source_mode(&handle, std::ffi::OsStr::new("link.md")).is_err());
+        assert!(
+            source_mode(&handle, std::ffi::OsStr::new("real.md"))
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            source_mode(&handle, std::ffi::OsStr::new("gone.md"))
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
