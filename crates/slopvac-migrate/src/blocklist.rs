@@ -5,7 +5,7 @@
 //! This module plans one more change per referenced file and checks the result with the
 //! real `slopvac-terms` loader before the plan is returned.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
@@ -15,8 +15,9 @@ use cap_std::fs::Dir;
 use slopvac_terms::{Blocklist, Pos, TermsError};
 use toml_edit::{DocumentMut, Item, TableLike, Value};
 
-use crate::config::{key_lines, line_of};
+use crate::config::line_of;
 use crate::limits::{Budget, Kind, Refused};
+use crate::provenance::{KeyLines, key_lines};
 use crate::{Dropped, Error};
 
 /// A `vocabulary.path` in a 2.x config.
@@ -322,7 +323,7 @@ fn rewrite(
             "the suffix is not .toml, .json, .yml or .yaml, so 3.0 cannot load it".to_owned()
         };
         return Err(blocked(
-            located(&refused, &HashMap::new()).1,
+            located(&refused, &KeyLines::default()).1,
             "schema_version",
             reason,
         ));
@@ -345,7 +346,7 @@ fn rewrite(
             format!("the file {}", describe(&refused)),
         ));
     }
-    let line = |key: &str| lines.get(key).copied().unwrap_or(1);
+    let line = |key: &str| lines.line(key).unwrap_or(1);
     let mut problems = Vec::new();
     let mut notes = Vec::new();
     match doc.get("schema_version") {
@@ -368,8 +369,7 @@ fn rewrite(
             };
             let key = format!("entries[{index}]");
             let pos_line = lines
-                .get(&format!("{key}.pos"))
-                .copied()
+                .line(&format!("{key}.pos"))
                 .unwrap_or_else(|| line(&key));
             match fix_pos(&raw) {
                 PosFix::Keep => {}
@@ -407,47 +407,41 @@ fn rewrite(
 /// The key and one-based line a loader failure points at, in the file on disk. An entry
 /// error names the entry (the loader numbers entries from one). A parse error carries its
 /// position in the parser's message, and that is all this reads from the message.
-fn located(error: &TermsError, lines: &HashMap<String, usize>) -> (String, usize) {
+fn located(error: &TermsError, lines: &KeyLines) -> (String, usize) {
     match error {
         TermsError::Entry {
             number: Some(n), ..
         } => {
             let key = format!("entries[{}]", n.saturating_sub(1));
-            let line = lines.get(&key).copied().unwrap_or(1);
+            let line = lines.line(&key).unwrap_or(1);
             (key, line)
         }
         // The error holds a message and no position. The message can quote the file, so it is
         // never searched for one.
         TermsError::Parse { .. } => ("entries".to_owned(), 1),
-        _ => (
-            "entries".to_owned(),
-            lines.get("entries").copied().unwrap_or(1),
-        ),
+        _ => ("entries".to_owned(), lines.line("entries").unwrap_or(1)),
     }
 }
 
 /// The key and line of the first entry field that is not a string, in a TOML blocklist the
 /// loader refused for its types. Falls back to the `entries` key.
-fn wrong_type_at(doc: &DocumentMut, lines: &HashMap<String, usize>) -> (String, usize) {
+fn wrong_type_at(doc: &DocumentMut, lines: &KeyLines) -> (String, usize) {
     if let Some(Item::ArrayOfTables(entries)) = doc.get("entries") {
         for (index, table) in entries.iter().enumerate() {
             for field in ["word", "pos", "reason", "replacement"] {
                 if table.get(field).is_some_and(|item| item.as_str().is_none()) {
                     let key = format!("entries[{index}].{field}");
-                    let line = lines.get(&key).copied().unwrap_or(1);
+                    let line = lines.line(&key).unwrap_or(1);
                     return (key, line);
                 }
             }
         }
     }
-    (
-        "entries".to_owned(),
-        lines.get("entries").copied().unwrap_or(1),
-    )
+    ("entries".to_owned(), lines.line("entries").unwrap_or(1))
 }
 
 /// A loader failure as a located record.
-fn blocked_by(label: &str, error: &TermsError, lines: &HashMap<String, usize>) -> Vec<Dropped> {
+fn blocked_by(label: &str, error: &TermsError, lines: &KeyLines) -> Vec<Dropped> {
     let (key, line) = located(error, lines);
     vec![Dropped::new(
         label,

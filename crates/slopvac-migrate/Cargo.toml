@@ -12,6 +12,7 @@ publish.workspace = true
 cap-fs-ext.workspace = true
 cap-std.workspace = true
 clap.workspace = true
+frontmatter-spans.workspace = true
 rustix = { workspace = true, features = ["fs"] }
 sha2.workspace = true
 similar.workspace = true
