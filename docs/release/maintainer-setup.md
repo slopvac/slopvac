@@ -27,7 +27,7 @@ In Settings, Environments, `pypi`:
 
 ## The `candidate-signing` environment
 
-The `sign` job of `candidate.yml` runs in the `candidate-signing` environment and is the only candidate job that reads `MINISIGN_SECRET_KEY`. The job runs only for a publishing run: a push of an `rc/v*` tag, or a manual run on that tag with `dry-run` off. A dry run never signs. In Settings, Environments, `candidate-signing`:
+The `sign` job of `publish-pypi.yml` runs in the `candidate-signing` environment and is the only candidate job that reads `MINISIGN_SECRET_KEY`. The job runs only for a publishing run: a push of an `rc/v*` tag, or a manual run on that tag with `dry-run` off. A dry run never signs. In Settings, Environments, `candidate-signing`:
 
 - Under deployment branches and tags, allow only the `rc/v*` tag pattern. Allow no branch and no `v*` tag.
 - Add the `MINISIGN_SECRET_KEY` environment secret.

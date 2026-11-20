@@ -36,7 +36,7 @@ DEPARTURES: dict[str, set[tuple[str, str]]] = {
         ("test.yml", "security"),
     },
     "attestations": {
-        ("candidate.yml", "prerelease"),
+        ("publish-pypi.yml", "prerelease"),
         ("release.yml", "build-local-artifacts"),
     },
     "pages": {("docs-deploy.yml", "deploy")},
@@ -83,7 +83,7 @@ MINTED_WRITERS = [
         (("Publish the release", "env", "GH_TOKEN"),),
     ),
     Writer(
-        "candidate.yml",
+        "publish-pypi.yml",
         "prerelease",
         "release-token",
         ("contents",),
