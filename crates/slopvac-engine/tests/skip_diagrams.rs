@@ -10,6 +10,7 @@
 mod common;
 
 use common::{category, id, ruleset, settings};
+use rstest::rstest;
 use slopvac_diagrams::Format;
 use slopvac_engine::{
     DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input, Level,
@@ -80,6 +81,91 @@ fn a_fenced_diagram_is_checked_and_positioned_in_the_host_file() {
     // Line 5 is `  A[This ...`, and the label starts after the two spaces and `A[`.
     assert_eq!((f.start.line(), f.start.column()), (5, 5));
     assert!(f.contexts.iter().any(|c| c.as_str() == "diagram-label"));
+}
+
+fn sees_diagram_label(doc: &slopvac_model::Document) -> bool {
+    doc.contexts_seen
+        .iter()
+        .any(|c| c.as_str() == "diagram-label")
+}
+
+const CLEAN_FENCE: &str = "Intro.\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n";
+const CLEAN_FILE: &str = "flowchart TD\n  A[Start] --> B[End]\n";
+const DIAGRAM_RULES: [&str; 8] = [
+    "label-run-on",
+    "label-title-plus-gloss",
+    "meta-reference",
+    "note-long",
+    "note-needed",
+    "over-explained",
+    "prose-restates",
+    "prose-restates-labels",
+];
+
+fn no_checker() -> Engine {
+    Engine::new(vec![ruleset(vec![category("cat", &[])])], settings()).unwrap()
+}
+
+fn rules_disabled() -> Engine {
+    let mut off = settings();
+    for rule in DIAGRAM_RULES {
+        off.rule_levels
+            .insert(id(&format!("diagrams:diagram.{rule}")), Level::Off);
+    }
+    diagram_engine(off)
+}
+
+/// The default genre is `reference`, so a rule limited to `consumer` does not apply.
+fn genre_excludes_checker() -> Engine {
+    let rule = signal_rule(
+        "label-run-on",
+        "diagram-label-run-on",
+        &serde_json::json!({"applies_to": {"genres": ["consumer"]}}),
+    );
+    one_rule_engine(vec![("diagram", &rule)])
+}
+
+#[rstest]
+#[case::no_checker(no_checker())]
+#[case::rules_disabled(rules_disabled())]
+#[case::genre_excludes_checker(genre_excludes_checker())]
+#[case::checker_runs(diagram_engine(settings()))]
+fn contexts_seen_lists_the_diagram_context_whether_or_not_a_checker_runs(#[case] engine: Engine) {
+    let fenced = engine.lint(&Input::markdown("a.md", CLEAN_FENCE)).unwrap();
+    assert!(sees_diagram_label(&fenced), "fenced diagram");
+    let file = engine
+        .lint(&Input::diagram("flow.mmd", CLEAN_FILE, Format::Mermaid))
+        .unwrap();
+    assert!(sees_diagram_label(&file), "diagram file");
+}
+
+#[test]
+fn contexts_seen_lists_every_context_of_a_document_in_order() {
+    let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    let dull = common::tokens("dull", "leverage", &serde_json::json!({}));
+    let engine = Engine::new(
+        vec![ruleset(vec![category("cat", &[dull])]), pack],
+        settings(),
+    )
+    .unwrap();
+    let source =
+        "You must leverage the cache.\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n";
+    let doc = engine.lint(&Input::markdown("a.md", source)).unwrap();
+    let seen: Vec<&str> = doc
+        .contexts_seen
+        .iter()
+        .map(slopvac_model::ContextTag::as_str)
+        .collect();
+    // Sorted by name: the prose context comes after the diagram one.
+    assert_eq!(seen, ["diagram-label", "requirement"]);
+}
+
+#[test]
+fn contexts_seen_omits_the_diagram_context_without_a_diagram() {
+    let doc = diagram_engine(settings())
+        .lint(&Input::markdown("a.md", "Just prose here.\n"))
+        .unwrap();
+    assert!(!sees_diagram_label(&doc));
 }
 
 #[test]

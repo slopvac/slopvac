@@ -940,6 +940,7 @@ impl Engine {
         let mut findings = run.lexical()?;
         // Code-comment mode runs the lexical rules only; `comment_notice` lists the rest.
         let mut diagram_notices = Vec::new();
+        let mut seen = tags.kinds_seen();
         if !matches!(input.kind, Kind::Comments(_)) {
             findings.extend(run.vocabulary()?);
             findings.extend(run.term_casing()?);
@@ -949,6 +950,7 @@ impl Engine {
             findings.extend(diagrams.findings);
             extra.extend(diagrams.unchecked);
             diagram_notices = diagrams.notices;
+            seen.extend(run.holds_diagram().then_some(slopvac_diagrams::CONTEXT));
         }
         findings.extend(run.invalid_directives()?);
         // Lookups that passed their budget answered nothing, so nothing found above stands.
@@ -967,7 +969,7 @@ impl Engine {
             self.not_run_notices(&genre.id)?
         };
         notices.extend(extra);
-        let document = self.document(input, &prepared, &tags, genre, findings, notices);
+        let document = self.document(input, &prepared, seen, genre, findings, notices);
         Ok((document, diagram_notices))
     }
 
@@ -1199,18 +1201,17 @@ impl Engine {
         &self,
         input: &Input<'_>,
         prepared: &Prepared<'_>,
-        tags: &TagIndex,
+        mut seen: Vec<&str>,
         genre: GenreResult,
         findings: Vec<Finding>,
         extra: Vec<Notice>,
     ) -> Document {
         let words = prepared.words();
-        let mut seen = tags.kinds_seen();
         if matches!(input.kind, Kind::Comments(_)) && !prepared.blocks().is_empty() {
             seen.push(COMMENT_CONTEXT);
-            seen.sort_unstable();
-            seen.dedup();
         }
+        seen.sort_unstable();
+        seen.dedup();
         let mut unchecked = extra;
         // Code-comment mode runs no vocabulary rule, so it has no vocabulary notice.
         if !matches!(input.kind, Kind::Comments(_)) {
@@ -1899,6 +1900,19 @@ impl Run<'_> {
     /// Findings of diagram rules, over diagram files and fenced diagram blocks, a warning
     /// notice for each diagram that was malformed or over a limit, and an info notice for
     /// each diagram of an unsupported type.
+    /// Whether the input is a diagram file or holds a fenced diagram, so its labels are a
+    /// context the document has. Reads the parsed fences only, whether or not a checker runs.
+    fn holds_diagram(&self) -> bool {
+        matches!(self.input.kind, Kind::Diagram(_))
+            || self.parsed.blocks.iter().any(|block| {
+                matches!(
+                    &block.kind,
+                    BlockKind::CodeBlock { lang: Some(lang), fenced: true, .. }
+                        if DiagramFormat::from_lang(lang).is_some()
+                )
+            })
+    }
+
     fn diagrams(&self) -> Result<DiagramResult, EngineError> {
         let engine = self.engine;
         // A checker none of whose rules applies to the document's genre does not run. One that
