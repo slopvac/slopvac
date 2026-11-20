@@ -292,21 +292,27 @@ REAL_KINDS = {"identity", "entity", "backslash", "opaque", "collapse", "masked"}
 def check_tokens(doc: Doc, tokens: list[dict], ordered: bool = True) -> str:
     """Validate a projection token list against the source and return the projected text.
 
-    A projection of table cells is not ordered: its ranges may come out of source order,
-    but they never overlap."""
+    A projection of table cells is not ordered. Its text tokens may come out of source
+    order, but they never overlap one another. A token marked `bridge` stands for a gap
+    between the lines of a wrapped cell. It may cover the source of the cells beside it,
+    so it may overlap a text token. Only an unordered list may hold a bridge."""
     cursor = 0
     taken: list[tuple[int, int]] = []
     projected = []
     for token in tokens:
         kind, text = token["kind"], token["text"]
         start, end = token["src"]
+        bridge = token.get("bridge", False)
         check_span(doc, start, end)
+        if bridge and ordered:
+            raise PositionError("only an unordered projection may hold a bridge")
         if ordered and start < cursor:
             raise PositionError("projection tokens must ascend in source order")
-        if not ordered and any(start < b and a < end for a, b in taken):
-            raise PositionError("projection token ranges must not overlap")
-        if start != end:
-            taken.append((start, end))
+        if not bridge:
+            if not ordered and any(start < b and a < end for a, b in taken):
+                raise PositionError("projection text tokens must not overlap")
+            if start != end:
+                taken.append((start, end))
         source = doc.data[start:end].decode("utf-8")
         if kind == "identity" and text != source:
             raise PositionError("identity token text differs from its source")
@@ -318,10 +324,14 @@ def check_tokens(doc: Doc, tokens: list[dict], ordered: bool = True) -> str:
             raise PositionError(
                 "wrap token is one space anchored at the previous real end"
             )
-        if kind == "collapse" and (
-            text != " " or not source or source.strip(" \t\r\n")
+        if (
+            kind == "collapse"
+            and not bridge
+            and (text != " " or not source or source.strip(" \t\r\n"))
         ):
             raise PositionError("collapse token is one space over a whitespace run")
+        if kind == "collapse" and bridge and text != " ":
+            raise PositionError("a collapse bridge is one space")
         if kind in REAL_KINDS and start == end:
             raise PositionError("a real token needs a non-empty source range")
         if kind not in REAL_KINDS | {"wrap"}:

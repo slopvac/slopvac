@@ -222,11 +222,11 @@ Every read in the table below reports a refusal as one of the kinds listed. Each
 | Config file | `config-too-large` | `config-io` |
 | Rule or category file | `rules-file-too-large` | No dedicated code yet. |
 | Style file | `style-too-large` | No dedicated code yet. |
-| Terms file | `terms-file-too-large` | No dedicated code yet. |
+| Terms file | `terms-file-too-large` | `terms-io` |
 
 The refusal kinds are `unsafe-path`, `not-found`, `symlink`, `not-regular`, `multiply-linked`, `io`, `not-utf8` and `too-large`. The list can grow in a later 3.x release.
 
-Reserved for a later 3.x release, and not emitted yet: the codes `rules-file-unreadable`, `style-unreadable` and `terms-file-unreadable` for the empty cells above, and a `data.reason` key on every refusal that carries the kind as one of the strings above. Until they are emitted, consumers branch on the codes in the table.
+Reserved for a later 3.x release, and not emitted yet: the codes `rules-file-unreadable` and `style-unreadable` for the cells above with no dedicated code, `terms-file-unreadable` as a possible later name for `terms-io`, and a `data.reason` key on every refusal that carries the kind as one of the strings above. Until they are emitted, consumers branch on the codes in the table.
 
 Output and protocol caps are separate and already hold: plugin frames 16 MiB, reStructuredText converter output 16 MiB, and fixer edits 1 MiB.
 

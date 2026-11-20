@@ -180,6 +180,30 @@ def test_malformed_projection_tokens_are_rejected(tokens: list[dict]) -> None:
         check_tokens(Doc.from_text("xa"), tokens)
 
 
+@pytest.mark.parametrize(
+    ("tokens", "ordered"),
+    [
+        (
+            [
+                {"kind": "identity", "text": "a", "src": [2, 3]},
+                {"kind": "identity", "text": "a", "src": [2, 3]},
+            ],
+            False,
+        ),
+        (
+            [{"kind": "collapse", "text": " ", "src": [0, 1], "bridge": True}],
+            True,
+        ),
+    ],
+    ids=["unordered-text-tokens-overlap", "bridge-in-ordered-projection"],
+)
+def test_the_table_cell_exception_is_no_wider_than_stated(
+    tokens: list[dict], ordered: bool
+) -> None:
+    with pytest.raises(PositionError):
+        check_tokens(Doc.from_text("xxaxx"), tokens, ordered)
+
+
 def test_invalid_utf8_source_is_rejected() -> None:
     with pytest.raises(PositionError):
         Doc.from_bytes(b"ok \xff\n")
