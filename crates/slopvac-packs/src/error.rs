@@ -1,5 +1,6 @@
 //! Why a pack failed to load.
 
+use crate::problem::{ArtifactFault, RuleProblem, render_problems};
 use crate::{ManifestError, NameError, RegistryError, SourceError};
 
 /// Why a pack failed to load. Text from pack files reaches `Display` only through
@@ -28,16 +29,19 @@ pub enum PackError {
         /// The `provides` entry.
         path: String,
     },
-    /// The category files do not compile.
-    #[error("the rules do not load: {}", slopvac_sanitize::line(&.0.to_string()))]
-    Rules(slopvac_rules::LoadErrors),
-    /// A genre or tagger file does not parse.
-    #[error("`{}` does not load: {}", slopvac_sanitize::line(.path), slopvac_sanitize::line(&.source.to_string()))]
+    /// The category files do not load. The problems hold locations and fixed reasons only.
+    #[error("the rules do not load: {}", slopvac_sanitize::line(&render_problems(.problems)))]
+    Rules {
+        /// Every problem found, in order.
+        problems: Vec<RuleProblem>,
+    },
+    /// A genre or tagger file does not load. The file's own text never reaches the error.
+    #[error("`{}` does not load: {fault}", slopvac_sanitize::line(.path))]
     Artifact {
         /// The pack-relative path.
         path: String,
-        /// The parse failure.
-        source: Box<slopvac_context::Error>,
+        /// What went wrong, without file text.
+        fault: ArtifactFault,
     },
     /// Two packs supply the same name.
     #[error(transparent)]

@@ -12,7 +12,8 @@ use slopvac_styles::{Style, StyleError, StylePresets, StyleSource};
 
 use crate::genre_layer::{display_path, settings};
 use crate::{
-    Manifest, PackError, PackPath, PackSource, Provenance, QualifiedName, Registry, Source,
+    ArtifactFault, Manifest, PackError, PackPath, PackSource, Provenance, QualifiedName, Registry,
+    RuleFault, RuleProblem, Source,
 };
 
 /// The id of the built-in pack.
@@ -52,10 +53,41 @@ fn read_all(
         .collect()
 }
 
-fn artifact(path: &PackPath, source: slopvac_context::Error) -> PackError {
+/// Reduce a parse failure of `text` to a location and a fixed reason.
+fn artifact(path: &PackPath, text: &str, source: &slopvac_context::Error) -> PackError {
+    use slopvac_context::Error as E;
+    let fault = match source {
+        E::Yaml(_) => match slopvac_config::tree::parse_yaml(text) {
+            Err(e) => {
+                let at = e.span.map_or(0, |s| s.start);
+                let (line, column) = slopvac_config::tree::LineIndex::new(text).line_col(at);
+                ArtifactFault::Syntax { line, column }
+            }
+            Ok(_) => ArtifactFault::Schema,
+        },
+        E::Pattern { .. } | E::PatternTooLong { .. } => ArtifactFault::Pattern,
+        E::Glob { .. } | E::GlobSet(_) | E::SignalGlob { .. } => ArtifactFault::Glob,
+        _ => ArtifactFault::Invalid,
+    };
     PackError::Artifact {
         path: path.as_str().to_owned(),
-        source: Box::new(source),
+        fault,
+    }
+}
+
+fn rule_problems(errors: &slopvac_rules::LoadErrors) -> PackError {
+    PackError::Rules {
+        problems: errors
+            .errors()
+            .iter()
+            .map(|e| {
+                RuleProblem::new(
+                    e.file.display().to_string(),
+                    e.line,
+                    RuleFault::from(&e.kind),
+                )
+            })
+            .collect(),
     }
 }
 
@@ -91,16 +123,17 @@ impl LoadedPack {
                 .map(|(p, text)| (PathBuf::from(p.as_str()), text)),
             &CompileOptions::default(),
         )
-        .map_err(PackError::Rules)?;
+        .map_err(|e| rule_problems(&e))?;
         let mut genres = Vec::new();
         for (path, text) in read_all(source, &provides.genres)? {
-            let spec = GenreSpec::from_yaml(&text).map_err(|e| artifact(&path, e))?;
+            let spec = GenreSpec::from_yaml(&text).map_err(|e| artifact(&path, &text, &e))?;
             genres.push((path, spec));
         }
         let mut taggers = Vec::new();
         if origin == Source::Core {
             for (path, text) in read_all(source, &provides.taggers)? {
-                taggers.push(TaggerSpec::from_yaml(&text).map_err(|e| artifact(&path, e))?);
+                let spec = TaggerSpec::from_yaml(&text).map_err(|e| artifact(&path, &text, &e))?;
+                taggers.push(spec);
             }
         }
         let styles = read_all(source, &provides.styles)?;

@@ -11,6 +11,7 @@ mod manifest;
 mod name;
 mod pack;
 mod pack_id;
+mod problem;
 mod provenance;
 mod registry;
 mod source;
@@ -18,6 +19,7 @@ mod source;
 pub use core::core_source;
 pub use error::PackError;
 pub use pack::{LoadedPack, Packs};
+pub use problem::{ArtifactFault, RuleFault, RuleProblem};
 pub use source::{DirSource, EmbeddedSource, FileTable, MANIFEST_FILE, PackSource, SourceError};
 
 pub use manifest::{
