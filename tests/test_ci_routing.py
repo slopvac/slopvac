@@ -828,6 +828,8 @@ def test_every_input_a_crate_embeds_trips_a_cargo_delta_wire(path):
     "path",
     [
         ".cargo/config.toml",
+        "docs/contract/compat/dispositions.toml",
+        "packages/slopvac-lint/tests/fixtures/regression/issues/x.md",
         "docs/reference/cli.md",
         "docs/migrate-2-to-3.md",
         "docs/model-recommendations.md",
