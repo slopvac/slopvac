@@ -225,6 +225,9 @@ update-fetch-redirect-no-location text
 update-fetch-redirects-refused text
 update-fetch-too-large text
 update-fetch-too-many-redirects text
+update-hint-check-then-remove text
+update-hint-remove-lock text
+update-hint-wait text
 update-in-progress error
 update-interrupted error
 update-lock-unsafe error

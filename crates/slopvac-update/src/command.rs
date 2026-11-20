@@ -204,7 +204,11 @@ fn self_update(rt: &Runtime) -> Result<String, Failure> {
         }));
     }
     if rt.offline {
-        return Err(Failure::from_message(&UpdateMessage::OfflineNetworkNeeded));
+        return Err(Failure::from_message(
+            &UpdateMessage::OfflineNetworkNeeded {
+                command: "self update".to_owned(),
+            },
+        ));
     }
     // The fingerprint must come before any external work: the network lookup below gives
     // another installer time to replace the file, and a later fingerprint would credit that

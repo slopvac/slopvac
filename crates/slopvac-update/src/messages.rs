@@ -191,6 +191,16 @@ pub(crate) enum UpdateText {
         path: PathBuf,
         problem: String,
     },
+    /// Advice after an interrupted update when no other update runs.
+    #[code("update-hint-remove-lock")]
+    #[text("No other update is running, so remove {name} beside it and run the update again.")]
+    HintRemoveLock { name: String },
+    /// Advice after an interrupted update when the lock state is unknown.
+    #[code("update-hint-check-then-remove")]
+    #[text(
+        "Make sure that no slopvac update is running before you remove {name}, then run the update again."
+    )]
+    HintCheckThenRemove { name: String },
     /// The policy file could not be read.
     #[code("update-policy-unreadable")]
     #[text("cannot read: {reason}")]
@@ -266,6 +276,10 @@ pub(crate) enum UpdatePhrase {
     #[code("update-pipeline-no-parent")]
     #[text("no parent directory")]
     NoParentDirectory,
+    /// Advice after an interrupted update when another update holds the lock.
+    #[code("update-hint-wait")]
+    #[text("Another slopvac update is running; wait for it to finish, then run the update again.")]
+    HintWait,
     /// The registry answered in an unexpected shape.
     #[code("update-registry-unexpected")]
     #[text("unexpected registry response")]
@@ -485,6 +499,18 @@ mod tests {
                 "a/slopvac.toml: p",
             ),
             (
+                UpdateText::HintRemoveLock {
+                    name: s("slopvac.update.lock"),
+                },
+                "No other update is running, so remove slopvac.update.lock beside it and run the update again.",
+            ),
+            (
+                UpdateText::HintCheckThenRemove {
+                    name: s("slopvac.update.lock"),
+                },
+                "Make sure that no slopvac update is running before you remove slopvac.update.lock, then run the update again.",
+            ),
+            (
                 UpdateText::PolicyUnreadable {
                     reason: s("denied"),
                 },
@@ -545,6 +571,10 @@ mod tests {
             ),
             (UpdatePhrase::BinaryTooLarge, "binary is too large"),
             (UpdatePhrase::NoParentDirectory, "no parent directory"),
+            (
+                UpdatePhrase::HintWait,
+                "Another slopvac update is running; wait for it to finish, then run the update again.",
+            ),
             (
                 UpdatePhrase::RegistryUnexpected,
                 "unexpected registry response",

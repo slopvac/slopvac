@@ -56,7 +56,7 @@ use std::time::{Duration, Instant};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::messages::UpdateMessage;
+use crate::messages::{UpdateMessage, UpdatePhrase, UpdateText};
 
 /// How long [`UpdateLock::acquire`] waits for another update to finish.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -131,13 +131,17 @@ enum Record {
 impl Record {
     fn render(&self) -> String {
         match self {
+            // ast-grep-ignore: user-text-literal
             Self::Installed { version, sha } => format!("installed {version} {sha}\n"),
             Self::Pending {
                 to,
                 new_sha,
                 old_sha,
                 from,
-            } => format!("pending {to} {new_sha} {old_sha} {from}\n"),
+            } => {
+                // ast-grep-ignore: user-text-literal
+                format!("pending {to} {new_sha} {old_sha} {from}\n")
+            }
         }
     }
 
@@ -250,18 +254,11 @@ pub(crate) fn recovery_hint(exe: &Path) -> String {
         .file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
     match UpdateLock::acquire(exe, Duration::ZERO) {
-        Ok(_free) => format!(
-            "No other update is running, so remove {name} beside it and run the update again."
-        ),
+        Ok(_free) => UpdateText::HintRemoveLock { name }.to_string(),
         Err(LockError::Refused(UpdateMessage::InProgress { .. })) => {
-            "Another slopvac update is running; wait for it to finish, \
-             then run the update again."
-                .to_owned()
+            UpdatePhrase::HintWait.as_static().to_owned()
         }
-        Err(_) => format!(
-            "Make sure that no slopvac update is running before you remove {name}, \
-             then run the update again."
-        ),
+        Err(_) => UpdateText::HintCheckThenRemove { name }.to_string(),
     }
 }
 
