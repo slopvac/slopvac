@@ -71,9 +71,9 @@ pub struct Evals {
     pub rows: Vec<Run>,
 }
 
-fn invalid(detail: String) -> AgentsError {
+fn invalid(detail: impl Into<String>) -> AgentsError {
     AgentsError::coded(&AgentsMessage::ModelEvalsInvalid {
-        detail: detail.to_string(),
+        detail: detail.into(),
     })
 }
 
