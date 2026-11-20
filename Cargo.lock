@@ -2525,11 +2525,13 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "slopvac-config",
  "slopvac-context",
  "slopvac-model",
  "slopvac-pcre2",
  "slopvac-rules",
  "slopvac-sanitize",
+ "tempfile",
  "thiserror",
  "toml",
 ]

@@ -176,3 +176,31 @@ pointer = "/conformance/valid/minimal.json"
 kind = "corpus-rejected"
 reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
 approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/then/required/python"
+kind = "required-added"
+reason = "runtime and python are new keys, so then only constrains new input"
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/else/not"
+kind = "constraint-added"
+reason = "python was already rejected by unevaluatedProperties, so else only restates that"
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Plugin/then/required/python"
+kind = "required-added"
+reason = "runtime and python are new keys, so then only constrains new input"
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Plugin/else/not"
+kind = "constraint-added"
+reason = "python was already rejected by unevaluatedProperties, so else only restates that"
+approved_by = "contract owner (8l4.2)"

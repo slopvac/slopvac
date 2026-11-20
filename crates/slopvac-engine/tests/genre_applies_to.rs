@@ -37,8 +37,8 @@ fn lint_both(engine: &Engine) -> (Document, Document) {
     let (reference, consumer) = (with_genre("reference"), with_genre("consumer"));
     let mut docs = engine
         .lint_all(&[
-            Input::markdown("a.md", &reference),
-            Input::markdown("b.md", &consumer),
+            Input::markdown("a.md", &reference).with_declared_genre("reference"),
+            Input::markdown("b.md", &consumer).with_declared_genre("consumer"),
         ])
         .into_iter()
         .map(Result::unwrap);
@@ -148,7 +148,9 @@ fn a_rule_the_genre_excludes_does_not_run_on_the_document() {
     let set = ruleset(vec![category("cat", &[bomb])]);
     let engine = Engine::new(vec![set], per_document()).unwrap();
     let source = format!("---\ngenre: consumer\n---\n{}b\n", "a".repeat(64));
-    let doc = engine.lint(&Input::markdown("a.md", &source)).unwrap();
+    let doc = engine
+        .lint(&Input::markdown("a.md", &source).with_declared_genre("consumer"))
+        .unwrap();
     assert_eq!(doc.genre.id.as_str(), "consumer");
     assert_eq!(doc.findings.len(), 0);
 }
@@ -165,7 +167,7 @@ fn a_metric_the_genre_excludes_is_not_measured_on_the_document() {
     let entries = |genre: &str| {
         let before = matcher_entries(MatchKind::Metric);
         let doc = engine
-            .lint(&Input::markdown("a.md", &with_genre(genre)))
+            .lint(&Input::markdown("a.md", &with_genre(genre)).with_declared_genre(genre))
             .unwrap();
         (
             matcher_entries(MatchKind::Metric) - before,
@@ -183,7 +185,9 @@ fn entries_for(engine: &Engine, kind: MatchKind, body: &str) -> [(usize, usize);
     ["reference", "consumer"].map(|genre| {
         let before = matcher_entries(kind);
         let source = format!("---\ngenre: {genre}\n---\n{body}");
-        let doc = engine.lint(&Input::markdown("a.md", &source)).unwrap();
+        let doc = engine
+            .lint(&Input::markdown("a.md", &source).with_declared_genre(genre))
+            .unwrap();
         (matcher_entries(kind) - before, doc.findings.len())
     })
 }

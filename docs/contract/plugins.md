@@ -32,6 +32,7 @@ Every file carries `schema_version = 3`. Unknown keys are errors, and keys with 
 - `kind` is `data` or `code`. `kind = "data"` forbids the `[plugin]` table. `kind = "code"` requires it. The lockfile, `slopvac plugins status` and the doctor report use the same two values.
 - `requires` lists other plugins with a version requirement. The host resolves them first and reports a cycle as an error.
 - The `[plugin]` table embeds the [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration) fields `network`, `hooks` and `features` flat, next to `command`, `args` and `env`. The host reads the declaration from the same bytes that `slopvac plugins trust` hashes (plugin-protocol.md section 4.3). A change to any field in the table changes the hash. The manifest closes the hook entries and the `features` table, so they take only the declared keys and `x-` keys.
+- `runtime` in the `[plugin]` table says how to run `command`. `native`, the default, runs it as a program. `python` runs it as a script of the plugin in a managed Python environment, and the table then needs `python`, the interpreter version request such as `3.12`. The script path is relative with no `..` segment, backslash or leading dash, and `args` follow it. `slopvac plugins sync` builds the environment from the plugin's `pylock.toml` and its wheels, offline when the sync is offline. The host then runs the plugin as `<env>/bin/python -I -B <command> <args>` (threat-model.md section 6.6). `python` is invalid without `runtime = "python"`. Both fields sit in the table, so they are part of the trust hash.
 - Rule ids take the plugin id as their prefix: `<plugin>:<category>.<rule>`. The id `core` belongs to the built-in plugin, and a manifest with the id `core` is invalid (section 9).
 
 ## 3. Styles
@@ -206,10 +207,27 @@ The slopvac repository holds the source of each first-party plugin under `plugin
 | K2 | Every file in `invalid/` | The schema rejects it at the pointer in `cases.toml`. |
 | K3 | A manifest with `kind = "code"` and no `[plugin]` table, or a `data` manifest with one | Rejected. |
 | K4 | A `[plugin]` table without `network`, or a hook without `id` | Rejected through `PluginDeclaration`. |
+| K4a | `runtime = "python"` without `python`, `python` without that runtime, an unknown `runtime`, or a `python` request that starts with a dash | Rejected. |
 | K5 | A lock entry with an unpinned git source or a non-sha256 digest | Rejected. |
 | K6 | The kind `plugin` in a manifest, a lock entry, an index entry or a doctor report | Rejected. The kinds are `data` and `code`. |
 | K7 | `core` as a manifest id, a lock id, an index id or namespace, or a config plugin id | Rejected. |
 | K8 | A config with a `[[packs]]` array | Rejected as an unknown key. |
 | K9 | A config that lists one plugin id twice | The config validator rejects the second entry. JSON Schema cannot express this rule, so it has no schema case. |
+
+**K4a translation.** `python` follows semver rules, and uv takes PEP 440 specifiers, so the host translates the value before it calls uv. The environment key uses the translated form. A part may have one to three numbers.
+
+| Manifest | uv request |
+| --- | --- |
+| `3.12` or `3.12.4`, alone | unchanged |
+| `=3`, `=3.12`, `=3.12.4` | `==3.*`, `==3.12.*`, `==3.12.4` |
+| `^3.12` | `>=3.12,<4` |
+| `^0.2.3`, `^0.0.3` | `>=0.2.3,<0.3`, `>=0.0.3,<0.0.4` |
+| `~3.12`, `~3.12.4`, `~3` | `>=3.12,<3.13`, `>=3.12.4,<3.13`, `>=3,<4` |
+| `>=3.12`, `<3.13` | unchanged |
+| `>3.12`, `>3`, `>3.12.4` | `>=3.13`, `>=4`, `>3.12.4` |
+| `<=3.12`, `<=3`, `<=3.12.4` | `<3.13`, `<4`, `<=3.12.4` |
+| `>=3.11,<3.13` | the comparators joined with commas |
+
+A bare version inside a list means `=`. A pre-release suffix such as `3.12-rc.1` has no PEP 440 interpreter form, so the host refuses the plugin and names the value.
 
 The host behaviors in sections 3 to 11 (conflict notices, genre ties, digest mismatch, the command surface and key handling) get tests in the engine and plugin loader, which cite this file.
