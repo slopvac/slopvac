@@ -55,15 +55,22 @@ def reads_signing_secret(node: object) -> bool:
 # expression or any other name is rejected, so a new home for the key needs a change here.
 ALLOWED_ENVIRONMENTS = frozenset({"release", "revocations", "candidate-signing"})
 
-EXPRESSION = re.compile(r"\$\{\{(.*?)\}\}", re.DOTALL)
-STRING_LITERAL = re.compile(r"'(?:[^']|'')*'")
-# `secrets` as a whole context: not a property access, and not itself a property
-# (`inputs.secrets`, `outputs.secrets`).
-BARE_SECRETS = re.compile(r"(?<![\w.\-])secrets\b(?!\s*(?:\.|\[))", re.IGNORECASE)
+# A single-quoted literal; `''` inside it is an escaped quote. `}}` in one does not end
+# the expression.
+STRING_LITERAL = r"'(?:[^']|'')*'"
+EXPRESSION = re.compile(
+    rf"\$\{{\{{((?:{STRING_LITERAL}|[^'}}]|}}(?!}})|')*?)(?:\}}\}}|\Z)", re.DOTALL
+)
+# `secrets` as a whole context: not a named property access (`secrets.NAME`,
+# `secrets['NAME']`), and not itself a property (`inputs.secrets`). A wildcard
+# projection (`secrets.*`) selects every secret, so it counts as the whole context.
+BARE_SECRETS = re.compile(
+    r"(?<![\w.\-])secrets\b(?!\s*(?:\.(?!\s*\*)|\[))", re.IGNORECASE
+)
 
 
 def uses_whole_secrets_context(expression: str) -> bool:
-    return BARE_SECRETS.search(STRING_LITERAL.sub("", expression)) is not None
+    return BARE_SECRETS.search(re.sub(STRING_LITERAL, "", expression)) is not None
 
 
 def forwards_all_secrets(node: object, key: str = "") -> bool:
@@ -193,14 +200,10 @@ def test_a_computed_secrets_index_inside_a_reviewed_environment_is_allowed(expre
     assert violations(synthetic(job)) == []
 
 
-@pytest.mark.parametrize(
-    "environment",
-    [
-        pytest.param("release", id="string"),
-        pytest.param({"name": "release"}, id="mapping"),
-    ],
-)
-def test_a_signing_secret_read_inside_an_environment_is_allowed(environment):
+@pytest.mark.parametrize("name", sorted(ALLOWED_ENVIRONMENTS))
+@pytest.mark.parametrize("form", ["string", "mapping"])
+def test_a_signing_secret_read_inside_a_reviewed_environment_is_allowed(name, form):
+    environment = name if form == "string" else {"name": name, "url": "https://x.test"}
     job = {"environment": environment, "steps": [{"env": {"K": SECRET}}]}
     assert violations(synthetic(job)) == []
 
@@ -232,6 +235,21 @@ def test_a_signing_secret_read_inside_an_environment_is_allowed(environment):
         pytest.param(
             {"if": "toJSON(secrets) != ''", "steps": []}, id="bare-in-if-field"
         ),
+        pytest.param(
+            {"steps": [{"run": "echo ${{ toJSON(secrets.*) }}"}]}, id="wildcard"
+        ),
+        pytest.param(
+            {"steps": [{"run": "echo ${{ toJSON(secrets . * ) }}"}]},
+            id="wildcard-spaced",
+        ),
+        pytest.param(
+            {"steps": [{"run": "echo ${{ format('}}{0}', toJSON(secrets)) }}"}]},
+            id="after-braces-in-string-literal",
+        ),
+        pytest.param(
+            {"steps": [{"run": "echo ${{ format('it''s }}', toJSON(secrets)) }}"}]},
+            id="after-escaped-quote-and-braces",
+        ),
     ],
 )
 def test_bulk_secret_forwarding_is_reported(job):
@@ -253,9 +271,6 @@ def test_bulk_secret_forwarding_is_reported(job):
         pytest.param({"steps": [{"run": "echo secrets are not printed"}]}, id="prose"),
         pytest.param(
             {"steps": [{"run": "echo '${{ 'secrets' }}'"}]}, id="string-literal"
-        ),
-        pytest.param(
-            {"steps": [{"env": {"T": "${{ secrets.GITHUB_TOKEN }}"}}]}, id="named"
         ),
     ],
 )
@@ -282,14 +297,6 @@ def test_a_signing_secret_read_in_an_unreviewed_environment_is_reported(environm
     ]
 
 
-@pytest.mark.parametrize("name", ["release", "revocations", "candidate-signing"])
-@pytest.mark.parametrize("form", ["string", "mapping"])
-def test_every_reviewed_environment_is_allowed_in_both_forms(name, form):
-    environment = name if form == "string" else {"name": name, "url": "https://x.test"}
-    job = {"environment": environment, "steps": [{"env": {"K": SECRET}}]}
-    assert violations(synthetic(job)) == []
-
-
 def test_a_workflow_level_signing_secret_is_reported_even_with_job_environments():
     job = {"environment": "release", "steps": []}
     assert violations(synthetic(job, env={"K": SECRET})) == [
@@ -305,3 +312,11 @@ def test_a_workflow_level_signing_secret_is_reported_even_with_job_environments(
 def test_other_secrets_need_no_environment(expression):
     job = {"steps": [{"env": {"T": expression}}]}
     assert violations(synthetic(job)) == []
+
+
+def test_a_workflow_level_bulk_secrets_use_is_reported():
+    job = {"environment": "release", "steps": []}
+    workflow_env = {"A": "${{ toJSON(secrets) }}"}
+    assert violations(synthetic(job, env=workflow_env)) == [
+        "x.yml forwards the whole secrets context outside any job"
+    ]
