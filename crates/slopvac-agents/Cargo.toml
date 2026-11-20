@@ -25,6 +25,7 @@ slopvac-fs.workspace = true
 slopvac-messages.workspace = true
 slopvac-migrate.workspace = true
 slopvac-model.workspace = true
+slopvac-packs.workspace = true
 slopvac-text.workspace = true
 slopvac-update.workspace = true
 thiserror.workspace = true

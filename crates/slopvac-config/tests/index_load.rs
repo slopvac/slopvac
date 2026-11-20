@@ -1,14 +1,17 @@
 //! Extra-index sources never reach rendered output, and the extra-index count is capped.
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 
+use common::NoPresets;
 use rstest::rstest;
 use slopvac_config::tree::parse_toml;
 use slopvac_config::validate::{command, run};
 use slopvac_config::{
-    BudgetData, Code, ConfigBudget, ConfigError, MAX_INDEX_EXTRA, NoPresets, SourceFile, load,
-    render, validate_config,
+    BudgetData, Code, ConfigBudget, ConfigError, MAX_INDEX_EXTRA, SourceFile, load, render,
+    validate_config,
 };
 use tempfile::TempDir;
 

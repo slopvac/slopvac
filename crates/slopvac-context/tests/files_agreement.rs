@@ -4,10 +4,27 @@
 use std::path::Path;
 
 use rstest::rstest;
-use slopvac_config::{Inputs, NoPresets, load};
+use slopvac_config::{Inputs, PackFile, Presets, Setting, load};
 use slopvac_context::{
     GenreAssignment, GenreRegistry, PlainDocument, ResolveOptions, parse_genres,
 };
+
+/// No packs behind the loader. `slopvac-packs` depends on this crate, so it cannot stand in.
+struct NoPresets;
+
+impl Presets for NoPresets {
+    fn style(&self, _name: &str) -> Option<Vec<Setting>> {
+        None
+    }
+
+    fn genre_chain(&self, _name: &str) -> Vec<Vec<Setting>> {
+        Vec::new()
+    }
+
+    fn pack_config(&self, _name: &str) -> Option<PackFile> {
+        None
+    }
+}
 
 /// Whether config resolution and genre resolution each assign `hit` to `path`, for one
 /// `[[genres]]` block with the given `files`. The patterns are written into the TOML as

@@ -5,7 +5,8 @@
 
 use std::path::Path;
 
-use slopvac_config::{ConfigError, Discovery, LoadedConfig, NoPresets};
+use slopvac_config::{ConfigError, Discovery, LoadedConfig};
+use slopvac_packs::Packs;
 
 use crate::error::{AgentsError, ConfigFailure};
 use crate::messages::PrimeText;
@@ -79,7 +80,12 @@ impl Guidance {
     /// `explicit` is a `--config` path and wins over discovery. Without it, the nearest
     /// `slopvac.toml` from `root` upward applies. With no config the schema defaults hold.
     pub fn load(root: &Path, explicit: Option<&Path>) -> Result<Self, AgentsError> {
-        let discovery = Discovery::new(&NoPresets);
+        #[expect(
+            clippy::expect_used,
+            reason = "the core pack is embedded in the binary and its load is tested"
+        )]
+        let packs = Packs::core().expect("the embedded core pack loads");
+        let discovery = Discovery::new(&packs);
         let config = match explicit {
             Some(path) => Some(discovery.explicit(path)),
             None => discovery.nearest(root).transpose(),

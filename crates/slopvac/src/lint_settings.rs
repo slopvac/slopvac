@@ -548,7 +548,24 @@ pub fn config_sources(files: &[(String, bool)]) -> Vec<ConfigSource> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use slopvac_config::{NoPresets, load};
+    use slopvac_config::load;
+
+    /// No packs behind the loader: these tests cover the settings builder, not packs.
+    struct NoPresets;
+
+    impl Presets for NoPresets {
+        fn style(&self, _name: &str) -> Option<Vec<Setting>> {
+            None
+        }
+
+        fn genre_chain(&self, _name: &str) -> Vec<Vec<Setting>> {
+            Vec::new()
+        }
+
+        fn pack_config(&self, _name: &str) -> Option<PackFile> {
+            None
+        }
+    }
 
     /// The settings that `config` (the text of a `slopvac.toml`) gives to a file.
     fn settings(config: &str) -> Result<Settings, CliError> {

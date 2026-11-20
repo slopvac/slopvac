@@ -31,7 +31,7 @@ pub use error::{ConfigError, Rejected};
 pub use files::{FilesError, FilesMatcher};
 pub use load::{LoadedConfig, load, load_labeled};
 pub use messages::{error_entries, phrase_entries, text_entries};
-pub use presets::{NoPresets, PackFile, PresetFailure, Presets};
+pub use presets::{PackFile, PresetFailure, Presets};
 pub use read::{
     MAX_CONFIG_BYTES, MAX_DOCUMENT_BYTES, MAX_EXTENDS_APPLIED_BYTES, MAX_EXTENDS_BYTES,
     MAX_EXTENDS_DEPTH, MAX_EXTENDS_FILES, MAX_FILE_BLOCKS, MAX_INDEX_EXTRA,

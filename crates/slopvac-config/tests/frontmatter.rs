@@ -1,8 +1,11 @@
 //! Front-matter reading and the allow policy, through the public interface.
 
+mod common;
+
+use common::NoPresets;
 use serde_json::json;
 use slopvac_config::frontmatter::{Format, Policy, extract, parse_block, read};
-use slopvac_config::{Code, ConfigLayer, ConfigSource, Inputs, NoPresets, load};
+use slopvac_config::{Code, ConfigLayer, ConfigSource, Inputs, load};
 use std::num::NonZeroUsize;
 use std::path::Path;
 

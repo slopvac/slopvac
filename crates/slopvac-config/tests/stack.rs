@@ -6,10 +6,11 @@ use std::fs;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
+use common::NoPresets;
 use serde_json::{Value as Json, json};
 use slopvac_config::{
     BudgetData, Code, ConfigBudget, ConfigError, ConfigLayer, ConfigSource, Discovery, Inputs,
-    LoadedConfig, NoPresets, PackFile, Presets, Setting, bare_source, load,
+    LoadedConfig, PackFile, Presets, Setting, bare_source, load,
 };
 use tempfile::TempDir;
 
