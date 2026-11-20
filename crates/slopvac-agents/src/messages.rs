@@ -2,7 +2,7 @@
 //! and fixed phrases.
 //!
 //! Four enums hold them. [`PrimeText`] is what `prime <topic>` prints in place of a
-//! disabled topic. [`AgentsMessage`] has one entry per error code and per notice.
+//! disabled topic, and the labels and refusal notices around the project's notes. [`AgentsMessage`] has one entry per error code and per notice.
 //! [`AgentsText`] holds the sentences with parameters that errors, command output and
 //! checks fill in. [`AgentsPhrase`] holds fixed phrases, which callers read as `&'static str`
 //! through [`AgentsPhrase::as_static`]. The binary registers them as one catalog through
@@ -18,7 +18,8 @@ use std::sync::OnceLock;
 
 use slopvac_messages::{Catalog, Entry};
 
-/// What `prime <topic>` prints in place of a topic, and around the project's notes.
+/// The `prime` text that is not a topic: the notice for a disabled topic, the labels around
+/// the project's `.slopvac/PRIME.md` notes, and the notice for a refused notes file.
 #[derive(Debug, Clone, PartialEq, Eq, Catalog)]
 pub(crate) enum PrimeText {
     /// The topic's `[guidance]` control is `"off"` and no config file is known to set it.
@@ -777,6 +778,28 @@ pub fn message_entries() -> &'static [Entry] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A refusal notice names its own code. The text and the `#[code]` attribute are two
+    /// literals, so this keeps them from drifting apart.
+    #[test]
+    fn each_refusal_notice_names_its_own_code() {
+        for notice in [
+            PrimeText::OverrideSymlink,
+            PrimeText::OverrideNotRegular,
+            PrimeText::OverrideTooLarge,
+            PrimeText::OverrideNotUtf8,
+            PrimeText::OverrideUnreadable,
+            PrimeText::OverrideUnknownTopic,
+            PrimeText::OverrideHardlinked,
+        ] {
+            let text = slopvac_messages::render(&notice);
+            assert!(
+                text.contains(&format!("({})", notice.code())),
+                "{text:?} does not name {}",
+                notice.code()
+            );
+        }
+    }
 
     #[test]
     fn every_code_keeps_its_published_text_and_is_registered() {

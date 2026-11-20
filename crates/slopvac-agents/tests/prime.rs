@@ -195,16 +195,6 @@ fn project_with_notes(bytes: &[u8]) -> tempfile::TempDir {
     dir
 }
 
-/// What follows the built-in text when the notes are refused.
-fn tail_after_builtin(out: &str, topic: Option<&str>) -> String {
-    let base = builtin(topic);
-    assert!(
-        out.starts_with(&base),
-        "built-in text must come first, unchanged"
-    );
-    out[base.len()..].to_owned()
-}
-
 /// Render on a thread so a read that blocks fails the test instead of hanging it.
 fn render_bounded(root: &std::path::Path) -> String {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -216,17 +206,19 @@ fn render_bounded(root: &std::path::Path) -> String {
         .expect("prime blocked on the notes file")
 }
 
-fn assert_refused(root: &std::path::Path, code: &str) {
+/// Text that no notice may ever carry; every refused fixture holds it.
+const SENTINEL: &str = "SENTINEL-4c1d9e";
+
+/// The refusal must be exactly the built-in text, a blank line, then the fixed notice.
+fn assert_refused(root: &std::path::Path, code: &str, reason: &str) {
     let out = render_bounded(root);
-    let tail = tail_after_builtin(&out, None);
-    assert!(tail.contains(code), "notice must name {code}: {tail:?}");
+    let notice =
+        format!("Ignored .slopvac/PRIME.md ({code}): {reason} The guidance above is complete.\n");
+    assert_eq!(out, format!("{}\n{notice}", builtin(None)));
+    assert!(!out.contains(SENTINEL), "notes text leaked: {out:?}");
     assert!(
-        !tail.contains("project-notes"),
-        "no notes fence in a notice: {tail:?}"
-    );
-    assert!(
-        !tail.contains(root.to_str().unwrap()),
-        "no path in a notice: {tail:?}"
+        !out.contains(root.to_str().unwrap()),
+        "absolute root leaked: {out:?}"
     );
 }
 
@@ -277,31 +269,26 @@ fn missing_notes_leave_the_output_byte_identical() {
     }
 }
 
-#[test]
-fn crlf_notes_are_normalised_before_escaping() {
-    let dir = project_with_notes(b"one\r\ntwo\r\n");
+#[rstest::rstest]
+#[case::crlf("one\r\ntwo\r\n", "one\ntwo\n")]
+#[case::lone_cr("a\rb\n", "a\\u{d}b\n")]
+#[case::backslash("a\\b \\u{1b}\n", "a\\\\b \\\\u{1b}\n")]
+#[case::escape_and_bidi("a\u{1b}[31m b\u{202e}c\n", "a\\u{1b}[31m b\\u{202e}c\n")]
+#[case::workflow_commands(
+    "::error::x\nd ##[warning]\n",
+    "\\u{3a}:error::x\nd \\u{23}#[warning]\n"
+)]
+fn notes_are_normalised_and_escaped_before_they_are_fenced(
+    #[case] raw: &str,
+    #[case] escaped: &str,
+) {
+    let dir = project_with_notes(raw.as_bytes());
     let out = render_in(dir.path(), None);
     assert!(
-        out.ends_with(&format!(
-            "```text project-notes\none\ntwo\n```\n{NOTES_END}"
-        )),
+        out.ends_with(&format!("```text project-notes\n{escaped}```\n{NOTES_END}")),
         "{out:?}"
     );
-}
-
-#[test]
-fn hostile_characters_in_notes_are_escaped() {
-    // ESC, a right-to-left override, a line-leading workflow command and `##[`.
-    let dir = project_with_notes("a\u{1b}[31m b\u{202e}c\n::error::x\nd ##[warning]\n".as_bytes());
-    let out = render_in(dir.path(), None);
-    let expected_body = "a\\u{1b}[31m b\\u{202e}c\n\\u{3a}:error::x\nd \\u{23}#[warning]\n";
-    assert!(
-        out.ends_with(&format!(
-            "```text project-notes\n{expected_body}```\n{NOTES_END}"
-        )),
-        "{out:?}"
-    );
-    assert!(!out.contains('\u{1b}') && !out.contains('\u{202e}'));
+    assert!(!out.contains('\u{1b}') && !out.contains('\u{202e}') && !out.contains('\r'));
 }
 
 #[test]
@@ -336,17 +323,73 @@ fn notes_of_exactly_the_cap_are_read() {
 
 #[rstest::rstest]
 #[case::one_byte_over_the_cap(
-    format!("{}\nb", "a".repeat(64 * 1024 - 1)).into_bytes(),
-    "prime-override-too-large"
+    format!("{SENTINEL}\n{}", "a".repeat(64 * 1024 - SENTINEL.len())).into_bytes(),
+    "prime-override-too-large",
+    "it is larger than 64 KiB."
 )]
-#[case::not_utf8(b"ok\n\xff\xfe\n".to_vec(), "prime-override-not-utf8")]
+#[case::not_utf8(
+    format!("{SENTINEL}\n").into_bytes().into_iter().chain([0xff, 0xfe]).collect(),
+    "prime-override-not-utf8",
+    "it is not valid UTF-8."
+)]
 #[case::unknown_marker(
-    b"<!-- slopvac:topic bogus -->\nHello.\n".to_vec(),
-    "prime-override-unknown-topic"
+    format!("<!-- slopvac:topic bogus -->\n{SENTINEL}\n").into_bytes(),
+    "prime-override-unknown-topic",
+    "a topic marker names no topic."
 )]
-fn refused_notes_leave_the_built_in_text_and_a_notice(#[case] bytes: Vec<u8>, #[case] code: &str) {
+fn refused_notes_leave_the_built_in_text_and_one_fixed_notice(
+    #[case] bytes: Vec<u8>,
+    #[case] code: &str,
+    #[case] reason: &str,
+) {
+    assert_eq!(bytes.len() > 64 * 1024, code == "prime-override-too-large");
     let dir = project_with_notes(&bytes);
-    assert_refused(dir.path(), code);
+    assert_refused(dir.path(), code, reason);
+}
+
+#[test]
+fn a_file_of_exactly_the_cap_is_not_a_too_large_refusal() {
+    let exact = format!("{SENTINEL}\n{}", "a".repeat(64 * 1024 - SENTINEL.len() - 1));
+    assert_eq!(exact.len(), 64 * 1024);
+    let dir = project_with_notes(exact.as_bytes());
+    assert!(render_in(dir.path(), None).contains("```text project-notes\n"));
+}
+
+#[test]
+fn the_first_of_two_sections_for_a_topic_wins() {
+    let dir = project_with_notes(
+        b"<!-- slopvac:topic write -->\nFirst.\n<!-- slopvac:topic write -->\nSecond.\n",
+    );
+    let out = render_in(dir.path(), Some("write"));
+    assert!(out.contains("```text project-notes\nFirst.\n```\n"));
+    assert!(!out.contains("Second."));
+}
+
+#[test]
+fn a_marker_with_no_name_starts_the_base_topic_notes() {
+    let dir = project_with_notes(b"<!-- slopvac:topic -->\nBase notes.\n");
+    let out = render_in(dir.path(), None);
+    assert!(out.ends_with(&format!(
+        "```text project-notes\nBase notes.\n```\n{NOTES_END}"
+    )));
+}
+
+#[test]
+fn a_disabled_topic_prints_only_its_notice_even_with_notes() {
+    let dir = project_with_notes(format!("<!-- slopvac:topic write -->\n{SENTINEL}\n").as_bytes());
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        "schema_version = 3\n\n[guidance]\nwrite = \"off\"\n",
+    )
+    .unwrap();
+    let m = prime::command()
+        .try_get_matches_from(["prime", "write"])
+        .unwrap();
+    let out = prime::run(&m, &tree(), dir.path()).unwrap();
+    assert_eq!(
+        out,
+        "slopvac prime write is disabled by [guidance] write = \"off\" in slopvac.toml.\n"
+    );
 }
 
 #[rstest::rstest]
@@ -356,6 +399,35 @@ fn refused_notes_leave_the_built_in_text_and_a_notice(#[case] bytes: Vec<u8>, #[
 fn notes_for_other_topics_leave_a_topic_unchanged(#[case] topic: &str) {
     let dir = project_with_notes(b"<!-- slopvac:topic rules -->\nOnly rules.\n");
     assert_eq!(render_in(dir.path(), Some(topic)), builtin(Some(topic)));
+}
+
+/// Every file under `root` by relative path, except the notes file itself.
+fn installed_files(root: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fn walk(
+        dir: &std::path::Path,
+        root: &std::path::Path,
+        out: &mut std::collections::BTreeMap<String, Vec<u8>>,
+    ) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, root, out);
+            } else {
+                let rel = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned();
+                if rel != ".slopvac/PRIME.md" {
+                    out.insert(rel, fs::read(&path).unwrap());
+                }
+            }
+        }
+    }
+    let mut out = std::collections::BTreeMap::new();
+    walk(root, root, &mut out);
+    out
 }
 
 #[test]
@@ -373,8 +445,6 @@ fn notes_do_not_change_what_setup_installs_or_reports() {
         agent: false,
         reviewer_model: None,
     };
-    let plain = tempfile::tempdir().unwrap();
-    let noted = project_with_notes(b"House rules.\n");
     // Outcome lines name the root, which differs per directory.
     let run = |root: &std::path::Path| {
         let mut out = execute(&opts(root)).unwrap();
@@ -386,10 +456,13 @@ fn notes_do_not_change_what_setup_installs_or_reports() {
             .collect();
         out
     };
-    let a = run(plain.path());
-    let b = run(noted.path());
-    assert_eq!(a, b);
-    // The notes file itself is left alone.
+    let plain = tempfile::tempdir().unwrap();
+    let noted = project_with_notes(b"House rules.\n");
+    assert_eq!(run(plain.path()), run(noted.path()));
+    // The installed bytes match too, and the notes file is left alone.
+    let files = installed_files(noted.path());
+    assert!(!files.is_empty());
+    assert_eq!(files, installed_files(plain.path()));
     assert_eq!(
         fs::read(noted.path().join(".slopvac/PRIME.md")).unwrap(),
         b"House rules.\n"
@@ -397,14 +470,37 @@ fn notes_do_not_change_what_setup_installs_or_reports() {
 }
 
 #[test]
-fn a_refusal_notice_carries_no_notes_text_and_exits_zero_through_run() {
-    let dir = project_with_notes(b"<!-- slopvac:topic bogus -->\nSECRET-MARKER\n");
+fn a_refusal_exits_zero_through_run_and_ends_with_a_newline() {
+    let dir = project_with_notes(format!("<!-- slopvac:topic bogus -->\n{SENTINEL}\n").as_bytes());
     let m = prime::command().try_get_matches_from(["prime"]).unwrap();
     let out = prime::run(&m, &tree(), dir.path()).unwrap();
-    let tail = tail_after_builtin(&out, None);
-    assert!(tail.contains("prime-override-unknown-topic"), "{tail:?}");
-    assert!(!out.contains("SECRET-MARKER") && !out.contains("bogus"));
-    assert!(out.ends_with('\n'));
+    assert!(out.ends_with(
+        "(prime-override-unknown-topic): a topic marker names no topic. The guidance above is complete.\n"
+    ));
+    assert!(!out.contains(SENTINEL) && !out.contains("bogus"));
+}
+
+#[test]
+fn a_notes_path_that_cannot_be_opened_is_refused_as_unreadable() {
+    // `.slopvac` is a file, so the notes path fails with "not a directory". This holds for any user,
+    // root included, unlike a permission test.
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(".slopvac"), format!("{SENTINEL}\n")).unwrap();
+    assert_refused(
+        dir.path(),
+        "prime-override-unreadable",
+        "it could not be read.",
+    );
+    // The root itself is a file.
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let out = render_in(file.path(), None);
+    assert_eq!(
+        out,
+        format!(
+            "{}\nIgnored .slopvac/PRIME.md (prime-override-unreadable): it could not be read. The guidance above is complete.\n",
+            builtin(None)
+        )
+    );
 }
 
 #[cfg(unix)]
@@ -416,13 +512,17 @@ mod unix {
     fn a_symlinked_notes_file_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join(".slopvac")).unwrap();
-        fs::write(dir.path().join("elsewhere.md"), "Hi.\n").unwrap();
+        fs::write(dir.path().join("elsewhere.md"), format!("{SENTINEL}\n")).unwrap();
         symlink(
             dir.path().join("elsewhere.md"),
             dir.path().join(".slopvac/PRIME.md"),
         )
         .unwrap();
-        assert_refused(dir.path(), "prime-override-symlink");
+        assert_refused(
+            dir.path(),
+            "prime-override-symlink",
+            "a path component is a symlink.",
+        );
     }
 
     #[test]
@@ -430,50 +530,55 @@ mod unix {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().join("real");
         fs::create_dir(&real).unwrap();
-        fs::write(real.join("PRIME.md"), "Hi.\n").unwrap();
+        fs::write(real.join("PRIME.md"), format!("{SENTINEL}\n")).unwrap();
         symlink(&real, dir.path().join(".slopvac")).unwrap();
-        assert_refused(dir.path(), "prime-override-symlink");
+        assert_refused(
+            dir.path(),
+            "prime-override-symlink",
+            "a path component is a symlink.",
+        );
     }
 
     #[test]
     fn a_hard_linked_notes_file_is_refused() {
-        let dir = project_with_notes(b"Hi.\n");
+        let dir = project_with_notes(format!("{SENTINEL}\n").as_bytes());
         fs::hard_link(
             dir.path().join(".slopvac/PRIME.md"),
             dir.path().join("alias.md"),
         )
         .unwrap();
-        assert_refused(dir.path(), "prime-override-hardlinked");
+        assert_refused(
+            dir.path(),
+            "prime-override-hardlinked",
+            "it has more than one hard link.",
+        );
     }
 
     #[test]
-    fn a_fifo_or_directory_as_notes_is_refused_without_blocking() {
+    fn a_fifo_as_notes_is_refused_without_blocking() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join(".slopvac")).unwrap();
-        let fifo = dir.path().join(".slopvac/PRIME.md");
         let made = std::process::Command::new("mkfifo")
-            .arg(&fifo)
+            .arg(dir.path().join(".slopvac/PRIME.md"))
             .status()
             .unwrap();
         assert!(made.success());
-        assert_refused(dir.path(), "prime-override-not-regular");
-
-        let dirs = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dirs.path().join(".slopvac/PRIME.md")).unwrap();
-        assert_refused(dirs.path(), "prime-override-not-regular");
+        assert_refused(
+            dir.path(),
+            "prime-override-not-regular",
+            "it is not a regular file.",
+        );
     }
 
     #[test]
-    fn an_unreadable_notes_file_is_refused() {
-        use std::os::unix::fs::PermissionsExt;
-        let uid = std::process::Command::new("id").arg("-u").output().unwrap();
-        if uid.stdout.trim_ascii() == b"0" {
-            return;
-        }
-        let dir = project_with_notes(b"Hi.\n");
-        let path = dir.path().join(".slopvac/PRIME.md");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
-        assert_refused(dir.path(), "prime-override-unreadable");
+    fn a_directory_as_notes_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".slopvac/PRIME.md")).unwrap();
+        assert_refused(
+            dir.path(),
+            "prime-override-not-regular",
+            "it is not a regular file.",
+        );
     }
 }
 

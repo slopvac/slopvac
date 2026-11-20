@@ -3,7 +3,8 @@
 //! Each topic is a Markdown file under `topics/`, embedded at build time. A topic
 //! may open with `<!-- summary: ... -->`, which feeds the index in the base topic.
 //! The base topic's command list and topic index come from the clap tree and the
-//! registry, so they cannot drift from the code. `.slopvac/PRIME.md` overrides topics.
+//! registry, so they cannot drift from the code. `.slopvac/PRIME.md` adds project notes after
+//! a topic: the built-in text comes first and the notes follow as labelled data.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -137,8 +138,8 @@ fn command_lines(cli: &Command) -> Vec<CommandLine> {
         .collect()
 }
 
-/// Parse `.slopvac/PRIME.md` into `(topic, text)` overrides. A file without
-/// topic lines overrides the base topic (`""`).
+/// Parse `.slopvac/PRIME.md` into `(topic, text)` sections. Text before any topic line
+/// belongs to the base topic (`""`), and so does a topic line with no name.
 fn overrides(text: &str) -> Vec<(String, String)> {
     const MARK: &str = "<!-- slopvac:topic ";
     let mut out: Vec<(String, String)> = Vec::new();
@@ -224,6 +225,7 @@ fn fenced_notes(text: &str) -> String {
     }
     let longest = body.split(|c| c != '`').map(str::len).max().unwrap_or(0);
     let fence = "`".repeat((longest + 1).max(3));
+    // The fence is Markdown that agents parse as a delimiter around project data, not a message.
     // ast-grep-ignore: user-text-literal
     format!("{fence}text project-notes\n{body}{fence}\n")
 }
@@ -325,8 +327,8 @@ fn render_template(
     })
 }
 
-/// Render a topic (`None` is the base topic) for `cli`, applying any override
-/// under `root`.
+/// Render a topic (`None` is the base topic) for `cli`, then append the project notes
+/// that `.slopvac/PRIME.md` under `root` holds for it.
 pub fn render(
     topic: Option<&str>,
     settings: &Settings,
