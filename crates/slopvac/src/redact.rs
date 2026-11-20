@@ -96,12 +96,13 @@ pub fn strip_url_userinfo(text: &str) -> String {
     out
 }
 
-/// A config value that is a URL, as the explain output shows it: no user-info, no query string.
+/// A config value that is a URL, as the explain output shows it: no user-info, query or fragment.
 ///
 /// The whole value is the URL when it starts with an RFC 3986 scheme (`ALPHA *( ALPHA / DIGIT /
 /// "+" / "-" / "." ) ":"`). A value without a scheme comes back unchanged, and so does a URL
 /// inside a longer string. The value splits by component: the fragment starts at the first
-/// `#` and stays, the query runs from the first `?` before the fragment and goes, and the
+/// `#` and goes with everything after it, the query runs from the first `?` before the
+/// fragment and goes, and the
 /// user-info goes only when an authority (`//`) is present: everything up to the last `@`
 /// before the first `/` of the authority.
 #[must_use]
@@ -121,7 +122,10 @@ pub fn redact_url_value(text: &str) -> String {
         return text.to_owned();
     };
     let (scheme, rest) = text.split_at(colon + 1);
-    let (before_fragment, fragment) = rest.split_at(rest.find('#').unwrap_or(rest.len()));
+    // The fragment can hold a token (an OAuth redirect does), so everything from `#` goes.
+    let before_fragment = rest
+        .split_once('#')
+        .map_or(rest, |(before, _fragment)| before);
     let hier = before_fragment
         .split_once('?')
         .map_or(before_fragment, |(hier, _query)| hier);
@@ -133,7 +137,7 @@ pub fn redact_url_value(text: &str) -> String {
         }
         None => hier.to_owned(),
     };
-    format!("{scheme}{hier}{fragment}")
+    format!("{scheme}{hier}")
 }
 
 #[must_use]
@@ -357,12 +361,11 @@ mod tests {
     #[case::apostrophe_in_path("https://user:SECRET@host/x'y?token=SECRET", "https://host/x'y")]
     #[case::apostrophe_in_query("https://host/x?a='SECRET'&b=1", "https://host/x")]
     #[case::mailto_query("mailto:user@host?subject=SECRET", "mailto:user@host")]
-    #[case::fragment_only("https://host/x#frag", "https://host/x#frag")]
-    #[case::query_and_fragment("https://host/x?token=SECRET#frag", "https://host/x#frag")]
-    #[case::question_mark_in_fragment(
-        "https://host/x#frag?not-a-query",
-        "https://host/x#frag?not-a-query"
-    )]
+    #[case::fragment_only("https://host/x#frag", "https://host/x")]
+    #[case::query_and_fragment("https://host/x?token=SECRET#frag", "https://host/x")]
+    #[case::question_mark_in_fragment("https://host/x#frag?not-a-query", "https://host/x")]
+    #[case::oauth_fragment("https://host/cb#access_token=SECRET", "https://host/cb")]
+    #[case::fragment_without_path("https://host#access_token=SECRET", "https://host")]
     #[case::uppercase_scheme("HTTPS://user:SECRET@host/x?q=SECRET", "HTTPS://host/x")]
     #[case::ipv6("http://user:SECRET@[::1]:8080/x?q=SECRET", "http://[::1]:8080/x")]
     #[case::at_sign_in_path("https://host/a@b?q=SECRET", "https://host/a@b")]
@@ -379,21 +382,24 @@ mod tests {
     }
 
     proptest::proptest! {
-        /// User-info and query carry unique markers that no other part can hold, so the
-        /// result must equal the URL without them.
+        /// User-info, query and fragment carry unique markers that no other part can hold, so
+        /// the result must equal the URL without them.
         #[test]
-        fn redact_url_value_drops_user_info_and_query_and_keeps_the_rest(
+        fn redact_url_value_drops_user_info_query_and_fragment_and_keeps_the_rest(
             scheme in "[a-z][a-z0-9+.-]{0,6}",
             user in "UIN[a-z0-9:'_~!$&()*+,;=%.-]{0,8}",
             host in "[a-z]{1,8}\\.example",
             path in "(/[a-z0-9'@:_~!$&()*+,;=%.-]{0,6}){0,3}",
             query in "QRY[a-z0-9/'?=&:@_~!$()*+,;%.-]{0,8}",
-            fragment in "[a-z0-9/'?@:_~!$&()*+,;=%.-]{0,8}",
+            fragment in "FRG[a-z0-9/'?@:_~!$&()*+,;=%.-]{0,8}",
         ) {
             let given = format!("{scheme}://{user}@{host}{path}?{query}#{fragment}");
-            let want = format!("{scheme}://{host}{path}#{fragment}");
+            let want = format!("{scheme}://{host}{path}");
             let got = redact_url_value(&given);
-            proptest::prop_assert!(!got.contains("UIN") && !got.contains("QRY"), "{got}");
+            proptest::prop_assert!(
+                !got.contains("UIN") && !got.contains("QRY") && !got.contains("FRG"),
+                "{got}"
+            );
             proptest::prop_assert_eq!(got, want);
         }
     }
