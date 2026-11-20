@@ -319,3 +319,10 @@ fn each_removed_rule_gives_one_migrate_rule_removed_notice_per_use(
         );
     }
 }
+
+#[test]
+fn a_legacy_config_that_is_not_valid_toml_reports_config_parse() {
+    let err = migrate("profile = \n").unwrap_err();
+    assert!(matches!(err, Error::Parse { .. }), "{err:?}");
+    assert_eq!(err.code(), "config-parse");
+}

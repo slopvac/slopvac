@@ -43,7 +43,7 @@ These also exit 2 and write nothing:
 - `config-too-large`: a config is over 1 MiB. Shorten it.
 - `migrate-run-limit`: too many files or bytes. Use a smaller directory.
 - `migrate-not-utf8`: a file is not UTF-8. Convert it.
-- `config-invalid-toml`: a config is not valid TOML. The message gives the line.
+- `config-parse`: a config is not valid TOML. The message gives the line.
 - `config-invalid-type`: `schema_version` is not an integer. Fix it.
 - `migrate-lint-failed`: the lint could not finish. Fix the file named.
 

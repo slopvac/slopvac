@@ -136,6 +136,11 @@ pub(crate) enum ConfigText {
     #[code("config-help-did-you-mean")]
     #[text("did you mean `{suggestion}`?")]
     DidYouMean { suggestion: String },
+    /// A source URL that is refused. The text names the field and the reason, never the value,
+    /// because the value may carry a credential.
+    #[code("config-source-refused")]
+    #[text("`{field}` is refused: {reason}")]
+    SourceRefused { field: String, reason: String },
     /// A string that fails the pattern for its kind.
     #[code("config-value-not-valid")]
     #[text("`{value}` is not a valid {name}")]
@@ -278,6 +283,21 @@ pub(crate) enum ConfigText {
         path: String,
         #[count]
         limit: u64,
+    },
+    /// Too many `[[index.extra]]` entries in one file.
+    #[code("config-budget-index-extra")]
+    #[text("{path} lists more than {limit} `index.extra` entries")]
+    BudgetIndexExtra {
+        path: String,
+        #[count]
+        limit: u64,
+    },
+    /// A list with more entries than its schema allows.
+    #[code("config-list-too-long")]
+    #[text("the list holds more than {max_items} entries")]
+    ListTooLong {
+        #[count]
+        max_items: usize,
     },
     /// An extended config over the size cap.
     #[code("config-extended-too-large")]
@@ -437,6 +457,30 @@ pub(crate) enum ConfigPhrase {
     #[code("config-scope-directive")]
     #[text("an inline directive")]
     ScopeDirective,
+    /// Names the name of an extra plugin index in a message.
+    #[code("config-noun-index-name")]
+    #[text("index name (lowercase letters, digits and hyphens; `core` and `slopvac` are reserved)")]
+    NounIndexName,
+    /// The reason an extra-index source has an unsupported scheme.
+    #[code("config-reason-source-scheme")]
+    #[text("its scheme is not `oci://` or `https://`")]
+    ReasonSourceScheme,
+    /// The reason an extra-index source carries user-info.
+    #[code("config-reason-source-user-info")]
+    #[text("it carries user-info")]
+    ReasonSourceUserInfo,
+    /// The reason an extra-index source names no host.
+    #[code("config-reason-source-host")]
+    #[text("it names no host")]
+    ReasonSourceHost,
+    /// The reason an extra-index source is too long.
+    #[code("config-reason-source-too-long")]
+    #[text("it is longer than 2048 characters")]
+    ReasonSourceTooLong,
+    /// The reason an extra-index source holds whitespace.
+    #[code("config-reason-source-space")]
+    #[text("it holds whitespace")]
+    ReasonSourceSpace,
     /// Names a plugin id in a message.
     #[code("config-noun-pack-id")]
     #[text("plugin id (lowercase letters, digits and hyphens)")]
@@ -535,6 +579,10 @@ pub(crate) enum ConfigPhrase {
     #[code("config-label-too-many-blocks")]
     #[text("too many blocks")]
     LabelTooManyBlocks,
+    /// Label for a file that lists too many extra indexes.
+    #[code("config-label-too-many-indexes")]
+    #[text("too many indexes")]
+    LabelTooManyIndexes,
     /// Label for an `extends` entry.
     #[code("config-label-extended-here")]
     #[text("extended here")]
@@ -607,6 +655,10 @@ pub(crate) enum ConfigPhrase {
     #[code("config-help-merge-or-split-blocks")]
     #[text("merge blocks that share files, or split the config")]
     HelpMergeOrSplitBlocks,
+    /// Help for too many extra indexes.
+    #[code("config-help-remove-indexes")]
+    #[text("remove the indexes that you do not search")]
+    HelpRemoveIndexes,
     /// Help for too many applied bytes.
     #[code("config-help-remove-repeated-large")]
     #[text("remove entries that extend the same large files again")]

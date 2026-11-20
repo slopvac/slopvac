@@ -7,6 +7,7 @@ use slopvac_engine::discover::{self, FileKind};
 
 use crate::capped::Capped;
 use crate::limits::Budget;
+use crate::messages::MigrateText;
 use crate::{BACKUP_DIR, Error};
 
 /// A directory the walk entered, with the 2.x config files it holds.
@@ -96,10 +97,12 @@ fn walk(
         } else if kind.is_symlink() {
             let to_dir = fs::metadata(&path).is_ok_and(|m| m.is_dir());
             if to_dir || is_candidate(&name) {
-                warnings.push(format!(
-                    "{}: not checked: symbolic link (links are not followed)",
-                    rel(root, &path)
-                ));
+                warnings.push(
+                    MigrateText::NotCheckedSymlink {
+                        path: rel(root, &path),
+                    }
+                    .to_string(),
+                );
             }
         } else if kind.is_file() {
             match name.as_ref() {
@@ -111,18 +114,23 @@ fn walk(
             match FileKind::from_file_name(&name) {
                 Some(kind @ (FileKind::Markdown | FileKind::Mdx)) => docs.push((path, kind)),
                 Some(kind @ (FileKind::Html | FileKind::Rst | FileKind::Text)) => {
-                    warnings.push(format!(
-                        "{}: not checked: migrate reads Markdown and MDX only, not {kind:?} files",
-                        rel(root, &path)
-                    ));
+                    warnings.push(
+                        MigrateText::NotCheckedKind {
+                            path: rel(root, &path),
+                            kind: format!("{kind:?}"),
+                        }
+                        .to_string(),
+                    );
                 }
                 _ => {}
             }
         } else if is_candidate(&name) {
-            warnings.push(format!(
-                "{}: not checked: not a regular file",
-                rel(root, &path)
-            ));
+            warnings.push(
+                MigrateText::NotCheckedIrregular {
+                    path: rel(root, &path),
+                }
+                .to_string(),
+            );
         }
     }
     tree.dirs.push(here);

@@ -26,6 +26,9 @@ pub static ALL: &[Registered] = &[
     ("slopvac-terms-phrases", slopvac_terms::phrase_entries),
     ("slopvac-text", slopvac_text::message_entries),
     ("report issue", report_entries),
+    ("slopvac-migrate", slopvac_migrate::error_entries),
+    ("slopvac-migrate-text", slopvac_migrate::text_entries),
+    ("slopvac-migrate-phrases", slopvac_migrate::phrase_entries),
     ("self update", slopvac_update::error_entries),
     ("self update text", slopvac_update::text_entries),
     ("self update phrases", slopvac_update::phrase_entries),
@@ -45,7 +48,10 @@ pub struct Retired {
 }
 
 /// Codes removed from the catalogs. Never reuse one.
-pub static RETIRED: &[Retired] = &[];
+pub static RETIRED: &[Retired] = &[Retired {
+    code: "config-invalid-toml",
+    note: "Merged into config-parse.",
+}];
 
 /// The entries of [`ALL`], paired with their catalog names.
 #[must_use]

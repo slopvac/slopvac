@@ -2659,6 +2659,7 @@ dependencies = [
  "slopvac-config",
  "slopvac-engine",
  "slopvac-fs",
+ "slopvac-messages",
  "slopvac-model",
  "slopvac-rules",
  "slopvac-sanitize",

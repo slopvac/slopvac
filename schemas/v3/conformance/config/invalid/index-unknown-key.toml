@@ -1,0 +1,4 @@
+schema_version = 3
+
+[index]
+mirror = "https://plugins.acme.example/index.json"

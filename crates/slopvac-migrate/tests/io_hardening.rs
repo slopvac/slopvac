@@ -184,7 +184,7 @@ fn a_malformed_pyproject_is_exit_2_with_file_and_line() {
     let (code, _, err) = cli(dir.path());
     assert_eq!(code, 2);
     assert!(
-        err.starts_with("error[config-invalid-toml]: pyproject.toml: line 2: "),
+        err.starts_with("error[config-parse]: pyproject.toml: line 2: "),
         "{err}"
     );
 }

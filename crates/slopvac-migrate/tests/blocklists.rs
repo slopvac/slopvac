@@ -473,7 +473,9 @@ fn a_blocklist_over_the_terms_file_cap_exits_2_and_nothing_is_written() {
     assert_eq!(code, 2);
     assert_eq!(
         err,
-        format!("error[terms-file-too-large]: words.toml: larger than {CAP} bytes\n")
+        format!(
+            "error[terms-file-too-large]: [terms-file-too-large] words.toml is larger than {CAP} bytes\n"
+        )
     );
     assert_eq!(read(dir.path(), "words.toml"), big);
     assert_eq!(read(dir.path(), "slopvac.toml"), CONFIG);

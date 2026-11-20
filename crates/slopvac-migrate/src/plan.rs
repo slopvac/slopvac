@@ -9,9 +9,10 @@ use slopvac_engine::discover::FileKind;
 use toml_edit::{DocumentMut, Item, Value};
 
 use crate::blocklist::{self, Planned};
-use crate::capped::{Blockers, Capped};
+use crate::capped::{Blockers, Capped, Listed};
 use crate::config::migrate_config_in;
 use crate::limits::{Budget, Kind, Limits};
+use crate::messages::{MigratePhrase, MigrateText};
 use crate::provenance::{KeyLines, key_lines};
 use crate::walk::{Dir, discover};
 use crate::{Dropped, Error, Options, RenameTable, rewrite_directives, rewrite_steering};
@@ -109,8 +110,8 @@ pub fn plan_with_limits(
     let mut budget = Budget::new(limits);
     let mut sink = Sink {
         changes: Vec::new(),
-        notes: Capped::new("notes"),
-        warnings: Capped::new("warnings"),
+        notes: Capped::new(Listed::Notes),
+        warnings: Capped::new(Listed::Warnings),
         blocklists: BTreeSet::new(),
     };
     let mut dropped = Blockers::default();
@@ -180,11 +181,12 @@ fn plan_dir(
     let sources =
         usize::from(found.main) + usize::from(found.dot) + usize::from(py_table.is_some());
     if sources > 1 {
-        return Err(Error::Conflict(format!(
-            "{}: more than one 2.x config source (slopvac.toml, .slopvac.toml, [tool.slopvac]); \
-             2.x read only one of them. Remove the ones that are unused, then rerun",
-            rel(root, dir).display()
-        )));
+        return Err(Error::Conflict(
+            MigrateText::ConfigSources {
+                directory: rel(root, dir).display().to_string(),
+            }
+            .to_string(),
+        ));
     }
     let (source, origin, old) = if found.main {
         (
@@ -353,7 +355,12 @@ impl Moved<'_> {
                 new: Some(rewrite_text),
             }),
             Origin::Dotfile => {
-                plan.notes.push(format!("{label}: renamed to slopvac.toml"));
+                plan.notes.push(
+                    MigrateText::NoteRenamedDotfile {
+                        label: label.to_string(),
+                    }
+                    .to_string(),
+                );
                 plan.changes.push(Change {
                     path: target,
                     kind: ChangeKind::Write,
@@ -368,8 +375,12 @@ impl Moved<'_> {
                 });
             }
             Origin::Pyproject => {
-                plan.notes
-                    .push(format!("{label}: moved [tool.slopvac] to slopvac.toml"));
+                plan.notes.push(
+                    MigrateText::NoteMovedPyproject {
+                        label: label.to_string(),
+                    }
+                    .to_string(),
+                );
                 plan.changes.push(Change {
                     path: target,
                     kind: ChangeKind::Write,
@@ -443,12 +454,14 @@ fn extract_tool_table(text: &str, file: &str) -> Result<Option<(String, String)>
         .parse()
         .map_err(|e: toml_edit::TomlError| Error::Parse {
             file: file.to_owned(),
-            message: format!(
-                "line {}: {}",
-                e.span()
-                    .map_or(1, |s| crate::config::line_of(text, s.start)),
-                e.message()
-            ),
+            message: MigrateText::ParseAtLine {
+                line: e
+                    .span()
+                    .map_or(1, |s| crate::config::line_of(text, s.start))
+                    .to_string(),
+                message: e.message().to_owned(),
+            }
+            .to_string(),
         })?;
     Ok(split_tool_table(&mut doc))
 }
@@ -501,25 +514,28 @@ fn plan_document(
         plan.notes.push(
             Dropped::new(
                 label.display().to_string(),
-                format!("slopvac-allow rule={}", r.id),
+                MigrateText::DirectiveKey { id: r.id.clone() }.to_string(),
                 r.line,
-                "rule no longer exists in 3.0",
+                MigratePhrase::ReasonRuleGone.as_static(),
             )
             .rule_removed_notice(),
         );
     }
     for line in &found.invalid {
-        plan.warnings.push(format!(
-            "{}:{line}: invalid 2.x directive, left as is",
-            label.display()
-        ));
+        plan.warnings.push(
+            MigrateText::DirectiveInvalid {
+                path: label.display().to_string(),
+                line: line.to_string(),
+            }
+            .to_string(),
+        );
     }
     dropped.extend(found.unknown.into_iter().map(|u| {
         Dropped::new(
             label.display().to_string(),
-            format!("slopvac-allow rule={}", u.id),
+            MigrateText::DirectiveKey { id: u.id.clone() }.to_string(),
             u.line,
-            "directive rule id has no 3.0 name; the rename table has no entry",
+            MigratePhrase::ReasonUnknownDirectiveId.as_static(),
         )
     }));
     match rewrite_steering(&text, steering) {
@@ -555,10 +571,13 @@ fn warn_mdx_directives(label: &Path, text: &str, renames: &RenameTable, warnings
     lines.sort_unstable();
     lines.dedup();
     for line in lines {
-        warnings.push(format!(
-            "{}:{line}: MDX is not rewritten; rename or remove this slopvac-allow directive by hand",
-            label.display(),
-        ));
+        warnings.push(
+            MigrateText::DirectiveMdx {
+                path: label.display().to_string(),
+                line: line.to_string(),
+            }
+            .to_string(),
+        );
     }
 }
 

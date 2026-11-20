@@ -17,7 +17,7 @@ use crate::messages::{ConfigPhrase, ConfigText};
 use crate::presets::Presets;
 use crate::read::{
     MAX_CONFIG_BYTES, MAX_EXTENDS_APPLIED_BYTES, MAX_EXTENDS_BYTES, MAX_EXTENDS_DEPTH,
-    MAX_EXTENDS_FILES, MAX_FILE_BLOCKS, ReadFailure, read_text,
+    MAX_EXTENDS_FILES, MAX_FILE_BLOCKS, MAX_INDEX_EXTRA, ReadFailure, read_text,
 };
 use crate::schema::validate_config;
 use crate::source::Setting;
@@ -392,6 +392,9 @@ impl Loader<'_> {
         if let Some(d) = self.check_block_count(&tree, key, display) {
             return Err(reject(text, vec![d]));
         }
+        if let Some(d) = self.check_index_count(&tree, key, display) {
+            return Err(reject(text, vec![d]));
+        }
         let mut diagnostics = validate_config(&tree, &text);
         if diagnostics.is_empty() {
             check_exclude(&tree, &mut diagnostics);
@@ -438,6 +441,28 @@ impl Loader<'_> {
             Key::Path(p) => safe_display(p, self.root),
             Key::Pack(_) => display.to_owned(),
         }
+    }
+
+    /// Refuse a file that lists more than [`MAX_INDEX_EXTRA`] `[[index.extra]]` entries, before
+    /// the schema check, the duplicate-name scan or any fetch.
+    fn check_index_count(&self, tree: &Node, key: &Key, display: &str) -> Option<Diagnostic> {
+        let extra = tree.get("index").and_then(|index| index.get("extra"))?;
+        let Value::Array(items) = &extra.value else {
+            return None;
+        };
+        if items.len() <= MAX_INDEX_EXTRA {
+            return None;
+        }
+        let refusal = self.over_budget(key, display, ConfigBudget::IndexExtra);
+        Some(Diagnostic {
+            code: refusal.code,
+            message: refusal.message,
+            label: ConfigPhrase::LabelTooManyIndexes.text(),
+            span: items.first().map_or(0..0, |first| first.span.clone()),
+            help: refusal.help,
+            path: vec!["index".to_owned(), "extra".to_owned()],
+            data: refusal.data,
+        })
     }
 
     /// Refuse a file that lists more than [`MAX_FILE_BLOCKS`] `[[genres]]` and `[[overrides]]`
@@ -626,6 +651,14 @@ impl Loader<'_> {
                     limit,
                 };
                 (limit, message, ConfigPhrase::HelpMergeOrSplitBlocks)
+            }
+            ConfigBudget::IndexExtra => {
+                let limit = MAX_INDEX_EXTRA as u64;
+                let message = ConfigText::BudgetIndexExtra {
+                    path: path_text,
+                    limit,
+                };
+                (limit, message, ConfigPhrase::HelpRemoveIndexes)
             }
             ConfigBudget::ExtendsAppliedBytes => {
                 let limit = MAX_EXTENDS_APPLIED_BYTES;

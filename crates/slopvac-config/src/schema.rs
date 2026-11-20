@@ -24,6 +24,13 @@ pub enum Shape {
     },
     /// A boolean.
     Bool,
+    /// A string that `fault` accepts by returning `None`. Otherwise `fault` returns the reason.
+    /// The diagnostic names the field and the reason and never the value, because the value
+    /// may carry a credential.
+    Source {
+        /// Why a string is refused, or `None` when it is fine.
+        fault: fn(&str) -> Option<&'static str>,
+    },
     /// An integer within optional bounds.
     Int {
         /// Inclusive lower bound.
@@ -49,6 +56,13 @@ pub enum Shape {
     },
     /// The schema version, which must be 3.
     Version,
+    /// A list of at most `max_items` entries, checked as `list`.
+    Capped {
+        /// Most entries the list may hold.
+        max_items: usize,
+        /// The list shape.
+        list: Box<Shape>,
+    },
     /// A list of one item shape.
     List {
         /// Shape of each item.
@@ -97,6 +111,7 @@ const PROJECT_WIDE: &[&str] = &[
     "network",
     "review",
     "plugins",
+    "index",
     "styles",
     "extends",
     "frontmatter",
@@ -187,6 +202,78 @@ fn plugin_id() -> Shape {
         name: ConfigPhrase::NounPluginId.as_static(),
         check: is_plugin_id,
     }
+}
+
+fn is_index_name(s: &str) -> bool {
+    is_pack_id(s) && s != BUILT_IN_PLUGIN && s != DEFAULT_INDEX
+}
+
+fn index_name() -> Shape {
+    Shape::Pattern {
+        name: ConfigPhrase::NounIndexName.as_static(),
+        check: is_index_name,
+    }
+}
+
+/// The name of the signed first-party index, so no extra index may take it.
+const DEFAULT_INDEX: &str = "slopvac";
+
+/// The longest `source` of an extra index, in characters.
+const INDEX_SOURCE_MAX: usize = 2048;
+
+/// Why an extra-index source is refused, or `None` for an `oci://` or `https://` source with a
+/// host and no user-info, as in the schema's `IndexExtraSource`. An `@` after the host is
+/// allowed, because a digest reference uses one. The reason never repeats the source.
+fn index_source_fault(s: &str) -> Option<&'static str> {
+    let Some(rest) = s
+        .strip_prefix("oci://")
+        .or_else(|| s.strip_prefix("https://"))
+    else {
+        return Some(ConfigPhrase::ReasonSourceScheme.as_static());
+    };
+    if s.chars().count() > INDEX_SOURCE_MAX {
+        return Some(ConfigPhrase::ReasonSourceTooLong.as_static());
+    }
+    if s.contains(char::is_whitespace) {
+        return Some(ConfigPhrase::ReasonSourceSpace.as_static());
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') {
+        return Some(ConfigPhrase::ReasonSourceUserInfo.as_static());
+    }
+    authority
+        .is_empty()
+        .then(|| ConfigPhrase::ReasonSourceHost.as_static())
+}
+
+fn index_source() -> Shape {
+    Shape::Source {
+        fault: index_source_fault,
+    }
+}
+
+fn index() -> Shape {
+    table(
+        vec![
+            ("default", Shape::Bool),
+            (
+                "extra",
+                Shape::Capped {
+                    max_items: crate::MAX_INDEX_EXTRA,
+                    list: Box::new(Shape::List {
+                        item: Box::new(table(
+                            vec![("name", index_name()), ("source", index_source())],
+                            &["name", "source"],
+                        )),
+                        min_items: 0,
+                        unique: false,
+                        unique_key: Some("name"),
+                    }),
+                },
+            ),
+        ],
+        &[],
+    )
 }
 
 fn reference() -> Shape {
@@ -358,6 +445,7 @@ pub fn config_shape() -> Shape {
                     unique_key: Some("id"),
                 },
             ),
+            ("index", index()),
             (
                 "genres",
                 list(scoped(
@@ -630,6 +718,7 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
             ),
             _ => ctx.type_error(node, path, ConfigPhrase::KindString.as_static(), None),
         },
+        Shape::Source { fault } => check_source(ctx, node, *fault, path),
         Shape::Bool => {
             if !matches!(node.value, Value::Bool(_)) {
                 ctx.type_error(node, path, ConfigPhrase::KindBoolean.as_static(), None);
@@ -650,6 +739,7 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
         Shape::Num { min, max } => check_num(ctx, node, *min, *max, path),
         Shape::Choice { values, table_help } => check_choice(ctx, node, values, *table_help, path),
         Shape::Version => check_version_value(ctx, node, path),
+        Shape::Capped { max_items, list } => check_capped(ctx, node, *max_items, list, path),
         Shape::List {
             item,
             min_items,
@@ -958,6 +1048,65 @@ fn check_entry(ctx: &mut Ctx<'_>, e: &Entry, shape: &TableShape, path: &[String]
         ConfigPhrase::LabelNotKnownKey.text(),
         help,
     );
+}
+
+/// A key path as a person writes it: `index.extra[0].source`.
+fn field_name(path: &[String]) -> String {
+    let mut out = String::new();
+    for seg in path {
+        if seg.bytes().all(|b| b.is_ascii_digit()) {
+            out.push('[');
+            out.push_str(seg);
+            out.push(']');
+        } else {
+            if !out.is_empty() {
+                out.push('.');
+            }
+            out.push_str(seg);
+        }
+    }
+    out
+}
+
+/// A string whose refusal names the field and the reason and never the value.
+fn check_source(
+    ctx: &mut Ctx<'_>,
+    node: &Node,
+    fault: fn(&str) -> Option<&'static str>,
+    path: &[String],
+) {
+    let Value::Str(s) = &node.value else {
+        ctx.type_error(node, path, ConfigPhrase::KindString.as_static(), None);
+        return;
+    };
+    if let Some(reason) = fault(s) {
+        ctx.value_error(
+            node,
+            path,
+            ConfigText::SourceRefused {
+                field: field_name(path),
+                reason: reason.to_owned(),
+            }
+            .to_string(),
+            ConfigPhrase::LabelNotValidHere.text(),
+            None,
+        );
+    }
+}
+
+/// A list that holds at most `max_items` entries, then the checks of `list`.
+fn check_capped(ctx: &mut Ctx<'_>, node: &Node, max_items: usize, list: &Shape, path: &[String]) {
+    if matches!(&node.value, Value::Array(items) if items.len() > max_items) {
+        ctx.value_error(
+            node,
+            path,
+            ConfigText::ListTooLong { max_items }.to_string(),
+            ConfigPhrase::LabelNotValidHere.text(),
+            None,
+        );
+    } else {
+        check(ctx, node, list, path);
+    }
 }
 
 fn join_ticks(values: &[&str]) -> String {
