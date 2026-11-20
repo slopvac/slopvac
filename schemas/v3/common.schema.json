@@ -46,11 +46,6 @@
       "type": "string",
       "pattern": "^(?!core(?![\\s\\S]))[a-z][a-z0-9-]*(?![\\s\\S])"
     },
-    "PluginId": {
-      "description": "Identifier of a plugin, or of the namespace a publisher signs for. Same character set as PackId. `core` is reserved for the built-in plugin that is compiled into the binary, so no manifest, lock entry, index entry or config entry may use it as an id or a namespace. Semantics: docs/contract/plugins.md, section 9.",
-      "type": "string",
-      "pattern": "^(?!core(?![\\s\\S]))[a-z][a-z0-9-]*(?![\\s\\S])"
-    },
     "RuleId": {
       "description": "Qualified rule identifier <plugin>:<id>. A rule from a category file has the id <category>.<rule>, for example core:prose-craft.acronym-periods; a rule a plugin reports may use a bare id such as core:passive-voice. Short names resolve in configuration only where they are unambiguous; every output carries the qualified form. Semantics owned by slopvac-8l4.2.3.",
       "type": "string",
