@@ -2443,6 +2443,7 @@ dependencies = [
  "slopvac-plugins",
  "slopvac-report",
  "slopvac-rules",
+ "slopvac-sanitize",
  "slopvac-styles",
  "slopvac-terms",
  "slopvac-text",

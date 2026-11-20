@@ -440,6 +440,67 @@ fn genre_refuses_a_fifo_without_blocking() {
         ));
 }
 
+/// Hostile file names and how a diagnostic must show them: each control or bidi character as
+/// a `\u{..}` escape, so the name cannot move the cursor, start a line or reorder text.
+const HOSTILE_NAMES: [(&str, &str); 3] = [
+    ("x\u{1b}[2Jy.md", "x\\u{1b}[2Jy.md"),
+    ("x\ny.md", "x\\u{a}y.md"),
+    ("x\u{202e}y.md", "x\\u{202e}y.md"),
+];
+
+fn assert_one_clean_line(err: &str) {
+    assert_eq!(err.lines().count(), 1, "{err:?}");
+    assert!(
+        !err.chars().any(|c| c.is_control() && c != '\n') && !err.contains('\u{202e}'),
+        "{err:?}"
+    );
+}
+
+#[rstest::rstest]
+#[case::escape(0)]
+#[case::newline(1)]
+#[case::bidi(2)]
+fn genre_escapes_a_hostile_name_in_the_too_large_refusal(#[case] which: usize) {
+    let (name, shown) = HOSTILE_NAMES[which];
+    let work = tempfile::tempdir().unwrap();
+    sparse(&work.path().join(name), DOCUMENT_CAP + 1);
+    let out = slopvac(work.path()).args(["genre", name]).output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        err,
+        format!("error[document-too-large]: {shown}: larger than the 64 MiB document limit\n")
+    );
+    assert_one_clean_line(&err);
+}
+
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::escape(0)]
+#[case::newline(1)]
+#[case::bidi(2)]
+fn genre_escapes_a_hostile_name_in_the_unreadable_refusal(#[case] which: usize) {
+    let (name, shown) = HOSTILE_NAMES[which];
+    let work = tempfile::tempdir().unwrap();
+    let made = std::process::Command::new("mkfifo")
+        .arg(work.path().join(name))
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success());
+    let out = slopvac(work.path())
+        .timeout(std::time::Duration::from_secs(20))
+        .args(["genre", name])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        err,
+        format!("error[input-unreadable]: {shown}: cannot read\n")
+    );
+    assert_one_clean_line(&err);
+}
+
 #[test]
 fn validate_names_a_missing_external_document_without_its_directories() {
     let work = tempfile::tempdir().unwrap();
