@@ -1,9 +1,9 @@
 """A job may read a minisign signing secret only from inside a deployment environment.
 
-The signing key is stored on environments, never on the repository, so a deployment
-policy (the refs that may deploy) and optional reviewers guard every read. A job
-without `environment:` falls back to repository secrets, which a workflow run on any
-ref can read. This test parses each workflow and flags a `MINISIGN_*` secret reference
+A job may read a signing secret only from inside a reviewed environment, so a
+deployment policy (the refs that may deploy) and optional reviewers guard every read,
+and a repository-level copy is never what a job reads. A job without `environment:`
+resolves to repository secrets, which a workflow run on any ref can read. This test parses each workflow and flags a `MINISIGN_*` secret reference
 (or a computed `secrets[...]` index, which may name one) in a job that names no
 environment, wherever the reference sits: job or step `env`, step `with`, `run`, or a
 reusable-workflow `secrets` map.
@@ -200,7 +200,7 @@ def test_a_computed_secrets_index_inside_a_reviewed_environment_is_allowed(expre
     assert violations(synthetic(job)) == []
 
 
-@pytest.mark.parametrize("name", sorted(ALLOWED_ENVIRONMENTS))
+@pytest.mark.parametrize("name", ("release", "revocations", "candidate-signing"))
 @pytest.mark.parametrize("form", ["string", "mapping"])
 def test_a_signing_secret_read_inside_a_reviewed_environment_is_allowed(name, form):
     environment = name if form == "string" else {"name": name, "url": "https://x.test"}

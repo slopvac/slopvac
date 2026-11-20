@@ -67,7 +67,7 @@ Release artifacts are signed with minisign. The public key is committed at `keys
   RWRtrHBF20uR2Ul9P3Ppdw/e62xuebTxakJxrRL1eyclNXsCQvwoCqzN
   ```
 
-- The secret key lives in the GitHub Actions secret `MINISIGN_SECRET_KEY`, stored on the `release`, `candidate-signing` and `revocations` environments and nowhere else. A backup is in the 1Password vault `proj-slopvac`, item `slopvac release minisign key`.
+- The secret key lives in the GitHub Actions secret `MINISIGN_SECRET_KEY`, stored on the `release`, `candidate-signing` and `revocations` environments. A repository-level copy remains only until the first candidate signs in `candidate-signing`. Then delete it with `gh secret delete MINISIGN_SECRET_KEY -R slopvac/slopvac`, and the environments are its only home. A backup is in the 1Password vault `proj-slopvac`, item `slopvac release minisign key`.
 
 To verify a release file against the committed key:
 
