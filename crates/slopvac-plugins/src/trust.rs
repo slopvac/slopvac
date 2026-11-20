@@ -51,7 +51,7 @@ use crate::extract::{ExtractError, TreeHash, tree_hash, verify_tree};
 use crate::host::{PluginSpec, SpawnGate};
 use crate::oci::Digest;
 use crate::protocol::PluginDeclaration;
-use crate::pyenv::{ManagedEnv, PYTHON_FLAGS, PyEnvError};
+use crate::pyenv::{EnvStore, ManagedEnv, PYTHON_FLAGS, PyEnvError, PythonRuntime};
 use crate::revoke::{RevocationError, RevocationList, Revocations};
 use crate::sign::{
     PublicKey, RotationProof, SignError, canonical_json, is_reserved_namespace, verify_rotation,
@@ -929,6 +929,7 @@ pub struct TrustGate {
     cache: Option<Revocations>,
     external: HashSet<PathBuf>,
     python: HashMap<String, ManagedEnv>,
+    launches: HashMap<String, PythonRuntime>,
     plugins: HashMap<String, VerifiedPlugin>,
 }
 
@@ -946,6 +947,7 @@ impl TrustGate {
             cache: None,
             external: HashSet::new(),
             python: HashMap::new(),
+            launches: HashMap::new(),
             plugins: plugins.into_iter().map(|p| (p.name.clone(), p)).collect(),
         }
     }
@@ -994,6 +996,49 @@ impl TrustGate {
     pub fn with_managed_python(mut self, plugin: impl Into<String>, env: ManagedEnv) -> Self {
         self.python.insert(plugin.into(), env);
         self
+    }
+
+    /// Wire every Python plugin among the gate's verified plugins to its
+    /// environment in `envs`. A plugin whose manifest selects
+    /// `runtime = "python"` ([`PythonRuntime::read`]) goes through
+    /// [`Self::with_managed_python`] with the environment that `sync` built
+    /// for its tree and interpreter request; [`Self::python_launch`] then
+    /// gives the program and arguments for its spec.
+    ///
+    /// The environment is loaded, not checked: [`SpawnGate::check`] runs the
+    /// quick check before every spawn.
+    ///
+    /// # Errors
+    /// [`PyEnvError::Manifest`] for a manifest that cannot select an
+    /// environment, [`PyEnvError::EnvMissing`] for a plugin that `sync` has
+    /// not built one for, and the load failures of [`EnvStore::load`]. The
+    /// gate is dropped: a Python plugin never runs half-wired.
+    pub fn with_python_plugins(mut self, envs: &EnvStore) -> Result<Self, PyEnvError> {
+        let mut names: Vec<String> = self.plugins.keys().cloned().collect();
+        names.sort();
+        for name in names {
+            let vp = &self.plugins[&name];
+            let Some(runtime) = PythonRuntime::read(&vp.root)? else {
+                continue;
+            };
+            let env =
+                envs.load(&vp.tree, &runtime.python)?
+                    .ok_or_else(|| PyEnvError::EnvMissing {
+                        plugin: name.clone(),
+                        python: runtime.python.clone(),
+                    })?;
+            self.python.insert(name.clone(), env);
+            self.launches.insert(name, runtime);
+        }
+        Ok(self)
+    }
+
+    /// The program and arguments for the spec of a plugin that
+    /// [`Self::with_python_plugins`] wired, or `None` for any other plugin.
+    #[must_use]
+    pub fn python_launch(&self, plugin: &str) -> Option<(PathBuf, Vec<String>)> {
+        let env = self.python.get(plugin)?;
+        Some(self.launches.get(plugin)?.launch(env))
     }
 
     fn revoked(&self, vp: &VerifiedPlugin, hash: &Digest) -> Result<bool, TrustError> {

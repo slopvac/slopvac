@@ -1,6 +1,7 @@
 //! Sync, status, offline cache and CI lock check (bead 8l4.9.3; threat model
 //! TM-22, TM-39, TM-46, TM-48; policies.md N2, N4, N7).
 
+mod common;
 mod oci_server;
 mod revocations;
 mod support;
@@ -1316,5 +1317,284 @@ mod io_boundary {
         let tail = format!("/{ROOT_SHOWN}/trees/{name}: Not a directory (os error 20)");
         assert!(msg.starts_with("data directory: removing "), "{msg}");
         assert!(msg.ends_with(&tail), "{msg}");
+    }
+}
+
+/// Managed Python environments (bead 8l4.9.34), built with a scripted fake uv.
+#[cfg(unix)]
+mod python {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+    use crate::common::fake_uv::{Fake, fake_uv};
+    use slopvac_plugins::extract::{TreeHash, tree_hash};
+    use slopvac_plugins::pyenv::{EnvStore, PyEnvError};
+    use slopvac_plugins::sync::{PythonBuild, PythonState, status_with_python};
+
+    const PLUGIN_MANIFEST: &str = "schema_version = 3\nid = \"py\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+    const EMPTY_LOCK: &str = "lock-version = \"1.0\"\ncreated-by = \"test\"\n";
+
+    /// A project with one in-place pack `py`, a fake uv and an environment store.
+    struct Setup {
+        env: Env,
+        hash: TreeHash,
+        lock: Lockfile,
+        uv: PathBuf,
+        envs: EnvStore,
+    }
+
+    impl Setup {
+        fn new(fake: &Fake<'_>, files: &[(&str, &str)]) -> Self {
+            let env = Env::new();
+            let dir = env.project.path().join("packs/py");
+            fs::create_dir_all(&dir).unwrap();
+            for (name, text) in files {
+                fs::write(dir.join(name), text).unwrap();
+            }
+            let hash = tree_hash(&dir).unwrap();
+            let lock = lock_text(&[format!(
+                "\n[[plugins]]\nid = \"py\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+                 source = \"packs/py\"\ndigest = \"{hash}\"\n"
+            )]);
+            let uv = fake_uv(&env.data.path().join("uv-bin"), fake);
+            let envs = EnvStore::open(env.data.path().join("envs"));
+            Self {
+                env,
+                hash,
+                lock,
+                uv,
+                envs,
+            }
+        }
+
+        fn python(files: &[(&str, &str)]) -> Self {
+            Self::new(&Fake::real(), files)
+        }
+
+        fn build(&self) -> PythonBuild<'_> {
+            PythonBuild {
+                envs: &self.envs,
+                uv: &self.uv,
+                python_install_dir: Path::new("/nonexistent/uv-python"),
+            }
+        }
+
+        fn sync(
+            &self,
+            network: Network<'_>,
+            with_python: bool,
+        ) -> Result<slopvac_plugins::sync::SyncReport, SyncError> {
+            let (store, revs) = (self.env.store(), self.env.revocations(NOW));
+            let pol = KeyPolicy::default();
+            let syncer = Syncer::new(&store, network, &pol, self.env.project.path(), &revs);
+            let syncer = if with_python {
+                syncer.with_python(self.build())
+            } else {
+                syncer
+            };
+            syncer.sync(&self.lock)
+        }
+
+        fn uv_log(&self) -> String {
+            fs::read_to_string(self.env.data.path().join("uv-bin/uv.log")).unwrap_or_default()
+        }
+    }
+
+    const PLUGIN_FILES: [(&str, &str); 3] = [
+        ("slopvac-plugin.toml", PLUGIN_MANIFEST),
+        ("plugin.py", "print('plugin')\n"),
+        ("pylock.toml", EMPTY_LOCK),
+    ];
+
+    #[test]
+    fn sync_and_status_find_a_manifest_under_the_name_the_contract_gives() {
+        // The literal file name from docs/contract/plugins.md, not the reader's constant.
+        let t = Setup::python(&[
+            ("slopvac-plugin.toml", PLUGIN_MANIFEST),
+            ("plugin.py", "print('plugin')\n"),
+            ("pylock.toml", EMPTY_LOCK),
+        ]);
+        let report = t.sync(Network::Offline, true).unwrap();
+        let key = EnvStore::key(&t.hash, "3.12");
+        assert_eq!(report.packs[0].python_env, Some(key.clone()));
+        assert_eq!(python_states(&t), [PythonState::Verified(key)]);
+    }
+
+    #[test]
+    fn sync_builds_the_manifest_selected_environment_without_the_network() {
+        // The fake exits 99 on any uv call that could download.
+        let t = Setup::new(
+            &Fake {
+                offline_only: true,
+                ..Fake::real()
+            },
+            &PLUGIN_FILES,
+        );
+        let report = t.sync(Network::Offline, true).unwrap();
+        assert_eq!(
+            report.packs[0].python_env,
+            Some(EnvStore::key(&t.hash, "3.12"))
+        );
+        assert!(t.envs.load(&t.hash, "3.12").unwrap().is_some());
+        assert!(t.uv_log().contains("ARGS venv"), "uv built the environment");
+    }
+
+    #[test]
+    fn sync_passes_uv_the_pep_440_form_of_a_semver_requirement() {
+        let caret = PLUGIN_MANIFEST.replace("python = \"3.12\"", "python = \"^3.12\"");
+        let t = Setup::python(&[
+            ("slopvac-plugin.toml", caret.as_str()),
+            ("plugin.py", "print('plugin')\n"),
+            ("pylock.toml", EMPTY_LOCK),
+        ]);
+        let report = t.sync(Network::Offline, true).unwrap();
+        let log = t.uv_log();
+        assert!(
+            log.contains("--python >=3.12,<4\n") || log.contains("--python >=3.12,<4 "),
+            "{log}"
+        );
+        assert!(!log.contains("^3.12"), "{log}");
+        let key = EnvStore::key(&t.hash, ">=3.12,<4");
+        assert_eq!(report.packs[0].python_env, Some(key.clone()));
+        // Status finds the same environment, and a second sync reuses it.
+        assert_eq!(python_states(&t), [PythonState::Verified(key)]);
+        t.sync(Network::Offline, true).unwrap();
+        assert_eq!(t.uv_log(), log, "uv ran again");
+    }
+
+    #[test]
+    fn a_repeated_sync_keeps_a_sound_environment() {
+        let t = Setup::python(&PLUGIN_FILES);
+        t.sync(Network::Offline, true).unwrap();
+        let after_first = t.uv_log();
+        assert_ne!(after_first, "");
+        t.sync(Network::Offline, true).unwrap();
+        assert_eq!(t.uv_log(), after_first, "uv ran again");
+    }
+
+    #[test]
+    fn sync_builds_no_environment_for_a_pack_that_is_not_a_python_plugin() {
+        let data_manifest = "schema_version = 3\nid = \"py\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"data\"\n";
+        let t = Setup::python(&[("slopvac-plugin.toml", data_manifest)]);
+        let report = t.sync(Network::Offline, true).unwrap();
+        assert_eq!(report.packs[0].python_env, None);
+        assert_eq!(t.uv_log(), "");
+    }
+
+    #[test]
+    fn sync_without_a_python_build_configured_builds_nothing() {
+        let t = Setup::python(&PLUGIN_FILES);
+        let report = t.sync(Network::Offline, false).unwrap();
+        assert_eq!(report.packs[0].python_env, None);
+        assert_eq!(t.uv_log(), "");
+    }
+
+    #[test]
+    fn a_failed_environment_build_fails_the_sync() {
+        let sdist = format!(
+            "lock-version = \"1.0\"\n\n[[packages]]\nname = \"demo\"\nversion = \"1.0\"\nsdist = {{ path = \"demo-1.0.tar.gz\", hashes = {{ sha256 = \"{}\" }} }}\n",
+            "ab".repeat(32)
+        );
+        let t = Setup::python(&[
+            ("slopvac-plugin.toml", PLUGIN_MANIFEST),
+            ("plugin.py", "x\n"),
+            ("pylock.toml", &sdist),
+        ]);
+        let err = t.sync(Network::Offline, true).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                SyncError::PythonEnv {
+                    source: PyEnvError::SourceOnly { .. },
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert_eq!(err.exit_code(), 2);
+        assert_eq!(t.uv_log(), "", "uv never ran");
+    }
+
+    #[test]
+    fn offline_sync_without_an_installed_interpreter_fails_instead_of_downloading() {
+        let t = Setup::new(
+            &Fake {
+                find_exit: 1,
+                ..Fake::real()
+            },
+            &PLUGIN_FILES,
+        );
+        let err = t.sync(Network::Offline, true).unwrap_err();
+        assert!(
+            matches!(&err, SyncError::PythonEnv { source: PyEnvError::OfflinePythonMissing(r), .. } if r == "3.12"),
+            "{err:?}"
+        );
+    }
+
+    fn python_states(t: &Setup) -> Vec<PythonState> {
+        status_with_python(&t.env.store(), &t.envs, t.env.project.path(), &t.lock)
+            .unwrap()
+            .into_iter()
+            .map(|p| p.python)
+            .collect()
+    }
+
+    #[test]
+    fn status_verifies_a_built_environment_with_the_full_check() {
+        let t = Setup::python(&PLUGIN_FILES);
+        t.sync(Network::Offline, true).unwrap();
+        assert_eq!(
+            python_states(&t),
+            [PythonState::Verified(EnvStore::key(&t.hash, "3.12"))]
+        );
+        let plain = status(&t.env.store(), t.env.project.path(), &t.lock).unwrap();
+        assert_eq!(plain[0].python, PythonState::NotChecked);
+    }
+
+    #[test]
+    fn status_reports_a_missing_environment() {
+        let t = Setup::python(&PLUGIN_FILES);
+        t.sync(Network::Offline, false).unwrap();
+        assert_eq!(python_states(&t), [PythonState::Missing]);
+    }
+
+    #[test]
+    fn status_reports_an_edit_that_only_the_full_check_sees() {
+        let t = Setup::python(&PLUGIN_FILES);
+        t.sync(Network::Offline, true).unwrap();
+        let env = t.envs.load(&t.hash, "3.12").unwrap().unwrap();
+        let file = env.root().join("pyvenv.cfg");
+        let (before, text) = (
+            fs::metadata(&file).unwrap(),
+            fs::read_to_string(&file).unwrap(),
+        );
+        // Same size, same modification time: a different first letter.
+        let edited = format!("H{}", &text[1..]);
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&file, edited).unwrap();
+        let f = fs::File::options().write(true).open(&file).unwrap();
+        f.set_modified(before.modified().unwrap()).unwrap();
+        drop(f);
+        fs::set_permissions(&file, before.permissions()).unwrap();
+        assert_eq!(fs::metadata(&file).unwrap().len(), before.len());
+
+        env.check_quick().unwrap();
+        let states = python_states(&t);
+        assert!(
+            matches!(&states[..], [PythonState::Failed(why)] if why.contains("pyvenv.cfg")),
+            "{states:?}"
+        );
+    }
+
+    #[test]
+    fn status_does_not_look_for_an_environment_of_a_pack_that_is_not_a_python_plugin() {
+        let t = Setup::python(&[(
+            "slopvac-plugin.toml",
+            PLUGIN_MANIFEST
+                .replace("runtime = \"python\"\npython = \"3.12\"\n", "")
+                .as_str(),
+        )]);
+        t.sync(Network::Offline, true).unwrap();
+        assert_eq!(python_states(&t), [PythonState::NotChecked]);
     }
 }
