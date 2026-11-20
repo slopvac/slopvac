@@ -18,7 +18,7 @@ use crate::{Engine, EngineError, Input, Settings};
 #[non_exhaustive]
 pub enum CasesError {
     /// An argument is not a valid value.
-    #[error("{}", crate::messages::EngineText::GitError { reason: .0.clone() })]
+    #[error("{}", crate::messages::git_error(.0))]
     Argument(String),
     /// The pack did not load.
     #[error(transparent)]
@@ -38,7 +38,7 @@ pub enum CasesError {
         cap: u64,
     },
     /// A corpus file or the output failed.
-    #[error("{}", crate::messages::EngineText::PathError { path: .path.clone(), reason: .source.to_string() })]
+    #[error("{}", crate::messages::path_error(.path, .source))]
     Io {
         /// The file, or `output`.
         path: String,

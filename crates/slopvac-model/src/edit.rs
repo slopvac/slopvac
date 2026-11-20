@@ -22,7 +22,7 @@ pub struct Edit {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EditError {
     /// An edit span is not valid for the file.
-    #[error("{}", crate::messages::ModelText::EditPosition { reason: .0.to_string() })]
+    #[error("{}", crate::messages::edit_position(.0))]
     Position(#[from] PositionError),
     /// Two edits overlap.
     #[error("{}", crate::messages::overlap(.first, .second))]

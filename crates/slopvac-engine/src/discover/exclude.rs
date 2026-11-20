@@ -22,7 +22,7 @@ use super::syntax::{class_end, lexical_clean};
 
 /// Why an exclude pattern was rejected.
 #[derive(Debug, thiserror::Error)]
-#[error("{}", crate::messages::EngineText::ExcludeInvalid { reason: .0.to_string() })]
+#[error("{}", crate::messages::exclude_invalid(.0))]
 pub struct ExcludeError(#[from] ignore::Error);
 
 /// A compiled exclude list.

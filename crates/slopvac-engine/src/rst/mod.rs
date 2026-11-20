@@ -149,13 +149,13 @@ pub struct RstParse {
 #[non_exhaustive]
 pub enum RstError {
     /// No trusted interpreter can import docutils.
-    #[error("{}", crate::messages::EngineText::RstMissing { detail: .detail.clone() })]
+    #[error("{}", crate::messages::rst_missing(.detail))]
     ConverterMissing {
         /// What was searched and what was passed over.
         detail: String,
     },
     /// The interpreter could not start, or its pipes failed.
-    #[error("{}", crate::messages::EngineText::RstSpawn { converter: .converter.display().to_string(), reason: .source.to_string() })]
+    #[error("{}", crate::messages::rst_spawn(.converter, .source))]
     Spawn {
         /// The interpreter.
         converter: PathBuf,
@@ -163,7 +163,7 @@ pub enum RstError {
         source: std::io::Error,
     },
     /// The driver did not finish in time.
-    #[error("{}", crate::messages::EngineText::RstTimeout { converter: .converter.display().to_string(), timeout: format!("{:?}", .timeout) })]
+    #[error("{}", crate::messages::rst_timeout(.converter, .timeout))]
     Timeout {
         /// The interpreter.
         converter: PathBuf,
@@ -171,7 +171,7 @@ pub enum RstError {
         timeout: Duration,
     },
     /// The driver wrote more output than allowed.
-    #[error("{}", crate::messages::EngineText::RstOutputLimit { converter: .converter.display().to_string(), limit: *.limit })]
+    #[error("{}", crate::messages::rst_output_limit(.converter, *.limit))]
     OutputTooLarge {
         /// The interpreter.
         converter: PathBuf,
@@ -179,7 +179,7 @@ pub enum RstError {
         limit: usize,
     },
     /// The driver exited with an error.
-    #[error("{}", crate::messages::EngineText::RstFailed { converter: .converter.display().to_string(), status: .status.clone(), stderr: .stderr.clone() })]
+    #[error("{}", crate::messages::rst_failed(.converter, .status, .stderr))]
     Failed {
         /// The interpreter.
         converter: PathBuf,
@@ -189,7 +189,7 @@ pub enum RstError {
         stderr: String,
     },
     /// The driver wrote output that is not the expected JSON.
-    #[error("{}", crate::messages::EngineText::RstInvalidOutput { converter: .converter.display().to_string(), reason: .reason.clone() })]
+    #[error("{}", crate::messages::rst_invalid_output(.converter, .reason))]
     InvalidOutput {
         /// The interpreter.
         converter: PathBuf,

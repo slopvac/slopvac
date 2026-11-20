@@ -2,6 +2,31 @@
 
 use slopvac_messages::{Catalog, Entry};
 
+pub(crate) fn edit_position(reason: &crate::PositionError) -> ModelText {
+    ModelText::EditPosition {
+        reason: reason.to_string(),
+    }
+}
+
+pub(crate) fn gate_inconsistent(passed: bool, count: usize) -> ModelText {
+    ModelText::GateInconsistent {
+        passed: passed.to_string(),
+        count,
+    }
+}
+
+pub(crate) fn origin_locator(reason: &str) -> ModelText {
+    ModelText::OriginLocator {
+        reason: reason.into(),
+    }
+}
+
+pub(crate) fn origin_label(reason: &str) -> ModelText {
+    ModelText::OriginLabel {
+        reason: reason.into(),
+    }
+}
+
 #[derive(Debug, Catalog)]
 pub(crate) enum ModelText {
     /// An identifier is malformed.

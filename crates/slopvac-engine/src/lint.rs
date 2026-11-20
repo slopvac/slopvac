@@ -223,14 +223,14 @@ pub enum EngineError {
     #[error(transparent)]
     Text(#[from] TextError),
     /// A context tagger failed.
-    #[error("{}", crate::messages::EngineText::Context { reason: .0.clone() })]
+    #[error("{}", crate::messages::context(.0))]
     Context(String),
     /// A computed position was not valid for the file.
     #[error(transparent)]
     Position(#[from] PositionError),
     /// A diagram checker returned a range that is reversed or outside the file and the
     /// prose it was given.
-    #[error("{}", crate::messages::EngineText::BadRange { reason: .0.clone() })]
+    #[error("{}", crate::messages::bad_range(.0))]
     BadRange(String),
     /// Context lookups looked at more tags than the document allows, so the findings that
     /// depend on them cannot be trusted and the document is not checked. A pack that puts many
@@ -249,14 +249,14 @@ pub enum EngineError {
         limit: usize,
     },
     /// A terms file could not be read or is not valid.
-    #[error("{}", crate::messages::EngineText::Terms { reason: .0.clone() })]
+    #[error("{}", crate::messages::terms(.0))]
     Terms(String),
     /// The comments of a source file could not be extracted within the work limits of
     /// `slopvac-comments`, so the file is incomplete.
-    #[error("{}", crate::messages::EngineText::Comments { reason: .0.clone() })]
+    #[error("{}", crate::messages::comments(.0))]
     Comments(String),
     /// A value the engine built broke a model invariant. This is a bug.
-    #[error("{}", crate::messages::EngineText::Internal { reason: .0.clone() })]
+    #[error("{}", crate::messages::internal(.0))]
     Internal(String),
 }
 

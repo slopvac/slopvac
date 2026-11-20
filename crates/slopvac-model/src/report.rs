@@ -677,7 +677,7 @@ pub enum GateError {
     #[error("{}", crate::messages::ModelText::GateEmptyReason)]
     EmptyReason,
     /// `passed` disagrees with the reasons.
-    #[error("{}", crate::messages::ModelText::GateInconsistent { passed: .passed.to_string(), count: *.count })]
+    #[error("{}", crate::messages::gate_inconsistent(*.passed, *.count))]
     Mismatch {
         /// The `passed` value given.
         passed: bool,

@@ -26,10 +26,10 @@ fn forbidden(c: char) -> bool {
 #[non_exhaustive]
 pub enum OriginError {
     /// A locator is empty, too long, has a forbidden character or a bad `%` escape.
-    #[error("{}", crate::messages::ModelText::OriginLocator { reason: (* .0).into() })]
+    #[error("{}", crate::messages::origin_locator(.0))]
     Locator(&'static str),
     /// A label is empty, too long or has a forbidden character.
-    #[error("{}", crate::messages::ModelText::OriginLabel { reason: (* .0).into() })]
+    #[error("{}", crate::messages::origin_label(.0))]
     Label(&'static str),
     /// A segment id is not 1 to 64 characters of `[A-Za-z0-9._-]` starting with a letter or digit.
     #[error("{}", crate::messages::ModelText::SegmentId)]

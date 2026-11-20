@@ -59,7 +59,7 @@ pub trait Detector: Send + Sync {
 
 /// A detector name was registered twice.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{}", crate::messages::EngineText::DuplicateDetector { name: .0.clone() })]
+#[error("{}", crate::messages::detector(.0))]
 pub struct DuplicateDetector(String);
 
 /// A match wholly inside a quotation on its line. A document that bans a phrase has to

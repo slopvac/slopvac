@@ -211,7 +211,7 @@ impl fmt::Display for CaseReport {
 #[non_exhaustive]
 pub enum CasesError {
     /// The selected id names no rule of the engine.
-    #[error("{}", crate::messages::EngineText::NoRule { rule: .0.to_string() })]
+    #[error("{}", crate::messages::no_rule(.0))]
     UnknownRule(RuleId),
     /// The engine holds no rule with cases or checkable examples, so nothing would run.
     #[error("{}", crate::messages::EngineText::NoCases)]

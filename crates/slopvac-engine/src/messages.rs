@@ -2,6 +2,139 @@
 
 use slopvac_messages::{Catalog, Entry};
 
+macro_rules! reason_helpers {
+    ($($name:ident => $variant:ident),+ $(,)?) => {
+        $(pub(crate) fn $name(reason: impl ToString) -> EngineText {
+            EngineText::$variant { reason: reason.to_string() }
+        })+
+    };
+}
+
+reason_helpers! {
+    context => Context, bad_range => BadRange, terms => Terms, comments => Comments,
+    internal => Internal, fix_rst => FixRst, git_spawn => GitSpawn,
+    git_repository => GitRepository, git_error => GitError, git_revision => GitRevision,
+    git_malformed => GitMalformed, git_object_missing => GitObjectMissing,
+    exclude_invalid => ExcludeInvalid, locale_load => LocaleLoad,
+}
+
+pub(crate) fn detector(name: &str) -> EngineText {
+    EngineText::DuplicateDetector { name: name.into() }
+}
+pub(crate) fn no_rule(rule: impl ToString) -> EngineText {
+    EngineText::NoRule {
+        rule: rule.to_string(),
+    }
+}
+pub(crate) fn path_error(path: &str, reason: impl ToString) -> EngineText {
+    EngineText::PathError {
+        path: path.into(),
+        reason: reason.to_string(),
+    }
+}
+pub(crate) fn not_utf8(path: &str) -> EngineText {
+    EngineText::NotUtf8 { path: path.into() }
+}
+pub(crate) fn git_timeout(timeout: &std::time::Duration) -> EngineText {
+    EngineText::GitTimeout {
+        timeout: format!("{timeout:?}"),
+    }
+}
+pub(crate) fn git_not_regular(path: &std::path::Path) -> EngineText {
+    EngineText::GitNotRegular {
+        path: path.display().to_string(),
+    }
+}
+pub(crate) fn git_symlink(path: &std::path::Path) -> EngineText {
+    EngineText::GitSymlink {
+        path: path.display().to_string(),
+    }
+}
+pub(crate) fn git_escape(path: &std::path::Path) -> EngineText {
+    EngineText::GitEscape {
+        path: path.display().to_string(),
+    }
+}
+pub(crate) fn changed_file_too_large(path: &std::path::Path, cap: u64) -> String {
+    document_too_large(
+        EngineText::ChangedFileLabel {
+            path: path.display().to_string(),
+        }
+        .to_string(),
+        cap,
+    )
+}
+pub(crate) fn discover_missing(path: &str) -> EngineText {
+    EngineText::DiscoverMissing { path: path.into() }
+}
+pub(crate) fn glob_invalid(pattern: &str, reason: impl ToString) -> EngineText {
+    EngineText::GlobInvalid {
+        pattern: pattern.into(),
+        reason: reason.to_string(),
+    }
+}
+pub(crate) fn walk_error(path: &str, reason: impl ToString) -> EngineText {
+    EngineText::WalkError {
+        path: path.into(),
+        reason: reason.to_string(),
+    }
+}
+pub(crate) fn rst_missing(detail: &str) -> EngineText {
+    EngineText::RstMissing {
+        detail: detail.into(),
+    }
+}
+pub(crate) fn rst_spawn(converter: &std::path::Path, reason: impl ToString) -> EngineText {
+    EngineText::RstSpawn {
+        converter: converter.display().to_string(),
+        reason: reason.to_string(),
+    }
+}
+pub(crate) fn rst_timeout(
+    converter: &std::path::Path,
+    timeout: &std::time::Duration,
+) -> EngineText {
+    EngineText::RstTimeout {
+        converter: converter.display().to_string(),
+        timeout: format!("{timeout:?}"),
+    }
+}
+pub(crate) fn rst_output_limit(converter: &std::path::Path, limit: usize) -> EngineText {
+    EngineText::RstOutputLimit {
+        converter: converter.display().to_string(),
+        limit,
+    }
+}
+pub(crate) fn rst_failed(converter: &std::path::Path, status: &str, stderr: &str) -> EngineText {
+    EngineText::RstFailed {
+        converter: converter.display().to_string(),
+        status: status.into(),
+        stderr: stderr.into(),
+    }
+}
+pub(crate) fn rst_invalid_output(converter: &std::path::Path, reason: &str) -> EngineText {
+    EngineText::RstInvalidOutput {
+        converter: converter.display().to_string(),
+        reason: reason.into(),
+    }
+}
+pub(crate) fn locale_unknown(tag: &str) -> EngineText {
+    EngineText::LocaleUnknown {
+        tag: tag.into(),
+        known: crate::locale::Locale::known().join(", "),
+    }
+}
+pub(crate) fn locale_category(category: &str) -> EngineText {
+    EngineText::LocaleCategory {
+        category: category.into(),
+    }
+}
+pub(crate) fn override_inside(root: &std::path::Path) -> EngineDetails {
+    EngineDetails::RstOverrideInside {
+        root: root.display().to_string(),
+    }
+}
+
 #[derive(Debug, Catalog)]
 pub(crate) enum EngineText {
     /// A reader reports a coded size-cap failure.

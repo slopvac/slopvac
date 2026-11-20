@@ -92,7 +92,7 @@ pub enum OverrideError {
     #[error("{}", crate::messages::EnginePhrase::RstOverrideNotExecutable.as_static())]
     NotExecutable,
     /// The interpreter resolves inside a project root.
-    #[error("{}", crate::messages::EngineDetails::RstOverrideInside { root: .0.display().to_string() })]
+    #[error("{}", crate::messages::override_inside(.0))]
     InsideProject(PathBuf),
 }
 

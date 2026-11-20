@@ -111,14 +111,14 @@ impl Locale {
 pub enum LocaleError {
     /// The tag is not a known locale. 2.x reported this as a note and skipped the check, so a
     /// typo did not stop the other rules.
-    #[error("{}", crate::messages::EngineText::LocaleUnknown { tag: .0.clone(), known: Locale::known().join(", ") })]
+    #[error("{}", crate::messages::locale_unknown(.0))]
     Unknown(String),
     /// The rules have no `ste-words` category to hold the rule.
-    #[error("{}", crate::messages::EngineText::LocaleCategory { category: CATEGORY.into() })]
+    #[error("{}", crate::messages::locale_category(CATEGORY))]
     MissingCategory,
     /// The generated rule failed to load: a pattern did not compile, or an example
     /// disagreed with it.
-    #[error("{}", crate::messages::EngineText::LocaleLoad { reason: .0.to_string() })]
+    #[error("{}", crate::messages::locale_load(.0))]
     Load(LoadErrors),
 }
 
