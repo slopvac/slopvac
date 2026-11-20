@@ -560,6 +560,53 @@ fn tm16_each_denied_path_is_refused_without_approval_and_nothing_is_written() {
     }
 }
 
+#[rstest::rstest]
+#[case::nested_state_dir("a/.slopvac/x")]
+#[case::deeply_nested_state_dir("a/b/.slopvac/plugins.lock")]
+#[case::root_dot_config(".slopvac.toml")]
+#[case::nested_dot_config("a/.slopvac.toml")]
+#[case::root_config("slopvac.toml")]
+#[case::nested_config("a/slopvac.toml")]
+#[case::mixed_case_state_dir(".SlopVac/x")]
+#[case::mixed_case_nested_state_dir("a/.SlopVac/x")]
+#[case::mixed_case_dot_config(".SLOPVAC.TOML")]
+#[case::mixed_case_nested_dot_config("a/.SLOPVAC.TOML")]
+#[case::mixed_case_nested_config("a/SlopVac.toml")]
+fn tm16_slopvac_state_and_config_are_refused_at_any_depth(#[case] denied: &str) {
+    let s = sandbox();
+    let report = apply_plan(&s.root, &[write_file(denied, "x")], &PlanOptions::default());
+    let status = only_status(&report, 0);
+    assert!(
+        matches!(status, EntryStatus::Refused(ApplyError::Sensitive { .. })),
+        "{denied}: {status:?}"
+    );
+    assert!(!report.wrote, "{denied}");
+    assert!(names(&s.root).is_empty(), "{denied}: {:?}", names(&s.root));
+}
+
+#[test]
+fn tm16_workflows_are_refused_at_the_root_only() {
+    let s = sandbox();
+    let root = apply_plan(
+        &s.root,
+        &[write_file(".github/workflows/ci.yml", "x")],
+        &dry(),
+    );
+    assert!(matches!(
+        only_status(&root, 0),
+        EntryStatus::Refused(ApplyError::Sensitive { .. })
+    ));
+    let nested = apply_plan(
+        &s.root,
+        &[write_file("a/.github/workflows/ci.yml", "x")],
+        &dry(),
+    );
+    assert_eq!(
+        *only_status(&nested, 0),
+        ok_status("a/.github/workflows/ci.yml")
+    );
+}
+
 #[test]
 fn tm16_a_remove_of_a_denied_path_is_refused_too() {
     let s = sandbox();
