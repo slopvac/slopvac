@@ -5,6 +5,7 @@
 
 use std::fs;
 use std::io::Write;
+use std::num::NonZeroUsize;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -295,8 +296,8 @@ fn missing_term_files(config: &LoadedConfig) -> Vec<Problem> {
                         key: key.to_owned(),
                         name: name.to_owned(),
                         file: file.display.clone(),
-                        line: s.source.line.unwrap_or(1),
-                        column: s.source.column.unwrap_or(1),
+                        line: s.source.line.map_or(1, NonZeroUsize::get),
+                        column: s.source.column.map_or(1, NonZeroUsize::get),
                     };
                     out.push(Problem {
                         file: file.display.clone(),

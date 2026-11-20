@@ -22,8 +22,8 @@ use crate::flatten::{Origin, flatten};
 use crate::frontmatter::{Policy, Read, denied};
 use crate::messages::ConfigPhrase;
 use crate::schema::validate_directive;
-use crate::source::Layer;
 use crate::tree::{Entry, Node, Value};
+use slopvac_model::ConfigLayer;
 
 /// One directive comment: where it is and the fields it sets.
 #[derive(Debug, Clone, PartialEq)]
@@ -455,7 +455,7 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
             flatten(
                 &d.node,
                 Origin {
-                    layer: Layer::Directive,
+                    layer: ConfigLayer::Directive,
                     file,
                     text: doc,
                 },

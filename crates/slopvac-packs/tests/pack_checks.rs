@@ -1,6 +1,7 @@
 //! The loader checks what the schema states beyond field types, and the genre graph it builds.
 
 use std::fs;
+use std::num::NonZeroUsize;
 
 use rstest::rstest;
 use slopvac_config::Presets;
@@ -145,7 +146,10 @@ fn a_genre_setting_keeps_the_line_and_column_of_its_key() {
             .flatten()
             .find(|s| s.path == path)
             .unwrap_or_else(|| panic!("no setting {path:?}"));
-        (s.source.line, s.source.column)
+        (
+            s.source.line.map(NonZeroUsize::get),
+            s.source.column.map(NonZeroUsize::get),
+        )
     };
     assert_eq!(at(&["profile", "name"]), (Some(3), Some(1)));
     assert_eq!(at(&["categories", "prose", "weight"]), (Some(6), Some(5)));
