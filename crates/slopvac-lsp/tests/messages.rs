@@ -132,3 +132,53 @@ fn an_initialize_error_does_not_carry_the_rejected_value() {
     assert!(!format!("{error:?}").contains(MARKER), "{error:?}");
     assert!(error.source().is_none());
 }
+
+/// Handshake, send one request with `params`, and return the error message of the reply.
+fn rejected_request_message(method: &str, params: serde_json::Value) -> String {
+    let (client, handle) = spawn_server();
+    let send = |message: Message| client.sender.send(message).unwrap();
+    send(Message::Request(Request::new(
+        RequestId::from(1),
+        "initialize".to_owned(),
+        json!({"processId": null, "rootUri": null, "capabilities": {}}),
+    )));
+    client.receiver.recv_timeout(WAIT).unwrap();
+    send(Message::Notification(Notification::new(
+        "initialized".to_owned(),
+        json!({}),
+    )));
+    send(Message::Request(Request::new(
+        RequestId::from(2),
+        method.to_owned(),
+        params,
+    )));
+    let Message::Response(response) = client.receiver.recv_timeout(WAIT).unwrap() else {
+        panic!("expected a response");
+    };
+    assert!(!format!("{response:?}").contains(MARKER), "{response:?}");
+    send(Message::Request(Request::new(
+        RequestId::from(3),
+        "shutdown".to_owned(),
+        json!(null),
+    )));
+    client.receiver.recv_timeout(WAIT).unwrap();
+    send(Message::Notification(Notification::new(
+        "exit".to_owned(),
+        json!(null),
+    )));
+    handle.join().unwrap().unwrap();
+    response.error.expect("an error response").message
+}
+
+#[rstest]
+#[case::hover("textDocument/hover")]
+#[case::code_action("textDocument/codeAction")]
+fn an_invalid_request_error_does_not_carry_the_rejected_value(#[case] method: &str) {
+    let message = rejected_request_message(method, json!({"textDocument": MARKER}));
+    // The parameters are a parsed value, so serde_json has no text position to give.
+    assert_eq!(
+        message,
+        format!("invalid {method} parameters: data error at line 0, column 0")
+    );
+    assert!(!message.contains(MARKER), "{message}");
+}

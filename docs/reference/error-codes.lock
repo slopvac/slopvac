@@ -152,6 +152,7 @@ lsp-initialize-invalid error
 lsp-io-failed error
 lsp-lint-incomplete notice
 lsp-method-unsupported error
+lsp-params-invalid error
 lsp-protocol-error error
 lsp-setup-failed error
 lsp-unchecked text
