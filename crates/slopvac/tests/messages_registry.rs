@@ -129,6 +129,27 @@ mod lock_rules {
         );
     }
 
+    #[rstest::rstest]
+    #[case::error("error")]
+    #[case::notice("notice")]
+    fn a_retired_code_reused_as_a_text_id_is_reported_twice(#[case] locked_kind: &str) {
+        let entries = [entry("alpha", Kind::Error), entry("beta", Kind::Text)];
+        let retired = [Retired {
+            code: "beta",
+            note: "Gone.",
+        }];
+        let lock = format!("alpha error\nbeta {locked_kind}\n");
+        assert_eq!(
+            check_lock(&lock, &[("cat", &entries)], &retired),
+            [
+                format!(
+                    "`beta` is locked as {locked_kind} but registered as text; a code never changes kind"
+                ),
+                "retired `beta` is registered again; never reuse a code".to_owned(),
+            ]
+        );
+    }
+
     #[test]
     fn a_text_id_that_is_not_retired_is_clean() {
         let entries = [entry("alpha", Kind::Error), entry("label", Kind::Text)];
