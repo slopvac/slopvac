@@ -140,6 +140,24 @@ Migrate a 2.x project to 3.0: config, inline directives and steering blocks
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
+### `slopvac report`
+
+Preview an issue report, and file it with the GitHub CLI.
+
+| Argument | Description |
+| --- | --- |
+| `<CATEGORY>` | The kind of report; it picks the issue form. |
+| `--title` | The issue title, without the category prefix. |
+| `--field` | A form field. Repeat for several fields, or several dropdown options. |
+| `--include-text` | Read the document sample for the `input` field from this file. |
+| `--body-file` | Write the previewed body to this file. The write replaces the file in one step. |
+| `--gh` | Print the exact `gh issue create` command for the body file. |
+| `--yes` | With --gh: run that command after the preview. Offline mode refuses it. |
+| `--open` | Open the prefilled issue form in a browser. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
 ### `slopvac terms`
 
 Manage project terms
@@ -378,16 +396,6 @@ Print the agent onboarding text.
 ### `slopvac reference`
 
 Generate or check the rules reference.
-
-| Argument | Description |
-| --- | --- |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac report`
-
-Preview or submit an issue report.
 
 | Argument | Description |
 | --- | --- |

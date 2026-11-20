@@ -67,14 +67,13 @@ fn with_removed(mut cmd: Command, names: &[&'static str]) -> Command {
 
 /// Commands whose implementation another crate has not exposed yet.
 // STUB(slopvac-8l4.12.13): replace each placeholder with the owner's `command()`.
-pub const PLACEHOLDERS: [(&str, &str); 4] = [
+pub const PLACEHOLDERS: [(&str, &str); 3] = [
     (
         "plugins",
         "Manage data plugins and code plugins: sync, trust, update.",
     ),
     ("onboard", "Print the agent onboarding text."),
     ("reference", "Generate or check the rules reference."),
-    ("report", "Preview or submit an issue report."),
 ];
 
 fn placeholder(name: &'static str, about: &'static str) -> Command {
@@ -378,6 +377,7 @@ pub fn command() -> Command {
         .subcommand(self_cmd())
         .subcommand(slopvac_lsp::command())
         .subcommand(slopvac_migrate::command())
+        .subcommand(crate::report::command())
         .subcommand(slopvac_terms::cli::command())
         .subcommand(slopvac_context::command())
         .subcommand(slopvac_config::validate::command())

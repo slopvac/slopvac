@@ -21,6 +21,7 @@ pub mod offline;
 pub mod output;
 pub mod owners;
 pub mod redact;
+pub mod report;
 pub mod rule_catalog;
 mod run;
 pub mod severity;

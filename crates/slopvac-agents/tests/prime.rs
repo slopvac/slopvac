@@ -41,7 +41,7 @@ fn tree() -> Command {
         .subcommand(flags(
             "report",
             "Preview or post an issue",
-            &["submit", "include-text"],
+            &["title", "field", "include-text", "body-file", "gh", "yes"],
         ))
         .subcommand(slopvac_migrate::command())
         .subcommand(slopvac_agents::claims::command())
