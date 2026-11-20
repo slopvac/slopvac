@@ -17,7 +17,7 @@ Slopvac {{ version }}. After compaction, a cleared context or a new session, run
 
 Run `slopvac prime <topic>` for one.
 {% for t in topics %}
-- `{{ t.name }}`{{ (": " ~ t.summary) if level != "minimal" }}
+- `{{ t.name }}`{{ (": " ~ t.summary) if level != "minimal" }}{{ " Ask the user first." if t.ask }}
 {% endfor %}
 {% if level == "full" %}
 ## Notes

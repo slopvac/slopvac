@@ -203,7 +203,8 @@ fn run_renders_the_requested_topic_and_level() {
     let m = prime::command()
         .try_get_matches_from(["prime", "setup", "--level", "full"])
         .unwrap();
-    let out = prime::run(&m, &tree(), std::path::Path::new("/nonexistent")).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let out = prime::run(&m, &tree(), root.path()).unwrap();
     assert!(out.starts_with("# Prime: setup"));
     assert!(out.contains("agents, codex, omp, kiro, claude, opencode"));
     assert!(
