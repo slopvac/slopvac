@@ -10,6 +10,20 @@ const fn entry(code: &'static str, kind: Kind) -> Entry {
     Entry::new(code, kind, "E::V", "text", &[], "Summary.")
 }
 
+#[rstest::rstest]
+#[case::in_progress("update-in-progress")]
+#[case::lock_unsafe("update-lock-unsafe")]
+#[case::interrupted("update-interrupted")]
+#[case::version_unknown("update-version-unknown")]
+fn a_self_update_refusal_code_is_registered_as_an_error(#[case] code: &str) {
+    let entry = catalogs()
+        .into_iter()
+        .flat_map(|(_, entries)| entries.iter())
+        .find(|e| e.code == code)
+        .unwrap_or_else(|| panic!("`{code}` is not in the registry"));
+    assert_eq!(entry.kind, Kind::Error);
+}
+
 #[test]
 fn the_registry_passes_the_audit() {
     let problems: Vec<String> = audit(&catalogs()).iter().map(ToString::to_string).collect();
@@ -99,15 +113,57 @@ mod lock_rules {
         );
     }
 
-    #[test]
-    fn a_retired_code_that_is_registered_again_is_reported() {
+    #[rstest::rstest]
+    #[case::notice(Kind::Notice)]
+    #[case::text(Kind::Text)]
+    fn a_retired_code_that_is_registered_again_is_reported(#[case] kind: Kind) {
+        let entries = [entry("alpha", Kind::Error), entry("beta", kind)];
         let retired = [Retired {
             code: "beta",
             note: "Gone.",
         }];
+        let lock = format!("alpha error\nbeta {}\n", kind.name());
         assert_eq!(
-            check("alpha error\nbeta notice\n", &retired),
+            check_lock(&lock, &[("cat", &entries)], &retired),
             ["retired `beta` is registered again; never reuse a code"]
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::error("error")]
+    #[case::notice("notice")]
+    fn a_retired_code_reused_as_a_text_id_is_reported_twice(#[case] locked_kind: &str) {
+        let entries = [entry("alpha", Kind::Error), entry("beta", Kind::Text)];
+        let retired = [Retired {
+            code: "beta",
+            note: "Gone.",
+        }];
+        let lock = format!("alpha error\nbeta {locked_kind}\n");
+        assert_eq!(
+            check_lock(&lock, &[("cat", &entries)], &retired),
+            [
+                format!(
+                    "`beta` is locked as {locked_kind} but registered as text; a code never changes kind"
+                ),
+                "retired `beta` is registered again; never reuse a code".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_text_id_that_is_not_retired_is_clean() {
+        let entries = [entry("alpha", Kind::Error), entry("label", Kind::Text)];
+        let retired = [Retired {
+            code: "gamma",
+            note: "Gone.",
+        }];
+        assert_eq!(
+            check_lock(
+                "alpha error\ngamma error\nlabel text\n",
+                &[("cat", &entries)],
+                &retired
+            ),
+            Vec::<String>::new()
         );
     }
 

@@ -1,6 +1,8 @@
 //! Safe application of fixer edits and recipe plans: threats O6 to O9 of
-//! `docs/contract/threat-model.md`. Test names cite the test ids TM-15 to TM-18
+//! `docs/contract/threat-model.md`. Test names cite the test ids TM-14 to TM-18
 //! and H22 (`docs/contract/plugin-protocol.md` section 12.1).
+
+mod support;
 
 use std::fs;
 use std::path::Path;
@@ -13,7 +15,7 @@ use slopvac_plugins::apply::{
 #[cfg(unix)]
 use slopvac_plugins::apply::{SeamStage, WriteOutcome};
 use slopvac_plugins::hooks::{FixEdit, MAX_INSERTED_BYTES, RecipeAction, RecipeFile, Span};
-use tempfile::TempDir;
+use support::Scratch;
 
 fn edit(start: u64, end: u64, text: &str) -> FixEdit {
     FixEdit {
@@ -51,13 +53,13 @@ fn dry() -> PlanOptions {
 
 /// A project root and a sibling directory outside it.
 struct Sandbox {
-    _tmp: TempDir,
+    _tmp: Scratch,
     root: std::path::PathBuf,
     outside: std::path::PathBuf,
 }
 
 fn sandbox() -> Sandbox {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = support::scratch();
     let root = tmp.path().join("project");
     let outside = tmp.path().join("outside");
     fs::create_dir(&root).unwrap();
@@ -160,7 +162,7 @@ fn edits_reject_a_source_that_is_not_utf8() {
 }
 
 #[test]
-fn edits_reject_more_than_the_edit_count_limit() {
+fn tm14_edits_reject_more_than_the_edit_count_limit() {
     let many: Vec<FixEdit> = (0..1001).map(|_| edit(0, 0, "")).collect();
     assert!(matches!(
         edited_bytes(b"a", &many),
@@ -525,7 +527,7 @@ fn h22_a_symlink_target_outside_the_root_is_refused_and_nothing_is_written() {
 const DENIED: [&str; 16] = [
     ".git/config",
     ".git/hooks/pre-commit",
-    ".slopvac/packs.lock",
+    ".slopvac/plugins.lock",
     ".slopvac/trust.toml",
     ".github/workflows/ci.yml",
     ".env",
@@ -774,7 +776,7 @@ fn seam(
 }
 
 #[test]
-fn inserted_bytes_are_capped_at_the_limit_and_one_more_is_refused() {
+fn tm14_inserted_bytes_are_capped_at_the_limit_and_one_more_is_refused() {
     let at_cap = edit(0, 0, &"x".repeat(MAX_INSERTED_BYTES));
     assert_eq!(
         edited_bytes(b"", &[at_cap]).unwrap().len(),
@@ -789,6 +791,61 @@ fn inserted_bytes_are_capped_at_the_limit_and_one_more_is_refused() {
     fs::write(s.root.join("a.md"), "").unwrap();
     assert!(apply_edits(&s.root, "a.md", b"", std::slice::from_ref(&over)).is_err());
     assert_eq!(fs::read_to_string(s.root.join("a.md")).unwrap(), "");
+}
+
+/// The cap counts the bytes of all edits together, not each edit alone.
+#[test]
+fn tm14_inserted_bytes_summed_over_several_edits_pass_the_cap_and_apply_nothing() {
+    let half = MAX_INSERTED_BYTES / 2;
+    let s = sandbox();
+    fs::write(s.root.join("a.md"), "ab").unwrap();
+    let over = [
+        edit(0, 0, &"x".repeat(half)),
+        edit(1, 1, &"y".repeat(half + 1)),
+    ];
+    assert!(matches!(
+        apply_edits(&s.root, "a.md", b"ab", &over),
+        Err(ApplyError::InvalidEdits(_))
+    ));
+    assert_eq!(fs::read_to_string(s.root.join("a.md")).unwrap(), "ab");
+    let at_cap = [edit(0, 0, &"x".repeat(half)), edit(1, 1, &"y".repeat(half))];
+    assert_eq!(
+        edited_bytes(b"ab", &at_cap).unwrap().len(),
+        2 + MAX_INSERTED_BYTES
+    );
+}
+
+/// The wire path: a fixer reply past either cap is `plugin-output-invalid`.
+/// The finding spans 300,000 bytes, so the reply cap is 4 x 300,000 + 4,096,
+/// held to the 1 MiB ceiling.
+#[test]
+fn tm14_a_fixer_reply_past_either_cap_is_plugin_output_invalid() {
+    use serde_json::json;
+    use slopvac_plugins::hooks::{Finding, MAX_EDITS_PER_DOCUMENT, parse_edits};
+
+    let text = "a".repeat(300_000);
+    let findings = [Finding {
+        rule: "core:x".into(),
+        severity: "warning".into(),
+        span: Span {
+            start: 0,
+            end: 300_000,
+        },
+        message: "m".into(),
+    }];
+    let one = |t: &str| json!({"finding": 0, "span": {"start": 0, "end": 0}, "text": t});
+    let code = |entry: Value| {
+        parse_edits(&entry, &text, &findings)
+            .unwrap_err()
+            .slopvac_code()
+            .to_owned()
+    };
+    let at_cap = json!({"edits": [one(&"y".repeat(MAX_INSERTED_BYTES))]});
+    assert!(parse_edits(&at_cap, &text, &findings).is_ok());
+    let over = json!({"edits": [one(&"y".repeat(MAX_INSERTED_BYTES + 1))]});
+    assert_eq!(code(over), "plugin-output-invalid");
+    let many: Vec<Value> = (0..=MAX_EDITS_PER_DOCUMENT).map(|_| one("")).collect();
+    assert_eq!(code(json!({ "edits": many })), "plugin-output-invalid");
 }
 
 #[cfg(unix)]

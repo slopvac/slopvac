@@ -9,58 +9,13 @@
 
 mod common;
 
-use std::fmt::Write as _;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-
-use common::{engine, places, tokens};
+use common::{engine, places, tokens, wrapped_rst, wrapped_table as table};
 use serde_json::json;
-use slopvac_engine::rst::RstOptions;
 use slopvac_engine::{Engine, Input, take_split_visits};
 
-/// The table: a left cell of `lines` lines that each read `Must go.`, and `x` beside the first.
-fn table(lines: usize) -> String {
-    let border = format!("+{}+{}+\n", "-".repeat(12), "-".repeat(5));
-    let mut source = border.clone();
-    for line in 0..lines {
-        let right = if line == 0 { "x" } else { " " };
-        writeln!(source, "| Must go.   | {right}   |").unwrap();
-    }
-    source.push_str(&border);
-    source
-}
-
-/// The driver output for the table.
-fn driver_output(lines: usize) -> String {
-    let left = vec!["Must go."; lines].join("\\n");
-    let cell = |end: usize, column: usize, text: &str| {
-        format!(
-            r#"{{"tag":"paragraph","start":2,"end":{end},"containers":[],"cell":[0,{column},1],"pieces":[{{"k":"t","t":"{text}"}}]}}"#
-        )
-    };
-    format!(
-        r#"{{"docutils":"0.21.2","nodes":[{{"tag":"table","table":true,"start":1,"end":{},"containers":[]}},{},{}]}}"#,
-        lines + 2,
-        cell(lines + 1, 0, &left),
-        cell(2, 1, "x"),
-    )
-}
-
 fn wrapped_engine(lines: usize) -> Engine {
-    let dir = common::private_dir("rst-split");
-    let json_path = dir.join(format!("wrapped-{lines}.json"));
-    fs::write(&json_path, driver_output(lines)).unwrap();
-    let python = dir.join(format!("wrapped-python-{lines}"));
-    fs::write(
-        &python,
-        format!("#!/bin/sh\ncat >/dev/null\ncat '{}'\n", json_path.display()),
-    )
-    .unwrap();
-    fs::set_permissions(&python, fs::Permissions::from_mode(0o755)).unwrap();
-    let mut options = RstOptions::default();
-    options.interpreter = Some(python);
     let gate = json!({"contexts": {"only": ["requirement"]}});
-    engine(&[tokens("dull", "Must", &gate)]).with_rst(options)
+    engine(&[tokens("dull", "Must", &gate)]).with_rst(wrapped_rst(lines))
 }
 
 #[test]

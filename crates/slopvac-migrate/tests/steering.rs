@@ -12,7 +12,8 @@ const V2_BLOCK: &str = "<!-- slopvac:begin -->\n## Slopvac\n\nRun `slopvac prime
 fn migrate(root: &Path) {
     let block = steering_block(BlockKind::Standard);
     let p = plan(root, &RenameTable::bundled(), Options::default(), &block).unwrap();
-    apply(root, &p).unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    apply(root, &p, cache.path()).unwrap();
 }
 
 fn setup_opts(root: &Path, harness: &str) -> setup::Options {

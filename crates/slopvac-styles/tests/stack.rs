@@ -1,5 +1,7 @@
 //! Styles as layer 2 of the config stack: values keep the preset and line that set them.
 
+mod common;
+
 use std::path::Path;
 
 use serde_json::json;
@@ -34,14 +36,14 @@ fn resolve_with(
 #[test]
 fn a_value_from_a_preset_names_the_preset_and_its_line() {
     let (_, resolved) = resolve_project("schema_version = 3\nstyles = [\"ste\"]\n");
-    // presets/ste.toml line 32: "ste-verbs.passive-voice" = "suggestion"
+    // presets/ste.toml line 31: "ste-verbs.passive-voice" = "suggestion"
     let source = resolved
         .source(&["rules", "ste-verbs.passive-voice"])
         .unwrap();
     assert_eq!(source.layer, Layer::Style);
     assert_eq!(source.file.as_deref(), Some("preset:ste"));
-    assert_eq!((source.line, source.column), (Some(32), Some(1)));
-    assert_eq!(describe(source), "style preset:ste:32:1");
+    assert_eq!((source.line, source.column), (Some(31), Some(1)));
+    assert_eq!(describe(source), "style preset:ste:31:1");
 }
 
 #[test]
@@ -74,7 +76,7 @@ fn explain_shows_a_project_value_replacing_a_preset_value() {
         block,
         [
             "rules.\"ste-verbs.passive-voice\" = \"error\"  [project slopvac.toml:4:1]",
-            "    replaced \"suggestion\"  [style preset:ste:32:1]",
+            "    replaced \"suggestion\"  [style preset:ste:31:1]",
         ]
     );
 }
@@ -167,4 +169,32 @@ fn an_oversized_style_file_fails_the_config_load_with_its_code() {
     let err = load(&path, &StylePresets(DirSource::new(styles.path()))).unwrap_err();
     assert_eq!(err.code(), slopvac_config::Code::StyleTooLarge);
     assert!(err.render().contains("style-too-large"), "{}", err.render());
+}
+
+#[test]
+fn a_fifo_style_fails_the_config_load_instead_of_vanishing() {
+    use slopvac_styles::DirSource;
+
+    let styles = tempfile::tempdir().unwrap();
+    let fifo = styles.path().join("pipe.toml");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let project = tempfile::tempdir().unwrap();
+    let path = project.path().join("slopvac.toml");
+    std::fs::write(&path, "schema_version = 3\nstyles = [\"pipe\"]\n").unwrap();
+    let source = DirSource::new(styles.path());
+    let probe = fifo.clone();
+    let result = common::within_timeout(&probe, move || load(&path, &StylePresets(source)));
+    let err = result.unwrap_err();
+    assert_eq!(err.code(), slopvac_config::Code::Io);
+    assert!(
+        err.render().contains("not a regular file"),
+        "{}",
+        err.render()
+    );
 }

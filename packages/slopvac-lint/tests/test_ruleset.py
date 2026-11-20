@@ -131,8 +131,7 @@ def test_checked_and_judgement_rules_partition_the_catalogue(ruleset):
     """`rules` is the lint surface; judgement rules reach only the guidance."""
     checked = {rule.qualified_id for rule in ruleset.rules}
     judgement = {rule.qualified_id for rule in ruleset.judgement_rules}
-    assert len(checked) == 169
-    assert len(judgement) == 68
+    assert "prose-scope.mixed-content-types" in judgement
     assert not checked & judgement
     assert checked | judgement == {rule.qualified_id for rule in ruleset.all_rules}
     assert {
@@ -648,3 +647,34 @@ def test_shipped_lexical_examples_fire_through_engine(ruleset):
         failure for failure in failures if failure.split(" ", 1)[0] not in known_failures
     ]
     assert not unexpected, "\n".join(unexpected)
+
+
+def _yaml_rule_counts() -> tuple[int, int]:
+    """Total and judgement rule counts from the YAML text, independent of the loader."""
+    rules_dir = Path(__file__).parents[1] / "src" / "slopvac" / "rules"
+    total = judgement = 0
+    for path in rules_dir.glob("*.yml"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            total += line.startswith("  - id: ")
+            judgement += line == "    kind: judgement"
+    return total, judgement
+
+
+def test_loaded_catalogue_matches_the_yaml_text(ruleset):
+    total, judgement = _yaml_rule_counts()
+    assert len(ruleset.judgement_rules) == judgement
+    assert len(ruleset.rules) + len(ruleset.judgement_rules) == total
+
+
+def test_readme_rule_totals_match_the_yaml_text():
+    """The README counts are prose with no generator, so they are checked here."""
+    total, judgement = _yaml_rule_counts()
+    checked = total - judgement
+    root = Path(__file__).parents[3]
+    for path in (root / "README.md", root / "packages" / "slopvac-lint" / "README.md"):
+        text = " ".join(path.read_text(encoding="utf-8").split())
+        claims = re.findall(r"\b(\d+) (checked|judg(?:e)?ment) rules\b", text)
+        assert claims, f"{path} states no rule count"
+        expected = {"checked": checked, "judgment": judgement, "judgement": judgement}
+        for number, kind in claims:
+            assert int(number) == expected[kind], f"{path}: {number} {kind} rules"

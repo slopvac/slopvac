@@ -9,7 +9,7 @@ use std::ops::Range;
 use slopvac_model::Span;
 use slopvac_parse::{BlockKind, Document, ParseError, parse_markdown, parse_mdx};
 
-use crate::{Extraction, Format};
+use crate::{Extraction, ExtractionStatus, Format};
 
 /// A fenced code block that holds a diagram.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,7 +67,9 @@ fn lone_cr_as_lf(source: &str) -> Cow<'_, str> {
 #[must_use]
 pub fn extract_fenced(format: Format, source: &str, body: Range<usize>) -> Extraction {
     let Some(text) = source.get(body.clone()) else {
-        return Extraction::default();
+        return Extraction::failed(ExtractionStatus::Malformed(
+            "block range is outside the source",
+        ));
     };
     let strip = Prefix::of_line_before(source, body.start);
     if strip.is_empty() {

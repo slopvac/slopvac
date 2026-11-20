@@ -7,7 +7,8 @@ use std::fmt::Write as _;
 use slopvac_model::{Document, Report};
 
 use crate::escape::xml as e;
-use crate::text::severity_word;
+use crate::messages::{Label, Line};
+use crate::text::{score_text, severity_word, verdict_word};
 
 const STYLE: &str = "\
 :root{color-scheme:light dark;--bg:#fff;--fg:#1a1a1a;--panel:#f3f3f3;--muted:#4d4d4d;--pass:#0b5d1e;--fail:#a40000;--focus:#0050c8}\
@@ -22,28 +23,40 @@ a:focus,summary:focus{outline:3px solid var(--focus);outline-offset:2px}\
 
 pub(crate) fn render(report: &Report) -> String {
     let s = &report.summary;
-    let verdict = if s.passed { "PASS" } else { "FAIL" };
+    let verdict = verdict_word(s.passed);
     let class = if s.passed { "pass" } else { "fail" };
+    let title = Label::HtmlTitle.as_static();
+    let page_title = Line::HtmlPageTitle {
+        verdict: verdict.to_owned(),
+    };
+    let summary = Line::HtmlSummary {
+        documents: s.documents,
+        findings: s.findings,
+        errors: s.errors,
+        warnings: s.warnings,
+        suggestions: s.suggestions,
+        score: score_text(s.score),
+        version: e(report.slopvac_version.as_str()),
+    };
     let mut out = String::new();
+    // ast-grep-ignore: user-text-literal
     let _ = write!(
         out,
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n\
-         <title>slopvac report: {verdict}</title>\n<style>{STYLE}</style>\n</head>\n<body>\n\
-         <a class=\"skip\" href=\"#findings\">Skip to findings</a>\n<main>\n\
-         <h1>slopvac report</h1>\n\
-         <p class=\"{class}\"><strong>{verdict}</strong> &mdash; {} documents, {} findings \
-         ({} errors, {} warnings, {} suggestions), score {:.1}. slopvac {}.</p>\n",
-        s.documents,
-        s.findings,
-        s.errors,
-        s.warnings,
-        s.suggestions,
-        f64::from(s.score),
-        e(report.slopvac_version.as_str())
+         <title>{page_title}</title>\n<style>{STYLE}</style>\n</head>\n<body>\n\
+         <a class=\"skip\" href=\"#findings\">{}</a>\n<main>\n\
+         <h1>{title}</h1>\n\
+         <p class=\"{class}\"><strong>{verdict}</strong> &mdash; {summary}</p>\n",
+        Label::HtmlSkip.as_static(),
     );
     if !report.notices.is_empty() {
-        out.push_str("<section class=\"panel\"><h2>Notices</h2>\n<ul>\n");
+        // ast-grep-ignore: user-text-literal
+        let _ = writeln!(
+            out,
+            "<section class=\"panel\"><h2>{}</h2>\n<ul>",
+            Label::HtmlNoticesHeading.as_static()
+        );
         for n in &report.notices {
             let _ = writeln!(
                 out,
@@ -54,15 +67,31 @@ pub(crate) fn render(report: &Report) -> String {
         }
         out.push_str("</ul></section>\n");
     }
-    out.push_str("<section class=\"panel\" id=\"findings\"><h2>Documents</h2>\n");
-    out.push_str("<table><caption>Result for each document</caption>\n<thead><tr><th scope=\"col\">Document</th><th scope=\"col\">Verdict</th><th scope=\"col\">Score</th><th scope=\"col\">Findings</th></tr></thead>\n<tbody>\n");
+    // ast-grep-ignore: user-text-literal
+    let _ = writeln!(
+        out,
+        "<section class=\"panel\" id=\"findings\"><h2>{}</h2>",
+        Label::HtmlDocumentsHeading.as_static()
+    );
+    let _ = writeln!(
+        out,
+        "<table><caption>{}</caption>\n<thead><tr>{}</tr></thead>\n<tbody>",
+        Label::HtmlDocumentsCaption.as_static(),
+        header_cells(&[
+            Label::ColumnDocument,
+            Label::ColumnVerdict,
+            Label::ColumnScore,
+            Label::ColumnFindings,
+        ])
+    );
     for doc in &report.documents {
-        let v = if doc.gate.is_passed() { "PASS" } else { "FAIL" };
+        // ast-grep-ignore: user-text-literal
         let _ = writeln!(
             out,
-            "<tr><th scope=\"row\">{}</th><td>{v}</td><td>{:.1}</td><td>{}</td></tr>",
+            "<tr><th scope=\"row\">{}</th><td>{}</td><td>{}</td><td>{}</td></tr>",
             e(doc.path.as_str()),
-            f64::from(doc.score),
+            verdict_word(doc.gate.is_passed()),
+            score_text(doc.score),
             doc.total_findings
         );
     }
@@ -74,8 +103,18 @@ pub(crate) fn render(report: &Report) -> String {
     out
 }
 
+fn header_cells(labels: &[Label]) -> String {
+    let mut out = String::new();
+    for l in labels {
+        // ast-grep-ignore: user-text-literal
+        let _ = write!(out, "<th scope=\"col\">{}</th>", l.as_static());
+    }
+    out
+}
+
 fn document(out: &mut String, doc: &Document) {
-    let v = if doc.gate.is_passed() { "PASS" } else { "FAIL" };
+    let v = verdict_word(doc.gate.is_passed());
+    // ast-grep-ignore: user-text-literal
     let _ = writeln!(
         out,
         "<details class=\"panel\"{}><summary>{} &mdash; {v}</summary>",
@@ -90,20 +129,34 @@ fn document(out: &mut String, doc: &Document) {
         for n in &doc.unchecked {
             let _ = writeln!(
                 out,
-                "<li>UNCHECKED <code>{}</code>: {}</li>",
-                e(n.code.as_str()),
-                e(n.message.as_str())
+                "<li>{}</li>",
+                Line::HtmlUnchecked {
+                    code: e(n.code.as_str()),
+                    message: e(n.message.as_str()),
+                }
             );
         }
         out.push_str("</ul>\n");
     }
     if doc.findings.is_empty() {
-        out.push_str("<p class=\"muted\">No findings.</p>\n");
-    } else {
-        let _ = write!(
+        let _ = writeln!(
             out,
-            "<table><caption>Findings in {}</caption>\n<thead><tr><th scope=\"col\">Location</th><th scope=\"col\">Severity</th><th scope=\"col\">Rule</th><th scope=\"col\">Message</th></tr></thead>\n<tbody>\n",
-            e(doc.path.as_str())
+            "<p class=\"muted\">{}</p>",
+            Label::HtmlNoFindings.as_static()
+        );
+    } else {
+        let _ = writeln!(
+            out,
+            "<table><caption>{}</caption>\n<thead><tr>{}</tr></thead>\n<tbody>",
+            Line::HtmlFindingsCaption {
+                path: e(doc.path.as_str()),
+            },
+            header_cells(&[
+                Label::ColumnLocation,
+                Label::ColumnSeverity,
+                Label::ColumnRule,
+                Label::ColumnMessage,
+            ])
         );
         for f in &doc.findings {
             let _ = writeln!(

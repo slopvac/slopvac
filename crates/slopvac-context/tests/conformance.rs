@@ -133,20 +133,28 @@ fn tagger_corpus_agrees_with_the_schema_and_the_struct() {
     check_corpus("tagger", "tagger.schema.json", load_tagger);
 }
 
-fn builtin(file: &str) -> Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+/// The built-in genre files, each parsed as one artifact.
+fn builtin_files(dir: &str) -> Vec<Value> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/builtin")
-        .join(file);
-    serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+        .join(dir);
+    let mut paths: Vec<PathBuf> = fs::read_dir(root)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    paths.sort();
+    paths
+        .iter()
+        .map(|p| serde_saphyr::from_str(&fs::read_to_string(p).unwrap()).unwrap())
+        .collect()
 }
 
 #[test]
 fn every_built_in_genre_satisfies_the_genre_schema() {
     let v = validator("genre.schema.json");
-    let list = builtin("genres.yaml");
-    let genres = list.as_array().unwrap();
+    let genres = builtin_files("genres");
     assert!(genres.len() >= 12, "{} genres", genres.len());
-    for g in genres {
+    for g in &genres {
         let errors: Vec<String> = v.iter_errors(g).map(|e| e.to_string()).collect();
         assert!(errors.is_empty(), "{}: {errors:?}", g["id"]);
     }
@@ -155,24 +163,28 @@ fn every_built_in_genre_satisfies_the_genre_schema() {
 #[test]
 fn every_built_in_tagger_satisfies_the_tagger_schema() {
     let v = validator("tagger.schema.json");
-    let list = builtin("taggers.yaml");
-    let taggers = list.as_array().unwrap();
-    assert_eq!(taggers.len(), 1);
-    for t in taggers {
+    let taggers = builtin_files("taggers");
+    assert!(taggers.len() >= 15, "{} taggers", taggers.len());
+    for t in &taggers {
         let errors: Vec<String> = v.iter_errors(t).map(|e| e.to_string()).collect();
         assert!(errors.is_empty(), "{}: {errors:?}", t["id"]);
     }
 }
 
 #[test]
-fn every_built_in_structural_tagger_satisfies_the_tagger_schema() {
-    let v = validator("tagger.schema.json");
-    let list = builtin("structural.yaml");
-    let taggers = list.as_array().unwrap();
-    assert!(taggers.len() >= 14, "{} taggers", taggers.len());
-    for t in taggers {
-        let errors: Vec<String> = v.iter_errors(t).map(|e| e.to_string()).collect();
-        assert!(errors.is_empty(), "{}: {errors:?}", t["id"]);
+fn every_built_in_file_is_named_for_its_artifact_and_registered() {
+    for (dir, table) in [
+        ("genres", slopvac_context::GENRE_FILES),
+        ("taggers", slopvac_context::TAGGER_FILES),
+    ] {
+        let mut on_disk: Vec<String> = builtin_files(dir)
+            .iter()
+            .map(|v| format!("{dir}/{}.yaml", v["id"].as_str().unwrap()))
+            .collect();
+        let mut registered: Vec<String> = table.iter().map(|(p, _)| (*p).to_owned()).collect();
+        on_disk.sort();
+        registered.sort();
+        assert_eq!(on_disk, registered, "{dir}");
     }
 }
 

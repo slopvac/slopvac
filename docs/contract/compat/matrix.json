@@ -105,7 +105,7 @@
         "default": ""
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.13.6",
       "test": "n/a"
     },
@@ -534,6 +534,56 @@
       "test": "pending"
     },
     {
+      "id": "behavior:rule:ste-practices.inconsistent-wording-for-same-step",
+      "source": "behavior",
+      "summary": "Rule ste-practices.inconsistent-wording-for-same-step.",
+      "detail": {},
+      "disposition": "remove",
+      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0.",
+      "owner": "slopvac-8l4.3.43",
+      "test": "n/a"
+    },
+    {
+      "id": "behavior:rule:ste-safety.safety-block-missing-consequence",
+      "source": "behavior",
+      "summary": "Rule ste-safety.safety-block-missing-consequence.",
+      "detail": {},
+      "disposition": "remove",
+      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0.",
+      "owner": "slopvac-8l4.3.43",
+      "test": "n/a"
+    },
+    {
+      "id": "behavior:rule:ste-sentences.vertical-list-item-punctuation",
+      "source": "behavior",
+      "summary": "Rule ste-sentences.vertical-list-item-punctuation.",
+      "detail": {},
+      "disposition": "remove",
+      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0.",
+      "owner": "slopvac-8l4.3.43",
+      "test": "n/a"
+    },
+    {
+      "id": "behavior:rule:ste-sentences.vertical-list-lead-in-missing-colon",
+      "source": "behavior",
+      "summary": "Rule ste-sentences.vertical-list-lead-in-missing-colon.",
+      "detail": {},
+      "disposition": "remove",
+      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0.",
+      "owner": "slopvac-8l4.3.43",
+      "test": "n/a"
+    },
+    {
+      "id": "behavior:rule:ste-words.inconsistent-term-for-same-thing",
+      "source": "behavior",
+      "summary": "Rule ste-words.inconsistent-term-for-same-thing.",
+      "detail": {},
+      "disposition": "remove",
+      "note": "Removed in 3.0. `slopvac migrate` drops its config entries and `slopvac-allow` directives, and reports each drop as an info notice with the code `migrate-rule-removed` that points to `removed-rules.toml`. The run exits 0.",
+      "owner": "slopvac-8l4.3.43",
+      "test": "n/a"
+    },
+    {
       "id": "behavior:setup-list-remove-check",
       "source": "behavior",
       "summary": "setup actions.",
@@ -669,7 +719,7 @@
       "summary": "slopvac doctor",
       "detail": {},
       "disposition": "preserve",
-      "note": "Reports Rust binary, config and pack health instead of Python and Vale.",
+      "note": "Reports Rust binary, config and plugin health instead of Python and Vale.",
       "owner": "slopvac-8l4.12.5",
       "test": "pending"
     },
@@ -995,7 +1045,7 @@
         "kind": "option"
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1007,7 +1057,7 @@
         "kind": "argument"
       },
       "disposition": "migrate",
-      "note": "IDs gain the pack namespace; bare 2.x IDs error. `slopvac migrate` rewrites directive IDs.",
+      "note": "IDs gain the plugin namespace; bare 2.x IDs error. `slopvac migrate` rewrites directive IDs.",
       "owner": "slopvac-8l4.2.3",
       "test": "n/a"
     },
@@ -1168,7 +1218,7 @@
         "kind": "option"
       },
       "disposition": "preserve",
-      "note": "Rule disable stays; IDs gain the pack namespace.",
+      "note": "Rule disable stays; IDs gain the plugin namespace.",
       "owner": "slopvac-8l4.12.1",
       "test": "pending"
     },
@@ -1357,7 +1407,7 @@
         "kind": "option"
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1419,7 +1469,7 @@
         "kind": "option"
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1461,7 +1511,7 @@
         "kind": "option"
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1609,7 +1659,7 @@
         "kind": "option"
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local pack in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },

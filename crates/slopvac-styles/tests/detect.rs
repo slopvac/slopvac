@@ -2,7 +2,11 @@
 
 use std::fs;
 
-use slopvac_styles::{BuiltinSource, detect_house_styles};
+use slopvac_styles::{BuiltinSource, SkippedFile, Suggestion};
+
+fn detect_house_styles(root: &std::path::Path) -> Vec<Suggestion> {
+    slopvac_styles::detect_house_styles(root).suggestions
+}
 
 fn repo(files: &[(&str, &str)]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -126,6 +130,39 @@ fn an_oversized_file_is_skipped() {
     let padding = "x".repeat(1024 * 1024 + 1);
     let dir = repo(&[("STYLE.md", &format!("{GOOGLE_LINE}{padding}"))]);
     assert_eq!(detect_house_styles(dir.path()), vec![]);
+}
+
+#[test]
+fn an_oversized_file_is_reported_as_skipped() {
+    let padding = "x".repeat(1024 * 1024 + 1);
+    let dir = repo(&[
+        (".vale.ini", &padding),
+        ("STYLE.md", GOOGLE_LINE),
+        ("CONTRIBUTING.md", &padding),
+    ]);
+    let found = slopvac_styles::detect_house_styles(dir.path());
+    assert_eq!(
+        found.skipped,
+        vec![
+            SkippedFile {
+                file: ".vale.ini".to_owned(),
+                code: "style-detect-file-too-large"
+            },
+            SkippedFile {
+                file: "CONTRIBUTING.md".to_owned(),
+                code: "style-detect-file-too-large"
+            },
+        ]
+    );
+    assert_eq!(found.suggestions.len(), 1, "the readable file still counts");
+}
+
+#[test]
+fn a_missing_or_non_utf8_file_is_not_reported_as_skipped() {
+    let dir = repo(&[]);
+    fs::write(dir.path().join("STYLE.md"), [0xff, 0xfe, 0x00]).unwrap();
+    let found = slopvac_styles::detect_house_styles(dir.path());
+    assert_eq!(found.skipped, vec![]);
 }
 
 #[test]

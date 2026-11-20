@@ -119,7 +119,7 @@ mod tests {
             ".git/config",
             ".GIT/hooks/pre-commit",
             "sub/.git/HEAD",
-            ".slopvac/packs.lock",
+            ".slopvac/plugins.lock",
             ".github/workflows/ci.yml",
             ".GitHub/Workflows/ci.yml",
             ".env",

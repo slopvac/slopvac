@@ -13,7 +13,8 @@ use base64::engine::general_purpose::STANDARD_NO_PAD;
 use flate2::read::DeflateDecoder;
 use roxmltree::{Document, Node, ParsingOptions};
 
-use crate::{Extraction, Fragment, Role};
+use crate::sink::{CAP_INFLATED_BYTES, CAP_XML_NODES, Sink, clip};
+use crate::{BudgetHit, Extraction, ExtractionStatus, Fragment, Role};
 
 const MAX_INFLATED: u64 = 32 * 1024 * 1024;
 const MAX_NODES: u32 = 1_000_000;
@@ -45,16 +46,17 @@ enum Origin {
     Whole(Range<usize>),
 }
 
+/// Why a read stopped. The fragments read before it stay in the output.
+type Failure = ExtractionStatus;
+
 pub(crate) fn extract_xml(src: &str, base: usize) -> Extraction {
     extract_xml_with(src, base, &mut Budget::new())
 }
 
 fn extract_xml_with(src: &str, base: usize, budget: &mut Budget) -> Extraction {
-    let mut out = Vec::new();
-    if !document(src, &Origin::Direct(base), budget, &mut out) {
-        return Extraction::default();
-    }
-    done(out)
+    let mut out = Sink::default();
+    let result = document(src, &Origin::Direct(base), budget, &mut out);
+    done(out, result)
 }
 
 pub(crate) fn extract_svg(src: &str, base: usize) -> Extraction {
@@ -62,20 +64,19 @@ pub(crate) fn extract_svg(src: &str, base: usize) -> Extraction {
 }
 
 fn extract_svg_with(src: &str, base: usize, budget: &mut Budget) -> Extraction {
-    let Ok(doc) = parse(src, budget) else {
-        return Extraction::default();
+    let doc = match parse(src, budget) {
+        Ok(doc) => doc,
+        Err(status) => return Extraction::failed(status),
     };
     let root = doc.root_element();
     let Some(attr) = root.attribute_node("content") else {
-        return Extraction::default();
+        return Extraction::failed(ExtractionStatus::Malformed("no diagram source"));
     };
     let range = attr.range_value();
     let whole = Origin::Whole(base + range.start..base + range.end);
-    let mut out = Vec::new();
-    if !document(attr.value(), &whole, budget, &mut out) {
-        return Extraction::default();
-    }
-    done(out)
+    let mut out = Sink::default();
+    let result = document(attr.value(), &whole, budget, &mut out);
+    done(out, result)
 }
 
 pub(crate) fn extract_png(bytes: &[u8], base: usize) -> Extraction {
@@ -84,28 +85,29 @@ pub(crate) fn extract_png(bytes: &[u8], base: usize) -> Extraction {
 
 fn extract_png_with(bytes: &[u8], base: usize, budget: &mut Budget) -> Extraction {
     let Some((range, text)) = png_mxfile(bytes) else {
-        return Extraction::default();
+        return Extraction::failed(ExtractionStatus::Malformed("no diagram source"));
     };
     let Some(xml) = percent_decode(&text) else {
-        return Extraction::default();
+        return Extraction::failed(ExtractionStatus::Malformed("invalid percent encoding"));
     };
     let whole = Origin::Whole(base + range.start..base + range.end);
-    let mut out = Vec::new();
-    if !document(&xml, &whole, budget, &mut out) {
-        return Extraction::default();
-    }
-    done(out)
+    let mut out = Sink::default();
+    let result = document(&xml, &whole, budget, &mut out);
+    done(out, result)
 }
 
-fn done(fragments: Vec<Fragment>) -> Extraction {
+/// Build the extraction. A failure keeps the fragments read so far.
+fn done(out: Sink, result: Result<(), Failure>) -> Extraction {
+    let (fragments, hit) = out.finish();
     Extraction {
         diagram: Some("drawio".to_string()),
         fragments,
+        status: result.err().unwrap_or_else(|| crate::sink::status(hit)),
     }
 }
 
 /// Parse XML against the shared node budget.
-fn parse<'a>(src: &'a str, budget: &mut Budget) -> Result<Document<'a>, roxmltree::Error> {
+fn parse<'a>(src: &'a str, budget: &mut Budget) -> Result<Document<'a>, Failure> {
     let doc = Document::parse_with_options(
         src,
         ParsingOptions {
@@ -113,21 +115,39 @@ fn parse<'a>(src: &'a str, budget: &mut Budget) -> Result<Document<'a>, roxmltre
             nodes_limit: budget.nodes,
             ..ParsingOptions::default()
         },
-    )?;
+    )
+    .map_err(|e| match e {
+        roxmltree::Error::NodesLimitReached => {
+            ExtractionStatus::BudgetExhausted(BudgetHit::new(CAP_XML_NODES, u64::from(MAX_NODES)))
+        }
+        _ => ExtractionStatus::Malformed("invalid XML"),
+    })?;
     let used = u32::try_from(doc.descendants().count()).unwrap_or(u32::MAX);
     budget.nodes = budget.nodes.saturating_sub(used);
     Ok(doc)
 }
 
-/// Walk one XML document. Return false when it does not parse.
-fn document(src: &str, origin: &Origin, budget: &mut Budget, out: &mut Vec<Fragment>) -> bool {
-    let Ok(doc) = parse(src, budget) else {
-        return false;
-    };
+/// Walk one XML document. A page that fails stops the walk, and earlier pages stay in `out`.
+fn document(
+    src: &str,
+    origin: &Origin,
+    budget: &mut Budget,
+    out: &mut Sink,
+) -> Result<(), Failure> {
+    let doc = parse(src, budget)?;
     let root = doc.root_element();
     match root.tag_name().name() {
         "mxfile" => {
+            let has_content = root.children().any(|n| {
+                n.is_element() || (n.is_text() && n.text().is_some_and(|t| !t.trim().is_empty()))
+            });
+            if has_content && !root.children().any(|n| n.has_tag_name("diagram")) {
+                return Err(ExtractionStatus::Malformed("no diagram pages"));
+            }
             for diagram in root.children().filter(|n| n.has_tag_name("diagram")) {
+                if out.is_full() {
+                    break;
+                }
                 let page = diagram.attribute("name").unwrap_or("page");
                 if let Some(model) = diagram.children().find(|n| n.has_tag_name("mxGraphModel")) {
                     cells(model, page, origin, out);
@@ -139,21 +159,19 @@ fn document(src: &str, origin: &Origin, budget: &mut Budget, out: &mut Vec<Fragm
                         }
                         _ => origin.clone(),
                     };
-                    let Some(xml) = inflate_page(payload, budget) else {
-                        return false;
-                    };
-                    if !inflated_model(&xml, page, &whole, budget, out) {
-                        return false;
-                    }
+                    let xml = inflate_page(payload, budget)?;
+                    inflated_model(&xml, page, &whole, budget, out)?;
+                } else if diagram.children().any(|n| n.is_element()) {
+                    return Err(ExtractionStatus::Malformed("unrecognised page content"));
                 }
             }
-            true
+            Ok(())
         }
         "mxGraphModel" => {
             cells(root, "page", origin, out);
-            true
+            Ok(())
         }
-        _ => false,
+        _ => Err(ExtractionStatus::Unsupported("not a draw.io document")),
     }
 }
 
@@ -163,21 +181,22 @@ fn inflated_model(
     page: &str,
     origin: &Origin,
     budget: &mut Budget,
-    out: &mut Vec<Fragment>,
-) -> bool {
-    let Ok(doc) = parse(xml, budget) else {
-        return false;
-    };
+    out: &mut Sink,
+) -> Result<(), Failure> {
+    let doc = parse(xml, budget)?;
     let root = doc.root_element();
     if !root.has_tag_name("mxGraphModel") {
-        return false;
+        return Err(ExtractionStatus::Malformed("page is not a graph model"));
     }
     cells(root, page, origin, out);
-    true
+    Ok(())
 }
 
-fn cells(model: Node<'_, '_>, page: &str, origin: &Origin, out: &mut Vec<Fragment>) {
+fn cells(model: Node<'_, '_>, page: &str, origin: &Origin, out: &mut Sink) {
     for node in model.descendants().filter(Node::is_element) {
+        if out.is_full() {
+            return;
+        }
         let name = node.tag_name().name();
         let (label_attr, cell) = match name {
             "mxCell" if !wrapped(node) => ("value", node),
@@ -215,7 +234,7 @@ fn cells(model: Node<'_, '_>, page: &str, origin: &Origin, out: &mut Vec<Fragmen
             span,
             text,
             role,
-            logical: format!("drawio/{page}/{}[{id}]", role.as_str()),
+            logical: format!("drawio/{}/{}[{}]", clip(page), role.as_str(), clip(id)),
         });
     }
 }
@@ -331,20 +350,25 @@ fn decode_entities(s: &str, work: &mut usize) -> String {
     out
 }
 
-fn inflate_page(payload: &str, budget: &mut Budget) -> Option<String> {
+fn inflate_page(payload: &str, budget: &mut Budget) -> Result<String, Failure> {
     let compact: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
-    let bytes = STANDARD_NO_PAD.decode(compact.trim_end_matches('=')).ok()?;
+    let bytes = STANDARD_NO_PAD
+        .decode(compact.trim_end_matches('='))
+        .map_err(|_| ExtractionStatus::Malformed("invalid base64 page"))?;
     let mut inflated = Vec::new();
     DeflateDecoder::new(bytes.as_slice())
         .take(budget.inflated + 1)
         .read_to_end(&mut inflated)
-        .ok()?;
+        .map_err(|_| ExtractionStatus::Malformed("invalid compressed page"))?;
     let size = inflated.len() as u64;
     if size > budget.inflated {
-        return None;
+        return Err(ExtractionStatus::BudgetExhausted(BudgetHit::new(
+            CAP_INFLATED_BYTES,
+            MAX_INFLATED,
+        )));
     }
     budget.inflated -= size;
-    percent_decode(&inflated)
+    percent_decode(&inflated).ok_or(ExtractionStatus::Malformed("invalid percent encoding"))
 }
 
 fn percent_decode(bytes: &[u8]) -> Option<String> {
@@ -395,7 +419,7 @@ fn png_mxfile(bytes: &[u8]) -> Option<(Range<usize>, Vec<u8>)> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Format, Role, extract, extract_bytes};
+    use crate::{ExtractionStatus, Format, Role, extract, extract_bytes};
 
     const COMPRESSED: &str = "jU9bCgMhDDxN/tXcoPbx1UMIBlqIRqJb7O3r1oWWwkI/ApOZTJgB9KlfNJTbVSIx4AnQq0ibKHVPzODMPQIewTkzBtx5R7Vv1ZSglNs/BjcNj8ALTcZLKkq1Uhx8HpnmRW1P3i5UlhxpfWABD9sD0kZ9N4T9DjHAp+BYfvq/AA==";
     const PNG_TEXT: &str = "%3Cmxfile%3E%3Cdiagram%20name%3D%22P%22%3E%3CmxGraphModel%3E%3Croot%3E%3CmxCell%20id%3D%222%22%20value%3D%22In%20a%20PNG%22%20vertex%3D%221%22%20parent%3D%221%22%2F%3E%3C%2Froot%3E%3C%2FmxGraphModel%3E%3C%2Fdiagram%3E%3C%2Fmxfile%3E";
@@ -489,28 +513,65 @@ mod tests {
     }
 
     #[test]
-    fn broken_input_yields_nothing() {
-        for bad in [
-            "<mxfile",
-            "<svg/>",
-            "<mxfile><diagram>!!!notbase64</diagram></mxfile>",
+    fn broken_input_reports_why_it_failed() {
+        for (bad, want) in [
+            ("<mxfile", ExtractionStatus::Malformed("invalid XML")),
+            (
+                "<svg/>",
+                ExtractionStatus::Unsupported("not a draw.io document"),
+            ),
+            (
+                "<mxfile><diagram>!!!notbase64</diagram></mxfile>",
+                ExtractionStatus::Malformed("invalid base64 page"),
+            ),
         ] {
-            assert_eq!(
-                extract(Format::Drawio, bad, 0).fragments,
-                Vec::new(),
-                "{bad}"
-            );
+            let ex = extract(Format::Drawio, bad, 0);
+            assert_eq!(ex.status, want, "{bad}");
+            assert!(ex.fragments.is_empty(), "{bad}");
         }
         assert_eq!(
-            extract_bytes(Format::DrawioPng, b"not a png", 0).diagram,
-            None
+            extract_bytes(Format::DrawioPng, b"not a png", 0).status,
+            ExtractionStatus::Malformed("no diagram source")
         );
+    }
+
+    #[test]
+    fn a_file_with_no_labels_is_ok() {
+        let ex = extract(Format::Drawio, "<mxfile><diagram name=\"A\"/></mxfile>", 0);
+        assert_eq!(ex.status, ExtractionStatus::Ok);
+        assert_eq!(ex.fragments, Vec::new());
+    }
+
+    #[test]
+    fn a_drawio_svg_without_a_diagram_source_is_malformed() {
+        let ex = extract(
+            Format::DrawioSvg,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+            0,
+        );
+        assert_eq!(ex.status, ExtractionStatus::Malformed("no diagram source"));
+    }
+
+    #[test]
+    fn a_bad_later_page_keeps_the_earlier_pages_fragments() {
+        let src = "<mxfile><diagram name=\"One\"><mxGraphModel><root><mxCell id=\"a\" value=\"Kept\" vertex=\"1\"/></root></mxGraphModel></diagram>\
+             <diagram name=\"Two\">!!!notbase64</diagram></mxfile>";
+        let ex = extract(Format::Drawio, src, 0);
+        assert_eq!(
+            ex.status,
+            ExtractionStatus::Malformed("invalid base64 page")
+        );
+        let logical: Vec<_> = ex.fragments.iter().map(|f| f.logical.as_str()).collect();
+        assert_eq!(logical, ["drawio/One/node[a]"]);
     }
 
     #[test]
     fn external_entities_are_refused() {
         let xxe = "<!DOCTYPE x [<!ENTITY e SYSTEM \"file:///etc/passwd\">]><mxGraphModel><root><mxCell id=\"2\" value=\"&e;\" vertex=\"1\"/></root></mxGraphModel>";
-        assert_eq!(extract(Format::Drawio, xxe, 0).diagram, None);
+        assert_eq!(
+            extract(Format::Drawio, xxe, 0).status,
+            ExtractionStatus::Malformed("invalid XML")
+        );
     }
 }
 
@@ -572,7 +633,13 @@ mod limit_tests {
             inflated: one_page_inflated + 64,
             nodes: MAX_NODES,
         };
-        assert_eq!(extract_xml_with(&src, 0, &mut tight).diagram, None);
+        let ex = extract_xml_with(&src, 0, &mut tight);
+        assert_eq!(
+            ex.status,
+            ExtractionStatus::BudgetExhausted(BudgetHit::new("inflated-bytes", MAX_INFLATED))
+        );
+        // The first page of 50 cells fits the budget and stays.
+        assert_eq!(ex.fragments.len(), 50);
     }
 
     #[test]
@@ -584,7 +651,10 @@ mod limit_tests {
             inflated: 100_000,
             nodes: MAX_NODES,
         };
-        assert_eq!(extract_xml_with(&src, 0, &mut budget).diagram, None);
+        assert_eq!(
+            extract_xml_with(&src, 0, &mut budget).status,
+            ExtractionStatus::BudgetExhausted(BudgetHit::new("inflated-bytes", MAX_INFLATED))
+        );
     }
 
     #[test]
@@ -600,14 +670,23 @@ mod limit_tests {
             inflated: MAX_INFLATED,
             nodes: 50,
         };
-        assert_eq!(extract_xml_with(&src, 0, &mut tight).diagram, None);
+        let ex = extract_xml_with(&src, 0, &mut tight);
+        assert_eq!(
+            ex.status,
+            ExtractionStatus::BudgetExhausted(BudgetHit::new("xml-nodes", 1_000_000))
+        );
+        // The outer file takes 6 nodes and the first page 34, within 50. The second page does not fit.
+        assert_eq!(ex.fragments.len(), 30);
     }
 
     #[test]
     fn a_compressed_page_cannot_nest_another_file() {
         let inner = file(&[compressed_page(&model(1))]);
         let src = file(&[compressed_page(&inner)]);
-        assert_eq!(extract_xml(&src, 0).diagram, None);
+        assert_eq!(
+            extract_xml(&src, 0).status,
+            ExtractionStatus::Malformed("page is not a graph model")
+        );
     }
 
     #[test]
@@ -650,7 +729,7 @@ mod limit_tests {
     }
 
     #[test]
-    fn malformed_png_chunks_yield_nothing_without_panicking() {
+    fn malformed_png_chunks_fail_without_panicking() {
         let mut max_len = png(&[]);
         max_len.extend_from_slice(&u32::MAX.to_be_bytes());
         max_len.extend_from_slice(b"tEXt");
@@ -670,7 +749,8 @@ mod limit_tests {
             ("other key", other_key),
             ("bad percent", bad_percent),
         ] {
-            assert_eq!(extract_png(&bytes, 0).diagram, None, "{name}");
+            assert!(extract_png(&bytes, 0).status.is_failure(), "{name}");
+            assert!(extract_png(&bytes, 0).fragments.is_empty(), "{name}");
         }
     }
 }

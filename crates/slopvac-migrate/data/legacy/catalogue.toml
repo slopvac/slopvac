@@ -210,6 +210,7 @@
 "prose-scope.epigram" = { kind = "checked", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "prose-scope.formulaic-subject-verb-slogan" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
 "prose-scope.implementation-leak" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
+"prose-scope.mixed-content-types" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }
 "prose-scope.rejected-alternative" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "excluded" }
 "prose-scope.unrequested-reassurance" = { kind = "checked", strict = "enforced", normal = "enforced", relaxed = "advisory" }
 "ste-descriptive.information-not-gradual" = { kind = "judgement", strict = "enforced", normal = "advisory", relaxed = "excluded" }

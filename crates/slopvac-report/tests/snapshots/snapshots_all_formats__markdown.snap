@@ -1,0 +1,45 @@
+---
+source: crates/slopvac-report/tests/snapshots_all_formats.rs
+expression: "rendered(Format::Markdown)"
+---
+# slopvac report
+
+**FAIL**: 3 documents, 4 findings (1 errors, 2 warnings, 1 suggestions), score 93.0.
+
+## Notices
+
+- `directory-entries-skipped`: Skipped 4 files under node\_modules.
+
+## docs/guide.md FAIL
+
+Score 88.5, 412 words, 3 findings.
+
+- ai-residue: 0.243 errors and warnings per 100 words exceeds the budget of 0
+
+| Location | Severity | Rule | Message |
+| --- | --- | --- | --- |
+| 9:1 | error | core:ai-residue.chat-leakage | Remove the chat reply that leaked into the document. |
+| 4:12 | warning | core:prose-inflation.slop-lexicon | Replace 'delve' with a plain verb. |
+| 12:40 | suggestion | core:orwell.not-un | Say 'unclear' without the 'not un' double negative. |
+
+## README.md PASS
+
+Score 100.0, 250 words, 0 findings.
+
+## src/app.py PASS
+
+Score 94.0, 80 words, 1 findings.
+
+- UNCHECKED `vale-not-found`: Vale is not installed, so the Vale-backed rules did not run.
+
+| Location | Severity | Rule | Message |
+| --- | --- | --- | --- |
+| 1:1 | warning | core:docs-discipline.document-length | The comment block runs 80 words; keep it under 60. |
+
+## dossiers/ça \& \<é\>.md PASS
+
+Score 88.5, 412 words, 1 findings.
+
+| Location | Severity | Rule | Message |
+| --- | --- | --- | --- |
+| 2:7 | warning | core:prose-inflation.slop-lexicon | Replace "wörld" \<b\>\& \`x\` \| y |

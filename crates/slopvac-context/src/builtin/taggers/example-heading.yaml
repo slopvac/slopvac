@@ -1,0 +1,7 @@
+schema_version: 3
+id: example-heading
+tag: example
+scope: section
+confidence: 0.8
+when:
+  heading_path: '^\W*(?:examples?|sample|samples|example usage)\b'

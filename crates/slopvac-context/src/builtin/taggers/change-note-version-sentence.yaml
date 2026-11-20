@@ -1,0 +1,9 @@
+schema_version: 3
+id: change-note-version-sentence
+description: A sentence that names a version.
+tag: change-note
+unit: sentence
+confidence: 0.6
+evidence: The sentence names a version.
+match:
+  - pattern: '\bv\d+(?:\.\d+)*\b|\b\d+\.\d+\.\d+\b|\b(?:version|release|since|until)\s+v?\d+\.\d+\b'

@@ -43,10 +43,10 @@ on:
    target:
     description: Where to publish when dry-run is false.
     type: choice
-    options: [testpypi, pypi]
-    default: testpypi
+    options: [pypi]
+    default: pypi
    rc:
-    description: Build a release candidate of the selected ref's pending version. Numbered from PyPI, also for TestPyPI.
+    description: Build a release candidate of the selected ref's pending version. Numbered from PyPI.
     type: boolean
     default: false
 
@@ -69,7 +69,7 @@ jobs:
   outputs:
    version: ${{ steps.version.outputs.version }}
    rc: ${{ steps.version.outputs.rc }}
-   gated: ${{ steps.gate.outputs.gated }}
+   legacy: ${{ steps.legacy.outputs.legacy }}
   steps:
    - name: Checkout
      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -114,20 +114,17 @@ jobs:
       echo "version=$version" >> "$GITHUB_OUTPUT"
       echo "rc=$RC" >> "$GITHUB_OUTPUT"
 
-   # 3.x and later stable releases need a passed, tagged candidate. 2.x
-   # candidates are untagged branch builds, so 2.x publishing stays ungated.
-   - name: Decide the provenance gate
-     id: gate
+   # This workflow builds the pure-Python 2.x package. Version 3.0.0 and later
+   # are the binary wheels, which only publish-pypi.yml publishes. The publish
+   # jobs need legacy == 'true', so a missing or unparsable value publishes
+   # nothing. Non-legacy dry runs still build.
+   - name: Decide whether this workflow may publish the version
+     id: legacy
      env:
       VERSION: ${{ steps.version.outputs.version }}
-      RC: ${{ steps.version.outputs.rc }}
      run: |
       set -euo pipefail
-      gated=false
-      if [[ "$RC" != "true" ]]; then
-       gated="$(python3 scripts/release_provenance.py requires-gate "$VERSION")"
-      fi
-      echo "gated=$gated" >> "$GITHUB_OUTPUT"
+      echo "legacy=$(python3 scripts/release_provenance.py is-legacy "$VERSION")" >> "$GITHUB_OUTPUT"
 
    - name: Build
      working-directory: packages/slopvac-lint
@@ -248,38 +245,13 @@ jobs:
       path: packages/slopvac-lint/dist/
       if-no-files-found: error
 
- test-pypi:
-  name: Publish to TestPyPI
-  needs: build
-  if: >-
-   github.event_name == 'workflow_dispatch' &&
-   !inputs.dry-run &&
-   inputs.target == 'testpypi'
-  runs-on: ubuntu-latest
-  timeout-minutes: 15
-  environment:
-   name: testpypi
-   url: https://test.pypi.org/p/slopvac
-  permissions:
-   id-token: write # the OIDC token Trusted Publishing exchanges for an upload
-  steps:
-   - name: Download distributions
-     uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-     with:
-      name: dist
-      path: dist
-
-   - name: Publish
-     uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
-     with:
-      repository-url: https://test.pypi.org/legacy/
-
  pypi-rc:
   name: Publish release candidate to PyPI
   needs: build
   # Same environment and workflow file as the stable job, so the trusted
   # publisher and the required reviewer both apply to every RC upload.
   if: >-
+   needs.build.outputs.legacy == 'true' &&
    needs.build.outputs.rc == 'true' &&
    (github.event_name == 'push' ||
     (!inputs.dry-run && inputs.target == 'pypi'))
@@ -291,44 +263,37 @@ jobs:
   permissions:
    id-token: write
   steps:
+   # The script comes from the tagged tree.
+   - name: Checkout
+     uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+     with:
+      persist-credentials: false
+
    - name: Download distributions
      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
      with:
       name: dist
       path: dist
 
+   # The build step ran third-party backend code, so the upload trusts no file name.
+   # Every file must be the one sdist and the one wheel of this version, and their
+   # own metadata must name the project and that version.
+   - name: Check the distributions
+     env:
+      VERSION: ${{ needs.build.outputs.version }}
+     run: python3 scripts/release_provenance.py check-dist dist --version "$VERSION" --sdist --wheels 1
+
    - name: Publish
      uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
 
- provenance:
-  name: Stable release has a passed candidate
-  needs: build
-  # Same condition as the stable job below, for versions the gate covers (3.x on).
-  if: >-
-   needs.build.outputs.gated == 'true' &&
-   needs.build.outputs.rc != 'true' &&
-   github.event_name == 'workflow_dispatch' &&
-   github.ref_type == 'tag' &&
-   !inputs.dry-run &&
-   inputs.target == 'pypi'
-  permissions:
-   actions: read
-   contents: read
-  uses: ./.github/workflows/release-provenance.yml
-  secrets:
-   RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-
  pypi:
   name: Publish to PyPI
-  needs: [build, provenance]
+  needs: build
   # Stable publishing is manual and only from a tag the build step accepted as
   # exactly v<package version>. A push to the release PR branch is an RC and
-  # never reaches this job. The provenance job is skipped for 2.x, which keeps
-  # its ungated flow; for 3.x it must succeed.
+  # never reaches this job. Only a version below 3.0.0 gets here.
   if: >-
-   !cancelled() &&
-   needs.build.result == 'success' &&
-   (needs.build.outputs.gated != 'true' || needs.provenance.result == 'success') &&
+   needs.build.outputs.legacy == 'true' &&
    needs.build.outputs.rc != 'true' &&
    github.event_name == 'workflow_dispatch' &&
    github.ref_type == 'tag' &&
@@ -342,11 +307,25 @@ jobs:
   permissions:
    id-token: write
   steps:
+   # The script comes from the tagged tree.
+   - name: Checkout
+     uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+     with:
+      persist-credentials: false
+
    - name: Download distributions
      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
      with:
       name: dist
       path: dist
+
+   # The build step ran third-party backend code, so the upload trusts no file name.
+   # Every file must be the one sdist and the one wheel of this version, and their
+   # own metadata must name the project and that version.
+   - name: Check the distributions
+     env:
+      VERSION: ${{ needs.build.outputs.version }}
+     run: python3 scripts/release_provenance.py check-dist dist --version "$VERSION" --sdist --wheels 1
 
    - name: Publish
      uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

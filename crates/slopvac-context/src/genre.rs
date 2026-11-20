@@ -1,5 +1,5 @@
 //! Genres as data: the `genre` artifact of `schemas/v3/genre.schema.json`, specified in
-//! `docs/contract/packs.md`, section 4. This module holds the definitions, a registry with
+//! `docs/contract/plugins.md`, section 4. This module holds the definitions, a registry with
 //! an `extends` chain, detection with reasons, and resolution of the genre for one document.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -9,7 +9,9 @@ use globset::{GlobBuilder, GlobMatcher};
 use serde::Deserialize;
 use serde::de::{self, Visitor};
 
-use crate::schema::{Extensions, check_schema_version, is_name, is_ref, is_rule_key, present};
+use crate::schema::{
+    Extensions, GENRE_SCHEMA_VERSION, check_schema_version, is_name, is_ref, is_rule_key, present,
+};
 use crate::{BlockKind, DocumentView, Error, Pattern, normalize_path};
 
 /// The level a rule or category reports at (`RuleLevel` in `config.schema.json`).
@@ -185,7 +187,12 @@ pub enum Scalar {
 }
 
 impl Scalar {
-    fn to_text(&self) -> String {
+    /// The text a front matter value is compared as: `true`, `42`, `1.5`, or the string.
+    ///
+    /// Signals compile their expected value through this, and the engine renders the
+    /// scalars of a document's front matter through it, so both sides compare one text.
+    #[must_use]
+    pub fn to_text(&self) -> String {
         match self {
             Self::Bool(b) => b.to_string(),
             Self::Int(i) => i.to_string(),
@@ -291,7 +298,11 @@ impl GenreSpec {
     pub fn validate(&self) -> Result<(), Error> {
         let id = &self.id;
         let fail = |msg: String| Error::Parse(format!("genre `{id}`: {msg}"));
-        check_schema_version(&format!("genre `{id}`"), self.schema_version)?;
+        check_schema_version(
+            &format!("genre `{id}`"),
+            self.schema_version,
+            GENRE_SCHEMA_VERSION,
+        )?;
         if !is_name(id) {
             return Err(fail("id must be lowercase kebab-case".into()));
         }
@@ -698,7 +709,7 @@ impl GenreRegistry {
             );
         }
         let mut best: Option<&(&Genre, f64, Vec<Reason>)> = None;
-        // packs.md section 4: a tie goes to the genre listed last in the config, then to the
+        // plugins.md section 4: a tie goes to the genre listed last in the config, then to the
         // lexically smaller qualified id. The registry holds the genres in the order the
         // host registered them, which is the order the config lists its packs and genre
         // files, so a later position is a genre listed later. Positions are unique, so a tie
@@ -815,7 +826,7 @@ fn lossy(text: &str, range: std::ops::Range<usize>) -> std::borrow::Cow<'_, str>
 }
 
 /// The genre name in a `Ref`. A registry holds one set of genres, so the pack prefix of a
-/// qualified `<pack>:<name>` only names where the genre came from.
+/// qualified `<plugin>:<name>` only names where the genre came from.
 fn ref_name(r: &str) -> &str {
     r.rsplit_once(':').map_or(r, |(_, name)| name)
 }

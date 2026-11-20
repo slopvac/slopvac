@@ -517,7 +517,10 @@ def test_ignored_2x_rule_entry_is_dropped(ruleset):
 def test_a_profile_override_clears_a_budget_with_none(ruleset):
     # ai-tells-agentic has a budget at normal and none at relaxed.
     config3 = expand(
-        {"profile": "normal", "overrides": [{"files": ["docs/**"], "profile": "relaxed"}]},
+        {
+            "profile": "normal",
+            "overrides": [{"files": ["docs/**"], "profile": "relaxed"}],
+        },
         ruleset,
     )
     block = config3["overrides"][0]
@@ -536,7 +539,16 @@ def test_a_profile_override_clears_a_budget_with_none(ruleset):
         ["/docs/**"],
         ["docs/../x/**"],
     ],
-    ids=["wildcard", "wildcard-before-tree", "basename", "negated", "class", "any-depth", "leading-slash", "dot-dot"],
+    ids=[
+        "wildcard",
+        "wildcard-before-tree",
+        "basename",
+        "negated",
+        "class",
+        "any-depth",
+        "leading-slash",
+        "dot-dot",
+    ],
 )
 def test_expansion_stops_on_globs_outside_the_grammar(ruleset, files):
     from preserve_expansion import AmbiguousOverlap
@@ -584,13 +596,22 @@ REGION_PATHS = [
         [["docs/api"], ["docs/api/**"]],
         [["docs/api/**"], ["docs/api"], ["docs/**"]],
     ],
-    ids=["nested", "reversed", "forest", "equal-and-file", "path-and-tree", "tree-path-and-parent"],
+    ids=[
+        "nested",
+        "reversed",
+        "forest",
+        "equal-and-file",
+        "path-and-tree",
+        "tree-path-and-parent",
+    ],
 )
 def test_each_path_falls_in_exactly_one_region_that_names_its_blocks(blocks):
     from preserve_expansion import build_regions, matches_files
 
     regions = build_regions(blocks)
     for path in REGION_PATHS:
-        matching = frozenset(i for i, files in enumerate(blocks) if matches_files(files, path))
+        matching = frozenset(
+            i for i, files in enumerate(blocks) if matches_files(files, path)
+        )
         hit = [scope for scope, files in regions if matches_files(files, path)]
         assert hit == [matching], path

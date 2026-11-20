@@ -9,28 +9,28 @@
 # approved_by = "reviewer name"
 
 [[allow]]
-file = "pack-manifest.schema.json"
-pointer = "/properties/plugin/$ref(pack-manifest.schema.json#/$defs/Plugin)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+file = "plugin-manifest.schema.json"
+pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
 kind = "required-added"
 reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
 approved_by = "contract owner (8l4.2)"
 
 [[allow]]
-file = "pack-manifest.schema.json"
-pointer = "/properties/plugin/$ref(pack-manifest.schema.json#/$defs/Plugin)/allOf/0/$ref(plugin-protocol.schema.json#/$defs/PluginDeclaration)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+file = "plugin-manifest.schema.json"
+pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/allOf/0/$ref(plugin-protocol.schema.json#/$defs/PluginDeclaration)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
 kind = "required-added"
 reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
 approved_by = "contract owner (8l4.2)"
 
 [[allow]]
-file = "pack-manifest.schema.json"
+file = "plugin-manifest.schema.json"
 pointer = "/$defs/Plugin/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
 kind = "required-added"
 reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
 approved_by = "contract owner (8l4.2)"
 
 [[allow]]
-file = "pack-manifest.schema.json"
+file = "plugin-manifest.schema.json"
 pointer = "/$defs/Plugin/allOf/0/$ref(plugin-protocol.schema.json#/$defs/PluginDeclaration)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
 kind = "required-added"
 reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
@@ -84,3 +84,95 @@ pointer = "/allOf/0/then/$ref(plugin-protocol.schema.json#/$defs/Call)/allOf/12/
 kind = "required-added"
 reason = "The new binary-extractor/extract request must carry id and params. The constraint applies only to that new method's own messages, so no existing message is affected."
 approved_by = "contract owner (8l4.2)"
+
+# The plugins amendment: one plugins group, kinds data and code, reserved core, pack names renamed to plugin.
+[[allow]]
+file = "config.schema.json"
+pointer = "/properties/packs"
+kind = "property-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames every pack key to plugins: the config packs array merges into the one plugins array, and the doctor report key packs becomes plugins. v3 is unreleased, so nothing reads the old key."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "config.schema.json"
+pointer = "/properties/plugins/items/$ref(config.schema.json#/$defs/Source)/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
+kind = "pattern-changed"
+reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "config.schema.json"
+pointer = "/$defs/Source/properties/id/$ref(common.schema.json#/$defs/PluginId)/pattern"
+kind = "pattern-changed"
+reason = "The plugins amendment (slopvac-8l4.2.73, namespace rule slopvac-8l4.2.75) reserves `core` for the built-in plugin, so a plugin id may not be `core`. The new pattern also ends in (?![\\s\\S]) instead of $."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/required/plugins"
+kind = "required-added"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the doctor report key packs to plugins, which stays required. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/properties/packs"
+kind = "property-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames every pack key to plugins: the config packs array merges into the one plugins array, and the doctor report key packs becomes plugins. v3 is unreleased, so nothing reads the old key."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/$defs/Pack"
+kind = "def-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the doctor report defs Pack and Packs to LockedPlugin and Plugins. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/$defs/Packs"
+kind = "def-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the doctor report defs Pack and Packs to LockedPlugin and Plugins. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "pack-index.schema.json"
+pointer = ""
+kind = "file-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack schemas to plugin-manifest, plugins-lock and plugin-index, with no alias, by the maintainer's decision. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "pack-manifest.schema.json"
+pointer = ""
+kind = "file-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack schemas to plugin-manifest, plugins-lock and plugin-index, with no alias, by the maintainer's decision. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "packs-lock.schema.json"
+pointer = ""
+kind = "file-removed"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack schemas to plugin-manifest, plugins-lock and plugin-index, with no alias, by the maintainer's decision. v3 is unreleased."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "config.schema.json"
+pointer = "/conformance/valid/full.toml"
+kind = "corpus-rejected"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/conformance/valid/full.json"
+kind = "corpus-rejected"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
+
+[[allow]]
+file = "doctor-report.schema.json"
+pointer = "/conformance/valid/minimal.json"
+kind = "corpus-rejected"
+reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
+approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"

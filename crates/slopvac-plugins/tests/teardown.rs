@@ -121,6 +121,27 @@ fn the_group_is_signalled_before_its_exited_leader_is_reaped() {
     );
 }
 
+/// The walk's outcome does not depend on how long one table read takes.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_slow_table_helper_still_completes_a_deep_chain_outside_the_group() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (dir, c) = seam("slow-chain", &format!("sleep 0.25\n{PS}"), WALK);
+    let pidfile = dir.join("pids");
+    let p = start_mode("chain:12", &dir, &c);
+    let pids = pids_n(&pidfile, 12);
+    let out = p.shutdown();
+    let gone = wait_gone(&pids);
+    if !gone {
+        end(&pids);
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(gone, "generations {pids:?} survived");
+    assert!(out.teardown.is_complete(), "{out:?}");
+}
+
 /// Hold the teardown that starts when the leader exits, run `action` on a
 /// thread, and fail if it returns while the teardown is held. `action` may
 /// hand the plugin back to be dropped after that check.

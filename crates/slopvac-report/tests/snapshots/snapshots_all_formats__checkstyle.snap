@@ -1,0 +1,20 @@
+---
+source: crates/slopvac-report/tests/snapshots_all_formats.rs
+expression: "rendered(Format::Checkstyle)"
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="8.0">
+  <file name="docs/guide.md">
+    <error line="9" column="1" severity="error" message="Remove the chat reply that leaked into the document." source="core:ai-residue.chat-leakage"/>
+    <error line="4" column="12" severity="warning" message="Replace &#39;delve&#39; with a plain verb." source="core:prose-inflation.slop-lexicon"/>
+    <error line="12" column="40" severity="info" message="Say &#39;unclear&#39; without the &#39;not un&#39; double negative." source="core:orwell.not-un"/>
+  </file>
+  <file name="README.md">
+  </file>
+  <file name="src/app.py">
+    <error line="1" column="1" severity="warning" message="The comment block runs 80 words; keep it under 60." source="core:docs-discipline.document-length"/>
+  </file>
+  <file name="dossiers/ça &amp; &lt;é&gt;.md">
+    <error line="2" column="7" severity="warning" message="Replace &quot;wörld&quot; &lt;b&gt;&amp; `x` | y�" source="core:prose-inflation.slop-lexicon"/>
+  </file>
+</checkstyle>

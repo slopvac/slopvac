@@ -18,13 +18,19 @@ clap.workspace = true
 minijinja.workspace = true
 pulldown-cmark.workspace = true
 serde.workspace = true
+serde-saphyr.workspace = true
 serde_json.workspace = true
 slopvac-config.workspace = true
+slopvac-fs.workspace = true
+slopvac-messages.workspace = true
 slopvac-migrate.workspace = true
+slopvac-model.workspace = true
 slopvac-text.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+rstest.workspace = true
+serde-saphyr.workspace = true
 # Enable counters for integration tests without changing the default features.
 slopvac-agents = { path = ".", features = ["test-counters"] }
 tempfile.workspace = true

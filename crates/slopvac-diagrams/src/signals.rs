@@ -25,6 +25,7 @@
 
 use std::collections::HashSet;
 use std::ops::Range;
+use std::sync::OnceLock;
 
 use crate::{Format, Fragment, Role};
 
@@ -299,13 +300,13 @@ fn spans(text: &str) -> Vec<(Range<usize>, String)> {
     out
 }
 
-/// Find phrases that point at the diagram. Each match is a complete phrase that ends in a
+/// Find phrases that point at the diagram, as byte ranges in `text`. Each match is a complete phrase that ends in a
 /// diagram noun or a locating word, so "as shown in the logs" and a cut-off prefix do not match.
-fn meta_references(block: &ProseBlock<'_>) -> Vec<Range<usize>> {
+fn meta_references(text: &str) -> Vec<Range<usize>> {
     const NOUNS: &[&str] = &["diagram", "flowchart", "figure", "chart", "graph"];
     const VERBS: &[&str] = &["above", "below", "shows", "illustrates", "depicts"];
     const DEMONSTRATIVES: &[&str] = &["the", "this"];
-    let w = spans(block.text);
+    let w = spans(text);
     let mut out = Vec::new();
     let mut i = 0;
     while i < w.len() {
@@ -332,11 +333,33 @@ fn meta_references(block: &ProseBlock<'_>) -> Vec<Range<usize>> {
             i += 1;
             continue;
         };
-        out.push(block.span.start + w[i].0.start..block.span.start + w[i + len - 1].0.end);
+        out.push(w[i].0.start..w[i + len - 1].0.end);
         i += len;
     }
     out
 }
+
+/// Paragraph analyses made so far in this process.
+#[cfg(feature = "test-counters")]
+static PROSE_ANALYSES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The number of paragraphs the prose signals have analysed so far in this process. A test
+/// that lints many diagrams around one paragraph and reads the difference shows whether the
+/// paragraph is analysed once or once per diagram.
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn prose_analyses() -> usize {
+    PROSE_ANALYSES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(feature = "test-counters")]
+fn count_prose_analysis() {
+    PROSE_ANALYSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(not(feature = "test-counters"))]
+fn count_prose_analysis() {}
 
 fn content_tokens(text: &str) -> Vec<String> {
     spans(text)
@@ -346,29 +369,89 @@ fn content_tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// What the prose signals read from one paragraph, computed once and shared by every diagram
+/// that has the paragraph nearby.
+///
+/// The paragraph is analysed on first use, so a paragraph no check reads costs nothing. Share
+/// one value among all the diagrams beside the paragraph instead of making one for each.
+#[derive(Debug)]
+pub struct ProseAnalysis<'a> {
+    text: &'a str,
+    read: OnceLock<Read>,
+}
+
+#[derive(Debug)]
+struct Read {
+    words: usize,
+    /// Byte ranges in the paragraph text.
+    meta: Vec<Range<usize>>,
+    tokens: HashSet<String>,
+}
+
+impl<'a> ProseAnalysis<'a> {
+    /// A paragraph, not yet analysed.
+    #[must_use]
+    pub const fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            read: OnceLock::new(),
+        }
+    }
+
+    fn read(&self) -> &Read {
+        self.read.get_or_init(|| {
+            count_prose_analysis();
+            Read {
+                words: word_count(self.text, false),
+                meta: meta_references(self.text),
+                tokens: content_tokens(self.text).into_iter().collect(),
+            }
+        })
+    }
+}
+
 /// Check the prose next to one diagram.
 ///
 /// `prose` holds the nearest paragraph before and after the diagram. A meta
 /// reference is reported per phrase. A restatement is reported once, on the
 /// first paragraph.
+///
+/// This analyses each paragraph afresh. To check many diagrams that share a paragraph, build
+/// one [`ProseAnalysis`] per paragraph and call [`check_prose_analysed`].
 #[must_use]
 pub fn check_prose(
     source: &str,
     fragments: &[Fragment],
     prose: &[ProseBlock<'_>],
 ) -> Vec<SignalHit> {
+    let analyses: Vec<_> = prose.iter().map(|b| ProseAnalysis::new(b.text)).collect();
+    let refs: Vec<_> = analyses.iter().collect();
+    check_prose_analysed(source, fragments, prose, &refs)
+}
+
+/// [`check_prose`] with the analysis of each paragraph supplied by the caller.
+///
+/// `analyses[i]` must be the analysis of `prose[i].text`; the two slices must be the same
+/// length, and a hit is dropped for a block that has no analysis.
+#[must_use]
+pub fn check_prose_analysed(
+    source: &str,
+    fragments: &[Fragment],
+    prose: &[ProseBlock<'_>],
+    analyses: &[&ProseAnalysis<'_>],
+) -> Vec<SignalHit> {
     let mut out = Vec::new();
-    for block in prose {
-        for span in meta_references(block) {
+    for (block, analysis) in prose.iter().zip(analyses) {
+        for span in &analysis.read().meta {
             out.push(SignalHit {
                 signal: Signal::MetaReference,
-                span,
+                span: block.span.start + span.start..block.span.start + span.end,
                 matched: None,
                 message: "This sentence points at the diagram. Say what the system does and let the diagram show the shape.".to_string(),
             });
         }
     }
-    let prose_words: usize = prose.iter().map(|b| word_count(b.text, false)).sum();
+    let prose_words: usize = analyses.iter().map(|a| a.read().words).sum();
     let labels: Vec<Vec<String>> = fragments
         .iter()
         .filter(|f| matches!(f.role, Role::Node | Role::Group))
@@ -378,12 +461,12 @@ pub fn check_prose(
         && labels.len() >= MIN_LABELS
         && prose_words >= MIN_PROSE_WORDS
     {
-        let known: HashSet<String> = prose.iter().flat_map(|b| content_tokens(b.text)).collect();
+        let known = |t: &String| analyses.iter().any(|a| a.read().tokens.contains(t));
         let mentioned = labels
             .iter()
             .filter(|tokens| {
                 !tokens.is_empty()
-                    && count_f64(tokens.iter().filter(|t| known.contains(*t)).count())
+                    && count_f64(tokens.iter().filter(|t| known(t)).count())
                         >= MENTION_SHARE * count_f64(tokens.len())
             })
             .count();

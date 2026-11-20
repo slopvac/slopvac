@@ -3,4 +3,5 @@
 "negative-weight.json" = "/weight"
 "bad-rule.json" = "/rules/0"
 "upper-id.json" = "/id"
+"id-trailing-newline.json" = "/id"
 "profile-budget-negative.json" = "/max_per_100_words/strict"

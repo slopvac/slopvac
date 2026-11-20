@@ -1,0 +1,7 @@
+schema_version: 3
+id: generated-notice
+tag: generated
+scope: paragraph
+confidence: 0.8
+when:
+  sentence: '\b(?:this file is (?:auto-?)?generated|auto-?generated (?:file|by)|do not edit (?:this|by hand))\b'

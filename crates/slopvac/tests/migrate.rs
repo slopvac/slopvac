@@ -41,7 +41,9 @@ fn preview_prints_the_diff_and_writes_nothing() {
 #[test]
 fn write_migrates_and_restore_undoes_it() {
     let dir = project("profile = \"strict\"\n");
+    let cache = tempfile::tempdir().expect("tempdir");
     slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
         .arg("migrate")
         .arg(dir.path())
         .arg("--write")
@@ -53,6 +55,7 @@ fn write_migrates_and_restore_undoes_it() {
     );
     assert!(!dir.path().join(".slopvac.toml").exists());
     slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
         .arg("migrate")
         .arg(dir.path())
         .arg("--restore")
@@ -170,7 +173,9 @@ fn write_rewrites_a_2x_steering_block_to_the_block_setup_writes() {
     for dir in [&migrated, &reference] {
         fs::write(dir.path().join("AGENTS.md"), text).expect("write");
     }
+    let cache = tempfile::tempdir().expect("tempdir");
     slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
         .arg("migrate")
         .arg(migrated.path())
         .arg("--write")
@@ -192,4 +197,132 @@ fn write_rewrites_a_2x_steering_block_to_the_block_setup_writes() {
         fs::read(migrated.path().join("AGENTS.md")).expect("read"),
         fs::read(reference.path().join("AGENTS.md")).expect("read"),
     );
+}
+
+#[test]
+fn a_migrated_project_loads_its_blocklist() {
+    let dir = project("[vocabulary]\npath = \"words.toml\"\n");
+    fs::write(
+        dir.path().join("words.toml"),
+        "[[entries]]\nword = \"synergize\"\npos = \"Verb\"\nreason = \"Business jargon.\"\n",
+    )
+    .expect("blocklist");
+    let doc = dir.path().join("doc.md");
+    fs::write(&doc, "# Title\n\nManagers synergize the teams on Friday.\n").expect("doc");
+    let cache = tempfile::tempdir().expect("cache");
+    slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--write")
+        .assert()
+        .code(0);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("words.toml")).expect("blocklist"),
+        "schema_version = 3\n[[entries]]\nword = \"synergize\"\npos = \"verb\"\nreason = \"Business jargon.\"\n"
+    );
+    slopvac()
+        .env("NO_COLOR", "1")
+        .args(["lint", "--format", "json"])
+        .arg(&doc)
+        .assert()
+        .stdout(predicate::str::contains("vocabulary"));
+}
+#[test]
+fn a_blocklist_path_with_a_symlink_before_a_parent_step_is_refused() {
+    // `a/link/../words.toml` is `a/words.toml` when read as text. The OS follows the link
+    // first, so the project loads `other/words.toml`. Migrate cannot tell, so it refuses.
+    let dir = project("[vocabulary]\npath = \"a/link/../words.toml\"\n");
+    let old = "[[entries]]\nword = \"synergize\"\npos = \"verb\"\nreason = \"Jargon.\"\n";
+    for name in ["a/words.toml", "other/words.toml"] {
+        let path = dir.path().join(name);
+        fs::create_dir_all(path.parent().expect("parent")).expect("dirs");
+        fs::write(path, old).expect("blocklist");
+    }
+    fs::create_dir_all(dir.path().join("other/deep")).expect("dirs");
+    std::os::unix::fs::symlink("../other/deep", dir.path().join("a/link")).expect("symlink");
+    slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--write")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[migrate-unsafe-path]: "))
+        .stderr(predicate::str::contains("crosses a symbolic link"));
+    for name in ["a/words.toml", "other/words.toml"] {
+        assert_eq!(
+            fs::read_to_string(dir.path().join(name)).expect("blocklist"),
+            old
+        );
+    }
+    assert!(dir.path().join(".slopvac.toml").exists());
+    assert!(!dir.path().join("slopvac.toml").exists());
+    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+}
+
+#[test]
+fn an_absolute_blocklist_path_inside_the_project_migrates_from_the_default_root() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonical");
+    let words = root.join("words.toml");
+    fs::write(
+        root.join("slopvac.toml"),
+        format!("[vocabulary]\npath = \"{}\"\n", words.display()),
+    )
+    .expect("config");
+    fs::write(
+        &words,
+        "[[entries]]\nword = \"synergize\"\npos = \"Verb\"\nreason = \"Business jargon.\"\n",
+    )
+    .expect("blocklist");
+    // No path argument: the project root is the default `.`.
+    let cache = tempfile::tempdir().expect("cache");
+    slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .current_dir(&root)
+        .args(["migrate", "--write"])
+        .assert()
+        .code(0);
+    assert_eq!(
+        fs::read_to_string(&words).expect("blocklist"),
+        "schema_version = 3\n[[entries]]\nword = \"synergize\"\npos = \"verb\"\nreason = \"Business jargon.\"\n"
+    );
+}
+
+/// A 2.x config that names a removed category and a removed rule, at the top level.
+const REMOVED_CONFIG: &str = "profile = \"normal\"\n[categories]\norwell-voice = \"off\"\n[rules]\n\"ste-words.inconsistent-term-for-same-thing\" = \"error\"\n";
+
+#[test]
+fn removed_names_print_their_codes_and_the_pointer_and_exit_0() {
+    let dir = project(REMOVED_CONFIG);
+    slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(
+            "migrate-category-removed: .slopvac.toml:3: `categories.orwell-voice`: category no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml",
+        ))
+        .stdout(predicate::str::contains(
+            "migrate-rule-removed: .slopvac.toml:5: `rules.ste-words.inconsistent-term-for-same-thing`: rule no longer exists in 3.0; see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml",
+        ));
+}
+
+#[test]
+fn a_config_with_removed_names_loads_after_migration() {
+    let dir = project(REMOVED_CONFIG);
+    fs::write(dir.path().join("doc.md"), "Plain text.\n").expect("write");
+    let cache = tempfile::tempdir().expect("tempdir");
+    slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--write")
+        .assert()
+        .code(0);
+    slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "doc.md"])
+        .assert()
+        .code(0);
 }

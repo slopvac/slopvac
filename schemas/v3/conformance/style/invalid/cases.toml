@@ -1,5 +1,6 @@
 "level-unknown.toml" = "/categories/ste-words"
 "extends-uppercase.toml" = "/extends/0"
+"extends-trailing-newline.toml" = "/extends/0"
 "unknown-key.toml" = ""
 "dials-unknown-key.toml" = "/categories/prose-craft"
 "dials-negative-weight.toml" = "/categories/prose-craft/weight"

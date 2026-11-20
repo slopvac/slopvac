@@ -8,10 +8,10 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 
-use frontmatter_spans::FrontMatter;
+use frontmatter_spans::{FrontMatter, Value};
 use slopvac_context::{
     BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, GenreRegistry,
-    GenreResult, ResolveOptions, SentenceView, Tag, TagIndex, TagRegistry,
+    GenreResult, ResolveOptions, Scalar, SentenceView, Tag, TagIndex, TagRegistry, TagSink,
 };
 use slopvac_parse::{BlockKind, ByteMapper, Container, Document};
 
@@ -60,6 +60,32 @@ impl Extents {
     }
 }
 
+/// The text of each top-level non-string scalar, rendered by `Scalar::to_text`, the one
+/// formatter that genre signals use for their expected value: `true`, `42`, `1.5`. A datetime
+/// keeps its source text.
+/// The last occurrence of a key decides: a later null, sequence or table removes the text of
+/// an earlier scalar, as `get` returns the last occurrence.
+fn scalar_text<'a>(front: &'a FrontMatter<'a>) -> HashMap<&'a str, String> {
+    let Value::Table(entries) = &front.root.value else {
+        return HashMap::new();
+    };
+    let mut texts = HashMap::new();
+    for e in entries {
+        let scalar = match &e.value.value {
+            Value::Bool(b) => Scalar::Bool(*b),
+            Value::Integer(i) => Scalar::Int(*i),
+            Value::Float(f) => Scalar::Float(*f),
+            Value::Datetime(d) => Scalar::Str(d.clone()),
+            Value::Null | Value::String(_) | Value::Array(_) | Value::Table(_) => {
+                texts.remove(e.key.as_str());
+                continue;
+            }
+        };
+        texts.insert(e.key.as_str(), scalar.to_text());
+    }
+    texts
+}
+
 /// A parsed document as the taggers read it.
 struct View<'a> {
     path: &'a str,
@@ -68,6 +94,8 @@ struct View<'a> {
     source_len: usize,
     title: Option<&'a str>,
     front_matter: Option<&'a FrontMatter<'a>>,
+    /// Top-level front matter keys whose value is not a string, rendered as text.
+    scalars: HashMap<&'a str, String>,
     entries: Vec<Entry<'a>>,
     /// The blocks as taggers read them, built once.
     views: Vec<BlockView<'a>>,
@@ -162,6 +190,7 @@ impl<'a> View<'a> {
             source_len: source.len(),
             title,
             front_matter,
+            scalars: front_matter.map(scalar_text).unwrap_or_default(),
             entries,
             by_text,
             unmapped: Cell::new(false),
@@ -199,7 +228,7 @@ impl View<'_> {
     #[inline(always)]
     fn visit(&self) {}
 
-    fn split_interleaved(&self, index: TagIndex) -> TagIndex {
+    fn split_interleaved(&self, tags: Vec<Tag>, max_tags: usize) -> Result<TagIndex, TagError> {
         let mut order: Vec<usize> = (0..self.entries.len())
             .filter(|&i| self.entries[i].projection.is_some())
             .collect();
@@ -221,12 +250,15 @@ impl View<'_> {
             latest_end = latest_end.max(span.end);
         }
         if !marked.contains(&true) {
-            return index;
+            return Ok(TagIndex::from_tags(tags));
         }
         let owners = self.owners.borrow();
         let mut extents: BTreeMap<usize, Extents> = BTreeMap::new();
-        let mut tags = Vec::with_capacity(index.tags().len());
-        for (group, tag) in index.tags().iter().enumerate() {
+        // Each piece is charged against the ceiling before it is built, so the split never
+        // holds more pieces than the document may. The groups are one number per piece.
+        let mut sink = TagSink::new(max_tags);
+        let mut groups: Vec<usize> = Vec::new();
+        for (group, tag) in tags.into_iter().enumerate() {
             self.visit();
             let owner = owners
                 .get(&(tag.span.start, tag.span.end))
@@ -242,26 +274,24 @@ impl View<'_> {
                     )
                 })
             });
-            let mut pieces = Vec::new();
+            let before = sink.len();
             for span in extents
                 .into_iter()
                 .flat_map(|e| e.overlapping(&tag.span, || self.visit()))
             {
-                pieces.push((
-                    Tag {
-                        span,
-                        ..tag.clone()
-                    },
-                    group,
-                ));
+                sink.push_with(|| Tag {
+                    span,
+                    ..tag.clone()
+                })?;
+                groups.push(group);
             }
-            if pieces.is_empty() {
-                tags.push((tag.clone(), group));
-            } else {
-                tags.extend(pieces);
+            if sink.len() == before {
+                sink.push_with(|| tag)?;
+                groups.push(group);
             }
         }
-        TagIndex::from_pieces(tags)
+        let pieces = sink.into_tags().into_iter().zip(groups).collect();
+        Ok(TagIndex::from_pieces(pieces))
     }
 }
 
@@ -278,7 +308,9 @@ impl DocumentView for View<'_> {
     }
 
     fn front_matter(&self, key: &str) -> Option<&str> {
-        self.front_matter?.get(key)?.as_str()
+        let node = self.front_matter?.get(key)?;
+        node.as_str()
+            .or_else(|| self.scalars.get(key).map(String::as_str))
     }
 
     fn source_len(&self) -> usize {
@@ -328,10 +360,61 @@ impl DocumentView for View<'_> {
 pub(crate) enum TagError {
     /// A tagger failed.
     #[error(transparent)]
-    Tagger(#[from] ContextError),
+    Tagger(ContextError),
+    /// The document has more tags than its size allows, so no index was built.
+    #[error("the document has more than {limit} context tags")]
+    Budget {
+        /// The most tags, or pieces of tags, the document was allowed.
+        limit: usize,
+    },
     /// The sentences of a block do not lie on the text the block was projected from.
     #[error("the sentences of a block do not map onto its projected text")]
     Unmapped,
+}
+
+impl From<ContextError> for TagError {
+    fn from(e: ContextError) -> Self {
+        match e {
+            ContextError::TagLimit { limit } => Self::Budget { limit },
+            other => Self::Tagger(other),
+        }
+    }
+}
+
+/// Tags that context lookups may look at for each byte of the document.
+///
+/// A lookup for a match that crosses the lines of a wrapped table cell looks at each tag
+/// that sits on the cell. A document with a few kinds of tag on a few cells looks at a few
+/// tags for each match, so a match is far under one look for each byte. A pack that puts many
+/// kinds of tag on one cell, and rules that match across its lines, make each match look at
+/// every kind, and the looks grow with kinds times matches.
+const LOOKUPS_PER_BYTE: usize = 8;
+
+/// Looks allowed whatever the size of the document, so a small document with a few cells
+/// is never cut short.
+const LOOKUP_HEADROOM: usize = 16_384;
+
+/// The looks that context lookups may make on a document of `source_len` bytes.
+pub(crate) fn lookup_budget(source_len: usize) -> usize {
+    source_len
+        .saturating_mul(LOOKUPS_PER_BYTE)
+        .saturating_add(LOOKUP_HEADROOM)
+}
+
+/// Bytes of the document for each tag it may hold.
+///
+/// Prose holds a sentence tag every few dozen bytes at most, and a tag costs index memory
+/// whatever its size. One tag for every 64 bytes sits above what prose needs, and keeps a
+/// document of very short sentences from building an index of gigabytes. The value is in
+/// `docs/contract/policies.md`, section 1.9.
+const BYTES_PER_TAG: usize = 64;
+
+/// Tags allowed whatever the size of the document.
+const TAG_HEADROOM: usize = 65_536;
+
+/// The tags, and pieces of tags, that a document of `source_len` bytes may hold.
+pub(crate) fn tag_budget(source_len: usize) -> usize {
+    (source_len / BYTES_PER_TAG).saturating_add(TAG_HEADROOM)
 }
 
 /// Run every tagger over `doc`.
@@ -343,11 +426,14 @@ pub(crate) fn tag(
     front_matter: Option<&FrontMatter<'_>>,
 ) -> Result<TagIndex, TagError> {
     let view = View::new(path, source, doc, front_matter);
-    let index = registry.tag_document(&view)?;
+    let max_tags = tag_budget(source.len());
+    let tags = registry.collect_tags(&view, max_tags)?;
     if view.unmapped.get() {
         return Err(TagError::Unmapped);
     }
-    Ok(view.split_interleaved(index))
+    Ok(view
+        .split_interleaved(tags, max_tags)?
+        .with_lookup_budget(lookup_budget(source.len())))
 }
 
 /// Choose the genre of `doc`: front matter, then an assignment from `opts`, then detection.

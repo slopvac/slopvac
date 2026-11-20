@@ -68,10 +68,15 @@ pub const FIXTURES: &[Fixture] = &[
         ],
     },
     Fixture {
-        name: "python docstrings are strings, not comments",
+        name: "python docstrings are documentation and comments stay comments",
         language: Language::Python,
         source: "\"\"\"Module doc.\n\nSecond para.\n\"\"\"\n\n\ndef f():\n    \"\"\"Doc f.\"\"\"\n    # real comment\n    return 1\n",
-        expected: &[(Line, "real comment")],
+        expected: &[
+            (Doc, "Module doc."),
+            (Doc, "Second para."),
+            (Doc, "Doc f."),
+            (Line, "real comment"),
+        ],
     },
     Fixture {
         name: "python string that is not the first statement is code",

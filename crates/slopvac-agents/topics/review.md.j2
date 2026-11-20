@@ -2,6 +2,11 @@
 # Prime: review
 
 Run before you hand off prose. Someone other than the author checks the change.
+{% if review_depth == "self" %}
+Depth: `self`. You review the change yourself; no separate reviewer pass runs.
+{% elif review_depth == "adversary" %}
+Depth: `adversary`. Complete the adversary loop: rounds with a new reviewer each, until a round reports no finding you accept.
+{% endif %}
 {% if review_type == "auto" %}
 ## Pick the type
 
@@ -24,11 +29,23 @@ Run `slopvac prime review --type <type>` for the steps of one type.
 {% elif review_type == "update" %}
 3. Check each changed and added claim against code or a source. Skip unchanged claims.
 4. For each `fact_candidate` in `dropped`, restore the fact or justify the removal.
+{% if review_depth == "self" %}
+5. Review it yourself, with no separate reviewer (`review_depth = self`). Check the changed passages, not the whole document.
+{% elif review_depth == "adversary" %}
+5. Reviewer pass: run rounds, each with a new fresh-context reviewer, until a round reports no finding you accept. Give each round the changed passages, not the whole document.
+{% else %}
 5. Reviewer pass: give one fresh-context reviewer the changed passages, not the whole document.
+{% endif %}
 {% else %}
 3. List the facts in the original. Confirm that each one survived or was wrong.
 4. Check every present-tense claim in the new document against code or a source.
+{% if review_depth == "self" %}
+5. Review it yourself, with no separate reviewer (`review_depth = self`). Check the whole document and the original.
+{% elif review_depth == "adversary" %}
+5. Reviewer pass: run rounds, each with a new fresh-context reviewer, until a round reports no finding you accept. Give each round the whole document and the original.
+{% else %}
 5. Reviewer pass: give one fresh-context reviewer the whole document and the original.
+{% endif %}
 {% endif %}
 {% endif %}
 ## Scope
@@ -46,10 +63,10 @@ Run `slopvac prime review --type <type>` for the steps of one type.
 
 {{ model_guidance }}
 
-- The reviewer model must differ from the author's. `slopvac review --reviewer-model <model>` rejects the author's model.
+- The reviewer model must differ from the author's. `slopvac review --reviewer-model <model>` rejects a match.
 - A model provider is a plugin. It runs only after `slopvac plugins trust` and a `[review] provider` entry.
-- `slopvac review --dry-run` prints the exact text a provider would get and calls nothing. Offline mode blocks every provider.
-- `mechanical` calls no provider. `update` sends changed passages with their originals, added sentences and dropped sentences. `rewrite` sends the original and the revised document.
+- `slopvac review --dry-run` prints the text a provider would get and calls nothing. Offline mode blocks every provider.
+- `mechanical` calls no provider. `update` sends changed passages with originals, plus added and dropped sentences. `rewrite` sends both documents.
 {% if level != "minimal" %}
 
 ## Verdict
@@ -60,9 +77,11 @@ Gate:    lint exit <code>, unchecked <entries or none>
 Type:    <review type>, scope <required> checks, <extra> extra
 Claims:  <verified, or the claim that does not hold>
 Facts:   <all kept, or the facts the revision lost>
-Reviewer: <model>, different from the author's
+Reviewer: <model the harness used, or unknown>; author <model or unknown>; different: yes | no | not checked
 Action:  <the single highest-value change, or none>
 ```
 
 Report REVISE for lint exit 1 or 2, a failed claim, a lost fact or an open reviewer finding.
+
+In the Reviewer line, name the model the harness actually ran, or `unknown`; never guess.
 {% endif %}

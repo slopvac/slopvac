@@ -1,0 +1,12 @@
+schema_version: 3
+id: agent-instructions
+extends: [reference]
+description: Instructions for coding agents. Normative MUST and NEVER are allowed.
+detect:
+  min_score: 3
+  signals:
+    - { kind: path, glob: '**/{agents,claude,gemini}.md', weight: 3 }
+    - { kind: path, glob: '**/copilot-instructions.md', weight: 3 }
+    - { kind: path, glob: '**/{.cursor/rules,.github/instructions}/**', weight: 3 }
+rules:
+  prose-craft.negative-requirement: 'off'

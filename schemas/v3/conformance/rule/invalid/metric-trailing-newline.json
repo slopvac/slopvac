@@ -1,0 +1,15 @@
+{
+  "schema_version": 3,
+  "id": "sentence-length",
+  "name": "Shorten the sentence",
+  "message": "sentence has {match} words",
+  "match": {
+    "kind": "metric",
+    "metric": "sentence_words\n",
+    "threshold": 20,
+    "comparison": "gte"
+  },
+  "citation": {
+    "source": "s"
+  }
+}

@@ -1,0 +1,7 @@
+schema_version: 3
+id: change-note-version-heading
+tag: change-note
+scope: section
+confidence: 0.9
+when:
+  heading_path: '^\W*(?:version\s+|v)?\d+\.\d+(?:\.\d+)?\b'

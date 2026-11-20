@@ -1,11 +1,11 @@
-"""Plugin protocol, pack manifest and per-pack reference pages.
+"""Plugin protocol, plugin manifest and per-plugin reference pages.
 
 The protocol and manifest pages come from the JSON Schemas in ``schemas/<api>/``,
 plus the error-code tables of the protocol contract, which the schema cannot
-express. A pack page comes from one ``slopvac-pack.toml`` manifest, checked
+express. A plugin page comes from one ``slopvac-plugin.toml`` manifest, checked
 against the manifest schema first.
 
-STUB(slopvac-8l4.9.1): no pack loader exists yet, so pack pages list the files
+STUB(slopvac-8l4.9.1): no plugin loader exists yet, so plugin pages list the files
 a manifest declares under ``provides``. They do not open those files to list
 the rules, styles, genres and terms inside. Swap this for the loader's registry
 when it lands.
@@ -25,8 +25,8 @@ from mdtext import cell, code, text, untrusted, untrusted_cell
 Pages = dict[str, str]
 
 PROTOCOL_SCHEMA = "plugin-protocol.schema.json"
-MANIFEST_SCHEMA = "pack-manifest.schema.json"
-MANIFEST_FILE = "slopvac-pack.toml"
+MANIFEST_SCHEMA = "plugin-manifest.schema.json"
+MANIFEST_FILE = "slopvac-plugin.toml"
 CONTRACT_FILE = "plugin-protocol.md"
 
 
@@ -438,7 +438,7 @@ def generate_manifest(schemas: SchemaSet) -> Pages:
     root = schemas.doc(MANIFEST_SCHEMA)
     renderer = Renderer(schemas)
     lines = [
-        "# Pack manifest",
+        "# Plugin manifest",
         "",
         text(root["description"]),
         "",
@@ -472,11 +472,11 @@ def generate_manifest(schemas: SchemaSet) -> Pages:
 
 
 # ---------------------------------------------------------------------------
-# Pack pages
+# Plugin pages
 
 
 def load_manifests(packs_dir: Path) -> dict[str, tuple[Path, dict]]:
-    """Every ``<packs_dir>/*/slopvac-pack.toml``, keyed by pack id."""
+    """Every ``<packs_dir>/*/slopvac-plugin.toml``, keyed by pack id."""
     manifests: dict[str, tuple[Path, dict]] = {}
     for path in sorted(packs_dir.glob(f"*/{MANIFEST_FILE}")):
         data = tomllib.loads(path.read_text())
@@ -485,7 +485,7 @@ def load_manifests(packs_dir: Path) -> dict[str, tuple[Path, dict]]:
             raise SystemExit(f"{path}: manifest has no string id")
         if pack_id in manifests:
             raise SystemExit(
-                f"{path}: pack id {pack_id} also appears in {manifests[pack_id][0]}"
+                f"{path}: plugin id {pack_id} also appears in {manifests[pack_id][0]}"
             )
         manifests[pack_id] = (path, data)
     return manifests
@@ -562,7 +562,7 @@ def _pack_page(manifest: dict, known: set[str], artifact_keys: list[str]) -> str
         for kind, paths in declared:
             lines.append(f"- {kind}: " + ", ".join(code(p) for p in paths))
     else:
-        lines.append("This pack declares no data files.")
+        lines.append("This plugin declares no data files.")
 
     requires = manifest.get("requires", [])
     if requires:
@@ -622,20 +622,20 @@ def generate_packs(schemas: SchemaSet, packs_dir: Path) -> Pages:
     artifact_keys = list(schemas.properties(provides_schema)[0])
     pages: Pages = {}
     known = set(manifests)
-    index = ["# Packs", ""]
+    index = ["# Bundled plugins", ""]
     if manifests:
         index += [
-            "One page per pack, generated from its manifest.",
+            "One page per bundled plugin, generated from its manifest.",
             "",
-            "| Pack | Version | Kind | Description |",
+            "| Plugin | Version | Kind | Description |",
             "| --- | --- | --- | --- |",
         ]
     else:
-        index.append("No packs are bundled with this build.")
+        index.append("No plugins are bundled with this build.")
     for pack_id, (_, data) in sorted(manifests.items()):
-        # A folder per pack keeps the page clear of packs/index.md, whatever the
-        # id, and the public route stays /plugins/packs/<id>/.
-        pages[f"plugins/packs/{pack_id}/index.md"] = _pack_page(
+        # A folder per plugin keeps the page clear of bundled/index.md, whatever the
+        # id, and the public route stays /plugins/bundled/<id>/.
+        pages[f"plugins/bundled/{pack_id}/index.md"] = _pack_page(
             data, known, artifact_keys
         )
         index.append(
@@ -643,5 +643,5 @@ def generate_packs(schemas: SchemaSet, packs_dir: Path) -> Pages:
             f"| {cell(data['kind'])} "
             f"| {untrusted_cell(data.get('description', ''))} |"
         )
-    pages["plugins/packs/index.md"] = "\n".join(index) + "\n"
+    pages["plugins/bundled/index.md"] = "\n".join(index) + "\n"
     return pages

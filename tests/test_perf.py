@@ -101,7 +101,7 @@ def test_benchmarks_never_run_in_the_repository(tmp_path: Path, monkeypatch) -> 
     fake.write_text(
         "#!/bin/sh\n"
         f'pwd > "{record}"\n'
-        'while [ $# -gt 0 ]; do\n'
+        "while [ $# -gt 0 ]; do\n"
         '  if [ "$1" = "--export-json" ]; then printf \'{"results": []}\' > "$2"; fi\n'
         "  shift\n"
         "done\n",
@@ -121,7 +121,9 @@ def test_benchmarks_never_run_in_the_repository(tmp_path: Path, monkeypatch) -> 
     assert json.loads((directory / "hyperfine.json").read_text())["results"] == []
 
 
-@pytest.mark.parametrize(("code", "args", "ok"), [(1, [], True), (2, ["--no-vale"], True), (2, [], False)])
+@pytest.mark.parametrize(
+    ("code", "args", "ok"), [(1, [], True), (2, ["--no-vale"], True), (2, [], False)]
+)
 def test_profilers_accept_only_the_exits_a_scenario_expects(code, args, ok) -> None:
     """A failed gate still yields a profile; an incomplete Vale run does not."""
     command = [sys.executable, "-c", f"raise SystemExit({code})"]
@@ -132,7 +134,9 @@ def test_profilers_accept_only_the_exits_a_scenario_expects(code, args, ok) -> N
             run_profiled(command, {"kind": "lint", "args": args})
 
 
-def test_a_vale_profile_without_vale_fails_instead_of_running_incomplete(monkeypatch) -> None:
+def test_a_vale_profile_without_vale_fails_instead_of_running_incomplete(
+    monkeypatch,
+) -> None:
     vale_scenario = next(s for s in load_scenarios() if s.get("requires_vale"))
     monkeypatch.setattr(perf, "resolve_tool", lambda name, variable=None: None)
     with pytest.raises(RuntimeError, match="needs Vale"):

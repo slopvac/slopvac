@@ -4,6 +4,7 @@
 
 mod oci_server;
 mod revocations;
+mod support;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,6 +12,7 @@ use std::process::Command;
 
 use oci_server::{Response, Server};
 use revocations::{ListServer, Root, Signed, list_json};
+use slopvac_plugins::PluginError;
 use slopvac_plugins::extract::{Limits, tree_hash};
 use slopvac_plugins::launch::Launcher;
 use slopvac_plugins::lock::Lockfile;
@@ -53,7 +55,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
 
 /// A source repository with one commit.
 struct Remote {
-    dir: tempfile::TempDir,
+    dir: support::Scratch,
     commit: String,
 }
 
@@ -78,7 +80,7 @@ impl Remote {
     }
 
     fn build(fill: impl FnOnce(&Path)) -> Self {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = support::scratch();
         let work = dir.path().join("repo");
         fs::create_dir(&work).unwrap();
         git(&work, &["init", "--quiet"]);
@@ -119,7 +121,7 @@ impl Remote {
 
     fn lock_at(commit: &str, digest: &str) -> Lockfile {
         let text = format!(
-            "schema_version = 3\n\n[[packs]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
+            "schema_version = 3\n\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
              slopvac_api = 1\nsource = \"git+{LOCKED_HOST}repo@{commit}\"\ndigest = \"{digest}\"\n",
         );
         Lockfile::parse(&text).unwrap()
@@ -133,7 +135,7 @@ impl Remote {
 
 /// The tree hash of `files`, computed on a plain directory, not through git.
 fn expected_digest(files: &[(&str, &[u8])]) -> String {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     for (name, data) in files {
         let path = dir.path().join(name);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -143,8 +145,8 @@ fn expected_digest(files: &[(&str, &[u8])]) -> String {
 }
 
 struct Env {
-    data: tempfile::TempDir,
-    project: tempfile::TempDir,
+    data: support::Scratch,
+    project: support::Scratch,
     root: Root,
     list: ListServer,
 }
@@ -157,8 +159,8 @@ impl Env {
             list_json("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z", &[], &[]),
         );
         Self {
-            data: tempfile::tempdir().unwrap(),
-            project: tempfile::tempdir().unwrap(),
+            data: support::scratch(),
+            project: support::scratch(),
             root,
             list: ListServer::start(Some(empty)),
         }
@@ -207,6 +209,20 @@ impl Env {
         limits: Limits,
         memory: Option<u64>,
     ) -> Result<SyncReport, SyncError> {
+        let launcher = Launcher::Program(launcher().into());
+        self.sync_through(launcher, network, served_from, lock, limits, memory)
+    }
+
+    /// Like `sync_capped`, with `launcher` as the program that runs `git`.
+    fn sync_through(
+        &self,
+        launcher: Launcher,
+        network: Network<'_>,
+        served_from: &str,
+        lock: &Lockfile,
+        limits: Limits,
+        memory: Option<u64>,
+    ) -> Result<SyncReport, SyncError> {
         let store = self.store();
         let revocations = Revocations::new(
             self.data.path().join("state"),
@@ -218,7 +234,7 @@ impl Env {
         let policy = KeyPolicy::default();
         let syncer = Syncer::new(&store, network, &policy, self.project.path(), &revocations)
             .with_limits(limits)
-            .with_launcher(Launcher::Program(launcher().into()))
+            .with_launcher(launcher)
             .with_git_rewrite_for_tests(LOCKED_HOST, served_from);
         match memory {
             Some(bytes) => syncer.with_git_memory_for_tests(bytes),
@@ -305,8 +321,47 @@ fn a_second_online_sync_uses_the_stored_tree() {
     assert_eq!(again.packs[0].change, Change::Unchanged);
 }
 
+/// This test binary never calls `launch::intercept`, so the current
+/// executable is not a launcher.
 #[test]
-fn a_commit_whose_tree_differs_from_the_lock_installs_nothing() {
+fn a_program_without_the_launcher_entry_point_syncs_no_git_source() {
+    let remote = Remote::with_files(FILES, &[]);
+    let env = Env::new();
+    let c = client();
+    let lock = remote.lock(&expected_digest(FILES));
+
+    let err = env
+        .sync_through(
+            Launcher::CurrentExe,
+            Network::Online(&c),
+            &remote.served_from(),
+            &lock,
+            Limits::default(),
+            None,
+        )
+        .unwrap_err();
+
+    let SyncError::Launcher { source, .. } = &err else {
+        panic!("{err:?}");
+    };
+    assert_eq!(*source, PluginError::LauncherNotInstalled);
+    assert_eq!(err.code(), "launcher-not-installed");
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(
+        err.to_string(),
+        "plugin `style`: the running program did not install the slopvac plugin launcher, \
+         so plugins and git plugin sources cannot start"
+    );
+    env.assert_no_trees();
+    // A refused sync has no side effects: no revocation fetch, no store, no
+    // state directory.
+    assert_eq!(env.list.fetches(), 0);
+    let left: Vec<_> = fs::read_dir(env.data.path()).unwrap().collect();
+    assert!(left.is_empty(), "unexpected entries: {left:?}");
+}
+
+#[test]
+fn tm31_a_pinned_commit_whose_tree_differs_from_the_lock_exits_2_and_installs_nothing() {
     let remote = Remote::with_files(FILES, &[]);
     let env = Env::new();
     let c = client();
@@ -337,7 +392,7 @@ fn offline_with_a_cold_cache_names_the_pack_and_digest() {
 
     let err = env.sync(Network::Offline, &remote, &lock).unwrap_err();
 
-    assert_eq!(err.code(), "offline-pack-missing");
+    assert_eq!(err.code(), "offline-plugin-missing");
     assert!(err.to_string().contains(&digest), "{err}");
     env.assert_no_trees();
 }
@@ -399,7 +454,7 @@ fn an_executable_file_keeps_its_bit_when_the_commit_lists_it() {
     let files: &[(&str, &[u8])] = &[("bin/run", b"#!/bin/sh\n"), (".slopvac-exec", b"bin/run\n")];
     let remote = Remote::with_files(files, &["bin/run"]);
     // The expected digest comes from a plain directory with the same mode.
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     fs::create_dir(dir.path().join("bin")).unwrap();
     fs::write(dir.path().join("bin/run"), b"#!/bin/sh\n").unwrap();
     fs::set_permissions(
@@ -478,7 +533,7 @@ fn n10_a_symlink_or_a_submodule_in_the_commit_is_refused() {
 #[test]
 fn tm40_hooks_filters_and_attributes_in_the_repository_do_nothing() {
     use std::os::unix::fs::PermissionsExt;
-    let marker_dir = tempfile::tempdir().unwrap();
+    let marker_dir = support::scratch();
     let marker = marker_dir.path().join("ran");
     let marker_text = marker.display().to_string();
     let script = format!("#!/bin/sh\ntouch '{marker_text}'\n");
@@ -746,11 +801,11 @@ fn git_error_text_is_escaped_once_with_a_doubled_backslash() {
 
     assert_eq!(
         git.to_string(),
-        format!("pack `style`: git source: {HOSTILE_SHOWN}")
+        format!("plugin `style`: git source: {HOSTILE_SHOWN}")
     );
     assert_eq!(
         limit.to_string(),
-        format!("pack `style`: git source passes a limit: {HOSTILE_SHOWN}")
+        format!("plugin `style`: git source passes a limit: {HOSTILE_SHOWN}")
     );
 }
 
@@ -771,7 +826,7 @@ fn a_hostile_path_in_a_refused_commit_is_escaped_exactly_once() {
 
     assert_eq!(
         err.to_string(),
-        "pack `style`: git source: `a\\u{1b}[31m\\\\b` is a symbolic link"
+        "plugin `style`: git source: `a\\u{1b}[31m\\\\b` is a symbolic link"
     );
 }
 

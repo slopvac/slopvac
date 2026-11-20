@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from . import corpuslib as lib
+from . import procs
 
 RESULTS_SCHEMA = 1
 BATCH = 50
@@ -126,17 +127,15 @@ class Engine:
         # was incomplete, for example rules that cannot run on code comments. That
         # still yields findings, so keep them and record the gap per document.
         # Anything else, or exit 2 without a report, is an engine failure.
+        stderr = procs.redact(proc.stderr.strip())[:500]
         try:
             report = json.loads(proc.stdout)
         except json.JSONDecodeError as exc:
             raise EngineError(
-                f"{self.name} exited {proc.returncode} with no report: "
-                f"{proc.stderr.strip()[:500] or exc}"
+                f"{self.name} exited {proc.returncode} with no report: {stderr or exc}"
             ) from exc
         if proc.returncode not in (0, 1, 2) or "documents" not in report:
-            raise EngineError(
-                f"{self.name} exited {proc.returncode}: {proc.stderr.strip()[:500]}"
-            )
+            raise EngineError(f"{self.name} exited {proc.returncode}: {stderr}")
         return report
 
 
@@ -165,7 +164,7 @@ def _slim(finding: Mapping[str, Any]) -> dict[str, Any]:
     if finding.get("end_line") is not None:
         out["end_line"] = finding["end_line"]
     if finding.get("matched_text") is not None:
-        out["text"] = finding["matched_text"]
+        out["text"] = procs.redact_credentials(str(finding["matched_text"]))
     return out
 
 
@@ -255,8 +254,10 @@ def run_engine(
                     reported = (staged_engine.cwd or Path.cwd()) / entry["path"]
                     doc = by_path.get(str(reported.resolve()))
                     if doc is None:
+                        # The path is engine output and may name private
+                        # directories, so the error does not repeat it.
                         raise EngineError(
-                            f"report names an unknown path: {entry['path']}"
+                            "report names an unknown path that this run did not stage"
                         )
                     results[doc["id"]] = {
                         "words": entry.get("words", 0),

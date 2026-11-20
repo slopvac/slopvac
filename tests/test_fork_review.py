@@ -1,7 +1,7 @@
 """The privileged fork-review consumer must reject a hostile artifact.
 
-The valid report is the rdjsonl the stand-in binary writes
-(.github/action-fixtures/fake-slopvac.py, STUB(slopvac-8l4.13.12)).
+The valid report is the rdjsonl the real slopvac binary writes for a sloppy
+document (see real_binary.py).
 """
 
 from __future__ import annotations
@@ -9,16 +9,16 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-import subprocess
 import sys
 import zipfile
 from pathlib import Path
 
 import pytest
 
+pytest_plugins = ["real_binary"]  # the real-binary fixtures
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "fork_review.py"
-FAKE_SLOPVAC = ROOT / ".github" / "action-fixtures" / "fake-slopvac.py"
 SPEC = importlib.util.spec_from_file_location("fork_review", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 fork = importlib.util.module_from_spec(SPEC)
@@ -31,14 +31,9 @@ OTHER_SHA = "f" * 40
 
 
 @pytest.fixture(scope="module")
-def valid_report(tmp_path_factory) -> bytes:
-    out = tmp_path_factory.mktemp("fake") / "findings.rdjsonl"
-    subprocess.run(
-        [sys.executable, str(FAKE_SLOPVAC), "lint", "--format", "rdjsonl"]
-        + ["--out", str(out), "--", "docs/a.md"],
-        check=True,
-        env={**os.environ, "FAKE_EXIT_RDJSONL": "0"},
-    )
+def valid_report(slop_project, lint_with_binary, tmp_path_factory) -> bytes:
+    out = tmp_path_factory.mktemp("report") / "findings.rdjsonl"
+    assert lint_with_binary(slop_project, "rdjsonl", out, "slop.md") == 1
     return out.read_bytes()
 
 
@@ -74,7 +69,7 @@ def line(**overrides):
     return json.dumps({**base, **overrides}).encode() + b"\n"
 
 
-def test_the_stand_in_binary_report_is_accepted(check, good, valid_report):
+def test_the_real_binary_report_is_accepted(check, good, valid_report):
     assert check(good)["findings.rdjsonl"] == valid_report
 
 

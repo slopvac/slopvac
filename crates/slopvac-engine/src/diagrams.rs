@@ -9,7 +9,7 @@
 use std::ops::Range;
 use std::path::PathBuf;
 
-use slopvac_diagrams::{Extraction, ProseBlock, Signal, SignalHit};
+use slopvac_diagrams::{Extraction, ProseAnalysis, ProseBlock, Signal, SignalHit};
 use slopvac_model::{PackId, RuleId, Severity};
 use slopvac_rules::{CompileOptions, LoadErrors, RuleSet, StructureMatch};
 
@@ -34,6 +34,10 @@ pub struct DiagramInput<'a> {
     pub extraction: &'a Extraction,
     /// The nearest paragraph before and after a fenced diagram. A diagram file has none.
     pub prose: &'a [ProseBlock<'a>],
+    /// What the prose checks read from each paragraph of `prose`, in the same order. The
+    /// engine shares one analysis among all the diagrams beside a paragraph. A checker that
+    /// reads the paragraph's words can use it instead of tokenising the text again.
+    pub prose_analysis: &'a [&'a ProseAnalysis<'a>],
 }
 
 /// A problem a checker found.
@@ -114,10 +118,11 @@ impl DiagramChecker for SignalChecker {
     fn check(&self, input: &DiagramInput<'_>) -> Vec<DiagramHit> {
         let fragments = &input.extraction.fragments;
         let mut found = slopvac_diagrams::check_labels(input.source, fragments, input.format);
-        found.extend(slopvac_diagrams::check_prose(
+        found.extend(slopvac_diagrams::check_prose_analysed(
             input.source,
             fragments,
             input.prose,
+            input.prose_analysis,
         ));
         found
             .into_iter()

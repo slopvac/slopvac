@@ -19,7 +19,7 @@ from referencing import Registry, Resource
 SCHEMAS = Path(__file__).resolve().parents[2] / "schemas" / "v3"
 CONFORMANCE = SCHEMAS / "conformance/plugin-protocol"
 VECTORS = json.loads((CONFORMANCE / "binary-caps.json").read_text("utf-8"))
-# Approved on #514 by the contract owner (slopvac-8l4.2): names, order and values.
+# Approved by the contract owner: names, order and values.
 APPROVED_BUDGETS = {
     "segments": 1_000_000,
     "part": 1024,

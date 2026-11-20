@@ -2,3 +2,5 @@
 # Reviewer model recommendations
 
 Reviewer model recommendations are pending re-evaluation. Until they are published, pick a model from a different family than the author's.
+
+To set the models, read [Choosing models for review](guides/choosing-review-models.md).

@@ -3,10 +3,10 @@
 //! The input is TOML text. The output keeps comments and key order. Settings with no
 //! 3.0 equivalent are collected as [`Dropped`] and block the rewrite.
 
-use std::collections::HashMap;
+use toml_edit::{Array, DocumentMut, Item, RawString, Table, TableLike, Value, value};
 
-use toml_edit::{Array, Document, DocumentMut, Item, RawString, Table, TableLike, Value, value};
-
+use crate::capped::Blockers;
+use crate::provenance::{KeyLines, key_lines};
 use crate::{Dropped, Error, Options, RenameTable, preserve_doc};
 
 const THRESHOLD_KEYS: &[&str] = &[
@@ -59,6 +59,9 @@ pub struct Rewrite {
     /// `text`'s source. A caller that embeds the source in a larger file maps the
     /// lines first, then renders each with [`Dropped::category_removed_notice`].
     pub removed_categories: Vec<Dropped>,
+    /// The rules that 3.0 no longer has and the rewrite dropped, with the same line
+    /// rules as `removed_categories`. Render each with [`Dropped::rule_removed_notice`].
+    pub removed_rules: Vec<Dropped>,
 }
 
 /// Rewrite 2.x config text. `file` names the source in diagnostics.
@@ -70,10 +73,24 @@ pub fn migrate_config(
     renames: &RenameTable,
     options: Options,
 ) -> Result<Rewrite, Error> {
-    let lines = key_lines(text).map_err(|e| Error::Parse {
+    migrate_config_in(text, file, renames, options, None)
+}
+
+/// [`migrate_config`] for text that came from a `[tool.slopvac]` table. `outer` holds the
+/// line of every key in the file that holds the table, so each blocker is given its line in
+/// that file before its key is clipped for display.
+pub(crate) fn migrate_config_in(
+    text: &str,
+    file: &str,
+    renames: &RenameTable,
+    options: Options,
+    outer: Option<&KeyLines>,
+) -> Result<Rewrite, Error> {
+    let own = key_lines(text).map_err(|e| Error::Parse {
         file: file.to_owned(),
         message: e,
     })?;
+    let lines = Lines { own: &own, outer };
     let mut doc: DocumentMut = text
         .parse()
         .map_err(|e: toml_edit::TomlError| Error::Parse {
@@ -88,11 +105,12 @@ pub fn migrate_config(
     let original = doc.clone();
     let mut cx = Cx {
         file,
-        lines: &lines,
+        lines,
         renames,
-        dropped: Vec::new(),
+        dropped: Blockers::default(),
         notes: Vec::new(),
         removed_categories: Vec::new(),
+        removed_rules: Vec::new(),
     };
     migrate_scope(doc.as_table_mut(), "", Scope::Project, &mut cx);
     if cx.dropped.is_empty() && options.preserve_behavior {
@@ -101,7 +119,7 @@ pub fn migrate_config(
             &mut doc,
             &mut preserve_doc::Ctx {
                 file,
-                lines: &lines,
+                lines,
                 renames,
                 dropped: &mut cx.dropped,
                 notes: &mut cx.notes,
@@ -114,9 +132,10 @@ pub fn migrate_config(
             text: doc.to_string(),
             notes: cx.notes,
             removed_categories: cx.removed_categories,
+            removed_rules: cx.removed_rules,
         })
     } else {
-        Err(Error::Dropped(cx.dropped))
+        Err(Error::Dropped(cx.dropped.finish()))
     }
 }
 
@@ -130,6 +149,17 @@ fn is_legacy(text: &str, file: &str) -> Result<bool, Error> {
         file: file.to_owned(),
         message: e.message,
     })?;
+    // The version gate leaves a non-integer to the schema, so a value like `"3"` would pass
+    // for migrated. Refuse it here, with its line.
+    if let Some(entry) = root.entry("schema_version")
+        && !matches!(entry.node.value, slopvac_config::tree::Value::Int(_))
+    {
+        return Err(Error::InvalidType {
+            file: file.to_owned(),
+            line: line_of(text, entry.node.span.start),
+            message: "`schema_version` must be an integer".to_owned(),
+        });
+    }
     Ok(matches!(
         slopvac_config::version::check_version(&root, text),
         Err(d) if d.code == slopvac_config::Code::LegacyVersion
@@ -142,33 +172,55 @@ enum Scope {
     Override,
 }
 
+/// The lines of a config's keys. When the config came from a `[tool.slopvac]` table, a key
+/// that the holding file also has takes its line in that file.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Lines<'a> {
+    own: &'a KeyLines,
+    outer: Option<&'a KeyLines>,
+}
+
+impl Lines<'_> {
+    /// The line of the key at `path`, or 1 when the config has no such key.
+    pub(crate) fn of(&self, path: &str) -> usize {
+        self.own.line(path).map_or(1, |own| {
+            self.outer
+                .and_then(|o| o.line(&format!("tool.slopvac.{path}")))
+                .unwrap_or(own)
+        })
+    }
+}
+
 struct Cx<'a> {
     file: &'a str,
-    lines: &'a HashMap<String, usize>,
+    lines: Lines<'a>,
     renames: &'a RenameTable,
-    dropped: Vec<Dropped>,
+    dropped: Blockers,
     notes: Vec<String>,
     removed_categories: Vec<Dropped>,
+    removed_rules: Vec<Dropped>,
 }
 
 impl Cx<'_> {
     /// Drop a category that 3.0 no longer has and go on, with a
     /// `migrate-category-removed` notice and no exit 2.
     fn drop_category_note(&mut self, path: &str, reason: &str) {
-        self.removed_categories.push(Dropped {
-            file: self.file.to_owned(),
-            key: path.to_owned(),
-            line: self.lines.get(path).copied().unwrap_or(1),
-            reason: reason.to_owned(),
-        });
+        self.removed_categories
+            .push(Dropped::new(self.file, path, self.lines.of(path), reason));
     }
-    fn drop_key(&mut self, path: &str, reason: impl Into<String>) {
-        self.dropped.push(Dropped {
-            file: self.file.to_owned(),
-            key: path.to_owned(),
-            line: self.lines.get(path).copied().unwrap_or(1),
-            reason: reason.into(),
-        });
+    /// Drop a rule that 3.0 no longer has and go on, with a `migrate-rule-removed`
+    /// notice and no exit 2.
+    fn drop_rule_note(&mut self, path: &str) {
+        self.removed_rules.push(Dropped::new(
+            self.file,
+            path,
+            self.lines.of(path),
+            "rule no longer exists in 3.0",
+        ));
+    }
+    fn drop_key(&mut self, path: &str, reason: impl AsRef<str>) {
+        self.dropped
+            .record(self.file, path, self.lines.of(path), reason.as_ref());
     }
 }
 
@@ -381,18 +433,13 @@ fn migrate_categories(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<
     restore(t, key, out);
 }
 
-/// The note for a reference to a rule that 3.0 removed.
-fn removed_rule_note(rule: &str, path: &str) -> String {
-    format!("removed {path}: rule {rule} no longer exists in 3.0")
-}
-
 fn migrate_rules(t: &mut dyn TableLike, key: &str, path: &str, cx: &mut Cx<'_>) {
     let Some(entries) = drain(t, key) else { return };
     let mut out = Vec::new();
     for (k, item) in entries {
         let kp = join(path, k.get());
         if cx.renames.is_removed(k.get()) {
-            cx.notes.push(removed_rule_note(k.get(), &kp));
+            cx.drop_rule_note(&kp);
             continue;
         }
         let Some(new) = cx.renames.rule(k.get()) else {
@@ -604,55 +651,11 @@ fn migrate_vale(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
     }
 }
 
-/// Map every key path in `text` to its one-based line. Array-of-tables elements use
-/// `name[index]`.
-pub(crate) fn key_lines(text: &str) -> Result<HashMap<String, usize>, String> {
-    let doc = Document::parse(text.to_owned()).map_err(|e| e.to_string())?;
-    let mut out = HashMap::new();
-    walk(doc.as_table(), "", text, &mut out);
-    Ok(out)
-}
-
-fn line_of(text: &str, offset: usize) -> usize {
+/// The one-based line of byte `offset` in `text`.
+pub(crate) fn line_of(text: &str, offset: usize) -> usize {
     text[..offset.min(text.len())]
         .bytes()
         .filter(|b| *b == b'\n')
         .count()
         + 1
-}
-
-fn walk(t: &dyn TableLike, prefix: &str, text: &str, out: &mut HashMap<String, usize>) {
-    for (name, item) in t.iter() {
-        let path = join(prefix, name);
-        if let Some(span) = t.key(name).and_then(toml_edit::Key::span) {
-            out.insert(path.clone(), line_of(text, span.start));
-        }
-        match item {
-            Item::ArrayOfTables(aot) => {
-                for (i, table) in aot.iter().enumerate() {
-                    let p = format!("{path}[{i}]");
-                    if let Some(span) = table.span() {
-                        out.insert(p.clone(), line_of(text, span.start));
-                    }
-                    walk(table, &p, text, out);
-                }
-            }
-            Item::Value(Value::Array(arr)) => {
-                for (i, v) in arr.iter().enumerate() {
-                    if let Some(it) = v.as_inline_table() {
-                        let p = format!("{path}[{i}]");
-                        if let Some(span) = v.span() {
-                            out.insert(p.clone(), line_of(text, span.start));
-                        }
-                        walk(it, &p, text, out);
-                    }
-                }
-            }
-            other => {
-                if let Some(tl) = other.as_table_like() {
-                    walk(tl, &path, text, out);
-                }
-            }
-        }
-    }
 }

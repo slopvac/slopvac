@@ -50,6 +50,9 @@ impl<'a> Obj<'a> {
     }
 }
 
+/// The only `schema_version` of a packs lockfile this crate reads and writes.
+pub const LOCK_SCHEMA_VERSION: i64 = 3;
+
 pub(super) fn parse(text: &str) -> Result<Lockfile, LockError> {
     if text.len() > MAX_LOCK_BYTES {
         return Err(err("", format!("larger than {MAX_LOCK_BYTES} bytes")));
@@ -60,20 +63,20 @@ pub(super) fn parse(text: &str) -> Result<Lockfile, LockError> {
             .map_or(String::new(), |s| format!(" at byte {}", s.start));
         err("", format!("invalid TOML{at}: {}", e.message()))
     })?;
-    let root = Obj::new(&table, String::new(), &["schema_version", "packs"])?;
+    let root = Obj::new(&table, String::new(), &["schema_version", "plugins"])?;
     match root.required("schema_version")? {
-        Value::Integer(3) => {}
+        Value::Integer(LOCK_SCHEMA_VERSION) => {}
         _ => return Err(err("/schema_version", "must be the integer 3")),
     }
     let items = root
-        .required("packs")?
+        .required("plugins")?
         .as_array()
-        .ok_or_else(|| err("/packs", "must be an array of tables"))?;
+        .ok_or_else(|| err("/plugins", "must be an array of tables"))?;
     let packs = items
         .iter()
         .enumerate()
         .map(|(i, item)| {
-            let pointer = format!("/packs/{i}");
+            let pointer = format!("/plugins/{i}");
             let table = item
                 .as_table()
                 .ok_or_else(|| err(&pointer, "must be a table"))?;
@@ -152,7 +155,7 @@ fn requires(obj: &Obj<'_>) -> Result<Vec<PackId>, LockError> {
     let pointer = obj.at("requires");
     let items = value
         .as_array()
-        .ok_or_else(|| err(&pointer, "must be an array of pack ids"))?;
+        .ok_or_else(|| err(&pointer, "must be an array of plugin ids"))?;
     items
         .iter()
         .enumerate()

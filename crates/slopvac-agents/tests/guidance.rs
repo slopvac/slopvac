@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use rstest::rstest;
 use slopvac_agents::AgentsError;
 use slopvac_agents::guidance::Guidance;
 use slopvac_agents::harness::SKILL_NAME;
@@ -31,7 +32,7 @@ fn no_config_gives_the_schema_defaults() {
     fs::create_dir(dir.path().join(".git")).unwrap();
     let g = Guidance::load(dir.path(), None).unwrap();
     assert_eq!(g.level, Level::Default);
-    assert!(g.write);
+    assert_eq!(g.write, slopvac_agents::guidance::Write::Auto);
 }
 
 #[test]
@@ -86,11 +87,150 @@ fn missing_explicit_config_is_a_config_io_error() {
     assert_eq!(err.code(), "config-io");
 }
 
+/// Prime output for a project whose `[guidance]` holds `guidance`.
+fn prime_with(guidance: &str, args: &[&str]) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    write_config(dir.path(), "slopvac.toml", guidance);
+    prime_out(dir.path(), args).unwrap()
+}
+
+const WRITE_STEP: &str = "- `write`:";
+const REVIEW_STEP: &str = "run `slopvac prime review`";
+const REVIEW_INDEX: &str = "- `review`:";
+const REPORT_STEP: &str = "- `report`:";
+
 #[test]
-fn level_flag_skips_loading_the_config() {
+fn write_auto_lists_the_write_topic_in_the_base_guide() {
+    assert!(prime_with("write = \"auto\"", &[]).contains(WRITE_STEP));
+}
+
+#[test]
+fn write_off_drops_the_write_topic_from_the_base_guide() {
+    assert!(!prime_with("write = \"off\"", &[]).contains(WRITE_STEP));
+}
+
+#[test]
+fn write_off_disables_the_write_topic_and_names_the_config_file() {
+    assert_eq!(
+        prime_with("write = \"off\"", &["write"]).trim_end(),
+        "slopvac prime write is disabled by [guidance] write = \"off\" in slopvac.toml."
+    );
+}
+
+#[test]
+fn review_auto_lists_the_review_topic_without_the_ask_text() {
+    let out = prime_with("review = \"auto\"", &[]);
+    assert!(out.contains(REVIEW_INDEX) && !out.contains("Ask the user first"));
+}
+
+#[test]
+fn review_ask_has_the_agent_ask_the_user_first() {
+    let out = prime_with("review = \"ask\"", &[]);
+    assert!(out.contains(REVIEW_INDEX) && out.contains("Ask the user first."));
+}
+
+#[test]
+fn review_off_drops_the_hand_off_step_and_disables_the_topic() {
+    assert!(!prime_with("review = \"off\"", &[]).contains(REVIEW_INDEX));
+    assert_eq!(
+        prime_with("review = \"off\"", &["review"]).trim_end(),
+        "slopvac prime review is disabled by [guidance] review = \"off\" in slopvac.toml."
+    );
+}
+
+#[test]
+fn review_off_removes_the_hand_off_line_of_the_write_topic() {
+    assert!(prime_with("review = \"auto\"", &["write"]).contains(REVIEW_STEP));
+    assert!(!prime_with("review = \"off\"", &["write"]).contains(REVIEW_STEP));
+}
+
+#[rstest]
+#[case::self_review("self", "review the change yourself")]
+#[case::adversary("adversary", "Complete the adversary loop")]
+fn review_depth_sets_the_depth_line_of_the_review_topic(
+    #[case] depth: &str,
+    #[case] expected: &str,
+) {
+    let out = prime_with(&format!("review_depth = \"{depth}\""), &["review"]);
+    assert!(out.contains(expected), "{depth}: {out}");
+}
+
+#[rstest]
+#[case::self_review("self", "Review it yourself, with no separate")]
+#[case::subagent("subagent", "Reviewer pass: give one fresh-context reviewer")]
+#[case::adversary("adversary", "Give each round")]
+fn review_depth_sets_the_reviewer_pass_of_the_review_topic(
+    #[case] depth: &str,
+    #[case] expected: &str,
+) {
+    let out = prime_with(
+        &format!("review_depth = \"{depth}\""),
+        &["review", "--type", "update"],
+    );
+    assert!(out.contains(expected), "{depth}: {out}");
+}
+
+#[test]
+fn report_ask_keeps_the_reporting_section_in_the_base_guide() {
+    assert!(prime_with("report = \"ask\"", &[]).contains(REPORT_STEP));
+}
+
+#[test]
+fn report_off_drops_the_section_and_disables_the_topic() {
+    assert!(!prime_with("report = \"off\"", &[]).contains(REPORT_STEP));
+    assert_eq!(
+        prime_with("report = \"off\"", &["report"]).trim_end(),
+        "slopvac prime report is disabled by [guidance] report = \"off\" in slopvac.toml."
+    );
+}
+
+#[test]
+fn the_notice_names_the_extended_file_that_set_the_control() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("base.toml"),
+        "schema_version = 3\n\n[guidance]\nreport = \"off\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"./base.toml\"]\n",
+    )
+    .unwrap();
+    let out = prime_out(dir.path(), &["report"]).unwrap();
+    assert!(out.contains("in base.toml."), "{out}");
+}
+
+#[test]
+fn level_flag_still_fails_on_a_config_that_cannot_load() {
+    // The Python reference loads the config for every `prime` run and fails on a broken one,
+    // so a project cannot be told to run a step it switched off.
     let dir = tempfile::tempdir().unwrap();
     write_config(dir.path(), "slopvac.toml", "level = \"loud\"");
-    assert!(prime_out(dir.path(), &["--level", "full"]).is_ok());
+    let err = prime_out(dir.path(), &["--level", "full"]).unwrap_err();
+    assert_eq!(err.code(), "config-invalid-value");
+}
+
+#[test]
+fn the_notice_shows_a_control_from_outside_the_project_as_external() {
+    let dir = tempfile::tempdir().unwrap();
+    let shared = dir.path().join("shared");
+    let project = dir.path().join("project");
+    fs::create_dir_all(&shared).unwrap();
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        shared.join("base.toml"),
+        "schema_version = 3\n\n[guidance]\nreview = \"off\"\n",
+    )
+    .unwrap();
+    fs::write(
+        project.join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"../shared/base.toml\"]\n",
+    )
+    .unwrap();
+    let out = prime_out(&project, &["review"]).unwrap();
+    assert!(out.contains("in <external>/base.toml."), "{out}");
+    assert!(!out.contains(dir.path().to_str().unwrap()), "{out}");
 }
 
 fn run_setup(root: &Path, extra: &[&str]) -> Result<setup::Outcome, AgentsError> {

@@ -1,0 +1,19 @@
+schema_version = 3
+id = "acme-tagger"
+version = "0.3.1-rc.1"
+slopvac_api = 1
+kind = "code"
+
+[plugin]
+command = "bin/acme-tagger"
+args = ["--stdio"]
+env = ["ACME_REGION"]
+network = false
+
+[[plugin.hooks]]
+kind = "tagger"
+id = "acme"
+
+[plugin.features]
+required = []
+optional = ["document-path"]

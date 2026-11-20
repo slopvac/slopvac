@@ -1,0 +1,15 @@
+# Diataxis content types. Each one is a consumer genre. Compass: does the reader act or
+# study, and does the page serve learning or work? Tutorial = act + learn, how-to = act +
+# work, reference = study + work, explanation = study + learn. A page that serves two
+# quadrants should be split.
+schema_version: 3
+id: tutorial
+extends: [consumer]
+description: Diataxis tutorial. A guided lesson that ends in something the reader built.
+detect:
+  min_score: 3
+  signals:
+    - { kind: path, glob: '**/{tutorial,tutorials}/**', weight: 3 }
+    - { kind: heading, pattern: '^\W*(?:what you.ll (?:learn|build)|next steps|step \d+)\b', weight: 1.5 }
+rules:
+  prose-craft.future-tense: 'off'

@@ -2,20 +2,20 @@
 
 The stable release prerequisites live in [distribution](distribution.md#maintainer-setup): the Homebrew tap and App access, the minisign secret and public key, the release-please App with Administration: Read-only, the `v*` tag ruleset and immutable releases. Candidates also need the signing key. This page lists only what [release candidates](candidates.md) add. A maintainer does these by hand, because no workflow or script in this repository changes repository, PyPI or GitHub settings.
 
-## PyPI Trusted Publishing for candidates
+## PyPI Trusted Publishing
 
-PyPI matches the publishing workflow by file name and environment. Candidates upload from a new workflow, so register it for the `slopvac` project at <https://pypi.org/manage/project/slopvac/settings/publishing/> before the first candidate:
+PyPI matches the publishing workflow by file name and environment. Candidates and stable 3.x releases both upload from `publish-pypi.yml`, so register it for the `slopvac` project at <https://pypi.org/manage/project/slopvac/settings/publishing/> before the first candidate:
 
 | Field | Value |
 | --- | --- |
 | Owner | `slopvac` |
 | Repository name | `slopvac` |
-| Workflow name | `candidate.yml` |
+| Workflow name | `publish-pypi.yml` |
 | Environment name | `pypi` |
 
 The PyPI trusted publisher owner is the `slopvac` GitHub organisation. The release GitHub App is installed on the `slopvac` organisation.
 
-Stable releases keep the registration of `publish-lint.yml` that already exists. If a later change publishes stable wheels from another workflow, register that file the same way.
+The 2.x registration of `publish-lint.yml` stays while 2.x releases remain. No other workflow uploads to PyPI.
 
 ## The `pypi` environment
 
@@ -25,11 +25,21 @@ In Settings, Environments, `pypi`:
 - Under deployment branches and tags, allow the `rc/v*` and `v*` tag patterns.
 - Add no secrets. Trusted Publishing needs none.
 
+## The `candidate-signing` environment
+
+The `sign` job of `publish-pypi.yml` runs in the `candidate-signing` environment and is the only candidate job that reads `MINISIGN_SECRET_KEY`. The job runs only for a publishing run: a push of an `rc/v*` tag, or a manual run on that tag with `dry-run` off. A dry run never signs. In Settings, Environments, `candidate-signing`:
+
+- Under deployment branches and tags, allow only the `rc/v*` tag pattern. Allow no branch and no `v*` tag.
+- Add the `MINISIGN_SECRET_KEY` environment secret.
+- Add required reviewers only if you want a second approval before signing. The `pypi` environment already gates the upload.
+
+The environment is separate from `release` so that adding `rc/v*` never lets a candidate tag reach the environment that signs stable releases.
+
 ## Protect candidate tags
 
 Create a second ruleset that targets `refs/tags/rc/v*` with the same settings as the `v*` ruleset in [distribution](distribution.md#protect-version-tags): active, with the update, deletion and non-fast-forward rules, and a bypass list that is empty or admin-only.
 
-No workflow checks this ruleset. `scripts/release_ruleset.py` accepts only plain `vX.Y.Z` tags. The stable gate does not rely on it: it needs a passed `candidate.yml` push run for the candidate tag at its current commit, so a moved tag has no passed run until its run passes. The ruleset keeps the tag that testers installed from fixed.
+No workflow checks this ruleset. `scripts/release_ruleset.py` accepts only plain `vX.Y.Z` tags. The stable gate does not rely on it: it needs a passed `publish-pypi.yml` push run for the candidate tag at its current commit, so a moved tag has no passed run until its run passes. The ruleset keeps the tag that testers installed from fixed.
 
 ## Pin the tag rulesets
 
@@ -43,7 +53,7 @@ python3 scripts/release_ruleset.py update-pins --repo slopvac/slopvac
 
 ## Check the setup
 
-Run the `Release candidate` workflow by hand (`workflow_dispatch`) on a branch with `dry-run` on. It exercises the build and tests and publishes nothing. The first real upload happens only when someone pushes an `rc/vX.Y.Z-rc.N` tag and approves the `pypi` environment.
+Run the `Publish to PyPI` workflow by hand (`workflow_dispatch`) on a branch with `dry-run` on. It exercises the build and tests and publishes nothing. The first real upload happens only when someone pushes an `rc/vX.Y.Z-rc.N` or `vX.Y.Z` tag and approves the `pypi` environment.
 
 ## Release signing key
 
@@ -57,7 +67,7 @@ Release artifacts are signed with minisign. The public key is committed at `keys
   RWRtrHBF20uR2Ul9P3Ppdw/e62xuebTxakJxrRL1eyclNXsCQvwoCqzN
   ```
 
-- The secret key lives in the GitHub Actions secret `MINISIGN_SECRET_KEY`. A backup is in the 1Password vault `proj-slopvac`, item `slopvac release minisign key`.
+- The secret key lives in the GitHub Actions secret `MINISIGN_SECRET_KEY`, stored on the `release`, `candidate-signing` and `revocations` environments. A repository-level copy remains only until the first candidate signs in `candidate-signing`. Then delete it with `gh secret delete MINISIGN_SECRET_KEY -R slopvac/slopvac`, and the environments are its only home. A backup is in the 1Password vault `proj-slopvac`, item `slopvac release minisign key`.
 
 To verify a release file against the committed key:
 
@@ -69,24 +79,49 @@ The release and candidate workflows sign with this key and check each signature 
 
 ### Where the binary uses the key
 
-The `slopvac-plugins` crate compiles `keys/slopvac-release.pub` in with `include_str!`. `KeyPolicy::compiled()` in `sign.rs` makes it the only key for the first-party namespace `slopvac`. `Revocations::with_compiled_root` in `revoke.rs` makes it the root key that verifies the revocation list. Both return an error if the compiled key does not parse, and first-party verification then refuses.
+The release key signs release archives and the revocation list. It signs no plugin. The `slopvac-plugins` crate compiles `keys/slopvac-release.pub` in with `include_str!`, and `Revocations::with_compiled_root` in `revoke.rs` makes it the only root key that verifies the revocation list. That function returns an error if the compiled key does not parse, and then no revocation list verifies.
 
-The `slopvac-update` crate includes the same file in `verify.rs`. `ReleaseVerifier` checks the `.minisig` of the archive that `slopvac self update` downloads. It accepts prehashed signatures only. It refuses a missing, tampered, legacy or foreign-key signature before it replaces the binary. It also requires the signed trusted comment to name the requested archive and version, so an older or foreign-target archive that the key signed does not install. `scripts/release_signing.py` writes that comment.
+The `slopvac-update` crate includes the same file in `verify.rs`, plus the optional `NEXT_RELEASE_KEY_FILE` constant in `verify.rs`. `ReleaseVerifier` checks the `.minisig` of the archive that `slopvac self update` downloads against both keys. It accepts prehashed signatures only. It refuses a missing, tampered, legacy or foreign-key signature before it replaces the binary. It also requires the signed trusted comment to name the requested archive and version, so an older or foreign-target archive that the key signed does not install. `scripts/release_signing.py` writes that comment.
 
 Tests inject other keys through the public fields of `KeyPolicy`, through `Revocations::new` and through `Runtime::verifier`, so no test needs the secret key.
 
-### How first-party packs are signed
+### How the release key signs
 
-Release CI signs release artifacts with `MINISIGN_SECRET_KEY` in minisign's default prehashed mode. The `Revocation list` workflow signs the revocation list the same way, as [the last section](#the-signed-revocation-list) describes. Signing first-party packs is not wired into a workflow yet, so no first-party pack is signed. A first-party pack carries a signed statement and its `.minisig` as the two signature layers described in [the threat model](../contract/threat-model.md#53-rotation-and-revocation). The statement names the namespace `slopvac` and the key id `D9914BDB4570AC6D`. The revocation list uses the same key. No one signs by hand and no one reads the secret key.
+Release CI signs release artifacts with `MINISIGN_SECRET_KEY` in minisign's default prehashed mode. The `Revocation list` workflow signs the revocation list the same way, as [the last section](#the-signed-revocation-list) describes. No one signs by hand and no one reads the secret key.
 
 ### Rotate the key
 
-The first-party key set is compiled in, so it changes only with a slopvac release. A publisher-key rotation statement (signed by the old and new key) applies to pinned user keys, not to this key.
+The trusted release keys are compiled in, so they change only with a slopvac release. `slopvac self update` trusts a list of up to two keys: the current key in `keys/slopvac-release.pub` and an optional next key in the `NEXT_RELEASE_KEY_FILE` constant in `crates/slopvac-update/src/verify.rs`. A signature from either key verifies, and the trusted comment must still match. The constant is `None` when no rotation is under way.
 
-1. Generate the new minisign key pair. Store the secret key in the Actions secret `MINISIGN_SECRET_KEY` and a backup in 1Password, without printing it.
-2. Replace `keys/slopvac-release.pub` with the new public key, update the key id on this page, and release a binary that embeds it. The embedded-key tests in `crates/slopvac-plugins/tests/sign.rs` and `crates/slopvac-update/src/verify.rs` must change in the same pull request.
-3. Re-sign the first-party packs and publish a new revocation list with the new key.
-4. If the old key leaked, publish a list that names its key id, signed while the old key is still a root. Binaries that embed the old key keep trusting it until the user upgrades, which is residual risk R8 in the threat model.
+A binary trusts only the keys it was built with. If a rotation skipped the next-key step, a client could never verify a release signed with the new key, and it would need a manual reinstall. The next key therefore ships in a release before anything is signed with it.
+
+A publisher-key rotation statement (signed by the old and new key) applies to pinned user keys, not to this key.
+
+1. Generate the next minisign key pair with `minisign -G -W`. Keep the secret key out of the repository and the transcript. Store a backup in 1Password. Do not touch the `MINISIGN_SECRET_KEY` environment secrets yet.
+2. Set `NEXT_RELEASE_KEY_FILE` to the text of the new public key, in a pull request that updates the key ids on this page and in [distribution](distribution.md#signatures).
+3. Release. This rotation release is signed with the current key, still in the `MINISIGN_SECRET_KEY` secret of each of the three signing environments, and embeds both public keys. Clients that update to it now trust the next key.
+4. Wait until enough clients have updated to the rotation release. Clients that skip it cannot verify a release signed with the next key.
+5. Promote the next key in one pull request: move the key text from `NEXT_RELEASE_KEY_FILE` into `keys/slopvac-release.pub` and set the constant back to `None`. After it merges and before the release workflow runs, replace `MINISIGN_SECRET_KEY` with the new secret in each of the three signing environments. The release workflow checks each signature against `keys/slopvac-release.pub`, so the secret and that file must change together. The release is signed with the new key. Clients on the rotation release accept it through their next key, and it embeds only the new key.
+6. Publish a new revocation list with the new key.
+
+A release-key rotation changes trust for binaries and the revocation list, not plugins. The plugins key, described in [the next section](#plugins-signing-key), is separate and stays in place.
+
+#### After a key compromise
+
+If the signing key leaked, rotation does not repair existing installs. Anyone with the old secret can sign an update that a client with the old key accepts, so a client that updates through `self update` cannot recover. Users must reinstall from a source they verify themselves: a release checked against the key id published in this repository, or a package manager. Publish the new key id and the reinstall instruction, then publish a revocation list that names the old key id, signed while the old key is still a root. Binaries that embed the old key keep trusting it until the user reinstalls, which is residual risk R8 in the threat model.
+
+## Plugins signing key
+
+The plugins key is a separate minisign key. Its public half is committed at `keys/slopvac-plugins.pub`.
+
+- Key id: `089DF22CF142CD2B`
+- It signs first-party plugins and the first-party plugin index and nothing else.
+
+The secret half is held in a protected release environment, and the release key and its secret never sign a plugin. Because the release key is the revocation root, a revocation list that names `089DF22CF142CD2B` stops every plugin the plugins key signed.
+
+The `slopvac-plugins` crate compiles `keys/slopvac-plugins.pub` in with `include_str!`. `KeyPolicy::compiled()` in `sign.rs` makes it the only key for the first-party namespace `slopvac`, and the release key does not verify that namespace. It returns an error if the compiled key does not parse, so first-party verification refuses. No first-party plugin is signed yet, because no workflow signs one. A first-party plugin carries a signed statement and its `.minisig` as the two signature layers described in [the threat model](../contract/threat-model.md#53-rotation-and-revocation). The statement names the namespace `slopvac` and the key id `089DF22CF142CD2B`.
+
+Replacing the compiled plugins key requires a slopvac release.
 
 ## The signed revocation list
 
@@ -99,7 +134,7 @@ The workflow has two jobs:
 - `build-sign` runs in the `revocations` environment with `contents: read`. It is the only job that reads `MINISIGN_SECRET_KEY`. It runs `scripts/revocation_list.py build`, which writes the canonical list, signs it in prehashed mode and checks the result against the committed public key.
 - `push` has `packages: write` and no secret. It checks the signature again, pushes the two files with a pinned `oras` and then pulls the result back to check it.
 
-The `revocations` environment is separate from `release` on purpose. This scheduled job only ever needs `main`, so the environment deploys from `main` alone, with no admin bypass. The `release` environment also allows `v*` tags. With a separate environment, a tag can never reach the key through this workflow. The job also has an `if` guard for `main`, as an extra layer, and so does `push`. The workflow has no `pull_request` trigger. Before `push` replaces the list, it resolves the published manifest and pulls the list. It refuses to continue unless the new `issued` time is strictly later, so a retried older run cannot roll clients back. Only a clear "manifest not found" counts as nothing published, and a scheduled run treats even that as a failure. Any other error, such as an authentication or network error, a server error or a layer that cannot be fetched, also fails the run.
+The `revocations` environment is separate from `release` on purpose. This scheduled job only ever needs `main`, so the environment deploys from `main` alone, with no admin bypass. The `release` environment allows `main` and `v*` tags, and `candidate-signing` allows `rc/v*` tags only. With a separate environment, a tag can never reach the key through this workflow. The job also has an `if` guard for `main`, as an extra layer, and so does `push`. The workflow has no `pull_request` trigger. Before `push` replaces the list, it resolves the published manifest and pulls the list. It refuses to continue unless the new `issued` time is strictly later, so a retried older run cannot roll clients back. Only a clear "manifest not found" counts as nothing published, and a scheduled run treats even that as a failure. Any other error, such as an authentication or network error, a server error or a layer that cannot be fetched, also fails the run.
 
 ### First run
 

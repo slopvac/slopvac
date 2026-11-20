@@ -265,7 +265,7 @@ def test_only_pull_request_runs_cancel_a_superseded_run(context, cancels):
 
 def rust_cache_steps() -> dict[tuple[str, str], dict]:
     found = {}
-    for workflow in ("test.yml", "docs-site.yml"):
+    for workflow in ("test.yml", "docs-site.yml", "action-v3-test.yml"):
         for name, job in load(workflow)["jobs"].items():
             for step in job.get("steps", []):
                 if step.get("uses", "").startswith("Swatinem/rust-cache@"):
@@ -278,7 +278,9 @@ def test_every_rust_cache_step_is_checked():
         ("test.yml", "rust-static"),
         ("test.yml", "rust"),
         ("test.yml", "rust-msrv"),
+        ("test.yml", "test"),
         ("docs-site.yml", "build"),
+        ("action-v3-test.yml", "action"),
     }
 
 
@@ -446,14 +448,22 @@ GATE_SCRIPT = "\n".join(
 )
 
 
-def run_security_gate(event: str, dependencies: bool, review: str) -> int:
+def run_security_gate(
+    event: str,
+    dependencies: bool,
+    review: str,
+    secrets: bool = False,
+    secret_scan: str = "skipped",
+    trufflehog: str = "skipped",
+) -> int:
     expected_osv = "success" if dependencies else "skipped"
     needs = {
         "dependency-review": {"result": review},
-        "trufflehog": {"result": "skipped"},
+        "trufflehog": {"result": trufflehog},
         "codeql": {"result": "skipped"},
         "osv": {"result": expected_osv},
         "trivy": {"result": "skipped"},
+        "trivy-secret": {"result": secret_scan},
     }
     env = {
         "RESULTS": json.dumps(needs),
@@ -461,7 +471,7 @@ def run_security_gate(event: str, dependencies: bool, review: str) -> int:
         "CODE": "false",
         "DEPENDENCIES": "true" if dependencies else "false",
         "FILESYSTEM": "false",
-        "SECRETS": "false",
+        "SECRETS": "true" if secrets else "false",
     }
     return subprocess.run(
         [sys.executable, "-c", GATE_SCRIPT],
@@ -480,6 +490,24 @@ def test_security_gate_requires_dependency_review_exactly_when_classified(
 ):
     accepted = review == ("success" if dependencies else "skipped")
     assert (run_security_gate(event, dependencies, review) == 0) is accepted
+
+
+@pytest.mark.parametrize("event", ["pull_request", "merge_group"])
+@pytest.mark.parametrize("secret_scan", ["success", "skipped", "failure"])
+def test_security_gate_requires_the_trivy_secret_scan_when_secrets_are_classified(
+    event, secret_scan
+):
+    # trufflehog is also due when SECRETS is true; give it a pass so only the scan varies.
+    assert "trivy-secret" in load("security.yml")["jobs"]["security-gate"]["needs"]
+    accepted = secret_scan == "success"
+    gate = run_security_gate(
+        event, False, "skipped", True, secret_scan, trufflehog="success"
+    )
+    assert (gate == 0) is accepted
+
+
+def test_security_gate_rejects_a_trivy_secret_scan_that_was_not_classified():
+    assert run_security_gate("pull_request", False, "skipped", False, "success") == 1
 
 
 def test_security_gate_expects_dependency_review_skipped_on_push():
@@ -523,7 +551,6 @@ def runs(expression: str, context: dict) -> bool:
 def test_every_pull_request_workflow_runs_when_a_draft_is_marked_ready():
     workflows = pull_request_workflows()
     assert set(workflows) == {
-        "action-v3-test.yml",
         "release.yml",
         "test.yml",
         "wheels.yml",
@@ -539,7 +566,6 @@ def test_every_pull_request_workflow_runs_when_a_draft_is_marked_ready():
 
 
 ROOT_JOBS = [
-    ("action-v3-test.yml", "action"),
     ("release.yml", "route"),
     ("test.yml", "changes"),
     ("test.yml", "quick-lint"),
@@ -961,3 +987,86 @@ def test_schema_check_compares_a_pull_request_with_its_merge_base(tmp_path):
     git, python = run_schema_step(tmp_path, pull)
     assert "git merge-base origin/main HEAD" in git
     assert python == ["python3 scripts/contract/schema_compat.py --base MERGEBASE"]
+
+
+# --- Rust scope: only pull requests narrow ------------------------------------
+
+SCOPE_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "ci" / "rust_scope.py"
+CHANGES_STEPS = load("test.yml")["jobs"]["changes"]["steps"]
+FORCE_STEP = next(s for s in CHANGES_STEPS if s.get("id") == "force")
+SCOPE_STEP = next(s for s in CHANGES_STEPS if s.get("id") == "scope")
+
+
+def changes_scope(event: str, routing_changed: bool, tmp_path: Path) -> dict[str, str]:
+    """Run the force step, then the scope script with a cargo-delta that must not run."""
+    out = tmp_path / "force_output"
+    out.touch()
+    subprocess.run(
+        ["bash", "-c", FORCE_STEP["run"]],
+        env={
+            **os.environ,
+            "EVENT_NAME": event,
+            "ROUTING_CHANGED": "true" if routing_changed else "false",
+            "GITHUB_OUTPUT": str(out),
+        },
+        check=True,
+    )
+    forced = out.read_text().strip() == "force_all=true"
+    tripwire = tmp_path / "ran"
+    stub = tmp_path / "stub"
+    stub.write_text(f"#!/bin/sh\ntouch {tripwire}\nexit 1\n")
+    stub.chmod(0o755)
+    scope_out = tmp_path / "scope_output"
+    scope_out.touch()
+    subprocess.run(
+        [sys.executable, str(SCOPE_SCRIPT), "--delta", str(stub)],
+        env={
+            **os.environ,
+            "EVENT_NAME": event,
+            "BASE_REF": "main",
+            # The workflow passes `force_all || rust != 'true'`; with Rust routed it is force_all.
+            "FORCE_ALL": "true" if forced else "false",
+            "GITHUB_OUTPUT": str(scope_out),
+        },
+        check=True,
+        capture_output=True,
+    )
+    result = dict(line.split("=", 1) for line in scope_out.read_text().splitlines())
+    result["asked_cargo_delta"] = str(tripwire.exists())
+    return result
+
+
+@pytest.mark.parametrize("event", ["merge_group", "push"])
+def test_the_queue_and_main_run_the_whole_workspace_without_cargo_delta(
+    event, tmp_path
+):
+    assert changes_scope(event, False, tmp_path) == {
+        "rust_scope": "all",
+        "rust_modified": "--workspace",
+        "rust_affected": "--workspace",
+        "asked_cargo_delta": "False",
+    }
+
+
+def test_editing_the_routing_runs_the_whole_workspace_even_on_a_pull_request(tmp_path):
+    outputs = changes_scope("pull_request", True, tmp_path)
+    assert outputs["rust_scope"] == "all"
+    assert outputs["asked_cargo_delta"] == "False"
+
+
+def test_a_pull_request_asks_cargo_delta_and_a_failing_answer_widens_to_all(tmp_path):
+    outputs = changes_scope("pull_request", False, tmp_path)
+    assert outputs["asked_cargo_delta"] == "True"
+    assert outputs["rust_scope"] == "all"
+
+
+def test_the_scope_step_forces_everything_unless_rust_is_routed_and_unforced():
+    force = SCOPE_STEP["env"]["FORCE_ALL"]
+    assert "steps.force.outputs.force_all == 'true'" in force
+    assert "steps.filter.outputs.rust != 'true'" in force
+
+
+def test_the_changes_job_fetches_history_for_the_diff_base():
+    checkout = next(s for s in CHANGES_STEPS if s["name"] == "Checkout")
+    assert checkout["with"]["fetch-depth"] == "0"
+    assert SCOPE_STEP["env"]["BASE_REF"] == "${{ github.base_ref }}"

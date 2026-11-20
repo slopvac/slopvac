@@ -27,7 +27,7 @@ The 2.x report had its own `schema_version` of 1. The 3.0 report uses 3, like ev
 | `update` | Whether update checks run, why not, and the cached answer. |
 | `offline` | Whether offline mode is on, and which sources turned it on. |
 | `config` | Each configuration source with a status. |
-| `packs` | The lockfile status and each locked pack with its state. |
+| `plugins` | The lockfile status and each locked plugin with its state. |
 | `trust` | The trust store status, the number of plugin approvals and the pinned keys. |
 | `directories` | The cache, data and state directories. |
 
@@ -57,40 +57,41 @@ Each entry has a `layer` (`explicit` for `--config`, `project` for the nearest `
 
 The `error` text is a fixed message with no file content. `config.ok` is true when every source has status `ok`. A project with no source runs on the defaults, and `config.ok` is true.
 
-### 2.4 Packs and trust
+### 2.4 Plugins and trust
 
-The lockfile is `.slopvac/packs.lock` in the directory of the configuration file, or in the working directory if the search finds none. `packs.lockfile.status` is `absent` when there is no lockfile, which is not a problem. It is `invalid` when the file does not parse, and `unreadable` when the file or the pack store cannot be read. The `invalid` error holds the location only, such as `invalid value at /packs/0/digest`, or `not a valid lockfile` for a syntax error. It repeats nothing the file said, because a parser message can echo a rejected value. A pointer segment that is not a lockfile key or an array index shows as `*`.
+The lockfile is `.slopvac/plugins.lock` in the directory of the configuration file, or in the working directory if the search finds none. `plugins.lockfile.status` is `absent` when there is no lockfile, which is not a problem. It is `invalid` when the file does not parse, and `unreadable` when the file or the plugin store cannot be read. The `invalid` error holds the location only, such as `invalid value at /plugins/0/digest`, or `not a valid lockfile` for a syntax error. It repeats nothing the file said, because a parser message can echo a rejected value. A pointer segment that is not a lockfile key or an array index shows as `*`.
 
-Each entry in `packs.items` has the pack `id`, `version` and `kind`, and a `state`: `recorded`, `in-place`, `changed`, `tampered` or `not-installed`. Doctor reports the state without repairing it. `plugins sync` repairs a tampered pack.
+Each entry in `plugins.items` has the plugin `id`, `version` and `kind` (`data` or `code`), and a `state`: `recorded`, `in-place`, `changed`, `tampered` or `not-installed`. Doctor reports the state without repairing it. `plugins sync` repairs a tampered plugin.
 
 Doctor reads the trust file like every other project file: without blocking, only as a regular file, and under the 8 MiB limit of the store. A missing file is `absent`. A permission error, a non-regular file, an oversize file or a damaged file is `unreadable`. `trust.trusted_plugins` counts the approvals in the trust store. `trust.pinned_keys` lists each pinned namespace with the SHA-256 fingerprint of its key. Doctor prints no stored text as it stands. It parses each stored key and derives the fingerprint itself, so a stored fingerprint that disagrees fails. The namespace must match `^[a-z][a-z0-9-]{0,63}$`. A store with an invalid pin is `unreadable` with the fixed error `the trust store holds an invalid pinned key`, and `pinned_keys` is empty.
 
-`ok` is false when `config.ok` is false, the lockfile status is `invalid` or `unreadable`, any pack is `tampered`, or the trust store is `unreadable`.
+`ok` is false when `config.ok` is false, the lockfile status is `invalid` or `unreadable`, any plugin is `tampered`, or the trust store is `unreadable`.
 
 ### 2.5 Directories
 
 `directories` has `cache`, `data` and `state`. Each entry gives the `path`, the `source` of the choice (an environment variable name, `default` or `unresolved`), whether it exists, and the total size of the regular files below it. The size walk stops after 10000 entries. It then sets `truncated`, so `bytes` is a lower bound. Links are not followed. The working directory itself shows as `.`. A directory shows `<unresolved>` when the environment has no home to derive it from.
 
-The cache directory is `SLOPVAC_CACHE_DIR` when set, on every platform. Otherwise the locations are:
+The cache directory is `SLOPVAC_CACHE_DIR` when set and not empty. Otherwise each location follows the XDG base directory specification. An `XDG_*` variable counts only when it holds an absolute path:
 
-| Directory | Unix | Windows |
-|---|---|---|
-| cache | `$XDG_CACHE_HOME/slopvac`, else `~/.cache/slopvac` | `%LOCALAPPDATA%\slopvac\cache` |
-| data | `$XDG_DATA_HOME/slopvac`, else `~/.local/share/slopvac` | `%LOCALAPPDATA%\slopvac\data` |
-| state | `$XDG_STATE_HOME/slopvac`, else `~/.local/state/slopvac` | `%LOCALAPPDATA%\slopvac\state` |
+| Directory | Location |
+|---|---|
+| cache | `$XDG_CACHE_HOME/slopvac`, else `~/.cache/slopvac` |
+| data | `$XDG_DATA_HOME/slopvac`, else `~/.local/share/slopvac` |
+| state | `$XDG_STATE_HOME/slopvac`, else `~/.local/state/slopvac` |
 
-The data directory is the pack store, and the state directory holds the trust store.
+The same locations apply on macOS and under WSL. 3.0 has no native Windows build.
+
+The data directory is the plugin store, and the state directory holds the trust store.
 
 ## 3. Redaction
 
-A path in the report is relative to the working directory, or `<external>/<file name>` outside it (policies.md, section 1.7). The separator is `/` on every platform. Messages hold no absolute path and no file content. A per-user directory therefore shows as `<external>/slopvac` on Unix and `<external>/cache`, `<external>/data` or `<external>/state` on Windows, and `source` says how the location was chosen.
+A path in the report is relative to the working directory, or `<external>/<file name>` outside it (policies.md, section 1.7). The separator is `/` on every platform. Messages hold no absolute path and no file content. A per-user directory therefore shows as `<external>/slopvac`, and `source` says how the location was chosen.
 
 ## 4. Build status
 
-Two inputs come from local stand-ins until the beads that own them land:
+Configuration discovery comes from a local stand-in until the config layer lands. It handles one `slopvac.toml` and ignores `extends`.
 
-- Configuration discovery handles one `slopvac.toml` and ignores `extends`. `slopvac-8l4.12.23` swaps in the config layer.
-- The directory locations come from the environment. `slopvac-8l4.12.24` swaps in the shared resolver.
+The directory locations come from the shared resolver in `slopvac-fs`, the same one the plugin store and the trust store use.
 
 ## 5. Conformance
 

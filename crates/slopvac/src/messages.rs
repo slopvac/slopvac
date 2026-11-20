@@ -12,7 +12,22 @@ pub type Registered = (&'static str, fn() -> &'static [Entry]);
 
 /// Every catalog in the workspace, by name. Crates add themselves here as they adopt the
 /// message registry.
-pub static ALL: &[Registered] = &[];
+pub static ALL: &[Registered] = &[
+    ("slopvac-agents", slopvac_agents::message_entries),
+    ("slopvac-config", slopvac_config::error_entries),
+    ("slopvac-config-text", slopvac_config::text_entries),
+    ("slopvac-config-phrases", slopvac_config::phrase_entries),
+    ("report", slopvac_report::message_entries),
+    ("slopvac-lsp", slopvac_lsp::message_entries),
+    ("report issue", report_entries),
+    ("self update", slopvac_update::error_entries),
+    ("self update text", slopvac_update::text_entries),
+    ("self update phrases", slopvac_update::phrase_entries),
+];
+
+fn report_entries() -> &'static [Entry] {
+    <crate::report::messages::ReportError as slopvac_messages::Catalog>::entries()
+}
 
 /// A code that no longer exists. Its meaning stays reserved and the reference page keeps it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -96,7 +96,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       actions: read # list and download artifacts of the triggering run
-      pull-requests: write # review comments
+      pull-requests: read # check the pull request; comments use the minted token
     steps:
       - name: Install reviewdog
         run: |
@@ -234,12 +234,23 @@ jobs:
           fi
           echo "number=$number" >> "$GITHUB_OUTPUT"
           echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+      # Minted after the artifacts are handled, so no step that reads untrusted
+      # content runs with it in scope.
+      - name: Mint the review comment token
+        id: comment-token
+        if: ${{ steps.pr.outputs.number != '' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
       - name: Post review comments
         if: ${{ steps.pr.outputs.number != '' }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.comment-token.outputs.token }}
           REPO: ${{ github.repository }}
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ github.token }}
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ steps.comment-token.outputs.token }}
           CI_REPO_OWNER: ${{ github.repository_owner }}
           CI_REPO_NAME: ${{ github.event.repository.name }}
           # The validated head, not the artifact's claim. reviewdog sends comments with
@@ -293,7 +304,7 @@ jobs:
     permissions:
       actions: read # list and download artifacts of the triggering run
       contents: read # check out the default branch for the validation script
-      pull-requests: write # review comments
+      pull-requests: read # check the pull request; comments use the minted token
     steps:
       - name: Check out the validation script
         # workflow_run checks out the default branch, never the pull request.
@@ -345,11 +356,20 @@ jobs:
           # System python3 is acceptable: the script is standard library only and
           # runs on the hosted image, so there is no dependency to pin or install.
           python3 scripts/fork_review.py extract "$RUNNER_TEMP/slopvac-findings.zip" "$RUNNER_TEMP/findings-v3"
+      # Minted after the artifact is validated, so the extraction step runs without it.
+      - name: Mint the review comment token
+        id: comment-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
       - name: Post review comments
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.comment-token.outputs.token }}
           REPO: ${{ github.repository }}
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ github.token }}
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ steps.comment-token.outputs.token }}
           CI_REPO_OWNER: ${{ github.repository_owner }}
           CI_REPO_NAME: ${{ github.event.repository.name }}
           HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}

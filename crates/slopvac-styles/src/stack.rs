@@ -10,8 +10,9 @@ use crate::{StyleError, StyleSource};
 /// so the result matches [`fn@crate::resolve`] and a value in the explain output names the
 /// preset that set it. [`fn@crate::resolve`] also checks the list for cycles, malformed
 /// files and conflicts; `style_layers` has no error channel, so a list that fails to load
-/// contributes nothing. A style file over its size cap is the exception: [`Presets::check_styles`]
-/// reports it, and the config load fails with the code `style-too-large`.
+/// contributes nothing. A style file over its size cap and one that cannot be read are the exceptions:
+/// [`Presets::check_styles`] reports them, and the config load fails with the code
+/// `style-too-large` or `config-io`.
 #[derive(Debug, Clone, Copy)]
 pub struct StylePresets<S>(pub S);
 
@@ -31,6 +32,12 @@ impl<S: StyleSource> Presets for StylePresets<S> {
         match apply_order(listed, &self.0) {
             Err(e @ StyleError::TooLarge { .. }) => Err(PresetFailure {
                 code: Code::StyleTooLarge,
+                message: e.to_string(),
+            }),
+            // A style that cannot be read (a FIFO, a device, an I/O failure) must not vanish
+            // from the stack, so it fails the load like an oversized one.
+            Err(e @ StyleError::Io { .. }) => Err(PresetFailure {
+                code: Code::Io,
                 message: e.to_string(),
             }),
             _ => Ok(()),

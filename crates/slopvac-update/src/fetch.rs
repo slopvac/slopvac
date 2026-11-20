@@ -4,18 +4,24 @@ use std::time::Duration;
 
 use thiserror::Error;
 
+use crate::messages::{UpdatePhrase, UpdateText};
+
 /// Why a fetch failed.
 #[derive(Debug, Error)]
 pub enum FetchError {
     /// The URL is not HTTPS.
-    #[error("refusing a non-HTTPS URL")]
+    #[error("{}", UpdatePhrase::FetchNotHttps.as_static())]
     NotHttps,
     /// The response was larger than the limit.
-    #[error("response is larger than {0} bytes")]
+    #[error("{}", too_large_text(*.0))]
     TooLarge(u64),
     /// Transport or status failure.
     #[error("{0}")]
     Network(String),
+}
+
+fn too_large_text(limit: u64) -> String {
+    UpdateText::FetchTooLarge { limit }.to_string()
 }
 
 /// Hops the fetcher follows. GitHub release downloads need one, to the asset host.
@@ -103,6 +109,10 @@ impl UreqFetcher {
     }
 }
 
+fn network(phrase: UpdatePhrase) -> FetchError {
+    FetchError::Network(phrase.as_static().to_owned())
+}
+
 /// What one request returned: the final response, or a redirect to follow.
 enum Step<T> {
     Done(T),
@@ -123,15 +133,13 @@ fn follow<T>(
             Step::Done(response) => return Ok(response),
             Step::Redirect(location) => {
                 if !redirect_host_allowed(&location) {
-                    return Err(FetchError::Network(
-                        "refusing a redirect to a host that does not serve GitHub releases".into(),
-                    ));
+                    return Err(network(UpdatePhrase::FetchRedirectHost));
                 }
                 url = location;
             }
         }
     }
-    Err(FetchError::Network("too many redirects".into()))
+    Err(network(UpdatePhrase::FetchTooManyRedirects))
 }
 
 impl Fetcher for UreqFetcher {
@@ -158,13 +166,13 @@ impl Fetcher for UreqFetcher {
                 return Ok(Step::Done(resp));
             }
             if self.allow_loopback_http {
-                return Err(FetchError::Network("redirects are refused".into()));
+                return Err(network(UpdatePhrase::FetchRedirectsRefused));
             }
             let location = resp
                 .headers()
                 .get("location")
                 .and_then(|v| v.to_str().ok())
-                .ok_or_else(|| FetchError::Network("redirect without a Location".into()))?;
+                .ok_or_else(|| network(UpdatePhrase::FetchRedirectNoLocation))?;
             Ok(Step::Redirect(location.to_owned()))
         })?;
         let mut buf = Vec::new();

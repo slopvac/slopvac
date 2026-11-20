@@ -84,8 +84,8 @@ fn a_2x_rule_id_points_at_migrate_and_does_not_suppress() {
         lint("<!-- slopvac-allow: rule=cat.dull reason=dead-metaphor -->\nPlease leverage it.\n");
     assert_eq!(
         doc.findings[0].message.as_str(),
-        "suppression names cat.dull, a 2.x rule id with no pack. Run `slopvac migrate` to \
-         qualify it as <pack>:cat.dull."
+        "suppression names cat.dull, a 2.x rule id with no plugin. Run `slopvac migrate` to \
+         qualify it as <plugin>:cat.dull."
     );
     assert_eq!(doc.findings.len(), 2);
 }
@@ -104,7 +104,7 @@ fn a_malformed_allow_is_reported_with_the_expected_form() {
     let doc = lint("<!-- slopvac-allow: core:cat.dull -->\nPlain text.\n");
     assert_eq!(
         doc.findings[0].message.as_str(),
-        "invalid suppression; expected <!-- slopvac-allow: rule=<pack>:<rule-id> \
+        "invalid suppression; expected <!-- slopvac-allow: rule=<plugin>:<rule-id> \
          reason=<reason> -->."
     );
 }

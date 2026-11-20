@@ -160,8 +160,18 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-    for found in slopvac_styles::detect_house_styles(&project) {
+    let detection = slopvac_styles::detect_house_styles(&project);
+    for found in &detection.suggestions {
         say(out, format!("house style: {}", found.describe()))?;
+    }
+    // Info notice, in the report text form `notice[<code>]: <message>`. Detection
+    // never fails, so init still succeeds.
+    for skipped in &detection.skipped {
+        let label = slopvac_fs::display_under_root(&project.join(&skipped.file), &project);
+        say(
+            out,
+            format!("notice[{}]: {}", skipped.code, skipped.message(&label)),
+        )?;
     }
     if !skip_agents {
         let mut chosen: Vec<String> = Vec::new();
@@ -190,9 +200,7 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
                 agent: false,
                 reviewer_model: None,
             })
-            .map_err(|err| {
-                CliError::new(err.code(), redact::redact_root(&err.to_string(), &root))
-            })?;
+            .map_err(|err| crate::owners::agents_error(&err, &root))?;
             for line in outcome.lines {
                 say(out, redact::redact_root(&line, &root))?;
             }

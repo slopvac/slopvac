@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -33,7 +34,8 @@ def load(name: str) -> dict:
 
 
 def test_every_path_class_is_a_changes_output_and_vice_versa():
-    assert set(JOBS["changes"]["outputs"]) - {"force_all"} == set(CLASSES)
+    scope_outputs = {"force_all", "rust_scope", "rust_modified", "rust_affected"}
+    assert set(JOBS["changes"]["outputs"]) - scope_outputs == set(CLASSES)
 
 
 def test_gate_needs_every_job_except_itself_and_its_compat_shims():
@@ -106,6 +108,12 @@ def test_evals_class_includes(path):
     assert in_class("evals", path)
 
 
+@pytest.mark.parametrize("path", ["CLA.md", "tests/test_cla_text.py"])
+def test_code_class_runs_the_cla_text_test(path):
+    # tests/test_cla_text.py hashes CLA.md, so a change to the agreement text must run the tests.
+    assert in_class("code", path)
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -164,7 +172,12 @@ def evaluate(condition: str, true_outputs: set[str]) -> bool:
 
 @pytest.mark.parametrize(
     ("job", "klass"),
-    [("evals-ratchet", "evals"), ("docs-site", "docs-site")],
+    [
+        ("evals-ratchet", "evals"),
+        ("docs-site", "docs-site"),
+        ("action-v3", "action-v3"),
+        ("diagram-adapter", "diagram-adapter"),
+    ],
 )
 @pytest.mark.parametrize(
     ("true_outputs", "runs"),
@@ -185,6 +198,48 @@ def test_folded_job_runs_exactly_when_routed(job, klass, true_outputs, runs):
 )
 def test_folded_job_ignores_the_other_class(job, other):
     assert evaluate(JOBS[job]["if"], {other}) is False
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "crates/slopvac-diagrams/src/mermaid.rs",
+        "crates/slopvac-engine/src/lint.rs",
+        "evals/diagrams.py",
+        "tests/test_evals_diagrams.py",
+        "tests/fixtures/diagram_eval_output.json",
+    ],
+)
+def test_live_adapter_path_also_runs_the_python_suite(path):
+    # Main classifies these paths as `code`, so the Python suite runs with the adapter.
+    outputs = classes_of([path])
+    assert {"diagram-adapter", "code"} <= outputs
+    assert evaluate(JOBS["diagram-adapter"]["if"], outputs) is True
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+
+
+def test_adapter_class_alone_runs_the_adapter_and_not_the_python_suite():
+    # The gates are isolated: the adapter job fires on its own class, and the
+    # Python suite does not fire on it.
+    outputs = {"diagram-adapter"}
+    assert evaluate(JOBS["diagram-adapter"]["if"], outputs) is True
+    assert evaluate(JOBS["test"]["if"], outputs) is False
+
+
+@pytest.mark.parametrize("path", ["README.md", "docs/design/slopvac-3.md"])
+def test_prose_change_runs_neither_the_adapter_nor_the_python_suite(path):
+    outputs = classes_of([path])
+    assert evaluate(JOBS["diagram-adapter"]["if"], outputs) is False
+    assert evaluate(JOBS["test"]["if"], outputs) is False
+
+
+def test_live_diagram_adapter_pytest_step_requires_the_real_engine():
+    step = next(
+        step
+        for step in JOBS["diagram-adapter"]["steps"]
+        if "pytest" in step.get("run", "")
+    )
+    assert step.get("env", {}).get("SLOPVAC_EVALS_LIVE_ENGINE") == "1"
 
 
 @pytest.mark.parametrize(
@@ -267,17 +322,79 @@ def test_fixtures_read_by_contract_tests_run_the_full_suite(path):
     assert evaluate(JOBS["test"]["if"], outputs) is True
 
 
-@pytest.mark.parametrize("job", ["evals-ratchet", "docs-site"])
-def test_folded_job_calls_its_workflow_with_read_only_token(job):
+@pytest.mark.parametrize(
+    "path",
+    [
+        "crates/slopvac-report/src/lib.rs",
+        "crates/slopvac-engine/src/lib.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+        "rust-toolchain.toml",
+    ],
+)
+def test_a_change_to_the_binary_sources_runs_the_real_binary_suites(path):
+    outputs = classes_of([path])
+    assert {"code", "action-v3"} <= outputs
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+    assert evaluate(JOBS["action-v3"]["if"], outputs) is True
+
+
+def test_a_change_to_the_action_alone_runs_its_contract_tests():
+    # tests/test_action_v3.py reads action-v3/action.yml, so the full suite must run.
+    outputs = classes_of(["action-v3/action.yml"])
+    assert {"code", "action-v3"} <= outputs
+    assert evaluate(JOBS["test"]["if"], outputs) is True
+    assert evaluate(JOBS["action-v3"]["if"], outputs) is True
+
+
+@pytest.mark.parametrize("path", ["README.md", "docs/design/x.md"])
+def test_prose_only_changes_skip_the_action_v3_job(path):
+    assert evaluate(JOBS["action-v3"]["if"], classes_of([path])) is False
+
+
+def test_the_pytest_job_builds_the_binary_before_it_runs_the_suites():
+    steps = JOBS["test"]["steps"]
+    build = next(s for s in steps if s["name"] == "Build the slopvac binary")
+    assert build["run"] == "cargo build --locked -p slopvac"
+    assert JOBS["test"]["env"]["SLOPVAC_BIN"].endswith("/target/debug/slopvac")
+    names = [s["name"] for s in steps]
+    assert names.index("Build the slopvac binary") < names.index(
+        "Run every discovered pytest suite"
+    )
+
+
+def test_the_rust_job_allows_user_namespaces_before_the_tests_run():
+    steps = JOBS["rust"]["steps"]
+    names = [s["name"] for s in steps]
+    step = steps[
+        names.index("Allow unprivileged user namespaces for the network-sandbox test")
+    ]
+    assert names.index(step["name"]) < names.index("Test")
+    assert step["if"] == "runner.os == 'Linux'"
+    assert "kernel.apparmor_restrict_unprivileged_userns=0" in step["run"]
+    assert "unshare --user --map-root-user --net true" in step["run"]
+
+
+@pytest.mark.parametrize(
+    ("job", "workflow"),
+    [
+        ("evals-ratchet", "evals-ratchet.yml"),
+        ("docs-site", "docs-site.yml"),
+        ("action-v3", "action-v3-test.yml"),
+    ],
+)
+def test_folded_job_calls_its_workflow_with_read_only_token(job, workflow):
     call = JOBS[job]
-    assert call["uses"] == f"./.github/workflows/{job}.yml"
+    assert call["uses"] == f"./.github/workflows/{workflow}"
     assert call["permissions"] == {"contents": "read"}
 
 
 # --- workflow triggers and permissions ---------------------------------------
 
 
-@pytest.mark.parametrize("workflow", ["evals-ratchet.yml", "docs-site.yml"])
+@pytest.mark.parametrize(
+    "workflow", ["evals-ratchet.yml", "docs-site.yml", "action-v3-test.yml"]
+)
 def test_folded_workflow_has_no_standalone_pr_or_push_trigger(workflow):
     triggers = load(workflow)["on"]
     assert "workflow_call" in triggers
@@ -317,6 +434,7 @@ FLAG_ENV = {
     "PACKAGE": "package",
     "RUST": "rust",
     "ACTION": "action",
+    "ACTION_V3": "action-v3",
     "LINT": "lint",
     "DOCS": "docs",
     "SECRETS": "secrets",
@@ -324,17 +442,25 @@ FLAG_ENV = {
     "FILESYSTEM": "filesystem",
     "EVALS": "evals",
     "DOCS_SITE": "docs-site",
+    "DIAGRAM_ADAPTER": "diagram-adapter",
 }
 ALWAYS = {"changes", "quick-lint"}
 
 
 def run_gate(
-    flags: set[str], results: dict[str, str], *, draft: bool = False
+    flags: set[str],
+    results: dict[str, str],
+    *,
+    draft: bool = False,
+    event: str = "pull_request",
+    scope: tuple[str, str, str] = ("all", "--workspace", "--workspace"),
 ) -> subprocess.CompletedProcess:
     needs = {name: {"result": results.get(name, "skipped")} for name in GATE_NEEDS}
     env = {k: "true" if v in flags else "false" for k, v in FLAG_ENV.items()}
     env["RESULTS"] = json.dumps(needs)
     env["DRAFT"] = "true" if draft else "false"
+    env["EVENT_NAME"] = event
+    env["RUST_SCOPE"], env["RUST_MODIFIED"], env["RUST_AFFECTED"] = scope
     return subprocess.run(
         [sys.executable, "-c", GATE_SCRIPT],
         env={**os.environ, **env},
@@ -349,7 +475,9 @@ def ok(*names: str) -> dict[str, str]:
 
 
 def test_gate_step_declares_an_env_for_every_flag():
-    assert set(GATE_STEP["env"]) >= set(FLAG_ENV) | {"RESULTS", "DRAFT"}
+    declared = set(FLAG_ENV) | {"RESULTS", "DRAFT", "EVENT_NAME"}
+    declared |= {"RUST_SCOPE", "RUST_MODIFIED", "RUST_AFFECTED"}
+    assert set(GATE_STEP["env"]) >= declared
 
 
 def test_gate_needs_include_the_folded_jobs():
@@ -362,7 +490,9 @@ def test_gate_needs_include_the_folded_jobs():
         (set(), ok()),
         ({"evals"}, ok("evals-ratchet")),
         ({"docs-site"}, ok("docs-site")),
+        ({"action-v3"}, ok("action-v3")),
         ({"evals", "docs-site"}, ok("evals-ratchet", "docs-site")),
+        ({"diagram-adapter"}, ok("diagram-adapter")),
         ({"force_all"}, ok(*(set(GATE_NEEDS) - ALWAYS))),
     ],
 )
@@ -376,6 +506,19 @@ def test_gate_accepts_runs_and_skips_matching_the_classification(flags, results)
     [
         ({"evals"}, ok(), "evals-ratchet: got skipped, expected success"),
         ({"docs-site"}, ok(), "docs-site: got skipped, expected success"),
+        ({"action-v3"}, ok(), "action-v3: got skipped, expected success"),
+        (set(), ok("action-v3"), "action-v3: got success, expected skipped"),
+        ({"diagram-adapter"}, ok(), "diagram-adapter: got skipped, expected success"),
+        (
+            set(),
+            ok("diagram-adapter"),
+            "diagram-adapter: got success, expected skipped",
+        ),
+        (
+            {"diagram-adapter"},
+            {**ok(), "diagram-adapter": "failure"},
+            "diagram-adapter: got failure, expected success",
+        ),
         (set(), ok("evals-ratchet"), "evals-ratchet: got success, expected skipped"),
         (set(), ok("docs-site"), "docs-site: got success, expected skipped"),
         (
@@ -495,3 +638,210 @@ def test_gate_expects_every_suite_to_succeed_on_the_queue_and_main(event, tmp_pa
     assert run_gate(flags, everything).returncode == 0
     skipped = {**everything, "test": "skipped"}
     assert run_gate(flags, skipped).returncode == 1
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["crates/slopvac/src/report/scrub.rs", "docs/engineering.md", "README.md"],
+)
+def test_a_change_outside_the_filesystem_class_still_gets_the_secret_scan(path):
+    # #475 touched only crates/: no filesystem class, but every path is a secrets path.
+    outputs = classes_of([path])
+    assert "filesystem" not in outputs
+    assert "secrets" in outputs
+    assert evaluate(JOBS["security"]["if"], outputs) is True
+    assert JOBS["security"]["with"]["secrets"] == (
+        "${{ needs.changes.outputs.force_all == 'true' || needs.changes.outputs.secrets == 'true' }}"
+    )
+    scan_job = load("security.yml")["jobs"]["trivy-secret"]
+    assert scan_job["if"] == "${{ inputs.secrets }}"
+
+
+# --- Rust scope in the Tests gate -------------------------------------------
+
+SCOPED = ("scoped", "-p slopvac-fs", "-p slopvac -p slopvac-fs")
+RUST_RUN = ok("rust-static", "rust", "rust-msrv", "rust-supply-chain")
+
+
+@pytest.mark.parametrize(
+    ("flags", "event", "scope"),
+    [
+        ({"rust"}, "pull_request", SCOPED),
+        ({"rust"}, "pull_request", ("all", "--workspace", "--workspace")),
+        ({"rust", "force_all"}, "merge_group", ("all", "--workspace", "--workspace")),
+        ({"rust", "force_all"}, "push", ("all", "--workspace", "--workspace")),
+    ],
+)
+def test_gate_accepts_the_scopes_each_event_may_use(flags, event, scope):
+    results = RUST_RUN if flags == {"rust"} else ok(*(set(GATE_NEEDS) - ALWAYS))
+    proc = run_gate(flags, results, event=event, scope=scope)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize(
+    ("flags", "event", "scope", "message"),
+    [
+        # A queue or main run must never test less than the whole workspace.
+        ({"rust", "force_all"}, "merge_group", SCOPED, "scoped where the whole"),
+        ({"rust", "force_all"}, "push", SCOPED, "scoped where the whole"),
+        ({"rust"}, "push", SCOPED, "scoped where the whole"),
+        # A routing edit forces everything even on a pull request.
+        ({"rust", "force_all"}, "pull_request", SCOPED, "scoped where the whole"),
+        # Scope outputs that are missing or contradict each other fail the gate.
+        ({"rust"}, "pull_request", ("", "", ""), "expected all or scoped"),
+        (
+            {"rust"},
+            "pull_request",
+            ("all", "-p slopvac-fs", "-p slopvac-fs"),
+            "arguments are not --workspace",
+        ),
+        (
+            {"rust"},
+            "pull_request",
+            ("scoped", "--workspace", "-p slopvac-fs"),
+            "scoped where the whole",
+        ),
+    ],
+)
+def test_gate_fails_a_scope_that_narrows_what_must_run_in_full(
+    flags, event, scope, message
+):
+    results = RUST_RUN if flags == {"rust"} else ok(*(set(GATE_NEEDS) - ALWAYS))
+    proc = run_gate(flags, results, event=event, scope=scope)
+    assert proc.returncode == 1
+    assert message in proc.stdout
+
+
+# --- the Rust jobs take their scope from the changes job ---------------------
+
+
+def step_runs(job: str) -> str:
+    return "\n".join(s.get("run", "") for s in JOBS[job]["steps"])
+
+
+@pytest.mark.parametrize(
+    ("job", "variable", "output"),
+    [
+        ("rust-static", "RUST_MODIFIED", "rust_modified"),
+        ("rust", "RUST_AFFECTED", "rust_affected"),
+    ],
+)
+def test_rust_jobs_read_their_scope_from_the_changes_job(job, variable, output):
+    assert JOBS[job]["env"][variable] == f"${{{{ needs.changes.outputs.{output} }}}}"
+    assert f"${variable}" in step_runs(job)
+
+
+# --- inputs the Rust crates embed or read from outside crates/ ----------------
+
+INCLUDE = re.compile(
+    r"include_(?:str|bytes)!\(\s*"
+    r'(?:"(?P<plain>[^"]+)"'
+    r'|concat!\(\s*env!\("CARGO_MANIFEST_DIR"\)\s*,\s*"(?P<tail>[^"]+)"\s*,?\s*\))',
+)
+PARENT_LITERAL = re.compile(r'"(?P<path>(?:\.\./)+[\w./-]+)"')
+
+
+def crate_sources() -> list[Path]:
+    listed = subprocess.run(
+        ["git", "ls-files", "--", "crates/*.rs"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    return [ROOT / name for name in listed]
+
+
+def crate_of(source: Path) -> Path:
+    return ROOT / "crates" / source.relative_to(ROOT / "crates").parts[0]
+
+
+def embedded_inputs() -> set[str]:
+    """Repository paths outside crates/ that a crate source embeds or reads.
+
+    `include_str!`/`include_bytes!` resolve against the including file. Other
+    `../` literals (manifest-dir reads in tests and build scripts) resolve
+    against the crate directory.
+    """
+    found: set[str] = set()
+    for source in crate_sources():
+        text = source.read_text(encoding="utf-8")
+        resolved: list[Path] = []
+        for match in INCLUDE.finditer(text):
+            if match["plain"]:
+                resolved.append(source.parent / match["plain"])
+            else:
+                resolved.append(crate_of(source) / match["tail"].lstrip("/"))
+        resolved += [
+            crate_of(source) / m["path"] for m in PARENT_LITERAL.finditer(text)
+        ]
+        for path in resolved:
+            normal = Path(os.path.normpath(path))
+            if (
+                normal == ROOT
+                or not normal.exists()
+                or normal.is_relative_to(ROOT / "crates")
+            ):
+                continue
+            found.add(normal.relative_to(ROOT).as_posix())
+    return found
+
+
+def covered(patterns: list[str], path: str) -> bool:
+    # A directory is covered when a file inside it is.
+    probe = f"{path}/x" if (ROOT / path).is_dir() else path
+    return any(glob_to_regex(p).match(probe) for p in patterns)
+
+
+def test_the_scan_finds_the_known_embedded_inputs():
+    # Guards the scanner itself: a broken regex would make the routing tests vacuous.
+    assert {
+        "keys/slopvac-release.pub",
+        "docs/contract/compat/profiles/legacy-strict.toml",
+        "packages/slopvac-lint/examples/blocklist.toml",
+        "tests/fixtures/workflow-escape-vectors.json",
+        "docs/site.toml",
+        "docs/reference/error-codes.lock",
+        "Cargo.lock",
+    } <= embedded_inputs()
+
+
+@pytest.mark.parametrize("path", sorted(embedded_inputs()))
+def test_every_input_a_crate_embeds_routes_to_rust(path):
+    assert covered(CLASSES["rust"], path)
+
+
+# The root manifest and lockfile are scoped by cargo-delta itself, by design.
+SCOPED_BY_DELTA = {"Cargo.toml", "Cargo.lock"}
+
+
+@pytest.mark.parametrize("path", sorted(embedded_inputs() - SCOPED_BY_DELTA))
+def test_every_input_a_crate_embeds_trips_a_cargo_delta_wire(path):
+    wires = tomllib.loads((ROOT / ".github" / "cargo-delta.toml").read_text())[
+        "trip_wire_patterns"
+    ]
+    # cargo-delta follows include macros inside crates only, so outside paths need a wire.
+    assert covered(wires, path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".cargo/config.toml",
+        "docs/contract/compat/dispositions.toml",
+        "docs/contract/compat/removed-rules.toml",
+        "packages/slopvac-lint/src/slopvac/rules/prose-craft.yaml",
+        "packages/slopvac-lint/tests/fixtures/regression/issues/x.md",
+        "docs/reference/cli.md",
+        "docs/migrate-2-to-3.md",
+        "docs/model-recommendations.md",
+        "packages/slopvac-plugin/pyproject.toml",
+        "scripts/revocation_list.py",
+        "tests/golden/v3/inputs.toml",
+        "evals/corpus/x.md",
+        ".github/ISSUE_TEMPLATE/bug.yml",
+    ],
+)
+def test_files_the_crate_tests_read_by_path_route_to_rust(path):
+    # Reads built from CARGO_MANIFEST_DIR or a repository root are not include macros.
+    assert in_class("rust", path)

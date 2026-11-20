@@ -165,6 +165,17 @@ fn a_span_past_the_text_is_a_position_error() {
     let sources: HashMap<String, String> = HashMap::from([("t.txt".into(), "abc".into())]);
     let err = render(Format::Sarif, &report, &sources).unwrap_err();
     assert!(matches!(err, RenderError::Position { .. }), "{err}");
+    let source = std::error::Error::source(&err).expect("the position error stays the source");
+    assert_eq!(err.to_string(), format!("t.txt: {source}"));
+}
+
+#[test]
+fn render_errors_have_stable_codes() {
+    use slopvac_messages::Catalog as _;
+    let report = report_for(Some((0, 3)), [1, 1, 1, 4], "msg");
+    let err = render(Format::Sarif, &report, &NoSources).unwrap_err();
+    assert_eq!(err.code(), "render-missing-source");
+    assert_eq!(err.to_string(), "sarif output needs the text of t.txt");
 }
 
 #[test]
@@ -185,7 +196,8 @@ fn github_annotations_escape_newlines() {
     let report = report_for(Some((0, 1)), [1, 1, 1, 2], "a\nb::c");
     let rendered = out(Format::Github, &report, "a");
     assert_eq!(rendered.lines().count(), 1);
-    assert!(rendered.contains("a%0Ab::c"));
+    // `::` is escaped so message text cannot start a workflow command.
+    assert!(rendered.contains("a%0Ab%3A%3Ac"));
 }
 
 #[test]
@@ -293,4 +305,57 @@ fn sarif_with_notices_and_no_findings_validates() {
     assert!(sarif_validator().is_valid(&sarif));
     let notes = &sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"];
     assert!(notes.as_array().unwrap().len() >= 2);
+}
+
+/// Hostile text per control family: ESC+CSI, OSC ended by BEL, C1 CSI and C1 NEL.
+/// The text renderer emits no colour of its own, so there is no colour-on case.
+#[rstest::rstest]
+#[case::csi("a\u{1b}[2Jb")]
+#[case::osc_bel("a\u{1b}]0;title\u{7}b")]
+#[case::c1_csi("a\u{9b}2Jb")]
+#[case::c1_nel_and_cr("a\u{85}b\rc")]
+fn text_output_has_no_raw_terminal_controls(#[case] hostile: &str) {
+    let report = report_for(Some((0, 1)), [1, 1, 1, 2], hostile);
+    let mut value = serde_json::to_value(&report).unwrap();
+    value["documents"][0]["path"] = json!(format!("{hostile}.md"));
+    value["documents"][0]["unchecked"] =
+        json!([{"code": "x-skipped", "level": "warning", "message": hostile, "path": "t.txt"}]);
+    value["documents"][0]["gate"] = json!({"passed": false, "reasons": [hostile]});
+    value["notices"] = json!([{"code": "n-code", "level": "info", "message": hostile}]);
+    let report: Report = serde_json::from_value(value).unwrap();
+    let sources: HashMap<String, String> = HashMap::from([(format!("{hostile}.md"), "a".into())]);
+
+    let rendered = render(Format::Text, &report, &sources).unwrap();
+
+    let raw: Vec<char> = rendered
+        .chars()
+        .filter(|c| c.is_control() && *c != '\n')
+        .collect();
+    assert!(raw.is_empty(), "raw controls {raw:?} in {rendered:?}");
+    assert!(rendered.contains("\\u{"), "escaped visibly: {rendered:?}");
+}
+
+#[rstest::rstest]
+#[case::csi("\u{1b}[31mred")]
+#[case::osc_bel("\u{1b}]0;title\u{7}x")]
+#[case::c1_csi("\u{9b}31mred")]
+#[case::c1_nel_cr("a\u{85}b\rc")]
+#[case::bidi_override("a\u{202e}b")]
+fn github_annotations_neutralise_controls_in_path_and_message(#[case] hostile: &str) {
+    let mut report = report_for(Some((0, 1)), [3, 4, 3, 5], hostile);
+    report.documents[0].path = format!("dir/{hostile}.txt").try_into().unwrap();
+    let rendered = out(Format::Github, &report, "a");
+
+    let raw: Vec<char> = rendered
+        .chars()
+        .filter(|c| (c.is_control() && *c != '\n') || ('\u{202a}'..='\u{202e}').contains(c))
+        .collect();
+    assert!(raw.is_empty(), "raw controls {raw:?} in {rendered:?}");
+    assert_eq!(rendered.lines().count(), 1, "{rendered:?}");
+    let line = rendered.trim_end_matches('\n');
+    assert!(
+        line.starts_with("::warning file=dir/") && line.contains(",line=3,col=4,title="),
+        "{line:?}"
+    );
+    assert_eq!(line.matches("::").count(), 2, "{line:?}");
 }

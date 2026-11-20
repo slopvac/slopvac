@@ -2,7 +2,7 @@
 
 Status: contract for 3.0. Bead `slopvac-8l4.2.6`. Plan: [slopvac-3.md](../design/slopvac-3.md). Decision: [0001-slopvac-3-architecture.md](../design/0001-slopvac-3-architecture.md), decisions 8 and 9. Policies: [policies.md](policies.md).
 
-A code plugin is a separate program. The host starts it as a subprocess and speaks JSON-RPC 2.0 to it over the plugin's standard input and output. This document fixes the wire format, the lifecycle, and the hooks. The schema is [`plugin-protocol.schema.json`](../../schemas/v3/plugin-protocol.schema.json). It holds the message shapes and their field descriptions. This document does not repeat them.
+A code plugin is a separate program, and its manifest declares `kind = "code"` ([plugins.md](plugins.md), section 2). The host starts it as a subprocess and speaks JSON-RPC 2.0 to it over the plugin's standard input and output. This document fixes the wire format, the lifecycle, and the hooks. The schema is [`plugin-protocol.schema.json`](../../schemas/v3/plugin-protocol.schema.json). It holds the message shapes and their field descriptions. This document does not repeat them.
 
 2.x has no plugin API. Its only subprocess is Vale, which `vale.py` starts with a timeout and which 3.0 removes (`slopvac-8l4.16.4`). Every statement below is a 3.0 requirement.
 
@@ -11,7 +11,7 @@ A code plugin is a separate program. The host starts it as a subprocess and spea
 ## 1. Constraints from the plan
 
 - The host uses no async runtime. It runs one reader thread per plugin, joined to the work threads by `crossbeam-channel`, and enforces deadlines with `recv_deadline` or `select!`. The spike in `slopvac-8l4.2.17` ran this design with three children, one of which hung, in 49 lines.
-- The host starts a plugin only after `slopvac plugins trust` has recorded the content hash of the plugin. Nothing in this protocol records or implies trust.
+- The host starts a plugin only after `slopvac plugins trust` has recorded the content hash of the plugin. Nothing in this protocol records or implies trust. A code plugin that `slopvac.toml` lists under `[[plugins]]` without trust never starts, and the run reports it with `plugin-untrusted` (section 10) and exits 2.
 - A plugin that may open connections declares it in its trusted manifest (section 4.3). The host spawns it only when offline mode is off, and policies.md sections 1.5 and 1.6 apply.
 - The unknown-field rule of policies.md section 3.3 applies in both directions (section 9).
 
@@ -105,7 +105,7 @@ A version is a major version in the sense of policies.md section 3.6. A change w
 
 Anything that decides whether the host may start the plugin comes from the plugin manifest, never from the `initialize` reply. The reply arrives after the process runs, so a decision based on it would come too late.
 
-- The manifest embeds a [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration). It states `network`, every hook the plugin may offer, and the features it may require or request. The pack manifest schema (`slopvac-8l4.2.4`) must reference this def. The host reads the declaration from the same bytes that it hashes.
+- The manifest embeds a [`PluginDeclaration`](../../schemas/v3/plugin-protocol.schema.json#/$defs/PluginDeclaration). It states `network`, every hook the plugin may offer, and the features it may require or request. The plugin manifest schema (`plugin-manifest`) references this def. The host reads the declaration from the same bytes that it hashes.
 - The manifest is part of the content hash that `slopvac plugins trust` records. A change to the declaration changes the hash and revokes trust.
 - Before spawn the host checks: trust for the hash, `network` against offline mode (`--offline`, `SLOPVAC_OFFLINE`, `[network] offline`, and the `offline` state at the call site), and the declared hook kinds against the hooks the command needs. A plugin with `network: true` does not spawn in offline mode. The host prints `offline: <plugin> needs the network` and exits 2 when the user asked for the operation.
 - The host also decides from the declaration which features it can grant. It does not spawn a plugin whose declared required feature it lacks.
@@ -181,7 +181,7 @@ The host sends a file to a binary extractor only under these rules:
 - Discovery selects only files of the listed formats, so it skips EPUB, PDF and every other format slopvac does not read. When the user names such a file explicitly, or names a file of a listed format that no enabled extractor reads, the host sends it to no extractor. It reports `input-unsupported`, `data.format` names the detected format, such as `epub`, `pdf` or a listed id, and the run exits 2. Routing and discovery stay with the CLI.
 - The host sends a format only to a hook that declared it, and sends each document to one binary extractor only.
 - A plugin or other reader that receives a format id it does not know treats the document as unsupported. It declines that document with the per-document error -32008 `binary-input-declined` and `data.reason` `unknown-format`, answers the other documents, and does not fail the request. The host adds `binary-input-declined` to that document's `unchecked`, and the run exits 2. The vectors in [`binary-unknown-format.json`](../../schemas/v3/conformance/plugin-protocol/binary-unknown-format.json) show the rule.
-- No hook wins a format by default, because load order and pack order carry no intent. When two or more enabled hooks list a format, built-in extractors included, a mapping in the user's config picks one, such as `[formats] pptx = "<pack>:<hook>"`. The config contract fixes the key name. Without a mapping, the host sends files of that format to no extractor. It reports `binary-format-ambiguous`, names every hook that claims the format and the config key that resolves it, and the run exits 2.
+- No hook wins a format by default, because load order and plugin order carry no intent. When two or more enabled hooks list a format, built-in extractors included, a mapping in the user's config picks one, such as `[formats] pptx = "<plugin>:<hook>"`. The config contract fixes the key name. Without a mapping, the host sends files of that format to no extractor. It reports `binary-format-ambiguous`, names every hook that claims the format and the config key that resolves it, and the run exits 2.
 - Standard input is never a binary document in 3.0.
 
 #### 5.5.2 Request
@@ -197,7 +197,7 @@ A [`BinarySegment`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinarySe
 | Field | Meaning |
 |---|---|
 | `part` | The container member that holds the text. For a ZIP container, it is the entry name as stored, such as `word/document.xml`. For a PNG, it names the chunk, such as `tEXt:mxfile`. |
-| `locator` | The place of the text inside the part, such as `w:p[@w14:paraId=3F2A0B1C]`, `Sheet1!B4` or `drawio/Page-1/label[node-7]`. The format's extractor bead fixes the grammar. |
+| `locator` | The place of the text inside the part, such as `w:p[@w14:paraId=3F2A0B1C]`, `Sheet1!B4` or `drawio/Page-1/label[node-7]`. The format's extractor fixes the grammar. |
 | `span` | Physical provenance: a byte range into the decoded file. |
 | `text` | The extracted prose in UTF-8, at least one character long. Rules match this text. |
 | `context` | A context tag, as for `extractor`. |
@@ -215,7 +215,7 @@ Identity and order follow these rules:
 - The pair of `part` and `locator` identifies a segment. It is unique within one document result, and a duplicate is `plugin-output-invalid`.
 - `part` and `locator` each hold 1 to 1024 characters (section 5.5.5). Neither may hold a control character (U+0000 to U+001F, U+007F to U+009F) or a bidirectional control (U+202A to U+202E, U+2066 to U+2069). The host still escapes both before it shows them.
 - A locator comes only from the structure of the file: ids stored in it, cell references and ordinal positions. A counter across documents, a clock or a random value is not an input, so the same bytes give the same locators.
-- Segments arrive in the reading order of the format, which the format's extractor bead defines. The host keeps that order. The same bytes give the same order.
+- Segments arrive in the reading order of the format, which the format's extractor defines. The host keeps that order. The same bytes give the same order.
 
 The 3.0 roles are `body`, `heading`, `list-item`, `table-cell`, `caption`, `text-box`, `header`, `footer`, `footnote`, `endnote`, `comment`, `notes`, `cell` and `label`. The set is extensible (section 9), and a reader keeps a role it does not know. In 3.0 no rule depends on the role. It labels where a finding comes from.
 
@@ -390,11 +390,13 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 |---|---|
 | `plugin-untrusted` | The content hash has no recorded trust. The message prints the `slopvac plugins trust` command. |
 | `plugin-hash-mismatch` | The installed bytes differ from the hash that trust recorded. |
+| `plugin-not-code` | `slopvac plugins trust` or `untrust` named a data plugin, which runs no code and needs no trust. |
 | `plugin-timeout` | A timer in section 6.3 expired. |
 | `plugin-exited` | The process ended with requests pending. |
 | `plugin-protocol-violation` | A framing error, a limit breach or a duplicate key. |
 | `plugin-output-invalid` | A result does not match its schema, or breaks a rule such as span bounds. |
 | `plugin-spawn-failed` | The program did not start. |
+| `launcher-not-installed` | The running program did not install the plugin launcher, so the host cannot start a plugin or a git plugin source. Nothing was spawned. |
 | `plugin-declaration-mismatch` | The reply disagrees with the hashed manifest (section 4.3). |
 | `request-id-exhausted` | The request counter reached 2^53-1. |
 | `binary-format-mismatch` | The signature and the name of a file disagree about its format (section 5.5.1). |
@@ -545,7 +547,7 @@ A host passes when it satisfies every H test against a scripted fake plugin. A p
 | Span and edit semantics | `slopvac-8l4.2.11` |
 | Threat model and review | `slopvac-8l4.9.11` |
 | Config keys for timeouts and the provider | `slopvac-8l4.4.2` |
-| Pack manifest embeds `PluginDeclaration` | `slopvac-8l4.2.4` |
+| Plugin manifest embeds `PluginDeclaration` | `slopvac-8l4.2.4` |
 | Binary extraction contract (section 5.5) | This document |
 | Shared binary extraction types and validator | The shared extraction crate |
 | Wire adapter for `binary-extractor/extract`, and the Python SDK `binary-extractor` decorator | The wire adapter and the Python SDK |

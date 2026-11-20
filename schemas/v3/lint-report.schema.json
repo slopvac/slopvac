@@ -22,13 +22,13 @@
     "Count": {"type": "integer", "minimum": 0},
     "Density": {"description": "Findings per 100 words.", "type": "number", "minimum": 0},
     "Score": {"description": "Quality score from 0 (worst) to 100.", "type": "number", "minimum": 0, "maximum": 100},
-    "CategoryId": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+    "CategoryId": {"type": "string", "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"},
     "AiSignal": {"description": "How strongly a finding indicates machine-written text.", "enum": ["strong", "weak", "none"]},
     "Notice": {
       "description": "A stable, machine-readable fact with a human message. Consumers branch on `code`, never on `message`.",
       "type": "object",
       "properties": {
-        "code": {"description": "Stable kebab-case identifier. A code is never reused for a different meaning.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"},
+        "code": {"description": "Stable kebab-case identifier. A code is never reused for a different meaning.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])"},
         "level": {"enum": ["info", "warning"]},
         "message": {"type": "string", "minLength": 1},
         "path": {"description": "File the notice concerns, when it concerns one.", "type": "string"},
@@ -102,7 +102,7 @@
       "description": "One signal that led to the genre choice.",
       "type": "object",
       "properties": {
-        "signal": {"description": "Kebab-case signal name, such as `front-matter` or `path-glob`.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"},
+        "signal": {"description": "Kebab-case signal name, such as `front-matter` or `path-glob`.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])"},
         "detail": {"type": "string"}
       },
       "required": ["signal", "detail"],
@@ -113,7 +113,7 @@
       "description": "The genre applied to a document and why.",
       "type": "object",
       "properties": {
-        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"},
         "source": {"description": "`explicit` came from config, the command line or front matter; `detected` from genre signals; `default` from the fallback.", "enum": ["explicit", "detected", "default"]},
         "reasons": {"type": "array", "items": {"$ref": "#/$defs/GenreReason"}}
       },

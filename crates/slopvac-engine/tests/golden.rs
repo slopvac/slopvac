@@ -25,39 +25,56 @@ use std::path::{Path, PathBuf};
 
 mod common;
 
-use common::{legacy_engine, read_json, root};
+use common::{core_set, legacy_engine, legacy_settings, read_json, root};
 
 use serde_json::{Value, json};
+use slopvac_comments::Language;
+use slopvac_engine::locale::spelling_rules;
 use slopvac_engine::rst::{RstAdapter, RstOptions};
-use slopvac_engine::{Engine, Input};
-use slopvac_model::Document;
+use slopvac_engine::{Engine, Input, Level};
+use slopvac_model::{Document, PackId};
+use slopvac_rules::{CompileOptions, MatchKind};
 
 const PROFILES: [&str; 3] = ["strict", "normal", "relaxed"];
 
 /// Inputs that no engine entry point reads yet: input id, the owning bead and why.
-const SKIPPED: [(&str, &str, &str); 3] = [
-    (
-        "format-html",
-        "slopvac-8l4.3.42",
-        "the engine has no standalone HTML file kind (`Kind` stops at Markdown, MDX, RST and diagrams)",
-    ),
-    (
-        "format-python-comments",
-        "slopvac-8l4.3.26",
-        "code-comment mode: comments are not extracted from source files yet",
-    ),
-    (
-        "format-javascript-comments",
-        "slopvac-8l4.3.26",
-        "code-comment mode: comments are not extracted from source files yet",
-    ),
-];
+const SKIPPED: [(&str, &str, &str); 1] = [(
+    "format-html",
+    "slopvac-8l4.3.42",
+    "the engine has no standalone HTML file kind (`Kind` stops at Markdown, MDX, RST and diagrams)",
+)];
 
 /// The repository is the project: an interpreter inside it is never used.
 fn rst_options() -> RstOptions {
     let mut options = RstOptions::default();
     options.project_roots = vec![root()];
     options
+}
+
+/// The engine for one golden profile, set up as the 2.x reference ran: the golden runs use an
+/// empty config, so the project locale is the default (`en-US`, no `locale.allow`) and 2.x
+/// generated the spelling rule from it (`inject_locale_rule`). `core` ships no blocklist and
+/// the empty config sets none, so 2.x runs no vocabulary rule.
+fn golden_engine(profile: &str) -> Engine {
+    let base = core_set();
+    let locale = spelling_rules(
+        &PackId::new("core").unwrap(),
+        &base,
+        slopvac_engine::locale::Locale::default_locale().tag(),
+        &[],
+        &CompileOptions::default(),
+    )
+    .unwrap()
+    .expect("the default locale checks spelling");
+    // The generated set comes after the core data: it replaces any `spelling` rule there.
+    // 2.x compiles no vocabulary rule without a blocklist and says nothing about it. The
+    // engine has no such silent state: a vocabulary rule that is on reports a notice. Turning
+    // the rules off is the same configuration, so the golden's empty `unchecked` list holds.
+    let mut settings = legacy_settings(profile);
+    for rule in base.rules().filter(|r| r.kind() == MatchKind::Vocabulary) {
+        settings.rule_levels.insert(rule.id().clone(), Level::Off);
+    }
+    Engine::new(vec![base, locale], settings).unwrap()
 }
 
 struct Entry {
@@ -117,7 +134,11 @@ fn lint(engine: &Engine, entry: &Entry) -> Option<Value> {
             }
             Input::rst(name, &text)
         }
-        other => panic!("{}: no entry point for {other}", entry.id),
+        // A source file whose comments are the prose (`--mode code-comments`).
+        other => match Language::from_name(other) {
+            Some(language) => Input::comments(name, &text, language),
+            None => panic!("{}: no entry point for {other}", entry.id),
+        },
     };
     Some(project(
         &engine
@@ -537,7 +558,7 @@ fn compute(tier: &str) -> BTreeMap<String, serde_json::Map<String, Value>> {
     let mut runs = BTreeMap::new();
     let deltas = recorded_deltas("parity");
     for profile in PROFILES {
-        let engine = legacy_engine(profile).with_rst(rst_options());
+        let engine = golden_engine(profile).with_rst(rst_options());
         for entry in inputs()
             .iter()
             .filter(|e| e.tier == tier && !skipped(&e.id))

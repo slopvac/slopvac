@@ -1,0 +1,12 @@
+schema_version: 3
+id: explanation
+extends: [consumer]
+description: Diataxis explanation. Background, reasons and trade-offs.
+detect:
+  min_score: 3
+  signals:
+    - { kind: path, glob: '**/{explanation,concept,concepts,background,architecture}/**', weight: 3 }
+    - { kind: heading, pattern: '^\W*(?:background|why|design|how it works)\b', weight: 1.5 }
+rules:
+  prose-scope.contrastive-inversion-frames: 'off'
+  prose-scope.contrastive-inversion-remainder: 'off'

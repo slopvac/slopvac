@@ -64,7 +64,7 @@
       "citation": {
         "source": "ASD-STE100",
         "ste_ref": "9:6.2",
-        "note": "The consistency half overlaps ste-words/inconsistent-term-for-same-thing, which is the mechanizable part given a synonym-group list. What is unique here is the positive requirement to carry a key word forward, which no checker can measure."
+        "note": "What is unique here is the positive requirement to carry a key word forward, which no checker can measure."
       }
     },
     {

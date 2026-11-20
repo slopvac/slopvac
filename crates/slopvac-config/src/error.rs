@@ -2,7 +2,10 @@
 
 use std::io;
 
+use slopvac_messages::Catalog;
+
 use crate::diag::{Code, Diagnostic, SourceFile, render};
+use crate::messages::{ConfigMessage, ConfigPhrase, ConfigText};
 
 /// A file whose text slopvac refused, with the reasons.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,10 +33,12 @@ impl Rejected {
 }
 
 /// Why configuration could not be loaded.
+///
+/// Each variant's text comes from the message catalog through the helpers below.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     /// A file could not be read.
-    #[error("cannot read {path}: {}", reason(.source))]
+    #[error("{}", io_text(.path, .source))]
     Io {
         /// The path as the caller gave it, or relative to the project root. Never an absolute
         /// path that the caller did not supply.
@@ -43,7 +48,7 @@ pub enum ConfigError {
         source: io::Error,
     },
     /// A config file is larger than [`crate::MAX_CONFIG_BYTES`].
-    #[error("{path} is larger than {cap} bytes")]
+    #[error("{}", too_large_text(.path, *.cap))]
     TooLarge {
         /// The path as the caller gave it, or relative to the project root.
         path: String,
@@ -51,25 +56,60 @@ pub enum ConfigError {
         cap: u64,
     },
     /// A file was read and refused.
-    #[error("{}: {}", .0.file, summary(&.0.diagnostics))]
+    #[error("{}", summary(.0))]
     Rejected(Box<Rejected>),
+}
+
+fn io_text(path: &str, source: &io::Error) -> String {
+    ConfigMessage::Io {
+        path: path.to_owned(),
+        reason: reason(source).to_owned(),
+    }
+    .to_string()
+}
+
+fn too_large_text(path: &str, cap: u64) -> String {
+    ConfigMessage::TooLarge {
+        path: path.to_owned(),
+        cap,
+    }
+    .to_string()
 }
 
 /// A fixed phrase per error kind, so the message does not change with the operating system.
 pub(crate) fn reason(e: &io::Error) -> &'static str {
     match e.kind() {
-        io::ErrorKind::NotFound => "no such file",
-        io::ErrorKind::PermissionDenied => "permission denied",
-        io::ErrorKind::InvalidData => "not valid UTF-8",
-        _ => "the file cannot be read",
+        io::ErrorKind::NotFound => ConfigPhrase::ReasonNotFound,
+        io::ErrorKind::PermissionDenied => ConfigPhrase::ReasonPermissionDenied,
+        io::ErrorKind::InvalidData => ConfigPhrase::ReasonNotUtf8,
+        _ => ConfigPhrase::ReasonUnreadable,
+    }
+    .as_static()
+}
+
+fn summary(rejected: &Rejected) -> String {
+    let file = rejected.file.clone();
+    match rejected.diagnostics.as_slice() {
+        [only] => ConfigText::RejectedOne {
+            file,
+            diagnostic: only.to_string(),
+        }
+        .to_string(),
+        many => ConfigText::RejectedMany {
+            file,
+            problems: many.len(),
+        }
+        .to_string(),
     }
 }
 
-fn summary(diagnostics: &[Diagnostic]) -> String {
-    match diagnostics {
-        [only] => only.to_string(),
-        many => format!("{} problems", many.len()),
-    }
+/// One `error[code]: message` line, the form every non-snippet report uses.
+pub(crate) fn error_line(code: Code, message: &dyn Catalog) -> String {
+    format!(
+        "error[{}]: {}",
+        code.as_str(),
+        slopvac_messages::render(message)
+    )
 }
 
 impl ConfigError {

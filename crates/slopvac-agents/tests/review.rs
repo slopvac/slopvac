@@ -295,6 +295,7 @@ fn review_topic(review_type: Option<ReviewType>, approval: Approval, level: Leve
             level,
             review_type,
             review_approval: approval,
+            ..Settings::default()
         },
         &tree(),
         Path::new("/nonexistent"),
@@ -535,4 +536,213 @@ fn the_provider_receives_dropped_sentences_and_the_rewrite_baseline() {
     let sent = rec.seen.borrow()[1].clone();
     let texts: Vec<&str> = sent.items.iter().map(|i| i.text.as_str()).collect();
     assert_eq!(texts, [ORIGINAL, REVISED]);
+}
+fn plan_json(dir: &Path, extra: &[&str], env: &ReviewEnv<'_>) -> serde_json::Value {
+    let out = run(&args(dir, extra), env).unwrap();
+    serde_json::from_str(&out).unwrap()
+}
+
+fn notice_codes(json: &serde_json::Value) -> Vec<&str> {
+    json["notices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["code"].as_str().unwrap())
+        .collect()
+}
+
+#[test]
+fn both_models_known_and_different_are_checked_without_a_notice() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = plan_json(
+        dir.path(),
+        &[
+            "--dry-run",
+            "--author-model",
+            "claude-sonnet-5-5",
+            "--reviewer-model",
+            "gpt-5",
+        ],
+        &ReviewEnv::default(),
+    );
+    assert_eq!(json["reviewer_model_checked"], true);
+    assert_eq!(notice_codes(&json), Vec::<&str>::new());
+}
+
+#[test]
+fn the_author_flag_names_the_author_for_the_same_model_rule() {
+    let dir = tempfile::tempdir().unwrap();
+    let argv = args(
+        dir.path(),
+        &[
+            "--dry-run",
+            "--author-model",
+            "anthropic/gpt-5#high",
+            "--reviewer-model",
+            "gpt-5",
+        ],
+    );
+    let err = run(&argv, &ReviewEnv::default()).unwrap_err();
+    assert_eq!(err.code(), "review-same-model");
+}
+
+#[test]
+fn author_model_comes_from_the_flag_before_the_config_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let env = ReviewEnv {
+        author_model: Some("gpt-5".into()),
+        ..ReviewEnv::default()
+    };
+    // The flag names a different author, so a gpt-5 reviewer passes.
+    let json = plan_json(
+        dir.path(),
+        &[
+            "--dry-run",
+            "--author-model",
+            "claude-opus-5-5",
+            "--reviewer-model",
+            "gpt-5",
+        ],
+        &env,
+    );
+    assert_eq!(json["author_model"], "claude-opus-5-5");
+    assert_eq!(json["reviewer_model_checked"], true);
+}
+
+#[test]
+fn reviewer_model_comes_from_flag_then_config_then_provider() {
+    let dir = tempfile::tempdir().unwrap();
+    let mock = Mock {
+        model: "from-provider",
+        calls: Cell::new(0),
+    };
+    let env = ReviewEnv {
+        provider: Some(&mock),
+        reviewer_model: Some("from-config".into()),
+        author_model: Some("author".into()),
+        ..ReviewEnv::default()
+    };
+    let flag = plan_json(
+        dir.path(),
+        &["--dry-run", "--reviewer-model", "from-flag"],
+        &env,
+    );
+    assert_eq!(flag["reviewer_model"], "from-flag");
+    let config = plan_json(dir.path(), &["--dry-run"], &env);
+    assert_eq!(config["reviewer_model"], "from-config");
+    let env = ReviewEnv {
+        reviewer_model: None,
+        ..env
+    };
+    let provider = plan_json(dir.path(), &["--dry-run"], &env);
+    assert_eq!(provider["reviewer_model"], "from-provider");
+}
+
+#[test]
+fn an_unknown_author_leaves_the_rule_unchecked_and_names_the_author() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = plan_json(
+        dir.path(),
+        &["--dry-run", "--reviewer-model", "gpt-5"],
+        &ReviewEnv::default(),
+    );
+    assert_eq!(json["reviewer_model_checked"], false);
+    assert_eq!(notice_codes(&json), ["review-model-unchecked"]);
+    let message = json["notices"][0]["message"].as_str().unwrap();
+    assert!(message.contains("the author model is unknown"), "{message}");
+}
+
+#[test]
+fn an_unknown_reviewer_leaves_the_rule_unchecked_and_names_the_reviewer() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = plan_json(
+        dir.path(),
+        &["--dry-run", "--author-model", "gpt-5"],
+        &ReviewEnv::default(),
+    );
+    assert_eq!(json["reviewer_model_checked"], false);
+    assert_eq!(notice_codes(&json), ["review-model-unchecked"]);
+    let message = json["notices"][0]["message"].as_str().unwrap();
+    assert!(
+        message.contains("the reviewer model is unknown"),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_mechanical_review_has_no_reviewer_so_no_unchecked_notice() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = run(
+        &pair(dir.path(), &prose("handles"), &prose("serves"), &[]),
+        &ReviewEnv::default(),
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(notice_codes(&json), Vec::<&str>::new());
+}
+
+#[test]
+fn prime_review_verdict_reports_both_models_and_forbids_guessing() {
+    let text = review_topic(None, Approval::Ask, Level::Default);
+    assert!(text.contains(
+        "Reviewer: <model the harness used, or unknown>; author <model or unknown>; different: yes | no | not checked"
+    ));
+    assert!(text.contains("name the model the harness actually ran, or `unknown`; never guess."));
+}
+#[test]
+fn the_author_flag_overrides_the_config_author_at_the_provider_check() {
+    let dir = tempfile::tempdir().unwrap();
+    // The provider runs `gpt-5`. The config author is also `gpt-5`, which would be refused,
+    // but the flag names a different author, so the provider check passes and the call runs.
+    let mock = Mock {
+        model: "gpt-5",
+        calls: Cell::new(0),
+    };
+    let env = ReviewEnv {
+        provider: Some(&mock),
+        author_model: Some("gpt-5".into()),
+        ..ReviewEnv::default()
+    };
+    let out = run(
+        &args(
+            dir.path(),
+            &[
+                "--author-model",
+                "claude-opus-5-5",
+                "--reviewer-model",
+                "mistral-large",
+            ],
+        ),
+        &env,
+    )
+    .unwrap();
+    assert!(out.contains("\"report\": \"no findings\""), "{out}");
+    assert_eq!(mock.calls.get(), 1);
+}
+
+#[test]
+fn a_mechanical_review_ignores_matching_author_and_provider_models() {
+    let dir = tempfile::tempdir().unwrap();
+    let mock = Mock {
+        model: "gpt-5",
+        calls: Cell::new(0),
+    };
+    for offline in [false, true] {
+        let env = ReviewEnv {
+            offline,
+            provider: Some(&mock),
+            author_model: Some("gpt-5".into()),
+            ..ReviewEnv::default()
+        };
+        let out = run(
+            &pair(dir.path(), &prose("handles"), &prose("serves"), &[]),
+            &env,
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["review_type"], "mechanical", "offline={offline}");
+        assert_eq!(json["reviewer_model_checked"], false);
+        assert_eq!(notice_codes(&json), Vec::<&str>::new());
+    }
+    assert_eq!(mock.calls.get(), 0);
 }

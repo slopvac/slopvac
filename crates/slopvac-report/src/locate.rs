@@ -50,6 +50,7 @@ impl<'a> DocIndex<'a> {
     fn position_error(&self, source: slopvac_model::PositionError) -> RenderError {
         RenderError::Position {
             path: self.doc.path.as_str().to_owned(),
+            reason: source.to_string(),
             source,
         }
     }

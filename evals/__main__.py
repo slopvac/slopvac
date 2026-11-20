@@ -291,23 +291,71 @@ def cmd_label_sample(args: argparse.Namespace) -> int:
     return 0
 
 
+def _judge_start_refusal(judgments: Path, out: Path, ledger: Path) -> str | None:
+    """Why a judge run must not start, or None. The ledger holds the spent count.
+
+    Every artifact an earlier run leaves (the judgments file of any size and the
+    ledger lock) with no ledger would let a fresh ledger reset the ceiling.
+    """
+    wanted = {out.name, ledger.name, ledger.name + ".lock"}
+    folded = {w.lower() for w in wanted}
+    if judgments.is_dir():
+        strays = sorted(
+            f.name
+            for f in judgments.iterdir()
+            if f.name not in wanted and f.name.lower() in folded
+        )
+        if strays:
+            return (
+                f"{', '.join(strays)} differs from the family files only in letter "
+                "case, so a ledger could fork; rename or remove it"
+            )
+    if not ledger.exists():
+        lock = ledger.with_name(ledger.name + ".lock")
+        left = [f.name for f in (out, lock) if f.exists()]
+        if left:
+            return (
+                f"{' and '.join(left)} exists without {ledger.name}, so its spent "
+                "invocations are unknown; start with a fresh --dir"
+            )
+    return None
+
+
 def cmd_label_judge(args: argparse.Namespace) -> int:
     p = _paths(args)
     out = p["judgments"] / f"{args.family}.jsonl"
-    done = labelling.completed(labelling.read_jsonl(out), args.model)
     try:
-        rows = labelling.judge_items(
-            labelling.read_jsonl(p["items"]),
-            labelling.command_asker(args.provider_cmd),
-            family=args.family,
-            model=args.model,
-            manifest=lib.load_manifest(),
-            cache=_cache(args),
-            notes=labelling.rule_notes(Path(args.rules_dir)),
-            done=done,
-            sink=lambda row: labelling.append_jsonl(out, [row]),
-        )
+        labelling.check_identity(args.family, args.model)  # before any ledger exists
     except runner.EngineError as exc:
+        print(f"evals label judge: {exc}", file=sys.stderr)
+        return 2
+    ledger = out.with_suffix(".ledger.jsonl")
+    try:
+        refusal = _judge_start_refusal(p["judgments"], out, ledger)
+        if refusal:
+            print(f"evals label judge: {refusal}", file=sys.stderr)
+            return 2
+        done = labelling.completed(labelling.read_jsonl(out), args.model)
+        with models.Budget(args.max_invocations, ledger) as budget:
+            rows = labelling.judge_items(
+                labelling.read_jsonl(p["items"]),
+                labelling.command_asker(args.provider_cmd),
+                family=args.family,
+                model=args.model,
+                manifest=lib.load_manifest(),
+                cache=_cache(args),
+                notes=labelling.rule_notes(Path(args.rules_dir)),
+                done=done,
+                sink=lambda row: labelling.append_jsonl(out, [row]),
+                budget=budget,
+            )
+    except models.BudgetExceeded as exc:
+        print(
+            f"evals label judge: {exc}; {out} keeps the finished judgments",
+            file=sys.stderr,
+        )
+        return 2
+    except (models.ModelEvalError, runner.EngineError, OSError) as exc:
         print(f"evals label judge: {exc}", file=sys.stderr)
         return 2
     print(f"{len(rows)} judgments written to {out}")
@@ -391,6 +439,51 @@ def cmd_label_resolve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_label_worksheet(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    try:
+        judgments, _ = labelling.usable_judgments(
+            [
+                r
+                for f in sorted(p["judgments"].glob("*.jsonl"))
+                for r in labelling.read_jsonl(f)
+            ]
+        )
+        docs = {d["id"]: d for d in lib.load_manifest()["documents"]}
+        cache = _cache(args)
+        families, rows = labelling.worksheet_rows(
+            labelling.read_jsonl(p["items"]),
+            judgments,
+            labelling.read_jsonl(p["human"]),
+            doc_text=lambda doc: runner.text_path(docs[doc], cache).read_text("utf-8"),
+            notes=labelling.rule_notes(Path(args.rules_dir)),
+        )
+        labelling.write_worksheet(Path(args.out), families, rows)
+    except (runner.EngineError, OSError) as exc:
+        print(f"evals label worksheet: {exc}", file=sys.stderr)
+        return 2
+    print(f"{len(rows)} rows written to {args.out}")
+    return 0
+
+
+def cmd_label_import_worksheet(args: argparse.Namespace) -> int:
+    p = _paths(args)
+    try:
+        rows = labelling.worksheet_verdicts(
+            Path(args.csv),
+            {i["id"] for i in labelling.read_jsonl(p["items"])},
+            labelling.read_jsonl(p["human"]),
+            reviewer=args.reviewer,
+            date=args.date or labelling.today(),
+        )
+        labelling.append_jsonl(p["human"], rows)
+    except (ValueError, OSError) as exc:
+        print(f"evals label import-worksheet: {exc}", file=sys.stderr)
+        return 2
+    print(f"{len(rows)} human verdicts recorded")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m evals", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -441,6 +534,12 @@ def build_parser() -> argparse.ArgumentParser:
     lj.add_argument("--family", required=True)
     lj.add_argument("--model", required=True)
     lj.add_argument("--provider-cmd", required=True, help="reads a prompt on stdin")
+    lj.add_argument(
+        "--max-invocations",
+        type=int,
+        required=True,
+        help="hard cap on provider calls, counted in the family ledger across resumes",
+    )
     lj.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
     lj.add_argument("--cache")
     lj.set_defaults(func=cmd_label_judge)
@@ -456,6 +555,22 @@ def build_parser() -> argparse.ArgumentParser:
     lr.add_argument("--reason", required=True)
     lr.add_argument("--date", default=None)
     lr.set_defaults(func=cmd_label_resolve)
+
+    lw = lsub.add_parser(
+        "worksheet", help="write the disputes and spot-check items as one CSV"
+    )
+    lw.add_argument("--out", required=True)
+    lw.add_argument("--rules-dir", default=str(DEFAULT_RULES_DIR))
+    lw.add_argument("--cache")
+    lw.set_defaults(func=cmd_label_worksheet)
+
+    li = lsub.add_parser(
+        "import-worksheet", help="record the tp and fp rows of a filled worksheet"
+    )
+    li.add_argument("csv")
+    li.add_argument("--reviewer", required=True)
+    li.add_argument("--date", default=None)
+    li.set_defaults(func=cmd_label_import_worksheet)
 
     b = sub.add_parser("baseline", help="write a ratchet baseline from stored results")
     b.add_argument("results")

@@ -20,6 +20,7 @@ use std::fmt::Write as _;
 
 use super::Index;
 use super::model::IndexEntry;
+use crate::sign::is_reserved_namespace;
 
 /// An entry that matched, with its score.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,8 +90,6 @@ pub fn search<'a>(index: &'a Index, query: &str, limit: usize) -> Vec<SearchHit<
 /// Namespaces that belong to first-party packs. An index entry can claim one,
 /// and nothing in the index proves it: the key behind a first-party pack is
 /// compiled into the binary (threat model section 5.2).
-const RESERVED_NAMESPACES: [&str; 2] = ["core", "slopvac"];
-
 impl SearchHit<'_> {
     /// Renders the hit for a terminal. Every value from the index is escaped.
     /// The namespace, source and key are claims by the index, and the output
@@ -119,7 +118,7 @@ impl SearchHit<'_> {
             s(&e.publisher_key.key_id),
             s(&e.publisher_key.fingerprint)
         );
-        if RESERVED_NAMESPACES.contains(&e.namespace.as_str()) {
+        if is_reserved_namespace(&e.namespace) {
             let _ = writeln!(
                 out,
                 "  warning: claims first-party namespace `{}`; not verified",

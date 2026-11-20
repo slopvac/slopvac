@@ -1,0 +1,45 @@
+---
+source: crates/slopvac/tests/cli.rs
+expression: doc
+---
+{
+  "install_method": "[method]",
+  "name": "slopvac",
+  "notices": [],
+  "schema_versions": {
+    "blocklist": [
+      3
+    ],
+    "category": [
+      3
+    ],
+    "config": [
+      3
+    ],
+    "doctor-report": [
+      3
+    ],
+    "genre": [
+      3
+    ],
+    "lint-report": [
+      3
+    ],
+    "plugins-lock": [
+      3
+    ],
+    "style": [
+      3
+    ],
+    "tagger": [
+      3
+    ],
+    "terms": [
+      3
+    ]
+  },
+  "slopvac_api": [
+    1
+  ],
+  "version": "[version]"
+}
