@@ -182,7 +182,7 @@ repos:
 
 ```yaml
 - uses: actions/checkout@v7
-- uses: slopvac/slopvac@v3.0.0 # x-release-please-version
+- uses: slopvac/slopvac@<full commit SHA of the v3.0.0 tag> # v3.0.0
   with:
     paths: README.md docs/
 ```
