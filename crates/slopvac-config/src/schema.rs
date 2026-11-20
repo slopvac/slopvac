@@ -718,24 +718,7 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
             ),
             _ => ctx.type_error(node, path, ConfigPhrase::KindString.as_static(), None),
         },
-        Shape::Source { fault } => match &node.value {
-            Value::Str(s) => {
-                if let Some(reason) = fault(s) {
-                    ctx.value_error(
-                        node,
-                        path,
-                        ConfigText::SourceRefused {
-                            field: field_name(path),
-                            reason: reason.to_owned(),
-                        }
-                        .to_string(),
-                        ConfigPhrase::LabelNotValidHere.text(),
-                        None,
-                    );
-                }
-            }
-            _ => ctx.type_error(node, path, ConfigPhrase::KindString.as_static(), None),
-        },
+        Shape::Source { fault } => check_source(ctx, node, *fault, path),
         Shape::Bool => {
             if !matches!(node.value, Value::Bool(_)) {
                 ctx.type_error(node, path, ConfigPhrase::KindBoolean.as_static(), None);
@@ -756,22 +739,7 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
         Shape::Num { min, max } => check_num(ctx, node, *min, *max, path),
         Shape::Choice { values, table_help } => check_choice(ctx, node, values, *table_help, path),
         Shape::Version => check_version_value(ctx, node, path),
-        Shape::Capped { max_items, list } => {
-            if matches!(&node.value, Value::Array(items) if items.len() > *max_items) {
-                ctx.value_error(
-                    node,
-                    path,
-                    ConfigText::ListTooLong {
-                        max_items: *max_items,
-                    }
-                    .to_string(),
-                    ConfigPhrase::LabelNotValidHere.text(),
-                    None,
-                );
-            } else {
-                check(ctx, node, list, path);
-            }
-        }
+        Shape::Capped { max_items, list } => check_capped(ctx, node, *max_items, list, path),
         Shape::List {
             item,
             min_items,
@@ -1098,6 +1066,47 @@ fn field_name(path: &[String]) -> String {
         }
     }
     out
+}
+
+/// A string whose refusal names the field and the reason and never the value.
+fn check_source(
+    ctx: &mut Ctx<'_>,
+    node: &Node,
+    fault: fn(&str) -> Option<&'static str>,
+    path: &[String],
+) {
+    let Value::Str(s) = &node.value else {
+        ctx.type_error(node, path, ConfigPhrase::KindString.as_static(), None);
+        return;
+    };
+    if let Some(reason) = fault(s) {
+        ctx.value_error(
+            node,
+            path,
+            ConfigText::SourceRefused {
+                field: field_name(path),
+                reason: reason.to_owned(),
+            }
+            .to_string(),
+            ConfigPhrase::LabelNotValidHere.text(),
+            None,
+        );
+    }
+}
+
+/// A list that holds at most `max_items` entries, then the checks of `list`.
+fn check_capped(ctx: &mut Ctx<'_>, node: &Node, max_items: usize, list: &Shape, path: &[String]) {
+    if matches!(&node.value, Value::Array(items) if items.len() > max_items) {
+        ctx.value_error(
+            node,
+            path,
+            ConfigText::ListTooLong { max_items }.to_string(),
+            ConfigPhrase::LabelNotValidHere.text(),
+            None,
+        );
+    } else {
+        check(ctx, node, list, path);
+    }
 }
 
 fn join_ticks(values: &[&str]) -> String {

@@ -98,7 +98,7 @@ fn a_valid_source_with_a_token_is_masked_when_another_key_is_wrong() {
 fn the_public_render_masks_every_source_and_keeps_the_text_around_it() {
     let text = "schema_version = 3\n\n[[index.extra]]\nname = \"a\"\nsource = \"https://u:SECRET@h.example/x\" # note\n\n[[index.extra]]\nname = \"a\"\nsource = \"https://h.example/?token=SECRET\"\n";
     let diags = validate_config(&parse_toml(text).unwrap(), text);
-    assert!(!diags.is_empty());
+    assert_ne!(diags, Vec::new());
     let out = render(
         SourceFile {
             name: "slopvac.toml",
