@@ -93,7 +93,7 @@
         "default": ""
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile.",
+      "note": "Errors at 3.0, exit 2. Delete the input from the workflow by hand: `slopvac migrate` does not rewrite workflows. Set the `profile` or `styles` key in `slopvac.toml` instead.",
       "owner": "slopvac-8l4.13.6",
       "test": "n/a"
     },
@@ -105,7 +105,7 @@
         "default": ""
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0, exit 2. Delete the input from the workflow by hand: `slopvac migrate` does not rewrite workflows. Add the rules directory as a `plugins` entry in `slopvac.toml`.",
       "owner": "slopvac-8l4.13.6",
       "test": "n/a"
     },
@@ -1033,7 +1033,7 @@
         ]
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile.",
+      "note": "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Set the `profile` or `styles` key in `slopvac.toml` instead.",
       "owner": "slopvac-8l4.12.11",
       "test": "n/a"
     },
@@ -1045,7 +1045,7 @@
         "kind": "option"
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Add the rules directory as a `plugins` entry in `slopvac.toml`.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1131,7 +1131,7 @@
         ]
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile.",
+      "note": "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Set the `profile` or `styles` key in `slopvac.toml` instead.",
       "owner": "slopvac-8l4.2.10",
       "test": "n/a"
     },
@@ -1395,7 +1395,7 @@
         ]
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile.",
+      "note": "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Set the `profile` or `styles` key in `slopvac.toml` instead.",
       "owner": "slopvac-8l4.2.10",
       "test": "n/a"
     },
@@ -1407,7 +1407,7 @@
         "kind": "option"
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Add the rules directory as a `plugins` entry in `slopvac.toml`.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1469,7 +1469,7 @@
         "kind": "option"
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Add the rules directory as a `plugins` entry in `slopvac.toml`.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1511,7 +1511,7 @@
         "kind": "option"
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Add the rules directory as a `plugins` entry in `slopvac.toml`.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },
@@ -1647,7 +1647,7 @@
         ]
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile.",
+      "note": "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Set the `profile` or `styles` key in `slopvac.toml` instead.",
       "owner": "slopvac-8l4.12.11",
       "test": "n/a"
     },
@@ -1659,7 +1659,7 @@
         "kind": "option"
       },
       "disposition": "remove",
-      "note": "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry.",
+      "note": "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Add the rules directory as a `plugins` entry in `slopvac.toml`.",
       "owner": "slopvac-8l4.9.1",
       "test": "n/a"
     },

@@ -105,6 +105,24 @@ Under 2.x the placeholder stayed in the pattern as literal text. The effect is t
 `paragraph`, `document` or `raw`. The default is `prose`.
 `prose` leaves out code fences, inline code, URLs and front matter.
 `raw` reaches everything and is for formatting rules.
+A `raw` rule matches one line at a time, without the line terminator. A raw pattern therefore cannot match across lines, and `$` (or `(?![\s\S])`) anchors at the end of the line.
+
+A raw HTML block is checked as one plain paragraph. It has no containers and no element kinds, so the `heading`, `list`, `table` and `quote` exclusions do not reach inside it. Only its markup is excluded.
+
+These parts of a Markdown or MDX file are markup, not prose:
+
+- The `:::` directive markers.
+- MDX `import` and `export` blocks.
+- The `{#id}` attribute of a heading.
+- An image-only paragraph, because the text of an image is not read.
+
+## Reference behavior
+
+Where this contract describes the procedural or descriptive `text_type`, the position of a metric finding, a match that spans several lines, or `match_all_caps`, it follows the native engine of 2.x, not the behavior of Vale.
+
+A word, and the class of a character, follow the Python reference as `slopvac-text` implements it. The reference is `packages/slopvac-lint/src/slopvac/analyze.py`, and [`metrics.md`](../../packages/slopvac-lint/docs/metrics.md) states the word-counting phases.
+
+Part-of-speech tags are English and use the Penn Treebank tag set. The tagger is a Rust port of the tagger of the `prose` library, version 3.3.1.
 
 `body-sentence` is a sentence that is not in a heading or a table.
 It came with the 2.x change that fixed `ste-procedural.condition-after-command`
@@ -169,7 +187,7 @@ python scripts/contract/convert_rules_v2_to_v3.py OUT_DIR [--rules-dir DIR] [--t
 ```
 
 It writes one `<category>.json` per category.
-`tests/contract/test_rule_conversion.py` converts every shipped rule and validates the result, so the converted output is not committed.
+`tests/contract/test_rule_conversion.py` converts every shipped rule and validates the result. The converted core-v3 fixtures are committed under `crates/slopvac-rules/tests/fixtures/core-v3/`. The converter regenerates them, and `tests/contract/test_rules_fixtures.py` checks them for drift.
 
 The mapping:
 

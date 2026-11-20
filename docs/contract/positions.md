@@ -106,6 +106,23 @@ range `[start, end)` in bytes. Projected offsets count code points of the concat
 text. Source ranges ascend and never overlap. Gaps between them are source the parser
 dropped: markup, tags, delimiters and line terminators.
 
+One exception applies to the table cells of a reStructuredText grid table. The cells read one
+by one, and a cell that wraps over several lines can end after the next cell starts in the
+source. In the projection of a document, two things then differ from the rule above:
+
+- The text tokens of a table may be out of source order. They still never overlap one
+  another.
+- The space that stands for the line break inside a wrapped cell is a **bridge**. Its range
+  runs from the end of one line of the cell to the start of the next, so it covers the source
+  of the cells beside it and can overlap the text tokens of a later cell. The space between
+  two cells is a zero-width synthetic bridge at the end of the previous cell. A bridge belongs
+  to no extent of the block, so the source it covers is not taken for that block's text.
+
+A projected range maps to the hull of the real tokens it touches: the smallest start and the
+largest end, so the span never inverts. A range over only the bridge inside a cell maps to the
+bridge's own range. Markdown and HTML tables put no bridge inside a cell, and their cells ascend. Every other projection keeps the full rule: tokens ascend and never overlap. The vector
+`table_cells_out_of_order` covers the exception.
+
 | Kind | Projected text | Source range |
 | --- | --- | --- |
 | `identity` | The source characters themselves | Exact. Each code point maps to its own bytes |
@@ -410,7 +427,7 @@ survives editors that normalize text. The sections are:
 - `spans`: start and end positions per unit, and the payload of every output format except LSP.
 - `invalid_spans`: spans that MUST be rejected.
 - `edits` and `invalid_edits`: edit sets and their results.
-- `projections`: token lists and the span each projected range maps to.
+- `projections`: token lists and the span each projected range maps to. A case with `"unordered": true` holds table-cell tokens that are out of source order, and a token with `"bridge": true` in it may overlap the source of the text tokens.
 - `lsp_ranges`: LSP ranges per encoding, computed over the received buffer text. They include BOM regression vectors.
 - `lsp_negotiation`: client offers and the encoding the server picks.
 - `binary_hosts` and `binary_host_invalid_spans`: segment-local positions, physical

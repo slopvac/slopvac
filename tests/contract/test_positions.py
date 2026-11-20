@@ -126,7 +126,8 @@ def test_invalid_edit_set_is_rejected(case: dict) -> None:
 @pytest.mark.parametrize("case", VECTORS["projections"], ids=_ids("projections"))
 def test_projection_tokens_are_consistent_with_the_source(case: dict) -> None:
     doc = Doc.from_text(case["source"])
-    assert check_tokens(doc, case["tokens"]) == case["projected"]
+    ordered = not case.get("unordered", False)
+    assert check_tokens(doc, case["tokens"], ordered) == case["projected"]
 
 
 @pytest.mark.parametrize("case", VECTORS["projections"], ids=_ids("projections"))
@@ -177,6 +178,30 @@ def test_empty_range_at_the_end_anchors_to_the_last_token_source_end() -> None:
 def test_malformed_projection_tokens_are_rejected(tokens: list[dict]) -> None:
     with pytest.raises(PositionError):
         check_tokens(Doc.from_text("xa"), tokens)
+
+
+@pytest.mark.parametrize(
+    ("tokens", "ordered"),
+    [
+        (
+            [
+                {"kind": "identity", "text": "a", "src": [2, 3]},
+                {"kind": "identity", "text": "a", "src": [2, 3]},
+            ],
+            False,
+        ),
+        (
+            [{"kind": "collapse", "text": " ", "src": [0, 1], "bridge": True}],
+            True,
+        ),
+    ],
+    ids=["unordered-text-tokens-overlap", "bridge-in-ordered-projection"],
+)
+def test_the_table_cell_exception_is_no_wider_than_stated(
+    tokens: list[dict], ordered: bool
+) -> None:
+    with pytest.raises(PositionError):
+        check_tokens(Doc.from_text("xxaxx"), tokens, ordered)
 
 
 def test_invalid_utf8_source_is_rejected() -> None:

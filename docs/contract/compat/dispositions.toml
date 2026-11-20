@@ -14,10 +14,10 @@
 "opt:lint:targets" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Paths and directories, discovered with ignore rules (3.0 file discovery)." }
 "opt:lint:--stdin" = { disposition = "preserve", owner = "slopvac-8l4.12.9", note = "Reads one document from stdin." }
 "opt:lint:--language" = { disposition = "preserve", owner = "slopvac-8l4.12.9", note = "Names the stdin format." }
-"opt:lint:--profile" = { disposition = "remove", owner = "slopvac-8l4.2.10", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
+"opt:lint:--profile" = { disposition = "remove", owner = "slopvac-8l4.2.10", note = "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Set the `profile` or `styles` key in `slopvac.toml` instead." }
 "opt:lint:--mode" = { disposition = "preserve", owner = "slopvac-8l4.3.14", note = "code-comments moves to the tree-sitter mode; prose stays the default." }
 "opt:lint:--config" = { disposition = "preserve", owner = "slopvac-8l4.4.2", note = "Same flag; a 2.x config is rejected with a pointer to `slopvac migrate`." }
-"opt:lint:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry." }
+"opt:lint:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Add the rules directory as a `plugins` entry in `slopvac.toml`." }
 "opt:lint:--category" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Category filter stays." }
 "opt:lint:--disable" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Rule disable stays; IDs gain the plugin namespace." }
 "opt:lint:--format" = { disposition = "preserve", owner = "slopvac-8l4.12.2", note = "text, json, github, sarif and html continue; json is schema version 3; rdjsonl, codeclimate, junit, checkstyle and markdown are new." }
@@ -35,22 +35,22 @@
 "opt:lint:--verbose" = { disposition = "preserve", owner = "slopvac-8l4.12.1", note = "Verbosity stays." }
 "opt:lint:--explain-config" = { disposition = "preserve", owner = "slopvac-8l4.4.2", note = "Shows layered provenance for each setting." }
 "cmd:rules" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Rule listing." }
-"opt:rules:--profile" = { disposition = "remove", owner = "slopvac-8l4.12.11", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
+"opt:rules:--profile" = { disposition = "remove", owner = "slopvac-8l4.12.11", note = "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Set the `profile` or `styles` key in `slopvac.toml` instead." }
 "opt:rules:--category" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Filter stays." }
 "opt:rules:--kind" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Kinds change with the typed match block." }
 "opt:rules:--genre" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Filter stays; genres become data." }
 "opt:rules:--format" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "text, json and md stay." }
 "opt:rules:--include-excluded" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Stays." }
 "opt:rules:--config" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Same meaning." }
-"opt:rules:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry." }
+"opt:rules:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Add the rules directory as a `plugins` entry in `slopvac.toml`." }
 "cmd:explain" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Rule explanation." }
 "opt:explain:rule_id" = { disposition = "migrate", owner = "slopvac-8l4.2.3", note = "IDs gain the plugin namespace; bare 2.x IDs error. `slopvac migrate` rewrites directive IDs." }
 "opt:explain:--format" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "text, json and md stay." }
-"opt:explain:--profile" = { disposition = "remove", owner = "slopvac-8l4.12.11", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
+"opt:explain:--profile" = { disposition = "remove", owner = "slopvac-8l4.12.11", note = "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Set the `profile` or `styles` key in `slopvac.toml` instead." }
 "opt:explain:--config" = { disposition = "preserve", owner = "slopvac-8l4.12.11", note = "Same meaning." }
-"opt:explain:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry." }
+"opt:explain:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Add the rules directory as a `plugins` entry in `slopvac.toml`." }
 "cmd:init" = { disposition = "preserve", owner = "slopvac-8l4.12.8", note = "Writes 3.0 config templates." }
-"opt:init:--profile" = { disposition = "remove", owner = "slopvac-8l4.2.10", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
+"opt:init:--profile" = { disposition = "remove", owner = "slopvac-8l4.2.10", note = "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Set the `profile` or `styles` key in `slopvac.toml` instead." }
 "opt:init:--force" = { disposition = "preserve", owner = "slopvac-8l4.12.8", note = "Overwrites an existing file." }
 "opt:init:--path" = { disposition = "preserve", owner = "slopvac-8l4.12.8", note = "Output path." }
 "opt:init:--skip-agents" = { disposition = "preserve", owner = "slopvac-8l4.12.8", note = "Skips harness setup." }
@@ -59,7 +59,7 @@
 "cmd:prime" = { disposition = "preserve", owner = "slopvac-8l4.11.1", note = "Progressive disclosure; same entry point." }
 "opt:prime:topic" = { disposition = "preserve", owner = "slopvac-8l4.11.1", note = "write, review and report stay; migrate and configure are new." }
 "opt:prime:--config" = { disposition = "preserve", owner = "slopvac-8l4.11.1", note = "Same meaning." }
-"opt:prime:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry." }
+"opt:prime:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Add the rules directory as a `plugins` entry in `slopvac.toml`." }
 "cmd:onboard" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
 "cmd:setup" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Covers all harnesses including OpenCode." }
 "opt:setup:harness" = { disposition = "preserve", owner = "slopvac-8l4.11.2", note = "Stays." }
@@ -80,9 +80,9 @@
 "cmd:reference" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
 "opt:reference:--write" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
 "opt:reference:--check" = { disposition = "preserve", owner = "slopvac-8l4.12.10", note = "Stays." }
-"opt:reference:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry." }
+"opt:reference:--rules-dir" = { disposition = "remove", owner = "slopvac-8l4.9.1", note = "Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` does not rewrite command lines or scripts. Add the rules directory as a `plugins` entry in `slopvac.toml`." }
 "action:input:paths" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
-"action:input:profile" = { disposition = "remove", owner = "slopvac-8l4.13.6", note = "Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile." }
+"action:input:profile" = { disposition = "remove", owner = "slopvac-8l4.13.6", note = "Errors at 3.0, exit 2. Delete the input from the workflow by hand: `slopvac migrate` does not rewrite workflows. Set the `profile` or `styles` key in `slopvac.toml` instead." }
 "action:input:config" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
 "action:input:changed-files-only" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
 "action:input:min-score" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
@@ -96,7 +96,7 @@
 "action:input:vale-version" = { disposition = "remove", owner = "slopvac-8l4.13.6", note = "Errors at 3.0." }
 "action:input:version" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Pins the binary version." }
 "action:input:source" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Installs from a path or URL with the binary installer." }
-"action:input:rules-dir" = { disposition = "remove", owner = "slopvac-8l4.13.6", note = "Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry." }
+"action:input:rules-dir" = { disposition = "remove", owner = "slopvac-8l4.13.6", note = "Errors at 3.0, exit 2. Delete the input from the workflow by hand: `slopvac migrate` does not rewrite workflows. Add the rules directory as a `plugins` entry in `slopvac.toml`." }
 "action:output:score" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
 "action:output:findings" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }
 "action:output:errors" = { disposition = "preserve", owner = "slopvac-8l4.13.6", note = "Stays." }

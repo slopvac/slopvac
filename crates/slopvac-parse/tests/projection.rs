@@ -29,13 +29,38 @@ fn projected_ranges_map_to_the_vector_spans() {
     .unwrap();
     for case in v["projections"].as_array().unwrap() {
         let mut p = Projection::new();
+        let unordered = case["unordered"].as_bool().unwrap_or(false);
+        let mut text_ranges: Vec<(usize, usize)> = Vec::new();
         for t in case["tokens"].as_array().unwrap() {
             let src = Span::new(n(&t["src"][0]), n(&t["src"][1])).unwrap();
-            p.push(
+            let (kind, text) = (
                 kind(t["kind"].as_str().unwrap()),
                 t["text"].as_str().unwrap(),
-                src,
             );
+            let bridge = t["bridge"].as_bool().unwrap_or(false);
+            assert!(
+                unordered || !bridge,
+                "{}: only an unordered case holds a bridge",
+                case["id"]
+            );
+            if bridge {
+                p.push_bridge(kind, text, src);
+            } else if unordered {
+                // Text tokens may be out of order, but they never overlap.
+                for &(a, b) in &text_ranges {
+                    assert!(
+                        !(src.start() < b && a < src.end()),
+                        "{}: text tokens overlap",
+                        case["id"]
+                    );
+                }
+                if !src.is_empty() {
+                    text_ranges.push((src.start(), src.end()));
+                }
+                p.push_unordered(kind, text, src);
+            } else {
+                p.push(kind, text, src);
+            }
         }
         assert_eq!(
             p.text(),
