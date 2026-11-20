@@ -135,7 +135,7 @@ def test_the_scan_sees_the_signing_jobs_it_is_meant_to_guard():
     assert {
         "release.yml:sign",
         "revocations.yml:build-sign",
-        "candidate.yml:sign",
+        "publish-pypi.yml:sign",
     } <= readers
 
 

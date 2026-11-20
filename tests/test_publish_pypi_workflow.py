@@ -1,8 +1,7 @@
-"""The candidate workflow and the stable gate must agree on what a candidate is."""
+"""The PyPI workflow and the stable gate must agree on what a candidate is."""
 
 from __future__ import annotations
 
-import fnmatch
 import importlib.util
 import json
 import os
@@ -14,8 +13,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.workflow_expr import run_jobs
+
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github" / "workflows" / "candidate.yml"
+WORKFLOW = ROOT / ".github" / "workflows" / "publish-pypi.yml"
 SCRIPT = ROOT / "scripts" / "release_provenance.py"
 SPEC = importlib.util.spec_from_file_location("release_provenance", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
@@ -35,20 +36,30 @@ def step(job: str, name: str) -> dict:
     return next(s for s in JOBS[job]["steps"] if s.get("name") == name)
 
 
-def test_pushing_a_candidate_tag_is_the_only_automatic_trigger():
+def matches_a_tag_filter(tag: str) -> bool:
+    """GitHub's filter glob: ``*`` stays within a path segment, ``+`` repeats."""
+    return any(
+        re.fullmatch(f.replace(".", r"\.").replace("*", "[^/]*"), tag)
+        for f in TRIGGERS["push"]["tags"]
+    )
+
+
+def test_pushing_a_candidate_or_stable_tag_is_the_only_automatic_trigger():
     assert set(TRIGGERS) == {"push", "workflow_dispatch"}
-    assert TRIGGERS["push"] == {"tags": ["rc/v*"]}
+    assert TRIGGERS["push"] == {"tags": ["rc/v*", "v[0-9]+.[0-9]+.[0-9]+"]}
 
 
-@pytest.mark.parametrize("tag", ["rc/v3.0.0-rc.1", "rc/v10.20.30-rc.12"])
-def test_the_tag_filter_catches_every_candidate_tag(tag):
-    provenance.parse_candidate_tag(tag)
-    assert fnmatch.fnmatchcase(tag, TRIGGERS["push"]["tags"][0])
+@pytest.mark.parametrize(
+    "tag", ["rc/v3.0.0-rc.1", "rc/v10.20.30-rc.12", "v3.0.0", "v10.20.30"]
+)
+def test_the_tag_filter_catches_every_candidate_and_stable_tag(tag):
+    provenance.parse_release_tag(tag)
+    assert matches_a_tag_filter(tag)
 
 
-@pytest.mark.parametrize("tag", ["v3.0.0", "v3.0.0-rc.1", "release/v3.0.0-rc.1"])
-def test_the_tag_filter_ignores_stable_and_foreign_tags(tag):
-    assert not fnmatch.fnmatchcase(tag, TRIGGERS["push"]["tags"][0])
+@pytest.mark.parametrize("tag", ["v3.0.0-rc.1", "release/v3.0.0-rc.1", "3.0.0"])
+def test_the_tag_filter_ignores_foreign_tags(tag):
+    assert not matches_a_tag_filter(tag)
 
 
 def test_dispatch_defaults_to_a_dry_run():
@@ -90,7 +101,8 @@ def test_each_job_asks_for_the_least_it_needs():
         "wheels": {"contents": "read"},
         "archives": {"contents": "read"},
         "sign": {"contents": "read"},
-        "publish": {"id-token": "write"},
+        "provenance": {"contents": "read", "actions": "read"},
+        "publish": {"contents": "read", "id-token": "write"},
         "prerelease": {
             "contents": "read",
             "id-token": "write",
@@ -108,9 +120,106 @@ def test_publishing_waits_for_the_pypi_environment_and_every_build():
         "wheels",
         "archives",
         "sign",
+        "provenance",
     }
-    assert publish["if"] == "${{ needs.validate.outputs.publish == 'true' }}"
     assert set(JOBS["prerelease"]["needs"]) >= {"publish", "wheels", "archives"}
+
+
+def test_the_upload_job_does_not_skip_existing_versions():
+    assert "skip-existing" not in str(JOBS["publish"])
+
+
+def validate_outputs(tag: str, publish: bool) -> dict[str, str]:
+    """The outputs the real ``validate`` job emits for ``tag``."""
+    release = provenance.parse_release_tag(tag)
+
+    def flag(value: bool) -> str:
+        return "true" if value else "false"
+
+    return {
+        "cargo-version": release.cargo_version,
+        "pypi-version": release.pypi_version,
+        "stable": flag(release.stable),
+        "active": flag(release.active),
+        "publish": flag(publish),
+    }
+
+
+def jobs_that_run(tag: str, publish: bool, fail: frozenset[str] = frozenset()):
+    return run_jobs(JOBS, {}, {"validate": validate_outputs(tag, publish)}, fail=fail)
+
+
+CANDIDATE = "rc/v3.0.0-rc.2"
+STABLE = "v3.0.0"
+LEGACY = "v2.19.0"
+CANDIDATE_ALL = {
+    "validate", "evals", "wheels", "archives", "sign", "publish", "prerelease",
+}  # fmt: skip
+STABLE_ALL = {"validate", "evals", "wheels", "provenance", "publish"}
+
+
+@pytest.mark.parametrize(
+    ("tag", "publish", "expected"),
+    [
+        (CANDIDATE, True, CANDIDATE_ALL),
+        (CANDIDATE, False, {"validate", "evals", "wheels", "archives"}),
+        (STABLE, True, STABLE_ALL),
+        (STABLE, False, {"validate", "evals", "wheels"}),
+        (LEGACY, True, {"validate"}),
+        (LEGACY, False, {"validate"}),
+    ],
+    ids=[
+        "candidate-publish",
+        "candidate-dry-run",
+        "stable-publish",
+        "stable-dry-run",
+        "legacy-push",
+        "legacy-dry-run",
+    ],
+)
+def test_each_tag_kind_runs_exactly_its_jobs(tag, publish, expected):
+    assert jobs_that_run(tag, publish) == expected
+
+
+@pytest.mark.parametrize(
+    ("tag", "failing"),
+    [
+        (CANDIDATE, "evals"),
+        (CANDIDATE, "wheels"),
+        (CANDIDATE, "archives"),
+        (CANDIDATE, "sign"),
+        (STABLE, "evals"),
+        (STABLE, "wheels"),
+        (STABLE, "provenance"),
+    ],
+)
+def test_a_failed_gate_or_build_stops_the_pypi_upload(tag, failing):
+    assert "publish" not in jobs_that_run(tag, True, frozenset({failing}))
+
+
+def test_the_prerelease_waits_for_a_successful_upload():
+    assert "prerelease" not in jobs_that_run(CANDIDATE, True, frozenset({"publish"}))
+
+
+def test_a_tag_without_the_active_output_runs_nothing_but_validation():
+    outputs = {"validate": {**validate_outputs(STABLE, True), "active": ""}}
+    assert run_jobs(JOBS, {}, outputs) == {"validate"}
+
+
+def test_the_stable_provenance_job_reuses_the_shared_gate():
+    job = JOBS["provenance"]
+    assert job["uses"] == "./.github/workflows/release-provenance.yml"
+    assert job["needs"] == "validate"
+
+
+def test_a_stable_upload_first_rechecks_that_the_tag_still_points_at_the_commit():
+    names = [s.get("name") for s in JOBS["publish"]["steps"]]
+    recheck = step("publish", "Require the tag to still point at the built commit")
+    assert recheck["if"] == "${{ needs.validate.outputs.stable == 'true' }}"
+    assert recheck["run"] == (
+        'python3 scripts/release_provenance.py verify-tag "$TAG" "$SHA"'
+    )
+    assert names.index(recheck["name"]) < names.index("Publish")
 
 
 def test_every_external_action_is_pinned_by_commit():
@@ -235,12 +344,12 @@ def test_the_parse_step_emits_the_outputs_the_jobs_read():
     emitted = {line.split("=", 1)[0] for line in lines}
     read = {
         name
-        for key in ("cargo-version", "pypi-version")
+        for key in ("cargo-version", "pypi-version", "stable", "active")
         for name in re.findall(
             r"steps\.parse\.outputs\.(\w+)", JOBS["validate"]["outputs"][key]
         )
     }
-    assert read == emitted == {"cargo", "pypi"}
+    assert read == emitted == {"cargo", "pypi", "stable", "active"}
 
 
 # Behaviour of the guard steps, run as the workflow runs them.
@@ -259,14 +368,16 @@ def run_step(job: str, name: str, cwd: Path, env: dict[str, str]):
 
 
 @pytest.mark.parametrize(
-    ("tag", "cargo", "pypi"),
+    ("tag", "cargo", "pypi", "stable", "active"),
     [
-        ("rc/v3.0.0-rc.1", "3.0.0-rc.1", "3.0.0rc1"),
-        ("rc/v3.1.20-rc.12", "3.1.20-rc.12", "3.1.20rc12"),
+        ("rc/v3.0.0-rc.1", "3.0.0-rc.1", "3.0.0rc1", "false", "true"),
+        ("rc/v3.1.20-rc.12", "3.1.20-rc.12", "3.1.20rc12", "false", "true"),
+        ("v3.0.0", "3.0.0", "3.0.0", "true", "true"),
+        ("v2.19.0", "2.19.0", "2.19.0", "true", "false"),
     ],
 )
-def test_the_parse_step_writes_both_versions_for_a_candidate_tag(
-    tmp_path, tag, cargo, pypi
+def test_the_parse_step_writes_the_versions_and_kind_of_a_tag(
+    tmp_path, tag, cargo, pypi, stable, active
 ):
     output = tmp_path / "out"
     output.write_text("")
@@ -274,13 +385,20 @@ def test_the_parse_step_writes_both_versions_for_a_candidate_tag(
         "validate", "Parse the tag", ROOT, {"TAG": tag, "GITHUB_OUTPUT": str(output)}
     )
     assert done.returncode == 0, done.stderr
-    assert output.read_text().splitlines() == [f"cargo={cargo}", f"pypi={pypi}"]
+    assert output.read_text().splitlines() == [
+        f"cargo={cargo}",
+        f"pypi={pypi}",
+        f"stable={stable}",
+        f"active={active}",
+    ]
 
 
 @pytest.mark.parametrize(
     "tag",
     [
-        "v3.0.0",
+        "v3.0.0-rc.1",
+        "v3.0",
+        "v03.0.0",
         "3.0.0-rc.1",
         "rc/3.0.0-rc.1",
         "rc/v3.0.0",
@@ -300,7 +418,7 @@ def test_the_parse_step_writes_both_versions_for_a_candidate_tag(
         "",
     ],
 )
-def test_the_parse_step_rejects_anything_but_a_candidate_tag(tmp_path, tag):
+def test_the_parse_step_rejects_anything_but_a_candidate_or_stable_tag(tmp_path, tag):
     output = tmp_path / "out"
     output.write_text("")
     done = run_step(
@@ -384,63 +502,23 @@ def test_the_ancestry_guard_accepts_only_main_and_the_release_please_main_branch
         assert "not on main" in done.stderr
 
 
-def make_wheels(directory: Path, names: list[str]) -> None:
-    directory.mkdir()
-    for name in names:
-        (directory / name).write_text("")
+def test_the_wheel_check_binds_the_upload_to_the_version_and_the_wheels_matrix():
+    check = step("publish", "Check the wheel versions")
+    assert check["env"]["EXPECTED"] == "${{ needs.validate.outputs.pypi-version }}"
+    assert check["run"].split() == [
+        "python3", "scripts/release_provenance.py", "check-dist", "dist",
+        "--version", '"$EXPECTED"',
+        "--wheel-targets-from", ".github/workflows/wheels.yml",
+    ]  # fmt: skip
 
 
-WHEEL_STEP = "Check the wheel versions"
-TARGET_TAGS = [
-    "macosx_11_0_arm64",
-    "macosx_10_12_x86_64",
-    "manylinux_2_17_x86_64",
-    "manylinux_2_17_aarch64",
-    "musllinux_1_2_x86_64",
-]
-
-
-def wheel_names(version: str) -> list[str]:
-    return [f"slopvac-{version}-py3-none-{t}.whl" for t in TARGET_TAGS]
-
-
-def run_wheel_guard(tmp_path: Path, names: list[str] | None, expected="3.0.0rc2"):
-    if names is not None:
-        make_wheels(tmp_path / "dist", names)
-    return run_step("publish", WHEEL_STEP, tmp_path, {"EXPECTED": expected})
-
-
-def test_the_wheel_guard_accepts_a_full_set_of_the_expected_version(tmp_path):
-    done = run_wheel_guard(tmp_path, wheel_names("3.0.0rc2"))
-    assert done.returncode == 0, done.stderr
-
-
-@pytest.mark.parametrize(
-    "names",
-    [
-        wheel_names("3.0.0rc1"),
-        wheel_names("3.0.0rc20"),
-        wheel_names("3.0.0"),
-        wheel_names("3.0.0rc2")[:-1] + wheel_names("2.18.1")[:1],
-    ],
-    ids=["older-rc", "longer-rc", "stable", "one-stray"],
-)
-def test_the_wheel_guard_rejects_a_wheel_of_another_version(tmp_path, names):
-    done = run_wheel_guard(tmp_path, names)
-    assert done.returncode == 1
-    assert "unexpected wheel" in done.stderr
-
-
-def test_the_wheel_guard_rejects_an_empty_directory(tmp_path):
-    done = run_wheel_guard(tmp_path, [])
-    assert done.returncode == 1
-    assert "no wheels downloaded" in done.stderr
-
-
-def test_the_wheel_guard_rejects_a_missing_directory(tmp_path):
-    done = run_wheel_guard(tmp_path, None)
-    assert done.returncode == 1
-    assert "no wheels downloaded" in done.stderr
+def test_the_wheels_are_checked_after_the_download_and_before_the_upload():
+    names = [s.get("name") for s in JOBS["publish"]["steps"]]
+    assert (
+        names.index("Download wheels")
+        < names.index("Check the wheel versions")
+        < names.index("Publish")
+    )
 
 
 # --- minisign signing of the candidate assets -----------------------------------
@@ -468,7 +546,10 @@ def test_candidate_assets_are_signed_in_a_job_that_gates_the_pypi_upload():
     # Signing must finish before the irreversible PyPI upload and the prerelease.
     assert "sign" in JOBS["publish"]["needs"]
     assert "sign" in JOBS["prerelease"]["needs"]
-    assert JOBS["sign"]["if"] == "${{ needs.validate.outputs.publish == 'true' }}"
+    assert JOBS["sign"]["if"] == (
+        "${{ needs.validate.outputs.publish == 'true' && "
+        "needs.validate.outputs.stable != 'true' }}"
+    )
 
 
 def test_the_prerelease_attaches_the_signatures_without_the_secret():
@@ -494,5 +575,12 @@ def test_the_signing_secret_is_in_the_candidate_signing_step_env_only():
 
 def test_a_publishing_run_requires_the_public_key_before_anything_is_built():
     guard = step("validate", "Require the release public key")
-    assert guard["if"] == "${{ steps.mode.outputs.publish == 'true' }}"
+    assert guard["if"] == (
+        "${{ steps.mode.outputs.publish == 'true' && "
+        "steps.parse.outputs.active == 'true' }}"
+    )
     assert guard["run"] == "python3 scripts/release_signing.py require-key"
+
+
+def test_the_stable_provenance_call_keeps_the_default_candidate_requirement():
+    assert "with" not in JOBS["provenance"]

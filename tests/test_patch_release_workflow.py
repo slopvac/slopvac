@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.workflow_expr import evaluate as evaluate_condition
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "patch_release_workflow.py"
 SPEC = importlib.util.spec_from_file_location("patch_release_workflow", SCRIPT)
@@ -111,7 +113,9 @@ def test_no_job_writes_contents_with_the_workflow_token(workflow):
 
 @pytest.mark.parametrize("name", ["host", "publish-legacy-release"])
 def test_the_release_writers_mint_a_contents_token(workflow, name):
-    mint = next(s for s in workflow["jobs"][name]["steps"] if s.get("id") == "release-token")
+    mint = next(
+        s for s in workflow["jobs"][name]["steps"] if s.get("id") == "release-token"
+    )
     assert mint["with"]["permission-contents"] == "write"
     assert mint["with"]["repositories"] == "${{ github.event.repository.name }}"
     assert "secrets.GITHUB_TOKEN" not in str(workflow["jobs"][name]["permissions"])
@@ -151,32 +155,6 @@ def test_the_provenance_job_gets_no_secrets_and_read_permissions(workflow):
         "RELEASE_APP_PRIVATE_KEY": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}"
     }
     assert job["permissions"] == {"actions": "read", "contents": "read"}
-
-
-def _publish_jobs() -> dict:
-    return yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "publish-lint.yml").read_text(
-            encoding="utf-8"
-        )
-    )["jobs"]
-
-
-def test_the_stable_pypi_job_waits_for_the_provenance_job():
-    publish = _publish_jobs()
-    assert "provenance" in publish["pypi"]["needs"]
-    assert publish["provenance"]["uses"] == "./.github/workflows/release-provenance.yml"
-
-
-def test_the_provenance_gate_applies_only_to_gated_versions():
-    publish = _publish_jobs()
-    assert "needs.build.outputs.gated == 'true'" in publish["provenance"]["if"]
-    # 2.x skips the gate job, and the stable job must still run then.
-    condition = publish["pypi"]["if"]
-    assert (
-        "(needs.build.outputs.gated != 'true' || needs.provenance.result == 'success')"
-        in condition
-    )
-    assert "!cancelled()" in condition
 
 
 # --- hardening the raw cargo-dist output -------------------------------------
@@ -417,7 +395,11 @@ def test_the_legacy_ruleset_check_reads_with_the_app_token_and_no_fallback(workf
 
 
 def test_the_pypi_gate_passes_only_the_app_key():
-    provenance = _publish_jobs()["provenance"]
+    provenance = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "publish-pypi.yml").read_text(
+            encoding="utf-8"
+        )
+    )["jobs"]["provenance"]
     assert provenance["secrets"] == {
         "RELEASE_APP_PRIVATE_KEY": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}"
     }
@@ -431,71 +413,6 @@ PROVENANCE = ROOT / ".github" / "workflows" / "release-provenance.yml"
 @pytest.fixture(scope="module")
 def provenance() -> dict:
     return yaml.safe_load(PROVENANCE.read_text(encoding="utf-8"))
-
-
-# A minimal evaluator for the `if:` subset these workflows use: ==, !=, &&, ||, !,
-# parentheses, string literals and context names. Merge it with tests/workflow_expr.py
-# once that helper lands from the publish-lint test work.
-_TOKEN = re.compile(r"\s*(==|!=|&&|\|\||!|\(|\)|'[^']*'|[A-Za-z_][A-Za-z0-9_.]*)")
-
-
-def evaluate_condition(expression: str, context: dict[str, str]) -> bool:
-    text = expression.strip()
-    if text.startswith("${{") and text.endswith("}}"):
-        text = text[3:-2]
-    tokens = _TOKEN.findall(text)
-    position = 0
-
-    def peek() -> str | None:
-        return tokens[position] if position < len(tokens) else None
-
-    def take() -> str:
-        nonlocal position
-        position += 1
-        return tokens[position - 1]
-
-    def atom() -> str | bool:
-        token = take()
-        if token == "(":
-            value = either()
-            assert take() == ")"
-            return value
-        if token == "!":
-            return not truthy(atom())
-        if token.startswith("'"):
-            return token[1:-1]
-        return context[token]  # a missing context name is a test error
-
-    def truthy(value: str | bool) -> bool:
-        return bool(value)
-
-    def comparison() -> str | bool:
-        left = atom()
-        if peek() in ("==", "!="):
-            operator = take()
-            right = atom()
-            return (left == right) if operator == "==" else (left != right)
-        return left
-
-    def both() -> str | bool:
-        value = comparison()
-        while peek() == "&&":
-            take()
-            right = comparison()
-            value = right if truthy(value) else value
-        return value
-
-    def either() -> str | bool:
-        value = both()
-        while peek() == "||":
-            take()
-            right = both()
-            value = value if truthy(value) else right
-        return value
-
-    result = either()
-    assert position == len(tokens), f"unparsed input in {expression!r}"
-    return truthy(result)
 
 
 def test_the_app_key_is_a_required_workflow_call_secret(provenance):
@@ -531,28 +448,39 @@ def test_the_dispatch_input_is_a_required_tag_that_only_the_check_reads(provenan
     assert "inputs" not in check["run"]
 
 
-# Which provenance steps run, by how the workflow starts. `inputs.tag` is empty when
-# a release workflow calls it, even a caller that was itself dispatched, so those
-# callers still get the candidate check. A pull request or a plain branch run
-# starts no check: only a tag can publish.
+# Which provenance steps run, by how the workflow starts. The called workflow's
+# `inputs` context holds only the inputs it declares for `workflow_call`, never the
+# caller's own dispatch inputs, so `inputs.tag` is empty in every call (see
+# https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#inputs-context).
+# A caller that publishes passes `require-candidate`, and then the candidate check
+# runs on a tag and the closing step fails the job if the check did not pass. A
+# pull request run passes false: only a tag can publish.
 GATED_STEPS = {
     "Check the candidate": "candidate",
     "Mint the ruleset read token": "mint",
     "Require an immutable tag ruleset": "ruleset",
+    "Fail when a required candidate check did not pass": "closing",
 }
+# (ref type, tag input, require-candidate, outcome of the candidate step)
 RUNS = [
-    pytest.param("branch", "v2.9.1", {"mint", "ruleset"}, id="dispatch-from-a-branch"),
-    pytest.param("tag", "v2.9.1", {"mint", "ruleset"}, id="dispatch-on-a-tag-ref"),
-    pytest.param("tag", "", {"candidate", "mint", "ruleset"}, id="called-by-a-release"),
-    pytest.param("branch", "", set(), id="pull-request-or-branch-call"),
-]
+    pytest.param("branch", "v2.9.1", "", "skipped", {"mint", "ruleset"}, id="direct-dispatch-from-a-branch"),
+    pytest.param("tag", "v2.9.1", "", "skipped", {"mint", "ruleset"}, id="direct-dispatch-on-a-tag-ref"),
+    pytest.param("tag", "", True, "success", {"candidate", "mint", "ruleset"}, id="stable-tag-push-or-publish-pypi-dispatch-on-the-tag"),
+    pytest.param("branch", "", True, "skipped", {"closing"}, id="required-but-not-a-tag-fails-closed"),
+    pytest.param("branch", "", False, "skipped", set(), id="release-plan-on-a-pull-request"),
+]  # fmt: skip
 
 
-@pytest.mark.parametrize(("ref_type", "tag", "expected"), RUNS)
+@pytest.mark.parametrize(("ref_type", "tag", "required", "outcome", "expected"), RUNS)
 def test_each_start_runs_exactly_the_intended_provenance_steps(
-    provenance, ref_type, tag, expected
+    provenance, ref_type, tag, required, outcome, expected
 ):
-    context = {"github.ref_type": ref_type, "inputs.tag": tag}
+    context = {
+        "github.ref_type": ref_type,
+        "inputs.tag": tag,
+        "inputs.require-candidate": required,
+        "steps.candidate.outcome": outcome,
+    }
     steps = {
         s["name"]: s for s in provenance["jobs"]["provenance"]["steps"] if "name" in s
     }
@@ -562,6 +490,16 @@ def test_each_start_runs_exactly_the_intended_provenance_steps(
         if evaluate_condition(steps[name]["if"], context)
     }
     assert ran == expected
+
+
+def test_the_candidate_requirement_defaults_on_for_every_caller(provenance):
+    declared = provenance[True]["workflow_call"]["inputs"]["require-candidate"]
+    assert (declared["type"], declared["default"]) == ("boolean", True)
+
+
+def test_the_release_workflow_requires_a_candidate_except_on_pull_requests(workflow):
+    call = workflow["jobs"]["custom-release-provenance"]
+    assert call["with"] == {"require-candidate": "${{ !github.event.pull_request }}"}
 
 
 def test_the_provenance_workflow_has_no_write_permission(provenance):
