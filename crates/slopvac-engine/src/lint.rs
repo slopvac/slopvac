@@ -1274,6 +1274,41 @@ impl NearbyProse<'_> {
     }
 }
 
+/// One analysis for each paragraph, shared by every diagram beside it.
+fn share_analyses<'a, 'b: 'a>(
+    nearby: impl Iterator<Item = &'a NearbyProse<'b>>,
+) -> HashMap<usize, slopvac_diagrams::ProseAnalysis<'a>> {
+    let mut analyses = HashMap::new();
+    for n in nearby {
+        analyses
+            .entry(n.block.span.start())
+            .or_insert_with(|| slopvac_diagrams::ProseAnalysis::new(n.text()));
+    }
+    analyses
+}
+
+/// The paragraphs next to a diagram and the shared analysis of each, in the same order.
+fn prose_inputs<'a>(
+    nearby: &'a [NearbyProse<'a>],
+    analyses: &'a HashMap<usize, slopvac_diagrams::ProseAnalysis<'a>>,
+) -> (
+    Vec<slopvac_diagrams::ProseBlock<'a>>,
+    Vec<&'a slopvac_diagrams::ProseAnalysis<'a>>,
+) {
+    let prose = nearby
+        .iter()
+        .map(|n| slopvac_diagrams::ProseBlock {
+            span: n.base..n.base + n.text().len(),
+            text: n.text(),
+        })
+        .collect();
+    let shared = nearby
+        .iter()
+        .filter_map(|n| analyses.get(&n.block.span.start()))
+        .collect();
+    (prose, shared)
+}
+
 /// What identifies a finding on a paragraph: its rule and its place in the file.
 fn paragraph_hit_key(f: &Finding) -> (String, usize, usize) {
     let span = f
@@ -1879,38 +1914,18 @@ impl Run<'_> {
                 ));
             }
         }
-        // One analysis for each paragraph, shared by every diagram beside it.
-        let mut analyses: HashMap<usize, slopvac_diagrams::ProseAnalysis<'_>> = HashMap::new();
-        for (_, _, nearby) in &diagrams {
-            for n in nearby {
-                analyses
-                    .entry(n.block.span.start())
-                    .or_insert_with(|| slopvac_diagrams::ProseAnalysis::new(n.text()));
-            }
-        }
+        let analyses = share_analyses(diagrams.iter().flat_map(|(_, _, n)| n));
         let mut reported = HashSet::new();
         let mut out = Vec::new();
         let mut unchecked = Vec::new();
         let mut notices = Vec::new();
         for (format, extraction, nearby) in &diagrams {
-            if let Some(n) = self.extraction_notice(*format, extraction.status)? {
-                if n.level == NoticeLevel::Info {
-                    notices.push(n);
-                } else {
-                    unchecked.push(n);
-                }
+            match self.extraction_notice(*format, extraction.status)? {
+                Some(n) if n.level == NoticeLevel::Info => notices.push(n),
+                Some(n) => unchecked.push(n),
+                None => {}
             }
-            let prose: Vec<slopvac_diagrams::ProseBlock<'_>> = nearby
-                .iter()
-                .map(|n| slopvac_diagrams::ProseBlock {
-                    span: n.base..n.base + n.text().len(),
-                    text: n.text(),
-                })
-                .collect();
-            let prose_analysis: Vec<&slopvac_diagrams::ProseAnalysis<'_>> = nearby
-                .iter()
-                .filter_map(|n| analyses.get(&n.block.span.start()))
-                .collect();
+            let (prose, prose_analysis) = prose_inputs(nearby, &analyses);
             let input = DiagramInput {
                 format: *format,
                 source: self.input.source,

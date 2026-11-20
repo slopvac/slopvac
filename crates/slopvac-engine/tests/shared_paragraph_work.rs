@@ -82,7 +82,7 @@ fn a_meta_reference_in_a_shared_paragraph_is_reported_once() {
     let (_guard, run) = run();
     let found = of_rule(&run, "diagrams:diagram.meta-reference");
     assert_eq!(found.len(), 1);
-    assert_eq!(found[0].matched_text, "the diagram below");
+    assert_eq!(found[0].matched_text, "As shown in the diagram");
 }
 
 #[test]
