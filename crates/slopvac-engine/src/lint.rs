@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
+use slopvac_comments::Language;
 use slopvac_context::{GenreRegistry, ResolveOptions, TagIndex, TagRegistry};
 use slopvac_diagrams::{Extraction, Format as DiagramFormat, Signal, extract, extract_fenced};
 use slopvac_model::{
@@ -24,6 +25,7 @@ use slopvac_terms::{Blocklist, TermSet};
 use slopvac_text::{TextError, TextType};
 
 use crate::capitalization::{self, SentenceCase};
+use crate::comments;
 use crate::diagrams::{self, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker};
 use crate::directives::{Directives, Lines, Target, scan};
 use crate::exceptions::{Detectors, MatchSite, TextOrigin};
@@ -60,6 +62,9 @@ pub enum Kind {
     Mdx,
     /// reStructuredText, read through docutils (see [`crate::rst`]).
     Rst,
+    /// A source file in this language. Only its comments are prose: see
+    /// [`Input::comments`].
+    Comments(Language),
     /// A diagram file. Only diagram rules read it.
     Diagram(DiagramFormat),
 }
@@ -146,6 +151,29 @@ impl<'a> Input<'a> {
         }
     }
 
+    /// A source file read from disk, linted in code-comment mode.
+    ///
+    /// Only the prose of the comments is read, and a finding points at its exact bytes in
+    /// `source`. As in 2.x `--mode code-comments`:
+    ///
+    /// - The tokens, pattern and substitution rules run, and the capitalization rules the
+    ///   engine runs. A comment is the unit for every one of them, whatever the `scope` of
+    ///   the rule, and its text carries the context `code-comment`.
+    /// - Every other active rule is listed in one `info` notice, `comment-rules-not-run`,
+    ///   with their ids in `data.rules`. The run stays complete.
+    /// - An inline directive in a comment covers the comment block it starts or precedes. A
+    ///   directive indented as a Markdown code example is an example and does nothing.
+    ///
+    /// Strings are code, so a Python docstring is not read. See [`slopvac_comments`] for what
+    /// a comment is, and [`EngineError::Comments`] for the work limits.
+    #[must_use]
+    pub const fn comments(path: &'a str, source: &'a str, language: Language) -> Self {
+        Self {
+            kind: Kind::Comments(language),
+            ..Self::markdown(path, source)
+        }
+    }
+
     /// A diagram file read from disk.
     #[must_use]
     pub const fn diagram(path: &'a str, source: &'a str, format: DiagramFormat) -> Self {
@@ -197,6 +225,10 @@ pub enum EngineError {
     /// A terms file could not be read or is not valid.
     #[error("terms file: {0}")]
     Terms(String),
+    /// The comments of a source file could not be extracted within the work limits of
+    /// `slopvac-comments`, so the file is incomplete.
+    #[error("comment extraction: {0}")]
+    Comments(String),
     /// A value the engine built broke a model invariant. This is a bug.
     #[error("internal error: {0}")]
     Internal(String),
@@ -725,7 +757,7 @@ impl Engine {
     pub fn lint(&self, input: &Input<'_>) -> Result<Document, EngineError> {
         // Front matter is metadata, not prose: the parser reads only what follows it.
         let front = match input.kind {
-            Kind::Diagram(_) | Kind::Rst => None,
+            Kind::Diagram(_) | Kind::Rst | Kind::Comments(_) => None,
             _ => detect(input.source),
         };
         let body_start = front.as_ref().map_or(0, |b| b.body_start);
@@ -736,15 +768,26 @@ impl Engine {
         let body = Span::new(body_start, input.source.len()).expect("body starts inside the file");
         let front_matter = front.and_then(|b| FrontMatter::parse_block(input.source, b).ok());
         let mut extra = Vec::new();
+        // The text rules read: the source, or the source with all but comment text blanked,
+        // and for the directive scan the same with directive text kept.
+        let mut masked = None;
         let parsed = match input.kind {
             Kind::Markdown => parse_markdown(input.source, body)?,
             Kind::Mdx => parse_mdx(input.source, body)?,
             Kind::Rst => self.parse_rst(input, &mut extra)?,
             Kind::Diagram(_) => Parsed::default(),
+            Kind::Comments(language) => {
+                let text = comments::read(input.source, language)?;
+                masked = Some((text.masked, text.lexical));
+                text.parsed
+            }
         };
+        let text = masked
+            .as_ref()
+            .map_or(input.source, |(_, lexical)| lexical.as_str());
         let index = SourceIndex::new(input.source, input.bom);
         let parsed = with_html_prose(input.source, &index, parsed)?;
-        let prepared = Prepared::new(input.source, &parsed)?;
+        let prepared = Prepared::new(text, &parsed)?;
         let tags = match input.kind {
             Kind::Diagram(_) => TagIndex::default(),
             _ => tagging::tag(
@@ -761,26 +804,15 @@ impl Engine {
         };
         let genre = self.genre_of(input, &parsed, front_matter.as_ref())?;
         let lines = Lines::new(input.source);
+        let lookup = |id: &str| self.directive_target(id);
         let directives = match input.kind {
             Kind::Diagram(_) => Directives::default(),
-            _ => scan(&parsed, &lines, front_span, |id| {
-                match self.catalog.get(id) {
-                    None => Target::Unknown,
-                    Some(_) if !self.running.contains(id) => Target::Inactive,
-                    Some(Catalog::Loaded(_)) => Target::Active(
-                        self.loaded(id)
-                            .map(|r| {
-                                r.rule()
-                                    .exceptions()
-                                    .iter()
-                                    .map(|e| e.name.as_str())
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                    ),
-                    Some(Catalog::Diagram) => Target::Active(Vec::new()),
-                }
-            }),
+            Kind::Comments(_) => comments::directives(
+                input.source,
+                masked.as_ref().map_or("", |(masked, _)| masked.as_str()),
+                lookup,
+            ),
+            _ => scan(&parsed, &lines, front_span, lookup),
         };
         let subject = Subject::new(&prepared, &parsed, &lines, front_span);
         let run = Run {
@@ -797,11 +829,14 @@ impl Engine {
             genre: &genre,
         };
         let mut findings = run.lexical()?;
-        findings.extend(run.vocabulary()?);
-        findings.extend(run.term_casing()?);
-        findings.extend(run.metrics()?);
-        findings.extend(run.structure()?);
-        findings.extend(run.diagrams()?);
+        // Code-comment mode runs the lexical rules only; `comment_notice` lists the rest.
+        if !matches!(input.kind, Kind::Comments(_)) {
+            findings.extend(run.vocabulary()?);
+            findings.extend(run.term_casing()?);
+            findings.extend(run.metrics()?);
+            findings.extend(run.structure()?);
+            findings.extend(run.diagrams()?);
+        }
         findings.extend(run.invalid_directives()?);
         // Lookups that passed their budget answered nothing, so nothing found above stands.
         if tags.lookup_budget_exceeded() {
@@ -812,7 +847,12 @@ impl Engine {
         findings.sort_by(|a, b| (a.start, a.rule_id.as_str()).cmp(&(b.start, b.rule_id.as_str())));
         self.apply_genre(&genre, &mut findings);
         // Notices about rules that cannot run come first, then the ones the parse raised.
-        let mut notices = self.not_run_notices(&genre.id)?;
+        // Code-comment mode lists every rule it cannot read in one notice of its own.
+        let mut notices = if matches!(input.kind, Kind::Comments(_)) {
+            self.comment_notice()?.into_iter().collect()
+        } else {
+            self.not_run_notices(&genre.id)?
+        };
         notices.extend(extra);
         Ok(self.document(input, &prepared, &tags, genre, findings, notices))
     }
@@ -923,6 +963,87 @@ impl Engine {
         });
     }
 
+    /// What an inline directive naming `id` points at.
+    fn directive_target(&self, id: &str) -> Target<'_> {
+        match self.catalog.get(id) {
+            None => Target::Unknown,
+            Some(_) if !self.running.contains(id) => Target::Inactive,
+            Some(Catalog::Loaded(_)) => Target::Active(
+                self.loaded(id)
+                    .map(|r| {
+                        r.rule()
+                            .exceptions()
+                            .iter()
+                            .map(|e| e.name.as_str())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            ),
+            Some(Catalog::Diagram) => Target::Active(Vec::new()),
+        }
+    }
+
+    /// The notice for the active rules that code-comment mode does not run, or `None` when it
+    /// runs them all. As in 2.x, only the lexical rules read comments. Every other active
+    /// checker is listed in `data.rules`, diagram rules and the rules of a custom checker
+    /// included, so none passes in silence. A judgement rule never produces a finding, so it
+    /// is not listed.
+    ///
+    /// The notice is `info`, so the run stays complete. The contract asks for a `warning`
+    /// (an incomplete run) when the user enabled such a rule by name, but the engine sees one
+    /// level per rule and not the configuration layer it came from, so it cannot tell that
+    /// apart from a rule the profile or a style turns on.
+    fn comment_notice(&self) -> Result<Option<Notice>, EngineError> {
+        let runs: HashSet<&RuleId> = self
+            .active
+            .iter()
+            .map(|a| self.sets[a.set].categories()[a.category].rules()[a.rule].id())
+            .collect();
+        let mut skipped: Vec<&str> = Vec::new();
+        for set in &self.sets {
+            for rule in set.rules() {
+                let id = rule.id();
+                if self.running.contains(id.as_str())
+                    && !runs.contains(id)
+                    && rule.kind() != MatchKind::Judgement
+                    && !skipped.contains(&id.as_str())
+                {
+                    skipped.push(id.as_str());
+                }
+            }
+        }
+        // The rules of a custom checker have no loaded rule.
+        let mut custom: Vec<&str> = self
+            .diagram_rules
+            .keys()
+            .map(RuleId::as_str)
+            .filter(|id| !skipped.contains(id))
+            .collect();
+        custom.sort_unstable();
+        skipped.extend(custom);
+        if skipped.is_empty() {
+            return Ok(None);
+        }
+        let rules = skipped
+            .iter()
+            .map(|id| serde_json::Value::String((*id).to_owned()))
+            .collect();
+        let data = serde_json::Map::from_iter([("rules".to_owned(), rules)]);
+        Ok(Some(
+            notice(
+                "comment-rules-not-run",
+                NoticeLevel::Info,
+                format!(
+                    "{} active rule(s) do not run on code comments, which only the tokens, \
+                     pattern, substitution and capitalization rules read: {}",
+                    skipped.len(),
+                    skipped.join(", ")
+                ),
+            )?
+            .with_data(data),
+        ))
+    }
+
     /// Read an RST file. A file that cannot be read is an empty document with a warning
     /// notice, so the run is incomplete and the file is never skipped silently.
     fn parse_rst(&self, input: &Input<'_>, extra: &mut Vec<Notice>) -> Result<Parsed, EngineError> {
@@ -969,8 +1090,17 @@ impl Engine {
         extra: Vec<Notice>,
     ) -> Document {
         let words = prepared.words();
+        let mut seen = tags.kinds_seen();
+        if matches!(input.kind, Kind::Comments(_)) && !prepared.blocks().is_empty() {
+            seen.push(COMMENT_CONTEXT);
+            seen.sort_unstable();
+            seen.dedup();
+        }
         let mut unchecked = extra;
-        unchecked.extend(self.vocabulary.plan(&genre.id).notices().iter().cloned());
+        // Code-comment mode runs no vocabulary rule, so it has no vocabulary notice.
+        if !matches!(input.kind, Kind::Comments(_)) {
+            unchecked.extend(self.vocabulary.plan(&genre.id).notices().iter().cloned());
+        }
         let scoring = score_document(
             &findings,
             words,
@@ -984,7 +1114,7 @@ impl Engine {
             }),
             profile: self.settings.profile.clone(),
             genre,
-            contexts_seen: contexts(tags.kinds_seen()),
+            contexts_seen: contexts(seen),
             config_sources: self.settings.config_sources.clone(),
             words,
             sentences: prepared.sentence_count(),
@@ -1014,6 +1144,9 @@ fn kinds_of<'t>(tags: &'t TagIndex, span: Span, covering: &[Range<usize>]) -> Ve
         tags.kinds_at(&(span.start()..span.end()))
     }
 }
+
+/// The context tag of comment text in a source file (`docs/contract/lint-report.md`).
+const COMMENT_CONTEXT: &str = "code-comment";
 
 /// The signal a loaded rule runs, if it runs one.
 fn signal_of_rule(loaded: &LoadedRule) -> Option<Signal> {
@@ -1112,7 +1245,7 @@ impl Run<'_> {
         let start = self.index.line_col(c.span.start())?;
         let end = self.index.line_col(c.span.end())?;
         let mut kinds = kinds_of(self.tags, c.span, &c.covering);
-        if let Some(extra) = c.extra_context
+        if let Some(extra) = c.extra_context.or_else(|| self.ambient())
             && !kinds.contains(&extra)
         {
             kinds.push(extra);
@@ -1145,6 +1278,12 @@ impl Run<'_> {
             .suppressed(id, exceptions, self.lines.line_of(span.start()))
     }
 
+    /// The text context that every match in this input sits in, which no tagger gives: comment
+    /// text in a source file.
+    fn ambient(&self) -> Option<&'static str> {
+        matches!(self.input.kind, Kind::Comments(_)).then_some(COMMENT_CONTEXT)
+    }
+
     /// Whether the document's genre is one the rule applies to. A rule limited to other genres
     /// does not run, so it cannot fail the document.
     fn applies(&self, rule: &slopvac_rules::Rule) -> bool {
@@ -1170,6 +1309,7 @@ impl Run<'_> {
             // A diagram file is not prose. Only diagram rules read it.
             return Ok(Vec::new());
         }
+        let comments = matches!(self.input.kind, Kind::Comments(_));
         let inline_code = skip::build(self.parsed, &[], None, true);
         let mut out = Vec::new();
         for active in &engine.active {
@@ -1179,8 +1319,11 @@ impl Run<'_> {
             if !self.applies(rule) {
                 continue;
             }
+            // In code-comment mode a comment is the unit whatever the scope of the rule: 2.x
+            // replaced it with the comment scope of the source language.
+            let scope = if comments { Scope::Prose } else { rule.scope };
             let exclusions;
-            let skip: &SkipRanges = match (&rule.exclude_blocks, rule.scope) {
+            let skip: &SkipRanges = match (&rule.exclude_blocks, scope) {
                 (Some(kinds), scope) => {
                     exclusions =
                         skip::build(self.parsed, kinds, self.front_matter, scope != Scope::Raw);
@@ -1204,7 +1347,7 @@ impl Run<'_> {
                 }
                 _ => None,
             };
-            for unit in self.prepared.units(rule.scope)? {
+            for unit in self.prepared.units(scope)? {
                 matcher_work::entered(loaded.kind());
                 let ranges = match &sentence_case {
                     Some(check) => check.find(unit.text)?.into_iter().collect(),
@@ -1238,7 +1381,16 @@ impl Run<'_> {
         span: Span,
         covering: &[Range<usize>],
     ) -> bool {
-        self.guarded_with(None, rule, detectors, text, range, origin, span, covering)
+        self.guarded_with(
+            self.ambient(),
+            rule,
+            detectors,
+            text,
+            range,
+            origin,
+            span,
+            covering,
+        )
     }
 
     /// [`Self::guarded`] for a match that sits in `extra` context, a tag the context index
