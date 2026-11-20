@@ -577,7 +577,6 @@ def cmd_label_import_worksheet(args: argparse.Namespace) -> int:
             labelling.read_jsonl(p["human"]),
             reviewer=args.reviewer,
             date=args.date or labelling.today(),
-            colliding=labelling.colliding_texts(labelling.read_jsonl(p["items"])),
         )
         labelling.append_jsonl(p["human"], rows)
     except (ValueError, OSError) as exc:
