@@ -6,6 +6,8 @@
 
 use std::ops::Range;
 
+use slopvac_config::frontmatter::Policy;
+
 /// Block kinds a tagger can see.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -131,7 +133,7 @@ pub struct PlainDocument {
     pub title: Option<String>,
     /// Front matter pairs.
     pub front_matter: Vec<(String, String)>,
-    /// Fields of the `slopvac:` block, when it declares `v: 3`.
+    /// String fields of the valid `slopvac:` block.
     pub block: Vec<(String, String)>,
     /// Length in bytes of the source text.
     pub source_len: usize,
@@ -157,33 +159,25 @@ pub struct OwnedBlock {
 }
 
 impl PlainDocument {
-    /// Read the `key: value` lines of front matter. Lines indented under `slopvac:` form the
-    /// block, which counts only when it declares `v: 3`.
-    fn read_front_matter(&mut self, text: &str) {
-        let mut in_block = false;
-        let mut block = Vec::new();
-        for line in text.lines() {
-            let Some((k, v)) = line.split_once(':') else {
-                continue;
-            };
-            let pair = (k.trim().to_string(), v.trim().trim_matches('"').to_string());
-            if line.starts_with([' ', '\t']) {
-                // An indented line belongs to the mapping above it.
-                if in_block {
-                    block.push(pair);
-                } else {
-                    self.front_matter.push(pair);
-                }
-            } else {
-                in_block = pair.0 == "slopvac" && pair.1.is_empty();
-                if !in_block {
-                    self.front_matter.push(pair);
-                }
+    /// Read the front matter: the top-level `key: value` lines of `text`, and the string
+    /// fields of the `slopvac:` block as the project's reader validates them (`src` is the
+    /// whole document). A block that fails validation contributes nothing.
+    fn read_front_matter(&mut self, text: &str, src: &str) {
+        for line in text.lines().filter(|l| !l.starts_with([' ', '\t'])) {
+            if let Some((k, v)) = line.split_once(':') {
+                self.front_matter
+                    .push((k.trim().to_string(), v.trim().trim_matches('"').to_string()));
             }
         }
-        if block.iter().any(|(k, v)| k == "v" && v == "3") {
-            self.block = block;
-        }
+        let read = slopvac_config::frontmatter::read(src, &self.path, &Policy::core());
+        self.block = read
+            .settings
+            .into_iter()
+            .filter_map(|s| match (s.path.as_slice(), s.value.as_str()) {
+                ([key], Some(value)) => Some((key.clone(), value.to_owned())),
+                _ => None,
+            })
+            .collect();
     }
 }
 
@@ -205,7 +199,7 @@ impl PlainDocument {
         if let Some(rest) = src.strip_prefix("---\n")
             && let Some(end) = rest.find("\n---")
         {
-            doc.read_front_matter(&rest[..end]);
+            doc.read_front_matter(&rest[..end], src);
             front_end = 4 + end + 4;
         }
         let flush = |doc: &mut PlainDocument,

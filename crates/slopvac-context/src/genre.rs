@@ -734,10 +734,7 @@ impl GenreRegistry {
             if let Some((i, a)) = assigned.filter(|(_, a)| a.genre != id) {
                 result.reasons.push(Reason {
                     signal: "path-glob".to_string(),
-                    detail: format!(
-                        "`[[genres]]` block {i} matches `{rel}` and assigns `{}`",
-                        a.genre
-                    ),
+                    detail: format!("`[[genres]]` block {i} matches `{rel}`"),
                 });
                 result.assigned = Some(a.genre.clone());
             }

@@ -202,7 +202,7 @@ fn a_front_matter_genre_records_the_assignment_it_displaced() {
     assert_eq!(reasons[0]["signal"], "front-matter", "{reasons}");
     assert_eq!(reasons[1]["signal"], "path-glob", "{reasons}");
     assert_eq!(
-        reasons[1]["detail"], "`[[genres]]` block 0 matches `notes/n.md` and assigns `internal`",
+        reasons[1]["detail"], "`[[genres]]` block 0 matches `notes/n.md`",
         "{reasons}"
     );
 }
