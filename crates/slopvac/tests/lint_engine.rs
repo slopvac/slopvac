@@ -1020,3 +1020,41 @@ fn a_path_through_a_dangling_symlink_hides_the_external_directory() {
         }
     }
 }
+
+/// A flag the build accepts but cannot honour must refuse before linting, not lint quietly.
+#[rstest::rstest]
+#[case::fix("--fix")]
+#[case::diff_working_tree("--diff-working-tree")]
+#[case::explain_config("--explain-config")]
+fn an_unwired_lint_flag_refuses_with_exit_2_and_no_report(#[case] flag: &str) {
+    let (dir, _) = project("a.md", "It is important to note that this works.\n", None);
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "a.md", flag])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        format!(
+            "error[command-not-wired]: `slopvac lint {flag}` is not available in this build yet.\n"
+        )
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "");
+}
+
+#[test]
+fn diff_base_refuses_with_exit_2_and_no_report() {
+    let (dir, _) = project("a.md", "It is important to note that this works.\n", None);
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "a.md", "--diff-base", "main"])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "error[command-not-wired]: `slopvac lint --diff-base` is not available in this build yet.\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "");
+}

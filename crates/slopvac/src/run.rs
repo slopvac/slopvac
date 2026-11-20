@@ -322,6 +322,26 @@ fn doctor(
     })
 }
 
+/// Lint options that parse but have no wiring to the engine yet.
+const UNWIRED_LINT_FLAGS: [&str; 4] = ["fix", "diff-base", "diff-working-tree", "explain-config"];
+
+/// Refuse a lint option this build cannot honour, before any file is linted.
+///
+/// Running an ordinary lint instead would let `--fix` or a diff scope pass unnoticed.
+fn reject_unwired_lint_flags(m: &ArgMatches) -> Result<(), CliError> {
+    for name in UNWIRED_LINT_FLAGS {
+        let given = m.try_contains_id(name).unwrap_or(false)
+            && m.value_source(name) == Some(clap::parser::ValueSource::CommandLine);
+        if given {
+            return Err(CliError::new(
+                "command-not-wired",
+                format!("`slopvac lint --{name}` is not available in this build yet."),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Fail with the 3.0 pointer when a removed 2.x option was given.
 fn reject_removed(m: &ArgMatches, names: &[&str]) -> Result<(), CliError> {
     for name in names {
@@ -450,6 +470,7 @@ fn lint_with(
         Some((plan, bytes)) => (Some(plan), Some(bytes)),
         None => (None, None),
     };
+    reject_unwired_lint_flags(m)?;
     let targets: Vec<PathBuf> = m
         .get_many::<PathBuf>("targets")
         .map(|v| v.cloned().collect())
