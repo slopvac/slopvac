@@ -498,7 +498,7 @@ fn supported_versions() -> slopvac_update::command::Supported {
                 vec![u64::from(slopvac_context::GENRE_SCHEMA_VERSION)],
             ),
             ("lint-report", vec![report]),
-            ("packs-lock", vec![lock]),
+            ("plugins-lock", vec![lock]),
             ("style", vec![config]),
             (
                 "tagger",

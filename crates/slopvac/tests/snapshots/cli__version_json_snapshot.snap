@@ -25,7 +25,7 @@ expression: doc
     "lint-report": [
       3
     ],
-    "packs-lock": [
+    "plugins-lock": [
       3
     ],
     "style": [
