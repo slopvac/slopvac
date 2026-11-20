@@ -13,9 +13,7 @@ use std::sync::Arc;
 use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
-use slopvac_engine::{
-    Engine, EngineError, FileContext, FileFix, Input, Kind, fix_file_in,
-};
+use slopvac_engine::{Engine, EngineError, FileContext, FileFix, Input, Kind, fix_file_in};
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
@@ -982,7 +980,12 @@ fn fix_group(
     keep
 }
 
-fn lint_items(request: &LintRequest, mut items: Vec<Item>, rules: Catalog, mut run: Run) -> RunOutcome {
+fn lint_items(
+    request: &LintRequest,
+    mut items: Vec<Item>,
+    rules: Catalog,
+    mut run: Run,
+) -> RunOutcome {
     let groups = match group_by_settings(request, &items, &rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
