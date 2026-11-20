@@ -95,3 +95,27 @@ def test_trivy_gate_cannot_be_bypassed_by_continue_on_error() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/security.yml").read_text())
     assert "continue-on-error" not in workflow["jobs"]["trivy"]
     assert "continue-on-error" not in trivy_step()
+
+
+def secret_scan_job() -> dict:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/security.yml").read_text())
+    return workflow["jobs"]["trivy-secret"]
+
+
+def test_secret_scan_runs_with_the_same_gate_settings_as_the_full_scan() -> None:
+    job = secret_scan_job()
+    (scan,) = [
+        s
+        for s in job["steps"]
+        if str(s.get("uses", "")).startswith("aquasecurity/trivy-action@")
+    ]
+    assert scan["uses"] == trivy_step()["uses"]
+    with_ = scan["with"]
+    assert with_["scanners"] == "secret"
+    assert with_["severity"] == "HIGH,CRITICAL"
+    assert with_["exit-code"] == "1"
+    assert with_["trivyignores"] == ".trivyignore.yaml"
+    assert with_["version"] == trivy_step()["with"]["version"]
+    assert "continue-on-error" not in job
+    assert "continue-on-error" not in scan
+    assert job["permissions"] == {"contents": "read"}

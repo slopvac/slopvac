@@ -615,3 +615,20 @@ def test_gate_expects_every_suite_to_succeed_on_the_queue_and_main(event, tmp_pa
     assert run_gate(flags, everything).returncode == 0
     skipped = {**everything, "test": "skipped"}
     assert run_gate(flags, skipped).returncode == 1
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["crates/slopvac/src/report/scrub.rs", "docs/engineering.md", "README.md"],
+)
+def test_a_change_outside_the_filesystem_class_still_gets_the_secret_scan(path):
+    # #475 touched only crates/: no filesystem class, but every path is a secrets path.
+    outputs = classes_of([path])
+    assert "filesystem" not in outputs
+    assert "secrets" in outputs
+    assert evaluate(JOBS["security"]["if"], outputs) is True
+    assert JOBS["security"]["with"]["secrets"] == (
+        "${{ needs.changes.outputs.force_all == 'true' || needs.changes.outputs.secrets == 'true' }}"
+    )
+    scan_job = load("security.yml")["jobs"]["trivy-secret"]
+    assert scan_job["if"] == "${{ inputs.secrets }}"
