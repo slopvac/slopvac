@@ -124,7 +124,35 @@ pub fn terms(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
 
 /// `slopvac genre`.
 pub fn genre(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let text = slopvac_context::run(m).map_err(|e| {
+    let root = cwd();
+    let presets = StylePresets(BuiltinSource);
+    let discovery = Discovery::new(&presets);
+    // The front matter policy is the project's: the nearest config of the file's directory,
+    // as `lint` finds it. A config that cannot be read stops the command.
+    let config_failure = std::cell::RefCell::new(None);
+    let mut declared = |path: &str, text: &str| {
+        if config_failure.borrow().is_some() {
+            return None;
+        }
+        let absolute = root.join(path);
+        let dir = absolute.parent().unwrap_or(&root);
+        match discovery.nearest(dir) {
+            Ok(config) => engine::declared_genre(&engine::read_block_under(
+                text,
+                &shown(path),
+                config.as_deref(),
+            )),
+            Err(err) => {
+                *config_failure.borrow_mut() = Some(engine::config_error(&err, &root));
+                None
+            }
+        }
+    };
+    let result = slopvac_context::run(m, &mut declared);
+    if let Some(failure) = config_failure.into_inner() {
+        return Err(failure);
+    }
+    let text = result.map_err(|e| {
         // The owner words a read failure as `<path as typed>: <reason>`. Replace each file
         // argument, exactly as typed, with its shown form.
         let mut message = e.to_string();

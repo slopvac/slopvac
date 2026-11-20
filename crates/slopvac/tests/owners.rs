@@ -97,6 +97,60 @@ fn genre_prints_the_genre_and_its_scores() {
         .stdout(predicate::str::starts_with("a.md: consumer (default)\n"));
 }
 
+const TUTORIAL_BLOCK: &str = "---\nslopvac:\n  v: 3\n  genre: tutorial\n---\n# Title\n";
+
+/// `genre` reads the declared genre under the project's front matter policy, as `lint` does.
+#[rstest::rstest]
+#[case::default_policy(None, "a.md: tutorial (explicit)\n")]
+#[case::explicitly_allowed(
+    Some("[frontmatter]\nallow = [\"genre\"]\n"),
+    "a.md: tutorial (explicit)\n"
+)]
+#[case::front_matter_disabled(
+    Some("[frontmatter]\nenabled = false\n"),
+    "a.md: consumer (default)\n"
+)]
+#[case::genre_not_allowed(
+    Some("[frontmatter]\nallow = [\"locale\"]\n"),
+    "a.md: consumer (default)\n"
+)]
+fn genre_reads_the_block_under_the_project_policy(
+    #[case] policy: Option<&str>,
+    #[case] first_line: &str,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), TUTORIAL_BLOCK).unwrap();
+    if let Some(policy) = policy {
+        fs::write(
+            dir.path().join("slopvac.toml"),
+            format!("schema_version = 3\n\n{policy}"),
+        )
+        .unwrap();
+    }
+    slopvac(dir.path())
+        .args(["genre", "a.md"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::starts_with(first_line));
+}
+
+#[test]
+fn genre_refuses_an_unreadable_project_config() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), TUTORIAL_BLOCK).unwrap();
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        "schema_version = 3\nnonsense = 1\n",
+    )
+    .unwrap();
+    slopvac(dir.path())
+        .args(["genre", "a.md"])
+        .assert()
+        .code(2)
+        .stdout("")
+        .stderr(predicate::str::contains("error[config-unknown-key]"));
+}
+
 #[test]
 fn genre_assign_makes_the_choice_explicit() {
     let dir = tempfile::tempdir().unwrap();

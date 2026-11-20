@@ -183,15 +183,54 @@ fn an_allowed_slopvac_block_genre_wins_over_the_assignment() {
     assert_eq!(history_levels(doc), ["warning"], "{doc}");
 }
 
+/// The notices of a report whose code is `code`.
+fn notices<'a>(report: &'a Value, code: &str) -> Vec<&'a Value> {
+    report["notices"].as_array().map_or_else(Vec::new, |all| {
+        all.iter().filter(|n| n["code"] == code).collect()
+    })
+}
+
 #[test]
-fn a_project_that_drops_genre_from_the_allow_list_keeps_the_assignment() {
+fn a_denied_genre_keeps_the_assignment_and_is_reported() {
     let config = format!("{ASSIGNED}\n[frontmatter]\nallow = [\"locale\"]\n");
     let text = format!("---\nslopvac:\n  v: 3\n  genre: reference\n---\n{HISTORY}");
-    let (_, report) = lint_note(&config, &text);
+    let (code, report) = lint_note(&config, &text);
     let doc = document(&report, "n.md");
     assert_eq!(doc["genre"]["id"], "internal", "{doc}");
     assert_eq!(doc["genre"]["reasons"][0]["signal"], "path-glob", "{doc}");
     assert_eq!(history_levels(doc), ["suggestion"], "{doc}");
+    // The denied field is an error every time, and an error leaves the run incomplete.
+    assert_eq!(code, Some(2), "{report}");
+    let found = notices(&report, "config-frontmatter-field-denied");
+    assert_eq!(found.len(), 1, "{report}");
+    assert!(
+        found[0]["path"]
+            .as_str()
+            .is_some_and(|p| p.ends_with("n.md"))
+    );
+    assert!(
+        found[0]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("genre"))
+    );
+}
+
+#[rstest::rstest]
+#[case::missing_version("slopvac:\n  genre: reference\n", "config-missing-key")]
+#[case::wrong_version("slopvac:\n  v: 2\n  genre: reference\n", "config-invalid-value")]
+fn a_block_without_a_valid_version_keeps_the_assignment_and_is_reported(
+    #[case] block: &str,
+    #[case] error: &str,
+) {
+    let text = format!("---\n{block}---\n{HISTORY}");
+    let (code, report) = lint_note(ASSIGNED, &text);
+    assert_eq!(
+        document(&report, "n.md")["genre"]["id"],
+        "internal",
+        "{report}"
+    );
+    assert_eq!(code, Some(2), "{report}");
+    assert_eq!(notices(&report, error).len(), 1, "{report}");
 }
 
 #[test]

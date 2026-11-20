@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use slopvac_config::frontmatter::{Policy, read as read_front_matter};
+use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{EngineError, Input, Kind};
@@ -137,6 +137,24 @@ impl Run {
             data: serde_json::Map::new(),
         });
         self.incomplete.push(error);
+    }
+
+    /// Record what is wrong with a document's `slopvac:` block: an exit-2 error and a report
+    /// notice for each diagnostic. The block then contributes nothing and the document is
+    /// still linted.
+    fn front_matter_errors(&mut self, item: &Item, read: &Read) {
+        for d in &read.diagnostics {
+            let (line, column) = d.location(&item.text);
+            self.skip(
+                d.code.as_str(),
+                &item.shown,
+                format!(
+                    "{}:{line}:{column}: {}",
+                    item.shown,
+                    slopvac_sanitize::line(&d.message)
+                ),
+            );
+        }
     }
 
     /// Record a file the engine could not lint: not checked, so the run exits 2.
@@ -685,17 +703,24 @@ fn config_for(
     }))
 }
 
-/// The genre the `slopvac:` block of the item's front matter sets, when the project's
-/// front matter policy allows it and the block is valid. A top-level `genre` key is ordinary
-/// data and never counts.
-fn declared_genre(item: &Item) -> Option<String> {
-    let policy = item
-        .config
-        .as_ref()
-        .map_or_else(Policy::core, |(config, _)| Policy::from_config(config));
-    read_front_matter(&item.text, &item.shown, &policy)
-        .settings
-        .into_iter()
+/// The `slopvac:` block of the item's front matter, read under the project's front matter
+/// policy. A top-level `genre` key is ordinary data and never counts.
+fn read_block(item: &Item) -> Read {
+    let config = item.config.as_ref().map(|(config, _)| &**config);
+    read_block_under(&item.text, &item.shown, config)
+}
+
+/// Read the `slopvac:` block of `text` under the policy of `config`, or the core defaults
+/// when no config applies.
+pub(crate) fn read_block_under(text: &str, shown: &str, config: Option<&LoadedConfig>) -> Read {
+    let policy = config.map_or_else(Policy::core, Policy::from_config);
+    read_front_matter(text, shown, &policy)
+}
+
+/// The genre that a read block sets, when the policy allows it and the block is valid.
+pub(crate) fn declared_genre(read: &Read) -> Option<String> {
+    read.settings
+        .iter()
         .rfind(|s| s.path == ["genre"])
         .and_then(|s| s.value.as_str().map(str::to_owned))
 }
@@ -791,8 +816,11 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
             .iter()
             .map(|&i| items[i].config.as_ref().map(|(_, rel)| rel_text(rel)))
             .collect();
-        let declared: Vec<Option<String>> =
-            indexes.iter().map(|&i| declared_genre(&items[i])).collect();
+        let reads: Vec<Read> = indexes.iter().map(|&i| read_block(&items[i])).collect();
+        for (&i, read) in indexes.iter().zip(&reads) {
+            run.front_matter_errors(&items[i], read);
+        }
+        let declared: Vec<Option<String>> = reads.iter().map(declared_genre).collect();
         let inputs: Vec<Input<'_>> = indexes
             .iter()
             .zip(relatives.iter().zip(&declared))
