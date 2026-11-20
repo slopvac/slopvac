@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import sys
 
 import pytest
 
@@ -328,7 +329,7 @@ def test_an_interrupted_judge_run_keeps_finished_judgments_and_resumes_without_r
     def run(provider_calls_before_crash):
         def ask(prompt):
             if len(asked) >= provider_calls_before_crash:
-                raise lab.runner.EngineError("provider crashed")
+                raise OSError("provider crashed")
             asked.append(prompt)
             return "A"
 
@@ -1111,3 +1112,153 @@ def test_judge_reports_an_unusable_ledger_path_and_exits_2(
     assert judge_cli(judge_env, tmp_path, monkeypatch, asked) == 2
     assert asked == []
     assert "evals label judge" in capsys.readouterr().err
+
+
+# --- provider failures: retry, skip and treat as no judgment ------------------------
+
+
+def provider_failure():
+    raise lab.runner.EngineError("provider command exited 1: SECRET document text")
+
+
+def flaky(failures):
+    """A provider that fails its first `failures` calls, then answers A."""
+    calls = []
+
+    def answer(prompt):
+        calls.append(prompt)
+        if len(calls) <= failures:
+            provider_failure()
+        return "A"
+
+    return answer
+
+
+def always_fail(prompt):
+    provider_failure()
+
+
+def judgment_rows(d):
+    return lab.read_jsonl(d / "judgments" / "anthropic.jsonl")
+
+
+def test_a_pair_that_fails_twice_then_succeeds_gives_one_verdict_and_two_failed_rows(
+    judge_env, tmp_path, monkeypatch
+):
+    asked = []
+    rc = judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=flaky(2))
+    assert rc == 0
+    rows = judgment_rows(judge_env)
+    failed = [r for r in rows if r.get("status") == "failed"]
+    assert len(failed) == 2
+    assert sum("verdict" in r for r in rows) == 2  # both orders judged once
+    assert len(asked) == 4  # 2 failures + 2 verdict calls
+    assert reservations(judge_env, "anthropic") == 4
+    for r in failed:
+        assert "verdict" not in r
+        assert r["error"] == "provider-exit"
+        assert "SECRET" not in json.dumps(r)
+
+
+def test_a_pair_that_always_fails_is_charged_three_times_skipped_and_listed(
+    three_items, tmp_path, monkeypatch, capsys
+):
+    asked = []
+    rc = judge_cli(three_items, tmp_path, monkeypatch, asked, answer=flaky(3))
+    assert rc == 0  # the first pair fails all three attempts, the rest still run
+    assert len(asked) == 3 + 5
+    assert reservations(three_items, "anthropic") == 8
+    rows = judgment_rows(three_items)
+    assert sum(r.get("status") == "failed" for r in rows) == 3
+    assert sum("verdict" in r for r in rows) == 5
+    out = capsys.readouterr().out
+    assert "skipped 1 pair" in out and "i0 tp-first" in out
+
+
+def test_the_summary_names_each_skipped_pair(judge_env, tmp_path, monkeypatch, capsys):
+    assert judge_cli(judge_env, tmp_path, monkeypatch, [], answer=always_fail) == 0
+    out = capsys.readouterr().out
+    assert "i0 tp-first" in out and "i0 fp-first" in out
+    assert reservations(judge_env, "anthropic") == 6
+
+
+def test_a_resume_after_two_failed_attempts_allows_exactly_one_more(
+    judge_env, tmp_path, monkeypatch
+):
+    # Ceiling 2: both charges go to the first pair, the third reserve is refused.
+    rc = judge_cli(
+        judge_env, tmp_path, monkeypatch, [], answer=always_fail, max_invocations=2
+    )
+    assert rc == 2
+    asked = []
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=always_fail) == 0
+    assert len(asked) == 1 + 3  # one more for the first pair, three for the second
+    first = [r for r in judgment_rows(judge_env) if r["order"] == lab.ORDERS[0]]
+    assert len(first) == 3 and all(r["status"] == "failed" for r in first)
+    assert judge_cli(judge_env, tmp_path, monkeypatch, asked, answer=always_fail) == 0
+    assert len(asked) == 4  # nothing left to try
+
+
+def test_the_ceiling_holds_when_failures_consume_budget(
+    three_items, tmp_path, monkeypatch
+):
+    asked = []
+    rc = judge_cli(
+        three_items, tmp_path, monkeypatch, asked, answer=always_fail, max_invocations=4
+    )
+    assert rc == 2
+    assert len(asked) == 4
+    assert reservations(three_items, "anthropic") == 4
+
+
+def test_a_credential_failure_stops_the_run_without_a_retry(judge_env, tmp_path):
+    script = tmp_path / "provider.py"
+    script.write_text(
+        "import sys\nopen(sys.argv[1], 'a').write('x')\n"
+        "sys.stderr.write(\"could not resolve credentials for profile 'p'\")\n"
+        "sys.exit(1)\n"
+    )
+    counter = tmp_path / "calls"
+    rc = cli.main(
+        ["label", "--dir", str(judge_env), "judge", "--family", "anthropic"]
+        + ["--model", "claude-test", "--rules-dir", str(tmp_path)]
+        + ["--max-invocations", "99"]
+        + ["--provider-cmd", f"{sys.executable} {script} {counter}"]
+    )
+    assert rc == 2
+    assert counter.read_text() == "x"  # one call, no retry
+    assert not [r for r in judgment_rows(judge_env) if r.get("status") == "failed"]
+
+
+def skipped_env(d):
+    """Two families judged i0; anthropic failed three times on one order."""
+    write_judgments(d, "openai", "gpt-test", ["i0"])
+    base = {
+        "item": "i0",
+        "family": "anthropic",
+        "model": "claude-test",
+        "prompt_version": lab.PROMPT_VERSION,
+    }
+    rows = [{**base, "order": lab.ORDERS[0], "verdict": "tp"}] + [
+        {**base, "order": lab.ORDERS[1], "status": "failed", "error": "provider-exit"}
+        for _ in range(3)
+    ]
+    lab.write_jsonl(d / "judgments" / "anthropic.jsonl", rows)
+
+
+def test_merge_queues_a_skipped_pair_as_a_dispute_with_missing(judge_env):
+    skipped_env(judge_env)
+    assert merge_cli(judge_env) == 0
+    (dispute,) = lab.read_jsonl(judge_env / "disputes.jsonl")
+    assert dispute["verdicts"] == {"anthropic": "missing", "openai": "tp"}
+    assert lab.read_jsonl(judge_env / "labels.jsonl") == []
+    assert json.loads((judge_env / "stats.json").read_text())["kappa_n"] == 0
+
+
+def test_the_worksheet_shows_missing_for_a_skipped_pair(judge_env, tmp_path):
+    skipped_env(judge_env)
+    out = tmp_path / "w.csv"
+    assert worksheet_cli(judge_env, out, tmp_path) == 0
+    (row,) = read_sheet(out)
+    assert row["queue"] == "dispute"
+    assert row["judge anthropic"] == "missing" and row["judge openai"] == "tp"

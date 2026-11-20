@@ -118,16 +118,54 @@ def check_identity(family: str, model: str) -> None:
         )
 
 
+MAX_ATTEMPTS = 3  # provider calls per (item, order) pair, counted across runs
+FAILED = "failed"
+CREDENTIAL_MESSAGE = "could not resolve credentials"
+
+
+class CredentialFailure(runner.EngineError):
+    """The provider could not get credentials; a retry cannot help."""
+
+
 def completed(
     rows: Iterable[Mapping[str, Any]], model: str, prompt_version: str | None = None
 ) -> set[tuple[str, str]]:
-    """(item, order) pairs already judged by this model under this prompt version."""
+    """(item, order) pairs already judged by this model under this prompt version.
+
+    A row with `status: failed` is an attempt, not a judgment. Rows with no
+    status field (older files) count as judgments.
+    """
     version = PROMPT_VERSION if prompt_version is None else prompt_version
     return {
         (r["item"], r["order"])
         for r in rows
-        if r.get("model") == model and r.get("prompt_version") == version
+        if r.get("model") == model
+        and r.get("prompt_version") == version
+        and r.get("status") != FAILED
     }
+
+
+def failed_attempts(
+    rows: Iterable[Mapping[str, Any]], model: str, prompt_version: str | None = None
+) -> Counter[tuple[str, str]]:
+    """Failed provider calls recorded for each (item, order) pair."""
+    version = PROMPT_VERSION if prompt_version is None else prompt_version
+    return Counter(
+        (r["item"], r["order"])
+        for r in rows
+        if r.get("model") == model
+        and r.get("prompt_version") == version
+        and r.get("status") == FAILED
+    )
+
+
+def skipped_pairs(
+    rows: Sequence[Mapping[str, Any]], model: str, prompt_version: str | None = None
+) -> list[tuple[str, str]]:
+    """Pairs with no verdict after `MAX_ATTEMPTS` failed calls, in file order."""
+    done = completed(rows, model, prompt_version)
+    spent = failed_attempts(rows, model, prompt_version)
+    return [pair for pair, n in spent.items() if n >= MAX_ATTEMPTS and pair not in done]
 
 
 def usable_judgments(
@@ -324,6 +362,7 @@ def judge_items(
     cache: Path,
     notes: Mapping[str, str],
     done: Iterable[tuple[str, str]] = (),
+    attempts: Mapping[tuple[str, str], int] | None = None,
     sink: Callable[[dict[str, Any]], None] | None = None,
     budget: models.Budget | None = None,
 ) -> list[dict[str, Any]]:
@@ -331,6 +370,11 @@ def judge_items(
 
     With a `budget`, each call is charged before it runs. `models.BudgetExceeded`
     then stops the run, and the rows already passed to `sink` stay.
+
+    A provider failure (`runner.EngineError`) becomes a row with `status: failed`
+    and no verdict, and the pair is asked again until `attempts` (failed calls
+    from earlier runs) plus this run's reach `MAX_ATTEMPTS`; then it is skipped.
+    A `CredentialFailure` is never retried and propagates.
 
     `sink` receives each judgment as soon as it exists, so a caller can persist it
     before the next paid call. A run that stops half way then resumes without
@@ -350,19 +394,28 @@ def judge_items(
                     docs[item["doc"]], cache
                 ).read_text("utf-8")
             prompt, letters = build_prompt(item, order, texts[item["doc"]], notes)
-            row = {
+            base = {
                 "item": item["id"],
                 "family": family,
                 "model": model,
                 "order": order,
                 "prompt_version": PROMPT_VERSION,
-                "verdict": parse_answer(
-                    _charged_ask(ask, prompt, budget, model), letters
-                ),
             }
-            if sink:
-                sink(row)
-            rows.append(row)
+            tried = (attempts or {}).get((item["id"], order), 0)
+            while tried < MAX_ATTEMPTS:
+                try:
+                    answer = _charged_ask(ask, prompt, budget, model)
+                    row = {**base, "verdict": parse_answer(answer, letters)}
+                except CredentialFailure:
+                    raise
+                except runner.EngineError:  # the message may carry document text
+                    tried += 1
+                    row = {**base, "status": FAILED, "error": "provider-exit"}
+                if sink:
+                    sink(row)
+                rows.append(row)
+                if row.get("status") != FAILED:
+                    break
     return rows
 
 
@@ -392,6 +445,10 @@ def command_asker(command: str) -> Callable[[str], str]:
             argv, input=prompt, capture_output=True, text=True, check=False
         )
         if proc.returncode != 0:
+            if CREDENTIAL_MESSAGE in proc.stderr:
+                raise CredentialFailure(
+                    f"provider command exited {proc.returncode}: {CREDENTIAL_MESSAGE}"
+                )
             raise runner.EngineError(
                 f"provider command exited {proc.returncode}: {procs.redact(proc.stderr)[:300]}"
             )
@@ -405,7 +462,7 @@ def command_asker(command: str) -> Callable[[str], str]:
 
 def family_verdict(rows: Sequence[Mapping[str, Any]]) -> str:
     """One family's verdict: stable only if both option orders give the same answer."""
-    by_order = {r["order"]: r["verdict"] for r in rows}
+    by_order = {r["order"]: r["verdict"] for r in rows if r.get("status") != FAILED}
     if set(by_order) != set(ORDERS):
         return "missing"
     first, second = by_order[ORDERS[0]], by_order[ORDERS[1]]

@@ -128,6 +128,8 @@ python -m evals score results.json --labels evals/labels/labels.jsonl
 
 `label judge` needs `--max-invocations`, a hard cap on provider calls. The harness writes each call to `judgments/<family>.ledger.jsonl` before it runs the provider, so a crash cannot hide a call. A resume counts earlier calls as spent. When the cap is reached, the command exits 2 and keeps the judgments it wrote. If `judgments/<family>.jsonl` exists without its ledger, the command refuses to run.
 
+A failed provider call does not stop the run. The command writes a row for the pair with `"status": "failed"` and `"error": "provider-exit"`, with no verdict and no message text, and asks again. Each attempt is charged to the ledger. A pair gets 3 attempts in total, counted across runs. After the third failure the command skips the pair, goes on, prints the skipped pairs at the end and exits 0. A credential failure ("could not resolve credentials") is not retried: the command stops with exit 2. `merge` and `worksheet` treat failed rows as no judgment, so a skipped pair shows as `missing` and goes to the dispute queue.
+
 `label worksheet` writes both review queues to one CSV, without needing a clean `label merge`. Disputes come first, then rows sort by rule and document, and items with a human verdict are left out. Fill the `verdict` column with `tp` or `fp` and give a `reason`. `label import-worksheet` records the filled rows in `human.jsonl`, skips blank verdicts, and exits 2 with the row number on a bad row, writing nothing. Importing a file again adds no duplicates. Cells that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading quote so a spreadsheet does not run them as formulas. The import removes that quote.
 
 Files live in `evals/labels/`:

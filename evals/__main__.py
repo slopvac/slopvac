@@ -335,7 +335,9 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
         if refusal:
             print(f"evals label judge: {refusal}", file=sys.stderr)
             return 2
-        done = labelling.completed(labelling.read_jsonl(out), args.model)
+        earlier = labelling.read_jsonl(out)
+        done = labelling.completed(earlier, args.model)
+        spent = labelling.failed_attempts(earlier, args.model)
         with models.Budget(args.max_invocations, ledger) as budget:
             rows = labelling.judge_items(
                 labelling.read_jsonl(p["items"]),
@@ -346,6 +348,7 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
                 cache=_cache(args),
                 notes=labelling.rule_notes(Path(args.rules_dir)),
                 done=done,
+                attempts=spent,
                 sink=lambda row: labelling.append_jsonl(out, [row]),
                 budget=budget,
             )
@@ -358,7 +361,17 @@ def cmd_label_judge(args: argparse.Namespace) -> int:
     except (models.ModelEvalError, runner.EngineError, OSError) as exc:
         print(f"evals label judge: {exc}", file=sys.stderr)
         return 2
-    print(f"{len(rows)} judgments written to {out}")
+    written = sum(r.get("status") != labelling.FAILED for r in rows)
+    print(f"{written} judgments written to {out}")
+    skipped = labelling.skipped_pairs(labelling.read_jsonl(out), args.model)
+    if skipped:
+        print(
+            f"skipped {len(skipped)} pair{'s' if len(skipped) != 1 else ''} after "
+            f"{labelling.MAX_ATTEMPTS} failed attempts (no judgment; the merge "
+            "queues them for review):"
+        )
+        for item, order in skipped:
+            print(f"  {item} {order}")
     return 0
 
 
