@@ -8,7 +8,7 @@ use rstest::rstest;
 
 use slopvac_context::{
     BlockView, DocumentView, EnforcedInvariantTagger, PlainDocument, RequirementTagger, Tagger,
-    TaggerSpec, take_admonition_steps, take_heading_steps, take_section_steps, take_text_steps,
+    TaggerSpec, take_admonition_steps, take_heading_steps, take_negation_steps, take_section_steps, take_text_steps,
 };
 
 fn doc(src: &str) -> PlainDocument {
@@ -156,6 +156,26 @@ fn a_long_heading_is_matched_once_for_all_its_blocks() {
         let _ = take_heading_steps();
         section_tagger().tag(&doc).unwrap();
         (heading.len(), take_heading_steps())
+    });
+}
+
+/// A sentence that opens with a negator and lists enforcement verbs without whitespace between
+/// them is one long token before each later verb. Deciding whether a verb is negated looks at
+/// the two tokens before it, so a scan that restarts from the token's start for every verb
+/// reads the token again each time. The text has 8 bytes per verb; the bound is 4 steps per
+/// byte, which one pass with the trim of each verb's trailing separators stays under.
+#[rstest]
+#[case::tight_commas(",")]
+#[case::spaced_commas(", ")]
+fn negated_enforcement_verbs_take_linear_steps(#[case] sep: &str) {
+    let tagger = EnforcedInvariantTagger::new().unwrap();
+    assert_linear("negation scan", 4, 64, |bytes| {
+        let verbs = bytes / 8;
+        let text = format!("Never {}.", vec!["rejects"; verbs].join(sep));
+        let doc = doc(&format!("# T\n\n{text}\n"));
+        let _ = take_negation_steps();
+        tagger.tag(&doc).unwrap();
+        (text.len(), take_negation_steps())
     });
 }
 

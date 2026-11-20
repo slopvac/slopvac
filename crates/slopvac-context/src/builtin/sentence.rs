@@ -116,6 +116,7 @@ impl EnforcedInvariantTagger {
             let start = from + m.start;
             let end = from + m.end;
             let negated = text[..start].split_whitespace().rev().take(2).any(|w| {
+                crate::work::negation(w.len());
                 let w = w.trim_matches([',', ';', ':']).to_lowercase();
                 matches!(
                     w.as_str(),
