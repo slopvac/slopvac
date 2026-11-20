@@ -6,7 +6,19 @@
 //! `<env>/bin/python -I -B ...` ([`PYTHON_FLAGS`]).
 //!
 //! Windows is refused for now ([`PyEnvError::UnsupportedPlatform`]): the
-//! build, [`EnvStore::load`] and both checks return that error there.
+//! build, [`EnvStore::load`] and both checks return that error there. 3.0
+//! ships no native Windows support.
+//!
+//! # Wiring
+//!
+//! The pack manifest selects an environment with `runtime = "python"` and a
+//! `python` request in its `[plugin]` table ([`PythonRuntime::read`]).
+//! [`crate::sync::Syncer::with_python`] builds the environment after it
+//! extracts the pack (offline when the sync is offline),
+//! [`crate::sync::status_with_python`] runs [`ManagedEnv::verify_full`] for
+//! `plugins status` and `doctor`, and
+//! [`crate::trust::TrustGate::with_python_plugins`] wires the environment into
+//! the spawn gate.
 //!
 //! # Build
 //!
@@ -56,6 +68,7 @@
 
 mod listing;
 mod lock;
+mod runtime;
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
@@ -68,6 +81,9 @@ use serde_json::json;
 use slopvac_sanitize::{line as esc, terminal};
 
 pub use lock::{LockedPackage, LockedWheel, PyLock};
+pub use runtime::{
+    MANIFEST_FILE, PythonRuntime, RuntimeError, RuntimeResult, TomlCause, pep440_specifier,
+};
 
 use crate::extract::{Evicted, ExtractError, TreeHash, evict, verify_tree};
 use crate::oci::Digest;
@@ -121,6 +137,20 @@ pub enum PyEnvError {
         package: String,
         /// What is wrong.
         why: String,
+    },
+    /// The `[plugin]` table of the pack manifest cannot select an environment.
+    Manifest {
+        /// The manifest file. Messages show it redacted.
+        path: PathBuf,
+        /// What is wrong.
+        source: RuntimeError,
+    },
+    /// No environment is built for the plugin tree.
+    EnvMissing {
+        /// The plugin.
+        plugin: String,
+        /// The interpreter request.
+        python: String,
     },
     /// The installer setup is unusable.
     Installer(String),
@@ -176,6 +206,14 @@ impl PyEnvError {
             } => format!(
                 "package `{package}` is not a vendored wheel ({source_kind}); slopvac builds environments from locked wheels only and runs no build backend"
             ),
+            Self::Manifest { path, source } => format!(
+                "the manifest {} cannot select a Python environment: {}",
+                slopvac_fs::display_under_root(path, Path::new(".")),
+                source.unescaped()
+            ),
+            Self::EnvMissing { plugin, python } => format!(
+                "no Python environment is built for plugin `{plugin}` ({python}); run `slopvac plugins sync`"
+            ),
             Self::Wheel { package, why } => format!("wheel of `{package}` refused: {why}"),
             Self::Installer(m) => format!("the Python installer is refused: {m}"),
             Self::OfflinePythonMissing(r) => format!(
@@ -228,6 +266,7 @@ impl std::error::Error for PyEnvError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Tree(e) => Some(e),
+            Self::Manifest { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
             _ => None,
         }
@@ -265,6 +304,33 @@ pub enum InstallNetwork {
     Online,
 }
 
+/// Whether `p` is a plain interpreter request such as `3.12`, `^3.12` or
+/// `>=3.11,<3.13`: short, and never an option for uv. Everything the
+/// `VersionReq` def of the plugin-manifest schema accepts without whitespace
+/// passes.
+pub(crate) fn is_python_request(p: &str) -> bool {
+    !p.is_empty()
+        && p.len() <= 64
+        && !p.starts_with('-')
+        && p.bytes().all(|b| {
+            b.is_ascii_alphanumeric()
+                || matches!(
+                    b,
+                    b'.' | b'@'
+                        | b'-'
+                        | b'+'
+                        | b'='
+                        | b'<'
+                        | b'>'
+                        | b','
+                        | b'~'
+                        | b'!'
+                        | b'^'
+                        | b'*'
+                )
+        })
+}
+
 /// How to run uv.
 #[derive(Debug, Clone)]
 pub struct Installer {
@@ -290,19 +356,8 @@ impl Installer {
                 self.python_install_dir.display()
             ));
         }
-        let p = &self.python;
-        if p.is_empty()
-            || p.len() > 64
-            || p.starts_with('-')
-            || !p.bytes().all(|b| {
-                b.is_ascii_alphanumeric()
-                    || matches!(
-                        b,
-                        b'.' | b'@' | b'-' | b'+' | b'=' | b'<' | b'>' | b',' | b'~' | b'!'
-                    )
-            })
-        {
-            return refuse(format!("`{p}` is not a Python version request"));
+        if !is_python_request(&self.python) {
+            return refuse(format!("`{}` is not a Python version request", self.python));
         }
         Ok(())
     }

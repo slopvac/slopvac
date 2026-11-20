@@ -628,6 +628,12 @@
       "input": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
       "python": false,
       "rust": false
+    },
+    {
+      "pattern": "^\\S+$",
+      "input": "tool\n",
+      "python": true,
+      "rust": false
     }
   ]
 }

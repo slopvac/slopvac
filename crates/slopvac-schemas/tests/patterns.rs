@@ -48,6 +48,11 @@ const PENDING: &[(&str, &str, &str)] = &[
         "slopvac-8l4.2.52",
     ),
     (
+        "plugin-manifest.schema.json",
+        "/$defs/Plugin/properties/python",
+        "slopvac-8l4.2.52",
+    ),
+    (
         "plugins-lock.schema.json",
         "/$defs/Locked/properties/source",
         "slopvac-8l4.2.56",

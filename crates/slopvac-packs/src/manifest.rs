@@ -179,12 +179,29 @@ impl HookDecl {
     }
 }
 
+/// How the host runs a plugin's `command`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PluginRuntime {
+    /// A program from the pack, or a bare name the plugin's own environment provides.
+    #[default]
+    Native,
+    /// A script of the pack, run by a managed Python interpreter.
+    Python,
+}
+
 /// The `[plugin]` table: how to run the plugin and its pre-spawn declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PluginTable {
-    /// Executable inside the pack, or a bare name.
+    /// Executable inside the pack, or a bare name. With the Python runtime, a script inside the
+    /// pack that does not start with a dash.
     pub command: String,
+    /// How the host runs `command`.
+    pub runtime: PluginRuntime,
+    /// The Python version request for the managed environment. Set exactly when `runtime` is
+    /// [`PluginRuntime::Python`].
+    pub python: Option<String>,
     /// Arguments.
     pub args: Vec<String>,
     /// Environment variable names the plugin may receive.
@@ -206,6 +223,8 @@ impl PluginTable {
     pub fn new(command: impl Into<String>, network: bool) -> Self {
         Self {
             command: command.into(),
+            runtime: PluginRuntime::Native,
+            python: None,
             args: Vec::new(),
             env: Vec::new(),
             network,
@@ -583,16 +602,62 @@ fn env_name(s: &str) -> std::result::Result<String, String> {
     }
 }
 
+/// The longest `python` request the schema takes.
+const PYTHON_REQUEST_MAX: usize = 64;
+
+/// Read `runtime` and `python`. The Python runtime needs a `python` request and a script path
+/// that no interpreter option can imitate; the native runtime takes no `python`.
+fn parse_runtime(obj: &Obj<'_>, command: &str) -> Result<(PluginRuntime, Option<String>)> {
+    let runtime = match obj.optional_string("runtime")? {
+        None | Some("native") => PluginRuntime::Native,
+        Some("python") => PluginRuntime::Python,
+        Some(_) => {
+            return Err(err(&obj.at("runtime"), "must be `native` or `python`"));
+        }
+    };
+    let python = obj.optional_string("python")?;
+    match (runtime, python) {
+        (PluginRuntime::Native, None) => Ok((runtime, None)),
+        (PluginRuntime::Native, Some(_)) => {
+            Err(err(&obj.pointer, "`python` needs `runtime = \"python\"`"))
+        }
+        (PluginRuntime::Python, None) => Err(err(
+            &obj.pointer,
+            "`runtime = \"python\"` needs a `python` version request",
+        )),
+        (PluginRuntime::Python, Some(request)) => {
+            if request.len() > PYTHON_REQUEST_MAX || request.chars().any(char::is_whitespace) {
+                return Err(err(
+                    &obj.at("python"),
+                    "must be at most 64 characters with no whitespace",
+                ));
+            }
+            parse_requirement(request).map_err(|m| err(&obj.at("python"), m))?;
+            PackPath::parse(command).map_err(|m| err(&obj.at("command"), m))?;
+            if command.starts_with('-') {
+                return Err(err(
+                    &obj.at("command"),
+                    "a script path must not start with a dash",
+                ));
+            }
+            Ok((runtime, Some(request.to_owned())))
+        }
+    }
+}
+
 fn parse_plugin(value: &Value, pointer: String) -> Result<PluginTable> {
     let obj = Obj::new(
         value,
         pointer,
-        &["command", "args", "env", "network", "hooks", "features"],
+        &[
+            "command", "runtime", "python", "args", "env", "network", "hooks", "features",
+        ],
     )?;
     let command = obj.string("command")?;
     if command.is_empty() {
         return Err(err(&obj.at("command"), "must not be empty"));
     }
+    let (runtime, python) = parse_runtime(&obj, command)?;
     let network = obj
         .required("network")?
         .as_bool()
@@ -635,6 +700,8 @@ fn parse_plugin(value: &Value, pointer: String) -> Result<PluginTable> {
     features.required("optional")?;
     Ok(PluginTable {
         command: command.to_owned(),
+        runtime,
+        python,
         args,
         env,
         network,

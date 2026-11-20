@@ -284,3 +284,32 @@ pointer = "/$defs/Rule/properties/citation/$ref(rule.schema.json#/$defs/Citation
 kind = "pattern-changed"
 reason = "ste_ref spells \\d as [0-9]. \\d is outside the portable regex subset: Python reads it as any Unicode digit, the Rust validator as ASCII. The Rust is_ste_ref already accepts only ASCII digits (slopvac-8l4.2.49)."
 approved_by = "contract owner (slopvac-8l4.2)"
+
+# Added with the runtime and python keys of the plugin manifest.
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/then/required/python"
+kind = "required-added"
+reason = "runtime and python are new keys, so then only constrains new input"
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/else/not"
+kind = "constraint-added"
+reason = "python was already rejected by unevaluatedProperties, so else only restates that"
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Plugin/then/required/python"
+kind = "required-added"
+reason = "runtime and python are new keys, so then only constrains new input"
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Plugin/else/not"
+kind = "constraint-added"
+reason = "python was already rejected by unevaluatedProperties, so else only restates that"
+approved_by = "contract owner (8l4.2)"
