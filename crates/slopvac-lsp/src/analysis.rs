@@ -113,6 +113,23 @@ impl Item {
         }
     }
 
+    /// A run-level notice that leaves the run complete, such as unsupported content in a
+    /// supported input. The notice has no position, so the item sits at the document start.
+    /// It shows the notice message as is, with the notice code.
+    fn from_root_notice(n: &Notice) -> Self {
+        let message = n.message.to_string();
+        Self {
+            span: None,
+            line: 0,
+            severity: Severity::Suggestion,
+            code: n.code.to_string(),
+            hover: message.clone(),
+            message,
+            fix: None,
+            rule: None,
+        }
+    }
+
     /// The check could not finish. An unlinted buffer must not look clean (exit 2 semantics).
     fn incomplete(reason: &str) -> Self {
         let notice = LspMessage::LintIncomplete {
@@ -147,6 +164,7 @@ pub(crate) fn analyze(
             .into_iter()
             .map(Item::from_finding)
             .chain(linted.unchecked.into_iter().map(|n| Item::from_notice(&n)))
+            .chain(linted.notices.iter().map(Item::from_root_notice))
             .collect(),
         Err(e) => vec![Item::incomplete(&e.0)],
     };

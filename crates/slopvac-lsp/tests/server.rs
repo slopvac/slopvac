@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use lsp_server::{Connection, Message, Notification, Request, RequestId};
 use serde_json::{Value, json};
-use slopvac_engine::Settings;
+use slopvac_engine::{DIAGRAM_PACK, Settings, diagram_rule_set};
 use slopvac_lsp::{
     Check, EngineLinter, Exit, LintError, Linted, Linter, Problem, Server, ServerError,
 };
@@ -28,6 +28,22 @@ fn engine_linter() -> EngineLinter {
 
 /// [`engine_linter`] plus `extra` rules in the same category.
 fn engine_linter_with(extra: Vec<Value>) -> EngineLinter {
+    EngineLinter::new(vec![core_rule_set(extra)], engine_settings()).unwrap()
+}
+
+fn engine_settings() -> Settings {
+    Settings::new(
+        NonEmptyString::new("normal").unwrap(),
+        GenreResult {
+            id: GenreId::new("reference").unwrap(),
+            source: GenreSource::Default,
+            reasons: Vec::new(),
+        },
+    )
+}
+
+/// The `swap` rule plus `extra` rules, in one category.
+fn core_rule_set(extra: Vec<Value>) -> RuleSet {
     let rule = json!({
         "id": "swap", "name": "n", "message": "Found {match}.", "severity": "warning",
         "match": {"kind": "substitution", "substitutions": {"utilize": "use"}},
@@ -38,21 +54,12 @@ fn engine_linter_with(extra: Vec<Value>) -> EngineLinter {
     let category = json!({
         "schema_version": 3, "id": "cat", "title": "t", "description": "d", "rules": rules
     });
-    let set = RuleSet::from_sources(
+    RuleSet::from_sources(
         &PackId::new("core").unwrap(),
         vec![("cat.json".into(), category.to_string())],
         &CompileOptions::default(),
     )
-    .unwrap_or_else(|e| panic!("{e}"));
-    let settings = Settings::new(
-        NonEmptyString::new("normal").unwrap(),
-        GenreResult {
-            id: GenreId::new("reference").unwrap(),
-            source: GenreSource::Default,
-            reasons: Vec::new(),
-        },
-    );
-    EngineLinter::new(vec![set], settings).unwrap()
+    .unwrap_or_else(|e| panic!("{e}"))
 }
 
 struct Client {
@@ -560,6 +567,7 @@ impl Linter for Unchecked {
                 path: None,
                 data: serde_json::Map::new(),
             }],
+            notices: Vec::new(),
         })
     }
 
@@ -581,6 +589,39 @@ fn what_the_engine_did_not_check_shows_as_a_diagnostic() {
             .unwrap()
             .contains("no RST converter found")
     );
+    client.finish().unwrap();
+}
+
+/// The engine with the built-in diagram checkers next to the `swap` rule.
+fn diagram_engine_linter() -> EngineLinter {
+    let pack = diagram_rule_set(&PackId::new(DIAGRAM_PACK).unwrap()).unwrap();
+    EngineLinter::new(vec![core_rule_set(Vec::new()), pack], engine_settings()).unwrap()
+}
+
+const UNSUPPORTED_DIAGRAM: &str = "Intro.\n\n```mermaid\ngitGraph\n  commit\n```\n";
+
+#[test]
+fn an_unsupported_diagram_shows_as_an_information_diagnostic_without_actions() {
+    let mut client = Client::start(Server::new(Arc::new(diagram_engine_linter())), None);
+    let published = client.open(UNSUPPORTED_DIAGRAM);
+    let d = only_diagnostic(&published);
+    assert_eq!(d["code"], "extract-unsupported");
+    assert_eq!(d["severity"], 3);
+    assert_eq!(
+        d["message"],
+        "unsupported Mermaid diagram type; the diagram was not checked"
+    );
+    assert_eq!(d["range"]["start"], json!({"line": 0, "character": 0}));
+    assert_eq!(d["range"]["end"], json!({"line": 0, "character": 0}));
+    assert_eq!(actions(&mut client, &d["range"]), Vec::<Value>::new());
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_document_without_unsupported_content_has_no_information_diagnostic() {
+    let mut client = Client::start(Server::new(Arc::new(diagram_engine_linter())), None);
+    let published = client.open("Intro.\n\n```mermaid\nflowchart TD\n  A --> B\n```\n");
+    assert_eq!(published["diagnostics"], json!([]));
     client.finish().unwrap();
 }
 
