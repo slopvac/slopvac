@@ -196,20 +196,71 @@ fn embedded_data_is_pending_and_the_rendered_review_topic_says_so() {
     }
 }
 
-/// The checked-in table must equal the generated one. Set `SLOPVAC_BLESS=1` to rewrite it.
+/// Compare the table at `path` with `generated`. A set `SLOPVAC_BLESS` rewrites the file, unless
+/// `CI` is also set: a CI run must never rewrite tracked files, so it fails instead.
+/// `var` reads the environment, so tests pass their own values.
+fn check_table(
+    path: &std::path::Path,
+    generated: &str,
+    var: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> Result<(), String> {
+    if var("SLOPVAC_BLESS").is_some() {
+        if var("CI").is_some_and(|v| !v.is_empty()) {
+            return Err("SLOPVAC_BLESS is not allowed when CI is set".to_owned());
+        }
+        std::fs::write(path, generated).map_err(|e| e.to_string())?;
+    }
+    let on_disk = std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .replace("\r\n", "\n");
+    if on_disk == generated {
+        Ok(())
+    } else {
+        Err("run `SLOPVAC_BLESS=1 cargo test -p slopvac-agents --test models`".to_owned())
+    }
+}
+
+/// The checked-in table must equal the generated one. Set `SLOPVAC_BLESS=1` to rewrite it
+/// outside CI.
 #[test]
 fn checked_in_table_matches_the_generated_one() {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/model-recommendations.md");
     let generated = markdown(&Evals::embedded().unwrap());
-    if std::env::var_os("SLOPVAC_BLESS").is_some() {
-        std::fs::write(&path, &generated).unwrap();
+    if let Err(message) = check_table(&path, &generated, |k| std::env::var_os(k)) {
+        panic!("{message}");
     }
-    let on_disk = std::fs::read_to_string(&path)
-        .unwrap_or_default()
-        .replace("\r\n", "\n");
-    assert_eq!(
-        on_disk, generated,
-        "run `SLOPVAC_BLESS=1 cargo test -p slopvac-agents --test models`"
-    );
+}
+
+fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<std::ffi::OsString> + 'a {
+    move |k| {
+        pairs
+            .iter()
+            .find(|(n, _)| *n == k)
+            .map(|(_, v)| (*v).into())
+    }
+}
+
+#[test]
+fn bless_outside_ci_rewrites_the_table() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("table.md");
+    std::fs::write(&path, "stale\n").unwrap();
+    check_table(&path, "fresh\n", env_of(&[("SLOPVAC_BLESS", "1")])).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "fresh\n");
+}
+
+#[test]
+fn bless_in_ci_fails_and_leaves_the_table_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("table.md");
+    std::fs::write(&path, "stale\n").unwrap();
+    let err = check_table(
+        &path,
+        "fresh\n",
+        env_of(&[("SLOPVAC_BLESS", "1"), ("CI", "1")]),
+    )
+    .unwrap_err();
+    assert!(err.contains("CI"), "{err}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "stale\n");
 }
