@@ -1,7 +1,7 @@
 //! A genre as a layer of the config stack.
 
 use serde_json::{Value, json};
-use slopvac_config::tree::{self, LineIndex, Node};
+use slopvac_config::tree::{LineIndex, Node};
 use slopvac_config::{Layer, Setting, Source};
 use slopvac_context::{Budget, CategorySettings, GenreSpec, RuleLevel};
 use slopvac_model::PackId;
@@ -24,39 +24,23 @@ fn key(parts: &[&str]) -> Vec<String> {
     parts.iter().map(|s| (*s).to_owned()).collect()
 }
 
-/// A genre file's parsed form and its text, which the key locations come from.
+/// A genre file's parsed form, its syntax tree and its text, which the key locations come from.
 #[derive(Debug, Clone)]
 pub(crate) struct GenreFile {
     pub(crate) spec: GenreSpec,
     text: String,
+    root: Node,
 }
 
 impl GenreFile {
-    pub(crate) const fn new(spec: GenreSpec, text: String) -> Self {
-        Self { spec, text }
-    }
-}
-
-/// Where keys sit in a genre file: the line and column of the deepest key on a path that the
-/// file has. A path the file lacks (a short form such as `prose: error`) resolves to its
-/// longest prefix.
-struct Locator<'a> {
-    root: Option<Node>,
-    index: LineIndex<'a>,
-}
-
-impl<'a> Locator<'a> {
-    fn new(text: &'a str) -> Self {
-        Self {
-            root: tree::parse_yaml(text).ok(),
-            index: LineIndex::new(text),
-        }
+    pub(crate) const fn new(spec: GenreSpec, text: String, root: Node) -> Self {
+        Self { spec, text, root }
     }
 
-    fn at(&self, path: &[&str]) -> (Option<usize>, Option<usize>) {
-        let Some(mut node) = self.root.as_ref() else {
-            return (None, None);
-        };
+    /// The line and column of the deepest key on `path` that the file has: a path the file
+    /// lacks (a short form such as `prose: error`) resolves to its longest prefix.
+    pub(crate) fn locate(&self, path: &[&str]) -> (Option<usize>, Option<usize>) {
+        let mut node = &self.root;
         let mut found = None;
         for part in path {
             let Some(entry) = node.entry(part) else {
@@ -66,7 +50,7 @@ impl<'a> Locator<'a> {
             node = &entry.node;
         }
         found.map_or((None, None), |offset| {
-            let (line, column) = self.index.line_col(offset);
+            let (line, column) = LineIndex::new(&self.text).line_col(offset);
             (Some(line), Some(column))
         })
     }
@@ -77,10 +61,9 @@ impl<'a> Locator<'a> {
 /// pack id as a prefix.
 pub(crate) fn settings(pack: &PackId, file: &str, genre: &GenreFile) -> Vec<Setting> {
     let spec = &genre.spec;
-    let locator = Locator::new(&genre.text);
     let mut out = Vec::new();
     let mut push = |path: Vec<String>, value: Value, written: &[&str]| {
-        let (line, column) = locator.at(written);
+        let (line, column) = genre.locate(written);
         out.push(Setting {
             path,
             value,

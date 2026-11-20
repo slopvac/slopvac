@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 
+use rstest::rstest;
 use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
@@ -112,9 +113,11 @@ fn the_core_pack_takes_the_binary_version() {
     assert_eq!(pack.manifest().id, PackId::new("core").unwrap());
 }
 
-#[test]
-fn the_core_manifest_is_refused_from_any_other_origin() {
-    let err = LoadedPack::load(&core_source(), Source::Plugin).unwrap_err();
+#[rstest]
+#[case::plugin(Source::Plugin)]
+#[case::pack(Source::Pack)]
+fn the_core_manifest_is_refused_from_any_other_origin(#[case] origin: Source) {
+    let err = LoadedPack::load(&core_source(), origin).unwrap_err();
     assert!(matches!(err, PackError::ReservedId));
 }
 

@@ -11,6 +11,7 @@ use slopvac_rules::{CompileOptions, RuleSet};
 use slopvac_styles::{Style, StyleError, StylePresets, StyleSource};
 
 use crate::genre_layer::{GenreFile, display_path, settings};
+use crate::name::is_local;
 use crate::{
     ArtifactFault, Manifest, PackError, PackPath, PackSource, Provenance, Provides, QualifiedName,
     Registry, RuleFault, RuleProblem, Source,
@@ -72,21 +73,28 @@ fn artifact(path: &PackPath, text: &str, source: &slopvac_context::Error) -> Pac
     use slopvac_context::Error as E;
     let fault = match source {
         E::Yaml(_) => match slopvac_config::tree::parse_yaml(text) {
-            Err(e) => {
-                let at = e.span.map_or(0, |s| s.start);
-                let (line, column) = slopvac_config::tree::LineIndex::new(text).line_col(at);
-                ArtifactFault::Syntax { line, column }
-            }
+            Err(e) => return syntax(path, text, &e),
             Ok(_) => ArtifactFault::Schema,
         },
         E::Pattern { .. } | E::PatternTooLong { .. } => ArtifactFault::Pattern,
         E::Glob { .. } | E::GlobSet(_) | E::SignalGlob { .. } => ArtifactFault::Glob,
         _ => ArtifactFault::Invalid,
     };
+    artifact_fault(path, fault)
+}
+
+fn artifact_fault(path: &PackPath, fault: ArtifactFault) -> PackError {
     PackError::Artifact {
         path: path.as_str().to_owned(),
         fault,
     }
+}
+
+/// A YAML syntax error in `text`, as a line and column.
+fn syntax(path: &PackPath, text: &str, error: &slopvac_config::tree::ParseError) -> PackError {
+    let at = error.span.as_ref().map_or(0, |s| s.start);
+    let (line, column) = slopvac_config::tree::LineIndex::new(text).line_col(at);
+    artifact_fault(path, ArtifactFault::Syntax { line, column })
 }
 
 fn rule_problems(errors: &slopvac_rules::LoadErrors) -> PackError {
@@ -144,7 +152,12 @@ impl LoadedPack {
             let spec = GenreSpec::from_yaml(&text)
                 .and_then(|spec| spec.validate().map(|()| spec))
                 .map_err(|e| artifact(&path, &text, &e))?;
-            genres.push((path, GenreFile::new(spec, text)));
+            if !is_local(&spec.id) {
+                return Err(artifact_fault(&path, ArtifactFault::Invalid));
+            }
+            let root =
+                slopvac_config::tree::parse_yaml(&text).map_err(|e| syntax(&path, &text, &e))?;
+            genres.push((path, GenreFile::new(spec, text, root)));
         }
         let mut taggers = Vec::new();
         if origin == Source::Core {
@@ -221,7 +234,10 @@ impl Packs {
         let mut styles = Registry::new();
         for pack in &packs {
             for (path, file) in &pack.genres {
-                let name = QualifiedName::new(pack.manifest.id.clone(), file.spec.id.clone())?;
+                // The load already checked the id, so a refusal here is a defect upstream; it
+                // still reports the file and never the id.
+                let name = QualifiedName::new(pack.manifest.id.clone(), file.spec.id.clone())
+                    .map_err(|_| artifact_fault(path, ArtifactFault::Invalid))?;
                 genres.insert(name, file.clone(), pack.provenance(path))?;
             }
             for (path, text) in &pack.styles {
@@ -309,22 +325,26 @@ fn check_genre_graph(genres: &Registry<GenreFile>) -> Result<(), PackError> {
         if done.contains(name) {
             return Ok(());
         }
-        if walking.iter().any(|w| w == name) {
-            return Err(PackError::GenreCycle {
-                genre: name.to_owned(),
-            });
-        }
         let Ok(entry) = genres.resolve(name) else {
             // The caller reports the parent as missing; a root is always registered.
             return Ok(());
         };
+        let (line, column) = entry.value.locate(&["extends"]);
+        if walking.iter().any(|w| w == name) {
+            return Err(PackError::GenreCycle {
+                path: entry.provenance.file.clone(),
+                line,
+                column,
+            });
+        }
         walking.push(name.to_owned());
         for parent in &entry.value.spec.extends {
             let qualified = parent_name(&entry.provenance.pack, parent);
             if genres.resolve(&qualified).is_err() {
                 return Err(PackError::MissingParent {
-                    genre: name.to_owned(),
-                    parent: parent.clone(),
+                    path: entry.provenance.file.clone(),
+                    line,
+                    column,
                 });
             }
             visit(genres, &qualified, walking, done)?;

@@ -3,6 +3,14 @@
 use crate::problem::{ArtifactFault, RuleProblem, render_problems};
 use crate::{ManifestError, NameError, RegistryError, SourceError};
 
+/// A location suffix when line and column are known, else nothing.
+fn at(line: Option<usize>, column: Option<usize>) -> String {
+    match (line, column) {
+        (Some(line), Some(column)) => format!(" (line {line}, column {column})"),
+        _ => String::new(),
+    }
+}
+
 /// Why a pack failed to load. Text from pack files reaches `Display` only through
 /// `slopvac_sanitize::line`.
 #[derive(Debug, thiserror::Error)]
@@ -46,23 +54,26 @@ pub enum PackError {
     /// Two packs supply the same name.
     #[error(transparent)]
     Registry(#[from] RegistryError),
-    /// A genre extends itself, directly or through other genres.
-    #[error("genre `{}` extends itself through its parents", slopvac_sanitize::line(.genre))]
+    /// A genre extends itself, directly or through other genres. The error names the file of a
+    /// genre on the cycle, never the genre's id.
+    #[error("`{}`{}: the genre extends itself through its parents", slopvac_sanitize::line(.path), at(*.line, *.column))]
     GenreCycle {
-        /// The qualified name of a genre on the cycle.
-        genre: String,
+        /// The pack-relative file of a genre on the cycle.
+        path: String,
+        /// The one-based line of its `extends` key.
+        line: Option<usize>,
+        /// The one-based column of its `extends` key.
+        column: Option<usize>,
     },
-    /// A genre extends a genre that no loaded pack supplies.
-    #[error(
-        "genre `{}` extends `{}`, which no loaded pack supplies",
-        slopvac_sanitize::line(.genre),
-        slopvac_sanitize::line(.parent)
-    )]
+    /// A genre extends a genre that no loaded pack supplies. The parent is not repeated.
+    #[error("`{}`{}: the genre extends a genre that no loaded pack supplies", slopvac_sanitize::line(.path), at(*.line, *.column))]
     MissingParent {
-        /// The qualified name of the genre that names the parent.
-        genre: String,
-        /// The parent as written.
-        parent: String,
+        /// The pack-relative file of the genre.
+        path: String,
+        /// The one-based line of its `extends` key.
+        line: Option<usize>,
+        /// The one-based column of its `extends` key.
+        column: Option<usize>,
     },
     /// An artifact name is not valid.
     #[error(transparent)]
