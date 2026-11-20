@@ -117,7 +117,7 @@ impl LoadedPack {
     /// not compile, a genre that does not parse, a glob entry, the id `core` in another pack,
     /// or a core pack with another id.
     pub fn load(source: &dyn PackSource, origin: Source) -> Result<Self, PackError> {
-        let mut manifest = Manifest::parse(&source.manifest_text()?)?;
+        let mut manifest = Manifest::parse_allowing_core(&source.manifest_text()?)?;
         let is_core = manifest.id.as_str() == CORE_ID;
         match (origin, is_core) {
             (Source::Core, false) => return Err(PackError::NotCore),

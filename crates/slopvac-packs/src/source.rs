@@ -8,7 +8,7 @@ use cap_std::fs::Dir;
 use crate::PackPath;
 
 /// File name of the manifest at the root of a pack.
-pub const MANIFEST_FILE: &str = "slopvac-pack.toml";
+pub const MANIFEST_FILE: &str = "slopvac-plugin.toml";
 
 /// Largest pack file the directory source reads, in bytes.
 const MAX_FILE_BYTES: u64 = 1024 * 1024;

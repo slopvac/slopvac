@@ -69,7 +69,7 @@ fn a_data_manifest_holds_what_the_file_says() {
 #[test]
 fn a_plugin_manifest_holds_the_declaration() {
     let m = Manifest::parse(PLUGIN).unwrap();
-    assert_eq!(m.kind, PackKind::Plugin);
+    assert_eq!(m.kind, PackKind::Code);
     let p = m.plugin.unwrap();
     assert_eq!(p.command, "bin/acme");
     assert_eq!(p.args, ["--stdio"]);

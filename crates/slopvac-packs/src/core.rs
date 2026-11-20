@@ -33,7 +33,7 @@ const STYLES: FileTable = embed!(
 #[must_use]
 pub fn core_source() -> EmbeddedSource {
     EmbeddedSource::new(
-        include_str!("../core/slopvac-pack.toml"),
+        include_str!("../core/slopvac-plugin.toml"),
         &[
             CATEGORIES,
             STYLES,
