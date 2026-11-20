@@ -245,3 +245,55 @@ fn a_front_matter_genre_records_the_assignment_it_displaced() {
         "{reasons}"
     );
 }
+
+/// Lint a project with `config` and the document `notes/<name>` and return the raw output of
+/// the run with `format`.
+fn run_named_note(config: &str, name: &str, text: &str, format: &str) -> std::process::Output {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("slopvac.toml"), config).expect("write config");
+    let path = dir.path().join("notes").join(name);
+    fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+    fs::write(path, text).expect("write document");
+    slopvac()
+        .args(["lint", "--format", format])
+        .arg(dir.path())
+        .output()
+        .expect("run")
+}
+
+#[rstest::rstest]
+#[case::plain_value("PRIVATE_SENTINEL")]
+#[case::absolute_path("/Users/private-user/secret-project/notes")]
+fn block_errors_never_echo_a_document_value(#[case] value: &str) {
+    let config = format!("{ASSIGNED}\n[frontmatter]\nallow = [\"locale\"]\n");
+    let text = format!("---\nslopvac:\n  v: 3\n  locale: {value}\n---\n{HISTORY}");
+    for format in ["text", "json"] {
+        let out = run_named_note(&config, "n.md", &text, format);
+        assert_eq!(out.status.code(), Some(2), "{format}");
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            all.contains("config-"),
+            "{format}: a code is reported: {all}"
+        );
+        assert!(!all.contains(value), "{format}: {all}");
+        assert!(!all.contains("private-user"), "{format}: {all}");
+    }
+}
+
+#[test]
+fn a_hostile_file_name_is_escaped_in_the_block_error() {
+    let config = format!("{ASSIGNED}\n[frontmatter]\nallow = [\"locale\"]\n");
+    let text = format!("---\nslopvac:\n  v: 3\n  genre: reference\n---\n{HISTORY}");
+    let out = run_named_note(&config, "bad\u{1b}[2Jname.md", &text, "json");
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("config-frontmatter-field-denied"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
+}

@@ -141,19 +141,18 @@ impl Run {
 
     /// Record what is wrong with a document's `slopvac:` block: an exit-2 error and a report
     /// notice for each diagnostic. The block then contributes nothing and the document is
-    /// still linted.
+    /// still linted. The error text is escaped for a terminal; the notice keeps the raw
+    /// text, which each report format escapes for itself.
     fn front_matter_errors(&mut self, item: &Item, read: &Read) {
-        for d in &read.diagnostics {
-            let (line, column) = d.location(&item.text);
-            self.skip(
-                d.code.as_str(),
-                &item.shown,
-                format!(
-                    "{}:{line}:{column}: {}",
-                    item.shown,
-                    slopvac_sanitize::line(&d.message)
-                ),
-            );
+        for e in block_errors(&item.shown, &item.text, read) {
+            self.notices.push(Notice {
+                code: KebabName::new(e.code).expect("diagnostic codes are kebab-case"),
+                level: NoticeLevel::Warning,
+                message: NonEmptyString::new(e.raw).expect("messages are not empty"),
+                path: Some(item.shown.clone()),
+                data: serde_json::Map::new(),
+            });
+            self.incomplete.push(CliError::new(e.code, e.escaped));
         }
     }
 
@@ -701,6 +700,42 @@ fn config_for(
             .map_or_else(|_| absolute.clone(), Path::to_path_buf);
         (config, rel)
     }))
+}
+
+/// One problem in a document's `slopvac:` block, worded without the document's values.
+pub(crate) struct BlockError {
+    /// The diagnostic's stable code.
+    pub(crate) code: &'static str,
+    /// `<shown>:<line>:<column>: <key pointer>`, as the document gave the names.
+    pub(crate) raw: String,
+    /// The same with the file name and the key names escaped for a terminal.
+    pub(crate) escaped: String,
+}
+
+/// The problems that `read` found in the block of the document `text`, shown as `shown`. Only
+/// the code, the position and the key path are reported: a diagnostic's own message quotes
+/// the offending value, and front matter values stay out of error output (policies 1.7).
+pub(crate) fn block_errors(shown: &str, text: &str, read: &Read) -> Vec<BlockError> {
+    read.diagnostics
+        .iter()
+        .map(|d| {
+            let (line, column) = d.location(text);
+            let pointer = if d.path.is_empty() {
+                "/".to_owned()
+            } else {
+                d.pointer()
+            };
+            BlockError {
+                code: d.code.as_str(),
+                raw: format!("{shown}:{line}:{column}: {pointer}"),
+                escaped: format!(
+                    "{}:{line}:{column}: {}",
+                    slopvac_sanitize::line(shown),
+                    slopvac_sanitize::line(&pointer)
+                ),
+            }
+        })
+        .collect()
 }
 
 /// The `slopvac:` block of the item's front matter, read under the project's front matter
