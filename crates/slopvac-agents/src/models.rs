@@ -95,21 +95,30 @@ impl Evals {
             ));
         }
         if evals.repeats < MIN_REPEATS {
-            return Err(invalid(AgentsText::EvalsRepeats {
-                repeats: evals.repeats,
-                minimum: MIN_REPEATS,
-            }));
+            return Err(invalid(
+                AgentsText::EvalsRepeats {
+                    repeats: evals.repeats,
+                    minimum: MIN_REPEATS,
+                }
+                .to_string(),
+            ));
         }
         for r in &evals.rows {
             if ReviewType::parse(&r.review_type).is_none() {
-                return Err(invalid(AgentsText::EvalsReviewType {
-                    review_type: quoted(&r.review_type),
-                }));
+                return Err(invalid(
+                    AgentsText::EvalsReviewType {
+                        review_type: quoted(&r.review_type),
+                    }
+                    .to_string(),
+                ));
             }
             if !(0.0..=1.0).contains(&r.success_rate) {
-                return Err(invalid(AgentsText::EvalsSuccessRate {
-                    model: r.model.clone(),
-                }));
+                return Err(invalid(
+                    AgentsText::EvalsSuccessRate {
+                        model: r.model.clone(),
+                    }
+                    .to_string(),
+                ));
             }
         }
         Ok(evals)

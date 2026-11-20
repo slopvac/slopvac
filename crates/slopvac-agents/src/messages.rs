@@ -1,12 +1,12 @@
 //! The messages `slopvac-agents` reports: error codes, notices, text with parameters, help
 //! and fixed phrases.
 //!
-//! Four catalogs hold them. [`PrimeText`] is what `prime <topic>` prints in place of a
+//! Four enums hold them. [`PrimeText`] is what `prime <topic>` prints in place of a
 //! disabled topic. [`AgentsMessage`] has one entry per error code and per notice.
 //! [`AgentsText`] holds the sentences with parameters that errors, command output and
 //! checks fill in. [`AgentsPhrase`] holds fixed phrases, which callers read as `&'static str`
-//! through [`AgentsPhrase::as_static`]. The binary registers them through `message_entries`,
-//! `error_entries`, `text_entries` and `phrase_entries`.
+//! through [`AgentsPhrase::as_static`]. The binary registers them as one catalog through
+//! `message_entries`.
 //!
 //! Generated file content is not a message and stays in `content.rs`: the steering block, the
 //! skill stub and the reviewer agent file are artifacts that the user's harness reads, and
@@ -14,6 +14,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use slopvac_messages::{Catalog, Entry};
 
@@ -701,28 +702,20 @@ pub(crate) fn partial(cause: &dyn std::error::Error, changed: &[String]) -> Stri
     .to_string()
 }
 
-/// The entries of the `prime` text catalog.
+/// The entries of every agents catalog, for the one registration of `slopvac-agents`: the
+/// `prime` text, then the errors and notices, the text with parameters and the fixed phrases.
 #[must_use]
 pub fn message_entries() -> &'static [Entry] {
-    PrimeText::entries()
-}
-
-/// The entries of `AgentsMessage`: error codes and notices.
-#[must_use]
-pub fn error_entries() -> &'static [Entry] {
-    AgentsMessage::entries()
-}
-
-/// The entries of `AgentsText`: sentences with parameters.
-#[must_use]
-pub fn text_entries() -> &'static [Entry] {
-    AgentsText::entries()
-}
-
-/// The entries of `AgentsPhrase`: fixed phrases.
-#[must_use]
-pub fn phrase_entries() -> &'static [Entry] {
-    AgentsPhrase::entries()
+    static ALL: OnceLock<Vec<Entry>> = OnceLock::new();
+    ALL.get_or_init(|| {
+        [
+            PrimeText::entries(),
+            AgentsMessage::entries(),
+            AgentsText::entries(),
+            AgentsPhrase::entries(),
+        ]
+        .concat()
+    })
 }
 
 #[cfg(test)]
@@ -798,7 +791,7 @@ mod tests {
                 "text segmentation failed: boom",
             ),
         ];
-        let registered = error_entries();
+        let registered = AgentsMessage::entries();
         for (constant, message, code, text) in published {
             assert_eq!(constant, code);
             assert_eq!(message.code(), code);
@@ -878,7 +871,7 @@ mod tests {
                  than the author's.",
             ),
         ];
-        let registered = error_entries();
+        let registered = AgentsMessage::entries();
         for (message, code, text) in published {
             assert_eq!(message.code(), code);
             assert_eq!(message.to_string(), text);
