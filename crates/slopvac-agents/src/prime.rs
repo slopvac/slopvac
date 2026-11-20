@@ -166,11 +166,11 @@ const NOTES_CAP: u64 = 64 * 1024;
 
 /// What the project's notes add to a topic.
 enum Notes {
-    /// No notes file, or nothing in it for this topic.
+    /// No notes file, or nothing in it for the topic.
     None,
-    /// Text for this topic, to show as data after the built-in guidance.
+    /// Text for the topic, shown as data after the built-in guidance.
     Text(String),
-    /// The file was refused; show a fixed notice and no file text.
+    /// Slopvac refused the file. Show a fixed notice and no file text.
     Refused(PrimeText),
 }
 
@@ -186,7 +186,7 @@ fn refusal(kind: Option<InputKind>) -> PrimeText {
 }
 
 /// Read `.slopvac/PRIME.md` under `root` through the confined reader and pick the text for
-/// `topic`. A refused file never fails the command: the built-in guidance stands alone.
+/// `topic`. A refused file yields a notice, and the built-in guidance stands alone.
 fn project_notes(root: &Path, topic: &str) -> Notes {
     let dir = match Dir::open_ambient_dir(root, ambient_authority()) {
         Ok(dir) => dir,
@@ -224,10 +224,11 @@ fn fenced_notes(text: &str) -> String {
     }
     let longest = body.split(|c| c != '`').map(str::len).max().unwrap_or(0);
     let fence = "`".repeat((longest + 1).max(3));
+    // ast-grep-ignore: user-text-literal
     format!("{fence}text project-notes\n{body}{fence}\n")
 }
 
-/// Append the project's notes, or the notice for a refused file, after the built-in `out`.
+/// After the built-in `out`, append the project's notes or the notice for a refused file.
 fn with_project_notes(mut out: String, root: &Path, topic: &str) -> String {
     let addition = match project_notes(root, topic) {
         Notes::None => return out,
