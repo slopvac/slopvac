@@ -4,15 +4,13 @@
 //! the lint, so a loaded runner cannot make them fail. The counter is process-wide, so the
 //! tests take a lock and read a difference.
 
-#![allow(missing_docs)]
-
 mod common;
 
 use std::sync::{Mutex, MutexGuard};
 
 use common::{category, ruleset, settings};
 use slopvac_diagrams::prose_analyses;
-use slopvac_engine::{DIAGRAM_PACK, Engine, Input, diagram_rule_set};
+use slopvac_engine::{DIAGRAM_PACK, Engine, Input, diagram_rule_set, prose_finding_bytes};
 use slopvac_model::{Finding, PackId};
 
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -37,8 +35,12 @@ fn document() -> String {
     )
 }
 
+/// The text of the one meta reference in the paragraph.
+const META: &str = "As shown in the diagram";
+
 struct Run {
     analyses: usize,
+    built_bytes: usize,
     findings: Vec<Finding>,
 }
 
@@ -47,13 +49,21 @@ fn run() -> (MutexGuard<'static, ()>, Run) {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let source = document();
-    let before = prose_analyses();
+    let (before, built_before) = (prose_analyses(), prose_finding_bytes());
     let findings = engine()
         .lint(&Input::markdown("a.md", &source))
         .unwrap()
         .findings;
     let analyses = prose_analyses() - before;
-    (guard, Run { analyses, findings })
+    let built_bytes = prose_finding_bytes() - built_before;
+    (
+        guard,
+        Run {
+            analyses,
+            built_bytes,
+            findings,
+        },
+    )
 }
 
 fn of_rule<'a>(run: &'a Run, rule: &str) -> Vec<&'a Finding> {
@@ -82,17 +92,22 @@ fn a_meta_reference_in_a_shared_paragraph_is_reported_once() {
     let (_guard, run) = run();
     let found = of_rule(&run, "diagrams:diagram.meta-reference");
     assert_eq!(found.len(), 1);
-    assert_eq!(found[0].matched_text, "As shown in the diagram");
+    assert_eq!(found[0].matched_text, META);
 }
 
 #[test]
-fn findings_retain_no_more_than_one_copy_of_the_paragraph() {
+fn findings_retain_exactly_one_copy_of_the_paragraph() {
     let (_guard, run) = run();
     let retained: usize = run.findings.iter().map(|f| f.matched_text.len()).sum();
-    // One copy of the paragraph, and the short matched text of the meta reference.
-    assert!(
-        retained <= PARAGRAPH.len() + 64,
-        "{retained} bytes retained for a {} byte paragraph",
-        PARAGRAPH.len()
+    assert_eq!(retained, PARAGRAPH.len() + META.len());
+}
+
+#[test]
+fn a_repeated_paragraph_finding_is_not_built_for_every_fence() {
+    let (_guard, run) = run();
+    assert_eq!(
+        run.built_bytes,
+        PARAGRAPH.len() + META.len(),
+        "{FENCES} fences share one paragraph"
     );
 }
