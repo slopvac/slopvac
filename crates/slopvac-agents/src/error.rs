@@ -253,8 +253,13 @@ impl AgentsError {
     }
 
     /// A usage failure with the text `message`.
-    pub(crate) fn usage(message: impl ToString) -> Self {
-        Self::Usage(message.to_string())
+    pub(crate) fn usage(message: impl Into<String>) -> Self {
+        Self::Usage(
+            AgentsMessage::Usage {
+                message: message.into(),
+            }
+            .to_string(),
+        )
     }
 
     pub(crate) fn io(path: impl Into<PathBuf>, source: std::io::Error) -> Self {

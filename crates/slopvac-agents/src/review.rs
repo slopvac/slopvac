@@ -540,9 +540,12 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
         plan.report = Some(call_provider(env, &plan)?);
     }
     let mut json = serde_json::to_string_pretty(&plan).map_err(|e| {
-        AgentsError::usage(AgentsText::ReviewJsonFailed {
-            detail: e.to_string(),
-        })
+        AgentsError::usage(
+            AgentsText::ReviewJsonFailed {
+                detail: e.to_string(),
+            }
+            .to_string(),
+        )
     })?;
     json.push('\n');
     Ok(json)

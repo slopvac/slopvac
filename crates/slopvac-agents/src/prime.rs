@@ -182,9 +182,12 @@ fn render_template(
             .keep_trailing_newline(true)
             .build()
             .map_err(|e| {
-                AgentsError::usage(AgentsText::PrimeSyntaxFailed {
-                    detail: e.to_string(),
-                })
+                AgentsError::usage(
+                    AgentsText::PrimeSyntaxFailed {
+                        detail: e.to_string(),
+                    }
+                    .to_string(),
+                )
             })?,
     );
     let commands: Vec<Value> = command_lines(cli)
@@ -230,10 +233,13 @@ fn render_template(
     };
     let body = split_summary(source).1.replace("\r\n", "\n");
     env.render_str(&body, ctx).map_err(|e| {
-        AgentsError::usage(AgentsText::PrimeTopicRenderFailed {
-            topic: quoted(name),
-            detail: e.to_string(),
-        })
+        AgentsError::usage(
+            AgentsText::PrimeTopicRenderFailed {
+                topic: quoted(name),
+                detail: e.to_string(),
+            }
+            .to_string(),
+        )
     })
 }
 
@@ -257,10 +263,13 @@ pub fn render(
             .find(|(n, _)| *n == name)
             .map(|(_, s)| *s)
             .ok_or_else(|| {
-                AgentsError::usage(AgentsText::PrimeTopicUnknown {
-                    topic: quoted(name),
-                    choices: topic_names().join(", "),
-                })
+                AgentsError::usage(
+                    AgentsText::PrimeTopicUnknown {
+                        topic: quoted(name),
+                        choices: topic_names().join(", "),
+                    }
+                    .to_string(),
+                )
             })?
     };
     if let Some(text) = override_for(root, name)? {

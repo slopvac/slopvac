@@ -71,7 +71,7 @@ pub struct Evals {
     pub rows: Vec<Run>,
 }
 
-fn invalid(detail: impl ToString) -> AgentsError {
+fn invalid(detail: String) -> AgentsError {
     AgentsError::coded(&AgentsMessage::ModelEvalsInvalid {
         detail: detail.to_string(),
     })
@@ -80,14 +80,19 @@ fn invalid(detail: impl ToString) -> AgentsError {
 impl Evals {
     /// Parse and validate a results file.
     pub fn parse(json: &str) -> Result<Self, AgentsError> {
-        let evals: Self = serde_json::from_str(json).map_err(invalid)?;
+        let evals: Self = serde_json::from_str(json).map_err(|e| invalid(e.to_string()))?;
         if evals.schema_version != SCHEMA_VERSION {
-            return Err(invalid(AgentsText::EvalsSchema {
-                version: evals.schema_version,
-            }));
+            return Err(invalid(
+                AgentsText::EvalsSchema {
+                    version: evals.schema_version,
+                }
+                .to_string(),
+            ));
         }
         if evals.status == Status::PendingReevaluation && !evals.rows.is_empty() {
-            return Err(invalid(AgentsPhrase::EvalsPendingRows.as_static()));
+            return Err(invalid(
+                AgentsPhrase::EvalsPendingRows.as_static().to_owned(),
+            ));
         }
         if evals.repeats < MIN_REPEATS {
             return Err(invalid(AgentsText::EvalsRepeats {

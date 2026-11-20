@@ -600,9 +600,12 @@ pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
         return Ok(render_text(&report));
     }
     let mut json = serde_json::to_string_pretty(&report).map_err(|e| {
-        AgentsError::usage(AgentsText::ClaimsJsonFailed {
-            detail: e.to_string(),
-        })
+        AgentsError::usage(
+            AgentsText::ClaimsJsonFailed {
+                detail: e.to_string(),
+            }
+            .to_string(),
+        )
     })?;
     json.push('\n');
     Ok(json)

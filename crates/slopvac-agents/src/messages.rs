@@ -512,7 +512,7 @@ pub(crate) enum AgentsPhrase {
         "Claude Code uses CLAUDE_CODE_SUBAGENT_MODEL when it is set and the main conversation's model otherwise"
     )]
     PicksClaude,
-    /// How OpenCode picks the model of an agent with none set.
+    /// How `OpenCode` picks the model of an agent with none set.
     #[code("setup-picks-opencode")]
     #[text("OpenCode uses the parent session's model")]
     PicksOpencode,

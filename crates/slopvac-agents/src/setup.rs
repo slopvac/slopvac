@@ -156,7 +156,7 @@ pub fn run(matches: &ArgMatches) -> Result<Outcome, AgentsError> {
     execute(&opts)
 }
 
-fn usage(message: impl ToString) -> AgentsError {
+fn usage(message: impl Into<String>) -> AgentsError {
     AgentsError::usage(message)
 }
 
@@ -203,25 +203,33 @@ fn plan(opts: &Options) -> Result<Plan, AgentsError> {
         .as_deref()
         .ok_or_else(|| usage(AgentsPhrase::HarnessRequired.as_static()))?;
     let harness = harness::find(name).ok_or_else(|| {
-        usage(AgentsText::HarnessUnknown {
-            name: quoted(name),
-            choices: harness::names().join(", "),
-        })
+        usage(
+            AgentsText::HarnessUnknown {
+                name: quoted(name),
+                choices: harness::names().join(", "),
+            }
+            .to_string(),
+        )
     })?;
     if opts.check && opts.remove {
         return Err(usage(AgentsPhrase::CheckRemove.as_static()));
     }
     if opts.agent && harness.agent_format().is_none() {
-        return Err(usage(AgentsText::NoAgentFile {
-            harness: name.to_owned(),
-        }));
+        return Err(usage(
+            AgentsText::NoAgentFile {
+                harness: name.to_owned(),
+            }
+            .to_string(),
+        ));
     }
     if let Some(m) = &opts.reviewer_model {
         if !opts.agent {
             return Err(usage(AgentsPhrase::ModelNeedsAgent.as_static()));
         }
         if !content::valid_model(m) {
-            return Err(usage(AgentsText::ModelInvalid { model: quoted(m) }));
+            return Err(usage(
+                AgentsText::ModelInvalid { model: quoted(m) }.to_string(),
+            ));
         }
         if let Some(format) = harness.agent_format() {
             content::check_model_format(format, m).map_err(|message| {
