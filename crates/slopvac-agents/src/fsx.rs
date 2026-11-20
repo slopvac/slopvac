@@ -160,6 +160,8 @@ impl Project {
             Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(Self::map(&rel, e)),
         }
+        #[cfg(test)]
+        before_open::run();
         self.dir
             .read(&rel)
             .map(Some)
@@ -246,5 +248,88 @@ impl Project {
             let _ = self.dir.remove_dir(dir);
         }
         Ok(())
+    }
+}
+
+/// A test seam: code that runs once [`Project::read`] has resolved and checked the path and
+/// before it opens the file, so a test can swap the file in that window deterministically.
+#[cfg(test)]
+mod before_open {
+    use std::cell::RefCell;
+
+    type Hook = Box<dyn FnOnce()>;
+
+    thread_local! {
+        static HOOK: RefCell<Option<Hook>> = const { RefCell::new(None) };
+    }
+
+    /// Clears a hook that never ran when dropped, so it cannot reach a later read.
+    pub(super) struct Guard;
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            HOOK.with(|h| h.borrow_mut().take());
+        }
+    }
+
+    /// Run `hook` once, at the next open on this thread.
+    pub(super) fn set(hook: Hook) -> Guard {
+        HOOK.with(|h| *h.borrow_mut() = Some(hook));
+        Guard
+    }
+
+    pub(super) fn run() {
+        if let Some(hook) = HOOK.with(|h| h.borrow_mut().take()) {
+            hook();
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::path::Path;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use super::{Project, before_open};
+
+    /// How long a step may take before the test calls it blocked.
+    const LIMIT: Duration = Duration::from_secs(5);
+
+    fn mkfifo(path: &Path) {
+        let made = std::process::Command::new("mkfifo")
+            .arg(path)
+            .status()
+            .expect("mkfifo runs");
+        assert!(made.success(), "mkfifo failed");
+    }
+
+    /// Regression for the check-then-open race in `read`: the checks pass on a regular
+    /// file, and a FIFO takes its place before the open. A blocking open on the FIFO waits
+    /// for a writer that never comes, so the read must refuse it instead.
+    #[test]
+    fn a_fifo_swapped_in_after_the_checks_is_refused_promptly() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("AGENTS.md");
+        std::fs::write(&file, "steering\n").unwrap();
+        let project = Project::open(dir.path()).unwrap();
+        let (swapped_tx, swapped_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _hook = before_open::set(Box::new(move || {
+                std::fs::remove_file(&file).unwrap();
+                mkfifo(&file);
+                let _ = swapped_tx.send(());
+            }));
+            let read = project.read(Path::new("AGENTS.md"));
+            let _ = done_tx.send(read.map(|_| ()).map_err(|e| e.code()));
+        });
+        swapped_rx
+            .recv_timeout(LIMIT)
+            .expect("the hook swapped in a FIFO before the open");
+        let read = done_rx
+            .recv_timeout(LIMIT)
+            .expect("read blocked on a FIFO swapped in after its checks");
+        assert_eq!(read, Err("steering-unsafe-target"));
     }
 }
