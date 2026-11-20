@@ -5,9 +5,9 @@
 //! insert an allow directive with a reason, and explains a finding on hover. It is
 //! synchronous: one reader thread, one lint worker thread and `crossbeam-channel`.
 //!
-//! The server asks the engine through [`Linter`], and runs extra [`Check`]s next to it
-//! (the terms check and front-matter validation plug in there). Position units follow
-//! `docs/contract/positions.md`: the server negotiates `utf-8`, `utf-32` or `utf-16` with
+//! The server asks the engine through [`Linter`], and runs extra [`Check`]s next to it.
+//! Term casing comes from the engine. Only front-matter validation plugs in as a [`Check`].
+//! Position units follow `docs/contract/positions.md`: the server negotiates `utf-8`, `utf-32` or `utf-16` with
 //! [`slopvac_model::PositionEncoding::negotiate`] and derives every range from the buffer
 //! text it received.
 //!
