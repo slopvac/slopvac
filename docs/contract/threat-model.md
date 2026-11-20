@@ -211,9 +211,9 @@ The process limits (CPU time, open files, file size, core files and memory) are 
 | Redirects per request | 5, HTTPS only (loopback may use HTTP in tests) | `slopvac-8l4.9.2` |
 | Credential helper output and time | 64 KiB and 10 s | `slopvac-8l4.9.2` |
 | Compressed layer | 64 MiB | `slopvac-8l4.9.3` |
-| Expanded size of one artifact | 256 MiB, with a compression ratio of at most 100 to 1 | `slopvac-8l4.9.3` |
-| Expansion-ratio check | Starts once 1 MiB has expanded, then rejects the archive when the expanded size divided by the compressed bytes read so far exceeds 100 | `slopvac-8l4.9.3` |
-| Nodes in one extracted tree | 20,000 files and directories, counting the implicit parents of nested files and the sidecar that lists the executable files. A limit set above 20,000 is clamped to it, so every tree that extracts also verifies. | `slopvac-8l4.9.3` |
+| Expanded size of one artifact | 256 MiB. The expansion-ratio row below sets the ratio limit. | `slopvac-8l4.9.3` |
+| Expansion ratio | The check starts when the expanded size passes 1,048,576 bytes. The archive is rejected when the integer quotient of the expanded size divided by the larger of the compressed bytes read so far and 1 exceeds 100. | `crates/slopvac-plugins/src/extract.rs` |
+| Nodes in one extracted tree | 20,000 files and directories, counting the implicit parents of nested files and the sidecar that lists the executable files. A limit set above 20,000 is clamped to it, so every tree that extracts also verifies. | `crates/slopvac-plugins/src/extract.rs` |
 | Entries in one archive | 10,000 | `slopvac-8l4.9.3` |
 | Path length and depth in an archive | 1,024 bytes and 32 segments | `slopvac-8l4.9.3` |
 | Signed statement | 64 KiB | `slopvac-8l4.9.5` |

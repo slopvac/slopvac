@@ -220,25 +220,23 @@ Owner: `slopvac-8l4.21.8`.
 
 ### 1.10 Registry credentials
 
-**3.0 requirement.** Slopvac reads registry logins from the user's environment and home directory, never from the project. Three environment variables supply a login:
+**3.0 requirement.** Slopvac does not discover registry logins from the project's configuration. It reads them from the user's environment and home directory, and from the credential files that environment variables select, such as `REGISTRY_AUTH_FILE`. It does not exclude a project path from those files. A credential helper is the exception: slopvac starts one only from a trusted directory outside the project. Three environment variables supply a login:
 
 | Variable | Use | Sent to |
 |---|---|---|
 | `SLOPVAC_OCI_USER` and `SLOPVAC_OCI_TOKEN` | A username and a token. Both must be set, and a lone one is ignored. | The registry that the request goes to, and the token endpoint that the client accepts for it: the registry's own origin, or Docker Hub's `auth.docker.io`. |
-| `GITHUB_TOKEN` | A token for `ghcr.io`, sent with the username `slopvac`. | `ghcr.io` only, including its token endpoint on `ghcr.io`. For every other registry the variable is not read. |
+| `GITHUB_TOKEN` | A token for `ghcr.io`, sent with the username `slopvac`. | `ghcr.io` only, including its token endpoint on `ghcr.io`. For every other registry the token is not used. |
 
 The order, with the first match winning:
 
 1. `SLOPVAC_OCI_USER` with `SLOPVAC_OCI_TOKEN`.
 2. `GITHUB_TOKEN`, for `ghcr.io`.
 3. A static `auths` login in the Docker config (`$DOCKER_CONFIG/config.json`, else `~/.docker/config.json`).
-4. A static `auths` login in the first container auth file that exists: `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`, then `$XDG_CONFIG_HOME/containers/auth.json`.
+4. A static `auths` login in the first of these container auth files that exists: `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`, then `$XDG_CONFIG_HOME/containers/auth.json`, which is `~/.config/containers/auth.json` when `XDG_CONFIG_HOME` is unset. Slopvac reads only that one file.
 5. The credential helper that the Docker config names, found only in trusted directories (section 3.5, `credential-helper-untrusted`).
 6. No login.
 
 Section 1.7 keeps the values out of logs and errors. The `Debug` form of a credential prints `<redacted>` for the secret. The order comes from `crates/slopvac-plugins/src/oci/auth.rs`.
-
-Owner: `slopvac-8l4.9.2`.
 
 ## 2. Accessibility
 
@@ -398,13 +396,13 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 - Message text can change in any release. Codes, rule IDs, and exit codes form the interface.
 - A `fix` refusal carries its code through `Refusal::code`: `document-too-large`, `fix-outside-root`, `fix-symlink`, `fix-not-regular`, `fix-hardlinked`, `fix-not-owner`, `fix-unsafe-directory`, `fix-group-mismatch`, `fix-acl-present`, `fix-unsupported-platform` and `fix-changed`.
 
-The `slopvac plugins` group adds this code. Plugin-protocol.md, section 10, lists the other plugin host codes.
+The `slopvac plugins` group reserves this code. It is not emitted yet: nothing in the code raises it, and the message registry does not list it. Plugin-protocol.md, section 10, lists the other plugin host codes.
 
 | Code | Meaning | Exit |
 | --- | --- | --- |
-| `plugin-not-code` | `slopvac plugins trust` or `slopvac plugins untrust` named a data plugin. A data plugin has no executable content, so trust does not apply to it ([plugins.md](plugins.md), section 8). The command records nothing. | 2 |
+| `plugin-not-code` (reserved) | `slopvac plugins trust` or `slopvac plugins untrust` named a data plugin. A data plugin has no executable content, so trust does not apply to it ([plugins.md](plugins.md), section 8). The command records nothing. | 2 |
 
-The plugin library returns these further codes. Each one exits 2, because slopvac did not finish the part of the run that it names. The `Raised by` column names the command that reports it. Plugin-protocol.md, section 10, lists the codes of the plugin host that are not in this section.
+The `plugins` command is a placeholder in the binary and reports `command-not-wired`. The codes below are errors that the `slopvac-plugins` library returns. Each one exits 2, because slopvac did not finish the part of the run that it names. The `Raised by` column names the command that reports the code once the command is wired. Plugin-protocol.md, section 10, lists the codes of the plugin host that are not in this section.
 
 | Code | Meaning | Raised by |
 | --- | --- | --- |
@@ -412,9 +410,9 @@ The plugin library returns these further codes. Each one exits 2, because slopva
 | `lock-mismatch` | The resolved plugins differ from the lockfile. The message lists each difference. The lockfile is not changed (section 1.4). | `plugins sync` in CI |
 | `digest-mismatch` | Fetched or read content does not hash to the digest that the lockfile pins. | `plugins sync` |
 | `cache-tampered` | An installed tree differs from its recorded hash and the run is offline, so slopvac cannot fetch it again. Slopvac removes the tree. Online, `plugins sync` installs it again. | `plugins sync` while offline |
-| `signature-invalid` | The signature check refused an OCI artifact. The signature is missing, invalid or from a key that is not allowed. Or the lockfile has no signature for the entry, or the signature differs from the one the lockfile records. | `plugins sync` |
-| `plugin-revoked` | The revocation list names the locked artifact or the key that signed it. | `plugins sync` |
-| `sync-failed` | Any other failure of the sync that has no code of its own. It covers an archive that the extractor refuses, including one over a limit in threat-model.md, section 5.5. It also covers a git source over its limits, an artifact with the wrong layout, an unusable data directory and a network failure. | `plugins sync` |
+| `signature-invalid` | The signature check refused an OCI artifact. The signature is missing, invalid or from a key that is not allowed. Or the lockfile has no signature for the entry, or the signature differs from the one the lockfile records. In `plugins update` it also covers the candidate artifact that update checks. The update reports the refusal for that plugin and still exits 2. | `plugins sync`, `plugins update` |
+| `plugin-revoked` | The revocation list names the locked artifact or the key that signed it. In `plugins update` it also covers the candidate artifact. | `plugins sync`, `plugins update` |
+| `sync-failed` | Any other failure of the sync that has no code of its own. It covers an archive that the extractor refuses, including one over a limit in threat-model.md, section 5.5. It also covers a git source over its limits, an artifact with the wrong layout, an unusable data directory and a network failure. In `plugins update` it covers the same failures while update fetches, checks and resolves the candidate artifact. | `plugins sync`, `plugins update` |
 | `update-lock-busy` | Another `plugins update` holds the guard lock on the lockfile, and this one gave up after 30 seconds. | `plugins update` |
 | `update-failed` | Any other failure of the update that has no code of its own. It covers a lockfile that is too large, unreadable or invalid, a plugin id that the lockfile does not list, and a lockfile that cannot be written. | `plugins update` |
 | `revocation-list-invalid` | The revocation list or its artifact fails verification. The cause is no usable release key, a list over 1 MiB, a bad signature, text that is not canonical JSON of the list format, or an artifact with the wrong layers. | `plugins sync`, `plugins update` |
@@ -422,12 +420,12 @@ The plugin library returns these further codes. Each one exits 2, because slopva
 | `revocation-list-expired` | The fetched list is past its signed `expires`, which marks a replayed old list. The cache stays as it was. | `plugins sync`, `plugins update` |
 | `revocation-list-rollback` | The fetched list was issued earlier than the cached one. | `plugins sync`, `plugins update` |
 | `revocation-list-equivocation` | The fetched list has the same `issued` time as the cached one and different content. The cache stays as it was. | `plugins sync`, `plugins update` |
-| `revocation-cache-invalid` | The cached list does not verify, or a file operation on the cache failed. An online run replaces the cache. | `plugins sync`, `plugins update` |
+| `revocation-cache-invalid` | The cached list does not verify, or a file operation on the cache failed. A verified online refresh can replace a damaged cached list. A failed read, write or lock on the cache still fails the run. | `plugins sync`, `plugins update` |
 | `revocation-clock-invalid` | The clock that the caller passed is not a `YYYY-MM-DDTHH:MM:SSZ` time. The caller supplies the clock, so a user cannot cause this. It is an internal invariant. | `plugins sync`, `plugins update` |
 | `trust-key-missing` | Trust records exist but the key that they were made under is gone. | Any command that starts a code plugin |
 | `trust-key-mismatch` | The trust records were made under another key than the one in the trust store. | Any command that starts a code plugin |
 | `trust-key-unusable` | The trust key file is not private to the user, or does not hold a key. | Any command that starts a code plugin |
-| `plugin-usage` | The calling code used a plugin wrongly, for example by sending a request to a plugin that has shut down. Only code that drives the host by hand can reach it, so a user cannot. It is an internal invariant. | Any command that starts a code plugin |
+| `plugin-usage` | The plugin host refused to start the plugin or misused it. Before spawn it refuses a program file that is missing, is a symlink or is not a file in the plugin tree. It also refuses an environment variable name that is empty, repeated or can load code into the plugin. The code also covers wrong use of an open plugin, for example sending a request to one that has shut down. | Any command that starts a code plugin |
 
 Two notices come from the same revocation list. Neither blocks the run, so each leaves it complete. `revocation-list-missing` means that no list was ever fetched on this machine. `revocation-list-stale` means that the cached list is past its `expires`. Both appear in the report of an offline `plugins sync`. Threat-model.md, section 5.3, gives the freshness rules.
 
