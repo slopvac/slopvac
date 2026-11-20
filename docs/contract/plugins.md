@@ -112,7 +112,7 @@ Any other value, such as `Noun`, `adp`, or `noun` with a leading space, is inval
 | Command | Purpose |
 | --- | --- |
 | `plugins list` | Lists the built-in core and each plugin that the config names, with its kind, version and lock state. Reads local files only. |
-| `plugins search <query>` | Searches the plugin index (plugin-index.md). |
+| `plugins search <query> [--index <name>]` | Searches the plugin indexes that the config names: the signed first-party index and each `[[index.extra]]` (plugin-index.md, sections 5 to 9). `--index` limits the search to one configured index. |
 | `plugins sync` | Installs what the lockfile pins and verifies each digest (section 7). |
 | `plugins status` | Reports each locked plugin with its kind, install state and revocation state, and the trust state of each code plugin. |
 | `plugins outdated` | Lists newer versions and digests from the pinned sources. |
@@ -127,7 +127,8 @@ Any other value, such as `Noun`, `adp`, or `noun` with a leading space, is inval
 - `--registry` names the registry host, such as `ghcr.io`, and defaults to `ghcr.io`. A pin binds a key to the pair of registry host and namespace, and only to that pair.
 - `plugins pin` and `plugins rotate` refuse the namespaces `slopvac` and `core` with exit 2 (section 9).
 - No command in the group prompts. Only `plugins trust` records trust, and only `plugins pin` and `plugins rotate` change a key pin.
-- The index model, `plugins build` output and `plugins publish` are specified later.
+- Adding an index grants no trust. A key an index lists is for display, and a pin belongs to a pair of registry host and namespace, whichever index lists the plugin (plugin-index.md, section 10).
+- `plugins build` output and `plugins publish` are specified later.
 
 The group replaces the names that earlier drafts of this contract used. No old name stays as an alias.
 
@@ -170,7 +171,7 @@ No release shipped the earlier names, so no old code is retired: each one goes.
 
 A namespace is the owner segment of the repository that an artifact is published under (threat-model.md, section 5.1). Two names are special.
 
-- **`slopvac`** is the only first-party namespace. An artifact in it verifies only against the compiled plugins key (section 10), on any registry. No user pin applies to it: `plugins pin` and `plugins rotate` refuse it. An index may list an entry under `slopvac`. Search shows such an entry as an unverified claim (plugin-index.md, section 3).
+- **`slopvac`** is the only first-party namespace. An artifact in it verifies only against the compiled plugins key (section 10), on any registry. No user pin applies to it: `plugins pin` and `plugins rotate` refuse it. An index may list an entry under `slopvac`. Search shows such an entry as an unverified claim (plugin-index.md, section 3). The id `plugin-index` in `slopvac` names the first-party index. That artifact verifies by its index artifact type, so a plugin with that id cannot stand in for the index (plugin-index.md, section 5.1).
 - **`core`** is reserved as an id and as a namespace, and the reservation fails closed. A manifest, lock entry, index entry, config entry, key pin or signed statement that uses `core` as an id or a namespace is refused with exit 2. A reader refuses the whole document and does not skip the entry.
 
 The built-in core is a data plugin compiled into the binary. Its version is the binary's version, and its rules carry the prefix `core:`. It is never in the lockfile, an index or a registry, so `sync`, `update` and `outdated` never fetch it. `plugins list` shows it with the kind `data` and the binary's version.

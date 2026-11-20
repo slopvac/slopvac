@@ -28,7 +28,7 @@ Paragraphs and bullets labeled **2.x behavior** describe `packages/slopvac-lint`
 | Release-archive plugins | None. | `plugins sync` downloads a plugin archive over HTTPS and checks the digest that the lockfile pins. | `slopvac-8l4.9.3` |
 | Git plugins | None. | A plugin pinned to a git commit clones during `plugins sync` only. | `slopvac-8l4.9.3` |
 | Outdated check | None. | `plugins outdated` lists newer digests and versions from the pinned sources. | `slopvac-8l4.9.3` |
-| Plugin index search | None. | `plugins search` reads the published index over HTTPS. | `slopvac-8l4.9.8` |
+| Plugin index search | None. | `plugins search` fetches the signed first-party index from `oci://ghcr.io/slopvac/plugin-index` and each extra index that the project config names (`https://` or `oci://`), and verifies only the first-party one. Each index is cached in the per-user cache. A failed fetch shows the cache and exits 2, and offline reads the cache only ([plugin-index.md](plugin-index.md), sections 5 to 9). | `slopvac-8l4.9.8`, `slopvac-8l4.9.62` |
 | Issue submission | `prime report` prints a workflow that tells an agent to run `gh issue create` after the user approves the exact post (`guidance.py`). The `gh` program connects. | `slopvac report` posts nothing itself. It prints the exact `gh issue create` command, and `--gh --yes` runs it through the GitHub CLI, which holds the login. Slopvac never reads a token. Without `gh`, the user opens a prefilled issue-form URL. Both paths need the consent step in section 1.5. | `slopvac-8l4.12.6` |
 | Model-provider hooks | None. | A plugin that implements the model-provider hook may contact a model service. Slopvac core does not. Consent rules apply (section 1.5). | `slopvac-8l4.9.6`, `slopvac-8l4.11.3` |
 | LSP server | None. | `slopvac lsp` talks to the editor over stdio and opens no connection. | `slopvac-8l4.12.7` |
@@ -63,6 +63,7 @@ In offline mode:
 - Plugins that the lockfile pins and that sit in the local cache load normally.
 - A plugin missing from the cache exits 2 with the code `offline-plugin-missing`. The message names the plugin and the digest.
 - `plugins sync` succeeds from the cache alone. It verifies digests against `.slopvac/plugins.lock` and reports each missing plugin.
+- `plugins search` opens no connection and reads the index caches only. An index with no cache gets `offline-network-needed` and the run exits 2, with no results at all when no selected index has a cache ([plugin-index.md](plugin-index.md), section 9).
 
 These opt-outs apply to the update check only:
 
@@ -378,6 +379,15 @@ The `slopvac plugins` group adds this code. Plugin-protocol.md, section 10, list
 | Code | Meaning | Exit |
 | --- | --- | --- |
 | `plugin-not-code` | `slopvac plugins trust` or `slopvac plugins untrust` named a data plugin. A data plugin has no executable content, so trust does not apply to it ([plugins.md](plugins.md), section 8). The command records nothing. | 2 |
+
+Four codes of `plugins search` are reserved for the index fetch code (`slopvac-8l4.9.62`) and are not registered yet. Each joins this table in the change that first emits it, with its kind and exit. [plugin-index.md](plugin-index.md), section 9, gives the cases:
+
+- `index-fetch-failed`: an index could not be fetched or read. The search shows that index's cache, if any, and exits 2.
+- `index-signature-invalid`: the default index failed `sign::verify`. Same outcome.
+- `index-rollback`: the default index is older than the cached floor. Same outcome.
+- `index-unknown`: `--index` named an index that the config does not define. Exit 2.
+
+The search also reports `offline-network-needed` (section 1.3) for an index with no cache while offline.
 
 Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnostics, `slopvac-8l4.12.1` for the CLI.
 

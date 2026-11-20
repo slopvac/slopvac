@@ -97,6 +97,7 @@ const PROJECT_WIDE: &[&str] = &[
     "network",
     "review",
     "plugins",
+    "index",
     "styles",
     "extends",
     "frontmatter",
@@ -187,6 +188,70 @@ fn plugin_id() -> Shape {
         name: ConfigPhrase::NounPluginId.as_static(),
         check: is_plugin_id,
     }
+}
+
+fn is_index_name(s: &str) -> bool {
+    is_pack_id(s) && s != BUILT_IN_PLUGIN && s != DEFAULT_INDEX
+}
+
+fn index_name() -> Shape {
+    Shape::Pattern {
+        name: ConfigPhrase::NounIndexName.as_static(),
+        check: is_index_name,
+    }
+}
+
+/// The name of the signed first-party index, so no extra index may take it.
+const DEFAULT_INDEX: &str = "slopvac";
+
+/// The longest `source` of an extra index, in characters.
+const INDEX_SOURCE_MAX: usize = 2048;
+
+/// An `oci://` or `https://` source with a host and no user-info, as in the schema's
+/// `IndexExtraSource`. An `@` in the path is allowed, because a digest reference uses one.
+fn is_index_source(s: &str) -> bool {
+    let Some(rest) = s
+        .strip_prefix("oci://")
+        .or_else(|| s.strip_prefix("https://"))
+    else {
+        return false;
+    };
+    let host_len = rest
+        .find(|c: char| c.is_whitespace() || matches!(c, '/' | '?' | '#' | '@'))
+        .unwrap_or(rest.len());
+    let (host, tail) = rest.split_at(host_len);
+    !host.is_empty()
+        && (tail.is_empty() || tail.starts_with(['/', '?', '#']))
+        && !tail.contains(char::is_whitespace)
+        && s.chars().count() <= INDEX_SOURCE_MAX
+}
+
+fn index_source() -> Shape {
+    Shape::Pattern {
+        name: ConfigPhrase::NounIndexSource.as_static(),
+        check: is_index_source,
+    }
+}
+
+fn index() -> Shape {
+    table(
+        vec![
+            ("default", Shape::Bool),
+            (
+                "extra",
+                Shape::List {
+                    item: Box::new(table(
+                        vec![("name", index_name()), ("source", index_source())],
+                        &["name", "source"],
+                    )),
+                    min_items: 0,
+                    unique: false,
+                    unique_key: Some("name"),
+                },
+            ),
+        ],
+        &[],
+    )
 }
 
 fn reference() -> Shape {
@@ -358,6 +423,7 @@ pub fn config_shape() -> Shape {
                     unique_key: Some("id"),
                 },
             ),
+            ("index", index()),
             (
                 "genres",
                 list(scoped(

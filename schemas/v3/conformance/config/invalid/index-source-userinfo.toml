@@ -1,0 +1,5 @@
+schema_version = 3
+
+[[index.extra]]
+name = "acme"
+source = "https://reader:secret@plugins.acme.example/index.json"

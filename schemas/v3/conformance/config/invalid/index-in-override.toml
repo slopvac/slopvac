@@ -1,0 +1,7 @@
+schema_version = 3
+
+[[overrides]]
+files = ["docs/**"]
+
+[overrides.index]
+default = false

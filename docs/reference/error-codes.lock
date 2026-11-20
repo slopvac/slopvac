@@ -91,6 +91,8 @@ config-list-repeats text
 config-list-too-short text
 config-missing-key error
 config-no-schema-version text
+config-noun-index-name text
+config-noun-index-source text
 config-noun-pack-id text
 config-noun-plugin-id text
 config-noun-reference text

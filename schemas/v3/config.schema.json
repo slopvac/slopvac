@@ -50,6 +50,9 @@
         "$ref": "#/$defs/Source"
       }
     },
+    "index": {
+      "$ref": "#/$defs/IndexConfig"
+    },
     "genres": {
       "type": "array",
       "items": {
@@ -322,6 +325,59 @@
         "^x-": {}
       },
       "additionalProperties": false
+    },
+    "IndexConfig": {
+      "description": "Which plugin indexes `slopvac plugins search` reads. Project-scoped: no user config, environment variable, front matter or override sets it. Naming an index grants it no trust. Semantics: docs/contract/plugin-index.md, sections 5 and 6.",
+      "type": "object",
+      "properties": {
+        "default": {
+          "description": "Read the signed first-party index, named `slopvac`.",
+          "type": "boolean",
+          "default": true
+        },
+        "extra": {
+          "description": "Extra unsigned indexes, read in this order after the default index. Each `name` appears once; the config validator checks that, because JSON Schema cannot.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IndexExtra"
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "IndexExtra": {
+      "description": "An extra plugin index. Search results say `listed by <name>`. Its publisher keys are for display only.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/IndexName"
+        },
+        "source": {
+          "$ref": "#/$defs/IndexExtraSource"
+        }
+      },
+      "required": [
+        "name",
+        "source"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "IndexName": {
+      "description": "The name of an extra index: a plugin-id-shaped slug. `core` is reserved for the built-in plugin and `slopvac` names the default index.",
+      "type": "string",
+      "pattern": "^(?!(core|slopvac)(?![\\s\\S]))[a-z][a-z0-9-]*(?![\\s\\S])"
+    },
+    "IndexExtraSource": {
+      "description": "Where to fetch an extra index: an `oci://` reference or an `https://` URL. The URL carries no user-info. `http://`, `git+https://` and path sources are invalid.",
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^(oci|https)://[^\\s/?#@]+([/?#]\\S*)?(?![\\s\\S])"
     },
     "Override": {
       "description": "A glob-scoped patch. Every matching block applies in file order and the last writer of a field wins.",

@@ -45,7 +45,7 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 
 ### 1.3 Project-wide tables
 
-`guidance`, `network`, `review`, `plugins`, `styles`, `extends`, `frontmatter`, `mode` and `exclude` apply to the whole run or to file selection. They are not part of the `Settings` patch. An `[[overrides]]` or `[[genres]]` block that names one is an error, and so is a front matter field of that name. 2.x already rejected `guidance` in an override (`Override._reject_guidance`). 3.0 extends the rule to the other tables.
+`guidance`, `network`, `review`, `plugins`, `index`, `styles`, `extends`, `frontmatter`, `mode` and `exclude` apply to the whole run or to file selection. They are not part of the `Settings` patch. An `[[overrides]]` or `[[genres]]` block that names one is an error, and so is a front matter field of that name. 2.x already rejected `guidance` in an override (`Override._reject_guidance`). 3.0 extends the rule to the other tables.
 
 #### 1.3.1 Plugins
 
@@ -55,6 +55,16 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 - `core` is reserved for the built-in plugin, which the binary compiles in. An entry with the id `core` is an error.
 - A listed code plugin starts only after `slopvac plugins trust` records its content hash. A code plugin that is not trusted never starts. The run reports it with the code `plugin-untrusted` and exits 2.
 - A separate `[[packs]]` array is an unknown key.
+
+#### 1.3.2 Plugin indexes
+
+`[index]` sets which indexes `slopvac plugins search` reads (plugin-index.md, sections 5 and 6). It is project-scoped. There is no user-level config layer, and an environment variable, front matter, `[[overrides]]` block, `[[genres]]` block or inline directive cannot set it.
+
+- `default` is a boolean and defaults to `true`. It turns the signed first-party index on or off.
+- `[[index.extra]]` is a list of extra indexes. A later layer replaces the list, as for any list (section 1.2). Each entry has `name` and `source`, both required.
+- `name` is a lowercase slug of the form of a plugin id: a letter, then letters, digits and hyphens. `core` and `slopvac` are refused, because `slopvac` is the name of the default index. Each `name` appears once. A repeated name is an error at the second entry.
+- `source` is an `oci://` reference or an `https://` URL, at most 2048 characters. It carries no user-info. `http://`, `git+https://` and a path are invalid.
+- Naming an index grants it no trust (plugin-index.md, section 10).
 
 ### 1.4 Provenance
 
@@ -196,8 +206,8 @@ The `minimum_severity` row has one 2.x quirk. `CategorySettings` declares the fi
 The conformance corpus is the lasting golden. Generated schemas must accept and reject the same files.
 
 - `schemas/v3/conformance/config/valid/` holds TOML configs: a minimal one, one that uses every table, and one in the shape `migrate` writes.
-- `schemas/v3/conformance/config/invalid/` holds one defect per file. Each is mapped to a JSON pointer in `cases.toml`. The cases cover a missing or old `schema_version`, a 2.x `[vale]` table, unknown keys, bad levels, the 2.x table form of a rule and a `guidance` table inside an override. Further cases cover an invalid plugin id, the reserved id `core` and the retired `[[packs]]` array.
+- `schemas/v3/conformance/config/invalid/` holds one defect per file. Each is mapped to a JSON pointer in `cases.toml`. The cases cover a missing or old `schema_version`, a 2.x `[vale]` table, unknown keys, bad levels, the 2.x table form of a rule and a `guidance` table inside an override. Further cases cover an invalid plugin id, the reserved id `core` and the retired `[[packs]]` array, and an index with a reserved name, an unsupported source scheme or user-info in its source.
 - `schemas/v3/conformance/frontmatter/` holds YAML front matter, including a document with other keys, a document with no `slopvac:` key, and an `x-` key inside the block.
 - `schemas/v3/conformance/common/` holds `ConfigSource` instances for each layer shape.
 
-A schema checks form only. These behaviors need the resolver and have their own tests there: ambiguous rule names, duplicate scopes, `extends` cycles, denied front matter fields, and sticky offline mode. A repeated plugin id is an error that JSON Schema cannot express, so the config validator checks it and its tests cover it.
+A schema checks form only. These behaviors need the resolver and have their own tests there: ambiguous rule names, duplicate scopes, `extends` cycles, denied front matter fields, and sticky offline mode. A repeated plugin id is an error that JSON Schema cannot express, so the config validator checks it and its tests cover it. The same holds for a repeated `[[index.extra]]` name.

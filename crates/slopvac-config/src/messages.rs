@@ -437,6 +437,14 @@ pub(crate) enum ConfigPhrase {
     #[code("config-scope-directive")]
     #[text("an inline directive")]
     ScopeDirective,
+    /// Names the name of an extra plugin index in a message.
+    #[code("config-noun-index-name")]
+    #[text("index name (lowercase letters, digits and hyphens; `core` and `slopvac` are reserved)")]
+    NounIndexName,
+    /// Names the source of an extra plugin index in a message.
+    #[code("config-noun-index-source")]
+    #[text("index source (an `oci://` reference or an `https://` URL without user-info)")]
+    NounIndexSource,
     /// Names a plugin id in a message.
     #[code("config-noun-pack-id")]
     #[text("plugin id (lowercase letters, digits and hyphens)")]
