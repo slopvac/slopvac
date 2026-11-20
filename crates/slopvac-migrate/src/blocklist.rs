@@ -329,19 +329,10 @@ fn rewrite(
         return Ok(None);
     };
     if format != "toml" {
-        let reason = if matches!(format, "json" | "yml" | "yaml") {
-            MigrateText::BlocklistFormatRefused {
-                format: format.to_owned(),
-                what: describe(&refused),
-            }
-            .to_string()
-        } else {
-            MigratePhrase::BlocklistSuffix.as_static().to_owned()
-        };
         return Err(blocked(
             located(&refused, &KeyLines::default()).1,
             "schema_version",
-            reason,
+            format_refusal(format, &refused),
         ));
     }
     // A parser's message can quote the file, so no message is repeated. The position comes
@@ -431,6 +422,19 @@ fn rewrite(
     match Blocklist::parse(label, "toml", &new) {
         Ok(_) => Ok(Some((new, notes))),
         Err(e) => Err(blocked_by(label, &e, &lines)),
+    }
+}
+
+/// Why a blocklist in a format other than TOML cannot be migrated.
+fn format_refusal(format: &str, refused: &TermsError) -> String {
+    if matches!(format, "json" | "yml" | "yaml") {
+        MigrateText::BlocklistFormatRefused {
+            format: format.to_owned(),
+            what: describe(refused),
+        }
+        .to_string()
+    } else {
+        MigratePhrase::BlocklistSuffix.as_static().to_owned()
     }
 }
 
