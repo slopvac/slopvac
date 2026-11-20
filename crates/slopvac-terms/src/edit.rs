@@ -10,6 +10,7 @@ use std::path::Path;
 
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value, value};
 
+use crate::messages::TermsText;
 use crate::shape::TERMS_SCHEMA_VERSION;
 use crate::{EntryProblem, TermEntry, TermsError};
 
@@ -212,7 +213,10 @@ impl TermsDoc {
         if self.contains(&entry.term) {
             return Err(err(
                 "terms",
-                format!("term `{}` already exists", entry.term),
+                TermsText::TermExists {
+                    term: entry.term.clone(),
+                }
+                .to_string(),
             ));
         }
         match self.doc.get_mut("terms") {

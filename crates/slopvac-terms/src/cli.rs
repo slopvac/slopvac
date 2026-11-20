@@ -11,6 +11,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 
 use crate::edit::{TermsDoc, infer_ignore_case};
 use crate::import::{self, Source};
+use crate::messages::{TermsPhrase, TermsText};
 use crate::{EntryProblem, TermEntry, TermSet, TermsError, TermsFile};
 
 const DEFAULT_FILE: &str = ".slopvac/terms.toml";
@@ -20,36 +21,36 @@ fn files_arg() -> Arg {
         .long("files")
         .value_name("PATH")
         .action(ArgAction::Append)
-        .help("Terms file (default: .slopvac/terms.toml)")
+        .help(TermsPhrase::FilesHelp.as_static())
 }
 
 /// The `terms` command tree.
 #[must_use]
 pub fn command() -> Command {
     Command::new("terms")
-        .about("Manage project terms")
+        .about(TermsPhrase::About.as_static())
         .subcommand_required(true)
         .subcommand(
             Command::new("list")
-                .about("List terms")
+                .about(TermsPhrase::ListAbout.as_static())
                 .arg(Arg::new("kind").long("kind").value_name("KIND"))
                 .arg(
                     Arg::new("builtin")
                         .long("builtin")
                         .action(ArgAction::SetTrue)
-                        .help("Include the built-in list"),
+                        .help(TermsPhrase::BuiltinHelp.as_static()),
                 )
                 .arg(files_arg()),
         )
         .subcommand(
             Command::new("search")
-                .about("Find terms by substring, ignoring case")
+                .about(TermsPhrase::SearchAbout.as_static())
                 .arg(Arg::new("query").required(true))
                 .arg(files_arg()),
         )
         .subcommand(
             Command::new("add")
-                .about("Add a term; lower-case terms default to ignoring case")
+                .about(TermsPhrase::AddAbout.as_static())
                 .arg(Arg::new("term").required(true))
                 .arg(Arg::new("kind").long("kind").value_name("KIND"))
                 .arg(
@@ -68,28 +69,25 @@ pub fn command() -> Command {
                     Arg::new("case-sensitive")
                         .long("case-sensitive")
                         .action(ArgAction::SetTrue)
-                        .help("Match only the exact spelling; other casings are different words"),
+                        .help(TermsPhrase::CaseSensitiveHelp.as_static()),
                 )
                 .arg(files_arg()),
         )
         .subcommand(
             Command::new("remove")
-                .about("Remove a term")
+                .about(TermsPhrase::RemoveAbout.as_static())
                 .arg(Arg::new("term").required(true))
                 .arg(files_arg()),
         )
         .subcommand(
             Command::new("check")
-                .about("Report wrong-case terms in files; exit 1 when any are found")
+                .about(TermsPhrase::CheckAbout.as_static())
                 .arg(Arg::new("paths").required(true).num_args(1..))
                 .arg(files_arg()),
         )
         .subcommand(
             Command::new("suggest")
-                .about(
-                    "List inferred proper nouns and acronyms that are not terms yet; \
-                     nothing is written unless you name a term with --accept",
-                )
+                .about(TermsPhrase::SuggestAbout.as_static())
                 .arg(Arg::new("paths").required(true).num_args(1..))
                 .arg(
                     Arg::new("min")
@@ -97,23 +95,20 @@ pub fn command() -> Command {
                         .value_name("N")
                         .default_value("2")
                         .value_parser(clap::value_parser!(usize))
-                        .help("Only candidates seen at least N times"),
+                        .help(TermsPhrase::MinHelp.as_static()),
                 )
                 .arg(
                     Arg::new("accept")
                         .long("accept")
                         .value_name("TERM")
                         .action(ArgAction::Append)
-                        .help("Add this suggested spelling to the terms file"),
+                        .help(TermsPhrase::AcceptHelp.as_static()),
                 )
                 .arg(files_arg()),
         )
         .subcommand(
             Command::new("import")
-                .about(
-                    "Import words from another tool: a Vale accept.txt, a cspell JSON config \
-                     (YAML configs are not supported) or a codespell ignore list",
-                )
+                .about(TermsPhrase::ImportAbout.as_static())
                 .arg(Arg::new("from").long("from").required(true).value_parser([
                     "vale",
                     "cspell",
@@ -325,14 +320,18 @@ fn cmd_add(
     let mut doc = TermsDoc::open_labeled(file, &label(cwd, file))?;
     doc.add(&entry)?;
     doc.save_labeled(file, &label(cwd, file))?;
-    let how = if ignore_case {
-        "ignoring case"
+    let mode = if ignore_case {
+        TermsPhrase::ModeIgnoreCase
     } else if case_sensitive {
-        "exact spelling only"
+        TermsPhrase::ModeExact
     } else {
-        "flags wrong case"
+        TermsPhrase::ModeFlagsWrongCase
     };
-    writeln!(out, "added {term} ({how})").map_err(|e| io_err(&e))?;
+    let added = TermsText::AddedWithMode {
+        term,
+        mode: mode.as_static().to_owned(),
+    };
+    writeln!(out, "{added}").map_err(|e| io_err(&e))?;
     Ok(0)
 }
 
@@ -347,10 +346,15 @@ fn cmd_remove(
     let mut doc = TermsDoc::open_labeled(file, &label(cwd, file))?;
     if doc.remove(term) {
         doc.save_labeled(file, &label(cwd, file))?;
-        writeln!(out, "removed {term}").map_err(|e| io_err(&e))?;
+        let removed = TermsText::Removed { term: term.clone() };
+        writeln!(out, "{removed}").map_err(|e| io_err(&e))?;
         Ok(0)
     } else {
-        writeln!(out, "no term {term} in {}", label(cwd, file)).map_err(|e| io_err(&e))?;
+        let missing = TermsText::RemoveMissing {
+            term: term.clone(),
+            file: label(cwd, file),
+        };
+        writeln!(out, "{missing}").map_err(|e| io_err(&e))?;
         Ok(1)
     }
 }
@@ -371,8 +375,14 @@ fn cmd_check(
         let text = read_input(cwd, p, slopvac_fs::MAX_DOCUMENT_BYTES)?;
         for f in set.check_casing(&text, &markdown_code_ranges(&text)) {
             let (line, col) = line_col(&text, f.span.start);
-            writeln!(out, "{p}:{line}:{col}: {} -> {}", f.found, f.expected)
-                .map_err(|e| io_err(&e))?;
+            let finding = TermsText::CheckFinding {
+                file: p.clone(),
+                line,
+                column: col,
+                found: f.found,
+                expected: f.expected,
+            };
+            writeln!(out, "{finding}").map_err(|e| io_err(&e))?;
             found += 1;
         }
     }
@@ -421,7 +431,10 @@ fn cmd_suggest(
     {
         return Err(TermsError::Entry {
             path: "suggest".to_owned(),
-            message: format!("`{bad}` is not a suggestion; run without --accept to see them"),
+            message: TermsText::AcceptUnknown {
+                term: (*bad).clone(),
+            }
+            .to_string(),
             number: None,
             problem: EntryProblem::Other,
         });
@@ -439,7 +452,7 @@ fn cmd_suggest(
     }
     doc.save_labeled(target, &label(cwd, target))?;
     for term in accept {
-        writeln!(out, "added {term}").map_err(|e| io_err(&e))?;
+        writeln!(out, "{}", TermsText::Added { term: term.clone() }).map_err(|e| io_err(&e))?;
     }
     Ok(0)
 }
@@ -473,14 +486,15 @@ fn cmd_import(
         added += 1;
     }
     doc.save_labeled(target, &label(cwd, target))?;
-    writeln!(
-        out,
-        "imported {added} terms ({existing} already present, {} patterns skipped)",
-        imported.skipped.len()
-    )
-    .map_err(|e| io_err(&e))?;
+    let summary = TermsText::ImportSummary {
+        added,
+        existing,
+        skipped: imported.skipped.len(),
+    };
+    writeln!(out, "{summary}").map_err(|e| io_err(&e))?;
     for s in &imported.skipped {
-        writeln!(out, "skipped pattern: {s}").map_err(|e| io_err(&e))?;
+        let skipped = TermsText::ImportSkipped { pattern: s.clone() };
+        writeln!(out, "{skipped}").map_err(|e| io_err(&e))?;
     }
     Ok(0)
 }

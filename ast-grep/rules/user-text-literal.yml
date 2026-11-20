@@ -14,9 +14,16 @@ files:
   - crates/slopvac-report/src/**
   - crates/slopvac-lsp/src/**
   - crates/slopvac-update/src/**
+  - crates/slopvac-parse/src/**
+  - crates/slopvac-pos/src/**
+  - crates/slopvac-sanitize/src/**
+  - crates/slopvac-terms/src/**
+  - crates/slopvac-text/src/**
 ignores:
   # Audit output is for contributors reading a failing test, not for users.
   - crates/slopvac-messages/src/audit.rs
+  # A generated reference page: its prose is exempt because the prose gate covers it.
+  - crates/slopvac-terms/src/reference.rs
   - "**/tests/**"
   - "**/benches/**"
   - "**/examples/**"

@@ -11,6 +11,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::messages::{TermsPhrase, TermsText};
 use crate::{EntryProblem, TermsError};
 
 /// Parts of speech a blocklist entry can name.
@@ -132,9 +133,12 @@ fn read_raw(path: &str, format: &str, text: &str) -> Result<Raw, TermsError> {
                 .map_err(|e| parse_err(e.to_string()))?
         }
         other => {
-            return Err(parse_err(format!(
-                "unrecognized suffix `{other}`; use .toml, .json, .yml or .yaml"
-            )));
+            return Err(parse_err(
+                TermsText::BadSuffix {
+                    suffix: other.to_owned(),
+                }
+                .to_string(),
+            ));
         }
     };
     Ok(raw)
@@ -210,15 +214,13 @@ impl Blocklist {
                 .map(|k| format!("`{k}`"))
                 .collect::<Vec<_>>();
             let named = if named.is_empty() {
-                "nothing".to_owned()
+                TermsPhrase::DefinesNothing.as_static().to_owned()
             } else {
                 named.join(", ")
             };
             return Err(TermsError::Parse {
                 path: path.to_owned(),
-                message: format!(
-                    "no `entries` array; it defines {named}. Each word is an `[[entries]]` table"
-                ),
+                message: TermsText::MissingEntries { named }.to_string(),
             });
         };
         let unknown = |key: String| TermsError::UnknownKey {
@@ -246,7 +248,7 @@ impl Blocklist {
                 return Err(entry_err(
                     EntryProblem::MissingWord,
                     number,
-                    format!("entry {number} has no `word`"),
+                    TermsText::EntryNoWord { number }.to_string(),
                 ));
             }
             let raw_pos = record.pos.unwrap_or_default();
@@ -254,10 +256,11 @@ impl Blocklist {
                 return Err(entry_err(
                     EntryProblem::UnknownPos,
                     number,
-                    format!(
-                        "entry `{word}` has an unrecognized `pos` {raw_pos:?}; use noun, verb, \
-                         adjective, adverb, preposition, conjunction, pronoun or article"
-                    ),
+                    TermsText::EntryUnknownPos {
+                        word,
+                        pos: format!("{raw_pos:?}"),
+                    }
+                    .to_string(),
                 ));
             };
             let reason = record.reason.unwrap_or_default().trim().to_owned();
@@ -265,9 +268,11 @@ impl Blocklist {
                 return Err(entry_err(
                     EntryProblem::MissingReason,
                     number,
-                    format!(
-                        "entry `{word}` ({pos:?}) has no `reason`; every refused word needs one"
-                    ),
+                    TermsText::EntryNoReason {
+                        word,
+                        pos: format!("{pos:?}"),
+                    }
+                    .to_string(),
                 ));
             }
             let key = (word.clone(), pos);
@@ -275,7 +280,13 @@ impl Blocklist {
                 return Err(entry_err(
                     EntryProblem::Duplicate,
                     number,
-                    format!("duplicate entry `{word}` ({pos:?}) at entries {first} and {number}"),
+                    TermsText::EntryDuplicate {
+                        word,
+                        pos: format!("{pos:?}"),
+                        first: *first,
+                        number,
+                    }
+                    .to_string(),
                 ));
             }
             at.insert(key.clone(), number);
