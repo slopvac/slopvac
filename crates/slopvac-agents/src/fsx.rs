@@ -77,8 +77,25 @@ pub fn target(relative: &str) -> Result<PathBuf, AgentsError> {
     Ok(clean)
 }
 
+/// Make the open return at once for a FIFO or device swapped in at the leaf.
+#[cfg(unix)]
+fn nonblocking(options: &mut OpenOptions) -> std::io::Result<()> {
+    use cap_std::fs::OpenOptionsExt;
+    let flag = i32::try_from(rustix::fs::OFlags::NONBLOCK.bits())
+        .map_err(|_| std::io::Error::other("O_NONBLOCK does not fit"))?;
+    options.custom_flags(flag);
+    Ok(())
+}
+
+#[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps, reason = "matches the Unix signature")]
+fn nonblocking(_: &mut OpenOptions) -> std::io::Result<()> {
+    Ok(())
+}
+
 /// The permissions of the regular file `name`, read from a handle opened
-/// without following a symlink; `None` if it does not exist.
+/// without following a symlink and without blocking; `None` if it does not
+/// exist. A FIFO, device or directory is an error.
 ///
 /// `resolve` already rewrote every link in the path. Refusing a leaf that
 /// became a link since then keeps a swapped link from lending its target's
@@ -87,6 +104,7 @@ pub fn target(relative: &str) -> Result<PathBuf, AgentsError> {
 fn source_mode(parent: &Dir, name: &std::ffi::OsStr) -> std::io::Result<Option<Permissions>> {
     let mut options = OpenOptions::new();
     options.read(true).follow(FollowSymlinks::No);
+    nonblocking(&mut options)?;
     match parent.open_with(name, &options) {
         Ok(source) => {
             let meta = source.metadata()?;
@@ -484,6 +502,23 @@ mod mode_tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn a_fifo_at_the_source_is_refused_without_blocking() {
+        use rustix::fs::{CWD, FileType, Mode, mknodat};
+        let dir = tempfile::tempdir().unwrap();
+        mknodat(
+            CWD,
+            dir.path().join("pipe.md"),
+            FileType::Fifo,
+            Mode::RUSR | Mode::WUSR,
+            0,
+        )
+        .unwrap();
+        let handle = Dir::open_ambient_dir(dir.path(), ambient_authority()).unwrap();
+        let err = source_mode(&handle, std::ffi::OsStr::new("pipe.md")).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidInput);
     }
 
     #[test]

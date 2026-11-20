@@ -2465,6 +2465,7 @@ dependencies = [
  "minijinja",
  "pulldown-cmark",
  "rstest",
+ "rustix",
  "serde",
  "serde-saphyr",
  "serde_json",

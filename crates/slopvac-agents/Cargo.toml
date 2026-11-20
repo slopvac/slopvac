@@ -30,6 +30,11 @@ slopvac-text.workspace = true
 slopvac-update.workspace = true
 thiserror.workspace = true
 
+# O_NONBLOCK for the source open in `fsx`, so a FIFO swapped in at the leaf
+# cannot block it.
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs"] }
+
 [dev-dependencies]
 rstest.workspace = true
 serde-saphyr.workspace = true
