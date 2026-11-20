@@ -9,6 +9,7 @@
 mod common;
 
 use common::{category, engine, id, places, rule, ruleset, settings, tokens};
+use rstest::rstest;
 use serde_json::json;
 use slopvac_engine::{Engine, Input, Level, Mode};
 use slopvac_model::{NoticeLevel, Severity};
@@ -124,6 +125,31 @@ fn rules_of_kinds_the_engine_does_not_run_are_reported_in_an_info_notice() {
         doc.gate.is_passed(),
         "an info notice does not fail the gate"
     );
+}
+
+#[rstest]
+#[case::metric(
+    json!({"kind": "metric", "metric": "syllables_per_word", "threshold": 2, "comparison": "gt"}),
+    json!({"scope": "sentence"}),
+)]
+#[case::unknown_structure_check(
+    json!({"kind": "structure", "check": "mystery-check"}),
+    json!({}),
+)]
+fn rule_kind_not_implemented_lists_its_rules_in_an_info_notice(
+    #[case] matcher: serde_json::Value,
+    #[case] extra: serde_json::Value,
+) {
+    let doc = lint(
+        &engine(&[rule("pending", &matcher, &extra)]),
+        "Some text.\n",
+    );
+    let [n] = doc.unchecked.as_slice() else {
+        panic!("{:?}", doc.unchecked)
+    };
+    assert_eq!(n.code.as_str(), "rule-kind-not-implemented");
+    assert_eq!(n.level, NoticeLevel::Info);
+    assert_eq!(n.data["rules"], json!(["core:cat.pending"]));
 }
 
 #[test]
