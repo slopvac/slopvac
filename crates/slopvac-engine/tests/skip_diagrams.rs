@@ -82,6 +82,39 @@ fn a_fenced_diagram_is_checked_and_positioned_in_the_host_file() {
     assert!(f.contexts.iter().any(|c| c.as_str() == "diagram-label"));
 }
 
+fn sees_diagram_label(doc: &slopvac_model::Document) -> bool {
+    doc.contexts_seen
+        .iter()
+        .any(|c| c.as_str() == "diagram-label")
+}
+
+#[test]
+fn contexts_seen_lists_the_diagram_context_of_a_fenced_diagram_without_findings() {
+    let source = "Intro.\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n";
+    let doc = diagram_engine(settings())
+        .lint(&Input::markdown("a.md", source))
+        .unwrap();
+    assert!(doc.findings.is_empty());
+    assert!(sees_diagram_label(&doc));
+}
+
+#[test]
+fn contexts_seen_lists_the_diagram_context_of_a_diagram_file() {
+    let source = "flowchart TD\n  A[This label has far too many words in it] --> B[End]\n";
+    let doc = diagram_engine(settings())
+        .lint(&Input::diagram("flow.mmd", source, Format::Mermaid))
+        .unwrap();
+    assert!(sees_diagram_label(&doc));
+}
+
+#[test]
+fn contexts_seen_omits_the_diagram_context_without_a_diagram() {
+    let doc = diagram_engine(settings())
+        .lint(&Input::markdown("a.md", "Just prose here.\n"))
+        .unwrap();
+    assert!(!sees_diagram_label(&doc));
+}
+
 #[test]
 fn a_quoted_fence_is_positioned_past_the_quote_markers() {
     let source = "> ```mermaid\n> sequenceDiagram\n> participant A as This label has far too many words in it\n> ```\n";

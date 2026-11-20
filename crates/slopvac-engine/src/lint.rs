@@ -412,6 +412,8 @@ struct DiagramResult {
     unchecked: Vec<Notice>,
     /// Info notices for diagrams of an unsupported type.
     notices: Vec<Notice>,
+    /// Whether the input holds a diagram, so its labels are a context the document has.
+    has_diagram: bool,
 }
 
 /// The `unrun` key of capitalization rules in a style the engine does not run.
@@ -940,6 +942,7 @@ impl Engine {
         let mut findings = run.lexical()?;
         // Code-comment mode runs the lexical rules only; `comment_notice` lists the rest.
         let mut diagram_notices = Vec::new();
+        let mut seen = tags.kinds_seen();
         if !matches!(input.kind, Kind::Comments(_)) {
             findings.extend(run.vocabulary()?);
             findings.extend(run.term_casing()?);
@@ -949,6 +952,9 @@ impl Engine {
             findings.extend(diagrams.findings);
             extra.extend(diagrams.unchecked);
             diagram_notices = diagrams.notices;
+            if diagrams.has_diagram {
+                seen.push(slopvac_diagrams::CONTEXT);
+            }
         }
         findings.extend(run.invalid_directives()?);
         // Lookups that passed their budget answered nothing, so nothing found above stands.
@@ -967,7 +973,7 @@ impl Engine {
             self.not_run_notices(&genre.id)?
         };
         notices.extend(extra);
-        let document = self.document(input, &prepared, &tags, genre, findings, notices);
+        let document = self.document(input, &prepared, seen, genre, findings, notices);
         Ok((document, diagram_notices))
     }
 
@@ -1199,18 +1205,17 @@ impl Engine {
         &self,
         input: &Input<'_>,
         prepared: &Prepared<'_>,
-        tags: &TagIndex,
+        mut seen: Vec<&str>,
         genre: GenreResult,
         findings: Vec<Finding>,
         extra: Vec<Notice>,
     ) -> Document {
         let words = prepared.words();
-        let mut seen = tags.kinds_seen();
         if matches!(input.kind, Kind::Comments(_)) && !prepared.blocks().is_empty() {
             seen.push(COMMENT_CONTEXT);
-            seen.sort_unstable();
-            seen.dedup();
         }
+        seen.sort_unstable();
+        seen.dedup();
         let mut unchecked = extra;
         // Code-comment mode runs no vocabulary rule, so it has no vocabulary notice.
         if !matches!(input.kind, Kind::Comments(_)) {
@@ -2000,6 +2005,7 @@ impl Run<'_> {
             findings: out,
             unchecked,
             notices,
+            has_diagram: !diagrams.is_empty(),
         })
     }
 
