@@ -539,6 +539,12 @@ mod tests {
     use super::*;
     use crate::env::MapEnv;
 
+    /// Joins a token prefix and body at runtime, so the source never holds a token-shaped
+    /// literal that a secret scanner would flag.
+    fn fake(prefix: &str, body: &str) -> String {
+        format!("{prefix}{body}")
+    }
+
     #[test]
     fn path_like_words() {
         for (word, want) in [
@@ -653,13 +659,16 @@ mod tests {
 
     #[test]
     fn secrets_are_replaced() {
-        let token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+        let token = fake("ghp_", "abcdefghijklmnopqrstuvwxyz0123456789");
         assert_eq!(
             scrub_secrets(&format!("use {token} here")),
             "use <token> here"
         );
         assert_eq!(
-            scrub_secrets("github_pat_11AAAAAAA0abcdefghij_klmnopqrstuv end"),
+            scrub_secrets(&format!(
+                "{} end",
+                fake("github_pat_", "11AAAAAAA0abcdefghij_klmnopqrstuv")
+            )),
             "<token> end"
         );
         assert_eq!(
@@ -727,10 +736,14 @@ mod tests {
     #[test]
     fn a_github_token_split_by_whitespace_is_still_one_token() {
         for input in [
-            "ghp_ABCDEFGH\nIJKLMNOPQRSTUVWXYZ0123456789",
-            "ghp_abcdef12 \n 3456789abcdefghijklmnopqrstu",
-            "ghp_ABCDEFGHIJKLMNOP  QRSTUVWXYZ0123456789",
-            "github_pat_11AAAAAAA0abcdefghij\n_klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789012345678",
+            fake("ghp_", "ABCDEFGH\nIJKLMNOPQRSTUVWXYZ0123456789"),
+            fake("ghp_", "abcdef12 \n 3456789abcdefghijklmnopqrstu"),
+            fake("ghp_", "ABCDEFGHIJKLMNOP  QRSTUVWXYZ0123456789"),
+            format!(
+                "{}\n{}",
+                fake("github_pat_", "11AAAAAAA0abcdefghij"),
+                "_klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789012345678"
+            ),
         ] {
             let out = scrub_secrets(&format!("x {input} y"));
             assert_eq!(out, "x <token> y", "{input}");
