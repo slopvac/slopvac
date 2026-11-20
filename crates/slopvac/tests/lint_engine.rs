@@ -1356,7 +1356,6 @@ fn a_path_through_a_dangling_symlink_hides_the_external_directory() {
 
 /// A flag the build accepts but cannot honour must refuse before linting, not lint quietly.
 #[rstest::rstest]
-#[case::fix("--fix")]
 #[case::diff_working_tree("--diff-working-tree")]
 fn an_unwired_lint_flag_refuses_with_exit_2_and_no_report(#[case] flag: &str) {
     let (dir, _) = project("a.md", "It is important to note that this works.\n", None);

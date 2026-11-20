@@ -13,7 +13,9 @@ use std::sync::Arc;
 use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
-use slopvac_engine::{EngineError, Input, Kind};
+use slopvac_engine::{
+    Engine, EngineError, FileContext, FileFix, Input, Kind, fix_file_in,
+};
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
@@ -45,6 +47,8 @@ pub struct LintRequest {
     pub code_comments: bool,
     /// Settings from the command line.
     pub overrides: Overrides,
+    /// `--fix`: write the safe replacements back to each file before it is reported.
+    pub fix: bool,
 }
 
 /// The result of one run.
@@ -117,6 +121,8 @@ struct Item {
     config: Option<(Arc<LoadedConfig>, PathBuf)>,
     /// The directory that holds the file, canonical. Not set for standard input.
     dir: Option<PathBuf>,
+    /// The file, canonical. Not set for standard input. `--fix` writes here.
+    path: Option<PathBuf>,
 }
 
 /// The run so far.
@@ -582,6 +588,7 @@ fn collect_stdin(
             kind,
             config: config_for(configs, &request.root, Path::new(shown))?,
             dir: None,
+            path: None,
         }),
         (Err(why), _) => run.skip("input-unsupported", shown, format!("{shown}: {why}")),
         (_, Err(_)) => run.skip("input-not-utf8", shown, format!("{shown}: not valid UTF-8")),
@@ -692,6 +699,7 @@ fn collect_targets(
                 kind,
                 config,
                 dir: canonical.parent().map(Path::to_path_buf),
+                path: Some(canonical),
             });
         }
     }
@@ -895,7 +903,86 @@ fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
     roots
 }
 
-fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: Run) -> RunOutcome {
+/// What a fix run needs besides the items: the engine of the group and, for each input of
+/// the group, the lint context `lint_items` gives the engine.
+struct FixContext<'a> {
+    request: &'a LintRequest,
+    engine: &'a Engine,
+    relatives: &'a [Option<String>],
+    declared: &'a [Option<String>],
+}
+
+/// The entries of `values` whose flag in `keep` is set.
+fn retain<T: Clone>(values: &[T], keep: &[bool]) -> Vec<T> {
+    values
+        .iter()
+        .zip(keep)
+        .filter(|(_, keep)| **keep)
+        .map(|(value, _)| value.clone())
+        .collect()
+}
+
+/// Write the safe replacements of each file in `indexes` and swap the text of the item for
+/// the fixed text, so the report that follows describes the file as it is now.
+///
+/// Returns, for each index, whether the file is still to be reported: a file the engine
+/// refused to write is recorded as not checked (exit 2) and left out. Standard input has no
+/// file and is never written.
+fn fix_group(
+    context: &FixContext<'_>,
+    indexes: &[usize],
+    items: &mut [Item],
+    run: &mut Run,
+) -> Vec<bool> {
+    let mut keep = Vec::with_capacity(indexes.len());
+    for (position, &index) in indexes.iter().enumerate() {
+        let item = &mut items[index];
+        let Some(path) = item.path.clone() else {
+            keep.push(true);
+            continue;
+        };
+        let file_context = FileContext {
+            kind: item.kind,
+            shown: Some(&item.shown),
+            relative_path: context.relatives[position].as_deref(),
+            declared_genre: context.declared[position].as_deref(),
+        };
+        let fixed = fix_file_in(
+            context.engine,
+            &context.request.root,
+            &path,
+            &file_context,
+            false,
+            None,
+            &mut |_| Ok(()),
+        );
+        match fixed {
+            Ok(FileFix::Done(result)) => {
+                if result.written {
+                    item.text = result.report.text.clone();
+                }
+                keep.push(true);
+            }
+            Ok(FileFix::Refused(refusal)) => {
+                let shown = item.shown.clone();
+                run.skip(
+                    refusal.code(),
+                    &shown,
+                    format!("{shown}: not fixed ({})", refusal.code()),
+                );
+                keep.push(false);
+            }
+            Err(err) => {
+                let shown = item.shown.clone();
+                run.skip("fix-failed", &shown, format!("{shown}: {err}"));
+                keep.push(false);
+            }
+        }
+    }
+    keep
+}
+
+fn lint_items(request: &LintRequest, mut items: Vec<Item>, rules: Catalog, mut run: Run) -> RunOutcome {
     let groups = match group_by_settings(request, &items, &rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
@@ -917,6 +1004,24 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
             .iter()
             .map(|&i| items[i].config.as_ref().map(|(_, rel)| rel_text(rel)))
             .collect();
+        let (indexes, relatives) = if request.fix {
+            // The fix needs the genre each file declares before it is fixed. The report
+            // below reads the front matter again from the text that is left.
+            let declared: Vec<Option<String>> = indexes
+                .iter()
+                .map(|&i| declared_genre(&read_block(&items[i])))
+                .collect();
+            let context = FixContext {
+                request,
+                engine: &engine,
+                relatives: &relatives,
+                declared: &declared,
+            };
+            let keep = fix_group(&context, &indexes, &mut items, &mut run);
+            (retain(&indexes, &keep), retain(&relatives, &keep))
+        } else {
+            (indexes, relatives)
+        };
         let reads: Vec<Read> = indexes.iter().map(|&i| read_block(&items[i])).collect();
         for (&i, read) in indexes.iter().zip(&reads) {
             run.front_matter_errors(&items[i], read);
