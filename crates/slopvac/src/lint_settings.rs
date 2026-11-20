@@ -16,7 +16,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::Value as Json;
-use slopvac_config::{Inputs, Layer, PackFile, Presets};
+use slopvac_config::{Inputs, PackFile, Presets};
 use slopvac_config::{LevelFrom, LoadedConfig, Resolved, Setting, describe};
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
@@ -341,8 +341,11 @@ fn selected(rules: &Catalog, names: &[String]) -> Result<Vec<String>, CliError> 
 /// Whether the level came from a rule definition, a style or the genre chain, which the
 /// profile's `severity_shift` moves. A level that a config `rules` or `categories` entry
 /// sets is final.
-fn is_inherited(layer: Layer) -> bool {
-    matches!(layer, Layer::Core | Layer::Style | Layer::Genre)
+fn is_inherited(layer: ConfigLayer) -> bool {
+    matches!(
+        layer,
+        ConfigLayer::Core | ConfigLayer::Style | ConfigLayer::Genre
+    )
 }
 
 /// Build the engine settings for a file from its resolved config.

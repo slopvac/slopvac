@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 use slopvac_config::tree::{LineIndex, Node};
-use slopvac_config::{Layer, Setting, Source};
+use slopvac_config::{ConfigLayer, Setting, located_source};
 use slopvac_context::{Budget, CategorySettings, GenreSpec, RuleLevel};
 use slopvac_model::PackId;
 
@@ -67,12 +67,12 @@ pub(crate) fn settings(pack: &PackId, file: &str, genre: &GenreFile) -> Vec<Sett
         out.push(Setting {
             path,
             value,
-            source: Source {
-                layer: Layer::Genre,
-                file: Some(display_path(pack, file)),
-                line,
-                column,
-            },
+            source: located_source(
+                ConfigLayer::Genre,
+                Some(display_path(pack, file)),
+                line.unwrap_or(0),
+                column.unwrap_or(0),
+            ),
         });
     };
     if let Some(profile) = spec.profile {

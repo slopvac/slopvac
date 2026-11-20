@@ -2,11 +2,12 @@
 
 mod common;
 
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 use serde_json::json;
 use slopvac_config::resolve::describe;
-use slopvac_config::{Inputs, Layer, LoadedConfig, load, render_explain};
+use slopvac_config::{ConfigLayer, Inputs, LoadedConfig, load, render_explain};
 use slopvac_styles::{BuiltinSource, MapSource, StylePresets, StyleSource};
 
 fn resolve_project(config: &str) -> (LoadedConfig, slopvac_config::Resolved) {
@@ -40,9 +41,12 @@ fn a_value_from_a_preset_names_the_preset_and_its_line() {
     let source = resolved
         .source(&["rules", "ste-verbs.passive-voice"])
         .unwrap();
-    assert_eq!(source.layer, Layer::Style);
+    assert_eq!(source.layer, ConfigLayer::Style);
     assert_eq!(source.file.as_deref(), Some("preset:ste"));
-    assert_eq!((source.line, source.column), (Some(31), Some(1)));
+    assert_eq!(
+        (source.line, source.column),
+        (NonZeroUsize::new(31), NonZeroUsize::new(1))
+    );
     assert_eq!(describe(source), "style preset:ste:31:1");
 }
 
@@ -53,7 +57,10 @@ fn a_dial_inside_an_inline_table_points_at_its_own_key() {
     let source = resolved
         .source(&["categories", "ste-safety", "weight"])
         .unwrap();
-    assert_eq!((source.line, source.column), (Some(11), Some(61)));
+    assert_eq!(
+        (source.line, source.column),
+        (NonZeroUsize::new(11), NonZeroUsize::new(61))
+    );
     assert_eq!(
         resolved.get(&["categories", "ste-safety", "weight"]),
         Some(&json!(1.2))
