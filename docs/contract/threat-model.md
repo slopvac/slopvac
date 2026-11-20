@@ -217,7 +217,7 @@ The process limits (CPU time, open files, file size, core files and memory) are 
 | Entries, depth and file bytes in one managed Python environment | 20,000 entries, 32 levels and 1 GiB | `slopvac-8l4.9.31` |
 | One `uv` run or interpreter probe during an environment build | 10 minutes, then kill | `slopvac-8l4.9.31` |
 | Plugin index document | 32 MiB | `slopvac-8l4.9.8` |
-| Regex pattern length in a data plugin | 4,096 bytes | `slopvac-8l4.3.20` |
+| Regex pattern length in a data plugin | 8,192 bytes | `slopvac-8l4.3.20` |
 | PCRE2 match, depth and heap limits | fixed in `slopvac-8l4.3.20`; a limit hit is an error, never a no-match | `slopvac-8l4.3.20` |
 
 ## 6. Threat register
@@ -365,7 +365,7 @@ The spawn check misses an edit that keeps the size and restores the modification
 |---|---|---|---|---|---|---|---|
 | X1 | A plugin ships a pattern with catastrophic backtracking that hangs or exhausts a run. | D | CWE-1333, CWE-400 | M/M | Set PCRE2 match, depth and heap limits and a JIT stack cap on every compile, at the values `slopvac-8l4.3.20` fixes. Matching has no global state that a plugin can raise. | `slopvac-8l4.3.20`, `slopvac-8l4.3.7` | TM-54 (a nested-quantifier pattern against a hostile document ends at the limit) |
 | X2 | A limit hit is read as no match, so a plugin silently passes bad text or a plugin hides a finding. | T, R | CWE-755, CWE-703 | M/H | A limit error is a distinct, reported failure: the rule is incomplete, the run exits 2, and the diagnostic names the rule and document. Never "no match". | `slopvac-8l4.3.7` | TM-55 (limit hit gives exit 2 and a diagnostic) |
-| X3 | An oversized pattern, alternations of thousands of branches or many rules slow compilation. | D | CWE-770 | M/M | Pattern length 4,096 bytes. Total rules and compiled size capped per plugin and per run. Compilation of an invalid or over-limit pattern fails the plugin. | `slopvac-8l4.3.20`, `slopvac-8l4.9.1` | TM-56 |
+| X3 | An oversized pattern, alternations of thousands of branches or many rules slow compilation. | D | CWE-770 | M/M | Authored pattern length 8,192 bytes. Total rules and compiled size capped per plugin and per run. Compilation of an invalid or over-limit pattern fails the plugin. | `slopvac-8l4.3.20`, `slopvac-8l4.9.1` | TM-56 |
 | X4 | Pattern options change engine behavior: verbs such as `(*LIMIT_MATCH=)`, callouts, `\K` abuse, recursion. | T, D | CWE-1333 | L/M | Compile with the plugin API's fixed flags. A pattern verb may only lower a limit. Callouts are not available (no callback is set). | `slopvac-8l4.3.20` | TM-57 |
 | X5 | A 100 MiB document makes a safe pattern slow. | D | CWE-400 | M/M | Per-document byte cap and per-rule time accounting. The run reports the slow rule, exits 2 at the cap. | `slopvac-8l4.3.20` | TM-58 |
 | X6 | A hostile plugin shapes verdicts: severity, suppression or ignore rules that hide real findings. | T | CWE-807 | M/H | Project config, not a plugin, decides which plugins load. Plugin-provided suppression stays within the plugin's own rules. `--explain-config` shows provenance. | `slopvac-8l4.9.1`, `slopvac-8l4.4.2` | TM-59 (a plugin cannot suppress another plugin's rule) |
