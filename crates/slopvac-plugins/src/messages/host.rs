@@ -1164,6 +1164,10 @@ mod tests {
     /// Every published code, rendered with sample parameters, beside the text the host printed
     /// before the registry existed.
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table pins every published text; splitting it would only move rows"
+    )]
     fn every_published_code_keeps_its_text_and_is_registered() {
         let table: Vec<(HostMessage, &str, &str)> = vec![
             (
@@ -1313,6 +1317,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table pins every published text; splitting it would only move rows"
+    )]
     fn every_sentence_keeps_its_text_and_is_registered() {
         let table: Vec<(HostText, &str)> = vec![
             (
