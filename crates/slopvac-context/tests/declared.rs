@@ -2,8 +2,8 @@
 #![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{
-    DeclaredContextTagger, GenreAssignment, PlainDocument, ResolveOptions, TagRegistry,
-    builtin_genres, builtin_registry, context_hint,
+    DeclaredContextTagger, DocumentView, GenreAssignment, PlainDocument, ResolveOptions,
+    TagRegistry, builtin_genres, builtin_registry, context_hint,
 };
 
 const SECURITY_TEXT: &str = "# Policy\n\nTokens grant credentials. The sandbox denies secrets and approval escalates privileges.\n";
@@ -176,6 +176,13 @@ fn a_path_assigned_context_names_the_genre_that_declares_it() {
 )]
 #[case::nested_collision("---\nslopvac:\n  v: 3\n  rules:\n    genre: security\n---\n", false)]
 #[case::flow_mapping("---\nslopvac: {v: 3, genre: security}\n---\n", true)]
+#[case::crlf_lines("---\r\nslopvac:\r\n  v: 3\r\n  genre: security\r\n---\r\n", true)]
+#[case::byte_order_mark("\u{feff}---\nslopvac:\n  v: 3\n  genre: security\n---\n", true)]
+#[case::dots_closer("---\nslopvac:\n  v: 3\n  genre: security\n...\n", true)]
+#[case::toml("+++\n[slopvac]\nv = 3\ngenre = \"security\"\n+++\n", true)]
+#[case::toml_wrong_version("+++\n[slopvac]\nv = 2\ngenre = \"security\"\n+++\n", false)]
+#[case::json("{\"slopvac\": {\"v\": 3, \"genre\": \"security\"}}\n", true)]
+#[case::unclosed("---\nslopvac:\n  v: 3\n  genre: security\n", false)]
 #[case::block_beside_top_level(
     "---\ngenre: consumer\nslopvac:\n  v: 3\n  genre: security\n---\n",
     true
@@ -189,4 +196,14 @@ fn only_a_valid_versioned_block_declares_a_genre(#[case] front: &str, #[case] de
         declared,
         "{kinds:?}"
     );
+}
+
+#[rstest::rstest]
+#[case::yaml("---\ntitle: Notes\n---\n")]
+#[case::yaml_crlf("---\r\ntitle: Notes\r\n---\r\n")]
+#[case::toml("+++\ntitle = \"Notes\"\n+++\n")]
+#[case::json("{\"title\": \"Notes\"}\n")]
+fn top_level_front_matter_reads_in_every_format(#[case] front: &str) {
+    let doc = PlainDocument::from_markdown("a.md", &format!("{front}# Body\n\nText.\n"));
+    assert_eq!(doc.front_matter("title"), Some("Notes"));
 }

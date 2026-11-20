@@ -6,7 +6,8 @@
 
 use std::ops::Range;
 
-use slopvac_config::frontmatter::Policy;
+use slopvac_config::frontmatter::{self, Policy, extract, parse_block};
+use slopvac_config::tree::Value;
 
 /// Block kinds a tagger can see.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
@@ -159,17 +160,24 @@ pub struct OwnedBlock {
 }
 
 impl PlainDocument {
-    /// Read the front matter: the top-level `key: value` lines of `text`, and the string
-    /// fields of the `slopvac:` block as the project's reader validates them (`src` is the
-    /// whole document). A block that fails validation contributes nothing.
-    fn read_front_matter(&mut self, text: &str, src: &str) {
-        for line in text.lines().filter(|l| !l.starts_with([' ', '\t'])) {
-            if let Some((k, v)) = line.split_once(':') {
-                self.front_matter
-                    .push((k.trim().to_string(), v.trim().trim_matches('"').to_string()));
-            }
+    /// Read the front matter of `src` with the config crate's reader, so every format and
+    /// boundary it supports works here: YAML, TOML and JSON, a byte order mark, CRLF and a
+    /// `...` closer. Fills the top-level scalar fields and the string fields of the
+    /// `slopvac:` block as that reader validates them; a block that fails validation
+    /// contributes nothing. Returns the byte offset where the front matter ends.
+    fn read_front_matter(&mut self, src: &str) -> usize {
+        let Some(block) = extract(src) else {
+            return 0;
+        };
+        if let Ok(root) = parse_block(src, &block)
+            && let Value::Table(entries) = root.value
+        {
+            self.front_matter = entries
+                .into_iter()
+                .filter_map(|e| scalar_text(e.node.value).map(|text| (e.key, text)))
+                .collect();
         }
-        let read = slopvac_config::frontmatter::read(src, &self.path, &Policy::core());
+        let read = frontmatter::read(src, &self.path, &Policy::core());
         self.block = read
             .settings
             .into_iter()
@@ -178,6 +186,18 @@ impl PlainDocument {
                 _ => None,
             })
             .collect();
+        block.outer.end
+    }
+}
+
+/// A front matter scalar as text. A table, an array and `null` have none.
+fn scalar_text(value: Value) -> Option<String> {
+    match value {
+        Value::Str(s) | Value::Datetime(s) => Some(s),
+        Value::Bool(b) => Some(b.to_string()),
+        Value::Int(i) => Some(i.to_string()),
+        Value::Float(f) => Some(f.to_string()),
+        Value::Null | Value::Array(_) | Value::Table(_) => None,
     }
 }
 
@@ -195,13 +215,7 @@ impl PlainDocument {
         let mut para: Option<(usize, usize, BlockKind)> = None;
         let mut offset = 0;
         let mut fence = false;
-        let mut front_end = 0;
-        if let Some(rest) = src.strip_prefix("---\n")
-            && let Some(end) = rest.find("\n---")
-        {
-            doc.read_front_matter(&rest[..end], src);
-            front_end = 4 + end + 4;
-        }
+        let front_end = doc.read_front_matter(src);
         let flush = |doc: &mut PlainDocument,
                      para: &mut Option<(usize, usize, BlockKind)>,
                      heads: &[(usize, String)]| {
