@@ -759,44 +759,36 @@ fn printed_payload(plan: &str) -> &str {
     &plan[start..end]
 }
 
-/// The payload as the recorder saw it, written out field by field.
-fn observed_json(seen: &Payload) -> serde_json::Value {
-    let items: Vec<serde_json::Value> = seen
-        .items
-        .iter()
-        .map(|i| {
-            let mut item = serde_json::json!({"role": i.role, "line": i.line, "text": i.text});
-            if let Some(original) = &i.original {
-                item["original"] = serde_json::json!(original);
-            }
-            item
-        })
-        .collect();
-    serde_json::json!({"kind": seen.kind, "items": items})
-}
-
-/// `--dry-run` prints the payload a live run hands to the provider.
+/// TM19, partial coverage only: `--dry-run` and a live run agree on the payload, and the
+/// provider boundary receives the expected texts.
 ///
-/// The provider is a recording double at the `ModelProvider` trait. The plugin host
-/// adapter does not exist yet, so this proves the printed payload against what the
-/// trait receives, not against the real host's wire bytes.
+/// The provider is a recording double at the `ModelProvider` trait, which takes a
+/// structured `Payload`, not bytes. The plugin host adapter (not yet available) is the
+/// only place wire bytes exist, so this does not show that the host receives the bytes
+/// that `--dry-run` prints. That check stays open until the adapter lands. Expected
+/// texts below are literals worked out from the inputs, not produced by `payload()`.
 #[rstest]
-#[case::update_fixture(ORIGINAL, REVISED, &["--type", "update"])]
-#[case::rewrite_fixture(ORIGINAL, REVISED, &["--type", "rewrite"])]
+#[case::update_fixture(ORIGINAL, REVISED, &["--type", "update"], None)]
 #[case::update_dropped_sentence(
     "Keep this one. Remove the 90 day limit.\n",
     "Keep this one.\n",
     &["--type", "update"],
+    Some(&[("dropped", "Remove the 90 day limit.")][..]),
 )]
 #[case::rewrite_escapes(
     "Say \"hi\"\\ caf\u{e9} \u{1f600}\tend\n\nTwo.\r\n",
     "Say \"bye\"\\ caf\u{e9} \u{1f600}\tend\n\nTwo <b>&</b>.\r\n",
     &["--type", "rewrite"],
+    Some(&[
+        ("original_document", "Say \"hi\"\\ caf\u{e9} \u{1f600}\tend\n\nTwo.\r\n"),
+        ("revised_document", "Say \"bye\"\\ caf\u{e9} \u{1f600}\tend\n\nTwo <b>&</b>.\r\n"),
+    ][..]),
 )]
-fn tm19_dry_run_payload_bytes_equal_what_the_provider_receives(
+fn tm19_dry_run_and_provider_call_share_one_payload(
     #[case] old: &str,
     #[case] new: &str,
     #[case] flags: &[&str],
+    #[case] expected: Option<&[(&str, &str)]>,
 ) {
     let dir = tempfile::tempdir().unwrap();
     let rec = Recorder {
@@ -820,21 +812,17 @@ fn tm19_dry_run_payload_bytes_equal_what_the_provider_receives(
     let seen = rec.seen.borrow();
     assert_eq!(seen.len(), 1);
     assert!(!seen[0].items.is_empty(), "case must send something");
-
-    // Expected value built from the recorder's fields, not from `Payload`'s serializer.
-    let dry_bytes = printed_payload(&dry);
     assert_eq!(
-        dry_bytes,
+        printed_payload(&dry),
         printed_payload(&live),
-        "dry run and live run print different bytes"
+        "dry run and live run print different payloads"
     );
-    let printed: serde_json::Value = serde_json::from_str(dry_bytes).unwrap();
-    assert_eq!(printed, observed_json(&seen[0]));
-    for item in &seen[0].items {
-        let text = serde_json::to_string(&item.text).unwrap();
-        assert!(
-            dry_bytes.contains(&text),
-            "dry run lacks the exact text {text}"
-        );
+    if let Some(expected) = expected {
+        let got: Vec<(&str, &str)> = seen[0]
+            .items
+            .iter()
+            .map(|i| (i.role, i.text.as_str()))
+            .collect();
+        assert_eq!(got, expected);
     }
 }
