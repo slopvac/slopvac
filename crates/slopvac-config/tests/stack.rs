@@ -710,6 +710,24 @@ fn explain_text_names_the_root_the_files_and_each_replaced_value() {
 }
 
 #[test]
+fn explain_text_escapes_a_file_name_that_carries_a_control_character() {
+    let fx = Fixture::new();
+    fx.write("esc\u{1b}.toml", "schema_version = 3\nlocale = \"en-GB\"\n");
+    let cfg = load_at(&fx, "esc\u{1b}.toml");
+    let r = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
+    let text = slopvac_config::render_explain(&cfg, &r.explain(), ".");
+    assert!(!text.contains('\u{1b}'), "{text:?}");
+    assert!(
+        text.contains("config file: esc\\u{1b}.toml (project)\n"),
+        "{text:?}"
+    );
+    assert!(
+        text.contains("locale = \"en-GB\"  [project esc\\u{1b}.toml:2:1]\n"),
+        "{text:?}"
+    );
+}
+
+#[test]
 fn genre_and_override_blocks_apply_in_the_order_they_are_written() {
     let fx = Fixture::new();
     fx.write(

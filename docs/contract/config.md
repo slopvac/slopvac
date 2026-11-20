@@ -89,7 +89,7 @@ Every resolved value carries a `ConfigSource` (`common.schema.json#/$defs/Config
 - Then comes each resolved key as `<key> = <value>  [<layer> <file>:<line>:<column>]`. The origin of a `core` value has no file. Each value the key replaced follows on an indented line `replaced <value>  [<origin>]`, highest layer first.
 - Until front matter takes part in resolution, a block ends with the line `front matter overrides are not shown`.
 - The output is text only. `--explain-config` with a `--format` other than `text` fails before any file is read, with the code `explain-config-format-unsupported` and exit 2, before the config is read.
-- `--explain-config` with `--min-score`, `--max-per-100-words`, `--locale`, `--category`, `--disable`, `--out` or `--open` fails the same way, with the code `explain-config-option-unsupported` and exit 2. It does not show the command-line layer yet, and the refusal keeps it from ignoring those options.
+- `--explain-config` with `--min-score`, `--max-per-100-words`, `--locale`, `--category`, `--disable`, `--out`, `--open` or `--verbose` fails the same way, with the code `explain-config-option-unsupported` and exit 2. It does not show the command-line layer yet, and the refusal keeps it from ignoring those options.
 
 ## 2. Nearest config
 

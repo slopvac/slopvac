@@ -103,8 +103,19 @@ where
     let tree = cli::command();
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
     let cwd = std::env::current_dir().unwrap_or_default();
-    // Before `network_policy` reads slopvac.toml: an unreadable config must not hide it.
-    if let Some(err) = explain_config_refusal(&args, &tree) {
+    // `--version --json` is read before the default `lint` command is inserted. Every other
+    // invocation parses once, before any config is read: a usage error, a help request and
+    // the `--explain-config` refusals must not depend on `slopvac.toml`.
+    let invocation = match version_json_offline_flag(&args) {
+        Some(flag) => Invocation::VersionJson { offline_flag: flag },
+        None => match parse_args(tree, args, env, out, err_out) {
+            Ok(matches) => Invocation::Parsed(matches),
+            Err(code) => return exit::code(code),
+        },
+    };
+    if let Invocation::Parsed(matches) = &invocation
+        && let Some(err) = explain_config_refusal(matches)
+    {
         let _ = writeln!(err_out, "{err}");
         return exit::code(exit::INCOMPLETE);
     }
@@ -112,7 +123,7 @@ where
         Ok(policy) => policy,
         // `doctor` exists to report this state, so it runs on the default policy and its own
         // config scan shows the unreadable file (and exits 2 itself).
-        Err(_) if invokes_doctor(&args, &tree) => slopvac_update::policy::NetworkPolicy::default(),
+        Err(_) if invocation.is_doctor() => slopvac_update::policy::NetworkPolicy::default(),
         Err(err) => {
             // policies.md 1.7: a path in an error is relative to the root or `<external>/<name>`.
             let message = format!(
@@ -129,61 +140,17 @@ where
         }
     };
     let config_offline = policy.offline.then_some(true);
-    // `--version --json` is read before the default `lint` command is inserted.
-    if let Some(flag) = version_json_offline_flag(&args) {
-        let rt = update_runtime(
-            env,
-            offline::resolve(flag, env, config_offline),
-            policy.update_check,
-        );
-        return match write_stdout(
-            out,
-            slopvac_update::command::version_json(&rt, &supported_versions()).as_bytes(),
-        ) {
-            Ok(code) => exit::code(code),
-            Err(failure) => {
-                let _ = writeln!(err_out, "{failure}");
-                exit::code(exit::INCOMPLETE)
-            }
-        };
-    }
-    let args = cli::insert_default_command(args, &tree);
-    let early_color = color::resolve(scan_color_flag(&args), env);
-    let tree = tree.color(if early_color {
-        clap::ColorChoice::Always
-    } else {
-        clap::ColorChoice::Never
-    });
-    // `report` takes text that may be a pasted secret, and clap echoes the value it rejects.
-    let is_report = args.iter().skip(1).any(|a| a == "report");
-    let matches = match tree.try_get_matches_from(args) {
-        Ok(m) => m,
-        Err(err) if err.use_stderr() && is_report => {
-            let _ = writeln!(
-                err_out,
-                "error[usage]: invalid arguments for `slopvac report` ({:?}). Run `slopvac report --help`.",
-                err.kind()
+    let matches = match invocation {
+        Invocation::VersionJson { offline_flag } => {
+            let rt = update_runtime(
+                env,
+                offline::resolve(offline_flag, env, config_offline),
+                policy.update_check,
             );
-            return exit::code(exit::INCOMPLETE);
-        }
-        Err(err) if err.use_stderr() => {
-            let styled = err.render();
-            let text = if early_color {
-                styled.ansi().to_string()
-            } else {
-                styled.to_string()
-            };
-            let _ = write!(err_out, "{}", text.replacen("error:", "error[usage]:", 1));
-            return exit::code(exit::INCOMPLETE);
-        }
-        Err(err) => {
-            let styled = err.render();
-            let text = if early_color {
-                styled.ansi().to_string()
-            } else {
-                styled.to_string()
-            };
-            return match write_stdout(out, text.as_bytes()) {
+            return match write_stdout(
+                out,
+                slopvac_update::command::version_json(&rt, &supported_versions()).as_bytes(),
+            ) {
                 Ok(code) => exit::code(code),
                 Err(failure) => {
                     let _ = writeln!(err_out, "{failure}");
@@ -191,6 +158,7 @@ where
                 }
             };
         }
+        Invocation::Parsed(matches) => matches,
     };
     let globals = resolve_globals_with(&matches, env, config_offline);
     logging::init(env, globals.color);
@@ -208,12 +176,74 @@ where
     }
 }
 
-/// Whether these arguments run `slopvac doctor`. A parse failure or help request does not.
-fn invokes_doctor(args: &[OsString], tree: &clap::Command) -> bool {
-    let args = cli::insert_default_command(args.to_vec(), tree);
-    tree.clone()
-        .try_get_matches_from(args)
-        .is_ok_and(|m| m.subcommand_name() == Some("doctor"))
+/// What the arguments ask for, decided before any config is read.
+enum Invocation {
+    /// `--version --json`, which needs the network policy to report the update state.
+    VersionJson { offline_flag: bool },
+    /// Any other invocation, parsed once.
+    Parsed(ArgMatches),
+}
+
+impl Invocation {
+    /// Whether this runs `slopvac doctor`. A parse failure or help request does not.
+    fn is_doctor(&self) -> bool {
+        matches!(self, Self::Parsed(m) if m.subcommand_name() == Some("doctor"))
+    }
+}
+
+/// Parse the arguments. On a usage error or a help request, print it and return the exit code.
+fn parse_args(
+    tree: clap::Command,
+    args: Vec<OsString>,
+    env: &dyn Env,
+    out: &mut dyn std::io::Write,
+    err_out: &mut dyn std::io::Write,
+) -> Result<ArgMatches, u8> {
+    let args = cli::insert_default_command(args, &tree);
+    let early_color = color::resolve(scan_color_flag(&args), env);
+    let tree = tree.color(if early_color {
+        clap::ColorChoice::Always
+    } else {
+        clap::ColorChoice::Never
+    });
+    // `report` takes text that may be a pasted secret, and clap echoes the value it rejects.
+    let is_report = args.iter().skip(1).any(|a| a == "report");
+    match tree.try_get_matches_from(args) {
+        Ok(m) => Ok(m),
+        Err(err) if err.use_stderr() && is_report => {
+            let _ = writeln!(
+                err_out,
+                "error[usage]: invalid arguments for `slopvac report` ({:?}). Run `slopvac report --help`.",
+                err.kind()
+            );
+            Err(exit::INCOMPLETE)
+        }
+        Err(err) if err.use_stderr() => {
+            let styled = err.render();
+            let text = if early_color {
+                styled.ansi().to_string()
+            } else {
+                styled.to_string()
+            };
+            let _ = write!(err_out, "{}", text.replacen("error:", "error[usage]:", 1));
+            Err(exit::INCOMPLETE)
+        }
+        Err(err) => {
+            let styled = err.render();
+            let text = if early_color {
+                styled.ansi().to_string()
+            } else {
+                styled.to_string()
+            };
+            Err(match write_stdout(out, text.as_bytes()) {
+                Ok(code) => code,
+                Err(failure) => {
+                    let _ = writeln!(err_out, "{failure}");
+                    exit::INCOMPLETE
+                }
+            })
+        }
+    }
 }
 
 fn dispatch(
@@ -380,7 +410,7 @@ fn reject_explain_config_options(m: &ArgMatches) -> Result<(), CliError> {
 
 /// Options that `--explain-config` refuses: command-line settings, rule selection and the
 /// report destination. Explaining the command-line layer is separate work.
-const EXPLAIN_CONFIG_REFUSED: [&str; 7] = [
+const EXPLAIN_CONFIG_REFUSED: [&str; 8] = [
     "min-score",
     "max-per-100-words",
     "locale",
@@ -388,15 +418,11 @@ const EXPLAIN_CONFIG_REFUSED: [&str; 7] = [
     "disable",
     "out",
     "open",
+    "verbose",
 ];
 
-/// The refusal for `--explain-config`, found before any config is read.
-///
-/// `slopvac.toml` is read for the network policy ahead of the full parse, and an unreadable
-/// file must not hide this refusal.
-fn explain_config_refusal(args: &[OsString], tree: &clap::Command) -> Option<CliError> {
-    let args = cli::insert_default_command(args.to_vec(), tree);
-    let matches = tree.clone().try_get_matches_from(args).ok()?;
+/// The refusal for `--explain-config`, from the matches of the one parse.
+fn explain_config_refusal(matches: &ArgMatches) -> Option<CliError> {
     let (_, m) = matches.subcommand().filter(|(name, _)| *name == "lint")?;
     reject_explain_config_options(m).err()
 }

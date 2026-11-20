@@ -480,7 +480,8 @@ pub fn describe(source: &ConfigSource) -> String {
 /// The `--explain-config` text: each key, its final value and origin, then the values it replaced.
 ///
 /// `root` is how the config root appears in the text. The caller redacts it (policies 1.7), so
-/// the output never carries an absolute path. Every field passes through
+/// the root and the path metadata (the config files and the origins) carry no absolute path.
+/// Values print as configured. Every field passes through
 /// [`slopvac_sanitize::line`], so a file name or a value cannot inject a control sequence or a
 /// line break.
 #[must_use]
@@ -511,6 +512,8 @@ pub fn render_explain(config: &LoadedConfig, explained: &[Explained], root: &str
             let _ = writeln!(out, "    {replaced}");
         }
     }
+    // STUB(slopvac-8l4.12.70): front matter takes no part in resolution yet. Remove this line
+    // when that bead wires it in.
     let _ = writeln!(out, "{}", ConfigText::ExplainFrontMatter);
     out
 }

@@ -1515,6 +1515,7 @@ fn explain_config_with_a_report_format_refuses_before_reading_any_file(#[case] f
 #[case::disable(&["--disable", "prose-craft"], "--disable")]
 #[case::out(&["--out", "report.txt"], "--out")]
 #[case::open(&["--open"], "--open")]
+#[case::verbose(&["--verbose"], "--verbose")]
 fn explain_config_refuses_an_option_it_would_ignore(#[case] args: &[&str], #[case] option: &str) {
     let dir = explain_project();
     let out = slopvac()
@@ -1590,6 +1591,29 @@ fn explain_config_shows_a_nested_config_root_relative_to_the_working_directory()
         stdout.starts_with("docs/a.md\nconfig root: docs\nconfig file: slopvac.toml (project)\n"),
         "{stdout}"
     );
+}
+
+#[test]
+fn a_malformed_argument_is_a_usage_error_before_an_unreadable_config_is_read() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("slopvac.toml"), [0xff, 0xfe, 0x00]).expect("write config");
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args([
+            "lint",
+            "--explain-config",
+            "--format",
+            "json",
+            "--min-score",
+            "invalid",
+            "a.md",
+        ])
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(stderr.starts_with("error[usage]: "), "{stderr}");
+    assert!(!stderr.contains("config-unreadable"), "{stderr}");
 }
 
 #[test]
