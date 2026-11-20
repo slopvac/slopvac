@@ -12,7 +12,9 @@ use std::sync::Arc;
 use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
 use slopvac_comments::Language;
-use slopvac_context::{DeclaredGenre, GenreRegistry, ResolveOptions, TagIndex, TagRegistry};
+use slopvac_context::{
+    DeclaredContextTagger, DeclaredGenre, GenreRegistry, ResolveOptions, TagIndex, TagRegistry,
+};
 use slopvac_diagrams::{
     Extraction, ExtractionStatus, Format as DiagramFormat, Signal, extract, extract_fenced,
 };
@@ -329,6 +331,8 @@ pub struct Engine {
     tagger: TagRegistry,
     /// The genres a document is matched to, when the settings ask for per-document genres.
     genres: Option<GenreRegistry>,
+    /// The contexts the run's genre declares, when documents do not choose their own genre.
+    run_declared: Option<DeclaredContextTagger>,
     /// The diagram checkers, each with the ids of the rules it reports.
     checkers: Vec<(Box<dyn DiagramChecker>, Vec<RuleId>)>,
     /// Lexical rules that run.
@@ -482,13 +486,14 @@ impl Engine {
             slopvac_context::builtin_genres().map_err(|e| EngineError::from_context(&e))?;
         // Per-document genres apply their levels to each document's findings. Otherwise the
         // run's genre sets the genre levels now. Levels the caller already filled stay.
-        let genres = if settings.genre_assignments.is_some() {
-            Some(genres)
+        let (genres, run_declared) = if settings.genre_assignments.is_some() {
+            (Some(genres), None)
         } else {
             settings
                 .apply_genre_levels(&genres)
                 .map_err(|e| EngineError::Internal(e.to_string()))?;
-            None
+            let declared = declared_tagger(&genres, settings.genre.id.as_str(), None)?;
+            (None, declared)
         };
         let tagger =
             slopvac_context::builtin_registry().map_err(|e| EngineError::from_context(&e))?;
@@ -499,6 +504,7 @@ impl Engine {
             detectors: Detectors::builtin(),
             tagger,
             genres,
+            run_declared,
             checkers: Vec::new(),
             active: Vec::new(),
             vocabulary_rules: Vec::new(),
@@ -883,18 +889,7 @@ impl Engine {
         let index = SourceIndex::new(input.source, input.bom);
         let parsed = with_html_prose(input.source, &index, parsed)?;
         let prepared = Prepared::new(text, &parsed)?;
-        let tags = match input.kind {
-            Kind::Diagram(_) => TagIndex::default(),
-            _ => tagging::tag(
-                &self.tagger,
-                input.path,
-                input.source,
-                &parsed,
-                front_matter.as_ref(),
-            )
-            .map_err(EngineError::from_tag)?,
-        };
-        let genre = self.genre_of(input, &parsed, front_matter.as_ref())?;
+        let (genre, tags) = self.genre_and_tags(input, &parsed, front_matter.as_ref())?;
         let lines = Lines::new(input.source);
         let lookup = |id: &str| self.directive_target(id);
         let directives = match input.kind {
@@ -956,6 +951,34 @@ impl Engine {
         Ok((document, diagram_notices))
     }
 
+    /// The genre of one document and its context tags. The genre comes first: the contexts
+    /// it declares are tags of the document.
+    fn genre_and_tags(
+        &self,
+        input: &Input<'_>,
+        parsed: &Parsed,
+        front_matter: Option<&FrontMatter<'_>>,
+    ) -> Result<(GenreResult, TagIndex), EngineError> {
+        let (genre, assigned) = self.genre_of(input, parsed, front_matter)?;
+        let declared = match (&self.genres, &self.run_declared) {
+            (Some(registry), _) => declared_tagger(registry, genre.id.as_str(), assigned.as_deref())?,
+            (None, run) => run.clone(),
+        };
+        let tags = match input.kind {
+            Kind::Diagram(_) => TagIndex::default(),
+            _ => tagging::tag(
+                &self.tagger,
+                input.path,
+                input.source,
+                parsed,
+                front_matter,
+                declared.as_ref(),
+            )
+            .map_err(EngineError::from_tag)?,
+        };
+        Ok((genre, tags))
+    }
+
     /// The notices about active rules the engine does not run and that apply to a document of
     /// `genre`.
     fn not_run_notices(&self, genre: &GenreId) -> Vec<Notice> {
@@ -972,19 +995,20 @@ impl Engine {
     }
 
     /// The genre of one document: chosen from the document when the settings ask for it,
-    /// else the run's genre.
+    /// else the run's genre. The second value is the genre a `[[genres]]` assignment gave
+    /// when front matter chose another one.
     fn genre_of(
         &self,
         input: &Input<'_>,
         parsed: &Parsed,
         front_matter: Option<&FrontMatter<'_>>,
-    ) -> Result<GenreResult, EngineError> {
+    ) -> Result<(GenreResult, Option<String>), EngineError> {
         let (Some(registry), Some(assignments), false) = (
             &self.genres,
             &self.settings.genre_assignments,
             matches!(input.kind, Kind::Diagram(_)),
         ) else {
-            return Ok(self.settings.genre.clone());
+            return Ok((self.settings.genre.clone(), None));
         };
         let opts = ResolveOptions {
             assignments,
@@ -1000,7 +1024,8 @@ impl Engine {
             front_matter,
         )
         .map_err(|e| EngineError::from_context(&e))?;
-        Ok(GenreResult {
+        let assigned = found.assigned.clone();
+        let result = GenreResult {
             id: GenreId::new(found.id).map_err(|e| EngineError::Internal(e.to_string()))?,
             source: match found.source {
                 slopvac_context::GenreSource::Explicit => GenreSource::Explicit,
@@ -1018,7 +1043,8 @@ impl Engine {
                     })
                 })
                 .collect::<Result<_, EngineError>>()?,
-        })
+        };
+        Ok((result, assigned))
     }
 
     /// Give the findings of one document the levels of its genre. A rule or category level
@@ -1258,6 +1284,21 @@ fn category_of(id: &RuleId) -> CategoryId {
     let local = id.local();
     CategoryId::new(local.split_once('.').map_or(local, |(c, _)| c))
         .unwrap_or_else(|_| CategoryId::new("meta").expect("meta is a category id"))
+}
+
+/// The tagger for the contexts the genre `id` declares, plus those of the `assigned` genre.
+/// `None` when it declares none. A genre the registry does not know declares none: a custom
+/// run genre is accepted without a definition.
+fn declared_tagger(
+    registry: &GenreRegistry,
+    id: &str,
+    assigned: Option<&str>,
+) -> Result<Option<DeclaredContextTagger>, EngineError> {
+    if registry.spec(id).is_none() {
+        return Ok(None);
+    }
+    DeclaredContextTagger::for_genre_parts(registry, id, assigned)
+        .map_err(|e| EngineError::from_context(&e))
 }
 
 fn contexts(kinds: Vec<&str>) -> Contexts {

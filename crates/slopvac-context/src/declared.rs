@@ -8,6 +8,7 @@
 use crate::{DocumentView, Error, GenreRegistry, GenreResult, Tag, Tagger};
 
 /// Tags the whole document with the contexts its genre declares.
+#[derive(Debug, Clone)]
 pub struct DeclaredContextTagger {
     /// Each context with the genre that declares it.
     contexts: Vec<(String, String)>,
@@ -16,17 +17,34 @@ pub struct DeclaredContextTagger {
 impl DeclaredContextTagger {
     /// Build the tagger for a resolved genre. `None` when the genre declares no context.
     pub fn for_genre(registry: &GenreRegistry, genre: &GenreResult) -> Result<Option<Self>, Error> {
+        Self::from_ids(registry, &genre.id, genre.assigned.as_deref())
+    }
+
+    /// Like [`Self::for_genre`], for a caller that holds the genre id and the assigned genre.
+    pub fn for_genre_parts(
+        registry: &GenreRegistry,
+        id: &str,
+        assigned: Option<&str>,
+    ) -> Result<Option<Self>, Error> {
+        Self::from_ids(registry, id, assigned)
+    }
+
+    fn from_ids(
+        registry: &GenreRegistry,
+        id: &str,
+        assigned: Option<&str>,
+    ) -> Result<Option<Self>, Error> {
         let mut contexts: Vec<(String, String)> = registry
-            .contexts(&genre.id)?
+            .contexts(id)?
             .into_iter()
-            .map(|c| (c, genre.id.clone()))
+            .map(|c| (c, id.to_owned()))
             .collect();
         // Contexts from a path or config assignment are additive: a front matter genre
         // changes the genre but never removes them.
-        if let Some(assigned) = &genre.assigned {
+        if let Some(assigned) = assigned {
             for c in registry.contexts(assigned)? {
                 if !contexts.iter().any(|(known, _)| *known == c) {
-                    contexts.push((c, assigned.clone()));
+                    contexts.push((c, assigned.to_owned()));
                 }
             }
         }
