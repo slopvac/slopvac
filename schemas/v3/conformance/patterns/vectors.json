@@ -1,0 +1,639 @@
+{
+  "description": "Schema pattern vectors judged by both validators. Each vector names a pattern, an input string and the verdict of Python jsonschema and of the Rust jsonschema crate. The verdicts agree for every pattern in the portable subset; a vector where they differ shows why a construct is outside it.",
+  "vectors": [
+    {
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "core",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "core\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "core\nx",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "Core",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])",
+      "input": "core:prose.x",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])",
+      "input": "core:prose.x\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])",
+      "input": "plugin-timeout",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])",
+      "input": "plugin-timeout\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])",
+      "input": "a--b",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[a-z][a-z0-9_]*(?![\\s\\S])",
+      "input": "word_count",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[a-z][a-z0-9_]*(?![\\s\\S])",
+      "input": "word_count\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])",
+      "input": "WORDS",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[A-Z][A-Z0-9_]*(?![\\s\\S])",
+      "input": "WORDS\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?:[0-9]+:[0-9]+\\.[0-9]+|[0-9]+:GR-[0-9]+)(?![\\s\\S])",
+      "input": "9:1.2",
+      "python": true,
+      "rust": true,
+      "note": "[0-9] is ASCII in every engine; Python's \\d also matched other scripts' digits"
+    },
+    {
+      "pattern": "^(?:[0-9]+:[0-9]+\\.[0-9]+|[0-9]+:GR-[0-9]+)(?![\\s\\S])",
+      "input": "9:GR-2",
+      "python": true,
+      "rust": true,
+      "note": "[0-9] is ASCII in every engine; Python's \\d also matched other scripts' digits"
+    },
+    {
+      "pattern": "^(?:[0-9]+:[0-9]+\\.[0-9]+|[0-9]+:GR-[0-9]+)(?![\\s\\S])",
+      "input": "9:1.2\n",
+      "python": false,
+      "rust": false,
+      "note": "[0-9] is ASCII in every engine; Python's \\d also matched other scripts' digits"
+    },
+    {
+      "pattern": "^(?:[0-9]+:[0-9]+\\.[0-9]+|[0-9]+:GR-[0-9]+)(?![\\s\\S])",
+      "input": "9:GR-2\n",
+      "python": false,
+      "rust": false,
+      "note": "[0-9] is ASCII in every engine; Python's \\d also matched other scripts' digits"
+    },
+    {
+      "pattern": "^(?:[0-9]+:[0-9]+\\.[0-9]+|[0-9]+:GR-[0-9]+)(?![\\s\\S])",
+      "input": "٩:1.2",
+      "python": false,
+      "rust": false,
+      "note": "[0-9] is ASCII in every engine; Python's \\d also matched other scripts' digits"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "a\\u2014",
+      "python": true,
+      "rust": true,
+      "note": "an unescaped \\u or \\U escape, read from the start"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\U0001F600",
+      "python": true,
+      "rust": true,
+      "note": "an unescaped \\u or \\U escape, read from the start"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "a\\\\u2014",
+      "python": false,
+      "rust": false,
+      "note": "an unescaped \\u or \\U escape, read from the start"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "a\\\\\\u2014",
+      "python": true,
+      "rust": true,
+      "note": "an unescaped \\u or \\U escape, read from the start"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "x",
+      "python": false,
+      "rust": false,
+      "note": "an unescaped \\u or \\U escape, read from the start"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "line\n\\u0041",
+      "python": true,
+      "rust": true,
+      "note": "an unescaped \\u or \\U escape, read from the start"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\u0041",
+      "python": true,
+      "rust": true,
+      "note": "Pcre2Pattern guard: a match means the pattern is rejected; \\u at the start"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\\\u",
+      "python": false,
+      "rust": false,
+      "note": "Pcre2Pattern guard: accepted; an escaped backslash, then a literal u"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\\\\\u",
+      "python": true,
+      "rust": true,
+      "note": "Pcre2Pattern guard: rejected; an escaped backslash, then \\u"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\\\\\\\u",
+      "python": false,
+      "rust": false,
+      "note": "Pcre2Pattern guard: accepted; two escaped backslashes, then a literal u"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "a\\U0001F600",
+      "python": true,
+      "rust": true,
+      "note": "Pcre2Pattern guard: rejected; \\U after a literal"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\\x{41}",
+      "python": false,
+      "rust": false,
+      "note": "Pcre2Pattern guard: accepted; the braced hex escape PCRE2 takes instead of \\u"
+    },
+    {
+      "pattern": "^(?:[^\\\\]|\\\\[^uU])*\\\\[uU]",
+      "input": "\n\\u",
+      "python": true,
+      "rust": true,
+      "note": "Pcre2Pattern guard: rejected; [^\\\\] crosses the newline, so \\u after it is found"
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "input": "core",
+      "python": true,
+      "rust": true,
+      "note": "bare $: Python matches before a final newline"
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "input": "core\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $: Python matches before a final newline"
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "input": "core:prose.x\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "input": "plugin-timeout\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*$",
+      "input": "core:prose",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*$",
+      "input": "core:prose\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "input": "core:Rule.x",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "input": "core:Rule.x\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]{0,63}$",
+      "input": "acme",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]{0,63}$",
+      "input": "acme\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[0-9a-f]{64}$",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[0-9a-f]{64}$",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$",
+      "input": "1.2.3",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$",
+      "input": "1.2.3\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^((oci|https)://[^\\s/?#@]+([/?#]\\S*)?|git\\+https://[^\\s/?#@]+([/?#]\\S*)?@[0-9a-f]{40})$",
+      "input": "oci://ghcr.io/acme/pack",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^((oci|https)://[^\\s/?#@]+([/?#]\\S*)?|git\\+https://[^\\s/?#@]+([/?#]\\S*)?@[0-9a-f]{40})$",
+      "input": "oci://ghcr.io/acme/pack\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[0-9A-F]{16}$",
+      "input": "0123456789ABCDEF",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[0-9A-F]{16}$",
+      "input": "0123456789ABCDEF\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$",
+      "input": "1.2.3-rc.1",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$",
+      "input": "1.2.3-rc.1\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^\\s*(\\^|~|=|>=|<=|>|<)?\\s*[0-9]+(\\.[0-9]+){0,2}(-[0-9A-Za-z.-]+)?(\\s*,\\s*(\\^|~|=|>=|<=|>|<)?\\s*[0-9]+(\\.[0-9]+){0,2}(-[0-9A-Za-z.-]+)?)*\\s*$",
+      "input": ">=1.2, <2",
+      "python": true,
+      "rust": true,
+      "note": "bare $ after \\s*, which takes the newline itself"
+    },
+    {
+      "pattern": "^\\s*(\\^|~|=|>=|<=|>|<)?\\s*[0-9]+(\\.[0-9]+){0,2}(-[0-9A-Za-z.-]+)?(\\s*,\\s*(\\^|~|=|>=|<=|>|<)?\\s*[0-9]+(\\.[0-9]+){0,2}(-[0-9A-Za-z.-]+)?)*\\s*$",
+      "input": ">=1.2, <2\n",
+      "python": true,
+      "rust": true,
+      "note": "bare $ after \\s*, which takes the newline itself"
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))",
+      "input": "docs/a.md",
+      "python": true,
+      "rust": true,
+      "note": "the $ inside (/|$) matches before a final newline only in Python"
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))",
+      "input": "a/..\n",
+      "python": false,
+      "rust": true,
+      "note": "the $ inside (/|$) matches before a final newline only in Python"
+    },
+    {
+      "pattern": "^[A-Z_][A-Z0-9_]*$",
+      "input": "HOME",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[A-Z_][A-Z0-9_]*$",
+      "input": "HOME\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "input": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "input": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^(oci://\\S+|https://\\S+|git\\+https://\\S+@[0-9a-f]{40}|(?![/\\\\])(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))\\S.*)$",
+      "input": "https://example.com/p.tgz",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^(oci://\\S+|https://\\S+|git\\+https://\\S+@[0-9a-f]{40}|(?![/\\\\])(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))\\S.*)$",
+      "input": "https://example.com/p.tgz\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-9]))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$",
+      "input": "2026-01-31T12:00:00Z",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-9]))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$",
+      "input": "2026-01-31T12:00:00Z\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*$|^x-[a-z0-9-]+$",
+      "input": "x-acme",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*$|^x-[a-z0-9-]+$",
+      "input": "x-acme\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$)).+$",
+      "input": "docs/a.md",
+      "python": true,
+      "rust": true,
+      "note": "bare $"
+    },
+    {
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$)).+$",
+      "input": "docs/a.md\n",
+      "python": true,
+      "rust": false,
+      "note": "bare $"
+    },
+    {
+      "pattern": "\\S",
+      "input": "word",
+      "python": true,
+      "rust": true,
+      "note": "\\s and \\S: Python counts U+0085 as space and U+FEFF as not; ECMA the other way round"
+    },
+    {
+      "pattern": "\\S",
+      "input": " ",
+      "python": false,
+      "rust": false,
+      "note": "\\s and \\S: Python counts U+0085 as space and U+FEFF as not; ECMA the other way round"
+    },
+    {
+      "pattern": "\\S",
+      "input": "",
+      "python": false,
+      "rust": true,
+      "note": "\\s and \\S: Python counts U+0085 as space and U+FEFF as not; ECMA the other way round"
+    },
+    {
+      "pattern": "\\S",
+      "input": "﻿",
+      "python": true,
+      "rust": false,
+      "note": "\\s and \\S: Python counts U+0085 as space and U+FEFF as not; ECMA the other way round"
+    },
+    {
+      "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])",
+      "input": "ppt/slides/slide1.xml%23p2",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])",
+      "input": "ppt/slides/slide1.xml\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])",
+      "input": "a%2fb",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])",
+      "input": "Slide 1 notes",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])",
+      "input": "Slide 1 notes\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])",
+      "input": "a‮b",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])",
+      "input": "s1.notes",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])",
+      "input": "s1.notes\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^((\\^|~|=|>=|<=|>|<) *)?(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)?)?( *, *((\\^|~|=|>=|<=|>|<) *)?(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)?)?)*(?![\\s\\S])",
+      "input": "^1.2.3\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^((oci|https)://[^\\s/?#@]+([/?#]\\S*)?|git\\+https://[^\\s/?#@]+([/?#]\\S*)?@[0-9a-f]{40})(?![\\s\\S])",
+      "input": "oci://ghcr.io/acme/x\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\\s\\S])",
+      "input": "1.2.3\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\\s\\S])",
+      "input": "1.2.3\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S]))).+(?![\\s\\S])",
+      "input": "docs/a.md\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?!core(?![\\s\\S]))[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "acme\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])",
+      "input": "core:rule\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*(?![\\s\\S])",
+      "input": "core:tag\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(oci://\\S+|https://\\S+|git\\+https://\\S+@[0-9a-f]{40}|(?![/\\\\])(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S])))\\S.*)(?![\\s\\S])",
+      "input": "oci://ghcr.io/x\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[0-9A-F]{16}(?![\\s\\S])",
+      "input": "0123456789ABCDEF\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-9]))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z(?![\\s\\S])",
+      "input": "2026-11-19T10:00:00Z\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[A-Z_][A-Z0-9_]*(?![\\s\\S])",
+      "input": "MY_VAR\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])|^x-[a-z0-9-]+(?![\\s\\S])",
+      "input": "x-foo\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])",
+      "input": "tag\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])",
+      "input": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^\\S+(?![\\s\\S])",
+      "input": "tool\n",
+      "python": false,
+      "rust": false
+    }
+  ]
+}

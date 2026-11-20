@@ -3,6 +3,7 @@
 //! The CLI epic wires [`command`] and [`run`] into the clap tree.
 
 use std::fmt::Write as _;
+use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use slopvac_sanitize::line;
@@ -105,10 +106,7 @@ fn explain(
     assignments: &[GenreAssignment],
 ) -> Result<String, Error> {
     // STUB(slopvac-8l4.5.11): PlainDocument stands in for the real Markdown parser.
-    let src = std::fs::read_to_string(path).map_err(|source| Error::Read {
-        path: path.to_string(),
-        source,
-    })?;
+    let src = read_document(path)?;
     let doc = PlainDocument::from_markdown(path, &src);
     let result = registry.resolve(
         &doc as &dyn DocumentView,
@@ -119,4 +117,44 @@ fn explain(
         },
     )?;
     Ok(render(path, &result))
+}
+
+/// Read `path` as UTF-8 under the document cap. The read refuses a FIFO, a device or another
+/// file that is not regular without blocking on it. A symlink is resolved first, as the lint
+/// path does.
+fn read_document(path: &str) -> Result<String, Error> {
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+    let read_failed = |source: std::io::Error| Error::Read {
+        path: path.to_string(),
+        source,
+    };
+    slopvac_fs::read_capped_regular_to_string(
+        &resolved,
+        slopvac_fs::MAX_DOCUMENT_BYTES,
+        slopvac_fs::ReadOptions::new(),
+    )
+    .map_err(|e| match e {
+        slopvac_fs::Error::Input {
+            kind: slopvac_fs::InputKind::TooLarge,
+            ..
+        } => Error::TooLarge {
+            path: path.to_string(),
+            cap: slopvac_fs::MAX_DOCUMENT_BYTES,
+        },
+        slopvac_fs::Error::Input {
+            kind: slopvac_fs::InputKind::NotFound,
+            ..
+        } => read_failed(std::io::ErrorKind::NotFound.into()),
+        slopvac_fs::Error::Input {
+            kind: slopvac_fs::InputKind::NotUtf8,
+            ..
+        } => read_failed(std::io::ErrorKind::InvalidData.into()),
+        slopvac_fs::Error::Input {
+            source: Some(source),
+            ..
+        } => read_failed(source),
+        _ => Error::Unreadable {
+            path: path.to_string(),
+        },
+    })
 }

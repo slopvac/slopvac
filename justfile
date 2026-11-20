@@ -31,6 +31,14 @@ release VERSION:
 sync-release-please:
     python3 scripts/sync_release_please_crates.py
 
+# Regenerate schemas/v3 from the Rust types.
+schemas:
+    cargo run -p slopvac-schemas -- write
+
+# Fail when a committed schemas/v3 file differs from what the Rust types generate.
+schemas-check:
+    cargo run -p slopvac-schemas -- check
+
 # Run cargo-mutants over the workspace, or over PACKAGE (a crate name). Slow; needs cargo-mutants.
 mutants PACKAGE="":
     cargo mutants --locked {{ if PACKAGE == "" { "" } else { "--package " + quote(PACKAGE) } }}

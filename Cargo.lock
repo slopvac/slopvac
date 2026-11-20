@@ -2441,8 +2441,10 @@ dependencies = [
  "slopvac-parse",
  "slopvac-pcre2",
  "slopvac-plugins",
+ "slopvac-pos",
  "slopvac-report",
  "slopvac-rules",
+ "slopvac-sanitize",
  "slopvac-styles",
  "slopvac-terms",
  "slopvac-text",
@@ -2527,6 +2529,7 @@ dependencies = [
  "serde_json",
  "slopvac-config",
  "slopvac-context",
+ "slopvac-fs",
  "slopvac-model",
  "slopvac-pcre2",
  "slopvac-rules",
@@ -2711,7 +2714,9 @@ dependencies = [
  "markup5ever_rcdom",
  "proptest",
  "pulldown-cmark",
+ "rstest",
  "serde_json",
+ "slopvac-messages",
  "slopvac-model",
  "thiserror",
 ]
@@ -2763,7 +2768,9 @@ dependencies = [
 name = "slopvac-pos"
 version = "0.0.0"
 dependencies = [
+ "rstest",
  "serde",
+ "slopvac-messages",
  "thiserror",
  "toml",
 ]
@@ -2808,6 +2815,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "slopvac-schemas"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "jsonschema",
+ "rstest",
+ "schemars",
+ "serde_json",
+ "similar 3.2.1",
+ "slopvac-model",
+ "slopvac-rules",
+ "snapbox",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "slopvac-styles"
 version = "0.0.0"
 dependencies = [
@@ -2830,6 +2854,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "slopvac-fs",
+ "slopvac-messages",
  "tempfile",
  "thiserror",
  "toml",
@@ -2841,8 +2866,10 @@ name = "slopvac-text"
 version = "0.0.0"
 dependencies = [
  "proptest",
+ "rstest",
  "serde",
  "serde_json",
+ "slopvac-messages",
  "slopvac-pcre2",
  "thiserror",
 ]

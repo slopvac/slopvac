@@ -196,6 +196,9 @@ macro_rules! checked_string {
             fn schema_name() -> Cow<'static, str> {
                 stringify!($name).into()
             }
+            fn inline_schema() -> bool {
+                true
+            }
             fn json_schema(_: &mut SchemaGenerator) -> Schema {
                 $schema
             }
@@ -250,7 +253,7 @@ pub struct Origin {
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "Origin", extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 struct OriginWire {
-    /// Percent-escaped locator, unique per segment within the document.
+    /// Percent-escaped locator, unique per segment within the document. Opaque: a consumer compares it byte for byte and never parses it.
     locator: OriginLocator,
     /// Display name of the segment.
     label: OriginLabel,

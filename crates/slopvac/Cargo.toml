@@ -39,11 +39,15 @@ slopvac-lsp.workspace = true
 slopvac-messages.workspace = true
 slopvac-migrate.workspace = true
 slopvac-model.workspace = true
+slopvac-parse.workspace = true
 slopvac-plugins.workspace = true
+slopvac-pos.workspace = true
 slopvac-report.workspace = true
 slopvac-rules.workspace = true
+slopvac-sanitize.workspace = true
 slopvac-styles.workspace = true
 slopvac-terms.workspace = true
+slopvac-text.workspace = true
 slopvac-update.workspace = true
 tempfile.workspace = true
 toml.workspace = true
@@ -62,9 +66,7 @@ predicates = "3.1.4"
 proptest.workspace = true
 roxmltree.workspace = true
 rstest.workspace = true
-slopvac-parse.workspace = true
 slopvac-pcre2.workspace = true
-slopvac-text.workspace = true
 snapbox.workspace = true
 
 [lints]

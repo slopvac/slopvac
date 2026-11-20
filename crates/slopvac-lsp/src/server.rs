@@ -404,11 +404,11 @@ fn handle_request(shared: &Shared, req: Request) -> Response {
     match method.as_str() {
         "textDocument/hover" => match serde_json::from_value::<HoverParams>(params) {
             Ok(p) => ok(id, &hover(shared, &p)),
-            Err(e) => invalid(id, &e),
+            Err(e) => invalid(id, "textDocument/hover", &e),
         },
         "textDocument/codeAction" => match serde_json::from_value::<CodeActionParams>(params) {
             Ok(p) => ok(id, &code_actions(shared, &p)),
-            Err(e) => invalid(id, &e),
+            Err(e) => invalid(id, "textDocument/codeAction", &e),
         },
         _ => Response::new_err(
             id,
@@ -422,8 +422,14 @@ fn ok<T: serde::Serialize>(id: RequestId, result: &T) -> Response {
     Response::new_ok(id, result)
 }
 
-fn invalid(id: RequestId, error: &serde_json::Error) -> Response {
-    Response::new_err(id, ErrorCode::InvalidParams as i32, error.to_string())
+/// An invalid-params response. The parser's text quotes the rejected value, so the message
+/// carries only its category and position.
+fn invalid(id: RequestId, method: &str, error: &serde_json::Error) -> Response {
+    Response::new_err(
+        id,
+        ErrorCode::InvalidParams as i32,
+        render(&LspMessage::params_invalid(method, error)),
+    )
 }
 
 fn hover(shared: &Shared, p: &HoverParams) -> Option<Hover> {
