@@ -1,0 +1,29 @@
+//! The `slopvac lint` option errors, as a message catalog.
+
+use slopvac_messages::Catalog;
+
+/// Why `slopvac lint` refused its options.
+#[derive(Debug, Catalog)]
+pub enum LintOptionError {
+    /// `--explain-config` was given with a report format other than `text`.
+    #[code("explain-config-format-unsupported")]
+    #[message("`--explain-config` prints text only; remove `--format {format}`.")]
+    ExplainConfigFormat {
+        /// The `--format` value from the command line, one of the fixed format names.
+        format: String,
+    },
+    /// `--explain-config` was given with an option it would ignore.
+    #[code("explain-config-option-unsupported")]
+    #[message("`--explain-config` cannot be used with `{option}`; remove it.")]
+    ExplainConfigOption {
+        /// The option as written, one of a fixed list of flag names.
+        option: String,
+    },
+}
+
+impl From<LintOptionError> for crate::errors::CliError {
+    /// The code and the text both come from the catalog entry.
+    fn from(error: LintOptionError) -> Self {
+        Self::new(error.code(), slopvac_messages::render(&error))
+    }
+}

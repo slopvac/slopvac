@@ -96,6 +96,62 @@ pub fn strip_url_userinfo(text: &str) -> String {
     out
 }
 
+/// A config value that is a URL, as the explain output shows it: no user-info, query or fragment.
+///
+/// The whole value is the URL when it starts with an RFC 3986 scheme (`ALPHA *( ALPHA / DIGIT /
+/// "+" / "-" / "." ) ":"`). A value without a scheme comes back unchanged, and so does a URL
+/// inside a longer string. The rule is conservative, so it over-redacts where it cannot tell.
+///
+/// With an authority (`//`), the candidate runs from after `//` to the first `/`, and a `?`
+/// or `#` in it does not end it.
+/// - An `@` in the candidate whose part before the last `@` holds a `?` or `#` is ambiguous:
+///   the `@` may sit in a query or fragment, or the user-info may hold the `?` or `#`. The
+///   value prints as `<scheme>://` and nothing else, so `https://host#frag@x/p` prints as
+///   `https://`.
+/// - Any other `@` in the candidate ends the user-info, and everything through the last `@`
+///   goes.
+/// - Then the fragment goes with everything after the first `#`, and the query goes from the
+///   first `?`.
+///
+/// Without an authority (`mailto:`), only the fragment and the query go.
+#[must_use]
+pub fn redact_url_value(text: &str) -> String {
+    let scheme_len = text
+        .char_indices()
+        .find(|&(i, c)| {
+            let allowed = if i == 0 {
+                c.is_ascii_alphabetic()
+            } else {
+                c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')
+            };
+            !allowed
+        })
+        .map(|(i, c)| (i, c == ':'));
+    let Some((colon, true)) = scheme_len.filter(|&(i, _)| i > 0) else {
+        return text.to_owned();
+    };
+    let (scheme, rest) = text.split_at(colon + 1);
+    let rest = match rest.strip_prefix("//") {
+        Some(after) => {
+            let (candidate, path) = after.split_at(after.find('/').unwrap_or(after.len()));
+            match candidate.rsplit_once('@') {
+                Some((before, _)) if before.contains(['?', '#']) => return format!("{scheme}//"),
+                Some((_, host)) => format!("//{host}{path}"),
+                None => rest.to_owned(),
+            }
+        }
+        None => rest.to_owned(),
+    };
+    // The fragment can hold a token (an OAuth redirect does), so everything from `#` goes.
+    let before_fragment = rest
+        .split_once('#')
+        .map_or(rest.as_str(), |(before, _fragment)| before);
+    let hier = before_fragment
+        .split_once('?')
+        .map_or(before_fragment, |(hier, _query)| hier);
+    format!("{scheme}{hier}")
+}
+
 #[must_use]
 /// Replace the project root in `text` so no absolute path leaves the process.
 ///
@@ -310,6 +366,96 @@ mod tests {
             ),
             "cannot read <external>/x.toml: no such file"
         );
+    }
+
+    #[rstest]
+    #[case::user_info_and_query("https://user:SECRET@host/x?token=SECRET", "https://host/x")]
+    #[case::apostrophe_in_path("https://user:SECRET@host/x'y?token=SECRET", "https://host/x'y")]
+    #[case::apostrophe_in_query("https://host/x?a='SECRET'&b=1", "https://host/x")]
+    #[case::mailto_query("mailto:user@host?subject=SECRET", "mailto:user@host")]
+    #[case::fragment_only("https://host/x#frag", "https://host/x")]
+    #[case::query_and_fragment("https://host/x?token=SECRET#frag", "https://host/x")]
+    #[case::question_mark_in_fragment("https://host/x#frag?not-a-query", "https://host/x")]
+    #[case::oauth_fragment("https://host/cb#access_token=SECRET", "https://host/cb")]
+    #[case::fragment_without_path("https://host#access_token=SECRET", "https://host")]
+    #[case::fragment_char_in_user_info("https://user:SECRET#suffix@host/x", "https://")]
+    #[case::query_char_in_user_info("https://user:SECRET?x@host/p", "https://")]
+    #[case::at_sign_after_a_fragment("https://host#frag@x/p", "https://")]
+    #[case::at_sign_after_a_fragment_to_the_end("https://host#frag@SECRET/p", "https://")]
+    #[case::at_sign_in_a_fragment_token("https://host#tok=x@SECRET", "https://")]
+    #[case::at_sign_in_a_query("https://host?a=x@SECRET", "https://")]
+    #[case::user_info_then_at_sign_in_a_query("https://u:p@host?a=x@y@SECRET", "https://")]
+    #[case::empty_host_then_at_sign_in_a_query("file://?token=x@SECRET", "file://")]
+    #[case::user_info_then_query_marker_then_at("https://UIN@h.example?QRY@x#FRG", "https://")]
+    #[case::user_info_then_fragment_marker_then_at("https://UIN@h.example?QRY#FRG@x", "https://")]
+    #[case::user_info_and_at_sign_in_a_query_without_a_path(
+        "https://UIN@h.example?a=x@QRY",
+        "https://"
+    )]
+    #[case::at_sign_in_a_fragment_without_user_info_or_a_path(
+        "https://h.example#x@FRG",
+        "https://"
+    )]
+    #[case::at_sign_in_a_query_after_a_path("https://host/p?q=x@SECRET", "https://host/p")]
+    #[case::uppercase_scheme("HTTPS://user:SECRET@host/x?q=SECRET", "HTTPS://host/x")]
+    #[case::ipv6("http://user:SECRET@[::1]:8080/x?q=SECRET", "http://[::1]:8080/x")]
+    #[case::at_sign_in_path("https://host/a@b?q=SECRET", "https://host/a@b")]
+    #[case::no_path("https://u:SECRET@host?q=SECRET", "https://host")]
+    #[case::empty_authority("file:///etc/x?q=SECRET", "file:///etc/x")]
+    #[case::last_at_sign_ends_user_info("https://a@b:SECRET@host/x", "https://host/x")]
+    #[case::no_scheme("plain?x@y", "plain?x@y")]
+    #[case::not_a_scheme("1http://u:SECRET@host/x?q=1", "1http://u:SECRET@host/x?q=1")]
+    fn redact_url_value_splits_a_value_that_starts_with_a_scheme(
+        #[case] given: &str,
+        #[case] want: &str,
+    ) {
+        assert_eq!(redact_url_value(given), want);
+    }
+
+    proptest::proptest! {
+        /// With a path and user-info free of `?` and `#`, the result equals the URL without
+        /// user-info, query and fragment. Each carries a unique marker no other part can hold.
+        #[test]
+        fn redact_url_value_drops_user_info_query_and_fragment_and_keeps_the_rest(
+            scheme in "[a-z][a-z0-9+.-]{0,6}",
+            user in "UIN[a-z0-9:'_~!$&()*+,;=%.-]{0,8}",
+            host in "[a-z]{1,8}\\.example",
+            path in "(/[a-z0-9'@:_~!$&()*+,;=%.-]{0,6}){1,3}",
+            query in "QRY[a-z0-9/'?=&:@_~!$()*+,;%.-]{0,8}",
+            fragment in "FRG[a-z0-9/'?@:_~!$&()*+,;=%.-]{0,8}",
+        ) {
+            let given = format!("{scheme}://{user}@{host}{path}?{query}#{fragment}");
+            let want = format!("{scheme}://{host}{path}");
+            let got = redact_url_value(&given);
+            proptest::prop_assert!(
+                !got.contains("UIN") && !got.contains("QRY") && !got.contains("FRG"),
+                "{got}"
+            );
+            proptest::prop_assert_eq!(got, want);
+        }
+
+        /// Secrets placed after an `@` in the query or the fragment, the form that once got
+        /// promoted into the host. The user-info is absent or holds `?` or `#`, and the path
+        /// may be empty. No marker may survive, and the bare scheme is an allowed result.
+        #[test]
+        fn redact_url_value_never_leaks_a_marker_placed_after_an_at_sign(
+            scheme in "[a-z][a-z0-9+.-]{0,6}",
+            user in proptest::option::of("UIN[a-z0-9:'_~!$&()*+,;=%.#?-]{0,8}"),
+            host in "[a-z]{1,8}\\.example",
+            path in "(/[a-z0-9'@:_~!$&()*+,;=%.-]{0,6}){0,3}",
+            query in proptest::option::of("[a-z0-9=&]{0,4}@QRY[a-z0-9/'?=&:_~!$()*+,;%.#-]{0,8}"),
+            fragment in proptest::option::of("[a-z0-9=&]{0,4}@FRG[a-z0-9/'?:_~!$&()*+,;=%.-]{0,8}"),
+        ) {
+            let user = user.map_or_else(String::new, |u| format!("{u}@"));
+            let query = query.map_or_else(String::new, |q| format!("?{q}"));
+            let fragment = fragment.map_or_else(String::new, |f| format!("#{f}"));
+            let given = format!("{scheme}://{user}{host}{path}{query}{fragment}");
+            let got = redact_url_value(&given);
+            proptest::prop_assert!(
+                !got.contains("UIN") && !got.contains("QRY") && !got.contains("FRG"),
+                "{got}"
+            );
+        }
     }
 
     #[test]

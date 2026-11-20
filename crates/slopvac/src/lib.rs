@@ -13,6 +13,7 @@ pub mod exit;
 pub mod generate;
 pub mod init;
 pub mod inspect;
+pub mod lint_messages;
 pub mod lint_settings;
 pub mod lint_terms;
 pub mod logging;

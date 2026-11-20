@@ -1355,7 +1355,6 @@ fn a_path_through_a_dangling_symlink_hides_the_external_directory() {
 #[rstest::rstest]
 #[case::fix("--fix")]
 #[case::diff_working_tree("--diff-working-tree")]
-#[case::explain_config("--explain-config")]
 fn an_unwired_lint_flag_refuses_with_exit_2_and_no_report(#[case] flag: &str) {
     let (dir, _) = project("a.md", "It is important to note that this works.\n", None);
     let out = slopvac()
@@ -1371,6 +1370,284 @@ fn an_unwired_lint_flag_refuses_with_exit_2_and_no_report(#[case] flag: &str) {
         )
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout), "");
+}
+
+/// A project whose config sets `locale` and overrides it under `docs/`.
+const EXPLAIN_CONFIG: &str = "schema_version = 3\nlocale = \"en-GB\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nlocale = \"en-US\"\n";
+
+/// A project with `a.md` and `docs/a.md` under [`EXPLAIN_CONFIG`].
+fn explain_project() -> tempfile::TempDir {
+    let (dir, _) = project("a.md", SLOPPY, Some(EXPLAIN_CONFIG));
+    fs::create_dir(dir.path().join("docs")).expect("docs dir");
+    fs::write(dir.path().join("docs/a.md"), SLOPPY).expect("write docs/a.md");
+    dir
+}
+
+#[test]
+fn explain_config_prints_each_value_with_its_source_and_what_it_replaced_and_lints_nothing() {
+    let dir = explain_project();
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--explain-config", "docs/a.md"])
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // SLOPPY would fail the gate, so exit 0 shows nothing was linted.
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert_eq!(String::from_utf8_lossy(&out.stderr), "");
+    assert!(
+        stdout.starts_with("docs/a.md\nconfig root: .\nconfig file: slopvac.toml (project)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "locale = \"en-US\"  [override slopvac.toml:6:1]\n    replaced \"en-GB\"  [project slopvac.toml:2:1]\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("profile.name = \"normal\"  [core]\n"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("FAIL"), "{stdout}");
+    assert!(
+        stdout.ends_with("front matter overrides are not shown\n"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn explain_config_gives_each_file_its_own_block_in_argument_order() {
+    let dir = explain_project();
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--explain-config", "a.md", "docs/a.md"])
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    let (first, second) = stdout
+        .split_once("\ndocs/a.md\n")
+        .unwrap_or_else(|| panic!("no second block: {stdout}"));
+    assert!(first.starts_with("a.md\n"), "{stdout}");
+    // Every block ends with the fixed line, and a blank line separates the blocks.
+    assert!(
+        first.ends_with("front matter overrides are not shown\n"),
+        "{stdout}"
+    );
+    assert!(
+        second.ends_with("front matter overrides are not shown\n"),
+        "{stdout}"
+    );
+    assert!(first.contains("locale = \"en-GB\"  [project slopvac.toml:2:1]\n"));
+    assert!(!first.contains("override slopvac.toml"), "{stdout}");
+    assert!(second.contains("locale = \"en-US\"  [override slopvac.toml:6:1]\n"));
+}
+
+#[test]
+fn explain_config_names_standard_input_stdin() {
+    let dir = explain_project();
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args([
+            "lint",
+            "--explain-config",
+            "--stdin",
+            "--language",
+            "markdown",
+        ])
+        .write_stdin(SLOPPY)
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(stdout.starts_with("<stdin>\nconfig root: ."), "{stdout}");
+}
+
+#[test]
+fn explain_config_redacts_a_config_root_above_the_working_directory() {
+    let dir = explain_project();
+    fs::create_dir(dir.path().join("sub")).expect("sub dir");
+    fs::write(dir.path().join("sub/b.md"), SLOPPY).expect("write sub/b.md");
+    let out = slopvac()
+        .current_dir(dir.path().join("sub"))
+        .args(["lint", "--explain-config", "b.md"])
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let name = dir.path().file_name().expect("name").to_string_lossy();
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(
+        stdout.starts_with(&format!(
+            "b.md\nconfig root: <external>/{name}\nconfig file: slopvac.toml (project)\n"
+        )),
+        "{stdout}"
+    );
+    let parent = dir.path().parent().expect("parent").to_string_lossy();
+    assert!(!stdout.contains(parent.as_ref()), "{stdout}");
+}
+
+#[rstest::rstest]
+#[case::json("json")]
+#[case::sarif("sarif")]
+fn explain_config_with_a_report_format_refuses_before_reading_any_file(#[case] format: &str) {
+    let out = slopvac()
+        .args(["lint", "--explain-config", "--format", format, "missing.md"])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        format!(
+            "error[explain-config-format-unsupported]: `--explain-config` prints text only; remove `--format {format}`.\n"
+        )
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "");
+}
+
+/// Options that set a value in a layer `--explain-config` does not show, or that route the
+/// report. It refuses each rather than ignoring it.
+#[rstest::rstest]
+#[case::min_score(&["--min-score", "50"], "--min-score")]
+#[case::max_density(&["--max-per-100-words", "5"], "--max-per-100-words")]
+#[case::locale(&["--locale", "en-GB"], "--locale")]
+#[case::category(&["--category", "prose-craft"], "--category")]
+#[case::disable(&["--disable", "prose-craft"], "--disable")]
+#[case::out(&["--out", "report.txt"], "--out")]
+#[case::open(&["--open"], "--open")]
+#[case::verbose(&["--verbose"], "--verbose")]
+fn explain_config_refuses_an_option_it_would_ignore(#[case] args: &[&str], #[case] option: &str) {
+    let dir = explain_project();
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--explain-config", "a.md"])
+        .args(args)
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        format!(
+            "error[explain-config-option-unsupported]: `--explain-config` cannot be used with `{option}`; remove it.\n"
+        )
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "");
+    assert!(!dir.path().join("report.txt").exists());
+}
+
+#[test]
+fn explain_config_refuses_a_format_before_it_reads_slopvac_toml() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("slopvac.toml"), [0xff, 0xfe, 0x00]).expect("write config");
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--explain-config", "--format", "json", "a.md"])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "error[explain-config-format-unsupported]: `--explain-config` prints text only; remove `--format json`.\n"
+    );
+}
+
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::escape("a\u{1b}[31m.md", "a\\u{1b}[31m.md")]
+#[case::newline("b\nc.md", "b\\u{a}c.md")]
+fn explain_config_escapes_a_file_name_in_the_heading(#[case] name: &str, #[case] shown: &str) {
+    let dir = explain_project();
+    fs::write(dir.path().join(name), SLOPPY).expect("write odd name");
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--explain-config", "--", name])
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(
+        stdout.starts_with(&format!("{shown}\nconfig root: .\n")),
+        "{stdout:?}"
+    );
+    assert!(!stdout.contains('\u{1b}'), "{stdout:?}");
+}
+
+#[test]
+fn explain_config_shows_a_nested_config_root_relative_to_the_working_directory() {
+    let dir = explain_project();
+    fs::write(
+        dir.path().join("docs/slopvac.toml"),
+        "schema_version = 3\nlocale = \"en-US\"\n",
+    )
+    .expect("write nested config");
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--explain-config", "docs/a.md"])
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(
+        stdout.starts_with("docs/a.md\nconfig root: docs\nconfig file: slopvac.toml (project)\n"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn a_malformed_argument_is_a_usage_error_before_an_unreadable_config_is_read() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("slopvac.toml"), [0xff, 0xfe, 0x00]).expect("write config");
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args([
+            "lint",
+            "--explain-config",
+            "--format",
+            "json",
+            "--min-score",
+            "invalid",
+            "a.md",
+        ])
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(stderr.starts_with("error[usage]: "), "{stderr}");
+    assert!(!stderr.contains("config-unreadable"), "{stderr}");
+}
+
+#[test]
+fn explain_config_prints_a_url_value_without_its_user_info_and_query() {
+    let (dir, _) = project(
+        "a.md",
+        SLOPPY,
+        Some(
+            "schema_version = 3\n[terms]\nallow = [\"https://user:SECRET@host/x?token=SECRET\"]\n",
+        ),
+    );
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--explain-config", "a.md"])
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(!stdout.contains("SECRET"), "{stdout}");
+    assert!(
+        stdout.contains("terms.allow = [\"https://host/x\"]"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn explain_config_accepts_the_text_format_given_explicitly() {
+    let dir = explain_project();
+    slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--explain-config", "--format", "text", "a.md"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::starts_with("a.md\nconfig root: .\n"));
 }
 
 #[test]

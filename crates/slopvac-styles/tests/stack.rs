@@ -75,7 +75,7 @@ fn explain_shows_a_project_value_replacing_a_preset_value() {
         "schema_version = 3\nstyles = [\"ste\"]\n[rules]\n\"ste-verbs.passive-voice\" = \"error\"\n",
     );
     let explained = resolved.explain();
-    let text = render_explain(&loaded, &explained);
+    let text = render_explain(&loaded, &explained, ".");
     let line = text
         .lines()
         .position(|l| l.starts_with("rules.\"ste-verbs.passive-voice\" = "))

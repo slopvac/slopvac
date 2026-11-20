@@ -478,34 +478,42 @@ pub fn describe(source: &ConfigSource) -> String {
 }
 
 /// The `--explain-config` text: each key, its final value and origin, then the values it replaced.
+///
+/// `root` is how the config root appears in the text. The caller redacts it (policies 1.7), so
+/// the root and the path metadata (the config files and the origins) carry no absolute path.
+/// Values print as configured. Every field passes through
+/// [`slopvac_sanitize::line`], so a file name or a value cannot inject a control sequence or a
+/// line break.
 #[must_use]
-pub fn render_explain(config: &LoadedConfig, explained: &[Explained]) -> String {
+pub fn render_explain(config: &LoadedConfig, explained: &[Explained], root: &str) -> String {
+    use slopvac_sanitize::line;
     let mut out = String::new();
-    let root = ConfigText::ExplainRoot {
-        root: config.root.display().to_string(),
-    };
+    let root = ConfigText::ExplainRoot { root: line(root) };
     let _ = writeln!(out, "{root}");
     for f in &config.files {
         let file = ConfigText::ExplainFile {
-            file: f.display.clone(),
-            layer: layer_name(f.layer).to_owned(),
+            file: line(&f.display),
+            layer: line(layer_name(f.layer)),
         };
         let _ = writeln!(out, "{file}");
     }
     for e in explained {
         let setting = ConfigText::ExplainSetting {
-            path: e.path.clone(),
-            value: e.value.to_string(),
-            origin: describe(&e.source),
+            path: line(&e.path),
+            value: line(&e.value.to_string()),
+            origin: line(&describe(&e.source)),
         };
         let _ = writeln!(out, "{setting}");
         for o in e.overridden.iter().rev() {
             let replaced = ConfigText::ExplainReplaced {
-                value: o.value.to_string(),
-                origin: describe(&o.source),
+                value: line(&o.value.to_string()),
+                origin: line(&describe(&o.source)),
             };
             let _ = writeln!(out, "    {replaced}");
         }
     }
+    // STUB(slopvac-8l4.12.70): front matter takes no part in resolution yet. Remove this line
+    // when that bead wires it in.
+    let _ = writeln!(out, "{}", ConfigText::ExplainFrontMatter);
     out
 }
