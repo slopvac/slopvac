@@ -1,0 +1,9 @@
+schema_version: 3
+id: how-to
+extends: [consumer]
+description: Diataxis how-to guide. Steps that solve one task for a reader who knows the basics.
+detect:
+  min_score: 3
+  signals:
+    - { kind: path, glob: '**/{howto,howtos,how-to,how-tos}/**', weight: 3 }
+    - { kind: heading, pattern: '^\W*how to\b', weight: 3 }

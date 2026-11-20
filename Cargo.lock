@@ -2679,15 +2679,21 @@ dependencies = [
 name = "slopvac-packs"
 version = "0.0.0"
 dependencies = [
+ "cap-std",
  "proptest",
  "regex",
  "rstest",
  "semver",
  "serde_json",
+ "slopvac-config",
+ "slopvac-context",
  "slopvac-fs",
  "slopvac-model",
  "slopvac-plugins",
+ "slopvac-rules",
  "slopvac-sanitize",
+ "slopvac-styles",
+ "tempfile",
  "thiserror",
  "toml",
 ]

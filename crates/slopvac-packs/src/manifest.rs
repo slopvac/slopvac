@@ -1,4 +1,4 @@
-//! The `slopvac-pack.toml` manifest.
+//! The `slopvac-plugin.toml` manifest.
 //!
 //! The reader follows `schemas/v3/plugin-manifest.schema.json` and `docs/contract/plugins.md`.
 //! Every error carries a JSON Pointer to the offending value. A missing key and an unknown key
@@ -76,7 +76,7 @@ pub enum PackKind {
     /// Rules, styles, genres, terms and taggers. No code.
     Data,
     /// Adds a command for the host to run.
-    Plugin,
+    Code,
 }
 
 /// A path inside a pack: relative, with forward slashes and no `..` segment. A glob is allowed.
@@ -216,7 +216,7 @@ impl PluginTable {
     }
 }
 
-/// A parsed `slopvac-pack.toml`.
+/// A parsed `slopvac-plugin.toml`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Manifest {
@@ -238,18 +238,28 @@ pub struct Manifest {
     pub provides: Provides,
     /// Packs this pack needs.
     pub requires: Vec<Requirement>,
-    /// The plugin table; present exactly when `kind` is [`PackKind::Plugin`].
+    /// The plugin table; present exactly when `kind` is [`PackKind::Code`].
     pub plugin: Option<PluginTable>,
 }
 
 impl Manifest {
-    /// Parse manifest text.
+    /// Parse manifest text. The id `core` is reserved for the built-in plugin and is refused.
     pub fn parse(text: &str) -> Result<Self> {
+        Self::parse_with(text, false)
+    }
+
+    /// Parse manifest text, accepting the reserved id `core`. Only the loader calls this, and it
+    /// accepts the manifest only for the built-in core plugin.
+    pub(crate) fn parse_allowing_core(text: &str) -> Result<Self> {
+        Self::parse_with(text, true)
+    }
+
+    fn parse_with(text: &str, allow_core: bool) -> Result<Self> {
         if u64::try_from(text.len()).map_or(true, |n| n > MAX_MANIFEST_BYTES) {
             return Err(err("", format!("larger than {MAX_MANIFEST_BYTES} bytes")));
         }
         let root: Value = toml::from_str(text).map_err(|e| err("", toml_message(&e)))?;
-        parse_root(&root)
+        parse_root(&root, allow_core)
     }
 
     /// Read a manifest from `reader`, refusing more than 256 KiB.
@@ -342,7 +352,7 @@ impl<'a> Obj<'a> {
     }
 }
 
-fn parse_root(value: &Value) -> Result<Manifest> {
+fn parse_root(value: &Value, allow_core: bool) -> Result<Manifest> {
     let root = Obj::new(
         value,
         String::new(),
@@ -365,7 +375,7 @@ fn parse_root(value: &Value) -> Result<Manifest> {
         _ => return Err(err("/schema_version", "must be 3")),
     }
     let id = pack_id(root.string("id")?).map_err(|m| err("/id", m))?;
-    if id.as_str() == "core" {
+    if id.as_str() == "core" && !allow_core {
         return Err(err("/id", "`core` is reserved for the built-in plugin"));
     }
     let version = parse_version(root.string("version")?).map_err(|m| err("/version", m))?;
@@ -377,7 +387,7 @@ fn parse_root(value: &Value) -> Result<Manifest> {
         .ok_or_else(|| err("/slopvac_api", "must be an integer of at least 1"))?;
     let kind = match root.string("kind")? {
         "data" => PackKind::Data,
-        "code" => PackKind::Plugin,
+        "code" => PackKind::Code,
         _ => {
             return Err(err("/kind", "not a plugin kind (`data` or `code`)"));
         }
@@ -399,7 +409,7 @@ fn parse_root(value: &Value) -> Result<Manifest> {
         .map(|v| parse_plugin(v, "/plugin".to_owned()))
         .transpose()?;
     match (kind, &plugin) {
-        (PackKind::Plugin, None) => {
+        (PackKind::Code, None) => {
             return Err(err("", "a plugin pack needs a `[plugin]` table"));
         }
         (PackKind::Data, Some(_)) => {

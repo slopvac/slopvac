@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "docs"))
 
 import build_site
 
-GENRES_YAML = ROOT / "crates/slopvac-context/src/builtin/genres.yaml"
+GENRES_DIR = ROOT / "crates/slopvac-context/src/builtin/genres"
 REAL_SCHEMAS = ROOT / "schemas" / "v3"
 # The committed schemas use this author-side prefix; the fixture schemas share it.
 OLD_PREFIX = "https://slopvac.github.io/slopvac/schemas/v3/"
@@ -591,7 +591,7 @@ def test_genre_pages_come_from_the_registry_for_every_builtin_genre(
     sources: dict[str, Path],
 ) -> None:
     _run(sources)
-    ids = [g["id"] for g in yaml.safe_load(GENRES_YAML.read_text())]
+    ids = [yaml.safe_load(f.read_text())["id"] for f in sorted(GENRES_DIR.glob("*.yaml"))]
     written = {
         p.relative_to(sources["out"]).as_posix()
         for p in (sources["out"] / "genres").glob("*.md")

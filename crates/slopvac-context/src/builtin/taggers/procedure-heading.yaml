@@ -1,0 +1,8 @@
+# procedure, safety, example, quote, generated.
+schema_version: 3
+id: procedure-heading
+tag: procedure
+scope: section
+confidence: 0.8
+when:
+  heading_path: '\b(?:procedures?|steps?|install(?:ation)?|set ?up|getting started|instructions|how to|walkthrough)\b'
