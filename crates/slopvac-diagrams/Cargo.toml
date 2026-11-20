@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# Counts the paragraphs the prose signals analyse, for tests that check each paragraph is
+# analysed once. Off in ordinary builds, which then carry no shared atomic.
+test-counters = []
+
 [dependencies]
 base64.workspace = true
 flate2.workspace = true

@@ -37,7 +37,13 @@ mod signals;
 mod sink;
 
 pub use fences::{DiagramBlock, extract_fenced, find_markdown_blocks, find_mdx_blocks};
-pub use signals::{PACK, ProseBlock, Signal, SignalHit, check_labels, check_prose};
+#[cfg(feature = "test-counters")]
+#[doc(hidden)]
+pub use signals::prose_analyses;
+pub use signals::{
+    PACK, ProseAnalysis, ProseBlock, Signal, SignalHit, check_labels, check_prose,
+    check_prose_analysed,
+};
 pub use sink::{MAX_FRAGMENTS, MAX_IDENT_CHARS, MAX_RETAINED_BYTES};
 
 use std::ops::Range;

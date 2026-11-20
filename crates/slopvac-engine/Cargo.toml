@@ -49,6 +49,8 @@ proptest.workspace = true
 rstest.workspace = true
 # The lint work test counts the steps the section, heading and sentence taggers take.
 slopvac-context = { workspace = true, features = ["work-counters"] }
+# The prose work test counts the paragraphs the diagram signals analyse.
+slopvac-diagrams = { workspace = true, features = ["test-counters"] }
 # The nearby-prose work test counts block visits.
 slopvac-engine = { path = ".", features = ["test-counters"] }
 # The work-counter tests count the indexes a lint builds.

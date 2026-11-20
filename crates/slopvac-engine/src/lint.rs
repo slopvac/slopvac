@@ -1274,6 +1274,15 @@ impl NearbyProse<'_> {
     }
 }
 
+/// What identifies a finding on a paragraph: its rule and its place in the file.
+fn paragraph_hit_key(f: &Finding) -> (String, usize, usize) {
+    let span = f
+        .extent
+        .as_ref()
+        .map_or(0..0, |e| e.span.start()..e.span.end());
+    (f.rule_id.to_string(), span.start, span.end)
+}
+
 /// A finding before it gets its position.
 struct Candidate<'r> {
     rule_id: &'r RuleId,
@@ -1870,6 +1879,16 @@ impl Run<'_> {
                 ));
             }
         }
+        // One analysis for each paragraph, shared by every diagram beside it.
+        let mut analyses: HashMap<usize, slopvac_diagrams::ProseAnalysis<'_>> = HashMap::new();
+        for (_, _, nearby) in &diagrams {
+            for n in nearby {
+                analyses
+                    .entry(n.block.span.start())
+                    .or_insert_with(|| slopvac_diagrams::ProseAnalysis::new(n.text()));
+            }
+        }
+        let mut reported = HashSet::new();
         let mut out = Vec::new();
         let mut unchecked = Vec::new();
         let mut notices = Vec::new();
@@ -1888,18 +1907,30 @@ impl Run<'_> {
                     text: n.text(),
                 })
                 .collect();
+            let prose_analysis: Vec<&slopvac_diagrams::ProseAnalysis<'_>> = nearby
+                .iter()
+                .filter_map(|n| analyses.get(&n.block.span.start()))
+                .collect();
             let input = DiagramInput {
                 format: *format,
                 source: self.input.source,
                 extraction,
                 prose: &prose,
+                prose_analysis: &prose_analysis,
             };
             for checker in &checkers {
                 matcher_work::entered(MatchKind::Structure);
                 for hit in checker.check(&input) {
-                    if let Some(finding) = self.diagram_finding(&hit, nearby)? {
-                        out.push(finding);
+                    // A hit on a paragraph belongs to the paragraph, not to the diagram that
+                    // found it, so the paragraphs shared by adjacent diagrams report once.
+                    let in_prose = hit.span.start > self.input.source.len();
+                    let Some(finding) = self.diagram_finding(&hit, nearby)? else {
+                        continue;
+                    };
+                    if in_prose && !reported.insert(paragraph_hit_key(&finding)) {
+                        continue;
                     }
+                    out.push(finding);
                 }
             }
         }
