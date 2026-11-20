@@ -200,9 +200,7 @@ pub fn run(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
                 agent: false,
                 reviewer_model: None,
             })
-            .map_err(|err| {
-                CliError::new(err.code(), redact::redact_root(&err.to_string(), &root))
-            })?;
+            .map_err(|err| crate::owners::agents_error(&err, &root))?;
             for line in outcome.lines {
                 say(out, redact::redact_root(&line, &root))?;
             }

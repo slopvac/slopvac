@@ -7,7 +7,7 @@ use std::path::Path;
 
 use slopvac_config::{ConfigError, Discovery, LoadedConfig, NoPresets};
 
-use crate::error::AgentsError;
+use crate::error::{AgentsError, ConfigFailure};
 use crate::prime::Level;
 
 /// The guidance settings that `prime` and `setup` act on.
@@ -45,7 +45,7 @@ impl Guidance {
         match config {
             None => Ok(Self::default()),
             Some(Ok(config)) => Ok(Self::from_config(&config)),
-            Some(Err(e)) => Err(config_error(&e)),
+            Some(Err(e)) => Err(config_error(e)),
         }
     }
 
@@ -74,14 +74,9 @@ impl Guidance {
     }
 }
 
-fn config_error(e: &ConfigError) -> AgentsError {
-    let paths = match e {
-        ConfigError::Io { path, .. } | ConfigError::TooLarge { path, .. } => vec![path.clone()],
-        ConfigError::Rejected(_) => Vec::new(),
-    };
+fn config_error(e: ConfigError) -> AgentsError {
     AgentsError::Config {
         code: e.code().as_str(),
-        message: e.render(),
-        paths,
+        source: ConfigFailure::new(e),
     }
 }

@@ -71,7 +71,7 @@ impl Project {
     /// Open the project root.
     pub fn open(root: &Path) -> Result<Self, AgentsError> {
         let dir = Dir::open_ambient_dir(root, ambient_authority())
-            .map_err(|e| AgentsError::io(root, e))?;
+            .map_err(|e| AgentsError::io(".", e))?;
         Ok(Self {
             dir,
             root: root.to_owned(),
@@ -84,11 +84,11 @@ impl Project {
         self.root.join(rel).display().to_string()
     }
 
-    fn map(&self, rel: &Path, e: std::io::Error) -> AgentsError {
+    fn map(rel: &Path, e: std::io::Error) -> AgentsError {
         if e.kind() == ErrorKind::PermissionDenied && e.to_string().contains("outside") {
-            AgentsError::UnsafeTarget(self.display(rel))
+            AgentsError::UnsafeTarget(rel.display().to_string())
         } else {
-            AgentsError::io(self.root.join(rel), e)
+            AgentsError::io(rel, e)
         }
     }
 
@@ -104,7 +104,7 @@ impl Project {
     /// can do that can write `.git` directly, so for a same-user CLI the check is a
     /// guard against mistakes, not a sandbox.
     fn resolve(&self, rel: &Path) -> Result<PathBuf, AgentsError> {
-        let bad = || AgentsError::UnsafeTarget(self.display(rel));
+        let bad = || AgentsError::UnsafeTarget(rel.display().to_string());
         let mut pending: VecDeque<Step> = steps(rel).ok_or_else(bad)?;
         let mut done = PathBuf::new();
         let mut hops = 0;
@@ -125,7 +125,7 @@ impl Project {
             let is_link = match self.dir.symlink_metadata(&candidate) {
                 Ok(m) => m.file_type().is_symlink(),
                 Err(e) if e.kind() == ErrorKind::NotFound => false,
-                Err(e) => return Err(self.map(&candidate, e)),
+                Err(e) => return Err(Self::map(&candidate, e)),
             };
             if !is_link {
                 done = candidate;
@@ -138,7 +138,7 @@ impl Project {
             let link = self
                 .dir
                 .read_link_contents(&candidate)
-                .map_err(|e| self.map(&candidate, e))?;
+                .map_err(|e| Self::map(&candidate, e))?;
             for step in steps(&link).ok_or_else(bad)?.into_iter().rev() {
                 pending.push_front(step);
             }
@@ -153,12 +153,17 @@ impl Project {
     pub fn read(&self, rel: &Path) -> Result<Option<Vec<u8>>, AgentsError> {
         let rel = self.resolve(rel)?;
         match self.dir.metadata(&rel) {
-            Ok(m) if !m.is_file() => return Err(AgentsError::UnsafeTarget(self.display(&rel))),
+            Ok(m) if !m.is_file() => {
+                return Err(AgentsError::UnsafeTarget(rel.display().to_string()));
+            }
             Ok(_) => {}
             Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(self.map(&rel, e)),
+            Err(e) => return Err(Self::map(&rel, e)),
         }
-        self.dir.read(&rel).map(Some).map_err(|e| self.map(&rel, e))
+        self.dir
+            .read(&rel)
+            .map(Some)
+            .map_err(|e| Self::map(&rel, e))
     }
 
     /// Whether a file exists at `rel`.
@@ -169,14 +174,14 @@ impl Project {
     fn parent_dir(&self, rel: &Path, create: bool) -> Result<Dir, AgentsError> {
         let parent = rel.parent().filter(|p| !p.as_os_str().is_empty());
         let Some(parent) = parent else {
-            return self.dir.try_clone().map_err(|e| self.map(rel, e));
+            return self.dir.try_clone().map_err(|e| Self::map(rel, e));
         };
         if create {
             self.dir
                 .create_dir_all(parent)
-                .map_err(|e| self.map(parent, e))?;
+                .map_err(|e| Self::map(parent, e))?;
         }
-        self.dir.open_dir(parent).map_err(|e| self.map(parent, e))
+        self.dir.open_dir(parent).map_err(|e| Self::map(parent, e))
     }
 
     /// Replace the file at `rel` with `after`, but only if it still holds
@@ -192,12 +197,12 @@ impl Project {
         }
         let rel = self.resolve(rel)?;
         if self.read(&rel)?.as_deref() != before {
-            return Err(AgentsError::Conflict(self.root.join(&rel)));
+            return Err(AgentsError::Conflict(rel.clone()));
         }
         let parent = self.parent_dir(&rel, true)?;
         let name = rel
             .file_name()
-            .ok_or_else(|| AgentsError::UnsafeTarget(self.display(&rel)))?;
+            .ok_or_else(|| AgentsError::UnsafeTarget(rel.display().to_string()))?;
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         let stamp = std::time::SystemTime::now()
@@ -209,7 +214,7 @@ impl Project {
             match parent.open_with(&tmp_name, &options) {
                 Ok(f) => break (tmp_name, f),
                 Err(e) if e.kind() == ErrorKind::AlreadyExists && attempt < 100 => attempt += 1,
-                Err(e) => return Err(self.map(&rel, e)),
+                Err(e) => return Err(Self::map(&rel, e)),
             }
         };
         let mut finish = || -> std::io::Result<()> {
@@ -222,7 +227,7 @@ impl Project {
         };
         finish().map_err(|e| {
             let _ = parent.remove_file(&tmp_name);
-            self.map(&rel, e)
+            Self::map(&rel, e)
         })?;
         Ok(true)
     }
@@ -233,8 +238,8 @@ impl Project {
         let parent = self.parent_dir(&rel, false)?;
         let name = rel
             .file_name()
-            .ok_or_else(|| AgentsError::UnsafeTarget(self.display(&rel)))?;
-        parent.remove_file(name).map_err(|e| self.map(&rel, e))?;
+            .ok_or_else(|| AgentsError::UnsafeTarget(rel.display().to_string()))?;
+        parent.remove_file(name).map_err(|e| Self::map(&rel, e))?;
         // Windows cannot delete a directory while a handle to it is open.
         drop(parent);
         if let Some(dir) = rel.parent().filter(|p| !p.as_os_str().is_empty()) {

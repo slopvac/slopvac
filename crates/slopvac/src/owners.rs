@@ -56,11 +56,19 @@ fn terms_error(err: &TermsError) -> CliError {
     CliError::new(code, redact::redact_root(&message, &cwd()))
 }
 
-/// Name an owner's error from its fields, with every path shown through `shown_path`.
-fn agents_error(err: &AgentsError) -> CliError {
+/// Name an owner's error from its fields. Every path the owner reports is relative to the
+/// project `root`; it is joined to `root` and shown through `shown_path`, so it reads relative
+/// to the run root or as `<external>/<file name>` outside it (policies.md, 1.7).
+pub(crate) fn agents_error(err: &AgentsError, root: &Path) -> CliError {
+    CliError::new(err.code(), agents_message(err, root))
+}
+
+fn agents_message(err: &AgentsError, root: &Path) -> String {
     let cwd = cwd();
-    let path = |p: &Path| redact::shown_path(p, &cwd);
-    let message = match err {
+    // Every path in an `AgentsError` is relative to the root the caller passed. An absolute
+    // path (a file the user named on the command line) replaces the root in `join`.
+    let path = |p: &Path| redact::shown_path(&root.join(p), &cwd);
+    match err {
         AgentsError::UnsafeTarget(target) => {
             format!("unsafe steering target: {}", path(Path::new(target)))
         }
@@ -68,6 +76,20 @@ fn agents_error(err: &AgentsError) -> CliError {
             "malformed or ambiguous slopvac markers in {}; repair the begin/end pair first",
             path(p)
         ),
+        AgentsError::UnclosedFence(p) => format!(
+            "{} has an unterminated code fence that would hide the slopvac block; close the fence first",
+            path(p)
+        ),
+        AgentsError::Partial { changed, source } => format!(
+            "{}; already changed: {}",
+            agents_message(source, root),
+            changed
+                .iter()
+                .map(|c| path(Path::new(c)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        AgentsError::Text(e) => format!("text segmentation failed: {e}"),
         AgentsError::NotUtf8(p) => format!("steering must be UTF-8: {}", path(p)),
         AgentsError::Conflict(p) => format!("file changed during setup; retry: {}", path(p)),
         AgentsError::NotManaged(p) => format!(
@@ -78,23 +100,19 @@ fn agents_error(err: &AgentsError) -> CliError {
         AgentsError::Usage(m) | AgentsError::Coded { message: m, .. } => m.clone(),
         // The config crate's rendered text, which leads with its own `error[code]:` and names
         // paths as the user typed them.
-        AgentsError::Config {
-            code,
-            message,
-            paths,
-        } => {
-            let body = message
+        AgentsError::Config { code, source } => {
+            let rendered = source.diagnostics();
+            let body = rendered
                 .strip_prefix(&format!("error[{code}]: "))
-                .unwrap_or(message);
+                .unwrap_or(&rendered);
             // Replace each path the owner named, whole, before any text inference.
             let mut body = body.to_owned();
-            for named in paths {
-                body = body.replace(named.as_str(), &shown(named));
+            for named in source.paths() {
+                body = body.replace(named.as_str(), &shown(&named));
             }
             redact::redact_absolute(&body, &cwd)
         }
-    };
-    CliError::new(err.code(), message)
+    }
 }
 
 /// `slopvac terms`.
@@ -132,11 +150,11 @@ pub fn validate(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
 
 /// `slopvac setup`.
 pub fn setup(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let outcome = setup::run(m).map_err(|e| agents_error(&e))?;
     let root = m
         .get_one::<PathBuf>("root")
         .cloned()
         .unwrap_or_else(|| PathBuf::from("."));
+    let outcome = setup::run(m).map_err(|e| agents_error(&e, &root))?;
     for line in &outcome.lines {
         write(out, &format!("{}\n", redact::redact_root(line, &root)))?;
     }
@@ -145,7 +163,7 @@ pub fn setup(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
 
 /// `slopvac prime`.
 pub fn prime(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let text = prime::run(m, &cli::command(), &cwd()).map_err(|e| agents_error(&e))?;
+    let text = prime::run(m, &cli::command(), &cwd()).map_err(|e| agents_error(&e, &cwd()))?;
     write(out, &text)?;
     Ok(exit::PASS)
 }
@@ -171,14 +189,54 @@ pub fn review(m: &ArgMatches, offline: bool, out: &mut dyn Write) -> Result<u8, 
         author_model: author_model(&cwd())?,
         ..ReviewEnv::default()
     };
-    let text = review::run(m, &env).map_err(|e| agents_error(&e))?;
+    let text = review::run(m, &env).map_err(|e| agents_error(&e, &cwd()))?;
     write(out, &text)?;
     Ok(exit::PASS)
 }
 
 /// `slopvac claims`. Reads the two named files and nothing else, so it needs no network.
 pub fn claims(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
-    let text = claims::run(m).map_err(|e| agents_error(&e))?;
+    let text = claims::run(m).map_err(|e| agents_error(&e, &cwd()))?;
     write(out, &text)?;
     Ok(exit::PASS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    // Owners report paths relative to the project. With a relative root, each variant shows
+    // the root once.
+    #[rstest]
+    #[case::io(AgentsError::Io {
+        path: PathBuf::from("AGENTS.md"),
+        source: std::io::Error::from(std::io::ErrorKind::NotFound),
+    }, "setup-io", "proj/AGENTS.md: ")]
+    #[case::unsafe_target(
+        AgentsError::UnsafeTarget("AGENTS.md".to_owned()),
+        "steering-unsafe-target",
+        "unsafe steering target: proj/AGENTS.md"
+    )]
+    #[case::conflict(
+        AgentsError::Conflict(PathBuf::from("AGENTS.md")),
+        "steering-conflict",
+        "retry: proj/AGENTS.md"
+    )]
+    #[case::relative_to_the_project(
+        AgentsError::NotUtf8(PathBuf::from("AGENTS.md")),
+        "steering-not-utf8",
+        "UTF-8: proj/AGENTS.md"
+    )]
+    fn a_relative_root_is_shown_once(
+        #[case] err: AgentsError,
+        #[case] code: &str,
+        #[case] expected: &str,
+    ) {
+        let shown = agents_error(&err, Path::new("proj"));
+        let text = shown.to_string();
+        assert!(text.starts_with(&format!("error[{code}]: ")), "{text}");
+        assert!(text.contains(expected), "{text}");
+        assert!(!text.contains("proj/proj"), "{text}");
+    }
 }

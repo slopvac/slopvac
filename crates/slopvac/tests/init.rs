@@ -421,7 +421,47 @@ fn a_setup_error_under_an_external_path_prints_no_absolute_path() {
         !stderr.contains(&target.path().display().to_string()),
         "{stderr}"
     );
-    assert!(stderr.contains("<external>"), "{stderr}");
+    assert!(stderr.contains("in <external>/AGENTS.md;"), "{stderr}");
+}
+
+#[test]
+fn a_setup_error_under_the_run_root_names_the_path_relative_to_it() {
+    // On macOS the temp dir is `/var/...`, an alias of the `/private/var/...` the process
+    // reports as its working directory, so this also covers a non-canonical argument there.
+    let work = tempfile::tempdir().unwrap();
+    fs::write(work.path().join("AGENTS.md"), "<!-- slopvac:begin -->\n").unwrap();
+    let out = slopvac(work.path())
+        .args(["init", "--path"])
+        .arg(work.path().join("slopvac.toml"))
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr.contains("in AGENTS.md;"), "{stderr}");
+    assert!(
+        !stderr.contains(&work.path().display().to_string()),
+        "{stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_setup_error_under_a_symlinked_run_root_is_not_reported_as_external() {
+    let base = tempfile::tempdir().unwrap();
+    let real = base.path().canonicalize().unwrap().join("real");
+    fs::create_dir(&real).unwrap();
+    fs::write(real.join("AGENTS.md"), "<!-- slopvac:begin -->\n").unwrap();
+    let alias = base.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    // The process runs in `real`; the project is named through the alias.
+    let out = slopvac(&real)
+        .args(["init", "--path"])
+        .arg(alias.join("slopvac.toml"))
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr.contains("in AGENTS.md;"), "{stderr}");
 }
 
 /// Run `slopvac init --skip-agents [extra]` in `dir` under the given umask.

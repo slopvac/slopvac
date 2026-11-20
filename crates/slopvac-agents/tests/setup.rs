@@ -544,3 +544,47 @@ fn the_unset_warning_names_what_each_harness_falls_back_to() {
     assert!(message.contains("parent session's model"), "{message}");
     assert!(!message.contains("CLAUDE_CODE"), "{message}");
 }
+
+#[test]
+fn unterminated_fence_before_the_block_is_refused_and_leaves_the_file_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("CLAUDE.md");
+    let original = "# Notes\n\n```sh\nopen fence with no end\n";
+    fs::write(&file, original).unwrap();
+    for _ in 0..2 {
+        let err = execute(&opts(dir.path(), "claude")).unwrap_err();
+        assert_eq!(err.code(), "steering-malformed");
+        assert_eq!(
+            err.to_string(),
+            "CLAUDE.md has an unterminated code fence that would hide the slopvac block; \
+             close the fence first"
+        );
+        assert_eq!(fs::read_to_string(&file).unwrap(), original);
+    }
+    assert_eq!(check(dir.path(), "claude"), EXIT_INCOMPLETE);
+}
+
+#[test]
+fn managed_markers_inside_an_unterminated_fence_are_refused_and_never_duplicated() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("CLAUDE.md");
+    let original =
+        "```md\n<!-- slopvac:begin -->\nold\n<!-- slopvac:end -->\nno closing fence follows\n";
+    fs::write(&file, original).unwrap();
+    assert_eq!(check(dir.path(), "claude"), EXIT_INCOMPLETE);
+    for _ in 0..3 {
+        let err = execute(&opts(dir.path(), "claude")).unwrap_err();
+        assert_eq!(err.code(), "steering-malformed");
+        assert_eq!(
+            err.to_string(),
+            "CLAUDE.md has an unterminated code fence that would hide the slopvac block; \
+             close the fence first"
+        );
+        assert_eq!(fs::read(&file).unwrap(), original.as_bytes());
+        assert_eq!(check(dir.path(), "claude"), EXIT_INCOMPLETE);
+    }
+    assert!(
+        !dir.path().join(".claude").exists(),
+        "nothing else is written"
+    );
+}

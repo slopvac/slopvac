@@ -161,7 +161,21 @@ pub(crate) fn stepless_tokens(text: &str) -> Result<Vec<String>, TextError> {
     let text = collapse_proper_names(&text)?;
     let text = collapse(&text, &[&PAREN_SPAN])?;
     let text = collapse(&text, &[&NUMBER_WITH_UNIT, &ABBREVIATION])?;
+    Ok(split_words(&text))
+}
 
+/// The words of `text` with no collapsing: the same character rules that end the token
+/// stream. A joiner (hyphen or apostrophe) stays only with a word character directly on
+/// both sides, so `well-known` is one word and `a--b` is two.
+#[must_use]
+pub fn joined_words(text: &str) -> Vec<String> {
+    split_words(text)
+        .into_iter()
+        .filter(|w| !w.starts_with(SENTINEL))
+        .collect()
+}
+
+fn split_words(text: &str) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
     let mut current = String::new();
@@ -192,7 +206,7 @@ pub(crate) fn stepless_tokens(text: &str) -> Result<Vec<String>, TextError> {
     if !current.is_empty() {
         out.push(current);
     }
-    Ok(out)
+    out
 }
 
 /// Count words per the ordered phases in `docs/metrics.md`.
