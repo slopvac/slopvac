@@ -319,7 +319,13 @@ impl Linter for EngineLinter {
                 Some((config, rel)) => (config.as_ref(), rel.clone()),
                 None => (&none, PathBuf::from(&item.shown)),
             };
-            let explained = lint_settings::resolve(config, &rel).explain();
+            let mut explained = lint_settings::resolve(config, &rel).explain();
+            for entry in &mut explained {
+                redact_urls(&mut entry.value);
+                for replaced in &mut entry.overridden {
+                    redact_urls(&mut replaced.value);
+                }
+            }
             let root = redact::shown_path(&config.root, &request.root);
             if !text.is_empty() {
                 text.push('\n');
@@ -332,6 +338,16 @@ impl Linter for EngineLinter {
             text,
             incomplete: run.incomplete,
         }
+    }
+}
+
+/// Strip user-info and query strings from every URL in a config value before it is printed.
+fn redact_urls(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::String(text) => *text = redact::redact_url_value(text),
+        serde_json::Value::Array(items) => items.iter_mut().for_each(redact_urls),
+        serde_json::Value::Object(map) => map.values_mut().for_each(redact_urls),
+        _ => {}
     }
 }
 

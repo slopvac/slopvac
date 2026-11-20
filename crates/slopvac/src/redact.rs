@@ -96,6 +96,41 @@ pub fn strip_url_userinfo(text: &str) -> String {
     out
 }
 
+/// Remove the query string of every URL in `text`: from the `?` to the `#` or the end of the URL.
+///
+/// A URL starts at a `://` and ends at whitespace or a quote. Callers strip the user-info first.
+#[must_use]
+pub fn strip_url_query(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(pos) = rest.find("://") {
+        let (head, tail) = rest.split_at(pos + 3);
+        out.push_str(head);
+        let end = tail
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`'))
+            .unwrap_or(tail.len());
+        let (url, after) = tail.split_at(end);
+        match url.find('?') {
+            Some(q) => {
+                out.push_str(&url[..q]);
+                if let Some(frag) = url[q..].find('#') {
+                    out.push_str(&url[q + frag..]);
+                }
+            }
+            None => out.push_str(url),
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A URL in a config value as the explain output shows it: no user-info and no query string.
+#[must_use]
+pub fn redact_url_value(text: &str) -> String {
+    strip_url_query(&strip_url_userinfo(text))
+}
+
 #[must_use]
 /// Replace the project root in `text` so no absolute path leaves the process.
 ///

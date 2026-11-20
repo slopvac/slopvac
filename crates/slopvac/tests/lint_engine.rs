@@ -1617,6 +1617,29 @@ fn a_malformed_argument_is_a_usage_error_before_an_unreadable_config_is_read() {
 }
 
 #[test]
+fn explain_config_prints_a_url_value_without_its_user_info_and_query() {
+    let (dir, _) = project(
+        "a.md",
+        SLOPPY,
+        Some(
+            "schema_version = 3\n[terms]\nallow = [\"https://user:SECRET@host/x?token=SECRET\"]\n",
+        ),
+    );
+    let out = slopvac()
+        .current_dir(dir.path())
+        .args(["lint", "--explain-config", "a.md"])
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(!stdout.contains("SECRET"), "{stdout}");
+    assert!(
+        stdout.contains("terms.allow = [\"https://host/x\"]"),
+        "{stdout}"
+    );
+}
+
+#[test]
 fn explain_config_accepts_the_text_format_given_explicitly() {
     let dir = explain_project();
     slopvac()
