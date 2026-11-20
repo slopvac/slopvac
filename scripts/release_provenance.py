@@ -20,6 +20,7 @@ Subcommands:
       print true when VERSION is below major 3, the only versions the
       publish-lint.yml workflow may publish
   check-dist DIR --version VERSION [--project NAME] [--sdist] [--wheels N]
+                 [--wheel-targets-from WORKFLOW]
       exit 0 when DIR holds exactly the files an upload of NAME VERSION may
       carry: no extras, each file named for NAME and VERSION, and the project
       name and version inside each file's own metadata equal to them. Run it in
@@ -191,6 +192,68 @@ def _sdist_problems(path: Path, project: str, version: str) -> list[str]:
     return _metadata_problems(data, path.name, project, version)
 
 
+_TARGET_LINE = re.compile(r"^\s+target:\s*(\S+)\s*$", re.MULTILINE)
+
+
+def wheel_targets(workflow: Path) -> list[str]:
+    """Return the build targets listed in a wheels workflow's matrix, in order."""
+    found = _TARGET_LINE.findall(workflow.read_text(encoding="utf-8"))
+    if not found:
+        raise ValueError(f"no build targets in {workflow}")
+    return found
+
+
+def _tag_target(platform_tag: str) -> str | None:
+    """Map one wheel platform tag to the Rust target that builds it."""
+    arch = next(
+        (
+            rust
+            for suffix, rust in (
+                ("_x86_64", "x86_64"),
+                ("_arm64", "aarch64"),
+                ("_aarch64", "aarch64"),
+            )
+            if platform_tag.endswith(suffix)
+        ),
+        None,
+    )
+    if arch is None:
+        return None
+    if platform_tag.startswith("macosx_"):
+        return f"{arch}-apple-darwin"
+    if platform_tag.startswith("manylinux"):
+        return f"{arch}-unknown-linux-gnu"
+    if platform_tag.startswith("musllinux_"):
+        return f"{arch}-unknown-linux-musl"
+    return None
+
+
+def _wheel_target(name: str) -> str | None:
+    """Return the one target all of a wheel's platform tags name, else None."""
+    platform = name.removesuffix(".whl").rsplit("-", 1)[-1]
+    targets = {_tag_target(tag) for tag in platform.split(".")}
+    return targets.pop() if len(targets) == 1 else None
+
+
+def _target_problems(wheel_files: list[Path], targets: Sequence[str]) -> list[str]:
+    problems: list[str] = []
+    seen: dict[str, int] = {}
+    for path in wheel_files:
+        target = _wheel_target(path.name)
+        if target is None or target not in targets:
+            problems.append(
+                f"{path.name}: unexpected wheel, not built for a listed target"
+            )
+        else:
+            seen[target] = seen.get(target, 0) + 1
+    for target in targets:
+        if target not in seen:
+            problems.append(f"missing wheel for {target}")
+        elif seen[target] > 1:
+            problems.append(f"two wheels for {target}")
+    return problems
+
+
 def check_dist(
     directory: Path,
     version: str,
@@ -198,13 +261,16 @@ def check_dist(
     project: str = PROJECT,
     sdist: bool = False,
     wheels: int | None = None,
+    targets: Sequence[str] | None = None,
 ) -> None:
     """Fail unless ``directory`` holds exactly the files an upload may carry.
 
     File names alone prove nothing, since a build backend can write any file next
     to the expected ones. Each file's own metadata must name ``project`` and
     ``version``. Expect one sdist when ``sdist`` is set and none otherwise, and
-    ``wheels`` wheels (at least one when ``wheels`` is None).
+    ``wheels`` wheels (at least one when ``wheels`` is None). When ``targets`` is
+    given, the wheels must be exactly one per listed Rust target, judged by each
+    wheel's platform tag, so a right count of wrong wheels fails.
     """
     if not (_STABLE_VERSION.fullmatch(version) or _PRE_VERSION.fullmatch(version)):
         raise ValueError(f"not a version: {version}")
@@ -234,6 +300,8 @@ def check_dist(
         problems.append("no wheels found")
     if wheels is not None and len(wheel_files) != wheels:
         problems.append(f"expected {wheels} wheels, found {len(wheel_files)}")
+    if targets is not None:
+        problems += _target_problems(wheel_files, targets)
     for path in wheel_files:
         problems += _wheel_problems(path, project, version)
     for path in sdist_files:
@@ -399,6 +467,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     dist.add_argument("--project", default=PROJECT)
     dist.add_argument("--sdist", action="store_true")
     dist.add_argument("--wheels", type=int, default=None)
+    dist.add_argument(
+        "--wheel-targets-from",
+        type=Path,
+        default=None,
+        help="wheels workflow whose build matrix lists the expected targets",
+    )
     draft = sub.add_parser("check-draft")
     draft.add_argument("tag")
     draft.add_argument("--repo", required=True, help="owner/name")
@@ -424,6 +498,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 project=args.project,
                 sdist=args.sdist,
                 wheels=args.wheels,
+                targets=(
+                    wheel_targets(args.wheel_targets_from)
+                    if args.wheel_targets_from
+                    else None
+                ),
             )
         elif args.command == "check-draft":
             check_draft(args.tag, args.repo, args.app_slug)

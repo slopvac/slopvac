@@ -171,3 +171,73 @@ def test_the_command_line_exits_zero_for_the_exact_set_and_one_for_a_stray(dist)
     bad = subprocess.run(argv, capture_output=True, text=True, check=False)
     assert bad.returncode == 1
     assert "stray.txt: unexpected file" in bad.stderr
+
+
+# --- the wheel set is the build matrix, not a count ---------------------------
+
+MATRIX = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+]
+# Platform tags worked out from the PEP 600, 656 and macOS naming rules.
+MATRIX_TAGS = [
+    "macosx_11_0_arm64",
+    "macosx_10_12_x86_64",
+    "manylinux_2_17_x86_64.manylinux2014_x86_64",
+    "manylinux_2_17_aarch64.manylinux2014_aarch64",
+    "musllinux_1_2_x86_64",
+]
+
+
+def test_the_exact_target_set_passes(dist):
+    for tag in MATRIX_TAGS:
+        write_wheel(dist, "3.0.0", tag)
+    prov.check_dist(dist, "3.0.0", targets=MATRIX)
+
+
+def test_five_wheels_for_the_wrong_platforms_are_refused(dist):
+    for tag in ["win_amd64", "win32", "win_arm64", "macosx_11_0_arm64", "any"]:
+        write_wheel(dist, "3.0.0", tag)
+    message = refused(dist, "3.0.0", targets=MATRIX)
+    assert "unexpected wheel" in message
+    assert "missing wheel for x86_64-unknown-linux-musl" in message
+
+
+def test_a_missing_target_is_refused(dist):
+    for tag in MATRIX_TAGS[:-1]:
+        write_wheel(dist, "3.0.0", tag)
+    assert "missing wheel for x86_64-unknown-linux-musl" in refused(
+        dist, "3.0.0", targets=MATRIX
+    )
+
+
+def test_a_duplicate_target_is_refused(dist):
+    for tag in [*MATRIX_TAGS[:-1], "manylinux_2_28_x86_64"]:
+        write_wheel(dist, "3.0.0", tag)
+    message = refused(dist, "3.0.0", targets=MATRIX)
+    assert "two wheels for x86_64-unknown-linux-gnu" in message
+    assert "missing wheel for x86_64-unknown-linux-musl" in message
+
+
+def test_the_targets_come_from_the_wheels_workflow():
+    found = prov.wheel_targets(ROOT / ".github" / "workflows" / "wheels.yml")
+    assert found == MATRIX
+
+
+def test_the_command_line_takes_the_targets_from_the_workflow(dist):
+    for tag in MATRIX_TAGS:
+        write_wheel(dist, "3.0.0", tag)
+    argv = [
+        sys.executable, str(SCRIPT), "check-dist", str(dist),
+        "--version", "3.0.0",
+        "--wheel-targets-from", str(ROOT / ".github" / "workflows" / "wheels.yml"),
+    ]  # fmt: skip
+    ok = subprocess.run(argv, capture_output=True, text=True, check=False)
+    assert ok.returncode == 0, ok.stderr
+    (dist / next(dist.glob("*musllinux*"))).unlink()
+    bad = subprocess.run(argv, capture_output=True, text=True, check=False)
+    assert bad.returncode == 1
+    assert "missing wheel for x86_64-unknown-linux-musl" in bad.stderr

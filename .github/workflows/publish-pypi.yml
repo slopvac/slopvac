@@ -340,13 +340,16 @@ jobs:
           path: dist
 
       # The wheels came from build jobs, so the upload trusts no file name. The
-      # directory must hold exactly one wheel per build target, and each wheel's own
-      # metadata must name slopvac and this version.
+      # directory must hold exactly one wheel per build target listed in wheels.yml,
+      # judged by platform tag, and each wheel's own metadata must name slopvac and
+      # this version.
       - name: Check the wheel versions
         env:
           EXPECTED: ${{ needs.validate.outputs.pypi-version }}
-          WHEEL_COUNT: "5" # one per target in wheels.yml
-        run: python3 scripts/release_provenance.py check-dist dist --version "$EXPECTED" --wheels "$WHEEL_COUNT"
+        run: >-
+          python3 scripts/release_provenance.py check-dist dist
+          --version "$EXPECTED"
+          --wheel-targets-from .github/workflows/wheels.yml
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

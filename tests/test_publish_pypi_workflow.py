@@ -502,17 +502,14 @@ def test_the_ancestry_guard_accepts_only_main_and_the_release_please_main_branch
         assert "not on main" in done.stderr
 
 
-def test_the_wheel_check_binds_the_upload_to_the_version_and_the_target_count():
+def test_the_wheel_check_binds_the_upload_to_the_version_and_the_wheels_matrix():
     check = step("publish", "Check the wheel versions")
     assert check["env"]["EXPECTED"] == "${{ needs.validate.outputs.pypi-version }}"
-    assert check["run"] == (
-        "python3 scripts/release_provenance.py check-dist dist "
-        '--version "$EXPECTED" --wheels "$WHEEL_COUNT"'
-    )
-    targets = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "wheels.yml").read_text(encoding="utf-8")
-    )["jobs"]["build"]["strategy"]["matrix"]["include"]
-    assert int(check["env"]["WHEEL_COUNT"]) == len(targets)
+    assert check["run"].split() == [
+        "python3", "scripts/release_provenance.py", "check-dist", "dist",
+        "--version", '"$EXPECTED"',
+        "--wheel-targets-from", ".github/workflows/wheels.yml",
+    ]  # fmt: skip
 
 
 def test_the_wheels_are_checked_after_the_download_and_before_the_upload():
