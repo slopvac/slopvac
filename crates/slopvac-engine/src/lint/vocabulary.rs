@@ -86,11 +86,11 @@ impl Vocabulary {
 impl Engine {
     /// Index `blocklist` and elect the owner of the sweep for each genre, replacing any
     /// earlier plan. Only the rules that apply to a genre can own the sweep for it.
-    pub(super) fn plan_vocabulary(&mut self, blocklist: &Blocklist) -> Result<(), EngineError> {
+    pub(super) fn plan_vocabulary(&mut self, blocklist: &Blocklist) {
         let mut vocabulary = Vocabulary::default();
         if self.vocabulary_rules.is_empty() {
             self.vocabulary = vocabulary;
-            return Ok(());
+            return;
         }
         // A word that is not alphabetic, or has fewer than three letters, cannot be tagged
         // reliably. 2.x skipped it, and so do we.
@@ -116,7 +116,6 @@ impl Engine {
             }
         }
         self.vocabulary = vocabulary;
-        Ok(())
     }
 
     /// The plan for documents of `genre`. `usable` tells whether the blocklist holds an entry

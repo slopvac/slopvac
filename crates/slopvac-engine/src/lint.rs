@@ -514,14 +514,14 @@ impl Engine {
             engine.terms = TermSet::builtin();
         }
         engine.add_signal_checker();
-        engine.plan_vocabulary(&Blocklist::default())?;
+        engine.plan_vocabulary(&Blocklist::default());
         Ok(engine)
     }
 
     /// Set the word blocklist that the vocabulary rules enforce. Without one, or with an
     /// empty one, they have nothing to check and each document says so in an `info` notice.
     pub fn with_blocklist(mut self, blocklist: &Blocklist) -> Result<Self, EngineError> {
-        self.plan_vocabulary(blocklist)?;
+        self.plan_vocabulary(blocklist);
         self.blocklist = blocklist.clone();
         Ok(self)
     }
