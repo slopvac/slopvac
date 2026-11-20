@@ -891,6 +891,10 @@ pub(crate) enum HostPhrase {
     /// The launcher runs on Unix only.
     #[code("plugins-launch-unix-only")]
     #[text("the launcher runs on Unix only")]
+    #[cfg_attr(
+        unix,
+        expect(dead_code, reason = "only the non-Unix launcher reports this")
+    )]
     UnixOnly,
     /// The running program never installed the launcher.
     #[code("plugins-launch-not-installed")]

@@ -1455,6 +1455,10 @@ fn plugin_command(spec: &PluginSpec, cfg: &HostConfig) -> Result<Command, Plugin
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the catalog calls take more lines than the former literals; the body is unchanged"
+)]
 fn spawn(spec: &PluginSpec, cfg: &HostConfig) -> Result<Conn, StartError> {
     let spawn_failed = |e: io::Error| StartError {
         error: PluginError::SpawnFailed(messages::named(&spec.name, &e.to_string())),

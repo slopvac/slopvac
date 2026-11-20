@@ -751,10 +751,7 @@ impl StagedTree {
                 .map_err(io_err(TransportPhrase::ExtractCreateDirectory.as_static()))?;
         }
         let mut out = create_file(&target, executable).map_err(io_err(
-            TransportText::ExtractCreatingFile {
-                path: rel.to_owned(),
-            }
-            .to_string(),
+            TransportText::ExtractCreatingFile { path: rel.clone() }.to_string(),
         ))?;
         let (_, len) = hash_stream(content, Some(&mut out), &rel, None)?;
         self.bytes += len;
@@ -810,6 +807,10 @@ impl StagedTree {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the catalog calls take more lines than the former literals; the body is unchanged"
+)]
 fn unpack<S: std::hash::BuildHasher>(
     archive: impl Read,
     root: &Path,
@@ -992,10 +993,7 @@ fn write_entry(
             .map_err(io_err(TransportPhrase::ExtractCreateDirectory.as_static()))?;
     }
     let mut out = create_file(&target, exec).map_err(io_err(
-        TransportText::ExtractCreatingFile {
-            path: rel.to_owned(),
-        }
-        .to_string(),
+        TransportText::ExtractCreatingFile { path: rel.clone() }.to_string(),
     ))?;
     let declared = entry
         .header()
@@ -1004,10 +1002,7 @@ fn write_entry(
     let (sha, len) = hash_stream(entry, Some(&mut out), &rel, None)?;
     if len != declared {
         return Err(ExtractError::Malformed(
-            TransportText::ExtractShortEntry {
-                path: rel.to_owned(),
-            }
-            .to_string(),
+            TransportText::ExtractShortEntry { path: rel.clone() }.to_string(),
         ));
     }
     Ok(FileRecord {
@@ -1246,6 +1241,10 @@ pub fn tree_hash(dir: &Path) -> Result<TreeHash, ExtractError> {
 ///
 /// The callback is the test seam for the single-read guarantee: a test rewrites the sidecar from
 /// it, and the result must still come from the bytes that were hashed.
+#[expect(
+    clippy::too_many_lines,
+    reason = "the catalog calls take more lines than the former literals; the body is unchanged"
+)]
 fn tree_hash_observed(
     dir: &Path,
     after_hash: &mut dyn FnMut(&str, &Path),

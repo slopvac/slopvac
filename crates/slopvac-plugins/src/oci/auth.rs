@@ -349,6 +349,10 @@ fn resolve_helper(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the catalog calls take more lines than the former literals; the body is unchanged"
+)]
 fn run_helper(
     name: &str,
     registry: &str,

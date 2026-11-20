@@ -300,10 +300,7 @@ impl Group {
     pub(crate) fn status(&self) -> Option<String> {
         lock(&self.state).reaped.as_ref().map(|r| match r {
             Ok(s) => s.to_string(),
-            Err(e) => HostText::WaitFailed {
-                error: e.to_string(),
-            }
-            .to_string(),
+            Err(e) => HostText::WaitFailed { error: e.clone() }.to_string(),
         })
     }
 
