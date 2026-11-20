@@ -47,3 +47,4 @@
 "index-default-string.toml" = "/index/default"
 "index-in-override.toml" = "/overrides/0"
 "index-unknown-key.toml" = "/index"
+"index-extra-17.toml" = "/index/extra"

@@ -56,6 +56,13 @@ pub enum Shape {
     },
     /// The schema version, which must be 3.
     Version,
+    /// A list of at most `max_items` entries, checked as `list`.
+    Capped {
+        /// Most entries the list may hold.
+        max_items: usize,
+        /// The list shape.
+        list: Box<Shape>,
+    },
     /// A list of one item shape.
     List {
         /// Shape of each item.
@@ -251,14 +258,17 @@ fn index() -> Shape {
             ("default", Shape::Bool),
             (
                 "extra",
-                Shape::List {
-                    item: Box::new(table(
-                        vec![("name", index_name()), ("source", index_source())],
-                        &["name", "source"],
-                    )),
-                    min_items: 0,
-                    unique: false,
-                    unique_key: Some("name"),
+                Shape::Capped {
+                    max_items: crate::MAX_INDEX_EXTRA,
+                    list: Box::new(Shape::List {
+                        item: Box::new(table(
+                            vec![("name", index_name()), ("source", index_source())],
+                            &["name", "source"],
+                        )),
+                        min_items: 0,
+                        unique: false,
+                        unique_key: Some("name"),
+                    }),
                 },
             ),
         ],
@@ -746,6 +756,22 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
         Shape::Num { min, max } => check_num(ctx, node, *min, *max, path),
         Shape::Choice { values, table_help } => check_choice(ctx, node, values, *table_help, path),
         Shape::Version => check_version_value(ctx, node, path),
+        Shape::Capped { max_items, list } => {
+            if matches!(&node.value, Value::Array(items) if items.len() > *max_items) {
+                ctx.value_error(
+                    node,
+                    path,
+                    ConfigText::ListTooLong {
+                        max_items: *max_items,
+                    }
+                    .to_string(),
+                    ConfigPhrase::LabelNotValidHere.text(),
+                    None,
+                );
+            } else {
+                check(ctx, node, list, path);
+            }
+        }
         Shape::List {
             item,
             min_items,

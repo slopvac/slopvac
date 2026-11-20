@@ -61,11 +61,11 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 `[index]` sets which indexes `slopvac plugins search` reads (plugin-index.md, sections 5 and 6). It is project-scoped. There is no user-level config layer, and an environment variable, front matter, `[[overrides]]` block, `[[genres]]` block or inline directive cannot set it.
 
 - `default` is a boolean and defaults to `true`. It turns the signed first-party index on or off.
-- `[[index.extra]]` is a list of extra indexes. A later layer replaces the list, as for any list (section 1.2). Each entry has `name` and `source`, both required.
+- `[[index.extra]]` is a list of at most 16 extra indexes. The default index does not count. A file with more entries is refused with `config-budget-exceeded`, `data.budget = "index-extra"` and `data.limit = 16`, before the duplicate-name check and before any fetch (policies.md, section 1.9). The loader checks every file, extended files included, and a later layer replaces the list instead of adding to it, so the merged list never holds more than 16. Each entry has `name` and `source`, both required.
 - `name` is a lowercase slug of the form of a plugin id: a letter, then letters, digits and hyphens. `core` and `slopvac` are refused, because `slopvac` is the name of the default index. Each `name` appears once. A repeated name is an error at the second entry.
 - `source` is an `oci://` reference or an `https://` URL, at most 2048 characters. It carries no user-info. `http://`, `git+https://` and a path are invalid.
 - Naming an index grants it no trust (plugin-index.md, section 10).
-- A refused `source` is reported with its field, such as `index.extra[0].source`, and the reason: unsupported scheme, user-info, no host, whitespace or too long. The message never repeats the value, because a source can carry a credential (policies.md, section 1.7).
+- A refused `source` is reported with its field, such as `index.extra[0].source`, and the reason: unsupported scheme, user-info, no host, whitespace or too long. The message never repeats the value, because a source can carry a credential (policies.md, section 1.7). Rendered output masks the value of every `index.extra[*].source` in the quoted config line, whichever diagnostic quotes it, keeping the quotes, line and column.
 
 ### 1.4 Provenance
 

@@ -336,8 +336,9 @@
           "default": true
         },
         "extra": {
-          "description": "Extra unsigned indexes, read in this order after the default index. Each `name` appears once; the config validator checks that, because JSON Schema cannot.",
+          "description": "Extra unsigned indexes, at most 16, read in this order after the default index. Each `name` appears once; the config validator checks that, because JSON Schema cannot.",
           "type": "array",
+          "maxItems": 16,
           "items": {
             "$ref": "#/$defs/IndexExtra"
           }

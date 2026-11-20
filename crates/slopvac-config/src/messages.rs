@@ -284,6 +284,21 @@ pub(crate) enum ConfigText {
         #[count]
         limit: u64,
     },
+    /// Too many `[[index.extra]]` entries in one file.
+    #[code("config-budget-index-extra")]
+    #[text("{path} lists more than {limit} `index.extra` entries")]
+    BudgetIndexExtra {
+        path: String,
+        #[count]
+        limit: u64,
+    },
+    /// A list with more entries than its schema allows.
+    #[code("config-list-too-long")]
+    #[text("the list holds more than {max_items} entries")]
+    ListTooLong {
+        #[count]
+        max_items: usize,
+    },
     /// An extended config over the size cap.
     #[code("config-extended-too-large")]
     #[text("the extended config `{name}` is larger than {cap} bytes")]
@@ -564,6 +579,10 @@ pub(crate) enum ConfigPhrase {
     #[code("config-label-too-many-blocks")]
     #[text("too many blocks")]
     LabelTooManyBlocks,
+    /// Label for a file that lists too many extra indexes.
+    #[code("config-label-too-many-indexes")]
+    #[text("too many indexes")]
+    LabelTooManyIndexes,
     /// Label for an `extends` entry.
     #[code("config-label-extended-here")]
     #[text("extended here")]
@@ -636,6 +655,10 @@ pub(crate) enum ConfigPhrase {
     #[code("config-help-merge-or-split-blocks")]
     #[text("merge blocks that share files, or split the config")]
     HelpMergeOrSplitBlocks,
+    /// Help for too many extra indexes.
+    #[code("config-help-remove-indexes")]
+    #[text("remove the indexes that you do not search")]
+    HelpRemoveIndexes,
     /// Help for too many applied bytes.
     #[code("config-help-remove-repeated-large")]
     #[text("remove entries that extend the same large files again")]

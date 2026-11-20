@@ -75,7 +75,7 @@ source = "https://plugins.acme.example/index.json"
 ```
 
 - `default` is a boolean and defaults to `true`. `false` removes the default index from the search.
-- `[[index.extra]]` is a list. `name` is a lowercase slug of the form of a plugin id, other than `core` and `slopvac`, and each name appears once. `source` follows section 5.
+- `[[index.extra]]` is a list. `name` is a lowercase slug of the form of a plugin id, other than `core` and `slopvac`, and each name appears once. The list holds at most 16 entries, and the default index does not count (config.md, section 1.3.2). `source` follows section 5.
 - The table is project-scoped. Only a project config (with its `extends` files) sets it. There is no user-level config layer, and no environment variable, document front matter, override or inline directive sets it.
 - `slopvac plugins search --index <name>` limits one search to the index with that name, `slopvac` for the default. A name that no configured index has exits 2 with `index-unknown`. The flag selects among configured indexes and adds none.
 - Outside a project, or in a project without `[index]`, the search reads the default index alone.
@@ -116,6 +116,8 @@ The exit codes are those of policies.md, section 3.5. A search that could not re
 
 A notice or error never repeats a source or text from the index (section 4).
 
+Every index fetch uses the OCI transport of `slopvac-plugins` (`oci/http.rs`), with its deadlines: 15 seconds to connect, 60 seconds for the response headers, 600 seconds for the response body and one hour for the whole exchange. The body deadline covers reading the body, so a host that stalls or trickles is cut off there and handled as a failed fetch in the first row of the table.
+
 ## 10. An index never grants trust
 
 Adding an index grants nothing. An entry in an index, in any index, is a claim.
@@ -153,5 +155,8 @@ Adding an index grants nothing. An entry in an index, in any index, is a claim.
 | I22 | An unsigned extra index that serves a signature next to its document | The signature is ignored. The document is read under the checks of section 4. |
 | I23 | An extra `source` that is `http://`, a path, `git+https://` or holds user-info | The config is invalid. No fetch starts. |
 | I24 | A cached extra index after its `source` changes in the config | The old cache is discarded and not shown. |
+| I25 | A config with 16 extra indexes, then 17, also when the 17 sit in an extended file | 16 loads. 17 exits 2 with `config-budget-exceeded`, `data.budget = "index-extra"` and `data.limit = 16`, before the duplicate-name check and any fetch. |
+| I26 | A refused `source` that holds `user:SECRET@` or `?token=SECRET`, and a wrong `name` in the same file | No rendered output, message or log holds `SECRET`. The field, the reason, the line and the column survive. |
+| I27 | An extra index that stalls or trickles its body, next to a good one | The stalled one is a failed fetch with the cache, the reserved `index-fetch-failed` notice and exit 2. The good one answers. |
 
-The schema harness runs I1 and I2 in `tests/contract/test_schemas.py`. The Rust tests in `crates/slopvac-plugins/tests/index.rs` run I3 to I9 and repeat I1 and I2 against the reader. The config parts of I13 and I23 run in `crates/slopvac-config` (`schemas/v3/conformance/config/`). I10 to I12 and I14 to I24 wait for the index fetch code (`slopvac-8l4.9.62`), which adds their tests.
+The schema harness runs I1 and I2 in `tests/contract/test_schemas.py`. The Rust tests in `crates/slopvac-plugins/tests/index.rs` run I3 to I9 and repeat I1 and I2 against the reader. The config parts of I13, I23, I25 and I26 run in `crates/slopvac-config` (`tests/index.rs`, `tests/index_load.rs` and the corpus). I10 to I12, I14 to I22, I24 and I27 wait for the index fetch code (`slopvac-8l4.9.62`), which adds their tests.

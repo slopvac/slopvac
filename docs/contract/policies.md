@@ -195,6 +195,7 @@ A per-file cap does not bound the work of many files, or of a long list in one f
 | Context lookups on one document | tag-lookups | 8 per byte of the document, plus 16,384 | looks | context-budget-exceeded | A document with a few tags on a few cells looks at a few tags for each match. Many tag kinds on one cell, with rules that match across its lines, make the looks grow with kinds times matches. |
 | Rule, tokens or substitutions listed | `rule-entries` | 4096 | entries | `rules-budget-exceeded` | The longest shipped list has 112 entries. 4096 is a margin of more than thirty. The loader checks it before it compiles the matcher. |
 | Config file, `[[genres]]` and `[[overrides]]` blocks together | `file-blocks` | 256 | blocks | `config-budget-exceeded` | A real config has fewer than ten. Each block compiles a glob matcher, and the 1 MiB file cap alone allows tens of thousands. The loader checks it before the schema check. |
+| Config, extra indexes | `index-extra` | 16 | indexes | `config-budget-exceeded` | A real project lists one or two. Each entry is one more host that `plugins search` contacts. The default index does not count. The loader checks it per file before the schema check, the duplicate-name check and any fetch, so it also holds for every file in an `extends` chain. |
 
 How the budgets apply:
 

@@ -116,6 +116,8 @@ pub enum ConfigBudget {
     /// `[[genres]]` and `[[overrides]]` blocks in one file, in blocks:
     /// [`crate::MAX_FILE_BLOCKS`].
     FileBlocks,
+    /// `[[index.extra]]` entries in one file, in indexes: [`crate::MAX_INDEX_EXTRA`].
+    IndexExtra,
 }
 
 impl ConfigBudget {
@@ -128,6 +130,7 @@ impl ConfigBudget {
             Self::ExtendsBytes => "extends-bytes",
             Self::ExtendsAppliedBytes => "extends-applied-bytes",
             Self::FileBlocks => "file-blocks",
+            Self::IndexExtra => "index-extra",
         }
     }
 }
@@ -194,11 +197,95 @@ pub struct SourceFile<'a> {
 #[must_use]
 pub fn render(source: SourceFile<'_>, diagnostics: &[Diagnostic]) -> String {
     let renderer = Renderer::plain();
+    let masked = redact_index_sources(source.text);
+    let source = SourceFile {
+        name: source.name,
+        text: &masked,
+    };
     diagnostics
         .iter()
         .map(|d| render_one(&renderer, source, d))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The text with the value of every `index.extra[*].source` masked, because a source may carry a
+/// credential and the snippet quotes the whole line.
+///
+/// The mask keeps the quotes, line breaks and byte length, so every span, line and column
+/// stays where it was. Each other byte of the value becomes `*`. Text that is not a TOML config
+/// is returned as it is.
+fn redact_index_sources(text: &str) -> std::borrow::Cow<'_, str> {
+    use crate::tree::{Value, parse_toml};
+
+    if !text.contains("source") {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let Ok(root) = parse_toml(text) else {
+        return std::borrow::Cow::Borrowed(text);
+    };
+    let Some(Value::Array(items)) = root
+        .get("index")
+        .and_then(|index| index.get("extra"))
+        .map(|extra| &extra.value)
+    else {
+        return std::borrow::Cow::Borrowed(text);
+    };
+    let mut spans: Vec<Range<usize>> = items
+        .iter()
+        .filter_map(|item| item.get("source"))
+        .filter(|node| matches!(node.value, Value::Str(_)))
+        .map(|node| node.span.clone())
+        .filter(|span| {
+            span.end <= text.len()
+                && text.is_char_boundary(span.start)
+                && text.is_char_boundary(span.end)
+        })
+        .collect();
+    if spans.is_empty() {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    spans.sort_by_key(|s| s.start);
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    for span in spans {
+        if span.start < at {
+            continue;
+        }
+        out.push_str(&text[at..span.start]);
+        out.push_str(&mask_literal(&text[span.clone()]));
+        at = span.end;
+    }
+    out.push_str(&text[at..]);
+    std::borrow::Cow::Owned(out)
+}
+
+/// A TOML string literal with its quotes kept and the rest replaced by `*`, byte for byte.
+fn mask_literal(literal: &str) -> String {
+    let quote = literal.chars().next().filter(|c| matches!(c, '"' | '\''));
+    let Some(q) = quote else {
+        return literal.chars().map(|c| star(c, false)).collect();
+    };
+    let width = if literal.starts_with(&q.to_string().repeat(3)) && literal.len() >= 6 {
+        3
+    } else {
+        1
+    };
+    let inner_end = literal.len().saturating_sub(width).max(width);
+    let (head, rest) = literal.split_at(width);
+    let (inner, tail) = rest.split_at(inner_end - width);
+    let masked: String = inner.chars().map(|c| star(c, true)).collect();
+    format!("{head}{masked}{tail}")
+}
+
+/// `*` repeated for the bytes of `c`, so a masked line keeps its byte offsets. Line breaks stay
+/// when `keep_breaks` is set.
+fn star(c: char, keep_breaks: bool) -> String {
+    if keep_breaks && matches!(c, '\n' | '\r') {
+        c.to_string()
+    } else {
+        "*".repeat(c.len_utf8())
+    }
 }
 
 /// The text as `annotate-snippets` should see it, and how far its offsets moved.
