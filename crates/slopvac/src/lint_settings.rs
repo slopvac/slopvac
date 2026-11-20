@@ -240,10 +240,13 @@ pub fn resolve(config: &LoadedConfig, rel: &Path) -> Resolved {
     )
 }
 
-fn engine_level(level: ConfigLevel) -> Level {
+/// The engine level for a config level. A config level this build does not know sets none, so
+/// the rule keeps the level of its definition.
+fn engine_level(level: ConfigLevel) -> Option<Level> {
     match level {
-        ConfigLevel::Off => Level::Off,
-        ConfigLevel::On(severity) => Level::On(severity),
+        ConfigLevel::Off => Some(Level::Off),
+        ConfigLevel::On(severity) => Some(Level::On(severity)),
+        _ => None,
     }
 }
 
@@ -435,19 +438,18 @@ pub fn build(
             // genre chain. A level that the config sets is final. A category floor holds
             // after the shift.
             let level = match named {
-                Some(named) => {
-                    let l = engine_level(named.level);
+                Some(named) => engine_level(named.level).map(|l| {
                     let l = if is_inherited(named.source.layer) {
                         shifted(l, shift)
                     } else {
                         l
                     };
-                    Some(if named.from == LevelFrom::Category {
+                    if named.from == LevelFrom::Category {
                         floored(l, floor)
                     } else {
                         l
-                    })
-                }
+                    }
+                }),
                 // No layer names the rule: the engine shifts its genre or definition level.
                 None => None,
             };

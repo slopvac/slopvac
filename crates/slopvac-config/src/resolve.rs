@@ -342,6 +342,7 @@ fn insert_at(map: &mut Map<String, Json>, path: &[String], value: Json) {
 
 /// A level as config spells it: a severity, or `off`, which `Severity` has no value for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ConfigLevel {
     /// The rule does not run.
     Off,
