@@ -9,6 +9,7 @@ Inputs, from the environment:
   EVENT_NAME   the GitHub event; only `pull_request` is ever scoped
   FORCE_ALL    `true` when the routing was edited or the event is the merge queue or main
   BASE_REF     the pull request's base branch; its `origin/` ref must be fetched
+  RUST_SCOPE_TIMEOUT  seconds to wait for cargo-delta (default 120); tests lower it
   GITHUB_OUTPUT  file that receives the outputs
 
 Outputs:
@@ -32,7 +33,8 @@ from pathlib import Path
 ALL = "--workspace"
 # Cargo package names. Anything else is refused before it reaches a shell word split.
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
-TIMEOUT_SECONDS = 600
+# Well under the classification job's 10 minute limit, so the fallback below can still run.
+TIMEOUT_SECONDS = 120
 
 
 @dataclass(frozen=True)
@@ -74,7 +76,9 @@ def parse_impact(text: str) -> Scope:
     return Scope(tuple(sorted(modified)), tuple(sorted(affected)), "scoped")
 
 
-def run_delta(delta: Sequence[str], config: str, base_ref: str) -> Scope:
+def run_delta(
+    delta: Sequence[str], config: str, base_ref: str, timeout: float = TIMEOUT_SECONDS
+) -> Scope:
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "impact.json"
         command = [
@@ -91,13 +95,14 @@ def run_delta(delta: Sequence[str], config: str, base_ref: str) -> Scope:
         ]
         try:
             done = subprocess.run(
-                command, check=False, timeout=TIMEOUT_SECONDS, stdout=sys.stderr
+                command, check=False, timeout=timeout, stdout=sys.stderr
             )
-        except (OSError, subprocess.TimeoutExpired) as error:
-            return everything(f"cargo-delta did not run ({error!r})")
-        if done.returncode != 0:
-            return everything(f"cargo-delta exited {done.returncode}")
-        return parse_impact(out.read_text() if out.exists() else "")
+            if done.returncode != 0:
+                return everything(f"cargo-delta exited {done.returncode}")
+            text = out.read_text(encoding="utf-8") if out.exists() else ""
+        except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+            return everything(f"cargo-delta did not give a readable answer ({error!r})")
+        return parse_impact(text)
 
 
 def decide(env: dict[str, str], delta: Sequence[str], config: str) -> Scope:
@@ -110,7 +115,9 @@ def decide(env: dict[str, str], delta: Sequence[str], config: str) -> Scope:
     base_ref = env.get("BASE_REF", "")
     if not re.fullmatch(r"[A-Za-z0-9._/-]+", base_ref):
         return everything("the base branch name is missing or unusual")
-    return run_delta(delta, config, base_ref)
+    return run_delta(
+        delta, config, base_ref, float(env.get("RUST_SCOPE_TIMEOUT", TIMEOUT_SECONDS))
+    )
 
 
 def render(scope: Scope) -> dict[str, str]:

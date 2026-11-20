@@ -25,13 +25,20 @@ CONFIG = ROOT / ".github" / "cargo-delta.toml"
 
 # A stand-in for `cargo delta`: records that it ran, then writes the payload to --output.
 STUB = """#!/usr/bin/env python3
-import os, sys
+import os, sys, time
 from pathlib import Path
-Path(os.environ["STUB_CALLS"]).open("a").write(" ".join(sys.argv[1:]) + "\\n")
+Path(os.getenv("STUB_CALLS")).open("a").write(" ".join(sys.argv[1:]) + "\\n")
 args = sys.argv[1:]
-if "STUB_OUTPUT" in os.environ:
-    Path(args[args.index("--output") + 1]).write_text(os.environ["STUB_OUTPUT"])
-sys.exit(int(os.environ.get("STUB_EXIT", "0")))
+if os.getenv("STUB_SLEEP"):
+    time.sleep(float(os.getenv("STUB_SLEEP")))
+target = Path(args[args.index("--output") + 1])
+if os.getenv("STUB_BYTES"):
+    target.write_bytes(bytes.fromhex(os.getenv("STUB_BYTES")))
+elif os.getenv("STUB_DIRECTORY"):
+    target.mkdir()
+elif os.getenv("STUB_OUTPUT") is not None:
+    target.write_text(os.getenv("STUB_OUTPUT"))
+sys.exit(int(os.getenv("STUB_EXIT", "0")))
 """
 
 IMPACT = (
@@ -124,6 +131,14 @@ def test_anything_but_an_explicit_false_force_flag_runs_the_whole_workspace(
     [
         pytest.param({"exit_code": 1}, id="delta-fails"),
         pytest.param({"payload": None}, id="no-output-file"),
+        pytest.param(
+            {"payload": None, "STUB_BYTES": "ff fe".replace(" ", "")}, id="invalid-utf8"
+        ),
+        pytest.param({"payload": None, "STUB_DIRECTORY": "1"}, id="unreadable-output"),
+        pytest.param(
+            {"payload": None, "STUB_SLEEP": "5", "RUST_SCOPE_TIMEOUT": "0.5"},
+            id="timeout",
+        ),
         pytest.param({"payload": ""}, id="empty-output-file"),
         pytest.param({"payload": "not json"}, id="garbage"),
         pytest.param({"payload": '{"Modified": ["a"]}'}, id="missing-tier"),
@@ -321,4 +336,19 @@ def test_a_root_manifest_setting_outside_the_dependency_table_selects_every_crat
     manifest.write_text(manifest.read_text() + "[profile.release]\nlto = true\n")
     git(workspace, "commit", "-qam", "profile")
     outputs = scope_of(workspace, tmp_path)
+    assert packages(outputs["rust_affected"]) == EVERY_CRATE
+
+
+@needs_delta
+def test_a_root_profile_change_beside_one_crate_change_selects_every_crate(
+    workspace, tmp_path
+):
+    # The scoped root manifest (dependency-table edits only) must not hide a global setting
+    # that arrives in the same pull request as an edit to one crate.
+    manifest = workspace / "Cargo.toml"
+    manifest.write_text(manifest.read_text() + "[profile.release]\nlto = true\n")
+    (workspace / "crates/solo/src/lib.rs").write_text("pub fn three() -> u8 { 33 }\n")
+    git(workspace, "commit", "-qam", "profile and solo")
+    outputs = scope_of(workspace, tmp_path)
+    assert packages(outputs["rust_modified"]) == EVERY_CRATE
     assert packages(outputs["rust_affected"]) == EVERY_CRATE

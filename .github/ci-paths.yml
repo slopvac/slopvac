@@ -58,11 +58,30 @@ rust:
   - 'scripts/install_cargo_delta.sh'
   - 'scripts/install_release_archive.sh'
   - 'deny.toml'
-  - '.config/nextest.toml'
   # Message-registry checks (ast-grep rules) and the append-only code lock.
   - 'ast-grep/**'
   - 'sgconfig.yml'
   - 'docs/reference/error-codes.lock'
+  # Files outside crates/ that the crates embed with include_str!/include_bytes! or read
+  # from their tests. tests/test_ci_routing.py derives the include_* paths from the
+  # sources, so a new embedded input cannot escape this class.
+  - '.cargo/**'
+  - '.config/**'
+  - 'clippy.toml'
+  - 'about.toml'
+  - 'keys/**'
+  - 'docs/contract/compat/profiles/**'
+  - 'docs/reference/cli.md'
+  - 'docs/site.toml'
+  - 'docs/model-recommendations.md'
+  - 'docs/migrate-2-to-3.md'
+  - 'packages/slopvac-lint/examples/blocklist.toml'
+  - 'packages/slopvac-plugin/**'
+  - 'scripts/revocation_list.py'
+  - 'tests/fixtures/workflow-escape-vectors.json'
+  - 'tests/golden/**'
+  - 'evals/corpus/**'
+  - '.github/ISSUE_TEMPLATE/**'
 
 diagram-adapter:
   - '.github/workflows/**'

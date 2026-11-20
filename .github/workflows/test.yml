@@ -37,7 +37,7 @@ jobs:
     name: Classify changes
     if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       code: ${{ steps.filter.outputs.code }}
       package: ${{ steps.filter.outputs.package }}

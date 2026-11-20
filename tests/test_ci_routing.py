@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -728,3 +729,115 @@ def step_runs(job: str) -> str:
 def test_rust_jobs_read_their_scope_from_the_changes_job(job, variable, output):
     assert JOBS[job]["env"][variable] == f"${{{{ needs.changes.outputs.{output} }}}}"
     assert f"${variable}" in step_runs(job)
+
+
+# --- inputs the Rust crates embed or read from outside crates/ ----------------
+
+INCLUDE = re.compile(
+    r"include_(?:str|bytes)!\(\s*"
+    r'(?:"(?P<plain>[^"]+)"'
+    r'|concat!\(\s*env!\("CARGO_MANIFEST_DIR"\)\s*,\s*"(?P<tail>[^"]+)"\s*,?\s*\))',
+)
+PARENT_LITERAL = re.compile(r'"(?P<path>(?:\.\./)+[\w./-]+)"')
+
+
+def crate_sources() -> list[Path]:
+    listed = subprocess.run(
+        ["git", "ls-files", "--", "crates/*.rs"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    return [ROOT / name for name in listed]
+
+
+def crate_of(source: Path) -> Path:
+    return ROOT / "crates" / source.relative_to(ROOT / "crates").parts[0]
+
+
+def embedded_inputs() -> set[str]:
+    """Repository paths outside crates/ that a crate source embeds or reads.
+
+    `include_str!`/`include_bytes!` resolve against the including file. Other
+    `../` literals (manifest-dir reads in tests and build scripts) resolve
+    against the crate directory.
+    """
+    found: set[str] = set()
+    for source in crate_sources():
+        text = source.read_text(encoding="utf-8")
+        resolved: list[Path] = []
+        for match in INCLUDE.finditer(text):
+            if match["plain"]:
+                resolved.append(source.parent / match["plain"])
+            else:
+                resolved.append(crate_of(source) / match["tail"].lstrip("/"))
+        resolved += [
+            crate_of(source) / m["path"] for m in PARENT_LITERAL.finditer(text)
+        ]
+        for path in resolved:
+            normal = Path(os.path.normpath(path))
+            if (
+                normal == ROOT
+                or not normal.exists()
+                or normal.is_relative_to(ROOT / "crates")
+            ):
+                continue
+            found.add(normal.relative_to(ROOT).as_posix())
+    return found
+
+
+def covered(patterns: list[str], path: str) -> bool:
+    # A directory is covered when a file inside it is.
+    probe = f"{path}/x" if (ROOT / path).is_dir() else path
+    return any(glob_to_regex(p).match(probe) for p in patterns)
+
+
+def test_the_scan_finds_the_known_embedded_inputs():
+    # Guards the scanner itself: a broken regex would make the routing tests vacuous.
+    assert {
+        "keys/slopvac-release.pub",
+        "docs/contract/compat/profiles/legacy-strict.toml",
+        "packages/slopvac-lint/examples/blocklist.toml",
+        "tests/fixtures/workflow-escape-vectors.json",
+        "docs/site.toml",
+        "docs/reference/error-codes.lock",
+        "Cargo.lock",
+    } <= embedded_inputs()
+
+
+@pytest.mark.parametrize("path", sorted(embedded_inputs()))
+def test_every_input_a_crate_embeds_routes_to_rust(path):
+    assert covered(CLASSES["rust"], path)
+
+
+# The root manifest and lockfile are scoped by cargo-delta itself, by design.
+SCOPED_BY_DELTA = {"Cargo.toml", "Cargo.lock"}
+
+
+@pytest.mark.parametrize("path", sorted(embedded_inputs() - SCOPED_BY_DELTA))
+def test_every_input_a_crate_embeds_trips_a_cargo_delta_wire(path):
+    wires = tomllib.loads((ROOT / ".github" / "cargo-delta.toml").read_text())[
+        "trip_wire_patterns"
+    ]
+    # cargo-delta follows include macros inside crates only, so outside paths need a wire.
+    assert covered(wires, path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".cargo/config.toml",
+        "docs/reference/cli.md",
+        "docs/migrate-2-to-3.md",
+        "docs/model-recommendations.md",
+        "packages/slopvac-plugin/pyproject.toml",
+        "scripts/revocation_list.py",
+        "tests/golden/v3/inputs.toml",
+        "evals/corpus/x.md",
+        ".github/ISSUE_TEMPLATE/bug.yml",
+    ],
+)
+def test_files_the_crate_tests_read_by_path_route_to_rust(path):
+    # Reads built from CARGO_MANIFEST_DIR or a repository root are not include macros.
+    assert in_class("rust", path)
