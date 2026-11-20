@@ -1,6 +1,9 @@
 //! Where a pack's files come from: the binary, or a directory.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use cap_std::ambient_authority;
+use cap_std::fs::Dir;
 
 use crate::PackPath;
 
@@ -78,7 +81,8 @@ impl PackSource for EmbeddedSource {
     }
 }
 
-/// A pack in a directory, with its manifest at the root. A file that is a symlink is refused.
+/// A pack in a directory, with its manifest at the root. A symlink anywhere below the root,
+/// in a directory or as the file, is refused. The root itself is whatever the caller names.
 #[derive(Debug, Clone)]
 pub struct DirSource {
     root: PathBuf,
@@ -92,18 +96,23 @@ impl DirSource {
     }
 
     fn read_file(&self, rel: &str) -> Result<String, SourceError> {
-        let path = self.root.join(rel);
-        slopvac_fs::read_capped_regular_to_string(
-            &path,
-            MAX_FILE_BYTES,
-            slopvac_fs::ReadOptions::new(),
-        )
-        .map_err(|e| match e.input_kind() {
-            Some(slopvac_fs::InputKind::NotFound) => SourceError::Missing {
-                path: rel.to_owned(),
+        // Each read opens the root again and then walks down without following links, so a
+        // link that appears between two reads cannot carry a later read outside the pack.
+        let root =
+            Dir::open_ambient_dir(&self.root, ambient_authority()).map_err(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => SourceError::Missing {
+                    path: rel.to_owned(),
+                },
+                _ => SourceError::Read(slopvac_fs::Error::read(&e)),
+            })?;
+        slopvac_fs::read_capped_regular_to_string_in(&root, Path::new(rel), MAX_FILE_BYTES).map_err(
+            |e| match e.input_kind() {
+                Some(slopvac_fs::InputKind::NotFound) => SourceError::Missing {
+                    path: rel.to_owned(),
+                },
+                _ => SourceError::Read(e),
             },
-            _ => SourceError::Read(e),
-        })
+        )
     }
 }
 
