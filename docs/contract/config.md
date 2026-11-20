@@ -65,6 +65,7 @@ Scopes that apply to one file combine in file order, not by specificity. A glob 
 - `name` is a lowercase slug of the form of a plugin id: a letter, then letters, digits and hyphens. `core` and `slopvac` are refused, because `slopvac` is the name of the default index. Each `name` appears once. A repeated name is an error at the second entry.
 - `source` is an `oci://` reference or an `https://` URL, at most 2048 characters. It carries no user-info. `http://`, `git+https://` and a path are invalid.
 - Naming an index grants it no trust (plugin-index.md, section 10).
+- A refused `source` is reported with its field, such as `index.extra[0].source`, and the reason: unsupported scheme, user-info, no host, whitespace or too long. The message never repeats the value, because a source can carry a credential (policies.md, section 1.7).
 
 ### 1.4 Provenance
 

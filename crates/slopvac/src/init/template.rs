@@ -16,7 +16,7 @@ const WIDTH: usize = 78;
 /// Plain keys, in the order the template lists them.
 const SCALARS: [&str; 6] = ["mode", "extends", "styles", "exclude", "profile", "locale"];
 /// Tables.
-const TABLES: [&str; 8] = [
+const TABLES: [&str; 9] = [
     "thresholds",
     "categories",
     "rules",
@@ -24,6 +24,7 @@ const TABLES: [&str; 8] = [
     "frontmatter",
     "guidance",
     "network",
+    "index",
     "review",
 ];
 /// Arrays of tables.

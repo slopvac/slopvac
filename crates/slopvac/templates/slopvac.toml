@@ -73,6 +73,13 @@ profile = "normal"
 # offline = false
 # update_check = true
 
+# Which plugin indexes `slopvac plugins search` reads.
+# [index]
+# Read the signed first-party index, named `slopvac`.
+# default = true
+# Extra unsigned indexes, read in this order after the default index.
+# extra = []
+
 # Agent review.
 # [review]
 # Model name of the author.

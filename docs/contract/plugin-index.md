@@ -101,7 +101,7 @@ Every index has its own cache file in the per-user cache directory (policies.md,
 
 ## 9. Failure and offline behaviour
 
-The exit codes are those of policies.md, section 3.5. A search that could not read every selected index is incomplete and exits 2, because the results cannot show that no plugin is missing.
+The exit codes are those of policies.md, section 3.5. A search that could not read every selected index is incomplete and exits 2, because the results cannot show that no plugin is missing. The four `index-` codes in this table are reserved and nothing emits them yet.
 
 | Situation | Behaviour |
 |---|---|

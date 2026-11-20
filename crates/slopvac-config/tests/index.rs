@@ -33,7 +33,7 @@ fn two_extra_indexes_with_different_names_and_the_default_switch_are_valid() {
         extra("acme", "https://plugins.acme.example/index.json"),
         extra("mirror", "oci://ghcr.io/acme/index")
     );
-    assert!(check(&text).is_empty());
+    assert_eq!(check(&text), Vec::new());
 }
 
 #[rstest]
@@ -43,22 +43,68 @@ fn two_extra_indexes_with_different_names_and_the_default_switch_are_valid() {
 #[case::bare_host("https://plugins.acme.example")]
 #[case::query_with_at("https://plugins.acme.example/index.json?ref=a@b")]
 fn an_extra_index_source_that_names_a_host_is_valid(#[case] source: &str) {
-    assert!(check(&extra("acme", source)).is_empty());
+    assert_eq!(check(&extra("acme", source)), Vec::new());
 }
 
 #[rstest]
-#[case::no_host_https("https://")]
-#[case::no_host_oci("oci://")]
-#[case::path_as_host("https:///index.json")]
-#[case::user_in_authority("https://reader@plugins.acme.example/index.json")]
-#[case::empty_user_in_authority("oci://@ghcr.io/acme/index")]
-#[case::space("https://plugins.acme.example/in dex.json")]
-#[case::other_scheme("ftp://plugins.acme.example/index.json")]
-#[case::upper_scheme("HTTPS://plugins.acme.example/index.json")]
-fn an_extra_index_source_without_a_clean_host_is_invalid(#[case] source: &str) {
+#[case::no_host_https("https://", "it names no host")]
+#[case::no_host_oci("oci://", "it names no host")]
+#[case::path_as_host("https:///index.json", "it names no host")]
+#[case::user_in_authority(
+    "https://reader@plugins.acme.example/index.json",
+    "it carries user-info"
+)]
+#[case::empty_user_in_authority("oci://@ghcr.io/acme/index", "it carries user-info")]
+#[case::space("https://plugins.acme.example/in dex.json", "it holds whitespace")]
+#[case::other_scheme(
+    "ftp://plugins.acme.example/index.json",
+    "its scheme is not `oci://` or `https://`"
+)]
+#[case::upper_scheme(
+    "HTTPS://plugins.acme.example/index.json",
+    "its scheme is not `oci://` or `https://`"
+)]
+fn an_extra_index_source_without_a_clean_host_is_refused_with_its_reason(
+    #[case] source: &str,
+    #[case] reason: &str,
+) {
     let diags = check(&extra("acme", source));
     assert_eq!(diags.len(), 1, "{diags:#?}");
     assert_eq!(diags[0].pointer(), "/index/extra/0/source");
+    assert_eq!(
+        diags[0].message,
+        format!("`index.extra[0].source` is refused: {reason}")
+    );
+}
+
+#[test]
+fn a_refused_source_never_shows_the_credential_it_carries() {
+    let sentinel = "SECRET";
+    let sources = [
+        format!("https://user:{sentinel}@plugins.acme.example/index.json"),
+        format!("oci://user:{sentinel}@ghcr.io/acme/index"),
+        format!("ftp://user:{sentinel}@plugins.acme.example/index.json"),
+        format!("https://plugins.acme.example/in dex?token={sentinel}"),
+        format!(
+            "https://plugins.acme.example/{}?token={sentinel}",
+            "a".repeat(2100)
+        ),
+    ];
+    for source in sources {
+        let diags = check(&extra("acme", &source));
+        assert_eq!(diags.len(), 1, "{source}: {diags:#?}");
+        let d = &diags[0];
+        let shown = [
+            d.to_string(),
+            format!("{d:?}"),
+            d.message.clone(),
+            d.label.clone(),
+            d.help.clone().unwrap_or_default(),
+        ];
+        for text in shown {
+            assert!(!text.contains(sentinel), "{text}");
+        }
+    }
 }
 
 #[rstest]

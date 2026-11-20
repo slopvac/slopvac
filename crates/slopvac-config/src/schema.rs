@@ -24,6 +24,13 @@ pub enum Shape {
     },
     /// A boolean.
     Bool,
+    /// A string that `fault` accepts by returning `None`. Otherwise `fault` returns the reason.
+    /// The diagnostic names the field and the reason and never the value, because the value
+    /// may carry a credential.
+    Source {
+        /// Why a string is refused, or `None` when it is fine.
+        fault: fn(&str) -> Option<&'static str>,
+    },
     /// An integer within optional bounds.
     Int {
         /// Inclusive lower bound.
@@ -207,29 +214,34 @@ const DEFAULT_INDEX: &str = "slopvac";
 /// The longest `source` of an extra index, in characters.
 const INDEX_SOURCE_MAX: usize = 2048;
 
-/// An `oci://` or `https://` source with a host and no user-info, as in the schema's
-/// `IndexExtraSource`. An `@` in the path is allowed, because a digest reference uses one.
-fn is_index_source(s: &str) -> bool {
+/// Why an extra-index source is refused, or `None` for an `oci://` or `https://` source with a
+/// host and no user-info, as in the schema's `IndexExtraSource`. An `@` after the host is
+/// allowed, because a digest reference uses one. The reason never repeats the source.
+fn index_source_fault(s: &str) -> Option<&'static str> {
     let Some(rest) = s
         .strip_prefix("oci://")
         .or_else(|| s.strip_prefix("https://"))
     else {
-        return false;
+        return Some(ConfigPhrase::ReasonSourceScheme.as_static());
     };
-    let host_len = rest
-        .find(|c: char| c.is_whitespace() || matches!(c, '/' | '?' | '#' | '@'))
-        .unwrap_or(rest.len());
-    let (host, tail) = rest.split_at(host_len);
-    !host.is_empty()
-        && (tail.is_empty() || tail.starts_with(['/', '?', '#']))
-        && !tail.contains(char::is_whitespace)
-        && s.chars().count() <= INDEX_SOURCE_MAX
+    if s.chars().count() > INDEX_SOURCE_MAX {
+        return Some(ConfigPhrase::ReasonSourceTooLong.as_static());
+    }
+    if s.contains(char::is_whitespace) {
+        return Some(ConfigPhrase::ReasonSourceSpace.as_static());
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') {
+        return Some(ConfigPhrase::ReasonSourceUserInfo.as_static());
+    }
+    authority
+        .is_empty()
+        .then(|| ConfigPhrase::ReasonSourceHost.as_static())
 }
 
 fn index_source() -> Shape {
-    Shape::Pattern {
-        name: ConfigPhrase::NounIndexSource.as_static(),
-        check: is_index_source,
+    Shape::Source {
+        fault: index_source_fault,
     }
 }
 
@@ -696,6 +708,24 @@ fn check(ctx: &mut Ctx<'_>, node: &Node, shape: &Shape, path: &[String]) {
             ),
             _ => ctx.type_error(node, path, ConfigPhrase::KindString.as_static(), None),
         },
+        Shape::Source { fault } => match &node.value {
+            Value::Str(s) => {
+                if let Some(reason) = fault(s) {
+                    ctx.value_error(
+                        node,
+                        path,
+                        ConfigText::SourceRefused {
+                            field: field_name(path),
+                            reason: reason.to_owned(),
+                        }
+                        .to_string(),
+                        ConfigPhrase::LabelNotValidHere.text(),
+                        None,
+                    );
+                }
+            }
+            _ => ctx.type_error(node, path, ConfigPhrase::KindString.as_static(), None),
+        },
         Shape::Bool => {
             if !matches!(node.value, Value::Bool(_)) {
                 ctx.type_error(node, path, ConfigPhrase::KindBoolean.as_static(), None);
@@ -1024,6 +1054,24 @@ fn check_entry(ctx: &mut Ctx<'_>, e: &Entry, shape: &TableShape, path: &[String]
         ConfigPhrase::LabelNotKnownKey.text(),
         help,
     );
+}
+
+/// A key path as a person writes it: `index.extra[0].source`.
+fn field_name(path: &[String]) -> String {
+    let mut out = String::new();
+    for seg in path {
+        if seg.bytes().all(|b| b.is_ascii_digit()) {
+            out.push('[');
+            out.push_str(seg);
+            out.push(']');
+        } else {
+            if !out.is_empty() {
+                out.push('.');
+            }
+            out.push_str(seg);
+        }
+    }
+    out
 }
 
 fn join_ticks(values: &[&str]) -> String {

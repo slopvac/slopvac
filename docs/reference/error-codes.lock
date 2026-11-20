@@ -92,7 +92,6 @@ config-list-too-short text
 config-missing-key error
 config-no-schema-version text
 config-noun-index-name text
-config-noun-index-source text
 config-noun-pack-id text
 config-noun-plugin-id text
 config-noun-reference text
@@ -108,6 +107,11 @@ config-reason-directory text
 config-reason-not-found text
 config-reason-not-utf8 text
 config-reason-permission-denied text
+config-reason-source-host text
+config-reason-source-scheme text
+config-reason-source-space text
+config-reason-source-too-long text
+config-reason-source-user-info text
 config-reason-unreadable text
 config-rejected-many text
 config-rejected-one text
@@ -119,6 +123,7 @@ config-scope-front-matter text
 config-scope-genre-block text
 config-scope-override text
 config-scope-repeats text
+config-source-refused text
 config-too-large error
 config-type-mismatch text
 config-type-mismatch-label text
