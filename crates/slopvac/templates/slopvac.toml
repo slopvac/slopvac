@@ -77,7 +77,8 @@ profile = "normal"
 # [index]
 # Read the signed first-party index, named `slopvac`.
 # default = true
-# Extra unsigned indexes, read in this order after the default index.
+# Extra unsigned indexes, at most 16, read in this order after the default
+# index.
 # extra = []
 
 # Agent review.
