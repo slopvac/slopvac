@@ -139,7 +139,7 @@ From lowest priority to highest: core defaults, styles, the genre chain, `extend
   - The base topic is about 250 words. It has one line per command and an index of topics.
   - Each topic is a terse checklist with its own index.
   - slopvac renders each topic from a Markdown file, against the config, at the detail that `[guidance] level` selects.
-  - `.slopvac/PRIME.md` overrides a topic.
+  - `.slopvac/PRIME.md` adds project notes after a topic, labelled as untrusted data. The built-in text always comes first.
 - **Setup:** `setup <harness>` supports `opencode`. The flags select the block, the skill, and the reviewer agent, and set the reviewer model. Skills follow the Agent Skills specification.
 - **Review:**
   - Types are `mechanical`, `update`, and `rewrite`.

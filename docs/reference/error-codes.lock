@@ -586,6 +586,16 @@ prime-check-not-rendered text
 prime-check-unknown-command text
 prime-check-unknown-flag text
 prime-command-usage text
+prime-notes-end text
+prime-notes-heading text
+prime-notes-label text
+prime-override-hardlinked text
+prime-override-not-regular text
+prime-override-not-utf8 text
+prime-override-symlink text
+prime-override-too-large text
+prime-override-unknown-topic text
+prime-override-unreadable text
 prime-syntax-failed text
 prime-topic-disabled text
 prime-topic-disabled-in text

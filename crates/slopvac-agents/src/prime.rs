@@ -8,14 +8,17 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use cap_std::ambient_authority;
+use cap_std::fs::Dir;
 use clap::{Arg, ArgMatches, Command};
 use minijinja::syntax::SyntaxConfig;
 use minijinja::{Environment, UndefinedBehavior, Value, context};
+use slopvac_fs::InputKind;
 
 use crate::error::AgentsError;
 use crate::guidance::{Guidance, Report, Review, ReviewDepth, Write};
 use crate::harness;
-use crate::messages::{AgentsPhrase, AgentsText, quoted};
+use crate::messages::{AgentsPhrase, AgentsText, PrimeText, quoted};
 use crate::models::{self, Evals};
 use crate::review::{Approval, ReviewType};
 use crate::setup::{EXIT_FINDINGS, EXIT_INCOMPLETE, EXIT_OK};
@@ -155,16 +158,94 @@ fn overrides(text: &str) -> Vec<(String, String)> {
     out
 }
 
-fn override_for(root: &Path, topic: &str) -> Result<Option<String>, AgentsError> {
-    let path = root.join(".slopvac").join("PRIME.md");
-    if !path.is_file() {
-        return Ok(None);
+/// Where the project's notes live, relative to the project root.
+const NOTES_PATH: &str = ".slopvac/PRIME.md";
+
+/// The most notes text prime reads.
+const NOTES_CAP: u64 = 64 * 1024;
+
+/// What the project's notes add to a topic.
+enum Notes {
+    /// No notes file, or nothing in it for this topic.
+    None,
+    /// Text for this topic, to show as data after the built-in guidance.
+    Text(String),
+    /// The file was refused; show a fixed notice and no file text.
+    Refused(PrimeText),
+}
+
+fn refusal(kind: Option<InputKind>) -> PrimeText {
+    match kind {
+        Some(InputKind::Symlink) => PrimeText::OverrideSymlink,
+        Some(InputKind::NotRegular) => PrimeText::OverrideNotRegular,
+        Some(InputKind::TooLarge) => PrimeText::OverrideTooLarge,
+        Some(InputKind::NotUtf8) => PrimeText::OverrideNotUtf8,
+        Some(InputKind::MultiplyLinked) => PrimeText::OverrideHardlinked,
+        _ => PrimeText::OverrideUnreadable,
     }
-    let text = std::fs::read_to_string(&path).map_err(|e| AgentsError::io(&path, e))?;
-    Ok(overrides(&text)
-        .into_iter()
-        .find(|(n, _)| n == topic)
-        .map(|(_, body)| body))
+}
+
+/// Read `.slopvac/PRIME.md` under `root` through the confined reader and pick the text for
+/// `topic`. A refused file never fails the command: the built-in guidance stands alone.
+fn project_notes(root: &Path, topic: &str) -> Notes {
+    let dir = match Dir::open_ambient_dir(root, ambient_authority()) {
+        Ok(dir) => dir,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Notes::None,
+        Err(_) => return Notes::Refused(PrimeText::OverrideUnreadable),
+    };
+    let text = match slopvac_fs::read_capped_regular_to_string_in(
+        &dir,
+        Path::new(NOTES_PATH),
+        NOTES_CAP,
+    ) {
+        Ok(text) => text.replace("\r\n", "\n"),
+        Err(e) if e.input_kind() == Some(InputKind::NotFound) => return Notes::None,
+        Err(e) => return Notes::Refused(refusal(e.input_kind())),
+    };
+    let sections = overrides(&text);
+    let names = topic_names();
+    if sections
+        .iter()
+        .any(|(n, _)| !n.is_empty() && !names.contains(&n.as_str()))
+    {
+        return Notes::Refused(PrimeText::OverrideUnknownTopic);
+    }
+    match sections.into_iter().find(|(n, _)| n == topic) {
+        Some((_, body)) if !body.trim().is_empty() => Notes::Text(body),
+        _ => Notes::None,
+    }
+}
+
+/// `text` as data: escaped for the terminal, in a fence longer than any backtick run in it.
+fn fenced_notes(text: &str) -> String {
+    let mut body = slopvac_sanitize::terminal(text);
+    if !body.ends_with('\n') {
+        body.push('\n');
+    }
+    let longest = body.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    let fence = "`".repeat((longest + 1).max(3));
+    format!("{fence}text project-notes\n{body}{fence}\n")
+}
+
+/// Append the project's notes, or the notice for a refused file, after the built-in `out`.
+fn with_project_notes(mut out: String, root: &Path, topic: &str) -> String {
+    let addition = match project_notes(root, topic) {
+        Notes::None => return out,
+        Notes::Refused(notice) => format!("{}\n", slopvac_messages::render(&notice)),
+        Notes::Text(text) => format!(
+            "{}\n\n{}\n\n{}\n{}\n",
+            slopvac_messages::render(&PrimeText::NotesHeading),
+            slopvac_messages::render(&PrimeText::NotesLabel),
+            fenced_notes(&text),
+            slopvac_messages::render(&PrimeText::NotesEnd),
+        ),
+    };
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push('\n');
+    out.push_str(&addition);
+    out
 }
 
 fn render_template(
@@ -272,14 +353,11 @@ pub fn render(
                 )
             })?
     };
-    if let Some(text) = override_for(root, name)? {
-        return Ok(text);
-    }
     let mut out = render_template(name, source, settings, cli)?;
     while out.contains("\n\n\n") {
         out = out.replace("\n\n\n", "\n\n");
     }
-    Ok(out)
+    Ok(with_project_notes(out, root, name))
 }
 
 /// Check that every `slopvac <command>` and `--flag` that a topic names in a
