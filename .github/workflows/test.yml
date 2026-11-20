@@ -58,6 +58,11 @@ jobs:
       filesystem: ${{ steps.filter.outputs.filesystem }}
       secrets: ${{ steps.filter.outputs.secrets }}
       force_all: ${{ steps.force.outputs.force_all }}
+      # How far the Rust jobs reach. `all` or `scoped`, and the cargo arguments for the
+      # lint tier (fmt, clippy) and the build tier (build, test): `--workspace` or `-p NAME ...`.
+      rust_scope: ${{ steps.scope.outputs.rust_scope }}
+      rust_modified: ${{ steps.scope.outputs.rust_modified }}
+      rust_affected: ${{ steps.scope.outputs.rust_affected }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -96,6 +101,28 @@ jobs:
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: .github/ci-paths.yml
+
+      # Pull requests that touch Rust check only the changed crates and their dependents.
+      # cargo-delta needs the full history (above) and the pinned toolchain for cargo
+      # metadata. The queue and main skip these steps and run the whole workspace.
+      - name: Install the pinned toolchain
+        if: steps.force.outputs.force_all != 'true' && steps.filter.outputs.rust == 'true'
+        run: bash scripts/ci/install-rust-toolchain.sh
+
+      - name: Install cargo-delta
+        if: steps.force.outputs.force_all != 'true' && steps.filter.outputs.rust == 'true'
+        run: bash scripts/install_cargo_delta.sh
+
+      # Fails closed: any error, timeout or empty answer from cargo-delta, and any path
+      # that .github/cargo-delta.toml lists as a trip wire, selects the whole workspace.
+      - name: Scope the Rust jobs
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          # Anything but `false` selects the whole workspace, including a Rust-free run.
+          FORCE_ALL: ${{ steps.force.outputs.force_all == 'true' || steps.filter.outputs.rust != 'true' }}
+        run: python3 scripts/ci/rust_scope.py
 
       - name: Report classification
         env:
@@ -173,6 +200,7 @@ jobs:
     timeout-minutes: 20
     env:
       RUSTDOCFLAGS: -D warnings
+      RUST_MODIFIED: ${{ needs.changes.outputs.rust_modified }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -188,11 +216,22 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # RUST_MODIFIED is `--workspace` or a list of `-p NAME` pairs that rust_scope.py checked
+      # against a plain-name pattern, so the unquoted word splitting below is intended.
       - name: Check formatting
-        run: cargo fmt --all --check
+        run: |
+          set -euo pipefail
+          if [ "$RUST_MODIFIED" = "--workspace" ]; then
+            cargo fmt --all --check
+          else
+            # shellcheck disable=SC2086
+            cargo fmt $RUST_MODIFIED --check
+          fi
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: |
+          # shellcheck disable=SC2086
+          cargo clippy $RUST_MODIFIED --all-targets --locked -- -D warnings
 
       - name: Rustdoc
         run: cargo doc --workspace --no-deps --document-private-items --locked
@@ -243,6 +282,8 @@ jobs:
       needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      RUST_AFFECTED: ${{ needs.changes.outputs.rust_affected }}
     strategy:
       fail-fast: false
       matrix:
@@ -345,11 +386,16 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           unshare --user --map-root-user --net true
 
+      # RUST_AFFECTED is `--workspace` or a checked list of `-p NAME` pairs; see rust-static.
       - name: Test
-        run: cargo nextest run --workspace --locked --profile ci --no-tests=pass
+        run: |
+          # shellcheck disable=SC2086
+          cargo nextest run $RUST_AFFECTED --locked --profile ci --no-tests=pass
 
       - name: Doctests
-        run: cargo test --workspace --doc --locked
+        run: |
+          # shellcheck disable=SC2086
+          cargo test $RUST_AFFECTED --doc --locked
 
       - name: Upload JUnit report
         if: always()
@@ -397,9 +443,13 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check
-        run: cargo "+$MSRV" check --workspace --all-targets --locked
+        # RUST_AFFECTED is `--workspace` or a checked list of `-p NAME` pairs; see rust-static.
+        run: |
+          # shellcheck disable=SC2086
+          cargo "+$MSRV" check $RUST_AFFECTED --all-targets --locked
         env:
           MSRV: ${{ steps.msrv.outputs.version }}
+          RUST_AFFECTED: ${{ needs.changes.outputs.rust_affected }}
 
   rust-supply-chain:
     name: Rust supply chain
@@ -426,6 +476,8 @@ jobs:
       # The Action and fork-review tests run this binary. They fail in CI when it is missing.
       SLOPVAC_BIN: ${{ github.workspace }}/target/debug/slopvac
       SLOPVAC_REQUIRE_BIN: "1"
+      # tests/test_rust_scope.py runs the pinned cargo-delta on a throwaway workspace.
+      SLOPVAC_REQUIRE_CARGO_DELTA: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -458,6 +510,9 @@ jobs:
         run: python3 scripts/install_vale.py --prefix "$HOME/.local/bin" --cache-dir "$RUNNER_TEMP/vale-cache"
       - name: Add Vale to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install cargo-delta
+        run: bash scripts/install_cargo_delta.sh
 
       - name: Install minisign
         # The release signing tests run the real binary; the script checks its sha256.
@@ -762,6 +817,10 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
           DRAFT: ${{ github.event.pull_request.draft == true }}
           FORCE_ALL: ${{ needs.changes.outputs.force_all }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUST_SCOPE: ${{ needs.changes.outputs.rust_scope }}
+          RUST_MODIFIED: ${{ needs.changes.outputs.rust_modified }}
+          RUST_AFFECTED: ${{ needs.changes.outputs.rust_affected }}
           CODE: ${{ needs.changes.outputs.code }}
           PACKAGE: ${{ needs.changes.outputs.package }}
           RUST: ${{ needs.changes.outputs.rust }}
@@ -829,6 +888,25 @@ jobs:
               "evals-ratchet": force_all or evals,
               "docs-site": force_all or docs_site,
           }
+
+          # The Rust scope only narrows a pull request. The queue and main, and any run
+          # whose routing was edited, must cover the whole workspace.
+          scope = os.environ["RUST_SCOPE"]
+          if rust or force_all:
+              modified = os.environ["RUST_MODIFIED"]
+              affected = os.environ["RUST_AFFECTED"]
+              if scope not in ("all", "scoped"):
+                  problems.append(f"rust scope was {scope!r}, expected all or scoped")
+              elif scope == "all" and (modified != "--workspace" or affected != "--workspace"):
+                  problems.append("rust scope is all but the cargo arguments are not --workspace")
+              elif scope == "scoped" and (
+                  force_all
+                  or os.environ["EVENT_NAME"] != "pull_request"
+                  or "--workspace" in (modified, affected)
+                  or not modified.startswith("-p ")
+                  or not affected.startswith("-p ")
+              ):
+                  problems.append("rust scope is scoped where the whole workspace must run")
 
           for name, should_run in expected.items():
               actual = needs[name]["result"]

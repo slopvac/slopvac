@@ -987,3 +987,86 @@ def test_schema_check_compares_a_pull_request_with_its_merge_base(tmp_path):
     git, python = run_schema_step(tmp_path, pull)
     assert "git merge-base origin/main HEAD" in git
     assert python == ["python3 scripts/contract/schema_compat.py --base MERGEBASE"]
+
+
+# --- Rust scope: only pull requests narrow ------------------------------------
+
+SCOPE_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "ci" / "rust_scope.py"
+CHANGES_STEPS = load("test.yml")["jobs"]["changes"]["steps"]
+FORCE_STEP = next(s for s in CHANGES_STEPS if s.get("id") == "force")
+SCOPE_STEP = next(s for s in CHANGES_STEPS if s.get("id") == "scope")
+
+
+def changes_scope(event: str, routing_changed: bool, tmp_path: Path) -> dict[str, str]:
+    """Run the force step, then the scope script with a cargo-delta that must not run."""
+    out = tmp_path / "force_output"
+    out.touch()
+    subprocess.run(
+        ["bash", "-c", FORCE_STEP["run"]],
+        env={
+            **os.environ,
+            "EVENT_NAME": event,
+            "ROUTING_CHANGED": "true" if routing_changed else "false",
+            "GITHUB_OUTPUT": str(out),
+        },
+        check=True,
+    )
+    forced = out.read_text().strip() == "force_all=true"
+    tripwire = tmp_path / "ran"
+    stub = tmp_path / "stub"
+    stub.write_text(f"#!/bin/sh\ntouch {tripwire}\nexit 1\n")
+    stub.chmod(0o755)
+    scope_out = tmp_path / "scope_output"
+    scope_out.touch()
+    subprocess.run(
+        [sys.executable, str(SCOPE_SCRIPT), "--delta", str(stub)],
+        env={
+            **os.environ,
+            "EVENT_NAME": event,
+            "BASE_REF": "main",
+            # The workflow passes `force_all || rust != 'true'`; with Rust routed it is force_all.
+            "FORCE_ALL": "true" if forced else "false",
+            "GITHUB_OUTPUT": str(scope_out),
+        },
+        check=True,
+        capture_output=True,
+    )
+    result = dict(line.split("=", 1) for line in scope_out.read_text().splitlines())
+    result["asked_cargo_delta"] = str(tripwire.exists())
+    return result
+
+
+@pytest.mark.parametrize("event", ["merge_group", "push"])
+def test_the_queue_and_main_run_the_whole_workspace_without_cargo_delta(
+    event, tmp_path
+):
+    assert changes_scope(event, False, tmp_path) == {
+        "rust_scope": "all",
+        "rust_modified": "--workspace",
+        "rust_affected": "--workspace",
+        "asked_cargo_delta": "False",
+    }
+
+
+def test_editing_the_routing_runs_the_whole_workspace_even_on_a_pull_request(tmp_path):
+    outputs = changes_scope("pull_request", True, tmp_path)
+    assert outputs["rust_scope"] == "all"
+    assert outputs["asked_cargo_delta"] == "False"
+
+
+def test_a_pull_request_asks_cargo_delta_and_a_failing_answer_widens_to_all(tmp_path):
+    outputs = changes_scope("pull_request", False, tmp_path)
+    assert outputs["asked_cargo_delta"] == "True"
+    assert outputs["rust_scope"] == "all"
+
+
+def test_the_scope_step_forces_everything_unless_rust_is_routed_and_unforced():
+    force = SCOPE_STEP["env"]["FORCE_ALL"]
+    assert "steps.force.outputs.force_all == 'true'" in force
+    assert "steps.filter.outputs.rust != 'true'" in force
+
+
+def test_the_changes_job_fetches_history_for_the_diff_base():
+    checkout = next(s for s in CHANGES_STEPS if s["name"] == "Checkout")
+    assert checkout["with"]["fetch-depth"] == "0"
+    assert SCOPE_STEP["env"]["BASE_REF"] == "${{ github.base_ref }}"

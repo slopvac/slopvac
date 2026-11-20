@@ -28,21 +28,33 @@ while [[ $# -gt 0 ]]; do
 done
 """
 
-# script -> (URL prefix before the target triple, tool it installs)
+# script -> (URL prefix before the target triple, tool it installs, archive suffix)
 PINNED = {
     "install_cargo_dist.sh": (
         "https://github.com/axodotdev/cargo-dist/releases/download/v0.34.0/cargo-dist-",
         "dist",
+        ".tar.xz",
     ),
     "install_cargo_cyclonedx.sh": (
-        "https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/"
-        "cargo-cyclonedx-0.5.5/cargo-cyclonedx-",
+        (
+            "https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/"
+            "cargo-cyclonedx-0.5.5/cargo-cyclonedx-"
+        ),
         "cargo-cyclonedx",
+        ".tar.xz",
     ),
     "install_cargo_auditable.sh": (
-        "https://github.com/rust-secure-code/cargo-auditable/releases/download/"
-        "v0.7.7/cargo-auditable-",
+        (
+            "https://github.com/rust-secure-code/cargo-auditable/releases/download/"
+            "v0.7.7/cargo-auditable-"
+        ),
         "cargo-auditable",
+        ".tar.xz",
+    ),
+    "install_cargo_delta.sh": (
+        "https://github.com/tekian/cargo-delta/releases/download/v0.5.0/cargo-delta-",
+        "cargo-delta",
+        ".tar.gz",
     ),
 }
 
@@ -108,11 +120,11 @@ def sandbox(tmp_path):
     return Sandbox
 
 
-def _archive(member: str, body: str) -> tuple[bytes, str]:
-    """A .tar.xz holding one executable `member`, and its sha256."""
+def _archive(member: str, body: str, mode: str = "w:xz") -> tuple[bytes, str]:
+    """A tar archive holding one executable `member`, and its sha256."""
     data = body.encode()
     buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:xz") as tar:
+    with tarfile.open(fileobj=buffer, mode=mode) as tar:
         info = tarfile.TarInfo(member)
         info.size = len(data)
         info.mode = 0o755
@@ -123,7 +135,7 @@ def _archive(member: str, body: str) -> tuple[bytes, str]:
 
 @pytest.mark.parametrize("script", PINNED)
 def test_a_downloaded_archive_with_another_digest_fails_the_install(sandbox, script):
-    _, tool = PINNED[script]
+    _, tool, _ = PINNED[script]
     _skip_if_unsupported(script)
     sandbox.serve(b"not the pinned archive")
     result = sandbox.run("bash", str(SCRIPTS / script))
@@ -135,12 +147,12 @@ def test_a_downloaded_archive_with_another_digest_fails_the_install(sandbox, scr
 
 @pytest.mark.parametrize("script", PINNED)
 def test_the_download_is_the_pinned_release_asset_for_this_runner(sandbox, script):
-    prefix, _ = PINNED[script]
+    prefix, _, suffix = PINNED[script]
     _skip_if_unsupported(script)
     sandbox.serve(b"not the pinned archive")
     sandbox.run("bash", str(SCRIPTS / script))
     args = sandbox.curl_args.read_text().split()
-    assert f"{prefix}{_target()}.tar.xz" in args
+    assert f"{prefix}{_target()}{suffix}" in args
     assert "--proto" in args
 
 
@@ -230,3 +242,18 @@ def test_installing_twice_leaves_one_path_entry_and_a_working_executable(sandbox
     assert second.returncode == 0, second.stderr
     assert sandbox.run(str(sandbox.installed / "tool")).stdout == "stub-ran\n"
     assert sandbox.github_path.read_text().splitlines() == [str(sandbox.installed)]
+
+
+def test_a_gzip_archive_installs_like_an_xz_one(sandbox):
+    blob, digest = _archive("tool", "#!/bin/sh\necho stub-ran\n", mode="w:gz")
+    sandbox.serve(blob)
+    result = sandbox.run(
+        "bash",
+        "-c",
+        'source "$1" && install_release_archive tool https://example.test/t.tar.gz "$2" tool',
+        "bash",
+        str(LIBRARY),
+        digest,
+    )
+    assert result.returncode == 0, result.stderr
+    assert sandbox.run(str(sandbox.installed / "tool")).stdout == "stub-ran\n"

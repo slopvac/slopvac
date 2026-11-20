@@ -53,6 +53,10 @@ rust:
   - 'schemas/**'
   - 'rust-toolchain.toml'
   - 'rustfmt.toml'
+  - '.github/cargo-delta.toml'
+  - 'scripts/ci/rust_scope.py'
+  - 'scripts/install_cargo_delta.sh'
+  - 'scripts/install_release_archive.sh'
   - 'deny.toml'
   - '.config/nextest.toml'
   # Message-registry checks (ast-grep rules) and the append-only code lock.

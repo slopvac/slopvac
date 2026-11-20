@@ -33,7 +33,8 @@ def load(name: str) -> dict:
 
 
 def test_every_path_class_is_a_changes_output_and_vice_versa():
-    assert set(JOBS["changes"]["outputs"]) - {"force_all"} == set(CLASSES)
+    scope_outputs = {"force_all", "rust_scope", "rust_modified", "rust_affected"}
+    assert set(JOBS["changes"]["outputs"]) - scope_outputs == set(CLASSES)
 
 
 def test_gate_needs_every_job_except_itself_and_its_compat_shims():
@@ -446,12 +447,19 @@ ALWAYS = {"changes", "quick-lint"}
 
 
 def run_gate(
-    flags: set[str], results: dict[str, str], *, draft: bool = False
+    flags: set[str],
+    results: dict[str, str],
+    *,
+    draft: bool = False,
+    event: str = "pull_request",
+    scope: tuple[str, str, str] = ("all", "--workspace", "--workspace"),
 ) -> subprocess.CompletedProcess:
     needs = {name: {"result": results.get(name, "skipped")} for name in GATE_NEEDS}
     env = {k: "true" if v in flags else "false" for k, v in FLAG_ENV.items()}
     env["RESULTS"] = json.dumps(needs)
     env["DRAFT"] = "true" if draft else "false"
+    env["EVENT_NAME"] = event
+    env["RUST_SCOPE"], env["RUST_MODIFIED"], env["RUST_AFFECTED"] = scope
     return subprocess.run(
         [sys.executable, "-c", GATE_SCRIPT],
         env={**os.environ, **env},
@@ -466,7 +474,9 @@ def ok(*names: str) -> dict[str, str]:
 
 
 def test_gate_step_declares_an_env_for_every_flag():
-    assert set(GATE_STEP["env"]) >= set(FLAG_ENV) | {"RESULTS", "DRAFT"}
+    declared = set(FLAG_ENV) | {"RESULTS", "DRAFT", "EVENT_NAME"}
+    declared |= {"RUST_SCOPE", "RUST_MODIFIED", "RUST_AFFECTED"}
+    assert set(GATE_STEP["env"]) >= declared
 
 
 def test_gate_needs_include_the_folded_jobs():
@@ -644,3 +654,77 @@ def test_a_change_outside_the_filesystem_class_still_gets_the_secret_scan(path):
     )
     scan_job = load("security.yml")["jobs"]["trivy-secret"]
     assert scan_job["if"] == "${{ inputs.secrets }}"
+
+
+# --- Rust scope in the Tests gate -------------------------------------------
+
+SCOPED = ("scoped", "-p slopvac-fs", "-p slopvac -p slopvac-fs")
+RUST_RUN = ok("rust-static", "rust", "rust-msrv", "rust-supply-chain")
+
+
+@pytest.mark.parametrize(
+    ("flags", "event", "scope"),
+    [
+        ({"rust"}, "pull_request", SCOPED),
+        ({"rust"}, "pull_request", ("all", "--workspace", "--workspace")),
+        ({"rust", "force_all"}, "merge_group", ("all", "--workspace", "--workspace")),
+        ({"rust", "force_all"}, "push", ("all", "--workspace", "--workspace")),
+    ],
+)
+def test_gate_accepts_the_scopes_each_event_may_use(flags, event, scope):
+    results = RUST_RUN if flags == {"rust"} else ok(*(set(GATE_NEEDS) - ALWAYS))
+    proc = run_gate(flags, results, event=event, scope=scope)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize(
+    ("flags", "event", "scope", "message"),
+    [
+        # A queue or main run must never test less than the whole workspace.
+        ({"rust", "force_all"}, "merge_group", SCOPED, "scoped where the whole"),
+        ({"rust", "force_all"}, "push", SCOPED, "scoped where the whole"),
+        ({"rust"}, "push", SCOPED, "scoped where the whole"),
+        # A routing edit forces everything even on a pull request.
+        ({"rust", "force_all"}, "pull_request", SCOPED, "scoped where the whole"),
+        # Scope outputs that are missing or contradict each other fail the gate.
+        ({"rust"}, "pull_request", ("", "", ""), "expected all or scoped"),
+        (
+            {"rust"},
+            "pull_request",
+            ("all", "-p slopvac-fs", "-p slopvac-fs"),
+            "arguments are not --workspace",
+        ),
+        (
+            {"rust"},
+            "pull_request",
+            ("scoped", "--workspace", "-p slopvac-fs"),
+            "scoped where the whole",
+        ),
+    ],
+)
+def test_gate_fails_a_scope_that_narrows_what_must_run_in_full(
+    flags, event, scope, message
+):
+    results = RUST_RUN if flags == {"rust"} else ok(*(set(GATE_NEEDS) - ALWAYS))
+    proc = run_gate(flags, results, event=event, scope=scope)
+    assert proc.returncode == 1
+    assert message in proc.stdout
+
+
+# --- the Rust jobs take their scope from the changes job ---------------------
+
+
+def step_runs(job: str) -> str:
+    return "\n".join(s.get("run", "") for s in JOBS[job]["steps"])
+
+
+@pytest.mark.parametrize(
+    ("job", "variable", "output"),
+    [
+        ("rust-static", "RUST_MODIFIED", "rust_modified"),
+        ("rust", "RUST_AFFECTED", "rust_affected"),
+    ],
+)
+def test_rust_jobs_read_their_scope_from_the_changes_job(job, variable, output):
+    assert JOBS[job]["env"][variable] == f"${{{{ needs.changes.outputs.{output} }}}}"
+    assert f"${variable}" in step_runs(job)
