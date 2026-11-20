@@ -361,6 +361,18 @@ def test_the_pytest_job_builds_the_binary_before_it_runs_the_suites():
     )
 
 
+def test_the_rust_job_allows_user_namespaces_before_the_tests_run():
+    steps = JOBS["rust"]["steps"]
+    names = [s["name"] for s in steps]
+    step = steps[
+        names.index("Allow unprivileged user namespaces for the network-sandbox test")
+    ]
+    assert names.index(step["name"]) < names.index("Test")
+    assert step["if"] == "runner.os == 'Linux'"
+    assert "kernel.apparmor_restrict_unprivileged_userns=0" in step["run"]
+    assert "unshare --user --map-root-user --net true" in step["run"]
+
+
 @pytest.mark.parametrize(
     ("job", "workflow"),
     [
