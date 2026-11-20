@@ -118,7 +118,7 @@ fn write_off_disables_the_write_topic_and_names_the_config_file() {
 }
 
 #[test]
-fn review_auto_makes_the_hand_off_step_mandatory() {
+fn review_auto_lists_the_review_topic_without_the_ask_text() {
     let out = prime_with("review = \"auto\"", &[]);
     assert!(out.contains(REVIEW_INDEX) && !out.contains("Ask the user first"));
 }
@@ -209,6 +209,28 @@ fn level_flag_still_fails_on_a_config_that_cannot_load() {
     write_config(dir.path(), "slopvac.toml", "level = \"loud\"");
     let err = prime_out(dir.path(), &["--level", "full"]).unwrap_err();
     assert_eq!(err.code(), "config-invalid-value");
+}
+
+#[test]
+fn the_notice_shows_a_control_from_outside_the_project_as_external() {
+    let dir = tempfile::tempdir().unwrap();
+    let shared = dir.path().join("shared");
+    let project = dir.path().join("project");
+    fs::create_dir_all(&shared).unwrap();
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        shared.join("base.toml"),
+        "schema_version = 3\n\n[guidance]\nreview = \"off\"\n",
+    )
+    .unwrap();
+    fs::write(
+        project.join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"../shared/base.toml\"]\n",
+    )
+    .unwrap();
+    let out = prime_out(&project, &["review"]).unwrap();
+    assert!(out.contains("in <external>/base.toml."), "{out}");
+    assert!(!out.contains(dir.path().to_str().unwrap()), "{out}");
 }
 
 fn run_setup(root: &Path, extra: &[&str]) -> Result<setup::Outcome, AgentsError> {

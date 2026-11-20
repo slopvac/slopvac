@@ -8,6 +8,7 @@ use std::path::Path;
 use slopvac_config::{ConfigError, Discovery, LoadedConfig, NoPresets};
 
 use crate::error::{AgentsError, ConfigFailure};
+use crate::messages::PrimeText;
 use crate::prime::Level;
 
 /// `guidance.write`.
@@ -106,26 +107,35 @@ impl Guidance {
             .map(|(_, f)| f.as_str())
     }
 
+    /// Whether `prime <topic>` renders: `false` only for `write`, `review` or `report` when
+    /// its control is `"off"`.
+    #[must_use]
+    pub fn topic_enabled(&self, topic: &str) -> bool {
+        match topic {
+            "write" => self.write != Write::Off,
+            "review" => self.review != Review::Off,
+            "report" => self.report != Report::Off,
+            _ => true,
+        }
+    }
+
     /// The notice `prime <topic>` prints when its control is `"off"`, or `None` when the
-    /// topic is on.
+    /// topic is on. The config file shows as provenance does for a file outside the project:
+    /// `<external>/<file name>`, never an absolute path.
     #[must_use]
     pub fn disabled_notice(&self, topic: &str) -> Option<String> {
-        let (key, off) = match topic {
-            "write" => ("write", self.write == Write::Off),
-            "review" => ("review", self.review == Review::Off),
-            "report" => ("report", self.report == Report::Off),
-            _ => return None,
-        };
-        if !off {
+        if self.topic_enabled(topic) {
             return None;
         }
-        let place = self
-            .source_of(key)
-            .map(|f| format!(" in {f}"))
-            .unwrap_or_default();
-        Some(format!(
-            "slopvac prime {key} is disabled by [guidance] {key} = \"off\"{place}."
-        ))
+        let topic = topic.to_owned();
+        let message = match self.source_of(&topic) {
+            Some(file) => PrimeText::DisabledIn {
+                file: slopvac_fs::display_under_root(Path::new(file), Path::new(".")),
+                topic,
+            },
+            None => PrimeText::Disabled { topic },
+        };
+        Some(slopvac_messages::render(&message))
     }
 
     fn from_config(config: &LoadedConfig) -> Self {

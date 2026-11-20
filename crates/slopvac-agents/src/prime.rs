@@ -187,7 +187,7 @@ fn render_template(
     // enabled step, so the base guide stays within its word budget.
     let topics: Vec<Value> = TOPICS
         .iter()
-        .filter(|(n, _)| settings.guidance.disabled_notice(n).is_none())
+        .filter(|(n, _)| settings.guidance.topic_enabled(n))
         .map(|(n, s)| {
             let ask = *n == "review" && settings.guidance.review == Review::Ask;
             context! { name => *n, summary => split_summary(s).0, ask => ask }
@@ -216,11 +216,6 @@ fn render_template(
             ReviewDepth::Adversary => "adversary",
         },
         report => settings.guidance.report == Report::Ask,
-        reviewer_pass => match settings.guidance.review_depth {
-            ReviewDepth::SelfReview => "Review it yourself, with no separate reviewer (`review_depth = self`). Check",
-            ReviewDepth::Subagent => "Reviewer pass: give one fresh-context reviewer",
-            ReviewDepth::Adversary => "Reviewer pass: run rounds, each with a new fresh-context reviewer, until a round reports no finding you accept. Give each round",
-        },
         review_approval => if settings.review_approval == Approval::Auto { "auto" } else { "ask" },
         commands => commands,
         topics => topics,

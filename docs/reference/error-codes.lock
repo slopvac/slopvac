@@ -157,6 +157,8 @@ lsp-setup-failed error
 lsp-unchecked text
 lsp-worker-panicked error
 offline-network-needed error
+prime-topic-disabled text
+prime-topic-disabled-in text
 render-json error
 render-missing-source error
 render-position error
