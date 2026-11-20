@@ -1437,7 +1437,9 @@ PORTABLE = r"(?![\s\S])"
             id="empty-negated-class-then-flag-group",
         ),
         pytest.param("^[]$", f"^[]{PORTABLE}", False, id="empty-class-closes"),
-        pytest.param("^[^]$", f"^[^]{PORTABLE}", False, id="negated-empty-class-closes"),
+        pytest.param(
+            "^[^]$", f"^[^]{PORTABLE}", False, id="negated-empty-class-closes"
+        ),
         pytest.param(
             "^(?-m:a)$", f"^(?-m:a){PORTABLE}", True, id="modifier-group-keeps-finding"
         ),
