@@ -70,6 +70,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      # cargo-delta runs cargo metadata, so the job needs the pinned toolchain.
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
+
       # This routing guard is intentionally outside .github/ci-paths.yml. A broken
       # edit to the central map therefore cannot make its own validation disappear.
       - name: Protect CI routing changes
@@ -105,10 +109,6 @@ jobs:
       # Pull requests that touch Rust check only the changed crates and their dependents.
       # cargo-delta needs the full history (above) and the pinned toolchain for cargo
       # metadata. The queue and main skip these steps and run the whole workspace.
-      - name: Install the pinned toolchain
-        if: steps.force.outputs.force_all != 'true' && steps.filter.outputs.rust == 'true'
-        run: bash scripts/ci/install-rust-toolchain.sh
-
       - name: Install cargo-delta
         if: steps.force.outputs.force_all != 'true' && steps.filter.outputs.rust == 'true'
         run: bash scripts/install_cargo_delta.sh
