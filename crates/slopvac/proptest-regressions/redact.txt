@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 9a1db64084472bc61735b6b362f5d5fe8c972a95f4e5b1a86ee821acc443de25 # shrinks to scheme = "a", user = "UIN", host = "a.example", path = "/'", query = "QRY", fragment = ""
+cc cb88dda339a28309e4c12c6418f189ee7921a3b432d9632696fb15f58060fc9f # shrinks to scheme = "a", user = "UIN?", host = "a.example", path = "/", query = "QRY", fragment = "FRG"

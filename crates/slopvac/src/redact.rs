@@ -100,11 +100,12 @@ pub fn strip_url_userinfo(text: &str) -> String {
 ///
 /// The whole value is the URL when it starts with an RFC 3986 scheme (`ALPHA *( ALPHA / DIGIT /
 /// "+" / "-" / "." ) ":"`). A value without a scheme comes back unchanged, and so does a URL
-/// inside a longer string. The value splits by component: the fragment starts at the first
-/// `#` and goes with everything after it, the query runs from the first `?` before the
-/// fragment and goes, and the
-/// user-info goes only when an authority (`//`) is present: everything up to the last `@`
-/// before the first `/` of the authority.
+/// inside a longer string. The value splits by component, user-info first. With an authority
+/// (`//`), the candidate runs to the first `/`, and a `?` or `#` in it does not end it. When
+/// the candidate holds an `@`, everything up to the last `@` goes. This over-redacts on
+/// purpose: `https://host#frag@x/p` prints as `https://x/p`, because a `#` or `?` inside
+/// user-info must not cut the secret short. Then the fragment goes with everything after the
+/// first `#`, and the query goes from the first `?`.
 #[must_use]
 pub fn redact_url_value(text: &str) -> String {
     let scheme_len = text
@@ -122,21 +123,21 @@ pub fn redact_url_value(text: &str) -> String {
         return text.to_owned();
     };
     let (scheme, rest) = text.split_at(colon + 1);
+    let rest = match rest.strip_prefix("//") {
+        Some(after) => {
+            let (candidate, path) = after.split_at(after.find('/').unwrap_or(after.len()));
+            let host = candidate.rsplit_once('@').map_or(candidate, |(_, h)| h);
+            format!("//{host}{path}")
+        }
+        None => rest.to_owned(),
+    };
     // The fragment can hold a token (an OAuth redirect does), so everything from `#` goes.
     let before_fragment = rest
         .split_once('#')
-        .map_or(rest, |(before, _fragment)| before);
+        .map_or(rest.as_str(), |(before, _fragment)| before);
     let hier = before_fragment
         .split_once('?')
         .map_or(before_fragment, |(hier, _query)| hier);
-    let hier = match hier.strip_prefix("//") {
-        Some(after) => {
-            let (authority, path) = after.split_at(after.find('/').unwrap_or(after.len()));
-            let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
-            format!("//{host}{path}")
-        }
-        None => hier.to_owned(),
-    };
     format!("{scheme}{hier}")
 }
 
@@ -366,6 +367,9 @@ mod tests {
     #[case::question_mark_in_fragment("https://host/x#frag?not-a-query", "https://host/x")]
     #[case::oauth_fragment("https://host/cb#access_token=SECRET", "https://host/cb")]
     #[case::fragment_without_path("https://host#access_token=SECRET", "https://host")]
+    #[case::fragment_char_in_user_info("https://user:SECRET#suffix@host/x", "https://host/x")]
+    #[case::query_char_in_user_info("https://user:SECRET?x@host/p", "https://host/p")]
+    #[case::over_redacts_an_at_sign_after_a_fragment("https://host#frag@x/p", "https://x/p")]
     #[case::uppercase_scheme("HTTPS://user:SECRET@host/x?q=SECRET", "HTTPS://host/x")]
     #[case::ipv6("http://user:SECRET@[::1]:8080/x?q=SECRET", "http://[::1]:8080/x")]
     #[case::at_sign_in_path("https://host/a@b?q=SECRET", "https://host/a@b")]
@@ -387,9 +391,9 @@ mod tests {
         #[test]
         fn redact_url_value_drops_user_info_query_and_fragment_and_keeps_the_rest(
             scheme in "[a-z][a-z0-9+.-]{0,6}",
-            user in "UIN[a-z0-9:'_~!$&()*+,;=%.-]{0,8}",
+            user in "UIN[a-z0-9:'_~!$&()*+,;=%.#?-]{0,8}",
             host in "[a-z]{1,8}\\.example",
-            path in "(/[a-z0-9'@:_~!$&()*+,;=%.-]{0,6}){0,3}",
+            path in "(/[a-z0-9'@:_~!$&()*+,;=%.-]{0,6}){1,3}",
             query in "QRY[a-z0-9/'?=&:@_~!$()*+,;%.-]{0,8}",
             fragment in "FRG[a-z0-9/'?@:_~!$&()*+,;=%.-]{0,8}",
         ) {
