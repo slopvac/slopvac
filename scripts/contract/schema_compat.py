@@ -7,9 +7,10 @@ The baseline is a git ref (read through ``git show``) or a directory with the sa
 layout as schemas/v3 (``*.schema.json`` plus ``conformance/``). The working tree
 is compared against it. A change within one schema_version may add, never remove
 or tighten (docs/contract/policies.md, section 3.9). A ``pattern`` that differs only
-by ``(?![\\s\\S])`` against ``$`` is unchanged: under ECMA-262 without the ``m`` flag
-both mean end of input, and only Python's ``re`` read ``$`` as also matching before a
-trailing newline.
+by ``(?![\\s\\S])`` against ``$`` is unchanged, where the anchor is a real end assertion
+(not escaped, not inside a character class, no inline flag group): Python's ``re`` (the
+reference validator) and PCRE2 read ``$`` as also matching before a final newline;
+JSON Schema ``pattern`` uses ECMA-262, where it does not.
 
 Each finding prints as ``file:json-pointer: kind: old -> new``. The kind is a stable
 kebab-case code; a code is never reused and never changes meaning. An entry in
@@ -58,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -204,13 +206,63 @@ def _same(a: object, b: object) -> bool:
 
 
 _PORTABLE_END = r"(?![\s\S])"
+# An inline flag group such as ``(?m)``, ``(?i)`` or ``(?i:``: flags can change what ``$``
+# means, so a pattern that holds one is never treated as equivalent.
+_INLINE_FLAGS = re.compile(r"\(\?(?:[a-zA-Z]+(?:-[a-zA-Z]*)?|-[a-zA-Z]+)[):]")
+
+
+def _with_dollar_for_end_anchors(pattern: str) -> str | None:
+    """Return ``pattern`` with each real end assertion spelled ``$``.
+
+    Only an ``(?![\\s\\S])`` outside a character class is rewritten. An escaped
+    character (``\\$``) and anything inside a class (``[$]``, ``[(?![\\s\\S])]``) stay
+    as they are. A class runs from an unescaped ``[`` to the next unescaped ``]``; a
+    ``]`` right after ``[`` or ``[^`` is a literal. Returns ``None`` for a pattern with
+    an inline flag group. No tokenizer for the ECMA-262 dialect was available: the
+    checker is Python, and ``re._parser`` reads Python's dialect.
+    """
+    out: list[str] = []
+    i, n = 0, len(pattern)
+    in_class = False
+    while i < n:
+        char = pattern[i]
+        if char == "\\":
+            out.append(pattern[i : i + 2])
+            i += 2
+        elif in_class:
+            in_class = char != "]"
+            out.append(char)
+            i += 1
+        elif char == "[":
+            in_class = True
+            out.append(char)
+            i += 1
+            if pattern.startswith("^", i):
+                out.append("^")
+                i += 1
+            if pattern.startswith("]", i):
+                out.append("]")
+                i += 1
+        elif pattern.startswith(_PORTABLE_END, i):
+            out.append("$")
+            i += len(_PORTABLE_END)
+        elif _INLINE_FLAGS.match(pattern, i):
+            return None
+        else:
+            out.append(char)
+            i += 1
+    return "".join(out)
 
 
 def _same_pattern(old: object, new: object) -> bool:
     """Equal patterns, treating the portable end anchor as ``$`` (see the module docstring)."""
+    if old == new:
+        return True
     if isinstance(old, str) and isinstance(new, str):
-        return old.replace(_PORTABLE_END, "$") == new.replace(_PORTABLE_END, "$")
-    return old == new
+        old_norm = _with_dollar_for_end_anchors(old)
+        new_norm = _with_dollar_for_end_anchors(new)
+        return old_norm is not None and old_norm == new_norm
+    return False
 
 
 # --- structural comparison -------------------------------------------------------
