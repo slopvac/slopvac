@@ -4,6 +4,7 @@ use std::cell::Cell;
 use std::fs;
 use std::path::Path;
 
+use rstest::rstest;
 use slopvac_agents::claims::compare;
 use slopvac_agents::error::AgentsError;
 use slopvac_agents::prime::{self, Level, Settings};
@@ -746,4 +747,94 @@ fn a_mechanical_review_ignores_matching_author_and_provider_models() {
         assert_eq!(notice_codes(&json), Vec::<&str>::new());
     }
     assert_eq!(mock.calls.get(), 0);
+}
+
+/// The bytes of the `payload` member in a printed plan, from its key to the next member.
+fn printed_payload(plan: &str) -> &str {
+    let key = "\"payload\": ";
+    let start = plan.find(key).expect("plan prints a payload") + key.len();
+    let end = plan
+        .find(",\n  \"uses_provider\"")
+        .expect("payload is followed by uses_provider");
+    &plan[start..end]
+}
+
+/// The payload as the recorder saw it, written out field by field.
+fn observed_json(seen: &Payload) -> serde_json::Value {
+    let items: Vec<serde_json::Value> = seen
+        .items
+        .iter()
+        .map(|i| {
+            let mut item = serde_json::json!({"role": i.role, "line": i.line, "text": i.text});
+            if let Some(original) = &i.original {
+                item["original"] = serde_json::json!(original);
+            }
+            item
+        })
+        .collect();
+    serde_json::json!({"kind": seen.kind, "items": items})
+}
+
+/// `--dry-run` prints the payload a live run hands to the provider.
+///
+/// The provider is a recording double at the `ModelProvider` trait. The plugin host
+/// adapter does not exist yet, so this proves the printed payload against what the
+/// trait receives, not against the real host's wire bytes.
+#[rstest]
+#[case::update_fixture(ORIGINAL, REVISED, &["--type", "update"])]
+#[case::rewrite_fixture(ORIGINAL, REVISED, &["--type", "rewrite"])]
+#[case::update_dropped_sentence(
+    "Keep this one. Remove the 90 day limit.\n",
+    "Keep this one.\n",
+    &["--type", "update"],
+)]
+#[case::rewrite_escapes(
+    "Say \"hi\"\\ caf\u{e9} \u{1f600}\tend\n\nTwo.\r\n",
+    "Say \"bye\"\\ caf\u{e9} \u{1f600}\tend\n\nTwo <b>&</b>.\r\n",
+    &["--type", "rewrite"],
+)]
+fn tm19_dry_run_payload_bytes_equal_what_the_provider_receives(
+    #[case] old: &str,
+    #[case] new: &str,
+    #[case] flags: &[&str],
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let rec = Recorder {
+        seen: std::cell::RefCell::new(Vec::new()),
+    };
+    let env = ReviewEnv {
+        provider: Some(&rec),
+        ..ReviewEnv::default()
+    };
+
+    let mut dry_flags = flags.to_vec();
+    dry_flags.push("--dry-run");
+    let dry = run(&pair(dir.path(), old, new, &dry_flags), &env).unwrap();
+    assert_eq!(
+        rec.seen.borrow().len(),
+        0,
+        "dry run must not call the provider"
+    );
+
+    let live = run(&pair(dir.path(), old, new, flags), &env).unwrap();
+    let seen = rec.seen.borrow();
+    assert_eq!(seen.len(), 1);
+    assert!(!seen[0].items.is_empty(), "case must send something");
+
+    // Expected value built from the recorder's fields, not from `Payload`'s serializer.
+    let dry_bytes = printed_payload(&dry);
+    assert_eq!(
+        dry_bytes,
+        printed_payload(&live),
+        "dry run and live run print different bytes"
+    );
+    let printed: serde_json::Value = serde_json::from_str(dry_bytes).unwrap();
+    assert_eq!(printed, observed_json(&seen[0]));
+    for item in &seen[0].items {
+        let text = serde_json::to_string(&item.text).unwrap();
+        assert!(
+            dry_bytes.contains(&text),
+            "dry run lacks the exact text {text}"
+        );
+    }
 }
