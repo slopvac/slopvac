@@ -155,8 +155,8 @@ the original file bytes, and a segment range does not. `SegmentRange` takes no `
   1024 characters, and the host checks the two limits in this order: (1) at most 1024
   characters as sent; (2) the escaped length at most 3072, else the document fails with
   `extract-budget` and `data.budget` `locator` (see
-  [plugin-protocol.md section 5.5.5](plugin-protocol.md#555-limits)). A percent sign or a
-  control character escapes to 3 characters and U+2028 to 9, so a locator within the first
+  [plugin-protocol.md section 5.5.5](plugin-protocol.md#555-limits)). A percent sign or an
+  ASCII control character escapes to 3 characters and U+2028 to 9, so a locator within the first
   limit can still breach the second. A producer that needs more shortens the path by using
   a stable id the format provides, and never truncates.
 - Uniqueness: within one document, a `locator` identifies one `segment` and a `segment`
