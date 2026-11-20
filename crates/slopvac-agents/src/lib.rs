@@ -11,7 +11,7 @@ pub mod guidance;
 pub mod harness;
 pub mod managed;
 mod messages;
-pub use messages::message_entries;
+pub use messages::{error_entries, message_entries, phrase_entries, text_entries};
 pub mod models;
 pub mod prime;
 pub mod review;

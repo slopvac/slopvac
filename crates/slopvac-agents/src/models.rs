@@ -12,6 +12,7 @@ use std::fmt::Write as _;
 use serde::Deserialize;
 
 use crate::error::AgentsError;
+use crate::messages::{AgentsMessage, AgentsPhrase, AgentsText, quoted};
 use crate::review::ReviewType;
 
 /// The embedded eval results.
@@ -22,9 +23,6 @@ const SCHEMA_VERSION: u8 = 2;
 
 /// Fewest repeat runs a result needs to count.
 pub const MIN_REPEATS: u32 = 3;
-
-/// What users read while no reviewer model is recommended.
-const PENDING: &str = "Reviewer model recommendations are pending re-evaluation. Until they are published, pick a model from a different family than the author's.";
 
 /// Reviewers listed per review type in prime.
 const PRIME_LIMIT: usize = 5;
@@ -73,47 +71,40 @@ pub struct Evals {
     pub rows: Vec<Run>,
 }
 
-fn invalid(message: String) -> AgentsError {
-    AgentsError::Coded {
-        code: "models-eval-invalid",
-        message,
-    }
+fn invalid(detail: impl ToString) -> AgentsError {
+    AgentsError::coded(&AgentsMessage::ModelEvalsInvalid {
+        detail: detail.to_string(),
+    })
 }
 
 impl Evals {
     /// Parse and validate a results file.
     pub fn parse(json: &str) -> Result<Self, AgentsError> {
-        let evals: Self =
-            serde_json::from_str(json).map_err(|e| invalid(format!("model evals: {e}")))?;
+        let evals: Self = serde_json::from_str(json).map_err(invalid)?;
         if evals.schema_version != SCHEMA_VERSION {
-            return Err(invalid(format!(
-                "model evals: schema_version {} is not supported",
-                evals.schema_version
-            )));
+            return Err(invalid(AgentsText::EvalsSchema {
+                version: evals.schema_version,
+            }));
         }
         if evals.status == Status::PendingReevaluation && !evals.rows.is_empty() {
-            return Err(invalid(
-                "model evals: a file pending re-evaluation must hold no rows".into(),
-            ));
+            return Err(invalid(AgentsPhrase::EvalsPendingRows.as_static()));
         }
         if evals.repeats < MIN_REPEATS {
-            return Err(invalid(format!(
-                "model evals: {} repeats per task; at least {MIN_REPEATS} are needed",
-                evals.repeats
-            )));
+            return Err(invalid(AgentsText::EvalsRepeats {
+                repeats: evals.repeats,
+                minimum: MIN_REPEATS,
+            }));
         }
         for r in &evals.rows {
             if ReviewType::parse(&r.review_type).is_none() {
-                return Err(invalid(format!(
-                    "model evals: unknown review type {:?}",
-                    r.review_type
-                )));
+                return Err(invalid(AgentsText::EvalsReviewType {
+                    review_type: quoted(&r.review_type),
+                }));
             }
             if !(0.0..=1.0).contains(&r.success_rate) {
-                return Err(invalid(format!(
-                    "model evals: success rate of {} is outside 0..1",
-                    r.model
-                )));
+                return Err(invalid(AgentsText::EvalsSuccessRate {
+                    model: r.model.clone(),
+                }));
             }
         }
         Ok(evals)
@@ -157,10 +148,10 @@ fn coverage(evals: &Evals) -> Option<String> {
         .map(ReviewType::name)
         .collect();
     (!covered.is_empty() && covered.len() < TYPES.len()).then(|| {
-        format!(
-            "Results exist only for the {} reviewer.",
-            covered.join(" and ")
-        )
+        AgentsText::ModelsCoverage {
+            types: covered.join(" and "),
+        }
+        .to_string()
     })
 }
 
@@ -176,11 +167,13 @@ pub fn markdown(evals: &Evals) -> String {
     );
     out.push_str("# Reviewer model recommendations\n\n");
     if evals.status == Status::PendingReevaluation {
-        out.push_str(PENDING);
+        out.push_str(AgentsPhrase::ModelsPending.as_static());
         out.push('\n');
         out.push_str(GUIDE_LINK);
         return out;
     }
+    // The recommendations page is generated content, not a message.
+    // ast-grep-ignore: user-text-literal
     let _ = write!(out, "Eval results dated {}. ", evals.date);
     if let Some(sentence) = coverage(evals) {
         let _ = write!(out, "{sentence} ");
@@ -191,9 +184,8 @@ pub fn markdown(evals: &Evals) -> String {
         let _ = write!(out, "\n## {}\n\n", kind.name());
         let ranked = evals.ranked(kind);
         if ranked.is_empty() {
-            out.push_str(
-                "No eval results for this review type. Pick a model from a different family than the author's.\n",
-            );
+            out.push_str(AgentsPhrase::ModelsNoneForType.as_static());
+            out.push('\n');
             continue;
         }
         out.push_str("| Rank | Model | Family | Tier | Success rate | Tasks | Runs |\n| --- | --- | --- | --- | --- | --- | --- |\n");
@@ -219,9 +211,8 @@ pub fn markdown(evals: &Evals) -> String {
 #[must_use]
 pub fn prime_guidance(evals: &Evals, kind: Option<ReviewType>) -> String {
     if evals.status == Status::PendingReevaluation {
-        return PENDING.into();
+        return AgentsPhrase::ModelsPending.as_static().into();
     }
-    let none = "No eval results yet. Pick a model from a different family than the author's.";
     let line = |kind: ReviewType| -> Option<String> {
         let names: Vec<String> = evals
             .ranked(kind)
@@ -236,14 +227,16 @@ pub fn prime_guidance(evals: &Evals, kind: Option<ReviewType>) -> String {
         None => TYPES.into_iter().filter_map(line).collect(),
     };
     if lines.is_empty() {
-        return none.into();
+        return AgentsPhrase::ModelsNone.as_static().into();
     }
-    let mut out = format!(
-        "Reviewer models from evals dated {}. Pick the first available:\n",
-        evals.date
-    );
+    let mut out = AgentsText::ModelsPrimeHeader {
+        date: evals.date.clone(),
+    }
+    .to_string();
+    out.push('\n');
     if let Some(sentence) = coverage(evals) {
-        let _ = writeln!(out, "{sentence} For other types, pick another family.");
+        let other = AgentsText::ModelsPrimeOtherTypes { coverage: sentence };
+        let _ = writeln!(out, "{other}");
     }
     for l in lines {
         let _ = writeln!(out, "- {l}");

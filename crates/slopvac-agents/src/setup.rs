@@ -12,6 +12,7 @@ use crate::fsx::Project;
 use crate::guidance::Guidance;
 use crate::harness::{self, AgentFormat, Harness};
 use crate::managed;
+use crate::messages::{AgentsMessage, AgentsPhrase, AgentsText, quoted};
 
 /// Exit code: pass.
 pub const EXIT_OK: u8 = 0;
@@ -59,21 +60,66 @@ pub struct Outcome {
 #[must_use]
 pub fn command() -> Command {
     Command::new("setup")
-        .about("Install or remove project-local steering for a harness")
+        .about(AgentsPhrase::SetupAbout.as_static())
         .arg(
             Arg::new("harness")
                 .value_name("HARNESS")
-                .help("Required unless --list is used")
+                .help(AgentsPhrase::SetupHarness.as_static())
                 .value_parser(PossibleValuesParser::new(harness::names())),
         )
-        .arg(Arg::new("list").long("list").action(ArgAction::SetTrue).help("List supported harnesses"))
-        .arg(Arg::new("remove").long("remove").action(ArgAction::SetTrue).conflicts_with("check").help("Remove the managed block, skill and reviewer agent"))
-        .arg(Arg::new("check").long("check").action(ArgAction::SetTrue).help("Report whether the managed files are current without changing them"))
-        .arg(Arg::new("root").long("root").value_name("DIR").default_value(".").value_parser(clap::value_parser!(PathBuf)).help("Project directory that holds the steering files"))
-        .arg(Arg::new("block").long("block").value_parser(["minimal", "standard"]).default_value("standard").help("Size of the steering block"))
-        .arg(Arg::new("no-skill").long("no-skill").action(ArgAction::SetTrue).help("Install no slopvac-prose skill"))
-        .arg(Arg::new("agent").long("agent").action(ArgAction::SetTrue).help("Install the reviewer agent file, which runs only when `slopvac prime review` calls it"))
-        .arg(Arg::new("reviewer-model").long("reviewer-model").value_name("MODEL").requires("agent").help("Model for the reviewer agent; it must differ from the author's model"))
+        .arg(
+            Arg::new("list")
+                .long("list")
+                .action(ArgAction::SetTrue)
+                .help(AgentsPhrase::SetupList.as_static()),
+        )
+        .arg(
+            Arg::new("remove")
+                .long("remove")
+                .action(ArgAction::SetTrue)
+                .conflicts_with("check")
+                .help(AgentsPhrase::SetupRemove.as_static()),
+        )
+        .arg(
+            Arg::new("check")
+                .long("check")
+                .action(ArgAction::SetTrue)
+                .help(AgentsPhrase::SetupCheck.as_static()),
+        )
+        .arg(
+            Arg::new("root")
+                .long("root")
+                .value_name("DIR")
+                .default_value(".")
+                .value_parser(clap::value_parser!(PathBuf))
+                .help(AgentsPhrase::SetupRoot.as_static()),
+        )
+        .arg(
+            Arg::new("block")
+                .long("block")
+                .value_parser(["minimal", "standard"])
+                .default_value("standard")
+                .help(AgentsPhrase::SetupBlock.as_static()),
+        )
+        .arg(
+            Arg::new("no-skill")
+                .long("no-skill")
+                .action(ArgAction::SetTrue)
+                .help(AgentsPhrase::SetupNoSkill.as_static()),
+        )
+        .arg(
+            Arg::new("agent")
+                .long("agent")
+                .action(ArgAction::SetTrue)
+                .help(AgentsPhrase::SetupAgent.as_static()),
+        )
+        .arg(
+            Arg::new("reviewer-model")
+                .long("reviewer-model")
+                .value_name("MODEL")
+                .requires("agent")
+                .help(AgentsPhrase::SetupReviewerModel.as_static()),
+        )
 }
 
 /// Read [`Options`] from parsed arguments.
@@ -110,8 +156,8 @@ pub fn run(matches: &ArgMatches) -> Result<Outcome, AgentsError> {
     execute(&opts)
 }
 
-fn usage(message: &str) -> AgentsError {
-    AgentsError::Usage(message.into())
+fn usage(message: impl ToString) -> AgentsError {
+    AgentsError::usage(message)
 }
 
 struct Plan {
@@ -155,32 +201,31 @@ fn plan(opts: &Options) -> Result<Plan, AgentsError> {
     let name = opts
         .harness
         .as_deref()
-        .ok_or_else(|| usage("HARNESS is required unless --list is used."))?;
+        .ok_or_else(|| usage(AgentsPhrase::HarnessRequired.as_static()))?;
     let harness = harness::find(name).ok_or_else(|| {
-        usage(&format!(
-            "unknown harness {name:?}; choose from: {}",
-            harness::names().join(", ")
-        ))
+        usage(AgentsText::HarnessUnknown {
+            name: quoted(name),
+            choices: harness::names().join(", "),
+        })
     })?;
     if opts.check && opts.remove {
-        return Err(usage("--check and --remove cannot be used together."));
+        return Err(usage(AgentsPhrase::CheckRemove.as_static()));
     }
     if opts.agent && harness.agent_format().is_none() {
-        return Err(usage(&format!(
-            "{name} has no reviewer agent file; drop --agent."
-        )));
+        return Err(usage(AgentsText::NoAgentFile {
+            harness: name.to_owned(),
+        }));
     }
     if let Some(m) = &opts.reviewer_model {
         if !opts.agent {
-            return Err(usage("--reviewer-model needs --agent."));
+            return Err(usage(AgentsPhrase::ModelNeedsAgent.as_static()));
         }
         if !content::valid_model(m) {
-            return Err(usage(&format!("invalid reviewer model {m:?}.")));
+            return Err(usage(AgentsText::ModelInvalid { model: quoted(m) }));
         }
         if let Some(format) = harness.agent_format() {
-            content::check_model_format(format, m).map_err(|message| AgentsError::Coded {
-                code: "setup-reviewer-model-format",
-                message,
+            content::check_model_format(format, m).map_err(|message| {
+                AgentsError::coded(&AgentsMessage::ReviewerModelFormat { message })
             })?;
         }
     }
@@ -212,20 +257,14 @@ fn notices(p: &Plan) -> Result<Vec<Notice>, AgentsError> {
         return Ok(Vec::new());
     }
     let picks = match p.harness.agent_format() {
-        Some(AgentFormat::Claude) => {
-            "Claude Code uses CLAUDE_CODE_SUBAGENT_MODEL when it is set and the main \
-             conversation's model otherwise"
-        }
-        _ => "OpenCode uses the parent session's model",
+        Some(AgentFormat::Claude) => AgentsPhrase::PicksClaude,
+        _ => AgentsPhrase::PicksOpencode,
     };
     Ok(vec![notice(
-        "setup-reviewer-model-unset",
         NoticeLevel::Warning,
-        format!(
-            "no reviewer model is set, so the harness picks it: {picks}. That can be the \
-             author's model. Pass --reviewer-model with a model from a different family \
-             than the author's."
-        ),
+        &AgentsMessage::ReviewerModelUnset {
+            picks: picks.as_static().to_owned(),
+        },
     )?])
 }
 
@@ -277,20 +316,22 @@ fn remove(p: &Plan) -> Result<Outcome, AgentsError> {
     let project = &p.project;
     let mut lines = vec![status(
         project,
-        "removed from",
+        Verb::Removed,
         block::remove_block(project, &p.steering)?,
         &p.steering,
     )];
     if let Some(s) = &p.skill {
         if skill_in_use_elsewhere(p) {
-            lines.push(format!(
-                "kept {} (another harness uses it)",
-                project.display(s)
-            ));
+            lines.push(
+                AgentsText::StatusKept {
+                    path: project.display(s),
+                }
+                .to_string(),
+            );
         } else {
             lines.push(status(
                 project,
-                "removed from",
+                Verb::Removed,
                 managed::sync(project, s, None)?,
                 s,
             ));
@@ -299,7 +340,7 @@ fn remove(p: &Plan) -> Result<Outcome, AgentsError> {
     if let Some(a) = &p.agent {
         lines.push(status(
             project,
-            "removed from",
+            Verb::Removed,
             managed::sync(project, a, None)?,
             a,
         ));
@@ -347,7 +388,7 @@ fn install(p: &Plan, unrequested: Unrequested) -> Result<Outcome, AgentsError> {
             if changed {
                 changed_files.push(path.display().to_string());
             }
-            lines.push(status(project, "updated", changed, path));
+            lines.push(status(project, Verb::Updated, changed, path));
             Ok(())
         }
         Err(source) if changed_files.is_empty() => Err(source),
@@ -372,12 +413,21 @@ fn install(p: &Plan, unrequested: Unrequested) -> Result<Outcome, AgentsError> {
     })
 }
 
-fn status(project: &Project, verb: &str, changed: bool, path: &Path) -> String {
-    format!(
-        "{} {}",
-        if changed { verb } else { "unchanged" },
-        project.display(path)
-    )
+/// What a changed file reports: the managed text was taken out or put in.
+#[derive(Clone, Copy)]
+enum Verb {
+    Removed,
+    Updated,
+}
+
+fn status(project: &Project, verb: Verb, changed: bool, path: &Path) -> String {
+    let path = project.display(path);
+    match (changed, verb) {
+        (false, _) => AgentsText::StatusUnchanged { path },
+        (true, Verb::Removed) => AgentsText::StatusRemoved { path },
+        (true, Verb::Updated) => AgentsText::StatusUpdated { path },
+    }
+    .to_string()
 }
 
 /// Run setup with explicit options.
@@ -405,7 +455,7 @@ pub fn execute(opts: &Options) -> Result<Outcome, AgentsError> {
 /// As [`execute`]; also a usage error when `list`, `remove` or `check` is set.
 pub fn install_keeping_unrequested(opts: &Options) -> Result<Outcome, AgentsError> {
     if opts.list || opts.remove || opts.check {
-        return Err(usage("install takes no --list, --remove or --check."));
+        return Err(usage(AgentsPhrase::InstallFlags.as_static()));
     }
     install(&plan(opts)?, Unrequested::Keep)
 }

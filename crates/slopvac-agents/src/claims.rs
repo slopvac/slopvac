@@ -13,6 +13,7 @@ use clap::{Arg, ArgMatches, Command};
 use serde::Serialize;
 
 use crate::error::AgentsError;
+use crate::messages::{AgentsPhrase, AgentsText};
 
 /// Pairs below this similarity are not aligned.
 const MIN_ALIGN: f64 = 0.35;
@@ -514,13 +515,13 @@ fn dropped_facts(
 #[must_use]
 pub fn command() -> Command {
     Command::new("claims")
-        .about("List the claims a revision changed, added or dropped")
+        .about(AgentsPhrase::ClaimsAbout.as_static())
         .arg(
             Arg::new("revised")
                 .value_name("REVISED")
                 .required(true)
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("The revised document"),
+                .help(AgentsPhrase::Revised.as_static()),
         )
         .arg(
             Arg::new("original")
@@ -528,14 +529,14 @@ pub fn command() -> Command {
                 .value_name("FILE")
                 .required(true)
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("The document before the revision"),
+                .help(AgentsPhrase::Original.as_static()),
         )
         .arg(
             Arg::new("format")
                 .long("format")
                 .value_parser(["json", "text"])
                 .default_value("json")
-                .help("Output format"),
+                .help(AgentsPhrase::ClaimsFormat.as_static()),
         )
 }
 
@@ -544,24 +545,43 @@ pub fn command() -> Command {
 pub fn render_text(report: &Report) -> String {
     let mut out = String::new();
     for c in &report.claims {
-        let _ = writeln!(out, "{} line {}: {}", c.change, c.line, c.text);
+        let line = AgentsText::ClaimLine {
+            change: c.change.to_owned(),
+            line: c.line,
+            text: c.text.clone(),
+        };
+        let _ = writeln!(out, "{line}");
         for l in &c.literals_removed {
-            let _ = writeln!(out, "  removed {} {}", l.kind, l.text);
+            let removed = AgentsText::ClaimRemoved {
+                kind: l.kind.to_owned(),
+                text: l.text.clone(),
+            };
+            let _ = writeln!(out, "  {removed}");
         }
         for l in &c.literals_added {
-            let _ = writeln!(out, "  added {} {}", l.kind, l.text);
+            let added = AgentsText::ClaimAdded {
+                kind: l.kind.to_owned(),
+                text: l.text.clone(),
+            };
+            let _ = writeln!(out, "  {added}");
         }
         if c.negation_changed {
-            let _ = writeln!(out, "  negation changed");
+            let _ = writeln!(out, "  {}", AgentsPhrase::NegationChanged.as_static());
         }
     }
     for d in &report.dropped {
-        let tag = if d.fact_candidate {
-            "dropped fact"
+        let line = if d.fact_candidate {
+            AgentsText::ClaimDroppedFact {
+                line: d.line,
+                text: d.text.clone(),
+            }
         } else {
-            "dropped, covered"
+            AgentsText::ClaimDroppedCovered {
+                line: d.line,
+                text: d.text.clone(),
+            }
         };
-        let _ = writeln!(out, "{tag} line {}: {}", d.line, d.text);
+        let _ = writeln!(out, "{line}");
     }
     out
 }
@@ -579,8 +599,11 @@ pub fn run(matches: &ArgMatches) -> Result<String, AgentsError> {
     {
         return Ok(render_text(&report));
     }
-    let mut json = serde_json::to_string_pretty(&report)
-        .map_err(|e| AgentsError::Usage(format!("claims json: {e}")))?;
+    let mut json = serde_json::to_string_pretty(&report).map_err(|e| {
+        AgentsError::usage(AgentsText::ClaimsJsonFailed {
+            detail: e.to_string(),
+        })
+    })?;
     json.push('\n');
     Ok(json)
 }

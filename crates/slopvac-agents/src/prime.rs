@@ -15,6 +15,7 @@ use minijinja::{Environment, UndefinedBehavior, Value, context};
 use crate::error::AgentsError;
 use crate::guidance::{Guidance, Report, Review, ReviewDepth, Write};
 use crate::harness;
+use crate::messages::{AgentsPhrase, AgentsText, quoted};
 use crate::models::{self, Evals};
 use crate::review::{Approval, ReviewType};
 use crate::setup::{EXIT_FINDINGS, EXIT_INCOMPLETE, EXIT_OK};
@@ -116,7 +117,10 @@ fn command_lines(cli: &Command) -> Vec<CommandLine> {
     cli.get_subcommands()
         .filter(|c| !c.is_hide_set() && c.get_name() != "help")
         .map(|c| {
-            let mut usage = format!("slopvac {}", c.get_name());
+            let mut usage = AgentsText::PrimeCommandUsage {
+                name: c.get_name().to_owned(),
+            }
+            .to_string();
             for arg in c.get_positionals() {
                 usage.push(' ');
                 usage.push_str(&positional(arg));
@@ -177,7 +181,11 @@ fn render_template(
             .lstrip_blocks(true)
             .keep_trailing_newline(true)
             .build()
-            .map_err(|e| AgentsError::Usage(format!("prime syntax: {e}")))?,
+            .map_err(|e| {
+                AgentsError::usage(AgentsText::PrimeSyntaxFailed {
+                    detail: e.to_string(),
+                })
+            })?,
     );
     let commands: Vec<Value> = command_lines(cli)
         .into_iter()
@@ -221,8 +229,12 @@ fn render_template(
         topics => topics,
     };
     let body = split_summary(source).1.replace("\r\n", "\n");
-    env.render_str(&body, ctx)
-        .map_err(|e| AgentsError::Usage(format!("prime topic {name:?} failed to render: {e}")))
+    env.render_str(&body, ctx).map_err(|e| {
+        AgentsError::usage(AgentsText::PrimeTopicRenderFailed {
+            topic: quoted(name),
+            detail: e.to_string(),
+        })
+    })
 }
 
 /// Render a topic (`None` is the base topic) for `cli`, applying any override
@@ -245,10 +257,10 @@ pub fn render(
             .find(|(n, _)| *n == name)
             .map(|(_, s)| *s)
             .ok_or_else(|| {
-                AgentsError::Usage(format!(
-                    "unknown prime topic {name:?}; choose from: {}",
-                    topic_names().join(", ")
-                ))
+                AgentsError::usage(AgentsText::PrimeTopicUnknown {
+                    topic: quoted(name),
+                    choices: topic_names().join(", "),
+                })
             })?
     };
     if let Some(text) = override_for(root, name)? {
@@ -282,7 +294,12 @@ pub fn check_topics(cli: &Command) -> Vec<String> {
                 ..Settings::default()
             };
             let Ok(text) = render(topic, &settings, cli, Path::new("/nonexistent")) else {
-                problems.push(format!("topic {topic:?} does not render"));
+                problems.push(
+                    AgentsText::PrimeCheckNotRendered {
+                        topic: quoted(topic),
+                    }
+                    .to_string(),
+                );
                 continue;
             };
             for span in text.split('`').skip(1).step_by(2) {
@@ -308,7 +325,14 @@ fn check_span(span: &str, cli: &Command, topic: Option<&str>) -> Vec<String> {
         return Vec::new();
     }
     let Some(sub) = cli.find_subcommand(first) else {
-        return vec![format!("{at}: `{span}` names no command {first:?}")];
+        return vec![
+            AgentsText::PrimeCheckUnknownCommand {
+                at: at.to_owned(),
+                span: span.to_owned(),
+                command: quoted(first),
+            }
+            .to_string(),
+        ];
     };
     words
         .filter(|w| w.starts_with("--"))
@@ -318,7 +342,14 @@ fn check_span(span: &str, cli: &Command, topic: Option<&str>) -> Vec<String> {
             !sub.get_arguments().any(|a| a.get_long() == Some(flag))
                 && !cli.get_arguments().any(|a| a.get_long() == Some(flag))
         })
-        .map(|w| format!("{at}: `{span}` uses unknown flag {w}"))
+        .map(|w| {
+            AgentsText::PrimeCheckUnknownFlag {
+                at: at.to_owned(),
+                span: span.to_owned(),
+                flag: w.to_owned(),
+            }
+            .to_string()
+        })
         .collect()
 }
 
@@ -326,31 +357,31 @@ fn check_span(span: &str, cli: &Command, topic: Option<&str>) -> Vec<String> {
 #[must_use]
 pub fn command() -> Command {
     Command::new("prime")
-        .about("Print guidance for agents, one topic at a time")
+        .about(AgentsPhrase::PrimeAbout.as_static())
         .arg(
             Arg::new("topic")
                 .value_name("TOPIC")
                 .value_parser(clap::builder::PossibleValuesParser::new(topic_names()))
-                .help("A topic; omit it for the base guide"),
+                .help(AgentsPhrase::PrimeTopic.as_static()),
         )
         .arg(
             Arg::new("level")
                 .long("level")
                 .value_parser(["minimal", "default", "full"])
-                .help("Detail level for this run"),
+                .help(AgentsPhrase::PrimeLevel.as_static()),
         )
         .arg(
             Arg::new("type")
                 .long("type")
                 .value_parser(["mechanical", "update", "rewrite"])
-                .help("Review type, for the review topic"),
+                .help(AgentsPhrase::PrimeType.as_static()),
         )
         .arg(
             Arg::new("config")
                 .long("config")
                 .value_name("FILE")
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("Config file whose [guidance] table sets the level; --level overrides it"),
+                .help(AgentsPhrase::PrimeConfig.as_static()),
         )
 }
 

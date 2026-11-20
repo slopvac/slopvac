@@ -13,6 +13,7 @@ use slopvac_model::{Notice, NoticeLevel};
 
 use crate::claims::{self, Report};
 use crate::error::{AgentsError, notice};
+use crate::messages::{AgentsMessage, AgentsPhrase, AgentsText, quoted};
 
 // STUB(slopvac-8l4.11.8): `ReviewEnv` is filled by the caller; config and the provider hook replace it.
 // The `[review] author_model` and `[review] model` lookups sit behind the same seam.
@@ -136,33 +137,36 @@ pub fn select_type(stats: &ChangeStats, genre: Option<&str>) -> (ReviewType, Str
     if stats.share() >= REWRITE_SHARE {
         return (
             ReviewType::Rewrite,
-            "the change touches half of the document or more".into(),
+            AgentsPhrase::ReasonRewrite.as_static().into(),
         );
     }
     if genre.is_some_and(|g| STRICT_GENRES.contains(&g)) {
         return (
             ReviewType::Update,
-            "the genre carries contract claims, so a wording change still needs a check".into(),
+            AgentsPhrase::ReasonGenre.as_static().into(),
         );
     }
     if stats.literal_claims > 0 {
         return (
             ReviewType::Update,
-            "a changed sentence changes a literal or negation".into(),
+            AgentsPhrase::ReasonLiteral.as_static().into(),
         );
     }
     if stats.fact_candidates > 0 {
         return (
             ReviewType::Update,
-            "a sentence with facts is missing".into(),
+            AgentsPhrase::ReasonFact.as_static().into(),
         );
     }
     if stats.churn > MECHANICAL_MAX_CHURN || stats.share() > MECHANICAL_MAX_SHARE {
-        return (ReviewType::Update, "the change is large".into());
+        return (
+            ReviewType::Update,
+            AgentsPhrase::ReasonLarge.as_static().into(),
+        );
     }
     (
         ReviewType::Mechanical,
-        "the change rewords sentences and changes no literal, negation or fact".into(),
+        AgentsPhrase::ReasonMechanical.as_static().into(),
     )
 }
 
@@ -198,15 +202,11 @@ impl Scope {
         if extra <= self.extra_budget || approval == Approval::Auto || user_confirmed {
             return Ok(());
         }
-        Err(AgentsError::Coded {
-            code: "review-scope-approval",
-            message: format!(
-                "the review would add {extra} checks beyond the {} changed claims; the budget is {}. \
-                 Ask the user to confirm this scope, then rerun with --scope-approved, \
-                 or set review_approval = \"auto\".",
-                self.required, self.extra_budget
-            ),
-        })
+        Err(AgentsError::coded(&AgentsMessage::ScopeApproval {
+            extra,
+            required: self.required,
+            budget: self.extra_budget,
+        }))
     }
 }
 
@@ -224,12 +224,9 @@ pub fn check_reviewer_model(author: Option<&str>, reviewer: &str) -> Result<bool
         return Ok(false);
     };
     if model_key(author) == model_key(reviewer) {
-        return Err(AgentsError::Coded {
-            code: "review-same-model",
-            message: format!(
-                "reviewer model {reviewer:?} is the author's model; pick a different one"
-            ),
-        });
+        return Err(AgentsError::coded(&AgentsMessage::SameModel {
+            reviewer: quoted(reviewer),
+        }));
     }
     Ok(true)
 }
@@ -328,14 +325,11 @@ pub fn check_eligible(
     if rank(chosen) >= rank(required) {
         return Ok(());
     }
-    Err(AgentsError::Coded {
-        code: "review-type-ineligible",
-        message: format!(
-            "--type {} is too light for this change: it needs at least {} because {reason}",
-            chosen.name(),
-            required.name()
-        ),
-    })
+    Err(AgentsError::coded(&AgentsMessage::TypeIneligible {
+        chosen: chosen.name().to_owned(),
+        needed: required.name().to_owned(),
+        reason: reason.to_owned(),
+    }))
 }
 
 fn rank(kind: ReviewType) -> u8 {
@@ -406,13 +400,13 @@ pub struct Plan {
 pub fn command() -> Command {
     let path = || clap::value_parser!(PathBuf);
     Command::new("review")
-        .about("Plan or run the review of a revision")
+        .about(AgentsPhrase::ReviewAbout.as_static())
         .arg(
             Arg::new("revised")
                 .value_name("REVISED")
                 .required(true)
                 .value_parser(path())
-                .help("The revised document"),
+                .help(AgentsPhrase::Revised.as_static()),
         )
         .arg(
             Arg::new("original")
@@ -420,20 +414,20 @@ pub fn command() -> Command {
                 .value_name("FILE")
                 .required(true)
                 .value_parser(path())
-                .help("The document before the revision"),
+                .help(AgentsPhrase::Original.as_static()),
         )
         .arg(
             Arg::new("type")
                 .long("type")
                 .value_parser(["auto", "mechanical", "update", "rewrite"])
                 .default_value("auto")
-                .help("Review type; auto picks from the change"),
+                .help(AgentsPhrase::ReviewType.as_static()),
         )
         .arg(
             Arg::new("genre")
                 .long("genre")
                 .value_name("GENRE")
-                .help("The document's genre"),
+                .help(AgentsPhrase::ReviewGenre.as_static()),
         )
         .arg(
             Arg::new("extra")
@@ -441,31 +435,31 @@ pub fn command() -> Command {
                 .value_name("N")
                 .value_parser(clap::value_parser!(usize))
                 .default_value("0")
-                .help("Checks to add beyond the changed claims"),
+                .help(AgentsPhrase::ReviewExtra.as_static()),
         )
         .arg(
             Arg::new("scope-approved")
                 .long("scope-approved")
                 .action(ArgAction::SetTrue)
-                .help("The user confirmed the scope"),
+                .help(AgentsPhrase::ReviewScopeApproved.as_static()),
         )
         .arg(
             Arg::new("reviewer-model")
                 .long("reviewer-model")
                 .value_name("MODEL")
-                .help("Model that reviews; it must differ from the author's"),
+                .help(AgentsPhrase::ReviewReviewerModel.as_static()),
         )
         .arg(
             Arg::new("author-model")
                 .long("author-model")
                 .value_name("MODEL")
-                .help("Model that wrote the revision; overrides [review] author_model"),
+                .help(AgentsPhrase::ReviewAuthorModel.as_static()),
         )
         .arg(
             Arg::new("dry-run")
                 .long("dry-run")
                 .action(ArgAction::SetTrue)
-                .help("Print the exact payload and call no provider"),
+                .help(AgentsPhrase::ReviewDryRun.as_static()),
         )
 }
 
@@ -491,7 +485,7 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
     {
         Some(t) => {
             check_eligible(t, auto_type, &auto_reason)?;
-            (t, "chosen with --type".to_owned())
+            (t, AgentsPhrase::ReasonChosen.as_static().to_owned())
         }
         None => (auto_type, auto_reason),
     };
@@ -545,8 +539,11 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
     if plan.uses_provider && !matches.get_flag("dry-run") {
         plan.report = Some(call_provider(env, &plan)?);
     }
-    let mut json = serde_json::to_string_pretty(&plan)
-        .map_err(|e| AgentsError::Usage(format!("review json: {e}")))?;
+    let mut json = serde_json::to_string_pretty(&plan).map_err(|e| {
+        AgentsError::usage(AgentsText::ReviewJsonFailed {
+            detail: e.to_string(),
+        })
+    })?;
     json.push('\n');
     Ok(json)
 }
@@ -558,32 +555,30 @@ fn unchecked_notice(
 ) -> Result<Option<Notice>, AgentsError> {
     let missing = match (author_known, reviewer_known) {
         (true, true) => return Ok(None),
-        (false, true) => "the author model",
-        (true, false) => "the reviewer model",
-        (false, false) => "the author model and the reviewer model",
+        (false, true) => AgentsPhrase::MissingAuthor,
+        (true, false) => AgentsPhrase::MissingReviewer,
+        (false, false) => AgentsPhrase::MissingBoth,
     };
     notice(
-        "review-model-unchecked",
         NoticeLevel::Warning,
-        format!(
-            "the reviewer is not checked against the author: {missing} is unknown. \
-             Pass --author-model and --reviewer-model, or set author_model and model under [review]."
-        ),
+        &AgentsMessage::ModelUnchecked {
+            missing: missing.as_static().to_owned(),
+        },
     )
     .map(Some)
 }
 
 fn call_provider(env: &ReviewEnv<'_>, plan: &Plan) -> Result<String, AgentsError> {
     if env.offline {
+        // STUB(slopvac-8l4.21.6.3): import offline-network-needed from slopvac-update once it is registered there.
         return Err(AgentsError::Coded {
             code: "offline-network-needed",
             message: "offline: review needs the network".into(),
         });
     }
-    let provider = env.provider.ok_or_else(|| AgentsError::Coded {
-        code: "review-provider-missing",
-        message: "no trusted model provider: run `slopvac plugins trust` for one and name it under [review] provider, or use --dry-run".into(),
-    })?;
+    let provider = env
+        .provider
+        .ok_or_else(|| AgentsError::coded(&AgentsMessage::ProviderMissing))?;
     check_reviewer_model(plan.author_model.as_deref(), provider.model())?;
     provider.review(&plan.payload)
 }
