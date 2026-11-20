@@ -481,21 +481,19 @@ fn a_refusal_exits_zero_through_run_and_ends_with_a_newline() {
 }
 
 #[test]
-fn a_notes_path_that_cannot_be_opened_is_refused_as_unreadable() {
-    // `.slopvac` is a file, so the notes path fails with "not a directory". This holds for any user,
-    // root included, unlike a permission test.
+fn a_slopvac_entry_that_is_a_file_holds_no_notes() {
+    // The reader reports "not a directory" as not found, so this is the absent case.
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join(".slopvac"), format!("{SENTINEL}\n")).unwrap();
-    assert_refused(
-        dir.path(),
-        "prime-override-unreadable",
-        "it could not be read.",
-    );
-    // The root itself is a file.
+    assert_eq!(render_in(dir.path(), None), builtin(None));
+}
+
+#[test]
+fn a_project_root_that_is_a_file_is_refused_as_unreadable() {
+    // Opening the root fails with "not a directory". This holds for any user, root included.
     let file = tempfile::NamedTempFile::new().unwrap();
-    let out = render_in(file.path(), None);
     assert_eq!(
-        out,
+        render_in(file.path(), None),
         format!(
             "{}\nIgnored .slopvac/PRIME.md (prime-override-unreadable): it could not be read. The guidance above is complete.\n",
             builtin(None)
@@ -567,6 +565,24 @@ mod unix {
             dir.path(),
             "prime-override-not-regular",
             "it is not a regular file.",
+        );
+    }
+
+    #[test]
+    fn a_notes_file_without_read_permission_is_refused_as_unreadable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = project_with_notes(format!("{SENTINEL}\n").as_bytes());
+        let path = dir.path().join(".slopvac/PRIME.md");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        // Root and ACLs can bypass the mode. Fail loudly instead of passing without testing.
+        assert!(
+            fs::File::open(&path).is_err(),
+            "this test needs a user that the file mode binds; run the suite as a non-root user"
+        );
+        assert_refused(
+            dir.path(),
+            "prime-override-unreadable",
+            "it could not be read.",
         );
     }
 
