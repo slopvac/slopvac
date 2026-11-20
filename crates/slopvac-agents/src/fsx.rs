@@ -274,6 +274,9 @@ impl Project {
         let result = finish().map_err(|e| Self::map(&rel, e)).and_then(|()| {
             drop(file);
             hook(Stage::BeforeCommit);
+            if Self::current(&parent, name, &rel)?.as_deref() != before {
+                return Err(AgentsError::Conflict(rel.clone()));
+            }
             parent
                 .rename(&tmp_name, &parent, name)
                 .map_err(|e| Self::map(&rel, e))
@@ -311,7 +314,9 @@ impl Project {
             .file_name()
             .ok_or_else(|| AgentsError::UnsafeTarget(rel.display().to_string()))?;
         hook(Stage::BeforeCommit);
-        let _ = expected;
+        if Self::current(&parent, name, &rel)?.as_deref() != Some(expected) {
+            return Err(AgentsError::Conflict(rel));
+        }
         parent.remove_file(name).map_err(|e| Self::map(&rel, e))?;
         // Windows cannot delete a directory while a handle to it is open.
         drop(parent);
