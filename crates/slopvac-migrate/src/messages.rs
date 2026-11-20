@@ -11,6 +11,7 @@
 //! and `config-too-large`.
 
 use slopvac_messages::{Catalog, Entry};
+use slopvac_terms::TermsError;
 
 use crate::{DROPPED_SEPARATOR, Error};
 
@@ -790,10 +791,10 @@ pub(crate) fn path_reason(path: &str, reason: &str) -> String {
     .to_string()
 }
 
-/// The message a failure renders. A failure whose published code belongs to another catalog
-/// renders its own wording here.
-pub(crate) fn of(error: &Error) -> Box<dyn Catalog> {
-    match error {
+/// The message a failure renders from this crate's catalogs, or `None` for a failure that the
+/// catalog of another crate renders.
+pub(crate) fn of(error: &Error) -> Option<Box<dyn Catalog>> {
+    Some(match error {
         Error::Dropped(records) => Box::new(MigrateMessage::LegacyDropped {
             records: records
                 .iter()
@@ -851,24 +852,34 @@ pub(crate) fn of(error: &Error) -> Box<dyn Catalog> {
             path: path.clone(),
             reason: source.to_string(),
         }),
-        Error::DocumentTooLarge { path, cap }
-        | Error::ConfigTooLarge { path, cap }
-        | Error::TermsFileTooLarge { path, cap } => Box::new(MigrateText::PathTooLarge {
-            path: path.clone(),
-            cap: *cap,
-        }),
+        Error::DocumentTooLarge { path, cap } | Error::ConfigTooLarge { path, cap } => {
+            Box::new(MigrateText::PathTooLarge {
+                path: path.clone(),
+                cap: *cap,
+            })
+        }
+        Error::TermsFileTooLarge { .. } => return None,
         Error::RunLimit { path, what, limit } => Box::new(MigrateMessage::RunLimit {
             path: path.clone(),
             limit: *limit,
             what: (*what).to_owned(),
         }),
         Error::NotUtf8 { path } => Box::new(MigrateMessage::NotUtf8 { path: path.clone() }),
-    }
+    })
 }
 
-/// The text of a failure, rendered through the catalog.
+/// The text of a failure, rendered through the catalog. A blocklist over the terms file cap
+/// renders through the `slopvac-terms` catalog, which owns that code.
 pub(crate) fn text(error: &Error) -> String {
-    slopvac_messages::render(&*of(error))
+    if let Error::TermsFileTooLarge { path, cap } = error {
+        return TermsError::TooLarge {
+            code: crate::TERMS_FILE_TOO_LARGE,
+            path: path.clone(),
+            cap: *cap,
+        }
+        .to_string();
+    }
+    of(error).map_or_else(String::new, |message| slopvac_messages::render(&*message))
 }
 
 #[cfg(test)]

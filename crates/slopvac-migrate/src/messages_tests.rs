@@ -10,6 +10,19 @@ fn s(text: &str) -> String {
 const POINTER: &str = "see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml";
 
 #[test]
+fn a_blocklist_over_the_terms_cap_reads_with_the_terms_wording_and_code() {
+    let error = Error::TermsFileTooLarge {
+        path: s("t.toml"),
+        cap: 1_048_576,
+    };
+    assert_eq!(error.code(), "terms-file-too-large");
+    assert_eq!(
+        error.to_string(),
+        "[terms-file-too-large] t.toml is larger than 1048576 bytes"
+    );
+}
+
+#[test]
 fn every_code_keeps_its_published_text_and_is_registered() {
     let messages: Vec<(MigrateMessage, String)> = vec![
         (

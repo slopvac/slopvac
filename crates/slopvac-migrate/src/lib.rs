@@ -268,7 +268,7 @@ pub enum Error {
 }
 
 /// The code of a blocklist over the terms file cap. The code belongs to `slopvac-terms`, which
-/// registers it; this crate only reports it until that catalog is the source of the text.
+/// registers it and renders the text.
 const TERMS_FILE_TOO_LARGE: &str = "terms-file-too-large";
 
 impl Error {
@@ -283,8 +283,7 @@ impl Error {
             Self::InvalidType { .. } => Code::InvalidType.as_str(),
             Self::DocumentTooLarge { .. } => Code::DocumentTooLarge.as_str(),
             Self::ConfigTooLarge { .. } => Code::TooLarge.as_str(),
-            Self::TermsFileTooLarge { .. } => TERMS_FILE_TOO_LARGE,
-            other => messages::of(other).code(),
+            other => messages::of(other).map_or(TERMS_FILE_TOO_LARGE, |message| message.code()),
         }
     }
 
