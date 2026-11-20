@@ -1,0 +1,49 @@
+# cargo-delta configuration for pull request CI (scripts/ci/rust_scope.py).
+#
+# cargo-delta maps changed files to workspace crates through module trees and include
+# macros. Anything it cannot map to a crate must trip a wire, so the pull request runs the
+# whole workspace. The merge queue and pushes to main run the whole workspace regardless.
+#
+# Cargo.toml and Cargo.lock are deliberately not wires: cargo-delta compares the
+# [workspace.dependencies] table and the locked external dependency graph, and scopes those
+# edits to the crates that use them. Any other root Cargo.toml setting (profiles, lints,
+# resolver, package defaults, patches) trips the whole workspace inside cargo-delta.
+#
+# The default exclude list skips dot-directories, which would hide .github and .cargo.
+file_exclude_patterns = ["target/**", "*.tmp"]
+
+trip_wire_patterns = [
+    # Toolchain, build and test configuration.
+    "rust-toolchain.toml",
+    "rustfmt.toml",
+    "clippy.toml",
+    "deny.toml",
+    "about.toml",
+    "dist-workspace.toml",
+    "mise.toml",
+    "sgconfig.yml",
+    ".cargo/**",
+    ".config/**",
+    ".github/**",
+    "**/build.rs",
+    # Top-level directories whose files the crates read (schemas, conformance corpora, keys,
+    # docs, evals, scripts, packages) or that hold their own checks.
+    "action-v3/**",
+    "ast-grep/**",
+    "assets/**",
+    "docs/**",
+    "evals/**",
+    "fuzz/**",
+    "integrations/**",
+    "keys/**",
+    "packages/**",
+    "schemas/**",
+    "scripts/**",
+    "site/**",
+    "tests/**",
+    # Data that a crate reads at run time or embeds. cargo-delta follows only Rust modules
+    # and include macros, so a changed data file maps to no crate.
+    "crates/**/{fixtures,snapshots}/**",
+    "crates/*/{data,presets,templates,pack,topics,model,tools,licenses}/**",
+    "crates/**/*.{json,md,txt,py,snap,j2,stderr,pub,minisig,yaml,yml,tsv,der,pip,lock,bin,gz,proptest-regressions,go,rb,lua,js,java,clj,c}",
+]
