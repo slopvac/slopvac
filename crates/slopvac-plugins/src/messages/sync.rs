@@ -1501,6 +1501,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table pins every published text; splitting it would only move rows"
+    )]
     fn every_text_keeps_its_sentence_and_is_registered() {
         let table: Vec<(SyncText, &str)> = vec![
             (
@@ -1939,6 +1943,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table pins every published text; splitting it would only move rows"
+    )]
     fn every_phrase_keeps_its_text_and_is_registered() {
         let table: Vec<(SyncPhrase, &str)> = vec![
             (SyncPhrase::WhatArchive, "plugin archive"),

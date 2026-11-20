@@ -1104,6 +1104,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table pins every published text; splitting it would only move rows"
+    )]
     fn text_keeps_its_wording_and_is_registered() {
         use TransportText as T;
 
@@ -1503,6 +1507,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table pins every published text; splitting it would only move rows"
+    )]
     fn phrases_keep_their_wording_and_are_registered() {
         use TransportPhrase as P;
 

@@ -868,6 +868,10 @@ mod tests {
 
     /// Every sentence with sample parameters, beside the text the code printed before the registry.
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table pins every published text; splitting it would only move rows"
+    )]
     fn every_text_keeps_its_published_wording_and_is_registered() {
         let texts: Vec<(PyenvText, &str)> = vec![
             (
@@ -1260,6 +1264,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table pins every published text; splitting it would only move rows"
+    )]
     fn every_phrase_keeps_its_published_wording_and_is_registered() {
         let phrases: [(PyenvPhrase, &str); 103] = [
             (

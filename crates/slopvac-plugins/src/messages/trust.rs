@@ -1361,6 +1361,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table pins every published text; splitting it would only move rows"
+    )]
     fn trust_sentences_keep_their_text_and_are_registered() {
         let texts: Vec<(TrustText, &str)> = vec![
             (
