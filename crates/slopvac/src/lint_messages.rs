@@ -6,7 +6,7 @@ use slopvac_messages::Catalog;
 #[derive(Debug, Catalog)]
 pub enum LintOptionError {
     /// `--explain-config` was given with a report format other than `text`.
-    #[code("explain-config-format")]
+    #[code("explain-config-format-unsupported")]
     #[message("`--explain-config` prints text only; remove `--format {format}`.")]
     ExplainConfigFormat {
         /// The `--format` value from the command line, one of the fixed format names.

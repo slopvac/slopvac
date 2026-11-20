@@ -510,5 +510,6 @@ pub fn render_explain(config: &LoadedConfig, explained: &[Explained], root: &str
             let _ = writeln!(out, "    {replaced}");
         }
     }
+    let _ = writeln!(out, "{}", ConfigText::ExplainFrontMatter);
     out
 }

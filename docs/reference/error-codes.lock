@@ -51,6 +51,7 @@ config-directive-empty text
 config-duplicate-scope error
 config-expected-one-of text
 config-explain-file text
+config-explain-front-matter text
 config-explain-replaced text
 config-explain-root text
 config-explain-setting text
@@ -192,7 +193,7 @@ config-value-out-of-range text
 config-version-newer text
 config-version-unsupported text
 document-too-large error
-explain-config-format error
+explain-config-format-unsupported error
 lsp-action-allow text
 lsp-action-fix text
 lsp-binary-unchecked notice
