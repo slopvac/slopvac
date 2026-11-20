@@ -113,15 +113,36 @@ mod lock_rules {
         );
     }
 
-    #[test]
-    fn a_retired_code_that_is_registered_again_is_reported() {
+    #[rstest::rstest]
+    #[case::notice(Kind::Notice)]
+    #[case::text(Kind::Text)]
+    fn a_retired_code_that_is_registered_again_is_reported(#[case] kind: Kind) {
+        let entries = [entry("alpha", Kind::Error), entry("beta", kind)];
         let retired = [Retired {
             code: "beta",
             note: "Gone.",
         }];
+        let lock = format!("alpha error\nbeta {}\n", kind.name());
         assert_eq!(
-            check("alpha error\nbeta notice\n", &retired),
+            check_lock(&lock, &[("cat", &entries)], &retired),
             ["retired `beta` is registered again; never reuse a code"]
+        );
+    }
+
+    #[test]
+    fn a_text_id_that_is_not_retired_is_clean() {
+        let entries = [entry("alpha", Kind::Error), entry("label", Kind::Text)];
+        let retired = [Retired {
+            code: "gamma",
+            note: "Gone.",
+        }];
+        assert_eq!(
+            check_lock(
+                "alpha error\ngamma error\nlabel text\n",
+                &[("cat", &entries)],
+                &retired
+            ),
+            Vec::<String>::new()
         );
     }
 
