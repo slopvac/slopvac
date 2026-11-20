@@ -382,6 +382,7 @@ pub fn command() -> Command {
         .subcommand(slopvac_agents::setup::command())
         .subcommand(slopvac_agents::prime::command())
         .subcommand(slopvac_agents::review::command())
+        .subcommand(slopvac_agents::claims::command())
         .subcommand(completions())
         .subcommand(man())
         .subcommand(Command::new("cli-reference").about("Print the Markdown CLI reference.").hide(true));

@@ -240,6 +240,7 @@ fn dispatch(
         Some(("setup", m)) => owners::setup(m, out),
         Some(("prime", m)) => owners::prime(m, out),
         Some(("review", m)) => owners::review(m, globals.offline, out),
+        Some(("claims", m)) => owners::claims(m, out),
         Some(("man", m)) => man(m, out),
         Some(("doctor", m)) => doctor(matches, m, env, out),
         Some(("cli-reference", _)) => write_stdout(

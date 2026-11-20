@@ -320,6 +320,19 @@ Plan or run the review of a revision
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
+### `slopvac claims`
+
+List the claims a revision changed, added or dropped
+
+| Argument | Description |
+| --- | --- |
+| `<REVISED>` | The revised document |
+| `--original` | The document before the revision |
+| `--format` | Output format |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
 ### `slopvac completions`
 
 Print a shell completion script.

@@ -1,5 +1,5 @@
 //! Commands whose logic lives in an owner crate: `terms`, `genre`, `validate`, `setup`,
-//! `prime` and `review`. Each owner exposes `command()` and a run function; this module maps their
+//! `prime`, `review` and `claims`. Each owner exposes `command()` and a run function; this module maps their
 //! results and errors onto the CLI's exit codes and error codes (policies.md, 3.5) and
 //! keeps absolute paths out of every message (policies.md, 1.7).
 
@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::ArgMatches;
+use slopvac_agents::claims;
 use slopvac_agents::review::{self, ReviewEnv};
 use slopvac_agents::{AgentsError, prime, setup};
 use slopvac_config::Discovery;
@@ -171,6 +172,13 @@ pub fn review(m: &ArgMatches, offline: bool, out: &mut dyn Write) -> Result<u8, 
         ..ReviewEnv::default()
     };
     let text = review::run(m, &env).map_err(|e| agents_error(&e))?;
+    write(out, &text)?;
+    Ok(exit::PASS)
+}
+
+/// `slopvac claims`. Reads the two named files and nothing else, so it needs no network.
+pub fn claims(m: &ArgMatches, out: &mut dyn Write) -> Result<u8, CliError> {
+    let text = claims::run(m).map_err(|e| agents_error(&e))?;
     write(out, &text)?;
     Ok(exit::PASS)
 }
