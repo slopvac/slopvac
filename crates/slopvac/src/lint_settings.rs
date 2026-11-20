@@ -4,25 +4,25 @@
 //! The profile name sets the thresholds and the `severity_shift`. The 2.x category and rule
 //! levels of a profile are the styles `core:legacy-<profile>`, which apply only when a config
 //! lists them. Without one, rules report at the levels of their definitions. Config and
-//! styles share one layer stack, so the resolver decides every level, and an unknown rule or
-//! category name in the config is an error.
+//! styles share one layer stack, so the resolver decides every level. An unknown category name
+//! in the config is an error, and an unknown rule id is a warning notice.
 //!
 //! STUB(slopvac-8l4.12.29): the genre is the default `reference` unless config sets it, no
 //! genre chain or pack style is loaded, and `terms.blocklists` files are not read. The swap
 //! bead lists each gap.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::Value as Json;
 use slopvac_config::{ConfigLevel, LevelFrom, LoadedConfig, Resolved, Setting, describe};
-use slopvac_config::{Inputs, PackFile, Presets};
+use slopvac_config::{Inputs, PackFile, Presets, UnknownRule, unknown_rules};
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
-    CategoryId, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, NonEmptyString,
-    RuleId, Severity,
+    CategoryId, ConfigLayer, ConfigSource, GenreId, GenreResult, GenreSource, KebabName,
+    NonEmptyString, Notice, NoticeLevel, RuleId, Severity,
 };
 use slopvac_rules::MatchKind;
 use slopvac_styles::{BuiltinSource, Style, StylePresets};
@@ -98,36 +98,64 @@ fn category_of(rules: &Catalog, key: &str) -> Option<String> {
 /// Check the names a config uses against the catalogue. A key may be bare (`orwell.x`,
 /// `orwell`) or qualified (`core:orwell.x`, `core:orwell`); both resolve to the same rule or
 /// category, and the layer that wrote an entry decides which wins, never its spelling.
-fn check_names(settings: &[Setting], rules: &Catalog) -> Result<(), CliError> {
+///
+/// An unknown rule id is collected in `unknown`, since the run goes on without it. An unknown
+/// category stops the run.
+fn check_names(
+    settings: &[Setting],
+    rules: &Catalog,
+    unknown: &mut Vec<UnknownRule>,
+) -> Result<(), CliError> {
     for setting in settings {
-        let place = describe(&setting.source);
-        match setting.path.as_slice() {
-            [head, key, ..] if head == "rules" && rule_id_of(rules, key).is_none() => {
-                return Err(CliError::new(
-                    "config-unknown-rule",
-                    format!("{place}: unknown rule {key:?}; use a rule id from `slopvac rules`"),
-                ));
-            }
-            [head, key, ..] if head == "categories" && category_of(rules, key).is_none() => {
-                return Err(CliError::new(
-                    "config-unknown-category",
-                    format!(
-                        "{place}: unknown category {key:?}; use a category from `slopvac rules`"
-                    ),
-                ));
-            }
-            _ => {}
+        if let [head, key, ..] = setting.path.as_slice()
+            && head == "categories"
+            && category_of(rules, key).is_none()
+        {
+            return Err(CliError::new(
+                "config-unknown-category",
+                format!(
+                    "{}: unknown category {key:?}; use a category from `slopvac rules`",
+                    describe(&setting.source)
+                ),
+            ));
         }
     }
+    unknown.extend(unknown_rules(settings, |key| {
+        rule_id_of(rules, key).is_some()
+    }));
     Ok(())
+}
+
+/// The warning notice of a rule id that no loaded rule has. It names the config file as the
+/// report may show it (policies.md, 1.7) and carries `rule`, `line` and `column` in its data.
+fn unknown_rule_notice(unknown: &UnknownRule) -> Result<Notice, CliError> {
+    let source = unknown.source();
+    let mut data = serde_json::Map::new();
+    data.insert("rule".into(), unknown.rule().into());
+    if let Some(line) = source.line {
+        data.insert("line".into(), line.get().into());
+    }
+    if let Some(column) = source.column {
+        data.insert("column".into(), column.get().into());
+    }
+    Ok(Notice {
+        code: KebabName::new(unknown.code()).map_err(|e| internal("notice code", e))?,
+        level: NoticeLevel::Warning,
+        message: NonEmptyString::new(unknown.message()).map_err(|e| internal("notice", e))?,
+        path: unknown.shown_file(),
+        data,
+    })
 }
 
 /// Check a config against the catalogue.
 ///
+/// Returns one `config-unknown-rule` warning notice for each rule id that a config file, an
+/// `extends` target or a block names and no rule has.
+///
 /// # Errors
-/// `config-unknown-rule` or `config-unknown-category`, naming the file and line of the key,
-/// and `unknown-style` for a `styles` entry that does not ship.
-pub fn validate(config: &LoadedConfig, rules: &Catalog) -> Result<(), CliError> {
+/// `config-unknown-category`, naming the file and line of the key, and `unknown-style` for a
+/// `styles` entry that does not ship.
+pub fn validate(config: &LoadedConfig, rules: &Catalog) -> Result<Vec<Notice>, CliError> {
     let listed = config.project_value(&["styles"]);
     for name in listed
         .iter()
@@ -146,13 +174,35 @@ pub fn validate(config: &LoadedConfig, rules: &Catalog) -> Result<(), CliError> 
             ));
         }
     }
+    let mut unknown = Vec::new();
     for file in &config.files {
-        check_names(&file.settings, rules)?;
+        check_names(&file.settings, rules, &mut unknown)?;
         for block in &file.blocks {
-            check_names(&block.settings, rules)?;
+            check_names(&block.settings, rules, &mut unknown)?;
         }
     }
-    Ok(())
+    // A config that `extends` reaches twice, by a repeated entry or a diamond, is applied
+    // twice. Its keys are the same keys, so each id at each source location reports once.
+    let unknown = without_repeats(unknown);
+    unknown.iter().map(unknown_rule_notice).collect()
+}
+
+/// Drop the repeats of a rule id at one source: the same layer, file, line and column. The
+/// source is compared before it is shown, so two files with the same name stay apart, and the
+/// same position in two layers stays two findings.
+fn without_repeats(mut unknown: Vec<UnknownRule>) -> Vec<UnknownRule> {
+    let mut seen = HashSet::new();
+    unknown.retain(|u| {
+        let source = u.source();
+        seen.insert((
+            u.rule().to_owned(),
+            source.layer,
+            source.file.clone(),
+            source.line,
+            source.column,
+        ))
+    });
+    unknown
 }
 
 /// The name a config lists to ask for the 2.x levels of a profile: `core:legacy-normal`,
@@ -586,14 +636,50 @@ mod tests {
         );
     }
 
+    /// `a.b` as an unknown rule at `slopvac.toml:4:1` in `layer`.
+    fn unknown_in(layer: ConfigLayer) -> Vec<UnknownRule> {
+        let mut setting = Setting::bare(layer, &["rules", "a.b"], Json::from("off"));
+        setting.source = slopvac_config::located_source(layer, Some("slopvac.toml".into()), 4, 1);
+        unknown_rules(&[setting], |_| false)
+    }
+
     #[test]
-    fn an_unknown_rule_or_category_is_a_config_error_naming_the_line() {
-        let rule = settings(&format!("{HEAD}\n[rules]\n\"orwell.nope\" = \"off\"\n"));
-        let error = rule.unwrap_err();
-        assert_eq!(error.code, "config-unknown-rule");
-        assert!(error.message.contains("slopvac.toml:"), "{}", error.message);
+    fn the_same_unknown_rule_at_one_source_reports_once() {
+        let twice = [
+            unknown_in(ConfigLayer::Extends),
+            unknown_in(ConfigLayer::Extends),
+        ]
+        .concat();
+        assert_eq!(without_repeats(twice).len(), 1);
+    }
+
+    #[test]
+    fn the_same_position_in_two_layers_stays_two_findings() {
+        let both = [
+            unknown_in(ConfigLayer::Project),
+            unknown_in(ConfigLayer::Override),
+        ]
+        .concat();
+        assert_eq!(without_repeats(both).len(), 2);
+    }
+
+    #[test]
+    fn an_unknown_category_is_a_config_error_naming_the_line() {
         let category = settings(&format!("{HEAD}\n[categories]\nnope = \"off\"\n"));
-        assert_eq!(category.unwrap_err().code, "config-unknown-category");
+        let error = category.unwrap_err();
+        assert_eq!(error.code, "config-unknown-category");
+        assert!(error.message.contains("slopvac.toml:"), "{}", error.message);
+    }
+
+    #[test]
+    fn an_unknown_rule_does_not_stop_the_settings_and_levels_the_known_rules_keep() {
+        let config = format!(
+            "{HEAD}\n[rules]\n\"orwell.nope\" = \"off\"\n\"{COMMAND_PROMPT}\" = \"warning\"\n"
+        );
+        assert_eq!(
+            level(&settings(&config).unwrap(), COMMAND_PROMPT),
+            Some(WARNING)
+        );
     }
 
     #[test]

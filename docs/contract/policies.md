@@ -362,7 +362,7 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 **3.0 requirement.**
 
 - The exit codes keep their meaning. Slopvac uses no other exit code.
-- Exit 2 (incomplete) means slopvac did not read or did not check part of the input: a file refused over a cap or budget, a file that is malformed or unreadable, or content the engine could not extract. Those notices are warnings. In 3.0, a notice that lists active rules the engine did not run on input it did read (`rule-kind-not-implemented`, `comment-rules-not-run`) is an info notice: the run stays complete and exits 0, and the notice names the rules in `data.rules`.
+- Exit 2 (incomplete) means slopvac did not read or did not check part of the input: a file refused over a cap or budget, a file that is malformed or unreadable, or content the engine could not extract. Those notices are warnings. In 3.0, a notice that lists active rules the engine did not run on input it did read (`rule-kind-not-implemented`, `comment-rules-not-run`) is an info notice: the run stays complete and exits 0, and the notice names the rules in `data.rules`. A warning notice that is not about unread or unchecked input, such as `config-unknown-rule`, leaves the run complete.
 - Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `plugin-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation.
 - The `report` command uses these codes, and each exits 2: `report-incomplete` (a required form field is missing), `report-body-file` (the `--body-file` path is refused or cannot be written), `report-gh-missing` (`gh` is not found), `report-gh-not-logged-in` (`gh` is not logged in to github.com), `report-gh-failed` (`gh issue create` failed or ran longer than 60 seconds), `report-invalid` (a title, field or sample holds a control character) and `report-sample-unreadable` (the `--include-text` file cannot be read).
 - No code is reused, and no code changes meaning. A code that stops occurring stays in the documentation, marked retired.
@@ -397,7 +397,7 @@ Owners: `slopvac-8l4.2.6` for the protocol, `slopvac-8l4.4.7` for config diagnos
 3.0 carries no deprecation machinery. A breaking change takes effect at a major version, and the release notes list it.
 
 - Minor and patch releases of 3.x make additive changes only (section 3.2). A removal or rename needs a major version.
-- Warning periods, deprecated aliases, and flags that emit old output formats do not exist. Slopvac 3.0 rejects removed flags, options, hooks, and rule IDs with an error and exit 2.
+- Warning periods, deprecated aliases, and flags that emit old output formats do not exist. Slopvac 3.0 rejects removed flags, options and hooks with an error and exit 2. A rule ID in config that no rule has, a removed rule included, is the warning notice `config-unknown-rule`. The notice does not make the run incomplete and does not change its exit status.
 - Plugin `slopvac_api` and code plugin `protocolVersion` follow the same rule. The host loads a plugin whose versions it supports, as section 3.4 describes. A plugin outside that range stays unloaded, and the error names both versions. No grace period applies.
 
 Owners: `slopvac-8l4.12.1`, `slopvac-8l4.9.1`.

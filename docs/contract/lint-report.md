@@ -108,6 +108,14 @@ same keys.
 | `data.limit` | The integer limit, in the unit of that cap. |
 | `data.path` | The config file at which the budget tripped, relative to the root, or `<external>/<file name>` outside it (policies.md, sections 1.7 and 1.9). Never an absolute path. For the `extends-*` budgets it is the file whose `extends` entry passed the limit; for `extends-depth` that is the last file accepted, because its own entry would nest too deep. For `file-blocks` and `index-extra` it is the file that holds the entries. |
 
+`config-unknown-rule` is a `warning` notice. It does not make the run incomplete and does not change its exit status. A config layer named a rule id that no rule has. This covers a rule that 3.0 removed. The notice has one entry for each place that names the id. Its `path` is the config file, relative to the root, or `<external>/<file name>` outside it. The notice has these keys:
+
+| Key | Meaning |
+| --- | --- |
+| `data.rule` | The id as the config wrote it, qualified or bare. |
+| `data.line` | The one-based line of the key. Absent without a line. |
+| `data.column` | The one-based column of the key. Absent without a column. |
+
 A notice whose code this section does not list may still carry `data`. A consumer reads only the keys it knows and ignores the rest.
 
 ## Finding origin

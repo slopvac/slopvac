@@ -173,6 +173,7 @@ config-too-large error
 config-type-mismatch text
 config-type-mismatch-label text
 config-unknown-key error
+config-unknown-rule notice
 config-unsupported-version error
 config-validate-about text
 config-validate-config text

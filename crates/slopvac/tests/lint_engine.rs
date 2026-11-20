@@ -4,6 +4,7 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use rstest::rstest;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -318,26 +319,324 @@ fn an_unknown_category_or_rule_name_is_a_usage_error() {
 }
 
 #[test]
-fn a_config_that_names_an_unknown_rule_or_category_is_rejected() {
-    for (config, code) in [
-        (
-            "schema_version = 3\n\n[rules]\n\"core:orwell.no-such-rule\" = \"off\"\n",
-            "error[config-unknown-rule]",
-        ),
-        (
-            "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
-            "error[config-unknown-category]",
-        ),
-    ] {
-        let (_dir, path) = project("bad.md", SLOPPY, Some(config));
-        slopvac()
-            .arg("lint")
-            .arg(&path)
-            .assert()
-            .code(2)
-            .stderr(predicate::str::contains(code))
-            .stderr(predicate::str::contains("slopvac.toml"));
+fn a_config_that_names_an_unknown_category_is_rejected() {
+    let config = "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n";
+    let (_dir, path) = project("bad.md", SLOPPY, Some(config));
+    slopvac()
+        .arg("lint")
+        .arg(&path)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[config-unknown-category]"))
+        .stderr(predicate::str::contains("slopvac.toml"));
+}
+
+const NO_SUCH_RULE: &str = "core:orwell.no-such-rule";
+
+/// The root notices of a JSON report that carry `code`.
+fn notices_with<'a>(report: &'a Value, code: &str) -> Vec<&'a Value> {
+    report["notices"]
+        .as_array()
+        .expect("notices")
+        .iter()
+        .filter(|n| n["code"] == code)
+        .collect()
+}
+
+/// Lint the clean document of `dir` with its config and return the JSON report. The run must
+/// exit 0 and still lint the document.
+fn lint_clean_project(dir: &tempfile::TempDir) -> Value {
+    let out = slopvac()
+        .args(["lint", "--format", "json"])
+        .arg(dir.path().join("ok.md"))
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let report: Value = serde_json::from_slice(&out.stdout).expect("a JSON report");
+    assert_eq!(report["documents"].as_array().map(Vec::len), Some(1));
+    report
+}
+
+/// The one `config-unknown-rule` notice of `report`, checked against what the config said.
+fn assert_one_unknown_rule_notice(
+    dir: &tempfile::TempDir,
+    report: &Value,
+    rule: &str,
+    file: &str,
+    line: u64,
+    column: u64,
+) {
+    let found = notices_with(report, "config-unknown-rule");
+    assert_eq!(found.len(), 1, "{:?}", report["notices"]);
+    let notice = found[0];
+    assert_eq!(notice["level"], "warning");
+    assert_eq!(notice["path"], file);
+    assert_eq!(notice["data"]["rule"], rule);
+    assert_eq!(notice["data"]["line"], line);
+    assert_eq!(notice["data"]["column"], column);
+    let message = notice["message"].as_str().expect("message");
+    assert!(message.contains(rule), "{message}");
+    assert!(
+        message.contains(&format!("{file}:{line}:{column}")),
+        "{message}"
+    );
+    let root = dir.path().to_string_lossy();
+    assert!(!message.contains(root.as_ref()), "{message}");
+}
+
+#[rstest]
+#[case::rules_table(
+    "schema_version = 3\n\n[rules]\n\"core:orwell.no-such-rule\" = \"off\"\n",
+    None,
+    NO_SUCH_RULE,
+    "slopvac.toml",
+    4
+)]
+#[case::bare_key(
+    "schema_version = 3\n\n[rules]\n\"orwell.no-such-rule\" = \"warning\"\n",
+    None,
+    "orwell.no-such-rule",
+    "slopvac.toml",
+    4
+)]
+#[case::overrides_block(
+    "schema_version = 3\n\n[[overrides]]\nfiles = [\"*.md\"]\n\n[overrides.rules]\n\"core:orwell.no-such-rule\" = \"off\"\n",
+    None,
+    NO_SUCH_RULE,
+    "slopvac.toml",
+    7
+)]
+#[case::genres_block(
+    "schema_version = 3\n\n[[genres]]\nfiles = [\"*.md\"]\ngenre = \"reference\"\n\n[genres.rules]\n\"core:orwell.no-such-rule\" = \"off\"\n",
+    None,
+    NO_SUCH_RULE,
+    "slopvac.toml",
+    8
+)]
+#[case::extended_config(
+    "schema_version = 3\nextends = [\"base.toml\"]\n",
+    Some(("base.toml", "schema_version = 3\n\n[rules]\n\"core:orwell.no-such-rule\" = \"off\"\n")),
+    NO_SUCH_RULE,
+    "base.toml",
+    4
+)]
+fn an_unknown_rule_in_a_config_layer_is_one_warning_notice_and_the_run_still_lints(
+    #[case] config: &str,
+    #[case] extra: Option<(&str, &str)>,
+    #[case] rule: &str,
+    #[case] file: &str,
+    #[case] line: u64,
+) {
+    let (dir, _) = project("ok.md", CLEAN, Some(config));
+    if let Some((name, text)) = extra {
+        fs::write(dir.path().join(name), text).expect("write extended config");
     }
+    let report = lint_clean_project(&dir);
+    // Each key starts its line, so the notice points at column 1.
+    assert_one_unknown_rule_notice(&dir, &report, rule, file, line, 1);
+}
+
+#[rstest]
+#[case::vertical_list_lead_in("ste-sentences.vertical-list-lead-in-missing-colon")]
+#[case::vertical_list_item_punctuation("ste-sentences.vertical-list-item-punctuation")]
+#[case::safety_block_consequence("ste-safety.safety-block-missing-consequence")]
+#[case::inconsistent_term("ste-words.inconsistent-term-for-same-thing")]
+#[case::inconsistent_wording("ste-practices.inconsistent-wording-for-same-step")]
+fn a_rule_removed_in_3_0_is_an_unknown_rule_notice_not_an_error(#[case] removed: &str) {
+    let config = format!("schema_version = 3\n\n[rules]\n\"{removed}\" = \"off\"\n");
+    let (dir, _) = project("ok.md", CLEAN, Some(&config));
+    let report = lint_clean_project(&dir);
+    assert_one_unknown_rule_notice(&dir, &report, removed, "slopvac.toml", 4, 1);
+}
+
+#[test]
+fn a_config_with_only_known_rule_ids_has_no_unknown_rule_notice() {
+    let config = "schema_version = 3\n\n[rules]\n\"core:orwell.unsupported-evaluative\" = \"off\"\n\"prose-inflation.slop-lexicon\" = \"warning\"\n\n[categories]\norwell = \"warning\"\n\n[[overrides]]\nfiles = [\"*.md\"]\n\n[overrides.rules]\n\"core:prose-inflation.slop-lexicon\" = \"error\"\n";
+    let (dir, _) = project("ok.md", CLEAN, Some(config));
+    let report = lint_clean_project(&dir);
+    assert!(
+        notices_with(&report, "config-unknown-rule").is_empty(),
+        "{:?}",
+        report["notices"]
+    );
+}
+
+#[test]
+fn the_text_report_shows_the_unknown_rule_notice_and_exits_zero() {
+    let config = "schema_version = 3\n\n[rules]\n\"core:orwell.no-such-rule\" = \"off\"\n";
+    let (_dir, path) = project("ok.md", CLEAN, Some(config));
+    slopvac()
+        .arg("lint")
+        .arg(&path)
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains(
+            "notice[config-unknown-rule]: project slopvac.toml:4:1: unknown rule core:orwell.no-such-rule",
+        ));
+}
+
+const BASE_WITH_UNKNOWN_RULE: &str =
+    "schema_version = 3\n\n[rules]\n\"core:orwell.no-such-rule\" = \"off\"\n";
+
+/// A project that holds `ok.md` and a `slopvac.toml` with `config`, next to a sibling
+/// directory `zz-private-dir` that holds `files`. Returns the outer directory and the
+/// path of the document.
+fn project_beside_private_dir(
+    config: &str,
+    files: &[(&str, &str)],
+) -> (tempfile::TempDir, PathBuf) {
+    let outer = tempfile::tempdir().expect("tempdir");
+    let proj = outer.path().join("proj");
+    let private = outer.path().join("zz-private-dir");
+    fs::create_dir_all(&proj).expect("proj");
+    fs::create_dir_all(&private).expect("private");
+    fs::write(proj.join("ok.md"), CLEAN).expect("document");
+    fs::write(proj.join("slopvac.toml"), config).expect("config");
+    for (name, text) in files {
+        fs::write(private.join(name), text).expect("write extended config");
+    }
+    let document = proj.join("ok.md");
+    (outer, document)
+}
+
+#[test]
+fn an_unknown_rule_in_an_extended_config_outside_the_root_hides_its_directories() {
+    let config = "schema_version = 3\nextends = [\"../zz-private-dir/base.toml\"]\n";
+    let (outer, document) =
+        project_beside_private_dir(config, &[("base.toml", BASE_WITH_UNKNOWN_RULE)]);
+    let out = slopvac()
+        .args(["lint", "--format", "json"])
+        .arg(&document)
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let report: Value = serde_json::from_slice(&out.stdout).expect("a JSON report");
+    let found = notices_with(&report, "config-unknown-rule");
+    assert_eq!(found.len(), 1, "{:?}", report["notices"]);
+    assert_eq!(found[0]["path"], "<external>/base.toml");
+    assert_eq!(found[0]["data"]["line"], 4);
+    assert_eq!(found[0]["data"]["column"], 1);
+    assert_eq!(
+        found[0]["message"],
+        "extends <external>/base.toml:4:1: unknown rule core:orwell.no-such-rule; \
+         use a rule id from `slopvac rules`"
+    );
+    // The document's `config_sources` keep the fuller provenance form; the notice must not.
+    let notice = found[0].to_string();
+    for leaked in [
+        "zz-private-dir",
+        "../",
+        outer.path().to_string_lossy().as_ref(),
+    ] {
+        assert!(!notice.contains(leaked), "{leaked}: {notice}");
+    }
+}
+
+#[rstest]
+#[case::repeated_entry("schema_version = 3\nextends = [\"base.toml\", \"base.toml\"]\n", &[])]
+#[case::diamond(
+    "schema_version = 3\nextends = [\"left.toml\", \"right.toml\"]\n",
+    &[
+        ("left.toml", "schema_version = 3\nextends = [\"base.toml\"]\n"),
+        ("right.toml", "schema_version = 3\nextends = [\"base.toml\"]\n"),
+    ]
+)]
+fn a_config_reached_twice_through_extends_reports_its_unknown_rule_once(
+    #[case] config: &str,
+    #[case] extra: &[(&str, &str)],
+) {
+    let (dir, _) = project("ok.md", CLEAN, Some(config));
+    fs::write(dir.path().join("base.toml"), BASE_WITH_UNKNOWN_RULE).expect("base");
+    for (name, text) in extra {
+        fs::write(dir.path().join(name), text).expect("write extended config");
+    }
+    let report = lint_clean_project(&dir);
+    assert_one_unknown_rule_notice(&dir, &report, NO_SUCH_RULE, "base.toml", 4, 1);
+}
+
+#[test]
+fn the_same_unknown_rule_at_two_locations_is_two_notices() {
+    let config = "schema_version = 3\nextends = [\"left.toml\", \"right.toml\"]\n";
+    let (dir, _) = project("ok.md", CLEAN, Some(config));
+    fs::write(dir.path().join("left.toml"), BASE_WITH_UNKNOWN_RULE).expect("left");
+    fs::write(dir.path().join("right.toml"), BASE_WITH_UNKNOWN_RULE).expect("right");
+    let report = lint_clean_project(&dir);
+    let paths: Vec<_> = notices_with(&report, "config-unknown-rule")
+        .iter()
+        .map(|n| n["path"].as_str().expect("path").to_owned())
+        .collect();
+    assert_eq!(paths, ["left.toml", "right.toml"]);
+}
+
+/// The JSON bodies of the LSP frames in `output`.
+fn lsp_bodies(output: &str) -> Vec<Value> {
+    let mut bodies = Vec::new();
+    let mut rest = output;
+    while let Some(at) = rest.find("Content-Length: ") {
+        let after = &rest[at + "Content-Length: ".len()..];
+        let (length, tail) = after.split_once("\r\n\r\n").expect("a frame header");
+        let length: usize = length.trim().parse().expect("a length");
+        bodies.push(serde_json::from_str(&tail[..length]).expect("a JSON body"));
+        rest = &tail[length..];
+    }
+    bodies
+}
+
+/// What a `slopvac lsp` session in `dir` writes for `text` opened as a document.
+fn lsp_session(dir: &Path, text: &str) -> Vec<Value> {
+    fn frame(body: &str) -> String {
+        format!("Content-Length: {}\r\n\r\n{body}", body.len())
+    }
+    let open = serde_json::json!({
+        "jsonrpc": "2.0", "method": "textDocument/didOpen",
+        "params": {"textDocument": {
+            "uri": "file:///work/doc.md", "languageId": "markdown", "version": 1, "text": text}}
+    });
+    let input: String = [
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#.to_owned(),
+        r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#.to_owned(),
+        open.to_string(),
+        r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#.to_owned(),
+        r#"{"jsonrpc":"2.0","method":"exit"}"#.to_owned(),
+    ]
+    .iter()
+    .map(|m| frame(m))
+    .collect();
+    let out = slopvac()
+        .current_dir(dir)
+        .arg("lsp")
+        .write_stdin(input)
+        .timeout(std::time::Duration::from_secs(60))
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    lsp_bodies(&String::from_utf8_lossy(&out))
+}
+
+#[test]
+fn the_language_server_warns_once_about_an_unknown_rule_and_keeps_linting() {
+    let (dir, _) = project("ok.md", SLOPPY, Some(BASE_WITH_UNKNOWN_RULE));
+    let bodies = lsp_session(dir.path(), SLOPPY);
+    let shown: Vec<_> = bodies
+        .iter()
+        .filter(|b| b["method"] == "window/showMessage")
+        .collect();
+    assert_eq!(shown.len(), 1, "{bodies:?}");
+    // LSP message type 2 is Warning.
+    assert_eq!(shown[0]["params"]["type"], 2);
+    let message = shown[0]["params"]["message"].as_str().expect("message");
+    assert!(
+        message.contains("unknown rule core:orwell.no-such-rule"),
+        "{message}"
+    );
+    assert!(message.contains("slopvac.toml:4:1"), "{message}");
+    let diagnostics = bodies
+        .iter()
+        .filter(|b| b["method"] == "textDocument/publishDiagnostics")
+        .count();
+    assert!(diagnostics >= 1, "{bodies:?}");
 }
 
 #[test]
@@ -625,7 +924,7 @@ fn a_refused_config_value_that_is_a_path_is_redacted_in_stderr_and_notices() {
 }
 
 #[test]
-fn a_config_with_an_unknown_rule_is_rejected_even_when_no_file_is_left_to_lint() {
+fn a_config_with_an_unknown_rule_is_reported_even_when_no_file_is_left_to_lint() {
     let config = "schema_version = 3\n\n[rules]\n\"core:orwell.nope\" = \"off\"\n";
     let (dir, _) = project("ok.md", CLEAN, Some(config));
     let empty = dir.path().join("empty");
@@ -634,8 +933,8 @@ fn a_config_with_an_unknown_rule_is_rejected_even_when_no_file_is_left_to_lint()
         .arg("lint")
         .arg(&empty)
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains("error[config-unknown-rule]"));
+        .code(0)
+        .stdout(predicate::str::contains("notice[config-unknown-rule]"));
 }
 
 #[test]
@@ -775,8 +1074,8 @@ fn a_config_below_a_directory_target_is_checked_even_when_it_excludes_everything
         .arg("lint")
         .arg(dir.path())
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains("error[config-unknown-rule]"));
+        .code(0)
+        .stdout(predicate::str::contains("notice[config-unknown-rule]"));
 }
 
 #[test]
@@ -822,8 +1121,8 @@ fn a_config_below_a_glob_target_is_checked_even_when_it_excludes_every_match() {
         .current_dir(dir.path())
         .args(["lint", "docs/**/*.md"])
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains("error[config-unknown-rule]"));
+        .code(0)
+        .stdout(predicate::str::contains("notice[config-unknown-rule]"));
 }
 
 #[test]
