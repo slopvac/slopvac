@@ -238,7 +238,32 @@ pub(crate) fn config_error(err: &ConfigError, root: &Path) -> CliError {
     if err.is_legacy() {
         message.push_str("\nhelp: run `slopvac migrate` to convert it");
     }
-    CliError::new(err.code().as_str(), message)
+    let error = CliError::new(err.code().as_str(), message);
+    match budget_data(err) {
+        Some(data) => error.with_data(data),
+        None => error,
+    }
+}
+
+/// The `budget`, `limit` and `path` keys of a refused config's budget diagnostic.
+///
+/// Only `ConfigError::Rejected` carries budget data, and the loader builds it with exactly one
+/// diagnostic per refusal, so the first diagnostic with data is the only one. The path needs no
+/// further redaction: `slopvac-config` already shows it root-relative, or `<external>/<name>`
+/// outside the root, and a test pins that for an `extends` target outside the project.
+fn budget_data(err: &ConfigError) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let ConfigError::Rejected(rejected) = err else {
+        return None;
+    };
+    let budget = rejected
+        .diagnostics
+        .iter()
+        .find_map(|d| d.data.as_deref())?;
+    let mut data = serde_json::Map::new();
+    data.insert("budget".into(), budget.budget.as_str().into());
+    data.insert("limit".into(), budget.limit.into());
+    data.insert("path".into(), budget.path.as_str().into());
+    Some(data)
 }
 
 /// Finds the config of each directory once.
@@ -359,7 +384,7 @@ fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome 
         message: NonEmptyString::new(error.message.clone())
             .unwrap_or_else(|_| NonEmptyString::new("lint failed").expect("not empty")),
         path: None,
-        data: serde_json::Map::new(),
+        data: error.data.clone(),
     });
     run.incomplete.push(error.clone());
     RunOutcome {
