@@ -157,6 +157,37 @@ pub struct OwnedBlock {
 }
 
 impl PlainDocument {
+    /// Read the `key: value` lines of front matter. Lines indented under `slopvac:` form the
+    /// block, which counts only when it declares `v: 3`.
+    fn read_front_matter(&mut self, text: &str) {
+        let mut in_block = false;
+        let mut block = Vec::new();
+        for line in text.lines() {
+            let Some((k, v)) = line.split_once(':') else {
+                continue;
+            };
+            let pair = (k.trim().to_string(), v.trim().trim_matches('"').to_string());
+            if line.starts_with([' ', '\t']) {
+                // An indented line belongs to the mapping above it.
+                if in_block {
+                    block.push(pair);
+                } else {
+                    self.front_matter.push(pair);
+                }
+            } else {
+                in_block = pair.0 == "slopvac" && pair.1.is_empty();
+                if !in_block {
+                    self.front_matter.push(pair);
+                }
+            }
+        }
+        if block.iter().any(|(k, v)| k == "v" && v == "3") {
+            self.block = block;
+        }
+    }
+}
+
+impl PlainDocument {
     /// Build a document from Markdown-ish text: ATX headings and blank-line
     /// separated paragraphs, `- ` list items. Enough for tests and `genre`.
     #[must_use]
@@ -174,30 +205,7 @@ impl PlainDocument {
         if let Some(rest) = src.strip_prefix("---\n")
             && let Some(end) = rest.find("\n---")
         {
-            let mut in_block = false;
-            let mut block = Vec::new();
-            for line in rest[..end].lines() {
-                let Some((k, v)) = line.split_once(':') else {
-                    continue;
-                };
-                let pair = (k.trim().to_string(), v.trim().trim_matches('"').to_string());
-                if line.starts_with([' ', '\t']) {
-                    // An indented line belongs to the mapping above it.
-                    if in_block {
-                        block.push(pair);
-                    } else {
-                        doc.front_matter.push(pair);
-                    }
-                } else {
-                    in_block = pair.0 == "slopvac" && pair.1.is_empty();
-                    if !in_block {
-                        doc.front_matter.push(pair);
-                    }
-                }
-            }
-            if block.iter().any(|(k, v)| k == "v" && v == "3") {
-                doc.block = block;
-            }
+            doc.read_front_matter(&rest[..end]);
             front_end = 4 + end + 4;
         }
         let flush = |doc: &mut PlainDocument,
