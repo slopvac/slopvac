@@ -6,7 +6,7 @@
   "update": {"checks": "enabled", "disabled_by": null, "state": "unknown", "latest": null, "checked_at": null},
   "offline": {"effective": false, "sources": []},
   "config": {"ok": true, "sources": []},
-  "packs": {"lockfile": {"file": ".slopvac/packs.lock", "status": "absent", "error": null}, "items": []},
+  "plugins": {"lockfile": {"file": ".slopvac/plugins.lock", "status": "absent", "error": null}, "items": []},
   "trust": {"status": "absent", "error": null, "trusted_plugins": 0, "pinned_keys": []},
   "directories": {
     "cache": {"path": "<external>/slopvac", "source": "default", "exists": false, "bytes": null, "truncated": false},

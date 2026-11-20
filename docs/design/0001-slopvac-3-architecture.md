@@ -102,7 +102,7 @@ Framing follows LSP. An `initialize` handshake exchanges capabilities. A Python 
 
 ### 9. OCI artifacts, minisign, and mise-style trust
 
-Distribute packs and plugins as OCI artifacts on GHCR or any registry. Ship minisign signatures as manifest layers, and verify them with `minisign-verify`. The host loads a code plugin only after `slopvac plugins trust` records its content hash, and it prints that command for an untrusted plugin. No code path prompts, so an agent or CI job cannot answer a prompt on a user's behalf.
+Distribute data and code plugins as OCI artifacts on GHCR or any registry. Ship minisign signatures as manifest layers, and verify them with `minisign-verify`. The host loads a code plugin only after `slopvac plugins trust` records its content hash, and it prints that command for an untrusted plugin. No code path prompts, so an agent or CI job cannot answer a prompt on a user's behalf.
 
 - Evidence: GHCR returns 404 for the referrers API, so signatures cannot attach as referrers. The tag-schema fallback works (`slopvac-8l4.2.17`).
 - Rejected: Sigstore verification in 3.0, which moves to the backlog.
@@ -150,7 +150,7 @@ Each rule has a stable documentation page that formats link to. The formats foll
 Generate every reference document from code and data. CI fails when a generated file is stale. The generated set:
 
 - JSON Schemas from Rust types;
-- one page per rule, style, genre, and pack;
+- one page per rule, style, genre, and plugin;
 - the plugin protocol reference;
 - Rust API docs.
 
@@ -176,7 +176,7 @@ Confirmed 2026-11-14. An adversarial review proposed a smaller 3.0.0 with new pl
 
 Rust types generate versioned JSON Schemas, published per API major version.
 
-- IDs are namespaced as `<pack>:<id>`, with built-ins in `core`.
+- IDs are namespaced as `<plugin>:<id>`, with built-ins in `core`.
 - Rules use a typed `match:` block, and `tiers` is removed.
 - Profiles set gate thresholds and a severity shift only.
 - Styles are ordered presets with `extends` and declared `conflicts`.

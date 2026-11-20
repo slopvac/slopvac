@@ -1,4 +1,4 @@
-//! The `.slopvac/packs.lock` file (contract: `docs/contract/packs.md`, section 7).
+//! The `.slopvac/plugins.lock` file (contract: `docs/contract/plugins.md`, section 7).
 //!
 //! # Limits
 //!

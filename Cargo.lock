@@ -2499,6 +2499,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slopvac-fs",
+ "slopvac-messages",
  "strsim",
  "tempfile",
  "thiserror",
@@ -2558,6 +2559,7 @@ dependencies = [
  "serde",
  "serde_json",
  "similar 3.2.1",
+ "slopvac-comments",
  "slopvac-context",
  "slopvac-diagrams",
  "slopvac-engine",
@@ -2628,6 +2630,7 @@ dependencies = [
 name = "slopvac-migrate"
 version = "0.0.0"
 dependencies = [
+ "cap-std",
  "clap",
  "jsonschema",
  "rstest",
@@ -2640,6 +2643,7 @@ dependencies = [
  "slopvac-model",
  "slopvac-rules",
  "slopvac-sanitize",
+ "slopvac-terms",
  "tempfile",
  "thiserror",
  "toml",
@@ -2780,6 +2784,9 @@ dependencies = [
 [[package]]
 name = "slopvac-sanitize"
 version = "0.0.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "slopvac-styles"

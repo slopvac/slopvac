@@ -9,7 +9,9 @@
     "corpus-product.reactjs-reactjs-org.content-docs-rendering-elements-md.228186": "Diagnosed (slopvac-8l4.3.41), Vale-only behaviour; golden re-record tracked in slopvac-8l4.6.8: findings differ in presence for ai-tells-formatting.title-case-heading, prose-craft.hyphens, ste-procedural.multiple-instructions-per-sentence, ste-punctuation.hyphen-group-too-long because Vale and the 2.x native parser read the heading attribute `{#id}` as heading text, so it adds a word and gets hyphen and title-case findings; Rust treats it as heading syntax; and because 2.x runs the rule in Vale, which ignores its `text_type: procedural`, so the golden flags descriptive sentences; the 2.x native engine and Rust flag procedural sentences only (the rule's own data). Diagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, words than 2.x; markup by design (departure from 2.x), because three headings carry a `{#id}` attribute, which 2.x counts as one extra word each (+3 words), and the image-only paragraph is a paragraph to 2.x but has no text for Rust (+1 paragraph); Rust reads the attributes as heading syntax. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
     "corpus-reference.kubernetes-website.content-en-docs-reference-setup-tools-kubeadm-ku.0cbbcf": "Diagnosed (slopvac-8l4.3.41), Vale-only behaviour; golden re-record tracked in slopvac-8l4.6.8: findings differ in presence for ste-punctuation.hyphen-group-too-long because Vale and the 2.x native parser read the heading attribute `{#id}` as heading text, so it adds a word and gets hyphen and title-case findings; Rust treats it as heading syntax. Diagnosed (slopvac-8l4.3.41): Rust counts different words than 2.x; markup by design (departure from 2.x), because five headings carry a `{#id}` attribute, which 2.x counts as one extra word each (+5 words); Rust reads the attribute as heading syntax. The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
     "corpus-tutorials.rust-lang-rust-by-example.src-error-md.bfa0b4": "Diagnosed (slopvac-8l4.3.41), Vale-only behaviour; golden re-record tracked in slopvac-8l4.6.8: findings differ in presence for prose-craft.negative-requirement, ste-descriptive.sentence-too-long-descriptive, ste-procedural.multiple-instructions-per-sentence because a match that spans a line break: Vale folds it into one text with no end position, or drops it, and Rust reports the exact source range; the 2.x native engine and Rust agree on every finding; and because metric: Vale puts the finding on the first token of the unit (`We`, `. `) where Rust and the 2.x native engine report an empty match at the unit start, so the same finding is both missing and extra; the 2.x native engine and Rust agree on every finding; and because 2.x runs the rule in Vale, which ignores its `text_type: procedural`, so the golden flags descriptive sentences; the 2.x native engine and Rust flag procedural sentences only (the rule's own data). The scores, tallies, density, category scores and gate follow from the findings and counts above; they are recorded as Rust reports them.",
+    "format-javascript-comments": "Every finding matches except in strict, where 2.x matched `unclear-demonstrative-this` on the text `.` + newline + `This can` across the two lines of one comment, and the engine reports `. This can` at the same column: the extractor joins the lines of a comment with a synthetic space (docs/contract/positions.md), so the matched text has a space where 2.x kept the line break. The gate reasons differ in the same way for all profiles: `comment-rules-not-run` is `info` and the run is complete, where 2.x reported the skipped rules as an incomplete check (slopvac-8l4.3.67 adds the warning for a rule the user enabled by name).",
     "format-mdx": "Diagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; markup by design (departure from 2.x), because the sample starts with the line `import { Callout } from \"../components\"`. 2.x reads it as a paragraph with one sentence and 4 words; Rust reads it as MDX ESM, not prose (+1 paragraph, +1 sentence, +4 words in 2.x).",
+    "format-python-comments": "The module docstring is a string, so it is not read and the findings on its first and third lines are missing from every profile (8 in relaxed, 11 in strict and normal). The paragraph, sentence and word counts, the errors and the score follow from that. Python docstrings belong to slopvac-8l4.3.65. The three comments inside `load` match with the same spans. The `comment-rules-not-run` notice is `info` and the run is complete, where 2.x reported the rules it skipped as an incomplete check (slopvac-8l4.3.67 adds the warning for a rule the user enabled by name).",
     "format-rst": "Diagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; markup by design (departure from 2.x), because 2.x parses the RST as Markdown, so the directive line `.. note::` is a paragraph with one sentence and one word, and the literal-block marker `::` is a paragraph without words; Rust reads both as RST markup (+2 paragraphs, +1 sentence, +1 word in 2.x).",
     "issue-254": "Matched text: 2.x masks code spans and folds line breaks in the text it reports (`****` for an inline code span, `is bound` for `is` and `bound` on two lines), so the golden text differs from the source text Rust reports for the same finding; both are recorded.",
     "issue-256": "Diagnosed (slopvac-8l4.3.41): Rust counts different paragraphs, sentences, words than 2.x; markup by design (departure from 2.x), because the sample has an admonition opener `:::info[Changed in v2.0]` and a closing `:::`. 2.x counts the opener as a paragraph, a sentence and 4 words and the closer as a paragraph; Rust reads both lines as admonition markup (+2 paragraphs, +1 sentence, +4 words in 2.x).",
@@ -818,12 +820,207 @@
         }
       ]
     },
+    "normal/format-javascript-comments": {
+      "document": {
+        "gate": {
+          "passed": false,
+          "reasons": [
+            "8 error(s), limit 0",
+            "score 0.0, minimum 70.0"
+          ]
+        },
+        "paragraphs": 4,
+        "sentences": 5
+      },
+      "unchecked": [
+        "comment-rules-not-run"
+      ]
+    },
     "normal/format-mdx": {
       "document": {
         "paragraphs": 4,
         "sentences": 7,
         "words": 41
       }
+    },
+    "normal/format-python-comments": {
+      "document": {
+        "categories": {
+          "orwell": {
+            "budget": 0.8,
+            "category": "orwell",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          },
+          "prose-craft": {
+            "budget": 1.5,
+            "category": "prose-craft",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          },
+          "prose-discipline": {
+            "budget": 0.8,
+            "category": "prose-discipline",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          },
+          "prose-inflation": {
+            "budget": 0.6,
+            "category": "prose-inflation",
+            "errors": 1,
+            "findings": 1,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 80.0,
+            "suggestions": 0,
+            "warnings": 0
+          },
+          "ste-practices": {
+            "budget": 1.5,
+            "category": "ste-practices",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          }
+        },
+        "errors": 2,
+        "gate": {
+          "passed": false,
+          "reasons": [
+            "2 error(s), limit 0",
+            "score 60.0, minimum 70.0"
+          ]
+        },
+        "paragraphs": 3,
+        "prose": {
+          "errors": 2,
+          "findings": 2,
+          "per_100_words": 0.0,
+          "warnings": 0
+        },
+        "score": 60.0,
+        "sentences": 3,
+        "suggestions": 0,
+        "total_findings": 2,
+        "words": 21
+      },
+      "missing": [
+        {
+          "category": "orwell",
+          "column": 14,
+          "line": 1,
+          "matched_text": "comprehensive",
+          "rule_id": "core:orwell.unsupported-evaluative",
+          "severity": "error"
+        },
+        {
+          "category": "orwell",
+          "column": 28,
+          "line": 3,
+          "matched_text": "low-hanging fruit",
+          "rule_id": "core:orwell.stale-figure",
+          "severity": "error"
+        },
+        {
+          "category": "orwell",
+          "column": 6,
+          "line": 1,
+          "matched_text": "robust",
+          "rule_id": "core:orwell.unsupported-evaluative",
+          "severity": "error"
+        },
+        {
+          "category": "prose-craft",
+          "column": 1,
+          "line": 3,
+          "matched_text": "We ",
+          "rule_id": "core:prose-craft.first-person-plural",
+          "severity": "suggestion"
+        },
+        {
+          "category": "prose-craft",
+          "column": 4,
+          "line": 3,
+          "matched_text": "will ",
+          "rule_id": "core:prose-craft.future-tense",
+          "severity": "suggestion"
+        },
+        {
+          "category": "prose-discipline",
+          "column": 9,
+          "line": 3,
+          "matched_text": "circle back",
+          "rule_id": "core:prose-discipline.phrasal-verb",
+          "severity": "error"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 14,
+          "line": 1,
+          "matched_text": "comprehensive",
+          "rule_id": "core:prose-inflation.slop-lexicon",
+          "severity": "error"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 28,
+          "line": 3,
+          "matched_text": "low-hanging fruit",
+          "rule_id": "core:prose-inflation.business-jargon",
+          "severity": "error"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 6,
+          "line": 1,
+          "matched_text": "robust",
+          "rule_id": "core:prose-inflation.slop-lexicon",
+          "severity": "error"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 9,
+          "line": 3,
+          "matched_text": "circle back",
+          "rule_id": "core:prose-inflation.business-jargon",
+          "severity": "error"
+        },
+        {
+          "category": "ste-practices",
+          "column": 14,
+          "line": 1,
+          "matched_text": "comprehensive",
+          "rule_id": "core:ste-practices.false-friend-term",
+          "severity": "suggestion"
+        }
+      ],
+      "unchecked": [
+        "comment-rules-not-run"
+      ]
     },
     "normal/format-rst": {
       "document": {
@@ -2709,12 +2906,153 @@
         "words": 250
       }
     },
+    "relaxed/format-javascript-comments": {
+      "document": {
+        "gate": {
+          "passed": true,
+          "reasons": []
+        },
+        "paragraphs": 4,
+        "sentences": 5
+      },
+      "unchecked": [
+        "comment-rules-not-run"
+      ]
+    },
     "relaxed/format-mdx": {
       "document": {
         "paragraphs": 4,
         "sentences": 7,
         "words": 41
       }
+    },
+    "relaxed/format-python-comments": {
+      "document": {
+        "categories": {
+          "orwell": {
+            "budget": 2.0,
+            "category": "orwell",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          },
+          "prose-discipline": {
+            "budget": 2.0,
+            "category": "prose-discipline",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          },
+          "prose-inflation": {
+            "budget": 1.5,
+            "category": "prose-inflation",
+            "errors": 0,
+            "findings": 1,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 97.5,
+            "suggestions": 1,
+            "warnings": 0
+          }
+        },
+        "gate": {
+          "passed": true,
+          "reasons": []
+        },
+        "paragraphs": 3,
+        "prose": {
+          "errors": 1,
+          "findings": 2,
+          "per_100_words": 0.0,
+          "warnings": 0
+        },
+        "score": 77.5,
+        "sentences": 3,
+        "suggestions": 1,
+        "total_findings": 2,
+        "warnings": 0,
+        "words": 21
+      },
+      "missing": [
+        {
+          "category": "orwell",
+          "column": 14,
+          "line": 1,
+          "matched_text": "comprehensive",
+          "rule_id": "core:orwell.unsupported-evaluative",
+          "severity": "suggestion"
+        },
+        {
+          "category": "orwell",
+          "column": 28,
+          "line": 3,
+          "matched_text": "low-hanging fruit",
+          "rule_id": "core:orwell.stale-figure",
+          "severity": "suggestion"
+        },
+        {
+          "category": "orwell",
+          "column": 6,
+          "line": 1,
+          "matched_text": "robust",
+          "rule_id": "core:orwell.unsupported-evaluative",
+          "severity": "suggestion"
+        },
+        {
+          "category": "prose-discipline",
+          "column": 9,
+          "line": 3,
+          "matched_text": "circle back",
+          "rule_id": "core:prose-discipline.phrasal-verb",
+          "severity": "suggestion"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 14,
+          "line": 1,
+          "matched_text": "comprehensive",
+          "rule_id": "core:prose-inflation.slop-lexicon",
+          "severity": "warning"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 28,
+          "line": 3,
+          "matched_text": "low-hanging fruit",
+          "rule_id": "core:prose-inflation.business-jargon",
+          "severity": "warning"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 6,
+          "line": 1,
+          "matched_text": "robust",
+          "rule_id": "core:prose-inflation.slop-lexicon",
+          "severity": "warning"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 9,
+          "line": 3,
+          "matched_text": "circle back",
+          "rule_id": "core:prose-inflation.business-jargon",
+          "severity": "warning"
+        }
+      ],
+      "unchecked": [
+        "comment-rules-not-run"
+      ]
     },
     "relaxed/format-rst": {
       "document": {
@@ -4139,12 +4477,233 @@
         }
       ]
     },
+    "strict/format-javascript-comments": {
+      "document": {
+        "gate": {
+          "passed": false,
+          "reasons": [
+            "8 error(s), limit 0",
+            "score 0.0, minimum 85.0"
+          ]
+        },
+        "paragraphs": 4,
+        "sentences": 5
+      },
+      "extra": [
+        {
+          "ai_signal": "none",
+          "category": "ste-practices",
+          "column": 34,
+          "end_column": null,
+          "end_line": null,
+          "line": 1,
+          "matched_text": ". This can",
+          "message": "Bare demonstrative \". This can\". Name the thing it refers to.",
+          "replacement": null,
+          "rule_id": "core:ste-practices.unclear-demonstrative-this",
+          "severity": "suggestion",
+          "span": null
+        }
+      ],
+      "missing": [
+        {
+          "category": "ste-practices",
+          "column": 34,
+          "line": 1,
+          "matched_text": ".\nThis can",
+          "rule_id": "core:ste-practices.unclear-demonstrative-this",
+          "severity": "suggestion"
+        }
+      ],
+      "unchecked": [
+        "comment-rules-not-run"
+      ]
+    },
     "strict/format-mdx": {
       "document": {
         "paragraphs": 4,
         "sentences": 7,
         "words": 41
       }
+    },
+    "strict/format-python-comments": {
+      "document": {
+        "categories": {
+          "orwell": {
+            "budget": 0.4,
+            "category": "orwell",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          },
+          "prose-craft": {
+            "budget": 0.8,
+            "category": "prose-craft",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          },
+          "prose-discipline": {
+            "budget": 0.4,
+            "category": "prose-discipline",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          },
+          "prose-inflation": {
+            "budget": 0.3,
+            "category": "prose-inflation",
+            "errors": 1,
+            "findings": 1,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 80.0,
+            "suggestions": 0,
+            "warnings": 0
+          },
+          "ste-practices": {
+            "budget": 0.5,
+            "category": "ste-practices",
+            "errors": 0,
+            "findings": 0,
+            "gating_per_100_words": 0.0,
+            "over_budget": false,
+            "per_100_words": 0.0,
+            "score": 100.0,
+            "suggestions": 0,
+            "warnings": 0
+          }
+        },
+        "errors": 2,
+        "gate": {
+          "passed": false,
+          "reasons": [
+            "2 error(s), limit 0",
+            "score 60.0, minimum 85.0"
+          ]
+        },
+        "paragraphs": 3,
+        "prose": {
+          "errors": 2,
+          "findings": 2,
+          "per_100_words": 0.0,
+          "warnings": 0
+        },
+        "score": 60.0,
+        "sentences": 3,
+        "total_findings": 2,
+        "warnings": 0,
+        "words": 21
+      },
+      "missing": [
+        {
+          "category": "orwell",
+          "column": 14,
+          "line": 1,
+          "matched_text": "comprehensive",
+          "rule_id": "core:orwell.unsupported-evaluative",
+          "severity": "error"
+        },
+        {
+          "category": "orwell",
+          "column": 28,
+          "line": 3,
+          "matched_text": "low-hanging fruit",
+          "rule_id": "core:orwell.stale-figure",
+          "severity": "error"
+        },
+        {
+          "category": "orwell",
+          "column": 6,
+          "line": 1,
+          "matched_text": "robust",
+          "rule_id": "core:orwell.unsupported-evaluative",
+          "severity": "error"
+        },
+        {
+          "category": "prose-craft",
+          "column": 1,
+          "line": 3,
+          "matched_text": "We ",
+          "rule_id": "core:prose-craft.first-person-plural",
+          "severity": "warning"
+        },
+        {
+          "category": "prose-craft",
+          "column": 4,
+          "line": 3,
+          "matched_text": "will ",
+          "rule_id": "core:prose-craft.future-tense",
+          "severity": "warning"
+        },
+        {
+          "category": "prose-discipline",
+          "column": 9,
+          "line": 3,
+          "matched_text": "circle back",
+          "rule_id": "core:prose-discipline.phrasal-verb",
+          "severity": "error"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 14,
+          "line": 1,
+          "matched_text": "comprehensive",
+          "rule_id": "core:prose-inflation.slop-lexicon",
+          "severity": "error"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 28,
+          "line": 3,
+          "matched_text": "low-hanging fruit",
+          "rule_id": "core:prose-inflation.business-jargon",
+          "severity": "error"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 6,
+          "line": 1,
+          "matched_text": "robust",
+          "rule_id": "core:prose-inflation.slop-lexicon",
+          "severity": "error"
+        },
+        {
+          "category": "prose-inflation",
+          "column": 9,
+          "line": 3,
+          "matched_text": "circle back",
+          "rule_id": "core:prose-inflation.business-jargon",
+          "severity": "error"
+        },
+        {
+          "category": "ste-practices",
+          "column": 14,
+          "line": 1,
+          "matched_text": "comprehensive",
+          "rule_id": "core:ste-practices.false-friend-term",
+          "severity": "warning"
+        }
+      ],
+      "unchecked": [
+        "comment-rules-not-run"
+      ]
     },
     "strict/format-rst": {
       "document": {

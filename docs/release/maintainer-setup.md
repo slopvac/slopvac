@@ -71,13 +71,15 @@ The release and candidate workflows sign with this key and check each signature 
 
 The `slopvac-plugins` crate compiles `keys/slopvac-release.pub` in with `include_str!`. `KeyPolicy::compiled()` in `sign.rs` makes it the only key for the first-party namespace `slopvac`. `Revocations::with_compiled_root` in `revoke.rs` makes it the root key that verifies the revocation list. Both return an error if the compiled key does not parse, and first-party verification then refuses.
 
+The contract assigns first-party plugin verification to a separate compiled plugins key and reserves the release key for binaries and the revocation list ([plugins contract, section 10](../contract/plugins.md), [threat model, section 5.2](../contract/threat-model.md)). The plugins key is not issued yet: `plugins_key()` in `sign.rs` returns no key. There is a known implementation gap: `KeyPolicy::compiled()` falls back to the release key for the first-party namespace, although the contract requires that namespace to fail closed without a usable compiled plugins key.
+
 The `slopvac-update` crate includes the same file in `verify.rs`, plus the optional `NEXT_RELEASE_KEY_FILE` constant in `verify.rs`. `ReleaseVerifier` checks the `.minisig` of the archive that `slopvac self update` downloads against both keys. It accepts prehashed signatures only. It refuses a missing, tampered, legacy or foreign-key signature before it replaces the binary. It also requires the signed trusted comment to name the requested archive and version, so an older or foreign-target archive that the key signed does not install. `scripts/release_signing.py` writes that comment.
 
 Tests inject other keys through the public fields of `KeyPolicy`, through `Revocations::new` and through `Runtime::verifier`, so no test needs the secret key.
 
-### How first-party packs are signed
+### How first-party plugins are signed
 
-Release CI signs release artifacts with `MINISIGN_SECRET_KEY` in minisign's default prehashed mode. The `Revocation list` workflow signs the revocation list the same way, as [the last section](#the-signed-revocation-list) describes. Signing first-party packs is not wired into a workflow yet, so no first-party pack is signed. A first-party pack carries a signed statement and its `.minisig` as the two signature layers described in [the threat model](../contract/threat-model.md#53-rotation-and-revocation). The statement names the namespace `slopvac` and the key id `D9914BDB4570AC6D`. The revocation list uses the same key. No one signs by hand and no one reads the secret key.
+Release CI signs release artifacts with `MINISIGN_SECRET_KEY` in minisign's default prehashed mode. The `Revocation list` workflow signs the revocation list the same way, as [the last section](#the-signed-revocation-list) describes. Signing first-party plugins is not wired into a workflow yet, so no first-party plugin is signed. A first-party plugin carries a signed statement and its `.minisig` as the two signature layers described in [the threat model](../contract/threat-model.md#53-rotation-and-revocation). The statement names the namespace `slopvac` and the key id `D9914BDB4570AC6D`. The revocation list uses the same key. No one signs by hand and no one reads the secret key.
 
 ### Rotate the key
 
@@ -92,9 +94,9 @@ A publisher-key rotation statement (signed by the old and new key) applies to pi
 3. Release. This rotation release is signed with the current key, still in `MINISIGN_SECRET_KEY`, and embeds both public keys. Clients that update to it now trust the next key.
 4. Wait until enough clients have updated to the rotation release. Clients that skip it cannot verify a release signed with the next key.
 5. Promote the next key in one pull request: move the key text from `NEXT_RELEASE_KEY_FILE` into `keys/slopvac-release.pub` and set the constant back to `None`. After it merges and before the release workflow runs, replace `MINISIGN_SECRET_KEY` with the new secret. The release workflow checks each signature against `keys/slopvac-release.pub`, so the secret and that file must change together. The release is signed with the new key. Clients on the rotation release accept it through their next key, and it embeds only the new key.
-6. Re-sign the first-party packs and publish a new revocation list with the new key.
+6. Publish a new revocation list with the new key.
 
-`slopvac-plugins` stays on the single key in `keys/slopvac-release.pub`. First-party packs are not signed yet, so no pack needs the next key before step 5. After step 5 the plugin key is the new current key in the same build.
+Under the two-key contract, a release-key rotation changes trust for binaries and the revocation list, not plugins. The compiled plugins key verifies first-party plugins and the first-party plugin index. Replacing that compiled key requires a slopvac release. Until the implementation gap above is fixed, promoting a new release key also changes the key used to verify the `slopvac` namespace. No first-party plugin is signed yet, so none needs re-signing in this procedure.
 
 #### After a key compromise
 

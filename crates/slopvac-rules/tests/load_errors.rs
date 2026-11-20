@@ -340,7 +340,7 @@ fn a_pack_one_file_past_the_limit_is_refused_with_its_budget() {
     write_categories(dir.path(), slopvac_rules::MAX_PACK_FILES + 1);
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
     let (budget, limit, path) = budget_error(&e);
-    assert_eq!(budget, "pack-files");
+    assert_eq!(budget, "plugin-files");
     assert_eq!(limit, slopvac_rules::MAX_PACK_FILES as u64);
     assert!(!path.starts_with('/'), "{path}");
     assert!(e.to_string().contains("[rules-budget-exceeded]"), "{e}");
@@ -373,7 +373,7 @@ fn a_pack_one_byte_past_the_byte_limit_is_refused_with_its_budget() {
     std::fs::write(dir.path().join("zz.json"), " ").unwrap();
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
     let (budget, limit, _) = budget_error(&e);
-    assert_eq!(budget, "pack-bytes");
+    assert_eq!(budget, "plugin-bytes");
     assert_eq!(limit, slopvac_rules::MAX_PACK_BYTES);
 }
 
@@ -406,7 +406,7 @@ fn a_flood_of_aliases_past_the_entry_limit_is_refused_as_too_many_entries() {
     }
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
     let (budget, limit, _) = budget_error(&e);
-    assert_eq!(budget, "pack-entries");
+    assert_eq!(budget, "plugin-entries");
     assert_eq!(limit, slopvac_rules::MAX_PACK_ENTRIES as u64);
 }
 
@@ -418,7 +418,7 @@ fn a_flood_of_unrelated_entries_past_the_entry_limit_is_refused() {
     }
     let e = RuleSet::load_dir(&pack(), dir.path(), &CompileOptions::default()).unwrap_err();
     let (budget, limit, _) = budget_error(&e);
-    assert_eq!(budget, "pack-entries");
+    assert_eq!(budget, "plugin-entries");
     assert_eq!(limit, 1024);
 }
 

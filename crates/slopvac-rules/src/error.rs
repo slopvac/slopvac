@@ -16,13 +16,13 @@ pub enum PackBudget {
 }
 
 impl PackBudget {
-    /// The `data.budget` text, such as `pack-files`.
+    /// The `data.budget` text, such as `plugin-files`.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Files => "pack-files",
-            Self::Entries => "pack-entries",
-            Self::Bytes => "pack-bytes",
+            Self::Files => "plugin-files",
+            Self::Entries => "plugin-entries",
+            Self::Bytes => "plugin-bytes",
         }
     }
 
@@ -95,7 +95,7 @@ impl fmt::Display for LoadErrorKind {
             }
             Self::BudgetExceeded { budget, limit, .. } => write!(
                 f,
-                "[rules-budget-exceeded] the pack passes the limit of {limit} {} ({})",
+                "[rules-budget-exceeded] the plugin passes the limit of {limit} {} ({})",
                 budget.unit(),
                 budget.as_str()
             ),

@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/plugins-lock.schema.json",
+  "title": "slopvac v3 plugins lockfile",
+  "description": "The .slopvac/plugins.lock file. `slopvac plugins sync` writes it and a run reads it. It pins each data plugin and code plugin to a version, a source and a content digest, so a run on another machine loads the same bytes. A digest mismatch makes the run fail with exit 2. The lockfile records no trust: trust is a separate per-user record. The built-in core plugin is compiled into the binary and never appears here. Semantics are specified in docs/contract/plugins.md. Owner: slopvac-8l4.2.4.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "plugins": {
+      "description": "Locked entries, sorted by id, so diffs stay small.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Locked"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "plugins"
+  ],
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Digest": {
+      "description": "sha256 digest of the plugin content, as the OCI manifest digest or the hash of the extracted tree.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "Locked": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/PluginId"
+        },
+        "kind": {
+          "description": "data for a data plugin, code for a code plugin. The same values as the manifest kind.",
+          "enum": [
+            "data",
+            "code"
+          ]
+        },
+        "version": {
+          "$ref": "plugin-manifest.schema.json#/$defs/Semver"
+        },
+        "slopvac_api": {
+          "$ref": "common.schema.json#/$defs/ApiVersion"
+        },
+        "source": {
+          "description": "An oci:// reference, an https:// release archive URL, a git+https:// URL pinned to a full commit hash after @, or a path relative to the project root. http:// is rejected.",
+          "type": "string",
+          "pattern": "^(oci://\\S+|https://\\S+|git\\+https://\\S+@[0-9a-f]{40}|(?![/\\\\])(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|$))\\S.*)$"
+        },
+        "digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "signature": {
+          "description": "Present when the host verified a minisign signature.",
+          "type": "object",
+          "properties": {
+            "key_id": {
+              "description": "Minisign key id, 16 hex digits.",
+              "type": "string",
+              "pattern": "^[0-9A-F]{16}$"
+            },
+            "not_before": {
+              "description": "The notBefore time of the signed statement, in UTC (RFC 3339, `Z` suffix). The pattern rejects an impossible month, day, hour, minute or second, and 30 or 31 February. 29 February of a non-leap year passes the schema and fails when the host parses the time. `plugins update` refuses an older value than the lockfile holds unless the user passes the downgrade flag.",
+              "type": "string",
+              "pattern": "^[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-9]))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "key_id",
+            "not_before"
+          ],
+          "patternProperties": {
+            "^x-": {}
+          },
+          "additionalProperties": false
+        },
+        "requires": {
+          "description": "Ids of locked plugins this entry needs.",
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/PackId"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "version",
+        "slopvac_api",
+        "source",
+        "digest"
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}

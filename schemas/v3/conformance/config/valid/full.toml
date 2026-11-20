@@ -32,7 +32,8 @@ allow = ["colour", "slopvac"]
 files = [".slopvac/terms.toml"]
 blocklists = ["docs/blocklist.toml"]
 
-[[packs]]
+# A data plugin and a code plugin share the one list.
+[[plugins]]
 id = "acme"
 source = "oci://ghcr.io/acme/slopvac-acme"
 version = "1.2.0"

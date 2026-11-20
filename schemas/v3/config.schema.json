@@ -22,7 +22,7 @@
       "default": "prose"
     },
     "extends": {
-      "description": "Config files merged below this one, lowest first. A path relative to this file or `<pack>:<name>` for a pack config.",
+      "description": "Config files merged below this one, lowest first. A path relative to this file or `<plugin>:<name>` for a plugin config.",
       "type": "array",
       "items": {
         "type": "string",
@@ -43,13 +43,8 @@
         "$ref": "#/$defs/Glob"
       }
     },
-    "packs": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Source"
-      }
-    },
     "plugins": {
+      "description": "Data plugins and code plugins the project uses, in one list. Each id appears once, and `core` is reserved for the built-in plugin. A code plugin also needs `slopvac plugins trust`; one that is not trusted never starts.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/Source"
@@ -94,7 +89,7 @@
       "minLength": 1
     },
     "Ref": {
-      "description": "A style or genre name. A bare name resolves against the active packs and must be unambiguous; `<pack>:<name>` is exact.",
+      "description": "A style or genre name. A bare name resolves against the active plugins and must be unambiguous; `<plugin>:<name>` is exact.",
       "type": "string",
       "pattern": "^([a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*$"
     },
@@ -108,7 +103,7 @@
       ]
     },
     "RuleKey": {
-      "description": "A rule or category name: qualified `<pack>:<id>` or a bare name that is unambiguous across the active packs. Keys of maps in this file are data, so the `x-` convention does not apply to them.",
+      "description": "A rule or category name: qualified `<plugin>:<id>` or a bare name that is unambiguous across the active plugins. Keys of maps in this file are data, so the `x-` convention does not apply to them.",
       "type": "string",
       "pattern": "^([a-z][a-z0-9-]*:)?[A-Za-z0-9][A-Za-z0-9._-]*$"
     },
@@ -303,11 +298,11 @@
       }
     },
     "Source": {
-      "description": "A pack or plugin the project depends on. The lockfile pins the digest.",
+      "description": "A data plugin or code plugin the project depends on. The lockfile pins the digest and records the kind.",
       "type": "object",
       "properties": {
         "id": {
-          "$ref": "common.schema.json#/$defs/PackId"
+          "$ref": "common.schema.json#/$defs/PluginId"
         },
         "source": {
           "description": "An `oci://` reference, a `git+https://` URL with a commit, or a path relative to the config file.",

@@ -4,6 +4,7 @@
 
 mod oci_server;
 mod revocations;
+mod support;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -54,7 +55,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
 
 /// A source repository with one commit.
 struct Remote {
-    dir: tempfile::TempDir,
+    dir: support::Scratch,
     commit: String,
 }
 
@@ -79,7 +80,7 @@ impl Remote {
     }
 
     fn build(fill: impl FnOnce(&Path)) -> Self {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = support::scratch();
         let work = dir.path().join("repo");
         fs::create_dir(&work).unwrap();
         git(&work, &["init", "--quiet"]);
@@ -120,7 +121,7 @@ impl Remote {
 
     fn lock_at(commit: &str, digest: &str) -> Lockfile {
         let text = format!(
-            "schema_version = 3\n\n[[packs]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
+            "schema_version = 3\n\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
              slopvac_api = 1\nsource = \"git+{LOCKED_HOST}repo@{commit}\"\ndigest = \"{digest}\"\n",
         );
         Lockfile::parse(&text).unwrap()
@@ -134,7 +135,7 @@ impl Remote {
 
 /// The tree hash of `files`, computed on a plain directory, not through git.
 fn expected_digest(files: &[(&str, &[u8])]) -> String {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     for (name, data) in files {
         let path = dir.path().join(name);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -144,8 +145,8 @@ fn expected_digest(files: &[(&str, &[u8])]) -> String {
 }
 
 struct Env {
-    data: tempfile::TempDir,
-    project: tempfile::TempDir,
+    data: support::Scratch,
+    project: support::Scratch,
     root: Root,
     list: ListServer,
 }
@@ -158,8 +159,8 @@ impl Env {
             list_json("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z", &[], &[]),
         );
         Self {
-            data: tempfile::tempdir().unwrap(),
-            project: tempfile::tempdir().unwrap(),
+            data: support::scratch(),
+            project: support::scratch(),
             root,
             list: ListServer::start(Some(empty)),
         }
@@ -348,8 +349,8 @@ fn a_program_without_the_launcher_entry_point_syncs_no_git_source() {
     assert_eq!(err.exit_code(), 2);
     assert_eq!(
         err.to_string(),
-        "pack `style`: the running program did not install the slopvac plugin launcher, \
-         so plugins and git pack sources cannot start"
+        "plugin `style`: the running program did not install the slopvac plugin launcher, \
+         so plugins and git plugin sources cannot start"
     );
     env.assert_no_trees();
     // A refused sync has no side effects: no revocation fetch, no store, no
@@ -391,7 +392,7 @@ fn offline_with_a_cold_cache_names_the_pack_and_digest() {
 
     let err = env.sync(Network::Offline, &remote, &lock).unwrap_err();
 
-    assert_eq!(err.code(), "offline-pack-missing");
+    assert_eq!(err.code(), "offline-plugin-missing");
     assert!(err.to_string().contains(&digest), "{err}");
     env.assert_no_trees();
 }
@@ -453,7 +454,7 @@ fn an_executable_file_keeps_its_bit_when_the_commit_lists_it() {
     let files: &[(&str, &[u8])] = &[("bin/run", b"#!/bin/sh\n"), (".slopvac-exec", b"bin/run\n")];
     let remote = Remote::with_files(files, &["bin/run"]);
     // The expected digest comes from a plain directory with the same mode.
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     fs::create_dir(dir.path().join("bin")).unwrap();
     fs::write(dir.path().join("bin/run"), b"#!/bin/sh\n").unwrap();
     fs::set_permissions(
@@ -532,7 +533,7 @@ fn n10_a_symlink_or_a_submodule_in_the_commit_is_refused() {
 #[test]
 fn tm40_hooks_filters_and_attributes_in_the_repository_do_nothing() {
     use std::os::unix::fs::PermissionsExt;
-    let marker_dir = tempfile::tempdir().unwrap();
+    let marker_dir = support::scratch();
     let marker = marker_dir.path().join("ran");
     let marker_text = marker.display().to_string();
     let script = format!("#!/bin/sh\ntouch '{marker_text}'\n");
@@ -800,11 +801,11 @@ fn git_error_text_is_escaped_once_with_a_doubled_backslash() {
 
     assert_eq!(
         git.to_string(),
-        format!("pack `style`: git source: {HOSTILE_SHOWN}")
+        format!("plugin `style`: git source: {HOSTILE_SHOWN}")
     );
     assert_eq!(
         limit.to_string(),
-        format!("pack `style`: git source passes a limit: {HOSTILE_SHOWN}")
+        format!("plugin `style`: git source passes a limit: {HOSTILE_SHOWN}")
     );
 }
 
@@ -825,7 +826,7 @@ fn a_hostile_path_in_a_refused_commit_is_escaped_exactly_once() {
 
     assert_eq!(
         err.to_string(),
-        "pack `style`: git source: `a\\u{1b}[31m\\\\b` is a symbolic link"
+        "plugin `style`: git source: `a\\u{1b}[31m\\\\b` is a symbolic link"
     );
 }
 

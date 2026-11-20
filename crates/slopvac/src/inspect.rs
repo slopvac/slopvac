@@ -2,7 +2,7 @@
 //! (compat rows `cmd:rules`, `cmd:explain`, `opt:rules:*`, `opt:explain:*`,
 //! `behavior:inspection-filters`, `behavior:inspection-formats`).
 //!
-//! Output order is deterministic: category, then rule, as the pack lists them.
+//! Output order is deterministic: category, then rule, as the plugin lists them.
 
 use std::fmt::Write as _;
 
@@ -234,7 +234,7 @@ fn rule_json(category: &LoadedCategory, rule: &LoadedRule, sev: &Severities) -> 
     if let Value::Object(map) = &mut value {
         map.insert("id".into(), json!(rule.id().as_str()));
         map.insert("category".into(), json!(category.id().as_str()));
-        map.insert("pack".into(), json!(rule.id().pack()));
+        map.insert("plugin".into(), json!(rule.id().pack()));
         map.insert("kind".into(), json!(kind_name(rule.kind())));
         let eff = effective(sev, rule);
         map.insert("effective_severity".into(), json!(eff.level));
@@ -258,7 +258,7 @@ fn rules_json(
         .map(|c| {
             json!({
                 "id": c.id().as_str(),
-                "pack": c.rules().first().map_or("core", |r| r.id().pack()),
+                "plugin": c.rules().first().map_or("core", |r| r.id().pack()),
                 "title": c.title().as_str(),
                 "description": c.description().as_str(),
                 "weight": c.weight(),
@@ -267,18 +267,17 @@ fn rules_json(
         })
         .collect();
     let rules: Vec<Value> = picked.iter().map(|(c, r)| rule_json(c, r, sev)).collect();
-    // The packs that own the listed rules, in catalogue order. `pack` stays for readers of the
-    // first release and names the first of them; `packs` and the `pack` of each entry are the
-    // complete answer.
-    let mut packs: Vec<&str> = Vec::new();
+    // The plugins that own the listed rules, in catalogue order. `plugin` names the first of
+    // them; `plugins` and the `plugin` of each entry are the complete answer.
+    let mut plugins: Vec<&str> = Vec::new();
     for (_, rule) in picked {
-        if !packs.contains(&rule.id().pack()) {
-            packs.push(rule.id().pack());
+        if !plugins.contains(&rule.id().pack()) {
+            plugins.push(rule.id().pack());
         }
     }
     let payload = json!({
-        "pack": packs.first().copied().unwrap_or("core"),
-        "packs": packs,
+        "plugin": plugins.first().copied().unwrap_or("core"),
+        "plugins": plugins,
         "categories": categories,
         "rules": rules,
     });
@@ -466,7 +465,7 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
         let hint = if id.contains(':') {
             ""
         } else {
-            " Rule IDs carry a pack prefix in 3.0, such as `core:ste-words.spelling`; `slopvac migrate` rewrites 2.x IDs."
+            " Rule IDs carry a plugin prefix in 3.0, such as `core:ste-words.spelling`; `slopvac migrate` rewrites 2.x IDs."
         };
         return Err(CliError::new(
             "unknown-rule",

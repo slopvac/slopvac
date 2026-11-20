@@ -130,7 +130,7 @@ class Report:
 
 
 def load_declaration(path: Path) -> dict[str, Any]:
-    """Read a PluginDeclaration from a pack manifest (TOML) or a JSON file."""
+    """Read a PluginDeclaration from a plugin manifest (TOML) or a JSON file."""
     text = path.read_text(encoding="utf-8")
     data = tomllib.loads(text) if path.suffix == ".toml" else json.loads(text)
     declaration = data.get("plugin", data)

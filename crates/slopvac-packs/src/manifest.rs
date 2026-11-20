@@ -1,6 +1,6 @@
 //! The `slopvac-pack.toml` manifest.
 //!
-//! The reader follows `schemas/v3/pack-manifest.schema.json` and `docs/contract/packs.md`.
+//! The reader follows `schemas/v3/plugin-manifest.schema.json` and `docs/contract/plugins.md`.
 //! Every error carries a JSON Pointer to the offending value. A missing key and an unknown key
 //! point at the table that holds them, as the conformance corpus expects.
 
@@ -365,6 +365,9 @@ fn parse_root(value: &Value) -> Result<Manifest> {
         _ => return Err(err("/schema_version", "must be 3")),
     }
     let id = pack_id(root.string("id")?).map_err(|m| err("/id", m))?;
+    if id.as_str() == "core" {
+        return Err(err("/id", "`core` is reserved for the built-in plugin"));
+    }
     let version = parse_version(root.string("version")?).map_err(|m| err("/version", m))?;
     let slopvac_api = root
         .required("slopvac_api")?
@@ -374,9 +377,9 @@ fn parse_root(value: &Value) -> Result<Manifest> {
         .ok_or_else(|| err("/slopvac_api", "must be an integer of at least 1"))?;
     let kind = match root.string("kind")? {
         "data" => PackKind::Data,
-        "plugin" => PackKind::Plugin,
+        "code" => PackKind::Plugin,
         _ => {
-            return Err(err("/kind", "not a pack kind (`data` or `plugin`)"));
+            return Err(err("/kind", "not a plugin kind (`data` or `code`)"));
         }
     };
     let description = root.non_empty("description")?;

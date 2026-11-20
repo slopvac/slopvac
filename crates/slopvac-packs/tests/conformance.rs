@@ -1,4 +1,4 @@
-//! The `schemas/v3/conformance/pack-manifest` corpus: every `valid/` case parses and every
+//! The `schemas/v3/conformance/plugin-manifest` corpus: every `valid/` case parses and every
 //! `invalid/` case fails at the JSON Pointer that `cases.toml` names.
 
 use std::fs;
@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use slopvac_packs::Manifest;
 
 fn corpus() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance/pack-manifest")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance/plugin-manifest")
 }
 
 fn files(dir: &str) -> Vec<PathBuf> {

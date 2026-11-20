@@ -4,6 +4,8 @@
 //! or a lock file must show it escaped. Each case below puts the same hostile
 //! string into string fields and checks the whole message.
 
+mod support;
+
 use slopvac_plugins::apply::ApplyError;
 use slopvac_plugins::extract::ExtractError;
 use slopvac_plugins::frame::FrameError;
@@ -127,7 +129,7 @@ fn an_exited_plugin_keeps_its_stderr_lines_and_escapes_the_rest() {
 fn a_link_name_the_name_check_lets_through_is_escaped_in_the_extract_error() {
     // A soft hyphen and a byte order mark pass the name check, so the
     // link rejection interpolates the name itself.
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::scratch();
     std::os::unix::fs::symlink("elsewhere", dir.path().join("a\u{ad}b\u{feff}")).unwrap();
     let err = slopvac_plugins::extract::tree_hash(dir.path()).unwrap_err();
     assert_eq!(
@@ -173,7 +175,7 @@ fn a_recipe_path_in_the_approval_list_is_escaped_not_debug_printed() {
         "content": "x",
     }]});
     let files = parse_recipe(&result).unwrap();
-    let root = tempfile::tempdir().unwrap();
+    let root = support::scratch();
     let options = PlanOptions {
         dry_run: true,
         allow_sensitive: vec![],
@@ -214,7 +216,7 @@ fn a_locked_source_in_the_lock_mismatch_is_escaped() {
     let msg = check_lock(&lock, &[resolved]).unwrap_err().to_string();
     assert_eq!(
         msg,
-        "the lock does not match the resolved packs:\n\
+        "the lock does not match the resolved plugins:\n\
          changed: p source https://example.org/a\\u{23}#[error]x.tgz \
          -> https://example.org/b\\u{23}#[add-mask]y.tgz\n"
     );
@@ -224,7 +226,7 @@ fn a_locked_source_in_the_lock_mismatch_is_escaped() {
 #[cfg(unix)]
 fn a_store_path_with_hostile_characters_is_escaped_once() {
     use slopvac_plugins::sync::Store;
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = support::scratch();
     // U+202E, a literal backslash and a legacy command in a directory name.
     let root = tmp.path().join("s\u{202e}\\n##[e]");
     std::fs::create_dir_all(root.join(".lock")).unwrap();
@@ -238,7 +240,7 @@ fn a_store_path_with_hostile_characters_is_escaped_once() {
 #[cfg(unix)]
 fn a_planted_link_in_a_store_with_a_hostile_path_is_escaped_once() {
     use slopvac_plugins::sync::Store;
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = support::scratch();
     let root = tmp.path().join("s\u{202e}\\n##[e]");
     std::fs::create_dir_all(&root).unwrap();
     std::os::unix::fs::symlink(tmp.path(), root.join("trees")).unwrap();

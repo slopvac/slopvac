@@ -114,7 +114,7 @@ fn git_source_syncs_through_the_current_executable() {
     let commit = git(&work, &["rev-parse", "HEAD"]);
     let digest = tree_hash(plain.path()).unwrap().to_string();
     let lock = Lockfile::parse(&format!(
-        "schema_version = 3\n\n[[packs]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
+        "schema_version = 3\n\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
          slopvac_api = 1\nsource = \"git+{LOCKED_HOST}repo@{commit}\"\ndigest = \"{digest}\"\n",
     ))
     .unwrap();

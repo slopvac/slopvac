@@ -21,7 +21,7 @@ from slopvac_plugin.conformance.session import CaseFailure, CaseSkip, Session
 
 ALL_IDS = [f"P{i}" for i in range(1, 20)]
 REPO = Path(__file__).resolve().parents[3]
-PACK_SCHEMA = REPO / "schemas" / "v3" / "pack-manifest.schema.json"
+PACK_SCHEMA = REPO / "schemas" / "v3" / "plugin-manifest.schema.json"
 
 ALL_HOOKS_INPUTS = {
     "provider": {},
@@ -41,7 +41,7 @@ def test_example_plugin_passes_every_applicable_case(quiet_cwd):
     inputs = json.loads((EXAMPLE / "conformance-inputs.json").read_text("utf-8"))
     report = run_conformance(
         command,
-        declaration=load_declaration(EXAMPLE / "slopvac-pack.toml"),
+        declaration=load_declaration(EXAMPLE / "slopvac-plugin.toml"),
         inputs=inputs,
         pass_env=SDK_ENV,
     )
@@ -229,7 +229,7 @@ def test_cli_exit_2_when_the_command_does_not_start(tmp_path):
 
 
 @pytest.mark.skipif(
-    not PACK_SCHEMA.exists(), reason="pack-manifest schema lands with PR #288"
+    not PACK_SCHEMA.exists(), reason="plugin-manifest schema lands with PR #288"
 )
 def test_example_manifest_validates_against_the_pack_manifest_schema():
     from jsonschema import Draft202012Validator
@@ -243,7 +243,7 @@ def test_example_manifest_validates_against_the_pack_manifest_schema():
         [(s["$id"], Resource.from_contents(s)) for s in schemas]
     )
     schema = json.loads(PACK_SCHEMA.read_text("utf-8"))
-    manifest = tomllib.loads((EXAMPLE / "slopvac-pack.toml").read_text("utf-8"))
+    manifest = tomllib.loads((EXAMPLE / "slopvac-plugin.toml").read_text("utf-8"))
     errors = list(Draft202012Validator(schema, registry=registry).iter_errors(manifest))
     assert errors == []
 

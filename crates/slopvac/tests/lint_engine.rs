@@ -797,11 +797,11 @@ fn a_config_below_a_glob_target_is_checked_even_when_it_excludes_every_match() {
 
 #[test]
 fn an_unwired_command_says_so_without_any_internal_id() {
-    let out = slopvac().arg("packs").output().expect("run");
+    let out = slopvac().arg("onboard").output().expect("run");
     assert_eq!(out.status.code(), Some(2));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
-        "error[command-not-wired]: `slopvac packs` is not available in this build yet.\n"
+        "error[command-not-wired]: `slopvac onboard` is not available in this build yet.\n"
     );
 }
 
@@ -868,4 +868,155 @@ fn the_legacy_style_alone_requires_a_score_of_70() {
         reasons.contains(&"score 0.0, minimum 70.0".to_owned()),
         "{reasons:?}"
     );
+}
+
+/// A working directory `proj` beside a sentinel-named directory that stands for a private
+/// location outside the project.
+fn proj_beside_sentinel() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let proj = dir.path().join("proj");
+    fs::create_dir(&proj).expect("proj dir");
+    (dir, proj)
+}
+
+#[test]
+fn a_missing_target_reached_through_dot_dot_hides_the_external_directory() {
+    let (_dir, proj) = proj_beside_sentinel();
+    for format in ["text", "json"] {
+        let out = slopvac()
+            .current_dir(&proj)
+            .args([
+                "lint",
+                "--format",
+                format,
+                "../sentinel-outside-dir/missing.md",
+            ])
+            .output()
+            .expect("run");
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(all.contains("<external>/missing.md"), "{format}: {all}");
+        assert!(!all.contains("sentinel-outside-dir"), "{format}: {all}");
+    }
+}
+
+#[test]
+fn an_external_config_error_hides_the_external_directory() {
+    let (_dir, proj) = proj_beside_sentinel();
+    fs::write(proj.join("ok.md"), CLEAN).expect("document");
+    for format in ["text", "json"] {
+        let out = slopvac()
+            .current_dir(&proj)
+            .args([
+                "lint",
+                "--format",
+                format,
+                "--config",
+                "../sentinel-outside-dir/missing.toml",
+                "ok.md",
+            ])
+            .output()
+            .expect("run");
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(all.contains("<external>/missing.toml"), "{format}: {all}");
+        assert!(!all.contains("sentinel-outside-dir"), "{format}: {all}");
+    }
+}
+
+/// `link` points at `secret/sub`, so `link/..` is `secret`, not the directory that holds
+/// `link`. A lexical fold would turn `base/link/../proj/sentinel-private/...` into a path
+/// below the project and print the private directory name.
+#[cfg(unix)]
+#[test]
+fn a_path_through_a_symlinked_parent_still_hides_the_external_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // The canonical temp dir, so the working directory and the given paths share a prefix.
+    let top = dir.path().canonicalize().expect("canonical temp dir");
+    let base = top.join("base");
+    let proj = base.join("proj");
+    let secret_sub = top.join("secret").join("sub");
+    fs::create_dir_all(&proj).expect("proj dir");
+    fs::create_dir_all(&secret_sub).expect("secret dir");
+    std::os::unix::fs::symlink(&secret_sub, base.join("link")).expect("symlink");
+    fs::write(proj.join("ok.md"), CLEAN).expect("document");
+
+    let via_link = base
+        .join("link")
+        .join("..")
+        .join("proj")
+        .join("sentinel-private");
+    let cases: [(&[&str], &str); 2] = [(&["--config"], "missing.toml"), (&[], "missing.md")];
+    for format in ["text", "json"] {
+        for (flags, name) in cases {
+            let target = via_link.join(name);
+            let mut cmd = slopvac();
+            cmd.current_dir(&proj).args(["lint", "--format", format]);
+            if flags.is_empty() {
+                cmd.arg(&target);
+            } else {
+                cmd.args(flags).arg(&target).arg("ok.md");
+            }
+            let out = cmd.output().expect("run");
+            let all = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                all.contains(&format!("<external>/{name}")),
+                "{format} {name}: {all}"
+            );
+            assert!(!all.contains("sentinel-private"), "{format} {name}: {all}");
+        }
+    }
+}
+
+/// `shortcut` is a symlink whose target does not exist, so `shortcut/..` cannot be resolved.
+/// A fold that assumes it is a plain directory would place the path inside the project.
+#[cfg(unix)]
+#[test]
+fn a_path_through_a_dangling_symlink_hides_the_external_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let top = dir.path().canonicalize().expect("canonical temp dir");
+    let base = top.join("base");
+    let proj = base.join("proj");
+    fs::create_dir_all(&proj).expect("proj dir");
+    std::os::unix::fs::symlink(top.join("nowhere"), base.join("shortcut")).expect("symlink");
+    fs::write(proj.join("ok.md"), CLEAN).expect("document");
+
+    let via_shortcut = base
+        .join("shortcut")
+        .join("..")
+        .join("proj")
+        .join("sentinel-private");
+    for format in ["text", "json"] {
+        for (is_config, name) in [(true, "missing.toml"), (false, "missing.md")] {
+            let target = via_shortcut.join(name);
+            let mut cmd = slopvac();
+            cmd.current_dir(&proj).args(["lint", "--format", format]);
+            if is_config {
+                cmd.arg("--config").arg(&target).arg("ok.md");
+            } else {
+                cmd.arg(&target);
+            }
+            let out = cmd.output().expect("run");
+            let all = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                all.contains(&format!("<external>/{name}")),
+                "{format} {name}: {all}"
+            );
+            assert!(!all.contains("sentinel-private"), "{format} {name}: {all}");
+        }
+    }
 }

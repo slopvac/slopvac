@@ -163,9 +163,9 @@ fn a_genre_no_category_recommends_lists_nothing() {
 }
 
 #[test]
-fn rules_json_has_pack_categories_and_linked_rules() {
+fn rules_json_has_plugin_categories_and_linked_rules() {
     let v = json(&["rules", "--format", "json"]);
-    assert_eq!(v["pack"], "core");
+    assert_eq!(v["plugin"], "core");
     assert_eq!(
         v["categories"].as_array().unwrap().len(),
         fixture_categories()
@@ -849,4 +849,53 @@ fn an_extends_cycle_through_an_external_file_hides_its_directories() {
     ] {
         assert!(!err.contains(leaked), "{leaked} leaked: {err}");
     }
+}
+
+const TERM_CASING: &str = "terms:terms.casing";
+
+#[test]
+fn a_terms_only_listing_names_the_terms_plugin() {
+    let v = json(&["rules", "--category", "terms", "--format", "json"]);
+    assert_eq!(v["plugin"], "terms");
+    assert_eq!(v["plugins"], serde_json::json!(["terms"]));
+    let rules = v["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0]["plugin"], "terms");
+}
+
+#[test]
+fn a_mixed_listing_names_every_plugin_and_each_entry_its_own() {
+    let v = json(&["rules", "--format", "json"]);
+    assert_eq!(v["plugins"], serde_json::json!(["core", "terms"]));
+    let plugin_of = |list: &str, id: &str| {
+        v[list]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == id)
+            .unwrap_or_else(|| panic!("{id} is listed"))["plugin"]
+            .clone()
+    };
+    assert_eq!(plugin_of("rules", CHAT_LEAKAGE), "core");
+    assert_eq!(plugin_of("rules", TERM_CASING), "terms");
+    assert_eq!(plugin_of("categories", "ai-residue"), "core");
+    assert_eq!(plugin_of("categories", "terms"), "terms");
+}
+
+#[test]
+fn rules_lists_the_term_casing_rule() {
+    let v = json(&["rules", "--format", "json"]);
+    let rule = v["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == TERM_CASING)
+        .expect("the term-casing rule is listed");
+    assert_eq!(rule["category"], "terms");
+}
+
+#[test]
+fn explain_finds_the_term_casing_rule() {
+    let text = stdout(&["explain", TERM_CASING]);
+    assert!(text.starts_with(TERM_CASING), "{text}");
 }

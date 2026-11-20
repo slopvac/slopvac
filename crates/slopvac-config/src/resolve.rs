@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::{Map, Value as Json, json};
 
 use crate::load::{BlockKind, LoadedConfig};
+use crate::messages::ConfigText;
 use crate::presets::Presets;
 use crate::source::{Layer, Setting, Source, display_path};
 
@@ -456,14 +457,30 @@ pub fn describe(source: &Source) -> String {
 #[must_use]
 pub fn render_explain(config: &LoadedConfig, explained: &[Explained]) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "config root: {}", config.root.display());
+    let root = ConfigText::ExplainRoot {
+        root: config.root.display().to_string(),
+    };
+    let _ = writeln!(out, "{root}");
     for f in &config.files {
-        let _ = writeln!(out, "config file: {} ({})", f.display, f.layer.name());
+        let file = ConfigText::ExplainFile {
+            file: f.display.clone(),
+            layer: f.layer.name().to_owned(),
+        };
+        let _ = writeln!(out, "{file}");
     }
     for e in explained {
-        let _ = writeln!(out, "{} = {}  [{}]", e.path, e.value, describe(&e.source));
+        let setting = ConfigText::ExplainSetting {
+            path: e.path.clone(),
+            value: e.value.to_string(),
+            origin: describe(&e.source),
+        };
+        let _ = writeln!(out, "{setting}");
         for o in e.overridden.iter().rev() {
-            let _ = writeln!(out, "    replaced {}  [{}]", o.value, describe(&o.source));
+            let replaced = ConfigText::ExplainReplaced {
+                value: o.value.to_string(),
+                origin: describe(&o.source),
+            };
+            let _ = writeln!(out, "    {replaced}");
         }
     }
     out

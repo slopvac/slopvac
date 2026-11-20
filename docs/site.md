@@ -22,7 +22,7 @@ Everything below the API major lives under `/v3/`, so a future major version get
 | `/v3/rules/<category>/` | Category index. |
 | `/v3/styles/`, `/v3/genres/` | Style presets and genres. |
 | `/v3/plugins/protocol/` | Plugin protocol v1 reference. |
-| `/v3/plugins/packs/` | Pack reference. |
+| `/v3/plugins/bundled/` | Reference pages for the bundled plugins. |
 | `/schemas/v3/<name>.schema.json` | Published JSON Schema files. |
 | `/api/` | Rustdoc for the workspace crates. |
 
@@ -46,4 +46,4 @@ GitHub Pages publishes the site from `.github/workflows/docs-deploy.yml` on push
 
 The repository publishes with the GitHub Actions source. Changing the source in the repository settings stops deployment.
 
-The styles, genres, and pack pages are placeholders until the style, genre, and pack code exists. The rules page generator reads the Python rule data until the Rust rule loader replaces it.
+The styles, genres, and plugin pages are placeholders until the style, genre, and plugin code exists. The rules page generator reads the Python rule data until the Rust rule loader replaces it.

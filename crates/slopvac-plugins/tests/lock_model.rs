@@ -13,17 +13,17 @@ const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
 fn entry(id: &str, version: &str, source: &str, digest: &str) -> String {
     format!(
-        "\n[[packs]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"{version}\"\nslopvac_api = 1\nsource = \"{source}\"\ndigest = \"{digest}\"\n"
+        "\n[[plugins]]\nid = \"{id}\"\nkind = \"data\"\nversion = \"{version}\"\nslopvac_api = 1\nsource = \"{source}\"\ndigest = \"{digest}\"\n"
     )
 }
 
 fn lock_of(entries: &[String]) -> Lockfile {
-    let packs = if entries.is_empty() {
-        "packs = []\n"
+    let plugins = if entries.is_empty() {
+        "plugins = []\n"
     } else {
         ""
     };
-    let text = format!("schema_version = 3\n{packs}{}", entries.concat());
+    let text = format!("schema_version = 3\n{plugins}{}", entries.concat());
     Lockfile::parse(&text).unwrap()
 }
 
@@ -51,7 +51,7 @@ fn resolved(pack: &str, version: &str, source: &str, digest: &str) -> ResolvedPa
 /// and separates entries with one blank line.
 const FULL_CANONICAL: &str = "schema_version = 3
 
-[[packs]]
+[[plugins]]
 id = \"acme-docs\"
 kind = \"data\"
 version = \"1.2.0\"
@@ -60,19 +60,19 @@ source = \"oci://ghcr.io/acme/slopvac-docs:1.2.0\"
 digest = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"
 requires = [\"core\"]
 
-[packs.signature]
+[plugins.signature]
 key_id = \"A1B2C3D4E5F60718\"
 not_before = \"2026-11-01T00:00:00Z\"
 
-[[packs]]
+[[plugins]]
 id = \"acme-tagger\"
-kind = \"plugin\"
+kind = \"code\"
 version = \"0.3.1\"
 slopvac_api = 1
 source = \"git+https://github.com/acme/tagger@0123456789abcdef0123456789abcdef01234567\"
 digest = \"sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\"
 
-[[packs]]
+[[plugins]]
 id = \"archive\"
 kind = \"data\"
 version = \"2.0.0\"
@@ -80,7 +80,7 @@ slopvac_api = 1
 source = \"https://example.org/packs/archive-2.0.0.tar.gz\"
 digest = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"
 
-[[packs]]
+[[plugins]]
 id = \"local\"
 kind = \"data\"
 version = \"0.0.1\"
@@ -91,7 +91,7 @@ digest = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd
 
 #[test]
 fn unsorted_input_is_written_in_canonical_order() {
-    let full = include_str!("../../../schemas/v3/conformance/packs-lock/valid/full.toml");
+    let full = include_str!("../../../schemas/v3/conformance/plugins-lock/valid/full.toml");
     let lock = Lockfile::parse(full).unwrap();
     assert_eq!(lock.to_toml(), FULL_CANONICAL);
 }
@@ -105,7 +105,7 @@ fn canonical_text_round_trips_byte_for_byte() {
 #[test]
 fn serialise_then_parse_gives_an_equal_lock() {
     let lock = Lockfile::parse(include_str!(
-        "../../../schemas/v3/conformance/packs-lock/valid/full.toml"
+        "../../../schemas/v3/conformance/plugins-lock/valid/full.toml"
     ))
     .unwrap();
     assert_eq!(Lockfile::parse(&lock.to_toml()).unwrap(), lock);
@@ -113,7 +113,7 @@ fn serialise_then_parse_gives_an_equal_lock() {
 
 #[test]
 fn empty_lock_round_trips() {
-    let text = "schema_version = 3\npacks = []\n";
+    let text = "schema_version = 3\nplugins = []\n";
     let lock = Lockfile::parse(text).unwrap();
     assert_eq!(lock.packs().len(), 0);
     assert_eq!(lock.to_toml(), text);
@@ -134,7 +134,7 @@ fn path_with_a_quote_is_escaped_on_write() {
 #[test]
 fn x_keys_are_ignored_and_not_written() {
     let text = format!(
-        "schema_version = 3\nx-note = 1\n{}x-tool = \"a\"\n[packs.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\nx-extra = true\n",
+        "schema_version = 3\nx-note = 1\n{}x-tool = \"a\"\n[plugins.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\nx-extra = true\n",
         entry("p", "1.0.0", "oci://ghcr.io/a/b:1", D1)
     );
     let lock = Lockfile::parse(&text).unwrap();
@@ -173,12 +173,12 @@ fn rejects_what_the_contract_rejects() {
     let cases: Vec<(&str, String, &str)> = vec![
         (
             "unknown root key",
-            "schema_version = 3\npacks = []\nextra = 1\n".into(),
+            "schema_version = 3\nplugins = []\nextra = 1\n".into(),
             "",
         ),
         (
             "schema version 2",
-            "schema_version = 2\npacks = []\n".into(),
+            "schema_version = 2\nplugins = []\n".into(),
             "/schema_version",
         ),
         ("missing packs", "schema_version = 3\n".into(), ""),
@@ -189,58 +189,58 @@ fn rejects_what_the_contract_rejects() {
                 entry("p", "1.0.0", "oci://ghcr.io/a/b:1", D1),
                 entry("p", "1.0.1", "oci://ghcr.io/a/b:2", D2)
             ),
-            "/packs/1/id",
+            "/plugins/1/id",
         ),
         (
             "build metadata in version",
             with_entry_lines("").replace("1.0.0", "1.0.0+build"),
-            "/packs/0/version",
+            "/plugins/0/version",
         ),
         (
             "leading zero in version",
             with_entry_lines("").replace("1.0.0", "01.0.0"),
-            "/packs/0/version",
+            "/plugins/0/version",
         ),
         (
             "api zero",
             with_entry_lines("").replace("slopvac_api = 1", "slopvac_api = 0"),
-            "/packs/0/slopvac_api",
+            "/plugins/0/slopvac_api",
         ),
         (
             "uppercase pack id",
             with_entry_lines("").replace("id = \"p\"", "id = \"P\""),
-            "/packs/0/id",
+            "/plugins/0/id",
         ),
         (
-            "unknown kind",
-            with_entry_lines("").replace("\"data\"", "\"code\""),
-            "/packs/0/kind",
+            "retired kind",
+            with_entry_lines("").replace("\"data\"", "\"plugin\""),
+            "/plugins/0/kind",
         ),
         (
             "repeated requires",
             with_entry_lines("requires = [\"a\", \"a\"]\n"),
-            "/packs/0/requires/1",
+            "/plugins/0/requires/1",
         ),
         (
             "29 February in a non-leap year",
             with_entry_lines(
-                "[packs.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-02-29T00:00:00Z\"\n",
+                "[plugins.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-02-29T00:00:00Z\"\n",
             ),
-            "/packs/0/signature/not_before",
+            "/plugins/0/signature/not_before",
         ),
         (
             "lowercase key id",
             with_entry_lines(
-                "[packs.signature]\nkey_id = \"a1b2c3d4e5f60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\n",
+                "[plugins.signature]\nkey_id = \"a1b2c3d4e5f60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\n",
             ),
-            "/packs/0/signature/key_id",
+            "/plugins/0/signature/key_id",
         ),
         (
             "unknown signature key",
             with_entry_lines(
-                "[packs.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\ntrusted = true\n",
+                "[plugins.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\ntrusted = true\n",
             ),
-            "/packs/0/signature",
+            "/plugins/0/signature",
         ),
     ];
     for (label, text, pointer) in cases {
@@ -252,7 +252,7 @@ fn rejects_what_the_contract_rejects() {
 #[test]
 fn accepts_29_february_in_a_leap_year() {
     let text = with_entry_lines(
-        "[packs.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2028-02-29T23:59:59Z\"\n",
+        "[plugins.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2028-02-29T23:59:59Z\"\n",
     );
     assert!(Lockfile::parse(&text).is_ok());
 }

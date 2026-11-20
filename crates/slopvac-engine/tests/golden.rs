@@ -28,6 +28,7 @@ mod common;
 use common::{core_set, legacy_engine, legacy_settings, read_json, root};
 
 use serde_json::{Value, json};
+use slopvac_comments::Language;
 use slopvac_engine::locale::spelling_rules;
 use slopvac_engine::rst::{RstAdapter, RstOptions};
 use slopvac_engine::{Engine, Input, Level};
@@ -37,23 +38,11 @@ use slopvac_rules::{CompileOptions, MatchKind};
 const PROFILES: [&str; 3] = ["strict", "normal", "relaxed"];
 
 /// Inputs that no engine entry point reads yet: input id, the owning bead and why.
-const SKIPPED: [(&str, &str, &str); 3] = [
-    (
-        "format-html",
-        "slopvac-8l4.3.42",
-        "the engine has no standalone HTML file kind (`Kind` stops at Markdown, MDX, RST and diagrams)",
-    ),
-    (
-        "format-python-comments",
-        "slopvac-8l4.3.26",
-        "code-comment mode: comments are not extracted from source files yet",
-    ),
-    (
-        "format-javascript-comments",
-        "slopvac-8l4.3.26",
-        "code-comment mode: comments are not extracted from source files yet",
-    ),
-];
+const SKIPPED: [(&str, &str, &str); 1] = [(
+    "format-html",
+    "slopvac-8l4.3.42",
+    "the engine has no standalone HTML file kind (`Kind` stops at Markdown, MDX, RST and diagrams)",
+)];
 
 /// The repository is the project: an interpreter inside it is never used.
 fn rst_options() -> RstOptions {
@@ -145,7 +134,11 @@ fn lint(engine: &Engine, entry: &Entry) -> Option<Value> {
             }
             Input::rst(name, &text)
         }
-        other => panic!("{}: no entry point for {other}", entry.id),
+        // A source file whose comments are the prose (`--mode code-comments`).
+        other => match Language::from_name(other) {
+            Some(language) => Input::comments(name, &text, language),
+            None => panic!("{}: no entry point for {other}", entry.id),
+        },
     };
     Some(project(
         &engine

@@ -37,12 +37,17 @@
       "additionalProperties": false
     },
     "PackId": {
-      "description": "Pack identifier: the namespace of a rule. Built-in rules live in the reserved pack core. Semantics owned by slopvac-8l4.2.3.",
+      "description": "Plugin identifier: the namespace of a rule. Built-in rules live in the reserved plugin core. Semantics owned by slopvac-8l4.2.3.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$"
     },
+    "PluginId": {
+      "description": "Identifier of a plugin, or of the namespace a publisher signs for. Same character set as PackId. `core` is reserved for the built-in plugin that is compiled into the binary, so no manifest, lock entry, index entry or config entry may use it as an id or a namespace. Semantics: docs/contract/plugins.md, section 9.",
+      "type": "string",
+      "pattern": "^(?!core(?![\\s\\S]))[a-z][a-z0-9-]*(?![\\s\\S])"
+    },
     "RuleId": {
-      "description": "Qualified rule identifier <pack>:<id>. A rule from a category file has the id <category>.<rule>, for example core:prose-craft.acronym-periods; a rule a plugin reports may use a bare id such as core:passive-voice. Short names resolve in configuration only where they are unambiguous; every output carries the qualified form. Semantics owned by slopvac-8l4.2.3.",
+      "description": "Qualified rule identifier <plugin>:<id>. A rule from a category file has the id <category>.<rule>, for example core:prose-craft.acronym-periods; a rule a plugin reports may use a bare id such as core:passive-voice. Short names resolve in configuration only where they are unambiguous; every output carries the qualified form. Semantics owned by slopvac-8l4.2.3.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._-]*$"
     },
@@ -51,7 +56,7 @@
       "enum": ["error", "warning", "suggestion"]
     },
     "RuleProvenance": {
-      "description": "The pack that supplied a rule at run time: pack id, pack version and the pack-relative path of the defining file. A rule's citation of its own sources is the rule field citation, not this. Semantics owned by slopvac-8l4.2.3.",
+      "description": "The plugin that supplied a rule at run time: plugin id, plugin version and the plugin-relative path of the defining file. A rule's citation of its own sources is the rule field citation, not this. Semantics owned by slopvac-8l4.2.3.",
       "type": "object",
       "properties": {
         "pack": {"$ref": "#/$defs/PackId"},
@@ -71,7 +76,7 @@
           "enum": ["core", "style", "genre", "extends", "project", "override", "front-matter", "directive", "cli", "env"]
         },
         "file": {
-          "description": "Path relative to the project root, or pack:<id>/<path> for a pack file. Absent where no file holds the value: core, cli and env.",
+          "description": "Path relative to the project root, or plugin:<id>/<path> for a plugin file. Absent where no file holds the value: core, cli and env.",
           "type": "string"
         },
         "line": {"type": "integer", "minimum": 1},

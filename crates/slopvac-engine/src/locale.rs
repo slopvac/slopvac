@@ -278,7 +278,7 @@ fn rule_json(spelling: &Spelling) -> Value {
 ///
 /// The category copies the metadata of `base`'s `ste-words` category, so the rule scores with
 /// that category's weight and budget. Pass the set to the engine beside `base`; its rule id is
-/// `<pack>:ste-words.spelling`. A `spelling` rule that `base` already defines is replaced:
+/// `<plugin>:ste-words.spelling`. A `spelling` rule that `base` already defines is replaced:
 /// the engine gives a rule id to the last set that defines it, so pass this set after `base`.
 ///
 /// Returns `Ok(None)` for `und`, which turns the check off on purpose.

@@ -205,6 +205,26 @@ def _swap_identifier(
     return sentence.replace(f"`{old}`", f"`{new}`", 1), f"`{old}` -> `{new}`"
 
 
+def damage_sentence(
+    sentence: str, kind: str, pool: list[str], rng: random.Random
+) -> tuple[str | None, str] | None:
+    """Plant one fact edit in a sentence: (damaged sentence, detail) or None.
+
+    The kinds are `drop` (the sentence goes, so the first value is None), `number`,
+    `negation` and `entity`. None means the sentence has nothing to damage that way.
+    """
+    if kind == "drop":
+        # Only drop sentences that carry a checkable fact.
+        if not (NUMBER_RE.search(sentence) or CODE_SPAN_RE.search(sentence)):
+            return None
+        return None, "dropped"
+    if kind == "number":
+        return _replace_number(sentence, rng)
+    if kind == "negation":
+        return _flip_modal(sentence, rng)
+    return _swap_identifier(sentence, pool, rng)
+
+
 def plant_edits(parent: dict[str, Any], text: str) -> tuple[dict[str, Any], str] | None:
     rng = _rng("rewrite", parent["id"])
     lines = text.split("\n")
@@ -226,23 +246,15 @@ def plant_edits(parent: dict[str, Any], text: str) -> tuple[dict[str, Any], str]
         rng.shuffle(order)
         for i in order:
             sentence = sentences[i]
-            if kind == "drop":
-                # Only drop sentences that carry a checkable fact.
-                if not (NUMBER_RE.search(sentence) or CODE_SPAN_RE.search(sentence)):
-                    continue
-                rebuilt = " ".join(sentences[:i] + sentences[i + 1 :])
-                detail = "dropped"
-            else:
-                if kind == "number":
-                    changed = _replace_number(sentence, rng)
-                elif kind == "negation":
-                    changed = _flip_modal(sentence, rng)
-                else:
-                    changed = _swap_identifier(sentence, pool, rng)
-                if changed is None:
-                    continue
-                rebuilt = " ".join(sentences[:i] + [changed[0]] + sentences[i + 1 :])
-                detail = changed[1]
+            damage = damage_sentence(sentence, kind, pool, rng)
+            if damage is None:
+                continue
+            kept, detail = damage
+            rebuilt = " ".join(
+                sentences[:i]
+                + ([kept] if kept is not None else [])
+                + sentences[i + 1 :]
+            )
             replacements[first] = (last, rebuilt)
             edits.append(
                 {
