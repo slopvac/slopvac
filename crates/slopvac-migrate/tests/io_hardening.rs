@@ -68,7 +68,10 @@ fn notes_and_warnings_neutralise_escapes() {
     let (code, out, _) = cli(dir.path());
     assert_eq!(code, 0, "{out}");
     assert!(!out.contains('\u{1b}'), "{out:?}");
-    assert!(out.contains("note: docs/\\u{1b}[31mred.md:1:"), "{out:?}");
+    assert!(
+        out.contains("note: migrate-rule-removed: docs/\\u{1b}[31mred.md:1:"),
+        "{out:?}"
+    );
     assert!(
         out.contains("warning: docs/\\u{1b}[31mred.md:2:"),
         "{out:?}"
