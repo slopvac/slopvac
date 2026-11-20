@@ -363,8 +363,8 @@ pub(crate) enum PyenvText {
     SearchIndented { text: String },
     /// The source line of a search hit.
     #[code("plugins-index-search-source")]
-    #[text("source: {source}")]
-    SearchSource { source: String },
+    #[text("source: {origin}")]
+    SearchSource { origin: String },
     /// The publisher key line of a search hit.
     #[code("plugins-index-search-key")]
     #[text("publisher key: {key_id} (fingerprint {fingerprint})")]
@@ -1233,7 +1233,7 @@ mod tests {
             (PyenvText::SearchIndented { text: s("text-64") }, "text-64"),
             (
                 PyenvText::SearchSource {
-                    source: s("source-65"),
+                    origin: s("source-65"),
                 },
                 "source: source-65",
             ),

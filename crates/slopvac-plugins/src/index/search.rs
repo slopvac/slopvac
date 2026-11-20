@@ -125,7 +125,7 @@ impl SearchHit<'_> {
         ));
         line(indent(
             PyenvText::SearchSource {
-                source: s(&e.source),
+                origin: s(&e.source),
             }
             .to_string(),
         ));

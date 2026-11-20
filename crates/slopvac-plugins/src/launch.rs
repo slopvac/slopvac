@@ -394,6 +394,8 @@ mod linux {
     use std::time::{Duration, Instant};
 
     use rustix::io::Errno;
+
+    use crate::messages::host::HostText;
     use rustix::process::{Pid, Signal, WaitOptions, WaitStatus, getpid, kill_process, wait};
 
     use super::fail;

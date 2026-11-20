@@ -67,7 +67,7 @@ pub enum RuntimeError {
 /// terminal controls. The cause keeps only the position, the same scrub as the
 /// `slopvac-fs` errors (docs/engineering.md, approved departures).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("{}", messages::toml_syntax(.line, .column))]
+#[error("{}", messages::toml_syntax(*.line, *.column))]
 pub struct TomlCause {
     /// One-based line.
     pub line: usize,
