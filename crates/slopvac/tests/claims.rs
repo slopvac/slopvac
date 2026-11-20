@@ -2,7 +2,6 @@
 //! paths kept out of messages, and no network use.
 
 use assert_cmd::Command;
-use predicates::prelude::*;
 use serde_json::Value;
 use std::fs;
 use std::io::ErrorKind;
@@ -54,7 +53,7 @@ fn a_text_report_lists_the_changed_claim_and_its_number() {
     assert_eq!(out.status.code(), Some(0));
     // The revised sentence is a changed claim: 10 left, 20 arrived. The second original
     // sentence has no counterpart and is reported as a dropped fact.
-    let expected = "changed line 1: The cache holds 20 entries.\n  removed number 11\n  added number 20\ndropped fact line 1: It evicts the oldest entry first.\n";
+    let expected = "changed line 1: The cache holds 20 entries.\n  removed number 10\n  added number 20\ndropped fact line 1: It evicts the oldest entry first.\n";
     assert_eq!(String::from_utf8_lossy(&out.stdout), expected);
 }
 
