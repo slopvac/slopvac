@@ -50,7 +50,7 @@ impl Block {
     /// Whether the block applies to `rel`, a path relative to the project root.
     #[must_use]
     pub fn matches(&self, rel: &Path) -> bool {
-        !rel.starts_with("..")
+        is_under_root(rel)
             && self
                 .matcher
                 .matched_path_or_any_parents(rel, false)
@@ -121,13 +121,38 @@ impl LoadedConfig {
         }
     }
 
-    /// Whether `rel`, a path relative to the project root, is outside the lint run.
+    /// Whether `rel`, a path relative to the project root, is outside the lint run. A path
+    /// outside the root is never excluded.
     #[must_use]
     pub fn is_excluded(&self, rel: &Path) -> bool {
-        self.exclude
-            .matched_path_or_any_parents(rel, false)
-            .is_ignore()
+        is_under_root(rel)
+            && self
+                .exclude
+                .matched_path_or_any_parents(rel, false)
+                .is_ignore()
     }
+}
+
+/// Whether `rel` can be matched against root-relative patterns. A path that is absolute, or
+/// that climbs above the root at any point (`a/../../x`), is outside the root and matches no
+/// pattern. The matcher panics on such a path, so every call into it goes through this check.
+/// The walk is lexical and touches no filesystem.
+fn is_under_root(rel: &Path) -> bool {
+    let mut depth = 0usize;
+    for component in rel.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => return false,
+            Component::CurDir => {}
+            Component::Normal(_) => depth += 1,
+            Component::ParentDir => {
+                let Some(up) = depth.checked_sub(1) else {
+                    return false;
+                };
+                depth = up;
+            }
+        }
+    }
+    true
 }
 
 /// Load the config at `path` and everything it extends.
@@ -845,6 +870,7 @@ fn check_exclude(tree: &Node, diagnostics: &mut Vec<Diagnostic>) {
 mod tests {
     use super::*;
     use crate::presets::NoPresets;
+    use rstest::rstest;
 
     #[test]
     fn a_file_extended_many_times_is_read_once() {
@@ -928,5 +954,47 @@ mod tests {
             ),
             "<external>/b.toml"
         );
+    }
+
+    #[rstest]
+    #[case::parent("../README.md")]
+    #[case::deep_parent("../../elsewhere/README.md")]
+    #[case::absolute("/elsewhere/README.md")]
+    #[case::escapes_mid_path("a/../../README.md")]
+    fn a_path_outside_the_root_is_not_excluded(#[case] rel: &str) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("slopvac.toml");
+        fs::write(&path, "schema_version = 3\nexclude = [\"*.md\"]\n").unwrap();
+        let config = load(&path, &NoPresets).unwrap();
+        assert!(config.is_excluded(Path::new("README.md")));
+        assert!(!config.is_excluded(Path::new(rel)));
+    }
+
+    #[test]
+    fn a_path_that_climbs_and_returns_inside_the_root_is_excluded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("slopvac.toml");
+        fs::write(&path, "schema_version = 3\nexclude = [\"*.md\"]\n").unwrap();
+        let config = load(&path, &NoPresets).unwrap();
+        assert!(config.is_excluded(Path::new("a/../README.md")));
+    }
+
+    #[rstest]
+    #[case::inside("README.md", true)]
+    #[case::parent("../README.md", false)]
+    #[case::absolute("/elsewhere/README.md", false)]
+    #[case::escapes_mid_path("a/../../README.md", false)]
+    #[case::stays_inside("a/../README.md", true)]
+    fn a_block_applies_only_to_a_path_under_the_root(#[case] rel: &str, #[case] applies: bool) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("slopvac.toml");
+        fs::write(
+            &path,
+            "schema_version = 3\n[[genres]]\nfiles = [\"*.md\"]\ngenre = \"readme\"\n",
+        )
+        .unwrap();
+        let config = load(&path, &NoPresets).unwrap();
+        let block = &config.files.last().unwrap().blocks[0];
+        assert_eq!(block.matches(Path::new(rel)), applies);
     }
 }
