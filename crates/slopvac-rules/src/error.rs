@@ -100,7 +100,7 @@ impl fmt::Display for LoadErrorKind {
             }
             Self::BudgetExceeded { budget, limit, .. } => write!(
                 f,
-                "[rules-budget-exceeded] the plugin passes the limit of {limit} {} ({})",
+                "[rules-budget-exceeded] the input passes the limit of {limit} {} ({})",
                 budget.unit(),
                 budget.as_str()
             ),
