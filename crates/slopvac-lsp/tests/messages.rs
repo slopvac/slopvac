@@ -167,7 +167,9 @@ fn rejected_request_message(method: &str, params: serde_json::Value) -> String {
         json!(null),
     )));
     handle.join().unwrap().unwrap();
-    response.error.expect("an error response").message
+    let error = response.response_result.expect_err("an error response");
+    assert_eq!(error.code, -32602, "InvalidParams");
+    error.message
 }
 
 #[rstest]
