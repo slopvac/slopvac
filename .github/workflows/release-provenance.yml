@@ -8,8 +8,18 @@ name: Release provenance
 
 # A maintainer can also dispatch it with a tag to run only the tag ruleset check,
 # token mint included. That path skips the candidate checks and publishes nothing.
+# A caller that publishes needs the candidate check, so `require-candidate` defaults
+# on: the check runs on a tag, and a final step fails the job when it did not pass
+# (for example a call on a branch). Only a run that cannot publish, the release plan
+# on a pull request, passes false. The direct dispatch declares no such input, so it
+# runs the ruleset check alone.
 on:
   workflow_call:
+    inputs:
+      require-candidate:
+        description: Fail unless the passed-candidate check ran and passed.
+        type: boolean
+        default: true
     secrets:
       RELEASE_APP_PRIVATE_KEY:
         description: >-
@@ -41,8 +51,10 @@ jobs:
           persist-credentials: false
 
       - name: Check the candidate
-        # Pull requests run the release plan too; only a tag push can publish.
-        if: ${{ github.ref_type == 'tag' && inputs.tag == '' }}
+        id: candidate
+        # Pull requests run the release plan too; only a tag can publish. The
+        # direct dispatch has no `require-candidate` input and skips this step.
+        if: ${{ inputs.require-candidate && github.ref_type == 'tag' }}
         env:
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
@@ -84,3 +96,11 @@ jobs:
           GH_TOKEN: ${{ steps.ruleset-token.outputs.token }}
         run: |
           python3 scripts/release_ruleset.py check "$TAG" --repo "$REPO"
+
+      # The steps above skip on a branch. A caller that required the candidate
+      # check must not pass on a skip, so fail closed.
+      - name: Fail when a required candidate check did not pass
+        if: ${{ inputs.require-candidate && steps.candidate.outcome != 'success' }}
+        run: |
+          echo "::error::The passed-candidate check was required but did not run on a tag."
+          exit 1

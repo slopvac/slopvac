@@ -580,3 +580,7 @@ def test_a_publishing_run_requires_the_public_key_before_anything_is_built():
         "steps.parse.outputs.active == 'true' }}"
     )
     assert guard["run"] == "python3 scripts/release_signing.py require-key"
+
+
+def test_the_stable_provenance_call_keeps_the_default_candidate_requirement():
+    assert "with" not in JOBS["provenance"]

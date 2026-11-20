@@ -332,6 +332,9 @@ _CUSTOM_NEW = """\
     permissions:
       "actions": "read"
       "contents": "read"
+    with:
+      # The plan also runs on pull requests, which cannot publish.
+      require-candidate: ${{ !github.event.pull_request }}
     secrets:
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 """
