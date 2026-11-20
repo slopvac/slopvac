@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde::Serialize;
 use serde_json::{Map, Value as Json, json};
-use slopvac_model::{ConfigLayer, ConfigSource};
+use slopvac_model::{ConfigLayer, ConfigSource, Severity};
 
 use crate::load::{BlockKind, LoadedConfig};
 use crate::messages::ConfigText;
@@ -224,7 +224,7 @@ impl Resolved {
         );
         let as_level = |c: &Contribution, from| {
             Some(ResolvedLevel {
-                level: c.value.as_str()?.to_owned(),
+                level: ConfigLevel::from_value(&c.value)?,
                 source: c.source.clone(),
                 from,
             })
@@ -270,12 +270,12 @@ impl Resolved {
                     .iter()
                     .map(|c| vec!["categories", *c, "minimum_severity"]),
             )
-            .and_then(|c| c.value.as_str());
-        if let Some(floor) = floor
-            && let (Some(have), Some(min)) = (severity_rank(&level.level), severity_rank(floor))
+            .and_then(|c| ConfigLevel::from_value(&c.value));
+        // `off` as a floor sets none, and an `off` level is never raised.
+        if let (Some(ConfigLevel::On(min)), ConfigLevel::On(have)) = (floor, level.level)
             && have < min
         {
-            floor.clone_into(&mut level.level);
+            level.level = ConfigLevel::On(min);
         }
         level
     }
@@ -340,12 +340,34 @@ fn insert_at(map: &mut Map<String, Json>, path: &[String], value: Json) {
     }
 }
 
-fn severity_rank(level: &str) -> Option<u8> {
-    match level {
-        "suggestion" => Some(0),
-        "warning" => Some(1),
-        "error" => Some(2),
-        _ => None,
+/// A level as config spells it: a severity, or `off`, which `Severity` has no value for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigLevel {
+    /// The rule does not run.
+    Off,
+    /// The rule reports at this severity.
+    On(Severity),
+}
+
+impl ConfigLevel {
+    /// The level a config value names, or `None` when it names neither `off` nor a severity.
+    #[must_use]
+    pub fn from_value(value: &Json) -> Option<Self> {
+        if value == "off" {
+            return Some(Self::Off);
+        }
+        serde_json::from_value(value.clone()).ok().map(Self::On)
+    }
+
+    /// The config spelling: `off`, `suggestion`, `warning` or `error`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::On(Severity::Suggestion) => "suggestion",
+            Self::On(Severity::Warning) => "warning",
+            Self::On(Severity::Error) => "error",
+        }
     }
 }
 
@@ -361,8 +383,8 @@ pub enum LevelFrom {
 /// The level of one rule after layer precedence.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedLevel {
-    /// `error`, `warning`, `suggestion` or `off`.
-    pub level: String,
+    /// The severity, or `off`.
+    pub level: ConfigLevel,
     /// The layer and location of the entry that set it.
     pub source: ConfigSource,
     /// Whether a rule entry or a category entry set it.

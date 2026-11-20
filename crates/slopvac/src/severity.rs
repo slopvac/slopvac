@@ -193,7 +193,7 @@ impl Severities {
             .level_by_any(&[rule.id().as_str(), rule.id().local()], &categories);
         if let Some(named) = named {
             return Effective {
-                level: named.level,
+                level: named.level.as_str().to_owned(),
                 shipped: shipped.to_owned(),
                 from: Some(describe(&named.source)),
             };

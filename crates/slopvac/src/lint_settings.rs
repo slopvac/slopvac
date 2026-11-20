@@ -16,8 +16,8 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::Value as Json;
+use slopvac_config::{ConfigLevel, LevelFrom, LoadedConfig, Resolved, Setting, describe};
 use slopvac_config::{Inputs, PackFile, Presets};
-use slopvac_config::{LevelFrom, LoadedConfig, Resolved, Setting, describe};
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
@@ -240,6 +240,13 @@ pub fn resolve(config: &LoadedConfig, rel: &Path) -> Resolved {
     )
 }
 
+fn engine_level(level: ConfigLevel) -> Level {
+    match level {
+        ConfigLevel::Off => Level::Off,
+        ConfigLevel::On(severity) => Level::On(severity),
+    }
+}
+
 fn level_of(name: &str) -> Option<Level> {
     Some(match name {
         "error" => Level::On(Severity::Error),
@@ -428,18 +435,19 @@ pub fn build(
             // genre chain. A level that the config sets is final. A category floor holds
             // after the shift.
             let level = match named {
-                Some(named) => level_of(&named.level).map(|l| {
+                Some(named) => {
+                    let l = engine_level(named.level);
                     let l = if is_inherited(named.source.layer) {
                         shifted(l, shift)
                     } else {
                         l
                     };
-                    if named.from == LevelFrom::Category {
+                    Some(if named.from == LevelFrom::Category {
                         floored(l, floor)
                     } else {
                         l
-                    }
-                }),
+                    })
+                }
                 // No layer names the rule: the engine shifts its genre or definition level.
                 None => None,
             };

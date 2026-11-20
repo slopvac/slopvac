@@ -889,7 +889,7 @@ fn level_precedence_follows_the_profile_contract() {
         let cfg = load(&fx.root().join("slopvac.toml"), &presets).unwrap();
         let r = cfg.resolve(Path::new("a.md"), &inputs(&presets));
         let got = r.level("core:r", Some("cat")).map(|l| (l.level, l.from));
-        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+        assert_eq!(got, want.map(|(l, f)| (named_level(l), f)), "{name}");
     }
 }
 
@@ -949,7 +949,7 @@ fn level_by_any_key_follows_layers_not_spelling() {
         let got = r
             .level_by_any(&["core:r", "r"], &["core:cat", "cat"])
             .map(|l| (l.level, l.from));
-        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+        assert_eq!(got, want.map(|(l, f)| (named_level(l), f)), "{name}");
     }
 }
 
@@ -1024,7 +1024,7 @@ fn level_by_any_breaks_ties_and_merges_floors_across_spellings() {
         let cfg = load(&fx.root().join("slopvac.toml"), &NoPresets).unwrap();
         let r = cfg.resolve(Path::new("a.md"), &inputs(&NoPresets));
         let got = r.level_by_any(rules, categories).map(|l| (l.level, l.from));
-        assert_eq!(got, want.map(|(l, f)| (l.to_owned(), f)), "{name}");
+        assert_eq!(got, want.map(|(l, f)| (named_level(l), f)), "{name}");
     }
 }
 
@@ -1618,4 +1618,16 @@ fn blocks_split_across_both_tables_count_together() {
     let p = fx.write("slopvac.toml", &text);
     let data = budget_data(load(&p, &NoPresets).unwrap_err());
     assert_eq!(data.budget, ConfigBudget::FileBlocks);
+}
+
+/// The resolved level that a case table spells as `error`, `warning`, `suggestion` or `off`.
+fn named_level(name: &str) -> slopvac_config::ConfigLevel {
+    use slopvac_config::{ConfigLevel, Severity};
+    match name {
+        "off" => ConfigLevel::Off,
+        "suggestion" => ConfigLevel::On(Severity::Suggestion),
+        "warning" => ConfigLevel::On(Severity::Warning),
+        "error" => ConfigLevel::On(Severity::Error),
+        other => panic!("unknown level {other}"),
+    }
 }

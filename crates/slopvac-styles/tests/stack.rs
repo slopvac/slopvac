@@ -7,7 +7,9 @@ use std::path::Path;
 
 use serde_json::json;
 use slopvac_config::resolve::describe;
-use slopvac_config::{ConfigLayer, Inputs, LoadedConfig, load, render_explain};
+use slopvac_config::{
+    ConfigLayer, ConfigLevel, Inputs, LoadedConfig, Severity, load, render_explain,
+};
 use slopvac_styles::{BuiltinSource, MapSource, StylePresets, StyleSource};
 
 fn resolve_project(config: &str) -> (LoadedConfig, slopvac_config::Resolved) {
@@ -137,7 +139,7 @@ fn a_child_category_level_beats_its_parents_rule_level() {
     // The child is a higher layer than its parent, so its category entry outranks the
     // parent's rule entry.
     let level = resolved.level("core:a", Some("c")).unwrap();
-    assert_eq!(level.level, "error");
+    assert_eq!(level.level, ConfigLevel::On(Severity::Error));
     assert_eq!(level.source.file.as_deref(), Some("preset:child"));
 }
 
