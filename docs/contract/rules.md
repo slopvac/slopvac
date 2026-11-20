@@ -169,7 +169,7 @@ python scripts/contract/convert_rules_v2_to_v3.py OUT_DIR [--rules-dir DIR] [--t
 ```
 
 It writes one `<category>.json` per category.
-`tests/contract/test_rule_conversion.py` converts every shipped rule and validates the result, so the converted output is not committed.
+`tests/contract/test_rule_conversion.py` converts every shipped rule and validates the result. The converted core-v3 fixtures are committed under `crates/slopvac-rules/tests/fixtures/core-v3/`. The converter regenerates them, and `tests/contract/test_rules_fixtures.py` checks them for drift.
 
 The mapping:
 

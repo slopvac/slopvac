@@ -155,7 +155,7 @@ Owners: `slopvac-8l4.12.1` for the logging setup, `slopvac-8l4.12.9` for stdin.
 ### 1.8 Data written to disk
 
 - Caches and state go to the per-user directories that `etcetera` reports. `SLOPVAC_CACHE_DIR` overrides the cache location, as in 2.x (`vale_cache.py`).
-- Slopvac writes files atomically and takes a lock for shared state (`tempfile` persist and `fs4`).
+- A write takes an exclusive lock on the target file through standard-library file locking. The write goes to a new temporary file in the same directory. Slopvac syncs that file to disk, checks that it is still the file it created, renames it over the target, and then syncs the directory. Shared state takes the same lock.
 - Slopvac writes only to the cache directory, the project's `.slopvac/` directory, and paths the user names.
 
 Owners: `slopvac-8l4.9.3`, `slopvac-8l4.9.4`.
@@ -212,6 +212,20 @@ Code changes that touch a cap record the new value here in the same change. The 
 The CLI file and stdin reads enforce their cap and report `document-too-large` with exit 2. The language server and `migrate` document reads, and the `migrate` config read, enforce theirs in a later change. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and a `--diff` scoping read fails with `DiffError::FileTooLarge`. The `lint` command does not yet pass `--fix` or `--diff-base` to the engine. When it does, it reports both with `document-too-large`.
 
 A capped file read opens the file without blocking and accepts only a regular file. A FIFO, device, socket or directory at the path is refused at once, so a repository entry cannot hang a run. The refusal reports through the entry point's existing read-failure error, such as `input-unreadable` for a document, and not through a new code. Stdin is the exception: it reads a pipe by design.
+
+Every capped read reports a refusal as one of the kinds below. Each refusal exits 2.
+
+| Input kind | Over the cap | Every other refusal |
+|---|---|---|
+| Document | `document-too-large` | `input-unreadable`, or `input-not-utf8` when the bytes are not UTF-8 |
+| Config file | `config-too-large` | `config-io` |
+| Rule or category file | `rules-file-too-large` | No dedicated code yet. |
+| Style file | `style-too-large` | No dedicated code yet. |
+| Terms file | `terms-file-too-large` | No dedicated code yet. |
+
+The refusal kinds are `unsafe-path`, `not-found`, `symlink`, `not-regular`, `multiply-linked`, `io`, `not-utf8` and `too-large`. The list can grow in a later 3.x release.
+
+Reserved for a later 3.x release, and not emitted yet: the codes `rules-file-unreadable`, `style-unreadable` and `terms-file-unreadable` for the empty cells above, and a `data.reason` key on every refusal that carries the kind as one of the strings above. Until they are emitted, consumers branch on the codes in the table.
 
 Output and protocol caps are separate and already hold: plugin frames 16 MiB, reStructuredText converter output 16 MiB, and fixer edits 1 MiB.
 
@@ -372,6 +386,10 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 - Plugin protocol errors use the JSON-RPC 2.0 error object. Its numeric `code` follows the JSON-RPC ranges, and `data.slopvac_code` carries the string code. The protocol bead defines the numeric range.
 - Extractors share four codes. `extract-unsupported` covers unsupported content inside a supported input, such as a diagram type that no extractor reads. It is an `info` notice at the root of the report and exits 0, because the input is valid. Skipped content counts toward no score or gate, and the report shows that it was skipped. `extract-malformed` and `extract-budget` are `warning` notices in `unchecked` and exit 2, because the result cannot establish a pass. A broken diagram of a type slopvac reads is malformed, and an unknown type in a recognized fence is unsupported. `extract-output-invalid` belongs to first-party extractors. The failed output of a third-party plugin is `plugin-output-invalid`.
 - Three cases exit 2 although the input may be valid: a whole input that the user names in a format slopvac does not read (EPUB, PDF), an encrypted or password-protected container, and a file whose name promises source but holds none (`.drawio.png`, `.excalidraw.png`, `.drawio.svg`; the code is `binary-no-source` for a binary file). A plain PNG or SVG with no source is info and exits 0.
+- Three document-level `unchecked` entries cover a whole input. Each makes the run exit 2:
+  - `input-unreadable`: the reader refused the file or could not read it.
+  - `input-not-utf8`: the bytes are not valid UTF-8.
+  - `input-unsupported`: no reader handles this input kind. This includes a whole input that the user names in a format slopvac does not read, such as EPUB or PDF. Slopvac has no separate code for binary inputs.
 - Message text can change in any release. Codes, rule IDs, and exit codes form the interface.
 - A `fix` refusal carries its code through `Refusal::code`: `document-too-large`, `fix-outside-root`, `fix-symlink`, `fix-not-regular`, `fix-hardlinked`, `fix-not-owner`, `fix-unsafe-directory`, `fix-group-mismatch`, `fix-acl-present`, `fix-unsupported-platform` and `fix-changed`.
 
