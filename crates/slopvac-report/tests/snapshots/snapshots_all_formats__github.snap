@@ -6,4 +6,4 @@ expression: "rendered(Format::Github)"
 ::warning file=docs/guide.md,line=4,col=12,title=core%3Aprose-inflation.slop-lexicon::Replace 'delve' with a plain verb.
 ::notice file=docs/guide.md,line=12,col=40,title=core%3Aorwell.not-un::Say 'unclear' without the 'not un' double negative.
 ::warning file=src/app.py,line=1,col=1,title=core%3Adocs-discipline.document-length::The comment block runs 80 words; keep it under 60.
-::warning file=dossiers/ça & <é>.md,line=2,col=7,title=core%3Aprose-inflation.slop-lexicon::Replace "wörld" <b>& `x` | y
+::warning file=dossiers/ça & <é>.md,line=2,col=7,title=core%3Aprose-inflation.slop-lexicon::Replace "wörld" <b>& `x` | y\u{1}

@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 
 use slopvac_model::{Report, Severity};
 
-use crate::escape::{github_data, github_property};
+use slopvac_sanitize::{workflow_data, workflow_property};
 
 pub(crate) fn render(report: &Report) -> String {
     let mut out = String::new();
@@ -18,11 +18,11 @@ pub(crate) fn render(report: &Report) -> String {
             let _ = writeln!(
                 out,
                 "::{level} file={},line={},col={},title={}::{}",
-                github_property(doc.path.as_str()),
+                workflow_property(doc.path.as_str()),
                 f.start.line(),
                 f.start.column(),
-                github_property(f.rule_id.as_str()),
-                github_data(f.message.as_str())
+                workflow_property(f.rule_id.as_str()),
+                workflow_data(f.message.as_str())
             );
         }
     }

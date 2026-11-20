@@ -196,7 +196,8 @@ fn github_annotations_escape_newlines() {
     let report = report_for(Some((0, 1)), [1, 1, 1, 2], "a\nb::c");
     let rendered = out(Format::Github, &report, "a");
     assert_eq!(rendered.lines().count(), 1);
-    assert!(rendered.contains("a%0Ab::c"));
+    // `::` is escaped so message text cannot start a workflow command.
+    assert!(rendered.contains("a%0Ab%3A%3Ac"));
 }
 
 #[test]
@@ -332,4 +333,29 @@ fn text_output_has_no_raw_terminal_controls(#[case] hostile: &str) {
         .collect();
     assert!(raw.is_empty(), "raw controls {raw:?} in {rendered:?}");
     assert!(rendered.contains("\\u{"), "escaped visibly: {rendered:?}");
+}
+
+#[rstest::rstest]
+#[case::csi("\u{1b}[31mred")]
+#[case::osc_bel("\u{1b}]0;title\u{7}x")]
+#[case::c1_csi("\u{9b}31mred")]
+#[case::c1_nel_cr("a\u{85}b\rc")]
+#[case::bidi_override("a\u{202e}b")]
+fn github_annotations_neutralise_controls_in_path_and_message(#[case] hostile: &str) {
+    let mut report = report_for(Some((0, 1)), [3, 4, 3, 5], hostile);
+    report.documents[0].path = format!("dir/{hostile}.txt").try_into().unwrap();
+    let rendered = out(Format::Github, &report, "a");
+
+    let raw: Vec<char> = rendered
+        .chars()
+        .filter(|c| (c.is_control() && *c != '\n') || ('\u{202a}'..='\u{202e}').contains(c))
+        .collect();
+    assert!(raw.is_empty(), "raw controls {raw:?} in {rendered:?}");
+    assert_eq!(rendered.lines().count(), 1, "{rendered:?}");
+    let line = rendered.trim_end_matches('\n');
+    assert!(
+        line.starts_with("::warning file=dir/") && line.contains(",line=3,col=4,title="),
+        "{line:?}"
+    );
+    assert_eq!(line.matches("::").count(), 2, "{line:?}");
 }
