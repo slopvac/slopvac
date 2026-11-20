@@ -1,6 +1,7 @@
 //! A genre as a layer of the config stack.
 
 use serde_json::{Value, json};
+use slopvac_config::tree::{self, LineIndex, Node};
 use slopvac_config::{Layer, Setting, Source};
 use slopvac_context::{Budget, CategorySettings, GenreSpec, RuleLevel};
 use slopvac_model::PackId;
@@ -23,44 +24,114 @@ fn key(parts: &[&str]) -> Vec<String> {
     parts.iter().map(|s| (*s).to_owned()).collect()
 }
 
-/// The settings a genre sets itself: its profile, category dials and rule levels. Rule names
-/// in the pack's genre files are bare, so they take the pack id as a prefix.
-pub(crate) fn settings(pack: &PackId, file: &str, spec: &GenreSpec) -> Vec<Setting> {
-    let source = Source {
-        layer: Layer::Genre,
-        file: Some(display_path(pack, file)),
-        line: None,
-        column: None,
-    };
+/// A genre file's parsed form and its text, which the key locations come from.
+#[derive(Debug, Clone)]
+pub(crate) struct GenreFile {
+    pub(crate) spec: GenreSpec,
+    text: String,
+}
+
+impl GenreFile {
+    pub(crate) const fn new(spec: GenreSpec, text: String) -> Self {
+        Self { spec, text }
+    }
+}
+
+/// Where keys sit in a genre file: the line and column of the deepest key on a path that the
+/// file has. A path the file lacks (a short form such as `prose: error`) resolves to its
+/// longest prefix.
+struct Locator<'a> {
+    root: Option<Node>,
+    index: LineIndex<'a>,
+}
+
+impl<'a> Locator<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            root: tree::parse_yaml(text).ok(),
+            index: LineIndex::new(text),
+        }
+    }
+
+    fn at(&self, path: &[&str]) -> (Option<usize>, Option<usize>) {
+        let Some(mut node) = self.root.as_ref() else {
+            return (None, None);
+        };
+        let mut found = None;
+        for part in path {
+            let Some(entry) = node.entry(part) else {
+                break;
+            };
+            found = Some(entry.key_span.start);
+            node = &entry.node;
+        }
+        found.map_or((None, None), |offset| {
+            let (line, column) = self.index.line_col(offset);
+            (Some(line), Some(column))
+        })
+    }
+}
+
+/// The settings a genre sets itself: its profile, category dials and rule levels, each with the
+/// line and column of its key. Rule names in the pack's genre files are bare, so they take the
+/// pack id as a prefix.
+pub(crate) fn settings(pack: &PackId, file: &str, genre: &GenreFile) -> Vec<Setting> {
+    let spec = &genre.spec;
+    let locator = Locator::new(&genre.text);
     let mut out = Vec::new();
-    let mut push = |path: Vec<String>, value: Value| {
+    let mut push = |path: Vec<String>, value: Value, written: &[&str]| {
+        let (line, column) = locator.at(written);
         out.push(Setting {
             path,
             value,
-            source: source.clone(),
+            source: Source {
+                layer: Layer::Genre,
+                file: Some(display_path(pack, file)),
+                line,
+                column,
+            },
         });
     };
     if let Some(profile) = spec.profile {
-        push(key(&["profile", "name"]), json!(profile.as_str()));
+        push(
+            key(&["profile", "name"]),
+            json!(profile.as_str()),
+            &["profile"],
+        );
     }
     for (category, dials) in &spec.categories {
         let at = |dial: &str| key(&["categories", category, dial]);
+        let written = |dial: &'static str| ["categories", category.as_str(), dial];
         match dials {
-            CategorySettings::Level(l) => push(at("severity"), json!(level(*l))),
+            CategorySettings::Level(l) => {
+                push(at("severity"), json!(level(*l)), &written("severity"));
+            }
             CategorySettings::Table(t) => {
                 if let Some(l) = t.severity {
-                    push(at("severity"), json!(level(l)));
+                    push(at("severity"), json!(level(l)), &written("severity"));
                 }
                 if let Some(l) = t.minimum_severity {
-                    push(at("minimum_severity"), json!(level(l)));
+                    push(
+                        at("minimum_severity"),
+                        json!(level(l)),
+                        &written("minimum_severity"),
+                    );
                 }
                 match t.max_per_100_words {
-                    Some(Budget::Limit(n)) => push(at("max_per_100_words"), json!(n)),
-                    Some(Budget::None(_)) => push(at("max_per_100_words"), json!("none")),
+                    Some(Budget::Limit(n)) => push(
+                        at("max_per_100_words"),
+                        json!(n),
+                        &written("max_per_100_words"),
+                    ),
+                    Some(Budget::None(_)) => push(
+                        at("max_per_100_words"),
+                        json!("none"),
+                        &written("max_per_100_words"),
+                    ),
                     None => {}
                 }
                 if let Some(w) = t.weight {
-                    push(at("weight"), json!(w));
+                    push(at("weight"), json!(w), &written("weight"));
                 }
             }
         }
@@ -71,7 +142,11 @@ pub(crate) fn settings(pack: &PackId, file: &str, spec: &GenreSpec) -> Vec<Setti
         } else {
             format!("{pack}:{rule}")
         };
-        push(key(&["rules", &name]), json!(level(*l)));
+        push(
+            key(&["rules", &name]),
+            json!(level(*l)),
+            &["rules", rule.as_str()],
+        );
     }
     out
 }

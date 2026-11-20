@@ -10,10 +10,10 @@ use slopvac_model::PackId;
 use slopvac_rules::{CompileOptions, RuleSet};
 use slopvac_styles::{Style, StyleError, StylePresets, StyleSource};
 
-use crate::genre_layer::{display_path, settings};
+use crate::genre_layer::{GenreFile, display_path, settings};
 use crate::{
-    ArtifactFault, Manifest, PackError, PackPath, PackSource, Provenance, QualifiedName, Registry,
-    RuleFault, RuleProblem, Source,
+    ArtifactFault, Manifest, PackError, PackPath, PackSource, Provenance, Provides, QualifiedName,
+    Registry, RuleFault, RuleProblem, Source,
 };
 
 /// The id of the built-in pack.
@@ -25,7 +25,7 @@ pub struct LoadedPack {
     manifest: Manifest,
     origin: Source,
     rules: RuleSet,
-    genres: Vec<(PackPath, GenreSpec)>,
+    genres: Vec<(PackPath, GenreFile)>,
     taggers: Vec<TaggerSpec>,
     styles: Vec<(PackPath, String)>,
     configs: Vec<(PackPath, String)>,
@@ -40,16 +40,30 @@ fn not_glob(path: &PackPath) -> Result<(), PackError> {
     Ok(())
 }
 
+/// Refuse a glob in any `provides` list before a file is read.
+fn no_globs(provides: &Provides) -> Result<(), PackError> {
+    [
+        &provides.categories,
+        &provides.styles,
+        &provides.genres,
+        &provides.terms,
+        &provides.taggers,
+        &provides.configs,
+        &provides.prime,
+        &provides.blocklists,
+    ]
+    .into_iter()
+    .flatten()
+    .try_for_each(not_glob)
+}
+
 fn read_all(
     source: &dyn PackSource,
     paths: &[PackPath],
 ) -> Result<Vec<(PackPath, String)>, PackError> {
     paths
         .iter()
-        .map(|p| {
-            not_glob(p)?;
-            Ok((p.clone(), source.read(p)?))
-        })
+        .map(|p| Ok((p.clone(), source.read(p)?)))
         .collect()
 }
 
@@ -115,6 +129,7 @@ impl LoadedPack {
                 Version::parse(env!("CARGO_PKG_VERSION")).map_err(|_| PackError::BinaryVersion)?;
         }
         let provides = &manifest.provides;
+        no_globs(provides)?;
         let categories = read_all(source, &provides.categories)?;
         let rules = RuleSet::from_sources(
             &manifest.id,
@@ -126,13 +141,17 @@ impl LoadedPack {
         .map_err(|e| rule_problems(&e))?;
         let mut genres = Vec::new();
         for (path, text) in read_all(source, &provides.genres)? {
-            let spec = GenreSpec::from_yaml(&text).map_err(|e| artifact(&path, &text, &e))?;
-            genres.push((path, spec));
+            let spec = GenreSpec::from_yaml(&text)
+                .and_then(|spec| spec.validate().map(|()| spec))
+                .map_err(|e| artifact(&path, &text, &e))?;
+            genres.push((path, GenreFile::new(spec, text)));
         }
         let mut taggers = Vec::new();
         if origin == Source::Core {
             for (path, text) in read_all(source, &provides.taggers)? {
-                let spec = TaggerSpec::from_yaml(&text).map_err(|e| artifact(&path, &text, &e))?;
+                let spec = TaggerSpec::from_yaml(&text)
+                    .and_then(|spec| spec.clone().compile().map(|_| spec))
+                    .map_err(|e| artifact(&path, &text, &e))?;
                 taggers.push(spec);
             }
         }
@@ -186,7 +205,7 @@ fn stem(path: &PackPath) -> &str {
 #[derive(Debug)]
 pub struct Packs {
     loaded: Vec<LoadedPack>,
-    genres: Registry<GenreSpec>,
+    genres: Registry<GenreFile>,
     styles: Registry<String>,
 }
 
@@ -194,20 +213,23 @@ impl Packs {
     /// Register the genres and styles of `packs`, in order.
     ///
     /// # Errors
-    /// [`PackError::Registry`] when two packs supply the same qualified name.
+    /// [`PackError::Registry`] when two packs supply the same qualified name,
+    /// [`PackError::MissingParent`] for a genre that extends one no pack supplies, and
+    /// [`PackError::GenreCycle`] for a genre that extends itself through its parents.
     pub fn new(packs: Vec<LoadedPack>) -> Result<Self, PackError> {
         let mut genres = Registry::new();
         let mut styles = Registry::new();
         for pack in &packs {
-            for (path, spec) in &pack.genres {
-                let name = QualifiedName::new(pack.manifest.id.clone(), spec.id.clone())?;
-                genres.insert(name, spec.clone(), pack.provenance(path))?;
+            for (path, file) in &pack.genres {
+                let name = QualifiedName::new(pack.manifest.id.clone(), file.spec.id.clone())?;
+                genres.insert(name, file.clone(), pack.provenance(path))?;
             }
             for (path, text) in &pack.styles {
                 let name = QualifiedName::new(pack.manifest.id.clone(), stem(path))?;
                 styles.insert(name, text.clone(), pack.provenance(path))?;
             }
         }
+        check_genre_graph(&genres)?;
         Ok(Self {
             loaded: packs,
             genres,
@@ -238,7 +260,7 @@ impl Packs {
     pub fn genres(&self) -> impl Iterator<Item = &GenreSpec> {
         self.loaded
             .iter()
-            .flat_map(|p| p.genres.iter().map(|(_, g)| g))
+            .flat_map(|p| p.genres.iter().map(|(_, g)| &g.spec))
     }
 
     /// Every declarative tagger, in load order.
@@ -256,20 +278,66 @@ impl Packs {
             return;
         };
         let p = &entry.provenance;
-        if !seen.insert(format!("{}:{}", p.pack, entry.value.id)) {
+        if !seen.insert(format!("{}:{}", p.pack, entry.value.spec.id)) {
             return;
         }
-        for parent in &entry.value.extends {
-            // A parent written `<pack>:<name>` names a pack; a bare one means this genre's pack.
-            let qualified = if parent.contains(':') {
-                parent.clone()
-            } else {
-                format!("{}:{parent}", p.pack)
-            };
-            self.chain(&qualified, seen, out);
+        for parent in &entry.value.spec.extends {
+            self.chain(&parent_name(&p.pack, parent), seen, out);
         }
         out.push(settings(&p.pack, &p.file, &entry.value));
     }
+}
+
+/// A parent written `<pack>:<name>` names a pack; a bare one means the child's pack.
+fn parent_name(pack: &PackId, parent: &str) -> String {
+    if parent.contains(':') {
+        parent.to_owned()
+    } else {
+        format!("{pack}:{parent}")
+    }
+}
+
+/// Refuse a genre whose parents are missing or lead back to it.
+fn check_genre_graph(genres: &Registry<GenreFile>) -> Result<(), PackError> {
+    /// Qualified names of the genres on the path from the root of this walk, and the done ones.
+    fn visit(
+        genres: &Registry<GenreFile>,
+        name: &str,
+        walking: &mut Vec<String>,
+        done: &mut HashSet<String>,
+    ) -> Result<(), PackError> {
+        if done.contains(name) {
+            return Ok(());
+        }
+        if walking.iter().any(|w| w == name) {
+            return Err(PackError::GenreCycle {
+                genre: name.to_owned(),
+            });
+        }
+        let Ok(entry) = genres.resolve(name) else {
+            // The caller reports the parent as missing; a root is always registered.
+            return Ok(());
+        };
+        walking.push(name.to_owned());
+        for parent in &entry.value.spec.extends {
+            let qualified = parent_name(&entry.provenance.pack, parent);
+            if genres.resolve(&qualified).is_err() {
+                return Err(PackError::MissingParent {
+                    genre: name.to_owned(),
+                    parent: parent.clone(),
+                });
+            }
+            visit(genres, &qualified, walking, done)?;
+        }
+        walking.pop();
+        done.insert(name.to_owned());
+        Ok(())
+    }
+    let mut done = HashSet::new();
+    for (name, _) in genres.iter() {
+        visit(genres, &name.to_string(), &mut Vec::new(), &mut done)?;
+    }
+    Ok(())
 }
 
 /// The styles of loaded packs, as a [`StyleSource`].

@@ -46,6 +46,24 @@ pub enum PackError {
     /// Two packs supply the same name.
     #[error(transparent)]
     Registry(#[from] RegistryError),
+    /// A genre extends itself, directly or through other genres.
+    #[error("genre `{}` extends itself through its parents", slopvac_sanitize::line(.genre))]
+    GenreCycle {
+        /// The qualified name of a genre on the cycle.
+        genre: String,
+    },
+    /// A genre extends a genre that no loaded pack supplies.
+    #[error(
+        "genre `{}` extends `{}`, which no loaded pack supplies",
+        slopvac_sanitize::line(.genre),
+        slopvac_sanitize::line(.parent)
+    )]
+    MissingParent {
+        /// The qualified name of the genre that names the parent.
+        genre: String,
+        /// The parent as written.
+        parent: String,
+    },
     /// An artifact name is not valid.
     #[error(transparent)]
     Name(#[from] NameError),
