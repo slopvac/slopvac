@@ -1387,7 +1387,7 @@ def test_portable_end_anchor_equivalence_is_limited_to_pattern(tmp_path, keyword
         return schema(properties={"s": {"type": "string", keyword: value}})
 
     findings = run(tmp_path, body("^a$"), body(f"^a{PORTABLE}"))
-    assert findings != []
+    assert kinds(findings) == [(f"/properties/s/{keyword}", f"{keyword}-changed")]
 
 
 def test_unchanged_recursive_ref_still_passes(tmp_path):
@@ -1412,6 +1412,17 @@ PORTABLE = r"(?![\s\S])"
         pytest.param(f"^[a-z]+{PORTABLE}", "^[a-z]+$", False, id="reverse"),
         pytest.param("^[a-z]+$", f"^[a-z0-9]+{PORTABLE}", True, id="anchor-and-class"),
         pytest.param("^[a-z]+$", "^[a-z]+", True, id="anchor-dropped"),
+        pytest.param(
+            "^([$(]x)$",
+            f"^([{PORTABLE}(]x){PORTABLE}",
+            True,
+            id="token-inside-class-is-not-an-anchor",
+        ),
+        pytest.param(r"^\$$", rf"^\${PORTABLE}", False, id="escaped-dollar-kept"),
+        pytest.param("^[$]$", f"^[$]{PORTABLE}", False, id="dollar-in-class-kept"),
+        pytest.param(
+            "(?m)^a$", f"(?m)^a{PORTABLE}", True, id="inline-flag-keeps-the-finding"
+        ),
     ],
 )
 def test_portable_end_anchor_equals_dollar(tmp_path, old, new, flagged):
