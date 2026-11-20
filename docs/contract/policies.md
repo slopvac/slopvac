@@ -420,7 +420,7 @@ The `plugins` command is a placeholder in the binary and reports `command-not-wi
 | `revocation-list-expired` | The fetched list is past its signed `expires`, which marks a replayed old list. The cache stays as it was. | `plugins sync`, `plugins update` |
 | `revocation-list-rollback` | The fetched list was issued earlier than the cached one. | `plugins sync`, `plugins update` |
 | `revocation-list-equivocation` | The fetched list has the same `issued` time as the cached one and different content. The cache stays as it was. | `plugins sync`, `plugins update` |
-| `revocation-cache-invalid` | The cached list does not verify, or a file operation on the cache failed. A verified online refresh can replace a damaged cached list. A failed read, write or lock on the cache still fails the run. | `plugins sync`, `plugins update` |
+| `revocation-cache-invalid` | The cached list does not verify, or a file operation on the cache failed. A verified online refresh can replace a damaged cached list. A failed cache read blocks offline use. During a verified online refresh, a failed cache read is ignored, but a failed lock or write on the cache still fails the run. | `plugins sync`, `plugins update` |
 | `revocation-clock-invalid` | The clock that the caller passed is not a `YYYY-MM-DDTHH:MM:SSZ` time. The caller supplies the clock, so a user cannot cause this. It is an internal invariant. | `plugins sync`, `plugins update` |
 | `trust-key-missing` | Trust records exist but the key that they were made under is gone. | Any command that starts a code plugin |
 | `trust-key-mismatch` | The trust records were made under another key than the one in the trust store. | Any command that starts a code plugin |
