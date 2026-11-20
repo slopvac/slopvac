@@ -187,7 +187,12 @@ pub enum Scalar {
 }
 
 impl Scalar {
-    fn to_text(&self) -> String {
+    /// The text a front matter value is compared as: `true`, `42`, `1.5`, or the string.
+    ///
+    /// Signals compile their expected value through this, and the engine renders the
+    /// scalars of a document's front matter through it, so both sides compare one text.
+    #[must_use]
+    pub fn to_text(&self) -> String {
         match self {
             Self::Bool(b) => b.to_string(),
             Self::Int(i) => i.to_string(),
