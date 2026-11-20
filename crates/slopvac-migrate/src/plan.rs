@@ -14,10 +14,7 @@ use crate::config::migrate_config_in;
 use crate::limits::{Budget, Kind, Limits};
 use crate::provenance::{KeyLines, key_lines};
 use crate::walk::{Dir, discover};
-use crate::{
-    Dropped, Error, Options, REMOVED_RULES_POINTER, RenameTable, rewrite_directives,
-    rewrite_steering,
-};
+use crate::{Dropped, Error, Options, RenameTable, rewrite_directives, rewrite_steering};
 
 /// Where `apply` keeps the files it replaced, relative to the project root.
 pub const BACKUP_DIR: &str = ".slopvac-migrate-backup";
@@ -501,12 +498,15 @@ fn plan_document(
     }
     let (mut text, found) = rewrite_directives(&old, renames);
     for r in &found.removed {
-        plan.notes.push(format!(
-            "{}:{}: migrate-rule-removed: removed slopvac-allow rule={}: rule no longer exists in 3.0; {REMOVED_RULES_POINTER}",
-            label.display(),
-            r.line,
-            r.id
-        ));
+        plan.notes.push(
+            Dropped::new(
+                label.display().to_string(),
+                format!("slopvac-allow rule={}", r.id),
+                r.line,
+                "rule no longer exists in 3.0",
+            )
+            .rule_removed_notice(),
+        );
     }
     for line in &found.invalid {
         plan.warnings.push(format!(

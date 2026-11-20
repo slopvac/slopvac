@@ -51,7 +51,7 @@ pub struct Options {
 }
 
 /// Where a user finds why a rule or category is gone. Ends every removal notice.
-pub(crate) const REMOVED_RULES_POINTER: &str = "see removed-rules.toml";
+pub(crate) const REMOVED_RULES_POINTER: &str = "see removed-rules.toml at https://github.com/slopvac/slopvac/blob/main/docs/contract/compat/removed-rules.toml";
 
 /// A 2.x setting that 3.0 cannot represent (`config-legacy-dropped`).
 ///
