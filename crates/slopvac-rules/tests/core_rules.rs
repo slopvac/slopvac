@@ -29,6 +29,53 @@ fn core() -> RuleSet {
     .unwrap_or_else(|e| panic!("core rules must load:\n{e}"))
 }
 
+/// The ids in `docs/contract/compat/removed-rules.toml`: 2.x rules the YAML keeps and the
+/// 3.0 catalogue drops.
+fn removed_rule_ids() -> Vec<String> {
+    let path = manifest().join("../../docs/contract/compat/removed-rules.toml");
+    let table: toml::Table = std::fs::read_to_string(path).unwrap().parse().unwrap();
+    table["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// Rule counts read straight from the rule YAML on disk, independent of every loader, with
+/// the removed rules left out. A rule starts at a two-space `- id:` line and a judgement
+/// rule has a four-space `kind: judgement` line. Rule ids are `<category>.<name>`, where the
+/// category is the file's top-level `id:`.
+fn yaml_counts() -> (usize, usize) {
+    let dir = manifest().join("../../packages/slopvac-lint/src/slopvac/rules");
+    let removed = removed_rule_ids();
+    let (mut rules, mut judgement) = (0, 0);
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "yml") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let category = text
+            .lines()
+            .find_map(|l| l.strip_prefix("id: "))
+            .unwrap()
+            .trim()
+            .trim_matches('"');
+        // The rule the lines below belong to is retired.
+        let mut retired = false;
+        for line in text.lines() {
+            if let Some(name) = line.strip_prefix("  - id: ") {
+                let full = format!("{category}.{}", name.trim().trim_matches('"'));
+                retired = removed.contains(&full);
+                rules += usize::from(!retired);
+            }
+            judgement += usize::from(!retired && line == "    kind: judgement");
+        }
+    }
+    (rules, judgement)
+}
+
 fn no_spans() -> Vec<std::ops::Range<usize>> {
     Vec::new()
 }
@@ -55,8 +102,11 @@ fn every_core_category_file_validates_against_both_schemas() {
 fn the_core_pack_loads_every_category_and_rule() {
     let set = core();
     assert_eq!(set.categories().len(), 26);
-    assert_eq!(set.len(), 232);
-    assert_eq!(set.rules().count(), 232);
+    let (rules, judgement) = yaml_counts();
+    assert!(rules > 0, "the YAML files must be found");
+    assert_eq!(set.len(), rules);
+    assert_eq!(set.rules().count(), rules);
+    assert_eq!(set.rules_of_kind(MatchKind::Judgement).count(), judgement);
 }
 
 #[test]
@@ -67,7 +117,10 @@ fn rules_are_counted_by_kind() {
     assert_eq!(count(MatchKind::Pattern), 111);
     assert_eq!(count(MatchKind::Substitution), 18);
     assert_eq!(count(MatchKind::Tokens), 17);
-    assert_eq!(count(MatchKind::Judgement), 68);
+    let mixed = set
+        .get(&id("core:prose-scope.mixed-content-types"))
+        .expect("the mixed content types rule loads");
+    assert_eq!(mixed.kind(), MatchKind::Judgement);
     assert_eq!(count(MatchKind::Metric), 13);
     assert_eq!(count(MatchKind::Structure), 1);
     assert_eq!(count(MatchKind::Vocabulary), 4);

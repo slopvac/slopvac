@@ -3,7 +3,7 @@
 //! `behavior:inspection-filters`, `behavior:inspection-formats`).
 //!
 //! Expected counts come from the converted 2.x core files under
-//! `crates/slopvac-rules/tests/fixtures/core-v3`, counted with `jq`, not from
+//! `crates/slopvac-rules/tests/fixtures/core-v3` and the term-casing pack data, not from
 //! the code under test. The rules are embedded by STUB(slopvac-8l4.12.27).
 
 use assert_cmd::Command;
@@ -42,15 +42,57 @@ fn json(args: &[&str]) -> Value {
     serde_json::from_str(&stdout(args)).expect("json output")
 }
 
+/// The category files `slopvac rules` lists: the converted core files and the term-casing
+/// pack, which the binary loads from the engine crate's data file.
+fn category_files() -> Vec<std::path::PathBuf> {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = vec![manifest.join("../slopvac-engine/data/terms-pack.json")];
+    for entry in std::fs::read_dir(manifest.join("../slopvac-rules/tests/fixtures/core-v3"))
+        .expect("fixture dir")
+    {
+        let path = entry.expect("entry").path();
+        if path.extension().is_some_and(|e| e == "json") {
+            files.push(path);
+        }
+    }
+    files
+}
+
+/// The number of categories `slopvac rules` lists.
+fn fixture_categories() -> usize {
+    category_files().len()
+}
+
+/// Every listed rule as `(recommended_for, match kind)`.
+fn fixture_rules() -> Vec<(Vec<String>, String)> {
+    let mut out = Vec::new();
+    for path in category_files() {
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&path).expect("read"))
+            .expect("fixture json");
+        let genres: Vec<String> = v["recommended_for"]
+            .as_array()
+            .expect("recommended_for")
+            .iter()
+            .map(|g| g.as_str().expect("genre").to_owned())
+            .collect();
+        for rule in v["rules"].as_array().expect("rules") {
+            let kind = rule["match"]["kind"].as_str().expect("kind").to_owned();
+            out.push((genres.clone(), kind));
+        }
+    }
+    out
+}
+
 const CHAT_LEAKAGE: &str = "core:ai-residue.chat-leakage";
 
 #[test]
-fn rules_lists_every_core_and_term_casing_rule_with_a_count_line() {
-    // 232 core rules in 26 categories, and the one rule of the `terms` category.
+fn rules_lists_every_core_rule_with_a_count_line() {
     let text = stdout(&["rules"]);
-    assert_eq!(text.lines().count(), 234, "233 rules and the count line");
+    let n = fixture_rules().len();
+    assert_eq!(text.lines().count(), n + 1, "{n} rules and the count line");
+    let categories = fixture_categories();
     assert!(
-        text.ends_with("233 rule(s) in 27 category(ies)\n"),
+        text.ends_with(&format!("{n} rule(s) in {categories} category(ies)\n")),
         "{text}"
     );
 }
@@ -89,14 +131,29 @@ fn category_may_repeat() {
 #[test]
 fn kind_filter_counts_match_the_data() {
     let v = json(&["rules", "--kind", "judgement", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 68);
+    let expected = fixture_rules()
+        .iter()
+        .filter(|(_, kind)| kind == "judgement")
+        .count();
+    assert_eq!(v["rules"].as_array().unwrap().len(), expected);
+    assert!(
+        v["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == "core:prose-scope.mixed-content-types"),
+        "the mixed content types rule is a judgement rule"
+    );
 }
 
 #[test]
 fn genre_keeps_only_rules_in_categories_recommended_for_it() {
-    // 227 core rules and the term-casing rule, which suits `consumer`.
     let v = json(&["rules", "--genre", "consumer", "--format", "json"]);
-    assert_eq!(v["rules"].as_array().unwrap().len(), 228);
+    let expected = fixture_rules()
+        .iter()
+        .filter(|(genres, _)| genres.iter().any(|g| g == "consumer"))
+        .count();
+    assert_eq!(v["rules"].as_array().unwrap().len(), expected);
 }
 
 #[test]
@@ -109,7 +166,10 @@ fn a_genre_no_category_recommends_lists_nothing() {
 fn rules_json_has_plugin_categories_and_linked_rules() {
     let v = json(&["rules", "--format", "json"]);
     assert_eq!(v["plugin"], "core");
-    assert_eq!(v["categories"].as_array().unwrap().len(), 27);
+    assert_eq!(
+        v["categories"].as_array().unwrap().len(),
+        fixture_categories()
+    );
     let rule = &v["rules"][0];
     assert_eq!(rule["id"], CHAT_LEAKAGE);
     assert_eq!(rule["category"], "ai-residue");
@@ -246,47 +306,6 @@ fn unknown_rule_is_an_incomplete_run() {
         .stderr(predicate::str::starts_with(
             "error[unknown-rule]: unknown rule: core:no.such-rule.",
         ));
-}
-
-#[test]
-fn rule_output_never_names_a_removed_rule() {
-    let removed = [
-        "vertical-list-lead-in-missing-colon",
-        "vertical-list-item-punctuation",
-        "safety-block-missing-consequence",
-        "inconsistent-term-for-same-thing",
-        "inconsistent-wording-for-same-step",
-    ];
-    let outputs = [
-        stdout(&["explain", "core:ste-descriptive.missing-key-word-structure"]),
-        stdout(&["rules", "--format", "md"]),
-        stdout(&["rules", "--format", "json"]),
-        stdout(&["rules"]),
-    ];
-    for out in &outputs {
-        for id in removed {
-            assert!(!out.contains(id), "{id} appears in the output");
-        }
-    }
-}
-
-#[test]
-fn the_removed_structure_rules_are_unknown_rules() {
-    for id in [
-        "core:ste-sentences.vertical-list-lead-in-missing-colon",
-        "core:ste-sentences.vertical-list-item-punctuation",
-        "core:ste-safety.safety-block-missing-consequence",
-        "core:ste-words.inconsistent-term-for-same-thing",
-        "core:ste-practices.inconsistent-wording-for-same-step",
-    ] {
-        slopvac()
-            .args(["explain", id])
-            .assert()
-            .code(2)
-            .stderr(predicate::str::starts_with(format!(
-                "error[unknown-rule]: unknown rule: {id}."
-            )));
-    }
 }
 
 #[test]

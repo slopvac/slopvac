@@ -179,6 +179,7 @@
 "prose-scope.epigram" = "core:prose-scope.epigram"
 "prose-scope.formulaic-subject-verb-slogan" = "core:prose-scope.formulaic-subject-verb-slogan"
 "prose-scope.implementation-leak" = "core:prose-scope.implementation-leak"
+"prose-scope.mixed-content-types" = "core:prose-scope.mixed-content-types"
 "prose-scope.rejected-alternative" = "core:prose-scope.rejected-alternative"
 "prose-scope.unrequested-reassurance" = "core:prose-scope.unrequested-reassurance"
 "ste-descriptive.information-not-gradual" = "core:ste-descriptive.information-not-gradual"
