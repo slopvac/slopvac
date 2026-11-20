@@ -119,8 +119,8 @@ fn pyproject_removed_category_notices_report_the_pyproject_lines(#[case] preserv
     assert_eq!(
         notices,
         [
-            "pyproject.toml: migrate-category-removed: pyproject.toml:7: `categories.orwell-voice`: category no longer exists in 3.0",
-            "pyproject.toml: migrate-category-removed: pyproject.toml:12: `overrides[0].categories.orwell-voice`: category no longer exists in 3.0",
+            "pyproject.toml: migrate-category-removed: pyproject.toml:7: `categories.orwell-voice`: category no longer exists in 3.0; see removed-rules.toml",
+            "pyproject.toml: migrate-category-removed: pyproject.toml:12: `overrides[0].categories.orwell-voice`: category no longer exists in 3.0; see removed-rules.toml",
         ]
     );
 }
@@ -185,7 +185,7 @@ fn directives_for_removed_rules_are_dropped_with_a_note() {
         assert_eq!(
             p.notes,
             vec![format!(
-                "docs/a.md:1: removed slopvac-allow rule={id}: the rule no longer exists in 3.0"
+                "docs/a.md:1: migrate-rule-removed: removed slopvac-allow rule={id}: rule no longer exists in 3.0; see removed-rules.toml"
             )]
         );
     }

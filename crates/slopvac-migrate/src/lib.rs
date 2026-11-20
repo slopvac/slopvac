@@ -50,6 +50,9 @@ pub struct Options {
     pub preserve_behavior: bool,
 }
 
+/// Where a user finds why a rule or category is gone. Ends every removal notice.
+pub(crate) const REMOVED_RULES_POINTER: &str = "see removed-rules.toml";
+
 /// A 2.x setting that 3.0 cannot represent (`config-legacy-dropped`).
 ///
 /// A run keeps a bounded number of these. When it left some out, the last record has a
@@ -104,7 +107,14 @@ impl Dropped {
     /// migration.
     #[must_use]
     pub fn category_removed_notice(&self) -> String {
-        format!("migrate-category-removed: {self}")
+        format!("migrate-category-removed: {self}; {REMOVED_RULES_POINTER}")
+    }
+
+    /// The setting as a notice with the `migrate-rule-removed` code, for a rule that
+    /// 3.0 no longer has. Unlike a blocking drop, it does not stop the migration.
+    #[must_use]
+    pub fn rule_removed_notice(&self) -> String {
+        format!("migrate-rule-removed: {self}; {REMOVED_RULES_POINTER}")
     }
 }
 

@@ -369,10 +369,10 @@ fn a_rule_less_category_is_dropped_with_one_notice_per_use(
         notices,
         [
             format!(
-                "migrate-category-removed: slopvac.toml:3: `categories.{name}`: category no longer exists in 3.0"
+                "migrate-category-removed: slopvac.toml:3: `categories.{name}`: category no longer exists in 3.0; see removed-rules.toml"
             ),
             format!(
-                "migrate-category-removed: slopvac.toml:8: `overrides[0].categories.{name}`: category no longer exists in 3.0"
+                "migrate-category-removed: slopvac.toml:8: `overrides[0].categories.{name}`: category no longer exists in 3.0; see removed-rules.toml"
             ),
         ]
     );
