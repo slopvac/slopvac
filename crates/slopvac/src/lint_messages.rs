@@ -12,6 +12,13 @@ pub enum LintOptionError {
         /// The `--format` value from the command line, one of the fixed format names.
         format: String,
     },
+    /// `--explain-config` was given with an option it would ignore.
+    #[code("explain-config-option-unsupported")]
+    #[message("`--explain-config` cannot be used with `{option}`; remove it.")]
+    ExplainConfigOption {
+        /// The option as written, one of a fixed list of flag names.
+        option: String,
+    },
 }
 
 impl From<LintOptionError> for crate::errors::CliError {

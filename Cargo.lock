@@ -2511,6 +2511,7 @@ dependencies = [
  "slopvac-fs",
  "slopvac-messages",
  "slopvac-model",
+ "slopvac-sanitize",
  "strsim",
  "tempfile",
  "thiserror",

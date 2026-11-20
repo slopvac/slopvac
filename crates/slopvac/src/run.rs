@@ -103,6 +103,11 @@ where
     let tree = cli::command();
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
     let cwd = std::env::current_dir().unwrap_or_default();
+    // Before `network_policy` reads slopvac.toml: an unreadable config must not hide it.
+    if let Some(err) = explain_config_refusal(&args, &tree) {
+        let _ = writeln!(err_out, "{err}");
+        return exit::code(exit::INCOMPLETE);
+    }
     let policy = match slopvac_update::policy::network_policy(&cwd) {
         Ok(policy) => policy,
         // `doctor` exists to report this state, so it runs on the default policy and its own
@@ -343,17 +348,57 @@ fn reject_unwired_lint_flags(m: &ArgMatches) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Refuse `--explain-config` with a report format: it prints text and nothing else.
-fn reject_explain_config_format(m: &ArgMatches) -> Result<(), CliError> {
-    match m.get_one::<String>("format") {
-        Some(format) if m.get_flag("explain-config") && format != "text" => {
-            Err(crate::lint_messages::LintOptionError::ExplainConfigFormat {
-                format: format.clone(),
-            }
-            .into())
-        }
-        _ => Ok(()),
+/// Refuse `--explain-config` with a report format, or with an option it would ignore.
+///
+/// It prints text only, from the config files. A setting flag, a rule selection or a report
+/// route has no effect on it, and the command never says so by itself.
+fn reject_explain_config_options(m: &ArgMatches) -> Result<(), CliError> {
+    use crate::lint_messages::LintOptionError;
+    if !m.get_flag("explain-config") {
+        return Ok(());
     }
+    if let Some(format) = m.get_one::<String>("format")
+        && format != "text"
+    {
+        return Err(LintOptionError::ExplainConfigFormat {
+            format: format.clone(),
+        }
+        .into());
+    }
+    for option in EXPLAIN_CONFIG_REFUSED {
+        let given = m.try_contains_id(option).unwrap_or(false)
+            && m.value_source(option) == Some(clap::parser::ValueSource::CommandLine);
+        if given {
+            return Err(LintOptionError::ExplainConfigOption {
+                option: format!("--{option}"),
+            }
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// Options that `--explain-config` refuses: command-line settings, rule selection and the
+/// report destination. Explaining the command-line layer is separate work.
+const EXPLAIN_CONFIG_REFUSED: [&str; 7] = [
+    "min-score",
+    "max-per-100-words",
+    "locale",
+    "category",
+    "disable",
+    "out",
+    "open",
+];
+
+/// The refusal for `--explain-config`, found before any config is read.
+///
+/// `slopvac.toml` is read for the network policy ahead of the full parse, and an unreadable
+/// file must not hide this refusal.
+fn explain_config_refusal(args: &[OsString], tree: &clap::Command) -> Option<CliError> {
+    let args = cli::insert_default_command(args.to_vec(), tree);
+    let matches = tree.clone().try_get_matches_from(args).ok()?;
+    let (_, m) = matches.subcommand().filter(|(name, _)| *name == "lint")?;
+    reject_explain_config_options(m).err()
 }
 
 /// Fail with the 3.0 pointer when a removed 2.x option was given.
@@ -480,7 +525,7 @@ fn lint_with(
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     reject_removed(m, &cli::REMOVED_LINT_NAMES)?;
-    reject_explain_config_format(m)?;
+    reject_explain_config_options(m)?;
     let stdin = if m.get_flag("stdin") {
         let plan = stdin::plan(m)?;
         tracing::debug!(language = plan.language, mode = plan.mode, "stdin plan");

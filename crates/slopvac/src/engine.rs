@@ -324,7 +324,7 @@ impl Linter for EngineLinter {
             if !text.is_empty() {
                 text.push('\n');
             }
-            text.push_str(&item.shown);
+            text.push_str(&slopvac_sanitize::line(&item.shown));
             text.push('\n');
             text.push_str(&slopvac_config::render_explain(config, &explained, &root));
         }
