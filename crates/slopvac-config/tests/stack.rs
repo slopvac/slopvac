@@ -696,12 +696,9 @@ fn explain_text_names_the_root_the_files_and_each_replaced_value() {
     );
     let cfg = load_at(&fx, "slopvac.toml");
     let r = cfg.resolve(Path::new("docs/a.md"), &inputs(&NoPresets));
-    let text = slopvac_config::render_explain(&cfg, &r.explain());
-    let head = format!(
-        "config root: {}\nconfig file: slopvac.toml (project)\n",
-        fx.root().display()
-    );
-    assert!(text.starts_with(&head), "{text}");
+    let text = slopvac_config::render_explain(&cfg, &r.explain(), ".");
+    let head = "config root: .\nconfig file: slopvac.toml (project)\n";
+    assert!(text.starts_with(head), "{text}");
     assert!(
         text.contains("locale = \"en-US\"  [override slopvac.toml:6:1]\n    replaced \"en-GB\"  [project slopvac.toml:2:1]\n"),
         "{text}"

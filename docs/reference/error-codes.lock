@@ -192,6 +192,7 @@ config-value-out-of-range text
 config-version-newer text
 config-version-unsupported text
 document-too-large error
+explain-config-format error
 lsp-action-allow text
 lsp-action-fix text
 lsp-binary-unchecked notice

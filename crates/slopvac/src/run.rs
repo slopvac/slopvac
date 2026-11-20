@@ -324,7 +324,7 @@ fn doctor(
 }
 
 /// Lint options that parse but have no wiring to the engine yet.
-const UNWIRED_LINT_FLAGS: [&str; 4] = ["fix", "diff-base", "diff-working-tree", "explain-config"];
+const UNWIRED_LINT_FLAGS: [&str; 3] = ["fix", "diff-base", "diff-working-tree"];
 
 /// Refuse a lint option this build cannot honour, before any file is linted.
 ///
@@ -341,6 +341,19 @@ fn reject_unwired_lint_flags(m: &ArgMatches) -> Result<(), CliError> {
         }
     }
     Ok(())
+}
+
+/// Refuse `--explain-config` with a report format: it prints text and nothing else.
+fn reject_explain_config_format(m: &ArgMatches) -> Result<(), CliError> {
+    match m.get_one::<String>("format") {
+        Some(format) if m.get_flag("explain-config") && format != "text" => {
+            Err(crate::lint_messages::LintOptionError::ExplainConfigFormat {
+                format: format.clone(),
+            }
+            .into())
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Fail with the 3.0 pointer when a removed 2.x option was given.
@@ -467,6 +480,7 @@ fn lint_with(
     err_out: &mut dyn std::io::Write,
 ) -> Result<u8, CliError> {
     reject_removed(m, &cli::REMOVED_LINT_NAMES)?;
+    reject_explain_config_format(m)?;
     let stdin = if m.get_flag("stdin") {
         let plan = stdin::plan(m)?;
         tracing::debug!(language = plan.language, mode = plan.mode, "stdin plan");
@@ -492,7 +506,7 @@ fn lint_with(
         "lint start"
     );
     let root = std::env::current_dir().unwrap_or_default();
-    let outcome = linter.lint(&LintRequest {
+    let request = LintRequest {
         root,
         targets,
         stdin,
@@ -511,7 +525,20 @@ fn lint_with(
                 .map(|v| v.cloned().collect())
                 .unwrap_or_default(),
         },
-    });
+    };
+    if m.get_flag("explain-config") {
+        let explained = linter.explain_config(&request);
+        for err in &explained.incomplete {
+            let _ = writeln!(err_out, "{err}");
+        }
+        write_stdout(out, explained.text.as_bytes())?;
+        return Ok(if explained.incomplete.is_empty() {
+            exit::PASS
+        } else {
+            exit::INCOMPLETE
+        });
+    }
+    let outcome = linter.lint(&request);
     for err in &outcome.incomplete {
         let _ = writeln!(err_out, "{err}");
     }
@@ -589,6 +616,10 @@ mod tests {
         fn lint(&self, request: &LintRequest) -> RunOutcome {
             self.0.borrow_mut().push(request.clone());
             RunOutcome::default()
+        }
+
+        fn explain_config(&self, _request: &LintRequest) -> crate::engine::ExplainOutcome {
+            crate::engine::ExplainOutcome::default()
         }
     }
 

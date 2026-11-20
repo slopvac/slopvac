@@ -89,6 +89,18 @@ fn assemble(documents: &[Document], notices: Vec<Notice>) -> Report {
 pub trait Linter {
     /// Lint the request.
     fn lint(&self, request: &LintRequest) -> RunOutcome;
+
+    /// Explain the settings of each input of the request, without linting it.
+    fn explain_config(&self, request: &LintRequest) -> ExplainOutcome;
+}
+
+/// The result of `--explain-config`.
+#[derive(Debug, Clone, Default)]
+pub struct ExplainOutcome {
+    /// One block per input, each headed by its redacted path.
+    pub text: String,
+    /// Inputs that could not be read, or a failure that stopped the run.
+    pub incomplete: Vec<CliError>,
 }
 
 /// The linter backed by `slopvac-engine`.
@@ -285,42 +297,71 @@ impl Configs<'_> {
 impl Linter for EngineLinter {
     fn lint(&self, request: &LintRequest) -> RunOutcome {
         let mut run = Run::default();
-        let presets = StylePresets(BuiltinSource);
-        let mut configs = Configs {
-            discovery: Discovery::new(&presets),
-            explicit: None,
-        };
-        if let Some(given) = &request.config {
-            let shown = redact::shown_path(given, &request.root);
-            if !request.root.join(given).is_file() {
-                let error = CliError::new(
-                    "config-not-found",
-                    format!("--config {shown}: no such file"),
-                );
-                return failed(request, run, &error);
-            }
-            match configs.discovery.explicit_in(&request.root, given) {
-                Ok(config) => configs.explicit = Some(config),
-                Err(err) => {
-                    // A config that cannot be read lints nothing (policies V7).
-                    return failed(request, run, &config_error(&err, &request.root));
-                }
-            }
+        match prepare(request, &mut run) {
+            Ok((rules, items)) => lint_items(request, items, rules, run),
+            Err(err) => failed(request, run, &err),
         }
-        let rules = match Catalog::load() {
-            Ok(rules) => rules,
-            Err(err) => return failed(request, run, &err),
-        };
-        match validate_configs(request, &configs, &rules) {
-            Ok(notices) => run.notices.extend(notices),
-            Err(err) => return failed(request, run, &err),
-        }
-        let items = match collect(request, &configs, &mut run) {
-            Ok(items) => items,
-            Err(err) => return failed(request, run, &err),
-        };
-        lint_items(request, items, rules, run)
     }
+
+    fn explain_config(&self, request: &LintRequest) -> ExplainOutcome {
+        let mut run = Run::default();
+        let items = match prepare(request, &mut run) {
+            Ok((_, items)) => items,
+            Err(err) => {
+                run.incomplete.push(err);
+                Vec::new()
+            }
+        };
+        let none = LoadedConfig::without_files(request.root.clone());
+        let mut text = String::new();
+        for item in &items {
+            let (config, rel) = match &item.config {
+                Some((config, rel)) => (config.as_ref(), rel.clone()),
+                None => (&none, PathBuf::from(&item.shown)),
+            };
+            let explained = lint_settings::resolve(config, &rel).explain();
+            let root = redact::shown_path(&config.root, &request.root);
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(&item.shown);
+            text.push('\n');
+            text.push_str(&slopvac_config::render_explain(config, &explained, &root));
+        }
+        ExplainOutcome {
+            text,
+            incomplete: run.incomplete,
+        }
+    }
+}
+
+/// Load the configs, the rules and the inputs of a run, or say why it cannot start.
+fn prepare(request: &LintRequest, run: &mut Run) -> Result<(Catalog, Vec<Item>), CliError> {
+    let presets = StylePresets(BuiltinSource);
+    let mut configs = Configs {
+        discovery: Discovery::new(&presets),
+        explicit: None,
+    };
+    if let Some(given) = &request.config {
+        let shown = redact::shown_path(given, &request.root);
+        if !request.root.join(given).is_file() {
+            return Err(CliError::new(
+                "config-not-found",
+                format!("--config {shown}: no such file"),
+            ));
+        }
+        // A config that cannot be read lints nothing (policies V7).
+        let config = configs
+            .discovery
+            .explicit_in(&request.root, given)
+            .map_err(|err| config_error(&err, &request.root))?;
+        configs.explicit = Some(config);
+    }
+    let rules = Catalog::load()?;
+    run.notices
+        .extend(validate_configs(request, &configs, &rules)?);
+    let items = collect(request, &configs, run)?;
+    Ok((rules, items))
 }
 
 /// Check every config the run reaches against the catalogue, even when no input is left to

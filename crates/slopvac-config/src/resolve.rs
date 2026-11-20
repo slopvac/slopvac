@@ -478,11 +478,14 @@ pub fn describe(source: &ConfigSource) -> String {
 }
 
 /// The `--explain-config` text: each key, its final value and origin, then the values it replaced.
+///
+/// `root` is how the config root appears in the text. The caller redacts it (policies 1.7), so
+/// the output never carries an absolute path.
 #[must_use]
-pub fn render_explain(config: &LoadedConfig, explained: &[Explained]) -> String {
+pub fn render_explain(config: &LoadedConfig, explained: &[Explained], root: &str) -> String {
     let mut out = String::new();
     let root = ConfigText::ExplainRoot {
-        root: config.root.display().to_string(),
+        root: root.to_owned(),
     };
     let _ = writeln!(out, "{root}");
     for f in &config.files {
