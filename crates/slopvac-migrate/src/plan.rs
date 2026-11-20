@@ -15,7 +15,8 @@ use crate::limits::{Budget, Kind, Limits};
 use crate::provenance::{KeyLines, key_lines};
 use crate::walk::{Dir, discover};
 use crate::{
-    Dropped, Error, Options, REMOVED_RULES_POINTER, RenameTable, rewrite_directives, rewrite_steering,
+    Dropped, Error, Options, REMOVED_RULES_POINTER, RenameTable, rewrite_directives,
+    rewrite_steering,
 };
 
 /// Where `apply` keeps the files it replaced, relative to the project root.

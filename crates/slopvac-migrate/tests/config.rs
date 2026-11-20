@@ -289,7 +289,9 @@ fn removed_rules_leave_the_top_level_and_overrides(#[case] preserve_behavior: bo
 #[rstest::rstest]
 #[case::plain(false)]
 #[case::preserve(true)]
-fn each_removed_rule_gives_one_migrate_rule_removed_notice_per_use(#[case] preserve_behavior: bool) {
+fn each_removed_rule_gives_one_migrate_rule_removed_notice_per_use(
+    #[case] preserve_behavior: bool,
+) {
     for id in removed_ids() {
         let r = migrate_config(
             &removed_rule_text(&id),
