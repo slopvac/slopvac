@@ -33,12 +33,12 @@ pub(crate) struct Reference {
 
 /// The blocklist paths a 2.x config names, at the project level and in each override.
 pub(crate) fn references(config: &str) -> Vec<Reference> {
-    let Ok(doc) = config.parse::<DocumentMut>() else {
-        return Vec::new();
-    };
     if nesting::check(config).is_err() {
         return Vec::new();
     }
+    let Ok(doc) = config.parse::<DocumentMut>() else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     collect(doc.as_table(), "", &mut out);
     if let Some(overrides) = doc.get("overrides") {

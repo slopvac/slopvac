@@ -18,7 +18,7 @@
 //! bounded at the same number by the config loader.
 
 use frontmatter_spans::LineIndex;
-use toml_edit::{Document, Item, Key, TableLike, Value};
+use toml_edit::{ArrayOfTables, Document, Item, Key, TableLike, Value};
 
 /// Most levels of tables and arrays between the root and any value.
 pub(crate) const MAX_DEPTH: usize = 32;
@@ -37,6 +37,7 @@ pub(crate) fn message() -> String {
 
 enum Node<'a> {
     Table(&'a dyn TableLike),
+    Tables(&'a ArrayOfTables),
     Value(&'a Value),
 }
 
@@ -69,14 +70,15 @@ pub(crate) fn check_document<S>(doc: &Document<S>, text: &str) -> Result<(), Too
                     let key_at = t.key(name).and_then(Key::span).map(|s| s.start);
                     match item {
                         Item::Table(sub) => push(Node::Table(sub), key_at)?,
-                        Item::ArrayOfTables(aot) => {
-                            for table in aot {
-                                push(Node::Table(table), table.span().map(|s| s.start))?;
-                            }
-                        }
+                        Item::ArrayOfTables(aot) => push(Node::Tables(aot), key_at)?,
                         Item::Value(v) => descend(v, key_at, &mut push)?,
                         Item::None => {}
                     }
+                }
+            }
+            Node::Tables(aot) => {
+                for table in aot {
+                    push(Node::Table(table), table.span().map(|s| s.start))?;
                 }
             }
             Node::Value(Value::Array(arr)) => {
@@ -110,6 +112,8 @@ fn descend<'a>(
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     fn nested_headers(levels: usize) -> String {
@@ -132,26 +136,45 @@ mod tests {
         format!("x = 1\na = {}1{}\n", "[".repeat(levels), "]".repeat(levels))
     }
 
-    // Each shape at exactly MAX_DEPTH levels passes, and one more is refused on line 2.
+    /// `[[a.a…]]` with `levels - 1` parts: the tables, the array, and its element.
+    fn nested_array_of_tables(levels: usize) -> String {
+        format!("x = 1\n[[{}]]\n", vec!["a"; levels - 1].join("."))
+    }
+
+    /// An array of tables whose element holds alternating inline arrays and inline tables.
+    fn mixed(levels: usize) -> String {
+        let rest = levels - 2;
+        let (pairs, odd) = (rest / 2, rest % 2 == 1);
+        format!(
+            "x = 1\n[[a]]\nb = {}{}1{}{}\n",
+            "[{c = ".repeat(pairs),
+            if odd { "[" } else { "" },
+            if odd { "]" } else { "" },
+            "}]".repeat(pairs)
+        )
+    }
+
+    // Each shape at exactly MAX_DEPTH levels passes, and one more is refused.
     // Levels count tables and arrays between the root and the value: `[a.a]` and `a.a.a = 1`
-    // are two, `a = {a = 1}` is one, and `a = [[1]]` is two.
-    #[test]
-    fn each_shape_is_refused_one_level_past_the_bound() {
-        type Shape = fn(usize) -> String;
-        let shapes: [(&str, Shape); 4] = [
-            ("headers", nested_headers),
-            ("dotted keys", nested_dotted),
-            ("inline tables", nested_inline),
-            ("arrays", nested_arrays),
-        ];
-        for (name, shape) in shapes {
-            assert_eq!(check(&shape(MAX_DEPTH)), Ok(()), "{name} at the bound");
-            assert_eq!(
-                check(&shape(MAX_DEPTH + 1)),
-                Err(TooDeep { line: 2 }),
-                "{name} past the bound"
-            );
-        }
+    // are two, `a = {a = 1}` is one, `a = [[1]]` is two, and `[[a]]` is two (the array and
+    // its element).
+    #[rstest]
+    #[case::headers(nested_headers, 2)]
+    #[case::dotted_keys(nested_dotted, 2)]
+    #[case::inline_tables(nested_inline, 2)]
+    #[case::arrays(nested_arrays, 2)]
+    #[case::arrays_of_tables(nested_array_of_tables, 2)]
+    #[case::arrays_and_tables_mixed(mixed, 3)]
+    fn a_shape_is_refused_one_level_past_the_bound(
+        #[case] shape: fn(usize) -> String,
+        #[case] line: usize,
+    ) {
+        assert_eq!(check(&shape(MAX_DEPTH)), Ok(()), "at the bound");
+        assert_eq!(
+            check(&shape(MAX_DEPTH + 1)),
+            Err(TooDeep { line }),
+            "past the bound"
+        );
     }
 
     #[test]
