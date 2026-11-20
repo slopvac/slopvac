@@ -451,7 +451,13 @@ fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Se
         })
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "EngineNotice is a private derived catalog with validated codes and bundled nonempty summaries"
+)]
 fn notice(level: NoticeLevel, message: &EngineNotice) -> Notice {
+    let message = slopvac_model::NoticeMessage::try_from_catalog(message)
+        .expect("the private engine catalog supplies valid notice messages");
     Notice::from_catalog(level, message)
 }
 

@@ -83,26 +83,30 @@ pub struct Notice {
 }
 
 impl Notice {
-    /// Render a notice from a compiled catalog. The catalog's code must be a kebab-case
-    /// identifier, as checked by `#[derive(Catalog)]`. An empty rendering uses the entry's
-    /// nonempty summary instead.
+    /// Build a notice from an already-validated catalog message without further checks.
     #[must_use]
-    #[expect(
-        clippy::expect_used,
-        reason = "codes and summaries are validated compiled catalog data"
-    )]
-    pub fn from_catalog(level: NoticeLevel, catalog: &impl slopvac_messages::Catalog) -> Self {
-        let message = slopvac_messages::render(catalog);
+    pub fn from_catalog(level: NoticeLevel, catalog: crate::NoticeMessage) -> Self {
+        let (code, message) = catalog.into_parts();
         Self {
-            code: KebabName::new(catalog.code()).expect("compiled catalog code is valid"),
+            code,
             level,
-            message: NonEmptyString::new(message).unwrap_or_else(|_| {
-                NonEmptyString::new(catalog.entry().summary)
-                    .expect("compiled catalog summary is nonempty")
-            }),
+            message,
             path: None,
             data: serde_json::Map::new(),
         }
+    }
+
+    /// Validate and render an arbitrary catalog before constructing its notice.
+    ///
+    /// # Errors
+    ///
+    /// Returns the validation error from [`crate::NoticeMessage::try_from_catalog`].
+    pub fn try_from_catalog(
+        level: NoticeLevel,
+        catalog: &dyn slopvac_messages::Catalog,
+    ) -> crate::NoticeResult<Self> {
+        crate::NoticeMessage::try_from_catalog(catalog)
+            .map(|message| Self::from_catalog(level, message))
     }
 
     /// Returns the notice with `data` attached.
