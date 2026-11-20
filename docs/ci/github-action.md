@@ -2,6 +2,8 @@
 
 The action installs slopvac, lints the files you choose, and reports the findings. The exit code of `slopvac lint` is the gate: the job passes or fails on it, whatever the reporters do. Until the 3.0 cutover the action lives in `action-v3/`; at release it moves to the repository root and the examples below apply as written.
 
+Pin the action to a full commit SHA, with the version as a trailing comment. The repository publishes no moving major tag such as `v3`, and its `v*` tags are immutable. Replace the placeholder with the output of `git ls-remote https://github.com/slopvac/slopvac refs/tags/v3.0.0`; for an annotated tag, use the line for the peeled `refs/tags/v3.0.0^{}` object. Dependabot and Renovate update a SHA pin and its version comment together.
+
 ```yaml
 permissions:
   contents: read
@@ -15,7 +17,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: slopvac/slopvac@v3
+      - uses: slopvac/slopvac@<full commit SHA of the v3.0.0 tag> # v3.0.0
         with:
           paths: README.md docs/
           changed-files-only: true
@@ -52,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: slopvac
-        uses: slopvac/slopvac@v3
+        uses: slopvac/slopvac@<full commit SHA of the v3.0.0 tag> # v3.0.0
         with:
           reporter: none
           sarif: false
