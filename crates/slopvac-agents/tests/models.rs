@@ -205,7 +205,7 @@ fn check_table(
     var: impl Fn(&str) -> Option<std::ffi::OsString>,
 ) -> Result<(), String> {
     if var("SLOPVAC_BLESS").is_some() {
-        if var("CI").is_some_and(|v| !v.is_empty()) {
+        if var("CI").is_some() {
             return Err("SLOPVAC_BLESS is not allowed when CI is set".to_owned());
         }
         std::fs::write(path, generated).map_err(|e| e.to_string())?;
@@ -250,15 +250,17 @@ fn bless_outside_ci_rewrites_the_table() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "fresh\n");
 }
 
-#[test]
-fn bless_in_ci_fails_and_leaves_the_table_unchanged() {
+#[rstest::rstest]
+#[case::truthy("1")]
+#[case::empty("")]
+fn bless_in_ci_fails_and_leaves_the_table_unchanged(#[case] ci: &str) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("table.md");
     std::fs::write(&path, "stale\n").unwrap();
     let err = check_table(
         &path,
         "fresh\n",
-        env_of(&[("SLOPVAC_BLESS", "1"), ("CI", "1")]),
+        env_of(&[("SLOPVAC_BLESS", "1"), ("CI", ci)]),
     )
     .unwrap_err();
     assert!(err.contains("CI"), "{err}");
