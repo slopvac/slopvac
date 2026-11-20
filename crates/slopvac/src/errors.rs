@@ -12,6 +12,9 @@ pub struct CliError {
     pub code: &'static str,
     /// Human message. Not an interface.
     pub message: String,
+    /// Machine-readable detail for a code that documents keys, such as a budget refusal.
+    /// Empty for most errors.
+    pub data: serde_json::Map<String, serde_json::Value>,
 }
 
 impl CliError {
@@ -21,7 +24,15 @@ impl CliError {
         Self {
             code,
             message: crate::redact::strip_url_userinfo(&message.into()),
+            data: serde_json::Map::new(),
         }
+    }
+
+    /// Attach the machine-readable detail of this error.
+    #[must_use]
+    pub fn with_data(mut self, data: serde_json::Map<String, serde_json::Value>) -> Self {
+        self.data = data;
+        self
     }
 }
 

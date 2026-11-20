@@ -1058,3 +1058,104 @@ fn diff_base_refuses_with_exit_2_and_no_report() {
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout), "");
 }
+
+/// A project whose config starts an `extends` chain of `links` further files, so 33 links put the
+/// chain one level past the 32-level depth limit.
+fn extends_chain_project(links: usize) -> (tempfile::TempDir, PathBuf) {
+    let (dir, path) = project("doc.md", CLEAN, None);
+    let link = |i: usize| format!("link{i}.toml");
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        format!("schema_version = 3\nextends = [\"{}\"]\n", link(1)),
+    )
+    .expect("write config");
+    for i in 1..links {
+        fs::write(
+            dir.path().join(link(i)),
+            format!("schema_version = 3\nextends = [\"{}\"]\n", link(i + 1)),
+        )
+        .expect("write link");
+    }
+    fs::write(dir.path().join(link(links)), "schema_version = 3\n").expect("write last link");
+    (dir, path)
+}
+
+/// A project whose config lists the same leaf file once more than the file limit allows.
+fn extends_fan_project() -> (tempfile::TempDir, PathBuf) {
+    let (dir, path) = project("doc.md", CLEAN, None);
+    fs::write(dir.path().join("leaf.toml"), "schema_version = 3\n").expect("write leaf");
+    let entries = vec!["\"leaf.toml\""; slopvac_config::MAX_EXTENDS_FILES + 1].join(", ");
+    fs::write(
+        dir.path().join("slopvac.toml"),
+        format!("schema_version = 3\nextends = [{entries}]\n"),
+    )
+    .expect("write config");
+    (dir, path)
+}
+
+/// Assert the notice shape of a refused config and that the report validates.
+fn assert_budget_notice(report: &Value, budget: &str, limit: u64, path: &str) {
+    let notice = &report["notices"][0];
+    assert_eq!(notice["code"], "config-budget-exceeded");
+    assert_eq!(notice["data"]["budget"], budget);
+    assert_eq!(notice["data"]["limit"], limit);
+    assert_eq!(notice["data"]["path"], path);
+    let errors: Vec<String> = support::report_validator()
+        .iter_errors(report)
+        .map(|e| format!("{e} at {}", e.instance_path()))
+        .collect();
+    assert!(errors.is_empty(), "{errors:#?}");
+}
+
+// The path is the file whose `extends` entry tripped the limit. In a chain, slopvac.toml is
+// level 0 and link32.toml is level 32: it is the last file accepted, and its own entry would be
+// a 33rd level. In the fan, slopvac.toml holds the entry that is the 257th application.
+#[rstest::rstest]
+#[case::depth(extends_chain_project(33), "extends-depth", 32, "link32.toml")]
+#[case::files(extends_fan_project(), "extends-files", 256, "slopvac.toml")]
+fn a_config_past_a_budget_reports_it_in_the_json_notice(
+    #[case] project: (tempfile::TempDir, PathBuf),
+    #[case] budget: &str,
+    #[case] limit: u64,
+    #[case] path: &str,
+) {
+    let (_dir, doc) = project;
+    assert_budget_notice(&json_report(&doc, &[]), budget, limit, path);
+}
+
+#[test]
+fn a_budget_tripped_outside_the_project_shows_no_path_of_the_outside_directory() {
+    let top = tempfile::tempdir().expect("tempdir");
+    let proj = top.path().join("proj");
+    let outside = top.path().join("zz-outside-dir");
+    fs::create_dir_all(&proj).expect("proj");
+    fs::create_dir_all(&outside).expect("outside");
+    let doc = proj.join("doc.md");
+    fs::write(&doc, CLEAN).expect("doc");
+    fs::write(
+        proj.join("slopvac.toml"),
+        "schema_version = 3\nextends = [\"../zz-outside-dir/link1.toml\"]\n",
+    )
+    .expect("config");
+    for i in 1..33 {
+        fs::write(
+            outside.join(format!("link{i}.toml")),
+            format!("schema_version = 3\nextends = [\"link{}.toml\"]\n", i + 1),
+        )
+        .expect("link");
+    }
+    fs::write(outside.join("link33.toml"), "schema_version = 3\n").expect("last");
+    let out = slopvac()
+        .args(["lint", "--format", "json"])
+        .arg(&doc)
+        .output()
+        .expect("run");
+    let text = String::from_utf8(out.stdout).expect("utf8");
+    let report: Value = serde_json::from_str(&text).expect("a JSON report");
+    assert_budget_notice(&report, "extends-depth", 32, "<external>/link32.toml");
+    assert!(!text.contains("zz-outside-dir"), "{text}");
+    assert!(
+        !text.contains(top.path().to_str().expect("utf8 path")),
+        "{text}"
+    );
+}

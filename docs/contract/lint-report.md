@@ -94,6 +94,16 @@ The list of budget names can grow in a later 3.x release, so a consumer must han
 name it does not know. The plugin protocol's error `data` for the same code uses the
 same keys.
 
+`config-budget-exceeded` has these keys:
+
+| Key | Meaning |
+| --- | --- |
+| `data.budget` | Name of the config cap that the load passed: `extends-depth`, `extends-files`, `extends-bytes`, `extends-applied-bytes` or `file-blocks`. |
+| `data.limit` | The integer limit, in the unit of that cap. |
+| `data.path` | The config file at which the budget tripped, relative to the root, or `<external>/<file name>` outside it (policies.md, sections 1.7 and 1.9). Never an absolute path. For the `extends-*` budgets it is the file whose `extends` entry passed the limit; for `extends-depth` that is the last file accepted, because its own entry would nest too deep. For `file-blocks` it is the file that holds the blocks. |
+
+A notice whose code this section does not list may still carry `data`. A consumer reads only the keys it knows and ignores the rest.
+
 ## Finding origin
 
 A container document, such as a Word file or a draw.io diagram, is linted as a list of
