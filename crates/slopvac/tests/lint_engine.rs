@@ -387,6 +387,37 @@ fn a_run_that_could_not_start_reports_a_notice_in_json() {
     assert_eq!(report["notices"][0]["level"], "warning");
 }
 
+/// The level of every notice in a report, whether it sits on a document or at the root.
+fn notice_levels(report: &Value) -> Vec<String> {
+    let documents = report["documents"].as_array().expect("documents");
+    documents
+        .iter()
+        .flat_map(|d| d["unchecked"].as_array().into_iter().flatten())
+        .chain(report["notices"].as_array().into_iter().flatten())
+        .map(|n| n["level"].as_str().expect("level").to_owned())
+        .collect()
+}
+
+#[rstest::rstest]
+#[case::info_notice_keeps_the_run_complete(CLEAN.as_bytes(), "info", 0)]
+#[case::unreadable_input_is_incomplete(&[0xff, 0xfe], "warning", 2)]
+fn the_exit_code_follows_the_level_of_the_unchecked_notices(
+    #[case] contents: &[u8],
+    #[case] level: &str,
+    #[case] code: i32,
+) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("doc.md");
+    fs::write(&path, contents).expect("write document");
+    fs::write(dir.path().join("slopvac.toml"), "schema_version = 3\n").expect("write config");
+    let report = json_report(&path, &[]);
+    assert!(
+        notice_levels(&report).iter().any(|l| l == level),
+        "no {level} notice in {report}"
+    );
+    slopvac().arg("lint").arg(&path).assert().code(code);
+}
+
 /// A sentinel directory outside the working directory.
 fn outside() -> (tempfile::TempDir, String) {
     let dir = tempfile::Builder::new()

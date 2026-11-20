@@ -269,14 +269,17 @@ struct ActiveDiagram {
 /// An active rule of a kind, style or metric the engine does not run.
 struct NotRun {
     kind: &'static str,
+    /// The qualified id of the rule.
+    id: RuleId,
     /// The genres the rule is limited to, if any.
     genres: Option<Vec<GenreId>>,
 }
 
 impl NotRun {
-    fn of(kind: &'static str, rule: &slopvac_rules::Rule) -> Self {
+    fn of(kind: &'static str, id: &RuleId, rule: &slopvac_rules::Rule) -> Self {
         Self {
             kind,
+            id: id.clone(),
             genres: rule
                 .applies_to
                 .as_ref()
@@ -390,7 +393,8 @@ struct DiagramResult {
 /// The `unrun` key of capitalization rules in a style the engine does not run.
 const CAPITALIZATION: &str = "capitalization";
 
-fn not_run_notice(kind: &str, count: usize) -> Result<Notice, EngineError> {
+fn not_run_notice(kind: &str, rules: &[&RuleId]) -> Result<Notice, EngineError> {
+    let count = rules.len();
     if kind == CAPITALIZATION {
         // A style that cannot run would otherwise pass in silence, so the check is incomplete.
         return notice(
@@ -402,13 +406,23 @@ fn not_run_notice(kind: &str, count: usize) -> Result<Notice, EngineError> {
             ),
         );
     }
-    notice(
+    // The rules are an info notice's data: the run read the input, so it stays complete.
+    let mut ids: Vec<&str> = rules.iter().map(|id| id.as_str()).collect();
+    ids.sort_unstable();
+    let data = serde_json::Map::from_iter([(
+        "rules".to_owned(),
+        ids.iter()
+            .map(|id| serde_json::Value::String((*id).to_owned()))
+            .collect(),
+    )]);
+    Ok(notice(
         "rule-kind-not-implemented",
         NoticeLevel::Info,
         format!(
             "{count} active {kind} rule(s) did not run: the engine does not run {kind} rules yet"
         ),
-    )
+    )?
+    .with_data(data))
 }
 
 fn level_of(settings: &Settings, id: &RuleId, category: &CategoryId, shipped: Severity) -> Level {
@@ -701,7 +715,7 @@ impl Engine {
                             if supported {
                                 self.metrics.push(Active::new(s, c, r, severity));
                             } else {
-                                self.not_run.push(NotRun::of("metric", rule));
+                                self.not_run.push(NotRun::of("metric", loaded.id(), rule));
                             }
                         }
                         MatchKind::Structure => {
@@ -723,7 +737,8 @@ impl Engine {
                                 if let Some(check) = check {
                                     self.structure.push((Active::new(s, c, r, severity), check));
                                 } else {
-                                    self.not_run.push(NotRun::of("structure", rule));
+                                    self.not_run
+                                        .push(NotRun::of("structure", loaded.id(), rule));
                                 }
                             }
                         }
@@ -738,7 +753,8 @@ impl Engine {
                             list.push(Active::new(s, c, r, severity));
                         }
                         MatchKind::Capitalization => {
-                            self.not_run.push(NotRun::of(CAPITALIZATION, rule));
+                            self.not_run
+                                .push(NotRun::of(CAPITALIZATION, loaded.id(), rule));
                         }
                     }
                 }
@@ -934,15 +950,15 @@ impl Engine {
     /// The notices about active rules the engine does not run and that apply to a document of
     /// `genre`.
     fn not_run_notices(&self, genre: &GenreId) -> Result<Vec<Notice>, EngineError> {
-        let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        let mut ids: std::collections::BTreeMap<&str, Vec<&RuleId>> =
+            std::collections::BTreeMap::new();
         for n in &self.not_run {
             if n.genres.as_ref().is_none_or(|g| g.contains(genre)) {
-                *counts.entry(n.kind).or_default() += 1;
+                ids.entry(n.kind).or_default().push(&n.id);
             }
         }
-        counts
-            .into_iter()
-            .map(|(kind, count)| not_run_notice(kind, count))
+        ids.into_iter()
+            .map(|(kind, rules)| not_run_notice(kind, &rules))
             .collect()
     }
 
