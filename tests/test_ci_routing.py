@@ -829,6 +829,8 @@ def test_every_input_a_crate_embeds_trips_a_cargo_delta_wire(path):
     [
         ".cargo/config.toml",
         "docs/contract/compat/dispositions.toml",
+        "docs/contract/compat/removed-rules.toml",
+        "packages/slopvac-lint/src/slopvac/rules/prose-craft.yaml",
         "packages/slopvac-lint/tests/fixtures/regression/issues/x.md",
         "docs/reference/cli.md",
         "docs/migrate-2-to-3.md",
