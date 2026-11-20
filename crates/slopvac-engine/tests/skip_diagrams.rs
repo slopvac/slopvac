@@ -151,7 +151,11 @@ fn contexts_seen_lists_every_context_of_a_document_in_order() {
     let source =
         "You must leverage the cache.\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n";
     let doc = engine.lint(&Input::markdown("a.md", source)).unwrap();
-    let seen: Vec<&str> = doc.contexts_seen.iter().map(|c| c.as_str()).collect();
+    let seen: Vec<&str> = doc
+        .contexts_seen
+        .iter()
+        .map(slopvac_model::ContextTag::as_str)
+        .collect();
     // Sorted by name: the prose context comes after the diagram one.
     assert_eq!(seen, ["diagram-label", "requirement"]);
 }
