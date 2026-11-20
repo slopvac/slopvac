@@ -107,12 +107,14 @@ Under 2.x the placeholder stayed in the pattern as literal text. The effect is t
 `raw` reaches everything and is for formatting rules.
 A `raw` rule matches one line at a time, without the line terminator. A raw pattern therefore cannot match across lines, and `$` (or `(?![\s\S])`) anchors at the end of the line.
 
+A raw HTML block is checked as one plain paragraph. It has no containers and no element kinds, so the `heading`, `list`, `table` and `quote` exclusions do not reach inside it. Only its markup is excluded.
+
 These parts of a Markdown or MDX file are markup, not prose:
 
-- Each raw HTML block is one plain paragraph. It has no containers and no element kinds, so the `heading`, `list`, `table` and `quote` exclusions do not apply inside it.
 - The `:::` directive markers.
 - MDX `import` and `export` blocks.
 - The `{#id}` attribute of a heading.
+- An image-only paragraph, because the text of an image is not read.
 
 ## Reference behavior
 

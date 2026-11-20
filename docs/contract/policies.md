@@ -155,7 +155,8 @@ Owners: `slopvac-8l4.12.1` for the logging setup, `slopvac-8l4.12.9` for stdin.
 ### 1.8 Data written to disk
 
 - Caches and state go to the per-user directories that `etcetera` reports. `SLOPVAC_CACHE_DIR` overrides the cache location, as in 2.x (`vale_cache.py`).
-- A write takes an exclusive lock on the target file through standard-library file locking. The write goes to a new temporary file in the same directory. Slopvac syncs that file to disk, checks that it is still the file it created, renames it over the target, and then syncs the directory. Shared state takes the same lock.
+- Code that needs to serialize writers takes an exclusive lock through standard-library file locking, on a separate guard file next to the data. It does not lock the data file. A lock is separate from the write.
+- An atomic write replaces a file through a new temporary file in the same directory. Slopvac syncs that file to disk, checks that it is still the file it created, renames it over the target, and then syncs the directory. The write itself takes no lock.
 - Slopvac writes only to the cache directory, the project's `.slopvac/` directory, and paths the user names. For example, `slopvac migrate` keeps its backup of the files it changes in `.slopvac/migrate-backup/<UTC timestamp>/` inside the project. Its record of that backup stays in the per-user cache.
 
 Owners: `slopvac-8l4.9.3`, `slopvac-8l4.9.4`.
@@ -213,7 +214,7 @@ The CLI file and stdin reads enforce their cap and report `document-too-large` w
 
 A capped file read opens the file without blocking and accepts only a regular file. A FIFO, device, socket or directory at the path is refused at once, so a repository entry cannot hang a run. The refusal reports through the entry point's existing read-failure error, such as `input-unreadable` for a document, and not through a new code. Stdin is the exception: it reads a pipe by design.
 
-Every capped read reports a refusal as one of the kinds below. Each refusal exits 2.
+Every read in the table below reports a refusal as one of the kinds listed. Each such refusal exits 2. The advisory house-style detection read is the exception: it skips a file it cannot read and does not fail (see its row in the cap table).
 
 | Input kind | Over the cap | Every other refusal |
 |---|---|---|
