@@ -23,6 +23,11 @@ pub struct Linted {
     /// What did not run, and why (`Document.unchecked`). An editor must not show a buffer
     /// as clean when part of the check was skipped.
     pub unchecked: Vec<Notice>,
+    /// Root notices of the run, which leave it complete. The server publishes only
+    /// `extract-unsupported` (a diagram type the engine does not read), at the start of the
+    /// document because a notice has no position. It drops any other code when it builds
+    /// diagnostics, so this field can hold more than the editor shows.
+    pub notices: Vec<Notice>,
 }
 
 /// Lints the text of one editor buffer.
@@ -144,16 +149,18 @@ impl Linter for EngineLinter {
             return Ok(Linted {
                 findings: Vec::new(),
                 unchecked: unchecked_notice().into_iter().collect(),
+                notices: Vec::new(),
             });
         }
         let input = Input::new(path, text)
             .with_kind(kind_of(path))
             .with_bom(BomMode::Buffer);
         self.engine
-            .lint(&input)
-            .map(|document| Linted {
+            .lint_with_notices(&input)
+            .map(|(document, notices)| Linted {
                 findings: document.findings,
                 unchecked: document.unchecked,
+                notices,
             })
             .map_err(|e| LintError(e.to_string()))
     }
