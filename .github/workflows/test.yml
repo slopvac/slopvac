@@ -334,6 +334,17 @@ jobs:
         if: matrix.name == 'linux-x64'
         run: echo "SLOPVAC_PYENV_LIVE=1" >> "$GITHUB_ENV"
 
+      # The N1 network-sandbox test (crates/slopvac/tests/network_sandbox.rs) runs the
+      # offline commands under an unprivileged user and network namespace. Ubuntu 24.04
+      # runners restrict unprivileged user namespaces through AppArmor, so the test could
+      # not build its sandbox and would fail in CI. Lift the restriction for this job only,
+      # and prove a namespace can be created before the tests run.
+      - name: Allow unprivileged user namespaces for the network-sandbox test
+        if: runner.os == 'Linux'
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          unshare --user --map-root-user --net true
+
       - name: Test
         run: cargo nextest run --workspace --locked --profile ci --no-tests=pass
 
