@@ -112,25 +112,97 @@ impl EnforcedInvariantTagger {
     /// An enforcement verb that is not itself negated ("never rejects", "does not block").
     fn enforcement_verb(&self, text: &str) -> Result<Option<String>, Error> {
         let mut from = 0;
+        let mut preceding = Preceding::new(text);
         while let Some(m) = self.enforcement.find(&text[from..])? {
             let start = from + m.start;
             let end = from + m.end;
-            let negated = text[..start].split_whitespace().rev().take(2).any(|w| {
-                crate::work::negation(w.len());
-                let w = w.trim_matches([',', ';', ':']).to_lowercase();
-                matches!(
-                    w.as_str(),
-                    "never" | "not" | "no" | "without" | "cannot" | "neither" | "nor"
-                ) || w.ends_with("n't")
-                    || w.ends_with("n’t")
-            });
-            if !negated {
+            preceding.advance_to(start);
+            if !preceding.negated() {
                 return Ok(Some(text[start..end].to_lowercase()));
             }
             from = end;
         }
         Ok(None)
     }
+}
+
+const SEPARATORS: [char; 3] = [',', ';', ':'];
+
+/// The last two whitespace-separated tokens before a position that only moves forward.
+/// Asking about each of many positions in one text reads the text once in total, where
+/// splitting the prefix again for each position reads a long token again every time.
+struct Preceding<'a> {
+    text: &'a str,
+    /// Everything before this byte has been read.
+    pos: usize,
+    /// A token ends at `pos` without whitespace after it.
+    in_token: bool,
+    /// Where the open token's text starts after its leading separators. `None` while it has
+    /// only separators.
+    lead: Option<usize>,
+    /// The last two finished tokens without surrounding separators, latest first.
+    done: [&'a str; 2],
+}
+
+impl<'a> Preceding<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            pos: 0,
+            in_token: false,
+            lead: None,
+            done: [""; 2],
+        }
+    }
+
+    fn advance_to(&mut self, to: usize) {
+        for (i, c) in self.text[self.pos..to].char_indices() {
+            crate::work::negation(1);
+            let at = self.pos + i;
+            if c.is_whitespace() {
+                if self.in_token {
+                    let token = self.open_token(at);
+                    self.done = [token, self.done[0]];
+                    self.in_token = false;
+                    self.lead = None;
+                }
+            } else {
+                self.in_token = true;
+                if self.lead.is_none() && !SEPARATORS.contains(&c) {
+                    self.lead = Some(at);
+                }
+            }
+        }
+        self.pos = to;
+    }
+
+    /// The open token up to `end`, without separators.
+    fn open_token(&self, end: usize) -> &'a str {
+        let token = self.lead.map_or("", |l| &self.text[l..end]);
+        let trimmed = token.trim_end_matches(SEPARATORS);
+        crate::work::negation(token.len() - trimmed.len());
+        trimmed
+    }
+
+    /// Whether one of the last two tokens negates what follows.
+    fn negated(&self) -> bool {
+        let (first, second) = if self.in_token {
+            (self.open_token(self.pos), self.done[0])
+        } else {
+            (self.done[0], self.done[1])
+        };
+        is_negator(first) || is_negator(second)
+    }
+}
+
+/// A negating word, ignoring case, or a word that ends in `n't`.
+fn is_negator(token: &str) -> bool {
+    const WORDS: [&str; 7] = ["never", "not", "no", "without", "cannot", "neither", "nor"];
+    let ends = |suffix: &str| {
+        let (t, s) = (token.as_bytes(), suffix.as_bytes());
+        t.len() >= s.len() && t[t.len() - s.len()..].eq_ignore_ascii_case(s)
+    };
+    WORDS.iter().any(|w| token.eq_ignore_ascii_case(w)) || ends("n't") || ends("n’t")
 }
 
 impl Tagger for EnforcedInvariantTagger {
