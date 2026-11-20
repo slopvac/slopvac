@@ -511,7 +511,7 @@ fn read_runtime(name: &str, manifest: Option<&str>) -> Result<Option<PythonRunti
 #[test]
 fn a_python_runtime_in_the_manifest_selects_a_managed_environment() {
     let m = manifest(
-        "plugin",
+        "code",
         "runtime = \"python\"\npython = \"3.12\"\ncommand = \"bin/tagger.py\"\nargs = [\"--stdio\"]\n",
     );
     let rt = read_runtime("python", Some(&m)).unwrap().unwrap();
@@ -531,14 +531,14 @@ const DATA_MANIFEST: &str =
 #[rstest]
 #[case::no_manifest(None)]
 #[case::data(Some(DATA_MANIFEST.to_owned()))]
-#[case::default(Some(manifest("plugin", "command = \"bin/x\"\n")))]
-#[case::native(Some(manifest("plugin", "command = \"bin/x\"\nruntime = \"native\"\n")))]
+#[case::default(Some(manifest("code", "command = \"bin/x\"\n")))]
+#[case::native(Some(manifest("code", "command = \"bin/x\"\nruntime = \"native\"\n")))]
 fn a_tree_that_asks_for_no_python_environment_selects_none(#[case] m: Option<String>) {
     assert_eq!(read_runtime("none", m.as_deref()).unwrap(), None);
 }
 
 fn python_plugin(extra: &str) -> String {
-    manifest("plugin", &format!("runtime = \"python\"\n{extra}"))
+    manifest("code", &format!("runtime = \"python\"\n{extra}"))
 }
 
 #[rstest]
@@ -549,8 +549,8 @@ fn python_plugin(extra: &str) -> String {
 #[case::parent_command(python_plugin("python = \"3.12\"\ncommand = \"../a.py\"\n"))]
 #[case::absolute_command(python_plugin("python = \"3.12\"\ncommand = \"/bin/sh\"\n"))]
 #[case::backslash_command(python_plugin("python = \"3.12\"\ncommand = 'a\\b.py'\n"))]
-#[case::unknown_runtime(manifest("plugin", "runtime = \"node\"\ncommand = \"a.js\"\n"))]
-#[case::request_on_native(manifest("plugin", "python = \"3.12\"\ncommand = \"a\"\n"))]
+#[case::unknown_runtime(manifest("code", "runtime = \"node\"\ncommand = \"a.js\"\n"))]
+#[case::request_on_native(manifest("code", "python = \"3.12\"\ncommand = \"a\"\n"))]
 #[case::python_in_a_data_pack(manifest(
     "data",
     "runtime = \"python\"\npython = \"3.12\"\ncommand = \"a.py\"\n"
@@ -561,10 +561,10 @@ fn a_manifest_that_cannot_select_an_environment_is_refused(#[case] m: String) {
     assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
 }
 
-/// The shared pack-manifest conformance cases, the ones the schema test also reads.
+/// The shared plugin-manifest conformance cases, the ones the schema test also reads.
 fn manifest_cases(dir: &str) -> Vec<(String, String)> {
     let root =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance/pack-manifest");
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance/plugin-manifest");
     let mut out: Vec<_> = fs::read_dir(root.join(dir))
         .unwrap()
         .map(|e| e.unwrap().path())
@@ -617,7 +617,7 @@ const PY_PLUGIN: &str = "runtime = \"python\"\npython = \"3.12\"\ncommand = \"a.
 
 #[test]
 fn a_manifest_over_one_mebibyte_is_refused_even_when_it_is_valid_toml() {
-    let m = manifest("plugin", PY_PLUGIN);
+    let m = manifest("code", PY_PLUGIN);
     let at_limit = format!("{m}#{}\n", "x".repeat((1 << 20) - m.len() - 2));
     assert_eq!(at_limit.len(), 1 << 20);
     assert!(read_runtime("limit", Some(&at_limit)).unwrap().is_some());
@@ -633,7 +633,7 @@ fn a_manifest_that_is_a_symlink_is_refused() {
     let s = Scratch::new("rt-symlink");
     fs::create_dir_all(s.dir("tree")).unwrap();
     let real = s.dir("real.toml");
-    fs::write(&real, manifest("plugin", PY_PLUGIN)).unwrap();
+    fs::write(&real, manifest("code", PY_PLUGIN)).unwrap();
     std::os::unix::fs::symlink(&real, s.dir("tree").join(MANIFEST_FILE)).unwrap();
     let err = PythonRuntime::read(&s.dir("tree")).unwrap_err();
     assert!(matches!(err, PyEnvError::Manifest { .. }), "{err:?}");
@@ -642,7 +642,7 @@ fn a_manifest_that_is_a_symlink_is_refused() {
 #[test]
 fn manifest_values_are_escaped_once_in_the_error_text() {
     // The runtime is the text: x, backslash, y, BEL.
-    let m = manifest("plugin", "runtime = \"x\\\\y\\u0007\"\ncommand = \"a\"\n");
+    let m = manifest("code", "runtime = \"x\\\\y\\u0007\"\ncommand = \"a\"\n");
     let err = read_runtime("escape", Some(&m)).unwrap_err();
     let expected = r"`x\\y\u{7}` is not a runtime; use `native` or `python`";
     assert!(err.to_string().ends_with(expected), "{err}");
@@ -827,13 +827,13 @@ fn a_manifest_error_chain_names_the_cause_kind() {
 #[test]
 fn the_manifest_reader_hands_uv_the_translated_request() {
     let m = manifest(
-        "plugin",
+        "code",
         "runtime = \"python\"\npython = \"^3.12\"\ncommand = \"a.py\"\n",
     );
     let rt = read_runtime("translate", Some(&m)).unwrap().unwrap();
     assert_eq!(rt.python, ">=3.12,<4");
     let m = manifest(
-        "plugin",
+        "code",
         "runtime = \"python\"\npython = \"3.12-rc.1\"\ncommand = \"a.py\"\n",
     );
     let err = read_runtime("translate-pre", Some(&m)).unwrap_err();
@@ -1130,7 +1130,7 @@ mod unix_only {
         assert!(p.shutdown().clean());
     }
 
-    const PY_MANIFEST: &str = "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"plugin\"\n\n[plugin]\ncommand = \"plugin.py\"\nargs = [\"ok\", \"{}\"]\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+    const PY_MANIFEST: &str = "schema_version = 3\nid = \"fake\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nargs = [\"ok\", \"{}\"]\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
 
     /// A plugin tree whose manifest selects a Python environment, with that
     /// environment built in the store `envs`.

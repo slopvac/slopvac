@@ -1331,7 +1331,7 @@ mod python {
     use slopvac_plugins::pyenv::{EnvStore, PyEnvError};
     use slopvac_plugins::sync::{PythonBuild, PythonState, status_with_python};
 
-    const PLUGIN_MANIFEST: &str = "schema_version = 3\nid = \"py\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"plugin\"\n\n[plugin]\ncommand = \"plugin.py\"\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+    const PLUGIN_MANIFEST: &str = "schema_version = 3\nid = \"py\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
     const EMPTY_LOCK: &str = "lock-version = \"1.0\"\ncreated-by = \"test\"\n";
 
     /// A project with one in-place pack `py`, a fake uv and an environment store.
@@ -1353,7 +1353,7 @@ mod python {
             }
             let hash = tree_hash(&dir).unwrap();
             let lock = lock_text(&[format!(
-                "\n[[packs]]\nid = \"py\"\nkind = \"plugin\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+                "\n[[plugins]]\nid = \"py\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
                  source = \"packs/py\"\ndigest = \"{hash}\"\n"
             )]);
             let uv = fake_uv(&env.data.path().join("uv-bin"), fake);

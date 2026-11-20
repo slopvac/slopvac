@@ -40,8 +40,8 @@ pub enum RuntimeError {
     Toml(#[source] TomlCause),
     /// `python` is set without `runtime = "python"`.
     PythonWithoutRuntime,
-    /// `runtime = "python"` in a pack that is not `kind = "plugin"`.
-    RuntimeNeedsPluginKind,
+    /// `runtime = "python"` in a pack that is not `kind = "code"`.
+    RuntimeNeedsCodeKind,
     /// `runtime = "python"` without this field.
     MissingField(&'static str),
     /// The `python` value is not a plain version request.
@@ -122,9 +122,7 @@ impl RuntimeError {
                 c.line, c.column
             ),
             Self::PythonWithoutRuntime => "`python` needs `runtime = \"python\"`".into(),
-            Self::RuntimeNeedsPluginKind => {
-                "`runtime` belongs to a `kind = \"plugin\"` pack".into()
-            }
+            Self::RuntimeNeedsCodeKind => "`runtime` belongs to a `kind = \"code\"` pack".into(),
             Self::MissingField(f) => format!("`runtime = \"python\"` needs `{f}`"),
             Self::NotARequest(v) => format!("`{v}` is not a Python version request"),
             Self::NotAScript(v) => {
@@ -223,8 +221,8 @@ impl PythonRuntime {
                 Ok(None)
             }
             Some("python") => {
-                if manifest.kind.as_deref() != Some("plugin") {
-                    return Err(RuntimeError::RuntimeNeedsPluginKind);
+                if manifest.kind.as_deref() != Some("code") {
+                    return Err(RuntimeError::RuntimeNeedsCodeKind);
                 }
                 let python = plugin.python.ok_or(RuntimeError::MissingField("python"))?;
                 if !super::is_python_request(&python) {
@@ -262,7 +260,7 @@ impl PythonRuntime {
     }
 }
 
-/// What the `PackPath` def of the pack-manifest schema accepts, minus a
+/// What the `PackPath` def of the plugin-manifest schema accepts, minus a
 /// leading dash (the interpreter would read it as an option): relative,
 /// forward slashes, no drive letter, no `..` segment. A NUL cannot reach an
 /// argument list, so it is refused as well.
@@ -277,7 +275,7 @@ fn is_script_path(command: &str) -> bool {
 }
 
 /// Translate a `python` value of the manifest (the `VersionReq` def of the
-/// pack-manifest schema, semver rules) into the PEP 440 specifier set that uv
+/// plugin-manifest schema, semver rules) into the PEP 440 specifier set that uv
 /// takes as `--python`.
 ///
 /// The grammar is comma-separated comparators, each an optional operator
