@@ -3,7 +3,8 @@
 use serde_json::json;
 use slopvac_config::directives::{find, read};
 use slopvac_config::frontmatter::Policy;
-use slopvac_config::{Code, Inputs, Layer, NoPresets, load};
+use slopvac_config::{Code, ConfigLayer, Inputs, NoPresets, load};
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 fn default_policy() -> Policy {
@@ -76,7 +77,11 @@ fn each_comment_style_sets_fields_with_document_positions() {
         let s = &out.settings[0].source;
         assert_eq!(
             (s.layer, s.line, s.column),
-            (Layer::Directive, Some(line), Some(col)),
+            (
+                ConfigLayer::Directive,
+                NonZeroUsize::new(line),
+                NonZeroUsize::new(col)
+            ),
             "{file}"
         );
     }
@@ -110,7 +115,7 @@ fn dotted_keys_quotes_and_lists_set_nested_fields() {
             ("profile.name".to_owned(), json!("relaxed")),
         ]
     );
-    assert_eq!(out.settings[0].source.column, Some(26));
+    assert_eq!(out.settings[0].source.column, NonZeroUsize::new(26));
 }
 
 #[test]
@@ -151,7 +156,7 @@ fn a_later_directive_wins_and_both_stay_in_the_history() {
     let out = read(doc, "a.md", &default_policy());
     assert_eq!(out.settings.len(), 2);
     assert_eq!(out.settings[1].value, json!("en-GB"));
-    assert_eq!(out.settings[1].source.line, Some(2));
+    assert_eq!(out.settings[1].source.line, NonZeroUsize::new(2));
 }
 
 #[test]
@@ -182,7 +187,7 @@ fn directives_sit_above_front_matter_and_below_flags() {
     );
     let dirs = read("<!-- slopvac: locale=en-GB -->\n", "a.md", &policy);
     let cli = [slopvac_config::Setting::bare(
-        Layer::Cli,
+        ConfigLayer::Cli,
         &["locale"],
         json!("en-US"),
     )];
@@ -197,7 +202,7 @@ fn directives_sit_above_front_matter_and_below_flags() {
     assert_eq!(r.get(&["locale"]), Some(&json!("en-GB")));
     assert_eq!(
         r.source(&["locale"]).map(|s| s.layer),
-        Some(Layer::Directive)
+        Some(ConfigLayer::Directive)
     );
     drop(cli);
 }
@@ -312,7 +317,7 @@ fn a_directive_in_an_example_does_not_change_the_settings() {
     let out = read(doc, "a.md", &default_policy());
     assert_eq!(out.diagnostics, []);
     assert_eq!(out.settings.len(), 1);
-    assert_eq!(out.settings[0].source.line, Some(4));
+    assert_eq!(out.settings[0].source.line, NonZeroUsize::new(4));
 }
 
 #[test]
@@ -346,7 +351,7 @@ impl slopvac_config::Presets for Genres {
     fn genre_chain(&self, name: &str) -> Vec<Vec<slopvac_config::Setting>> {
         if name == "reference" {
             vec![vec![slopvac_config::Setting::bare(
-                Layer::Genre,
+                ConfigLayer::Genre,
                 &["locale"],
                 json!("en-GB"),
             )]]

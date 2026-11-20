@@ -62,8 +62,10 @@ pub fn run(_matches: &ArgMatches, linter: EngineLinter) -> Result<Exit, RunError
                 let _ = joined_tx.send(io_threads.join());
             });
             match joined.recv_timeout(IO_WAIT) {
+                // The error can wrap a protocol parse failure that quotes client text, so
+                // only its kind is reported.
                 Ok(Err(e)) => Err(RunError::Io {
-                    detail: e.to_string(),
+                    detail: e.kind().to_string(),
                 }),
                 Ok(Ok(())) | Err(_) => Ok(exit),
             }

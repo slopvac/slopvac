@@ -2444,6 +2444,7 @@ dependencies = [
  "slopvac-pos",
  "slopvac-report",
  "slopvac-rules",
+ "slopvac-sanitize",
  "slopvac-styles",
  "slopvac-terms",
  "slopvac-text",
@@ -2474,6 +2475,7 @@ dependencies = [
  "slopvac-migrate",
  "slopvac-model",
  "slopvac-text",
+ "slopvac-update",
  "tempfile",
  "thiserror",
 ]
@@ -2501,12 +2503,14 @@ dependencies = [
  "frontmatter-spans",
  "ignore",
  "insta",
+ "jsonschema",
  "rstest",
  "saphyr",
  "serde",
  "serde_json",
  "slopvac-fs",
  "slopvac-messages",
+ "slopvac-model",
  "strsim",
  "tempfile",
  "thiserror",
@@ -2528,6 +2532,7 @@ dependencies = [
  "serde_json",
  "slopvac-config",
  "slopvac-context",
+ "slopvac-fs",
  "slopvac-model",
  "slopvac-pcre2",
  "slopvac-rules",
@@ -2810,6 +2815,23 @@ name = "slopvac-sanitize"
 version = "0.0.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "slopvac-schemas"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "jsonschema",
+ "rstest",
+ "schemars",
+ "serde_json",
+ "similar 3.2.1",
+ "slopvac-model",
+ "slopvac-rules",
+ "snapbox",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]

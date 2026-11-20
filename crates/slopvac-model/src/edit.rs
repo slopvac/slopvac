@@ -2,12 +2,15 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::schema::x_extensions;
 use crate::source::SourceIndex;
 use crate::span::{PositionError, Span};
 
-/// Replace the source bytes in `span` with `text`, written verbatim.
+/// Replace the source bytes in span with text, written verbatim. A zero-width span inserts.
+/// Edits in one set use original offsets and must not overlap. See
+/// docs/contract/positions.md.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct Edit {
     /// Original-file byte range to replace. A zero-width span inserts.
     pub span: Span,

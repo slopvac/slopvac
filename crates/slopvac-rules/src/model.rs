@@ -15,39 +15,48 @@ use schemars::JsonSchema;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use slopvac_model::{
-    AiSignal, CategoryId, ContextTag, Density, GenreId, NonEmptyString, SchemaVersion, Severity,
+    AiSignal, CategoryId, ContextTag, Density, GenreId, NonEmptyString, SLUG, SchemaVersion,
+    Severity, if_then, x_extensions,
 };
 
 use crate::ext::{Extensions, UniqueVec, ValueError, is_slug, present, text_newtype};
+use crate::schema::Kind;
 
 text_newtype!(
-    /// Rule id inside its category: `^[a-z][a-z0-9-]*(?![\s\S])`.
-    LocalRuleId, "rule id", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
+    /// Rule id inside its category: a lower-case letter, then lower-case letters, digits and
+    /// hyphens.
+    LocalRuleId, false,
+    "Rule id inside its category. The qualified RuleId is <plugin>:<category>.<id>, built from \
+     the plugin manifest, the category id and this id.",
+    "rule id", |s| is_slug(s, '-'), SLUG
 );
 text_newtype!(
     /// A name the engine resolves: a structure or vocabulary check, an exception or a
-    /// detector. `^[a-z][a-z0-9-]*(?![\s\S])`.
-    Slug, "name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
+    /// detector. A lower-case letter, then lower-case letters, digits and hyphens.
+    Slug, true, "", "name", |s| is_slug(s, '-'), SLUG
 );
 text_newtype!(
-    /// A profile name, the key of a density budget: `^[a-z][a-z0-9-]*(?![\s\S])`.
-    ProfileName, "profile name", |s| is_slug(s, '-'), "^[a-z][a-z0-9-]*(?![\\s\\S])"
+    /// A profile name, the key of a density budget. A lower-case letter, then lower-case
+    /// letters, digits and hyphens.
+    ProfileName, true, "", "profile name", |s| is_slug(s, '-'), SLUG
 );
 text_newtype!(
-    /// A metric name: `^[a-z][a-z0-9_]*(?![\s\S])`.
-    MetricName, "metric name", |s| is_slug(s, '_'), "^[a-z][a-z0-9_]*(?![\\s\\S])"
+    /// A metric name: a lower-case letter, then lower-case letters, digits and underscores.
+    MetricName, true, "", "metric name", |s| is_slug(s, '_'), r"^[a-z][a-z0-9_]*(?![\s\S])"
 );
 text_newtype!(
-    /// A placeholder in a pattern: `^[A-Z][A-Z0-9_]*(?![\s\S])`.
-    PlaceholderName, "placeholder name", |s| {
+    /// A placeholder in a pattern: an upper-case letter, then upper-case letters, digits and
+    /// underscores.
+    PlaceholderName, true, "", "placeholder name", |s| {
         let mut chars = s.chars();
         chars.next().is_some_and(|c| c.is_ascii_uppercase())
             && chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-    }, "^[A-Z][A-Z0-9_]*(?![\\s\\S])"
+    }, r"^[A-Z][A-Z0-9_]*(?![\s\S])"
 );
 text_newtype!(
     /// An issue-qualified STE rule number such as `9:1.2` or `9:GR-2`.
-    SteRef, "STE reference", is_ste_ref, "^\\d+:\\d+\\.\\d+(?![\\s\\S])|^\\d+:GR-\\d+(?![\\s\\S])"
+    SteRef, true, "", "STE reference", is_ste_ref,
+    r"^(?:[0-9]+:[0-9]+\.[0-9]+|[0-9]+:GR-[0-9]+)(?![\s\S])"
 );
 
 fn is_ste_ref(s: &str) -> bool {
@@ -120,10 +129,17 @@ impl JsonSchema for Pcre2Pattern {
     }
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // Matches when, reading escapes from the start, one escape is `\u` or `\U`. An escaped
+        // backslash (`\\`) is one escape, so `\\u` is not a Unicode escape.
         schemars::json_schema!({
+            "description": "A PCRE2 pattern (10.43 or later). The pattern may not contain a \\uXXXX \
+                or \\UXXXXXXXX escape: write the literal character, or \\x{X...} in rule data \
+                written for v3. A lookbehind must have a finite maximum length of at most 255 \
+                characters, so + , * and {n,} are not allowed inside one. The schema rejects the \
+                \\u and \\U escapes; the loader compiles the rest.",
             "type": "string",
             "minLength": 1,
-            "not": {"pattern": "(?<!\\\\)(?:\\\\\\\\)*\\\\[uU]"},
+            "not": {"pattern": r"^(?:[^\\]|\\[^uU])*\\[uU]"},
         })
     }
 }
@@ -171,14 +187,21 @@ impl JsonSchema for Weight {
         "Weight".into()
     }
 
+    fn inline_schema() -> bool {
+        true
+    }
+
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({"type": "number", "minimum": 0, "default": 1.0})
     }
 }
 
-/// Which text units a lexical rule sees.
+/// Which text units a lexical rule sees. prose is every prose block without code, URLs and
+/// front matter. body-sentence is sentence minus heading and table blocks. raw is the unparsed
+/// source and is for formatting rules only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
+#[schemars(extend("default" = "prose"))]
 pub enum Scope {
     /// Every prose block without code, URLs and front matter.
     #[default]
@@ -197,7 +220,7 @@ pub enum Scope {
     Raw,
 }
 
-/// A block or span kind a rule must not look inside.
+/// A block or span kind the rule must not look inside.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum BlockKind {
@@ -217,7 +240,8 @@ pub enum BlockKind {
     FrontMatter,
 }
 
-/// Lint input surface.
+/// Lint input surface, chosen by --mode. Its text context tag is code-comment (lint-report
+/// Finding.contexts), a separate label that keeps its singular spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ApplyMode {
@@ -230,6 +254,7 @@ pub enum ApplyMode {
 /// A capitalization style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline)]
 pub enum CapitalizationStyle {
     /// Sentence case.
     Sentence,
@@ -244,6 +269,7 @@ pub enum CapitalizationStyle {
 /// How a measured value compares with the threshold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline)]
 pub enum Comparison {
     /// Greater than.
     #[default]
@@ -259,6 +285,7 @@ pub enum Comparison {
 /// Where the `ai_signal` value comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(inline)]
 pub enum AiSignalSource {
     /// Measured on a corpus.
     Measured,
@@ -272,6 +299,7 @@ pub enum AiSignalSource {
 /// The source of a placeholder's value. The only one is the locale allow list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
 pub enum PlaceholderSource {
     /// Words from the locale allow list.
     AllowedWords,
@@ -294,15 +322,19 @@ fn is_false(b: &bool) -> bool {
 /// Literal phrases, matched at word boundaries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "TokensMatch")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions, transform = Kind("tokens"))]
 pub struct TokensMatch {
     /// The phrases.
     pub tokens: UniqueVec<NonEmptyString, 1>,
     /// Match regardless of case.
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    #[schemars(extend("default" = true))]
     pub ignore_case: bool,
-    /// Report a match written entirely in capitals.
+    /// Report a match written entirely in capitals. Off by default because an all-caps token
+    /// is usually a keyword, an identifier or an initialism. Applies to tokens, pattern and
+    /// substitution.
     #[serde(default, skip_serializing_if = "is_false")]
+    #[schemars(extend("default" = false))]
     pub match_all_caps: bool,
     #[serde(flatten)]
     #[schemars(skip)]
@@ -312,23 +344,28 @@ pub struct TokensMatch {
 /// A PCRE2 regular expression.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "PatternMatch")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions, transform = Kind("pattern"))]
 pub struct PatternMatch {
     /// The pattern.
     pub pattern: Pcre2Pattern,
-    /// Placeholders in the pattern and where their values come from.
+    /// Maps a literal placeholder string in the pattern to a configuration source. The only
+    /// source is allowed-words: the loader replaces the placeholder with an alternation of the
+    /// escaped ASCII alphabetic words from the locale allow list, sorted case-insensitively.
+    /// With no words it becomes (?!), which never matches.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "non_empty_placeholders"
     )]
-    #[schemars(extend("minProperties" = 1))]
+    #[schemars(transform = crate::schema::property_names, extend("minProperties" = 1))]
     pub placeholders: Option<BTreeMap<PlaceholderName, PlaceholderSource>>,
     /// Match regardless of case.
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    #[schemars(extend("default" = true))]
     pub ignore_case: bool,
     /// Report a match written entirely in capitals.
     #[serde(default, skip_serializing_if = "is_false")]
+    #[schemars(extend("default" = false))]
     pub match_all_caps: bool,
     #[serde(flatten)]
     #[schemars(skip)]
@@ -417,30 +454,33 @@ impl JsonSchema for Substitutions {
     }
 }
 
-/// A map from a PCRE2 pattern to its replacement.
+/// A map from a PCRE2 pattern to its replacement. The message names the replacement.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "SubstitutionMatch")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions, transform = Kind("substitution"))]
 pub struct SubstitutionMatch {
     /// Pattern to replacement.
     pub substitutions: Substitutions,
     /// Match regardless of case.
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    #[schemars(extend("default" = true))]
     pub ignore_case: bool,
     /// Report a match written entirely in capitals.
     #[serde(default, skip_serializing_if = "is_false")]
+    #[schemars(extend("default" = false))]
     pub match_all_caps: bool,
     #[serde(flatten)]
     #[schemars(skip)]
     ext: Extensions,
 }
 
-/// A counted measurement compared with a threshold.
+/// A counted measurement compared with a threshold. The finding fires when `measured
+/// <comparison> threshold` holds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "MetricMatch")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions, transform = Kind("metric"))]
 pub struct MetricMatch {
-    /// The metric name.
+    /// Metric name. The names the 2.x engine measures are listed in docs/contract/rules.md.
     pub metric: MetricName,
     /// The threshold.
     pub threshold: f64,
@@ -455,7 +495,7 @@ pub struct MetricMatch {
 /// A block-level shape check implemented by the engine and selected by name.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "StructureMatch")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions, transform = Kind("structure"))]
 pub struct StructureMatch {
     /// The check name.
     pub check: Slug,
@@ -464,14 +504,15 @@ pub struct StructureMatch {
     ext: Extensions,
 }
 
-/// Report text that is not written in the named capitalization style.
+/// Report text that is not written in the named capitalization style. New in 3.0: 2.x
+/// expresses this as a pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "CapitalizationMatch")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions, transform = Kind("capitalization"))]
 pub struct CapitalizationMatch {
     /// The style.
     pub style: CapitalizationStyle,
-    /// Words exempt from the style.
+    /// Words exempt from the style, such as product names.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -483,10 +524,10 @@ pub struct CapitalizationMatch {
     ext: Extensions,
 }
 
-/// A part-of-speech keyed controlled-vocabulary lookup selected by name.
+/// A part-of-speech keyed controlled-vocabulary lookup selected by name (STE rule 1.2).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "VocabularyMatch")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions, transform = Kind("vocabulary"))]
 pub struct VocabularyMatch {
     /// The check name.
     pub check: Slug,
@@ -495,12 +536,13 @@ pub struct VocabularyMatch {
     ext: Extensions,
 }
 
-/// A check no linter can run. It never produces a finding.
+/// A check no linter can run. Carried so writing and review guidance read one source. Never
+/// produces a finding.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "JudgementMatch")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions, transform = Kind("judgement"))]
 pub struct JudgementMatch {
-    /// The question the reviewer must answer.
+    /// The question the reviewer must answer. It must be decidable, not a matter of taste.
     pub question: NonEmptyString,
     #[serde(flatten)]
     #[schemars(skip)]
@@ -528,10 +570,9 @@ pub enum MatchKind {
     Judgement,
 }
 
-/// The typed detection payload. `kind` selects the one allowed shape.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+/// The typed detection payload. match.kind selects the one allowed shape.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
-#[schemars(rename = "Match")]
 pub enum Match {
     /// Literal phrases.
     Tokens(TokensMatch),
@@ -551,6 +592,29 @@ pub enum Match {
     Judgement(JudgementMatch),
 }
 
+/// Each payload is its own `$defs` entry, which names its `kind` tag.
+impl JsonSchema for Match {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Match".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "The typed detection payload. match.kind selects the one allowed shape.",
+            "oneOf": [
+                generator.subschema_for::<TokensMatch>(),
+                generator.subschema_for::<PatternMatch>(),
+                generator.subschema_for::<SubstitutionMatch>(),
+                generator.subschema_for::<MetricMatch>(),
+                generator.subschema_for::<StructureMatch>(),
+                generator.subschema_for::<CapitalizationMatch>(),
+                generator.subschema_for::<VocabularyMatch>(),
+                generator.subschema_for::<JudgementMatch>(),
+            ],
+        })
+    }
+}
+
 impl Match {
     /// The kind of this payload.
     #[must_use]
@@ -568,12 +632,12 @@ impl Match {
     }
 }
 
-/// Context tags that gate a rule. With `only`, the rule runs on text that carries at least one
-/// listed tag. With `skip`, it is silent on text that carries any listed tag.
+/// Context tags that gate the rule. With only, the rule runs on text that carries at least one
+/// listed tag. With skip, it is silent on text that carries any listed tag.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(try_from = "ContextGateFields")]
 #[schemars(rename = "Contexts")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "minProperties" = 1))]
+#[schemars(transform = x_extensions, extend("minProperties" = 1))]
 pub struct ContextGate {
     /// Run only on text that carries one of these tags.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -583,9 +647,11 @@ pub struct ContextGate {
     pub skip: Option<UniqueVec<ContextTag>>,
 }
 
+/// Context tags that gate the rule. With only, the rule runs on text that carries at least one
+/// listed tag. With skip, it is silent on text that carries any listed tag.
 #[derive(Deserialize, JsonSchema)]
 #[schemars(rename = "Contexts")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "minProperties" = 1))]
+#[schemars(transform = x_extensions, extend("minProperties" = 1))]
 struct ContextGateFields {
     #[serde(default, deserialize_with = "present")]
     only: Option<UniqueVec<ContextTag>>,
@@ -609,11 +675,11 @@ impl TryFrom<ContextGateFields> for ContextGate {
     }
 }
 
-/// Narrows where a rule is active. An absent key means no restriction.
+/// Narrows where the rule is active. An absent key means no restriction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(try_from = "AppliesToFields")]
 #[schemars(rename = "AppliesTo")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "minProperties" = 1))]
+#[schemars(transform = x_extensions, extend("minProperties" = 1))]
 pub struct AppliesTo {
     /// Lint modes.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -623,9 +689,10 @@ pub struct AppliesTo {
     pub genres: Option<UniqueVec<GenreId, 1>>,
 }
 
+/// Narrows where the rule is active. An absent key means no restriction.
 #[derive(Deserialize, JsonSchema)]
 #[schemars(rename = "AppliesTo")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}, "minProperties" = 1))]
+#[schemars(transform = x_extensions, extend("minProperties" = 1))]
 struct AppliesToFields {
     #[serde(default, deserialize_with = "present")]
     modes: Option<UniqueVec<ApplyMode, 1>>,
@@ -649,10 +716,12 @@ impl TryFrom<AppliesToFields> for AppliesTo {
     }
 }
 
-/// A named, closed reason a finding may be suppressed.
+/// A named, closed reason a finding may be suppressed. A suppression annotation must cite one
+/// by name. With detector, the engine drops the finding itself when the named detector, or the
+/// context tag of that name, holds at the match.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "Exception")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct Exception {
     /// The name a suppression annotation cites.
     pub name: Slug,
@@ -675,10 +744,10 @@ pub struct Exception {
     ext: Extensions,
 }
 
-/// An expected finding count: exact, or an inclusive range.
+/// Expected finding count, or an inclusive range.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
-#[schemars(rename = "Want")]
+#[schemars(rename = "Want", inline, transform = crate::schema::exclusive_alternatives)]
 pub enum Want {
     /// Exactly this many findings.
     Count(u32),
@@ -689,7 +758,7 @@ pub enum Want {
 /// An inclusive finding-count range with at least one bound.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(try_from = "WantRangeFields")]
-#[schemars(rename = "WantRange")]
+#[schemars(rename = "WantRange", inline)]
 #[schemars(extend("additionalProperties" = false, "minProperties" = 1))]
 pub struct WantRange {
     /// The lower bound.
@@ -724,14 +793,15 @@ impl TryFrom<WantRangeFields> for WantRange {
     }
 }
 
-/// A test case in the style of `vale test`.
+/// A test case in the style of vale test. The input is linted with only this rule enabled.
+/// want counts findings, contains and absent compare against the matched text and message of
+/// those findings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(try_from = "CaseFields")]
 #[schemars(rename = "Case")]
-#[schemars(extend(
-    "additionalProperties" = false,
-    "patternProperties" = {"^x-": true},
-    "anyOf" = [{"required": ["want"]}, {"required": ["contains"]}, {"required": ["absent"]}]
+#[schemars(transform = x_extensions,
+extend(
+        "anyOf" = [{"required": ["want"]}, {"required": ["contains"]}, {"required": ["absent"]}]
 ))]
 pub struct Case {
     /// The text to lint with only this rule enabled.
@@ -750,20 +820,25 @@ pub struct Case {
     pub note: Option<String>,
 }
 
+/// A test case in the style of vale test. The input is linted with only this rule enabled.
+/// want counts findings, contains and absent compare against the matched text and message of
+/// those findings.
 #[derive(Deserialize, JsonSchema)]
 #[schemars(rename = "Case")]
-#[schemars(extend(
-    "additionalProperties" = false,
-    "patternProperties" = {"^x-": true},
-    "anyOf" = [{"required": ["want"]}, {"required": ["contains"]}, {"required": ["absent"]}]
+#[schemars(transform = x_extensions,
+extend(
+        "anyOf" = [{"required": ["want"]}, {"required": ["contains"]}, {"required": ["absent"]}]
 ))]
 struct CaseFields {
     input: String,
+    /// Expected finding count, or an inclusive range.
     #[serde(default, deserialize_with = "present")]
     want: Option<Want>,
+    /// Each string appears in the matched text or message of some finding.
     #[serde(default, deserialize_with = "present")]
     #[schemars(extend("minItems" = 1))]
     contains: Option<Vec<NonEmptyString>>,
+    /// No finding has a matched text or message that contains any of these strings.
     #[serde(default, deserialize_with = "present")]
     #[schemars(extend("minItems" = 1))]
     absent: Option<Vec<NonEmptyString>>,
@@ -794,10 +869,11 @@ impl TryFrom<CaseFields> for Case {
     }
 }
 
-/// A before and after pair shown in rule documentation.
+/// A before and after pair shown in rule documentation. For a mechanical rule the test runner
+/// also asserts that bad produces a finding and good produces none.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "Example")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct Example {
     /// Text the rule flags.
     pub bad: String,
@@ -820,14 +896,15 @@ pub struct Example {
     ext: Extensions,
 }
 
-/// Where a rule's idea comes from. This is not the runtime `RuleProvenance`.
+/// Where the rule's idea comes from, so a reader can argue with it. Not the runtime
+/// `RuleProvenance`, which names the pack that supplied a rule.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "Citation")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct Citation {
     /// The source.
     pub source: NonEmptyString,
-    /// Issue-qualified STE rule number.
+    /// Issue-qualified STE rule number such as 9:1.2 or 9:GR-2. A citation only.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -864,11 +941,46 @@ fn default_text_type() -> slopvac_text::TextType {
     slopvac_text::TextType::Any
 }
 
-fn text_type_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    schemars::json_schema!({
-        "enum": ["any", "procedural", "descriptive", "safety"],
-        "default": "any",
-    })
+/// The schema of `text_type`, shared as `$defs/TextType`.
+struct TextTypeSchema;
+
+impl JsonSchema for TextTypeSchema {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "TextType".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "Restrict the rule to sentences of one STE text type. any means the \
+                rule does not care.",
+            "enum": ["any", "procedural", "descriptive", "safety"],
+            "default": "any",
+        })
+    }
+}
+
+/// A judgement rule is a suggestion and declares no exceptions or cases.
+fn judgement_constraints() -> serde_json::Value {
+    if_then(
+        &serde_json::json!({
+            "properties": {"match": {"properties": {"kind": {"const": "judgement"}}, "required": ["kind"]}},
+            "required": ["match"]
+        }),
+        &serde_json::json!({
+            "properties": {
+                "severity": {"const": "suggestion"},
+                "exceptions": {"maxItems": 0},
+                "cases": {"maxItems": 0}
+            }
+        }),
+    )
+}
+
+/// The default of `scope` and `text_type` is stated once, on the definition each refers to.
+fn definition_default(schema: &mut schemars::Schema) {
+    if schema.get("$ref").is_some() {
+        schema.remove("default");
+    }
 }
 
 fn default_ai_signal() -> AiSignal {
@@ -879,23 +991,7 @@ fn default_ai_signal() -> AiSignal {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(try_from = "RuleFields")]
 #[schemars(rename = "Rule")]
-#[schemars(extend(
-    "additionalProperties" = false,
-    "patternProperties" = {"^x-": true},
-    "allOf" = [{
-        "if": {
-            "properties": {"match": {"properties": {"kind": {"const": "judgement"}}, "required": ["kind"]}},
-            "required": ["match"]
-        },
-        "then": {
-            "properties": {
-                "severity": {"const": "suggestion"},
-                "exceptions": {"maxItems": 0},
-                "cases": {"maxItems": 0}
-            }
-        }
-    }]
-))]
+#[schemars(transform = x_extensions, extend("allOf" = [judgement_constraints()]))]
 pub struct Rule {
     /// Present only in a standalone rule file.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -911,7 +1007,7 @@ pub struct Rule {
     /// The text unit the rule sees.
     pub scope: Scope,
     /// The STE text type the rule is limited to.
-    #[schemars(schema_with = "text_type_schema")]
+    #[schemars(with = "TextTypeSchema")]
     pub text_type: slopvac_text::TextType,
     /// The detection payload.
     #[serde(rename = "match")]
@@ -976,36 +1072,27 @@ impl Rule {
 
 /// A [`Rule`] as read: `severity` may be absent, and a judgement rule then gets `suggestion`.
 #[derive(Deserialize, JsonSchema)]
-#[schemars(rename = "Rule")]
-#[schemars(extend(
-    "additionalProperties" = false,
-    "patternProperties" = {"^x-": true},
-    "allOf" = [{
-        "if": {
-            "properties": {"match": {"properties": {"kind": {"const": "judgement"}}, "required": ["kind"]}},
-            "required": ["match"]
-        },
-        "then": {
-            "properties": {
-                "severity": {"const": "suggestion"},
-                "exceptions": {"maxItems": 0},
-                "cases": {"maxItems": 0}
-            }
-        }
-    }]
-))]
+#[schemars(rename = "Rule", description = "")]
+#[schemars(transform = x_extensions, extend("allOf" = [judgement_constraints()]))]
 struct RuleFields {
     #[serde(default, deserialize_with = "present")]
     schema_version: Option<SchemaVersion>,
     id: LocalRuleId,
+    /// Short imperative label.
     name: NonEmptyString,
+    /// Shown on a finding. Names the fix, not the violation. {match} and {replacement}
+    /// interpolate.
     message: NonEmptyString,
+    /// The shipped level. A category cap or a profile shift can lower it, never a rule.
+    /// Disabling a rule is configuration, so there is no off level.
     #[serde(default, deserialize_with = "present")]
+    #[schemars(extend("default" = "warning"))]
     severity: Option<Severity>,
     #[serde(default)]
+    #[schemars(transform = definition_default)]
     scope: Scope,
     #[serde(default = "default_text_type")]
-    #[schemars(schema_with = "text_type_schema")]
+    #[schemars(with = "TextTypeSchema", transform = definition_default)]
     text_type: slopvac_text::TextType,
     #[serde(rename = "match")]
     match_: Match,
@@ -1017,12 +1104,14 @@ struct RuleFields {
     applies_to: Option<AppliesTo>,
     #[serde(default, deserialize_with = "present")]
     exceptions: Option<UniqueVec<Exception>>,
+    /// Literal strings that never fire, even when the match holds.
     #[serde(default, deserialize_with = "present")]
     allowlist: Option<UniqueVec<NonEmptyString>>,
     #[serde(default, deserialize_with = "present")]
     examples: Option<Vec<Example>>,
     #[serde(default, deserialize_with = "present")]
     cases: Option<Vec<Case>>,
+    /// The rewrite operation, as guidance.
     #[serde(default, deserialize_with = "present")]
     fix: Option<String>,
     #[serde(default = "default_ai_signal")]
@@ -1120,14 +1209,10 @@ impl JsonSchema for RuleFile {
         "RuleFile".into()
     }
 
+    /// The embedded rule shape, by reference, plus a required `schema_version`.
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let mut schema = Rule::json_schema(generator);
-        let mut required = schema
-            .get("required")
-            .and_then(|r| r.as_array().cloned())
-            .unwrap_or_default();
-        required.push("schema_version".into());
-        schema.insert("required".into(), required.into());
+        let mut schema = generator.subschema_for::<Rule>();
+        schema.insert("required".into(), serde_json::json!(["schema_version"]));
         schema
     }
 }
@@ -1136,28 +1221,30 @@ fn default_weight() -> Weight {
     Weight::ONE
 }
 
-/// A group of rules, and the unit users enable, disable and score by.
+/// A group of rules, and the unit users enable, disable and score by. One category per file.
+/// Rule ids are unique within the category. Semantics are specified in docs/contract/rules.md.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "Category")]
-#[schemars(extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
+#[schemars(transform = x_extensions)]
 pub struct Category {
     /// Always 3.
     pub schema_version: SchemaVersion,
-    /// The category id.
+    /// Category id. The qualified rule id is `<plugin>:<category>.<rule>`.
     pub id: CategoryId,
     /// Display title.
     pub title: NonEmptyString,
     /// What the category covers.
     pub description: NonEmptyString,
-    /// Contribution to the overall score.
+    /// Contribution to the overall score before any config override.
     #[serde(default = "default_weight")]
     pub weight: Weight,
-    /// Density budget per profile.
+    /// Density budget per profile, keyed by profile name. Absent means no budget.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "present"
     )]
+    #[schemars(transform = crate::schema::property_names)]
     pub max_per_100_words: Option<BTreeMap<ProfileName, Density>>,
     /// Genres this category suits.
     #[serde(

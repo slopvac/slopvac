@@ -45,17 +45,21 @@ impl ServerError {
 
     /// Unreadable `initialize` parameters, reduced to category and position.
     pub(crate) fn initialize(source: &serde_json::Error) -> Self {
-        let category = match source.classify() {
-            serde_json::error::Category::Io => "io",
-            serde_json::error::Category::Syntax => "syntax",
-            serde_json::error::Category::Data => "data",
-            serde_json::error::Category::Eof => "eof",
-        };
         Self::Initialize {
-            category: category.to_owned(),
+            category: category(source).to_owned(),
             line: source.line(),
             column: source.column(),
         }
+    }
+}
+
+/// The category of a parse failure. It is fixed text, unlike the parser's own message.
+fn category(source: &serde_json::Error) -> &'static str {
+    match source.classify() {
+        serde_json::error::Category::Io => "io",
+        serde_json::error::Category::Syntax => "syntax",
+        serde_json::error::Category::Data => "data",
+        serde_json::error::Category::Eof => "eof",
     }
 }
 
@@ -139,6 +143,31 @@ pub(crate) enum LspMessage {
     #[code("lsp-method-unsupported")]
     #[message("method not supported: {method}")]
     MethodUnsupported { method: String },
+    /// The client sent request parameters the server cannot read. The message names the
+    /// failure's category and position only, because the parser's text quotes the rejected
+    /// value, such as document text or a path.
+    #[code("lsp-params-invalid")]
+    #[message("invalid {method} parameters: {category} error at line {line}, column {column}")]
+    ParamsInvalid {
+        method: String,
+        category: String,
+        #[count]
+        line: usize,
+        #[count]
+        column: usize,
+    },
+}
+
+impl LspMessage {
+    /// Unreadable parameters of `method`, reduced to category and position.
+    pub(crate) fn params_invalid(method: &str, source: &serde_json::Error) -> Self {
+        Self::ParamsInvalid {
+            method: method.to_owned(),
+            category: category(source).to_owned(),
+            line: source.line(),
+            column: source.column(),
+        }
+    }
 }
 
 /// Every entry of the language server's catalogs.

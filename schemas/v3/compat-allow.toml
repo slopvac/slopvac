@@ -8,6 +8,82 @@
 # reason = "Why the break is acceptable."
 # approved_by = "reviewer name"
 
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/allOf/0/$ref(plugin-protocol.schema.json#/$defs/PluginDeclaration)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Plugin/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Plugin/allOf/0/$ref(plugin-protocol.schema.json#/$defs/PluginDeclaration)/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/$defs/HookDecl/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/$defs/InitializeResult/properties/capabilities/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/$defs/Call/allOf/12/then/required/id"
+kind = "required-added"
+reason = "The new binary-extractor/extract request must carry id and params. The constraint applies only to that new method's own messages, so no existing message is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/$defs/Call/allOf/12/then/required/params"
+kind = "required-added"
+reason = "The new binary-extractor/extract request must carry id and params. The constraint applies only to that new method's own messages, so no existing message is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/$defs/PluginDeclaration/properties/hooks/items/$ref(plugin-protocol.schema.json#/$defs/HookDecl)/allOf/0/then/required/formats"
+kind = "required-added"
+reason = "The binary-extractor hook declaration must list its formats. The constraint applies only to that new hook's own declaration, so no existing plugin is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/allOf/0/then/$ref(plugin-protocol.schema.json#/$defs/Call)/allOf/12/then/required/id"
+kind = "required-added"
+reason = "The new binary-extractor/extract request must carry id and params. The constraint applies only to that new method's own messages, so no existing message is affected."
+approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-protocol.schema.json"
+pointer = "/allOf/0/then/$ref(plugin-protocol.schema.json#/$defs/Call)/allOf/12/then/required/params"
+kind = "required-added"
+reason = "The new binary-extractor/extract request must carry id and params. The constraint applies only to that new method's own messages, so no existing message is affected."
+approved_by = "contract owner (8l4.2)"
 
 # The plugins amendment: one plugins group, kinds data and code, reserved core, pack names renamed to plugin.
 [[allow]]
@@ -101,6 +177,191 @@ kind = "corpus-rejected"
 reason = "The plugins amendment (slopvac-8l4.2.73) renames the pack keys and retires the packs array; the corpus file now uses plugins."
 approved_by = "maintainer, relayed by the lead on 2026-11-18 and 2026-11-19"
 
+# The schema generator (slopvac-8l4.2.49): the Pcre2Pattern escape check drops its lookbehind.
+[[allow]]
+file = "category.schema.json"
+pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "category.schema.json"
+pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/Match/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/Match/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/PatternMatch/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/Pcre2Pattern/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/Rule/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/SubstitutionMatch/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/1/$ref(rule.schema.json#/$defs/PatternMatch)/properties/pattern/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/match/$ref(rule.schema.json#/$defs/Match)/oneOf/2/$ref(rule.schema.json#/$defs/SubstitutionMatch)/properties/substitutions/propertyNames/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/FrontMatterCondition/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/When/properties/admonition_title/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/When/properties/front_matter/$ref(tagger.schema.json#/$defs/FrontMatterCondition)/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/When/properties/heading_path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/When/properties/path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/$defs/When/properties/sentence/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/admonition_title/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/front_matter/$ref(tagger.schema.json#/$defs/FrontMatterCondition)/properties/matches/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/heading_path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/path/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "tagger.schema.json"
+pointer = "/properties/when/$ref(tagger.schema.json#/$defs/When)/properties/sentence/$ref(rule.schema.json#/$defs/Pcre2Pattern)/not"
+kind = "constraint-added"
+reason = "The Pcre2Pattern escape check drops its lookbehind for a forward scan, which stays inside the portable regex subset. It rejects the same unescaped \\u and \\U escapes; the shared pattern vectors record the verdicts (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+# The schema generator (slopvac-8l4.2.49): ste_ref spells its digits as [0-9], inside the portable regex subset.
+[[allow]]
+file = "category.schema.json"
+pointer = "/properties/rules/items/$ref(rule.schema.json#/$defs/Rule)/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
+kind = "pattern-changed"
+reason = "ste_ref spells \\d as [0-9]. \\d is outside the portable regex subset: Python reads it as any Unicode digit, the Rust validator as ASCII. The Rust is_ste_ref already accepts only ASCII digits (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$ref(rule.schema.json#/$defs/Rule)/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
+kind = "pattern-changed"
+reason = "ste_ref spells \\d as [0-9]. \\d is outside the portable regex subset: Python reads it as any Unicode digit, the Rust validator as ASCII. The Rust is_ste_ref already accepts only ASCII digits (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/Citation/properties/ste_ref/pattern"
+kind = "pattern-changed"
+reason = "ste_ref spells \\d as [0-9]. \\d is outside the portable regex subset: Python reads it as any Unicode digit, the Rust validator as ASCII. The Rust is_ste_ref already accepts only ASCII digits (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+[[allow]]
+file = "rule.schema.json"
+pointer = "/$defs/Rule/properties/citation/$ref(rule.schema.json#/$defs/Citation)/properties/ste_ref/pattern"
+kind = "pattern-changed"
+reason = "ste_ref spells \\d as [0-9]. \\d is outside the portable regex subset: Python reads it as any Unicode digit, the Rust validator as ASCII. The Rust is_ste_ref already accepts only ASCII digits (slopvac-8l4.2.49)."
+approved_by = "contract owner (slopvac-8l4.2)"
+
+# Added with the runtime and python keys of the plugin manifest.
 [[allow]]
 file = "plugin-manifest.schema.json"
 pointer = "/properties/plugin/$ref(plugin-manifest.schema.json#/$defs/Plugin)/then/required/python"

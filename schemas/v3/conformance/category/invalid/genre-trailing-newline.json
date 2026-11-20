@@ -1,0 +1,45 @@
+{
+  "schema_version": 3,
+  "id": "ste-sentences",
+  "title": "STE sentences",
+  "description": "Sentence length and shape.",
+  "weight": 0.8,
+  "max_per_100_words": {
+    "strict": 0.4,
+    "normal": 0.8
+  },
+  "recommended_for": [
+    "reference\n"
+  ],
+  "rules": [
+    {
+      "id": "sentence-length",
+      "name": "Shorten the sentence",
+      "message": "sentence has {match} words",
+      "scope": "sentence",
+      "match": {
+        "kind": "metric",
+        "metric": "sentence_words",
+        "threshold": 34
+      },
+      "citation": {
+        "source": "s"
+      }
+    },
+    {
+      "id": "filler",
+      "name": "Cut the filler",
+      "message": "cut {match}",
+      "match": {
+        "kind": "tokens",
+        "tokens": [
+          "basically"
+        ]
+      },
+      "citation": {
+        "source": "s"
+      }
+    }
+  ],
+  "x-note": "generated"
+}

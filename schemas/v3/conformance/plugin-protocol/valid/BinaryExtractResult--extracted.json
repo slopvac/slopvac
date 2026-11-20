@@ -1,0 +1,43 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "outcome": "extracted",
+      "segments": [
+        {
+          "part": "word/document.xml",
+          "locator": "w:p[@w14:paraId=3F2A0B1C]",
+          "span": {
+            "start": 0,
+            "end": 8
+          },
+          "text": "We must never fail.",
+          "context": "prose",
+          "role": "body"
+        },
+        {
+          "part": "word/comments.xml",
+          "locator": "w:comment[@w:id=0]/w:p[1]",
+          "span": {
+            "start": 0,
+            "end": 8
+          },
+          "text": "Reword this.",
+          "context": "prose",
+          "role": "comment"
+        },
+        {
+          "part": "word/document.xml",
+          "locator": "w:p[@w14:paraId=0B1C3F2A]",
+          "span": {
+            "start": 0,
+            "end": 8
+          },
+          "text": "A second paragraph in the same deflated entry.",
+          "context": "prose",
+          "role": "body"
+        }
+      ]
+    }
+  ]
+}

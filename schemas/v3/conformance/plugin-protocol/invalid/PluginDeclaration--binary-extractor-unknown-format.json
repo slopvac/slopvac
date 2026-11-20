@@ -1,0 +1,17 @@
+{
+  "network": false,
+  "hooks": [
+    {
+      "kind": "binary-extractor",
+      "id": "office",
+      "formats": [
+        "docx",
+        "pages"
+      ]
+    }
+  ],
+  "features": {
+    "required": [],
+    "optional": []
+  }
+}

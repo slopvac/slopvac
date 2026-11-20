@@ -44,6 +44,7 @@ slopvac-plugins.workspace = true
 slopvac-pos.workspace = true
 slopvac-report.workspace = true
 slopvac-rules.workspace = true
+slopvac-sanitize.workspace = true
 slopvac-styles.workspace = true
 slopvac-terms.workspace = true
 slopvac-text.workspace = true

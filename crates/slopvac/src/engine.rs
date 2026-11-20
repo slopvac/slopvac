@@ -829,7 +829,12 @@ fn config_files(config: &LoadedConfig) -> Vec<(String, bool)> {
     config
         .files
         .iter()
-        .map(|f| (f.display.clone(), f.layer == slopvac_config::Layer::Extends))
+        .map(|f| {
+            (
+                f.display.clone(),
+                f.layer == slopvac_model::ConfigLayer::Extends,
+            )
+        })
         .collect()
 }
 

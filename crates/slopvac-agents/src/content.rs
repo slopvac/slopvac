@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 
 use crate::harness::{AgentFormat, REVIEWER_NAME, SKILL_NAME};
 use crate::managed::MARKER;
+use crate::messages::{AgentsPhrase, AgentsText, quoted};
 
 const SKILL_FIELDS: [&str; 6] = [
     "name",
@@ -46,6 +47,8 @@ pub fn steering_block(kind: BlockKind) -> String {
 /// The skill stub. It carries triggers only; the guidance comes from `slopvac prime`.
 #[must_use]
 pub fn skill_stub() -> String {
+    // The skill file is generated content that the harness reads, not a message.
+    // ast-grep-ignore: user-text-literal
     format!(
         "---\n\
          name: {SKILL_NAME}\n\
@@ -107,10 +110,12 @@ pub fn check_model_format(format: AgentFormat, model: &str) -> Result<(), String
             {
                 Ok(())
             } else {
-                Err(format!(
-                    "reviewer model {model:?} is not valid for claude; use an alias ({}), a claude-* model ID or {INHERIT}.",
-                    CLAUDE_MODEL_ALIASES.join(", ")
-                ))
+                Err(AgentsText::ModelClaude {
+                    model: quoted(model),
+                    aliases: CLAUDE_MODEL_ALIASES.join(", "),
+                    inherit: INHERIT.to_owned(),
+                }
+                .to_string())
             }
         }
     }
@@ -162,12 +167,15 @@ fn opencode_permissions() -> String {
     let mut v2 =
         String::from("permissions:\n  - action: \"*\"\n    resource: \"*\"\n    effect: deny\n");
     for action in ["read", "grep", "glob"] {
+        // YAML for the harness, not a message.
+        // ast-grep-ignore: user-text-literal
         let _ = write!(
             v2,
             "  - action: {action}\n    resource: \"*\"\n    effect: allow\n"
         );
     }
     for env in ["*.env", "*.env.*"] {
+        // ast-grep-ignore: user-text-literal
         let _ = write!(
             v2,
             "  - action: read\n    resource: {}\n    effect: deny\n",
@@ -175,6 +183,7 @@ fn opencode_permissions() -> String {
         );
     }
     for (resource, effect) in SHELL_RULES {
+        // ast-grep-ignore: user-text-literal
         let _ = write!(
             v2,
             "  - action: shell\n    resource: {}\n    effect: {effect}\n",
@@ -205,16 +214,20 @@ pub fn reviewer_agent(format: AgentFormat, model: Option<&str>) -> String {
                 and proposed rewrite, then list the facts of the received document and mark \
                 each kept or wrong.";
     let model_line = match model {
+        // ast-grep-ignore: user-text-literal
         Some(m) => format!("model: {m}\n"),
         None => format!("{MODEL_PLACEHOLDER}\n"),
     };
     let head = match format {
+        // The agent file is generated content that the harness reads, not a message.
+        // ast-grep-ignore: user-text-literal
         AgentFormat::Opencode => format!(
             "name: {REVIEWER_NAME}\ndescription: \"{description}\"\nmode: subagent\n{model_line}\
              {}",
             opencode_permissions()
         ),
         // The `tools` allowlist cannot scope Bash to commands, so the reviewer gets no Bash.
+        // ast-grep-ignore: user-text-literal
         AgentFormat::Claude => format!(
             "name: {REVIEWER_NAME}\ndescription: \"{description}\"\n\
              tools: Read, Grep, Glob\n{model_line}"
@@ -230,7 +243,7 @@ pub fn validate_skill(dir_name: &str, text: &str) -> Vec<String> {
     let mut problems = Vec::new();
     let mut lines = text.lines();
     if lines.next() != Some("---") {
-        return vec!["front matter must start with ---".into()];
+        return vec![AgentsPhrase::SkillFrontMatterStart.as_static().into()];
     }
     let mut fields: Vec<(String, String)> = Vec::new();
     let mut closed = false;
@@ -255,48 +268,56 @@ pub fn validate_skill(dir_name: &str, text: &str) -> Vec<String> {
             };
             fields.push((k.trim().to_owned(), v.trim_matches('"').to_owned()));
         } else {
-            problems.push(format!("front matter line is not key: value: {line}"));
+            problems.push(
+                AgentsText::SkillFrontMatterLine {
+                    line: line.to_owned(),
+                }
+                .to_string(),
+            );
         }
     }
     if !closed {
-        problems.push("front matter has no closing ---".into());
+        problems.push(AgentsPhrase::SkillFrontMatterUnclosed.as_static().into());
     }
     let get = |k: &str| fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.as_str());
     match get("name") {
-        None => problems.push("name is required".into()),
+        None => problems.push(AgentsPhrase::SkillNameRequired.as_static().into()),
         Some(n) => {
             let ok_chars = n
                 .chars()
                 .all(|c| c == '-' || (c.is_alphanumeric() && !c.is_uppercase()));
             if n.is_empty() || n.chars().count() > 64 {
-                problems.push("name must be 1-64 characters".into());
+                problems.push(AgentsPhrase::SkillNameLength.as_static().into());
             }
             if !ok_chars || n.starts_with('-') || n.ends_with('-') || n.contains("--") {
-                problems.push(
-                    "name takes lowercase letters, digits and single hyphens, none at the ends"
-                        .into(),
-                );
+                problems.push(AgentsPhrase::SkillNameChars.as_static().into());
             }
             if n != dir_name {
-                problems.push(format!("name {n:?} must match directory {dir_name:?}"));
+                problems.push(
+                    AgentsText::SkillNameDirectory {
+                        name: quoted(n),
+                        directory: quoted(dir_name),
+                    }
+                    .to_string(),
+                );
             }
         }
     }
     match get("description") {
-        None => problems.push("description is required".into()),
+        None => problems.push(AgentsPhrase::SkillDescriptionRequired.as_static().into()),
         Some(d) if d.is_empty() || d.chars().count() > 1024 => {
-            problems.push("description must be 1-1024 characters".into());
+            problems.push(AgentsPhrase::SkillDescriptionLength.as_static().into());
         }
         Some(_) => {}
     }
     if let Some(c) = get("compatibility")
         && (c.is_empty() || c.chars().count() > 500)
     {
-        problems.push("compatibility must be 1-500 characters".into());
+        problems.push(AgentsPhrase::SkillCompatibilityLength.as_static().into());
     }
     for (k, _) in &fields {
         if !SKILL_FIELDS.contains(&k.as_str()) {
-            problems.push(format!("unknown front matter field: {k}"));
+            problems.push(AgentsText::SkillFieldUnknown { field: k.clone() }.to_string());
         }
     }
     problems

@@ -8,6 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::ids::{IdError, is_kebab, is_pack};
+use crate::schema;
 
 /// A number or text that breaks its constraint.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -64,7 +65,11 @@ impl JsonSchema for Density {
     }
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({ "type": "number", "minimum": 0 })
+        schemars::json_schema!({
+            "description": "Findings per 100 words.",
+            "type": "number",
+            "minimum": 0,
+        })
     }
 }
 
@@ -115,7 +120,12 @@ impl JsonSchema for Score {
     }
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({ "type": "number", "minimum": 0, "maximum": 100 })
+        schemars::json_schema!({
+            "description": "Quality score from 0 (worst) to 100.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+        })
     }
 }
 
@@ -169,13 +179,17 @@ impl JsonSchema for NonEmptyString {
         "NonEmptyString".into()
     }
 
+    fn inline_schema() -> bool {
+        true
+    }
+
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({ "type": "string", "minLength": 1 })
     }
 }
 
 macro_rules! id_newtype {
-    ($(#[$meta:meta])* $name:ident, $kind:literal, $check:path, $pattern:literal) => {
+    ($(#[$meta:meta])* $name:ident, $schema_name:literal, $inline:literal, $description:literal, $kind:literal, $check:path, $pattern:expr) => {
         $(#[$meta])*
         #[derive(
             Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
@@ -222,28 +236,35 @@ macro_rules! id_newtype {
 
         impl JsonSchema for $name {
             fn schema_name() -> std::borrow::Cow<'static, str> {
-                stringify!($name).into()
+                $schema_name.into()
+            }
+
+            fn inline_schema() -> bool {
+                $inline
             }
 
             fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-                schemars::json_schema!({ "type": "string", "pattern": $pattern })
+                let mut schema = schemars::json_schema!({ "type": "string", "pattern": $pattern });
+                if !$description.is_empty() {
+                    schema.insert("description".into(), $description.into());
+                }
+                schema
             }
         }
     };
 }
 
 id_newtype!(
-    /// Category identifier: `^[a-z][a-z0-9-]*(?![\s\S])`.
-    CategoryId, "category id", is_pack, "^[a-z][a-z0-9-]*(?![\\s\\S])"
+    /// Category identifier: a lower-case letter, then lower-case letters, digits and hyphens.
+    CategoryId, "CategoryId", false, "", "category id", is_pack, schema::SLUG
 );
 id_newtype!(
-    /// Genre identifier: `^[a-z][a-z0-9-]*(?![\s\S])`.
-    GenreId, "genre id", is_pack, "^[a-z][a-z0-9-]*(?![\\s\\S])"
+    /// Genre identifier: a lower-case letter, then lower-case letters, digits and hyphens.
+    GenreId, "Genre", false, "Genre id.", "genre id", is_pack, schema::SLUG
 );
 id_newtype!(
-    /// Stable kebab-case name, such as a notice code or genre signal:
-    /// `^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\s\S])`.
-    KebabName, "kebab-case name", is_kebab, "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])"
+    /// Stable kebab-case name, such as a notice code or genre signal.
+    KebabName, "KebabName", true, "", "kebab-case name", is_kebab, schema::KEBAB
 );
 
 /// Read an optional member that is either absent or a real value, never `null`.

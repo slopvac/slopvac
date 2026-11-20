@@ -30,6 +30,11 @@ went, and the rules a consumer relies on. Field descriptions live in the schema.
 - `extract-output-invalid` belongs to first-party extractors only. The result of a failed
   third-party plugin is `plugin-output-invalid`.
 - `slopvac_version` names the tool build. It does not signal a schema change.
+- Binary extraction adds root notices. Skipped content inside a binary document is an
+  `info` notice `extract-unsupported`, never an `unchecked` entry, and it does not change the
+  exit code. Every output format carries it, and the language server shows it as an
+  Information diagnostic. [plugin-protocol.md section 5.5.4](plugin-protocol.md#554-outcomes)
+  defines it and the other binary codes.
 - The schema is strict, because it is the producer contract. Slopvac writes only reports
   that validate, and its own tests check that. A consumer must ignore unknown fields, as
   [the field policy](policies.md) requires, so a later 3.x release can add keys. Keys that
@@ -84,11 +89,12 @@ keys, and a consumer must ignore keys it does not know.
 | `locator` | Unicode code points. |
 | `text` | UTF-8 bytes of extracted text. |
 | `in-flight` | Bytes. |
-| `frame` | Bytes, the negotiated `maxMessageBytes`. |
 | `fragments` | Count of extracted fragments. |
 | `retained-bytes` | Bytes of fragment locations and converted text. |
 | `inflated-bytes` | Bytes of a decompressed draw.io page. |
 | `xml-nodes` | Count of XML nodes in one draw.io file. |
+
+The binary extraction budgets are `segments`, `part`, `locator`, `text` and `in-flight`; the [`BinaryBudget`](../../schemas/v3/plugin-protocol.schema.json#/$defs/BinaryBudget) enum in the plugin protocol schema lists them. A frame overflow is not a budget breach: it is the protocol error `message-too-large`.
 
 The list of budget names can grow in a later 3.x release, so a consumer must handle a
 name it does not know. The plugin protocol's error `data` for the same code uses the
@@ -145,7 +151,13 @@ the original file bytes, and a segment range does not. `SegmentRange` takes no `
   bidirectional overrides (U+202A to U+202E, U+2066 to U+2069). Every other character,
   including `/`, `#`, `[`, `]`, `@` and non-ASCII text, appears as is. A `%` in a locator
   is always the start of a `%XX` escape, so the schema rejects `%zz` and `%0a`.
-- Length: at most 512 code points. A producer that needs more shortens the path by using
+- Length: at most 3072 code points of the escaped form. A binary extractor sends at most
+  1024 characters, and the host checks the two limits in this order: (1) at most 1024
+  characters as sent; (2) the escaped length at most 3072, else the document fails with
+  `extract-budget` and `data.budget` `locator` (see
+  [plugin-protocol.md section 5.5.5](plugin-protocol.md#555-limits)). A percent sign or an
+  ASCII control character escapes to 3 characters and U+2028 to 9, so a locator within the first
+  limit can still breach the second. A producer that needs more shortens the path by using
   a stable id the format provides, and never truncates.
 - Uniqueness: within one document, a `locator` identifies one `segment` and a `segment`
   has one `locator`. Findings in the same segment share both and differ in `range`. Each pair of

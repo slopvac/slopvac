@@ -1,252 +1,800 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://slopvac.github.io/slopvac/schemas/v3/lint-report.schema.json",
-  "title": "slopvac v3 lint report",
-  "description": "The `slopvac lint --format json` payload. Spec: docs/contract/lint-report.md. Owned by slopvac-8l4.2.2. Keys starting with `x-` are ignored by consumers.",
-  "type": "object",
-  "properties": {
-    "schema_version": {"$ref": "common.schema.json#/$defs/SchemaVersion"},
-    "slopvac_version": {"description": "Version of the tool that wrote the report. Not a schema version.", "type": "string", "minLength": 1},
-    "summary": {"$ref": "#/$defs/RunSummary"},
-    "documents": {"type": "array", "items": {"$ref": "#/$defs/Document"}},
-    "notices": {
-      "description": "Run-level facts a reader needs, such as skipped files or checks that did not run. Always present; empty when there is nothing to say.",
-      "type": "array",
-      "items": {"$ref": "#/$defs/Notice"}
-    }
-  },
-  "required": ["schema_version", "slopvac_version", "summary", "documents", "notices"],
-  "patternProperties": {"^x-": true},
-  "additionalProperties": false,
   "$defs": {
-    "Count": {"type": "integer", "minimum": 0},
-    "Density": {"description": "Findings per 100 words.", "type": "number", "minimum": 0},
-    "Score": {"description": "Quality score from 0 (worst) to 100.", "type": "number", "minimum": 0, "maximum": 100},
-    "CategoryId": {"type": "string", "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"},
-    "AiSignal": {"description": "How strongly a finding indicates machine-written text.", "enum": ["strong", "weak", "none"]},
-    "Notice": {
-      "description": "A stable, machine-readable fact with a human message. Consumers branch on `code`, never on `message`.",
-      "type": "object",
-      "properties": {
-        "code": {"description": "Stable kebab-case identifier. A code is never reused for a different meaning.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])"},
-        "level": {"enum": ["info", "warning"]},
-        "message": {"type": "string", "minLength": 1},
-        "path": {"description": "File the notice concerns, when it concerns one.", "type": "string"},
-        "data": {"description": "Details as a JSON object; a value may be any JSON value, including a nested object or array. Each notice code documents its own keys. Consumers must ignore keys they do not know. Omitted when the notice has none.", "type": "object"}
+    "AiRegister": {
+      "additionalProperties": false,
+      "description": "Strong and weak AI-signal summaries.",
+      "patternProperties": {
+        "^x-": true
       },
-      "required": ["code", "level", "message"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
+      "properties": {
+        "strong": {
+          "$ref": "#/$defs/AiRegisterSummary",
+          "description": "Strong signal."
+        },
+        "weak": {
+          "$ref": "#/$defs/AiRegisterSummary",
+          "description": "Weak signal."
+        }
+      },
+      "required": [
+        "strong",
+        "weak"
+      ],
+      "type": "object"
     },
     "AiRegisterSummary": {
+      "additionalProperties": false,
       "description": "Counts for one reporting axis, independent of scoring.",
-      "type": "object",
-      "properties": {
-        "findings": {"$ref": "#/$defs/Count"},
-        "errors": {"$ref": "#/$defs/Count"},
-        "warnings": {"$ref": "#/$defs/Count"},
-        "per_100_words": {"$ref": "#/$defs/Density"}
+      "patternProperties": {
+        "^x-": true
       },
-      "required": ["findings", "errors", "warnings", "per_100_words"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
+      "properties": {
+        "errors": {
+          "$ref": "#/$defs/Count",
+          "description": "Errors."
+        },
+        "findings": {
+          "$ref": "#/$defs/Count",
+          "description": "Findings."
+        },
+        "per_100_words": {
+          "$ref": "#/$defs/Density",
+          "description": "Findings per 100 words."
+        },
+        "warnings": {
+          "$ref": "#/$defs/Count",
+          "description": "Warnings."
+        }
+      },
+      "required": [
+        "findings",
+        "errors",
+        "warnings",
+        "per_100_words"
+      ],
+      "type": "object"
     },
-    "AiRegister": {
-      "type": "object",
-      "properties": {
-        "strong": {"$ref": "#/$defs/AiRegisterSummary"},
-        "weak": {"$ref": "#/$defs/AiRegisterSummary"}
-      },
-      "required": ["strong", "weak"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
+    "AiSignal": {
+      "description": "How strongly a finding indicates machine-written text.",
+      "enum": [
+        "strong",
+        "weak",
+        "none"
+      ]
     },
-    "CategorySummary": {
-      "description": "One category rolled up across every linted document.",
-      "type": "object",
-      "properties": {
-        "category": {"$ref": "#/$defs/CategoryId"},
-        "findings": {"$ref": "#/$defs/Count"},
-        "errors": {"$ref": "#/$defs/Count"},
-        "warnings": {"$ref": "#/$defs/Count"},
-        "suggestions": {"$ref": "#/$defs/Count"},
-        "per_100_words": {"$ref": "#/$defs/Density"},
-        "score": {"$ref": "#/$defs/Score"}
-      },
-      "required": ["category", "findings", "errors", "warnings", "suggestions", "per_100_words", "score"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
-    },
-    "RunSummary": {
-      "description": "Every document rolled into one result. Densities use total words, not an average of per-document densities.",
-      "type": "object",
-      "properties": {
-        "documents": {"$ref": "#/$defs/Count"},
-        "words": {"$ref": "#/$defs/Count"},
-        "findings": {"$ref": "#/$defs/Count"},
-        "errors": {"$ref": "#/$defs/Count"},
-        "warnings": {"$ref": "#/$defs/Count"},
-        "suggestions": {"$ref": "#/$defs/Count"},
-        "per_100_words": {"$ref": "#/$defs/Density"},
-        "score": {"$ref": "#/$defs/Score"},
-        "passed": {"description": "True when every document passed its gate.", "type": "boolean"},
-        "categories": {"type": "array", "items": {"$ref": "#/$defs/CategorySummary"}},
-        "ai_register": {"$ref": "#/$defs/AiRegister"},
-        "prose": {"$ref": "#/$defs/AiRegisterSummary"}
-      },
-      "required": ["documents", "words", "findings", "errors", "warnings", "suggestions", "per_100_words", "score", "passed", "categories", "ai_register", "prose"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
-    },
-    "GenreReason": {
-      "description": "One signal that led to the genre choice.",
-      "type": "object",
-      "properties": {
-        "signal": {"description": "Kebab-case signal name, such as `front-matter` or `path-glob`.", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])"},
-        "detail": {"type": "string"}
-      },
-      "required": ["signal", "detail"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
-    },
-    "GenreResult": {
-      "description": "The genre applied to a document and why.",
-      "type": "object",
-      "properties": {
-        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])"},
-        "source": {"description": "`explicit` came from config, the command line or front matter; `detected` from genre signals; `default` from the fallback.", "enum": ["explicit", "detected", "default"]},
-        "reasons": {"type": "array", "items": {"$ref": "#/$defs/GenreReason"}}
-      },
-      "required": ["id", "source", "reasons"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
+    "CategoryId": {
+      "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+      "type": "string"
     },
     "CategoryScore": {
+      "additionalProperties": false,
       "description": "Per-category result for one document.",
-      "type": "object",
-      "properties": {
-        "category": {"$ref": "#/$defs/CategoryId"},
-        "findings": {"$ref": "#/$defs/Count"},
-        "errors": {"$ref": "#/$defs/Count"},
-        "warnings": {"$ref": "#/$defs/Count"},
-        "suggestions": {"$ref": "#/$defs/Count"},
-        "per_100_words": {"$ref": "#/$defs/Density"},
-        "gating_per_100_words": {"description": "Errors and warnings per 100 words: the figure the budget is checked against.", "$ref": "#/$defs/Density"},
-        "budget": {"description": "Gating density limit, or null when the category has none.", "type": ["number", "null"], "minimum": 0},
-        "score": {"$ref": "#/$defs/Score"},
-        "over_budget": {"type": "boolean"}
+      "patternProperties": {
+        "^x-": true
       },
-      "required": ["category", "findings", "errors", "warnings", "suggestions", "per_100_words", "gating_per_100_words", "budget", "score", "over_budget"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
-    },
-    "Gate": {
-      "description": "The pass or fail result for one document under its profile.",
-      "type": "object",
       "properties": {
-        "passed": {"type": "boolean"},
-        "reasons": {"description": "Each failed threshold, named. Empty when passed.", "type": "array", "items": {"type": "string", "minLength": 1}}
+        "budget": {
+          "description": "Gating density limit, or null when the category has none.",
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "category": {
+          "$ref": "#/$defs/CategoryId",
+          "description": "Category id."
+        },
+        "errors": {
+          "$ref": "#/$defs/Count",
+          "description": "Errors."
+        },
+        "findings": {
+          "$ref": "#/$defs/Count",
+          "description": "Findings."
+        },
+        "gating_per_100_words": {
+          "$ref": "#/$defs/Density",
+          "description": "Errors and warnings per 100 words: the figure the budget is checked against."
+        },
+        "over_budget": {
+          "description": "Whether the budget is exceeded.",
+          "type": "boolean"
+        },
+        "per_100_words": {
+          "$ref": "#/$defs/Density",
+          "description": "Findings per 100 words."
+        },
+        "score": {
+          "$ref": "#/$defs/Score",
+          "description": "Score, 0 to 100."
+        },
+        "suggestions": {
+          "$ref": "#/$defs/Count",
+          "description": "Suggestions."
+        },
+        "warnings": {
+          "$ref": "#/$defs/Count",
+          "description": "Warnings."
+        }
       },
-      "required": ["passed", "reasons"],
-      "allOf": [
-        {"if": {"properties": {"passed": {"const": true}}}, "then": {"properties": {"reasons": {"maxItems": 0}}}},
-        {"if": {"properties": {"passed": {"const": false}}}, "then": {"properties": {"reasons": {"minItems": 1}}}}
+      "required": [
+        "category",
+        "findings",
+        "errors",
+        "warnings",
+        "suggestions",
+        "per_100_words",
+        "gating_per_100_words",
+        "budget",
+        "score",
+        "over_budget"
       ],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
+      "type": "object"
     },
-    "Fix": {
-      "description": "A machine-applicable correction. Edits address source bytes and never overlap.",
-      "type": "object",
-      "properties": {
-        "edits": {"type": "array", "minItems": 1, "items": {"$ref": "common.schema.json#/$defs/Edit"}}
+    "CategorySummary": {
+      "additionalProperties": false,
+      "description": "One category rolled up across every linted document.",
+      "patternProperties": {
+        "^x-": true
       },
-      "required": ["edits"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/CategoryId",
+          "description": "Category id."
+        },
+        "errors": {
+          "$ref": "#/$defs/Count",
+          "description": "Errors."
+        },
+        "findings": {
+          "$ref": "#/$defs/Count",
+          "description": "Findings."
+        },
+        "per_100_words": {
+          "$ref": "#/$defs/Density",
+          "description": "Findings per 100 words."
+        },
+        "score": {
+          "$ref": "#/$defs/Score",
+          "description": "Score, 0 to 100."
+        },
+        "suggestions": {
+          "$ref": "#/$defs/Count",
+          "description": "Suggestions."
+        },
+        "warnings": {
+          "$ref": "#/$defs/Count",
+          "description": "Warnings."
+        }
+      },
+      "required": [
+        "category",
+        "findings",
+        "errors",
+        "warnings",
+        "suggestions",
+        "per_100_words",
+        "score"
+      ],
+      "type": "object"
     },
-    "SegmentRange": {
-      "description": "Half-open range [start, end) of UTF-8 bytes in the text of one segment. Local to that segment, not to the container file. The end is exclusive, start is at most end, and both fall on code point boundaries of the segment text. Closed on purpose: it has no extension keys. See docs/contract/lint-report.md.",
-      "type": "object",
-      "properties": {
-        "start": {"type": "integer", "minimum": 0},
-        "end": {"type": "integer", "minimum": 0}
-      },
-      "required": ["start", "end"],
-      "additionalProperties": false
+    "Count": {
+      "minimum": 0,
+      "type": "integer"
     },
-    "Origin": {
-      "description": "Where a finding sits in a container document such as a Word file or a diagram: the extracted text segment that holds the match. Present only for findings in extracted segments, and never together with `fix`. See docs/contract/lint-report.md for escaping, uniqueness, length and stability.",
-      "type": "object",
-      "properties": {
-        "locator": {"description": "Percent-escaped locator, unique per segment within the document. Opaque: a consumer compares it byte for byte and never parses it.", "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])"},
-        "label": {"description": "Display name of the segment. Never an identity.", "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])"},
-        "segment": {"description": "Segment id, unique within the document.", "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])"},
-        "range": {"$ref": "#/$defs/SegmentRange"}
-      },
-      "required": ["locator", "label", "segment", "range"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
-    },
-    "Finding": {
-      "description": "One violation at one position. `line`, `column`, `end_line` and `end_column` are the display position; `span` is the byte range. A finding with no source range, such as a metric over a whole document, omits `span`, `end_line` and `end_column`.",
-      "type": "object",
-      "properties": {
-        "rule_id": {"$ref": "common.schema.json#/$defs/RuleId"},
-        "pack": {"$ref": "common.schema.json#/$defs/PackId"},
-        "category": {"$ref": "#/$defs/CategoryId"},
-        "severity": {"$ref": "common.schema.json#/$defs/Severity"},
-        "message": {"type": "string", "minLength": 1},
-        "span": {"$ref": "common.schema.json#/$defs/Span"},
-        "line": {"$ref": "common.schema.json#/$defs/LineCol/properties/line"},
-        "column": {"$ref": "common.schema.json#/$defs/LineCol/properties/column"},
-        "end_line": {"$ref": "common.schema.json#/$defs/LineCol/properties/line"},
-        "end_column": {"$ref": "common.schema.json#/$defs/LineCol/properties/column"},
-        "contexts": {"description": "Text contexts the match sits in, such as prose or code-comment.", "type": "array", "items": {"$ref": "common.schema.json#/$defs/ContextTag"}, "uniqueItems": true},
-        "ai_signal": {"$ref": "#/$defs/AiSignal"},
-        "matched_text": {"type": "string"},
-        "fix": {"$ref": "#/$defs/Fix"},
-        "provenance": {"$ref": "common.schema.json#/$defs/RuleProvenance"},
-        "origin": {"$ref": "#/$defs/Origin"}
-      },
-      "required": ["rule_id", "pack", "category", "severity", "message", "line", "column", "contexts", "ai_signal", "matched_text"],
-      "not": {"required": ["origin", "fix"]},
-      "dependentRequired": {
-        "span": ["end_line", "end_column"],
-        "end_line": ["end_column", "span"],
-        "end_column": ["end_line", "span"]
-      },
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
+    "Density": {
+      "description": "Findings per 100 words.",
+      "minimum": 0,
+      "type": "number"
     },
     "Document": {
+      "additionalProperties": false,
       "description": "The whole result for one linted file.",
-      "type": "object",
-      "properties": {
-        "path": {"type": "string", "minLength": 1},
-        "profile": {"type": "string", "minLength": 1},
-        "genre": {"$ref": "#/$defs/GenreResult"},
-        "contexts_seen": {"description": "Every text context found in the document, whether or not a finding fired in it.", "type": "array", "items": {"$ref": "common.schema.json#/$defs/ContextTag"}, "uniqueItems": true},
-        "config_sources": {"description": "Config layers that applied to this document, lowest priority first.", "type": "array", "items": {"$ref": "common.schema.json#/$defs/ConfigSource"}},
-        "words": {"$ref": "#/$defs/Count"},
-        "sentences": {"$ref": "#/$defs/Count"},
-        "paragraphs": {"$ref": "#/$defs/Count"},
-        "findings": {"type": "array", "items": {"$ref": "#/$defs/Finding"}},
-        "categories": {"type": "array", "items": {"$ref": "#/$defs/CategoryScore"}},
-        "total_findings": {"$ref": "#/$defs/Count"},
-        "errors": {"$ref": "#/$defs/Count"},
-        "warnings": {"$ref": "#/$defs/Count"},
-        "suggestions": {"$ref": "#/$defs/Count"},
-        "per_100_words": {"$ref": "#/$defs/Density"},
-        "score": {"$ref": "#/$defs/Score"},
-        "gate": {"$ref": "#/$defs/Gate"},
-        "unchecked": {"description": "What did not run, and why. A skipped check must never read as a pass.", "type": "array", "items": {"$ref": "#/$defs/Notice"}},
-        "ai_register": {"$ref": "#/$defs/AiRegister"},
-        "prose": {"$ref": "#/$defs/AiRegisterSummary"}
+      "patternProperties": {
+        "^x-": true
       },
-      "required": ["path", "profile", "genre", "contexts_seen", "config_sources", "words", "sentences", "paragraphs", "findings", "categories", "total_findings", "errors", "warnings", "suggestions", "per_100_words", "score", "gate", "unchecked", "ai_register", "prose"],
-      "patternProperties": {"^x-": true},
-      "additionalProperties": false
+      "properties": {
+        "ai_register": {
+          "$ref": "#/$defs/AiRegister",
+          "description": "AI register."
+        },
+        "categories": {
+          "description": "Per-category scores.",
+          "items": {
+            "$ref": "#/$defs/CategoryScore"
+          },
+          "type": "array"
+        },
+        "config_sources": {
+          "description": "Config layers that applied to this document, lowest priority first.",
+          "items": {
+            "$ref": "common.schema.json#/$defs/ConfigSource"
+          },
+          "type": "array"
+        },
+        "contexts_seen": {
+          "description": "Every text context found in the document, whether or not a finding fired in it.",
+          "items": {
+            "$ref": "common.schema.json#/$defs/ContextTag"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "errors": {
+          "$ref": "#/$defs/Count",
+          "description": "Errors."
+        },
+        "findings": {
+          "description": "Findings.",
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "type": "array"
+        },
+        "gate": {
+          "$ref": "#/$defs/Gate",
+          "description": "Gate result."
+        },
+        "genre": {
+          "$ref": "#/$defs/GenreResult",
+          "description": "Genre."
+        },
+        "paragraphs": {
+          "$ref": "#/$defs/Count",
+          "description": "Paragraphs."
+        },
+        "path": {
+          "description": "File path.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "per_100_words": {
+          "$ref": "#/$defs/Density",
+          "description": "Findings per 100 words."
+        },
+        "profile": {
+          "description": "Profile name.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "prose": {
+          "$ref": "#/$defs/AiRegisterSummary",
+          "description": "Prose axis."
+        },
+        "score": {
+          "$ref": "#/$defs/Score",
+          "description": "Score, 0 to 100."
+        },
+        "sentences": {
+          "$ref": "#/$defs/Count",
+          "description": "Sentences."
+        },
+        "suggestions": {
+          "$ref": "#/$defs/Count",
+          "description": "Suggestions."
+        },
+        "total_findings": {
+          "$ref": "#/$defs/Count",
+          "description": "Total findings."
+        },
+        "unchecked": {
+          "description": "What did not run, and why. A skipped check must never read as a pass.",
+          "items": {
+            "$ref": "#/$defs/Notice"
+          },
+          "type": "array"
+        },
+        "warnings": {
+          "$ref": "#/$defs/Count",
+          "description": "Warnings."
+        },
+        "words": {
+          "$ref": "#/$defs/Count",
+          "description": "Words."
+        }
+      },
+      "required": [
+        "path",
+        "profile",
+        "genre",
+        "contexts_seen",
+        "config_sources",
+        "words",
+        "sentences",
+        "paragraphs",
+        "findings",
+        "categories",
+        "total_findings",
+        "errors",
+        "warnings",
+        "suggestions",
+        "per_100_words",
+        "score",
+        "gate",
+        "unchecked",
+        "ai_register",
+        "prose"
+      ],
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "dependentRequired": {
+        "end_column": [
+          "end_line",
+          "span"
+        ],
+        "end_line": [
+          "end_column",
+          "span"
+        ],
+        "span": [
+          "end_line",
+          "end_column"
+        ]
+      },
+      "description": "One violation at one position. `line`, `column`, `end_line` and `end_column` are the display position; `span` is the byte range. A finding with no source range, such as a metric over a whole document, omits `span`, `end_line` and `end_column`.",
+      "not": {
+        "required": [
+          "origin",
+          "fix"
+        ]
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "ai_signal": {
+          "$ref": "#/$defs/AiSignal",
+          "description": "AI signal."
+        },
+        "category": {
+          "$ref": "#/$defs/CategoryId",
+          "description": "Category id."
+        },
+        "column": {
+          "description": "Start column.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "contexts": {
+          "description": "Text contexts the match sits in, such as prose or code-comment.",
+          "items": {
+            "$ref": "common.schema.json#/$defs/ContextTag"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "end_column": {
+          "description": "End column; present with `span`.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "end_line": {
+          "description": "End line; present with `span`.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "fix": {
+          "$ref": "#/$defs/Fix",
+          "description": "Suggested fix."
+        },
+        "line": {
+          "description": "Start line.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "matched_text": {
+          "description": "Matched source text.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Message.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin",
+          "description": "Segment of a container document that holds the match."
+        },
+        "pack": {
+          "$ref": "common.schema.json#/$defs/PackId",
+          "description": "Owning pack."
+        },
+        "provenance": {
+          "$ref": "common.schema.json#/$defs/RuleProvenance",
+          "description": "Rule provenance."
+        },
+        "rule_id": {
+          "$ref": "common.schema.json#/$defs/RuleId",
+          "description": "Qualified rule id."
+        },
+        "severity": {
+          "$ref": "common.schema.json#/$defs/Severity",
+          "description": "Severity."
+        },
+        "span": {
+          "$ref": "common.schema.json#/$defs/Span",
+          "description": "Byte range; absent for whole-document findings."
+        }
+      },
+      "required": [
+        "rule_id",
+        "pack",
+        "category",
+        "severity",
+        "message",
+        "line",
+        "column",
+        "contexts",
+        "ai_signal",
+        "matched_text"
+      ],
+      "type": "object"
+    },
+    "Fix": {
+      "additionalProperties": false,
+      "description": "A machine-applicable correction. Edits address source bytes and never overlap.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "edits": {
+          "description": "Non-overlapping edits in original offsets.",
+          "items": {
+            "$ref": "common.schema.json#/$defs/Edit"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "edits"
+      ],
+      "type": "object"
+    },
+    "Gate": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "passed": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reasons": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "passed": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reasons": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ],
+      "description": "The pass or fail result for one document under its profile.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "passed": {
+          "description": "Whether the document passed.",
+          "type": "boolean"
+        },
+        "reasons": {
+          "description": "Each failed threshold, named. Empty when passed.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "passed",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "GenreReason": {
+      "additionalProperties": false,
+      "description": "One signal that led to the genre choice.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "detail": {
+          "description": "Detail.",
+          "type": "string"
+        },
+        "signal": {
+          "description": "Kebab-case signal name, such as `front-matter` or `path-glob`.",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "signal",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "GenreResult": {
+      "additionalProperties": false,
+      "description": "The genre applied to a document and why.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": {
+          "description": "Genre id.",
+          "pattern": "^[a-z][a-z0-9-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "reasons": {
+          "description": "Reasons.",
+          "items": {
+            "$ref": "#/$defs/GenreReason"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "`explicit` came from config, the command line or front matter; `detected` from genre signals; `default` from the fallback.",
+          "enum": [
+            "explicit",
+            "detected",
+            "default"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "Notice": {
+      "additionalProperties": false,
+      "description": "A stable, machine-readable fact with a human message. Consumers branch on `code`, never on `message`.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "code": {
+          "description": "Stable kebab-case identifier. A code is never reused for a different meaning.",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])",
+          "type": "string"
+        },
+        "data": {
+          "description": "Details as a JSON object; a value may be any JSON value, including a nested object or array. Each notice code documents its own keys. Consumers must ignore keys they do not know. Omitted when the notice has none.",
+          "type": "object"
+        },
+        "level": {
+          "description": "Level.",
+          "enum": [
+            "info",
+            "warning"
+          ]
+        },
+        "message": {
+          "description": "Human message.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "path": {
+          "description": "File the notice concerns, when it concerns one.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "level",
+        "message"
+      ],
+      "type": "object"
+    },
+    "Origin": {
+      "additionalProperties": false,
+      "description": "Where a finding sits in a container document such as a Word file or a diagram.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "label": {
+          "description": "Display name of the segment.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]+(?![\\s\\S])",
+          "type": "string"
+        },
+        "locator": {
+          "description": "Percent-escaped locator, unique per segment within the document. Opaque: a consumer compares it byte for byte and never parses it.",
+          "maxLength": 3072,
+          "minLength": 1,
+          "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/SegmentRange",
+          "description": "Extracted match range in UTF-8 bytes, local to the segment's text."
+        },
+        "segment": {
+          "description": "Segment id, unique within the document.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "locator",
+        "label",
+        "segment",
+        "range"
+      ],
+      "type": "object"
+    },
+    "RunSummary": {
+      "additionalProperties": false,
+      "description": "Every document rolled into one result. Densities use total words, not an average of per-document densities.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "ai_register": {
+          "$ref": "#/$defs/AiRegister",
+          "description": "AI register."
+        },
+        "categories": {
+          "description": "Per-category rollup.",
+          "items": {
+            "$ref": "#/$defs/CategorySummary"
+          },
+          "type": "array"
+        },
+        "documents": {
+          "$ref": "#/$defs/Count",
+          "description": "Documents linted."
+        },
+        "errors": {
+          "$ref": "#/$defs/Count",
+          "description": "Errors."
+        },
+        "findings": {
+          "$ref": "#/$defs/Count",
+          "description": "Findings."
+        },
+        "passed": {
+          "description": "True when every document passed its gate.",
+          "type": "boolean"
+        },
+        "per_100_words": {
+          "$ref": "#/$defs/Density",
+          "description": "Findings per 100 words."
+        },
+        "prose": {
+          "$ref": "#/$defs/AiRegisterSummary",
+          "description": "Prose axis."
+        },
+        "score": {
+          "$ref": "#/$defs/Score",
+          "description": "Score, 0 to 100."
+        },
+        "suggestions": {
+          "$ref": "#/$defs/Count",
+          "description": "Suggestions."
+        },
+        "warnings": {
+          "$ref": "#/$defs/Count",
+          "description": "Warnings."
+        },
+        "words": {
+          "$ref": "#/$defs/Count",
+          "description": "Total words."
+        }
+      },
+      "required": [
+        "documents",
+        "words",
+        "findings",
+        "errors",
+        "warnings",
+        "suggestions",
+        "per_100_words",
+        "score",
+        "passed",
+        "categories",
+        "ai_register",
+        "prose"
+      ],
+      "type": "object"
+    },
+    "Score": {
+      "description": "Quality score from 0 (worst) to 100.",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "SegmentRange": {
+      "additionalProperties": false,
+      "description": "Range of UTF-8 bytes in a segment's text, `[start, end)`, local to that segment.",
+      "properties": {
+        "end": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
     }
-  }
+  },
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/lint-report.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `slopvac lint --format json` payload. Spec: docs/contract/lint-report.md. Keys starting with `x-` are ignored by consumers.",
+  "patternProperties": {
+    "^x-": true
+  },
+  "properties": {
+    "documents": {
+      "description": "Documents.",
+      "items": {
+        "$ref": "#/$defs/Document"
+      },
+      "type": "array"
+    },
+    "notices": {
+      "description": "Run-level facts a reader needs, such as skipped files or checks that did not run. Always present; empty when there is nothing to say.",
+      "items": {
+        "$ref": "#/$defs/Notice"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion",
+      "description": "Always 3."
+    },
+    "slopvac_version": {
+      "description": "Version of the tool that wrote the report. Not a schema version.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "summary": {
+      "$ref": "#/$defs/RunSummary",
+      "description": "Run summary."
+    }
+  },
+  "required": [
+    "schema_version",
+    "slopvac_version",
+    "summary",
+    "documents",
+    "notices"
+  ],
+  "title": "slopvac v3 lint report",
+  "type": "object"
 }

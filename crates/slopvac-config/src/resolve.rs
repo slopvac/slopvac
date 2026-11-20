@@ -6,16 +6,17 @@ use std::path::Path;
 
 use serde::Serialize;
 use serde_json::{Map, Value as Json, json};
+use slopvac_model::{ConfigLayer, ConfigSource, Severity};
 
 use crate::load::{BlockKind, LoadedConfig};
 use crate::messages::ConfigText;
 use crate::presets::Presets;
-use crate::source::{Layer, Setting, Source, display_path};
+use crate::source::{Setting, display_path, layer_name};
 
 /// Built-in defaults: the lowest layer.
 #[must_use]
 pub fn core_defaults() -> Vec<Setting> {
-    let core = |path: &[&str], value: Json| Setting::bare(Layer::Core, path, value);
+    let core = |path: &[&str], value: Json| Setting::bare(ConfigLayer::Core, path, value);
     vec![
         core(&["mode"], json!("prose")),
         core(
@@ -65,7 +66,7 @@ pub struct Inputs<'a> {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Contribution {
     /// Where it came from.
-    pub source: Source,
+    pub source: ConfigSource,
     /// The value. A category budget of `"none"` is stored as `null`.
     pub value: Json,
     /// Which layer instance set it: a style, a genre layer, a config file, a block, and so on,
@@ -151,7 +152,7 @@ impl Resolved {
 
     /// The layer and location that set the final value at `path`.
     #[must_use]
-    pub fn source(&self, path: &[&str]) -> Option<&Source> {
+    pub fn source(&self, path: &[&str]) -> Option<&ConfigSource> {
         let (k, h) = self.lookup(path)?;
         Self::winner(k, h).map(|c| &c.source)
     }
@@ -223,7 +224,7 @@ impl Resolved {
         );
         let as_level = |c: &Contribution, from| {
             Some(ResolvedLevel {
-                level: c.value.as_str()?.to_owned(),
+                level: ConfigLevel::from_value(&c.value)?,
                 source: c.source.clone(),
                 from,
             })
@@ -269,12 +270,12 @@ impl Resolved {
                     .iter()
                     .map(|c| vec!["categories", *c, "minimum_severity"]),
             )
-            .and_then(|c| c.value.as_str());
-        if let Some(floor) = floor
-            && let (Some(have), Some(min)) = (severity_rank(&level.level), severity_rank(floor))
+            .and_then(|c| ConfigLevel::from_value(&c.value));
+        // `off` as a floor sets none, and an `off` level is never raised.
+        if let (Some(ConfigLevel::On(min)), ConfigLevel::On(have)) = (floor, level.level)
             && have < min
         {
-            floor.clone_into(&mut level.level);
+            level.level = ConfigLevel::On(min);
         }
         level
     }
@@ -339,12 +340,35 @@ fn insert_at(map: &mut Map<String, Json>, path: &[String], value: Json) {
     }
 }
 
-fn severity_rank(level: &str) -> Option<u8> {
-    match level {
-        "suggestion" => Some(0),
-        "warning" => Some(1),
-        "error" => Some(2),
-        _ => None,
+/// A level as config spells it: a severity, or `off`, which `Severity` has no value for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConfigLevel {
+    /// The rule does not run.
+    Off,
+    /// The rule reports at this severity.
+    On(Severity),
+}
+
+impl ConfigLevel {
+    /// The level a config value names, or `None` when it names neither `off` nor a severity.
+    #[must_use]
+    pub fn from_value(value: &Json) -> Option<Self> {
+        if value == "off" {
+            return Some(Self::Off);
+        }
+        serde_json::from_value(value.clone()).ok().map(Self::On)
+    }
+
+    /// The config spelling: `off`, `suggestion`, `warning` or `error`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::On(Severity::Suggestion) => "suggestion",
+            Self::On(Severity::Warning) => "warning",
+            Self::On(Severity::Error) => "error",
+        }
     }
 }
 
@@ -360,10 +384,10 @@ pub enum LevelFrom {
 /// The level of one rule after layer precedence.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedLevel {
-    /// `error`, `warning`, `suggestion` or `off`.
-    pub level: String,
+    /// The severity, or `off`.
+    pub level: ConfigLevel,
     /// The layer and location of the entry that set it.
-    pub source: Source,
+    pub source: ConfigSource,
     /// Whether a rule entry or a category entry set it.
     pub from: LevelFrom,
 }
@@ -376,7 +400,7 @@ pub struct Explained {
     /// The final value.
     pub value: Json,
     /// Where the final value came from.
-    pub source: Source,
+    pub source: ConfigSource,
     /// Lower contributions the final value replaced, lowest first.
     pub overridden: Vec<Contribution>,
 }
@@ -441,8 +465,8 @@ impl LoadedConfig {
 
 /// Where a source points, such as `project slopvac.toml:3:1` or `core`.
 #[must_use]
-pub fn describe(source: &Source) -> String {
-    let mut out = source.layer.name().to_owned();
+pub fn describe(source: &ConfigSource) -> String {
+    let mut out = layer_name(source.layer).to_owned();
     if let Some(file) = &source.file {
         out.push(' ');
         out.push_str(file);
@@ -464,7 +488,7 @@ pub fn render_explain(config: &LoadedConfig, explained: &[Explained]) -> String 
     for f in &config.files {
         let file = ConfigText::ExplainFile {
             file: f.display.clone(),
-            layer: f.layer.name().to_owned(),
+            layer: layer_name(f.layer).to_owned(),
         };
         let _ = writeln!(out, "{file}");
     }

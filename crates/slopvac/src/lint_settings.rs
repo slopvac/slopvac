@@ -16,8 +16,8 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::Value as Json;
-use slopvac_config::{Inputs, Layer, PackFile, Presets};
-use slopvac_config::{LevelFrom, LoadedConfig, Resolved, Setting, describe};
+use slopvac_config::{ConfigLevel, LevelFrom, LoadedConfig, Resolved, Setting, describe};
+use slopvac_config::{Inputs, PackFile, Presets};
 use slopvac_context::GenreAssignment;
 use slopvac_engine::{CategoryDials, Level, Settings};
 use slopvac_model::{
@@ -240,6 +240,16 @@ pub fn resolve(config: &LoadedConfig, rel: &Path) -> Resolved {
     )
 }
 
+/// The engine level for a config level. A config level this build does not know sets none, so
+/// the rule keeps the level of its definition.
+fn engine_level(level: ConfigLevel) -> Option<Level> {
+    match level {
+        ConfigLevel::Off => Some(Level::Off),
+        ConfigLevel::On(severity) => Some(Level::On(severity)),
+        _ => None,
+    }
+}
+
 fn level_of(name: &str) -> Option<Level> {
     Some(match name {
         "error" => Level::On(Severity::Error),
@@ -341,8 +351,11 @@ fn selected(rules: &Catalog, names: &[String]) -> Result<Vec<String>, CliError> 
 /// Whether the level came from a rule definition, a style or the genre chain, which the
 /// profile's `severity_shift` moves. A level that a config `rules` or `categories` entry
 /// sets is final.
-fn is_inherited(layer: Layer) -> bool {
-    matches!(layer, Layer::Core | Layer::Style | Layer::Genre)
+fn is_inherited(layer: ConfigLayer) -> bool {
+    matches!(
+        layer,
+        ConfigLayer::Core | ConfigLayer::Style | ConfigLayer::Genre
+    )
 }
 
 /// Build the engine settings for a file from its resolved config.
@@ -425,7 +438,7 @@ pub fn build(
             // genre chain. A level that the config sets is final. A category floor holds
             // after the shift.
             let level = match named {
-                Some(named) => level_of(&named.level).map(|l| {
+                Some(named) => engine_level(named.level).map(|l| {
                     let l = if is_inherited(named.source.layer) {
                         shifted(l, shift)
                     } else {

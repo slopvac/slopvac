@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Longest locator, in code points.
-const LOCATOR_MAX_CHARS: usize = 512;
+const LOCATOR_MAX_CHARS: usize = 3072;
 /// Longest label, in code points.
 const LABEL_MAX_CHARS: usize = 256;
 /// Longest segment id, in characters.
@@ -196,6 +196,9 @@ macro_rules! checked_string {
             fn schema_name() -> Cow<'static, str> {
                 stringify!($name).into()
             }
+            fn inline_schema() -> bool {
+                true
+            }
             fn json_schema(_: &mut SchemaGenerator) -> Schema {
                 $schema
             }
@@ -210,7 +213,7 @@ checked_string!(
     json_schema!({
         "type": "string",
         "minLength": 1,
-        "maxLength": 512,
+        "maxLength": 3072,
         "pattern": "^(?:[^%\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]|%[0-9A-F]{2})+(?![\\s\\S])"
     })
 );
@@ -250,7 +253,7 @@ pub struct Origin {
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[schemars(rename = "Origin", extend("additionalProperties" = false, "patternProperties" = {"^x-": true}))]
 struct OriginWire {
-    /// Percent-escaped locator, unique per segment within the document.
+    /// Percent-escaped locator, unique per segment within the document. Opaque: a consumer compares it byte for byte and never parses it.
     locator: OriginLocator,
     /// Display name of the segment.
     label: OriginLabel,

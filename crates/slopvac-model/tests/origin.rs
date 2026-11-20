@@ -53,16 +53,32 @@ fn finding_keeps_its_origin_through_a_round_trip() {
 #[case::label_multibyte_over_limit(|n| OriginLabel::new("é".repeat(n)).is_ok(), 257, false)]
 #[case::label_astral_at_limit(|n| OriginLabel::new("\u{1F600}".repeat(n)).is_ok(), 256, true)]
 #[case::label_astral_over_limit(|n| OriginLabel::new("\u{1F600}".repeat(n)).is_ok(), 257, false)]
-#[case::locator_ascii_at_limit(|n| OriginLocator::new("a".repeat(n)).is_ok(), 512, true)]
-#[case::locator_ascii_over_limit(|n| OriginLocator::new("a".repeat(n)).is_ok(), 513, false)]
-#[case::locator_cjk_at_limit(|n| OriginLocator::new("中".repeat(n)).is_ok(), 512, true)]
-#[case::locator_cjk_over_limit(|n| OriginLocator::new("中".repeat(n)).is_ok(), 513, false)]
-#[case::locator_astral_at_limit(|n| OriginLocator::new("\u{1F600}".repeat(n)).is_ok(), 512, true)]
-#[case::locator_astral_over_limit(|n| OriginLocator::new("\u{1F600}".repeat(n)).is_ok(), 513, false)]
+#[case::locator_ascii_at_limit(|n| OriginLocator::new("a".repeat(n)).is_ok(), 3072, true)]
+#[case::locator_ascii_over_limit(|n| OriginLocator::new("a".repeat(n)).is_ok(), 3073, false)]
+#[case::locator_cjk_at_limit(|n| OriginLocator::new("中".repeat(n)).is_ok(), 3072, true)]
+#[case::locator_cjk_over_limit(|n| OriginLocator::new("中".repeat(n)).is_ok(), 3073, false)]
+#[case::locator_astral_at_limit(|n| OriginLocator::new("\u{1F600}".repeat(n)).is_ok(), 3072, true)]
+#[case::locator_astral_over_limit(|n| OriginLocator::new("\u{1F600}".repeat(n)).is_ok(), 3073, false)]
 #[case::segment_id_at_limit(|n| SegmentId::new("a".repeat(n)).is_ok(), 64, true)]
 #[case::segment_id_over_limit(|n| SegmentId::new("a".repeat(n)).is_ok(), 65, false)]
 fn field_limit(#[case] accepts: fn(usize) -> bool, #[case] count: usize, #[case] expected: bool) {
     assert_eq!(accepts(count), expected);
+}
+
+/// An extractor locator of 1024 characters, each a `%` (one of the characters the report
+/// escapes to three), becomes `%25` x 1024 = 3072 code points in the report. The report
+/// accepts it and keeps it byte for byte. There is no Rust extractor yet, so this drives the
+/// public `Finding` decode and encode with the escaped form.
+#[test]
+fn longest_extractor_locator_fits_the_report_origin_once_escaped() {
+    let escaped = "%25".repeat(1024);
+    assert_eq!(escaped.chars().count(), 3072);
+    let mut value = finding_with_origin();
+    value["origin"]["locator"] = json!(escaped);
+    let finding: Finding = serde_json::from_value(value.clone()).unwrap();
+    let origin = finding.origin.as_ref().unwrap();
+    assert_eq!(origin.locator().as_str(), escaped);
+    assert_eq!(serde_json::to_value(&finding).unwrap(), value);
 }
 
 #[test]

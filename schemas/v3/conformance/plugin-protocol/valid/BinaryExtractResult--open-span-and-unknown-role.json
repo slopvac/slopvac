@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "outcome": "extracted",
+      "segments": [
+        {
+          "part": "tEXt:mxfile",
+          "locator": "drawio/Page-1/label[node-7]",
+          "span": {
+            "start": 33,
+            "end": 4120,
+            "x-chunk": 4,
+            "inflated": true
+          },
+          "text": "Retry queue",
+          "context": "prose",
+          "role": "x-swimlane-title",
+          "x-note": "ignored"
+        }
+      ]
+    }
+  ]
+}

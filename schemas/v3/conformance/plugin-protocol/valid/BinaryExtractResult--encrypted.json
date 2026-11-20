@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "document": "d1",
+      "error": {
+        "code": -32011,
+        "message": "the document is encrypted",
+        "data": {
+          "slopvac_code": "binary-encrypted"
+        }
+      }
+    }
+  ]
+}
