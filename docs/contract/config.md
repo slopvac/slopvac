@@ -142,7 +142,7 @@ Owners for the behavior: `slopvac-8l4.16.1` for `migrate`, `slopvac-8l4.4.5` for
 
 - **preserve**: the key and its meaning carry over. `migrate` copies the value.
 - **migrate**: 3.0 has the setting under a new key or form. `migrate` rewrites it.
-- **remove**: 3.0 has no equivalent. `migrate` fails with `config-legacy-dropped`, except where the table says the removal is lossless.
+- **remove**: 3.0 has no equivalent. `migrate` fails with `config-legacy-dropped`, except where the table says the removal is lossless or ends in a notice.
 
 ### 5.2 Mapping table
 
@@ -165,6 +165,7 @@ Rule and category names change with the plugin model. `migrate` maps a 2.x name 
 | `categories.<name>.weight` | preserve | same key | Renames the category. |
 | `rules.<id>` as a bare level | preserve | `rules.<qualified id>` | Renames the rule. |
 | `rules.<id>.severity` as a table | migrate | `rules.<qualified id>` as a bare level | Renames the rule and writes the bare level. |
+| A rule that 3.0 removed, or a category with no rules in 3.0 | remove, with a notice | none | Drops the entry. Each drop prints a non-fatal notice and `migrate` exits 0. A removed category has the code `migrate-category-removed`. A removed rule has the code `migrate-rule-removed`, at info level. Both notices point to [`compat/removed-rules.toml`](compat/removed-rules.toml), which lists the removed rule ids. Policies section 3.7 forbids a silent drop. |
 | `thresholds.max_total_per_100_words` | preserve | same key | Copies it. |
 | `thresholds.max_errors` | preserve | same key | Copies it. |
 | `thresholds.max_warnings` | preserve | same key | Copies it. |
@@ -172,7 +173,7 @@ Rule and category names change with the plugin model. `migrate` maps a 2.x name 
 | `thresholds.max_unicode_dashes` | preserve | same key | Copies it. |
 | `locale.default` | migrate | `locale` | Moves the value up one level. |
 | `locale.allow` | migrate | `terms.allow` | Moves the list. The words still skip the spelling check. |
-| `vocabulary.path` | migrate | `terms.blocklists = [<path>]` | Keeps the path and checks that the file still loads. The entries keep `word`, `pos` and `reason`. |
+| `vocabulary.path` | migrate | `terms.blocklists = [<path>]` | Keeps the path and rewrites each 2.x blocklist: it adds `schema_version = 3` and normalises `pos` values that 3.0 does not accept to their long form. The entries keep `word`, `pos` and `reason`. It rewrites TOML blocklists inside the project only. For any other blocklist it names what to change by hand. |
 | `vale.enabled = false` | remove, lossless | none | Deletes the table and lists the deletion in the summary. Vale is gone in 3.0 (architecture record 0001, decision 2). |
 | `vale.enabled = true` | remove | none | Fails with `config-legacy-dropped`. |
 | `vale.binary` | remove | none | Fails, unless `vale.enabled = false` is set in the same table. |

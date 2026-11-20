@@ -1,5 +1,4 @@
 # Shape that `slopvac migrate` writes for a typical 2.x config.
-schema_version = 3
 profile = "normal"
 exclude = [
   "**/node_modules/**",
@@ -7,12 +6,11 @@ exclude = [
   "CHANGELOG.md",
   ".beads/**",
 ]
+schema_version = 3
 
 [thresholds]
 max_errors = 0
 
-[categories.ste-descriptive]
-severity = "suggestion"
-
-[categories.ste-safety]
-severity = "error"
+[categories]
+"core:ste-descriptive" = "suggestion"
+"core:ste-safety" = "error"

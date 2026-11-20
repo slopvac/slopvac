@@ -156,7 +156,7 @@ Owners: `slopvac-8l4.12.1` for the logging setup, `slopvac-8l4.12.9` for stdin.
 
 - Caches and state go to the per-user directories that `etcetera` reports. `SLOPVAC_CACHE_DIR` overrides the cache location, as in 2.x (`vale_cache.py`).
 - A write takes an exclusive lock on the target file through standard-library file locking. The write goes to a new temporary file in the same directory. Slopvac syncs that file to disk, checks that it is still the file it created, renames it over the target, and then syncs the directory. Shared state takes the same lock.
-- Slopvac writes only to the cache directory, the project's `.slopvac/` directory, and paths the user names.
+- Slopvac writes only to the cache directory, the project's `.slopvac/` directory, and paths the user names. For example, `slopvac migrate` keeps its backup of the files it changes in `.slopvac/migrate-backup/<UTC timestamp>/` inside the project. Its record of that backup stays in the per-user cache.
 
 Owners: `slopvac-8l4.9.3`, `slopvac-8l4.9.4`.
 
@@ -377,7 +377,7 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 
 - The exit codes keep their meaning. Slopvac uses no other exit code.
 - Exit 2 (incomplete) means slopvac did not read or did not check part of the input: a file refused over a cap or budget, a file that is malformed or unreadable, or content the engine could not extract. Those notices are warnings. In 3.0, a notice that lists active rules the engine did not run on input it did read (`rule-kind-not-implemented`, `comment-rules-not-run`) is an info notice: the run stays complete and exits 0, and the notice names the rules in `data.rules`. A warning notice that is not about unread or unchecked input, such as `config-unknown-rule`, leaves the run complete.
-- Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `plugin-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation.
+- Every error and notice has a stable `code`: a lowercase kebab-case string such as `config-unknown-key` or `plugin-api-unsupported`. The code appears in brackets in text output, in JSON `notices` and errors, and in the generated documentation. Until the generated reference ships, the tables in this contract are the list of codes.
 - The `report` command uses these codes, and each exits 2: `report-incomplete` (a required form field is missing), `report-body-file` (the `--body-file` path is refused or cannot be written), `report-gh-missing` (`gh` is not found), `report-gh-not-logged-in` (`gh` is not logged in to github.com), `report-gh-failed` (`gh issue create` failed or ran longer than 60 seconds), `report-invalid` (a title, field or sample holds a control character) and `report-sample-unreadable` (the `--include-text` file cannot be read).
 - No code is reused, and no code changes meaning. A code that stops occurring stays in the documentation, marked retired.
 - Registry logins have two codes. Slopvac asks for a login only when a registry demands one.

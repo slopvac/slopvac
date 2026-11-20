@@ -13,8 +13,8 @@ Totals: migrate 3, preserve 107, remove 36, 146 rows.
 | `action:input:max-per-100-words` | preserve | Stays. | slopvac-8l4.13.6 | pending |
 | `action:input:min-score` | preserve | Stays. | slopvac-8l4.13.6 | pending |
 | `action:input:paths` | preserve | Stays. | slopvac-8l4.13.6 | pending |
-| `action:input:profile` | remove | Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile. | slopvac-8l4.13.6 | n/a |
-| `action:input:rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.13.6 | n/a |
+| `action:input:profile` | remove | Errors at 3.0, exit 2. Delete the input from the workflow by hand: `slopvac migrate` edits config files only, never workflows. Set the `profile` or `styles` key in `slopvac.toml` instead. | slopvac-8l4.13.6 | n/a |
+| `action:input:rules-dir` | remove | Errors at 3.0, exit 2. Delete the input from the workflow by hand: `slopvac migrate` edits config files only, never workflows. Add the rules directory as a `plugins` entry in `slopvac.toml`. | slopvac-8l4.13.6 | n/a |
 | `action:input:sarif` | preserve | Stays. | slopvac-8l4.13.6 | pending |
 | `action:input:sarif-file` | preserve | Stays. | slopvac-8l4.13.6 | pending |
 | `action:input:source` | preserve | Installs from a path or URL with the binary installer. | slopvac-8l4.13.6 | pending |
@@ -100,14 +100,14 @@ Totals: migrate 3, preserve 107, remove 36, 146 rows.
 | `opt:doctor:--format` | preserve | text and json stay. | slopvac-8l4.12.5 | pending |
 | `opt:explain:--config` | preserve | Same meaning. | slopvac-8l4.12.11 | pending |
 | `opt:explain:--format` | preserve | text, json and md stay. | slopvac-8l4.12.11 | pending |
-| `opt:explain:--profile` | remove | Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile. | slopvac-8l4.12.11 | n/a |
-| `opt:explain:--rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
+| `opt:explain:--profile` | remove | Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` edits config files only, never scripts or command lines. Set the `profile` or `styles` key in `slopvac.toml` instead. | slopvac-8l4.12.11 | n/a |
+| `opt:explain:--rules-dir` | remove | Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` edits config files only, never scripts or command lines. Add the rules directory as a `plugins` entry in `slopvac.toml`. | slopvac-8l4.9.1 | n/a |
 | `opt:explain:rule_id` | migrate | IDs gain the plugin namespace; bare 2.x IDs error. `slopvac migrate` rewrites directive IDs. | slopvac-8l4.2.3 | n/a |
 | `opt:init:--force` | preserve | Overwrites an existing file. | slopvac-8l4.12.8 | pending |
 | `opt:init:--harness` | preserve | Harness list gains OpenCode and others. | slopvac-8l4.11.2 | pending |
 | `opt:init:--no-skills` | preserve | Stays. | slopvac-8l4.11.2 | pending |
 | `opt:init:--path` | preserve | Output path. | slopvac-8l4.12.8 | pending |
-| `opt:init:--profile` | remove | Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile. | slopvac-8l4.2.10 | n/a |
+| `opt:init:--profile` | remove | Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` edits config files only, never scripts or command lines. Set the `profile` or `styles` key in `slopvac.toml` instead. | slopvac-8l4.2.10 | n/a |
 | `opt:init:--skip-agents` | preserve | Skips harness setup. | slopvac-8l4.12.8 | pending |
 | `opt:lint:--category` | preserve | Category filter stays. | slopvac-8l4.12.1 | pending |
 | `opt:lint:--comments` | remove | Errors at 3.0. Use --mode code-comments. | slopvac-8l4.3.14 | n/a |
@@ -127,16 +127,16 @@ Totals: migrate 3, preserve 107, remove 36, 146 rows.
 | `opt:lint:--no-vale` | remove | Vale is removed; the flag errors at 3.0. | slopvac-8l4.16.2 | n/a |
 | `opt:lint:--open` | preserve | Opens the HTML report. | slopvac-8l4.12.11 | pending |
 | `opt:lint:--out` | preserve | Writes the report to a file. | slopvac-8l4.12.2 | pending |
-| `opt:lint:--profile` | remove | Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile. | slopvac-8l4.2.10 | n/a |
-| `opt:lint:--rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
+| `opt:lint:--profile` | remove | Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` edits config files only, never scripts or command lines. Set the `profile` or `styles` key in `slopvac.toml` instead. | slopvac-8l4.2.10 | n/a |
+| `opt:lint:--rules-dir` | remove | Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` edits config files only, never scripts or command lines. Add the rules directory as a `plugins` entry in `slopvac.toml`. | slopvac-8l4.9.1 | n/a |
 | `opt:lint:--stdin` | preserve | Reads one document from stdin. | slopvac-8l4.12.9 | pending |
 | `opt:lint:--verbose` | preserve | Verbosity stays. | slopvac-8l4.12.1 | pending |
 | `opt:lint:targets` | preserve | Paths and directories, discovered with ignore rules (3.0 file discovery). | slopvac-8l4.12.1 | pending |
 | `opt:prime:--config` | preserve | Same meaning. | slopvac-8l4.11.1 | pending |
-| `opt:prime:--rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
+| `opt:prime:--rules-dir` | remove | Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` edits config files only, never scripts or command lines. Add the rules directory as a `plugins` entry in `slopvac.toml`. | slopvac-8l4.9.1 | n/a |
 | `opt:prime:topic` | preserve | write, review and report stay; migrate and configure are new. | slopvac-8l4.11.1 | pending |
 | `opt:reference:--check` | preserve | Stays. | slopvac-8l4.12.10 | pending |
-| `opt:reference:--rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
+| `opt:reference:--rules-dir` | remove | Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` edits config files only, never scripts or command lines. Add the rules directory as a `plugins` entry in `slopvac.toml`. | slopvac-8l4.9.1 | n/a |
 | `opt:reference:--write` | preserve | Stays. | slopvac-8l4.12.10 | pending |
 | `opt:root:--version` | preserve | Prints the version. | slopvac-8l4.12.1 | pending |
 | `opt:rules:--category` | preserve | Filter stays. | slopvac-8l4.12.11 | pending |
@@ -145,8 +145,8 @@ Totals: migrate 3, preserve 107, remove 36, 146 rows.
 | `opt:rules:--genre` | preserve | Filter stays; genres become data. | slopvac-8l4.12.11 | pending |
 | `opt:rules:--include-excluded` | preserve | Stays. | slopvac-8l4.12.11 | pending |
 | `opt:rules:--kind` | preserve | Kinds change with the typed match block. | slopvac-8l4.12.11 | pending |
-| `opt:rules:--profile` | remove | Errors at 3.0. Set the style preset in config; `slopvac migrate` writes it from the 2.x profile. | slopvac-8l4.12.11 | n/a |
-| `opt:rules:--rules-dir` | remove | Errors at 3.0. Declare a local plugin in config; `slopvac migrate` writes the entry. | slopvac-8l4.9.1 | n/a |
+| `opt:rules:--profile` | remove | Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` edits config files only, never scripts or command lines. Set the `profile` or `styles` key in `slopvac.toml` instead. | slopvac-8l4.12.11 | n/a |
+| `opt:rules:--rules-dir` | remove | Errors at 3.0, exit 2. Delete the flag by hand: `slopvac migrate` edits config files only, never scripts or command lines. Add the rules directory as a `plugins` entry in `slopvac.toml`. | slopvac-8l4.9.1 | n/a |
 | `opt:setup:--check` | preserve | Stays. | slopvac-8l4.11.2 | pending |
 | `opt:setup:--list` | preserve | Stays. | slopvac-8l4.11.2 | pending |
 | `opt:setup:--remove` | preserve | Stays. | slopvac-8l4.11.2 | pending |
