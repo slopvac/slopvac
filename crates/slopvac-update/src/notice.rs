@@ -11,10 +11,12 @@ use std::time::Duration;
 
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use slopvac_messages::Catalog;
 use thiserror::Error;
 
 use crate::fetch::{FetchError, Fetcher};
-use crate::install::{InstallMethod, RELEASES_URL};
+use crate::install::InstallMethod;
+use crate::messages::{UpdateMessage, UpdatePhrase, UpdateText};
 
 /// Commands that may start a refresh.
 pub const REFRESH_COMMANDS: [&str; 4] = ["lint", "doctor", "prime", "self update"];
@@ -71,28 +73,31 @@ pub fn notice_for(current: &str, latest: &str, method: InstallMethod) -> Option<
         return None;
     }
     let upgrade_command = method.upgrade_command().map(str::to_owned);
-    let migrate_hint = (new.major > cur.major).then(|| {
-        "This is a new major version. Run `slopvac migrate` to update your configuration."
-            .to_owned()
-    });
-    let mut message = format!("slopvac {latest} is available (you have {current}).");
-    if let Some(cmd) = &upgrade_command {
-        message.push_str(" Upgrade with `");
-        message.push_str(cmd);
-        message.push_str("`.");
-    } else {
-        message.push_str(" See ");
-        message.push_str(RELEASES_URL);
-        message.push('.');
-    }
+    let migrate_hint =
+        (new.major > cur.major).then(|| UpdatePhrase::MigrateHint.as_static().to_owned());
+    let mut advice = match &upgrade_command {
+        Some(command) => UpdateText::UpgradeWith {
+            command: command.clone(),
+        }
+        .to_string(),
+        None => UpdatePhrase::SeeReleases.as_static().to_owned(),
+    };
     if let Some(hint) = &migrate_hint {
-        message.push(' ');
-        message.push_str(hint);
+        advice = UpdateText::AdviceAndHint {
+            advice,
+            hint: hint.clone(),
+        }
+        .to_string();
     }
+    let message = UpdateMessage::UpdateAvailable {
+        latest: latest.to_owned(),
+        current: current.to_owned(),
+        advice,
+    };
     Some(Notice {
-        code: "update-available",
+        code: message.code(),
         level: "info",
-        message,
+        message: message.to_string(),
         current: current.to_owned(),
         latest: latest.to_owned(),
         upgrade_command,
@@ -247,7 +252,7 @@ pub enum RegistryError {
     #[error(transparent)]
     Fetch(#[from] FetchError),
     /// The answer is not what the registry documents.
-    #[error("unexpected registry response")]
+    #[error("{}", UpdatePhrase::RegistryUnexpected.as_static())]
     Shape,
 }
 

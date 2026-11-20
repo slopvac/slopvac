@@ -48,10 +48,6 @@ pub enum ReportError {
         /// A fixed phrase that names the problem and the field id, never the value.
         detail: String,
     },
-    /// `--gh --yes` needs the network and the run is offline.
-    #[code("offline-network-needed")]
-    #[message("offline: report --gh --yes needs the network")]
-    OfflineNetworkNeeded,
     /// The `--include-text` file cannot be read.
     #[code("report-sample-unreadable")]
     #[message("--include-text: {reason}")]

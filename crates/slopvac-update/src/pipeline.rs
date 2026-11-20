@@ -20,7 +20,7 @@ use thiserror::Error;
 
 use crate::fetch::{FetchError, Fetcher};
 use crate::lock::{self, LockError, Running, UpdateLock};
-use crate::messages::UpdateMessage;
+use crate::messages::{UpdateMessage, UpdatePhrase, UpdateText};
 use crate::probe;
 use crate::verify::{ArtifactVerifier, ReleaseFile, VerifyError};
 
@@ -36,10 +36,10 @@ const MAX_BINARY_BYTES: u64 = 512 * 1024 * 1024;
 #[derive(Debug, Error)]
 pub enum UpdateError {
     /// This platform has no published archive that `self update` can read.
-    #[error("self update does not support this platform; download a release archive instead")]
+    #[error("{}", UpdatePhrase::UnsupportedPlatform.as_static())]
     UnsupportedPlatform,
     /// A download failed.
-    #[error("download of {asset} failed: {source}")]
+    #[error("{}", download_text(.asset, .source))]
     Download {
         /// Asset file name.
         asset: String,
@@ -47,7 +47,7 @@ pub enum UpdateError {
         source: FetchError,
     },
     /// The requested version is not newer than the running one. `self update` never downgrades.
-    #[error("refusing to install {requested}: it is not newer than the running {current}")]
+    #[error("{}", not_newer_text(.requested, .current))]
     NotNewer {
         /// Version of this binary.
         current: String,
@@ -55,18 +55,16 @@ pub enum UpdateError {
         requested: String,
     },
     /// The requested version is a prerelease. `self update` installs stable releases only.
-    #[error(
-        "refusing to install {0}: it is a prerelease, and self update installs stable releases only"
-    )]
+    #[error("{}", prerelease_text(.0))]
     Prerelease(String),
     /// The signature check refused the archive.
-    #[error("refusing to install: {0}")]
+    #[error("{}", verify_refused_text(.0))]
     Verify(#[from] VerifyError),
     /// The archive does not hold the binary.
-    #[error("the archive does not contain a `slopvac` binary")]
+    #[error("{}", UpdatePhrase::NoBinary.as_static())]
     NoBinary,
     /// The archive is damaged.
-    #[error("cannot read the archive: {0}")]
+    #[error("{}", archive_text(.0))]
     Archive(String),
     /// The update lock or the installed binary stopped the update: another update held the lock
     /// for the whole wait, the lock file is unsafe, an earlier update was interrupted, or the
@@ -74,7 +72,7 @@ pub enum UpdateError {
     #[error(transparent)]
     Refused(#[from] UpdateMessage),
     /// Writing the new binary failed.
-    #[error("cannot replace the installed binary: {0}")]
+    #[error("{}", replace_text(.0))]
     Replace(String),
 }
 
@@ -85,6 +83,50 @@ impl From<LockError> for UpdateError {
             LockError::Io { .. } => Self::Replace(e.to_string()),
         }
     }
+}
+
+fn download_text(asset: &str, source: &FetchError) -> String {
+    UpdateText::DownloadFailed {
+        asset: asset.to_owned(),
+        detail: source.to_string(),
+    }
+    .to_string()
+}
+
+fn not_newer_text(requested: &str, current: &str) -> String {
+    UpdateText::NotNewer {
+        requested: requested.to_owned(),
+        current: current.to_owned(),
+    }
+    .to_string()
+}
+
+fn prerelease_text(version: &str) -> String {
+    UpdateText::Prerelease {
+        version: version.to_owned(),
+    }
+    .to_string()
+}
+
+fn verify_refused_text(source: &VerifyError) -> String {
+    UpdateText::VerifyRefused {
+        detail: source.to_string(),
+    }
+    .to_string()
+}
+
+fn archive_text(detail: &str) -> String {
+    UpdateText::ArchiveUnreadable {
+        detail: detail.to_owned(),
+    }
+    .to_string()
+}
+
+fn replace_text(detail: &str) -> String {
+    UpdateText::ReplaceFailed {
+        detail: detail.to_owned(),
+    }
+    .to_string()
 }
 
 /// The Rust target triple of this build, for the platforms `self update` supports.
@@ -280,7 +322,9 @@ fn extract_binary(archive: &[u8]) -> Result<Vec<u8>, UpdateError> {
                 .read_to_end(&mut buf)
                 .map_err(err)?;
             if buf.len() as u64 > MAX_BINARY_BYTES {
-                return Err(UpdateError::Archive("binary is too large".into()));
+                return Err(UpdateError::Archive(
+                    UpdatePhrase::BinaryTooLarge.as_static().to_owned(),
+                ));
             }
             return Ok(buf);
         }
@@ -291,7 +335,9 @@ fn extract_binary(archive: &[u8]) -> Result<Vec<u8>, UpdateError> {
 /// Write `bytes` beside `exe` and rename them over it, keeping the old file's permissions.
 fn replace(exe: &Path, bytes: &[u8]) -> Result<(), UpdateError> {
     let fail = |e: &dyn std::fmt::Display| UpdateError::Replace(e.to_string());
-    let dir = exe.parent().ok_or_else(|| fail(&"no parent directory"))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| fail(&UpdatePhrase::NoParentDirectory.as_static()))?;
     let mut tmp = tempfile::Builder::new()
         .prefix(".slopvac-update-")
         .tempfile_in(dir)

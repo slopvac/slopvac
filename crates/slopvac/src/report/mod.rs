@@ -29,6 +29,8 @@ use crate::errors::CliError;
 use crate::exit;
 
 use self::messages::ReportError;
+use slopvac_messages::Catalog as _;
+use slopvac_update::messages::UpdateMessage;
 
 /// The repository that receives reports.
 pub const REPOSITORY: &str = "slopvac/slopvac";
@@ -273,7 +275,14 @@ pub fn run(
     }
     let run_gh = m.get_flag("yes");
     if run_gh && deps.offline {
-        return Err(ReportError::OfflineNetworkNeeded.into());
+        // The code has one home, in the `slopvac-update` catalog, with the command as a parameter.
+        let message = UpdateMessage::OfflineNetworkNeeded {
+            command: "report --gh --yes".to_owned(),
+        };
+        return Err(CliError::new(
+            message.code(),
+            slopvac_messages::render(&message),
+        ));
     }
     let scrubber = scrub::Scrubber::from_env(deps.env, &deps.cwd);
     let report = issue::build(

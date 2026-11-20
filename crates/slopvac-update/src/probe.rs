@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
+use crate::messages::{UpdatePhrase, UpdateText};
+
 /// How long the executable has to answer.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 /// The most output that is read. The document is under 1 KiB without notices.
@@ -26,23 +28,58 @@ const POLL: Duration = Duration::from_millis(10);
 #[derive(Debug, Error)]
 pub(crate) enum ProbeError {
     /// The executable did not start.
-    #[error("it did not start: {0}")]
+    #[error("{}", spawn_text(.0))]
     Spawn(std::io::Error),
     /// The executable did not answer in time.
-    #[error("it did not answer within {} s", .0.as_secs_f32())]
+    #[error("{}", timeout_text(*.0))]
     Timeout(Duration),
     /// The executable exited with a failure.
-    #[error("it exited with {0}")]
+    #[error("{}", failed_text(*.0))]
     Failed(std::process::ExitStatus),
     /// The output was larger than the cap.
-    #[error("its output is larger than {MAX_OUTPUT_BYTES} bytes")]
+    #[error("{}", too_large_text())]
     TooLarge,
     /// The output is not a slopvac version document.
-    #[error("its output is not a slopvac version document")]
+    #[error("{}", UpdatePhrase::ProbeUnparseable.as_static())]
     Unparseable,
     /// Reading the output failed.
-    #[error("cannot read its output: {0}")]
+    #[error("{}", read_text(.0))]
     Read(std::io::Error),
+}
+
+fn spawn_text(source: &std::io::Error) -> String {
+    UpdateText::ProbeSpawn {
+        detail: source.to_string(),
+    }
+    .to_string()
+}
+
+fn timeout_text(timeout: Duration) -> String {
+    UpdateText::ProbeTimeout {
+        seconds: timeout.as_secs_f32().to_string(),
+    }
+    .to_string()
+}
+
+fn failed_text(status: std::process::ExitStatus) -> String {
+    UpdateText::ProbeFailed {
+        status: status.to_string(),
+    }
+    .to_string()
+}
+
+fn too_large_text() -> String {
+    UpdateText::ProbeTooLarge {
+        limit: MAX_OUTPUT_BYTES,
+    }
+    .to_string()
+}
+
+fn read_text(source: &std::io::Error) -> String {
+    UpdateText::ProbeRead {
+        detail: source.to_string(),
+    }
+    .to_string()
 }
 
 /// The version that the executable at `exe` reports.

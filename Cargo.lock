@@ -2854,6 +2854,7 @@ dependencies = [
  "flate2",
  "minisign",
  "minisign-verify",
+ "rstest",
  "rustix",
  "semver",
  "serde",

@@ -28,5 +28,7 @@ pub mod policy;
 mod probe;
 pub mod verify;
 
+pub use messages::{error_entries, phrase_entries, text_entries};
+
 /// GitHub repository that publishes releases.
 pub const REPO: &str = "slopvac/slopvac";
