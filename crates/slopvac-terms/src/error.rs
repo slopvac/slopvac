@@ -117,6 +117,13 @@ fn io_text(path: &str, message: &str) -> String {
 }
 
 fn too_large_text(code: &str, path: &str, cap: u64) -> String {
+    if code == "terms-file-too-large" {
+        return TermsMessage::FileTooLarge {
+            path: path.to_owned(),
+            cap,
+        }
+        .to_string();
+    }
     TermsMessage::TooLarge {
         code: code.to_owned(),
         path: path.to_owned(),

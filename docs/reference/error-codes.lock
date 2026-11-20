@@ -262,6 +262,7 @@ terms-error-schema-version text
 terms-error-too-large text
 terms-error-unknown-key text
 terms-file-missing-array text
+terms-file-too-large error
 terms-files-help text
 terms-import-about text
 terms-import-cspell-yaml text

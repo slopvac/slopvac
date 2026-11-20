@@ -20,6 +20,15 @@ pub(crate) enum TermsMessage {
         path: String,
         message: String,
     },
+    /// A terms or blocklist file is larger than the terms file cap.
+    #[code("terms-file-too-large")]
+    #[message("[terms-file-too-large] {path} is larger than {cap} bytes")]
+    FileTooLarge {
+        #[display_path]
+        path: String,
+        #[count]
+        cap: u64,
+    },
     /// A file is larger than its size cap. The code names the cap that applies.
     #[code("terms-error-too-large")]
     #[text("[{code}] {path} is larger than {cap} bytes")]
@@ -365,6 +374,10 @@ mod tests {
         TermsMessage::TooLarge { code: s("terms-file-too-large"), path: s("t.toml"), cap: 1_048_576 },
         "[terms-file-too-large] t.toml is larger than 1048576 bytes"
     )]
+    #[case::file_too_large(
+        TermsMessage::FileTooLarge { path: s("t.toml"), cap: 1_048_576 },
+        "[terms-file-too-large] t.toml is larger than 1048576 bytes"
+    )]
     #[case::parse(
         TermsMessage::Parse { path: s("t.toml"), message: s("bad") },
         "cannot parse t.toml: bad"
@@ -543,8 +556,13 @@ mod tests {
             .into_iter()
             .flatten()
             .collect();
-        assert_eq!(all.len(), 58);
-        assert!(all.iter().all(|e| e.kind == Kind::Text));
+        assert_eq!(all.len(), 59);
+        let kinds: Vec<_> = all
+            .iter()
+            .filter(|e| e.kind != Kind::Text)
+            .map(|e| (e.code, e.kind))
+            .collect();
+        assert_eq!(kinds, [("terms-file-too-large", Kind::Error)]);
         assert!(all.iter().all(|e| e.code.starts_with("terms-")));
     }
 }
