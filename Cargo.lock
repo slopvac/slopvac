@@ -2478,6 +2478,7 @@ dependencies = [
 name = "slopvac-comments"
 version = "0.0.0"
 dependencies = [
+ "rstest",
  "thiserror",
  "toml",
  "tree-sitter",

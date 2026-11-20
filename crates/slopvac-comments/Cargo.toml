@@ -30,6 +30,7 @@ tree-sitter-java = { workspace = true, optional = true }
 tree-sitter-proto = { workspace = true, optional = true }
 
 [dev-dependencies]
+rstest.workspace = true
 toml.workspace = true
 
 [lints]

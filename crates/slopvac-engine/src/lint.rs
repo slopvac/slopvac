@@ -166,8 +166,9 @@ impl<'a> Input<'a> {
     /// - An inline directive in a comment covers the comment block it starts or precedes. A
     ///   directive indented as a Markdown code example is an example and does nothing.
     ///
-    /// Strings are code, so a Python docstring is not read. See [`slopvac_comments`] for what
-    /// a comment is, and [`EngineError::Comments`] for the work limits.
+    /// A Python docstring, the string that opens a module, class or function body, is read.
+    /// Other strings are code. See [`slopvac_comments`] for what a comment is, and
+    /// [`EngineError::Comments`] for the work limits.
     #[must_use]
     pub const fn comments(path: &'a str, source: &'a str, language: Language) -> Self {
         Self {

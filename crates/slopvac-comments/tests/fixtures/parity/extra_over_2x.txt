@@ -1,7 +1,14 @@
 # ZZZ positions that 3.0 extracts and the 2.x native projection did not. Each group
-# was checked by hand against the sample file: all are real comments. Python docstrings
-# are strings in 2.x and in 3.0, so the Python sample matches 2.x exactly.
+# was checked by hand against the sample file: all are real comments or docstrings.
 #
+# Python. 2.x blanked docstrings as strings. 3.0 extracts the string that opens a module,
+# class or function body: the module docstring, the function docstring and the class
+# docstring in the sample. The ordinary strings in the sample stay unread.
+sample.py 2 11
+sample.py 4 8
+sample.py 12 17
+sample.py 19 14
+sample.py 20 15
 # Lua. 2.x had no `--` marker for Lua, so it kept no Lua comment.
 sample.lua 1 4
 sample.lua 2 26
