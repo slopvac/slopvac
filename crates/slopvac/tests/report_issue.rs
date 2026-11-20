@@ -1638,32 +1638,48 @@ fn gh_sees_the_pinned_host_and_repository_whatever_the_caller_exports() {
 #[test]
 fn a_body_file_named_dash_is_refused_because_gh_would_read_stdin() {
     let w = World::new();
-    let dir = tempfile::tempdir().unwrap();
     let (result, out) = w.run(&refs(&bug(&["--body-file", "-", "--gh"])));
     let err = result.unwrap_err();
     assert_eq!(err.code, "report-body-file");
     assert!(err.message.contains("./-"), "{}", err.message);
     assert_eq!(out, "");
     assert!(w.gh.created.borrow().is_empty());
-    // The same name with a directory part is an ordinary file for gh.
-    let ok = dir.path().join("-");
-    let (result, _) = w.run(&refs(&bug(&["--body-file", ok.to_str().unwrap(), "--gh"])));
-    assert_eq!(result.unwrap(), 0);
 }
 
 #[test]
-fn a_relative_dash_path_is_written_and_printed_as_given() {
+fn a_dash_name_with_a_directory_part_is_an_ordinary_file() {
     let w = World::new();
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir(dir.path().join("sub")).unwrap();
-    let path = dir.path().join("sub").join("-");
-    let (_, out) = w.run(&refs(&bug(&[
-        "--body-file",
-        path.to_str().unwrap(),
-        "--gh",
-    ])));
+    let ok = dir.path().join("-");
+    let (result, _) = w.run(&refs(&bug(&["--body-file", ok.to_str().unwrap(), "--gh"])));
+    assert_eq!(result.unwrap(), 0);
+    assert!(ok.is_file());
+}
+
+/// `Deps::cwd` only feeds the redaction list, so the library harness cannot move the working
+/// directory; this runs the binary with the child's working directory set instead.
+#[test]
+fn dot_slash_dash_writes_a_file_named_dash_in_the_working_directory() {
+    let work = tempfile::tempdir().unwrap();
+    let args = bug(&["--body-file", "./-", "--gh"]);
+    let assert = slopvac()
+        .current_dir(work.path())
+        .arg("report")
+        .args(&args)
+        .assert()
+        .code(0);
+    let out = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let body = std::fs::read_to_string(work.path().join("-")).unwrap();
+    let preview_body = out
+        .split_once("\n\n")
+        .unwrap()
+        .1
+        .split_once("\n\n---\n")
+        .unwrap()
+        .0;
+    assert_eq!(body, preview_body, "{out}");
     assert!(
-        out.contains(&format!("--body-file {}", path.display())),
+        out.contains("--title '[bug]: crash on empty input' --body-file ./-\n"),
         "{out}"
     );
 }
