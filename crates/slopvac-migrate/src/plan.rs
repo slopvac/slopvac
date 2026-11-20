@@ -450,6 +450,10 @@ fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
 /// # Errors
 /// [`Error::Parse`] naming `file` and the line, when the text is not valid TOML.
 fn extract_tool_table(text: &str, file: &str) -> Result<Option<(String, String)>, Error> {
+    crate::nesting::check(text).map_err(|e| Error::Parse {
+        file: file.to_owned(),
+        message: format!("line {}: {}", e.line, e.message()),
+    })?;
     let mut doc: DocumentMut = text
         .parse()
         .map_err(|e: toml_edit::TomlError| Error::Parse {

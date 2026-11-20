@@ -18,6 +18,7 @@ use toml_edit::{DocumentMut, Item, TableLike, Value};
 use crate::config::line_of;
 use crate::limits::{Budget, Kind, Refused};
 use crate::messages::{MigratePhrase, MigrateText};
+use crate::nesting;
 use crate::provenance::{KeyLines, key_lines};
 use crate::{Dropped, Error};
 
@@ -35,6 +36,9 @@ pub(crate) fn references(config: &str) -> Vec<Reference> {
     let Ok(doc) = config.parse::<DocumentMut>() else {
         return Vec::new();
     };
+    if nesting::check(config).is_err() {
+        return Vec::new();
+    }
     let mut out = Vec::new();
     collect(doc.as_table(), "", &mut out);
     if let Some(overrides) = doc.get("overrides") {
@@ -325,6 +329,11 @@ fn rewrite(
 ) -> Result<Option<(String, Vec<String>)>, Vec<Dropped>> {
     let blocked =
         |line: usize, key: &str, reason: String| vec![Dropped::new(label, key, line, reason)];
+    if format == "toml" {
+        if let Err(e) = nesting::check(text) {
+            return Err(blocked(e.line, "entries", e.message()));
+        }
+    }
     let Err(refused) = Blocklist::parse(label, format, text) else {
         return Ok(None);
     };
