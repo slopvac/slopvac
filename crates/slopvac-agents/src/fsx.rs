@@ -96,30 +96,43 @@ fn nonblocking(_: &mut OpenOptions) -> std::io::Result<()> {
 
 /// Return the permissions of the regular file `name`, read from a handle opened
 /// without following a symlink and without blocking. Return `None` if the file
-/// does not exist. A FIFO, device or directory is an error.
+/// does not exist. A symlink, FIFO, device or directory is an unsafe target.
+/// Any other failure keeps its I/O cause.
 ///
 /// `resolve` already rewrote every link in the path. Refusing a leaf that
 /// became a link since then keeps a swapped link from lending its target's
 /// mode (CWE-59, CWE-367). The cap-std handle still confines the open to the
-/// project.
-fn source_mode(parent: &Dir, name: &std::ffi::OsStr) -> std::io::Result<Option<Permissions>> {
+/// project. `rel` is the path shown in an error.
+fn source_mode(
+    parent: &Dir,
+    name: &std::ffi::OsStr,
+    rel: &Path,
+) -> Result<Option<Permissions>, AgentsError> {
+    let unsafe_target = || AgentsError::UnsafeTarget(rel.display().to_string());
     let mut options = OpenOptions::new();
     options.read(true).follow(FollowSymlinks::No);
-    nonblocking(&mut options)?;
+    nonblocking(&mut options).map_err(|e| Project::map(rel, e))?;
     match parent.open_with(name, &options) {
         Ok(source) => {
-            let meta = source.metadata()?;
+            let meta = source.metadata().map_err(|e| Project::map(rel, e))?;
             if meta.is_file() {
                 Ok(Some(meta.permissions()))
             } else {
-                Err(std::io::Error::new(
-                    ErrorKind::InvalidInput,
-                    "not a regular file",
-                ))
+                Err(unsafe_target())
             }
         }
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e),
+        Err(e) => {
+            // The no-follow open fails on a link; tell that apart from other causes.
+            let swapped = parent
+                .symlink_metadata(name)
+                .is_ok_and(|m| m.file_type().is_symlink());
+            Err(if swapped {
+                unsafe_target()
+            } else {
+                Project::map(rel, e)
+            })
+        }
     }
 }
 
@@ -299,6 +312,9 @@ impl Project {
         let name = rel
             .file_name()
             .ok_or_else(|| AgentsError::UnsafeTarget(rel.display().to_string()))?;
+        // The mode comes from metadata on a no-follow, non-blocking source
+        // handle, not from a path stat.
+        let mode = source_mode(&parent, name, &rel)?;
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         // Private until filled, so the new bytes are never readable by others.
@@ -319,11 +335,7 @@ impl Project {
                 Err(e) => return Err(Self::map(&rel, e)),
             }
         };
-        // The mode comes from metadata on a no-follow, non-blocking source
-        // handle, not from a path stat.
-        let mode = source_mode(&parent, name);
         let finish = || -> std::io::Result<()> {
-            let mode = mode?;
             file.write_all(after)?;
             hook(Stage::Filled);
             if let Some(mode) = mode {
@@ -451,6 +463,7 @@ mod tests {
 #[cfg(all(test, unix))]
 mod mode_tests {
     use super::*;
+    use std::ffi::OsStr;
     use std::os::unix::fs::PermissionsExt;
 
     fn mode_of(path: &Path) -> u32 {
@@ -493,14 +506,17 @@ mod mode_tests {
         std::fs::write(dir.path().join("real.md"), "x").unwrap();
         std::os::unix::fs::symlink("real.md", dir.path().join("link.md")).unwrap();
         let handle = Dir::open_ambient_dir(dir.path(), ambient_authority()).unwrap();
-        assert!(source_mode(&handle, std::ffi::OsStr::new("link.md")).is_err());
+        assert!(matches!(
+            source_mode(&handle, OsStr::new("link.md"), Path::new("link.md")),
+            Err(AgentsError::UnsafeTarget(_))
+        ));
         assert!(
-            source_mode(&handle, std::ffi::OsStr::new("real.md"))
+            source_mode(&handle, OsStr::new("real.md"), Path::new("real.md"))
                 .unwrap()
                 .is_some()
         );
         assert!(
-            source_mode(&handle, std::ffi::OsStr::new("gone.md"))
+            source_mode(&handle, OsStr::new("gone.md"), Path::new("gone.md"))
                 .unwrap()
                 .is_none()
         );
@@ -524,12 +540,16 @@ mod mode_tests {
         let path = dir.path().to_owned();
         std::thread::spawn(move || {
             let handle = Dir::open_ambient_dir(&path, ambient_authority()).unwrap();
-            let _ = tx.send(source_mode(&handle, std::ffi::OsStr::new("pipe.md")));
+            let _ = tx.send(source_mode(
+                &handle,
+                OsStr::new("pipe.md"),
+                Path::new("pipe.md"),
+            ));
         });
         let got = rx
             .recv_timeout(std::time::Duration::from_secs(10))
             .expect("the open blocked on a FIFO");
-        assert_eq!(got.unwrap_err().kind(), ErrorKind::InvalidInput);
+        assert!(matches!(got, Err(AgentsError::UnsafeTarget(_))));
     }
 
     #[test]
