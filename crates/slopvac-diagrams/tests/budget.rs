@@ -59,6 +59,19 @@ fn converted_text_counts_toward_the_retained_byte_budget() {
 }
 
 #[test]
+fn a_malformed_element_after_the_budget_is_spent_keeps_the_budget_status() {
+    // Sixteen texts overrun the byte budget at the sixteenth. The non-object entry after
+    // them is never read, so the status stays the budget status and the fifteen kept
+    // fragments survive.
+    let mut src = escaped_scene(16, MIB);
+    src.truncate(src.len() - 2);
+    src.push_str(",42]}");
+    let ex = extract(Format::Excalidraw, &src, 0);
+    assert_eq!(ex.fragments.len(), 15);
+    assert_eq!(hit(&ex), ("retained-bytes", 16_777_216));
+}
+
+#[test]
 fn the_fragment_cap_reports_its_name_and_limit() {
     let mut src = String::from("flowchart TD\n");
     for i in 0..MAX_FRAGMENTS + 5 {
