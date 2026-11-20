@@ -491,7 +491,7 @@ impl Shared {
             let charged = self.budget.charge_unsolicited();
             if *n > self.caps.unsolicited_messages {
                 Err(HostText::UnsolicitedCap {
-                    limit: self.caps.unsolicited_messages.to_string(),
+                    limit: self.caps.unsolicited_messages,
                 }
                 .to_string())
             } else {
@@ -751,8 +751,8 @@ impl Conn {
         if bytes.len() > max {
             return Err(PluginError::MessageTooLarge(
                 HostText::BytesExceed {
-                    bytes: bytes.len().to_string(),
-                    max: max.to_string(),
+                    bytes: bytes.len(),
+                    max,
                 }
                 .to_string(),
             ));
@@ -1028,7 +1028,7 @@ fn check_reply(
         .ok_or_else(|| {
             out(HostText::LimitOutOfRange {
                 field: "maxMessageBytes".to_owned(),
-                value: l.max_message_bytes.to_string(),
+                value: l.max_message_bytes,
             }
             .to_string())
         })?;
@@ -1038,7 +1038,7 @@ fn check_reply(
         .ok_or_else(|| {
             out(HostText::LimitOutOfRange {
                 field: "maxBatchDocuments".to_owned(),
-                value: l.max_batch_documents.to_string(),
+                value: l.max_batch_documents,
             }
             .to_string())
         })?;
@@ -1048,7 +1048,7 @@ fn check_reply(
         .ok_or_else(|| {
             out(HostText::LimitOutOfRange {
                 field: "maxInFlight".to_owned(),
-                value: l.max_in_flight.to_string(),
+                value: l.max_in_flight,
             }
             .to_string())
         })?;

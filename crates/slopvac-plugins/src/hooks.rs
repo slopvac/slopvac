@@ -403,8 +403,8 @@ pub fn parse_edits(
     if raw.len() > MAX_EDITS_PER_DOCUMENT {
         return Err(invalid(
             HostText::EditsExceed {
-                count: raw.len().to_string(),
-                max: MAX_EDITS_PER_DOCUMENT.to_string(),
+                count: raw.len(),
+                max: MAX_EDITS_PER_DOCUMENT,
             }
             .to_string(),
         ));
@@ -430,10 +430,7 @@ pub fn parse_edits(
         }
         if !findings[idx].span.contains(&e.span) {
             return Err(invalid(
-                HostText::EditOutsideFinding {
-                    index: idx.to_string(),
-                }
-                .to_string(),
+                HostText::EditOutsideFinding { index: idx }.to_string(),
             ));
         }
     }
@@ -457,11 +454,7 @@ pub fn parse_edits(
     let inserted: usize = edits.iter().map(|e| e.text.len()).sum();
     if inserted > cap {
         return Err(invalid(
-            HostText::InsertedExceed {
-                inserted: inserted.to_string(),
-                cap: cap.to_string(),
-            }
-            .to_string(),
+            HostText::InsertedExceed { inserted, cap }.to_string(),
         ));
     }
     Ok(edits)

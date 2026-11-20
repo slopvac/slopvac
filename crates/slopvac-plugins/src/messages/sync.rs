@@ -162,23 +162,40 @@ pub(crate) enum SyncText {
     /// A path source could not be inspected.
     #[code("plugins-sync-path-io")]
     #[text("path source `{rel}`: {reason}")]
-    PathIo { rel: String, reason: String },
+    PathIo {
+        #[display_path]
+        rel: String,
+        reason: String,
+    },
     /// A path source goes through a link.
     #[code("plugins-sync-path-link")]
     #[text("path source `{rel}` goes through a link")]
-    PathLink { rel: String },
+    PathLink {
+        #[display_path]
+        rel: String,
+    },
     /// A path source leaves the project.
     #[code("plugins-sync-path-outside")]
     #[text("path source `{rel}` leaves the project")]
-    PathOutside { rel: String },
+    PathOutside {
+        #[display_path]
+        rel: String,
+    },
     /// A path source could not be read.
     #[code("plugins-sync-path-reading")]
     #[text("reading `{rel}`: {reason}")]
-    PathReading { rel: String, reason: String },
+    PathReading {
+        #[display_path]
+        rel: String,
+        reason: String,
+    },
     /// A path source is larger than the archive limit.
     #[code("plugins-sync-path-too-large")]
     #[text("`{rel}` exceeds the archive size limit")]
-    PathTooLarge { rel: String },
+    PathTooLarge {
+        #[display_path]
+        rel: String,
+    },
     /// A newer version in the configured range is available.
     #[code("plugins-sync-notice-update")]
     #[text("plugin {id}: {version} is available (locked {locked}); run `slopvac plugins update`")]
@@ -261,15 +278,25 @@ pub(crate) enum SyncText {
     /// The commit holds a symbolic link.
     #[code("plugins-sync-git-symlink")]
     #[text("`{path}` is a symbolic link")]
-    GitSymlink { path: String },
+    GitSymlink {
+        #[display_path]
+        path: String,
+    },
     /// The commit holds a submodule.
     #[code("plugins-sync-git-submodule")]
     #[text("`{path}` is a submodule")]
-    GitSubmodule { path: String },
+    GitSubmodule {
+        #[display_path]
+        path: String,
+    },
     /// The commit holds an entry with a mode a pack may not have.
     #[code("plugins-sync-git-mode")]
     #[text("`{path}` has the unsupported mode {mode}")]
-    GitMode { path: String, mode: String },
+    GitMode {
+        #[display_path]
+        path: String,
+        mode: String,
+    },
     /// The commit expands past the size limit.
     #[code("plugins-sync-git-expands")]
     #[text("the commit expands past the size limit of {max} bytes")]
@@ -490,7 +517,11 @@ pub(crate) enum SyncText {
     /// The lock directory is not a plain directory.
     #[code("plugins-update-lock-dir")]
     #[text("`{dir}` is not a plain directory ({reason})")]
-    UpdateLockDir { dir: String, reason: String },
+    UpdateLockDir {
+        #[display_path]
+        dir: String,
+        reason: String,
+    },
     /// The guard file is not private.
     #[code("plugins-update-guard-private")]
     #[text("`{path}` must be owned by you and private (mode 0600)")]

@@ -46,7 +46,7 @@ fn read_line<R: BufRead>(r: &mut R) -> Result<Option<Vec<u8>>, FrameError> {
         if line.len() + take > MAX_HEADER_LINE + 2 {
             return Err(framing(
                 HostText::HeaderTooLong {
-                    max: MAX_HEADER_LINE.to_string(),
+                    max: MAX_HEADER_LINE,
                 }
                 .to_string(),
             ));
@@ -125,7 +125,7 @@ pub fn read_frame_with<R: BufRead>(
         if lines > MAX_HEADER_LINES {
             return Err(framing(
                 HostText::TooManyHeaders {
-                    max: MAX_HEADER_LINES.to_string(),
+                    max: MAX_HEADER_LINES,
                 }
                 .to_string(),
             ));
@@ -145,11 +145,7 @@ pub fn read_frame_with<R: BufRead>(
     let max_body = max_body();
     if len > max_body {
         return Err(framing(
-            HostText::BodyTooLong {
-                len: len.to_string(),
-                max: max_body.to_string(),
-            }
-            .to_string(),
+            HostText::BodyTooLong { len, max: max_body }.to_string(),
         ));
     }
     let mut body = Vec::new();

@@ -90,7 +90,11 @@ pub(crate) enum TrustText {
     /// The store file is unreadable or invalid.
     #[code("plugins-trust-store-damaged")]
     #[text("the trust store {path} is damaged: {why}")]
-    StoreDamaged { path: String, why: String },
+    StoreDamaged {
+        #[display_path]
+        path: String,
+        why: String,
+    },
     /// A file system operation failed.
     #[code("plugins-trust-io")]
     #[text("{what}: {cause}")]
@@ -143,13 +147,20 @@ pub(crate) enum TrustText {
     #[text(
         "the trust key {file} is missing while trust records exist, so they cannot be checked; run `slopvac plugins trust` for each plugin to trust it again"
     )]
-    KeyMissing { file: String },
+    KeyMissing {
+        #[display_path]
+        file: String,
+    },
     /// The key file is not private to the user or does not hold a key.
     #[code("plugins-trust-key-unusable")]
     #[text(
         "the trust key {file} cannot be used: {why}; fix it, or delete it and run `slopvac plugins trust` for each plugin"
     )]
-    KeyUnusable { file: String, why: String },
+    KeyUnusable {
+        #[display_path]
+        file: String,
+        why: String,
+    },
     /// The key file belongs to another user.
     #[code("plugins-trust-key-other-user")]
     #[text("it belongs to user {uid}, not to you ({euid})")]
@@ -178,19 +189,31 @@ pub(crate) enum TrustText {
     /// The operation of opening a file.
     #[code("plugins-trust-opening")]
     #[text("opening {path}")]
-    Opening { path: String },
+    Opening {
+        #[display_path]
+        path: String,
+    },
     /// The operation of reading a file.
     #[code("plugins-trust-reading")]
     #[text("reading {path}")]
-    Reading { path: String },
+    Reading {
+        #[display_path]
+        path: String,
+    },
     /// The operation of creating a directory.
     #[code("plugins-trust-creating")]
     #[text("creating {path}")]
-    Creating { path: String },
+    Creating {
+        #[display_path]
+        path: String,
+    },
     /// The operation of inspecting a file.
     #[code("plugins-trust-inspecting")]
     #[text("inspecting {path}")]
-    Inspecting { path: String },
+    Inspecting {
+        #[display_path]
+        path: String,
+    },
     /// A declared environment variable has an invalid name.
     #[code("plugins-trust-env-bad-name")]
     #[text("`{name}` is not a variable name")]
@@ -206,39 +229,69 @@ pub(crate) enum TrustText {
     /// A `PATH` entry is relative.
     #[code("plugins-trust-env-path-relative")]
     #[text("PATH entry `{dir}` is not an absolute directory")]
-    EnvPathRelative { dir: String },
+    EnvPathRelative {
+        #[display_path]
+        dir: String,
+    },
     /// The program is a bare or relative path.
     #[code("plugins-trust-program-not-absolute")]
     #[text("`{path}` is not an absolute path; a bare name would be found through PATH")]
-    ProgramNotAbsolute { path: String },
+    ProgramNotAbsolute {
+        #[display_path]
+        path: String,
+    },
     /// The program path holds `.` or `..`.
     #[code("plugins-trust-program-dots")]
     #[text("`{path}` contains `.` or `..`")]
-    ProgramDots { path: String },
+    ProgramDots {
+        #[display_path]
+        path: String,
+    },
     /// The program is outside the verified tree and not on the allowlist.
     #[code("plugins-trust-program-outside")]
     #[text("`{path}` lies outside the verified tree and is not on the external allowlist")]
-    ProgramOutside { path: String },
+    ProgramOutside {
+        #[display_path]
+        path: String,
+    },
     /// The program path has a part that is not a plain name.
     #[code("plugins-trust-program-not-plain")]
     #[text("`{path}` is not a plain path")]
-    ProgramNotPlain { path: String },
+    ProgramNotPlain {
+        #[display_path]
+        path: String,
+    },
     /// A part of the program path could not be inspected.
     #[code("plugins-trust-program-unreadable")]
     #[text("`{path}`: {cause}")]
-    ProgramUnreadable { path: String, cause: String },
+    ProgramUnreadable {
+        #[display_path]
+        path: String,
+        cause: String,
+    },
     /// A part of the program path is a symlink.
     #[code("plugins-trust-program-symlink")]
     #[text("`{path}` is a symlink")]
-    ProgramSymlink { path: String },
+    ProgramSymlink {
+        #[display_path]
+        path: String,
+    },
     /// The program path is not a file in the tree.
     #[code("plugins-trust-program-not-file")]
     #[text("`{path}` is not a file in the tree")]
-    ProgramNotFile { path: String },
+    ProgramNotFile {
+        #[display_path]
+        path: String,
+    },
     /// The program is not the managed interpreter.
     #[code("plugins-trust-program-not-managed")]
     #[text("`{program}` is not the managed interpreter `{managed}`")]
-    ProgramNotManaged { program: String, managed: String },
+    ProgramNotManaged {
+        #[display_path]
+        program: String,
+        #[display_path]
+        managed: String,
+    },
     /// The plugin does not run from its verified tree.
     #[code("plugins-trust-mismatch-cwd")]
     #[text("{name} (it does not run from its verified tree)")]
@@ -272,6 +325,7 @@ pub(crate) enum TrustText {
     #[text("{name}: {file} ({why})")]
     SpawnKeyUnusable {
         name: String,
+        #[display_path]
         file: String,
         why: String,
     },
@@ -564,7 +618,11 @@ pub(crate) enum RevokeText {
     /// The cache file does not hold a list the root signed.
     #[code("plugins-revoke-cache-damaged")]
     #[text("the revocation cache {path} is damaged: {why}; run an online sync to replace it")]
-    CacheDamaged { path: String, why: String },
+    CacheDamaged {
+        #[display_path]
+        path: String,
+        why: String,
+    },
     /// A file operation on the cache failed.
     #[code("plugins-revoke-cache-io")]
     #[text("revocation cache: {what}: {cause}")]

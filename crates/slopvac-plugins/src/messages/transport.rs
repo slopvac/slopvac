@@ -339,15 +339,25 @@ pub(crate) enum TransportText {
     /// Reading an archive entry failed.
     #[code("plugins-extract-entry-read")]
     #[text("`{what}`: {detail}")]
-    ExtractEntryRead { what: String, detail: String },
+    ExtractEntryRead {
+        #[display_path]
+        what: String,
+        detail: String,
+    },
     /// Writing an archive entry failed.
     #[code("plugins-extract-entry-write")]
     #[text("writing `{what}`")]
-    ExtractEntryWrite { what: String },
+    ExtractEntryWrite {
+        #[display_path]
+        what: String,
+    },
     /// An archive entry is too large.
     #[code("plugins-extract-entry-size")]
     #[text("`{what}` is larger than allowed")]
-    ExtractEntrySize { what: String },
+    ExtractEntrySize {
+        #[display_path]
+        what: String,
+    },
     /// An observed tree path is invalid.
     #[code("plugins-extract-path")]
     #[text("`{path}`: {detail}")]

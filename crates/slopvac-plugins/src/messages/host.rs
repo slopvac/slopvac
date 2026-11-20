@@ -257,7 +257,8 @@ pub(crate) enum HostText {
     #[text("more than {limit} unsolicited messages")]
     UnsolicitedCap {
         /// The cap.
-        limit: String,
+        #[count]
+        limit: u32,
     },
     /// A message could not be encoded.
     #[code("plugins-host-encode-message")]
@@ -271,9 +272,11 @@ pub(crate) enum HostText {
     #[text("{bytes} bytes exceed the limit of {max}")]
     BytesExceed {
         /// Size of the message.
-        bytes: String,
+        #[count]
+        bytes: usize,
         /// The limit.
-        max: String,
+        #[count]
+        max: usize,
     },
     /// A request got no reply before its deadline.
     #[code("plugins-host-method-no-reply")]
@@ -335,7 +338,8 @@ pub(crate) enum HostText {
         /// The limit field.
         field: String,
         /// The value the reply gave.
-        value: String,
+        #[count]
+        value: u64,
     },
     /// The initialize result does not parse.
     #[code("plugins-host-initialize-result")]
@@ -381,30 +385,35 @@ pub(crate) enum HostText {
     #[text("the file size limit of {limit} bytes was reached")]
     FileLimit {
         /// The limit in bytes.
-        limit: String,
+        #[count]
+        limit: u64,
     },
     /// A header line is too long.
     #[code("plugins-frame-header-too-long")]
     #[text("header line longer than {max} bytes")]
     HeaderTooLong {
         /// The limit.
-        max: String,
+        #[count]
+        max: usize,
     },
     /// A header block has too many lines.
     #[code("plugins-frame-too-many-headers")]
     #[text("more than {max} header lines")]
     TooManyHeaders {
         /// The limit.
-        max: String,
+        #[count]
+        max: usize,
     },
     /// A body is larger than the limit.
     #[code("plugins-frame-body-too-long")]
     #[text("body of {len} bytes exceeds the limit of {max}")]
     BodyTooLong {
         /// Declared size.
-        len: String,
+        #[count]
+        len: usize,
         /// The limit.
-        max: String,
+        #[count]
+        max: usize,
     },
     /// Reading from the plugin failed.
     #[code("plugins-frame-read-failed")]
@@ -425,7 +434,8 @@ pub(crate) enum HostText {
     #[text("whole-run budget of {cap} {what} exceeded")]
     BudgetExceeded {
         /// The cap.
-        cap: String,
+        #[count]
+        cap: u64,
         /// What the cap counts.
         what: String,
     },
@@ -499,9 +509,11 @@ pub(crate) enum HostText {
     #[text("{count} edits exceed the limit of {max}")]
     EditsExceed {
         /// The number of edits.
-        count: String,
+        #[count]
+        count: usize,
         /// The limit.
-        max: String,
+        #[count]
+        max: usize,
     },
     /// An edit names a finding that does not exist.
     #[code("plugins-hooks-edit-missing-finding")]
@@ -515,16 +527,19 @@ pub(crate) enum HostText {
     #[text("edit lies outside finding {index}")]
     EditOutsideFinding {
         /// The finding index.
-        index: String,
+        #[count]
+        index: usize,
     },
     /// The edits insert more bytes than the cap.
     #[code("plugins-hooks-inserted-exceed")]
     #[text("{inserted} inserted bytes exceed the cap of {cap}")]
     InsertedExceed {
         /// The inserted bytes.
-        inserted: String,
+        #[count]
+        inserted: usize,
         /// The cap.
-        cap: String,
+        #[count]
+        cap: usize,
     },
     /// A path character is reserved on Windows.
     #[code("plugins-hooks-path-reserved-char")]
@@ -552,6 +567,7 @@ pub(crate) enum HostText {
     #[text("recipe path `{path}`: {reason}")]
     RecipePath {
         /// The path.
+        #[display_path]
         path: String,
         /// Why it is refused.
         reason: String,
@@ -561,6 +577,7 @@ pub(crate) enum HostText {
     #[text("recipe file `{path}` has no content")]
     RecipeNoContent {
         /// The path.
+        #[display_path]
         path: String,
     },
     /// A recipe path appears twice.
@@ -568,6 +585,7 @@ pub(crate) enum HostText {
     #[text("recipe path `{path}` appears twice")]
     RecipePathTwice {
         /// The path.
+        #[display_path]
         path: String,
     },
     /// The project root cannot be resolved.
@@ -582,6 +600,7 @@ pub(crate) enum HostText {
     #[text("symlink `{path}`: {error}")]
     Symlink {
         /// The path.
+        #[display_path]
         path: String,
         /// The OS error.
         error: String,
@@ -591,6 +610,7 @@ pub(crate) enum HostText {
     #[text("`{path}` leaves the project root through a symlink")]
     LeavesRoot {
         /// The path.
+        #[display_path]
         path: String,
     },
     /// A path component cannot be checked.
@@ -598,6 +618,7 @@ pub(crate) enum HostText {
     #[text("`{path}`: {error}")]
     PathError {
         /// The path.
+        #[display_path]
         path: String,
         /// The OS error.
         error: String,
@@ -1139,15 +1160,12 @@ pub(crate) fn cpu_limit(limit: Duration) -> String {
 }
 
 pub(crate) fn file_limit(limit: u64) -> String {
-    HostText::FileLimit {
-        limit: limit.to_string(),
-    }
-    .to_string()
+    HostText::FileLimit { limit }.to_string()
 }
 
 pub(crate) fn budget_exceeded(cap: u64, what: &str) -> String {
     HostText::BudgetExceeded {
-        cap: cap.to_string(),
+        cap,
         what: what.to_owned(),
     }
     .to_string()
@@ -1347,7 +1365,7 @@ mod tests {
                 "signal: 24: the file size limit of 5 bytes was reached",
             ),
             (
-                HostText::UnsolicitedCap { limit: s("8") },
+                HostText::UnsolicitedCap { limit: 8 },
                 "more than 8 unsolicited messages",
             ),
             (
@@ -1355,10 +1373,7 @@ mod tests {
                 "cannot encode message: e",
             ),
             (
-                HostText::BytesExceed {
-                    bytes: s("9"),
-                    max: s("8"),
-                },
+                HostText::BytesExceed { bytes: 9, max: 8 },
                 "9 bytes exceed the limit of 8",
             ),
             (
@@ -1398,7 +1413,7 @@ mod tests {
             (
                 HostText::LimitOutOfRange {
                     field: s("maxInFlight"),
-                    value: s("0"),
+                    value: 0,
                 },
                 "maxInFlight 0 is outside the allowed range",
             ),
@@ -1427,29 +1442,26 @@ mod tests {
                 "the CPU time limit of 3s was reached",
             ),
             (
-                HostText::FileLimit { limit: s("4") },
+                HostText::FileLimit { limit: 4 },
                 "the file size limit of 4 bytes was reached",
             ),
             (
-                HostText::HeaderTooLong { max: s("1024") },
+                HostText::HeaderTooLong { max: 1024 },
                 "header line longer than 1024 bytes",
             ),
             (
-                HostText::TooManyHeaders { max: s("8") },
+                HostText::TooManyHeaders { max: 8 },
                 "more than 8 header lines",
             ),
             (
-                HostText::BodyTooLong {
-                    len: s("9"),
-                    max: s("8"),
-                },
+                HostText::BodyTooLong { len: 9, max: 8 },
                 "body of 9 bytes exceeds the limit of 8",
             ),
             (HostText::ReadFailed { error: s("e") }, "read failed: e"),
             (HostText::WaitFailed { error: s("e") }, "wait failed: e"),
             (
                 HostText::BudgetExceeded {
-                    cap: s("5"),
+                    cap: 5,
                     what: s("standard output bytes"),
                 },
                 "whole-run budget of 5 standard output bytes exceeded",
@@ -1491,10 +1503,7 @@ mod tests {
                 "tag kind `Bad` is not kebab-case",
             ),
             (
-                HostText::EditsExceed {
-                    count: s("9"),
-                    max: s("8"),
-                },
+                HostText::EditsExceed { count: 9, max: 8 },
                 "9 edits exceed the limit of 8",
             ),
             (
@@ -1502,13 +1511,13 @@ mod tests {
                 "edit names missing finding 3",
             ),
             (
-                HostText::EditOutsideFinding { index: s("1") },
+                HostText::EditOutsideFinding { index: 1 },
                 "edit lies outside finding 1",
             ),
             (
                 HostText::InsertedExceed {
-                    inserted: s("9"),
-                    cap: s("8"),
+                    inserted: 9,
+                    cap: 8,
                 },
                 "9 inserted bytes exceed the cap of 8",
             ),

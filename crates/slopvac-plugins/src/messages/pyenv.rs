@@ -30,7 +30,11 @@ pub(crate) enum PyenvText {
     /// The `[plugin]` table of the pack manifest cannot select an environment.
     #[code("plugins-pyenv-manifest-unusable")]
     #[text("the manifest {path} cannot select a Python environment: {reason}")]
-    ManifestUnusable { path: String, reason: String },
+    ManifestUnusable {
+        #[display_path]
+        path: String,
+        reason: String,
+    },
     /// No environment is built for the plugin tree.
     #[code("plugins-pyenv-env-missing")]
     #[text(
@@ -64,7 +68,11 @@ pub(crate) enum PyenvText {
     #[text(
         "the Python environment changed: `{path}` {why}; rebuild it and run `slopvac plugins trust`"
     )]
-    EnvChanged { path: String, why: String },
+    EnvChanged {
+        #[display_path]
+        path: String,
+        why: String,
+    },
     /// The environment holds something it may not, or passes a bound.
     #[code("plugins-pyenv-env-refused")]
     #[text("the Python environment is refused: {detail}")]
@@ -72,7 +80,11 @@ pub(crate) enum PyenvText {
     /// The environment record is damaged.
     #[code("plugins-pyenv-record-damaged")]
     #[text("the environment record {path} is damaged: {why}")]
-    RecordDamaged { path: String, why: String },
+    RecordDamaged {
+        #[display_path]
+        path: String,
+        why: String,
+    },
     /// A file system operation failed.
     #[code("plugins-pyenv-io-failed")]
     #[text("{what}: {cause}")]
@@ -80,7 +92,10 @@ pub(crate) enum PyenvText {
     /// An installer path is not absolute.
     #[code("plugins-pyenv-not-absolute")]
     #[text("`{path}` is not an absolute path")]
-    NotAbsolute { path: String },
+    NotAbsolute {
+        #[display_path]
+        path: String,
+    },
     /// The installer interpreter request is not a plain version request.
     #[code("plugins-pyenv-not-a-request")]
     #[text("`{request}` is not a Python version request")]
@@ -96,35 +111,59 @@ pub(crate) enum PyenvText {
     /// Reading a file or directory.
     #[code("plugins-pyenv-reading")]
     #[text("reading {path}")]
-    Reading { path: String },
+    Reading {
+        #[display_path]
+        path: String,
+    },
     /// Inspecting a path.
     #[code("plugins-pyenv-inspecting")]
     #[text("inspecting {path}")]
-    Inspecting { path: String },
+    Inspecting {
+        #[display_path]
+        path: String,
+    },
     /// Reading a symbolic link.
     #[code("plugins-pyenv-reading-link")]
     #[text("reading link {path}")]
-    ReadingLink { path: String },
+    ReadingLink {
+        #[display_path]
+        path: String,
+    },
     /// Making a path read-only.
     #[code("plugins-pyenv-protecting")]
     #[text("protecting {path}")]
-    Protecting { path: String },
+    Protecting {
+        #[display_path]
+        path: String,
+    },
     /// Removing a file.
     #[code("plugins-pyenv-removing")]
     #[text("removing {path}")]
-    Removing { path: String },
+    Removing {
+        #[display_path]
+        path: String,
+    },
     /// Creating a directory.
     #[code("plugins-pyenv-creating")]
     #[text("creating {path}")]
-    Creating { path: String },
+    Creating {
+        #[display_path]
+        path: String,
+    },
     /// Restricting a directory to its owner.
     #[code("plugins-pyenv-securing")]
     #[text("securing {path}")]
-    Securing { path: String },
+    Securing {
+        #[display_path]
+        path: String,
+    },
     /// The environment root is a link or not a directory.
     #[code("plugins-pyenv-not-directory")]
     #[text("{path} is a link or not a directory")]
-    NotDirectory { path: String },
+    NotDirectory {
+        #[display_path]
+        path: String,
+    },
     /// The environment passes the entry bound.
     #[code("plugins-pyenv-too-many-entries")]
     #[text("the environment has more than {nodes} entries")]
@@ -149,7 +188,10 @@ pub(crate) enum PyenvText {
     /// The environment holds a special file.
     #[code("plugins-pyenv-special-file")]
     #[text("`{rel}` is a special file")]
-    SpecialFile { rel: String },
+    SpecialFile {
+        #[display_path]
+        rel: String,
+    },
     /// A link target is not UTF-8.
     #[code("plugins-pyenv-link-target-not-utf8")]
     #[text("`{rel}` has a link target that is not UTF-8")]
@@ -173,15 +215,23 @@ pub(crate) enum PyenvText {
     /// A wheel path or file has a problem.
     #[code("plugins-pyenv-path-problem")]
     #[text("`{path}`: {reason}")]
-    PathProblem { path: String, reason: String },
+    PathProblem {
+        #[display_path]
+        path: String,
+        reason: String,
+    },
     /// A locked wheel is not a regular file.
     #[code("plugins-pyenv-wheel-not-regular")]
     #[text("`{path}` is not a regular file")]
-    WheelNotRegular { path: String },
+    WheelNotRegular {
+        #[display_path]
+        path: String,
+    },
     /// A locked wheel does not match its hash.
     #[code("plugins-pyenv-wheel-hash-mismatch")]
     #[text("`{path}` has sha256 {actual}; the lock pins {pinned}")]
     WheelHashMismatch {
+        #[display_path]
         path: String,
         actual: String,
         pinned: String,
@@ -190,6 +240,7 @@ pub(crate) enum PyenvText {
     #[code("plugins-pyenv-wheel-holds")]
     #[text("`{path}` holds `{name}`, {why}")]
     WheelHolds {
+        #[display_path]
         path: String,
         name: String,
         why: String,
@@ -210,11 +261,15 @@ pub(crate) enum PyenvText {
     /// A wheel path does not end in `.whl`.
     #[code("plugins-pyenv-not-a-wheel")]
     #[text("`{path}` is not a wheel")]
-    NotAWheel { path: String },
+    NotAWheel {
+        #[display_path]
+        path: String,
+    },
     /// A wheel is not named for its package and version.
     #[code("plugins-pyenv-not-wheel-of-package")]
     #[text("`{path}` is not a wheel of {package} {version}")]
     NotWheelOfPackage {
+        #[display_path]
         path: String,
         package: String,
         version: String,
