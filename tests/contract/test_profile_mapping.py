@@ -30,6 +30,8 @@ SCHEMAS = ROOT / "schemas" / "v3"
 PROFILES = mapping.PROFILES
 # Categories that the 2.x profile tables name but no 2.x rule belongs to.
 NO_RULE_CATEGORIES = {"meta", "orwell-voice", "prose-density", "ste-vocabulary"}
+# 2.x rules that 3.0 removed: the styles carry no entry, so the 2.x state has no 3.0 twin.
+REMOVED = set(mapping.load_removed_rules())
 
 
 def _style(profile: str) -> dict:
@@ -126,6 +128,8 @@ def test_every_rule_resolves_to_its_2x_state(truth):
     layers = [style_layer(profile)]
     wrong = {}
     for rule in ruleset.all_rules:
+        if rule.qualified_id in REMOVED:
+            continue
         got = resolve(
             layers,
             rule.category,
@@ -501,6 +505,8 @@ def test_expansion_reproduces_2x_for_each_file(name, ruleset):
         )
         wrong = {}
         for rule in ruleset.all_rules:
+            if rule.qualified_id in REMOVED:
+                continue
             got = resolve(
                 layers,
                 rule.category,
