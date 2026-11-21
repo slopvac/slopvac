@@ -1029,15 +1029,13 @@ mod tests {
         let config = load_text(
             &path,
             "slopvac.toml",
-            "schema_version = 3\nprofile = \"strict\"\n".to_owned(),
+            "schema_version = 3\nexclude = [\"drafts/\"]\n".to_owned(),
             &NoPresets,
         )
         .unwrap();
         assert_eq!(config.root, fs::canonicalize(dir.path()).unwrap());
-        assert_eq!(
-            config.project_value(&["profile"]),
-            Some(Json::from("strict"))
-        );
+        assert!(config.is_excluded(Path::new("drafts/a.md")));
+        assert!(!config.is_excluded(Path::new("a.md")));
         assert!(!path.exists());
     }
 

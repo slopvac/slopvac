@@ -29,12 +29,12 @@ pub type SettingsOf<'a> = Box<dyn Fn(&Path) -> Result<Settings, Error> + 'a>;
 pub trait Configure {
     /// Load the config of `dir` and return the settings of each document under it.
     ///
-    /// `config` is the text of `dir/slopvac.toml`, or `None` when no config covers the
-    /// directory, whose documents then take the core defaults.
+    /// `config` is the text of `dir/slopvac.toml`. With `None`, the documents of `dir` take
+    /// the core defaults.
     ///
     /// # Errors
-    /// [`Error::Lint`] when the config does not load, names something the rules lack, or
-    /// gives a document settings the engine refuses.
+    /// [`Error::Lint`] when the config does not load, names a category or style that is not
+    /// shipped, or builds settings that fail validation.
     fn load<'a>(&'a self, dir: &Path, config: Option<&str>) -> Result<SettingsOf<'a>, Error>;
 }
 
