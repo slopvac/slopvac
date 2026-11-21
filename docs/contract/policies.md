@@ -352,7 +352,8 @@ The shared definitions are `SchemaVersion` and `ApiVersion` in `schemas/v3/commo
 - `SchemaVersion` is a positive integer. It counts breaking changes to one artifact's shape and has no minor or patch part.
 - Every root instance of a versioned artifact carries `schema_version` with the constant 3. Lint JSON jumps from 1 to 3 so that all artifacts share one number at first. The migration guide states this jump. A later breaking change raises only the number of the artifact it affects, so numbers can diverge after 3.0.
 - Changes within one `schema_version` are additive only. Section 3.9 describes the check that enforces this.
-  - Allowed: a new optional field, a new optional section, and a new value of an output-only enum that the schema marks as extensible.
+  - Allowed: a new optional field, a new optional section, and a new value or alternative in a position that the schema marks as extensible.
+  - Direction decides how enums and alternatives may grow. `schemas/v3/directions.toml` lists every schema file as `input` (slopvac reads it), `output` (slopvac writes it) or `both`. A `both` file follows the output rule. In an input schema a new `enum` value or an appended `anyOf` or `oneOf` member is allowed. In an output schema it is breaking, unless the same position carries `"x-slopvac-extensible": true`. Marking a position later, and removing the mark, are both visible to consumers. Adding a mark is allowed, removing one is breaking.
   - Not allowed: removing or renaming a field, changing a type, tightening a constraint, or giving a field a new meaning.
 - A schema's `$id` never changes within a version. The published URL has the form `https://slopvac.github.io/slopvac/schemas/v3/<artifact>.schema.json`.
 - `ApiVersion` is a positive integer for the plugin extension API. The first plugin manifest declares `slopvac_api = 1`. It names the host capabilities a plugin needs. `schema_version` names the shape of one file. The two are independent.
@@ -379,7 +380,9 @@ The rule depends on who wrote the file.
 
 Authors who attach their own data to a user-written file put it under a key with the prefix `x-`. Slopvac ignores `x-` keys wherever it forbids unknown keys and never gives one a meaning. Each artifact schema records this rule in its `description`.
 
-The schema marks which output enums can gain values. Consumers must tolerate new values of those enums.
+The schema marks which output positions can grow. A position is an `enum`, or an `anyOf` or `oneOf` list, that carries `"x-slopvac-extensible": true`. Consumers must tolerate new values and new alternatives there. Any other output enum or alternative list is closed: a new value is a breaking change and needs a new `schema_version`. A marked position is a promise that a minor release may add to it, so a consumer that matches on it needs a fallback for a value it does not know.
+
+The marker is written by the Rust types for generated files (`extend("x-slopvac-extensible" = true)`) and by hand in the files that are not generated yet. Severity, the AI signal scale, notice levels and the genre source stay closed, because gate and score logic depend on exactly those values. Open string patterns such as hook kinds and feature names have no enum to mark: a reader ignores a name it does not know.
 
 Owners: `slopvac-8l4.2.3`, `slopvac-8l4.2.4`, `slopvac-8l4.2.5`, `slopvac-8l4.2.6`.
 
@@ -525,19 +528,20 @@ Owners: `slopvac-8l4.9.7`, `slopvac-8l4.19.1`.
 - a removed property or `$defs` entry, at any depth
 - a new `required` entry
 - a narrowed `type`, `enum` or `const`
+- in an output or `both` schema, a new `enum` value or an appended `anyOf` or `oneOf` member at a position without `x-slopvac-extensible: true` (`enum-widened`, `alternative-added`), or a removed marker (`extensible-removed`)
 - a raised `min*` bound or a lowered `max*` bound
 - a changed `pattern`
 - `additionalProperties` that is newly `false`, or newly a narrower schema
 
-It then validates every `valid/` instance of the baseline corpus against the new schema and fails on any rejection. Added optional properties, widened enums, new `$defs` entries and new files pass. Each finding prints as `file:json-pointer: kind: old -> new`. The `kind` is a stable kebab-case code. A code is never reused and never changes meaning (see section 3.5 and `docs/engineering.md`). Exit code 0 means compatible, 1 means a breaking finding, and 2 means a usage or read error, which is never a pass.
+It then validates every `valid/` instance of the baseline corpus against the new schema and fails on any rejection. Added optional properties, new `$defs` entries and new files pass, and so do widened enums and appended alternatives in input schemas or at marked positions. Each finding prints as `file:json-pointer: kind: old -> new`. The `kind` is a stable kebab-case code. A code is never reused and never changes meaning (see section 3.5 and `docs/engineering.md`). Exit code 0 means compatible, 1 means a breaking finding, and 2 means a usage or read error, which is never a pass.
 
 **Baseline.** Before the first 3.0 release candidate, the baseline is the pull request's merge-base with `origin/main` (`--base <git-ref>`). This catches accidental breaks in each change. At the release candidate, a snapshot is committed under `schemas/v3/baseline/` and replaces the ref (`--baseline-dir`).
 
 **Limits.** The check fails closed where it cannot decide. Each case below needs an allow entry.
 
-- A `$ref` resolves across every file in `schemas/v3`, on both sides. A change to a shared definition is reported against each referrer, as `file:/properties/p/$ref(common.schema.json#/$defs/D)/minLength`. A reference that does not resolve is `unverified`. A schema file without a string `$id` is a read error.
+- A `$ref` resolves across every file in `schemas/v3`, on both sides. A change to a shared definition is reported against each referrer, as `file:/properties/p/$ref(common.schema.json#/$defs/D)/minLength`. The output-only findings are the exception: they are reported once, at the definition, under the direction of the file that holds it. A shared definition that an output schema references therefore belongs in an output or `both` file. A reference that does not resolve is `unverified`. A schema file without a string `$id` is a read error.
 - Proving that a recursive schema and its inlined expansion accept the same instances is out of scope. When a reference was added or removed and the same target recurs, the check stops at that point and reports `unverified`. The corpus re-validation is the backstop.
-- `allOf`, `anyOf`, `oneOf` and `prefixItems` compare by position. A list that keeps all its members in another order is `list-reordered`. A new `anyOf` or `oneOf`, and an appended `oneOf` or `prefixItems` member, are `narrowing-possible`.
+- `allOf`, `anyOf`, `oneOf` and `prefixItems` compare by position. A list that keeps all its members in another order is `list-reordered`. A new `anyOf` or `oneOf`, and an appended `oneOf` or `prefixItems` member, are `narrowing-possible`. In an output schema an appended `oneOf` member also gets `alternative-added`. The two differ: `alternative-added` says consumers meet a new variant, and `narrowing-possible` says the member may overlap an old one, so a document that validated can fail `oneOf`. A marker on the `oneOf` covers both.
 - A keyword the check does not model is `unverified` when it is added, removed or changed. Only these annotations never count: `description`, `title`, `examples`, `$comment`, `deprecated`, `readOnly` and `writeOnly`. A changed `default` does count, because it changes what consumers see.
 - Each added `required` field is its own finding, located by field name, so one allow entry covers one field.
 - The check compares `enum` and `const` as JSON values: a Boolean is not a number.
