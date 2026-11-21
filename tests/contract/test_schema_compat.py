@@ -1284,6 +1284,57 @@ def test_a_ref_transition_that_widens_an_input_is_allowed(tmp_path, old, new):
     assert run(tmp_path, old, new, direction="input") == []
 
 
+STR, NUL = {"type": "string"}, {"type": "null"}
+KIND_A = {"properties": {"kind": {"const": "a"}}, "required": ["kind"]}
+KIND_B = {"properties": {"kind": {"const": "b"}}, "required": ["kind"]}
+KIND_AB = {"properties": {"kind": {"enum": ["a", "b"]}}, "required": ["kind"]}
+KIND_A_OPTIONAL = {"properties": {"kind": {"const": "b"}}}
+
+DISJOINT_APPENDS = {
+    "types": ([STR], [STR, NUL]),
+    "const-discriminator": ([KIND_A], [KIND_A, KIND_B]),
+}
+OVERLAPPING_APPENDS = {
+    "same-type": ([STR], [STR, {"type": "string", "minLength": 1}]),
+    "integer-in-number": ([{"type": "number"}], [{"type": "number"}, {"type": "integer"}]),
+    "enum-shares-a-value": ([KIND_A], [KIND_A, KIND_AB]),
+    "discriminator-not-required": ([KIND_A], [KIND_A, KIND_A_OPTIONAL]),
+    "ref-member": ([STR], [STR, {"$ref": "#/$defs/X"}]),
+}
+
+
+@pytest.mark.parametrize(
+    ("old", "new"), DISJOINT_APPENDS.values(), ids=DISJOINT_APPENDS.keys()
+)
+def test_disjoint_oneOf_append_is_allowed_in_an_input_schema(tmp_path, old, new):
+    assert run(tmp_path, schema(oneOf=old), schema(oneOf=new)) == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new"), OVERLAPPING_APPENDS.values(), ids=OVERLAPPING_APPENDS.keys()
+)
+def test_overlapping_oneOf_append_is_flagged_in_an_input_schema(tmp_path, old, new):
+    findings = run(tmp_path, schema(oneOf=old), schema(oneOf=new))
+    assert kinds(findings) == [("/oneOf/1", "narrowing-possible")]
+
+
+def test_disjoint_oneOf_append_in_an_output_schema_is_only_an_added_alternative(
+    tmp_path,
+):
+    findings = run(
+        tmp_path, schema(oneOf=[STR]), schema(oneOf=[STR, NUL]), direction="output"
+    )
+    assert kinds(findings) == [("/oneOf/1", "alternative-added")]
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "both"])
+@pytest.mark.parametrize("key", ["anyOf", "oneOf"])
+def test_a_new_marked_alternative_list_is_still_a_constraint(tmp_path, direction, key):
+    new = schema(**{key: [{"required": ["a"]}]}, **EXT)
+    findings = run(tmp_path, schema(), new, direction=direction)
+    assert kinds(findings) == [(f"/{key}", "narrowing-possible")]
+
+
 def test_registry_must_list_every_schema_file(tmp_path):
     base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
     new_dir = write_dir(tmp_path / "new", {FILE: schema()})
