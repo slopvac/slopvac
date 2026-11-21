@@ -1,5 +1,6 @@
 //! `slopvac migrate` lints each side under its own config: the before side under what the
 //! 2.x config meant, the after side under the migrated `slopvac.toml`.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::Path;

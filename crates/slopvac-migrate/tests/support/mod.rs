@@ -15,11 +15,12 @@ impl Configure for NoConfig {
         if config.is_some() {
             return Err(Error::Lint("this double reads no config".into()));
         }
-        Ok(Box::new(|_| {
+        let failed = |e: &dyn std::fmt::Display| Error::Lint(e.to_string());
+        Ok(Box::new(move |_| {
             Ok(Settings::new(
-                NonEmptyString::new("normal").expect("a profile name"),
+                NonEmptyString::new("normal").map_err(|e| failed(&e))?,
                 GenreResult {
-                    id: GenreId::new("reference").expect("a genre id"),
+                    id: GenreId::new("reference").map_err(|e| failed(&e))?,
                     source: GenreSource::Default,
                     reasons: Vec::new(),
                 },
