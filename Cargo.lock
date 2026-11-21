@@ -2583,7 +2583,6 @@ dependencies = [
  "slopvac-messages",
  "slopvac-model",
  "slopvac-parse",
- "slopvac-pcre2",
  "slopvac-pos",
  "slopvac-rules",
  "slopvac-sanitize",
