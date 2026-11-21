@@ -111,8 +111,17 @@ proptest! {
         prop_assert_eq!(index.kinds_seen(), oracle.kinds_seen());
         for ranges in &queries {
             prop_assert_eq!(index.kinds_covering(ranges), oracle.kinds_covering(ranges));
+            let wanted = ["d", "b", "absent"];
+            let among = |all: Vec<&str>| -> Vec<&str> {
+                wanted.iter().copied().filter(|k| all.contains(k)).collect::<BTreeSet<_>>().into_iter().collect()
+            };
+            prop_assert_eq!(
+                index.kinds_covering_among(ranges, &wanted),
+                among(oracle.kinds_covering(ranges))
+            );
             for r in ranges {
                 prop_assert_eq!(index.kinds_at(r), oracle.kinds_at(r));
+                prop_assert_eq!(index.kinds_at_among(r, &wanted), among(oracle.kinds_at(r)));
             }
         }
     }
