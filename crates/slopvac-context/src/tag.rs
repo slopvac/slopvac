@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{DocumentView, Error, work};
@@ -178,8 +179,21 @@ pub struct TagIndex {
     single: Option<Spatial>,
     /// The tags of several pieces, for the part of [`Self::kinds_covering`] that needs them.
     multi: Stab,
+    /// The same structures kept apart per kind, built on the first lookup that names kinds.
+    by_kind: OnceLock<HashMap<String, PerKind>>,
     /// Caps the candidates [`Self::kinds_covering`] visits.
     budget: Budget,
+}
+
+/// The structures of the tags of one kind, so that asking whether that kind holds costs
+/// `O(log n)` however many other kinds the document has.
+#[derive(Debug, Default, Clone)]
+struct PerKind {
+    all: Spatial,
+    /// The tags of a single piece, when some tags of this kind have several.
+    single: Option<Spatial>,
+    /// The tags of several pieces.
+    multi: Stab,
 }
 
 /// A cap on the tags that [`TagIndex::kinds_covering`] looks at, shared by all its lookups.
@@ -489,8 +503,103 @@ impl TagIndex {
             all,
             single,
             multi,
+            by_kind: OnceLock::new(),
             budget: Budget::default(),
         }
+    }
+
+    /// The per-kind structures, built once for all lookups that name kinds.
+    fn per_kind(&self) -> &HashMap<String, PerKind> {
+        self.by_kind.get_or_init(|| {
+            let mut ids: HashMap<&str, Vec<usize>> = HashMap::new();
+            for (i, t) in self.tags.iter().enumerate() {
+                ids.entry(t.kind.as_str()).or_default().push(i);
+            }
+            ids.into_iter()
+                .map(|(kind, ids)| {
+                    let is_multi = |i: &usize| self.members.contains_key(&self.groups[*i]);
+                    let all = Spatial::build(ids.iter().map(|&i| &self.tags[i]));
+                    let multi_ids: Vec<usize> = ids.iter().copied().filter(is_multi).collect();
+                    let (single, multi) = if multi_ids.is_empty() {
+                        (None, Stab::default())
+                    } else {
+                        let single = Spatial::build(
+                            ids.iter().filter(|i| !is_multi(i)).map(|&i| &self.tags[i]),
+                        );
+                        (Some(single), Stab::build(&self.tags, multi_ids))
+                    };
+                    (kind.to_string(), PerKind { all, single, multi })
+                })
+                .collect()
+        })
+    }
+
+    /// The kinds among `wanted` that hold for `span`: [`Self::kinds_at`] restricted to
+    /// `wanted`, sorted and unique. A lookup costs `O(w log n)` for `w` wanted kinds,
+    /// whatever other kinds the document has.
+    #[must_use]
+    pub fn kinds_at_among<'k>(&self, span: &Range<usize>, wanted: &[&'k str]) -> Vec<&'k str> {
+        let per = self.per_kind();
+        let mut out: Vec<&'k str> = wanted
+            .iter()
+            .copied()
+            .filter(|k| {
+                per.get(*k)
+                    .is_some_and(|p| !p.all.kinds_containing(span.start, span.end).is_empty())
+            })
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// The kinds among `wanted` that [`Self::kinds_covering`] would answer, sorted and
+    /// unique. A lookup costs `O(w log n)` for `w` wanted kinds plus the visits of the
+    /// several-piece tags of those kinds, whatever other kinds the document has.
+    #[must_use]
+    pub fn kinds_covering_among<'k>(
+        &self,
+        ranges: &[Range<usize>],
+        wanted: &[&'k str],
+    ) -> Vec<&'k str> {
+        let Some(first) = ranges.first() else {
+            return Vec::new();
+        };
+        if self.budget.exceeded() {
+            return Vec::new();
+        }
+        let from = ranges.iter().map(|r| r.start).min().unwrap_or(first.start);
+        let to = ranges.iter().map(|r| r.end).max().unwrap_or(first.end);
+        let per = self.per_kind();
+        let mut out: Vec<&'k str> = Vec::new();
+        for &kind in wanted {
+            let Some(p) = per.get(kind) else {
+                continue;
+            };
+            let single = p.single.as_ref().unwrap_or(&p.all);
+            let mut hit = !single.kinds_containing(from, to).is_empty();
+            if !hit && !p.multi.ids.is_empty() {
+                p.multi.containing(first.start, first.end, &mut |i| {
+                    if !self.budget.charge() {
+                        return false;
+                    }
+                    hit = self
+                        .members
+                        .get(&self.groups[i])
+                        .is_some_and(|m| ranges.iter().all(|r| m.covers(r)));
+                    !hit
+                });
+            }
+            if hit {
+                out.push(kind);
+            }
+        }
+        if self.budget.exceeded() {
+            return Vec::new();
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
     }
 
     /// Cap the tags that [`Self::kinds_covering`] looks at, over all its lookups on this index.
