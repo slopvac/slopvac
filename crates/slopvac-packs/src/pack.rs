@@ -15,7 +15,7 @@ use crate::genre_layer::{GenreFile, display_path, settings};
 use crate::name::is_local;
 use crate::{
     LimitKind, ArtifactFault, Manifest, PackError, PackPath, PackSource, Provenance, Provides, QualifiedName,
-    Registry, RuleFault, RuleProblem, Source,
+    Reference, Registry, RegistryError, RuleFault, RuleProblem, Source,
 };
 
 /// The id of the built-in pack.
@@ -346,6 +346,34 @@ impl Packs {
     /// Every declarative tagger, in load order.
     pub fn taggers(&self) -> impl Iterator<Item = &TaggerSpec> {
         self.loaded.iter().flat_map(|p| p.taggers.iter())
+    }
+
+    /// Resolve a genre name written at `at`: `<pack>:<genre>` names one genre, and a bare name
+    /// needs exactly one pack to define it.
+    ///
+    /// # Errors
+    /// [`RegistryError::Ambiguous`] with the code `pack-name-ambiguous` when two packs (the core
+    /// included) define the bare name. The error names both qualified ids and points at `at`.
+    /// [`RegistryError::Unknown`] when no pack defines it.
+    pub fn resolve_genre(
+        &self,
+        name: &str,
+        at: &Reference,
+    ) -> Result<(&GenreSpec, &Provenance), RegistryError> {
+        let entry = self.genres.resolve_at(name, at)?;
+        Ok((&entry.value.spec, &entry.provenance))
+    }
+
+    /// Like [`Packs::resolve_genre`], for a style name.
+    ///
+    /// # Errors
+    /// As for [`Packs::resolve_genre`].
+    pub fn resolve_style(
+        &self,
+        name: &str,
+        at: &Reference,
+    ) -> Result<&Provenance, RegistryError> {
+        Ok(&self.styles.resolve_at(name, at)?.provenance)
     }
 
     fn style_presets(&self) -> StylePresets<PackStyles<'_>> {

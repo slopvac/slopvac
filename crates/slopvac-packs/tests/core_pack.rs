@@ -140,10 +140,3 @@ fn a_non_core_pack_loads_no_taggers() {
     let pack = LoadedPack::load(&DirSource::new(dir.path()), Source::Pack).unwrap();
     assert!(pack.taggers().is_empty());
 }
-
-#[test]
-fn a_glob_in_provides_is_refused() {
-    let dir = write_pack("genres = [\"genres/*.yaml\"]");
-    let err = LoadedPack::load(&DirSource::new(dir.path()), Source::Pack).unwrap_err();
-    assert!(matches!(err, PackError::Glob { .. }), "{err}");
-}

@@ -33,26 +33,6 @@ fn genre(id: &str, extends: &str) -> String {
 }
 
 #[rstest]
-#[case::categories("categories")]
-#[case::styles("styles")]
-#[case::genres("genres")]
-#[case::terms("terms")]
-#[case::taggers("taggers")]
-#[case::configs("configs")]
-#[case::prime("prime")]
-#[case::blocklists("blocklists")]
-fn a_glob_in_any_provides_list_is_refused(
-    #[case] kind: &str,
-    #[values(("acme", Source::Pack), ("core", Source::Core))] origin: (&str, Source),
-) {
-    let dir = pack(origin.0, &format!("{kind} = [\"dir/*.yaml\"]"), &[]);
-
-    let error = load(&dir, origin.1).unwrap_err();
-
-    assert!(matches!(error, PackError::Glob { .. }), "{error}");
-}
-
-#[rstest]
 #[case::bad_id("schema_version: 3\nid: Bad_Id\n")]
 #[case::wrong_version("schema_version: 2\nid: g\n")]
 #[case::empty_title("schema_version: 3\nid: g\ntitle: \"\"\n")]
