@@ -27,7 +27,10 @@ use slopvac_messages::render;
 use messages::LspMessage;
 
 pub use checks::FrontMatterCheck;
-pub use linter::{Check, EngineLinter, LintError, Linted, Linter, Problem, exception_names};
+pub use linter::{
+    Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
+    exception_names,
+};
 pub use messages::{RunError, ServerError, entries as message_entries};
 pub use server::{Exit, Server};
 

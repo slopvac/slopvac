@@ -8,6 +8,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -17,8 +18,8 @@ use serde_json::{Value, json};
 use slopvac_config::frontmatter::Policy;
 use slopvac_engine::{DIAGRAM_PACK, Settings, TERMS_PACK, diagram_rule_set, terms_rule_set};
 use slopvac_lsp::{
-    Check, EngineLinter, Exit, FrontMatterCheck, LintError, Linted, Linter, Problem, Server,
-    ServerError,
+    Check, ConfigFailure, EngineLinter, Exit, FrontMatterCheck, LintError, Linted, Linter, Problem,
+    Reloaded, Server, ServerError,
 };
 use slopvac_model::{
     GenreId, GenreResult, GenreSource, KebabName, NonEmptyString, Notice, NoticeLevel, PackId,
@@ -1242,4 +1243,274 @@ fn a_registered_check_adds_nothing_to_a_binary_container() {
     );
     assert_binary_host_diagnostic(&client.diagnostics());
     client.finish().unwrap();
+}
+
+const CONFIG_URI: &str = "file:///work/slopvac.toml";
+
+/// Which settings a [`Reloadable`] lints with after its next reload.
+#[derive(Clone)]
+enum Config {
+    /// The `swap` rule is on.
+    Strict,
+    /// No rule is on.
+    Lax,
+    Broken(ConfigFailure),
+}
+
+/// A linter whose settings change when the server asks it to reload.
+struct Reloadable {
+    /// What "the file on disk" says. A reload copies it to `active`.
+    on_disk: Arc<Mutex<Config>>,
+    active: Mutex<Config>,
+    strict: EngineLinter,
+    lax: EngineLinter,
+    notices: Vec<Notice>,
+}
+
+impl Reloadable {
+    fn new(notices: Vec<Notice>) -> (Self, Arc<Mutex<Config>>) {
+        let on_disk = Arc::new(Mutex::new(Config::Strict));
+        let linter = Self {
+            on_disk: Arc::clone(&on_disk),
+            active: Mutex::new(Config::Strict),
+            strict: engine_linter(),
+            lax: EngineLinter::new(Vec::new(), engine_settings()).unwrap(),
+            notices,
+        };
+        (linter, on_disk)
+    }
+}
+
+impl Linter for Reloadable {
+    fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
+        match &*self.active.lock().unwrap() {
+            Config::Strict => self.strict.lint(path, text),
+            Config::Lax => self.lax.lint(path, text),
+            Config::Broken(failure) => Err(LintError(failure.message.clone())),
+        }
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn reload(&self) -> Reloaded {
+        let config = self.on_disk.lock().unwrap().clone();
+        *self.active.lock().unwrap() = config.clone();
+        Reloaded {
+            notices: self.notices.clone(),
+            failure: match config {
+                Config::Broken(failure) => Some(failure),
+                _ => None,
+            },
+        }
+    }
+
+    fn watched(&self) -> Vec<String> {
+        vec![
+            "/work/slopvac.toml".to_owned(),
+            "/shared/base.toml".to_owned(),
+        ]
+    }
+}
+
+fn reloadable_client() -> (Client, Arc<Mutex<Config>>) {
+    let (linter, on_disk) = Reloadable::new(Vec::new());
+    (Client::start(Server::new(Arc::new(linter)), None), on_disk)
+}
+
+fn count(published: &Value) -> usize {
+    published["diagnostics"].as_array().map_or(0, Vec::len)
+}
+
+fn save(client: &Client, uri: &str) {
+    client.notify(
+        "textDocument/didSave",
+        &json!({"textDocument": {"uri": uri}}),
+    );
+}
+
+#[test]
+fn saving_the_config_lints_an_open_document_under_the_new_settings() {
+    let (mut client, on_disk) = reloadable_client();
+    assert_eq!(count(&client.open("We utilize it.\n")), 1);
+    *on_disk.lock().unwrap() = Config::Lax;
+    save(&client, CONFIG_URI);
+    let republished = client.diagnostics();
+    assert_eq!(republished["uri"], URI);
+    assert_eq!(count(&republished), 0);
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_change_of_a_watched_config_file_lints_an_open_document_under_the_new_settings() {
+    let (mut client, on_disk) = reloadable_client();
+    assert_eq!(count(&client.open("We utilize it.\n")), 1);
+    *on_disk.lock().unwrap() = Config::Lax;
+    // An extended file is not named slopvac.toml, so only the watch list tells it apart.
+    client.notify(
+        "workspace/didChangeWatchedFiles",
+        &json!({"changes": [{"uri": "file:///shared/base.toml", "type": 2}]}),
+    );
+    let republished = client.diagnostics();
+    assert_eq!(republished["uri"], URI);
+    assert_eq!(count(&republished), 0);
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_change_to_an_unrelated_file_does_not_reload() {
+    let (mut client, on_disk) = reloadable_client();
+    assert_eq!(count(&client.open("We utilize it.\n")), 1);
+    *on_disk.lock().unwrap() = Config::Lax;
+    client.notify(
+        "workspace/didChangeWatchedFiles",
+        &json!({"changes": [{"uri": "file:///work/notes.txt", "type": 2}]}),
+    );
+    client.barrier();
+    assert!(client.queued.is_empty(), "{:?}", client.queued);
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_reload_shows_the_config_notices_again() {
+    let notice = Notice {
+        code: KebabName::new("config-unknown-rule").unwrap(),
+        level: NoticeLevel::Warning,
+        message: NonEmptyString::new("slopvac.toml:4:1: unknown rule a.b").unwrap(),
+        path: Some("slopvac.toml".to_owned()),
+        data: serde_json::Map::new(),
+    };
+    let (linter, _) = Reloadable::new(vec![notice]);
+    let mut client = Client::start(Server::new(Arc::new(linter)), None);
+    save(&client, CONFIG_URI);
+    let shown = client.next_notification();
+    assert_eq!(shown.method, "window/showMessage");
+    assert_eq!(
+        shown.params,
+        json!({"type": 2, "message": "slopvac.toml:4:1: unknown rule a.b"})
+    );
+    client.finish().unwrap();
+}
+
+fn broken() -> Config {
+    Config::Broken(
+        ConfigFailure::new(
+            "config-invalid",
+            "bad value for `profile`",
+            "/work/slopvac.toml",
+        )
+        .at(2, 4),
+    )
+}
+
+#[test]
+fn a_config_that_fails_to_load_is_shown_and_leaves_no_document_clean() {
+    let (mut client, on_disk) = reloadable_client();
+    let second = "file:///work/two.md";
+    assert_eq!(count(&client.open("We utilize it.\n")), 1);
+    client.open_at(second, "Plain.\n");
+    assert_eq!(count(&client.diagnostics()), 0);
+    *on_disk.lock().unwrap() = broken();
+    save(&client, CONFIG_URI);
+    // The config error, and one incomplete item for each open document, in any order.
+    let mut seen = std::collections::HashMap::new();
+    for _ in 0..3 {
+        let published = client.diagnostics();
+        seen.insert(published["uri"].as_str().unwrap().to_owned(), published);
+    }
+    let config = &seen[CONFIG_URI]["diagnostics"];
+    assert_eq!(config.as_array().unwrap().len(), 1, "{config}");
+    assert_eq!(config[0]["code"], "config-invalid");
+    assert_eq!(config[0]["severity"], 1);
+    assert_eq!(config[0]["message"], "bad value for `profile`");
+    assert_eq!(range_of(&config[0]), [2, 4, 2, 4]);
+    for uri in [URI, second] {
+        let items = seen[uri]["diagnostics"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "no rule finding survives: {items:?}");
+        assert_eq!(items[0]["code"], "lsp-lint-incomplete");
+        assert_eq!(items[0]["severity"], 2);
+        assert!(
+            items[0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("bad value for `profile`")
+        );
+    }
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_later_good_reload_restores_the_findings_and_clears_the_config_error() {
+    let (mut client, on_disk) = reloadable_client();
+    client.open("We utilize it.\n");
+    *on_disk.lock().unwrap() = broken();
+    save(&client, CONFIG_URI);
+    client.diagnostics();
+    client.diagnostics();
+    *on_disk.lock().unwrap() = Config::Strict;
+    save(&client, CONFIG_URI);
+    let mut seen = std::collections::HashMap::new();
+    for _ in 0..2 {
+        let published = client.diagnostics();
+        seen.insert(published["uri"].as_str().unwrap().to_owned(), published);
+    }
+    assert_eq!(count(&seen[CONFIG_URI]), 0);
+    let doc = &seen[URI]["diagnostics"];
+    assert_eq!(doc.as_array().unwrap().len(), 1);
+    assert_eq!(doc[0]["code"], "cat.swap");
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_client_that_can_watch_files_is_asked_to_watch_the_config() {
+    let (linter, _) = Reloadable::new(Vec::new());
+    let (server_side, conn) = Connection::memory();
+    let handle = std::thread::spawn(move || Server::new(Arc::new(linter)).serve(&server_side));
+    let init = Request::new(
+        RequestId::from(1),
+        "initialize".to_owned(),
+        &json!({"processId": null, "rootUri": null, "capabilities": {
+            "workspace": {"didChangeWatchedFiles": {"dynamicRegistration": true}}}}),
+    );
+    conn.sender.send(Message::Request(init)).unwrap();
+    assert!(matches!(
+        conn.receiver.recv_timeout(WAIT).unwrap(),
+        Message::Response(_)
+    ));
+    conn.sender
+        .send(Message::Notification(Notification::new(
+            "initialized".to_owned(),
+            &json!({}),
+        )))
+        .unwrap();
+    let Message::Request(register) = conn.receiver.recv_timeout(WAIT).unwrap() else {
+        panic!("a registration request");
+    };
+    assert_eq!(register.method, "client/registerCapability");
+    let watchers = &register.params["registrations"][0]["registerOptions"]["watchers"];
+    let globs: Vec<&str> = watchers
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w["globPattern"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        globs,
+        ["**/slopvac.toml", "/work/slopvac.toml", "/shared/base.toml"]
+    );
+    conn.sender
+        .send(Message::Request(Request::new(
+            RequestId::from(2),
+            "shutdown".to_owned(),
+            &Value::Null,
+        )))
+        .unwrap();
+    conn.sender
+        .send(Message::Notification(Notification::new(
+            "exit".to_owned(),
+            &Value::Null,
+        )))
+        .unwrap();
+    handle.join().unwrap().unwrap();
 }
