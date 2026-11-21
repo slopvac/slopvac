@@ -170,3 +170,15 @@ fn the_report_goes_to_out_and_the_fix_is_still_written() {
     let report = fs::read_to_string(dir.path().join("r.json")).unwrap();
     assert!(!report.contains("slop-lexicon"), "{report}");
 }
+
+#[test]
+fn standard_input_is_linted_as_given_and_nothing_is_written() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    slopvac(dir.path())
+        .args(["lint", "--fix", "--stdin", "--language", "markdown"])
+        .write_stdin(FIXABLE)
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("slop-lexicon"));
+    assert!(entries(dir.path()).is_empty(), "stdin produced a file");
+}
