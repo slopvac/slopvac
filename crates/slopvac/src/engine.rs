@@ -10,10 +10,14 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::lint_messages::LintFixMessage;
 use slopvac_config::frontmatter::{Policy, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
-use slopvac_engine::{Engine, EngineError, FileContext, FileFix, Input, Kind, fix_file_in};
+use slopvac_engine::{
+    Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, fix_file_in,
+};
+use slopvac_messages::Catalog as _;
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
@@ -830,23 +834,36 @@ fn fix_group(
         );
         match fixed {
             Ok(FileFix::Done(result)) => {
-                if result.written {
-                    item.text.clone_from(&result.report.text);
-                }
+                // The fix read the file again, so its text is the one to report even when
+                // nothing was written.
+                item.text = result.report.text;
                 keep.push(true);
             }
             Ok(FileFix::Refused(refusal)) => {
                 let shown = item.shown.clone();
-                run.skip(
-                    refusal.code(),
-                    &shown,
-                    format!("{shown}: not fixed ({})", refusal.code()),
-                );
+                let message = slopvac_messages::render(&LintFixMessage::Refused {
+                    shown: shown.clone(),
+                    reason: refusal.code().to_owned(),
+                });
+                run.skip(refusal.code(), &shown, message);
+                keep.push(false);
+            }
+            Err(FixError::Engine(err)) => {
+                run.skip_engine_error(&item.shown, &err);
                 keep.push(false);
             }
             Err(err) => {
                 let shown = item.shown.clone();
-                run.skip("fix-failed", &shown, format!("{shown}: {err}"));
+                let reason = match err {
+                    FixError::Io { source, .. } => source.to_string(),
+                    FixError::NotUtf8(_) => "not valid UTF-8".to_owned(),
+                    other => other.to_string(),
+                };
+                let failed = LintFixMessage::Failed {
+                    shown: shown.clone(),
+                    reason,
+                };
+                run.skip(failed.code(), &shown, slopvac_messages::render(&failed));
                 keep.push(false);
             }
         }
@@ -1231,5 +1248,64 @@ mod skip_tests {
         assert_eq!(run.notices[0].code.as_str(), code);
         assert_eq!(run.notices[0].level, NoticeLevel::Warning);
         assert_eq!(run.notices[0].path.as_deref(), Some("docs/a.md"));
+    }
+}
+
+#[cfg(test)]
+mod fix_tests {
+    use super::*;
+    use slopvac_engine::Settings;
+    use slopvac_model::{GenreId, GenreResult, GenreSource};
+
+    #[test]
+    fn the_report_uses_the_text_the_fix_read_even_when_it_wrote_nothing() {
+        // The file changed after the run read it. The fix read the new text and found
+        // nothing to write, so the report must still describe the new text.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        let path = root.join("a.md");
+        std::fs::write(&path, "# New\n").expect("write");
+        let mut items = vec![Item {
+            shown: "a.md".to_owned(),
+            text: "# Old\n".to_owned(),
+            kind: Kind::Markdown,
+            config: None,
+            dir: Some(root.clone()),
+            path: Some(path),
+        }];
+        let request = LintRequest {
+            root,
+            targets: Vec::new(),
+            stdin: None,
+            stdin_plan: None,
+            config: None,
+            code_comments: false,
+            overrides: crate::lint_settings::Overrides::default(),
+            fix: true,
+        };
+        let engine = Engine::new(
+            Vec::new(),
+            Settings::new(
+                NonEmptyString::new("normal").expect("profile"),
+                GenreResult {
+                    id: GenreId::new("reference").expect("genre"),
+                    source: GenreSource::Default,
+                    reasons: Vec::new(),
+                },
+            ),
+        )
+        .expect("engine");
+        let context = FixContext {
+            request: &request,
+            engine: &engine,
+            relatives: &[None],
+            declared: &[None],
+        };
+        let mut run = Run::default();
+
+        let keep = fix_group(&context, &[0], &mut items, &mut run);
+
+        assert_eq!(keep, [true]);
+        assert_eq!(items[0].text, "# New\n");
     }
 }

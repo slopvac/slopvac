@@ -195,6 +195,8 @@ config-version-unsupported text
 document-too-large error
 explain-config-format-unsupported error
 explain-config-option-unsupported error
+fix-failed error
+fix-refused text
 lsp-action-allow text
 lsp-action-fix text
 lsp-binary-unchecked notice

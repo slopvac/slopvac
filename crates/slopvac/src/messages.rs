@@ -30,6 +30,7 @@ pub static ALL: &[Registered] = &[
     ("slopvac-migrate-text", slopvac_migrate::text_entries),
     ("slopvac-migrate-phrases", slopvac_migrate::phrase_entries),
     ("lint options", lint_option_entries),
+    ("lint fix", lint_fix_entries),
     ("self update", slopvac_update::error_entries),
     ("self update text", slopvac_update::text_entries),
     ("self update phrases", slopvac_update::phrase_entries),
@@ -41,6 +42,10 @@ fn report_entries() -> &'static [Entry] {
 
 fn lint_option_entries() -> &'static [Entry] {
     <crate::lint_messages::LintOptionError as slopvac_messages::Catalog>::entries()
+}
+
+fn lint_fix_entries() -> &'static [Entry] {
+    <crate::lint_messages::LintFixMessage as slopvac_messages::Catalog>::entries()
 }
 
 /// A code that no longer exists. Its meaning stays reserved and the reference page keeps it.
