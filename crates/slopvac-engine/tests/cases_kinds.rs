@@ -189,6 +189,24 @@ fn a_kind_the_engine_cannot_run_is_unchecked_not_passed() {
 }
 
 #[test]
+fn a_switched_off_rule_is_not_active_so_it_is_not_unchecked() {
+    // A title-style capitalization rule is a kind the runner cannot check, but it is off.
+    let title = rule(
+        "c",
+        &json!({"kind": "capitalization", "style": "title"}),
+        &json!({"scope": "heading", "examples": [{"bad": "install the plugin", "good": "Install The Plugin"}]}),
+    );
+    let set = common::ruleset(vec![common::category("cat", &[passing_foo(), title])]);
+    let mut settings = common::settings();
+    settings
+        .rule_levels
+        .insert(id("core:cat.c"), slopvac_engine::Level::Off);
+    let report = run_cases(&Engine::new(vec![set], settings).unwrap(), None).unwrap();
+    assert_eq!(report.exit_code(), 0, "{report}");
+    assert!(report.unchecked_notice().is_none());
+}
+
+#[test]
 fn selecting_only_a_judgement_rule_leaves_nothing_to_run() {
     let e: Engine = engine(&[judgement()]);
     let err = run_cases(&e, Some(&id("core:cat.j"))).unwrap_err();
