@@ -7,7 +7,7 @@
 //! that climb out of the root fail with [`AgentsError::UnsafeTarget`].
 
 use std::collections::VecDeque;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::io::{ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
 
@@ -23,6 +23,14 @@ const MAX_LINKS: usize = 8;
 pub struct Project {
     dir: Dir,
     root: PathBuf,
+}
+
+/// A point inside a write or delete where a test can change the target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stage {
+    /// The new state is ready, and the final check against the expected bytes
+    /// comes next.
+    BeforeCommit,
 }
 
 /// One step of a path being resolved.
@@ -184,13 +192,52 @@ impl Project {
         self.dir.open_dir(parent).map_err(|e| Self::map(parent, e))
     }
 
+    /// The bytes now at `name` in `parent`, or `None` when no entry has the name.
+    ///
+    /// This is the last look before a commit, so it does not resolve links
+    /// again: a name that has turned into a symlink, a directory or another
+    /// special file since the first check counts as changed.
+    fn current(parent: &Dir, name: &OsStr, rel: &Path) -> Result<Option<Vec<u8>>, AgentsError> {
+        match parent.symlink_metadata(name) {
+            Ok(m) if !m.is_file() => Err(AgentsError::Conflict(rel.to_path_buf())),
+            Ok(_) => parent.read(name).map(Some).map_err(|e| Self::map(rel, e)),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(Self::map(rel, e)),
+        }
+    }
+
     /// Replace the file at `rel` with `after`, but only if it still holds
     /// `before`. Returns whether the file changed.
+    ///
+    /// The new bytes go to a temporary file in the target's directory, which is
+    /// synced and then renamed over the name. The target is compared with
+    /// `before` once at the start and again right before the rename, so a change
+    /// that another writer, such as an editor or a pre-commit hook, makes while
+    /// the temporary file is written ends in [`AgentsError::Conflict`] and keeps
+    /// that writer's bytes.
+    ///
+    /// Guarantee: this narrows the lost-update window to the gap between the
+    /// last read and the rename. It is not a lock. A write that lands in that
+    /// gap is still replaced. It assumes that no attacker can write to the
+    /// target's directory. Such a process could swap the name in that gap, and
+    /// the check only guards cooperating writers against a lost update.
     pub fn write_atomic(
         &self,
         rel: &Path,
         before: Option<&[u8]>,
         after: &[u8],
+    ) -> Result<bool, AgentsError> {
+        self.write_atomic_staged(rel, before, after, &mut |_| {})
+    }
+
+    /// [`Project::write_atomic`], calling `hook` at each [`Stage`], so a test can
+    /// change the target there.
+    fn write_atomic_staged(
+        &self,
+        rel: &Path,
+        before: Option<&[u8]>,
+        after: &[u8],
+        hook: &mut dyn FnMut(Stage),
     ) -> Result<bool, AgentsError> {
         if before == Some(after) {
             return Ok(false);
@@ -222,23 +269,54 @@ impl Project {
             if let Ok(meta) = parent.metadata(name) {
                 file.set_permissions(meta.permissions())?;
             }
-            file.sync_all()?;
-            parent.rename(&tmp_name, &parent, name)
+            file.sync_all()
         };
-        finish().map_err(|e| {
+        let result = finish().map_err(|e| Self::map(&rel, e)).and_then(|()| {
+            drop(file);
+            hook(Stage::BeforeCommit);
+            if Self::current(&parent, name, &rel)?.as_deref() != before {
+                return Err(AgentsError::Conflict(rel.clone()));
+            }
+            parent
+                .rename(&tmp_name, &parent, name)
+                .map_err(|e| Self::map(&rel, e))
+        });
+        if result.is_err() {
+            // Best effort: the error being returned matters more than a leftover temporary file.
             let _ = parent.remove_file(&tmp_name);
-            Self::map(&rel, e)
-        })?;
+        }
+        result?;
         Ok(true)
     }
 
-    /// Delete the file at `rel` and its parent directory if that is now empty.
-    pub fn remove_file(&self, rel: &Path) -> Result<(), AgentsError> {
+    /// Delete the file at `rel`, but only if it still holds `expected`, and its
+    /// parent directory if that is now empty.
+    ///
+    /// The comparison runs right before the delete, so a file that changed
+    /// since the caller read it stays and the call fails with
+    /// [`AgentsError::Conflict`]. The guarantee and its limits are those of
+    /// [`Project::write_atomic`].
+    pub fn remove_file(&self, rel: &Path, expected: &[u8]) -> Result<(), AgentsError> {
+        self.remove_file_staged(rel, expected, &mut |_| {})
+    }
+
+    /// [`Project::remove_file`], calling `hook` at each [`Stage`], so a test can
+    /// change the target there.
+    fn remove_file_staged(
+        &self,
+        rel: &Path,
+        expected: &[u8],
+        hook: &mut dyn FnMut(Stage),
+    ) -> Result<(), AgentsError> {
         let rel = self.resolve(rel)?;
         let parent = self.parent_dir(&rel, false)?;
         let name = rel
             .file_name()
             .ok_or_else(|| AgentsError::UnsafeTarget(rel.display().to_string()))?;
+        hook(Stage::BeforeCommit);
+        if Self::current(&parent, name, &rel)?.as_deref() != Some(expected) {
+            return Err(AgentsError::Conflict(rel));
+        }
         parent.remove_file(name).map_err(|e| Self::map(&rel, e))?;
         // Windows cannot delete a directory while a handle to it is open.
         drop(parent);
@@ -246,5 +324,66 @@ impl Project {
             let _ = self.dir.remove_dir(dir);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    /// The names in `dir`, sorted, so a leftover temporary file shows up.
+    fn names(dir: &Path) -> Vec<String> {
+        let mut out: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[rstest]
+    #[case::replaced(Some("checked"))]
+    #[case::created(None)]
+    fn a_write_keeps_a_change_made_after_the_check(#[case] before: Option<&str>) {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("a.md");
+        if let Some(text) = before {
+            std::fs::write(&target, text).unwrap();
+        }
+        let project = Project::open(tmp.path()).unwrap();
+
+        let got = project.write_atomic_staged(
+            Path::new("a.md"),
+            before.map(str::as_bytes),
+            b"ours",
+            &mut |stage| {
+                if stage == Stage::BeforeCommit {
+                    std::fs::write(&target, "theirs").unwrap();
+                }
+            },
+        );
+
+        assert!(matches!(got, Err(AgentsError::Conflict(p)) if p == Path::new("a.md")));
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "theirs");
+        assert_eq!(names(tmp.path()), ["a.md"]);
+    }
+
+    #[test]
+    fn a_delete_keeps_a_change_made_after_the_check() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("a.md");
+        std::fs::write(&target, "checked").unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+
+        let got = project.remove_file_staged(Path::new("a.md"), b"checked", &mut |stage| {
+            if stage == Stage::BeforeCommit {
+                std::fs::write(&target, "theirs").unwrap();
+            }
+        });
+
+        assert!(matches!(got, Err(AgentsError::Conflict(p)) if p == Path::new("a.md")));
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "theirs");
     }
 }

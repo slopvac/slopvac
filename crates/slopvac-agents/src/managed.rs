@@ -79,10 +79,7 @@ pub fn sync(project: &Project, rel: &Path, expected: Option<&str>) -> Result<boo
         (Some(e), before) => project.write_atomic(rel, before.as_deref(), e.as_bytes()),
         (None, None) => Ok(false),
         (None, Some(b)) => {
-            if project.read(rel)?.as_deref() != Some(b.as_slice()) {
-                return Err(AgentsError::Conflict(rel.to_path_buf()));
-            }
-            project.remove_file(rel)?;
+            project.remove_file(rel, &b)?;
             Ok(true)
         }
     }
