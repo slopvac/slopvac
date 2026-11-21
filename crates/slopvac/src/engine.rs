@@ -936,7 +936,7 @@ fn fix_failure_reason(err: FixError) -> String {
         FixError::Io { source, .. }
             if source
                 .get_ref()
-                .is_some_and(|inner| inner.is::<AclCheckFailed>()) =>
+                .is_some_and(<dyn std::error::Error + Send + Sync>::is::<AclCheckFailed>) =>
         {
             LintFixReason::AclCheck
         }
