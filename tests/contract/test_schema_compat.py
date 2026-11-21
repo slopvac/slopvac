@@ -1519,9 +1519,17 @@ LOOSENED = {
     "dependentRequired-dropped": (
         {"dependentRequired": {"a": ["b"]}},
         {},
-        "/dependentRequired/a/b",
+        "/dependentRequired",
     ),
 }
+
+# Keywords that the effective restriction does not model are caught by the catch-all.
+CATCH_ALL_KEYWORDS = {"format", "multipleOf", "not", "dependentRequired"}
+
+
+def _loosened_kind(pointer: str) -> str:
+    changed = pointer.lstrip("/") in CATCH_ALL_KEYWORDS
+    return "constraint-changed" if changed else "constraint-loosened"
 
 
 @pytest.mark.parametrize("direction", ["output", "both"])
@@ -1531,7 +1539,7 @@ def test_loosening_a_constraint_of_an_output_schema_is_breaking(
 ):
     old_s, new_s = (_prop_schema(b) for b in (old, new))
     findings = run(tmp_path, old_s, new_s, direction=direction)
-    assert kinds(findings) == [(f"/properties/e{pointer}", "constraint-loosened")]
+    assert kinds(findings) == [(f"/properties/e{pointer}", _loosened_kind(pointer))]
 
 
 @pytest.mark.parametrize(("old", "new", "pointer"), LOOSENED.values(), ids=LOOSENED)
@@ -1676,6 +1684,150 @@ def test_dropping_a_child_schema_restriction_of_an_input_is_allowed(
 ):
     old_s, new_s = (_prop_schema(b) for b in (old, new))
     assert run(tmp_path, old_s, new_s, direction="input") == []
+
+
+KEYWORD_BODIES = {
+    "multipleOf": {"multipleOf": 2},
+    "not": {"not": {"type": "null"}},
+    "dependentRequired": {"dependentRequired": {"a": ["b"]}},
+    "format": {"format": "date"},
+}
+
+
+def _hop_pair(kind: str, body: dict) -> tuple[dict, dict]:
+    if kind == "retarget":
+        defs = {"A": body, "B": {}}
+        return _prop_schema(REF_A, **defs), _prop_schema(REF_B, **defs)
+    return _prop_schema(REF_A, A=body), _prop_schema({}, A=body)
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize("transition", ["retarget", "ref-to-inline"])
+@pytest.mark.parametrize("keyword", KEYWORD_BODIES)
+def test_a_keyword_dropped_across_a_ref_hop_is_reported(
+    tmp_path, direction, transition, keyword
+):
+    old, new = _hop_pair(transition, KEYWORD_BODIES[keyword])
+    findings = run(tmp_path, old, new, direction=direction)
+    assert ("/properties/e/" + keyword, "constraint-changed") in kinds(findings)
+
+
+@pytest.mark.parametrize("transition", ["retarget", "ref-to-inline"])
+@pytest.mark.parametrize("keyword", KEYWORD_BODIES)
+def test_a_keyword_dropped_across_a_ref_hop_is_allowed_in_an_input(
+    tmp_path, transition, keyword
+):
+    old, new = _hop_pair(transition, KEYWORD_BODIES[keyword])
+    assert run(tmp_path, old, new, direction="input") == []
+
+
+def test_an_unknown_keyword_changed_in_an_output_is_reported_once_modelled(tmp_path):
+    old = _prop_schema({"contentEncoding": "base64"})
+    new = _prop_schema({"contentEncoding": "base32"})
+    findings = run(tmp_path, old, new, direction="output")
+    assert ("/properties/e/contentEncoding", "constraint-changed") in kinds(findings)
+
+
+def test_annotation_changes_are_not_constraint_changes(tmp_path):
+    old = _prop_schema({"title": "a", "default": 1, "examples": [1]})
+    new = _prop_schema(
+        {"title": "b", "default": 2, "examples": [2], "deprecated": True}
+    )
+    findings = run(tmp_path, old, new, direction="output")
+    assert "constraint-changed" not in [f.kind for f in findings]
+
+
+FALSE_BODIES = {
+    "items": ({"items": False}, {}),
+    "unevaluatedProperties": ({"unevaluatedProperties": False}, {}),
+    "prefixItems": ({"prefixItems": [False]}, {"prefixItems": [True]}),
+    "allOf-member": ({"allOf": [False]}, {}),
+    "property": ({"properties": {"x": False}}, {"properties": {"x": {}}}),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(("old", "new"), FALSE_BODIES.values(), ids=FALSE_BODIES)
+def test_opening_a_false_schema_in_an_output_is_a_loosening(
+    tmp_path, direction, old, new
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    findings = run(tmp_path, old_s, new_s, direction=direction)
+    assert "constraint-loosened" in [f.kind for f in findings]
+
+
+@pytest.mark.parametrize(("old", "new"), FALSE_BODIES.values(), ids=FALSE_BODIES)
+def test_opening_a_false_schema_in_an_input_is_allowed(tmp_path, old, new):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    assert run(tmp_path, old_s, new_s, direction="input") == []
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+def test_a_false_ref_target_replaced_by_an_open_one_is_a_loosening(tmp_path, direction):
+    defs = {"A": False, "B": {}}
+    old, new = _prop_schema(REF_A, **defs), _prop_schema(REF_B, **defs)
+    findings = run(tmp_path, old, new, direction=direction)
+    assert "constraint-loosened" in [f.kind for f in findings]
+
+
+CONDITIONAL = {"if": {"type": "string"}, "then": {"minLength": 5}}
+IF_CHANGES = {
+    "if-removed": (CONDITIONAL, {"then": {"minLength": 5}}),
+    "if-added": ({"then": {"minLength": 5}}, CONDITIONAL),
+    "else-only-if-removed": (
+        {"if": {"type": "string"}, "else": {"minimum": 1}},
+        {"else": {"minimum": 1}},
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "both"])
+@pytest.mark.parametrize(("old", "new"), IF_CHANGES.values(), ids=IF_CHANGES)
+def test_adding_or_removing_an_if_changes_the_branches_in_every_direction(
+    tmp_path, direction, old, new
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    findings = run(tmp_path, old_s, new_s, direction=direction)
+    assert ("/properties/e/if", "if-changed") in kinds(findings)
+
+
+@pytest.mark.parametrize("direction", ["input", "output"])
+def test_an_if_removed_through_a_ref_transition_is_reported(tmp_path, direction):
+    old = _prop_schema(REF_A, A=CONDITIONAL)
+    new = _prop_schema({"then": {"minLength": 5}}, A=CONDITIONAL)
+    findings = run(tmp_path, old, new, direction=direction)
+    assert ("/properties/e/if", "if-changed") in kinds(findings)
+
+
+def test_an_if_without_branches_does_nothing_so_removing_it_is_silent(tmp_path):
+    old_s, new_s = _prop_schema({"if": {"type": "string"}}), _prop_schema({})
+    assert run(tmp_path, old_s, new_s, direction="output") == []
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+def test_removing_contains_drops_its_at_least_one_requirement(tmp_path, direction):
+    old, new = _prop_schema({"contains": {}}), _prop_schema({})
+    findings = run(tmp_path, old, new, direction=direction)
+    assert ("/properties/e/contains", "constraint-loosened") in kinds(findings)
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+def test_removing_contains_through_a_ref_is_reported(tmp_path, direction):
+    old = _prop_schema(REF_A, A={"contains": {}})
+    new = _prop_schema({}, A={"contains": {}})
+    findings = run(tmp_path, old, new, direction=direction)
+    assert ("/properties/e/contains", "constraint-loosened") in kinds(findings)
+
+
+def test_removing_contains_is_allowed_in_an_input_schema(tmp_path):
+    old, new = _prop_schema({"contains": {}}), _prop_schema({})
+    assert run(tmp_path, old, new, direction="input") == []
+
+
+def test_removing_contains_that_needs_no_match_is_harmless(tmp_path):
+    old = _prop_schema({"contains": {}, "minContains": 0})
+    findings = run(tmp_path, old, _prop_schema({}), direction="output")
+    assert findings == []
 
 
 def test_registry_must_list_every_schema_file(tmp_path):

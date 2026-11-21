@@ -114,6 +114,7 @@ OUTPUT_ONLY_KINDS = frozenset(
         "extensible-removed",
         "type-widened",
         "constraint-loosened",
+        "constraint-changed",
     }
 )
 
@@ -426,9 +427,52 @@ class Eff:
     maxs: dict[str, Any] = field(default_factory=dict)
     required: set[str] = field(default_factory=set)
     unique: bool = False
+    nothing: bool = False  # the schema is ``false``: it accepts no value
+    contains: bool = False  # a ``contains`` keyword needs at least one match
+    cond: frozenset[str] = frozenset()  # the ``if`` schemas
+    branches: bool = False  # a ``then`` or ``else`` exists
+    other: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
-def _own_eff(node: dict) -> Eff:
+# Keywords whose change cannot loosen a schema: documentation only. One place, so the
+# catch-all below and the unmodelled-keyword check agree on what is exempt.
+_CATCH_ALL_EXEMPT = _ANNOTATIONS | {"default"}
+# Keywords that the effective restriction models itself, or that are compared by
+# position in the tree (children, lists, definitions). Every other keyword at a position
+# is a constraint the checker does not model: a change to it is ``constraint-changed``.
+_EFFECTIVE_HANDLED = frozenset(
+    {
+        "$ref",
+        "$id",
+        "$schema",
+        "$defs",
+        "definitions",
+        "pattern",
+        "type",
+        "enum",
+        "const",
+        "required",
+        "uniqueItems",
+        "contains",
+        "if",
+        "then",
+        "else",
+        *_MIN_KEYWORDS,
+        *_MAX_KEYWORDS,
+        *_SCHEMA_MAPS,
+        *_SCHEMA_SINGLE,
+        *_SCHEMA_LISTS,
+        "additionalProperties",
+        "additionalItems",
+    }
+)
+
+
+def _own_eff(node: dict | bool) -> Eff:
+    if node is False:
+        return Eff(nothing=True)
+    if not isinstance(node, dict):
+        return Eff()
     values = None
     if "const" in node:
         values = {_canon(node["const"])}
@@ -443,6 +487,16 @@ def _own_eff(node: dict) -> Eff:
         maxs={k: node[k] for k in _MAX_KEYWORDS if _is_number(node.get(k))},
         required=set(required) if isinstance(required, list) else set(),
         unique=node.get("uniqueItems") is True,
+        contains="contains" in node,
+        cond=frozenset({_canon(node["if"])}) if "if" in node else frozenset(),
+        branches="then" in node or "else" in node,
+        other={
+            k: frozenset({_canon(v)})
+            for k, v in node.items()
+            if k not in _EFFECTIVE_HANDLED
+            and k not in _CATCH_ALL_EXEMPT
+            and not k.startswith("x-")
+        },
     )
 
 
@@ -465,6 +519,14 @@ def _meet(a: Eff, b: Eff) -> Eff:
         },
         required=a.required | b.required,
         unique=a.unique or b.unique,
+        nothing=a.nothing or b.nothing,
+        contains=a.contains or b.contains,
+        cond=a.cond | b.cond,
+        branches=a.branches or b.branches,
+        other={
+            k: a.other.get(k, frozenset()) | b.other.get(k, frozenset())
+            for k in a.other.keys() | b.other.keys()
+        },
     )
 
 
@@ -492,6 +554,8 @@ def _loosened(
                 _show(None if new.values is None else sorted(new.values)),
             )
     for key, bound in sorted(old.mins.items()):
+        if key in ("minContains", "maxContains") and not new.contains:
+            continue  # no contains left: the bound constrains nothing
         if key not in new.mins or new.mins[key] < bound:
             yield Finding(
                 file,
@@ -501,6 +565,8 @@ def _loosened(
                 _show(new.mins.get(key)),
             )
     for key, bound in sorted(old.maxs.items()):
+        if key == "maxContains" and not new.contains:
+            continue
         if key not in new.maxs or new.maxs[key] > bound:
             yield Finding(
                 file,
@@ -521,26 +587,34 @@ def _loosened(
         yield Finding(
             file, f"{ptr}/uniqueItems", "constraint-loosened", "true", "(absent)"
         )
-
-
-def _compare_dropped(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]:
-    """Keywords that the effective restriction does not model: report a removal."""
-    for key in ("format", "multipleOf", "not"):
-        if key in o and key not in n:
+    if old.nothing and not new.nothing:
+        yield Finding(file, ptr, "constraint-loosened", "false", "(accepts values)")
+    if old.cond != new.cond and (old.branches or new.branches):
+        yield Finding(
+            file,
+            f"{ptr}/if",
+            "if-changed",
+            _show(sorted(old.cond)),
+            _show(sorted(new.cond)),
+        )
+    if _needs_match(old) and not _needs_match(new):
+        yield Finding(
+            file, f"{ptr}/contains", "constraint-loosened", "(required)", "(absent)"
+        )
+    for key in sorted(old.other):
+        if old.other[key] != new.other.get(key):
             yield Finding(
-                file, f"{ptr}/{key}", "constraint-loosened", _show(o[key]), "(absent)"
+                file,
+                f"{ptr}/{_esc(key)}",
+                "constraint-changed",
+                _show(sorted(old.other[key])),
+                _show(sorted(new.other[key])) if key in new.other else "(absent)",
             )
-    for key, names in o.get("dependentRequired", {}).items():
-        kept = n.get("dependentRequired", {}).get(key, [])
-        for name in names:
-            if name not in kept:
-                yield Finding(
-                    file,
-                    f"{ptr}/dependentRequired/{_esc(key)}/{_esc(name)}",
-                    "constraint-loosened",
-                    _show(name),
-                    "(absent)",
-                )
+
+
+def _needs_match(eff: Eff) -> bool:
+    """``contains`` demands a match unless ``minContains`` is 0."""
+    return eff.contains and eff.mins.get("minContains", 1) > 0
 
 
 @dataclass(frozen=True)
@@ -592,7 +666,11 @@ class Comparer:
         ``hop_root`` marks the first pair of a hop: the referrer already compared the
         effective restriction there, with its siblings, so the root skips that check.
         """
-        if old is False or (_same(old, new) and not self._has_ref(old)):
+        if old is False:
+            if new is not False:
+                yield Finding(file, ptr, "constraint-loosened", "false", _show(new))
+            return
+        if _same(old, new) and not self._has_ref(old):
             return
         if new is False:
             yield Finding(file, ptr, "schema-narrowed", _show(old), "false")
@@ -609,8 +687,6 @@ class Comparer:
             # the inline replacement; the bare siblings would read as additions.
             return
         yield from _compare_scalars(file, ptr, o, n)
-        if not hop_root:
-            yield from _compare_dropped(file, ptr, o, n)
         yield from _compare_unmodelled(file, ptr, o, n)
         yield from _compare_required(file, ptr, o, n)
         yield from self._compare_additional(file, doc, ptr, o, n)
@@ -674,7 +750,7 @@ class Comparer:
     ) -> Eff:
         """The restrictions of ``node`` with its ``$ref`` target and ``allOf`` members."""
         if not isinstance(node, dict):
-            return Eff()
+            return _own_eff(node)
         schemas, uris = (
             (self.old, self._old_uris) if side == "old" else (self.new, self._new_uris)
         )
@@ -832,9 +908,15 @@ class Comparer:
         for key in _SCHEMA_SINGLE:
             if key in o and key in n:
                 if key == "if" and not _same(o[key], n[key]):
-                    yield Finding(
-                        file, f"{ptr}/if", "if-changed", _show(o[key]), _show(n[key])
-                    )
+                    if not {"then", "else"} & (o.keys() | n.keys()):
+                        # Without then/else the effective comparison stays silent.
+                        yield Finding(
+                            file,
+                            f"{ptr}/if",
+                            "if-changed",
+                            _show(o[key]),
+                            _show(n[key]),
+                        )
                 else:
                     yield from self.compare(file, doc, f"{ptr}/{key}", o[key], n[key])
             elif key in n and key != "if":
