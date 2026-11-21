@@ -582,13 +582,11 @@ mod tests {
         std::thread::spawn(move || {
             let _ = tx.send(detect(&exe, &|_: &str| None));
         });
-        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
-            Ok(method) => method,
-            Err(_) => {
-                let _ = std::fs::OpenOptions::new().write(true).open(fifo);
-                panic!("detection hung on a metadata file");
-            }
+        if let Ok(method) = rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            return method;
         }
+        let _ = std::fs::OpenOptions::new().write(true).open(fifo);
+        panic!("detection hung on a metadata file");
     }
 
     // One metadata file is special, the other is valid. A special `RECORD` hides the binary, so
