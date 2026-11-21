@@ -454,6 +454,10 @@ enum Matcher {
 
 struct Genre {
     spec: GenreSpec,
+    /// The pack that supplies the genre, when the registry was built from packs.
+    pack: Option<String>,
+    /// The registry key: `<pack>/<genre>` for a pack genre, the bare id otherwise.
+    key: String,
     min_score: f64,
     signals: Vec<CompiledSignal>,
 }
@@ -573,6 +577,64 @@ impl GenreRegistry {
         }
     }
 
+    /// Validate and compile the genres of several packs, each given as `(pack, spec)`.
+    ///
+    /// Every genre has the qualified key `<pack>/<genre>`. Two packs may define the same bare
+    /// id: a bare reference then resolves only when one genre claims it ([`GenreRegistry::claims`]
+    /// lists the qualified ids that do). A bare `extends` entry names a genre of the same pack
+    /// first. `default` is a qualified or bare key.
+    pub fn from_packs(specs: Vec<(String, GenreSpec)>, default: &str) -> Result<Self, Error> {
+        let mut seen = BTreeSet::new();
+        let mut genres = Vec::with_capacity(specs.len());
+        for (pack, spec) in specs {
+            spec.validate()?;
+            if !is_name(&pack) {
+                return Err(Error::Parse(format!("`{pack}` is not a pack id")));
+            }
+            if !seen.insert((pack.clone(), spec.id.clone())) {
+                return Err(Error::Parse(format!(
+                    "genre `{}` is defined twice in pack `{pack}`",
+                    spec.id
+                )));
+            }
+            genres.push(compile_in(Some(pack), spec)?);
+        }
+        let reg = Self {
+            genres,
+            default: default.to_string(),
+            contexts: BTreeMap::new(),
+        };
+        for g in &reg.genres {
+            if let Some(p) = g
+                .spec
+                .extends
+                .iter()
+                .find(|r| reg.find(g.pack.as_deref(), r).is_none())
+            {
+                return Err(Error::Parse(format!(
+                    "genre `{}` extends unknown genre `{p}`",
+                    g.key
+                )));
+            }
+            reg.chain_genres(g.pack.as_deref(), &g.key)?;
+        }
+        match reg.get(default) {
+            Some(_) => Ok(reg),
+            None => Err(Error::UnknownGenre(default.to_string())),
+        }
+    }
+
+    /// The qualified keys of every genre whose bare id is `bare`, in definition order. More
+    /// than one means a bare reference to it is ambiguous.
+    #[must_use]
+    pub fn claims(&self, bare: &str) -> Vec<String> {
+        self.genres
+            .iter()
+            .filter(|g| g.spec.id == bare)
+            .map(|g| g.key.clone())
+            .collect()
+    }
+
     /// Declare more context tags for a genre than its file lists. Documents of the genre, and of genres that extend
     /// it, carry the tags for the whole document (see `DeclaredContextTagger`).
     pub fn with_contexts(mut self, genre: &str, tags: &[&str]) -> Result<Self, Error> {
@@ -591,13 +653,36 @@ impl GenreRegistry {
     }
 
     fn get(&self, id: &str) -> Option<&Genre> {
-        self.genres.iter().find(|g| g.spec.id == id)
+        self.find(None, id)
+    }
+
+    /// Resolve a reference. `<pack>/<genre>` names one genre exactly. `<pack>:<genre>` prefers
+    /// that pack and otherwise falls back to the bare name. A bare name prefers a genre of the
+    /// pack `from`, then needs exactly one genre with that id.
+    fn find(&self, from: Option<&str>, r: &str) -> Option<&Genre> {
+        if r.contains('/') {
+            return self.genres.iter().find(|g| g.key == r);
+        }
+        let (pack, name) = r.rsplit_once(':').map_or((from, r), |(p, n)| (Some(p), n));
+        if let Some(pack) = pack
+            && let Some(g) = self
+                .genres
+                .iter()
+                .find(|g| g.pack.as_deref() == Some(pack) && g.spec.id == name)
+        {
+            return Some(g);
+        }
+        let mut same = self.genres.iter().filter(|g| g.spec.id == name);
+        match (same.next(), same.next()) {
+            (Some(g), None) => Some(g),
+            _ => None,
+        }
     }
 
     /// Genre ids in definition order.
     #[must_use]
     pub fn ids(&self) -> Vec<&str> {
-        self.genres.iter().map(|g| g.spec.id.as_str()).collect()
+        self.genres.iter().map(|g| g.key.as_str()).collect()
     }
 
     /// The definition of one genre.
@@ -609,35 +694,44 @@ impl GenreRegistry {
     /// The genre and everything it extends, lowest first and the genre itself last. A
     /// genre that several paths reach appears once, at its first position.
     pub fn chain(&self, id: &str) -> Result<Vec<&GenreSpec>, Error> {
+        Ok(self
+            .chain_genres(None, id)?
+            .into_iter()
+            .map(|g| &g.spec)
+            .collect())
+    }
+
+    fn chain_genres(&self, from: Option<&str>, id: &str) -> Result<Vec<&Genre>, Error> {
         let mut out = Vec::new();
-        self.visit(id, &mut Vec::new(), &mut out)?;
+        self.visit(from, id, &mut Vec::new(), &mut out)?;
         Ok(out)
     }
 
     fn visit<'a>(
         &'a self,
+        from: Option<&str>,
         id: &str,
         path: &mut Vec<String>,
-        out: &mut Vec<&'a GenreSpec>,
+        out: &mut Vec<&'a Genre>,
     ) -> Result<(), Error> {
         let g = self
-            .get(ref_name(id))
+            .find(from, id)
             .ok_or_else(|| Error::UnknownGenre(id.to_string()))?;
-        if path.contains(&g.spec.id) {
+        if path.contains(&g.key) {
             return Err(Error::Parse(format!(
                 "genre `{}` has an `extends` cycle",
                 g.spec.id
             )));
         }
-        if out.iter().any(|s| s.id == g.spec.id) {
+        if out.iter().any(|s| s.key == g.key) {
             return Ok(());
         }
-        path.push(g.spec.id.clone());
+        path.push(g.key.clone());
         for parent in &g.spec.extends {
-            self.visit(parent, path, out)?;
+            self.visit(g.pack.as_deref(), parent, path, out)?;
         }
         path.pop();
-        out.push(&g.spec);
+        out.push(g);
         Ok(())
     }
 
@@ -700,7 +794,7 @@ impl GenreRegistry {
         let candidates = self.score(doc, rel)?;
         let mut scores: Vec<(String, f64)> = candidates
             .iter()
-            .map(|(g, s, _)| (g.spec.id.clone(), *s))
+            .map(|(g, s, _)| (g.key.clone(), *s))
             .collect();
         scores.sort_by(|a, b| b.1.total_cmp(&a.1));
         let explicit = |id: &str, signal: &str, detail: String| -> Result<GenreResult, Error> {
@@ -761,7 +855,7 @@ impl GenreRegistry {
         }
         if let Some((g, _, reasons)) = best {
             return Ok(GenreResult {
-                id: g.spec.id.clone(),
+                id: g.key.clone(),
                 source: GenreSource::Detected,
                 reasons: reasons.clone(),
                 scores,
@@ -791,10 +885,18 @@ impl GenreRegistry {
         let mut out = Vec::new();
         let rel = normalize_path(doc.path());
         for (g, score, _) in self.score(doc, &rel)? {
-            let below_parent =
-                g.spec.id != parent && self.chain(&g.spec.id)?.iter().any(|s| s.id == parent);
+            let below_parent = match self.get(parent) {
+                Some(p) => {
+                    g.key != p.key
+                        && self
+                            .chain_genres(g.pack.as_deref(), &g.key)?
+                            .iter()
+                            .any(|x| x.key == p.key)
+                }
+                None => false,
+            };
             if below_parent && g.is_candidate(score) {
-                out.push((g.spec.id.clone(), score));
+                out.push((g.key.clone(), score));
             }
         }
         out.sort_by(|a, b| b.1.total_cmp(&a.1));
@@ -886,6 +988,10 @@ fn files_match(patterns: &[String], native: &str) -> Result<bool, Error> {
 }
 
 fn compile(spec: GenreSpec) -> Result<Genre, Error> {
+    compile_in(None, spec)
+}
+
+fn compile_in(pack: Option<String>, spec: GenreSpec) -> Result<Genre, Error> {
     let mut signals = Vec::new();
     let mut min_score = 0.0;
     if let Some(d) = &spec.detect {
@@ -921,8 +1027,13 @@ fn compile(spec: GenreSpec) -> Result<Genre, Error> {
             });
         }
     }
+    let key = pack
+        .as_ref()
+        .map_or_else(|| spec.id.clone(), |p| format!("{p}/{}", spec.id));
     Ok(Genre {
         spec,
+        pack,
+        key,
         min_score,
         signals,
     })
