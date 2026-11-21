@@ -7,7 +7,7 @@ use toml_edit::{Array, DocumentMut, Item, RawString, Table, TableLike, Value, va
 
 use crate::capped::Blockers;
 use crate::messages::{MigratePhrase, MigrateText};
-use crate::nesting::{self, TABLES_KEY};
+use crate::nesting::{self, Refusal, TABLES_KEY};
 use crate::provenance::{KeyLines, key_lines};
 use crate::{Dropped, Error, Options, RenameTable, preserve_doc};
 
@@ -88,7 +88,13 @@ pub(crate) fn migrate_config_in(
     options: Options,
     outer: Option<&KeyLines>,
 ) -> Result<Rewrite, Error> {
-    nesting::check(text).map_err(|e| Error::Dropped(vec![e.dropped(file, TABLES_KEY)]))?;
+    nesting::check(text).map_err(|refusal| match refusal {
+        Refusal::TooDeep(e) => Error::Dropped(vec![e.dropped(file, TABLES_KEY)]),
+        Refusal::Invalid(e) => Error::Parse {
+            file: file.to_owned(),
+            message: e.to_string(),
+        },
+    })?;
     let own = key_lines(text).map_err(|e| Error::Parse {
         file: file.to_owned(),
         message: e,

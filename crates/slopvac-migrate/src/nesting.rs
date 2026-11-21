@@ -18,7 +18,7 @@
 //! bounded at the same number by the config loader.
 
 use frontmatter_spans::LineIndex;
-use toml_edit::{ArrayOfTables, Document, Item, Key, TableLike, Value};
+use toml_edit::{ArrayOfTables, Document, Item, Key, TableLike, TomlError, Value};
 
 use crate::Dropped;
 use crate::messages::MigrateText;
@@ -65,26 +65,37 @@ enum Node<'a> {
 /// The pages are reserved, not committed, until the recursion reaches them.
 const CHECK_STACK_BYTES: usize = 16 << 20;
 
-/// Parse `text` and check its nesting. Text that is not valid TOML passes: the caller's own
-/// parse reports it.
+/// Why [`check`] refuses a document.
+#[derive(Debug)]
+pub(crate) enum Refusal {
+    /// The document nests deeper than [`MAX_DEPTH`].
+    TooDeep(TooDeep),
+    /// The text is not valid TOML. The parser's error is plain data, so a caller reports it
+    /// without parsing the text again on its own stack.
+    Invalid(TomlError),
+}
+
+/// Parse `text` and check its nesting. A caller parses the text itself only after this
+/// returns `Ok`.
 ///
-/// The parse, the check and the drop of the parsed tree run on a thread of their own with
-/// [`CHECK_STACK_BYTES`] of stack, so a refused document cannot overflow the caller's stack.
-pub(crate) fn check(text: &str) -> Result<(), TooDeep> {
+/// The parse, the check and the drop of the parsed tree, or of the partial tree a failed
+/// parse built, run on a thread of their own with [`CHECK_STACK_BYTES`] of stack, so a
+/// refused document cannot overflow the caller's stack.
+pub(crate) fn check(text: &str) -> Result<(), Refusal> {
     std::thread::scope(|scope| {
         let worker = std::thread::Builder::new()
             .name("slopvac-migrate-nesting".to_owned())
             .stack_size(CHECK_STACK_BYTES)
             .spawn_scoped(scope, || match Document::parse(text) {
-                Ok(doc) => check_document(&doc, text),
-                Err(_) => Ok(()),
+                Ok(doc) => check_document(&doc, text).map_err(Refusal::TooDeep),
+                Err(e) => Err(Refusal::Invalid(e)),
             });
         match worker {
             Ok(handle) => handle
                 .join()
                 .unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
             // No thread, no check: refuse rather than walk an unchecked document.
-            Err(_) => Err(TooDeep { line: 1 }),
+            Err(_) => Err(Refusal::TooDeep(TooDeep { line: 1 })),
         }
     })
 }
@@ -208,16 +219,18 @@ mod tests {
         #[case] shape: fn(usize) -> String,
         #[case] line: usize,
     ) {
-        assert_eq!(check(&shape(MAX_DEPTH)), Ok(()), "at the bound");
-        assert_eq!(
-            check(&shape(MAX_DEPTH + 1)),
-            Err(TooDeep { line }),
+        assert!(check(&shape(MAX_DEPTH)).is_ok(), "at the bound");
+        assert!(
+            matches!(
+                check(&shape(MAX_DEPTH + 1)),
+                Err(Refusal::TooDeep(TooDeep { line: got })) if got == line
+            ),
             "past the bound"
         );
     }
 
     #[test]
-    fn text_that_is_not_toml_passes_for_the_parser_to_report() {
-        assert_eq!(check("a = = 1"), Ok(()));
+    fn text_that_is_not_toml_is_returned_as_the_parsers_error() {
+        assert!(matches!(check("a = = 1"), Err(Refusal::Invalid(_))));
     }
 }

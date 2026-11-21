@@ -104,3 +104,22 @@ fn the_deepest_tree_the_parser_accepts_is_refused_from_a_small_stack() {
         "slopvac.toml:2: `tables`: tables nest more than 32 levels deep"
     );
 }
+
+/// A deep valid prefix followed by a syntax error must still end in a located parse error
+/// from a small stack: the failed parse may have built the deep partial tree first.
+#[rstest]
+#[case::duplicate_root_key("profile = \"strict\"\n")]
+#[case::trailing_garbage("= = =\n")]
+fn a_deep_prefix_before_a_syntax_error_is_a_parse_error_from_a_small_stack(#[case] tail: &str) {
+    let text = format!(
+        "profile = \"normal\"\n{}{tail}",
+        dotted_in_inline_parts(80, 80)
+    );
+    let error = std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(move || refused(&text))
+        .expect("the test thread starts")
+        .join()
+        .expect("the refusal returns instead of panicking");
+    assert_eq!(error.code(), "config-parse");
+}

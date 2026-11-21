@@ -13,6 +13,7 @@ use crate::capped::{Blockers, Capped, Listed};
 use crate::config::migrate_config_in;
 use crate::limits::{Budget, Kind, Limits};
 use crate::messages::{MigratePhrase, MigrateText};
+use crate::nesting::Refusal;
 use crate::provenance::{KeyLines, key_lines};
 use crate::walk::{Dir, discover};
 use crate::{Dropped, Error, Options, RenameTable, rewrite_directives, rewrite_steering};
@@ -450,11 +451,9 @@ fn pyproject_lines(e: Error, py: Option<&str>) -> Error {
 /// # Errors
 /// [`Error::Parse`] naming `file` and the line, when the text is not valid TOML.
 fn extract_tool_table(text: &str, file: &str) -> Result<Option<(String, String)>, Error> {
-    crate::nesting::check(text)
-        .map_err(|e| Error::Dropped(vec![e.dropped(file, crate::nesting::TABLES_KEY)]))?;
-    let mut doc: DocumentMut = text
-        .parse()
-        .map_err(|e: toml_edit::TomlError| Error::Parse {
+    crate::nesting::check(text).map_err(|refusal| match refusal {
+        Refusal::TooDeep(e) => Error::Dropped(vec![e.dropped(file, crate::nesting::TABLES_KEY)]),
+        Refusal::Invalid(e) => Error::Parse {
             file: file.to_owned(),
             message: MigrateText::ParseAtLine {
                 line: e
@@ -464,6 +463,13 @@ fn extract_tool_table(text: &str, file: &str) -> Result<Option<(String, String)>
                 message: e.message().to_owned(),
             }
             .to_string(),
+        },
+    })?;
+    let mut doc: DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| Error::Parse {
+            file: file.to_owned(),
+            message: e.to_string(),
         })?;
     Ok(split_tool_table(&mut doc))
 }

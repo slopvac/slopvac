@@ -18,7 +18,7 @@ use toml_edit::{DocumentMut, Item, TableLike, Value};
 use crate::config::line_of;
 use crate::limits::{Budget, Kind, Refused};
 use crate::messages::{MigratePhrase, MigrateText};
-use crate::nesting;
+use crate::nesting::{self, Refusal};
 use crate::provenance::{KeyLines, key_lines};
 use crate::{Dropped, Error};
 
@@ -330,9 +330,17 @@ fn rewrite(
     let blocked =
         |line: usize, key: &str, reason: String| vec![Dropped::new(label, key, line, reason)];
     if format == "toml"
-        && let Err(e) = nesting::check(text)
+        && let Err(refusal) = nesting::check(text)
     {
-        return Err(vec![e.dropped(label, "entries")]);
+        return Err(match refusal {
+            Refusal::TooDeep(e) => vec![e.dropped(label, "entries")],
+            // A parser's message can quote the file, so no message is repeated.
+            Refusal::Invalid(e) => blocked(
+                e.span().map_or(1, |s| line_of(text, s.start)),
+                "entries",
+                MigratePhrase::BlocklistNotToml.as_static().to_owned(),
+            ),
+        });
     }
     let Err(refused) = Blocklist::parse(label, format, text) else {
         return Ok(None);
