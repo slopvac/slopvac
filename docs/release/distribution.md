@@ -10,7 +10,7 @@ The `slopvac` binary ships through cargo-dist (`dist`). The configuration lives 
   - Linux x86_64 (musl).
 - A shell installer and a Homebrew formula pushed to `slopvac/homebrew-tap`.
 - GitHub build attestations, checksums, a CycloneDX SBOM, and binaries built with `cargo-auditable`.
-- A minisign signature (`<file>.minisig`) for every published file: archives, installers, the Homebrew formula, checksum files, the SBOM and `dist-manifest.json`.
+- A minisign signature (`<file>.minisig`) for every published file: archives, installers, the Homebrew formula, checksum files, and the SBOM.
 
 ## Windows
 
@@ -75,7 +75,7 @@ How the workflows sign:
 
 - `scripts/install_minisign.sh` installs a pinned minisign release and checks its sha256 before it runs anything.
 - `scripts/release_signing.py sign` writes the secret from `MINISIGN_SECRET_KEY` to a mode 600 file under `RUNNER_TEMP`, signs every file in the artifact directory with the trusted comment for the version in `--version`, deletes the key file, and verifies each signature against `keys/slopvac-release.pub`. Only the signing step sees the secret. The step never prompts, so an encrypted key fails the job.
-- Both workflows pass the version from the validated tag through an environment variable. The `host` job signs in `release.yml`, before it uploads to the unpublished release. In `publish-pypi.yml` the `sign` job signs the archives, checksums and wheels before the PyPI upload, and the `prerelease` job attaches the signatures. A published release holds no unsigned asset.
+- Both workflows pass the version from the validated tag through an environment variable. The `sign` job signs in `release.yml`, before the `host` job uploads to the unpublished release. In `publish-pypi.yml` the `sign` job signs the archives, checksums and wheels before the PyPI upload, and the `prerelease` job attaches the signatures. A published release holds no unsigned asset.
 - The step fails closed. Without the public key file or the secret, the job stops before it uploads. `publish-pypi.yml` also checks for the key in `validate`. Candidate wheels on PyPI carry no `.minisig`; the signed copies are on the GitHub prerelease. A stable release has no wheels on GitHub, so its wheels have no minisign signature.
 
 To rotate the key, follow [Rotate the key](maintainer-setup.md#rotate-the-key). Releases already published keep verifying against the key that signed them, so keep the old public key under `keys/` with its key id in the file name, and record the change in the release notes.
@@ -137,7 +137,7 @@ A git tag name can hold `$(...)` or backticks, and the generated workflow pastes
 - The build step runs under bash, and the dist flags reach it through environment variables.
 - The CycloneDX step output is read as `outputs.paths`, so the SBOM reaches the upload. dist 0.34.0 writes `output`, which is a typo.
 - The stable PyPI upload of 3.0.0 and later is the `publish` job in `publish-pypi.yml`. Its `provenance` job calls the same `release-provenance.yml`, and the upload needs it to pass. The wheels are built from the tagged commit that the gate checked, and the upload job runs `verify-tag` first. Both PyPI publishers also run `release_provenance.py check-dist` before each upload: the files must be exactly the expected set, and the project name and version in each file's metadata must match, so a build step cannot add a file that the version check never saw. `publish-lint.yml` builds the pure-Python 2.x package and refuses any version from 3.0.0 on: its upload jobs need `release_provenance.py is-legacy` to print true. A 2.x release keeps its flow without the gate, because 2.x candidates are untagged branch builds that no candidate tag can prove.
-- The workflow token is read-only. Only the host job and the 2.x publish job can write contents.
+- The workflow token is read-only. Only the host job and the 2.x publish job can write contents, and both write with a token minted from the release App.
 
 `dist-workspace.toml` sets `allow-dirty = ["ci"]` so dist accepts the hardened file. The script fails if a dist upgrade changes the template, and `tests/test_patch_release_workflow.py` hardens dist's raw output, `tests/fixtures/release.generated.yml`, and requires the result to equal the committed workflow byte for byte. After changing `dist-workspace.toml` or upgrading dist, run `scripts/dist_generate.sh --save-raw tests/fixtures/release.generated.yml` and commit both files.
 
@@ -164,6 +164,6 @@ Each release of major 3 and later publishes in this order: build, upload to the 
 - the shell installer on Linux and macOS.
 - `brew install slopvac/tap/slopvac` on Linux and macOS. It runs only when the tag is the repository's latest stable release, because the tap serves only that one; for an older tag the workflow logs why it skipped. It retries for about ten minutes, because the tap updates after the release.
 
-It starts after the `Release` workflow succeeds on a tag push. The workflow has no `release: published` trigger: the host job publishes the release with `GITHUB_TOKEN`, which raises no event, and such a trigger could start before the assets exist. To test any release again, run the workflow from the Actions tab and give a `tag` such as `v3.0.0`. The tag must be `vX.Y.Z` or `vX.Y.Z-rc.N`; `scripts/release_smoke.py` rejects anything else, and the tag reaches shell steps only through the environment. Tags of major 2 and earlier are skipped, because dist did not build them.
+It starts after the `Release` workflow succeeds on a tag push. The workflow has no `release: published` trigger: the host job publishes the release with the release App token, and a `release: published` trigger could start before the Homebrew tap update finishes. This workflow waits for the whole `Release` workflow, tap update included. To test any release again, run the workflow from the Actions tab and give a `tag` such as `v3.0.0`. The tag must be `vX.Y.Z` or `vX.Y.Z-rc.N`; `scripts/release_smoke.py` rejects anything else, and the tag reaches shell steps only through the environment. Tags of major 2 and earlier are skipped, because dist did not build them.
 
 The workflow needs a published release, so it has not run yet. The first real release is its first test.

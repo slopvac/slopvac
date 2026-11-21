@@ -1633,7 +1633,11 @@ _TOKEN_MINT = "actions/create-github-app-token"
 
 
 def _holds_publishing_power(job: dict) -> bool:
-    """A job that can write contents or mints an App token."""
+    """A job with a publishing credential: `contents: write` or a release App token mint.
+
+    This leaves out `id-token: write` and `packages: write`. The attestation and GHCR
+    jobs hold those by approved departure (docs/engineering.md).
+    """
     if (job.get("permissions") or {}).get("contents") == "write":
         return True
     return any(
@@ -1665,7 +1669,7 @@ def test_no_publishing_job_installs_or_runs_dist_or_built_binaries(workflow):
             assert not _RUNS_BUILD_OUTPUT.search(run), (name, step)
 
 
-def test_the_job_that_runs_dist_holds_no_release_publishing_power(workflow):
+def test_no_job_that_runs_dist_holds_contents_write_or_an_app_token_mint(workflow):
     runners = {
         name
         for name, job in workflow["jobs"].items()
@@ -1688,4 +1692,16 @@ def test_the_host_job_verifies_every_signature_before_it_mints_or_uploads(workfl
     assert uploads
     assert verify < mint < min(uploads)
     assert "artifacts" in runs[verify]
-    assert "! -name '*.minisig'" in runs[verify]
+    assert "verify-dir artifacts" in runs[verify]
+
+
+def test_the_host_job_uploads_only_the_list_the_verify_step_wrote(workflow):
+    steps = workflow["jobs"]["host"]["steps"]
+    verify = next(s for s in steps if "release_signing.py verify" in s.get("run", ""))
+    upload = next(s for s in steps if "gh release upload" in s.get("run", ""))
+    assert verify["env"]["UPLOAD_LIST"] == upload["env"]["UPLOAD_LIST"]
+    assert 'verify-dir artifacts --list "$UPLOAD_LIST"' in verify["run"]
+    assert upload["run"].strip() == (
+        'xargs -0 -a "$UPLOAD_LIST" gh release upload "$RELEASE_TAG"'
+    )
+    assert "artifacts/" not in upload["run"]

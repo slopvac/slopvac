@@ -4,6 +4,7 @@
     release_signing.py require-key
     release_signing.py sign DIR --version VERSION
     release_signing.py verify FILE [FILE ...]
+    release_signing.py verify-dir DIR --list FILE
 
 ``sign`` writes ``<file>.minisig`` next to every regular file in DIR, then checks
 each signature against the committed public key before it returns. The workflows
@@ -109,6 +110,29 @@ def verify(files: Sequence[Path], pubkey: Path) -> None:
             raise SigningError(f"signature check failed for {file.name}: {err}")
 
 
+def verify_directory(directory: Path, pubkey: Path) -> list[Path]:
+    """Verify every payload in DIR; return the payloads and their signatures.
+
+    The result is the only set of files a publisher may upload. A signature without a
+    payload, a payload without a signature and any entry that is not a regular file all
+    fail, so nothing reaches the release unchecked.
+    """
+    payloads = artifacts(directory)
+    names = {p.name for p in payloads}
+    orphans = sorted(
+        e.name
+        for e in directory.iterdir()
+        if e.name.endswith(SIGNATURE_SUFFIX)
+        and e.name[: -len(SIGNATURE_SUFFIX)] not in names
+    )
+    if orphans:
+        raise SigningError(f"signature without a payload: {orphans}")
+    verify(payloads, pubkey)
+    return sorted(
+        [*payloads, *(p.with_name(p.name + SIGNATURE_SUFFIX) for p in payloads)]
+    )
+
+
 def artifacts(directory: Path) -> list[Path]:
     if not directory.is_dir():
         raise SigningError(f"{directory} is not a directory")
@@ -168,6 +192,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     sign_parser.add_argument("directory", type=Path)
     sign_parser.add_argument("--version", required=True)
     commands.add_parser("verify").add_argument("files", type=Path, nargs="+")
+    verify_dir = commands.add_parser("verify-dir")
+    verify_dir.add_argument("directory", type=Path)
+    verify_dir.add_argument("--list", type=Path, required=True, dest="list_file")
     args = parser.parse_args(argv)
     try:
         if args.command == "require-key":
@@ -177,6 +204,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.directory, args.pubkey, dict(os.environ), args.version
             ):
                 print(f"signed {signature.name}")
+        elif args.command == "verify-dir":
+            listed = verify_directory(args.directory, args.pubkey)
+            args.list_file.write_bytes(b"".join(str(f).encode() + b"\0" for f in listed))
+            print(f"verified {len(listed) // 2} file(s)")
         else:
             verify(args.files, args.pubkey)
             print(f"verified {len(args.files)} file(s)")

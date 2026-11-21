@@ -105,8 +105,9 @@ _RELEASE_NEW = """\
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          UPLOAD_LIST: ${{ runner.temp }}/upload-list
         run: |
-          gh release upload "$RELEASE_TAG" artifacts/*
+          xargs -0 -a "$UPLOAD_LIST" gh release upload "$RELEASE_TAG"
 {verify}\
       - name: Publish the release
         env:
@@ -184,8 +185,10 @@ _HOST_SIGNATURE_STEPS = """\
         run: bash scripts/install_minisign.sh
       - name: Verify the signatures against the committed key
         shell: bash
+        env:
+          UPLOAD_LIST: ${{ runner.temp }}/upload-list
         run: |
-          find artifacts -type f ! -name '*.minisig' -print0 | xargs -0 python3 scripts/release_signing.py verify
+          python3 scripts/release_signing.py verify-dir artifacts --list "$UPLOAD_LIST"
 """
 _HOST_CLEANUP_OLD = """\
           rm -f artifacts/*-dist-manifest.json

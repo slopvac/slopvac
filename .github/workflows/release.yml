@@ -397,8 +397,10 @@ jobs:
         run: bash scripts/install_minisign.sh
       - name: Verify the signatures against the committed key
         shell: bash
+        env:
+          UPLOAD_LIST: ${{ runner.temp }}/upload-list
         run: |
-          find artifacts -type f ! -name '*.minisig' -print0 | xargs -0 python3 scripts/release_signing.py verify
+          python3 scripts/release_signing.py verify-dir artifacts --list "$UPLOAD_LIST"
       - name: Mint the release token
         id: release-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -412,8 +414,9 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          UPLOAD_LIST: ${{ runner.temp }}/upload-list
         run: |
-          gh release upload "$RELEASE_TAG" artifacts/*
+          xargs -0 -a "$UPLOAD_LIST" gh release upload "$RELEASE_TAG"
       - name: Confirm the tag still points at the built commit
         shell: bash
         env:

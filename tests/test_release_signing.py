@@ -346,3 +346,68 @@ def test_a_file_name_that_cannot_go_in_a_trusted_comment_stops_signing_first(
     assert list(directory.glob("*.minisig")) == []
     # The fake minisign logs every call; no log means it never ran.
     assert not fake.exists()
+
+
+# --- verify-dir: the upload list is exactly the verified payloads and their sidecars ---
+
+
+@pytest.fixture
+def signed(fake, release):
+    directory, pub = release
+    for payload in list(directory.iterdir()):
+        (directory / (payload.name + ".minisig")).write_text("sig")
+    return directory, pub
+
+
+@POSIX_ONLY
+def test_the_upload_list_holds_each_verified_payload_and_its_sidecar(signed):
+    directory, pub = signed
+    listed = signing.verify_directory(directory, pub)
+    assert [p.name for p in listed] == [
+        "sha256.sum",
+        "sha256.sum.minisig",
+        "slopvac-x86_64.tar.gz",
+        "slopvac-x86_64.tar.gz.minisig",
+    ]
+
+
+@POSIX_ONLY
+def test_an_orphan_signature_fails_and_lists_nothing(signed, tmp_path):
+    directory, pub = signed
+    (directory / "extra.minisig").write_text("sig")
+    out = tmp_path / "upload-list"
+    code = signing.main(
+        ["--pubkey", str(pub), "verify-dir", str(directory), "--list", str(out)]
+    )
+    assert code == 1
+    assert not out.exists()
+
+
+@POSIX_ONLY
+def test_a_payload_without_a_signature_fails(signed):
+    directory, pub = signed
+    (directory / "slopvac-x86_64.tar.gz.minisig").unlink()
+    with pytest.raises(signing.SigningError, match="slopvac-x86_64.tar.gz"):
+        signing.verify_directory(directory, pub)
+
+
+@POSIX_ONLY
+def test_an_entry_that_is_not_a_regular_file_fails(signed):
+    directory, pub = signed
+    (directory / "nested").mkdir()
+    with pytest.raises(signing.SigningError, match="nested"):
+        signing.verify_directory(directory, pub)
+
+
+@POSIX_ONLY
+def test_the_list_file_is_nul_separated_for_xargs(signed, tmp_path):
+    directory, pub = signed
+    out = tmp_path / "upload-list"
+    code = signing.main(
+        ["--pubkey", str(pub), "verify-dir", str(directory), "--list", str(out)]
+    )
+    assert code == 0
+    names = out.read_bytes().split(b"\0")
+    assert names[-1] == b""
+    assert len(names) == 5
+    assert all(n.startswith(str(directory).encode()) for n in names[:-1])
