@@ -1858,3 +1858,20 @@ fn a_config_error_on_a_path_that_is_not_utf8_is_published_on_that_path() {
     assert_eq!(published["uri"], "file:///work/a%FF/slopvac.toml");
     client.finish().unwrap();
 }
+
+#[test]
+fn a_watched_path_with_glob_characters_is_registered_as_a_literal() {
+    let linter = Growing {
+        watched: Mutex::new(vec!["/work/[a]/{b}/c*d?.toml".to_owned()]),
+        on_reload: None,
+        on_lint: None,
+    };
+    let (conn, handle) = watching_session(linter);
+    let register = next_request(&conn);
+    // Each character the glob syntax reads is written as a one-character class.
+    assert_eq!(
+        globs_of(&register),
+        ["**/slopvac.toml", "/work/[[]a]/[{]b[}]/c[*]d[?].toml"]
+    );
+    end_session(&conn, handle);
+}

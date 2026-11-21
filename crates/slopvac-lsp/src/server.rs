@@ -386,7 +386,13 @@ fn sync_watch(shared: &Shared, out: &Sender<Message>) {
         return;
     }
     let globs: Vec<String> = std::iter::once(format!("**/{CONFIG_NAME}"))
-        .chain(shared.linter.watched())
+        .chain(
+            shared
+                .linter
+                .watched()
+                .iter()
+                .map(|path| literal_glob(path)),
+        )
         .collect();
     let mut watch = shared.watch.lock().unwrap_or_else(PoisonError::into_inner);
     if watch.globs.as_ref() == Some(&globs) {
@@ -419,6 +425,22 @@ fn sync_watch(shared: &Shared, out: &Sender<Message>) {
     );
     let _ = out.send(Message::Request(request));
     watch.globs = Some(globs);
+}
+
+/// `path` as a glob that matches that path only. The glob syntax of the protocol reads `*`,
+/// `?`, `{`, `}` and `[`, and has no escape, so each is written as a one-character class.
+fn literal_glob(path: &str) -> String {
+    let mut glob = String::with_capacity(path.len());
+    for c in path.chars() {
+        if matches!(c, '*' | '?' | '{' | '}' | '[') {
+            glob.push('[');
+            glob.push(c);
+            glob.push(']');
+        } else {
+            glob.push(c);
+        }
+    }
+    glob
 }
 
 fn watch_id(n: u64) -> String {
