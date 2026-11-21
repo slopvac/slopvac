@@ -389,3 +389,10 @@ pointer = "/$defs/Plugin/else/not"
 kind = "constraint-added"
 reason = "python was already rejected by unevaluatedProperties, so else only restates that"
 approved_by = "contract owner (8l4.2)"
+
+[[allow]]
+file = "plugin-manifest.schema.json"
+pointer = "/$defs/Semver"
+kind = "def-removed"
+reason = "The definition moved to common.schema.json, which the plugin manifest and the plugins lock both reference now. A shared definition must live in a file that follows the output rule, and a def name means one thing across schemas/v3. Nothing outside the schemas references the old name, and the conformance corpus holds no instance of it."
+approved_by = "contract owner (8l4.2)"
