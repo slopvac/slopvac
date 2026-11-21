@@ -733,8 +733,6 @@ const SCHEMA_PATHS: &[&[&str]] = &[
     &["slopvac", "rules"],
     &["slopvac", "terms"],
     &["slopvac", "terms", "allow"],
-    &["slopvac", "terms", "files"],
-    &["slopvac", "terms", "blocklists"],
 ];
 
 /// The JSON pointer of `path` cut at the first segment the schema does not own, `/` when no
