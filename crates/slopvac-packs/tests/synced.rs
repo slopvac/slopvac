@@ -55,7 +55,7 @@ impl Spec {
     }
 
     fn genre(mut self, name: &'static str, body: &str) -> Self {
-        self.provides = "genres = [\"genres/g.yaml\"]".to_owned();
+        self.provides = "genres = [\"genres/g.yaml\"]".into();
         self.files.push((
             "genres/g.yaml",
             format!("schema_version: 3\nid: {name}\n{body}"),
@@ -74,7 +74,7 @@ impl Spec {
                 )
             })
             .collect();
-        self.provides = "categories = [\"categories/c.json\"]".to_owned();
+        self.provides = "categories = [\"categories/c.json\"]".into();
         self.files.push((
             "categories/c.json",
             format!(
@@ -390,7 +390,7 @@ fn a_required_version_the_lock_does_not_provide_is_refused() {
 fn a_synced_pack_registers_no_taggers() {
     let mut w = World::new();
     let mut spec = Spec::new("acme");
-    spec.provides = "taggers = [\"taggers/t.yaml\"]".to_owned();
+    spec.provides = "taggers = [\"taggers/t.yaml\"]".into();
     spec.files.push((
         "taggers/t.yaml",
         "schema_version: 3\nid: t\ntag: procedure\nmatch:\n  - pattern: 'a'\n".to_owned(),

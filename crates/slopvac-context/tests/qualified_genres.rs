@@ -121,5 +121,5 @@ fn contexts_added_to_one_pack_genre_do_not_reach_a_same_named_genre_of_another()
     let r = registry().with_contexts("acme:howto", &["legal"]).unwrap();
 
     assert_eq!(r.contexts("acme:howto").unwrap(), ["legal"]);
-    assert!(r.contexts("core:howto").unwrap().is_empty());
+    assert_eq!(r.contexts("core:howto").unwrap(), Vec::<String>::new());
 }

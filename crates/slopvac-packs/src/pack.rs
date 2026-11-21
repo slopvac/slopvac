@@ -274,7 +274,7 @@ fn pattern_bytes_of(rules: &RuleSet) -> u64 {
     rules
         .categories()
         .iter()
-        .flat_map(|c| c.rules())
+        .flat_map(slopvac_rules::LoadedCategory::rules)
         .filter_map(|r| r.matcher())
         .map(|m| m.source().len() as u64)
         .sum()
