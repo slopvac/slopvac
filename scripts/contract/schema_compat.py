@@ -46,13 +46,15 @@ Limits, all of which fail closed:
 - Direction: schemas/v3/directions.toml classes each schema file as ``input``,
   ``output`` or ``both``; it must list every schema file and nothing else. ``both``
   follows the output rule. In an output schema, a new ``enum`` value or an appended
-  ``anyOf``/``oneOf`` member is reported (``enum-widened``, ``alternative-added``)
+  ``anyOf``/``oneOf`` member, a widened ``type`` or a dropped ``enum``/``const`` is
+  reported (``enum-widened``, ``alternative-added``, ``type-widened``)
   unless the same position in the new schema carries ``"x-slopvac-extensible": true``;
   a marked ``oneOf`` also skips ``narrowing-possible`` for members appended to an existing list (a newly introduced ``anyOf``/``oneOf`` is always checked). Removing
   a marker from an output schema is ``extensible-removed``. In an input schema all of
-  these stay allowed. An output-only finding is reported once, at the definition and in
-  the direction of the file that holds it, never again through a ``$ref``; so a shared
-  definition that an output schema references belongs in an output or ``both`` file.
+  these stay allowed. A change to one shared definition is reported once, at the
+  definition and in the direction of the file that holds it, not again at each referrer;
+  a retarget, or a reference added or removed, is still reported at the referrer. So a
+  definition that an output schema references must live in an output or ``both`` file.
   An appended ``oneOf`` member in an unmarked output position gets two findings with
   different meanings: ``alternative-added`` says consumers see a new variant, and
   ``narrowing-possible`` says the member may overlap an old one, so a document that
@@ -101,7 +103,9 @@ DIRECTIONS = ("input", "output", "both")
 EXTENSIBLE = "x-slopvac-extensible"
 # Kinds that only an output schema (or a "both" schema) reports: an input schema may
 # grow its enums and alternatives, but a consumer of output must be told it can.
-OUTPUT_ONLY_KINDS = frozenset({"enum-widened", "alternative-added", "extensible-removed"})
+OUTPUT_ONLY_KINDS = frozenset(
+    {"enum-widened", "alternative-added", "extensible-removed", "type-widened"}
+)
 
 LOADERS: dict[str, Callable[[str], Any]] = {
     ".json": json.loads,
@@ -450,6 +454,7 @@ class Comparer:
             return
         o, n = _as_schema(old), _as_schema(new)
         yield from self._compare_refs(file, doc, ptr, o, n)
+        new_has_ref = "$ref" in n
         removed = "$ref" in o and "$ref" not in n
         o = {k: v for k, v in o.items() if k != "$ref"}
         n = {k: v for k, v in n.items() if k != "$ref"}
@@ -458,6 +463,8 @@ class Comparer:
             # the inline replacement; the bare siblings would read as additions.
             return
         yield from _compare_scalars(file, ptr, o, n)
+        if not new_has_ref:
+            yield from _compare_widening(file, ptr, o, n)
         yield from _compare_unmodelled(file, ptr, o, n)
         yield from _compare_required(file, ptr, o, n)
         yield from self._compare_additional(file, doc, ptr, o, n)
@@ -737,6 +744,33 @@ def _compare_unmodelled(file: str, ptr: str, o: dict, n: dict) -> Iterator[Findi
                 "unverified",
                 _show(o.get(key)),
                 _show(n.get(key)),
+            )
+
+
+def _compare_widening(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]:
+    """Widenings by ``type``, or by dropping an ``enum``/``const``, that a closed output forbids.
+
+    Skipped where the new schema has a ``$ref`` (the target carries the constraint) and
+    where the position is marked extensible.
+    """
+    if _extensible(n):
+        return
+    old_types, new_types = _types(o.get("type")), _types(n.get("type"))
+    if old_types is not None and (
+        new_types is None
+        or not all(_type_satisfied(t, old_types) for t in new_types)
+    ):
+        yield Finding(
+            file,
+            f"{ptr}/type",
+            "type-widened",
+            _show(o.get("type")),
+            _show(n.get("type")) if "type" in n else "(absent)",
+        )
+    for key in ("enum", "const"):
+        if key in o and "enum" not in n and "const" not in n:
+            yield Finding(
+                file, f"{ptr}/{key}", "enum-widened", _show(o[key]), "(absent)"
             )
 
 
