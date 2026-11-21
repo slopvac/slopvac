@@ -106,6 +106,13 @@ Detail and tool choice: [`testing-rust.md`](testing-rust.md).
 
 - `cargo deny check` passes. Licences are permissive only. Never add `CC-BY-SA-4.0` to the global allow list. Scope it to the crate that embeds the model. Sources: [`deny.toml`](../deny.toml), [CONTRIBUTING, Rust checks](../CONTRIBUTING.md#rust-checks).
 - `cargo shear`, `cargo sort` and `typos` pass. No unused dependency, sorted manifests. Source: [CONTRIBUTING, Rust checks](../CONTRIBUTING.md#rust-checks).
+- `mise.lock` pins and checksums only the CI-installed tools, `taplo` and `ast-grep`, on purpose. The aqua registry carries no checksum for either, so the lock file is the check, and the CI install steps set `MISE_LOCKED=1` so a missing or wrong entry fails the install. Rules:
+  - Use mise 2026.11.6 or later. The lock file is version 4, and mise 2026.10.19 warns that it cannot read it and ignores it.
+  - After you change a pin in `mise.toml`, run `mise lock taplo ast-grep --platform linux-x64,linux-arm64,macos-arm64,macos-x64` and commit the result.
+  - A plain `mise install` of any other tool appends entries for every tool in `mise.toml` to `mise.lock`. Run `git restore mise.lock` (or drop those hunks) before you commit.
+  - Trust on first use: `mise lock` records the checksum of the file it downloads, because upstream publishes no checksum or signature for these assets. Later installs verify against the committed value, so review a checksum change in `mise.lock` like any other pin change.
+
+  Source: [`mise.lock`](../mise.lock), [`lint.yml`](../.github/workflows/lint.yml).
 - Before you push, run each Rust check:
   - `cargo fmt --all --check`
   - `cargo clippy --workspace --all-targets -- -D warnings`
