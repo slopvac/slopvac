@@ -4,6 +4,8 @@
 //! The network is never reached. A cache entry stamped far in the future counts as fresh, so
 //! the notice comes from the cache and no refresh starts.
 
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
+
 use std::cell::RefCell;
 use std::fs;
 use std::io::Write;
