@@ -36,6 +36,7 @@ slopvac-model = { workspace = true }
 slopvac-parse = { workspace = true }
 slopvac-pos = { workspace = true }
 slopvac-rules = { workspace = true }
+slopvac-sanitize = { workspace = true }
 slopvac-terms = { workspace = true }
 slopvac-text = { workspace = true }
 tempfile = { workspace = true }

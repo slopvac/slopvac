@@ -15,6 +15,10 @@ pub struct CliError {
     /// Machine-readable detail for a code that documents keys, such as a budget refusal.
     /// Empty for most errors.
     pub data: serde_json::Map<String, serde_json::Value>,
+    /// The message a report notice carries when it differs from [`CliError::message`]: the
+    /// same text before its untrusted parts (file names, config values) were escaped for
+    /// stderr. Each report format escapes the notice for its own output.
+    pub report_message: Option<String>,
 }
 
 impl CliError {
@@ -25,7 +29,22 @@ impl CliError {
             code,
             message: crate::redact::strip_url_userinfo(&message.into()),
             data: serde_json::Map::new(),
+            report_message: None,
         }
+    }
+
+    /// Build an error whose `raw` message holds untrusted text. The error text is `raw`
+    /// escaped once for the terminal, and the report notice keeps `raw`.
+    #[must_use]
+    pub fn escaping(code: &'static str, raw: &str) -> Self {
+        Self::new(code, slopvac_sanitize::line(raw)).with_report_message(raw)
+    }
+
+    /// Set the message a report notice carries, when it differs from the error text.
+    #[must_use]
+    pub fn with_report_message(mut self, raw: &str) -> Self {
+        self.report_message = Some(crate::redact::strip_url_userinfo(raw));
+        self
     }
 
     /// Attach the machine-readable detail of this error.

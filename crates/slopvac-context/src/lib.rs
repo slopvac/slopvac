@@ -49,20 +49,21 @@ pub use work::{
 pub use pattern::MAX_PATTERN_BYTES;
 
 /// Errors from this crate. Text from documents, configs and plugins reaches `Display` only
-/// through `slopvac_sanitize::line`; the fields and sources stay raw.
-#[derive(Debug, thiserror::Error)]
+/// through `slopvac_sanitize::line`; the fields and sources stay raw. [`Error::raw_message`]
+/// is the same message before that escaping, for a caller that escapes it where it writes it.
+///
+/// `Display` is written by hand, not derived, because it must sanitize text and share its
+/// wording with `raw_message` (the exception in `docs/engineering.md`, Errors).
+#[derive(Debug)]
 pub enum Error {
     /// A regular expression failed to compile.
-    #[error("invalid pattern `{}`: {}", slopvac_sanitize::line(.pattern), slopvac_sanitize::line(&.source.to_string()))]
     Pattern {
         /// Pattern source.
         pattern: String,
         /// The PCRE2 compile error.
-        #[source]
         source: slopvac_pcre2::CompileError,
     },
     /// A pattern is longer than the data-pack limit.
-    #[error("pattern is {len} bytes, over the {max}-byte limit")]
     PatternTooLong {
         /// Pattern length in bytes.
         len: usize,
@@ -70,63 +71,49 @@ pub enum Error {
         max: usize,
     },
     /// PCRE2 failed while matching, for example on a match or JIT stack limit.
-    #[error("pattern `{}` failed while matching: {}", slopvac_sanitize::line(.pattern), slopvac_sanitize::line(&.source.to_string()))]
     Match {
         /// Pattern source.
         pattern: String,
         /// The PCRE2 match error.
-        #[source]
         source: slopvac_pcre2::MatchError,
     },
     /// A tagger id was registered twice.
-    #[error("tagger `{}` is already registered", slopvac_sanitize::line(.0))]
     DuplicateTagger(String),
     /// The taggers produced more tags than the document is allowed, so no index was built.
-    #[error("the document has more than {limit} context tags")]
     TagLimit {
         /// The most tags the document was allowed.
         limit: usize,
     },
     /// A genre id that no definition provides.
-    #[error("unknown genre `{}`", slopvac_sanitize::line(.0))]
     UnknownGenre(String),
     /// A YAML data file did not parse.
-    #[error("{}", slopvac_sanitize::line(&.0.to_string()))]
-    Yaml(#[source] serde_saphyr::Error),
+    Yaml(serde_saphyr::Error),
     /// A `files` pattern is not a valid gitignore-style glob.
-    #[error("glob `{}`: {}", slopvac_sanitize::line(.pattern), slopvac_sanitize::line(&.source.to_string()))]
     Glob {
         /// The pattern as written.
         pattern: String,
         /// The glob parser error.
-        #[source]
         source: ignore::Error,
     },
     /// A list of `files` patterns did not compile as a set.
-    #[error("{}", slopvac_sanitize::line(&.0.to_string()))]
-    GlobSet(#[source] ignore::Error),
+    GlobSet(ignore::Error),
     /// A `path` signal glob of a genre is invalid.
-    #[error("genre `{}`: glob `{}`: {}", slopvac_sanitize::line(.genre), slopvac_sanitize::line(.glob), slopvac_sanitize::line(&.source.to_string()))]
     SignalGlob {
         /// Genre id.
         genre: String,
         /// The glob as written.
         glob: String,
         /// The glob parser error.
-        #[source]
         source: globset::Error,
     },
     /// A file could not be read. The path and the OS message are escaped for a terminal.
-    #[error("{}: {}", slopvac_sanitize::line(.path), slopvac_sanitize::line(&.source.to_string()))]
     Read {
         /// The path as given.
         path: String,
         /// The OS error.
-        #[source]
         source: std::io::Error,
     },
     /// A file is larger than the document size cap, so none of it was read.
-    #[error("{}: larger than the {cap}-byte document limit", slopvac_sanitize::line(.path))]
     TooLarge {
         /// The path as given.
         path: String,
@@ -135,12 +122,98 @@ pub enum Error {
     },
     /// A file was refused without a read: it is not a regular file, or it could not be opened
     /// safely.
-    #[error("{}: cannot read", slopvac_sanitize::line(.path))]
     Unreadable {
         /// The path as given.
         path: String,
     },
     /// A data file did not parse or validate.
-    #[error("{}", slopvac_sanitize::line(.0))]
     Parse(String),
+}
+
+impl Error {
+    /// The message of this error with its untrusted parts (patterns, ids, paths, OS and
+    /// parser messages) left unescaped. `Display` is this text, escaped.
+    ///
+    /// The caller must escape the result once where it writes it (a terminal line or a
+    /// report). It must never reach a log, a panic or an error chain.
+    #[must_use]
+    pub fn raw_message(&self) -> String {
+        self.render(str::to_owned)
+    }
+
+    /// The one wording of every message; `escape` is applied to each untrusted part.
+    fn render(&self, escape: fn(&str) -> String) -> String {
+        match self {
+            Self::Pattern { pattern, source } => format!(
+                "invalid pattern `{}`: {}",
+                escape(pattern),
+                escape(&source.to_string())
+            ),
+            Self::PatternTooLong { len, max } => {
+                format!("pattern is {len} bytes, over the {max}-byte limit")
+            }
+            Self::Match { pattern, source } => format!(
+                "pattern `{}` failed while matching: {}",
+                escape(pattern),
+                escape(&source.to_string())
+            ),
+            Self::DuplicateTagger(id) => format!("tagger `{}` is already registered", escape(id)),
+            Self::TagLimit { limit } => format!("the document has more than {limit} context tags"),
+            Self::UnknownGenre(id) => format!("unknown genre `{}`", escape(id)),
+            Self::Yaml(source) => escape(&source.to_string()),
+            Self::Glob { pattern, source } => format!(
+                "glob `{}`: {}",
+                escape(pattern),
+                escape(&source.to_string())
+            ),
+            Self::GlobSet(source) => escape(&source.to_string()),
+            Self::SignalGlob {
+                genre,
+                glob,
+                source,
+            } => format!(
+                "genre `{}`: glob `{}`: {}",
+                escape(genre),
+                escape(glob),
+                escape(&source.to_string())
+            ),
+            Self::Read { path, source } => {
+                format!("{}: {}", escape(path), escape(&source.to_string()))
+            }
+            Self::TooLarge { path, cap } => {
+                format!(
+                    "{}: larger than the {cap}-byte document limit",
+                    escape(path)
+                )
+            }
+            Self::Unreadable { path } => format!("{}: cannot read", escape(path)),
+            Self::Parse(text) => escape(text),
+        }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.render(slopvac_sanitize::line))
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Pattern { source, .. } => Some(source),
+            Self::Match { source, .. } => Some(source),
+            Self::Yaml(source) => Some(source),
+            Self::Glob { source, .. } | Self::GlobSet(source) => Some(source),
+            Self::SignalGlob { source, .. } => Some(source),
+            Self::Read { source, .. } => Some(source),
+            Self::PatternTooLong { .. }
+            | Self::DuplicateTagger(_)
+            | Self::TagLimit { .. }
+            | Self::UnknownGenre(_)
+            | Self::TooLarge { .. }
+            | Self::Unreadable { .. }
+            | Self::Parse(_) => None,
+        }
+    }
 }

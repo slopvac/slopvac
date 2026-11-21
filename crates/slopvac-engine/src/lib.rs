@@ -50,6 +50,7 @@ mod capitalization;
 pub mod cases;
 mod comments;
 mod commit;
+mod context_text;
 mod diagrams;
 pub mod diff_scope;
 mod directives;

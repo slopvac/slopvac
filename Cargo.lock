@@ -2540,7 +2540,6 @@ dependencies = [
  "slopvac-rules",
  "slopvac-sanitize",
  "tempfile",
- "thiserror",
  "toml",
 ]
 
@@ -2586,6 +2585,7 @@ dependencies = [
  "slopvac-parse",
  "slopvac-pos",
  "slopvac-rules",
+ "slopvac-sanitize",
  "slopvac-terms",
  "slopvac-text",
  "tempfile",
