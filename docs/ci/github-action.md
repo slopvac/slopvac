@@ -31,7 +31,7 @@ jobs:
 | SARIF | Code scanning, with the category set by `sarif-category` (default `slopvac`). Set `sarif: false` to skip it. |
 | Code Climate | The `slopvac-codeclimate` workflow artifact. Set `codeclimate: false` to skip it. |
 
-The `reporter` input takes `auto`, `review`, `annotations` or `none`. With `auto`, the action tries a review with suggestions on a pull request from the same repository that Dependabot did not open. The action cannot see the token's permissions, so if reviewdog fails to post the review, for example on a read-only token, it logs a warning and posts annotations instead. In every other pull request it uses annotations, which need no write permission. On pushes it uses a check run. A reviewdog install or post failure only warns; the slopvac exit code stays the gate.
+The `reporter` input takes `auto`, `review`, `annotations` or `none`. With `auto`, the action tries a review with suggestions on a pull request from the same repository that Dependabot or Renovate did not open. The action cannot see the token's permissions, so if reviewdog fails to post the review, for example on a read-only token, it logs a warning and posts annotations instead. In every other pull request it uses annotations, which need no write permission. On pushes it uses a check run. A reviewdog install or post failure only warns; the slopvac exit code stays the gate.
 
 When the project has a `.slopvac/plugins.lock` lockfile, a separate `Sync plugins` step runs `slopvac plugins sync` before the lint. A failed sync fails the action.
 

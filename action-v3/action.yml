@@ -37,7 +37,7 @@ inputs:
     description: >-
       auto, review, annotations or none. auto tries a reviewdog pull request
       review with suggestions for a same-repository pull request that
-      Dependabot did not open, and falls back to annotations when the review
+      Dependabot or Renovate did not open, and falls back to annotations when the review
       fails (for example a read-only token). Other pull requests use
       annotations. Pushes report through a check run. Reporting never fails
       the job.

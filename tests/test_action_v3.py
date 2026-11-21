@@ -41,6 +41,7 @@ PUSH = {"EVENT_NAME": "push"}
         (PR, ("github-pr-review", True)),
         (FORK, ("github-pr-annotations", False)),
         ({**PR, "ACTOR": "dependabot[bot]"}, ("github-pr-annotations", False)),
+        ({**PR, "ACTOR": "renovate[bot]"}, ("github-pr-annotations", False)),
         ({**PR, "HEAD_REPO": ""}, ("github-pr-annotations", False)),
         ({**PR, "REPORTER": "annotations"}, ("github-pr-annotations", False)),
         ({**FORK, "REPORTER": "review"}, ("github-pr-annotations", False)),
