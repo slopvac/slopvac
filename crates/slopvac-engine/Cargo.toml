@@ -60,8 +60,6 @@ slopvac-engine = { path = ".", features = ["test-counters"] }
 slopvac-model = { workspace = true, features = ["test-counters"] }
 # The tagging work test counts the tokens visited to map sentences to source.
 slopvac-parse = { workspace = true, features = ["test-counters"] }
-# The context-text tests build a match failure.
-slopvac-pcre2 = { workspace = true }
 toml.workspace = true
 
 [lints]
