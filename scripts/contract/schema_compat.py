@@ -503,6 +503,10 @@ class Comparer:
             inner = list(self.compare("", docs, "", old, new))
         finally:
             self._stack.discard(sides)
+        if sides[0] is not None and sides[0] == sides[1]:
+            # The same definition on both sides: the definition's own comparison reports
+            # an output-only change once, under its own file's direction.
+            inner = [f for f in inner if f.kind not in OUTPUT_ONLY_KINDS]
         self._cuts.discard(sides)
         if key is not None and not self._cuts:
             self._cache[key] = inner
@@ -803,14 +807,11 @@ def compare_snapshots(
             )
             continue
         found = comparer.compare(name, Docs(name, name), "", old_schema, new[name])
-        # Output-only kinds are reported at the definition, never again through a
-        # reference; an input file reports none.
+        # Output-only kinds are dropped for an input file. Through a reference they come
+        # only from a retarget or an added or removed reference; a change to one shared
+        # definition is reported once, at the definition.
         is_input = (directions or {}).get(name, "input") == "input"
-        found = (
-            f
-            for f in found
-            if f.kind not in OUTPUT_ONLY_KINDS or not (is_input or "/$ref(" in f.pointer)
-        )
+        found = (f for f in found if f.kind not in OUTPUT_ONLY_KINDS or not is_input)
         findings.extend(found)
     return findings
 

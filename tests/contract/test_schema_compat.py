@@ -1250,6 +1250,40 @@ def test_growth_reached_through_a_ref_follows_the_referrer_direction(tmp_path):
     assert run(tmp_path / "ok", old, marked, direction="output") == []
 
 
+def _ref_schema(target: str, **defs: dict) -> dict:
+    return schema(properties={"e": {"$ref": f"#/$defs/{target}"}}, **{"$defs": defs})
+
+
+ENUM_DEF_A = {"enum": ["a"]}
+ENUM_DEF_AB = {"enum": ["a", "b"]}
+
+REF_TRANSITIONS = {
+    "retarget": (
+        _ref_schema("A", A=ENUM_DEF_A, B=ENUM_DEF_AB),
+        _ref_schema("B", A=ENUM_DEF_A, B=ENUM_DEF_AB),
+    ),
+    "inline-to-ref": (
+        schema(properties={"e": ENUM_DEF_A}, **{"$defs": {"B": ENUM_DEF_AB}}),
+        _ref_schema("B", B=ENUM_DEF_AB),
+    ),
+    "ref-to-inline": (
+        _ref_schema("A", A=ENUM_DEF_A),
+        schema(properties={"e": ENUM_DEF_AB}, **{"$defs": {"A": ENUM_DEF_A}}),
+    ),
+}
+
+
+@pytest.mark.parametrize(("old", "new"), REF_TRANSITIONS.values(), ids=REF_TRANSITIONS)
+def test_a_ref_transition_that_widens_an_output_is_reported(tmp_path, old, new):
+    findings = run(tmp_path, old, new, direction="output")
+    assert "enum-widened" in [f.kind for f in findings]
+
+
+@pytest.mark.parametrize(("old", "new"), REF_TRANSITIONS.values(), ids=REF_TRANSITIONS)
+def test_a_ref_transition_that_widens_an_input_is_allowed(tmp_path, old, new):
+    assert run(tmp_path, old, new, direction="input") == []
+
+
 def test_registry_must_list_every_schema_file(tmp_path):
     base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
     new_dir = write_dir(tmp_path / "new", {FILE: schema()})
