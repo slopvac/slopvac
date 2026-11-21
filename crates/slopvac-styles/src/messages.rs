@@ -35,7 +35,7 @@ pub(crate) enum StyleMessage {
     Cycle { chain: String },
     /// Two active styles declare a conflict. The later style wins.
     #[code("style-conflict")]
-    #[text("style `{loser}` conflicts with `{winner}`; `{winner}` wins")]
+    #[notice("style `{loser}` conflicts with `{winner}`; `{winner}` wins")]
     Conflict { loser: String, winner: String },
     /// Two active styles declare a conflict and set different values on these keys.
     #[code("style-conflict-on-keys")]
@@ -267,7 +267,7 @@ mod tests {
                 ("style-error-parse", Kind::Text),
                 ("style-error-invalid", Kind::Text),
                 ("style-error-cycle", Kind::Text),
-                ("style-conflict", Kind::Text),
+                ("style-conflict", Kind::Notice),
                 ("style-conflict-on-keys", Kind::Text),
                 ("style-error-too-large", Kind::Text),
                 ("style-error-io", Kind::Text),

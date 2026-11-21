@@ -1550,7 +1550,7 @@ steering-not-utf8 error
 steering-unsafe-target error
 style-budget-invalid text
 style-budget-negative text
-style-conflict text
+style-conflict notice
 style-conflict-on-keys text
 style-detect-file-too-large notice
 style-detect-no-preset text
