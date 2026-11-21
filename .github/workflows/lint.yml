@@ -221,9 +221,10 @@ jobs:
         uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
         with:
           tool: cargo-deny@0.20.2,cargo-shear@1.14.1,cargo-sort@2.1.4,typos-cli@1.51.1
-      # mise reads the ast-grep pin from mise.toml and verifies the download through its aqua
-      # backend. Only ast-grep's bin directory joins PATH, added below: no shims, no mise.toml
-      # [env] and no cache write.
+      # mise reads the ast-grep and taplo pins from mise.toml. The aqua registry carries no
+      # checksum for either, so mise.lock holds the sha256 of each release asset and
+      # MISE_LOCKED makes the install fail without a matching entry. Only the tool bin
+      # directories join PATH, added below: no shims, no mise.toml [env] and no cache write.
       - name: Install ast-grep
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         env:
