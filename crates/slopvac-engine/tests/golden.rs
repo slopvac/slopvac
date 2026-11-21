@@ -558,7 +558,9 @@ fn divergence_path() -> PathBuf {
 /// the recorded one is cased the same way before the comparison. The golden data stays as
 /// recorded.
 fn recase_replacements(want: &mut Value) {
-    let findings = want["document"]["findings"].as_array_mut().unwrap();
+    let Some(findings) = want["document"]["findings"].as_array_mut() else {
+        return;
+    };
     for f in findings {
         let (Some(matched), Some(replacement)) = (
             f["matched_text"].as_str().map(str::to_owned),
