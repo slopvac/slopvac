@@ -391,7 +391,7 @@ The host raises these codes in its own diagnostics. They have no numeric code, b
 |---|---|
 | `plugin-untrusted` | The content hash has no recorded trust. The message prints the `slopvac plugins trust` command. |
 | `plugin-hash-mismatch` | The installed bytes differ from the hash that trust recorded. |
-| `plugin-not-code` (reserved) | `slopvac plugins trust` or `untrust` named a data plugin, which runs no code and needs no trust. Nothing emits this code yet. |
+| `plugin-not-code` | Reserved, not emitted yet: `slopvac plugins trust` or `untrust` named a data plugin, which runs no code and needs no trust. |
 | `plugin-timeout` | A timer in section 6.3 expired. |
 | `plugin-exited` | The process ended with requests pending. |
 | `plugin-protocol-violation` | A framing error, a limit breach or a duplicate key. |
