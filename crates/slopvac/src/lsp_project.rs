@@ -188,8 +188,17 @@ impl Project {
         }
     }
 
-    /// The config that applies to the files in `dir`, loaded once between reloads.
+    /// The config that applies to the files in `dir`: the nearest one, else the config of
+    /// the project root, so a buffer outside the project is linted as the project is.
     fn config_in(&self, dir: &Path) -> Result<Option<Arc<LoadedConfig>>, CliError> {
+        match self.nearest_cached(dir)? {
+            Some(found) => Ok(Some(found)),
+            None => self.nearest_cached(&self.root),
+        }
+    }
+
+    /// The nearest config of `dir`, read once between reloads.
+    fn nearest_cached(&self, dir: &Path) -> Result<Option<Arc<LoadedConfig>>, CliError> {
         if let Some(found) = self.loaded().configs.get(dir) {
             return Ok(found.clone());
         }
