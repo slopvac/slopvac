@@ -1499,6 +1499,8 @@ steering-not-utf8 error
 steering-unsafe-target error
 style-too-large error
 sync-failed error
+sync-fetch error
+sync-unsigned error
 terms-about text
 terms-accept-help text
 terms-accept-unknown text
@@ -1602,6 +1604,7 @@ update-pipeline-prerelease text
 update-pipeline-replace-failed text
 update-pipeline-unsupported-platform text
 update-pipeline-verify-refused text
+update-plugin-unknown error
 update-policy-at-path text
 update-policy-not-regular text
 update-policy-too-large error

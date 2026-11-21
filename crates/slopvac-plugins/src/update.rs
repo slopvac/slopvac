@@ -101,9 +101,9 @@ pub enum UpdateError {
     /// swap can redirect, so lock writes are refused (as in [`crate::apply`]).
     #[error("{}", messages::unsupported_on_windows(.0))]
     UnsupportedOnWindows(String),
-    /// A named pack is not in the lock.
-    #[error("{}", messages::update_unknown_pack(.0))]
-    UnknownPack(PackId),
+    /// A named plugin is not in the lock.
+    #[error("{}", messages::update_unknown_plugin(.0))]
+    UnknownPlugin(PackId),
     /// The lock file is unreadable, too large or invalid.
     #[error("{}", messages::update_lock_file(path, message))]
     Lock {
@@ -139,6 +139,7 @@ impl UpdateError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Offline => "offline-network-needed",
+            Self::UnknownPlugin(_) => "update-plugin-unknown",
             Self::Busy { .. } => "update-lock-busy",
             Self::UnsupportedOnWindows(_) => "unsupported-on-windows",
             Self::Revocation(e) => e.code(),
@@ -320,7 +321,7 @@ impl<'a> Updater<'a> {
         let text = read_lock(&dir, &shown).map_err(|e| lock_error(e.to_string()))?;
         let lock = Lockfile::parse(&text).map_err(|e: LockError| lock_error(e.to_string()))?;
         if let Some(missing) = only.iter().find(|id| lock.get(id).is_none()) {
-            return Err(UpdateError::UnknownPack(missing.clone()));
+            return Err(UpdateError::UnknownPlugin(missing.clone()));
         }
         let current = self.revocations.refresh(client)?;
 

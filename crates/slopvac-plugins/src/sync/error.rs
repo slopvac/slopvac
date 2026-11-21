@@ -64,7 +64,7 @@ pub enum SyncError {
         why: String,
     },
     /// The registry or the network failed.
-    #[error("{}", messages::plugin_cause(id, source))]
+    #[error("{}", messages::fetch_cause(id, source))]
     Fetch {
         /// Pack id.
         id: PackId,
@@ -182,12 +182,11 @@ impl SyncError {
                 source: SignError::Fetch(e),
                 ..
             } if e.code().is_some() => e.code().unwrap_or("signature-invalid"),
-            Self::Sign { .. } | Self::Unsigned { .. } | Self::SignatureDiffersFromLock { .. } => {
-                "signature-invalid"
-            }
+            Self::Unsigned { .. } => "sync-unsigned",
+            Self::Sign { .. } | Self::SignatureDiffersFromLock { .. } => "signature-invalid",
             Self::Revoked { .. } => "plugin-revoked",
             Self::Revocation(e) => e.code(),
-            Self::Fetch { source, .. } => source.code().unwrap_or("sync-failed"),
+            Self::Fetch { source, .. } => source.code().unwrap_or("sync-fetch"),
             Self::Launcher { .. } => "launcher-not-installed",
             _ => "sync-failed",
         }

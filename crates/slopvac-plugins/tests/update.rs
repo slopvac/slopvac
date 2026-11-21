@@ -778,7 +778,7 @@ fn a_pack_not_in_the_lock_is_an_error() {
         )
         .unwrap_err();
 
-    assert!(matches!(err, UpdateError::UnknownPack(ref id) if id.as_str() == "ghost"));
+    assert!(matches!(err, UpdateError::UnknownPlugin(ref id) if id.as_str() == "ghost"));
 }
 
 #[test]

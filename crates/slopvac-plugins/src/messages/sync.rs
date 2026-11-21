@@ -52,6 +52,14 @@ pub(crate) enum SyncMessage {
     #[code("signature-invalid")]
     #[message("{detail}")]
     SignatureInvalid { detail: String },
+    /// A network or registry fetch failed and the source error has no code of its own.
+    #[code("sync-fetch")]
+    #[message("{detail}")]
+    SyncFetch { detail: String },
+    /// The lock has no signature for an OCI entry.
+    #[code("sync-unsigned")]
+    #[message("{detail}")]
+    SyncUnsigned { detail: String },
     /// The revocation list names the artifact or its signing key.
     #[code("plugin-revoked")]
     #[message("plugin `{id}`: {what} is on the revocation list")]
@@ -75,6 +83,10 @@ pub(crate) enum SyncMessage {
         #[display_path]
         path: String,
     },
+    /// `plugins update` named a plugin that the lock does not list.
+    #[code("update-plugin-unknown")]
+    #[message("{detail}")]
+    UpdatePluginUnknown { detail: String },
     /// Any other failure of `plugins update`.
     #[code("update-failed")]
     #[message("{detail}")]
@@ -789,6 +801,18 @@ pub(crate) fn plugin_cause(id: &PackId, cause: &impl Display) -> String {
     })
 }
 
+/// `sync-fetch` for a failed fetch that carries the cause's text.
+pub(crate) fn fetch_cause(id: &PackId, cause: &impl Display) -> String {
+    SyncMessage::SyncFetch {
+        detail: SyncText::PluginCause {
+            id: s(id),
+            cause: s(cause),
+        }
+        .to_string(),
+    }
+    .to_string()
+}
+
 /// `signature-invalid` for a refused signature check.
 pub(crate) fn sign_failed(id: &PackId, cause: &impl Display) -> String {
     signature_invalid(&SyncText::SignFailed {
@@ -797,9 +821,12 @@ pub(crate) fn sign_failed(id: &PackId, cause: &impl Display) -> String {
     })
 }
 
-/// `signature-invalid` for an OCI entry without a signature in the lock.
+/// `sync-unsigned` for an OCI entry without a signature in the lock.
 pub(crate) fn unsigned(id: &PackId) -> String {
-    signature_invalid(&SyncText::Unsigned { id: s(id) })
+    SyncMessage::SyncUnsigned {
+        detail: SyncText::Unsigned { id: s(id) }.to_string(),
+    }
+    .to_string()
 }
 
 /// `signature-invalid` for a statement that differs from the lock.
@@ -1398,9 +1425,12 @@ fn update_failed(detail: &SyncText) -> String {
     .to_string()
 }
 
-/// `update-failed` for a pack that is not in the lock.
-pub(crate) fn update_unknown_pack(id: &impl Display) -> String {
-    update_failed(&SyncText::UpdateUnknownPack { id: s(id) })
+/// `update-plugin-unknown` for a plugin that is not in the lock.
+pub(crate) fn update_unknown_plugin(id: &impl Display) -> String {
+    SyncMessage::UpdatePluginUnknown {
+        detail: SyncText::UpdateUnknownPack { id: s(id) }.to_string(),
+    }
+    .to_string()
 }
 
 /// `update-failed` for a lock file that cannot be used.
@@ -1510,6 +1540,9 @@ mod tests {
                 "plugin `demo`: artifact sha256:aa is on the revocation list",
             ),
             (SyncMessage::SyncFailed { detail: s("d") }, "d"),
+            (SyncMessage::SyncFetch { detail: s("d") }, "d"),
+            (SyncMessage::SyncUnsigned { detail: s("d") }, "d"),
+            (SyncMessage::UpdatePluginUnknown { detail: s("d") }, "d"),
             (
                 SyncMessage::UpdateLockBusy {
                     path: s("/p/.slopvac/plugins.lock.guard"),
