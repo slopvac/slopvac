@@ -24,7 +24,7 @@ base64 = "0.23"
 cap-fs-ext = "4"
 cap-std = "4"
 caseless = "0.2"
-clap = { version = "4.6", features = ["derive"] }
+clap = "4.6"
 crossbeam-channel = "0.5"
 etcetera = "0.11"
 flate2 = "1.1"
@@ -133,12 +133,30 @@ invalid_html_tags = "deny"
 bare_urls = "deny"
 missing_crate_level_docs = "deny"
 
+# Keep this table in step with `[lints.clippy]` in crates/slopvac-pcre2/Cargo.toml, which
+# cannot inherit it (see docs/engineering.md, approved departures). CI denies warnings.
+# `indexing_slicing` and `string_slice` are not set here: the parser crates opt in from
+# their `lib.rs`, because a crate cannot add lints on top of `workspace = true`.
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
-# Pedantic lints that mostly add noise for a text-processing codebase.
+# Pedantic lints that mostly add noise for a text-processing codebase. Cargo lint tables
+# take no `reason` key, so each allow gives its reason in the comment above it.
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+# Restriction and nursery lints from docs/engineering.md, "Panics and lints".
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+allow_attributes_without_reason = "warn"
+undocumented_unsafe_blocks = "warn"
+clone_on_ref_ptr = "warn"
+# Libraries stay silent; the three binaries opt out at crate or file level.
+print_stdout = "warn"
+print_stderr = "warn"
 
 [profile.release]
 lto = "thin"
