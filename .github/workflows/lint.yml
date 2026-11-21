@@ -157,12 +157,35 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      # mise reads the taplo pin from mise.toml, the same pin the local prek hook uses. The
+      # aqua registry has no checksum for taplo, so mise.lock holds the sha256 of each release
+      # asset and MISE_LOCKED makes the install fail without a matching lock entry.
+      - name: Install taplo
+        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        env:
+          MISE_LOCKED: "1"
         with:
-          enable-cache: true
+          version: 2026.11.9
+          sha256: f13f3e5ec88807e0161669b3aa07a91d84478cdf1e95b5b92b63f85a25d42395
+          install_args: taplo
+          cache: false
+          env: false
+          add_shims_to_path: false
+      # Link just the taplo binary into its own directory, as the prek job does for ast-grep.
+      - name: Put taplo on PATH
+        run: |
+          set -eu
+          dirs="$(mise bin-paths taplo)"
+          if [ "$(printf '%s\n' "$dirs" | wc -l)" -ne 1 ] || [ ! -x "$dirs/taplo" ]; then
+            echo "expected one taplo install directory, got: $dirs" >&2
+            exit 1
+          fi
+          bin="$RUNNER_TEMP/taplo-bin"
+          mkdir -p "$bin"
+          ln -s "$dirs/taplo" "$bin/taplo"
+          echo "$bin" >> "$GITHUB_PATH"
       - name: taplo
-        run: uvx taplo@0.9.3 fmt --check
+        run: taplo fmt --check
 
   pinact:
     if: ${{ inputs.ci || inputs.action }}
@@ -198,15 +221,18 @@ jobs:
         uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
         with:
           tool: cargo-deny@0.20.2,cargo-shear@1.14.1,cargo-sort@2.1.4,typos-cli@1.51.1
-      # mise reads the ast-grep pin from mise.toml and verifies the download through its aqua
-      # backend. Only ast-grep's bin directory joins PATH, added below: no shims, no mise.toml
-      # [env] and no cache write.
+      # mise reads the ast-grep and taplo pins from mise.toml. The aqua registry carries no
+      # checksum for either, so mise.lock holds the sha256 of each release asset and
+      # MISE_LOCKED makes the install fail without a matching entry. Only the tool bin
+      # directories join PATH, added below: no shims, no mise.toml [env] and no cache write.
       - name: Install ast-grep
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        env:
+          MISE_LOCKED: "1" # mise.lock holds the sha256 of each ast-grep and taplo asset
         with:
           version: 2026.11.9
           sha256: f13f3e5ec88807e0161669b3aa07a91d84478cdf1e95b5b92b63f85a25d42395
-          install_args: ast-grep
+          install_args: ast-grep taplo
           cache: false
           env: false
           add_shims_to_path: false
@@ -224,6 +250,18 @@ jobs:
           bin="$RUNNER_TEMP/ast-grep-bin"
           mkdir -p "$bin"
           ln -s "$dirs/ast-grep" "$bin/ast-grep"
+          echo "$bin" >> "$GITHUB_PATH"
+      - name: Put taplo on PATH
+        run: |
+          set -eu
+          dirs="$(mise bin-paths taplo)"
+          if [ "$(printf '%s\n' "$dirs" | wc -l)" -ne 1 ] || [ ! -x "$dirs/taplo" ]; then
+            echo "expected one taplo install directory, got: $dirs" >&2
+            exit 1
+          fi
+          bin="$RUNNER_TEMP/taplo-bin"
+          mkdir -p "$bin"
+          ln -s "$dirs/taplo" "$bin/taplo"
           echo "$bin" >> "$GITHUB_PATH"
       - name: Run configured hooks
         run: uvx prek@0.5.2 run --all-files
