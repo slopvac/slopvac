@@ -17,6 +17,7 @@ test-counters = []
 base64.workspace = true
 flate2.workspace = true
 roxmltree.workspace = true
+slopvac-messages.workspace = true
 slopvac-model.workspace = true
 slopvac-parse.workspace = true
 

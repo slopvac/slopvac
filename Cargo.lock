@@ -2432,6 +2432,7 @@ dependencies = [
  "slopvac-agents",
  "slopvac-config",
  "slopvac-context",
+ "slopvac-diagrams",
  "slopvac-engine",
  "slopvac-fs",
  "slopvac-lsp",
@@ -2553,6 +2554,7 @@ dependencies = [
  "flate2",
  "roxmltree",
  "rstest",
+ "slopvac-messages",
  "slopvac-model",
  "slopvac-parse",
 ]

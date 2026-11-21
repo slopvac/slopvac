@@ -27,6 +27,7 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::OnceLock;
 
+use crate::messages::DiagramMessage;
 use crate::{Format, Fragment, Role};
 
 /// A deterministic check that a rule of the diagram pack names in `match.check`.
@@ -249,15 +250,17 @@ pub fn check_labels(source: &str, fragments: &[Fragment], format: Format) -> Vec
         match f.role {
             Role::Note => {
                 if count >= NOTE_WORDS {
-                    out.push(finding(Signal::NoteLong,
-                        format!("This note has {count} words. Name the component or cut the note to a few words."),
+                    out.push(finding(
+                        Signal::NoteLong,
+                        DiagramMessage::NoteLong { count }.to_string(),
                     ));
                 }
             }
             Role::Node | Role::Edge | Role::Group => {
                 if count >= RUN_ON_WORDS {
-                    out.push(finding(Signal::LabelRunOn,
-                        format!("This label has {count} words. Use a short noun phrase and move the detail to the text."),
+                    out.push(finding(
+                        Signal::LabelRunOn,
+                        DiagramMessage::LabelRunOn { count }.to_string(),
                     ));
                 } else if f.role != Role::Edge
                     && count >= GLOSS_MIN_WORDS
@@ -267,8 +270,9 @@ pub fn check_labels(source: &str, fragments: &[Fragment], format: Format) -> Vec
                     let gloss_words = word_count(gloss, literal_n);
                     let list = gloss.contains(',') || gloss_words >= 3;
                     if (1..=4).contains(&head_words) && gloss_words >= 2 && list {
-                        out.push(finding(Signal::LabelTitlePlusGloss,
-                            "This label holds a name and a description. Keep the name and move the description to the text.".to_string(),
+                        out.push(finding(
+                            Signal::LabelTitlePlusGloss,
+                            DiagramMessage::LabelTitlePlusGloss.to_string(),
                         ));
                     }
                 }
@@ -447,7 +451,7 @@ pub fn check_prose_analysed(
                 signal: Signal::MetaReference,
                 span: block.span.start + span.start..block.span.start + span.end,
                 matched: None,
-                message: "This sentence points at the diagram. Say what the system does and let the diagram show the shape.".to_string(),
+                message: DiagramMessage::MetaReference.to_string(),
             });
         }
     }
@@ -475,10 +479,11 @@ pub fn check_prose_analysed(
                 signal: Signal::ProseRestatesLabels,
                 span: first.span.clone(),
                 matched: None,
-                message: format!(
-                    "The text names {mentioned} of the {} labels in the diagram. Keep what the diagram cannot show, such as reasons, limits and failure modes.",
-                    labels.len()
-                ),
+                message: DiagramMessage::ProseRestatesLabels {
+                    mentioned,
+                    labels: labels.len(),
+                }
+                .to_string(),
             });
         }
     }

@@ -13,6 +13,7 @@ use base64::engine::general_purpose::STANDARD_NO_PAD;
 use flate2::read::DeflateDecoder;
 use roxmltree::{Document, Node, ParsingOptions};
 
+use crate::messages::DiagramPhrase;
 use crate::sink::{CAP_INFLATED_BYTES, CAP_XML_NODES, Sink, clip};
 use crate::{BudgetHit, Extraction, ExtractionStatus, Fragment, Role};
 
@@ -70,7 +71,9 @@ fn extract_svg_with(src: &str, base: usize, budget: &mut Budget) -> Extraction {
     };
     let root = doc.root_element();
     let Some(attr) = root.attribute_node("content") else {
-        return Extraction::failed(ExtractionStatus::Malformed("no diagram source"));
+        return Extraction::failed(ExtractionStatus::Malformed(
+            DiagramPhrase::NoDiagramSource.as_static(),
+        ));
     };
     let range = attr.range_value();
     let whole = Origin::Whole(base + range.start..base + range.end);
@@ -85,10 +88,14 @@ pub(crate) fn extract_png(bytes: &[u8], base: usize) -> Extraction {
 
 fn extract_png_with(bytes: &[u8], base: usize, budget: &mut Budget) -> Extraction {
     let Some((range, text)) = png_mxfile(bytes) else {
-        return Extraction::failed(ExtractionStatus::Malformed("no diagram source"));
+        return Extraction::failed(ExtractionStatus::Malformed(
+            DiagramPhrase::NoDiagramSource.as_static(),
+        ));
     };
     let Some(xml) = percent_decode(&text) else {
-        return Extraction::failed(ExtractionStatus::Malformed("invalid percent encoding"));
+        return Extraction::failed(ExtractionStatus::Malformed(
+            DiagramPhrase::InvalidPercentEncoding.as_static(),
+        ));
     };
     let whole = Origin::Whole(base + range.start..base + range.end);
     let mut out = Sink::default();
@@ -120,7 +127,7 @@ fn parse<'a>(src: &'a str, budget: &mut Budget) -> Result<Document<'a>, Failure>
         roxmltree::Error::NodesLimitReached => {
             ExtractionStatus::BudgetExhausted(BudgetHit::new(CAP_XML_NODES, u64::from(MAX_NODES)))
         }
-        _ => ExtractionStatus::Malformed("invalid XML"),
+        _ => ExtractionStatus::Malformed(DiagramPhrase::InvalidXml.as_static()),
     })?;
     let used = u32::try_from(doc.descendants().count()).unwrap_or(u32::MAX);
     budget.nodes = budget.nodes.saturating_sub(used);
@@ -142,7 +149,9 @@ fn document(
                 n.is_element() || (n.is_text() && n.text().is_some_and(|t| !t.trim().is_empty()))
             });
             if has_content && !root.children().any(|n| n.has_tag_name("diagram")) {
-                return Err(ExtractionStatus::Malformed("no diagram pages"));
+                return Err(ExtractionStatus::Malformed(
+                    DiagramPhrase::NoDiagramPages.as_static(),
+                ));
             }
             for diagram in root.children().filter(|n| n.has_tag_name("diagram")) {
                 if out.is_full() {
@@ -162,7 +171,9 @@ fn document(
                     let xml = inflate_page(payload, budget)?;
                     inflated_model(&xml, page, &whole, budget, out)?;
                 } else if diagram.children().any(|n| n.is_element()) {
-                    return Err(ExtractionStatus::Malformed("unrecognised page content"));
+                    return Err(ExtractionStatus::Malformed(
+                        DiagramPhrase::UnrecognisedPage.as_static(),
+                    ));
                 }
             }
             Ok(())
@@ -171,7 +182,9 @@ fn document(
             cells(root, "page", origin, out);
             Ok(())
         }
-        _ => Err(ExtractionStatus::Unsupported("not a draw.io document")),
+        _ => Err(ExtractionStatus::Unsupported(
+            DiagramPhrase::NotDrawio.as_static(),
+        )),
     }
 }
 
@@ -186,7 +199,9 @@ fn inflated_model(
     let doc = parse(xml, budget)?;
     let root = doc.root_element();
     if !root.has_tag_name("mxGraphModel") {
-        return Err(ExtractionStatus::Malformed("page is not a graph model"));
+        return Err(ExtractionStatus::Malformed(
+            DiagramPhrase::NotGraphModel.as_static(),
+        ));
     }
     cells(root, page, origin, out);
     Ok(())
@@ -354,12 +369,12 @@ fn inflate_page(payload: &str, budget: &mut Budget) -> Result<String, Failure> {
     let compact: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
     let bytes = STANDARD_NO_PAD
         .decode(compact.trim_end_matches('='))
-        .map_err(|_| ExtractionStatus::Malformed("invalid base64 page"))?;
+        .map_err(|_| ExtractionStatus::Malformed(DiagramPhrase::InvalidBase64.as_static()))?;
     let mut inflated = Vec::new();
     DeflateDecoder::new(bytes.as_slice())
         .take(budget.inflated + 1)
         .read_to_end(&mut inflated)
-        .map_err(|_| ExtractionStatus::Malformed("invalid compressed page"))?;
+        .map_err(|_| ExtractionStatus::Malformed(DiagramPhrase::InvalidCompressed.as_static()))?;
     let size = inflated.len() as u64;
     if size > budget.inflated {
         return Err(ExtractionStatus::BudgetExhausted(BudgetHit::new(
@@ -368,7 +383,9 @@ fn inflate_page(payload: &str, budget: &mut Budget) -> Result<String, Failure> {
         )));
     }
     budget.inflated -= size;
-    percent_decode(&inflated).ok_or(ExtractionStatus::Malformed("invalid percent encoding"))
+    percent_decode(&inflated).ok_or(ExtractionStatus::Malformed(
+        DiagramPhrase::InvalidPercentEncoding.as_static(),
+    ))
 }
 
 fn percent_decode(bytes: &[u8]) -> Option<String> {

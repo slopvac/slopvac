@@ -11,6 +11,7 @@ note: >-
 files:
   - crates/slopvac-agents/src/**
   - crates/slopvac-config/src/**
+  - crates/slopvac-diagrams/src/**
   - crates/slopvac-engine/src/**
   - crates/slopvac-model/src/**
   - crates/slopvac-messages/src/**
