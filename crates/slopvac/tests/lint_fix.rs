@@ -183,3 +183,22 @@ fn standard_input_is_refused_as_a_usage_error_and_nothing_is_written() {
         .stderr(predicate::str::contains("error[usage]"));
     assert!(entries(dir.path()).is_empty(), "stdin produced a file");
 }
+
+/// A document that trips the context-tag ceiling: 150000 eight-byte sentences in one
+/// paragraph, over the one tag for every 64 bytes the ceiling allows.
+fn over_budget() -> String {
+    format!("{}\n", vec!["It must."; 150_000].join(" "))
+}
+
+#[rstest]
+#[case::lint(&["lint"])]
+#[case::lint_fix(&["lint", "--fix"])]
+fn an_over_budget_document_reports_the_same_code_with_and_without_fix(#[case] args: &[&str]) {
+    let dir = project(&over_budget());
+    slopvac(dir.path())
+        .args(args)
+        .arg("a.md")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error[context-budget-exceeded]"));
+}
