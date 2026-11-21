@@ -1859,20 +1859,61 @@ fn a_config_error_on_a_path_that_is_not_utf8_is_published_on_that_path() {
     client.finish().unwrap();
 }
 
-#[test]
-fn a_watched_path_with_glob_characters_is_registered_as_a_literal() {
+/// Whether `glob` matches the whole of `path`, with the glob syntax of VS Code: `*` and `?`
+/// stay inside a path segment, `[...]` is a class whose first `]` is a member when it comes
+/// right after the opening bracket, and a `]` outside a class reads as an empty class, which
+/// matches nothing. `{` and `}` open and close alternatives, so a bare one is never literal.
+fn glob_matches(glob: &[char], path: &[char]) -> bool {
+    let Some((&first, rest)) = glob.split_first() else {
+        return path.is_empty();
+    };
+    match first {
+        '*' => (0..=path.len())
+            .take_while(|&n| path[..n].iter().all(|&c| c != '/'))
+            .any(|n| glob_matches(rest, &path[n..])),
+        '?' => path.first().is_some_and(|&c| c != '/') && glob_matches(rest, &path[1..]),
+        '{' | '}' | ']' => false,
+        '[' => {
+            let members = usize::from(rest.first() == Some(&']'));
+            let Some(close) = rest[members..].iter().position(|&c| c == ']') else {
+                return false;
+            };
+            let class = &rest[..members + close];
+            path.first().is_some_and(|c| class.contains(c))
+                && glob_matches(&rest[members + close + 1..], &path[1..])
+        }
+        literal => path.first() == Some(&literal) && glob_matches(rest, &path[1..]),
+    }
+}
+
+fn matches(glob: &str, path: &str) -> bool {
+    let glob: Vec<char> = glob.chars().collect();
+    let path: Vec<char> = path.chars().collect();
+    glob_matches(&glob, &path)
+}
+
+#[rstest::rstest]
+#[case::brackets_and_wildcards("/work/[a]/{b}/c*d?.toml")]
+#[case::closing_bracket_alone("/work/a]b/c.toml")]
+#[case::plain("/work/plain/base.toml")]
+fn a_watched_path_is_registered_as_a_glob_that_matches_that_path_only(#[case] path: &str) {
     let linter = Growing {
-        watched: Mutex::new(vec!["/work/[a]/{b}/c*d?.toml".to_owned()]),
+        watched: Mutex::new(vec![path.to_owned()]),
         on_reload: None,
         on_lint: None,
     };
     let (conn, handle) = watching_session(linter);
-    let register = next_request(&conn);
-    // Each character the glob syntax reads is written as a one-character class.
-    assert_eq!(
-        globs_of(&register),
-        ["**/slopvac.toml", "/work/[[]a]/[{]b[}]/c[*]d[?].toml"]
-    );
+    let registered = globs_of(&next_request(&conn));
+    let glob = &registered[1];
+    assert!(matches(glob, path), "{glob} does not match {path}");
+    // A neighbour that the unescaped characters would also match stays out.
+    for other in [
+        "/work/a/b/cXdY.toml",
+        "/work/a/b/c.toml",
+        "/work/a/bb/c.toml",
+    ] {
+        assert!(!matches(glob, other), "{glob} matches {other}");
+    }
     end_session(&conn, handle);
 }
 

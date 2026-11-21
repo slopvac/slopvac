@@ -428,11 +428,12 @@ fn sync_watch(shared: &Shared, out: &Sender<Message>) {
 }
 
 /// `path` as a glob that matches that path only. The glob syntax of the protocol reads `*`,
-/// `?`, `{`, `}` and `[`, and has no escape, so each is written as a one-character class.
+/// `?`, `{`, `}`, `[` and a `]` that no class holds, and has no escape, so each is written as a
+/// one-character class. A `]` comes first in its class (`[]]`), where it is a member.
 fn literal_glob(path: &str) -> String {
     let mut glob = String::with_capacity(path.len());
     for c in path.chars() {
-        if matches!(c, '*' | '?' | '{' | '}' | '[') {
+        if matches!(c, '*' | '?' | '{' | '}' | '[' | ']') {
             glob.push('[');
             glob.push(c);
             glob.push(']');
