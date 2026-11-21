@@ -387,42 +387,7 @@ fn rewrite(
                 .to_owned(),
         )),
     }
-    if let Some(entries) = doc.get_mut("entries") {
-        for (index, table) in entry_tables(entries) {
-            let Some(raw) = table.get("pos").and_then(Item::as_str).map(str::to_owned) else {
-                continue;
-            };
-            let key = format!("entries[{index}]");
-            let pos_line = lines
-                .line(&format!("{key}.pos"))
-                .unwrap_or_else(|| line(&key));
-            match fix_pos(&raw) {
-                PosFix::Keep => {}
-                PosFix::To(long) => {
-                    if let Some(item) = table.get_mut("pos") {
-                        let mut value = Value::from(long);
-                        if let Some(old) = item.as_value() {
-                            *value.decor_mut() = old.decor().clone();
-                        }
-                        *item = Item::Value(value);
-                    }
-                    notes.push(
-                        MigrateText::NotePosRewritten {
-                            label: label.to_owned(),
-                            line: pos_line.to_string(),
-                            long: long.to_owned(),
-                        }
-                        .to_string(),
-                    );
-                }
-                PosFix::Unknown => problems.extend(blocked(
-                    pos_line,
-                    &format!("{key}.pos"),
-                    MigratePhrase::BlocklistUnknownPos.as_static().to_owned(),
-                )),
-            }
-        }
-    }
+    fix_positions(label, &mut doc, &lines, &mut problems, &mut notes);
     if !problems.is_empty() {
         return Err(problems);
     }
@@ -431,6 +396,56 @@ fn rewrite(
     match Blocklist::parse(label, "toml", &new) {
         Ok(_) => Ok(Some((new, notes))),
         Err(e) => Err(blocked_by(label, &e, &lines)),
+    }
+}
+
+/// Rewrite each short `pos` in `entries` to its long form. A note records every rewrite, and a
+/// `pos` with no long form becomes a blocking record.
+fn fix_positions(
+    label: &str,
+    doc: &mut DocumentMut,
+    lines: &KeyLines,
+    problems: &mut Vec<Dropped>,
+    notes: &mut Vec<String>,
+) {
+    let line = |key: &str| lines.line(key).unwrap_or(1);
+    let Some(entries) = doc.get_mut("entries") else {
+        return;
+    };
+    for (index, table) in entry_tables(entries) {
+        let Some(raw) = table.get("pos").and_then(Item::as_str).map(str::to_owned) else {
+            continue;
+        };
+        let key = format!("entries[{index}]");
+        let pos_line = lines
+            .line(&format!("{key}.pos"))
+            .unwrap_or_else(|| line(&key));
+        match fix_pos(&raw) {
+            PosFix::Keep => {}
+            PosFix::To(long) => {
+                if let Some(item) = table.get_mut("pos") {
+                    let mut value = Value::from(long);
+                    if let Some(old) = item.as_value() {
+                        *value.decor_mut() = old.decor().clone();
+                    }
+                    *item = Item::Value(value);
+                }
+                notes.push(
+                    MigrateText::NotePosRewritten {
+                        label: label.to_owned(),
+                        line: pos_line.to_string(),
+                        long: long.to_owned(),
+                    }
+                    .to_string(),
+                );
+            }
+            PosFix::Unknown => problems.push(Dropped::new(
+                label,
+                &format!("{key}.pos"),
+                pos_line,
+                MigratePhrase::BlocklistUnknownPos.as_static().to_owned(),
+            )),
+        }
     }
 }
 
