@@ -34,7 +34,8 @@
             "directive",
             "cli",
             "env"
-          ]
+          ],
+          "x-slopvac-extensible": true
         },
         "line": {
           "description": "One-based line.",
