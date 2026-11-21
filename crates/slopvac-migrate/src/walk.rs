@@ -5,10 +5,11 @@ use std::path::{Path, PathBuf};
 
 use slopvac_engine::discover::{self, FileKind};
 
+use crate::Error;
 use crate::capped::Capped;
 use crate::limits::Budget;
 use crate::messages::MigrateText;
-use crate::{BACKUP_DIR, Error};
+use crate::plan::{BACKUPS_NAME, PROJECT_DIR};
 
 /// A directory the walk entered, with the 2.x config files it holds.
 #[derive(Debug)]
@@ -91,7 +92,9 @@ fn walk(
         let name = name.to_string_lossy();
         let kind = entry.file_type().map_err(|e| Error::io(&path, e))?;
         if kind.is_dir() {
-            if name != BACKUP_DIR && !discover::SKIP_DIRS.contains(&name.as_ref()) {
+            // A backup directory, `.slopvac/migrate-backup`, at any depth.
+            let backups = name == BACKUPS_NAME && dir.file_name().is_some_and(|n| n == PROJECT_DIR);
+            if !backups && !discover::SKIP_DIRS.contains(&name.as_ref()) {
                 subdirs.push(path);
             }
         } else if kind.is_symlink() {

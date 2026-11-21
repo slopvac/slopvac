@@ -234,7 +234,7 @@ fn an_unknown_pos_is_reported_with_its_line_and_nothing_is_written(#[case] raw: 
     );
     assert_eq!(read(dir.path(), "words.toml"), old);
     assert_eq!(read(dir.path(), "slopvac.toml"), CONFIG);
-    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+    assert!(!dir.path().join(".slopvac").exists());
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn a_blocklist_outside_the_project_is_refused_and_never_written(#[case] path: &s
     assert!(err.starts_with("error[migrate-unsafe-path]: "), "{err}");
     assert!(!err.contains(parent.path().to_str().unwrap()), "{err}");
     assert_eq!(read(parent.path(), "outside.toml"), OLD);
-    assert!(!root.join(".slopvac-migrate-backup").exists());
+    assert!(!root.join(".slopvac").exists());
 }
 
 #[test]
@@ -411,7 +411,7 @@ fn a_path_through_a_symlink_is_refused_and_nothing_is_written(#[case] path: &str
     assert!(err.starts_with("error[migrate-unsafe-path]: "), "{err}");
     assert_eq!(read(dir.path(), "real/words.toml"), OLD);
     assert_eq!(read(dir.path(), "slopvac.toml"), config);
-    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+    assert!(!dir.path().join(".slopvac").exists());
 }
 
 /// A message never quotes the blocklist: a parser echoes the text it stopped at, and file
@@ -479,7 +479,7 @@ fn a_blocklist_over_the_terms_file_cap_exits_2_and_nothing_is_written() {
     );
     assert_eq!(read(dir.path(), "words.toml"), big);
     assert_eq!(read(dir.path(), "slopvac.toml"), CONFIG);
-    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+    assert!(!dir.path().join(".slopvac").exists());
 }
 
 #[test]
@@ -520,7 +520,7 @@ fn a_regular_file_cancelled_by_a_parent_step_is_not_a_directory() {
     assert!(err.contains("file not found"), "{err}");
     assert_eq!(read(dir.path(), "words.toml"), OLD);
     assert_eq!(read(dir.path(), "slopvac.toml"), before);
-    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+    assert!(!dir.path().join(".slopvac").exists());
 }
 
 #[test]

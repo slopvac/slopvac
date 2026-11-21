@@ -4,9 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use slopvac_migrate::{
-    BACKUP_DIR, EngineLinter, Error, Finding, Linter, Options, Phase, RenameTable, plan,
-};
+use slopvac_migrate::{EngineLinter, Error, Finding, Linter, Options, Phase, RenameTable, plan};
 use slopvac_model::PackId;
 use slopvac_rules::{CompileOptions, RuleSet};
 
@@ -84,7 +82,10 @@ fn before_and_after_counts_come_from_the_engine() {
 
 #[test]
 fn backup_directories_at_any_depth_are_not_linted() {
-    for backup in [BACKUP_DIR.to_owned(), format!("nested/{BACKUP_DIR}")] {
+    for backup in [
+        ".slopvac/migrate-backup/20261120T064000Z",
+        "nested/.slopvac/migrate-backup/20261120T064000Z",
+    ] {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "doc.md", "Please leverage it.\n");
         write(dir.path(), "nested/doc.md", "Please leverage it.\n");
@@ -113,16 +114,27 @@ fn an_unreadable_backup_directory_is_never_read() {
     write(dir.path(), "doc.md", "Please leverage it.\n");
     write(
         dir.path(),
-        &format!("{BACKUP_DIR}/doc.md"),
+        ".slopvac/migrate-backup/20261120T064000Z/doc.md",
         "Please leverage it.\n",
     );
-    let backup = dir.path().join(BACKUP_DIR);
+    let backup = dir.path().join(".slopvac/migrate-backup");
     fs::set_permissions(&backup, fs::Permissions::from_mode(0o000)).unwrap();
 
     let before = linter().lint(dir.path(), Phase::Before, &[]);
 
     fs::set_permissions(&backup, fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(counts(&before.unwrap()), [("core:orwell.stale-figure", 1)]);
+}
+
+#[test]
+fn documents_beside_the_backup_directory_are_linted() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), ".slopvac/doc.md", "Please leverage it.\n");
+    write(dir.path(), ".slopvac/other/doc.md", "Please leverage it.\n");
+
+    let before = linter().lint(dir.path(), Phase::Before, &[]).unwrap();
+
+    assert_eq!(counts(&before), [("core:orwell.stale-figure", 2)]);
 }
 
 #[test]

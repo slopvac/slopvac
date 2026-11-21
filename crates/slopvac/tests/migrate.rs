@@ -102,7 +102,7 @@ fn a_document_the_engine_cannot_lint_exits_2_and_writes_nothing() {
         .stderr(predicate::str::contains("doc.mdx"));
     assert!(dir.path().join(".slopvac.toml").exists());
     assert!(!dir.path().join("slopvac.toml").exists());
-    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+    assert!(!dir.path().join(".slopvac").exists());
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn unrepresentable_setting_exits_2_and_writes_nothing() {
 #[test]
 fn restore_rejects_a_manifest_that_escapes_the_project() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let backup = dir.path().join(".slopvac-migrate-backup");
+    let backup = dir.path().join(".slopvac/migrate-backup/20261120T064000Z");
     fs::create_dir_all(&backup).expect("mkdir");
     fs::write(backup.join("manifest.txt"), "C ../x\n").expect("write");
     slopvac()
@@ -257,7 +257,7 @@ fn a_blocklist_path_with_a_symlink_before_a_parent_step_is_refused() {
     }
     assert!(dir.path().join(".slopvac.toml").exists());
     assert!(!dir.path().join("slopvac.toml").exists());
-    assert!(!dir.path().join(".slopvac-migrate-backup").exists());
+    assert!(!dir.path().join(".slopvac").exists());
 }
 
 #[test]

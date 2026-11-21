@@ -2655,6 +2655,7 @@ dependencies = [
  "clap",
  "frontmatter-spans",
  "jsonschema",
+ "proptest",
  "rstest",
  "rustix",
  "serde_json",
