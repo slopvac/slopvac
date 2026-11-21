@@ -3,9 +3,39 @@
 //! Matching is case-insensitive on every platform, so the list fails closed on
 //! case-insensitive file systems. Paths are root-relative with `/` separators.
 
-/// The path components, lowercased.
-fn parts(path: &str) -> Vec<String> {
-    path.split('/').map(str::to_lowercase).collect()
+use unicode_normalization::UnicodeNormalization;
+
+/// The path components under the canonical caseless match of Unicode 3.13
+/// (D145), `NFD(toCasefold(NFD(x)))`, the same fold `extract.rs` uses for
+/// collisions. It maps `ſ` (U+017F) to `s`, which `str::to_lowercase` does not.
+fn canonical_parts(path: &str) -> Vec<String> {
+    path.split('/').map(fold_name).collect()
+}
+
+/// One name under the canonical caseless match.
+fn fold_name(name: &str) -> String {
+    let decomposed: String = name.nfd().collect();
+    caseless::default_case_fold_str(&decomposed).nfd().collect()
+}
+
+/// The path components under the NTFS name comparison, which uppercases per
+/// character and so merges `i` with the dotless `ı` (U+0131), where the
+/// canonical fold keeps them apart. The result is ASCII-lowercased to meet the
+/// deny list constants.
+fn ntfs_parts(path: &str) -> Vec<String> {
+    path.split('/')
+        .map(|c| {
+            c.nfc()
+                .map(|ch| {
+                    let mut up = ch.to_uppercase();
+                    match (up.next(), up.next()) {
+                        (Some(u), None) => u.to_ascii_lowercase(),
+                        _ => ch,
+                    }
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// Why `path` is on the deny list, or `None`.
@@ -15,9 +45,18 @@ fn parts(path: &str) -> Vec<String> {
 /// `.env*`, `.gitmodules`, `.gitattributes`, `slopvac.toml` and `.slopvac.toml`
 /// at any depth, `.mise.toml`, `.envrc` and `.vscode/tasks.json`. `mise.toml` is
 /// also listed, because mise reads it like `.mise.toml`.
+///
+/// Names match by case-fold equivalence, so `.ſlopvac` and `.SlopVac` are
+/// `.slopvac`. A name is denied when either the canonical fold or the NTFS
+/// comparison puts it on the list. The match is the same on every platform, so
+/// the list fails closed on case-insensitive file systems.
 #[must_use]
 pub fn deny_reason(path: &str) -> Option<&'static str> {
-    let p = parts(path);
+    classify(&canonical_parts(path)).or_else(|| classify(&ntfs_parts(path)))
+}
+
+/// The deny list over components already folded to lowercase.
+fn classify(p: &[String]) -> Option<&'static str> {
     let name = p.last().map_or("", String::as_str);
     if p.iter().any(|c| c == ".git") {
         Some("git directory")
@@ -123,7 +162,8 @@ mod tests {
             ".GIT/hooks/pre-commit",
             "sub/.git/HEAD",
             ".slopvac/plugins.lock",
-            "a/.SlopVac/x",
+            "a/.\u{17f}lopvac/x",
+            ".g\u{131}t/config",
             ".slopvac.toml",
             "a/.SLOPVAC.TOML",
             ".github/workflows/ci.yml",
