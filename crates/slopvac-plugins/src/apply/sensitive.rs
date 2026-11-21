@@ -10,18 +10,18 @@ fn parts(path: &str) -> Vec<String> {
 
 /// Why `path` is on the deny list, or `None`.
 ///
-/// The list is the one in threat O7: `.git/` at any depth (hooks included),
-/// `.slopvac/`, `.github/workflows/`, anything named `.env*`, `.gitmodules`,
-/// `.gitattributes`, `slopvac.toml`, `.mise.toml`, `.envrc` and
-/// `.vscode/tasks.json`. `mise.toml` is also listed, because mise reads it like
-/// `.mise.toml`.
+/// The list is the one in threat O7: `.git/` and `.slopvac/` at any depth
+/// (hooks included), `.github/workflows/` at the root only, anything named
+/// `.env*`, `.gitmodules`, `.gitattributes`, `slopvac.toml` and `.slopvac.toml`
+/// at any depth, `.mise.toml`, `.envrc` and `.vscode/tasks.json`. `mise.toml` is
+/// also listed, because mise reads it like `.mise.toml`.
 #[must_use]
 pub fn deny_reason(path: &str) -> Option<&'static str> {
     let p = parts(path);
     let name = p.last().map_or("", String::as_str);
     if p.iter().any(|c| c == ".git") {
         Some("git directory")
-    } else if p.first().is_some_and(|c| c == ".slopvac") {
+    } else if p.iter().any(|c| c == ".slopvac") {
         Some("slopvac state")
     } else if p.len() > 2 && p[0] == ".github" && p[1] == "workflows" {
         Some("CI workflow")
@@ -29,7 +29,10 @@ pub fn deny_reason(path: &str) -> Option<&'static str> {
         Some("environment file")
     } else if matches!(name, ".gitmodules" | ".gitattributes") {
         Some("git configuration")
-    } else if matches!(name, "slopvac.toml" | ".mise.toml" | "mise.toml") {
+    } else if matches!(
+        name,
+        "slopvac.toml" | ".slopvac.toml" | ".mise.toml" | "mise.toml"
+    ) {
         Some("tool configuration")
     } else if p.len() >= 2 && p[p.len() - 2] == ".vscode" && name == "tasks.json" {
         Some("editor task file")
@@ -120,6 +123,9 @@ mod tests {
             ".GIT/hooks/pre-commit",
             "sub/.git/HEAD",
             ".slopvac/plugins.lock",
+            "a/.SlopVac/x",
+            ".slopvac.toml",
+            "a/.SLOPVAC.TOML",
             ".github/workflows/ci.yml",
             ".GitHub/Workflows/ci.yml",
             ".env",
