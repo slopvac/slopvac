@@ -14,8 +14,8 @@ use crate::expand::expand;
 use crate::genre_layer::{GenreFile, display_path, settings};
 use crate::name::is_local;
 use crate::{
-    LimitKind, ArtifactFault, Manifest, PackError, PackPath, PackSource, Provenance, Provides, QualifiedName,
-    Reference, Registry, RegistryError, RuleFault, RuleProblem, Source,
+    ArtifactFault, LimitKind, Manifest, PackError, PackPath, PackSource, Provenance, Provides,
+    QualifiedName, Reference, Registry, RegistryError, RuleFault, RuleProblem, Source,
 };
 
 /// The id of the built-in pack.
@@ -368,11 +368,7 @@ impl Packs {
     ///
     /// # Errors
     /// As for [`Packs::resolve_genre`].
-    pub fn resolve_style(
-        &self,
-        name: &str,
-        at: &Reference,
-    ) -> Result<&Provenance, RegistryError> {
+    pub fn resolve_style(&self, name: &str, at: &Reference) -> Result<&Provenance, RegistryError> {
         Ok(&self.styles.resolve_at(name, at)?.provenance)
     }
 
