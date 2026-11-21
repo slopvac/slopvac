@@ -123,3 +123,37 @@ fn contexts_added_to_one_pack_genre_do_not_reach_a_same_named_genre_of_another()
     assert_eq!(r.contexts("acme:howto").unwrap(), ["legal"]);
     assert_eq!(r.contexts("core:howto").unwrap(), Vec::<String>::new());
 }
+
+#[rstest]
+#[case::other_pack("missing:consumer", false)]
+#[case::the_core_pack("core:consumer", true)]
+#[case::bare("consumer", true)]
+fn a_qualified_reference_to_the_builtin_genres_is_exact(
+    #[case] reference: &str,
+    #[case] found: bool,
+) {
+    let r = slopvac_context::builtin_genres().unwrap();
+
+    assert_eq!(r.spec(reference).is_some(), found);
+}
+
+#[rstest]
+#[case::any_pack("core:base")]
+#[case::other_pack("acme:base")]
+fn a_registry_that_names_no_pack_resolves_no_qualified_reference(#[case] reference: &str) {
+    let r = GenreRegistry::new(vec![spec("core", "base", &[])], "base").unwrap();
+
+    assert!(r.spec(reference).is_none());
+    assert!(r.spec("base").is_some());
+}
+
+#[test]
+fn naming_the_pack_of_a_registry_makes_its_qualified_references_resolve() {
+    let r = GenreRegistry::new(vec![spec("core", "base", &[])], "base")
+        .unwrap()
+        .in_pack("core")
+        .unwrap();
+
+    assert!(r.spec("core:base").is_some());
+    assert!(r.spec("acme:base").is_none());
+}

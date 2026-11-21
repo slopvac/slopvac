@@ -539,9 +539,23 @@ pub struct GenreRegistry {
     /// Context tags the host declares in code, on top of the `contexts` of the genre files,
     /// see [`GenreRegistry::with_contexts`].
     contexts: BTreeMap<String, Vec<String>>,
+    /// The pack that every genre of a registry built by [`GenreRegistry::new`] belongs to, when
+    /// the caller says so with [`GenreRegistry::in_pack`]. Only that name qualifies a reference.
+    label: Option<String>,
 }
 
 impl GenreRegistry {
+    /// Name the pack that supplies every genre of this registry, so that `<pack>:<genre>`
+    /// references to it resolve. A registry built by [`GenreRegistry::new`] has no pack name until
+    /// then, and no qualified reference resolves in it.
+    pub fn in_pack(mut self, pack: &str) -> Result<Self, Error> {
+        if !is_name(pack) {
+            return Err(Error::Parse(format!("`{pack}` is not a pack id")));
+        }
+        self.label = Some(pack.to_string());
+        Ok(self)
+    }
+
     /// Validate and compile `specs`. `default` is the fallback genre id.
     pub fn new(specs: Vec<GenreSpec>, default: &str) -> Result<Self, Error> {
         let mut seen = BTreeSet::new();
@@ -567,6 +581,7 @@ impl GenreRegistry {
             genres,
             default: default.to_string(),
             contexts: BTreeMap::new(),
+            label: None,
         };
         for g in &reg.genres {
             reg.chain(&g.spec.id)?;
@@ -603,6 +618,7 @@ impl GenreRegistry {
             genres,
             default: default.to_string(),
             contexts: BTreeMap::new(),
+            label: None,
         };
         for g in &reg.genres {
             if let Some(p) = g
@@ -659,10 +675,10 @@ impl GenreRegistry {
     }
 
     /// Resolve a reference. `<pack>:<genre>` names one genre of that pack exactly (the `Ref`
-    /// form of `config.schema.json`), and never falls back to a bare claim. A registry that
-    /// no pack built (`GenreRegistry::new`) has no pack names, so there the pack part only says
-    /// where the genre came from and the bare name decides. A bare name prefers a genre of
-    /// the pack `from`, then needs exactly one genre with that id.
+    /// form of `config.schema.json`), and never falls back to a bare claim, in any registry. A
+    /// registry that no pack built (`GenreRegistry::new`) knows its pack only through
+    /// [`GenreRegistry::in_pack`], and resolves no qualified reference without it. A bare name
+    /// prefers a genre of the pack `from`, then needs exactly one genre with that id.
     fn find(&self, from: Option<&str>, r: &str) -> Option<&Genre> {
         let unique = |name: &str| {
             let mut same = self.genres.iter().filter(|g| g.spec.id == name);
@@ -673,7 +689,9 @@ impl GenreRegistry {
         };
         if let Some((pack, name)) = r.rsplit_once(':') {
             if self.genres.iter().all(|g| g.pack.is_none()) {
-                return unique(name);
+                return (self.label.as_deref() == Some(pack))
+                    .then(|| unique(name))
+                    .flatten();
             }
             return self
                 .genres

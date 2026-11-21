@@ -133,21 +133,3 @@ pub enum ArtifactFault {
     #[error("the file breaks a schema rule")]
     Invalid,
 }
-
-/// What a size cap counts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
-pub enum LimitKind {
-    /// Files listed in `provides`.
-    #[error("files")]
-    Files,
-    /// Bytes of pack files.
-    #[error("bytes")]
-    Bytes,
-    /// Rules.
-    #[error("rules")]
-    Rules,
-    /// Bytes of authored rule patterns.
-    #[error("bytes of rule patterns")]
-    PatternBytes,
-}

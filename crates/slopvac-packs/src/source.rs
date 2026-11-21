@@ -34,7 +34,7 @@ pub enum SourceError {
         path: String,
     },
     /// The pack holds more entries or levels than a pack may.
-    #[error("{}", PackMessage::TooManyEntries { limit: MAX_ENTRIES.to_string() })]
+    #[error("{}", PackMessage::TooManyEntries { limit: MAX_ENTRIES })]
     TooManyEntries,
 }
 

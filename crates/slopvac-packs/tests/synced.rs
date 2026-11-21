@@ -11,12 +11,13 @@ use rstest::rstest;
 use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
-    Budget, LimitKind, Limits, LoadedPack, PackError, Packs, Reference, SyncedError, load_synced,
+    Budget, Limits, LoadedPack, PackError, Packs, Reference, SyncedError, load_synced,
     load_synced_within,
 };
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::Lockfile;
 use slopvac_plugins::sync::Store;
+use slopvac_rules::PackBudget;
 
 /// One pack to install: its manifest values and extra files.
 struct Spec {
@@ -537,14 +538,14 @@ fn the_run_byte_budget_stops_the_load_before_the_next_pack_is_read() {
     assert!(
         matches!(
             e,
-            PackError::RunLimit {
-                what: LimitKind::Bytes,
+            PackError::Budget {
+                budget: PackBudget::RunBytes,
                 limit: 10
             }
         ),
         "{e}"
     );
-    assert_eq!(e.code(), Some("plugin-run-limit-exceeded"));
+    assert_eq!(e.code(), Some("rules-budget-exceeded"));
 }
 
 #[test]
@@ -554,10 +555,16 @@ fn the_pack_byte_budget_names_the_pack() {
     let e = run_error(&w, small(|l| l.pack_bytes = 10));
 
     assert!(
-        matches!(&e, PackError::Limit { id, what: LimitKind::Bytes, .. } if id == "base"),
+        matches!(
+            &e,
+            PackError::Budget {
+                budget: PackBudget::Bytes,
+                limit: 10
+            }
+        ),
         "{e}"
     );
-    assert_eq!(e.code(), Some("plugin-limit-exceeded"));
+    assert_eq!(e.code(), Some("rules-budget-exceeded"));
 }
 
 #[test]
@@ -570,8 +577,8 @@ fn the_run_rule_budget_is_checked_before_a_pattern_compiles() {
     assert!(
         matches!(
             e,
-            PackError::RunLimit {
-                what: LimitKind::Rules,
+            PackError::Budget {
+                budget: PackBudget::RunRules,
                 limit: 1
             }
         ),
@@ -588,8 +595,8 @@ fn the_compiled_pattern_budget_stops_the_load_after_a_pack_compiles() {
     assert!(
         matches!(
             e,
-            PackError::RunLimit {
-                what: LimitKind::PatternBytes,
+            PackError::Budget {
+                budget: PackBudget::RunPatternBytes,
                 limit: 5
             }
         ),
@@ -613,8 +620,8 @@ fn the_core_pack_counts_toward_the_run_budget() {
     assert!(
         matches!(
             err,
-            SyncedError::Pack(PackError::RunLimit {
-                what: LimitKind::Rules,
+            SyncedError::Pack(PackError::Budget {
+                budget: PackBudget::RunRules,
                 ..
             })
         ),
@@ -623,12 +630,12 @@ fn the_core_pack_counts_toward_the_run_budget() {
 }
 
 #[rstest]
-#[case::bytes(|l: &mut Limits| l.run_bytes = 10, LimitKind::Bytes)]
-#[case::rules(|l: &mut Limits| l.run_rules = 1, LimitKind::Rules)]
-#[case::patterns(|l: &mut Limits| l.run_pattern_bytes = 5, LimitKind::PatternBytes)]
+#[case::bytes(|l: &mut Limits| l.run_bytes = 10, PackBudget::RunBytes)]
+#[case::rules(|l: &mut Limits| l.run_rules = 1, PackBudget::RunRules)]
+#[case::patterns(|l: &mut Limits| l.run_pattern_bytes = 5, PackBudget::RunPatternBytes)]
 fn registering_packs_applies_the_same_budgets_as_loading_them(
     #[case] set: fn(&mut Limits),
-    #[case] what: LimitKind,
+    #[case] what: PackBudget,
 ) {
     let mut w = World::new();
     w.install(&Spec::new("acme").rules(&["abcdef", "ghi"]));
@@ -638,14 +645,110 @@ fn registering_packs_applies_the_same_budgets_as_loading_them(
     let err = Packs::new_within(packs, small(set)).unwrap_err();
 
     assert!(
-        matches!(err, PackError::RunLimit { what: w, .. } if w == what),
+        matches!(err, PackError::Budget { budget, .. } if budget == what),
         "{err}"
     );
 }
 
+#[test]
+fn manifests_alone_exhaust_the_run_byte_budget() {
+    // Neither pack lists a file, so only the manifests are counted.
+    let mut w = World::new();
+    w.install(&Spec::new("top").requires("base"));
+    w.install(&Spec::new("base"));
+    // One manifest fits and two do not.
+    let manifest_len = Spec::new("base").manifest().len() as u64;
+
+    let e = run_error(&w, small(|l| l.run_bytes = manifest_len));
+
+    assert!(
+        matches!(
+            e,
+            PackError::Budget {
+                budget: PackBudget::RunBytes,
+                ..
+            }
+        ),
+        "{e}"
+    );
+}
+
+#[test]
+fn a_manifest_counts_toward_the_pack_byte_budget() {
+    let w = base_then_unread_top(&Spec::new("base"));
+
+    let e = run_error(&w, small(|l| l.pack_bytes = 10));
+
+    assert!(
+        matches!(
+            e,
+            PackError::Budget {
+                budget: PackBudget::Bytes,
+                ..
+            }
+        ),
+        "{e}"
+    );
+}
+
+#[test]
+fn a_pattern_is_charged_its_compiled_size_not_its_source_size() {
+    // The source is about twenty bytes and passes a limit of 500, but ab repeated a thousand
+    // times compiles to several kilobytes.
+    let w = base_then_unread_top(&Spec::new("base").rules(&["(?:ab){1000}"]));
+
+    let e = run_error(&w, small(|l| l.run_pattern_bytes = 500));
+
+    assert!(
+        matches!(
+            e,
+            PackError::Budget {
+                budget: PackBudget::RunPatternBytes,
+                limit: 500
+            }
+        ),
+        "{e}"
+    );
+}
+
+#[test]
+fn an_exhausted_pattern_budget_compiles_nothing() {
+    // The pattern does not compile. A load that compiled it would report a rules problem.
+    let w = base_then_unread_top(&Spec::new("base").rules(&["("]));
+
+    let e = run_error(&w, small(|l| l.run_pattern_bytes = 0));
+
+    assert!(
+        matches!(
+            e,
+            PackError::Budget {
+                budget: PackBudget::RunPatternBytes,
+                limit: 0
+            }
+        ),
+        "{e}"
+    );
+}
+
 #[rstest]
-#[case::pack_error(SyncedError::Pack(PackError::Limit { id: "a".into(), what: LimitKind::Files, limit: 1 }), Some("plugin-limit-exceeded"))]
-#[case::pack_run_limit(SyncedError::Pack(PackError::RunLimit { what: LimitKind::Bytes, limit: 1 }), Some("plugin-run-limit-exceeded"))]
+#[case::files(PackBudget::Files, "plugin-files")]
+#[case::bytes(PackBudget::Bytes, "plugin-bytes")]
+#[case::run_bytes(PackBudget::RunBytes, "plugin-run-bytes")]
+#[case::run_rules(PackBudget::RunRules, "plugin-run-rules")]
+#[case::run_pattern_bytes(PackBudget::RunPatternBytes, "plugin-run-pattern-bytes")]
+fn every_budget_refusal_has_one_code_and_names_its_budget(
+    #[case] budget: PackBudget,
+    #[case] name: &str,
+) {
+    let error = PackError::Budget { budget, limit: 1 };
+
+    assert_eq!(error.code(), Some("rules-budget-exceeded"));
+    assert_eq!(budget.as_str(), name);
+    assert!(error.to_string().contains(name), "{error}");
+}
+
+#[rstest]
+#[case::pack_error(SyncedError::Pack(PackError::Budget { budget: PackBudget::Files, limit: 1 }), Some("rules-budget-exceeded"))]
 #[case::pack_glob(
     SyncedError::Pack(PackError::GlobTooComplex),
     Some("plugin-glob-too-complex")

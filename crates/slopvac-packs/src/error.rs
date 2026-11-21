@@ -1,6 +1,6 @@
 //! Why a pack failed to load.
 
-use crate::problem::{ArtifactFault, LimitKind, RuleProblem, render_problems};
+use crate::problem::{ArtifactFault, RuleProblem, render_problems};
 use crate::{ManifestError, NameError, RegistryError, SourceError};
 
 /// A location suffix when line and column are known, else nothing.
@@ -8,6 +8,15 @@ fn at(line: Option<usize>, column: Option<usize>) -> String {
     match (line, column) {
         (Some(line), Some(column)) => format!(" (line {line}, column {column})"),
         _ => String::new(),
+    }
+}
+
+impl From<slopvac_rules::BudgetHit> for PackError {
+    fn from(hit: slopvac_rules::BudgetHit) -> Self {
+        Self::Budget {
+            budget: hit.budget,
+            limit: hit.limit,
+        }
     }
 }
 
@@ -20,8 +29,7 @@ impl PackError {
         match self {
             Self::Source(e) => e.code(),
             Self::Registry(e) => e.code(),
-            Self::Limit { .. } => Some(code_of!(PluginLimit { id, what, limit })),
-            Self::RunLimit { .. } => Some(code_of!(RunLimit { what, limit })),
+            Self::Budget { budget, .. } => Some(budget.code()),
             Self::GlobTooComplex => Some(code_of!(GlobTooComplex {
                 depth,
                 alternatives,
@@ -106,22 +114,14 @@ pub enum PackError {
         )
     )]
     GlobTooComplex,
-    /// One pack is over a size cap (X3).
-    #[error("{}", crate::messages::pack_limit(.id, *.what, *.limit))]
-    Limit {
-        /// The pack id.
-        id: String,
-        /// What the cap counts.
-        what: LimitKind,
-        /// The cap.
-        limit: u64,
-    },
-    /// The loaded packs together are over a size cap (X3).
-    #[error("{}", crate::messages::run_limit(*.what, *.limit))]
-    RunLimit {
-        /// What the cap counts.
-        what: LimitKind,
-        /// The cap.
+    /// A pack or the run is over a budget (X3). The code is `rules-budget-exceeded`, with
+    /// `data.budget` the name of the budget (`plugin-files`, `plugin-bytes`, `plugin-run-bytes`,
+    /// `plugin-run-rules` or `plugin-run-pattern-bytes`) and `data.limit` the limit.
+    #[error("{}", .budget.message(*.limit))]
+    Budget {
+        /// The budget that was crossed.
+        budget: slopvac_rules::PackBudget,
+        /// Its limit, in the unit of the budget.
         limit: u64,
     },
     /// An artifact name is not valid.

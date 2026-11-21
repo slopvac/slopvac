@@ -8,7 +8,7 @@
 
 use slopvac_messages::{Catalog, Entry};
 
-use crate::{LimitKind, Provenance, QualifiedName, Reference};
+use crate::{Provenance, QualifiedName, Reference};
 
 /// Every sentence the loader reports for a synced plugin.
 #[derive(Debug, Clone, PartialEq, Eq, Catalog)]
@@ -42,7 +42,11 @@ pub(crate) enum PackMessage {
     /// A plugin targets an extension API that this build does not implement.
     #[code("plugin-api-unsupported")]
     #[message("plugin `{id}` targets extension API {api}, which this slopvac does not implement")]
-    ApiUnsupported { id: String, api: String },
+    ApiUnsupported {
+        id: String,
+        #[count]
+        api: u64,
+    },
     /// The installed manifest disagrees with the lock entry.
     #[code("plugin-manifest-mismatch")]
     #[message("plugin `{id}`: the installed manifest has another {field} than the lock")]
@@ -59,27 +63,18 @@ pub(crate) enum PackMessage {
         needs: String,
         requirement: String,
     },
-    /// One plugin is over a size cap.
-    #[code("plugin-limit-exceeded")]
-    #[message("plugin `{id}` is over the limit of {limit} {what}")]
-    PluginLimit {
-        id: String,
-        what: String,
-        limit: String,
-    },
-    /// The loaded plugins together are over a size cap.
-    #[code("plugin-run-limit-exceeded")]
-    #[message("the loaded plugins together are over the limit of {limit} {what}")]
-    RunLimit { what: String, limit: String },
     /// A `provides` glob nests, branches or runs past the limits.
     #[code("plugin-glob-too-complex")]
     #[message(
         "a `provides` glob is too complex: it may nest {depth} levels, hold {alternatives} alternatives and run {bytes} bytes"
     )]
     GlobTooComplex {
-        depth: String,
-        alternatives: String,
-        bytes: String,
+        #[count]
+        depth: usize,
+        #[count]
+        alternatives: usize,
+        #[count]
+        bytes: usize,
     },
     /// A plugin directory holds a link, which a plugin may not contain.
     #[code("plugin-file-link")]
@@ -88,7 +83,10 @@ pub(crate) enum PackMessage {
     /// A plugin directory holds more entries than a plugin may.
     #[code("plugin-too-many-entries")]
     #[message("the plugin directory holds more than {limit} entries")]
-    TooManyEntries { limit: String },
+    TooManyEntries {
+        #[count]
+        limit: usize,
+    },
 }
 
 fn claims_text(claims: &[(QualifiedName, Provenance)]) -> String {
@@ -120,25 +118,6 @@ pub(crate) fn name_ambiguous(
     .to_string()
 }
 
-/// One pack over a cap.
-pub(crate) fn pack_limit(id: &str, what: LimitKind, limit: u64) -> String {
-    PackMessage::PluginLimit {
-        id: id.to_owned(),
-        what: what.to_string(),
-        limit: limit.to_string(),
-    }
-    .to_string()
-}
-
-/// All packs together over a cap.
-pub(crate) fn run_limit(what: LimitKind, limit: u64) -> String {
-    PackMessage::RunLimit {
-        what: what.to_string(),
-        limit: limit.to_string(),
-    }
-    .to_string()
-}
-
 /// The entries of the packs catalog.
 #[must_use]
 pub fn message_entries() -> &'static [Entry] {
@@ -149,7 +128,7 @@ pub fn message_entries() -> &'static [Entry] {
 macro_rules! code_of {
     ($variant:ident { $($field:ident),* $(,)? }) => {{
         use slopvac_messages::Catalog as _;
-        $crate::messages::PackMessage::$variant { $($field: String::new()),* }.code()
+        $crate::messages::PackMessage::$variant { $($field: Default::default()),* }.code()
     }};
 }
 pub(crate) use code_of;
@@ -157,9 +136,9 @@ pub(crate) use code_of;
 /// A `provides` glob over the limits of [`crate::expand`].
 pub(crate) fn glob_too_complex(depth: usize, alternatives: usize, bytes: usize) -> String {
     PackMessage::GlobTooComplex {
-        depth: depth.to_string(),
-        alternatives: alternatives.to_string(),
-        bytes: bytes.to_string(),
+        depth,
+        alternatives,
+        bytes,
     }
     .to_string()
 }

@@ -42,13 +42,14 @@ pub const TAGGER_FILES: &[BuiltinFile] = yaml_files!("taggers":
     "change-note-version-sentence",
 );
 
-/// The built-in genres. `consumer` is the fallback.
+/// The built-in genres, which belong to the `core` pack, so `core:consumer` resolves. `consumer`
+/// is the fallback.
 pub fn builtin_genres() -> Result<GenreRegistry, Error> {
     let genres = GENRE_FILES
         .iter()
         .map(|(_, text)| GenreSpec::from_yaml(text))
         .collect::<Result<Vec<_>, _>>()?;
-    GenreRegistry::new(genres, "consumer")
+    GenreRegistry::new(genres, "consumer")?.in_pack("core")
 }
 
 /// A registry with every built-in tagger.

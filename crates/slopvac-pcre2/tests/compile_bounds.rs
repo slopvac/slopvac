@@ -83,3 +83,22 @@ fn a_variable_length_lookbehind_branch_over_the_limit_is_rejected() {
         "{beyond:?}"
     );
 }
+
+#[test]
+fn a_repeated_group_reports_a_compiled_size_far_over_its_source() {
+    let pattern = "(?:ab){1000}";
+
+    let size = Regex::new(pattern, Options::new()).unwrap().compiled_size();
+
+    assert!(size > 10 * pattern.len(), "{size}");
+}
+
+#[test]
+fn a_longer_pattern_reports_a_larger_compiled_size() {
+    let short = Regex::new("a", Options::new()).unwrap().compiled_size();
+    let long = Regex::new(&"a|b".repeat(50), Options::new())
+        .unwrap()
+        .compiled_size();
+
+    assert!(0 < short && short < long, "{short} {long}");
+}

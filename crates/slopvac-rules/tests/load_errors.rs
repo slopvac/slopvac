@@ -577,3 +577,108 @@ fn counting_the_rules_of_a_file_that_does_not_parse_is_the_load_error() {
 
     assert_eq!(err.file, PathBuf::from("cat.json"));
 }
+
+mod compile_budget {
+    use std::path::PathBuf;
+
+    use slopvac_rules::{
+        BudgetHit, CompileBudget, CompileOptions, LoadErrorKind, PackBudget, RuleSet,
+    };
+
+    /// Refuses once more than `allowed` pattern bytes were reserved; records every call.
+    struct Spy {
+        allowed: usize,
+        reserved: usize,
+        reserves: usize,
+        settles: usize,
+    }
+
+    impl CompileBudget for Spy {
+        fn reserve(&mut self, source_bytes: usize) -> Result<(), BudgetHit> {
+            self.reserves += 1;
+            self.reserved += source_bytes;
+            if self.reserved > self.allowed {
+                return Err(BudgetHit {
+                    budget: PackBudget::RunPatternBytes,
+                    limit: 7,
+                });
+            }
+            Ok(())
+        }
+
+        fn settle(&mut self, _: usize, compiled: usize) -> Result<(), BudgetHit> {
+            self.settles += 1;
+            assert!(compiled > 0);
+            Ok(())
+        }
+    }
+
+    fn category(patterns: &[&str]) -> (PathBuf, String) {
+        let rules: Vec<String> = patterns
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                format!(
+                    r#"{{"id":"r{i}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"{p}"}},"citation":{{"source":"s"}}}}"#
+                )
+            })
+            .collect();
+        (
+            PathBuf::from("c.json"),
+            format!(
+                r#"{{"schema_version":3,"id":"c","title":"T","description":"D","rules":[{}]}}"#,
+                rules.join(",")
+            ),
+        )
+    }
+
+    #[test]
+    fn a_refusing_budget_stops_the_load_before_the_next_pattern_compiles() {
+        let mut spy = Spy {
+            allowed: 0,
+            reserved: 0,
+            reserves: 0,
+            settles: 0,
+        };
+        // The second pattern would not compile, so a load that reached it would say so.
+        let sources = [category(&["a", "("])];
+
+        let err = RuleSet::from_sources_budgeted(
+            &slopvac_model::PackId::new("core").unwrap(),
+            sources,
+            &CompileOptions::default(),
+            &mut spy,
+        )
+        .unwrap_err();
+
+        assert_eq!((spy.reserves, spy.settles), (1, 0));
+        assert!(matches!(
+            err.errors().last().map(|e| &e.kind),
+            Some(LoadErrorKind::BudgetExceeded {
+                budget: PackBudget::RunPatternBytes,
+                limit: 7,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn an_allowing_budget_sees_each_pattern_reserved_then_settled() {
+        let mut spy = Spy {
+            allowed: usize::MAX,
+            reserved: 0,
+            reserves: 0,
+            settles: 0,
+        };
+
+        RuleSet::from_sources_budgeted(
+            &slopvac_model::PackId::new("core").unwrap(),
+            [category(&["a", "b"])],
+            &CompileOptions::default(),
+            &mut spy,
+        )
+        .unwrap();
+
+        assert_eq!((spy.reserves, spy.settles), (2, 2));
+    }
+}

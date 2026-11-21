@@ -7,8 +7,7 @@ use std::os::unix::fs::symlink;
 use proptest::prelude::*;
 use rstest::rstest;
 use slopvac_packs::{
-    DirSource, LimitKind, LoadedPack, MANIFEST_FILE, MAX_PACK_FILES, PackError, Packs, Source,
-    SourceError,
+    DirSource, LoadedPack, MANIFEST_FILE, MAX_PACK_FILES, PackError, Packs, Source, SourceError,
 };
 
 fn pack(genres: &str, files: &[&str]) -> tempfile::TempDir {
@@ -89,8 +88,8 @@ fn a_pack_over_the_file_cap_is_refused_before_a_file_is_read() {
     assert!(
         matches!(
             err,
-            PackError::Limit {
-                what: LimitKind::Files,
+            PackError::Budget {
+                budget: slopvac_rules::PackBudget::Files,
                 ..
             }
         ),
@@ -115,6 +114,17 @@ fn a_hostile_glob_is_refused_with_a_typed_error(#[case] glob: String) {
 
     assert!(matches!(err, PackError::GlobTooComplex), "{err}");
     assert_eq!(err.code(), Some("plugin-glob-too-complex"));
+}
+
+/// `]` right after `{` is a literal to globset, so a scan that counts brackets sees depth 1 while
+/// the regex nests 128 groups deep. The compile itself must refuse it.
+#[test]
+fn hidden_nesting_behind_literal_brackets_is_refused_not_a_panic() {
+    let glob = "{]".repeat(128) + "a" + &"}".repeat(128);
+
+    let err = genre_ids(&hostile(&glob)).unwrap_err();
+
+    assert!(matches!(err, PackError::GlobTooComplex), "{err}");
 }
 
 #[test]
@@ -142,6 +152,20 @@ proptest! {
         prop_assert!(outcome.is_ok() || outcome.is_err());
     }
 
+
+    /// Runs of opening and closing brackets in any mix never panic expansion.
+    #[test]
+    fn bracket_runs_never_panic_expansion(
+        runs in proptest::collection::vec(
+            (proptest::sample::select(vec!["{", "[", "]", "}", "{]", "[!", "{a,", "\\\\"]), 1..140_usize),
+            1..6,
+        )
+    ) {
+        let glob: String = runs.iter().map(|(t, n)| t.repeat(*n)).collect::<String>() + "a";
+        prop_assume!(glob.len() <= 600);
+        let outcome = genre_ids(&hostile(&glob));
+        prop_assert!(outcome.is_ok() || outcome.is_err());
+    }
 
     /// Whatever files a directory holds, `dir/*.yaml` loads exactly those files, in path order.
     #[test]

@@ -1,6 +1,7 @@
 //! Expand the globs of a `provides` table against the files a pack holds.
 
-use globset::{GlobBuilder, GlobMatcher};
+use globset::GlobBuilder;
+use regex::bytes::{Regex, RegexBuilder};
 
 use crate::{PackError, PackPath, PackSource, Provides};
 
@@ -11,14 +12,19 @@ pub const GLOB_MAX_DEPTH: usize = 8;
 /// Most commas, the alternatives of all `{a,b}` groups together, in a `provides` glob.
 pub const GLOB_MAX_ALTERNATIVES: usize = 256;
 
-/// Whether a glob is over the limits above.
+/// Deepest regex nesting a glob may compile to.
+const REGEX_NEST_LIMIT: u32 = 32;
+/// Largest compiled regex a glob may build, in bytes.
+const REGEX_SIZE_LIMIT: usize = 1 << 20;
+
+/// A cheap pre-filter: whether a glob is over the limits above.
 ///
-/// `GlobMatcher` compiles its regex with an `expect`, and that compile fails only past the
-/// regex nesting limit (250) or the compiled size limit. A glob of at most 512 bytes that nests
-/// at most 8 levels deep stays far below both, so the bound alone keeps `compile_matcher` from
-/// panicking on pack input, and no fallible compile path is needed. The hostile-glob tests and
-/// a property test hold that to account. The scan is conservative: a `\` escapes the next
-/// character, and a closing bracket only lowers the depth.
+/// The scan is not what keeps a glob from panicking. `GlobMatcher` compiles its regex with an
+/// `expect`, and a bracket written as `{]` hides nesting from a scan. So [`matcher`] never calls
+/// `compile_matcher`: it builds the regex from `Glob::regex()` with `regex`'s own nesting and
+/// size limits, and any build error is a refusal. The scan only turns away the obvious cases
+/// before any parsing. It is conservative: a `\` escapes the next character, and a closing
+/// bracket only lowers the depth.
 fn too_complex(glob: &str) -> bool {
     if glob.len() > GLOB_MAX_BYTES {
         return true;
@@ -85,7 +91,7 @@ pub(crate) fn expand(source: &dyn PackSource, provides: &Provides) -> Result<Pro
         for entry in list {
             if is_glob(entry) {
                 let matcher = matcher(entry)?;
-                for file in files.iter().filter(|f| matcher.is_match(f.as_str())) {
+                for file in files.iter().filter(|f| matcher.is_match(f.as_bytes())) {
                     // A file whose name is not a valid pack path cannot be provided.
                     if let Some(path) = PackPath::parse(file).ok().filter(|p| !out.contains(p)) {
                         out.push(path);
@@ -113,15 +119,22 @@ fn is_glob(path: &PackPath) -> bool {
     path.as_str().contains(META)
 }
 
-fn matcher(path: &PackPath) -> Result<GlobMatcher, PackError> {
+/// Compile a `provides` glob to a regex over path bytes, as `globset` matches paths, under
+/// limits that make the build fallible instead of a panic.
+fn matcher(path: &PackPath) -> Result<Regex, PackError> {
     if too_complex(path.as_str()) {
         return Err(PackError::GlobTooComplex);
     }
-    GlobBuilder::new(path.as_str())
+    let glob = GlobBuilder::new(path.as_str())
         .literal_separator(true)
         .build()
-        .map(|g| g.compile_matcher())
         .map_err(|_| PackError::Glob {
             path: path.as_str().to_owned(),
-        })
+        })?;
+    RegexBuilder::new(glob.regex())
+        .nest_limit(REGEX_NEST_LIMIT)
+        .size_limit(REGEX_SIZE_LIMIT)
+        .dfa_size_limit(REGEX_SIZE_LIMIT)
+        .build()
+        .map_err(|_| PackError::GlobTooComplex)
 }

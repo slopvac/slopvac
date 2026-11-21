@@ -7,16 +7,16 @@ use semver::Version;
 use slopvac_config::{PackFile, PresetFailure, Presets, Setting};
 use slopvac_context::{GenreSpec, TaggerSpec};
 use slopvac_model::PackId;
-use slopvac_rules::{CompileOptions, RuleSet};
+use slopvac_rules::{CompileOptions, PackBudget, RuleSet};
 use slopvac_styles::{Style, StyleError, StylePresets, StyleSource};
 
-use crate::budget::{Budget, Limits};
+use crate::budget::{Budget, Limits, refusal};
 use crate::expand::expand;
 use crate::genre_layer::{GenreFile, display_path, settings};
 use crate::name::is_local;
 use crate::{
-    ArtifactFault, LimitKind, Manifest, PackError, PackPath, PackSource, Provenance, Provides,
-    QualifiedName, Reference, Registry, RegistryError, RuleFault, RuleProblem, Source,
+    ArtifactFault, Manifest, PackError, PackPath, PackSource, Provenance, Provides, QualifiedName,
+    Reference, Registry, RegistryError, RuleFault, RuleProblem, Source,
 };
 
 /// The id of the built-in pack.
@@ -33,12 +33,12 @@ pub struct LoadedPack {
     styles: Vec<(PackPath, String)>,
     configs: Vec<(PackPath, String)>,
     pub(crate) bytes: u64,
+    pub(crate) pattern_bytes: u64,
 }
 
 /// Reads a pack's files and counts the bytes against the per-pack and the run budget.
 struct Reader<'a> {
     source: &'a dyn PackSource,
-    id: &'a PackId,
     budget: &'a mut Budget,
     bytes: u64,
 }
@@ -52,11 +52,7 @@ impl Reader<'_> {
                 let len = text.len() as u64;
                 self.bytes = self.bytes.saturating_add(len);
                 if self.bytes > self.budget.limits().pack_bytes {
-                    return Err(PackError::Limit {
-                        id: self.id.to_string(),
-                        what: LimitKind::Bytes,
-                        limit: self.budget.limits().pack_bytes,
-                    });
+                    return Err(refusal(PackBudget::Bytes, self.budget.limits().pack_bytes));
                 }
                 self.budget.charge_bytes(len)?;
                 Ok((p.clone(), text))
@@ -95,6 +91,20 @@ fn syntax(path: &PackPath, text: &str, error: &slopvac_config::tree::ParseError)
 }
 
 fn rule_problems(errors: &slopvac_rules::LoadErrors) -> PackError {
+    use slopvac_rules::LoadErrorKind as K;
+    // A run budget the loader refused outranks the problems found before it.
+    let run_budget = errors.errors().iter().find_map(|e| match &e.kind {
+        K::BudgetExceeded {
+            budget:
+                budget @ (PackBudget::RunBytes | PackBudget::RunRules | PackBudget::RunPatternBytes),
+            limit,
+            ..
+        } => Some(refusal(*budget, *limit)),
+        _ => None,
+    });
+    if let Some(refusal) = run_budget {
+        return refusal;
+    }
     PackError::Rules {
         problems: errors
             .errors()
@@ -137,7 +147,14 @@ impl LoadedPack {
         origin: Source,
         budget: &mut Budget,
     ) -> Result<Self, PackError> {
-        let mut manifest = Manifest::parse_allowing_core(&source.manifest_text()?)?;
+        // The manifest counts toward both byte budgets like any pack file, before it is parsed.
+        let manifest_text = source.manifest_text()?;
+        let manifest_bytes = manifest_text.len() as u64;
+        if manifest_bytes > budget.limits().pack_bytes {
+            return Err(refusal(PackBudget::Bytes, budget.limits().pack_bytes));
+        }
+        budget.charge_bytes(manifest_bytes)?;
+        let mut manifest = Manifest::parse_allowing_core(&manifest_text)?;
         let is_core = manifest.id.as_str() == CORE_ID;
         match (origin, is_core) {
             (Source::Core, false) => return Err(PackError::NotCore),
@@ -151,17 +168,16 @@ impl LoadedPack {
         manifest.provides = expand(source, &manifest.provides)?;
         let provides = &manifest.provides;
         if file_count(provides) > budget.limits().pack_files {
-            return Err(PackError::Limit {
-                id: manifest.id.to_string(),
-                what: LimitKind::Files,
-                limit: budget.limits().pack_files as u64,
-            });
+            return Err(refusal(
+                PackBudget::Files,
+                budget.limits().pack_files as u64,
+            ));
         }
+        let patterns_before = budget.pattern_used();
         let mut reader = Reader {
             source,
-            id: &manifest.id,
             budget,
-            bytes: 0,
+            bytes: manifest_bytes,
         };
         let categories = reader.read_all(&provides.categories)?;
         // Count the rules before compiling any: a file that does not parse counts as none here
@@ -172,17 +188,18 @@ impl LoadedPack {
                 reader.budget.charge_rules(n)?;
             }
         }
-        let rules = RuleSet::from_sources(
+        // Each pattern reserves its source bytes before it compiles and is charged its compiled
+        // size after, so the load stops at the first pattern that crosses the run budget.
+        let rules = RuleSet::from_sources_budgeted(
             &manifest.id,
             categories
                 .into_iter()
                 .map(|(p, text)| (PathBuf::from(p.as_str()), text)),
             &CompileOptions::default(),
+            &mut *reader.budget,
         )
         .map_err(|e| rule_problems(&e))?;
-        reader
-            .budget
-            .charge_pattern_bytes(pattern_bytes_of(&rules))?;
+        let pattern_bytes = reader.budget.pattern_used().saturating_sub(patterns_before);
         let mut genres = Vec::new();
         for (path, text) in reader.read_all(&provides.genres)? {
             let spec = GenreSpec::from_yaml(&text)
@@ -224,12 +241,8 @@ impl LoadedPack {
             styles,
             configs,
             bytes,
+            pattern_bytes,
         })
-    }
-
-    /// The authored pattern bytes of the pack's compiled rules.
-    pub(crate) fn pattern_bytes(&self) -> u64 {
-        pattern_bytes_of(&self.rules)
     }
 
     /// The number of rules the pack supplies.
@@ -267,17 +280,6 @@ impl LoadedPack {
             file.as_str(),
         )
     }
-}
-
-/// The authored pattern text of every lexical rule in `rules`.
-fn pattern_bytes_of(rules: &RuleSet) -> u64 {
-    rules
-        .categories()
-        .iter()
-        .flat_map(slopvac_rules::LoadedCategory::rules)
-        .filter_map(|r| r.matcher())
-        .map(|m| m.source().len() as u64)
-        .sum()
 }
 
 /// The number of files a `provides` table lists.

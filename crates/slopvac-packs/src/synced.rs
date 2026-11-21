@@ -55,7 +55,7 @@ pub enum SyncedError {
         source: Box<SyncError>,
     },
     /// The plugin targets an extension API this build does not implement.
-    #[error("{}", PackMessage::ApiUnsupported { id: String::from(.id), api: ToString::to_string(.api) })]
+    #[error("{}", PackMessage::ApiUnsupported { id: String::from(.id), api: *.api })]
     ApiUnsupported {
         /// The plugin id.
         id: String,

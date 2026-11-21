@@ -19,16 +19,17 @@ use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 
 use pcre2_sys::{
-    PCRE2_CONFIG_JIT, PCRE2_CONFIG_VERSION, PCRE2_INFO_JITSIZE, PCRE2_INFO_SIZE, PCRE2_JIT_COMPLETE, PCRE2_NO_JIT,
-    PCRE2_NO_UTF_CHECK, PCRE2_NOTEMPTY_ATSTART, PCRE2_UNSET, pcre2_code_8, pcre2_code_free_8,
-    pcre2_compile_8, pcre2_compile_context_8, pcre2_compile_context_create_8,
-    pcre2_compile_context_free_8, pcre2_config_8, pcre2_get_error_message_8,
-    pcre2_get_ovector_count_8, pcre2_get_ovector_pointer_8, pcre2_jit_compile_8, pcre2_jit_stack_8,
-    pcre2_jit_stack_assign_8, pcre2_jit_stack_create_8, pcre2_jit_stack_free_8, pcre2_match_8,
-    pcre2_match_context_8, pcre2_match_context_create_8, pcre2_match_context_free_8,
-    pcre2_match_data_8, pcre2_match_data_create_from_pattern_8, pcre2_match_data_free_8,
-    pcre2_pattern_info_8, pcre2_set_depth_limit_8, pcre2_set_heap_limit_8, pcre2_set_match_limit_8,
-    pcre2_set_max_pattern_length_8, pcre2_set_max_varlookbehind_8, pcre2_set_parens_nest_limit_8,
+    PCRE2_CONFIG_JIT, PCRE2_CONFIG_VERSION, PCRE2_INFO_JITSIZE, PCRE2_INFO_SIZE,
+    PCRE2_JIT_COMPLETE, PCRE2_NO_JIT, PCRE2_NO_UTF_CHECK, PCRE2_NOTEMPTY_ATSTART, PCRE2_UNSET,
+    pcre2_code_8, pcre2_code_free_8, pcre2_compile_8, pcre2_compile_context_8,
+    pcre2_compile_context_create_8, pcre2_compile_context_free_8, pcre2_config_8,
+    pcre2_get_error_message_8, pcre2_get_ovector_count_8, pcre2_get_ovector_pointer_8,
+    pcre2_jit_compile_8, pcre2_jit_stack_8, pcre2_jit_stack_assign_8, pcre2_jit_stack_create_8,
+    pcre2_jit_stack_free_8, pcre2_match_8, pcre2_match_context_8, pcre2_match_context_create_8,
+    pcre2_match_context_free_8, pcre2_match_data_8, pcre2_match_data_create_from_pattern_8,
+    pcre2_match_data_free_8, pcre2_pattern_info_8, pcre2_set_depth_limit_8, pcre2_set_heap_limit_8,
+    pcre2_set_match_limit_8, pcre2_set_max_pattern_length_8, pcre2_set_max_varlookbehind_8,
+    pcre2_set_parens_nest_limit_8,
 };
 
 use crate::Limits;
