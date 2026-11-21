@@ -204,10 +204,11 @@ fn nonblocking(_: &mut OpenOptions) -> std::io::Result<()> {
 pub struct AclCheckFailed;
 
 /// The source of the I/O error that [`Root::open`] returns when the root path was replaced
-/// while it was being opened.
+/// while it was being opened, so a caller can tell it from other I/O errors and word it
+/// itself.
 #[derive(Debug, thiserror::Error)]
 #[error("the project root changed while it was opened")]
-struct RootChanged;
+pub struct RootChanged;
 
 /// The project root as an open directory handle.
 ///

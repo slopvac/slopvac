@@ -397,6 +397,10 @@ internal-error error
 invalid-params error
 invalid-request error
 launcher-not-installed error
+lint-fix-reason-acl-check text
+lint-fix-reason-io text
+lint-fix-reason-not-utf8 text
+lint-fix-reason-root-changed text
 lock-mismatch error
 lsp-action-allow text
 lsp-action-fix text

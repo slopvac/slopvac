@@ -62,6 +62,10 @@ pub enum LintFixReason {
     #[code("lint-fix-reason-acl-check")]
     #[text("the access control list check failed")]
     AclCheck,
+    /// The project root was replaced while the run opened it.
+    #[code("lint-fix-reason-root-changed")]
+    #[text("the project root was replaced while it was opened")]
+    RootChanged,
     /// A read or write failed, with the system's own wording.
     #[code("lint-fix-reason-io")]
     #[text("{detail}")]

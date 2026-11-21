@@ -16,7 +16,7 @@ use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{
     AclCheckFailed, Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, Root,
-    fix_file_in,
+    RootChanged, fix_file_in,
 };
 use slopvac_messages::Catalog as _;
 use slopvac_model::{
@@ -940,6 +940,13 @@ fn fix_failure_reason(err: FixError) -> String {
         {
             LintFixReason::AclCheck
         }
+        FixError::Io { source, .. }
+            if source
+                .get_ref()
+                .is_some_and(<dyn std::error::Error + Send + Sync>::is::<RootChanged>) =>
+        {
+            LintFixReason::RootChanged
+        }
         FixError::Io { source, .. } => LintFixReason::Io {
             detail: source.to_string(),
         },
@@ -1567,5 +1574,26 @@ mod fix_tests {
             ))),
             "permission denied"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_root_replaced_while_it_was_opened_gets_the_registry_reason() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("root");
+        std::fs::create_dir(&root).unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let source = Root::open_hooked(&root, &mut || {
+            std::fs::rename(&root, parent.path().join("moved")).unwrap();
+            std::os::unix::fs::symlink(elsewhere.path(), &root).unwrap();
+        })
+        .unwrap_err();
+
+        let reason = fix_failure_reason(FixError::Io {
+            path: "a.md".to_owned(),
+            source,
+        });
+
+        assert_eq!(reason, "the project root was replaced while it was opened");
     }
 }

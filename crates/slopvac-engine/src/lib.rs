@@ -79,7 +79,7 @@ mod structure;
 mod tagging;
 mod terms;
 
-pub use commit::{AclCheckFailed, MAX_FILE_BYTES, Refusal, Root, Step};
+pub use commit::{AclCheckFailed, MAX_FILE_BYTES, Refusal, Root, RootChanged, Step};
 pub use diagrams::{
     DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker,
     diagram_rule_set,
