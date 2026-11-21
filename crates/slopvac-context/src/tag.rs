@@ -486,13 +486,19 @@ impl TagIndex {
             by_group.into_iter().filter(|(_, m)| m.len() > 1).collect();
         multi_groups.sort_unstable_by_key(|(g, _)| *g);
         for (g, m) in &multi_groups {
-            let key = (
-                tags[m[0]].kind.as_str(),
-                m.iter()
-                    .map(|&i| (tags[i].span.start, tags[i].span.end))
-                    .collect(),
-            );
-            if !seen.insert(key) {
+            let Some(kind) = m
+                .first()
+                .and_then(|&i| tags.get(i))
+                .map(|t| t.kind.as_str())
+            else {
+                continue;
+            };
+            let extents = m
+                .iter()
+                .filter_map(|&i| tags.get(i))
+                .map(|t| (t.span.start, t.span.end))
+                .collect();
+            if !seen.insert((kind, extents)) {
                 repeated.insert(*g);
             }
         }
@@ -509,8 +515,11 @@ impl TagIndex {
                     .map(|(_, t)| t),
             )
         });
-        let multi_ids: Vec<usize> = (0..tags.len())
-            .filter(|&i| members.contains_key(&groups[i]) && !repeated.contains(&groups[i]))
+        let multi_ids: Vec<usize> = groups
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| members.contains_key(g) && !repeated.contains(g))
+            .map(|(i, _)| i)
             .collect();
         let multi = if multi_ids.is_empty() {
             Stab::default()
@@ -533,24 +542,30 @@ impl TagIndex {
     /// The per-kind structures, built once for all lookups that name kinds.
     fn per_kind(&self) -> &HashMap<String, PerKind> {
         self.by_kind.get_or_init(|| {
-            let mut ids: HashMap<&str, Vec<usize>> = HashMap::new();
-            for (i, t) in self.tags.iter().enumerate() {
-                ids.entry(t.kind.as_str()).or_default().push(i);
+            // Each tag with its index and group, kept by kind in span order.
+            let mut by_kind: HashMap<&str, Vec<(usize, &Tag, usize)>> = HashMap::new();
+            for (i, (t, &g)) in self.tags.iter().zip(&self.groups).enumerate() {
+                by_kind.entry(t.kind.as_str()).or_default().push((i, t, g));
             }
-            ids.into_iter()
-                .map(|(kind, ids)| {
-                    let is_multi = |i: &usize| self.members.contains_key(&self.groups[*i]);
-                    let all = Spatial::build(ids.iter().map(|&i| &self.tags[i]));
-                    let multi_ids: Vec<usize> = ids
+            by_kind
+                .into_iter()
+                .map(|(kind, items)| {
+                    let all = Spatial::build(items.iter().map(|&(_, t, _)| t));
+                    let multi_ids: Vec<usize> = items
                         .iter()
-                        .copied()
-                        .filter(|i| is_multi(i) && !self.repeated.contains(&self.groups[*i]))
+                        .filter(|(_, _, g)| {
+                            self.members.contains_key(g) && !self.repeated.contains(g)
+                        })
+                        .map(|&(i, _, _)| i)
                         .collect();
                     let (single, multi) = if multi_ids.is_empty() {
                         (None, Stab::default())
                     } else {
                         let single = Spatial::build(
-                            ids.iter().filter(|i| !is_multi(i)).map(|&i| &self.tags[i]),
+                            items
+                                .iter()
+                                .filter(|(_, _, g)| !self.members.contains_key(g))
+                                .map(|&(_, t, _)| t),
                         );
                         (Some(single), Stab::build(&self.tags, multi_ids))
                     };
@@ -610,8 +625,9 @@ impl TagIndex {
                         return false;
                     }
                     hit = self
-                        .members
-                        .get(&self.groups[i])
+                        .groups
+                        .get(i)
+                        .and_then(|g| self.members.get(g))
                         .is_some_and(|m| ranges.iter().all(|r| m.covers(r)));
                     !hit
                 });
