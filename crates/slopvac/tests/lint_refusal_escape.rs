@@ -357,3 +357,51 @@ fn a_config_notice_is_escaped_once_in_the_text_report_and_raw_in_json() {
     let message = report["notices"][0]["message"].as_str().expect("message");
     assert!(message.contains(FORGE_RAW), "{message:?}");
 }
+
+/// A config that fails schema validation, so the refusal comes from the rejected-config
+/// renderer. The file name and the quoted value are both hostile. `toml_value` is `raw` as a
+/// TOML basic-string body.
+#[rstest]
+#[case::esc(ESC_RAW, ESC_SAFE, "a\\u001b]0;x\\u0007b")]
+#[case::newline(FORGE_RAW, FORGE_SAFE, "a\\n::error::forged")]
+#[case::bidi(BIDI_RAW, BIDI_SAFE, "a\\u202eb")]
+fn a_schema_invalid_config_escapes_its_name_and_value_once(
+    #[case] raw: &str,
+    #[case] safe: &str,
+    #[case] toml_value: &str,
+) {
+    let file = format!("{raw}.toml");
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join(&file),
+        format!("schema_version = 3\nlocale = \"{toml_value}\"\n"),
+    )
+    .expect("write");
+    std::fs::write(dir.path().join("ok.md"), "text\n").expect("write");
+    let args = ["--config", &file, "ok.md"];
+
+    let (_, err) = run_in(slopvac(dir.path()), &[&["lint"], &args[..]].concat());
+    assert_eq!(
+        err,
+        format!(
+            "error[config-invalid-value]: `{safe}` is not an accepted value\n \
+             --> {safe}.toml:2:10\nhelp: use one of `en-US`, `en-GB`, `und`\n"
+        )
+    );
+
+    // The report notice keeps the raw text for the format that escapes it.
+    let (json, _) = run_in(
+        slopvac(dir.path()),
+        &[&["lint", "--format", "json"], &args[..]].concat(),
+    );
+    let report: serde_json::Value = serde_json::from_str(&json).expect("json report");
+    let message = report["notices"][0]["message"].as_str().expect("message");
+    assert!(
+        message.contains(&format!("`{raw}` is not an accepted value")),
+        "{message:?}"
+    );
+    assert!(
+        message.contains(&format!("--> {raw}.toml:2:10")),
+        "{message:?}"
+    );
+}

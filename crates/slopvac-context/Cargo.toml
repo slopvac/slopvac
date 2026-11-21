@@ -24,7 +24,6 @@ slopvac-model = { workspace = true }
 slopvac-pcre2 = { workspace = true }
 slopvac-rules = { workspace = true }
 slopvac-sanitize = { workspace = true }
-thiserror = { workspace = true }
 
 [dev-dependencies]
 jsonschema = { workspace = true }
