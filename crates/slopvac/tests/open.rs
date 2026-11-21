@@ -56,6 +56,8 @@ impl FakeOpener {
 
 fn slopvac(opener: &FakeOpener) -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+    // Tests stay off the network: the update notice may refresh its cache after lint, doctor and prime.
+    cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1");
     for var in [
         "SLOPVAC_OFFLINE",
         "SLOPVAC_LOG",

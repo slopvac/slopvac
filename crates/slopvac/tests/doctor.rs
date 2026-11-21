@@ -23,6 +23,9 @@ const LOCK: &str = include_str!("../../../schemas/v3/conformance/plugins-lock/va
 /// never reach the output.
 struct World {
     root: tempfile::TempDir,
+    /// Whether the update check is on. It is off by default, so an ordinary run never starts a
+    /// refresh after the report.
+    updates: bool,
 }
 
 impl World {
@@ -34,7 +37,20 @@ impl World {
         for dir in ["project", "home", "cache"] {
             fs::create_dir(root.path().join(dir)).unwrap();
         }
-        Self { root }
+        Self {
+            root,
+            updates: false,
+        }
+    }
+
+    /// A world for tests that read the update state: the check is on. Its cache is empty, stale
+    /// or unreadable in most of them, so a refresh could start. The proxy below refuses every
+    /// connection at once, so none reaches the network.
+    fn with_updates() -> Self {
+        Self {
+            updates: true,
+            ..Self::new()
+        }
     }
 
     fn project(&self) -> PathBuf {
@@ -114,6 +130,14 @@ impl World {
             "CLICOLOR_FORCE",
         ] {
             cmd.env_remove(var);
+        }
+        if self.updates {
+            // Port 9 on the loopback address refuses connections, for every proxy variable ureq reads.
+            for var in ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"] {
+                cmd.env(var, "http://127.0.0.1:9");
+            }
+        } else {
+            cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1");
         }
         cmd.env("NO_COLOR", "1")
             .env("HOME", self.home())
@@ -374,7 +398,7 @@ fn cache_entry(w: &World, latest: &str) {
 
 #[test]
 fn update_state_comes_from_the_cached_check() {
-    let w = World::new();
+    let w = World::with_updates();
     let (_, unknown) = w.json(&[], |_| {});
     assert_eq!(unknown["update"]["state"], "unknown");
     assert_eq!(unknown["update"]["latest"], Value::Null);
@@ -395,7 +419,7 @@ fn update_state_comes_from_the_cached_check() {
 
 #[test]
 fn update_checks_report_why_they_are_off() {
-    let w = World::new();
+    let w = World::with_updates();
     w.write(
         "slopvac.toml",
         "schema_version = 3\n[network]\nupdate_check = false\n",
@@ -580,15 +604,10 @@ fn doctor_changes_nothing_on_disk() {
         found
     };
     let before = snapshot(w.root.path());
-    // Policy lets `doctor` refresh the update cache, and `tests/update_notice.rs` covers that.
-    // The opt-out keeps this test on what else `doctor` might write: nothing.
-    w.json(&[], |c| {
-        c.env("SLOPVAC_NO_UPDATE_CHECK", "1");
-    });
-    w.doctor()
-        .env("SLOPVAC_NO_UPDATE_CHECK", "1")
-        .assert()
-        .code(0);
+    // The fixture sets `SLOPVAC_NO_UPDATE_CHECK=1`. Policy lets `doctor` write the update cache,
+    // and `tests/update_notice.rs` covers that. This test pins that `doctor` writes nothing else.
+    w.json(&[], |_| {});
+    w.doctor().assert().code(0);
     assert_eq!(snapshot(w.root.path()), before);
 }
 
@@ -840,7 +859,7 @@ fn a_directory_that_is_the_working_directory_is_shown_as_a_dot() {
 
 #[test]
 fn a_cached_version_that_is_not_semver_counts_as_unknown() {
-    let w = World::new();
+    let w = World::with_updates();
     for garbage in ["not-a-version", "99", "v3.0.0", ""] {
         cache_entry(&w, garbage);
         let (code, doc) = w.json(&[], |_| {});
@@ -906,7 +925,7 @@ fn a_receipt_for_another_location_leaves_the_method_unknown() {
 
 #[test]
 fn the_text_report_gives_the_upgrade_command_when_an_update_is_cached() {
-    let w = World::new();
+    let w = World::with_updates();
     let receipts = w.root.path().join("receipts");
     write_receipt(&receipts, &binary_dir());
     cache_entry(&w, "99.0.0");
@@ -923,7 +942,7 @@ fn the_text_report_gives_the_upgrade_command_when_an_update_is_cached() {
 
 #[test]
 fn the_text_report_points_a_cargo_install_at_the_releases_page_when_an_update_is_cached() {
-    let w = World::new();
+    let w = World::with_updates();
     // A binary under `<CARGO_HOME>/bin` with no receipt is classed as a cargo install.
     let cargo_home = fs::canonicalize(w.root.path()).unwrap().join("cargo-home");
     let bin = cargo_home.join("bin");
@@ -960,7 +979,7 @@ fn fifo(path: &Path) {
 #[cfg(unix)]
 #[test]
 fn a_fifo_as_the_update_cache_does_not_hang_doctor() {
-    let w = World::new();
+    let w = World::with_updates();
     fifo(&w.cache().join("update-check.json"));
     let (code, doc) = w.json(&[], |c| {
         c.timeout(std::time::Duration::from_secs(20));
@@ -973,7 +992,7 @@ fn a_fifo_as_the_update_cache_does_not_hang_doctor() {
 #[cfg(unix)]
 #[test]
 fn a_symlink_to_an_endless_device_as_the_update_cache_is_not_read() {
-    let w = World::new();
+    let w = World::with_updates();
     std::os::unix::fs::symlink("/dev/zero", w.cache().join("update-check.json")).unwrap();
     let (code, doc) = w.json(&[], |c| {
         c.timeout(std::time::Duration::from_secs(20));
@@ -984,7 +1003,7 @@ fn a_symlink_to_an_endless_device_as_the_update_cache_is_not_read() {
 
 #[test]
 fn an_oversize_update_cache_is_reported_unknown() {
-    let w = World::new();
+    let w = World::with_updates();
     let padding = "x".repeat(70 * 1024);
     fs::write(
         w.cache().join("update-check.json"),

@@ -21,7 +21,7 @@ fn slopvac() -> Command {
     ] {
         cmd = cmd.env_remove(var);
     }
-    cmd.env("NO_COLOR", "1")
+    cmd.env("NO_COLOR", "1").env("SLOPVAC_NO_UPDATE_CHECK", "1")
 }
 
 /// snapbox: assert on output with inline expectations. `[..]` matches any text.

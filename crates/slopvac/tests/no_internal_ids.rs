@@ -11,6 +11,8 @@ fn has_internal_id(text: &str) -> bool {
 
 fn slopvac() -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+    // Tests stay off the network: the update notice may refresh its cache after lint, doctor and prime.
+    cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1");
     for var in ["SLOPVAC_LOG", "FORCE_COLOR", "CLICOLOR_FORCE"] {
         cmd.env_remove(var);
     }

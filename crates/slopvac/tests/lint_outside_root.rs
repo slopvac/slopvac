@@ -35,7 +35,9 @@ fn slopvac(dir: &std::path::Path) -> Command {
     ] {
         cmd = cmd.env_remove(var);
     }
-    cmd.env("NO_COLOR", "1").current_dir(dir)
+    cmd.env("NO_COLOR", "1")
+        .env("SLOPVAC_NO_UPDATE_CHECK", "1")
+        .current_dir(dir)
 }
 
 #[test]

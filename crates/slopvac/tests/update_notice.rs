@@ -4,8 +4,11 @@
 //! The network is never reached. A cache entry stamped far in the future counts as fresh, so
 //! the notice comes from the cache and no refresh starts.
 
+use std::cell::RefCell;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
+use std::rc::Rc;
 
 use rstest::rstest;
 use snapbox::cmd::{Command, cargo_bin};
@@ -165,4 +168,71 @@ fn other_commands_print_no_notice(#[case] args: &[&str]) {
     let out = run(&fx, cache.path(), args);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.contains("update-available"), "stderr: {stderr}");
+}
+
+/// One ordered log of every write and flush on either stream.
+type Log = Rc<RefCell<Vec<String>>>;
+
+/// A stream that records each call, with its own name, in the shared log.
+struct Recorder {
+    name: &'static str,
+    log: Log,
+}
+
+impl Write for Recorder {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let text = String::from_utf8_lossy(buf);
+        self.log
+            .borrow_mut()
+            .push(format!("{} write: {text}", self.name));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.log.borrow_mut().push(format!("{} flush", self.name));
+        Ok(())
+    }
+}
+
+#[test]
+fn stdout_is_flushed_before_the_notice_is_written() {
+    let cache = seeded_cache();
+    let home = tempfile::tempdir().expect("tempdir");
+    // `main_with_io` reads the working directory. This is the only test here that runs in the
+    // test process rather than in the binary, so changing it cannot race another test.
+    let fx = fixture();
+    std::env::set_current_dir(fx.work.path()).expect("enter the project");
+    let cache_dir = cache.path().to_string_lossy().into_owned();
+    let home_dir = home.path().to_string_lossy().into_owned();
+    let env = slopvac_cli::env::MapEnv::new(
+        &[
+            ("SLOPVAC_CACHE_DIR", cache_dir.as_str()),
+            ("HOME", home_dir.as_str()),
+        ],
+        false,
+    );
+    let log = Log::default();
+    let mut out = Recorder {
+        name: "out",
+        log: Rc::clone(&log),
+    };
+    let mut err = Recorder {
+        name: "err",
+        log: Rc::clone(&log),
+    };
+    let _ = slopvac_cli::main_with_io(["slopvac", "prime"], &env, &mut out, &mut err);
+
+    let log = log.borrow();
+    let last_out_flush = log
+        .iter()
+        .rposition(|l| l == "out flush")
+        .unwrap_or_else(|| panic!("stdout was not flushed: {log:?}"));
+    let notice = log
+        .iter()
+        .position(|l| l.starts_with("err write: ") && l.contains(NOTICE))
+        .unwrap_or_else(|| panic!("no notice on stderr: {log:?}"));
+    assert!(
+        last_out_flush < notice,
+        "stdout is flushed before the notice: {log:?}"
+    );
 }
