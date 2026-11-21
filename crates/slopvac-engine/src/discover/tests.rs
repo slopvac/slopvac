@@ -991,3 +991,56 @@ mod target_forms {
         assert_eq!(run(&target, &root, &["/manuals/"]), Vec::<PathBuf>::new());
     }
 }
+
+#[test]
+fn drawio_png_is_skipped_with_an_info_notice_in_every_selection() {
+    for selection in [Selection::Prose, Selection::CodeComments, Selection::Both] {
+        let dir = TempDir::new().unwrap();
+        let png = write(dir.path(), "a.DRAWIO.png", "");
+        write(dir.path(), "b.md", "");
+        let opts = Options {
+            selection,
+            ..Options::default()
+        };
+        let walked = discover(&[dir.path().to_str().unwrap()], opts.clone()).unwrap();
+        let explicit = discover(&[png.to_str().unwrap()], opts).unwrap();
+        for found in [&walked, &explicit] {
+            assert!(
+                found.files.iter().all(|f| f.path != png),
+                "{selection:?}: never listed as a file to lint"
+            );
+            assert!(found.skipped.is_empty(), "{selection:?}");
+            let got: Vec<_> = found
+                .notices
+                .iter()
+                .map(|n| {
+                    (
+                        n.code.as_str(),
+                        n.level,
+                        n.message.as_str(),
+                        n.path.as_deref(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                got,
+                [(
+                    "diagram-format-unsupported",
+                    slopvac_model::NoticeLevel::Info,
+                    ".drawio.png isn't linted in 3.0; export as .drawio.svg",
+                    Some(png.to_str().unwrap()),
+                )],
+                "{selection:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_plain_png_and_a_drawio_svg_raise_no_unsupported_notice() {
+    let dir = TempDir::new().unwrap();
+    write(dir.path(), "logo.png", "");
+    write(dir.path(), "a.drawio.svg", "");
+    let found = discover(&[dir.path().to_str().unwrap()], Options::default()).unwrap();
+    assert!(found.notices.is_empty());
+}
