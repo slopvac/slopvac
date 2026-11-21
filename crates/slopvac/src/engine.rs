@@ -689,11 +689,21 @@ fn config_for(
 /// front matter policy allows it and the block is valid. A top-level `genre` key is ordinary
 /// data and never counts.
 fn declared_genre(item: &Item) -> Option<String> {
-    let policy = item
-        .config
-        .as_ref()
-        .map_or_else(Policy::core, |(config, _)| Policy::from_config(config));
-    read_front_matter(&item.text, &item.shown, &policy)
+    declared_genre_of(
+        item.config.as_ref().map(|(c, _)| c.as_ref()),
+        &item.text,
+        &item.shown,
+    )
+}
+
+/// [`declared_genre`] for a document with `text`, shown as `shown`, under `config`.
+pub(crate) fn declared_genre_of(
+    config: Option<&LoadedConfig>,
+    text: &str,
+    shown: &str,
+) -> Option<String> {
+    let policy = config.map_or_else(Policy::core, Policy::from_config);
+    read_front_matter(text, shown, &policy)
         .settings
         .into_iter()
         .rfind(|s| s.path == ["genre"])
@@ -701,7 +711,7 @@ fn declared_genre(item: &Item) -> Option<String> {
 }
 
 /// A config-relative path as the forward-slash text that `files` patterns match against.
-fn rel_text(rel: &Path) -> String {
+pub(crate) fn rel_text(rel: &Path) -> String {
     rel.components()
         .map(|c| c.as_os_str().to_string_lossy())
         .collect::<Vec<_>>()
@@ -724,23 +734,33 @@ fn group_by_settings(
             Some((config, rel)) => (config.as_ref(), rel.clone()),
             None => (&none, PathBuf::from(&item.shown)),
         };
-        let resolved = lint_settings::resolve(config, &rel);
-        let files = config_files(config);
-        let mut settings = lint_settings::build(
-            rules,
-            &resolved,
-            lint_settings::config_sources(&files),
-            &request.overrides,
-        )?;
-        let terms = lint_terms::inputs(&resolved, &config.root);
-        settings.genre_assignments = Some(lint_settings::genre_assignments(config));
+        let (settings, terms, key) = settings_for(rules, config, &rel, &request.overrides)?;
         groups
-            .entry(format!("{settings:?}{terms:?}"))
+            .entry(key)
             .or_insert_with(|| (settings, terms, Vec::new()))
             .2
             .push(index);
     }
     Ok(groups)
+}
+
+/// The engine settings and term inputs for the file at `rel` under `config`, and the key
+/// that two files share exactly when one engine serves both. `slopvac lint` and the language
+/// server both resolve a file's settings here.
+pub(crate) fn settings_for(
+    rules: &Catalog,
+    config: &LoadedConfig,
+    rel: &Path,
+    cli: &Overrides,
+) -> Result<(slopvac_engine::Settings, TermInputs, String), CliError> {
+    let resolved = lint_settings::resolve(config, rel);
+    let files = config_files(config);
+    let mut settings =
+        lint_settings::build(rules, &resolved, lint_settings::config_sources(&files), cli)?;
+    let terms = lint_terms::inputs(&resolved, &config.root);
+    settings.genre_assignments = Some(lint_settings::genre_assignments(config));
+    let key = format!("{settings:?}{terms:?}");
+    Ok((settings, terms, key))
 }
 
 /// The directories an RST interpreter is never taken from: the working directory, the
@@ -852,59 +872,8 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
     }
 }
 
-/// The language server's linter for the project config found from `root`: the shipped
-/// rules, the term-casing pack, the settings, the project's terms files and the blocklists,
-/// built the same way `slopvac lint` builds an engine. The notices are the warnings about the
-/// config, which the language server shows to the client.
-///
-/// # Errors
-/// The config error, `terms-invalid`, or `rules-unavailable`.
-pub fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
-    let core = Catalog::load()?;
-    let presets = StylePresets(BuiltinSource);
-    let discovery = Discovery::new(&presets);
-    let found = discovery
-        .nearest(root)
-        .map_err(|e| config_error(&e, root))?;
-    let (config, files) = match &found {
-        Some(config) => (config.as_ref().clone(), config_files(config)),
-        None => (LoadedConfig::without_files(root.to_path_buf()), Vec::new()),
-    };
-    let notices = lint_settings::validate(&config, &core)?;
-    let resolved = lint_settings::resolve(&config, Path::new(""));
-    let settings = lint_settings::build(
-        &core,
-        &resolved,
-        lint_settings::config_sources(&files),
-        &Overrides::default(),
-    )?;
-    let terms = lint_terms::inputs(&resolved, &config.root);
-    let sets = core.into_sets();
-    let reasons = slopvac_lsp::exception_names(&sets);
-    let engine = lint_terms::build_engine(sets, settings, &terms, root)?;
-    let checks: Vec<Arc<dyn slopvac_lsp::Check>> = vec![Arc::new(
-        slopvac_lsp::FrontMatterCheck::new(Policy::from_config(&config)),
-    )];
-    Ok(ProjectServer {
-        linter: slopvac_lsp::EngineLinter::from_engine(engine, reasons),
-        notices,
-        checks,
-    })
-}
-
-/// What the language server needs from the project: the engine, the config warnings and the
-/// extra checks it runs next to the engine. Term casing comes from the engine.
-pub struct ProjectServer {
-    /// The engine linter.
-    pub linter: slopvac_lsp::EngineLinter,
-    /// Warnings about the config.
-    pub notices: Vec<Notice>,
-    /// Front-matter validation.
-    pub checks: Vec<Arc<dyn slopvac_lsp::Check>>,
-}
-
 /// The display name of each config file and whether it was pulled in by `extends`.
-fn config_files(config: &LoadedConfig) -> Vec<(String, bool)> {
+pub(crate) fn config_files(config: &LoadedConfig) -> Vec<(String, bool)> {
     config
         .files
         .iter()

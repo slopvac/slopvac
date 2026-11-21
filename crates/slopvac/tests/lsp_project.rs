@@ -10,8 +10,6 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-mod support;
-
 const SLOPPY: &str = "# Title\n\nWe leverage a robust, seamless solution to delve into the data.\n";
 const HISTORY: &str = "# Notes\n\nWe refactored the parser.\n";
 const LEXICON: &str = "core:prose-inflation.slop-lexicon";
@@ -173,7 +171,8 @@ fn an_override_block_turns_a_rule_off_only_for_the_documents_it_matches() {
 
 #[test]
 fn a_genres_block_gives_the_documents_it_matches_the_genre_level() {
-    let config = "schema_version = 3\n\n[[genres]]\nfiles = [\"log/**\"]\ngenre = \"change-comms\"\n";
+    let config =
+        "schema_version = 3\n\n[[genres]]\nfiles = [\"log/**\"]\ngenre = \"change-comms\"\n";
     let dir = project(config, &[]);
     let root = dir.path().canonicalize().expect("canonical");
     let mut session = Session::start(&root);
