@@ -11,6 +11,11 @@
 //! [`slopvac_model::PositionEncoding::negotiate`] and derives every range from the buffer
 //! text it received.
 //!
+//! A [`Linter`] can read its config again: the server calls [`Linter::reload`] when a config
+//! file is saved or changes on disk, shows the config warnings, shows a config that fails to
+//! load on the file that failed, and lints every open document again. It asks the client to
+//! watch the config files when the client can.
+//!
 //! [`command`] and [`run`] are the `slopvac lsp` subcommand.
 
 mod analysis;
