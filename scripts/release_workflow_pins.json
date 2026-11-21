@@ -10,7 +10,7 @@
     "publish-homebrew-formula": "4d460a45a1058378200f89a878caa22cf91c897c5f6ce56a35203c4328e6d8c8",
     "publish-legacy-release": "b43c50244e9b1f3470f9e9e6f91b88beab364fef941b628ce39fb72dc20c43bb",
     "route": "4b0d2358b81f0d9ba0f852f5f4b8ee2a59a32d21bf17bb0a8f2c1f6614ce8237",
-    "sign": "f260ca882b0b27cf4cb66ab46effbd65b6d0e9c1d9b3afc2e4110c5d55865ff8"
+    "sign": "b47601a9bd300cc3be09dfe755355368ff8ceaf89195612f702c070b8c626fe8"
   },
   "workflow": {
     "_jobs_header": "2012b182a308b22cd153966064559bd30abe875313792b4e218e73cacb6e00c6",

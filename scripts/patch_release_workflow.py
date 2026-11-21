@@ -156,7 +156,7 @@ _SIGN_JOB = """\
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
-          # The host job writes this one itself; it is not a signed release asset
+          # The plan job uploads this one itself; it is not a signed release asset
           rm -f artifacts/dist-manifest.json
       - name: Install minisign
         run: bash scripts/install_minisign.sh

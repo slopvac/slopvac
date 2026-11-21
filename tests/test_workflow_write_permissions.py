@@ -70,7 +70,6 @@ MINTED_WRITERS = [
         "release-token",
         ("contents",),
         (
-            ("host", "env", "GH_TOKEN"),
             ("Upload the artifacts to the draft release", "env", "GH_TOKEN"),
             ("Publish the release", "env", "GH_TOKEN"),
         ),
