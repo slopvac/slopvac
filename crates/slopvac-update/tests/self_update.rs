@@ -1,9 +1,5 @@
 //! `slopvac self update` through the public `Runtime` interface, with an injected fetcher.
-#![allow(
-    clippy::clone_on_ref_ptr,
-    clippy::unwrap_used,
-    reason = "test code: a panic is a failed test"
-)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -301,7 +297,7 @@ fn a_validly_signed_next_minor_candidate_is_refused_before_any_download() {
         hits: AtomicUsize::new(0),
     });
     let fx = installed();
-    let mut rt = runtime(&fx, srv.clone(), Box::new(verifier));
+    let mut rt = runtime(&fx, Arc::clone(&srv), Box::new(verifier));
     rt.target = Some(LINUX);
     let err = update(&rt).unwrap_err();
     assert_eq!(err.code, "update-prerelease-refused");
@@ -317,7 +313,7 @@ fn a_validly_signed_next_minor_candidate_is_refused_before_any_download() {
 fn already_current_downloads_nothing() {
     let fx = installed();
     let srv = server("3.0.0");
-    let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let rt = runtime(&fx, Arc::clone(&srv), Box::new(Fixed(Ok(()))));
     assert_eq!(update(&rt).unwrap(), "slopvac 3.0.0 is up to date.\n");
     assert_eq!(
         srv.hits.load(Ordering::SeqCst),
@@ -331,7 +327,7 @@ fn already_current_downloads_nothing() {
 fn offline_makes_no_request() {
     let fx = installed();
     let srv = server("3.1.0");
-    let mut rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let mut rt = runtime(&fx, Arc::clone(&srv), Box::new(Fixed(Ok(()))));
     rt.offline = true;
     let err = update(&rt).unwrap_err();
     assert_eq!(err.code, "offline-network-needed");
@@ -349,7 +345,7 @@ fn other_installs_print_their_upgrade_command_and_change_nothing() {
     std::fs::write(&exe, b"old binary").unwrap();
     let fx = Fixture { dir, exe };
     let srv = server("3.1.0");
-    let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let rt = runtime(&fx, Arc::clone(&srv), Box::new(Fixed(Ok(()))));
     let err = update(&rt).unwrap_err();
     assert_eq!(err.code, "self-update-unmanaged");
     assert!(err.message.contains("homebrew"), "{}", err.message);
@@ -411,7 +407,7 @@ fn version_json_lists_supported_versions_per_artifact() {
 fn version_json_never_starts_a_refresh() {
     let fx = installed();
     let srv = server("3.1.0");
-    let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let rt = runtime(&fx, Arc::clone(&srv), Box::new(Fixed(Ok(()))));
     let doc: serde_json::Value =
         serde_json::from_str(&command::version_json(&rt, &Supported::default())).unwrap();
     assert_eq!(doc["notices"], serde_json::json!([]));
@@ -426,7 +422,7 @@ fn unknown_installs_point_to_the_slopvac_org_releases() {
     std::fs::write(&exe, b"old binary").unwrap();
     let fx = Fixture { dir, exe };
     let srv = server("3.1.0");
-    let rt = runtime(&fx, srv.clone(), Box::new(Fixed(Ok(()))));
+    let rt = runtime(&fx, Arc::clone(&srv), Box::new(Fixed(Ok(()))));
     let err = update(&rt).unwrap_err();
     assert_eq!(err.code, "self-update-unmanaged");
     assert!(
