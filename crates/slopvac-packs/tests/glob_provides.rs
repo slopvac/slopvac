@@ -98,7 +98,51 @@ fn a_pack_over_the_file_cap_is_refused_before_a_file_is_read() {
     );
 }
 
+/// A manifest entry holding `glob` as a TOML literal string, which needs no escapes.
+fn hostile(glob: &str) -> tempfile::TempDir {
+    pack(&format!("['{glob}']"), &[])
+}
+
+#[rstest]
+#[case::deep_braces("{".repeat(300))]
+#[case::deep_brackets("[".repeat(300))]
+#[case::nesting_just_over_the_limit("{a,".repeat(9) + &"}".repeat(9))]
+#[case::many_alternatives(format!("{{{}}}", vec!["a"; 400].join(",")))]
+#[case::long_pattern("a*".repeat(300))]
+#[case::long_wildcards("*".repeat(600))]
+fn a_hostile_glob_is_refused_with_a_typed_error(#[case] glob: String) {
+    let err = genre_ids(&hostile(&glob)).unwrap_err();
+
+    assert!(matches!(err, PackError::GlobTooComplex), "{err}");
+    assert_eq!(err.code(), Some("plugin-glob-too-complex"));
+}
+
+#[test]
+fn a_glob_at_the_limits_still_compiles() {
+    let nested = "{a,".repeat(8) + "b" + &"}".repeat(8);
+    let alternatives = format!("{{{}}}", vec!["a"; 200].join(","));
+
+    for glob in [nested, alternatives, "*".repeat(500)] {
+        assert_eq!(genre_ids(&hostile(&glob)).unwrap(), Vec::<String>::new());
+    }
+}
+
 proptest! {
+    /// No glob, however built, makes `provides` expansion panic: it loads or it is refused.
+    #[test]
+    fn expansion_never_panics_on_an_arbitrary_glob(
+        glob in proptest::collection::vec(
+            proptest::sample::select(vec!['{', '}', '[', ']', '*', '?', ',', '!', '-', '^', 'a', 'b', '/', '.']),
+            0..700,
+        )
+    ) {
+        let glob: String = glob.into_iter().collect();
+        prop_assume!(!glob.is_empty() && !glob.starts_with('/') && !glob.split('/').any(|s| s == ".."));
+        let outcome = genre_ids(&hostile(&glob));
+        prop_assert!(outcome.is_ok() || outcome.is_err());
+    }
+
+
     /// Whatever files a directory holds, `dir/*.yaml` loads exactly those files, in path order.
     #[test]
     fn a_star_glob_loads_exactly_the_matching_files(

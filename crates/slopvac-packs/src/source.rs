@@ -6,7 +6,7 @@ use cap_std::ambient_authority;
 use cap_std::fs::Dir;
 
 use crate::PackPath;
-use crate::messages::PackMessage;
+use crate::messages::{PackMessage, code_of};
 
 /// File name of the manifest at the root of a pack.
 pub const MANIFEST_FILE: &str = "slopvac-plugin.toml";
@@ -41,6 +41,18 @@ pub enum SourceError {
 /// Most directory entries the directory source lists, and most levels it descends.
 const MAX_ENTRIES: usize = 1024;
 const MAX_DEPTH: usize = 16;
+
+impl SourceError {
+    /// The stable code of this error, for the variants that have one.
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::Link { .. } => Some(code_of!(FileLink { path })),
+            Self::TooManyEntries => Some(code_of!(TooManyEntries { limit })),
+            _ => None,
+        }
+    }
+}
 
 /// A pack's files, read by pack-relative path.
 pub trait PackSource {

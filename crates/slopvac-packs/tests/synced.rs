@@ -10,7 +10,10 @@ use proptest::prelude::*;
 use rstest::rstest;
 use slopvac_config::Presets;
 use slopvac_model::PackId;
-use slopvac_packs::{LoadedPack, Packs, Reference, SyncedError, load_synced};
+use slopvac_packs::{
+    Budget, LimitKind, Limits, LoadedPack, PackError, Packs, Reference, SyncedError, load_synced,
+    load_synced_within,
+};
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::Lockfile;
 use slopvac_plugins::sync::Store;
@@ -27,7 +30,7 @@ struct Spec {
     requires: Vec<(&'static str, &'static str)>,
     /// Ids in the lock entry's `requires`.
     locked_requires: Vec<&'static str>,
-    provides: &'static str,
+    provides: String,
     files: Vec<(&'static str, String)>,
 }
 
@@ -40,7 +43,7 @@ impl Spec {
             locked_api: 1,
             requires: Vec::new(),
             locked_requires: Vec::new(),
-            provides: "",
+            provides: String::new(),
             files: Vec::new(),
         }
     }
@@ -52,10 +55,32 @@ impl Spec {
     }
 
     fn genre(mut self, name: &'static str, body: &str) -> Self {
-        self.provides = "genres = [\"genres/g.yaml\"]";
+        self.provides = "genres = [\"genres/g.yaml\"]".to_owned();
         self.files.push((
             "genres/g.yaml",
             format!("schema_version: 3\nid: {name}\n{body}"),
+        ));
+        self
+    }
+
+    /// A category file with one pattern rule for each pattern.
+    fn rules(mut self, patterns: &[&str]) -> Self {
+        let rules: Vec<String> = patterns
+            .iter()
+            .enumerate()
+            .map(|(i, pattern)| {
+                format!(
+                    r#"{{"id":"r{i}","name":"N","message":"m","match":{{"kind":"pattern","pattern":"{pattern}"}},"citation":{{"source":"s"}}}}"#
+                )
+            })
+            .collect();
+        self.provides = "categories = [\"categories/c.json\"]".to_owned();
+        self.files.push((
+            "categories/c.json",
+            format!(
+                r#"{{"schema_version":3,"id":"c","title":"T","description":"D","rules":[{}]}}"#,
+                rules.join(",")
+            ),
         ));
         self
     }
@@ -365,7 +390,7 @@ fn a_required_version_the_lock_does_not_provide_is_refused() {
 fn a_synced_pack_registers_no_taggers() {
     let mut w = World::new();
     let mut spec = Spec::new("acme");
-    spec.provides = "taggers = [\"taggers/t.yaml\"]";
+    spec.provides = "taggers = [\"taggers/t.yaml\"]".to_owned();
     spec.files.push((
         "taggers/t.yaml",
         "schema_version: 3\nid: t\ntag: procedure\nmatch:\n  - pattern: 'a'\n".to_owned(),
@@ -478,4 +503,166 @@ proptest! {
             prop_assert!(loaded.iter().any(|l| l == name));
         }
     }
+}
+
+fn small(limits: impl FnOnce(&mut Limits)) -> Limits {
+    let mut l = Limits::default();
+    limits(&mut l);
+    l
+}
+
+/// Two packs: `base` is installed, `top` requires it and is locked but never installed, so a
+/// load that read past `base` would fail with `NotInstalled` instead of a budget error.
+fn base_then_unread_top(base: &Spec) -> World {
+    let mut w = World::new();
+    w.lock_entry(&Spec::new("top").requires("base"));
+    w.install(base);
+    w
+}
+
+fn run_error(w: &World, limits: Limits) -> PackError {
+    let mut budget = Budget::new(limits);
+    match load_synced_within(&ids(&["top"]), &w.lock(), &w.store(), &mut budget) {
+        Err(SyncedError::Pack(e)) => e,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn the_run_byte_budget_stops_the_load_before_the_next_pack_is_read() {
+    let w = base_then_unread_top(&Spec::new("base").genre("memo", ""));
+
+    let e = run_error(&w, small(|l| l.run_bytes = 10));
+
+    assert!(
+        matches!(
+            e,
+            PackError::RunLimit {
+                what: LimitKind::Bytes,
+                limit: 10
+            }
+        ),
+        "{e}"
+    );
+    assert_eq!(e.code(), Some("plugin-run-limit-exceeded"));
+}
+
+#[test]
+fn the_pack_byte_budget_names_the_pack() {
+    let w = base_then_unread_top(&Spec::new("base").genre("memo", ""));
+
+    let e = run_error(&w, small(|l| l.pack_bytes = 10));
+
+    assert!(
+        matches!(&e, PackError::Limit { id, what: LimitKind::Bytes, .. } if id == "base"),
+        "{e}"
+    );
+    assert_eq!(e.code(), Some("plugin-limit-exceeded"));
+}
+
+#[test]
+fn the_run_rule_budget_is_checked_before_a_pattern_compiles() {
+    // The second pattern does not compile. A load that compiled first would report that.
+    let w = base_then_unread_top(&Spec::new("base").rules(&["a", "("]));
+
+    let e = run_error(&w, small(|l| l.run_rules = 1));
+
+    assert!(
+        matches!(
+            e,
+            PackError::RunLimit {
+                what: LimitKind::Rules,
+                limit: 1
+            }
+        ),
+        "{e}"
+    );
+}
+
+#[test]
+fn the_compiled_pattern_budget_stops_the_load_after_a_pack_compiles() {
+    let w = base_then_unread_top(&Spec::new("base").rules(&["abcdef"]));
+
+    let e = run_error(&w, small(|l| l.run_pattern_bytes = 5));
+
+    assert!(
+        matches!(
+            e,
+            PackError::RunLimit {
+                what: LimitKind::PatternBytes,
+                limit: 5
+            }
+        ),
+        "{e}"
+    );
+}
+
+#[test]
+fn the_core_pack_counts_toward_the_run_budget() {
+    let mut w = World::new();
+    w.install(&Spec::new("acme"));
+
+    let err = Packs::with_synced_within(
+        &ids(&["acme"]),
+        &w.lock(),
+        &w.store(),
+        small(|l| l.run_rules = 1),
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            SyncedError::Pack(PackError::RunLimit {
+                what: LimitKind::Rules,
+                ..
+            })
+        ),
+        "{err}"
+    );
+}
+
+#[rstest]
+#[case::bytes(|l: &mut Limits| l.run_bytes = 10, LimitKind::Bytes)]
+#[case::rules(|l: &mut Limits| l.run_rules = 1, LimitKind::Rules)]
+#[case::patterns(|l: &mut Limits| l.run_pattern_bytes = 5, LimitKind::PatternBytes)]
+fn registering_packs_applies_the_same_budgets_as_loading_them(
+    #[case] set: fn(&mut Limits),
+    #[case] what: LimitKind,
+) {
+    let mut w = World::new();
+    w.install(&Spec::new("acme").rules(&["abcdef", "ghi"]));
+    // Loaded under the default limits, then registered under small ones.
+    let packs = load_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
+
+    let err = Packs::new_within(packs, small(set)).unwrap_err();
+
+    assert!(
+        matches!(err, PackError::RunLimit { what: w, .. } if w == what),
+        "{err}"
+    );
+}
+
+#[rstest]
+#[case::pack_error(SyncedError::Pack(PackError::Limit { id: "a".into(), what: LimitKind::Files, limit: 1 }), Some("plugin-limit-exceeded"))]
+#[case::pack_run_limit(SyncedError::Pack(PackError::RunLimit { what: LimitKind::Bytes, limit: 1 }), Some("plugin-run-limit-exceeded"))]
+#[case::pack_glob(
+    SyncedError::Pack(PackError::GlobTooComplex),
+    Some("plugin-glob-too-complex")
+)]
+#[case::pack_link(SyncedError::Pack(PackError::Source(slopvac_packs::SourceError::Link { path: "l".into() })), Some("plugin-file-link"))]
+#[case::pack_entries(
+    SyncedError::Pack(PackError::Source(slopvac_packs::SourceError::TooManyEntries)),
+    Some("plugin-too-many-entries")
+)]
+#[case::pack_without_code(SyncedError::Pack(PackError::NotCore), None)]
+#[case::not_locked(SyncedError::NotLocked { id: "a".into() }, Some("plugin-not-locked"))]
+#[case::not_installed(SyncedError::NotInstalled { id: "a".into() }, Some("plugin-not-installed"))]
+#[case::tampered(SyncedError::Tampered { id: "a".into() }, Some("plugin-tampered"))]
+#[case::api(SyncedError::ApiUnsupported { id: "a".into(), api: 9 }, Some("plugin-api-unsupported"))]
+#[case::mismatch(SyncedError::ManifestMismatch { id: "a".into(), field: "id" }, Some("plugin-manifest-mismatch"))]
+#[case::cycle(SyncedError::RequiresCycle { cycle: vec!["a".into(), "a".into()] }, Some("plugin-requires-cycle"))]
+#[case::unmet(SyncedError::RequirementUnmet { id: "a".into(), needs: "b".into(), requirement: ">=1".into() }, Some("plugin-requirement-unmet"))]
+fn every_error_reports_its_catalog_code(#[case] error: SyncedError, #[case] code: Option<&str>) {
+    assert_eq!(error.code(), code);
 }

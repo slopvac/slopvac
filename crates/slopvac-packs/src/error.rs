@@ -11,6 +11,27 @@ fn at(line: Option<usize>, column: Option<usize>) -> String {
     }
 }
 
+impl PackError {
+    /// The stable code of this error, for the variants that have one. A wrapped error reports
+    /// its own code.
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        use crate::messages::code_of;
+        match self {
+            Self::Source(e) => e.code(),
+            Self::Registry(e) => e.code(),
+            Self::Limit { .. } => Some(code_of!(PluginLimit { id, what, limit })),
+            Self::RunLimit { .. } => Some(code_of!(RunLimit { what, limit })),
+            Self::GlobTooComplex => Some(code_of!(GlobTooComplex {
+                depth,
+                alternatives,
+                bytes
+            })),
+            _ => None,
+        }
+    }
+}
+
 /// Why a pack failed to load. Text from pack files reaches `Display` only through
 /// `slopvac_sanitize::line`.
 #[derive(Debug, thiserror::Error)]
@@ -75,6 +96,16 @@ pub enum PackError {
         /// The one-based column of its `extends` key.
         column: Option<usize>,
     },
+    /// A `provides` glob is over the limits of the loader (X3).
+    #[error(
+        "{}",
+        crate::messages::glob_too_complex(
+            crate::GLOB_MAX_DEPTH,
+            crate::GLOB_MAX_ALTERNATIVES,
+            crate::GLOB_MAX_BYTES
+        )
+    )]
+    GlobTooComplex,
     /// One pack is over a size cap (X3).
     #[error("{}", crate::messages::pack_limit(.id, *.what, *.limit))]
     Limit {

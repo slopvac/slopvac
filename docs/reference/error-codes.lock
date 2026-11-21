@@ -645,6 +645,7 @@ plugin-api-unsupported error
 plugin-declaration-mismatch error
 plugin-exited error
 plugin-file-link error
+plugin-glob-too-complex error
 plugin-hash-mismatch error
 plugin-limit-exceeded error
 plugin-manifest-mismatch error

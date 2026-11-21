@@ -39,9 +39,6 @@ pub enum RegistryError {
     Name(#[from] NameError),
 }
 
-/// The stable code of an ambiguous bare name.
-const AMBIGUOUS_CODE: &str = "pack-name-ambiguous";
-
 /// Where a name was written: a file and a one-based line and column.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -71,7 +68,11 @@ impl RegistryError {
     #[must_use]
     pub fn code(&self) -> Option<&'static str> {
         match self {
-            Self::Ambiguous { .. } => Some(AMBIGUOUS_CODE),
+            Self::Ambiguous { .. } => Some(crate::messages::code_of!(NameAmbiguous {
+                at,
+                name,
+                claims
+            })),
             _ => None,
         }
     }

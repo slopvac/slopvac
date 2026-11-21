@@ -147,4 +147,7 @@ pub enum LimitKind {
     /// Rules.
     #[error("rules")]
     Rules,
+    /// Bytes of authored rule patterns.
+    #[error("bytes of rule patterns")]
+    PatternBytes,
 }

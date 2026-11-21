@@ -554,3 +554,26 @@ fn an_over_limit_substitution_map_is_refused_before_its_patterns_compile() {
     let (budget, _, _) = budget_error(&e);
     assert_eq!(budget, "rule-entries");
 }
+
+#[test]
+fn the_rule_count_of_a_file_is_known_before_any_pattern_compiles() {
+    // The second rule's pattern does not compile, and counting never compiles it.
+    let bad = json!({
+        "id": "bad", "name": "n", "message": "m",
+        "match": {"kind": "pattern", "pattern": "("},
+        "citation": {"source": "s"}
+    });
+    let text = category("cat", &[tokens_rule("one", "leverage", &json!([])), bad]);
+
+    assert_eq!(
+        slopvac_rules::count_rules(std::path::Path::new("cat.json"), &text).unwrap(),
+        2
+    );
+}
+
+#[test]
+fn counting_the_rules_of_a_file_that_does_not_parse_is_the_load_error() {
+    let err = slopvac_rules::count_rules(std::path::Path::new("cat.json"), "{").unwrap_err();
+
+    assert_eq!(err.file, PathBuf::from("cat.json"));
+}

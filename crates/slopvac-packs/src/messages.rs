@@ -71,6 +71,16 @@ pub(crate) enum PackMessage {
     #[code("plugin-run-limit-exceeded")]
     #[message("the loaded plugins together are over the limit of {limit} {what}")]
     RunLimit { what: String, limit: String },
+    /// A `provides` glob nests, branches or runs past the limits.
+    #[code("plugin-glob-too-complex")]
+    #[message(
+        "a `provides` glob is too complex: it may nest {depth} levels, hold {alternatives} alternatives and run {bytes} bytes"
+    )]
+    GlobTooComplex {
+        depth: String,
+        alternatives: String,
+        bytes: String,
+    },
     /// A plugin directory holds a link, which a plugin may not contain.
     #[code("plugin-file-link")]
     #[message("the plugin holds a link at `{path}`, which is not allowed")]
@@ -133,4 +143,28 @@ pub(crate) fn run_limit(what: LimitKind, limit: u64) -> String {
 #[must_use]
 pub fn message_entries() -> &'static [Entry] {
     PackMessage::entries()
+}
+
+/// The code of `PackMessage::$variant`, read from the catalog, so no code is written twice.
+macro_rules! code_of {
+    ($variant:ident { $($field:ident),* $(,)? }) => {{
+        use slopvac_messages::Catalog as _;
+        $crate::messages::PackMessage::$variant { $($field: String::new()),* }.code()
+    }};
+}
+pub(crate) use code_of;
+
+/// A `provides` glob over the limits of [`crate::expand`].
+pub(crate) fn glob_too_complex(depth: usize, alternatives: usize, bytes: usize) -> String {
+    PackMessage::GlobTooComplex {
+        depth: depth.to_string(),
+        alternatives: alternatives.to_string(),
+        bytes: bytes.to_string(),
+    }
+    .to_string()
+}
+
+/// The plugin ids of a cycle, joined as the message shows them.
+pub(crate) fn join_cycle(cycle: &[String]) -> String {
+    cycle.join(" -> ")
 }

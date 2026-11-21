@@ -4,6 +4,52 @@ use globset::{GlobBuilder, GlobMatcher};
 
 use crate::{PackError, PackPath, PackSource, Provides};
 
+/// Most bytes in a `provides` glob.
+pub const GLOB_MAX_BYTES: usize = 512;
+/// Deepest nesting of `{` and `[` in a `provides` glob.
+pub const GLOB_MAX_DEPTH: usize = 8;
+/// Most commas, the alternatives of all `{a,b}` groups together, in a `provides` glob.
+pub const GLOB_MAX_ALTERNATIVES: usize = 256;
+
+/// Whether a glob is over the limits above.
+///
+/// `GlobMatcher` compiles its regex with an `expect`, and that compile fails only past the
+/// regex nesting limit (250) or the compiled size limit. A glob of at most 512 bytes that nests
+/// at most 8 levels deep stays far below both, so the bound alone keeps `compile_matcher` from
+/// panicking on pack input, and no fallible compile path is needed. The hostile-glob tests and
+/// a property test hold that to account. The scan is conservative: a `\` escapes the next
+/// character, and a closing bracket only lowers the depth.
+fn too_complex(glob: &str) -> bool {
+    if glob.len() > GLOB_MAX_BYTES {
+        return true;
+    }
+    let (mut depth, mut commas, mut escaped) = (0_usize, 0_usize, false);
+    for c in glob.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match c {
+            '\\' => escaped = true,
+            '{' | '[' => {
+                depth += 1;
+                if depth > GLOB_MAX_DEPTH {
+                    return true;
+                }
+            }
+            '}' | ']' => depth = depth.saturating_sub(1),
+            ',' => {
+                commas += 1;
+                if commas > GLOB_MAX_ALTERNATIVES {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Characters that make a `provides` entry a glob.
 const META: [char; 4] = ['*', '?', '[', '{'];
 
@@ -14,7 +60,8 @@ const META: [char; 4] = ['*', '?', '[', '{'];
 /// when the loader reads it. The pack's file list is read only when some entry is a glob.
 ///
 /// # Errors
-/// [`PackError::Glob`] for a glob that does not parse, and [`PackError::Source`] when the
+/// [`PackError::GlobTooComplex`] for a glob over the limits, [`PackError::Glob`] for a glob that
+/// does not parse, and [`PackError::Source`] when the
 /// pack cannot be listed.
 pub(crate) fn expand(source: &dyn PackSource, provides: &Provides) -> Result<Provides, PackError> {
     let lists = [
@@ -67,6 +114,9 @@ fn is_glob(path: &PackPath) -> bool {
 }
 
 fn matcher(path: &PackPath) -> Result<GlobMatcher, PackError> {
+    if too_complex(path.as_str()) {
+        return Err(PackError::GlobTooComplex);
+    }
     GlobBuilder::new(path.as_str())
         .literal_separator(true)
         .build()

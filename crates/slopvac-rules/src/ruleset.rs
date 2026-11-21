@@ -174,6 +174,16 @@ pub struct RuleSet {
     index: HashMap<RuleId, (usize, usize)>,
 }
 
+/// How many rules the category file `file` declares, from its text, with no pattern compiled.
+///
+/// A host that loads many files checks this against its own budget before it compiles anything.
+///
+/// # Errors
+/// The [`LoadError`] that loading the file would report for a file that does not parse.
+pub fn count_rules(file: &Path, text: &str) -> Result<usize, LoadError> {
+    Ok(parse::<Category>(file, text)?.rules.len())
+}
+
 impl RuleSet {
     /// Load every category file (`json`, `yaml`, `yml` or `toml`) directly inside `dir`, in
     /// file-name order.
