@@ -895,6 +895,44 @@ def compare_snapshots(
     return findings
 
 
+def input_references(
+    schemas: dict[str, dict], directions: dict[str, str]
+) -> list[Finding]:
+    """References from an output or ``both`` schema into a file classed ``input``.
+
+    A shared definition that an output schema uses is compared once, at the definition,
+    under its own file's direction. In an input file that comparison allows growth, so
+    the definition would grow unchecked. Such a reference is a finding.
+    """
+    findings: list[Finding] = []
+
+    def walk(name: str, node: object, ptr: str) -> None:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and not ref.startswith("#"):
+                target = Path(urllib.parse.urlsplit(ref).path).name
+                if directions.get(target) == "input":
+                    findings.append(
+                        Finding(
+                            name,
+                            f"{ptr}/$ref",
+                            "input-definition-referenced",
+                            _show(ref),
+                            _show(f"{target} is an input schema"),
+                        )
+                    )
+            for key, value in node.items():
+                walk(name, value, f"{ptr}/{_esc(key)}")
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                walk(name, value, f"{ptr}/{i}")
+
+    for name, schema in sorted(schemas.items()):
+        if directions.get(name, "input") != "input":
+            walk(name, schema, "")
+    return findings
+
+
 def load_directions(path: Path) -> dict[str, str]:
     """Read the direction registry: ``[directions]`` maps a schema file to its class."""
     try:
@@ -1173,8 +1211,10 @@ def check(base: Snapshot, new_dir: Path, allow: list[AllowEntry]) -> list[Findin
     new = _read_dir(new_dir).schemas
     directions = load_directions(new_dir / DIRECTIONS_FILE)
     check_directions(directions, new)
-    findings = compare_snapshots(base.schemas, new, directions) + validate_corpus(
-        base.corpus, new
+    findings = (
+        compare_snapshots(base.schemas, new, directions)
+        + input_references(new, directions)
+        + validate_corpus(base.corpus, new)
     )
     persisting = set(compare_snapshots(base.schemas, base.schemas))
     findings = [

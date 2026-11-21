@@ -13,7 +13,7 @@
       "$ref": "common.schema.json#/$defs/PluginId"
     },
     "version": {
-      "$ref": "#/$defs/Semver"
+      "$ref": "common.schema.json#/$defs/Semver"
     },
     "slopvac_api": {
       "description": "Plugin extension API the plugin was written for. A host that implements a lower version refuses the plugin.",
@@ -89,9 +89,8 @@
   "additionalProperties": false,
   "$defs": {
     "Semver": {
-      "description": "Semantic version 2.0.0 without build metadata. Numeric prerelease identifiers have no leading zeros.",
-      "type": "string",
-      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\\s\\S])"
+      "description": "Semantic version 2.0.0 without build metadata. The definition lives in common.schema.json; this name stays so a reference to it keeps resolving.",
+      "$ref": "common.schema.json#/$defs/Semver"
     },
     "VersionReq": {
       "description": "Version requirement: comma-separated comparators, each an optional operator (^ ~ = > >= < <=) and a version with one to three numeric parts. A pre-release suffix is allowed only after a full MAJOR.MINOR.PATCH, so 1.0.0-rc.1 is valid and 1.0-rc is not. Numbers have no leading zeros and a pre-release has no empty segment, as in the Semver def. Spaces are allowed after an operator and around a comma, and nowhere else: no leading or trailing space, no newline.",

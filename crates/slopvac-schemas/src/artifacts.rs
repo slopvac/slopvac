@@ -75,6 +75,7 @@ fn common() -> Value {
         define::<Edit>,
         define::<PackId>,
         define::<PluginId>,
+        define::<Semver>,
         define::<RuleId>,
         define::<Severity>,
         define::<RuleProvenance>,
@@ -108,6 +109,16 @@ fn define<T: JsonSchema>(generator: &mut SchemaGenerator) {
 // type replaces it.
 #[schemars(with = "String", extend("pattern" = r"^(?!core(?![\s\S]))[a-z][a-z0-9-]*(?![\s\S])"))]
 struct PluginId;
+
+/// Semantic version 2.0.0 without build metadata. Numeric prerelease identifiers have no
+/// leading zeros.
+#[derive(JsonSchema)]
+// Schema only, like `PluginId`. The plugin manifest and lock readers check the value
+// themselves. The definition lives here, not in the manifest schema, because the lock and
+// the index are read and written by slopvac, and a definition they share must sit in a file
+// that follows the output rule.
+#[schemars(with = "String", extend("pattern" = r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\s\S])"))]
+struct Semver;
 
 fn rule() -> Value {
     schema_generator()

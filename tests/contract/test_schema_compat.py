@@ -1408,6 +1408,40 @@ def test_moving_an_enum_into_a_ref_is_not_a_removal(tmp_path):
     assert run(tmp_path, old, new, direction="output") == []
 
 
+@pytest.mark.parametrize("direction", ["output", "both"])
+def test_a_reference_into_an_input_file_is_reported_from_output_and_both(
+    tmp_path, direction
+):
+    other = "other.schema.json"
+    other_body = {**schema(), "$id": "https://example.test/schemas/v3/" + other}
+    referrer = schema(properties={"v": {"$ref": f"{other}#/$defs/V"}})
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = tmp_path / "new"
+    write_dir(new_dir, {FILE: referrer, other: other_body})
+    (new_dir / compat.DIRECTIONS_FILE).write_text(
+        f'[directions]\n"{FILE}" = "{direction}"\n"{other}" = "input"\n',
+        encoding="utf-8",
+    )
+    findings = compat.check(base, new_dir, [])
+    assert kinds(findings) == [("/properties/v/$ref", "input-definition-referenced")]
+
+
+def test_a_reference_into_an_input_file_is_fine_from_an_input_file(tmp_path):
+    other = "other.schema.json"
+    other_body = {**schema(), "$id": "https://example.test/schemas/v3/" + other}
+    referrer = schema(properties={"v": {"$ref": f"{other}#/$defs/V"}})
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = write_dir(tmp_path / "new", {FILE: referrer, other: other_body})
+    assert compat.check(base, new_dir, []) == []
+
+
+def test_committed_output_schemas_reference_no_input_file():
+    schemas_dir = ROOT / "schemas" / "v3"
+    directions = compat.load_directions(schemas_dir / compat.DIRECTIONS_FILE)
+    schemas = compat.snapshot_from_dir(schemas_dir).schemas
+    assert compat.input_references(schemas, directions) == []
+
+
 def test_registry_must_list_every_schema_file(tmp_path):
     base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
     new_dir = write_dir(tmp_path / "new", {FILE: schema()})
