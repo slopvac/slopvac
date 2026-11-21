@@ -7,10 +7,15 @@
 //! - No symbolic link is followed. Every path is walked from one handle on the project
 //!   root, one component at a time. A symbolic link, a non-regular file and a file with
 //!   more than one hard link are refused.
+//! - Each run writes its backup to a new directory below [`BACKUP_DIR`], named for its UTC
+//!   start time. It creates `.slopvac` and `migrate-backup` owner-only when they are missing,
+//!   and refuses either one when it is a link or not a directory.
 //! - The trusted restore record lives in the per-user cache directory, outside the project.
 //!   It is bound to the checkout's identity, the root directory's device and inode, and to
-//!   one migration instance, a random id that the backup manifest repeats. Restore refuses
-//!   a backup directory that does not match the record exactly.
+//!   one migration instance, a random id that the backup manifest repeats. It names the
+//!   run's backup directory by name and identity, and the directories above it by identity.
+//!   Restore uses only that directory, never the newest one on disk, and refuses it when it
+//!   does not match the record exactly.
 //! - A target counts as the migration's own only when both its identity and its digest
 //!   match the record: it is the file the migration staged, by device and inode, with the
 //!   bytes the migration wrote. Same bytes alone prove nothing. `--force` also puts back a
@@ -34,6 +39,7 @@ use std::hash::{BuildHasher, Hasher};
 use std::io::{ErrorKind, Read, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
@@ -47,17 +53,17 @@ use slopvac_fs::{WriteOptions, write_atomic};
 
 use crate::Error;
 use crate::messages::{MigratePhrase, MigrateText, path_reason};
-use crate::plan::{BACKUP_DIR, ChangeKind, Plan};
+use crate::plan::{BACKUP_DIR, BACKUPS_NAME, ChangeKind, PROJECT_DIR, Plan};
 
 /// The list of backup copies, for people. Restore checks its digest and never reads it.
 const MANIFEST: &str = "manifest.txt";
 const MANIFEST_HEADER: &str = "slopvac-migrate-backup";
-const RECORD_HEADER: &str = "slopvac-migrate-record 3";
+const RECORD_HEADER: &str = "slopvac-migrate-record 4";
 /// The directory below the per-user cache that holds one record per project.
 const RECORD_DIR: &str = "migrate-backups";
 /// Permission bits for a file that did not exist before.
 const NEW_FILE_MODE: u32 = 0o644;
-/// Permission bits for the backup directory, and for the files in it and the record.
+/// Permission bits for the backup directories, and for the files in them and the record.
 const BACKUP_DIR_MODE: u32 = 0o700;
 const BACKUP_FILE_MODE: u32 = 0o600;
 /// How many random names to try before giving up.
@@ -135,13 +141,67 @@ fn unverified() -> Error {
     )
 }
 
-fn exists() -> Error {
+fn exists(backup: &Path) -> Error {
     Error::Unsafe(
         MigrateText::BackupExists {
-            directory: BACKUP_DIR.to_owned(),
+            directory: shown(backup),
         }
         .to_string(),
     )
+}
+
+/// A record in the per-user cache, at `record` below it, that exists but does not parse.
+fn unreadable(record: &Path) -> Error {
+    Error::Unsafe(
+        MigrateText::RecordUnreadable {
+            record: shown(record),
+        }
+        .to_string(),
+    )
+}
+
+/// The name of a backup directory made at `now`, to the second. A clock before the epoch
+/// is refused, because the name would not tell the time.
+fn name_at(now: SystemTime) -> Result<String, Error> {
+    let since = now.duration_since(UNIX_EPOCH).map_err(|_| {
+        Error::io(
+            Path::new(BACKUP_DIR),
+            std::io::Error::other(MigratePhrase::IoClockBeforeEpoch.as_static()),
+        )
+    })?;
+    Ok(timestamp(since.as_secs()))
+}
+
+/// The UTC time `secs` seconds after the epoch as `YYYYMMDDTHHMMSSZ`, which sorts by time.
+fn timestamp(secs: u64) -> String {
+    let (days, time) = (secs / 86_400, secs % 86_400);
+    // The civil date of a day count from 1970-01-01, after Howard Hinnant's
+    // `civil_from_days`, with eras of 400 years that start on 1 March.
+    let shifted = days + 719_468;
+    let (era, day_of_era) = (shifted / 146_097, shifted % 146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_from_march = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_from_march + 2) / 5 + 1;
+    let month = if month_from_march < 10 {
+        month_from_march + 3
+    } else {
+        month_from_march - 9
+    };
+    let year = era * 400 + year_of_era + u64::from(month <= 2);
+    format!(
+        "{year:04}{month:02}{day:02}T{:02}{:02}{:02}Z",
+        time / 3600,
+        time / 60 % 60,
+        time % 60
+    )
+}
+
+/// Whether `name` can name a backup directory: one component of ASCII letters, digits and
+/// hyphens, as [`timestamp`] and its suffixes make.
+fn is_backup_name(name: &str) -> bool {
+    !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 /// A file or directory by device and inode.
@@ -348,6 +408,63 @@ fn private_dir(parent: &Dir, name: &OsStr) -> std::io::Result<(Dir, Id)> {
         ));
     }
     Ok((dir, id_of(&meta)))
+}
+
+/// Whether `name` in `parent` is still the directory `id`.
+fn same_dir(parent: &Dir, name: &str, id: Id) -> bool {
+    parent
+        .symlink_metadata(name)
+        .is_ok_and(|m| m.is_dir() && id_of(&m) == id)
+}
+
+/// A directory on the way to a backup, and whether this migration created it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Level {
+    id: Id,
+    made: bool,
+}
+
+/// Open the directory `name` in `parent` without following a link. `None` when nothing has
+/// the name. A link and anything other than a directory are refused.
+fn open_level(parent: &Dir, name: &str, shown: &Path) -> Result<Option<Dir>, Error> {
+    match parent.open_dir_nofollow(name) {
+        Ok(dir) => Ok(Some(dir)),
+        Err(e) => match parent.symlink_metadata(name) {
+            Err(m) if m.kind() == ErrorKind::NotFound => Ok(None),
+            Ok(m) if m.is_symlink() => Err(refused(shown, MigratePhrase::WhySymlink)),
+            Ok(m) if !m.is_dir() => Err(refused(shown, MigratePhrase::WhyNotDirectory)),
+            _ => Err(Error::io(shown, e)),
+        },
+    }
+}
+
+/// Open the directory `name` in `parent` as [`open_level`] does, or create it owner-only
+/// when it is missing.
+fn ensure_level(parent: &Dir, name: &str, shown: &Path) -> Result<(Dir, Level), Error> {
+    let io = |e| Error::io(shown, e);
+    // A second pass covers a directory that appeared between the two calls.
+    for _ in 0..2 {
+        if let Some(dir) = open_level(parent, name, shown)? {
+            let id = id_of(&dir.dir_metadata().map_err(io)?);
+            return Ok((dir, Level { id, made: false }));
+        }
+        match private_dir(parent, OsStr::new(name)) {
+            Ok((dir, id)) => return Ok((dir, Level { id, made: true })),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(io(e)),
+        }
+    }
+    Err(changed(shown, MigratePhrase::WhyChangedWhileCreated))
+}
+
+/// Remove the directory `name` from `parent` if this migration created it, it is still that
+/// directory and it is empty. Best effort: a directory that stays is no error, because what
+/// led here is complete.
+fn remove_made(parent: &Dir, name: &str, level: Level) {
+    if level.made && same_dir(parent, name, level.id) {
+        // Removes only an empty directory.
+        let _ = parent.remove_dir(name);
+    }
 }
 
 /// Create `name` in `dir` without following a link and note it in `owned` at once. Then
@@ -716,12 +833,46 @@ fn copy_name(index: usize) -> OsString {
     OsString::from(index.to_string())
 }
 
+/// Where one migration keeps its backup: its own directory below `.slopvac/migrate-backup`,
+/// by name and identity, and the identity of each directory above it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Location {
+    project: Level,
+    backups: Level,
+    name: String,
+    id: Id,
+}
+
+impl Location {
+    /// The backup directory below the project, for messages and the hook.
+    fn shown(&self) -> PathBuf {
+        Path::new(BACKUP_DIR).join(&self.name)
+    }
+}
+
+fn render_level(level: Level) -> String {
+    format!("{} {}", opt_id(Some(level.id)), u8::from(level.made))
+}
+
+fn parse_level(text: &str) -> Option<Level> {
+    let (id, made) = text.rsplit_once(' ')?;
+    let made = match made {
+        "0" => false,
+        "1" => true,
+        _ => return None,
+    };
+    Some(Level {
+        id: parse_id(id)?,
+        made,
+    })
+}
+
 /// The trusted state of one migration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Record {
     instance: String,
     root: Id,
-    backup: Option<Id>,
+    backup: Option<Location>,
     manifest: Option<Sha>,
     entries: Vec<Entry>,
 }
@@ -753,12 +904,22 @@ fn parse_digest(text: &str) -> Result<Option<Sha>, ()> {
 
 impl Record {
     fn render(&self) -> String {
+        let (backup, project, backups) = self.backup.as_ref().map_or_else(
+            || ("-".to_owned(), "-".to_owned(), "-".to_owned()),
+            |l| {
+                (
+                    format!("{} {}", opt_id(Some(l.id)), l.name),
+                    render_level(l.project),
+                    render_level(l.backups),
+                )
+            },
+        );
         // ast-grep-ignore: user-text-literal
         let head = format!(
-            "{RECORD_HEADER}\ninstance {}\nroot {}\nbackup {}\nmanifest {}\n",
+            "{RECORD_HEADER}\ninstance {}\nroot {}\nbackup {backup}\nproject {project}\n\
+             backups {backups}\nmanifest {}\n",
             self.instance,
             opt_id(Some(self.root)),
-            opt_id(self.backup),
             opt_hex(self.manifest.as_ref()),
         );
         let entries = self.entries.iter().map(|e| {
@@ -785,9 +946,22 @@ impl Record {
         let mut field = |key: &str| lines.next()?.strip_prefix(key)?.strip_prefix(' ');
         let instance = field("instance")?.to_owned();
         let root = parse_id(field("root")?)?;
-        let backup = match field("backup")? {
-            "-" => None,
-            text => Some(parse_id(text)?),
+        let (backup, project, backups) = (field("backup")?, field("project")?, field("backups")?);
+        let backup = if (backup, project, backups) == ("-", "-", "-") {
+            None
+        } else {
+            let mut parts = backup.splitn(3, ' ');
+            let id = Id {
+                dev: parts.next()?.parse().ok()?,
+                ino: parts.next()?.parse().ok()?,
+            };
+            let name = parts.next().filter(|n| is_backup_name(n))?;
+            Some(Location {
+                project: parse_level(project)?,
+                backups: parse_level(backups)?,
+                name: name.to_owned(),
+                id,
+            })
         };
         let manifest = parse_digest(field("manifest")?).ok()?;
         let mut entries = Vec::new();
@@ -834,6 +1008,14 @@ impl Record {
             manifest,
             entries,
         })
+    }
+
+    /// [`Record::parse`] over the bytes of a saved record.
+    fn from_bytes(bytes: Vec<u8>) -> Option<Self> {
+        match String::from_utf8(bytes) {
+            Ok(text) => Self::parse(&text),
+            Err(_) => None,
+        }
     }
 
     fn manifest_text(&self) -> String {
@@ -911,12 +1093,15 @@ impl Store {
         })
     }
 
+    /// The bytes of the saved record, if one exists.
+    fn read(&self) -> Result<Option<Vec<u8>>, Error> {
+        Ok(look(&self.dir, &self.name)?.map(|seen| seen.bytes))
+    }
+
     fn load(&self) -> Result<Option<Record>, Error> {
-        let Some(seen) = look(&self.dir, &self.name)? else {
-            return Ok(None);
-        };
-        let text = String::from_utf8(seen.bytes).map_err(|_| unverified())?;
-        Record::parse(&text).map(Some).ok_or_else(unverified)
+        self.read()?
+            .map(|bytes| Record::from_bytes(bytes).ok_or_else(unverified))
+            .transpose()
     }
 
     fn remove(&self) -> Result<(), Error> {
@@ -932,45 +1117,95 @@ fn open_root(root: &Path) -> Result<(Dir, Id), Error> {
     Ok((dir, id))
 }
 
-/// A backup directory this run created, and the files it put in it.
+/// The backup directory this run created, the directories above it, and the files it put
+/// in it.
 struct Owned {
+    project: Dir,
+    backups: Dir,
+    location: Location,
     dir: Dir,
-    id: Id,
     files: Vec<(OsString, Id)>,
 }
 
-/// Remove what this run put in its backup directory, then the directory. Used when apply
-/// fails before it changed any target.
+/// Remove what this run put in its backup directory, then the directory, then the
+/// directories above it that this run created. Used when apply fails before it changed any
+/// target.
 fn discard(root: &Dir, owned: &Owned) {
     // Best effort throughout: the error that led here is the one to report, and the record
     // goes next, so nothing trusts what is left. A file that is not the one this run wrote
-    // stays, and so does the directory then.
-    let _ = remove_checked(&owned.dir, &owned.files, Path::new(BACKUP_DIR), &mut |_| {
-        Ok(())
-    });
-    if root
-        .symlink_metadata(BACKUP_DIR)
-        .is_ok_and(|m| m.is_dir() && id_of(&m) == owned.id)
-    {
+    // stays, and so do the directories then.
+    let at = owned.location.shown();
+    let _ = remove_checked(&owned.dir, &owned.files, &at, &mut |_| Ok(()));
+    let loc = &owned.location;
+    if same_dir(&owned.backups, &loc.name, loc.id) {
         // Removes only an empty directory.
-        let _ = root.remove_dir(BACKUP_DIR);
+        let _ = owned.backups.remove_dir(&loc.name);
     }
+    remove_made(&owned.project, BACKUPS_NAME, loc.backups);
+    remove_made(root, PROJECT_DIR, loc.project);
 }
 
-/// Create the backup directory and write the copies and the manifest into it. On failure,
-/// whatever it created is gone again.
-fn make_backup(root: &Dir, record: &Record, plan: &Plan, hook: Hook<'_>) -> Result<Owned, Error> {
-    let shown_dir = Path::new(BACKUP_DIR);
-    let (dir, id) = match private_dir(root, OsStr::new(BACKUP_DIR)) {
-        Ok(pair) => pair,
-        Err(e) if e.kind() == ErrorKind::AlreadyExists => return Err(exists()),
-        Err(e) => return Err(Error::io(shown_dir, e)),
+/// Create a new directory in `backups` named `now`. A name that is taken gets a numbered
+/// suffix, so a backup directory is never reused.
+fn run_dir(backups: &Dir, now: &str) -> Result<(Dir, Id, String), Error> {
+    for n in 0..NAME_ATTEMPTS {
+        let name = if n == 0 {
+            now.to_owned()
+        } else {
+            format!("{now}-{n}")
+        };
+        match private_dir(backups, OsStr::new(&name)) {
+            Ok((dir, id)) => return Ok((dir, id, name)),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(Error::io(&Path::new(BACKUP_DIR).join(&name), e)),
+        }
+    }
+    Err(Error::io(
+        Path::new(BACKUP_DIR),
+        std::io::Error::other(MigratePhrase::IoNoFreeBackupName.as_static()),
+    ))
+}
+
+/// Create the backup directory, and `.slopvac` and `migrate-backup` above it where they are
+/// missing, and write the copies and the manifest into it. On failure, whatever it created
+/// is gone again. `now` names the backup directory.
+fn make_backup(
+    root: &Dir,
+    record: &Record,
+    plan: &Plan,
+    now: &str,
+    hook: Hook<'_>,
+) -> Result<Owned, Error> {
+    let (project, project_level) = ensure_level(root, PROJECT_DIR, Path::new(PROJECT_DIR))?;
+    let made = ensure_level(&project, BACKUPS_NAME, Path::new(BACKUP_DIR)).and_then(
+        |(backups, backups_level)| match run_dir(&backups, now) {
+            Ok(run) => Ok((backups, backups_level, run)),
+            Err(e) => {
+                remove_made(&project, BACKUPS_NAME, backups_level);
+                Err(e)
+            }
+        },
+    );
+    let (backups, backups_level, (dir, id, name)) = match made {
+        Ok(made) => made,
+        Err(e) => {
+            remove_made(root, PROJECT_DIR, project_level);
+            return Err(e);
+        }
     };
     let mut owned = Owned {
+        project,
+        backups,
+        location: Location {
+            project: project_level,
+            backups: backups_level,
+            name,
+            id,
+        },
         dir,
-        id,
         files: Vec::new(),
     };
+    let shown_dir = owned.location.shown();
     let manifest = record.manifest_text();
     let files = plan
         .changes
@@ -998,8 +1233,33 @@ fn make_backup(root: &Dir, record: &Record, plan: &Plan, hook: Hook<'_>) -> Resu
     Ok(owned)
 }
 
-/// Check the plan's paths and what each target holds now, before anything is written.
-fn preflight(dir: &Dir, plan: &Plan) -> Result<(Vec<Want>, Vec<Entry>), Error> {
+/// Refuse `.slopvac` or `migrate-backup` when it is a link or not a directory, and refuse
+/// while the backup that `previous` names exists, so a second write never comes before the
+/// restore of the first. Other backup directories do not count.
+fn guard(dir: &Dir, previous: Option<&Record>) -> Result<(), Error> {
+    let Some(project) = open_level(dir, PROJECT_DIR, Path::new(PROJECT_DIR))? else {
+        return Ok(());
+    };
+    let Some(backups) = open_level(&project, BACKUPS_NAME, Path::new(BACKUP_DIR))? else {
+        return Ok(());
+    };
+    let Some(loc) = previous.and_then(|r| r.backup.as_ref()) else {
+        return Ok(());
+    };
+    match backups.symlink_metadata(&loc.name) {
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
+        Ok(_) => Err(exists(&loc.shown())),
+        Err(e) => Err(Error::io(&loc.shown(), e)),
+    }
+}
+
+/// Check the plan's paths, the backup directories and what each target holds now, before
+/// anything is written. `previous` is the record of an earlier run in this checkout.
+fn preflight(
+    dir: &Dir,
+    plan: &Plan,
+    previous: Option<&Record>,
+) -> Result<(Vec<Want>, Vec<Entry>), Error> {
     let mut paths = BTreeSet::new();
     for c in &plan.changes {
         let key: PathBuf = plain(&c.path)?.into_iter().collect();
@@ -1007,9 +1267,7 @@ fn preflight(dir: &Dir, plan: &Plan) -> Result<(Vec<Want>, Vec<Entry>), Error> {
             return Err(refused(&c.path, MigratePhrase::WhyNamedTwice));
         }
     }
-    if dir.symlink_metadata(BACKUP_DIR).is_ok() {
-        return Err(exists());
-    }
+    guard(dir, previous)?;
     let mut wants = Vec::with_capacity(plan.changes.len());
     let mut entries = Vec::with_capacity(plan.changes.len());
     for c in &plan.changes {
@@ -1040,14 +1298,17 @@ fn preflight(dir: &Dir, plan: &Plan) -> Result<(Vec<Want>, Vec<Entry>), Error> {
     Ok((wants, entries))
 }
 
-/// Write the plan to disk. Replaced and deleted files are copied to [`BACKUP_DIR`] first,
-/// and the run is recorded in `state`, the per-user cache directory, which [`restore`]
-/// trusts. A second write is refused while a backup exists, so the first backup is never
-/// overwritten.
+/// Write the plan to disk. Replaced and deleted files are copied first to a new directory
+/// below [`BACKUP_DIR`], named for the UTC time, and the run is recorded in `state`, the
+/// per-user cache directory, which [`restore`] trusts. A second write is refused while the
+/// backup that the record names exists, so that backup is never lost. Other directories
+/// below [`BACKUP_DIR`] are left alone.
 ///
 /// Every target must still hold what the plan read, with one link and no symbolic link on
-/// the way; otherwise nothing is written. When a change fails before any target changed,
-/// the backup and the record are removed again.
+/// the way, and `.slopvac` and `migrate-backup` must be directories, not links; otherwise
+/// nothing is written. When a change fails before any target changed, the backup and the
+/// record are removed again, and so are the directories above the backup that this run
+/// created.
 pub fn apply(root: &Path, plan: &Plan, state: &Path) -> Result<(), Error> {
     apply_hooked(root, plan, state, &mut |_| Ok(()))
 }
@@ -1062,7 +1323,19 @@ pub fn apply_hooked(
     hook: &mut dyn FnMut(Point<'_>) -> std::io::Result<()>,
 ) -> Result<(), Error> {
     let (dir, root_id) = open_root(root)?;
-    let (wants, entries) = preflight(&dir, plan)?;
+    // A record that does not parse may name a backup that was never restored, so apply
+    // stops. A record of another checkout at this path names no backup that restore could
+    // use here.
+    let previous = match Store::find(root, state)? {
+        Some(store) => match store.read()? {
+            Some(bytes) => Some(Record::from_bytes(bytes).ok_or_else(|| unreadable(&store.name))?),
+            None => None,
+        },
+        None => None,
+    }
+    .filter(|r| r.root == root_id);
+    let (wants, entries) = preflight(&dir, plan, previous.as_ref())?;
+    let now = name_at(SystemTime::now())?;
     let store = Store::create(root, state)?;
     let mut record = Record {
         instance: nonce()?,
@@ -1072,14 +1345,14 @@ pub fn apply_hooked(
         entries,
     };
     store.save(&record)?;
-    let owned = match make_backup(&dir, &record, plan, hook) {
+    let owned = match make_backup(&dir, &record, plan, &now, hook) {
         Ok(owned) => owned,
         Err(e) => {
             let _ = store.remove();
             return Err(e);
         }
     };
-    record.backup = Some(owned.id);
+    record.backup = Some(owned.location.clone());
     record.manifest = Some(sha(record.manifest_text().as_bytes()));
     if let Err(e) = store.save(&record) {
         discard(&dir, &owned);
@@ -1148,8 +1421,11 @@ enum Step {
 /// The checked record and backup directory.
 struct Verified {
     record: Record,
+    /// Where the record says the backup is, with a handle on each directory on the way.
+    location: Location,
+    project: Dir,
+    backups: Dir,
     backup: Dir,
-    backup_id: Id,
     /// Each name in the backup directory with the file it held when it was checked.
     files: Vec<(OsString, Id)>,
     /// The bytes of each entry's backup copy.
@@ -1163,16 +1439,23 @@ fn verify(root: &Path, dir: &Dir, root_id: Id, state: &Path) -> Result<(Verified
     if record.root != root_id {
         return Err(unverified());
     }
-    let (Some(backup_id), Some(manifest)) = (record.backup, record.manifest) else {
+    let (Some(location), Some(manifest)) = (record.backup.clone(), record.manifest) else {
         return Err(unverified());
     };
-    let backup = dir
-        .open_dir_nofollow(BACKUP_DIR)
-        .map_err(|_| unverified())?;
-    let io = |e| Error::io(Path::new(BACKUP_DIR), e);
-    if id_of(&backup.dir_metadata().map_err(io)?) != backup_id {
-        return Err(unverified());
-    }
+    let shown_dir = location.shown();
+    let open = |parent: &Dir, name: &str, id: Id| -> Result<Dir, Error> {
+        let next = parent.open_dir_nofollow(name).map_err(|_| unverified())?;
+        let meta = next.dir_metadata().map_err(|e| Error::io(&shown_dir, e))?;
+        if id_of(&meta) == id {
+            Ok(next)
+        } else {
+            Err(unverified())
+        }
+    };
+    let project = open(dir, PROJECT_DIR, location.project.id)?;
+    let backups = open(&project, BACKUPS_NAME, location.backups.id)?;
+    let backup = open(&backups, &location.name, location.id)?;
+    let io = |e| Error::io(&shown_dir, e);
     let expected = record.backup_names();
     let mut found = BTreeSet::new();
     for entry in backup.entries().map_err(io)? {
@@ -1181,14 +1464,13 @@ fn verify(root: &Path, dir: &Dir, root_id: Id, state: &Path) -> Result<(Verified
     if found != expected {
         return Err(Error::Unsafe(
             MigrateText::BackupForeignFiles {
-                directory: BACKUP_DIR.to_owned(),
+                directory: shown(&shown_dir),
             }
             .to_string(),
         ));
     }
-    let read = |name: &OsStr| {
-        read_entry(&backup, name, &Path::new(BACKUP_DIR).join(name))?.ok_or_else(unverified)
-    };
+    let read =
+        |name: &OsStr| read_entry(&backup, name, &shown_dir.join(name))?.ok_or_else(unverified);
     let mut files = Vec::with_capacity(expected.len());
     let m = read(OsStr::new(MANIFEST))?;
     if m.digest != manifest {
@@ -1216,8 +1498,10 @@ fn verify(root: &Path, dir: &Dir, root_id: Id, state: &Path) -> Result<(Verified
     }
     let verified = Verified {
         record,
+        location,
+        project,
+        backups,
         backup,
-        backup_id,
         files,
         copies,
     };
@@ -1266,7 +1550,9 @@ fn decide(dir: &Dir, record: &Record, force: bool) -> Result<Vec<Step>, Error> {
 ///
 /// - The record that [`apply`] wrote to `state` exists and names this checkout: the same
 ///   root directory, by device and inode.
-/// - The backup directory is the one that run created, also by device and inode, and holds
+/// - The backup directory is the one the record names, the one that run created, by name
+///   and by device and inode, and so are `.slopvac` and `migrate-backup` above it. Any other
+///   directory below [`BACKUP_DIR`], a newer one included, is never read. The backup holds
 ///   exactly the files that run wrote, each with its recorded digest.
 /// - Each target is the migration's own result, or already holds its original bytes. The
 ///   migration's own file is the one it staged, by device and inode, with the bytes it
@@ -1279,6 +1565,9 @@ fn decide(dir: &Dir, record: &Record, force: bool) -> Result<Vec<Step>, Error> {
 ///
 /// A target that is not the migration's own and whose change never completed is left as it
 /// is. A file is deleted only if it is the migration's own.
+///
+/// Afterwards the backup directory is removed, then `migrate-backup` and `.slopvac` if that
+/// run created them and they are empty now. A `.slopvac` that existed before stays.
 pub fn restore(root: &Path, state: &Path, force: bool) -> Result<Restored, Error> {
     restore_hooked(root, state, force, &mut |_| Ok(()))
 }
@@ -1319,23 +1608,143 @@ pub fn restore_hooked(
 }
 
 /// Move each checked backup file into a holding directory inside the backup directory,
-/// check it there and remove it, then remove the backup directory. A file that is no longer
-/// the one that was checked stays, and so does the directory.
+/// check it there and remove it, then remove the backup directory, and then the directories
+/// above it that the migration created, when they are empty. A file that is no longer the
+/// one that was checked stays, and so does the directory.
 fn clean_up(dir: &Dir, verified: &Verified, hook: Hook<'_>) -> Result<(), Error> {
-    let shown_dir = Path::new(BACKUP_DIR);
-    remove_checked(&verified.backup, &verified.files, shown_dir, hook)?;
-    let same = dir
-        .symlink_metadata(BACKUP_DIR)
-        .is_ok_and(|m| m.is_dir() && id_of(&m) == verified.backup_id);
-    if !same {
-        return Err(changed(shown_dir, MigratePhrase::WhyChangedDuringRestore));
+    let loc = &verified.location;
+    let shown_dir = loc.shown();
+    remove_checked(&verified.backup, &verified.files, &shown_dir, hook)?;
+    if !same_dir(&verified.backups, &loc.name, loc.id) {
+        return Err(changed(&shown_dir, MigratePhrase::WhyChangedDuringRestore));
     }
     // Removes only an empty directory.
-    dir.remove_dir(BACKUP_DIR).map_err(|e| {
+    verified.backups.remove_dir(&loc.name).map_err(|e| {
         if e.kind() == ErrorKind::DirectoryNotEmpty {
-            changed(shown_dir, MigratePhrase::WhyGainedFiles)
+            changed(&shown_dir, MigratePhrase::WhyGainedFiles)
         } else {
-            Error::io(shown_dir, e)
+            Error::io(&shown_dir, e)
         }
-    })
+    })?;
+    remove_made(&verified.project, BACKUPS_NAME, loc.backups);
+    remove_made(dir, PROJECT_DIR, loc.project);
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use proptest::prelude::*;
+    use rstest::rstest;
+
+    use cap_std::ambient_authority;
+    use cap_std::fs::Dir;
+
+    use super::{name_at, run_dir, timestamp};
+
+    // Expected values from `date -u -r <secs> +%Y%m%dT%H%M%SZ`.
+    #[rstest]
+    #[case::epoch(0, "19700101T000000Z")]
+    #[case::leap_day_of_a_400_year(951_782_400, "20000229T000000Z")]
+    #[case::leap_day_last_second(1_709_251_199, "20240229T235959Z")]
+    #[case::autumn(1_795_156_800, "20261120T064000Z")]
+    #[case::last_second_of_2099(4_102_444_799, "20991231T235959Z")]
+    #[case::first_second_of_2100(4_102_444_800, "21000101T000000Z")]
+    #[case::feb_28_2100(4_107_456_000, "21000228T000000Z")]
+    #[case::last_second_of_feb_2100(4_107_542_399, "21000228T235959Z")]
+    #[case::no_leap_day_in_2100(4_107_542_400, "21000301T000000Z")]
+    fn timestamp_is_the_utc_time(#[case] secs: u64, #[case] expected: &str) {
+        assert_eq!(timestamp(secs), expected);
+    }
+
+    #[test]
+    fn the_name_drops_the_fraction_of_a_second() {
+        let now = UNIX_EPOCH + Duration::new(1_795_156_800, 999_999_999);
+        assert_eq!(name_at(now).unwrap(), "20261120T064000Z");
+    }
+
+    #[test]
+    fn a_clock_before_1970_is_refused() {
+        let now = UNIX_EPOCH - Duration::from_secs(1);
+        let e = name_at(now).unwrap_err();
+        assert_eq!(e.code(), "migrate-io-failed");
+        assert!(
+            e.to_string().starts_with(".slopvac/migrate-backup: "),
+            "{e}"
+        );
+    }
+
+    fn is_leap(year: u64) -> bool {
+        year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
+    }
+
+    fn month_days(year: u64, month: u64) -> u64 {
+        match month {
+            2 if is_leap(year) => 29,
+            2 => 28,
+            4 | 6 | 9 | 11 => 30,
+            _ => 31,
+        }
+    }
+
+    /// The Unix time of a `YYYYMMDDTHHMMSSZ` name, counted year by year and month by month,
+    /// or `None` when a field is out of range.
+    fn epoch_of(name: &str) -> Option<u64> {
+        let b = name.as_bytes();
+        if b.len() != 16 || b[8] != b'T' || b[15] != b'Z' {
+            return None;
+        }
+        let num = |range: std::ops::Range<usize>| name.get(range)?.parse::<u64>().ok();
+        let (year, month, day) = (num(0..4)?, num(4..6)?, num(6..8)?);
+        let (hour, minute, second) = (num(9..11)?, num(11..13)?, num(13..15)?);
+        let valid = (1970..=9999).contains(&year)
+            && (1..=12).contains(&month)
+            && (1..=month_days(year, month)).contains(&day)
+            && hour < 24
+            && minute < 60
+            && second < 60;
+        if !valid {
+            return None;
+        }
+        let years: u64 = (1970..year)
+            .map(|y| if is_leap(y) { 366 } else { 365 })
+            .sum();
+        let months: u64 = (1..month).map(|m| month_days(year, m)).sum();
+        let days = years + months + day - 1;
+        Some(days * 86_400 + hour * 3600 + minute * 60 + second)
+    }
+
+    #[rstest]
+    #[case::one_taken(&["20261120T064000Z"], "20261120T064000Z-1")]
+    #[case::two_taken(&["20261120T064000Z", "20261120T064000Z-1"], "20261120T064000Z-2")]
+    fn a_taken_backup_name_gets_a_suffix_and_the_taken_one_stays(
+        #[case] taken: &[&str],
+        #[case] expected: &str,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in taken {
+            std::fs::create_dir(tmp.path().join(name)).unwrap();
+            std::fs::write(tmp.path().join(name).join("0"), name).unwrap();
+        }
+        let backups = Dir::open_ambient_dir(tmp.path(), ambient_authority()).unwrap();
+
+        let (_, _, name) = run_dir(&backups, "20261120T064000Z").unwrap();
+
+        assert_eq!(name, expected);
+        assert!(tmp.path().join(expected).is_dir());
+        for name in taken {
+            let kept = std::fs::read_to_string(tmp.path().join(name).join("0")).unwrap();
+            assert_eq!(kept, *name);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn timestamp_round_trips_through_a_reference_calendar(
+            secs in 0u64..=253_402_300_799,
+        ) {
+            prop_assert_eq!(epoch_of(&timestamp(secs)), Some(secs));
+        }
+    }
 }

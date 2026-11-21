@@ -17,8 +17,14 @@ use crate::provenance::{KeyLines, key_lines};
 use crate::walk::{Dir, discover};
 use crate::{Dropped, Error, Options, RenameTable, rewrite_directives, rewrite_steering};
 
-/// Where `apply` keeps the files it replaced, relative to the project root.
-pub const BACKUP_DIR: &str = ".slopvac-migrate-backup";
+/// Where `apply` keeps backups, relative to the project root. Each run writes its own
+/// directory below it, named for its UTC start time, such as `20261120T064000Z`.
+pub const BACKUP_DIR: &str = ".slopvac/migrate-backup";
+/// The project's slopvac directory, the first component of [`BACKUP_DIR`].
+pub(crate) const PROJECT_DIR: &str = ".slopvac";
+/// The directory below [`PROJECT_DIR`] that holds the backups, the last component of
+/// [`BACKUP_DIR`].
+pub(crate) const BACKUPS_NAME: &str = "migrate-backup";
 
 /// What a change does to its file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

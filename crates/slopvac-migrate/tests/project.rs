@@ -265,7 +265,7 @@ fn restore_undoes_apply() {
         fs::read_to_string(dir.path().join("a.md")).unwrap(),
         "<!-- slopvac-allow: rule=orwell.not-un reason=x -->\n"
     );
-    assert!(!dir.path().join(slopvac_migrate::BACKUP_DIR).exists());
+    assert!(!dir.path().join(".slopvac").exists());
 }
 
 #[test]
@@ -406,7 +406,7 @@ fn apply_rejects_paths_that_leave_the_project() {
             fs::read_to_string(outer.path().join("victim.txt")).unwrap(),
             "keep"
         );
-        assert!(!root.join(slopvac_migrate::BACKUP_DIR).exists());
+        assert!(!root.join(".slopvac").exists());
     }
 }
 
@@ -437,17 +437,57 @@ fn restore_rejects_a_symlinked_directory() {
     );
 }
 
+/// The names in the project's backup directory, sorted. Empty when it does not exist.
+fn backups(root: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(root.join(".slopvac/migrate-backup")) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    names
+}
+
 #[test]
 fn apply_refuses_while_a_backup_exists() {
     let dir = tempfile::tempdir().unwrap();
+    let cache = cache();
     write(dir.path(), "slopvac.toml", "profile = \"strict\"\n");
     let p = plan_of(dir.path()).unwrap();
-    apply(dir.path(), &p, cache().path()).unwrap();
+    apply(dir.path(), &p, cache.path()).unwrap();
+    let first = backups(dir.path());
+    assert_eq!(first.len(), 1, "{first:?}");
     write(dir.path(), "slopvac.toml", "profile = \"normal\"\n");
     assert!(matches!(
-        apply(dir.path(), &p, cache().path()),
+        apply(dir.path(), &p, cache.path()),
         Err(Error::Unsafe(_))
     ));
+    assert_eq!(backups(dir.path()), first);
+}
+
+#[test]
+fn a_backup_directory_no_record_names_does_not_block_apply_and_is_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = cache();
+    write(dir.path(), ".slopvac.toml", "profile = \"strict\"\n");
+    apply(dir.path(), &plan_of(dir.path()).unwrap(), cache.path()).unwrap();
+    restore(dir.path(), cache.path(), false).unwrap();
+    // A backup left over from an earlier run that was discarded by hand.
+    let old = ".slopvac/migrate-backup/20200101T000000Z";
+    write(dir.path(), &format!("{old}/0"), "earlier\n");
+
+    apply(dir.path(), &plan_of(dir.path()).unwrap(), cache.path()).unwrap();
+
+    let names = backups(dir.path());
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert_eq!(names[0], "20200101T000000Z");
+    assert_eq!(
+        fs::read_to_string(dir.path().join(old).join("0")).unwrap(),
+        "earlier\n"
+    );
+    restore(dir.path(), cache.path(), false).unwrap();
+    assert_eq!(backups(dir.path()), ["20200101T000000Z"]);
 }
 
 #[test]
@@ -509,7 +549,7 @@ fn an_unmapped_directive_id_stops_the_command_and_writes_nothing() {
         fs::read_to_string(dir.path().join("docs/a.md")).unwrap(),
         doc
     );
-    assert!(!dir.path().join(slopvac_migrate::BACKUP_DIR).exists());
+    assert!(!dir.path().join(".slopvac").exists());
 }
 
 #[test]

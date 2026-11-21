@@ -407,6 +407,10 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
             ".b exists; run `slopvac migrate --restore` or delete it first",
         ),
         (
+            MigrateText::RecordUnreadable { record: s("r") },
+            "r in the per-user cache: the record of an earlier `slopvac migrate --write` does not parse, so its backup may not be restored yet; run `slopvac migrate --restore` with the version that wrote it, or remove the record by hand; nothing written",
+        ),
+        (
             MigrateText::BackupForeignFiles { directory: s(".b") },
             ".b holds files that `slopvac migrate --write` did not write; nothing restored",
         ),
@@ -478,7 +482,7 @@ fn every_phrase_keeps_its_published_text_and_is_registered() {
         ),
         (
             P::HelpLongAbout,
-            "Shows a diff of every change by default. With --write, rewrites the files and keeps the originals in .slopvac-migrate-backup. Lints before and after and reports the change per rule.",
+            "Shows a diff of every change by default. With --write, rewrites the files and keeps the originals in .slopvac/migrate-backup. Lints before and after and reports the change per rule.",
         ),
         (P::HelpPath, "Project root"),
         (P::HelpWrite, "Apply the changes instead of previewing them"),
@@ -602,6 +606,8 @@ fn every_phrase_keeps_its_published_text_and_is_registered() {
         ),
         (P::WhyComponentNotDir, "a path component is not a directory"),
         (P::WhySymlink, "is a symbolic link"),
+        (P::WhyNotDirectory, "is not a directory"),
+        (P::WhyChangedWhileCreated, "changed while it was created"),
         (P::WhyNotRegular, "is not a regular file"),
         (P::WhyChangedWhileRead, "changed while it was read"),
         (P::WhyHardLinks, "has more than one hard link"),
@@ -638,6 +644,11 @@ fn every_phrase_keeps_its_published_text_and_is_registered() {
         ),
         (P::IoNonblock, "O_NONBLOCK does not fit"),
         (P::IoNoFreeName, "no free temporary name"),
+        (P::IoNoFreeBackupName, "no free backup name"),
+        (
+            P::IoClockBeforeEpoch,
+            "the system clock is before 1970, so the backup cannot be named",
+        ),
         (P::IoHoldingReplaced, "a holding directory was replaced"),
         (
             P::IoCreatedReplaced,

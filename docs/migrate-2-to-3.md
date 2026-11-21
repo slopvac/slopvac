@@ -53,7 +53,7 @@ These also exit 2 and write nothing:
 slopvac migrate --write
 ```
 
-It copies each replaced file to `.slopvac-migrate-backup`, then rewrites it. Config comments and key order stay. It:
+It copies each replaced file to a new backup directory, `.slopvac/migrate-backup/<UTC time>/`, then rewrites it. Config comments and key order stay. It:
 
 - Moves `.slopvac.toml` and `[tool.slopvac]` into `slopvac.toml` and adds `schema_version = 3`.
 - Renames categories and rules to 3.0 names. A rule with only a `severity` becomes a bare level.
@@ -73,7 +73,7 @@ It stops, naming the file and line, for a blocklist that is outside the project,
 
 Compare `slopvac lint` with the preview report.
 
-To undo a write, run `slopvac migrate --restore`. It restores backed-up files, removes created files and deletes the backup. Without `--force`, a file changed since stops it. To keep the migration, delete `.slopvac-migrate-backup`. A second `slopvac migrate` finds nothing to change.
+To undo a write, run `slopvac migrate --restore`. It uses the backup of the last write, restores backed-up files, removes created files and deletes the backup. It keeps a `.slopvac/` directory you had before. Without `--force`, a file changed since stops it. A write that still has changes to make stops until you restore or remove that backup. To keep the migration, remove the backup directory. A second `slopvac migrate` finds nothing to change.
 
 ## 6. Removed in 3.0
 

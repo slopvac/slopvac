@@ -8,9 +8,13 @@ use std::path::{Path, PathBuf};
 
 use rstest::rstest;
 use slopvac_migrate::{
-    BACKUP_DIR, Change, ChangeKind, Error, NullLinter, Options, Plan, Point, RenameTable, Restored,
-    apply, apply_hooked, command, plan, restore, restore_hooked, run,
+    Change, ChangeKind, Error, NullLinter, Options, Plan, Point, RenameTable, Restored, apply,
+    apply_hooked, command, plan, restore, restore_hooked, run,
 };
+
+/// The project's slopvac directory, and the directory below it that holds one backup per run.
+const PROJECT_DIR: &str = ".slopvac";
+const BACKUPS: &str = ".slopvac/migrate-backup";
 
 const STEERING: &str = "<!-- slopvac:begin -->\nnew\n<!-- slopvac:end -->\n";
 const OLD: &str = "profile = \"strict\"\n";
@@ -108,9 +112,53 @@ impl Setup {
         })
     }
 
-    fn backup_exists(&self) -> bool {
-        fs::symlink_metadata(self.path(BACKUP_DIR)).is_ok()
+    /// The names in the backup directory, sorted. Empty when it does not exist.
+    fn backup_names(&self) -> Vec<String> {
+        let Ok(entries) = fs::read_dir(self.path(BACKUPS)) else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = entries
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
     }
+
+    /// The one backup a run wrote, below the project root.
+    fn backup(&self) -> PathBuf {
+        let names = self.backup_names();
+        assert_eq!(names.len(), 1, "{names:?}");
+        Path::new(BACKUPS).join(&names[0])
+    }
+
+    fn backup_exists(&self) -> bool {
+        !self.backup_names().is_empty()
+    }
+
+    /// The names directly below the project root, sorted.
+    fn root_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(self.root())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Whether the per-user cache directory holds nothing.
+    fn cache_is_empty(&self) -> bool {
+        fs::read_dir(self.cache.path()).unwrap().next().is_none()
+    }
+}
+
+/// Whether `name` is a UTC timestamp such as `20261120T064000Z`.
+fn is_timestamp(name: &str) -> bool {
+    let b = name.as_bytes();
+    b.len() == 16
+        && b[..8].iter().all(u8::is_ascii_digit)
+        && b[8] == b'T'
+        && b[9..15].iter().all(u8::is_ascii_digit)
+        && b[15] == b'Z'
 }
 
 /// What a hostile checkout puts at a target.
@@ -389,14 +437,16 @@ enum Forgery {
 #[case::copy_edited(Forgery::CopyEdited)]
 fn restore_rejects_a_backup_it_did_not_write(#[case] forgery: Forgery) {
     let s = Setup::new(&[("slopvac.toml", OLD), ("README.md", "keep\n")]);
-    let backup = s.path(BACKUP_DIR);
-    if matches!(forgery, Forgery::PreSeeded) {
-        fs::create_dir(&backup).unwrap();
+    let backup = if matches!(forgery, Forgery::PreSeeded) {
+        let backup = s.path(BACKUPS).join("20261120T064000Z");
+        fs::create_dir_all(&backup).unwrap();
         fs::write(backup.join("manifest.txt"), "0 README.md\n").unwrap();
         fs::write(backup.join("0"), "other\n").unwrap();
+        backup
     } else {
         s.apply(&s.plan()).unwrap();
-    }
+        s.root().join(s.backup())
+    };
     match forgery {
         Forgery::PreSeeded => {}
         Forgery::ManifestEdited => {
@@ -435,7 +485,7 @@ fn restore_rejects_a_checkout_replaced_at_the_same_path() {
     let moved = s.outer.path().join("moved");
     fs::rename(s.root(), &moved).unwrap();
     fs::create_dir(s.root()).unwrap();
-    for name in ["slopvac.toml", BACKUP_DIR] {
+    for name in ["slopvac.toml", PROJECT_DIR] {
         fs::rename(moved.join(name), s.path(name)).unwrap();
     }
     assert!(matches!(s.restore(false), Err(Error::Unsafe(_))));
@@ -443,17 +493,42 @@ fn restore_rejects_a_checkout_replaced_at_the_same_path() {
     assert!(s.backup_exists());
 }
 
+#[rstest]
+#[case::slopvac(PROJECT_DIR)]
+#[case::backup_directory(BACKUPS)]
+fn restore_rejects_a_replaced_directory_above_the_backup(#[case] parent: &str) {
+    let s = Setup::new(&[("slopvac.toml", OLD)]);
+    s.apply(&s.plan()).unwrap();
+    let backup = s.root().join(s.backup());
+    let inode = fs::metadata(&backup).unwrap().ino();
+    // A new directory takes the parent's name, and what the old one held moves into it with
+    // its inodes, so only the parent differs.
+    let moved = s.outer.path().join("moved");
+    fs::rename(s.path(parent), &moved).unwrap();
+    fs::create_dir(s.path(parent)).unwrap();
+    for entry in fs::read_dir(&moved).unwrap() {
+        let entry = entry.unwrap();
+        fs::rename(entry.path(), s.path(parent).join(entry.file_name())).unwrap();
+    }
+    assert_eq!(fs::metadata(&backup).unwrap().ino(), inode);
+
+    assert!(matches!(s.restore(true), Err(Error::Unsafe(_))));
+
+    assert_eq!(s.read("slopvac.toml"), NEW);
+    assert_eq!(fs::read_to_string(backup.join("0")).unwrap(), OLD);
+}
+
 #[test]
 fn restore_rejects_a_replayed_older_backup() {
     let s = Setup::new(&[("slopvac.toml", OLD)]);
     s.apply(&s.plan()).unwrap();
     let old_backup = s.outer.path().join("old-backup");
-    copy_dir(&s.path(BACKUP_DIR), &old_backup);
+    copy_dir(&s.root().join(s.backup()), &old_backup);
     s.restore(false).unwrap();
     s.apply(&s.plan()).unwrap();
     // The authentic backup directory stays, with its inode; only its files become the older
     // backup's. The copies hold the same original bytes, so only the instance differs.
-    let backup = s.path(BACKUP_DIR);
+    let backup = s.root().join(s.backup());
     let inode = fs::metadata(&backup).unwrap().ino();
     for entry in fs::read_dir(&backup).unwrap() {
         fs::remove_file(entry.unwrap().path()).unwrap();
@@ -472,8 +547,11 @@ fn backups_are_owner_only() {
     let s = Setup::new(&[("slopvac.toml", OLD)]);
     fs::set_permissions(s.path("slopvac.toml"), fs::Permissions::from_mode(0o644)).unwrap();
     s.apply(&s.plan()).unwrap();
-    assert_eq!(s.mode(BACKUP_DIR), 0o700);
-    for entry in fs::read_dir(s.path(BACKUP_DIR)).unwrap() {
+    let backup = s.backup();
+    for dir in [Path::new(PROJECT_DIR), Path::new(BACKUPS), &backup] {
+        assert_eq!(s.mode(dir.to_str().unwrap()), 0o700, "{}", dir.display());
+    }
+    for entry in fs::read_dir(s.root().join(&backup)).unwrap() {
         let mode = entry.unwrap().metadata().unwrap().mode() & 0o7777;
         assert_eq!(mode, 0o600);
     }
@@ -654,10 +732,11 @@ fn restore_keeps_a_backup_file_replaced_before_it_is_removed() {
     let s = Setup::new(&[("slopvac.toml", OLD)]);
     s.apply(&s.plan()).unwrap();
     fs::write(s.outside(), "outside\n").unwrap();
-    let copy = Path::new(BACKUP_DIR).join("0");
+    let backup = s.backup();
+    let copy = backup.join("0");
     let mut hook = |point: Point<'_>| {
         if point == Point::Cleanup(&copy) {
-            link_outside(&s, &holding(&s.path(BACKUP_DIR)).join("0"));
+            link_outside(&s, &holding(&s.root().join(&backup)).join("0"));
         }
     };
     assert!(matches!(
@@ -668,25 +747,43 @@ fn restore_keeps_a_backup_file_replaced_before_it_is_removed() {
     assert_eq!(outside_links(&s), 2, "the swapped-in link was removed");
 }
 
+/// Where a write fails: a target, or a file in the backup of this run.
+#[derive(Debug, Clone, Copy)]
+enum Failing {
+    Target(&'static str),
+    Backup(&'static str),
+}
+
+impl Failing {
+    fn matches(self, path: &Path) -> bool {
+        match self {
+            Self::Target(name) => path == Path::new(name),
+            Self::Backup(name) => {
+                path.parent().and_then(Path::parent) == Some(Path::new(BACKUPS))
+                    && path.file_name() == Some(name.as_ref())
+            }
+        }
+    }
+}
+
 #[rstest]
-#[case::staged_target("slopvac.toml")]
-#[case::backup_copy(".slopvac-migrate-backup/0")]
-#[case::manifest(".slopvac-migrate-backup/manifest.txt")]
-fn a_failed_write_leaves_no_file_behind(#[case] failing: &str) {
+#[case::staged_target(Failing::Target("slopvac.toml"))]
+#[case::backup_copy(Failing::Backup("0"))]
+#[case::manifest(Failing::Backup("manifest.txt"))]
+fn a_failed_write_leaves_no_file_behind(#[case] failing: Failing) {
     let s = Setup::new(&[("slopvac.toml", OLD)]);
+    let mut reached = false;
     let mut hook = |point: Point<'_>| match point {
-        Point::Write(p) if p == Path::new(failing) => {
+        Point::Write(p) if failing.matches(p) => {
+            reached = true;
             Err(std::io::Error::from(std::io::ErrorKind::StorageFull))
         }
         _ => Ok(()),
     };
     assert!(s.apply_failing(&s.plan(), &mut hook).is_err());
+    assert!(reached, "no write reached {failing:?}");
     assert_eq!(s.read("slopvac.toml"), OLD);
-    let names: Vec<_> = fs::read_dir(s.root())
-        .unwrap()
-        .map(|e| e.unwrap().file_name())
-        .collect();
-    assert_eq!(names, ["slopvac.toml"]);
+    assert_eq!(s.root_names(), ["slopvac.toml"]);
 }
 
 fn run_cli(s: &Setup, args: &[&str]) -> (i32, String, String) {
@@ -721,4 +818,150 @@ fn the_kept_file_notice_escapes_control_characters_in_the_name() {
     assert_eq!(code, 0, "{err}");
     assert!(out.contains("kept e\\u{1b}[31m/slopvac.toml"), "{out}");
     assert!(!out.contains('\u{1b}'), "{out}");
+}
+
+#[test]
+fn apply_backs_up_into_a_timestamp_directory_and_restore_removes_it() {
+    let s = Setup::new(&[("slopvac.toml", OLD), ("a.md", DOC_OLD)]);
+    s.apply(&s.plan()).unwrap();
+    let names = s.backup_names();
+    assert_eq!(names.len(), 1, "{names:?}");
+    assert!(is_timestamp(&names[0]), "{names:?}");
+    let mut copies: Vec<String> = fs::read_dir(s.root().join(s.backup()))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.file_name().unwrap() != "manifest.txt")
+        .map(|p| fs::read_to_string(p).unwrap())
+        .collect();
+    copies.sort();
+    assert_eq!(copies, [DOC_OLD, OLD]);
+    assert_eq!(s.read("slopvac.toml"), NEW);
+
+    let done = s.restore(false).unwrap();
+
+    assert_eq!((done.restored, done.kept.len()), (2, 0));
+    assert_eq!(s.read("slopvac.toml"), OLD);
+    assert_eq!(s.read("a.md"), DOC_OLD);
+    assert_eq!(s.root_names(), ["a.md", "slopvac.toml"]);
+}
+
+/// What the project's slopvac directory holds before the migration.
+#[derive(Debug, Clone, Copy)]
+enum Before {
+    Empty,
+    UserFile,
+    EmptyBackups,
+}
+
+#[rstest]
+#[case::empty(Before::Empty)]
+#[case::user_file(Before::UserFile)]
+#[case::empty_backup_directory(Before::EmptyBackups)]
+fn restore_keeps_a_slopvac_directory_the_user_had(#[case] before: Before) {
+    let s = Setup::new(&[("slopvac.toml", OLD)]);
+    match before {
+        Before::Empty => fs::create_dir(s.path(PROJECT_DIR)).unwrap(),
+        Before::UserFile => s.write(".slopvac/terms.toml", "allow = []\n"),
+        Before::EmptyBackups => fs::create_dir_all(s.path(BACKUPS)).unwrap(),
+    }
+    let inode = fs::metadata(s.path(PROJECT_DIR)).unwrap().ino();
+    s.apply(&s.plan()).unwrap();
+    assert!(s.backup_exists());
+
+    s.restore(false).unwrap();
+
+    assert_eq!(s.read("slopvac.toml"), OLD);
+    assert_eq!(fs::metadata(s.path(PROJECT_DIR)).unwrap().ino(), inode);
+    assert!(!s.backup_exists());
+    match before {
+        Before::Empty => assert!(fs::read_dir(s.path(PROJECT_DIR)).unwrap().next().is_none()),
+        Before::UserFile => assert_eq!(s.read(".slopvac/terms.toml"), "allow = []\n"),
+        Before::EmptyBackups => assert!(s.path(BACKUPS).is_dir()),
+    }
+}
+
+/// What a hostile checkout puts where a backup directory goes.
+#[derive(Debug, Clone, Copy)]
+enum Blocked {
+    /// A symbolic link to a directory outside the project.
+    Link(&'static str),
+    /// A regular file.
+    File(&'static str),
+}
+
+#[rstest]
+#[case::linked_slopvac(Blocked::Link(PROJECT_DIR))]
+#[case::linked_backups(Blocked::Link(BACKUPS))]
+#[case::slopvac_is_a_file(Blocked::File(PROJECT_DIR))]
+#[case::backups_is_a_file(Blocked::File(BACKUPS))]
+fn apply_refuses_a_backup_directory_that_is_a_link_or_a_file(#[case] blocked: Blocked) {
+    let s = Setup::new(&[("slopvac.toml", OLD)]);
+    let elsewhere = s.outer.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap();
+    let p = s.plan();
+    match blocked {
+        Blocked::Link(name) => {
+            fs::create_dir_all(s.path(name).parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(&elsewhere, s.path(name)).unwrap();
+        }
+        Blocked::File(name) => s.write(name, "x\n"),
+    }
+
+    assert!(matches!(s.apply(&p), Err(Error::Unsafe(_))));
+
+    assert_eq!(s.read("slopvac.toml"), OLD);
+    assert!(fs::read_dir(&elsewhere).unwrap().next().is_none());
+    assert!(s.cache_is_empty());
+}
+
+#[test]
+fn restore_ignores_a_newer_backup_directory_planted_beside_its_own() {
+    let s = Setup::new(&[("slopvac.toml", OLD)]);
+    s.apply(&s.plan()).unwrap();
+    let own = s.backup();
+    // A newer name sorts last, and holds a copy with other bytes.
+    let planted = s.path(BACKUPS).join("99991231T235959Z");
+    copy_dir(&s.root().join(&own), &planted);
+    fs::write(planted.join("0"), EDITED).unwrap();
+
+    s.restore(false).unwrap();
+
+    assert_eq!(s.read("slopvac.toml"), OLD);
+    assert!(!s.root().join(own).exists());
+    assert_eq!(fs::read_to_string(planted.join("0")).unwrap(), EDITED);
+}
+
+#[test]
+fn apply_refuses_while_the_record_of_an_earlier_write_does_not_parse() {
+    let s = Setup::new(&[("slopvac.toml", OLD)]);
+    s.apply(&s.plan()).unwrap();
+    let records: Vec<PathBuf> = fs::read_dir(s.cache.path().join("migrate-backups"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(records.len(), 1, "{records:?}");
+    let record = &records[0];
+    fs::write(record, "slopvac-migrate-record 4\nnot a record\n").unwrap();
+    let backup = s.backup();
+    let copy = s.read(backup.join("0").to_str().unwrap());
+    let p = Plan {
+        changes: vec![write_change(PathBuf::from("new.toml"), NEW)],
+        ..Plan::default()
+    };
+
+    let e = s.apply(&p).unwrap_err();
+
+    assert_eq!(e.code(), "migrate-unsafe-path");
+    let text = e.to_string();
+    assert!(text.contains("migrate-backups/"), "{text}");
+    assert!(text.contains("slopvac migrate --restore"), "{text}");
+    assert!(text.contains("remove the record by hand"), "{text}");
+    assert!(!s.path("new.toml").exists());
+    assert_eq!(s.read("slopvac.toml"), NEW);
+    assert_eq!(s.backup(), backup);
+    assert_eq!(s.read(backup.join("0").to_str().unwrap()), copy);
+    assert_eq!(
+        fs::read_to_string(record).unwrap(),
+        "slopvac-migrate-record 4\nnot a record\n"
+    );
 }

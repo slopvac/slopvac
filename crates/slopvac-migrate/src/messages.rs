@@ -380,6 +380,14 @@ pub(crate) enum MigrateText {
     #[code("migrate-backup-exists")]
     #[text("{directory} exists; run `slopvac migrate --restore` or delete it first")]
     BackupExists { directory: String },
+    /// The record of an earlier write exists in the per-user cache but does not parse.
+    #[code("migrate-record-unreadable")]
+    #[text(
+        "{record} in the per-user cache: the record of an earlier `slopvac migrate --write` does not \
+         parse, so its backup may not be restored yet; run `slopvac migrate --restore` with the \
+         version that wrote it, or remove the record by hand; nothing written"
+    )]
+    RecordUnreadable { record: String },
     /// The backup directory holds files the tool did not write.
     #[code("migrate-backup-foreign-files")]
     #[text(
@@ -457,7 +465,7 @@ pub(crate) enum MigratePhrase {
     #[code("migrate-help-long-about")]
     #[text(
         "Shows a diff of every change by default. With --write, rewrites the files \
-         and keeps the originals in .slopvac-migrate-backup. Lints before and after \
+         and keeps the originals in .slopvac/migrate-backup. Lints before and after \
          and reports the change per rule."
     )]
     HelpLongAbout,
@@ -674,6 +682,14 @@ pub(crate) enum MigratePhrase {
     #[code("migrate-why-component-symlink")]
     #[text("a path component is a symbolic link")]
     WhyComponentSymlink,
+    /// The entry is not a directory.
+    #[code("migrate-why-not-directory")]
+    #[text("is not a directory")]
+    WhyNotDirectory,
+    /// A directory changed while this run created it.
+    #[code("migrate-why-changed-while-created")]
+    #[text("changed while it was created")]
+    WhyChangedWhileCreated,
     /// A path component is not a directory.
     #[code("migrate-why-component-not-dir")]
     #[text("a path component is not a directory")]
@@ -754,6 +770,14 @@ pub(crate) enum MigratePhrase {
     #[code("migrate-io-no-free-name")]
     #[text("no free temporary name")]
     IoNoFreeName,
+    /// No backup-directory name was free.
+    #[code("migrate-io-no-free-backup-name")]
+    #[text("no free backup name")]
+    IoNoFreeBackupName,
+    /// The system clock is before the epoch, so a backup directory cannot be named.
+    #[code("migrate-io-clock-before-epoch")]
+    #[text("the system clock is before 1970, so the backup cannot be named")]
+    IoClockBeforeEpoch,
     /// A holding directory was swapped.
     #[code("migrate-io-holding-replaced")]
     #[text("a holding directory was replaced")]

@@ -409,9 +409,11 @@ migrate-help-preserve-behavior text
 migrate-help-restore text
 migrate-help-write text
 migrate-invalid-type text
+migrate-io-clock-before-epoch text
 migrate-io-created-replaced text
 migrate-io-failed error
 migrate-io-holding-replaced text
+migrate-io-no-free-backup-name text
 migrate-io-no-free-name text
 migrate-io-nonblock text
 migrate-lint-document-failed text
@@ -479,6 +481,7 @@ migrate-reason-vale-enabled text
 migrate-reason-vale-setting text
 migrate-reason-vale-table text
 migrate-reason-version-not-integer text
+migrate-record-unreadable text
 migrate-rename-missing-table text
 migrate-rename-not-string text
 migrate-rename-removed-not-array text
@@ -497,6 +500,7 @@ migrate-why-changed-after-check text
 migrate-why-changed-after-plan text
 migrate-why-changed-after-write text
 migrate-why-changed-during-restore text
+migrate-why-changed-while-created text
 migrate-why-changed-while-read text
 migrate-why-component-not-dir text
 migrate-why-component-symlink text
@@ -505,6 +509,7 @@ migrate-why-empty-path text
 migrate-why-gained-files text
 migrate-why-hard-links text
 migrate-why-named-twice text
+migrate-why-not-directory text
 migrate-why-not-regular text
 migrate-why-path-leaves text
 migrate-why-path-newline text
