@@ -68,7 +68,12 @@ inputs:
     required: false
     default: "true"
   version:
-    description: slopvac version to install, for example "3.0.0". Empty installs the latest stable release. Pin it for reproducible CI.
+    description: >-
+      slopvac version to install, for example "3.0.0".
+      Until 3.0.0 is released, set it to "3.0.0rc1" or later.
+      An empty value installs the latest stable release, which is still a 2.x package,
+      and the Action refuses a slopvac older than 3.0.
+      Pin it for reproducible CI.
     required: false
     default: ""
   binary:
@@ -127,6 +132,41 @@ runs:
           uv tool install --quiet "slopvac==$VERSION"
         else
           uv tool install --quiet slopvac
+        fi
+
+    # An empty `version` resolves to PyPI's latest stable release, which is a
+    # 2.x package without the 3.x command line. Fail closed here, with
+    # guidance, instead of failing later with an unrelated exit 2. Only the
+    # parsed digits reach the annotation, never the binary's raw output.
+    - name: Check the slopvac version
+      if: inputs.binary == ''
+      shell: bash
+      env:
+        BINARY: ${{ format('{0}/slopvac-bin/slopvac', runner.temp) }}
+      run: |
+        set -euo pipefail
+        guidance='set `version: 3.0.0rc1` (or later) on this Action until 3.0.0 is released'
+        out="$("$BINARY" --version 2>/dev/null)" || out=""
+        # Accept only a line that starts with the program name: the Rust CLI
+        # prints `slopvac X.Y.Z[-pre]`, the 2.x package `slopvac, version X.Y.Z`.
+        # Anything else, a date or another tool's version included, is unreadable.
+        pattern='^slopvac(, version)? ([0-9]+)\.([0-9]+)\.([0-9]+)([-+.]?[0-9A-Za-z.+-]*)$'
+        major="" found=""
+        while IFS= read -r line; do
+          line="${line%$'\r'}"
+          if [[ "$line" =~ $pattern ]]; then
+            major="${BASH_REMATCH[2]}"
+            found="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.${BASH_REMATCH[4]}"
+            break
+          fi
+        done <<< "$out"
+        if [[ -z "$found" ]]; then
+          echo "::error::could not read the slopvac version after install; $guidance"
+          exit 1
+        fi
+        if (( 10#$major < 3 )); then
+          echo "::error::slopvac $found is older than 3.0; $guidance"
+          exit 1
         fi
 
     - name: Resolve target paths

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import signal
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -727,3 +729,107 @@ def test_expressions_reach_scripts_only_through_env_and_actions_are_pinned():
         assert "${{" not in step.get("run", ""), step["name"]
         if "uses" in step and not step["uses"].startswith("./"):
             assert re.search(r"@[0-9a-f]{40}$", step["uses"]), step["uses"]
+
+
+GUIDANCE = "set `version: 3.0.0rc1`"
+
+
+def _run_version_check(tmp_path, printed, exit_code=0, noise=""):
+    """Run the "Check the slopvac version" step against a fake binary.
+
+    ``printed`` goes to stdout and ``noise`` to stderr.
+    """
+    fake = tmp_path / "slopvac"
+    fake.write_text(
+        f"#!/bin/sh\ncat <<'EOF_OUT'\n{printed}\nEOF_OUT\n"
+        f"cat >&2 <<'EOF_ERR'\n{noise}\nEOF_ERR\nexit {exit_code}\n",
+        encoding="utf-8",
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    step = _step("Check the slopvac version")
+    assert step["shell"] == "bash"
+    return subprocess.run(
+        ["bash", "-c", step["run"]],
+        env={"PATH": os.environ["PATH"], "BINARY": str(fake)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("printed", "noise"),
+    [
+        ("slopvac 3.0.0-rc.1", ""),  # the Rust CLI (clap), semver prerelease
+        ("slopvac 3.0.0", ""),
+        ("slopvac 3.1.0", ""),
+        ("slopvac 10.0.2", ""),
+        ("slopvac, version 3.0.0rc1", ""),  # click's format, PEP 440 prerelease
+        ("slopvac, version 3.2.0", ""),
+        ("slopvac 3.0.0", "Python 2.7.18 warning: something"),  # stderr is ignored
+        ("Python 3.11.9\nslopvac 3.0.0", ""),  # a noise line before the version line
+    ],
+)
+def test_version_check_accepts_3_or_later(tmp_path, printed, noise):
+    result = _run_version_check(tmp_path, printed, noise=noise)
+    assert result.returncode == 0, result.stdout
+
+
+@pytest.mark.parametrize(
+    ("printed", "noise", "found"),
+    [
+        ("slopvac, version 2.18.1", "", "2.18.1"),  # click's format, the 2.x package
+        ("slopvac 0.9.4", "", "0.9.4"),
+        ("Python 3.11.9\nslopvac, version 2.18.1", "", "2.18.1"),
+        ("2026.11.20\nslopvac, version 2.18.1", "", "2.18.1"),
+        ("slopvac, version 2.18.1", "Python 3.11.9", "2.18.1"),
+    ],
+)
+def test_version_check_refuses_older_than_3(tmp_path, printed, noise, found):
+    result = _run_version_check(tmp_path, printed, noise=noise)
+    assert result.returncode != 0
+    assert result.stdout.startswith("::error::")
+    assert f"slopvac {found} is older than 3.0" in result.stdout
+    assert GUIDANCE in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("printed", "noise", "code"),
+    [
+        ("garbage", "", 0),
+        ("", "", 0),
+        ("slopvac 3.0.0", "", 1),
+        ("v3", "", 0),
+        ("Python 3.11.9", "", 0),  # a version that is not slopvac's
+        ("2026.11.20", "", 0),  # a date
+        ("", "slopvac 3.0.0", 0),  # the version only on stderr
+        ("tool slopvac 3.0.0", "", 0),  # the slopvac line is not anchored
+        ("slopvac 3.0.0 extra words", "", 0),
+    ],
+)
+def test_version_check_fails_closed_on_unreadable_output(
+    tmp_path, printed, noise, code
+):
+    result = _run_version_check(tmp_path, printed, exit_code=code, noise=noise)
+    assert result.returncode != 0
+    assert result.stdout.startswith("::error::")
+    assert GUIDANCE in result.stdout
+
+
+def test_version_check_never_echoes_binary_output_into_the_annotation(tmp_path):
+    result = _run_version_check(tmp_path, "::set-output name=x::y %0A")
+    assert "set-output" not in result.stdout
+
+
+def test_version_check_sits_between_install_and_the_first_use_of_the_binary():
+    steps = _steps()
+    names = [s["name"] for s in steps]
+    check = names.index("Check the slopvac version")
+    install = names.index("Install slopvac")
+    first_use = next(
+        i
+        for i, s in enumerate(steps)
+        if "BINARY" in s.get("env", {}) and s["name"] != "Check the slopvac version"
+    )
+    assert install < check < first_use
+    assert steps[check]["if"] == steps[install]["if"]
