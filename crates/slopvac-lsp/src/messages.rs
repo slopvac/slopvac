@@ -105,6 +105,10 @@ pub(crate) enum LspMessage {
     #[code("lsp-lint-incomplete")]
     #[notice("slopvac could not lint this document: {reason}")]
     LintIncomplete { reason: String },
+    /// The path of the document is not UTF-8, so the linter cannot be asked about it.
+    #[code("lsp-path-not-utf8")]
+    #[text("the document path is not valid UTF-8")]
+    PathNotUtf8,
     /// Part of the check did not run. The diagnostic carries the notice's own code, so this
     /// is message text only.
     #[code("lsp-unchecked")]

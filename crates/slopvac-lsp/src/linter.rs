@@ -1,6 +1,7 @@
 //! What the server asks of the lint engine, and the adapter for `slopvac-engine`.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use frontmatter_spans::detect;
 use slopvac_engine::{Engine, EngineError, Input, Kind, Settings};
@@ -84,8 +85,8 @@ pub struct ConfigFailure {
     pub code: String,
     /// The error text, without the source excerpt.
     pub message: String,
-    /// The config file that failed, as an absolute path.
-    pub path: String,
+    /// The config file that failed, as an absolute path. It is not always text.
+    pub path: PathBuf,
     /// The text of that file and the byte offset in it where the error is, when it has a
     /// position. The server converts the offset to a line and column in the encoding the
     /// client negotiated.
@@ -98,7 +99,7 @@ impl ConfigFailure {
     pub fn new(
         code: impl Into<String>,
         message: impl Into<String>,
-        path: impl Into<String>,
+        path: impl Into<PathBuf>,
     ) -> Self {
         Self {
             code: code.into(),

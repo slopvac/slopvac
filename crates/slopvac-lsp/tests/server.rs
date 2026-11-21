@@ -1791,3 +1791,70 @@ fn a_warning_found_while_linting_reaches_the_client_once() {
     );
     client.finish().unwrap();
 }
+
+/// Counts the lints it is asked for, and reports the path of the last one.
+struct Counting {
+    calls: AtomicUsize,
+    last: Mutex<String>,
+}
+
+impl Linter for Counting {
+    fn lint(&self, path: &str, _text: &str) -> Result<Linted, LintError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        path.clone_into(&mut self.last.lock().unwrap());
+        Ok(Linted::default())
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+#[test]
+fn a_document_whose_path_is_not_utf8_is_reported_incomplete_and_not_linted_under_another_path() {
+    let linter = Arc::new(Counting {
+        calls: AtomicUsize::new(0),
+        last: Mutex::new(String::new()),
+    });
+    let mut client = Client::start(Server::new(Arc::clone(&linter) as Arc<dyn Linter>), None);
+    client.open_at("file:///work/a%FF.md", "Plain.\n");
+    let published = client.diagnostics();
+    let items = published["diagnostics"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{published}");
+    assert_eq!(items[0]["code"], "lsp-lint-incomplete");
+    assert_eq!(
+        linter.calls.load(Ordering::SeqCst),
+        0,
+        "linted as {}",
+        linter.last.lock().unwrap()
+    );
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_document_path_with_an_encoded_slash_is_the_path_with_a_slash() {
+    let linter = Arc::new(Counting {
+        calls: AtomicUsize::new(0),
+        last: Mutex::new(String::new()),
+    });
+    let mut client = Client::start(Server::new(Arc::clone(&linter) as Arc<dyn Linter>), None);
+    client.open_at("file:///work%2Fsub/a%20b.md", "Plain.\n");
+    client.diagnostics();
+    assert_eq!(*linter.last.lock().unwrap(), "/work/sub/a b.md");
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_config_error_on_a_path_that_is_not_utf8_is_published_on_that_path() {
+    use std::os::unix::ffi::OsStringExt;
+    let (linter, on_disk) = Reloadable::new(Vec::new());
+    let mut client = Client::start(Server::new(Arc::new(linter)), None);
+    let path = std::path::PathBuf::from(std::ffi::OsString::from_vec(
+        b"/work/a\xFF/slopvac.toml".to_vec(),
+    ));
+    *on_disk.lock().unwrap() = Config::Broken(ConfigFailure::new("config-invalid", "bad", path));
+    save(&client, CONFIG_URI);
+    let published = client.diagnostics();
+    assert_eq!(published["uri"], "file:///work/a%FF/slopvac.toml");
+    client.finish().unwrap();
+}

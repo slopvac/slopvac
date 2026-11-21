@@ -192,3 +192,14 @@ pub(crate) fn analyze(
         items,
     }
 }
+
+/// The result for a document whose path is not text: the buffer is not linted, and it must
+/// not look clean.
+pub(crate) fn unreadable_path(generation: u64, epoch: u64, version: i32) -> Analysis {
+    Analysis {
+        generation,
+        epoch,
+        version,
+        items: vec![Item::incomplete(&render(&LspMessage::PathNotUtf8))],
+    }
+}

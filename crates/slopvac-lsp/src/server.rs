@@ -10,6 +10,7 @@
 //! are needed and are never stored across versions (`docs/contract/positions.md`).
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -30,11 +31,11 @@ use slopvac_model::{Notice, PositionEncoding, Severity, SourceIndex};
 
 use slopvac_messages::render;
 
-use crate::analysis::{Analysis, Item, analyze};
+use crate::analysis::{Analysis, Item, analyze, unreadable_path};
 use crate::convert::{item_range, span_range, touches};
 use crate::linter::{Check, ConfigFailure, Linter};
 use crate::messages::{LspMessage, ServerError};
-use crate::uri::{file_uri, path_of};
+use crate::uri::{file_path, file_uri};
 
 /// How long a clean exit waits for queued diagnostics to reach the client.
 const FLUSH_WAIT: Duration = Duration::from_secs(5);
@@ -316,8 +317,11 @@ impl Shared {
 
     /// Whether `uri` is a config file: a `slopvac.toml`, or a file the linter read.
     fn is_config(&self, uri: &str) -> bool {
-        let path = path_of(uri);
-        path.rsplit('/').next() == Some(CONFIG_NAME) || self.linter.watches(&path)
+        let Some(path) = file_path(uri) else {
+            return false;
+        };
+        path.file_name() == Some(OsStr::new(CONFIG_NAME))
+            || path.to_str().is_some_and(|text| self.linter.watches(text))
     }
 
     /// The analysis of the current version of `uri`, linting if none is cached. The lock is
@@ -336,15 +340,20 @@ impl Shared {
                 self.epoch(),
             )
         };
-        let done = Arc::new(analyze(
-            self.linter.as_ref(),
-            &self.checks,
-            &path_of(uri),
-            generation,
-            epoch,
-            version,
-            &text,
-        ));
+        // A path that is not text cannot go to the linter, which takes it as text, and a
+        // lossy copy would lint a different file.
+        let done = Arc::new(match document_path(uri) {
+            Some(path) => analyze(
+                self.linter.as_ref(),
+                &self.checks,
+                &path,
+                generation,
+                epoch,
+                version,
+                &text,
+            ),
+            None => unreadable_path(generation, epoch, version),
+        });
         if let Some(doc) = self.docs().get_mut(uri)
             && doc.generation == generation
             && self.settled(epoch)
@@ -429,6 +438,15 @@ fn reload(shared: &Shared, jobs: &Sender<String>, out: &Sender<Message>) {
     sync_watch(shared, out);
     for uri in open {
         let _ = jobs.send(uri);
+    }
+}
+
+/// The path to lint the document at `uri` under: the path of a local file, else the uri as
+/// the client wrote it. `None` when a local file's path is not UTF-8.
+fn document_path(uri: &str) -> Option<String> {
+    match file_path(uri) {
+        Some(path) => path.into_os_string().into_string().ok(),
+        None => Some(uri.to_owned()),
     }
 }
 
@@ -746,7 +764,7 @@ fn code_actions(shared: &Shared, p: &CodeActionParams) -> Vec<CodeActionOrComman
             let line = range.start.line;
             let site = line_start_offset(&text, line);
             for reason in shared.linter.allow_reasons(
-                &path_of(p.text_document.uri.as_str()),
+                &document_path(p.text_document.uri.as_str()).unwrap_or_default(),
                 &text,
                 site,
                 rule,

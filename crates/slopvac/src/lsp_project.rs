@@ -471,11 +471,8 @@ impl Linter for ProjectLinter {
         match self.project.load() {
             Ok(notices) => Reloaded::new(notices, None),
             Err(failure) => {
-                let mut shown = ConfigFailure::new(
-                    failure.error.code,
-                    failure.error.message,
-                    failure.path.display().to_string(),
-                );
+                let mut shown =
+                    ConfigFailure::new(failure.error.code, failure.error.message, failure.path);
                 if let Some((text, offset)) = failure.position {
                     shown = shown.at_offset(text, offset);
                 }

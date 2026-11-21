@@ -11,9 +11,11 @@ publish.workspace = true
 [dependencies]
 clap.workspace = true
 crossbeam-channel.workspace = true
+fluent-uri.workspace = true
 frontmatter-spans.workspace = true
 lsp-server.workspace = true
 lsp-types.workspace = true
+percent-encoding.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 slopvac-config.workspace = true
