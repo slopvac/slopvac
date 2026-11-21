@@ -1580,6 +1580,104 @@ def test_a_discriminator_with_an_object_type_proves_disjointness(tmp_path, new, 
     assert findings == []
 
 
+CHILD_KEYS = {
+    "additionalProperties-enum-to-true": (
+        {"additionalProperties": {"enum": ["a"]}},
+        {"additionalProperties": True},
+        "/additionalProperties/enum",
+        "enum-widened",
+    ),
+    "additionalProperties-enum-removed": (
+        {"additionalProperties": {"enum": ["a"]}},
+        {},
+        "/additionalProperties/enum",
+        "enum-widened",
+    ),
+    "additionalProperties-const-removed": (
+        {"additionalProperties": {"const": "a"}},
+        {},
+        "/additionalProperties/const",
+        "enum-widened",
+    ),
+    "additionalProperties-type-removed": (
+        {"additionalProperties": {"type": "string"}},
+        {},
+        "/additionalProperties/type",
+        "type-widened",
+    ),
+    "additionalProperties-closed-then-opened": (
+        {"additionalProperties": False},
+        {"additionalProperties": True},
+        "/additionalProperties",
+        "constraint-loosened",
+    ),
+    "additionalProperties-closed-then-removed": (
+        {"additionalProperties": False},
+        {},
+        "/additionalProperties",
+        "constraint-loosened",
+    ),
+    "additionalProperties-closed-then-schema": (
+        {"additionalProperties": False},
+        {"additionalProperties": {"type": "string"}},
+        "/additionalProperties",
+        "constraint-loosened",
+    ),
+    "items-enum-removed": (
+        {"items": {"enum": ["a"]}},
+        {},
+        "/items/enum",
+        "enum-widened",
+    ),
+    "items-type-removed": (
+        {"items": {"type": "string"}},
+        {},
+        "/items/type",
+        "type-widened",
+    ),
+    "patternProperties-enum-dropped": (
+        {"patternProperties": {"^x": {"enum": ["a"]}}},
+        {"patternProperties": {"^x": {}}},
+        "/patternProperties/^x/enum",
+        "enum-widened",
+    ),
+    "propertyNames-enum-removed": (
+        {"propertyNames": {"enum": ["a"]}},
+        {},
+        "/propertyNames/enum",
+        "enum-widened",
+    ),
+    "contains-type-removed": (
+        {"contains": {"type": "string"}},
+        {},
+        "/contains/type",
+        "type-widened",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), CHILD_KEYS.values(), ids=CHILD_KEYS
+)
+def test_dropping_a_child_schema_restriction_of_an_output_is_breaking(
+    tmp_path, direction, old, new, pointer, kind
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    findings = run(tmp_path, old_s, new_s, direction=direction)
+    assert (f"/properties/e{pointer}", kind) in kinds(findings)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), CHILD_KEYS.values(), ids=CHILD_KEYS
+)
+def test_dropping_a_child_schema_restriction_of_an_input_is_allowed(
+    tmp_path, old, new, pointer, kind
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    assert run(tmp_path, old_s, new_s, direction="input") == []
+
+
 def test_registry_must_list_every_schema_file(tmp_path):
     base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
     new_dir = write_dir(tmp_path / "new", {FILE: schema()})

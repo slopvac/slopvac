@@ -783,6 +783,18 @@ class Comparer:
         self, file: str, doc: Docs, ptr: str, o: dict, n: dict
     ) -> Iterator[Finding]:
         for key in ("additionalProperties", "additionalItems"):
+            if key in o:
+                old_v, new_v = o[key], n.get(key, True)
+                if old_v is False and new_v is not False:
+                    shown = _show(n[key]) if key in n else "(absent)"
+                    yield Finding(
+                        file, f"{ptr}/{key}", "constraint-loosened", "false", shown
+                    )
+                    continue
+                if isinstance(old_v, dict) and new_v is True:
+                    # Dropped or opened up: what the old schema restricted is free now.
+                    yield from self.compare(file, doc, f"{ptr}/{key}", old_v, {})
+                    continue
             if key not in n:
                 continue
             old = o.get(key, True)
