@@ -68,7 +68,12 @@ inputs:
     required: false
     default: "true"
   version:
-    description: slopvac version to install, for example "3.0.0". Empty installs the latest stable release. Pin it for reproducible CI.
+    description: >-
+      slopvac version to install, for example "3.0.0".
+      Until 3.0.0 is released, set it to "3.0.0rc1" or later.
+      An empty value installs the latest stable release, which is still a 2.x package,
+      and the Action refuses a slopvac older than 3.0.
+      Pin it for reproducible CI.
     required: false
     default: ""
   binary:
@@ -127,6 +132,29 @@ runs:
           uv tool install --quiet "slopvac==$VERSION"
         else
           uv tool install --quiet slopvac
+        fi
+
+    # An empty `version` resolves to PyPI's latest stable release, which is a
+    # 2.x package without the 3.x command line. Fail closed here, with
+    # guidance, instead of failing later with an unrelated exit 2. Only the
+    # parsed digits reach the annotation, never the binary's raw output.
+    - name: Check the slopvac version
+      if: inputs.binary == ''
+      shell: bash
+      env:
+        BINARY: ${{ format('{0}/slopvac-bin/slopvac', runner.temp) }}
+      run: |
+        set -euo pipefail
+        guidance='set `version: 3.0.0rc1` (or later) on this Action until 3.0.0 is released'
+        out="$("$BINARY" --version 2>&1)" || out=""
+        if [[ ! "$out" =~ ([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+          echo "::error::could not read the slopvac version after install; $guidance"
+          exit 1
+        fi
+        if (( BASH_REMATCH[1] < 3 )); then
+          found="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+          echo "::error::slopvac $found is older than 3.0; $guidance"
+          exit 1
         fi
 
     - name: Resolve target paths

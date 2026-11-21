@@ -87,4 +87,4 @@ The action itself refuses `rdjsonl-file`, `sarif-file` and the Code Climate path
 
 ## Inputs and outputs
 
-See `action-v3/action.yml` for every input and output. The binary version comes from `version`. Pin it for reproducible runs, or leave it empty for the latest stable release.
+See `action-v3/action.yml` for every input and output. The binary version comes from `version`. Until 3.0.0 is released, set `version: 3.0.0rc1` or later. An empty value installs the latest stable release, which is still a 2.x package, and the Action then stops with an error that says so. Once 3.0.0 is released, an empty value installs it. Pin the version for reproducible runs.

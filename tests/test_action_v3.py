@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import signal
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -727,3 +729,62 @@ def test_expressions_reach_scripts_only_through_env_and_actions_are_pinned():
         assert "${{" not in step.get("run", ""), step["name"]
         if "uses" in step and not step["uses"].startswith("./"):
             assert re.search(r"@[0-9a-f]{40}$", step["uses"]), step["uses"]
+
+
+GUIDANCE = "set `version: 3.0.0rc1`"
+
+
+def _run_version_check(tmp_path, printed, exit_code=0):
+    """Run the "Check the slopvac version" step against a fake binary."""
+    fake = tmp_path / "slopvac"
+    fake.write_text(
+        f"#!/bin/sh\ncat <<'EOF_OUT'\n{printed}\nEOF_OUT\nexit {exit_code}\n",
+        encoding="utf-8",
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    step = _step("Check the slopvac version")
+    assert step["shell"] == "bash"
+    return subprocess.run(
+        ["bash", "-c", step["run"]],
+        env={"PATH": os.environ["PATH"], "BINARY": str(fake)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "printed",
+    ["slopvac 3.0.0rc1", "slopvac 3.1.0", "slopvac 10.0.2", "3.0.0"],
+)
+def test_version_check_accepts_3_or_later(tmp_path, printed):
+    result = _run_version_check(tmp_path, printed)
+    assert result.returncode == 0, result.stdout
+
+
+@pytest.mark.parametrize(
+    ("printed", "found"),
+    [("slopvac 2.18.1", "2.18.1"), ("slopvac 0.9.4", "0.9.4")],
+)
+def test_version_check_refuses_older_than_3(tmp_path, printed, found):
+    result = _run_version_check(tmp_path, printed)
+    assert result.returncode != 0
+    assert result.stdout.startswith("::error::")
+    assert f"slopvac {found} is older than 3.0" in result.stdout
+    assert GUIDANCE in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("printed", "code"),
+    [("garbage", 0), ("", 0), ("slopvac 3.0.0", 1), ("v3", 0)],
+)
+def test_version_check_fails_closed_on_unreadable_output(tmp_path, printed, code):
+    result = _run_version_check(tmp_path, printed, exit_code=code)
+    assert result.returncode != 0
+    assert result.stdout.startswith("::error::")
+    assert GUIDANCE in result.stdout
+
+
+def test_version_check_never_echoes_binary_output_into_the_annotation(tmp_path):
+    result = _run_version_check(tmp_path, "::set-output name=x::y %0A")
+    assert "set-output" not in result.stdout
