@@ -471,3 +471,38 @@ fn a_change_to_the_target_of_a_symlinked_extended_file_lints_the_open_document_a
     assert!(session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
     session.finish();
 }
+
+#[test]
+fn a_category_error_in_an_external_extended_file_is_shown_on_that_file_at_the_key() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let top = dir.path().canonicalize().expect("canonical");
+    fs::create_dir_all(top.join("shared")).expect("mkdir");
+    fs::create_dir_all(top.join("proj")).expect("mkdir");
+    fs::write(top.join("shared/base.toml"), "schema_version = 3\n").expect("base");
+    fs::write(
+        top.join("proj/slopvac.toml"),
+        "schema_version = 3\nextends = [\"../shared/base.toml\"]\n",
+    )
+    .expect("config");
+    let root = top.join("proj");
+    let mut session = Session::start(&root);
+    fs::write(
+        top.join("shared/base.toml"),
+        "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
+    )
+    .expect("break");
+    let base = uri_of(&top, "shared/base.toml");
+    changed(&mut session, &base);
+    let shown = diagnostics_on(&session, &base);
+    assert_eq!(shown[0]["code"], "config-unknown-category", "{shown}");
+    assert_eq!(
+        shown[0]["range"]["start"],
+        json!({"line": 3, "character": 0})
+    );
+    let message = shown[0]["message"].as_str().expect("message");
+    assert!(
+        !message.contains(top.to_str().expect("utf-8")),
+        "an absolute path in {message}"
+    );
+    session.finish();
+}

@@ -32,12 +32,12 @@ use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_lsp::{
     Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
 };
-use slopvac_model::{Notice, RuleId};
+use slopvac_model::{ConfigSource, Notice, RuleId};
 use slopvac_styles::{BuiltinSource, StylePresets};
 
 use crate::engine::{config_error, declared_genre, read_block_under, rel_text, settings_for};
 use crate::errors::CliError;
-use crate::lint_settings::{self, Overrides};
+use crate::lint_settings::{self, Located, Overrides};
 use crate::lint_terms;
 use crate::rule_catalog::Catalog;
 
@@ -203,6 +203,30 @@ fn nearest(dir: &Path) -> Result<Option<Arc<LoadedConfig>>, ConfigError> {
     Discovery::new(&presets).nearest(dir)
 }
 
+/// The text of the config file at `path` and the byte offset of `source` in it. `None` when
+/// the source has no line, or the file cannot be read again.
+fn source_position(path: &Path, source: &ConfigSource) -> Option<(String, usize)> {
+    let (line, column) = (source.line?.get(), source.column?.get());
+    let text = slopvac_fs::read_capped_regular_to_string(
+        path,
+        slopvac_config::MAX_CONFIG_BYTES,
+        slopvac_fs::ReadOptions::new(),
+    )
+    .ok()?;
+    let start: usize = text
+        .split_inclusive('\n')
+        .take(line.saturating_sub(1))
+        .map(str::len)
+        .sum();
+    let rest = text.get(start..)?;
+    let offset = start
+        + rest
+            .char_indices()
+            .nth(column.saturating_sub(1))
+            .map_or(rest.len(), |(at, _)| at);
+    Some((text, offset))
+}
+
 /// Add `files` to the set of files to watch, each under the name the config gave it and, when
 /// that is a link, under the name of the file it points to as well: an editor reports a change
 /// under either. A file that does not exist yet has no other name.
@@ -288,7 +312,8 @@ impl Project {
             watch_all(dependencies, config.dependencies());
         }
         let notices = match &config {
-            Some(config) => lint_settings::validate(config, &catalog).map_err(fallback)?,
+            Some(config) => lint_settings::validate_located(config, &catalog)
+                .map_err(|located| Box::new(self.located_failure(config, located)))?,
             None => Vec::new(),
         };
         let mut ready = Ready {
@@ -300,6 +325,30 @@ impl Project {
         };
         ready.configs.insert(self.root.clone(), config);
         Ok((ready, notices))
+    }
+
+    /// Where a validation failure shows: on the file its key is in, at the key.
+    fn located_failure(&self, config: &LoadedConfig, located: Located) -> LoadFailure {
+        let own = config
+            .dependencies()
+            .first()
+            .cloned()
+            .unwrap_or_else(|| self.root.join("slopvac.toml"));
+        let (path, position) = match &located.source {
+            Some(source) => {
+                let path = source.file.as_ref().map_or(own, |file| {
+                    slopvac_fs::lexical_normalize(&config.root.join(file))
+                });
+                let position = source_position(&path, source);
+                (path, position)
+            }
+            None => (own, None),
+        };
+        LoadFailure {
+            error: located.error,
+            path,
+            position,
+        }
     }
 
     /// Where a config error shows: on the file it is about, which sits outside the project
