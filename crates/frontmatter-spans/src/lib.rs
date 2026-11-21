@@ -1,3 +1,9 @@
+#![warn(clippy::indexing_slicing, clippy::string_slice)]
+#![allow(
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![doc = include_str!("../README.md")]
 
 mod de;
