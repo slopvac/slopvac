@@ -19,7 +19,8 @@ use crate::{Error, InputKind, Result, read_capped};
 #[non_exhaustive]
 pub struct ReadOptions {
     /// Refuse a file that has more than one hard link, with [`InputKind::MultiplyLinked`].
-    /// Off by default here; the confined `_in` readers always refuse.
+    /// Off by default here. [`read_capped_regular_in`] and its `_to_string` variant always
+    /// refuse; [`read_capped_regular_in_with`] follows this setting.
     pub reject_multiply_linked: bool,
 }
 
@@ -59,8 +60,30 @@ impl ReadOptions {
 /// for a same-user process that changes the directories involved while the call runs
 /// (residual risk R6; see the crate docs).
 pub fn read_capped_regular_in(root: &Dir, rel: &Path, cap: u64) -> Result<Vec<u8>> {
+    let strict = ReadOptions::new().reject_multiply_linked(true);
+    read_capped_regular_in_with(root, rel, cap, strict)
+}
+
+/// [`read_capped_regular_in`] with [`ReadOptions`], for a caller that must accept a file with
+/// more than one hard link.
+///
+/// Every other check is the same: confined, no symlink, non-blocking open, a regular file
+/// only. Pass `u64::MAX` as `cap` to read without a size limit.
+pub fn read_capped_regular_in_with(
+    root: &Dir,
+    rel: &Path,
+    cap: u64,
+    opts: ReadOptions,
+) -> Result<Vec<u8>> {
     let (name, ancestors) = split_plain(rel).map_err(|_| unsafe_path(rel))?;
-    read_in(root, &ancestors, name, rel, cap, true)
+    read_in(
+        root,
+        &ancestors,
+        name,
+        rel,
+        cap,
+        opts.reject_multiply_linked,
+    )
 }
 
 /// [`read_capped_regular_in`] returning the content as UTF-8, or [`InputKind::NotUtf8`].

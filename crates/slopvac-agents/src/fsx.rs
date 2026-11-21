@@ -38,6 +38,18 @@ enum Stage {
     BeforeCommit,
 }
 
+/// The I/O cause of a failed confined read, or a plain error when it carries none. Only the
+/// kind and the OS code are kept, so the error chain holds no path.
+fn read_failure(e: &slopvac_fs::Error) -> std::io::Error {
+    match std::error::Error::source(e).and_then(|s| s.downcast_ref::<std::io::Error>()) {
+        Some(io) => io.raw_os_error().map_or_else(
+            || std::io::Error::from(io.kind()),
+            std::io::Error::from_raw_os_error,
+        ),
+        None => std::io::Error::other(e.to_string()),
+    }
+}
+
 /// One step of a path being resolved.
 enum Step {
     Name(OsString),
@@ -237,19 +249,24 @@ impl Project {
         hook: &mut dyn FnMut(Stage),
     ) -> Result<Option<Vec<u8>>, AgentsError> {
         let rel = self.resolve(rel)?;
-        match self.dir.metadata(&rel) {
-            Ok(m) if !m.is_file() => {
-                return Err(AgentsError::UnsafeTarget(rel.display().to_string()));
-            }
-            Ok(_) => {}
-            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(Self::map(&rel, e)),
-        }
         hook(Stage::BeforeOpen);
-        self.dir
-            .read(&rel)
-            .map(Some)
-            .map_err(|e| Self::map(&rel, e))
+        match slopvac_fs::read_capped_regular_in_with(
+            &self.dir,
+            &rel,
+            u64::MAX,
+            slopvac_fs::ReadOptions::new(),
+        ) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(e) => match e.input_kind() {
+                Some(slopvac_fs::InputKind::NotFound) => Ok(None),
+                Some(
+                    slopvac_fs::InputKind::NotRegular
+                    | slopvac_fs::InputKind::Symlink
+                    | slopvac_fs::InputKind::UnsafePath,
+                ) => Err(AgentsError::UnsafeTarget(rel.display().to_string())),
+                _ => Err(AgentsError::io(&rel, read_failure(&e))),
+            },
+        }
     }
 
     /// Whether a file exists at `rel`.
