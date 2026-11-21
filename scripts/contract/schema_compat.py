@@ -585,10 +585,52 @@ def _meet(a: Eff, b: Eff) -> Eff:
     )
 
 
+def _additive_properties(o: dict, n: dict) -> bool:
+    """True when ``n`` only adds optional properties to a flat, closed object ``o``.
+
+    Sound for an input only. Every one of these must hold: no ``$ref``; both sides have
+    ``unevaluatedProperties: false`` and no ``unevaluatedItems``; no applicator except
+    ``properties`` on either side; every old property is unchanged; ``required`` is the
+    same set, so no new property is required. A new name was rejected before and is
+    accepted now, which an input may do. With another applicator the new name could
+    already be evaluated, and the added schema would then narrow it.
+    """
+    if "$ref" in o or "$ref" in n:
+        return False
+    if o.get("unevaluatedProperties") is not False:
+        return False
+    if n.get("unevaluatedProperties") is not False:
+        return False
+    if "unevaluatedItems" in o or "unevaluatedItems" in n:
+        return False
+    others = set(_EVALUATION_APPLICATORS) - {"properties"}
+    if others & (o.keys() | n.keys()):
+        return False
+    old_props, new_props = o.get("properties", {}), n.get("properties", {})
+    if not isinstance(old_props, dict) or not isinstance(new_props, dict):
+        return False
+    if any(
+        k not in new_props or _canon(new_props[k]) != _canon(v)
+        for k, v in old_props.items()
+    ):
+        return False
+    return set(o.get("required", [])) == set(n.get("required", []))
+
+
 def _loosened(
-    file: str, ptr: str, old: Eff, new: Eff, marked: bool, value_key: str
+    file: str,
+    ptr: str,
+    old: Eff,
+    new: Eff,
+    marked: bool,
+    value_key: str,
+    additive: bool = False,
 ) -> Iterator[Finding]:
-    """One finding for each restriction of ``old`` that ``new`` does not keep."""
+    """One finding for each restriction of ``old`` that ``new`` does not keep.
+
+    ``additive`` marks the one input-only exception to the unevaluated rule: new optional
+    properties on a flat, closed object (see ``_additive_properties``).
+    """
     if not marked:
         if old.types is not None and (new.types is None or not new.types <= old.types):
             yield Finding(
@@ -672,7 +714,7 @@ def _loosened(
                     "constraint-changed",
                     _show(sorted(before)) if before else "(absent)",
                     _show(sorted(after)) if after else "(absent)",
-                    everywhere=True,
+                    everywhere=not additive,
                 )
     for key in sorted(old.other):
         if old.other[key] != new.other.get(key):
@@ -866,6 +908,13 @@ class Comparer:
             # The reference itself is an applicator of this object, as on the old side.
             rest_eff.applicators["$ref"] = frozenset({_canon(n["$ref"])})
             new_eff = _meet(rest_eff, self._effective("old", old_t[0], old_t[2]))
+            if rest_eff.unevaluated:
+                # The referrer supplies the ``unevaluated*`` context, so a change that
+                # exists only in the target must show: read the applicators from the
+                # actual new target. Other changes stay with the definition.
+                actual = self._effective("new", doc.new, n)
+                new_eff.unevaluated = True
+                new_eff.applicators = actual.applicators
         else:
             new_eff = self._effective("new", doc.new, n)
         marked = self._marked("new", doc.new, n)
@@ -879,7 +928,9 @@ class Comparer:
             and "const" in n
         ):
             key = "const"
-        yield from _loosened(file, ptr, old_eff, new_eff, marked, key)
+        yield from _loosened(
+            file, ptr, old_eff, new_eff, marked, key, _additive_properties(o, n)
+        )
 
     def _compare_refs(
         self, file: str, doc: Docs, ptr: str, o: dict, n: dict

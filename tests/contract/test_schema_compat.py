@@ -1908,6 +1908,110 @@ def test_unchanged_ref_beside_unevaluated_reports_nothing(tmp_path):
         assert found == []
 
 
+TARGET_ONLY_UNEVALUATED = {
+    "target-gains-items": (
+        _prop_schema({**REF_A, "unevaluatedItems": False}, A={}),
+        _prop_schema({**REF_A, "unevaluatedItems": False}, A={"items": {}}),
+        "/properties/e/items",
+    ),
+    "target-loses-additionalProperties": (
+        _prop_schema(
+            {**REF_A, "unevaluatedProperties": False},
+            A={"additionalProperties": True},
+        ),
+        _prop_schema({**REF_A, "unevaluatedProperties": False}, A={}),
+        "/properties/e/additionalProperties",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "pointer"),
+    TARGET_ONLY_UNEVALUATED.values(),
+    ids=TARGET_ONLY_UNEVALUATED,
+)
+def test_a_change_only_in_the_target_is_reported_when_the_referrer_is_closed(
+    tmp_path, direction, old, new, pointer
+):
+    findings = run(tmp_path, old, new, direction=direction)
+    assert (pointer, "constraint-changed") in kinds(findings)
+
+
+CLOSED = {"unevaluatedProperties": False}
+FLAT = {"properties": {"a": {"type": "string"}}, **CLOSED}
+ADDED_B = {"properties": {"a": {"type": "string"}, "b": {"type": "integer"}}, **CLOSED}
+CARVE_OUT_POINTER = "/properties/e/properties"
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+def test_the_additive_property_carve_out_still_reports_in_an_output(
+    tmp_path, direction
+):
+    findings = run(
+        tmp_path, _prop_schema(FLAT), _prop_schema(ADDED_B), direction=direction
+    )
+    assert (CARVE_OUT_POINTER, "constraint-changed") in kinds(findings)
+
+
+def test_an_added_optional_property_of_a_flat_closed_object_passes_in_an_input(
+    tmp_path,
+):
+    assert run(tmp_path, _prop_schema(FLAT), _prop_schema(ADDED_B)) == []
+
+
+NOT_ADDITIVE = {
+    "additionalProperties-true-makes-the-name-evaluated": (
+        {"additionalProperties": True, **CLOSED},
+        {
+            "additionalProperties": True,
+            "properties": {"a": {"type": "string"}},
+            **CLOSED,
+        },
+    ),
+    "new-property-is-required": (
+        FLAT,
+        {**ADDED_B, "required": ["b"]},
+    ),
+    "existing-property-changed": (
+        FLAT,
+        {
+            "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+            **CLOSED,
+        },
+    ),
+    "existing-property-removed": ({**ADDED_B}, FLAT),
+    "object-has-allOf": (
+        {"allOf": [{}], **FLAT},
+        {"allOf": [{}], **ADDED_B},
+    ),
+    "object-has-patternProperties": (
+        {"patternProperties": {"^x": {}}, **FLAT},
+        {"patternProperties": {"^x": {}}, **ADDED_B},
+    ),
+    "object-has-a-ref": (
+        {**REF_A, **FLAT},
+        {**REF_A, **ADDED_B},
+    ),
+}
+
+
+@pytest.mark.parametrize(("old", "new"), NOT_ADDITIVE.values(), ids=NOT_ADDITIVE)
+def test_anything_beyond_the_additive_carve_out_still_reports_in_an_input(
+    tmp_path, old, new
+):
+    found = run(tmp_path, _prop_schema(old, A={}), _prop_schema(new, A={}))
+    assert (CARVE_OUT_POINTER, "constraint-changed") in kinds(found)
+
+
+def test_an_added_property_of_an_open_object_is_not_a_closed_object_change(tmp_path):
+    old = _prop_schema({"properties": {"a": {"type": "string"}}})
+    new = _prop_schema(
+        {"properties": {"a": {"type": "string"}, "b": {"type": "integer"}}}
+    )
+    assert run(tmp_path, old, new) == []
+
+
 def test_registry_must_list_every_schema_file(tmp_path):
     base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
     new_dir = write_dir(tmp_path / "new", {FILE: schema()})
