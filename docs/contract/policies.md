@@ -531,6 +531,8 @@ Owners: `slopvac-8l4.9.7`, `slopvac-8l4.19.1`.
 - a new `required` entry
 - a narrowed `type`, `enum` or `const`
 - in an output or `both` schema, a new `enum` value or an appended `anyOf` or `oneOf` member at a position without `x-slopvac-extensible: true` (`enum-widened`, `alternative-added`), a widened `type` or a dropped `enum` or `const` (`type-widened`, `enum-widened`), or a removed marker (`extensible-removed`)
+- in an output or `both` schema, any loosened constraint that the check cannot prove harmless (`constraint-loosened`), such as a lowered `min*` bound, a dropped `required` entry or a removed `additionalProperties` restriction
+- in an output or `both` schema, a reference into an `input` file (`input-definition-referenced`)
 - a raised `min*` bound or a lowered `max*` bound
 - a changed `pattern`
 - `additionalProperties` that is newly `false`, or newly a narrower schema
