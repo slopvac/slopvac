@@ -1194,10 +1194,20 @@ mod helpers {
 
     use super::*;
 
+    /// Timer for tests whose outcome is an event: a reply, an exit, or output
+    /// reaching the cap. It only stops a real hang from outliving the run;
+    /// nextest's slow-timeout guards that too, and the outcome comes from the
+    /// asserted event alone. Never shorten it to race a loaded machine.
+    const HANG_GUARD: Duration = Duration::from_secs(3600);
+
+    /// Timer for tests whose outcome is the deadline itself.
+    const SHORT_DEADLINE: Duration = Duration::from_secs(1);
+
     fn setup(
         name: &str,
         store: &str,
         script: Option<&str>,
+        timeout: Duration,
     ) -> (std::path::PathBuf, DefaultCredentials) {
         let dir =
             std::env::temp_dir().join(format!("slopvac-oci-helper-{name}-{}", std::process::id()));
@@ -1217,7 +1227,7 @@ mod helpers {
             docker_config_dir: Some(dir.clone()),
             helper_search_path: Some(bin.into_os_string()),
             project_root: Some(dir.join("project")),
-            helper_timeout: Some(Duration::from_secs(8)),
+            helper_timeout: Some(timeout),
             ..DefaultCredentials::default()
         };
         (dir, creds)
@@ -1228,8 +1238,17 @@ mod helpers {
         store: &str,
         script: Option<&str>,
     ) -> Result<Option<slopvac_plugins::oci::Credential>, OciError> {
+        lookup_within(name, store, script, HANG_GUARD)
+    }
+
+    fn lookup_within(
+        name: &str,
+        store: &str,
+        script: Option<&str>,
+        timeout: Duration,
+    ) -> Result<Option<slopvac_plugins::oci::Credential>, OciError> {
         use slopvac_plugins::oci::CredentialSource;
-        let (dir, creds) = setup(name, store, script);
+        let (dir, creds) = setup(name, store, script, timeout);
         let r = creds.credential("ghcr.io");
         let _ = Path::new(&dir);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1275,16 +1294,17 @@ mod helpers {
 
     #[test]
     fn tm38_a_helper_that_hangs_times_out() {
-        let err = lookup("hang", "slow", Some("sleep 120")).unwrap_err();
+        let err = lookup_within("hang", "slow", Some("sleep 120"), SHORT_DEADLINE).unwrap_err();
         assert!(err.to_string().contains("timed out"), "{err}");
     }
 
     #[test]
     fn tm38_a_helper_that_exits_but_leaves_a_descendant_holding_stdout_times_out() {
-        let err = lookup(
+        let err = lookup_within(
             "orphan",
             "leaky",
             Some(r#"cat >/dev/null; echo '{"Username":"u","Secret":"s"}'; sleep 60 &"#),
+            SHORT_DEADLINE,
         )
         .unwrap_err();
         assert!(err.to_string().contains("timed out"), "{err}");
@@ -1296,15 +1316,19 @@ mod helpers {
     /// The helper's deadline starts at spawn, so on a loaded machine it can fire before
     /// the background job has written its pid. That attempt proves nothing about the
     /// kill, so retry with a doubled deadline until the pid is on disk.
-    fn lookup_with_descendant(name: &str, script: &str) -> (Result<(), OciError>, u32) {
+    fn lookup_with_descendant(
+        name: &str,
+        script: &str,
+        first: Duration,
+    ) -> (Result<(), OciError>, u32) {
         use slopvac_plugins::oci::CredentialSource;
-        let (dir, mut creds) = setup(name, "tree", None);
+        let (dir, mut creds) = setup(name, "tree", None, first);
         let marker = dir.join("descendant.pid");
         let bin = dir.join("bin").join("docker-credential-tree");
         let body = script.replace("$MARKER", marker.to_str().unwrap());
         std::fs::write(&bin, format!("#!/bin/sh\n{body}\n")).unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let mut timeout = Duration::from_secs(8);
+        let mut timeout = first;
         for _ in 0..4 {
             creds.helper_timeout = Some(timeout);
             let result = creds.credential("ghcr.io").map(drop);
@@ -1339,12 +1363,16 @@ mod helpers {
         true
     }
 
+    /// First deadline for the tests that need the timeout to fire; the retry
+    /// in `lookup_with_descendant` doubles it when the pid is not on disk yet.
+    const DESCENDANT_DEADLINE: Duration = Duration::from_secs(8);
+
     const SPAWN_SLEEPER: &str = "sh -c 'echo $$ >\"$MARKER\"; exec sleep 300' &";
 
     #[test]
     fn tm38_a_timeout_kills_the_helpers_descendants() {
         let script = format!("cat >/dev/null\n{SPAWN_SLEEPER}\nsleep 300");
-        let (result, pid) = lookup_with_descendant("tree-timeout", &script);
+        let (result, pid) = lookup_with_descendant("tree-timeout", &script, DESCENDANT_DEADLINE);
         assert!(result.unwrap_err().to_string().contains("timed out"));
         assert!(
             process_is_gone(pid),
@@ -1355,7 +1383,7 @@ mod helpers {
     #[test]
     fn tm38_a_timeout_after_the_helper_exited_kills_the_descendant_holding_stdout() {
         let script = format!("cat >/dev/null\n{SPAWN_SLEEPER}");
-        let (result, pid) = lookup_with_descendant("tree-orphan", &script);
+        let (result, pid) = lookup_with_descendant("tree-orphan", &script, DESCENDANT_DEADLINE);
         assert!(result.unwrap_err().to_string().contains("timed out"));
         assert!(
             process_is_gone(pid),
@@ -1366,7 +1394,7 @@ mod helpers {
     #[test]
     fn tm38_an_output_flood_kills_the_descendant_that_writes_it() {
         let script = "cat >/dev/null\nsh -c 'echo $$ >\"$MARKER\"; exec yes' &\nsleep 300";
-        let (result, pid) = lookup_with_descendant("tree-flood", script);
+        let (result, pid) = lookup_with_descendant("tree-flood", script, HANG_GUARD);
         assert!(
             result
                 .unwrap_err()
@@ -1431,7 +1459,7 @@ mod helpers {
             docker_config_dir: Some(scratch.to_path_buf()),
             helper_search_path: Some(search.into()),
             project_root: Some(project.to_path_buf()),
-            helper_timeout: Some(Duration::from_secs(8)),
+            helper_timeout: Some(HANG_GUARD),
             ..DefaultCredentials::default()
         }
     }

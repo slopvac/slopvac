@@ -1039,8 +1039,13 @@ mod unix {
         args: &[S],
         deadline: Instant,
     ) -> Option<Vec<u8>> {
+        drain_bounded(spawn_bounded(program, args)?, deadline)
+    }
+
+    /// Start the helper as [`run_bounded`] describes, without a deadline.
+    pub(super) fn spawn_bounded<S: AsRef<OsStr>>(program: &Path, args: &[S]) -> Option<Child> {
         use std::os::unix::process::CommandExt;
-        let mut child = Command::new(program)
+        Command::new(program)
             .args(args)
             .env_clear()
             .env("LC_ALL", "C")
@@ -1050,7 +1055,12 @@ mod unix {
             .stderr(Stdio::null())
             .process_group(0)
             .spawn()
-            .ok()?;
+            .ok()
+    }
+
+    /// Collect the output of a helper from [`spawn_bounded`] by `deadline`,
+    /// then kill its group and reap it.
+    pub(super) fn drain_bounded(mut child: Child, deadline: Instant) -> Option<Vec<u8>> {
         let out = read_bounded(child.stdout.take(), deadline);
         let exited = out.is_some() && exited_by(&child, deadline);
         // Still unreaped, so the helper's ids are its own. The helper itself
@@ -1419,7 +1429,9 @@ mod tests {
         use std::path::Path;
         use std::time::{Duration, Instant};
 
-        use super::super::unix::{Entry, TABLE_MAX_BYTES, parse_table, run_bounded};
+        use super::super::unix::{
+            Entry, TABLE_MAX_BYTES, drain_bounded, parse_table, run_bounded, spawn_bounded,
+        };
 
         fn sh(script: &str, within: Duration) -> Option<Vec<u8>> {
             run_bounded(
@@ -1493,8 +1505,11 @@ mod tests {
             }
         }
 
-        /// Run `script` with a 500 ms deadline; it writes a pid to the file
+        /// Run `script` with a 500 ms deadline; it writes a pid to the FIFO
         /// named by `$0`. Returns the output, the time taken and that pid.
+        ///
+        /// The deadline starts once the script has reported its pid, so a
+        /// slow shell start cannot leave the pid missing or half written.
         fn hung(script: &str) -> (Option<Vec<u8>>, Duration, String) {
             let dir = std::env::temp_dir().join(format!(
                 "slopvac-hung-{}-{}",
@@ -1503,18 +1518,26 @@ mod tests {
             ));
             std::fs::create_dir_all(&dir).unwrap();
             let pidfile = dir.join("pid");
-            let started = Instant::now();
-            let got = run_bounded(
+            let made = std::process::Command::new("/usr/bin/mkfifo")
+                .arg(&pidfile)
+                .status()
+                .unwrap();
+            assert!(made.success(), "mkfifo failed");
+            let child = spawn_bounded(
                 Path::new("/bin/sh"),
                 &[
                     std::ffi::OsStr::new("-c"),
                     script.as_ref(),
                     pidfile.as_os_str(),
                 ],
-                started + Duration::from_millis(500),
-            );
-            let took = started.elapsed();
+            )
+            .expect("spawn the helper");
+            // Blocks until the script writes the pid and closes the FIFO.
             let pid = std::fs::read_to_string(&pidfile).unwrap().trim().to_owned();
+            pid.parse::<u32>().expect("the helper wrote a pid");
+            let started = Instant::now();
+            let got = drain_bounded(child, started + Duration::from_millis(500));
+            let took = started.elapsed();
             std::fs::remove_dir_all(&dir).unwrap();
             (got, took, pid)
         }
