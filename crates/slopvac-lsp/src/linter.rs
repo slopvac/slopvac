@@ -52,15 +52,33 @@ pub trait Linter: Send + Sync {
         Reloaded::default()
     }
 
-    /// Absolute paths of the config files in use, which the server watches. The default
-    /// has none.
+    /// Absolute paths of the files the active configs were read from, which the server
+    /// watches: every config in use, the files they extend and an extended file that does
+    /// not exist yet. The default has none. The list can change after a reload or after a
+    /// buffer is linted, and the server registers the new list.
     fn watched(&self) -> Vec<String> {
         Vec::new()
+    }
+
+    /// Warnings found since the last call, about configs the linter loaded while it linted,
+    /// such as the config of a nested folder. The server shows each as a warning message.
+    /// The default has none.
+    fn take_notices(&self) -> Vec<Notice> {
+        Vec::new()
+    }
+
+    /// Whether a change to the file at `path`, an absolute path as the client names it,
+    /// concerns a config file the linter reads. The default compares with
+    /// [`Linter::watched`] by equality. An implementation that knows how paths relate, such
+    /// as `a/../b` and `b`, overrides it.
+    fn watches(&self, path: &str) -> bool {
+        self.watched().iter().any(|w| w == path)
     }
 }
 
 /// Why the project config could not be read on a reload.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ConfigFailure {
     /// The stable error code, the one `slopvac lint` reports for the same failure.
     pub code: String,
@@ -68,8 +86,10 @@ pub struct ConfigFailure {
     pub message: String,
     /// The config file that failed, as an absolute path.
     pub path: String,
-    /// Zero-based line and column of the error in that file, when it has a position.
-    pub position: Option<(u32, u32)>,
+    /// The text of that file and the byte offset in it where the error is, when it has a
+    /// position. The server converts the offset to a line and column in the encoding the
+    /// client negotiated.
+    pub position: Option<(String, usize)>,
 }
 
 impl ConfigFailure {
@@ -88,22 +108,32 @@ impl ConfigFailure {
         }
     }
 
-    /// The same failure at zero-based `line` and `column`.
+    /// The same failure at byte `offset` of `text`, the text of the file.
     #[must_use]
-    pub fn at(mut self, line: u32, column: u32) -> Self {
-        self.position = Some((line, column));
+    pub fn at_offset(mut self, text: impl Into<String>, offset: usize) -> Self {
+        self.position = Some((text.into(), offset));
         self
     }
 }
 
 /// What a [`Linter::reload`] found.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[non_exhaustive]
 pub struct Reloaded {
     /// Warnings about the config that was read, such as an unknown rule id.
     pub notices: Vec<Notice>,
     /// Set when the config could not be read. Until a later reload succeeds, the linter
     /// reports every buffer as not linted.
     pub failure: Option<ConfigFailure>,
+}
+
+impl Reloaded {
+    /// What a reload found: the config `notices`, and the `failure` when the config could
+    /// not be read.
+    #[must_use]
+    pub fn new(notices: Vec<Notice>, failure: Option<ConfigFailure>) -> Self {
+        Self { notices, failure }
+    }
 }
 
 /// A problem found by a [`Check`], shown as a diagnostic.

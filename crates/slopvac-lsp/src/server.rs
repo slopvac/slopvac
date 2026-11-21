@@ -34,6 +34,7 @@ use crate::analysis::{Analysis, Item, analyze};
 use crate::convert::{item_range, span_range, touches};
 use crate::linter::{Check, ConfigFailure, Linter};
 use crate::messages::{LspMessage, ServerError};
+use crate::uri::{file_uri, path_of};
 
 /// How long a clean exit waits for queued diagnostics to reach the client.
 const FLUSH_WAIT: Duration = Duration::from_secs(5);
@@ -131,6 +132,9 @@ impl Server {
             next_generation: AtomicU64::new(1),
             hook: self.hook,
             config_shown: Mutex::new(None),
+            epoch: AtomicU64::new(0),
+            can_watch,
+            watch: Mutex::new(Watch::default()),
         });
         // Diagnostics are queued here under the document lock, in the order the lock
         // decided, and a writer thread sends them. The transport may block when the client
@@ -161,18 +165,9 @@ impl Server {
         };
         // `initialize_finish` has taken the client's `initialized`, so the client is ready.
         for notice in &self.startup {
-            notify(
-                &queue_tx,
-                "window/showMessage",
-                &ShowMessageParams {
-                    typ: MessageType::WARNING,
-                    message: notice.message.as_str().to_owned(),
-                },
-            );
+            show_warning(&queue_tx, notice);
         }
-        if can_watch {
-            watch_config(&shared, &queue_tx);
-        }
+        sync_watch(&shared, &queue_tx);
         let result = main_loop(&shared, connection, &jobs_tx, &queue_tx);
         drop(jobs_tx);
         worker.join().map_err(|_| ServerError::WorkerPanicked)?;
@@ -238,6 +233,24 @@ struct Shared {
     hook: Option<PublishHook>,
     /// The uri that carries the config failure diagnostic, while one is shown.
     config_shown: Mutex<Option<String>>,
+    /// Counts config reloads. It is odd while a reload runs and even otherwise. An analysis
+    /// is kept and published only when the epoch it began under is even and still current,
+    /// so a lint never straddles a reload: one that began before the reload, or while it
+    /// ran, carries a result of the old config, and the reload lints the document again.
+    epoch: AtomicU64,
+    /// Whether the client can register file watchers.
+    can_watch: bool,
+    /// The watcher registration the client holds.
+    watch: Mutex<Watch>,
+}
+
+/// The file watchers registered with the client.
+#[derive(Default)]
+struct Watch {
+    /// Counts registrations. It numbers the next registration id.
+    registrations: u64,
+    /// The globs of the current registration, once there is one.
+    globs: Option<Vec<String>>,
 }
 
 impl Shared {
@@ -266,46 +279,75 @@ impl Shared {
         }
     }
 
-    /// Drop every cached result and start a new generation for each open document. Returns
-    /// their uris, to be queued for linting.
-    fn invalidate_all(&self) -> Vec<String> {
+    /// The current epoch (see [`Shared::epoch`]).
+    fn epoch(&self) -> u64 {
+        self.epoch.load(Ordering::SeqCst)
+    }
+
+    /// Whether work that began under `epoch` still belongs to the config on disk: no reload
+    /// ran or began since, and none was running when it began.
+    fn settled(&self, epoch: u64) -> bool {
+        epoch.is_multiple_of(2) && self.epoch() == epoch
+    }
+
+    /// Mark a reload as running. Under the document lock, so a publication either happened
+    /// before this or sees the new epoch.
+    fn begin_reload(&self) {
+        let _docs = self.docs();
+        self.epoch.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Mark the reload as done, and drop every cached result and start a new generation for
+    /// each open document, in one step under the document lock. Returns their uris, to be
+    /// queued for linting.
+    fn end_reload(&self) -> Vec<String> {
         let mut docs = self.docs();
-        docs.iter_mut()
+        let uris = docs
+            .iter_mut()
             .map(|(uri, doc)| {
                 doc.generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
                 doc.analysis = None;
                 uri.clone()
             })
-            .collect()
+            .collect();
+        self.epoch.fetch_add(1, Ordering::SeqCst);
+        uris
     }
 
     /// Whether `uri` is a config file: a `slopvac.toml`, or a file the linter read.
     fn is_config(&self, uri: &str) -> bool {
         let path = path_of(uri);
-        path.rsplit('/').next() == Some(CONFIG_NAME) || self.linter.watched().contains(&path)
+        path.rsplit('/').next() == Some(CONFIG_NAME) || self.linter.watches(&path)
     }
 
     /// The analysis of the current version of `uri`, linting if none is cached. The lock is
     /// not held while linting.
     fn analysis(&self, uri: &str) -> Option<(Arc<str>, Arc<Analysis>)> {
-        let (generation, version, text) = {
+        let (generation, version, text, epoch) = {
             let docs = self.docs();
             let doc = docs.get(uri)?;
             if let Some(done) = &doc.analysis {
                 return Some((Arc::clone(&doc.text), Arc::clone(done)));
             }
-            (doc.generation, doc.version, Arc::clone(&doc.text))
+            (
+                doc.generation,
+                doc.version,
+                Arc::clone(&doc.text),
+                self.epoch(),
+            )
         };
         let done = Arc::new(analyze(
             self.linter.as_ref(),
             &self.checks,
             &path_of(uri),
             generation,
+            epoch,
             version,
             &text,
         ));
         if let Some(doc) = self.docs().get_mut(uri)
             && doc.generation == generation
+            && self.settled(epoch)
         {
             doc.analysis = Some(Arc::clone(&done));
         }
@@ -326,41 +368,80 @@ impl Shared {
 const CONFIG_NAME: &str = "slopvac.toml";
 
 /// Ask the client to tell us when a config file changes on disk: any `slopvac.toml`, and
-/// each file the linter read, which can sit outside the project through `extends`.
-fn watch_config(shared: &Shared, out: &Sender<Message>) {
-    let globs = std::iter::once(format!("**/{CONFIG_NAME}")).chain(shared.linter.watched());
+/// each file the linter read or tried to read, which can sit outside the project through
+/// `extends`. The list changes with the config and with the nested configs that linting
+/// finds, so the registration is replaced whenever the list differs from the one the client
+/// holds.
+fn sync_watch(shared: &Shared, out: &Sender<Message>) {
+    if !shared.can_watch {
+        return;
+    }
+    let globs: Vec<String> = std::iter::once(format!("**/{CONFIG_NAME}"))
+        .chain(shared.linter.watched())
+        .collect();
+    let mut watch = shared.watch.lock().unwrap_or_else(PoisonError::into_inner);
+    if watch.globs.as_ref() == Some(&globs) {
+        return;
+    }
+    if watch.globs.take().is_some() {
+        let request = Request::new(
+            RequestId::from(format!("slopvac-unwatch-config-{}", watch.registrations)),
+            "client/unregisterCapability".to_owned(),
+            serde_json::json!({"unregisterations": [{
+                "id": watch_id(watch.registrations),
+                "method": "workspace/didChangeWatchedFiles",
+            }]}),
+        );
+        let _ = out.send(Message::Request(request));
+    }
+    watch.registrations += 1;
     let watchers: Vec<_> = globs
+        .iter()
         .map(|glob| serde_json::json!({"globPattern": glob}))
         .collect();
     let request = Request::new(
-        RequestId::from("slopvac-watch-config".to_owned()),
+        RequestId::from(watch_id(watch.registrations)),
         "client/registerCapability".to_owned(),
         serde_json::json!({"registrations": [{
-            "id": "slopvac-watch-config",
+            "id": watch_id(watch.registrations),
             "method": "workspace/didChangeWatchedFiles",
             "registerOptions": {"watchers": watchers},
         }]}),
     );
     let _ = out.send(Message::Request(request));
+    watch.globs = Some(globs);
+}
+
+fn watch_id(n: u64) -> String {
+    format!("slopvac-watch-config-{n}")
 }
 
 /// Read the config again, show what that found, and lint every open document again.
 fn reload(shared: &Shared, jobs: &Sender<String>, out: &Sender<Message>) {
+    shared.begin_reload();
     let reloaded = shared.linter.reload();
+    // Every open document starts over before anything of the reload is shown.
+    let open = shared.end_reload();
     for notice in &reloaded.notices {
-        notify(
-            out,
-            "window/showMessage",
-            &ShowMessageParams {
-                typ: MessageType::WARNING,
-                message: notice.message.as_str().to_owned(),
-            },
-        );
+        show_warning(out, notice);
     }
     show_config_failure(shared, reloaded.failure.as_ref(), out);
-    for uri in shared.invalidate_all() {
+    sync_watch(shared, out);
+    for uri in open {
         let _ = jobs.send(uri);
     }
+}
+
+/// Show `notice` to the client as a warning message.
+fn show_warning(out: &Sender<Message>, notice: &Notice) {
+    notify(
+        out,
+        "window/showMessage",
+        &ShowMessageParams {
+            typ: MessageType::WARNING,
+            message: notice.message.as_str().to_owned(),
+        },
+    );
 }
 
 /// Publish the config failure on the file that failed, and clear the one shown before.
@@ -369,7 +450,7 @@ fn show_config_failure(shared: &Shared, failure: Option<&ConfigFailure>, out: &S
         .config_shown
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    let uri = failure.map(|f| format!("file://{}", f.path));
+    let uri = failure.map(|f| file_uri(&f.path));
     if let Some(old) = shown.take()
         && uri.as_ref() != Some(&old)
     {
@@ -378,8 +459,7 @@ fn show_config_failure(shared: &Shared, failure: Option<&ConfigFailure>, out: &S
     let (Some(failure), Some(uri)) = (failure, uri) else {
         return;
     };
-    let (line, column) = failure.position.unwrap_or((0, 0));
-    let at = Position::new(line, column);
+    let at = failure_position(failure, shared.encoding);
     publish(
         out,
         &uri,
@@ -396,8 +476,22 @@ fn show_config_failure(shared: &Shared, failure: Option<&ConfigFailure>, out: &S
     *shown = Some(uri);
 }
 
-fn path_of(uri: &str) -> String {
-    uri.strip_prefix("file://").unwrap_or(uri).to_owned()
+/// Where the failure is in its file, in the unit the client negotiated. The file start when
+/// the failure has no position, or one the text cannot hold.
+fn failure_position(failure: &ConfigFailure, encoding: PositionEncoding) -> Position {
+    let Some((text, offset)) = &failure.position else {
+        return Position::new(0, 0);
+    };
+    SourceIndex::buffer(text)
+        .lsp_position(*offset, encoding)
+        .ok()
+        .and_then(|(line, character)| {
+            Some(Position::new(
+                u32::try_from(line).ok()?,
+                u32::try_from(character).ok()?,
+            ))
+        })
+        .unwrap_or_default()
 }
 
 fn notify<P: serde::Serialize>(out: &Sender<Message>, method: &str, params: &P) -> bool {
@@ -440,6 +534,7 @@ fn worker(shared: &Shared, jobs: &Receiver<String>, out: &Sender<Message>) {
             if docs
                 .get(&uri)
                 .is_some_and(|d| d.generation == analysis.generation)
+                && shared.settled(analysis.epoch)
             {
                 if let Some(hook) = &shared.hook {
                     hook(&uri);
@@ -447,6 +542,11 @@ fn worker(shared: &Shared, jobs: &Receiver<String>, out: &Sender<Message>) {
                 publish(out, &uri, Some(analysis.version), diagnostics);
             }
         }
+        // Linting finds the nested configs of the documents, their warnings and their files.
+        for notice in shared.linter.take_notices() {
+            show_warning(out, &notice);
+        }
+        sync_watch(shared, out);
     }
 }
 

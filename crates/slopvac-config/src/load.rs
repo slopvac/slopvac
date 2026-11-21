@@ -185,6 +185,7 @@ pub fn load_text(
         return Err(ConfigError::TooLarge {
             path: label.to_owned(),
             cap: MAX_CONFIG_BYTES,
+            file: None,
         });
     }
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty());
@@ -227,13 +228,13 @@ fn load_from(
         reads: 1,
         attempted: vec![abs.to_path_buf()],
     };
-    let loaded = loader.load_text(
+    let outcome = loader.load_text(
         &Key::Path(abs.to_path_buf()),
         &relative_display(abs, &root),
         text,
         ConfigLayer::Project,
     );
-    if let Err(error) = loaded {
+    if let Err(error) = outcome {
         return Err(error.with_reads(loader.attempted));
     }
     let exclude = build_exclude(&loader.files, &root);

@@ -25,6 +25,7 @@ mod convert;
 mod linter;
 mod messages;
 mod server;
+mod uri;
 
 use clap::{ArgMatches, Command};
 use slopvac_messages::render;

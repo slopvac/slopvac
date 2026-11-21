@@ -293,3 +293,150 @@ fn a_config_that_breaks_is_shown_on_the_file_and_a_fixed_one_restores_the_findin
     assert!(session.codes(&root, "top.md").iter().any(|c| c == LEXICON));
     session.finish();
 }
+
+const LEXICON_OFF: &str =
+    "schema_version = 3\n\n[rules]\n\"prose-inflation.slop-lexicon\" = \"off\"\n";
+
+/// Tell the server that the file at `path` changed on disk.
+fn changed(session: &mut Session, uri: &str) {
+    session.notify(
+        "workspace/didChangeWatchedFiles",
+        &json!({"changes": [{"uri": uri, "type": 2}]}),
+    );
+}
+
+fn diagnostics_on(session: &Session, uri: &str) -> Value {
+    session
+        .wait_for(|m| m["method"] == "textDocument/publishDiagnostics" && m["params"]["uri"] == uri)
+        ["params"]["diagnostics"]
+        .clone()
+}
+
+#[test]
+fn a_buffer_outside_the_project_with_no_config_on_its_path_gets_the_core_defaults() {
+    let dir = project(LEXICON_OFF, &[]);
+    let root = dir.path().canonicalize().expect("canonical");
+    let elsewhere = tempfile::tempdir().expect("tempdir");
+    let other = elsewhere.path().canonicalize().expect("canonical");
+    let mut session = Session::start(&root);
+    session.open(&other, "a.md", SLOPPY);
+    let codes = session.codes(&other, "a.md");
+    assert!(codes.iter().any(|c| c == LEXICON), "{codes:?}");
+    session.finish();
+}
+
+#[test]
+fn a_config_that_fails_in_an_extended_file_recovers_when_only_that_file_is_fixed() {
+    let dir = project("schema_version = 3\nextends = [\"base.toml\"]\n", &[]);
+    let root = dir.path().canonicalize().expect("canonical");
+    fs::write(root.join("base.toml"), LEXICON_OFF).expect("base");
+    let mut session = Session::start(&root);
+    session.open(&root, "a.md", SLOPPY);
+    assert!(!session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
+    let base = uri_of(&root, "base.toml");
+    fs::write(root.join("base.toml"), "schema_version = 3\nprofile = [\n").expect("break");
+    changed(&mut session, &base);
+    let shown = diagnostics_on(&session, &base);
+    assert_eq!(shown.as_array().map(Vec::len), Some(1), "{shown}");
+    assert_eq!(session.codes(&root, "a.md"), ["lsp-lint-incomplete"]);
+    fs::write(root.join("base.toml"), "schema_version = 3\n").expect("fix");
+    changed(&mut session, &base);
+    assert_eq!(diagnostics_on(&session, &base), json!([]));
+    assert!(session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
+    session.finish();
+}
+
+#[test]
+fn an_extended_file_outside_the_project_is_watched_and_shows_its_own_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let top = dir.path().canonicalize().expect("canonical");
+    fs::create_dir_all(top.join("shared")).expect("mkdir");
+    fs::create_dir_all(top.join("proj")).expect("mkdir");
+    fs::write(top.join("shared/base.toml"), LEXICON_OFF).expect("base");
+    fs::write(
+        top.join("proj/slopvac.toml"),
+        "schema_version = 3\nextends = [\"../shared/base.toml\"]\n",
+    )
+    .expect("config");
+    let root = top.join("proj");
+    let mut session = Session::start(&root);
+    session.open(&root, "a.md", SLOPPY);
+    assert!(!session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
+    let base = uri_of(&top, "shared/base.toml");
+    fs::write(
+        top.join("shared/base.toml"),
+        "schema_version = 3\nprofile = [\n",
+    )
+    .expect("break");
+    // The client may name the file with a `..` in it.
+    changed(&mut session, &uri_of(&root, "../shared/base.toml"));
+    let shown = diagnostics_on(&session, &base);
+    assert_eq!(shown.as_array().map(Vec::len), Some(1), "{shown}");
+    fs::write(top.join("shared/base.toml"), "schema_version = 3\n").expect("fix");
+    changed(&mut session, &base);
+    assert_eq!(diagnostics_on(&session, &base), json!([]));
+    session.finish();
+}
+
+#[test]
+fn a_change_to_a_file_that_a_nested_config_extends_lints_the_open_document_again() {
+    let dir = project("schema_version = 3\n", &[]);
+    let root = dir.path().canonicalize().expect("canonical");
+    fs::create_dir_all(root.join("shared")).expect("mkdir");
+    fs::create_dir_all(root.join("sub")).expect("mkdir");
+    fs::write(root.join("shared/nested.toml"), LEXICON_OFF).expect("base");
+    fs::write(
+        root.join("sub/slopvac.toml"),
+        "schema_version = 3\nextends = [\"../shared/nested.toml\"]\n",
+    )
+    .expect("nested config");
+    let mut session = Session::start(&root);
+    session.open(&root, "sub/a.md", SLOPPY);
+    assert!(
+        !session
+            .codes(&root, "sub/a.md")
+            .iter()
+            .any(|c| c == LEXICON)
+    );
+    fs::write(root.join("shared/nested.toml"), "schema_version = 3\n").expect("edit");
+    changed(&mut session, &uri_of(&root, "shared/nested.toml"));
+    assert!(
+        session
+            .codes(&root, "sub/a.md")
+            .iter()
+            .any(|c| c == LEXICON)
+    );
+    session.finish();
+}
+
+#[test]
+fn a_nested_config_is_checked_as_lint_checks_it() {
+    let dir = project("schema_version = 3\n", &[]);
+    let root = dir.path().canonicalize().expect("canonical");
+    fs::create_dir_all(root.join("bad")).expect("mkdir");
+    fs::create_dir_all(root.join("warn")).expect("mkdir");
+    fs::write(
+        root.join("bad/slopvac.toml"),
+        "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
+    )
+    .expect("config");
+    fs::write(
+        root.join("warn/slopvac.toml"),
+        "schema_version = 3\n\n[rules]\n\"core:orwell.no-such-rule\" = \"off\"\n",
+    )
+    .expect("config");
+    let mut session = Session::start(&root);
+    session.open(&root, "bad/a.md", SLOPPY);
+    let published = diagnostics_on(&session, &uri_of(&root, "bad/a.md"));
+    assert_eq!(published[0]["code"], "lsp-lint-incomplete");
+    let message = published[0]["message"].as_str().expect("message");
+    assert!(message.contains("no-such-category"), "{message}");
+    session.open(&root, "warn/a.md", SLOPPY);
+    let shown = session.wait_for(|m| m["method"] == "window/showMessage");
+    let message = shown["params"]["message"].as_str().expect("message");
+    assert!(
+        message.contains("unknown rule core:orwell.no-such-rule"),
+        "{message}"
+    );
+    session.finish();
+}

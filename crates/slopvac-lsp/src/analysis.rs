@@ -34,6 +34,8 @@ pub(crate) struct Item {
 pub(crate) struct Analysis {
     /// The generation of the document text that was linted.
     pub(crate) generation: u64,
+    /// The config epoch the lint began under (see the server's `epoch`).
+    pub(crate) epoch: u64,
     /// The client's version of that text.
     pub(crate) version: i32,
     pub(crate) items: Vec<Item>,
@@ -165,6 +167,7 @@ pub(crate) fn analyze(
     checks: &[Arc<dyn Check>],
     path: &str,
     generation: u64,
+    epoch: u64,
     version: i32,
     text: &str,
 ) -> Analysis {
@@ -184,6 +187,7 @@ pub(crate) fn analyze(
     }
     Analysis {
         generation,
+        epoch,
         version,
         items,
     }

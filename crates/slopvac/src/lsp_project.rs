@@ -3,16 +3,27 @@
 //!
 //! A document gets the settings `slopvac lint` would give it: the nearest `slopvac.toml`
 //! of its directory, with the `[[overrides]]` and `[[genres]]` blocks that match its path
-//! (see [`crate::engine::settings_for`]). One engine serves every document whose settings
-//! are equal, as in a lint run.
+//! (see [`crate::engine::settings_for`]). A buffer with no config on its path gets the core
+//! defaults, as a file does in a lint run. One engine serves every document whose settings
+//! are equal.
 //!
 //! A reload throws away every loaded config and engine, reads the project config again and
 //! reports what it found. A config that cannot be read leaves no document looking checked:
 //! every document is reported as not linted, with the config error as the reason, until a
 //! later reload succeeds. The earlier settings are not kept, because a result computed from
 //! them would pass for a result of the config on disk.
+//!
+//! Every load counts an epoch. Work that began under an earlier epoch (a config read, an
+//! engine build) may finish after a reload, and its result must not enter the caches of the
+//! new one, so each insert names the epoch it began under and is dropped when that is no
+//! longer current.
+//!
+//! The caches hold at most [`MAX_CONFIGS`] directories and [`MAX_ENGINES`] engines. A full
+//! cache is emptied before the next entry goes in. Every entry can be built again from disk,
+//! and a lint that holds an engine keeps it alive through its `Arc`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -30,6 +41,12 @@ use crate::lint_settings::{self, Overrides};
 use crate::lint_terms;
 use crate::rule_catalog::Catalog;
 
+/// How many directories the config cache holds.
+const MAX_CONFIGS: usize = 256;
+/// How many engines the engine cache holds. An engine owns its compiled rule sets, so this
+/// is the smaller bound.
+const MAX_ENGINES: usize = 16;
+
 /// What the language server needs from the project: the linter, the config warnings and the
 /// extra checks it runs next to the engine. Term casing comes from the engine.
 pub(crate) struct ProjectServer {
@@ -46,27 +63,92 @@ struct LoadFailure {
     error: CliError,
     /// Absolute path of the file that failed.
     path: PathBuf,
-    /// Zero-based line and column in that file.
-    position: Option<(u32, u32)>,
+    /// The text of that file and the byte offset of the error in it.
+    position: Option<(String, usize)>,
 }
 
-/// What a load of the project produced. A reload replaces all of it.
-#[derive(Default)]
-struct Loaded {
-    /// Set when the project config could not be loaded.
-    failure: Option<String>,
-    catalog: Option<Catalog>,
-    /// The nearest config of each directory, as `slopvac lint` finds it.
-    configs: HashMap<PathBuf, Option<Arc<LoadedConfig>>>,
-    /// One engine for each distinct settings set.
-    engines: HashMap<String, Arc<EngineLinter>>,
-    /// Absolute paths of the config files of the project.
-    files: Vec<String>,
+/// A map that holds at most `cap` entries: a new key that finds it full empties it first.
+struct Bounded<K, V> {
+    map: HashMap<K, V>,
+    cap: usize,
 }
+
+impl<K: Eq + Hash, V> Bounded<K, V> {
+    fn new(cap: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            cap,
+        }
+    }
+
+    fn get<Q>(&self, key: &Q) -> Option<&V>
+    where
+        K: std::borrow::Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        self.map.get(key)
+    }
+
+    fn insert(&mut self, key: K, value: V) {
+        if self.map.len() >= self.cap && !self.map.contains_key(&key) {
+            self.map.clear();
+        }
+        self.map.insert(key, value);
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.map.len()
+    }
+}
+
+/// What a successful load of the project holds.
+struct Ready {
+    catalog: Catalog,
+    /// The nearest config of each directory, as `slopvac lint` finds it.
+    configs: Bounded<PathBuf, Option<Arc<LoadedConfig>>>,
+    /// One engine for each distinct settings set.
+    engines: Bounded<String, Arc<EngineLinter>>,
+    /// The warnings shown so far, so a config that several directories share warns once.
+    notified: HashSet<(String, String)>,
+    /// Warnings from configs that linting found, not yet handed to the server.
+    pending: Vec<Notice>,
+}
+
+/// The result of the last load. A reload replaces all of it.
+enum State {
+    /// The project config could not be loaded. The text says why.
+    Failed(String),
+    Ready(Ready),
+}
+
+struct Loaded {
+    /// Counts loads. Work that began under another value is stale.
+    epoch: u64,
+    /// Every config file the active configs read or tried to read, absolute and normalised:
+    /// the files to watch.
+    dependencies: BTreeSet<PathBuf>,
+    state: State,
+}
+
+/// A point in a lookup that a test can pause at, to interleave a reload there.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stage {
+    /// A config was read from disk and is not in the cache yet.
+    ConfigRead,
+    /// An engine was built and is not in the cache yet.
+    EngineBuilt,
+}
+
+#[cfg(test)]
+type Pause = Arc<dyn Fn(Stage) + Send + Sync>;
 
 struct Project {
     root: PathBuf,
     loaded: Mutex<Loaded>,
+    #[cfg(test)]
+    pause: Mutex<Option<Pause>>,
 }
 
 /// A document's engine and what the engine needs to know about its place in the project.
@@ -96,7 +178,14 @@ struct ProjectCheck {
 pub(crate) fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
     let project = Arc::new(Project {
         root: root.to_path_buf(),
-        loaded: Mutex::new(Loaded::default()),
+        loaded: Mutex::new(Loaded {
+            epoch: 0,
+            dependencies: BTreeSet::new(),
+            // Replaced by the load below. A project whose first load fails is never served.
+            state: State::Failed(String::new()),
+        }),
+        #[cfg(test)]
+        pause: Mutex::new(None),
     });
     let notices = project.load().map_err(|failure| failure.error)?;
     Ok(ProjectServer {
@@ -114,23 +203,63 @@ fn nearest(dir: &Path) -> Result<Option<Arc<LoadedConfig>>, ConfigError> {
     Discovery::new(&presets).nearest(dir)
 }
 
+fn notice_key(notice: &Notice) -> (String, String) {
+    (notice.code.to_string(), notice.message.as_str().to_owned())
+}
+
 impl Project {
     fn loaded(&self) -> MutexGuard<'_, Loaded> {
         self.loaded.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Replace everything with a fresh read of the project config.
-    fn load(&self) -> Result<Vec<Notice>, Box<LoadFailure>> {
-        let mut fresh = Loaded::default();
-        let result = self.read_into(&mut fresh);
-        if let Err(failure) = &result {
-            fresh.failure = Some(failure.error.message.clone());
-        }
-        *self.loaded() = fresh;
-        result
+    /// The state, when no load has replaced it since `epoch`.
+    fn current(&self, epoch: u64) -> Option<MutexGuard<'_, Loaded>> {
+        let loaded = self.loaded();
+        (loaded.epoch == epoch).then_some(loaded)
     }
 
-    fn read_into(&self, loaded: &mut Loaded) -> Result<Vec<Notice>, Box<LoadFailure>> {
+    #[cfg(test)]
+    fn paused_at(&self, stage: Stage) {
+        let hook = self
+            .pause
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(hook) = hook {
+            hook(stage);
+        }
+    }
+
+    /// Replace everything with a fresh read of the project config.
+    fn load(&self) -> Result<Vec<Notice>, Box<LoadFailure>> {
+        let mut dependencies = BTreeSet::new();
+        let result = self.read(&mut dependencies);
+        let mut loaded = self.loaded();
+        let epoch = loaded.epoch + 1;
+        match result {
+            Ok((ready, notices)) => {
+                *loaded = Loaded {
+                    epoch,
+                    dependencies,
+                    state: State::Ready(ready),
+                };
+                Ok(notices)
+            }
+            Err(failure) => {
+                *loaded = Loaded {
+                    epoch,
+                    dependencies,
+                    state: State::Failed(failure.error.message.clone()),
+                };
+                Err(failure)
+            }
+        }
+    }
+
+    fn read(
+        &self,
+        dependencies: &mut BTreeSet<PathBuf>,
+    ) -> Result<(Ready, Vec<Notice>), Box<LoadFailure>> {
         let fallback = |error: CliError| {
             Box::new(LoadFailure {
                 error,
@@ -138,75 +267,92 @@ impl Project {
                 position: None,
             })
         };
-        let core = Catalog::load().map_err(fallback)?;
-        let config = nearest(&self.root).map_err(|e| Box::new(self.failure_of(&e)))?;
+        let catalog = Catalog::load().map_err(fallback)?;
+        let config = nearest(&self.root).map_err(|e| {
+            dependencies.extend(e.dependencies().iter().cloned());
+            Box::new(self.failure_of(&e))
+        })?;
+        if let Some(config) = &config {
+            dependencies.extend(config.dependencies().iter().cloned());
+        }
         let notices = match &config {
-            Some(config) => lint_settings::validate(config, &core).map_err(fallback)?,
+            Some(config) => lint_settings::validate(config, &catalog).map_err(fallback)?,
             None => Vec::new(),
         };
-        if let Some(config) = &config {
-            loaded.files = config
-                .files
-                .iter()
-                .filter(|f| !f.display.starts_with('<'))
-                .map(|f| config.root.join(&f.display).display().to_string())
-                .collect();
-        }
-        loaded.configs.insert(self.root.clone(), config);
-        loaded.catalog = Some(core);
-        Ok(notices)
+        let mut ready = Ready {
+            catalog,
+            configs: Bounded::new(MAX_CONFIGS),
+            engines: Bounded::new(MAX_ENGINES),
+            notified: notices.iter().map(notice_key).collect(),
+            pending: Vec::new(),
+        };
+        ready.configs.insert(self.root.clone(), config);
+        Ok((ready, notices))
     }
 
-    /// The nearest config of `dir`, found again from disk.
+    /// Where a config error shows: on the file it is about, which sits outside the project
+    /// when an `extends` entry leads there, at the position the error names.
     fn failure_of(&self, err: &ConfigError) -> LoadFailure {
-        let (path, position) = match err {
-            ConfigError::Rejected(rejected) => (
-                rejected.file.clone(),
-                rejected.diagnostics.first().map(|d| {
-                    let (line, column) = d.location(&rejected.text);
-                    (
-                        u32::try_from(line.saturating_sub(1)).unwrap_or(u32::MAX),
-                        u32::try_from(column.saturating_sub(1)).unwrap_or(u32::MAX),
-                    )
-                }),
-            ),
-            ConfigError::Io { path, .. } | ConfigError::TooLarge { path, .. } => {
-                (path.clone(), None)
-            }
-        };
-        // A path shown as `<external>/name` has no place under the root. Show the failure on
-        // the project config then.
-        let absolute = if path.starts_with('<') || path.is_empty() {
-            self.root.join("slopvac.toml")
-        } else {
-            self.root.join(path)
+        let position = match err {
+            ConfigError::Rejected(rejected) => rejected
+                .diagnostics
+                .first()
+                .map(|d| (rejected.text.clone(), d.span.start)),
+            ConfigError::Io { .. } | ConfigError::TooLarge { .. } => None,
         };
         LoadFailure {
             error: config_error(err, &self.root),
-            path: absolute,
+            path: err
+                .source_file()
+                .map_or_else(|| self.root.join("slopvac.toml"), Path::to_path_buf),
             position,
         }
     }
 
-    /// The config that applies to the files in `dir`: the nearest one, else the config of
-    /// the project root, so a buffer outside the project is linted as the project is.
-    fn config_in(&self, dir: &Path) -> Result<Option<Arc<LoadedConfig>>, CliError> {
-        match self.nearest_cached(dir)? {
-            Some(found) => Ok(Some(found)),
-            None => self.nearest_cached(&self.root),
-        }
-    }
-
-    /// The nearest config of `dir`, read once between reloads.
-    fn nearest_cached(&self, dir: &Path) -> Result<Option<Arc<LoadedConfig>>, CliError> {
-        if let Some(found) = self.loaded().configs.get(dir) {
+    /// The config that applies to the files in `dir`: the nearest one, else none, so a buffer
+    /// with no config on its path gets the core defaults, as a file does in a lint run.
+    fn config_in(&self, dir: &Path, epoch: u64) -> Result<Option<Arc<LoadedConfig>>, CliError> {
+        if let State::Ready(ready) = &self.loaded().state
+            && let Some(found) = ready.configs.get(dir)
+        {
             return Ok(found.clone());
         }
-        let found = nearest(dir).map_err(|e| config_error(&e, &self.root))?;
-        self.loaded()
-            .configs
-            .insert(dir.to_path_buf(), found.clone());
-        Ok(found)
+        let found = nearest(dir);
+        #[cfg(test)]
+        self.paused_at(Stage::ConfigRead);
+        let Some(mut loaded) = self.current(epoch) else {
+            // A reload ran meanwhile. The answer is for the old config: use it, keep nothing.
+            return found.map_err(|e| config_error(&e, &self.root));
+        };
+        let loaded = &mut *loaded;
+        match found {
+            Ok(config) => {
+                if let Some(config) = &config {
+                    loaded
+                        .dependencies
+                        .extend(config.dependencies().iter().cloned());
+                }
+                let State::Ready(ready) = &mut loaded.state else {
+                    return Ok(config);
+                };
+                // The same checks `slopvac lint` runs on each config it loads.
+                if let Some(config) = &config {
+                    for notice in lint_settings::validate(config, &ready.catalog)? {
+                        if ready.notified.insert(notice_key(&notice)) {
+                            ready.pending.push(notice);
+                        }
+                    }
+                }
+                ready.configs.insert(dir.to_path_buf(), config.clone());
+                Ok(config)
+            }
+            Err(error) => {
+                loaded
+                    .dependencies
+                    .extend(error.dependencies().iter().cloned());
+                Err(config_error(&error, &self.root))
+            }
+        }
     }
 
     /// Where the document at `path` sits: its canonical path, and the nearest directory
@@ -225,19 +371,26 @@ impl Project {
         (path.to_path_buf(), self.root.clone())
     }
 
-    /// The engine, relative path and genre of the document at `path`.
-    fn resolve(&self, path: &str, text: &str) -> Result<Resolved, LintError> {
-        if let Some(why) = self.loaded().failure.clone() {
-            return Err(LintError(why));
+    /// The epoch of the loaded project, or why the project cannot lint.
+    fn epoch(&self) -> Result<u64, LintError> {
+        let loaded = self.loaded();
+        match &loaded.state {
+            State::Failed(why) => Err(LintError(why.clone())),
+            State::Ready(_) => Ok(loaded.epoch),
         }
-        self.resolve_settings(path, text)
-            .map_err(|e| LintError(e.message))
     }
 
-    fn resolve_settings(&self, path: &str, text: &str) -> Result<Resolved, CliError> {
+    /// The engine, relative path and genre of the document at `path`.
+    fn resolve(&self, path: &str, text: &str) -> Result<Resolved, LintError> {
+        let epoch = self.epoch()?;
+        self.resolve_settings(path, text, epoch)
+    }
+
+    fn resolve_settings(&self, path: &str, text: &str, epoch: u64) -> Result<Resolved, LintError> {
+        let shown = |e: CliError| LintError(e.message);
         let file = Path::new(path);
         let (absolute, dir) = self.locate(file);
-        let config = self.config_in(&dir)?;
+        let config = self.config_in(&dir, epoch).map_err(shown)?;
         let none = LoadedConfig::without_files(self.root.clone());
         let (config_ref, rel) = match &config {
             Some(config) => (
@@ -250,29 +403,43 @@ impl Project {
         };
         // The catalog stays in the shared state, so take what the settings need under the
         // lock and build the engine outside it.
-        let (settings, terms, key) = {
+        let (settings, terms, key, cached) = {
             let loaded = self.loaded();
-            let catalog = loaded
-                .catalog
-                .as_ref()
-                .ok_or_else(|| CliError::new("rules-unavailable", "the rules are not loaded"))?;
-            settings_for(catalog, config_ref, &rel, &Overrides::default())?
+            let ready = match &loaded.state {
+                State::Ready(ready) => ready,
+                State::Failed(why) => return Err(LintError(why.clone())),
+            };
+            let (settings, terms, key) =
+                settings_for(&ready.catalog, config_ref, &rel, &Overrides::default())
+                    .map_err(shown)?;
+            let cached = ready.engines.get(&key).cloned();
+            (settings, terms, key, cached)
         };
-        let cached = self.loaded().engines.get(&key).cloned();
         let engine = if let Some(engine) = cached {
             engine
         } else {
             // The engine owns its rule sets, and a set does not clone: load them again.
-            let sets = Catalog::load()?.into_sets();
+            let sets = Catalog::load().map_err(shown)?.into_sets();
             let reasons = slopvac_lsp::exception_names(&sets);
-            let built = lint_terms::build_engine(sets, settings, &terms, &self.root)?;
+            let built =
+                lint_terms::build_engine(sets, settings, &terms, &self.root).map_err(shown)?;
             let engine = Arc::new(EngineLinter::from_engine(built, reasons));
-            Arc::clone(
-                self.loaded()
-                    .engines
-                    .entry(key)
-                    .or_insert_with(|| Arc::clone(&engine)),
-            )
+            #[cfg(test)]
+            self.paused_at(Stage::EngineBuilt);
+            match self.current(epoch) {
+                Some(mut loaded) => match &mut loaded.state {
+                    State::Ready(ready) => {
+                        if let Some(existing) = ready.engines.get(&key) {
+                            Arc::clone(existing)
+                        } else {
+                            ready.engines.insert(key, Arc::clone(&engine));
+                            engine
+                        }
+                    }
+                    State::Failed(_) => engine,
+                },
+                None => engine,
+            }
         };
         Ok(Resolved {
             engine,
@@ -302,45 +469,171 @@ impl Linter for ProjectLinter {
 
     fn reload(&self) -> Reloaded {
         match self.project.load() {
-            Ok(notices) => Reloaded {
-                notices,
-                failure: None,
-            },
+            Ok(notices) => Reloaded::new(notices, None),
             Err(failure) => {
                 let mut shown = ConfigFailure::new(
                     failure.error.code,
                     failure.error.message,
                     failure.path.display().to_string(),
                 );
-                if let Some((line, column)) = failure.position {
-                    shown = shown.at(line, column);
+                if let Some((text, offset)) = failure.position {
+                    shown = shown.at_offset(text, offset);
                 }
-                Reloaded {
-                    notices: Vec::new(),
-                    failure: Some(shown),
-                }
+                Reloaded::new(Vec::new(), Some(shown))
             }
         }
     }
 
     fn watched(&self) -> Vec<String> {
-        self.project.loaded().files.clone()
+        self.project
+            .loaded()
+            .dependencies
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect()
+    }
+
+    fn watches(&self, path: &str) -> bool {
+        // `a/../b` and `b` are one file; the dependencies are stored in the second form.
+        let path = slopvac_fs::lexical_normalize(Path::new(path));
+        self.project.loaded().dependencies.contains(&path)
+    }
+
+    fn take_notices(&self) -> Vec<Notice> {
+        match &mut self.project.loaded().state {
+            State::Ready(ready) => std::mem::take(&mut ready.pending),
+            State::Failed(_) => Vec::new(),
+        }
     }
 }
 
 impl Check for ProjectCheck {
     fn check(&self, path: &str, text: &str) -> Vec<Problem> {
         // A config that failed to load gives no policy to check against.
-        if self.project.loaded().failure.is_some() {
+        let Ok(epoch) = self.project.epoch() else {
             return Vec::new();
-        }
+        };
         let (_, dir) = self.project.locate(Path::new(path));
-        let Ok(config) = self.project.config_in(&dir) else {
+        let Ok(config) = self.project.config_in(&dir, epoch) else {
             return Vec::new();
         };
         let policy = config
             .as_deref()
             .map_or_else(Policy::core, Policy::from_config);
         slopvac_lsp::FrontMatterCheck::new(policy).check(path, text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::time::Duration;
+
+    use super::*;
+
+    const WAIT: Duration = Duration::from_secs(20);
+    const SLOPPY: &str = "We leverage a robust, seamless solution to delve into the data.\n";
+    const LEXICON: &str = "core:prose-inflation.slop-lexicon";
+    const LEXICON_OFF: &str =
+        "schema_version = 3\n\n[rules]\n\"prose-inflation.slop-lexicon\" = \"off\"\n";
+
+    #[test]
+    fn a_full_cache_is_emptied_before_a_new_key_goes_in() {
+        let mut cache = Bounded::new(2);
+        cache.insert("a", 1);
+        cache.insert("b", 2);
+        cache.insert("c", 3);
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.get("c"), Some(&3));
+        assert_eq!(cache.get("a"), None);
+    }
+
+    #[test]
+    fn replacing_a_key_of_a_full_cache_keeps_the_other_entries() {
+        let mut cache = Bounded::new(2);
+        cache.insert("a", 1);
+        cache.insert("b", 2);
+        cache.insert("b", 3);
+        assert_eq!(cache.len(), 2);
+        assert_eq!(cache.get("a"), Some(&1));
+        assert_eq!(cache.get("b"), Some(&3));
+    }
+
+    /// A project with a nested config in `sub/` that turns the lexicon rule off.
+    fn nested_project() -> (tempfile::TempDir, PathBuf, ProjectServer) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical");
+        std::fs::create_dir(root.join("sub")).expect("mkdir");
+        std::fs::write(root.join("slopvac.toml"), "schema_version = 3\n").expect("config");
+        std::fs::write(root.join("sub/slopvac.toml"), LEXICON_OFF).expect("nested config");
+        let server = project_linter(&root).expect("a project");
+        (dir, root, server)
+    }
+
+    /// Make the next lookup that reaches `stage` report on the first channel and wait for the
+    /// second. Other stages pass.
+    fn pause_at(project: &Project, stage: Stage) -> (Receiver<()>, Sender<()>) {
+        let (reached_tx, reached) = channel();
+        let (proceed, proceed_rx) = channel::<()>();
+        let proceed_rx = Mutex::new(proceed_rx);
+        let reached_tx = Mutex::new(reached_tx);
+        *project.pause.lock().unwrap() = Some(Arc::new(move |at| {
+            if at == stage {
+                reached_tx.lock().unwrap().send(()).unwrap();
+                proceed_rx.lock().unwrap().recv_timeout(WAIT).unwrap();
+            }
+        }));
+        (reached, proceed)
+    }
+
+    fn lexicon_found(linter: &ProjectLinter, path: &Path) -> bool {
+        let linted = linter
+            .lint(&path.display().to_string(), SLOPPY)
+            .expect("linted");
+        linted
+            .findings
+            .iter()
+            .any(|f| f.rule_id.to_string() == LEXICON)
+    }
+
+    #[test]
+    fn a_config_read_that_a_reload_overtook_does_not_refill_the_cache() {
+        let (_dir, root, server) = nested_project();
+        let linter = server.linter;
+        let project = Arc::clone(&linter.project);
+        let (reached, proceed) = pause_at(&project, Stage::ConfigRead);
+        let document = root.join("sub/a.md");
+        std::thread::scope(|scope| {
+            let early = scope.spawn(|| lexicon_found(&linter, &document));
+            // The lookup has read the nested config and is about to cache it.
+            reached.recv_timeout(WAIT).unwrap();
+            std::fs::write(root.join("sub/slopvac.toml"), "schema_version = 3\n").unwrap();
+            linter.reload();
+            proceed.send(()).unwrap();
+            // It read the config before the edit, so what it saw is out of date.
+            assert!(!early.join().unwrap());
+        });
+        *project.pause.lock().unwrap() = None;
+        assert!(lexicon_found(&linter, &document));
+    }
+
+    #[test]
+    fn an_engine_built_before_a_reload_is_not_cached_after_it() {
+        let (_dir, root, server) = nested_project();
+        let linter = server.linter;
+        let project = Arc::clone(&linter.project);
+        let (reached, proceed) = pause_at(&project, Stage::EngineBuilt);
+        let document = root.join("a.md");
+        std::thread::scope(|scope| {
+            let early = scope.spawn(|| lexicon_found(&linter, &document));
+            reached.recv_timeout(WAIT).unwrap();
+            linter.reload();
+            proceed.send(()).unwrap();
+            early.join().unwrap();
+        });
+        let State::Ready(ready) = &project.loaded().state else {
+            panic!("the reload succeeded");
+        };
+        assert_eq!(ready.engines.len(), 0);
     }
 }
