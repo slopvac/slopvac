@@ -572,6 +572,10 @@ fn tm16_each_denied_path_is_refused_without_approval_and_nothing_is_written() {
 #[case::mixed_case_dot_config(".SLOPVAC.TOML")]
 #[case::mixed_case_nested_dot_config("a/.SLOPVAC.TOML")]
 #[case::mixed_case_nested_config("a/SlopVac.toml")]
+#[case::long_s_state_dir("a/.\u{17f}lopvac/plugins.lock")]
+#[case::long_s_root_state_dir(".\u{17f}lopvac/x")]
+#[case::long_s_dot_config(".\u{17f}lopvac.toml")]
+#[case::long_s_nested_config("a/\u{17f}lopvac.toml")]
 fn tm16_slopvac_state_and_config_are_refused_at_any_depth(#[case] denied: &str) {
     let s = sandbox();
     let report = apply_plan(&s.root, &[write_file(denied, "x")], &PlanOptions::default());
