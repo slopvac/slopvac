@@ -957,7 +957,7 @@ fn fix_group(
         match fixed {
             Ok(FileFix::Done(result)) => {
                 if result.written {
-                    item.text = result.report.text.clone();
+                    item.text.clone_from(&result.report.text);
                 }
                 keep.push(true);
             }
