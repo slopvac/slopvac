@@ -4,6 +4,12 @@
 //! (`.md`) and diagram files (`.mmd`, `.puml`, `.drawio`, ...) and prints one JSON object
 //! per file: `{"file", "findings": [{"rule", "line", "matched"}]}`. `evals/diagrams.py`
 //! scores that output against the hand labels. This is eval tooling, not a public interface.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
+#![allow(
+    clippy::print_stderr,
+    clippy::print_stdout,
+    reason = "example binary: it prints its report to the terminal"
+)]
 
 use std::process::ExitCode;
 

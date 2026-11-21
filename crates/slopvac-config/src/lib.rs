@@ -4,6 +4,10 @@
 //! and value keeps its byte span, validates that tree against the v3 schemas,
 //! merges the layers for one file with per-value provenance, and renders
 //! failures as coded diagnostics.
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.2.32"
+)]
 
 mod comments;
 pub mod diag;

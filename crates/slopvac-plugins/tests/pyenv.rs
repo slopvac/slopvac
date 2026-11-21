@@ -6,6 +6,16 @@
 //! gate. The `live` tests use the real uv. They skip when no uv is found,
 //! fail when one is found but cannot build, and fail instead of skipping when
 //! `SLOPVAC_PYENV_LIVE` is set.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::print_stderr,
+    reason = "test code: it prints diagnostics to the test log"
+)]
 
 mod common;
 

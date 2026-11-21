@@ -3,7 +3,15 @@
 //! Every test builds a throwaway repository in a temp directory and drives the public API.
 //! Expected ranges are worked out from the file contents written below, not from the code.
 //! Tests return early when `git` is not on `PATH`.
-
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 // Lists of exactly one range are the common case under test.
 #![allow(clippy::single_range_in_vec_init)]
 

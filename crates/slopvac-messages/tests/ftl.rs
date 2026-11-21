@@ -3,6 +3,7 @@
 //! No Fluent library is a dependency, so `check_ftl` below is a small grammar check for
 //! the subset the exporter writes: `id = text { $param }` messages with `#` comments and
 //! indented continuation lines.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 mod support;
 

@@ -1,4 +1,5 @@
 //! Reviewer model recommendations: parsing, ranking, generated doc and prime text.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::path::PathBuf;
 

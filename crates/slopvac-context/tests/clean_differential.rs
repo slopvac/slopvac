@@ -4,6 +4,7 @@
 //! with their rescans, and the two taggers that call `clean`. Both sides read the same random
 //! text, so the comparison covers the spans, the confidence and the evidence the public
 //! taggers return.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use proptest::prelude::*;
 

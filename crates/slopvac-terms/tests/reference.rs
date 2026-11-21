@@ -1,4 +1,9 @@
 //! The generated built-in terms reference page.
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::ffi::OsStr;
 use std::fs::File;

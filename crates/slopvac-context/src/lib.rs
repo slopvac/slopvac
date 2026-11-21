@@ -1,4 +1,8 @@
 //! Context taggers, the tag registry and genres.
+#![allow(
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod builtin;
 mod checklist;

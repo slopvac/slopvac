@@ -1,4 +1,5 @@
 //! The shared position vectors (`schemas/v3/conformance/positions/vectors.json`) against `LineIndex`.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::Path;

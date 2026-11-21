@@ -1,5 +1,15 @@
 //! Sync, status, offline cache and CI lock check (bead 8l4.9.3; threat model
 //! TM-22, TM-39, TM-46, TM-48; policies.md N2, N4, N7).
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.2.32"
+)]
 
 mod common;
 mod oci_server;

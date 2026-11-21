@@ -1,5 +1,11 @@
 //! The plugin launcher, run directly as the host runs it: limits under an
 //! inherited ceiling, and refusals of malformed invocations.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
 
 mod common;

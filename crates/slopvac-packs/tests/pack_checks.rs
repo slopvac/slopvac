@@ -1,4 +1,5 @@
 //! The loader checks what the schema states beyond field types, and the genre graph it builds.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::num::NonZeroUsize;

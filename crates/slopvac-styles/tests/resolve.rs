@@ -1,4 +1,5 @@
 //! Behavior of style resolution through the public API.
+#![allow(clippy::panic, reason = "test code: a panic is a failed test")]
 
 use serde_json::{Value, json};
 use slopvac_config::resolve::Contribution;

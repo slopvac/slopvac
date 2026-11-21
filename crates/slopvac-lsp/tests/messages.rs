@@ -1,4 +1,10 @@
 //! The language server's error messages and registry entries.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::error::Error as _;
 use std::sync::Arc;

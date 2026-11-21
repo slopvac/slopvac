@@ -1,4 +1,9 @@
 //! `Finding.origin`: limits, range order, the origin/fix exclusion and the round trip.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

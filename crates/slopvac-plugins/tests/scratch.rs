@@ -1,4 +1,5 @@
 //! The scratch directory removes read-only trees on drop.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 #![cfg(unix)]
 
 mod support;

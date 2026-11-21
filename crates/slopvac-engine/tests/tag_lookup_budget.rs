@@ -6,8 +6,14 @@
 //! line break then look up the tags that cover a match that spans two lines, and each such
 //! lookup looks at every kind on the cell, even when the context gate leaves no finding. The
 //! tests count the looks, not the time.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

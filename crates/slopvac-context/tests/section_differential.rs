@@ -5,6 +5,7 @@
 //! backwards and forwards for every matching block, so it is quadratic, but easy to trust.
 //! Documents are random trees of headings and paragraphs, some with blocks whose spans read
 //! out of source order, the way the cells of a wrapped table do.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::ops::Range;
 

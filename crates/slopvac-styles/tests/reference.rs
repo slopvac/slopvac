@@ -1,4 +1,5 @@
 //! The generated style reference pages.
+#![allow(clippy::panic, reason = "test code: a panic is a failed test")]
 
 use slopvac_styles::{BuiltinSource, StyleSource, reference_pages};
 

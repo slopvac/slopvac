@@ -1,6 +1,7 @@
 //! `plugins update`: resolve within config ranges and write a new lock (bead
 //! 8l4.9.30; threat model K1-K3 rollback floor and key pins, K5 revocation;
 //! policies.md offline mode and exit code 2).
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 mod oci_server;
 mod revocations;

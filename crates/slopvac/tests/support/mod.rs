@@ -21,7 +21,7 @@ pub(crate) fn neutral_dir() -> &'static Path {
 }
 
 /// A validator for the published `lint-report` schema.
-#[allow(dead_code)] // not every test binary validates reports
+#[allow(dead_code, reason = "not every test binary validates reports")]
 pub(crate) fn report_validator() -> jsonschema::Validator {
     let schemas = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3");
     let read = |name: &str| -> Value {

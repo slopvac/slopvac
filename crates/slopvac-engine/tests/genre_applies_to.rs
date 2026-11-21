@@ -1,7 +1,12 @@
 //! A rule limited by `applies_to.genres` takes part in a document only when the document's own
 //! genre is listed, in findings, notices and the choice of the vocabulary sweep owner.
-
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

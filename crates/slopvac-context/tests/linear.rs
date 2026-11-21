@@ -3,6 +3,7 @@
 //! The tests count work instead of time: blocks examined to find section bounds, text
 //! positions scanned, and bytes of heading and admonition text matched. They assert an upper
 //! bound that grows linearly with the input, not the count of one traversal.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use rstest::rstest;
 

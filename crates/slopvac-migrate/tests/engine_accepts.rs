@@ -1,6 +1,10 @@
 //! The 3.0 engine against what `migrate` writes for directives.
-
-#![allow(missing_docs)]
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 use std::path::PathBuf;
 

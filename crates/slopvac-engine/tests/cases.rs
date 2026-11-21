@@ -1,6 +1,15 @@
 //! The case runner on synthetic rules and on the shipped core rules.
-
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::print_stderr,
+    reason = "test code: it prints diagnostics to the test log"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

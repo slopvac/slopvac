@@ -1,7 +1,7 @@
 //! An authored pattern is capped at 8,192 UTF-8 bytes as written. Patterns the loader builds
 //! are not.
-
-#![allow(missing_docs)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 use std::path::PathBuf;
 

@@ -346,7 +346,10 @@ fn type_mismatch_error_carries_the_span_of_the_value() {
 fn unknown_field_error_carries_the_span_of_the_key() {
     #[derive(Debug, Deserialize)]
     #[serde(deny_unknown_fields)]
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "test support: each test binary uses a subset of the helpers"
+    )]
     struct Strict {
         a: u8,
     }

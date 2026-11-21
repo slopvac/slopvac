@@ -81,7 +81,10 @@ struct Raw {
     schema_version: Option<serde_json::Value>,
     entries: Option<Vec<RawEntry>>,
     #[serde(flatten)]
-    #[allow(clippy::zero_sized_map_values)] // only the key names are reported
+    #[allow(
+        clippy::zero_sized_map_values,
+        reason = "only the key names are reported"
+    )]
     other: BTreeMap<String, serde::de::IgnoredAny>,
 }
 
@@ -92,7 +95,10 @@ struct RawEntry {
     reason: Option<String>,
     replacement: Option<String>,
     #[serde(flatten)]
-    #[allow(clippy::zero_sized_map_values)] // only the key names are checked
+    #[allow(
+        clippy::zero_sized_map_values,
+        reason = "only the key names are checked"
+    )]
     other: BTreeMap<String, serde::de::IgnoredAny>,
 }
 

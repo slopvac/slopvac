@@ -1,4 +1,10 @@
 //! Drives the server over an in-memory connection, as an editor would.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::collections::VecDeque;
 use std::sync::Arc;

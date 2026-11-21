@@ -1,4 +1,5 @@
 //! Inputs that cannot be read at all: the status and the empty result they report.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::io::Write as _;
 use std::ops::Range;

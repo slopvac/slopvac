@@ -1,4 +1,10 @@
 //! Which paragraphs a diagram checker sees as nearby prose.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

@@ -1,4 +1,9 @@
 //! OCI client tests against a scripted loopback registry (threat model section 6.4).
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod log_capture;
 mod oci_server;

@@ -1,6 +1,9 @@
 //! Shared span invariants: every node and key slice is a clean, re-parsable fragment.
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "test support: each test binary uses a subset of the helpers"
+)]
 
 use frontmatter_spans::{Format, FrontMatter, Node, Value};
 

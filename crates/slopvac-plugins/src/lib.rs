@@ -13,6 +13,12 @@
 //! gate, the signed revocation list with its cache ([`revoke`]), managed
 //! Python environments for plugins ([`pyenv`]) and [`update`], which moves the
 //! lock to newer in-range versions.
+#![allow(
+    clippy::allow_attributes_without_reason,
+    clippy::expect_used,
+    clippy::print_stderr,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.2.32"
+)]
 
 pub mod api;
 pub mod apply;

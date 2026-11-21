@@ -1,4 +1,5 @@
 //! Behaviour tests for the review workflow: type, scope, models, payloads, consent.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::cell::Cell;
 use std::fs;

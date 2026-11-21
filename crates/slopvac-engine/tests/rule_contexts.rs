@@ -13,8 +13,13 @@
 //!   on a `fires` document and none on a `silent` document.
 //!
 //! The harness checks the rule's own findings only; other rules may fire on the document.
-
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

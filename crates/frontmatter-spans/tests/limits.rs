@@ -1,4 +1,5 @@
 //! Resource limits: hostile input returns an error, never an abort or a runaway allocation.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::time::{Duration, Instant};
 

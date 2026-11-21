@@ -3,6 +3,12 @@
 //! The library tests inject the token source, the poster and the browser opener, so nothing
 //! touches the network. `github.rs` tests the real poster against a local listener. The binary
 //! tests at the end run `slopvac` with no token and no `gh` on the path.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};

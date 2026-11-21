@@ -4,8 +4,14 @@
 //! The interpreter is a shell script that prints driver output the test writes. Every cell of
 //! the row then shares the span of the row, and the cells differ in length and in multibyte
 //! text, so a cell mapped through another cell's projection would have offsets off its text.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

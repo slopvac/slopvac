@@ -3,6 +3,14 @@
 //! These tests need a `python3` or `python` on `PATH` that imports docutils 0.21 or later,
 //! and return early without one. The always-on tests are in `rst_fake.rs`.
 #![allow(
+    clippy::print_stderr,
+    reason = "test code: it prints diagnostics to the test log"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
+#![allow(
     missing_docs,
     clippy::assert_is_empty,
     clippy::cloned_ref_to_slice_refs

@@ -1,4 +1,5 @@
 //! Atomic, symlink-safe saves of a terms file.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::path::{Path, PathBuf};
 

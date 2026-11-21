@@ -3,6 +3,11 @@
 //! Every file under `valid/` must load. Every file under `invalid/` other than
 //! `cases.toml` must be rejected. Blocklist files also name the reason: the
 //! loader must give the diagnostic that matches each file's fault.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::path::{Path, PathBuf};
 

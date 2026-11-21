@@ -4,8 +4,14 @@
 //! The interpreter is a shell script that prints driver output the test writes: a left cell
 //! that wraps over many lines, each a sentence, and a right cell beside the first line. The
 //! two cells overlap in the source, so the tags of the left cell are split over its extents.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

@@ -1,4 +1,5 @@
 //! Hostile input: no panics, bounded work.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 mod common;
 

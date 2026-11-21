@@ -1,6 +1,11 @@
 //! `[[genres]]` assignments in `slopvac.toml` reach the engine: each document gets the genre
 //! its path selects, and the genre sets the level of `docs-discipline.history-internal-reference`
 //! (`docs/contract/config.md`, `docs/contract/packs.md` section 4).
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::fs;
 

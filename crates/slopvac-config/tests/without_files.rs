@@ -1,4 +1,9 @@
 //! `LoadedConfig::without_files`: a project that has no `slopvac.toml`.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

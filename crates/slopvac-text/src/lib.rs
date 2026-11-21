@@ -7,6 +7,12 @@
 //! The crate does not cap its input. The caller must pass at most
 //! 64 MiB (`slopvac_fs::MAX_DOCUMENT_BYTES`) of text, and each slopvac entry point enforces
 //! that cap before it calls in. The caps are listed in `docs/contract/policies.md`.
+#![allow(
+    clippy::allow_attributes_without_reason,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod classify;
 mod lexicon;

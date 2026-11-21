@@ -2,6 +2,7 @@
 //!
 //! The pack loader lives above `slopvac-config`, so these tests sit in the first crate that
 //! wires the two together.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::num::NonZeroUsize;

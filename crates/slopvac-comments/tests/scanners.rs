@@ -7,6 +7,11 @@
 //!
 //! The check fails closed. A grammar crate whose source directory is missing or cannot
 //! be read is an error, not a pass, and every linked grammar must show a `parser.c`.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

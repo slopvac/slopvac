@@ -1,6 +1,11 @@
 //! Genre registration and graph errors never repeat a genre id or an `extends` value. Those are
 //! artifact values, so an error holds the pack-relative file and a location only
 //! (docs/contract/policies.md section 1.7).
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::error::Error;
 use std::fs;

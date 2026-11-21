@@ -1,4 +1,10 @@
 //! Host conformance tests (plugin-protocol.md section 12.1) against a scripted fake plugin.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
 
 mod common;

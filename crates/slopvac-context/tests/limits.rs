@@ -1,5 +1,6 @@
 //! A pattern that hits the PCRE2 match limit only surfaces as an error when the tagger
 //! reaches that pattern for a block it could tag.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use slopvac_context::{PlainDocument, Tagger, TaggerSpec};
 

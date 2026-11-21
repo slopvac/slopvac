@@ -1,5 +1,6 @@
 //! The plugin launcher as a program of its own, which this package's tests
 //! start plugins through. The `slopvac` binary runs the same code.
+#![allow(clippy::print_stderr, reason = "the binary owns stdout and stderr")]
 
 fn main() {
     slopvac_plugins::launch::intercept();

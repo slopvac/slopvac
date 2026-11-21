@@ -1,4 +1,5 @@
 //! Confined and plain reads of regular files, through the public API.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;

@@ -1,4 +1,5 @@
 //! Regressions found in review: each pins one behaviour of the public validators.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use slopvac_config::tree::{parse_toml, parse_yaml};
 use slopvac_config::{Code, Diagnostic, validate_config, validate_frontmatter};

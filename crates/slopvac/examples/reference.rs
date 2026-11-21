@@ -3,6 +3,7 @@
 //! `cargo run -p slopvac --example reference -- <out-dir>` writes `reference/error-codes.md`
 //! below `<out-dir>`. It lists every code in [`slopvac_cli::messages::ALL`] and every retired
 //! code.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::fmt::Write as _;
 use std::path::PathBuf;

@@ -5,8 +5,13 @@
 //! Each case lints a real document through `Engine::lint`. A configurable tagger sets the
 //! `generated` context when the key `flag` matches its pattern, and a rule that skips
 //! `generated` text goes silent exactly when the tagger fired.
-
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

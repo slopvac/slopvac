@@ -1,6 +1,12 @@
 //! Hardening cases from the config epic's review: unmappable members are reported,
 //! inline-array overrides migrate, rule-table comments survive, and this
 //! repository's own 2.x config round-trips.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use slopvac_migrate::{Error, Options, RenameTable, migrate_config};
 use toml_edit::{DocumentMut, Item};

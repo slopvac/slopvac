@@ -1,4 +1,5 @@
 //! Full-output conformance: each format against its pinned specification, parsed back.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::collections::HashMap;
 

@@ -1,4 +1,5 @@
-#![allow(missing_docs)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 //! Container ancestry of blocks: the lists and block quotes that hold each block.
 
 use slopvac_model::Span;

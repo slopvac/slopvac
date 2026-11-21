@@ -327,7 +327,10 @@ fn unquote(body: &[u8], whole: &[u8]) -> Result<Vec<u8>, DiffError> {
 }
 
 #[cfg(unix)]
-#[allow(clippy::unnecessary_wraps)] // Same signature as the non-Unix build, which can fail.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "Same signature as the non-Unix build, which can fail"
+)]
 pub(super) fn to_path(bytes: &[u8]) -> Result<PathBuf, DiffError> {
     use std::os::unix::ffi::OsStrExt;
     Ok(PathBuf::from(std::ffi::OsStr::from_bytes(bytes)))

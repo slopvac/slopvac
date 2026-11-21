@@ -34,6 +34,12 @@
 //!
 //! Extraction is all this crate does. `slopvac-engine` runs the rules over the fragments:
 //! see `Input::comments` there.
+#![warn(clippy::indexing_slicing, clippy::string_slice)]
+#![allow(
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod docstring;
 mod extract;

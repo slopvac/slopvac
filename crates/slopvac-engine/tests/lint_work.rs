@@ -5,7 +5,13 @@
 //! of this thread after a lint of documents that double in size, and bounds each by a multiple
 //! of the document's size plus a constant. A quadratic path passes at the smallest size and
 //! overshoots at the largest.
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

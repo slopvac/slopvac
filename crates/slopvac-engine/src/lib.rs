@@ -45,6 +45,11 @@
 //! [`skip_ranges`] is the reusable part for other crates: the source ranges a rule skips.
 //! [`discover`] finds the files to lint. [`diff_scope`] finds the lines a branch or the
 //! work tree changed, to scope findings and fixes to them.
+#![allow(
+    clippy::allow_attributes_without_reason,
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod capitalization;
 pub mod cases;

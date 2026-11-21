@@ -1,4 +1,5 @@
 //! `terms suggest`: candidates listed with evidence, written only on request.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::path::{Path, PathBuf};
 

@@ -1,4 +1,10 @@
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 //! The vocabulary sweep indexes the source once per document, not once per raw HTML block.
 //! The work counter is the number of `SourceIndex` values built. It is deterministic, and
 //! it lives in its own test binary so no other test builds indexes at the same time.

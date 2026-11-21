@@ -1,4 +1,5 @@
 //! Limits, escaping, credentials and construction invariants of the lock model.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use slopvac_plugins::lock::{
     LockedPack, Lockfile, MAX_API_VERSION, MAX_LOCK_BYTES, MAX_PACKS, MAX_REQUIRES,

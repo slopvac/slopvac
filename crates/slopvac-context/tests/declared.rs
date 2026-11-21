@@ -1,4 +1,9 @@
 //! Declared contexts: security comes from a genre, never from vocabulary.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![allow(clippy::assert_is_empty)]
 
 use slopvac_context::{

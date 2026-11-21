@@ -1,4 +1,9 @@
 //! A FIFO at a style path is refused at once. It must not block the run.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

@@ -1,6 +1,11 @@
 //! Adversarial inputs shared by the work-counter test (`src/tokenize.rs`) and
 //! the timing benchmark (`tests/scaling.rs`).
-#![allow(unreachable_pub, missing_docs, dead_code)]
+#![allow(
+    unreachable_pub,
+    missing_docs,
+    dead_code,
+    reason = "test support: items are shared across test binaries; test crate: nothing public to document; test support: each test binary uses a subset of the helpers"
+)]
 
 /// Every adversarial input, by name.
 pub const NAMES: [&str; 14] = [

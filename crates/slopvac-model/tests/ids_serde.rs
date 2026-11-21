@@ -1,7 +1,7 @@
 //! The identifier and version decoders must reject what the shared corpus marks invalid,
 //! without going through a generated schema.
-
-#![allow(missing_docs)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 use std::fs;
 use std::path::Path;

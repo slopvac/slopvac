@@ -1,5 +1,6 @@
 //! Apply and restore in a checkout whose author controls every file: links, swapped files,
 //! edits, and forged, extended or replayed backups.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::os::unix::ffi::OsStrExt;

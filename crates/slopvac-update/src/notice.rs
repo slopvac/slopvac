@@ -363,7 +363,12 @@ mod tests {
     }
 
     fn run(ctx: &Context<'_>, cache: &Cache, f: &Arc<Canned>) -> Option<Notice> {
-        notice(ctx, cache, Some(f.clone()), Duration::from_secs(5))
+        notice(
+            ctx,
+            cache,
+            Some(Arc::<Canned>::clone(f)),
+            Duration::from_secs(5),
+        )
     }
 
     #[test]
@@ -606,7 +611,7 @@ mod tests {
         let cache = Arc::new(cache);
         let handles: Vec<_> = (0..8)
             .map(|i| {
-                let cache = cache.clone();
+                let cache = Arc::clone(&cache);
                 std::thread::spawn(move || {
                     for round in 0..10 {
                         cache

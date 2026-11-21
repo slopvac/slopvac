@@ -6,7 +6,15 @@
 //! `fixtures/locale-divergences.json` lists the documents whose positions differ on purpose,
 //! with the reason; every other fact is still compared, and a listed difference must still
 //! exist.
-
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![allow(missing_docs, clippy::assert_is_empty)]
 
 use std::collections::BTreeMap;

@@ -1,4 +1,5 @@
 //! Every `Error` maps to one stable code of the message registry.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use rstest::rstest;
 use slopvac_context::{Error, MAX_PATTERN_BYTES, Pattern, TaggerSpec};

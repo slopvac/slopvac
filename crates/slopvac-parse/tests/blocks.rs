@@ -1,4 +1,9 @@
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 //! Block structure of Markdown and MDX. Expected spans are checked by the source text
 //! they cover, which is worked out from the input, not from the parser.
 

@@ -2,7 +2,11 @@
 //! (`schemas/v3/conformance`) says, judged by the Rust jsonschema crate. `slopvac-schemas
 //! check` keeps the published files equal to what the Rust types generate. The
 //! plugin-protocol corpus belongs to the plugin host's types, not to this crate.
-
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 mod common;

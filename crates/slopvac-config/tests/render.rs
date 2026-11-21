@@ -1,4 +1,5 @@
 //! Snapshots of rendered diagnostics, the text users read.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use slopvac_config::tree::parse_toml;
 use slopvac_config::{SourceFile, render, validate_config};

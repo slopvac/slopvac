@@ -1,4 +1,5 @@
 //! Rules for `[index]` that JSON Schema cannot express, and edge cases of the extra-index source.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use rstest::rstest;
 use slopvac_config::tree::parse_toml;

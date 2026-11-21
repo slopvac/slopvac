@@ -8,6 +8,11 @@
 //!
 //! The types in [`Rule`] and [`Category`] reject what the schemas reject. The JSON Schemas
 //! the types generate come from [`rule_schema`], [`rule_file_schema`] and [`category_schema`].
+#![allow(
+    clippy::allow_attributes_without_reason,
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod error;
 mod ext;

@@ -1,4 +1,5 @@
 //! The core pack loads from the copy in the binary and from a copy on disk.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::collections::BTreeSet;
 use std::fs;

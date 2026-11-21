@@ -1,4 +1,5 @@
 //! The bundled presets load and resolve.
+#![allow(clippy::panic, reason = "test code: a panic is a failed test")]
 
 use serde_json::{Value, json};
 use slopvac_styles::{BuiltinSource, Resolution, resolve};

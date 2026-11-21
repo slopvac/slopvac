@@ -1,4 +1,9 @@
 //! The shared conformance corpus (`schemas/v3/conformance/`) run through the validator.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::collections::BTreeMap;
 use std::fs;

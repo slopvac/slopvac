@@ -1,5 +1,6 @@
 //! A lint target outside the directory of the config file, which is the project root, is
 //! linted and matches no root-relative pattern. It never crashes the run.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 

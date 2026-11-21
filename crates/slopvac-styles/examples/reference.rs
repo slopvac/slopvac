@@ -2,6 +2,7 @@
 //!
 //! `cargo run -p slopvac-styles --example reference -- <out-dir>` writes
 //! `styles/index.md` and one page per bundled preset below `<out-dir>`.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::path::PathBuf;
 

@@ -3,6 +3,11 @@
 //!
 //! `tests/fixtures/generate.py` writes the vectors from the contract reference,
 //! `tests/contract/preserve_expansion.py`.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::collections::BTreeSet;
 use std::fs;

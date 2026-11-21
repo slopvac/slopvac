@@ -5,6 +5,16 @@
 //!
 //! Without the registration in `intercept`, both checks fail with
 //! `launcher-not-installed`.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::print_stdout,
+    reason = "test code: it prints diagnostics to the test log"
+)]
 #![cfg(unix)]
 
 mod common;

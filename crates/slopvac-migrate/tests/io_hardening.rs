@@ -1,5 +1,6 @@
 //! Reading, discovery and terminal output: escapes are neutralised, caps and run limits
 //! stop the run, unreadable input is exit 2, and unsupported files are reported.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::Path;

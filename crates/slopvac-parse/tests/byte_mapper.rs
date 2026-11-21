@@ -1,4 +1,5 @@
-#![allow(missing_docs)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 //! `ByteMapper::span` returns the span `Projection::span_for_bytes` returns, for every range
 //! of every projection. The oracle below is the code of `span_for_bytes` and
 //! `span_for_range` as it was before the mapper existed.

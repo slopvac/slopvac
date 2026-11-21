@@ -1,4 +1,5 @@
 //! The `terms` subcommands through `command()` and `run()`.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::path::{Path, PathBuf};
 

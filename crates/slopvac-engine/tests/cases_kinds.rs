@@ -1,5 +1,11 @@
 //! The case runner checks the examples of every mechanically checkable rule kind and
 //! sets its exit code by the contract ruling in `docs/contract/rules.md`.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

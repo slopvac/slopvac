@@ -1,4 +1,5 @@
 //! Behaviour tests for `slopvac setup` through its public interface.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::Path;

@@ -155,7 +155,7 @@ impl Runtime {
         notice::notice(
             &ctx,
             self.cache.as_ref()?,
-            Some(self.fetcher.clone()),
+            Some(Arc::clone(&self.fetcher)),
             notice::REFRESH_DEADLINE,
         )
     }

@@ -2,6 +2,12 @@
 //!
 //! The test counts block visits rather than timing the lint, so a loaded runner cannot make
 //! it fail. It is the only test in this binary, so no other lint adds to the counter.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

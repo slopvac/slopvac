@@ -4,8 +4,14 @@
 //!
 //! The tests count the tags built and the elements the index structures are built from, not
 //! the time.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

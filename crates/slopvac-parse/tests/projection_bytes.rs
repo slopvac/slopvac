@@ -1,4 +1,5 @@
-#![allow(missing_docs)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 //! `Projection::span_for_bytes` takes a range in bytes of the projected text, which is what a
 //! regex match reports, and returns the source span.
 

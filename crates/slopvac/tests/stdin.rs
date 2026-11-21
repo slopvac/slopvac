@@ -3,6 +3,7 @@
 //!
 //! These tests cover input handling, option checks and name redaction. Findings are checked
 //! in `lint_engine.rs`.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 mod support;
 

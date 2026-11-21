@@ -1,6 +1,7 @@
 //! `Tagger::from_model_bytes` on small hand-built models in prose's flat
 //! format: what it accepts, and what it must reject without panicking or
 //! reserving memory a hostile header asks for.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use slopvac_pos::{ModelError, Tagger};
 

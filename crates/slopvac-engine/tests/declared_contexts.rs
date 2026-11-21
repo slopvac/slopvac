@@ -1,4 +1,10 @@
 //! A genre's declared contexts tag the whole document, so rules gated on a context see them.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

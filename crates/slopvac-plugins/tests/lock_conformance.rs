@@ -1,5 +1,6 @@
 //! Conformance for `.slopvac/plugins.lock`, run against the shared corpus in
 //! `schemas/v3/conformance/plugins-lock/`.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::collections::BTreeMap;
 use std::fs;

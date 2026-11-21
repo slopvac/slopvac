@@ -7,7 +7,11 @@
 //!
 //! It prints the totals and the ratio; it asserts only that both engines find the same
 //! matches, so a drift between them still fails.
-
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![allow(
     missing_docs,
     clippy::cast_precision_loss,

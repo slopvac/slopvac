@@ -1,4 +1,5 @@
 //! `[guidance]` read from real config files by `prime` and `setup`.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -1,5 +1,6 @@
 //! Python docstrings: a string that is the first statement of a module, class or function
 //! body is extracted. Every expected value below was worked out by hand from the source.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 mod common;
 

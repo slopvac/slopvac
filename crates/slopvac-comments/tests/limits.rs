@@ -1,4 +1,5 @@
-#![allow(missing_docs)]
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 #![cfg(feature = "all-languages")]
 //! Work bounds: deterministic counters, not wall-clock time.
 

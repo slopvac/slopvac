@@ -1,4 +1,5 @@
 //! Project-level planning, apply, restore and the command.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::Path;

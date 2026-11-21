@@ -1,5 +1,9 @@
 //! Read paths that `doctor` and `plugins status` share must not block on a swapped-in FIFO.
-
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
 
 use std::fs;

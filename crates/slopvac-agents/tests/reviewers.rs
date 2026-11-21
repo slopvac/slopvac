@@ -1,4 +1,5 @@
 //! Behaviour tests for finding installed reviewer agent files.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::{Path, PathBuf};

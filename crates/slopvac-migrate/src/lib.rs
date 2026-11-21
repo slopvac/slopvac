@@ -5,6 +5,10 @@
 //! compares findings before and after.
 //!
 //! The CLI crate wires [`command`] and [`run`] into the clap tree.
+#![allow(
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod backup;
 mod blocklist;

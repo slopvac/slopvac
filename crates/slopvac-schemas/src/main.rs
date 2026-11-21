@@ -1,5 +1,10 @@
 //! `slopvac-schemas write|check`: regenerate `schemas/v3` from the Rust types, or fail when a
 //! committed file differs from what the types generate.
+#![allow(
+    clippy::print_stderr,
+    clippy::print_stdout,
+    reason = "the binary owns stdout and stderr"
+)]
 
 use std::path::PathBuf;
 use std::process::ExitCode;

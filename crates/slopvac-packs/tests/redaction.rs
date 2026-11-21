@@ -1,6 +1,7 @@
 //! Errors never repeat text from the manifest. A value that is refused can carry a credential
 //! (a homepage with URL user-info) or hostile text, so a diagnostic holds the pointer and a
 //! fixed reason only (docs/contract/policies.md section 1.7).
+#![allow(clippy::panic, reason = "test code: a panic is a failed test")]
 
 use std::error::Error;
 

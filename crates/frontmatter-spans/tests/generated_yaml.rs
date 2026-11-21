@@ -6,6 +6,16 @@
 //! and escapes, scalars folded over several lines, literal and folded block scalars with strip
 //! and clip chomping (also empty ones), keys with spaces and quotes, trailing and leading
 //! comments, blank lines, compact and indented sequences, CRLF, and a BOM.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod common;
 

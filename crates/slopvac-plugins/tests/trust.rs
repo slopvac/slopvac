@@ -4,6 +4,12 @@
 //! call `SpawnGate::check` and never start a process. Tests that start the fake
 //! plugin or the Python SDK example through the host, or depend on Unix
 //! permissions and symlinks, live in `unix_only`.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

@@ -1,4 +1,5 @@
 //! Installed-binary tests for `slopvac migrate`.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use assert_cmd::Command;
 use predicates::prelude::*;

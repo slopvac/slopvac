@@ -3,6 +3,10 @@
 //! The shapes match `schemas/v3`. Positions follow `docs/contract/positions.md`: a
 //! [`Span`] of byte offsets is the only stored position, and [`SourceIndex`] derives
 //! line and column from it.
+#![allow(
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod edit;
 mod ids;

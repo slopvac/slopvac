@@ -1,7 +1,12 @@
 //! Shared fixtures. Every expected value below was worked out by hand from the source
 //! text, not by running the extractor.
 
-#![allow(dead_code, unreachable_pub, missing_docs)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    missing_docs,
+    reason = "test support: each test binary uses a subset of the helpers; test support: items are shared across test binaries; test crate: nothing public to document"
+)]
 
 use slopvac_comments::CommentKind::{Block, Doc, Line};
 use slopvac_comments::{CommentKind, Fragment, Language, Limits, extract, extract_lexical};

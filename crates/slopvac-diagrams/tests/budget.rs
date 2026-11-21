@@ -1,4 +1,9 @@
 //! The caps on one extraction: what hits them, what they report and how fast they stop.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::fmt::Write as _;
 use std::io::Write as _;

@@ -1,6 +1,11 @@
 //! Prints `file<TAB>line<TAB>char column<TAB>word<TAB>tag` for every token of
 //! the given files. Lines are 1-based and columns count characters from 1, the
 //! way Vale reports positions. Used by `tools/full_corpus_agreement.py`.
+#![allow(
+    clippy::print_stderr,
+    clippy::print_stdout,
+    reason = "example binary: it prints its report to the terminal"
+)]
 
 use std::process::ExitCode;
 

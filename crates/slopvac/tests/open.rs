@@ -3,7 +3,11 @@
 //!
 //! The opener is the platform program found on `PATH` (`open` on macOS, `xdg-open` on Linux).
 //! Each test puts a fake one first on `PATH`; it records its arguments to a file.
-
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
 
 use assert_cmd::Command;

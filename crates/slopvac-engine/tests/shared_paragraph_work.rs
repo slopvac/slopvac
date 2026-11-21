@@ -3,6 +3,12 @@
 //! The tests count paragraph analyses (`test-counters`) and retained bytes rather than timing
 //! the lint, so a loaded runner cannot make them fail. The counter is process-wide, so the
 //! tests take a lock and read a difference.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 
