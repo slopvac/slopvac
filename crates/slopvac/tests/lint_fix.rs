@@ -28,7 +28,7 @@ fn slopvac(dir: &std::path::Path) -> Command {
 
 /// A project directory holding `a.md` with `text`.
 fn project(text: &str) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = tempfile::tempdir_in(support::neutral_dir()).expect("tempdir");
     fs::write(dir.path().join("a.md"), text).expect("write document");
     dir
 }
@@ -95,7 +95,7 @@ fn a_file_with_no_applicable_fix_is_not_written(#[case] text: &str) {
 
 #[test]
 fn a_file_over_the_size_cap_is_refused_and_left_alone() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = tempfile::tempdir_in(support::neutral_dir()).expect("tempdir");
     let file = dir.path().join("big.md");
     fs::File::create(&file)
         .and_then(|f| f.set_len(CAP + 1))
@@ -110,7 +110,7 @@ fn a_file_over_the_size_cap_is_refused_and_left_alone() {
 
 #[test]
 fn a_file_outside_the_working_directory_is_refused_and_left_alone() {
-    let project_dir = tempfile::tempdir().expect("tempdir");
+    let project_dir = tempfile::tempdir_in(support::neutral_dir()).expect("tempdir");
     let outside = project(FIXABLE);
     let target = outside.path().join("a.md");
     slopvac(project_dir.path())
@@ -126,7 +126,7 @@ fn a_file_outside_the_working_directory_is_refused_and_left_alone() {
 #[cfg(unix)]
 #[test]
 fn a_symlink_to_a_file_outside_the_working_directory_is_refused_and_left_alone() {
-    let project_dir = tempfile::tempdir().expect("tempdir");
+    let project_dir = tempfile::tempdir_in(support::neutral_dir()).expect("tempdir");
     let outside = project(FIXABLE);
     std::os::unix::fs::symlink(
         outside.path().join("a.md"),
@@ -173,7 +173,7 @@ fn the_report_goes_to_out_and_the_fix_is_still_written() {
 
 #[test]
 fn standard_input_is_refused_as_a_usage_error_and_nothing_is_written() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = tempfile::tempdir_in(support::neutral_dir()).expect("tempdir");
     slopvac(dir.path())
         .args(["lint", "--fix", "--stdin", "--language", "markdown"])
         .write_stdin(FIXABLE)
