@@ -208,7 +208,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"signed {signature.name}")
         elif args.command == "verify-dir":
             listed = verify_directory(args.directory, args.pubkey)
-            args.list_file.write_bytes(b"".join(str(f).encode() + b"\0" for f in listed))
+            args.list_file.write_bytes(
+                b"".join(str(f).encode() + b"\0" for f in listed)
+            )
             print(f"verified {len(listed) // 2} file(s)")
         else:
             verify(args.files, args.pubkey)

@@ -415,9 +415,7 @@ def test_the_list_file_is_nul_separated_for_xargs(signed, tmp_path):
 
 @POSIX_ONLY
 @pytest.mark.parametrize("link", ["slopvac-x86_64.tar.gz", "sha256.sum.minisig"])
-def test_a_symlinked_payload_or_sidecar_fails_and_lists_nothing(
-    signed, tmp_path, link
-):
+def test_a_symlinked_payload_or_sidecar_fails_and_lists_nothing(signed, tmp_path, link):
     directory, pub = signed
     target = tmp_path / "elsewhere"
     target.write_bytes(b"outside")
