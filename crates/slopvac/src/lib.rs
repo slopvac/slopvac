@@ -23,6 +23,7 @@ pub mod lint_settings;
 pub mod lint_terms;
 pub mod logging;
 pub mod messages;
+pub mod migrate_lint;
 pub mod offline;
 pub mod output;
 pub mod owners;

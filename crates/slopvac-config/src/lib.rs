@@ -33,7 +33,7 @@ pub use diag::{BudgetData, Code, ConfigBudget, Diagnostic, SourceFile, render};
 pub use discover::Discovery;
 pub use error::{ConfigError, Rejected};
 pub use files::{FilesError, FilesMatcher};
-pub use load::{LoadedConfig, load, load_labeled};
+pub use load::{LoadedConfig, load, load_labeled, load_text};
 pub use messages::{document_size_message, error_entries, phrase_entries, text_entries};
 pub use presets::{PackFile, PresetFailure, Presets};
 pub use read::{

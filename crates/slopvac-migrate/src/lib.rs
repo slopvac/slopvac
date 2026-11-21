@@ -4,7 +4,8 @@
 //! configuration (comments kept), inline directive ids and steering blocks, and
 //! compares findings before and after.
 //!
-//! The CLI crate wires [`command`] and [`run`] into the clap tree.
+//! The CLI crate wires [`command`] and [`run`] into the clap tree, and gives the
+//! [`EngineLinter`] its config resolver through [`Configure`].
 #![allow(
     clippy::expect_used,
     reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
@@ -44,7 +45,7 @@ pub use config::{Rewrite, migrate_config};
 pub use directives::{Found, RemovedId, UnknownId, rewrite_directives};
 pub use guide::{doc as guide_doc, prime_migrate};
 pub use limits::Limits;
-pub use lint::EngineLinter;
+pub use lint::{Configure, EngineLinter, SettingsOf};
 pub use messages::{error_entries, phrase_entries, text_entries};
 pub use plan::{BACKUP_DIR, Change, ChangeKind, Plan, plan, plan_with_limits, render_diff};
 pub use renames::RenameTable;

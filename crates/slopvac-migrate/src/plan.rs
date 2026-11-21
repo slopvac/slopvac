@@ -58,6 +58,10 @@ pub struct Plan {
     pub notes: Vec<String>,
     /// Things the user should check, such as a malformed steering block.
     pub warnings: Vec<String>,
+    /// What each 2.x config meant, in 3.0 terms: the `--preserve-behavior` rewrite, keyed
+    /// by the `slopvac.toml` path relative to the project root. The before side of the
+    /// lint reads these in place of the 2.x files.
+    pub before: Vec<(PathBuf, String)>,
 }
 
 impl Plan {
@@ -75,6 +79,16 @@ impl Plan {
             .filter_map(|c| Some((root.join(&c.path), c.new.clone()?)))
             .collect()
     }
+
+    /// The 3.0 meaning of each 2.x config ([`Plan::before`]), for linting the project as it
+    /// is.
+    #[must_use]
+    pub fn before_overlay(&self, root: &Path) -> Vec<(PathBuf, String)> {
+        self.before
+            .iter()
+            .map(|(path, text)| (root.join(path), text.clone()))
+            .collect()
+    }
 }
 
 /// What planning collects: the edits, and the bounded notes and warnings.
@@ -84,6 +98,8 @@ struct Sink {
     warnings: Capped,
     /// Blocklists already planned, so a file two settings share is planned once.
     blocklists: BTreeSet<PathBuf>,
+    /// The 3.0 meaning of each 2.x config, for the before side of the lint.
+    before: Vec<(PathBuf, String)>,
 }
 
 /// Plan the migration of the project under `root`.
@@ -120,6 +136,7 @@ pub fn plan_with_limits(
         notes: Capped::new(Listed::Notes),
         warnings: Capped::new(Listed::Warnings),
         blocklists: BTreeSet::new(),
+        before: Vec::new(),
     };
     let mut dropped = Blockers::default();
     let tree = discover(root, &mut budget, &mut sink.warnings)?;
@@ -150,6 +167,7 @@ pub fn plan_with_limits(
         changes: sink.changes,
         notes: sink.notes.finish(),
         warnings: sink.warnings.finish(),
+        before: sink.before,
     };
     let dropped = dropped.finish();
     if dropped.is_empty() {
@@ -228,6 +246,19 @@ fn plan_dir(
             };
         }
     };
+    // The before side lints under what the 2.x config meant: the `--preserve-behavior`
+    // rewrite reproduces its gates. When that rewrite cannot run on this config, such as an
+    // override glob outside its grammar, the before side falls back to the plain rewrite.
+    let meant = if options.preserve_behavior {
+        rewrite.text.clone()
+    } else {
+        let preserve = Options {
+            preserve_behavior: true,
+        };
+        migrate_config_in(&old, &label, renames, preserve, outer.as_ref())
+            .map_or_else(|_| rewrite.text.clone(), |rw| rw.text)
+    };
+    plan.before.push((rel(root, &main_cfg), meant));
     for n in rewrite.notes {
         plan.notes.push(format!("{label}: {n}"));
     }

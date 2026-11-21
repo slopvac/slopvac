@@ -25,8 +25,10 @@ pub struct Finding {
 
 /// Runs a lint over the project and counts findings per rule.
 ///
-/// `Before` runs against the files on disk. `After` runs against the files the plan
-/// would write, so the caller passes them in `overlay` as (path, new text) pairs.
+/// `overlay` holds (path, text) pairs that stand in for the files on disk. For `After` they
+/// are the files the plan would write ([`crate::Plan::overlay`]). For `Before` they are the
+/// 3.0 meaning of each 2.x config ([`crate::Plan::before_overlay`]), and every document is
+/// read from disk.
 pub trait Linter {
     /// Lint `root` and return findings per rule.
     fn lint(

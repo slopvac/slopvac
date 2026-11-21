@@ -1,6 +1,8 @@
 //! Caps, the run budget and hostile text, through the real engine linter.
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
+mod support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -24,7 +26,7 @@ fn linter() -> EngineLinter {
         &CompileOptions::default(),
     )
     .unwrap();
-    EngineLinter::new(vec![set]).unwrap()
+    EngineLinter::new(vec![set], Box::new(support::NoConfig))
 }
 
 fn write(root: &Path, name: &str, text: &str) {

@@ -188,7 +188,7 @@ fn execute_in(
         };
         writeln!(out, "{text}").map_err(io)?;
     }
-    let before = linter.lint(&root, Phase::Before, &[])?;
+    let before = linter.lint(&root, Phase::Before, &plan.before_overlay(&root))?;
     let after = linter.lint(&root, Phase::After, &plan.overlay(&root))?;
     let rows = compare(&before, &after, &renames);
     let changed: Vec<_> = rows.iter().filter(|r| r.changed()).collect();
