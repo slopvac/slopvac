@@ -332,7 +332,8 @@
         {
           "$ref": "#/$defs/JudgementMatch"
         }
-      ]
+      ],
+      "x-slopvac-extensible": true
     },
     "MetricMatch": {
       "additionalProperties": false,
