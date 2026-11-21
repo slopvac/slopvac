@@ -1875,3 +1875,64 @@ fn a_watched_path_with_glob_characters_is_registered_as_a_literal() {
     );
     end_session(&conn, handle);
 }
+
+/// Like [`Swapping`], with a reload that does not wait, and a notice so that the test can
+/// tell when the reload is over. Only the first lint of a gate text waits for the test.
+struct Overtaken {
+    state: Mutex<&'static str>,
+    started: crossbeam_channel::Sender<()>,
+    release: crossbeam_channel::Receiver<()>,
+    gated: std::sync::atomic::AtomicBool,
+}
+
+impl Linter for Overtaken {
+    fn lint(&self, _path: &str, _text: &str) -> Result<Linted, LintError> {
+        let state = *self.state.lock().unwrap();
+        if self.gated.swap(false, Ordering::SeqCst) {
+            self.started.send(()).unwrap();
+            self.release.recv_timeout(WAIT).unwrap();
+        }
+        Err(LintError(format!("state={state}")))
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn reload(&self) -> Reloaded {
+        *self.state.lock().unwrap() = "new";
+        let notice = Notice {
+            code: KebabName::new("config-unknown-rule").unwrap(),
+            level: NoticeLevel::Warning,
+            message: NonEmptyString::new("reloaded").unwrap(),
+            path: None,
+            data: serde_json::Map::new(),
+        };
+        Reloaded::new(vec![notice], None)
+    }
+}
+
+#[test]
+fn a_lint_released_after_the_reload_finished_is_never_published() {
+    let (started_tx, started) = crossbeam_channel::unbounded();
+    let (release, release_rx) = crossbeam_channel::unbounded();
+    let linter = Overtaken {
+        state: Mutex::new("old"),
+        started: started_tx,
+        release: release_rx,
+        gated: std::sync::atomic::AtomicBool::new(true),
+    };
+    let mut client = Client::start(Server::new(Arc::new(linter)), None);
+    client.open_at(URI, "text");
+    started.recv_timeout(WAIT).unwrap();
+    save(&client, CONFIG_URI);
+    // The reload has finished when its notice reaches the client. The lint began before it
+    // and is still waiting.
+    let shown = client.next_notification();
+    assert_eq!(shown.method, "window/showMessage");
+    release.send(()).unwrap();
+    // The first diagnostics for the document come from the lint that the reload queued.
+    let published = client.diagnostics();
+    assert!(message(&published).ends_with("state=new"), "{published}");
+    client.finish().unwrap();
+}
