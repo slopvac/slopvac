@@ -598,3 +598,31 @@ fn a_second_reload_of_a_still_broken_nested_config_keeps_the_error_and_every_doc
     assert_eq!(again["sub/a.md"], ["lsp-lint-incomplete"]);
     session.finish();
 }
+#[test]
+fn an_unknown_style_in_an_extended_file_is_shown_on_its_styles_key() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let top = dir.path().canonicalize().expect("canonical");
+    fs::create_dir_all(top.join("shared")).expect("mkdir");
+    fs::create_dir_all(top.join("proj")).expect("mkdir");
+    fs::write(top.join("shared/base.toml"), "schema_version = 3\n").expect("base");
+    fs::write(
+        top.join("proj/slopvac.toml"),
+        "schema_version = 3\nextends = [\"../shared/base.toml\"]\n",
+    )
+    .expect("config");
+    let mut session = Session::start(&top.join("proj"));
+    fs::write(
+        top.join("shared/base.toml"),
+        "schema_version = 3\nstyles = [\"no-such-style\"]\n",
+    )
+    .expect("break");
+    let base = uri_of(&top, "shared/base.toml");
+    changed(&mut session, &base);
+    let shown = diagnostics_on(&session, &base);
+    assert_eq!(shown[0]["code"], "unknown-style", "{shown}");
+    assert_eq!(
+        shown[0]["range"]["start"],
+        json!({"line": 1, "character": 0})
+    );
+    session.finish();
+}

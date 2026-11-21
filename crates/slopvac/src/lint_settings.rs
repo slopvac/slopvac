@@ -207,7 +207,13 @@ pub fn validate_located(config: &LoadedConfig, rules: &Catalog) -> Result<Vec<No
                         BuiltinSource::names().collect::<Vec<_>>().join(", ")
                     ),
                 ),
-                source: None,
+                // The `styles` setting that won is the one with the bad name.
+                source: config
+                    .files
+                    .iter()
+                    .flat_map(|file| file.settings.iter())
+                    .rfind(|setting| setting.path == ["styles"])
+                    .map(|setting| setting.source.clone()),
             });
         }
     }
