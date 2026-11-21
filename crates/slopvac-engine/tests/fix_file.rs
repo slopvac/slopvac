@@ -635,6 +635,27 @@ fn each_refusal_has_its_stable_code(#[case] refusal: Refusal, #[case] code: &str
     assert_eq!(refusal.code(), code);
 }
 
+/// A root that cannot be opened is an I/O error. The error names the target the way policies
+/// section 1.7 shows paths, not by the absolute path the caller passed.
+#[test]
+fn a_root_that_cannot_be_opened_does_not_leak_the_absolute_target_path() {
+    let parent = tempfile::tempdir().unwrap();
+    let target = parent.path().join("private-dir").join("doc.md");
+    let err = fix_file(
+        &swaps(),
+        &parent.path().join("missing-root"),
+        &target,
+        Kind::Markdown,
+        false,
+        None,
+    )
+    .unwrap_err();
+    let slopvac_engine::FixError::Io { path, .. } = &err else {
+        panic!("not an I/O error: {err}");
+    };
+    assert_eq!(path, "<external>/doc.md");
+}
+
 /// After the root path is swapped for a link, an absolute path into the link's target is
 /// not under the root that was opened. It is refused, not mapped onto the original root.
 #[cfg(unix)]

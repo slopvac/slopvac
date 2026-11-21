@@ -109,7 +109,7 @@ pub fn fix_file(
     changed_lines: Option<&[RangeInclusive<usize>]>,
 ) -> Result<FileFix, FixError> {
     let root = Root::open(root).map_err(|source| FixError::Io {
-        path: path.to_string_lossy().into_owned(),
+        path: slopvac_fs::display_under_root(path, root),
         source,
     })?;
     fix_file_hooked(
