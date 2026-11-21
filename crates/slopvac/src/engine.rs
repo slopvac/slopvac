@@ -712,6 +712,54 @@ pub(crate) struct BlockError {
     pub(crate) escaped: String,
 }
 
+/// Key paths of the `slopvac:` block that the schema itself names. A key under a map
+/// (`rules`, `categories`), an unknown key and an array index come from the document, so a
+/// path is shown only up to the last prefix listed here.
+const SCHEMA_PATHS: &[&[&str]] = &[
+    &["slopvac"],
+    &["slopvac", "v"],
+    &["slopvac", "genre"],
+    &["slopvac", "profile"],
+    &["slopvac", "profile", "name"],
+    &["slopvac", "profile", "severity_shift"],
+    &["slopvac", "locale"],
+    &["slopvac", "thresholds"],
+    &["slopvac", "thresholds", "max_total_per_100_words"],
+    &["slopvac", "thresholds", "max_errors"],
+    &["slopvac", "thresholds", "max_warnings"],
+    &["slopvac", "thresholds", "min_score"],
+    &["slopvac", "thresholds", "max_unicode_dashes"],
+    &["slopvac", "categories"],
+    &["slopvac", "rules"],
+    &["slopvac", "terms"],
+    &["slopvac", "terms", "allow"],
+    &["slopvac", "terms", "files"],
+    &["slopvac", "terms", "blocklists"],
+];
+
+/// The JSON pointer of `path` cut at the first segment the schema does not own, `/` when no
+/// segment is owned.
+fn schema_pointer(path: &[String]) -> String {
+    let owned = (1..=path.len())
+        .take_while(|&n| {
+            SCHEMA_PATHS.iter().any(|known| {
+                known
+                    .iter()
+                    .copied()
+                    .eq(path[..n].iter().map(String::as_str))
+            })
+        })
+        .count();
+    if owned == 0 {
+        return "/".to_owned();
+    }
+    path[..owned].iter().fold(String::new(), |mut acc, seg| {
+        acc.push('/');
+        acc.push_str(seg);
+        acc
+    })
+}
+
 /// The problems that `read` found in the block of the document `text`, shown as `shown`. Only
 /// the code, the position and the key path are reported: a diagnostic's own message quotes
 /// the offending value, and front matter values stay out of error output (policies 1.7).
@@ -720,11 +768,7 @@ pub(crate) fn block_errors(shown: &str, text: &str, read: &Read) -> Vec<BlockErr
         .iter()
         .map(|d| {
             let (line, column) = d.location(text);
-            let pointer = if d.path.is_empty() {
-                "/".to_owned()
-            } else {
-                d.pointer()
-            };
+            let pointer = schema_pointer(&d.path);
             BlockError {
                 code: d.code.as_str(),
                 raw: format!("{shown}:{line}:{column}: {pointer}"),

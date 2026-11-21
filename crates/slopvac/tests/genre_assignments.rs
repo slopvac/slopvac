@@ -306,7 +306,7 @@ fn a_hostile_file_name_is_escaped_in_the_block_error() {
     "  thresholds:\n    PRIVATE_SENTINEL: 1\n",
     "/slopvac/thresholds"
 )]
-#[case::map_key("  rules:\n    PRIVATE_SENTINEL: error\n", "/slopvac/rules")]
+#[case::map_key("  rules:\n    PRIVATE_SENTINEL: not-a-level\n", "/slopvac/rules")]
 #[case::array_index(
     "  terms:\n    allow:\n      - fine\n      - PRIVATE_SENTINEL: 1\n",
     "/slopvac/terms/allow"
