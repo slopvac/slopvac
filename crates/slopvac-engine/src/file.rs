@@ -62,6 +62,36 @@ pub struct FileResult {
     pub written: bool,
 }
 
+/// How the caller linted a file, so the fix run lints it the same way.
+///
+/// [`fix_file`] knows only the path and the kind. A caller that gave its lint run a display
+/// path, a root-relative path for `[[genres]]` matching or a declared genre sets the same
+/// here, or the fix could act on findings the lint run did not report.
+#[derive(Debug, Clone, Copy)]
+pub struct FileContext<'a> {
+    /// The kind of file.
+    pub kind: Kind,
+    /// The path to show in the report and in errors. Defaults to `path`.
+    pub shown: Option<&'a str>,
+    /// The path relative to the project root, for matching `[[genres]]` file patterns.
+    pub relative_path: Option<&'a str>,
+    /// The genre the document declares, as the config reader validated it.
+    pub declared_genre: Option<&'a str>,
+}
+
+impl FileContext<'_> {
+    /// A context that knows only the kind of file.
+    #[must_use]
+    pub const fn new(kind: Kind) -> Self {
+        Self {
+            kind,
+            shown: None,
+            relative_path: None,
+            declared_genre: None,
+        }
+    }
+}
+
 /// Lint the file at `path`, fix it and, unless `dry_run`, write the result.
 ///
 /// `root` is the project root the caller trusts; `path` is absolute inside it or relative
@@ -100,7 +130,32 @@ pub fn fix_file_hooked(
     changed_lines: Option<&[RangeInclusive<usize>]>,
     hook: &mut dyn FnMut(Step) -> std::io::Result<()>,
 ) -> Result<FileFix, FixError> {
-    let shown = path.to_string_lossy().into_owned();
+    fix_file_in(
+        engine,
+        root,
+        path,
+        &FileContext::new(kind),
+        dry_run,
+        changed_lines,
+        hook,
+    )
+}
+
+/// [`fix_file_hooked`] with the lint context of the caller (see [`FileContext`]).
+#[doc(hidden)]
+pub fn fix_file_in(
+    engine: &Engine,
+    root: &Path,
+    path: &Path,
+    context: &FileContext<'_>,
+    dry_run: bool,
+    changed_lines: Option<&[RangeInclusive<usize>]>,
+    hook: &mut dyn FnMut(Step) -> std::io::Result<()>,
+) -> Result<FileFix, FixError> {
+    let kind = context.kind;
+    let shown = context
+        .shown
+        .map_or_else(|| path.to_string_lossy().into_owned(), str::to_owned);
     let io = |source| FixError::Io {
         path: shown.clone(),
         source,
@@ -113,7 +168,13 @@ pub fn fix_file_hooked(
         Err(refusal) => return Ok(FileFix::Refused(refusal)),
     };
     let source = String::from_utf8(bytes).map_err(|_| FixError::NotUtf8(shown.clone()))?;
-    let input = Input::new(&shown, &source).with_kind(kind);
+    let mut input = Input::new(&shown, &source).with_kind(kind);
+    if let Some(relative) = context.relative_path {
+        input = input.with_relative_path(relative);
+    }
+    if let Some(genre) = context.declared_genre {
+        input = input.with_declared_genre(genre);
+    }
     let document = engine.lint(&input)?;
     let report = fix_document(engine, &input, &document, changed_lines)?;
     let diff = unified_diff(&shown, &source, &report.text);

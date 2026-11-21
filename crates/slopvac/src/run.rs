@@ -365,7 +365,7 @@ fn doctor(
 }
 
 /// Lint options that parse but have no wiring to the engine yet.
-const UNWIRED_LINT_FLAGS: [&str; 3] = ["fix", "diff-base", "diff-working-tree"];
+const UNWIRED_LINT_FLAGS: [&str; 2] = ["diff-base", "diff-working-tree"];
 
 /// Refuse a lint option this build cannot honour, before any file is linted.
 ///
@@ -591,6 +591,7 @@ fn lint_with(
         stdin_plan: plan,
         config: m.get_one::<PathBuf>("config").cloned(),
         code_comments: m.get_one::<String>("mode").map(String::as_str) == Some("code-comments"),
+        fix: m.get_flag("fix"),
         overrides: lint_settings::Overrides {
             min_score: m.get_one::<f64>("min-score").copied(),
             max_per_100_words: m.get_one::<f64>("max-per-100-words").copied(),
