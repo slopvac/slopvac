@@ -2432,6 +2432,7 @@ dependencies = [
  "slopvac-agents",
  "slopvac-config",
  "slopvac-context",
+ "slopvac-diagrams",
  "slopvac-engine",
  "slopvac-fs",
  "slopvac-lsp",
@@ -2555,6 +2556,7 @@ dependencies = [
  "flate2",
  "roxmltree",
  "rstest",
+ "slopvac-messages",
  "slopvac-model",
  "slopvac-parse",
 ]
@@ -2855,11 +2857,13 @@ dependencies = [
 name = "slopvac-styles"
 version = "0.0.0"
 dependencies = [
+ "rstest",
  "rustix",
  "serde",
  "serde_json",
  "slopvac-config",
  "slopvac-fs",
+ "slopvac-messages",
  "tempfile",
  "thiserror",
 ]

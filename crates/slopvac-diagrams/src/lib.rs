@@ -32,11 +32,13 @@ mod excalidraw;
 mod fences;
 mod json;
 mod mermaid;
+mod messages;
 mod plantuml;
 mod signals;
 mod sink;
 
 pub use fences::{DiagramBlock, extract_fenced, find_markdown_blocks, find_mdx_blocks};
+pub use messages::{message_entries, phrase_entries};
 #[cfg(feature = "test-counters")]
 #[doc(hidden)]
 pub use signals::prose_analyses;
@@ -47,6 +49,8 @@ pub use signals::{
 pub use sink::{MAX_FRAGMENTS, MAX_IDENT_CHARS, MAX_RETAINED_BYTES};
 
 use std::ops::Range;
+
+use crate::messages::DiagramPhrase;
 
 /// What a fragment is in the diagram. Rules use it for exceptions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -161,7 +165,7 @@ impl ExtractionStatus {
         match self {
             ExtractionStatus::Ok => None,
             ExtractionStatus::Unsupported(r) | ExtractionStatus::Malformed(r) => Some(r),
-            ExtractionStatus::BudgetExhausted(_) => Some("a size or work limit was reached"),
+            ExtractionStatus::BudgetExhausted(_) => Some(DiagramPhrase::BudgetReached.as_static()),
         }
     }
 }
@@ -294,7 +298,7 @@ pub fn extract(format: Format, source: &str, base: usize) -> Extraction {
         Format::Drawio => drawio::extract_xml(source, base),
         Format::DrawioSvg => drawio::extract_svg(source, base),
         Format::DrawioPng => Extraction::failed(ExtractionStatus::Unsupported(
-            "binary format needs byte input",
+            DiagramPhrase::BinaryNeedsBytes.as_static(),
         )),
     }
 }
@@ -306,7 +310,11 @@ pub fn extract_bytes(format: Format, bytes: &[u8], base: usize) -> Extraction {
         return drawio::extract_png(bytes, base);
     }
     std::str::from_utf8(bytes).map_or_else(
-        |_| Extraction::failed(ExtractionStatus::Malformed("input is not valid UTF-8")),
+        |_| {
+            Extraction::failed(ExtractionStatus::Malformed(
+                DiagramPhrase::NotUtf8.as_static(),
+            ))
+        },
         |s| extract(format, s, base),
     )
 }

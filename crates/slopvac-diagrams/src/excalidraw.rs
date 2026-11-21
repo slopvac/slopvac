@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 
 use crate::json::{Json, parse};
+use crate::messages::DiagramPhrase;
 use crate::sink::{Sink, clip};
 use crate::{Extraction, ExtractionStatus, Fragment, Role};
 
@@ -17,7 +18,9 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
         return Extraction::failed(ExtractionStatus::Malformed("invalid JSON"));
     };
     let Some(Json::Arr(elements)) = root.get("elements") else {
-        return Extraction::failed(ExtractionStatus::Malformed("no elements array"));
+        return Extraction::failed(ExtractionStatus::Malformed(
+            DiagramPhrase::NoElements.as_static(),
+        ));
     };
     let types: HashMap<&str, &str> = elements
         .iter()
@@ -30,7 +33,7 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
             break;
         }
         if !matches!(e, Json::Obj(_)) {
-            malformed = Some("element is not an object");
+            malformed = Some(DiagramPhrase::ElementNotObject.as_static());
             break;
         }
         if matches!(e.get("isDeleted"), Some(Json::Bool(true))) {
@@ -52,7 +55,7 @@ pub(crate) fn extract(src: &str, base: usize) -> Extraction {
         };
         let Some(Json::Str { span, value }) = e.get(key) else {
             if key == "text" {
-                malformed = Some("text element has no text");
+                malformed = Some(DiagramPhrase::TextElementEmpty.as_static());
                 break;
             }
             continue;

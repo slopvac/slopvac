@@ -10,6 +10,7 @@ use slopvac_config::{
 };
 
 use crate::StyleError;
+use crate::messages::StyleMessage;
 use crate::types::{CategoryPatch, Level, Terms};
 
 /// The file name shown in provenance for the style `name`.
@@ -57,8 +58,8 @@ impl Style {
                 SourceFile { name: &file, text },
                 &[Diagnostic {
                     code: Code::Parse,
-                    message: format!("not valid TOML: {}", e.message),
-                    label: "the parser stopped here".into(),
+                    message: StyleMessage::TomlInvalid { reason: e.message }.to_string(),
+                    label: StyleMessage::TomlLabel.to_string(),
                     span: e.span.unwrap_or(0..0),
                     help: None,
                     path: Vec::new(),

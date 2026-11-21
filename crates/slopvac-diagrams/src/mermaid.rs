@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use crate::messages::DiagramPhrase;
 use crate::sink::{Sink, clip};
 use crate::{Extraction, ExtractionStatus, Fragment, Role, lines};
 
@@ -125,7 +126,9 @@ fn extract_counted(src: &str, base: usize) -> (Extraction, Work) {
             front.push(l);
         }
         if !closed {
-            return failed(ExtractionStatus::Malformed("front matter is not closed"));
+            return failed(ExtractionStatus::Malformed(
+                DiagramPhrase::FrontMatterOpen.as_static(),
+            ));
         }
     }
     let mut header = None;
@@ -147,7 +150,7 @@ fn extract_counted(src: &str, base: usize) -> (Extraction, Work) {
         None => return (Extraction::default(), Work::default()),
         Some(_) => {
             return failed(ExtractionStatus::Unsupported(
-                "unsupported Mermaid diagram type",
+                DiagramPhrase::MermaidUnsupported.as_static(),
             ));
         }
     };

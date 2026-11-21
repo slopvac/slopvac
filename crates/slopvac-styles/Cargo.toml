@@ -13,12 +13,14 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 slopvac-config = { workspace = true }
 slopvac-fs = { workspace = true }
+slopvac-messages = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
+rstest = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]

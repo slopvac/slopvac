@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde_json::Value as Json;
 use slopvac_config::Resolved;
 
-use crate::{Style, StyleError, StyleSource};
+use crate::{Style, StyleError, StyleSource, messages};
 
 /// A declared conflict between two active styles.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,15 +20,7 @@ impl Conflict {
     /// A one-line warning that names the winner.
     #[must_use]
     pub fn message(&self) -> String {
-        let on = if self.keys.is_empty() {
-            String::new()
-        } else {
-            format!(" on {}", self.keys.join(", "))
-        };
-        format!(
-            "style `{}` conflicts with `{}`; `{}` wins{on}",
-            self.loser, self.winner, self.winner
-        )
+        messages::conflict_warning(&self.loser, &self.winner, &self.keys).to_string()
     }
 }
 

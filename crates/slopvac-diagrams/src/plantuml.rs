@@ -4,6 +4,7 @@
 //! component family. Other `@start` types (mindmap, gantt and so on) are
 //! unsupported. Usecase shorthand such as `(Login)` and `:Actor:` is not read.
 
+use crate::messages::DiagramPhrase;
 use crate::sink::{Sink, clip};
 use crate::{Extraction, ExtractionStatus, Fragment, Role, lines};
 
@@ -350,7 +351,9 @@ fn blocks(src: &str, base: usize) -> Result<Blocks<'_>, ExtractionStatus> {
         let opens = t.starts_with("@start");
         if opens && !t.to_ascii_lowercase().starts_with("@startuml") {
             if explicit && current.is_some() {
-                return Err(ExtractionStatus::Malformed("missing @enduml"));
+                return Err(ExtractionStatus::Malformed(
+                    DiagramPhrase::MissingEnduml.as_static(),
+                ));
             }
             explicit = true;
             skipped = true;
@@ -368,11 +371,15 @@ fn blocks(src: &str, base: usize) -> Result<Blocks<'_>, ExtractionStatus> {
             continue;
         }
         if opens {
-            return Err(ExtractionStatus::Malformed("missing @enduml"));
+            return Err(ExtractionStatus::Malformed(
+                DiagramPhrase::MissingEnduml.as_static(),
+            ));
         }
         if t.starts_with("@end") {
             if !t.eq_ignore_ascii_case("@enduml") {
-                return Err(ExtractionStatus::Malformed("mismatched terminator"));
+                return Err(ExtractionStatus::Malformed(
+                    DiagramPhrase::MismatchedTerminator.as_static(),
+                ));
             }
             done.extend(current.take());
             continue;
@@ -380,7 +387,9 @@ fn blocks(src: &str, base: usize) -> Result<Blocks<'_>, ExtractionStatus> {
         body.push((at, t));
     }
     if explicit && current.is_some() {
-        return Err(ExtractionStatus::Malformed("missing @enduml"));
+        return Err(ExtractionStatus::Malformed(
+            DiagramPhrase::MissingEnduml.as_static(),
+        ));
     }
     done.extend(current);
     Ok(Blocks {
@@ -438,7 +447,7 @@ fn extract_counted(src: &str, base: usize) -> (Extraction, usize) {
 }
 
 fn unsupported() -> ExtractionStatus {
-    ExtractionStatus::Unsupported("unsupported PlantUML diagram type")
+    ExtractionStatus::Unsupported(DiagramPhrase::PlantUmlUnsupported.as_static())
 }
 
 fn lower_eq(t: &str, a: &str, b: &str) -> bool {
