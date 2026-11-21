@@ -40,8 +40,15 @@ Limits, all of which fail closed:
   list whose members all survive in another order is reported as ``list-reordered``
   and needs an allow entry. A new ``anyOf``/``oneOf``, and an appended ``oneOf`` or
   ``prefixItems`` member, are reported as ``narrowing-possible``. An appended ``anyOf``
-  member passes; how output schemas treat appended variants and widened enums is
-  pending policy (slopvac-8l4.2.50).
+  member passes in an input schema.
+- Direction: schemas/v3/directions.toml classes each schema file as ``input``,
+  ``output`` or ``both``; it must list every schema file and nothing else. ``both``
+  follows the output rule. In an output schema, a new ``enum`` value or an appended
+  ``anyOf``/``oneOf`` member is reported (``enum-widened``, ``alternative-added``)
+  unless the same position in the new schema carries ``"x-slopvac-extensible": true``;
+  a marked ``oneOf`` also skips ``narrowing-possible`` for appended members. Removing
+  a marker from an output schema is ``extensible-removed``. In an input schema all of
+  these stay allowed. A finding reached through a ``$ref`` follows the referrer's file.
 - A keyword the check does not model is reported as ``unverified`` when it is
   added, removed or changed. Only the annotations in ``_ANNOTATIONS`` are exempt:
   ``description``, ``title``, ``examples``, ``$comment``, ``deprecated``,
@@ -81,6 +88,12 @@ SCHEMA_REL = "schemas/v3"
 SCHEMA_SUFFIX = ".schema.json"
 ALLOW_FILE = "compat-allow.toml"
 ALLOW_FIELDS = ("file", "pointer", "kind", "reason", "approved_by")
+DIRECTIONS_FILE = "directions.toml"
+DIRECTIONS = ("input", "output", "both")
+EXTENSIBLE = "x-slopvac-extensible"
+# Kinds that only an output schema (or a "both" schema) reports: an input schema may
+# grow its enums and alternatives, but a consumer of output must be told it can.
+OUTPUT_ONLY_KINDS = frozenset({"enum-widened", "alternative-added", "extensible-removed"})
 
 LOADERS: dict[str, Callable[[str], Any]] = {
     ".json": json.loads,
@@ -290,6 +303,7 @@ _MODELLED = frozenset(
         "not",
         "required",
         "dependentRequired",
+        EXTENSIBLE,
         "additionalProperties",
         "additionalItems",
         *_SCHEMA_MAPS,
@@ -588,13 +602,12 @@ class Comparer:
                 # The whole subschema is gone: inspect what it described.
                 yield from self.compare(file, doc, f"{ptr}/{key}", o[key], {})
         for key in _SCHEMA_LISTS:
-            yield from self._compare_list(
-                file, doc, ptr, key, o.get(key, []), n.get(key, [])
-            )
+            yield from self._compare_list(file, doc, ptr, key, o, n)
 
     def _compare_list(
-        self, file: str, doc: Docs, ptr: str, key: str, old: list, new: list
+        self, file: str, doc: Docs, ptr: str, key: str, o: dict, n: dict
     ) -> Iterator[Finding]:
+        old, new = o.get(key, []), n.get(key, [])
         old_c, new_c = [_canon(m) for m in old], [_canon(m) for m in new]
         if old_c != new_c[: len(old_c)] and not (Counter(old_c) - Counter(new_c)):
             # Every old member survives but at another position: fail closed.
@@ -611,7 +624,18 @@ class Comparer:
                 # A removed member: inspect what it described.
                 yield from self.compare(file, doc, f"{ptr}/allOf/{i}", old[i], {})
             return
-        yield from self._narrowing_possible(file, ptr, key, old, new)
+        if key in ("anyOf", "oneOf") and old:
+            for i in range(len(old), len(new)):
+                if not _extensible(n):
+                    yield Finding(
+                        file,
+                        f"{ptr}/{key}/{i}",
+                        "alternative-added",
+                        "(absent)",
+                        _show(new[i]),
+                    )
+        if not (key == "oneOf" and _extensible(n)):
+            yield from self._narrowing_possible(file, ptr, key, old, new)
         for i, member in enumerate(old):
             child = f"{ptr}/{key}/{i}"
             if i >= len(new):
@@ -705,8 +729,15 @@ def _compare_scalars(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]
                 )
 
 
+def _extensible(node: dict) -> bool:
+    """True when the position carries ``x-slopvac-extensible: true`` (JSON ``true`` only)."""
+    return node.get(EXTENSIBLE) is True
+
+
 def _compare_value_sets(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]:
     """``enum`` and ``const`` both restrict to a value set; compare the sets."""
+    if _extensible(o) and not _extensible(n):
+        yield Finding(file, ptr, "extensible-removed", "true", _show(n.get(EXTENSIBLE)))
     old_vals = (
         o.get("enum") if "enum" in o else ([o["const"]] if "const" in o else None)
     )
@@ -725,6 +756,12 @@ def _compare_value_sets(file: str, ptr: str, o: dict, n: dict) -> Iterator[Findi
                 _show(o.get(old_key)),
                 _show(n[key]),
             )
+        elif not _extensible(n) and not {_canon(v) for v in new_vals} <= {
+            _canon(v) for v in old_vals
+        }:
+            yield Finding(
+                file, f"{ptr}/{key}", "enum-widened", _show(old_vals), _show(n[key])
+            )
 
 
 def _compare_required(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]:
@@ -739,8 +776,18 @@ def _compare_required(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding
         )
 
 
-def compare_snapshots(old: dict[str, dict], new: dict[str, dict]) -> list[Finding]:
-    """Compare schemas by file name. Added files are allowed."""
+def compare_snapshots(
+    old: dict[str, dict],
+    new: dict[str, dict],
+    directions: dict[str, str] | None = None,
+) -> list[Finding]:
+    """Compare schemas by file name. Added files are allowed.
+
+    ``directions`` maps a file name to ``input``, ``output`` or ``both``. A file that is
+    not listed counts as ``input``. The output-only kinds are dropped for an input file;
+    a finding reached through a ``$ref`` carries the referring file, so the referrer's
+    direction decides.
+    """
     comparer = Comparer(old, new)
     findings: list[Finding] = []
     for name, old_schema in sorted(old.items()):
@@ -749,10 +796,38 @@ def compare_snapshots(old: dict[str, dict], new: dict[str, dict]) -> list[Findin
                 Finding(name, "", "file-removed", old_schema["$id"], "(absent)")
             )
             continue
-        findings.extend(
-            comparer.compare(name, Docs(name, name), "", old_schema, new[name])
-        )
+        found = comparer.compare(name, Docs(name, name), "", old_schema, new[name])
+        if (directions or {}).get(name, "input") == "input":
+            found = (f for f in found if f.kind not in OUTPUT_ONLY_KINDS)
+        findings.extend(found)
     return findings
+
+
+def load_directions(path: Path) -> dict[str, str]:
+    """Read the direction registry: ``[directions]`` maps a schema file to its class."""
+    try:
+        data = tomllib.loads(_read(path))
+    except tomllib.TOMLDecodeError as exc:
+        raise CompatError(f"cannot parse {path}: {exc}") from exc
+    table = data.get("directions")
+    if not isinstance(table, dict) or set(data) != {"directions"}:
+        raise CompatError(f"{path}: expected one [directions] table")
+    for name, value in table.items():
+        if value not in DIRECTIONS:
+            raise CompatError(
+                f"{path}: {name}: direction {value!r} is not one of {', '.join(DIRECTIONS)}"
+            )
+    return table
+
+
+def check_directions(directions: dict[str, str], schemas: dict[str, dict]) -> None:
+    """The registry lists every schema file once and nothing else (fail closed)."""
+    unlisted = sorted(set(schemas) - set(directions))
+    if unlisted:
+        raise CompatError(f"{', '.join(unlisted)}: not in {DIRECTIONS_FILE}")
+    unknown = sorted(set(directions) - set(schemas))
+    if unknown:
+        raise CompatError(f"{DIRECTIONS_FILE} lists no such schema: {', '.join(unknown)}")
 
 
 # --- corpus re-validation --------------------------------------------------------
@@ -1004,7 +1079,11 @@ def check(base: Snapshot, new_dir: Path, allow: list[AllowEntry]) -> list[Findin
     new review.
     """
     new = _read_dir(new_dir).schemas
-    findings = compare_snapshots(base.schemas, new) + validate_corpus(base.corpus, new)
+    directions = load_directions(new_dir / DIRECTIONS_FILE)
+    check_directions(directions, new)
+    findings = compare_snapshots(base.schemas, new, directions) + validate_corpus(
+        base.corpus, new
+    )
     persisting = set(compare_snapshots(base.schemas, base.schemas))
     findings = [
         f

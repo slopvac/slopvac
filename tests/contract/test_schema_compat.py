@@ -1154,6 +1154,140 @@ def test_narrowing_possible_is_suppressed_by_an_allow_entry(tmp_path):
     assert findings == []
 
 
+EXT = {"x-slopvac-extensible": True}
+ENUM_A = schema(properties={"e": {"enum": ["a"]}})
+ENUM_AB = schema(properties={"e": {"enum": ["a", "b"]}})
+ENUM_AB_OPEN = schema(properties={"e": {"enum": ["a", "b"], **EXT}})
+ANY_A = schema(anyOf=[{"type": "string"}])
+ANY_AB = schema(anyOf=[{"type": "string"}, {"type": "null"}])
+ANY_AB_OPEN = schema(anyOf=[{"type": "string"}, {"type": "null"}], **EXT)
+ONE_A = schema(oneOf=[{"required": ["a"]}])
+ONE_AB = schema(oneOf=[{"required": ["a"]}, {"required": ["b"]}])
+ONE_AB_OPEN = schema(oneOf=[{"required": ["a"]}, {"required": ["b"]}], **EXT)
+
+OUTPUT_GROWTH = {
+    "enum-value": (ENUM_A, ENUM_AB, "/properties/e/enum", "enum-widened"),
+    "anyOf-branch": (ANY_A, ANY_AB, "/anyOf/1", "alternative-added"),
+    "oneOf-branch": (ONE_A, ONE_AB, "/oneOf/1", "alternative-added"),
+}
+
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), OUTPUT_GROWTH.values(), ids=OUTPUT_GROWTH.keys()
+)
+def test_growth_in_an_output_schema_is_breaking_unless_marked(
+    tmp_path, direction, old, new, pointer, kind
+):
+    findings = run(tmp_path, old, new, direction=direction)
+    expected = [(pointer, kind)]
+    if kind == "alternative-added" and "oneOf" in pointer:
+        expected.append((pointer, "narrowing-possible"))
+    assert sorted(kinds(findings)) == sorted(expected)
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [(ENUM_A, ENUM_AB_OPEN), (ANY_A, ANY_AB_OPEN), (ONE_A, ONE_AB_OPEN)],
+    ids=["enum", "anyOf", "oneOf"],
+)
+def test_marked_growth_in_an_output_schema_is_allowed(tmp_path, direction, old, new):
+    assert run(tmp_path, old, new, direction=direction) == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [(ENUM_A, ENUM_AB), (ANY_A, ANY_AB)],
+    ids=["enum", "anyOf"],
+)
+def test_unmarked_growth_in_an_input_schema_is_allowed(tmp_path, old, new):
+    assert run(tmp_path, old, new, direction="input") == []
+
+
+def test_marker_on_another_position_does_not_cover_the_growth(tmp_path):
+    new = schema(properties={"e": {"enum": ["a", "b"]}, "f": {**EXT}})
+    old = schema(properties={"e": {"enum": ["a"]}, "f": {}})
+    findings = run(tmp_path, old, new, direction="output")
+    assert kinds(findings) == [("/properties/e/enum", "enum-widened")]
+
+
+def test_marker_value_other_than_true_does_not_cover_the_growth(tmp_path):
+    new = schema(properties={"e": {"enum": ["a", "b"], "x-slopvac-extensible": False}})
+    findings = run(tmp_path, ENUM_A, new, direction="output")
+    assert kinds(findings) == [("/properties/e/enum", "enum-widened")]
+
+
+def test_adding_the_marker_alone_is_allowed(tmp_path):
+    new = schema(properties={"e": {"enum": ["a"], **EXT}})
+    assert run(tmp_path, ENUM_A, new, direction="output") == []
+
+
+def test_removing_the_marker_from_an_output_schema_is_breaking(tmp_path):
+    old = schema(properties={"e": {"enum": ["a"], **EXT}})
+    findings = run(tmp_path, old, ENUM_A, direction="output")
+    assert kinds(findings) == [("/properties/e", "extensible-removed")]
+
+
+def test_removing_the_marker_from_an_input_schema_is_allowed(tmp_path):
+    old = schema(properties={"e": {"enum": ["a"], **EXT}})
+    assert run(tmp_path, old, ENUM_A, direction="input") == []
+
+
+def test_growth_reached_through_a_ref_follows_the_referrer_direction(tmp_path):
+    def referrer(defn: dict) -> dict:
+        return schema(
+            properties={"e": {"$ref": "#/$defs/E"}}, **{"$defs": {"E": defn}}
+        )
+
+    old = referrer({"enum": ["a"]})
+    assert run(tmp_path / "in", old, referrer({"enum": ["a", "b"]})) == []
+    out = run(tmp_path / "out", old, referrer({"enum": ["a", "b"]}), direction="output")
+    # Once at the definition and once through the reference.
+    assert [f.kind for f in out] == ["enum-widened", "enum-widened"]
+    marked = referrer({"enum": ["a", "b"], **EXT})
+    assert run(tmp_path / "ok", old, marked, direction="output") == []
+
+
+def test_registry_must_list_every_schema_file(tmp_path):
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = write_dir(tmp_path / "new", {FILE: schema()})
+    write_directions(new_dir, [])
+    with pytest.raises(compat.CompatError, match="not in directions"):
+        compat.check(base, new_dir, [])
+
+
+def test_registry_must_not_list_a_missing_file(tmp_path):
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = write_dir(tmp_path / "new", {FILE: schema()})
+    write_directions(new_dir, [FILE, "gone.schema.json"])
+    with pytest.raises(compat.CompatError, match="gone.schema.json"):
+        compat.check(base, new_dir, [])
+
+
+def test_registry_rejects_an_unknown_direction(tmp_path):
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = write_dir(tmp_path / "new", {FILE: schema()}, direction="sideways")
+    with pytest.raises(compat.CompatError, match="sideways"):
+        compat.check(base, new_dir, [])
+
+
+def test_registry_is_required_in_the_checked_tree(tmp_path):
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = write_dir(tmp_path / "new", {FILE: schema()})
+    (new_dir / compat.DIRECTIONS_FILE).unlink()
+    with pytest.raises(compat.CompatError, match=compat.DIRECTIONS_FILE):
+        compat.check(base, new_dir, [])
+
+
+def test_committed_registry_covers_exactly_the_committed_schemas():
+    schemas_dir = ROOT / "schemas" / "v3"
+    registry = compat.load_directions(schemas_dir / compat.DIRECTIONS_FILE)
+    committed = {p.name for p in schemas_dir.glob(f"*{compat.SCHEMA_SUFFIX}")}
+    assert set(registry) == committed
+
+
 def test_each_added_required_field_has_its_own_finding(tmp_path):
     findings = run(tmp_path, schema(), schema(required=["a", "b"]))
     assert kinds(findings) == [
