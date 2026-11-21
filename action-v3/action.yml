@@ -146,13 +146,25 @@ runs:
       run: |
         set -euo pipefail
         guidance='set `version: 3.0.0rc1` (or later) on this Action until 3.0.0 is released'
-        out="$("$BINARY" --version 2>&1)" || out=""
-        if [[ ! "$out" =~ ([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+        out="$("$BINARY" --version 2>/dev/null)" || out=""
+        # Accept only a line that starts with the program name: the Rust CLI
+        # prints `slopvac X.Y.Z[-pre]`, the 2.x package `slopvac, version X.Y.Z`.
+        # Anything else, a date or another tool's version included, is unreadable.
+        pattern='^slopvac(, version)? ([0-9]+)\.([0-9]+)\.([0-9]+)([-+.]?[0-9A-Za-z.+-]*)$'
+        major="" found=""
+        while IFS= read -r line; do
+          line="${line%$'\r'}"
+          if [[ "$line" =~ $pattern ]]; then
+            major="${BASH_REMATCH[2]}"
+            found="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.${BASH_REMATCH[4]}"
+            break
+          fi
+        done <<< "$out"
+        if [[ -z "$found" ]]; then
           echo "::error::could not read the slopvac version after install; $guidance"
           exit 1
         fi
-        if (( BASH_REMATCH[1] < 3 )); then
-          found="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+        if (( 10#$major < 3 )); then
           echo "::error::slopvac $found is older than 3.0; $guidance"
           exit 1
         fi
