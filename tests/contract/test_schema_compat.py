@@ -1244,8 +1244,8 @@ def test_growth_reached_through_a_ref_follows_the_referrer_direction(tmp_path):
     old = referrer({"enum": ["a"]})
     assert run(tmp_path / "in", old, referrer({"enum": ["a", "b"]})) == []
     out = run(tmp_path / "out", old, referrer({"enum": ["a", "b"]}), direction="output")
-    # Once at the definition and once through the reference.
-    assert [f.kind for f in out] == ["enum-widened", "enum-widened"]
+    # Reported once, at the definition, and not again at the referrer.
+    assert kinds(out) == [("/$defs/E/enum", "enum-widened")]
     marked = referrer({"enum": ["a", "b"], **EXT})
     assert run(tmp_path / "ok", old, marked, direction="output") == []
 
