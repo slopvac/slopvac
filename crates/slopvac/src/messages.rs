@@ -31,6 +31,7 @@ pub static ALL: &[Registered] = &[
     ("slopvac-plugins", slopvac_plugins::message_entries),
     ("slopvac-pos", slopvac_pos::message_entries),
     ("slopvac-rules", slopvac_rules::message_entries),
+    ("slopvac-styles", slopvac_styles::message_entries),
     ("slopvac-terms", slopvac_terms::message_entries),
     ("slopvac-terms-text", slopvac_terms::text_entries),
     ("slopvac-terms-phrases", slopvac_terms::phrase_entries),

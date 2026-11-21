@@ -9,6 +9,7 @@
 
 mod detect;
 mod error;
+mod messages;
 mod reference;
 mod resolve;
 mod shape;
@@ -18,6 +19,7 @@ mod types;
 
 pub use detect::{Detection, Evidence, SkippedFile, Suggestion, detect_house_styles};
 pub use error::StyleError;
+pub use messages::message_entries;
 pub use reference::reference_pages;
 pub use resolve::{Conflict, Resolution, resolve};
 pub use shape::Style;

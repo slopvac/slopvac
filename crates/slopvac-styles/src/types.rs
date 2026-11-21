@@ -5,6 +5,8 @@
 
 use serde::Deserialize;
 
+use crate::messages::StyleMessage;
+
 /// The level a rule or category reports at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -94,13 +96,11 @@ impl<'de> Deserialize<'de> for Budget {
         }
         match Raw::deserialize(d)? {
             Raw::Number(n) if n >= 0.0 => Ok(Self::Limit(n)),
-            Raw::Number(n) => Err(D::Error::custom(format!(
-                "max_per_100_words must be at least 0, found {n}"
-            ))),
+            Raw::Number(n) => Err(D::Error::custom(StyleMessage::BudgetNegative {
+                found: n.to_string(),
+            })),
             Raw::Text(t) if t == "none" => Ok(Self::None),
-            Raw::Text(t) => Err(D::Error::custom(format!(
-                "max_per_100_words must be a number or \"none\", found \"{t}\""
-            ))),
+            Raw::Text(t) => Err(D::Error::custom(StyleMessage::BudgetInvalid { found: t })),
         }
     }
 }

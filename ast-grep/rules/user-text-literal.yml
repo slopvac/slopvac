@@ -21,6 +21,7 @@ files:
   - crates/slopvac-plugins/src/**
   - crates/slopvac-pos/src/**
   - crates/slopvac-sanitize/src/**
+  - crates/slopvac-styles/src/**
   - crates/slopvac-terms/src/**
   - crates/slopvac-text/src/**
   - crates/slopvac-migrate/src/**
@@ -29,6 +30,8 @@ ignores:
   - crates/slopvac-messages/src/audit.rs
   # A generated reference page: its prose is exempt because the prose gate covers it.
   - crates/slopvac-terms/src/reference.rs
+  # A generated reference page: its prose is exempt because the prose gate covers it.
+  - crates/slopvac-styles/src/reference.rs
   - "**/tests/**"
   - "**/benches/**"
   - "**/examples/**"

@@ -12,6 +12,7 @@
 
 use std::path::Path;
 
+use crate::messages::StyleMessage;
 use crate::source::BuiltinSource;
 
 /// A known style guide: how projects name it and which bundled preset encodes it.
@@ -84,11 +85,19 @@ impl Suggestion {
     /// One human line: the suggestion and where it was found.
     #[must_use]
     pub fn describe(&self) -> String {
-        let at = format!("{}:{}", self.evidence.file, self.evidence.line);
+        let style = self.style.clone();
+        let file = self.evidence.file.clone();
+        let line = self.evidence.line;
         match &self.preset {
-            Some(p) => format!("{}: suggest the \"{p}\" preset ({at})", self.style),
-            None => format!("{}: no bundled preset ({at})", self.style),
+            Some(preset) => StyleMessage::SuggestPreset {
+                style,
+                preset: preset.clone(),
+                file,
+                line,
+            },
+            None => StyleMessage::NoPreset { style, file, line },
         }
+        .to_string()
     }
 }
 
@@ -106,13 +115,12 @@ pub struct SkippedFile {
 
 impl SkippedFile {
     /// The info notice text. `label` is the file's root-relative display path.
-    ///
-    /// The text stays here until the styles crate moves onto the message registry.
     #[must_use]
     pub fn message(&self, label: &str) -> String {
-        format!(
-            "{label} is over the 1 MiB style detection limit; house-style detection skipped it."
-        )
+        StyleMessage::DetectFileTooLarge {
+            label: label.to_owned(),
+        }
+        .to_string()
     }
 }
 
