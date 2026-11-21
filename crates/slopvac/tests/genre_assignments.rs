@@ -311,6 +311,7 @@ fn a_hostile_file_name_is_escaped_in_the_block_error() {
     "  terms:\n    allow:\n      - fine\n      - PRIVATE_SENTINEL: 1\n",
     "/slopvac/terms/allow"
 )]
+#[case::key_the_schema_does_not_own_under_terms("  terms:\n    files: true\n", "/slopvac/terms")]
 fn block_errors_show_only_the_schema_owned_key_path(#[case] body: &str, #[case] pointer: &str) {
     let config = format!(
         "{ASSIGNED}\n[frontmatter]\nallow = [\"genre\", \"locale\", \"thresholds\", \"rules\", \"terms\"]\n"
@@ -326,5 +327,18 @@ fn block_errors_show_only_the_schema_owned_key_path(#[case] body: &str, #[case] 
             stderr.lines().any(|l| l.ends_with(&format!(": {pointer}"))),
             "{format}: want a line ending in {pointer}: {stderr}"
         );
+        assert!(
+            !stderr.lines().any(|l| l.contains("files")),
+            "{format}: the key `files` leaked: {stderr}"
+        );
+        if format == "json" {
+            let report: Value = serde_json::from_slice(&out.stdout).expect("json report");
+            let messages = report.to_string();
+            assert!(!messages.contains("files"), "json: {messages}");
+            assert!(
+                messages.contains(&format!("{pointer}\"")),
+                "json: want a message ending in {pointer}: {messages}"
+            );
+        }
     }
 }
