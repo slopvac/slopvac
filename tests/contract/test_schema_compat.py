@@ -1172,7 +1172,6 @@ OUTPUT_GROWTH = {
 }
 
 
-
 @pytest.mark.parametrize("direction", ["output", "both"])
 @pytest.mark.parametrize(
     ("old", "new", "pointer", "kind"), OUTPUT_GROWTH.values(), ids=OUTPUT_GROWTH.keys()
@@ -1237,9 +1236,7 @@ def test_removing_the_marker_from_an_input_schema_is_allowed(tmp_path):
 
 def test_growth_reached_through_a_ref_follows_the_referrer_direction(tmp_path):
     def referrer(defn: dict) -> dict:
-        return schema(
-            properties={"e": {"$ref": "#/$defs/E"}}, **{"$defs": {"E": defn}}
-        )
+        return schema(properties={"e": {"$ref": "#/$defs/E"}}, **{"$defs": {"E": defn}})
 
     old = referrer({"enum": ["a"]})
     assert run(tmp_path / "in", old, referrer({"enum": ["a", "b"]})) == []
@@ -1296,7 +1293,10 @@ DISJOINT_APPENDS = {
 }
 OVERLAPPING_APPENDS = {
     "same-type": ([STR], [STR, {"type": "string", "minLength": 1}]),
-    "integer-in-number": ([{"type": "number"}], [{"type": "number"}, {"type": "integer"}]),
+    "integer-in-number": (
+        [{"type": "number"}],
+        [{"type": "number"}, {"type": "integer"}],
+    ),
     "enum-shares-a-value": ([KIND_A], [KIND_A, KIND_AB]),
     "discriminator-not-required": ([KIND_A], [KIND_A, KIND_A_OPTIONAL]),
     "ref-member": ([STR], [STR, {"$ref": "#/$defs/X"}]),
@@ -1440,6 +1440,112 @@ def test_committed_output_schemas_reference_no_input_file():
     directions = compat.load_directions(schemas_dir / compat.DIRECTIONS_FILE)
     schemas = compat.snapshot_from_dir(schemas_dir).schemas
     assert compat.input_references(schemas, directions) == []
+
+
+def _prop_schema(prop: dict, **defs: dict) -> dict:
+    return schema(properties={"e": prop}, **({"$defs": defs} if defs else {}))
+
+
+REF_A = {"$ref": "#/$defs/A"}
+REF_B = {"$ref": "#/$defs/B"}
+STRING_DEF = {"type": "string"}
+
+SIBLING_WIDENINGS = {
+    "sibling-enum-dropped": (
+        _prop_schema({**REF_A, "enum": ["a"]}, A=STRING_DEF),
+        _prop_schema(REF_A, A=STRING_DEF),
+        "enum-widened",
+    ),
+    "sibling-type-widened": (
+        _prop_schema({**REF_A, "type": "string"}, A={"minLength": 1}),
+        _prop_schema({**REF_A, "type": ["string", "null"]}, A={"minLength": 1}),
+        "type-widened",
+    ),
+    "retarget-with-sibling": (
+        _prop_schema(
+            {**REF_A, "type": "string"}, A={"enum": ["a"]}, B={"enum": ["a", "b"]}
+        ),
+        _prop_schema(
+            {**REF_B, "type": "string"}, A={"enum": ["a"]}, B={"enum": ["a", "b"]}
+        ),
+        "enum-widened",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "kind"), SIBLING_WIDENINGS.values(), ids=SIBLING_WIDENINGS
+)
+def test_siblings_of_a_ref_are_part_of_the_effective_restriction(
+    tmp_path, direction, old, new, kind
+):
+    findings = run(tmp_path, old, new, direction=direction)
+    assert kind in [f.kind for f in findings]
+    assert run(tmp_path / "in", old, new, direction="input") == []
+
+
+RELOCATIONS = {
+    "type-moves-into-the-ref": (
+        _prop_schema({"type": "string", "enum": ["a"]}),
+        _prop_schema({**REF_A, "enum": ["a"]}, A=STRING_DEF),
+    ),
+    "enum-moves-into-the-ref": (
+        _prop_schema({"type": "string", "enum": ["a"]}),
+        _prop_schema({**REF_A, "type": "string"}, A={"enum": ["a"]}),
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(("old", "new"), RELOCATIONS.values(), ids=RELOCATIONS)
+def test_relocating_a_restriction_without_loosening_it_is_allowed(
+    tmp_path, direction, old, new
+):
+    assert run(tmp_path, old, new, direction=direction) == []
+
+
+LOOSENED = {
+    "minLength-lowered": ({"minLength": 5}, {"minLength": 2}, "/minLength"),
+    "minLength-removed": ({"minLength": 5}, {}, "/minLength"),
+    "maxLength-raised": ({"maxLength": 5}, {"maxLength": 9}, "/maxLength"),
+    "maximum-removed": ({"maximum": 5}, {}, "/maximum"),
+    "minItems-lowered": ({"minItems": 2}, {"minItems": 1}, "/minItems"),
+    "required-dropped": ({"required": ["a"]}, {}, "/required/a"),
+    "uniqueItems-dropped": ({"uniqueItems": True}, {}, "/uniqueItems"),
+    "format-removed": ({"format": "date"}, {}, "/format"),
+    "multipleOf-removed": ({"multipleOf": 2}, {}, "/multipleOf"),
+    "not-removed": ({"not": {"type": "null"}}, {}, "/not"),
+    "dependentRequired-dropped": (
+        {"dependentRequired": {"a": ["b"]}},
+        {},
+        "/dependentRequired/a/b",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(("old", "new", "pointer"), LOOSENED.values(), ids=LOOSENED)
+def test_loosening_a_constraint_of_an_output_schema_is_breaking(
+    tmp_path, direction, old, new, pointer
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    findings = run(tmp_path, old_s, new_s, direction=direction)
+    assert kinds(findings) == [(f"/properties/e{pointer}", "constraint-loosened")]
+
+
+@pytest.mark.parametrize(("old", "new", "pointer"), LOOSENED.values(), ids=LOOSENED)
+def test_loosening_a_constraint_of_an_input_schema_is_allowed(
+    tmp_path, old, new, pointer
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    assert run(tmp_path, old_s, new_s, direction="input") == []
+
+
+def test_a_marker_does_not_excuse_a_loosened_bound(tmp_path):
+    old_s, new_s = _prop_schema({"minLength": 5}), _prop_schema({"minLength": 2, **EXT})
+    findings = run(tmp_path, old_s, new_s, direction="output")
+    assert kinds(findings) == [("/properties/e/minLength", "constraint-loosened")]
 
 
 def test_registry_must_list_every_schema_file(tmp_path):
