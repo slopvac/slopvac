@@ -3,9 +3,12 @@
 //! `tests/fixtures/`; `tools/gen_fixtures.py --check` proves they are current.
 #![allow(
     clippy::panic,
-    clippy::print_stderr,
     clippy::unwrap_used,
     reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::print_stderr,
+    reason = "test code: it prints diagnostics to the test log"
 )]
 #![allow(
     clippy::allow_attributes_without_reason,

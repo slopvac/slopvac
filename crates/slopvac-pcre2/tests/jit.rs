@@ -7,10 +7,10 @@
 //! These tests need real JIT code. On targets that have a JIT (x86-64 and `AArch64` on macOS
 //! and glibc Linux) a missing JIT fails the test; elsewhere the test prints why it did not
 //! run and returns.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 #![allow(
     clippy::print_stderr,
-    clippy::unwrap_used,
-    reason = "test code: a panic is a failed test"
+    reason = "test code: it prints diagnostics to the test log"
 )]
 #![allow(
     clippy::allow_attributes_without_reason,

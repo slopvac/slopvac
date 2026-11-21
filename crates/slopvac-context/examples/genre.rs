@@ -4,7 +4,7 @@
 #![allow(
     clippy::print_stderr,
     clippy::print_stdout,
-    reason = "test code: a panic is a failed test"
+    reason = "example binary: it prints its report to the terminal"
 )]
 
 fn main() {

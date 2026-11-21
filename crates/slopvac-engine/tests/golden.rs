@@ -16,10 +16,13 @@
 #![allow(
     clippy::expect_used,
     clippy::panic,
-    clippy::print_stderr,
-    clippy::print_stdout,
     clippy::unwrap_used,
     reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::print_stderr,
+    clippy::print_stdout,
+    reason = "test code: it prints diagnostics to the test log"
 )]
 #![allow(
     clippy::allow_attributes_without_reason,
