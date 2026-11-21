@@ -6,7 +6,6 @@
 //! failures as coded diagnostics.
 #![allow(
     clippy::allow_attributes_without_reason,
-    clippy::clone_on_ref_ptr,
     reason = "TEMPORARY: burn-down in slopvac-8l4.2.32"
 )]
 

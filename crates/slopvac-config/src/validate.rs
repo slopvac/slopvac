@@ -99,7 +99,7 @@ pub fn validate(
     let files = collect(paths, cwd, &mut report);
     for file in files {
         let config = match (&config, explicit) {
-            (Some(c), Some(_)) => Some(c.clone()),
+            (Some(c), Some(_)) => Some(Arc::clone(c)),
             _ => match file.parent().map(|d| discovery.nearest(d)) {
                 Some(Ok(c)) => c,
                 Some(Err(e)) => {

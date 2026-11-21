@@ -16,7 +16,6 @@
 //! It does not use `axoupdater`: that crate downloads and runs the installer script itself, so
 //! there is no point between download and replace where the minisign signature could be checked.
 #![allow(
-    clippy::clone_on_ref_ptr,
     clippy::unwrap_used,
     reason = "TEMPORARY: burn-down in slopvac-8l4.12.33"
 )]
