@@ -585,26 +585,50 @@ def _meet(a: Eff, b: Eff) -> Eff:
     )
 
 
+# Keywords a flat object may hold for the additive-property carve-out. Anything else,
+# including every reference and applicator, blocks it.
+_FLAT_OBJECT_KEYWORDS = frozenset(
+    {
+        "type",
+        "properties",
+        "required",
+        "unevaluatedProperties",
+        "title",
+        "description",
+        "default",
+        "examples",
+        "deprecated",
+        "readOnly",
+        "writeOnly",
+        "$comment",
+    }
+)
+
+
+def _plain_keys(o: dict) -> set[str]:
+    """Keys of ``o`` that are not ``x-`` annotations."""
+    return {k for k in o if not k.startswith("x-")}
+
+
 def _additive_properties(o: dict, n: dict) -> bool:
     """True when ``n`` only adds optional properties to a flat, closed object ``o``.
 
-    Sound for an input only. Every one of these must hold: no ``$ref``; both sides have
-    ``unevaluatedProperties: false`` and no ``unevaluatedItems``; no applicator except
-    ``properties`` on either side; every old property is unchanged; ``required`` is the
+    Sound for an input only. Every one of these must hold: both sides use only keywords
+    from ``_FLAT_OBJECT_KEYWORDS`` (an allow-list, so an unlisted keyword such as
+    ``$ref`` or ``$dynamicRef`` fails closed); both sides have
+    ``unevaluatedProperties: false``; every old property is unchanged; ``required`` is the
     same set, so no new property is required. A new name was rejected before and is
     accepted now, which an input may do. With another applicator the new name could
     already be evaluated, and the added schema would then narrow it.
     """
-    if "$ref" in o or "$ref" in n:
+    if not (
+        _FLAT_OBJECT_KEYWORDS.issuperset(_plain_keys(o))
+        and _FLAT_OBJECT_KEYWORDS.issuperset(_plain_keys(n))
+    ):
         return False
     if o.get("unevaluatedProperties") is not False:
         return False
     if n.get("unevaluatedProperties") is not False:
-        return False
-    if "unevaluatedItems" in o or "unevaluatedItems" in n:
-        return False
-    others = set(_EVALUATION_APPLICATORS) - {"properties"}
-    if others & (o.keys() | n.keys()):
         return False
     old_props, new_props = o.get("properties", {}), n.get("properties", {})
     if not isinstance(old_props, dict) or not isinstance(new_props, dict):

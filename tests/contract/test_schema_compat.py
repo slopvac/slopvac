@@ -2004,6 +2004,25 @@ def test_anything_beyond_the_additive_carve_out_still_reports_in_an_input(
     assert (CARVE_OUT_POINTER, "constraint-changed") in kinds(found)
 
 
+DYNAMIC_REF = {"$dynamicRef": "#/$defs/A"}
+NOT_FLAT = {
+    "dynamicRef-may-evaluate-the-name": DYNAMIC_REF,
+    "dynamicAnchor": {"$dynamicAnchor": "x"},
+    "unlisted-keyword": {"minProperties": 1},
+}
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "both"])
+@pytest.mark.parametrize("extra", NOT_FLAT.values(), ids=NOT_FLAT)
+def test_a_keyword_outside_the_flat_object_allow_list_blocks_the_carve_out(
+    tmp_path, direction, extra
+):
+    old = _prop_schema({**extra, **FLAT}, A={"additionalProperties": True})
+    new = _prop_schema({**extra, **ADDED_B}, A={"additionalProperties": True})
+    found = run(tmp_path, old, new, direction=direction)
+    assert (CARVE_OUT_POINTER, "constraint-changed") in kinds(found)
+
+
 def test_an_added_property_of_an_open_object_is_not_a_closed_object_change(tmp_path):
     old = _prop_schema({"properties": {"a": {"type": "string"}}})
     new = _prop_schema(
