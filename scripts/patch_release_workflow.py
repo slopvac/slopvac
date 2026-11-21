@@ -105,8 +105,9 @@ _RELEASE_NEW = """\
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          UPLOAD_LIST: ${{ runner.temp }}/upload-list
         run: |
-          gh release upload "$RELEASE_TAG" artifacts/*
+          xargs -0 -a "$UPLOAD_LIST" gh release upload "$RELEASE_TAG"
 {verify}\
       - name: Publish the release
         env:
@@ -156,7 +157,7 @@ _SIGN_JOB = """\
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
-          # The host job writes this one itself; it is not a signed release asset
+          # The plan job uploads this one itself; it is not a signed release asset
           rm -f artifacts/dist-manifest.json
       - name: Install minisign
         run: bash scripts/install_minisign.sh
@@ -184,8 +185,10 @@ _HOST_SIGNATURE_STEPS = """\
         run: bash scripts/install_minisign.sh
       - name: Verify the signatures against the committed key
         shell: bash
+        env:
+          UPLOAD_LIST: ${{ runner.temp }}/upload-list
         run: |
-          find artifacts -type f ! -name '*.minisig' -print0 | xargs -0 python3 scripts/release_signing.py verify
+          python3 scripts/release_signing.py verify-dir artifacts --list "$UPLOAD_LIST"
 """
 _HOST_CLEANUP_OLD = """\
           rm -f artifacts/*-dist-manifest.json
@@ -310,7 +313,7 @@ def harden(text: str) -> str:
         text = _replace_once(text, run, first + _ZIZMOR_WHY + rest, what)
     text = _replace_once(text, _SBOM_OLD, _SBOM_NEW, "SBOM output reference")
     text = _verify_tag_before_publishing(text)
-    text = _mint_release_token(text)
+    text = _publish_without_dist(text)
     text = _mint_tap_token(text)
     text = _isolate_tap_push(text)
     text = _route_by_major_version(text)
@@ -434,16 +437,53 @@ _TAP_CHECKOUT = re.compile(
 )
 
 
-def _mint_release_token(text: str) -> str:
-    """Make `host` write its release with a minted App token instead of GITHUB_TOKEN.
+_HOST_DIST_SETUP = re.compile(
+    r"      - name: Install cached dist\n.*?(?=" + re.escape(_VERIFY_STEP) + r")", re.S
+)
+_HOST_DIST_RUN = re.compile(r"      - id: host\n.*?(?=      # Create a GitHub Release)", re.S)
+_HOST_DIST_ENV = "    env:\n      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n      TAG_FLAG: ${{ needs.plan.outputs.tag-flag }}\n"
+_HOST_DIST_OUTPUT = "    outputs:\n      val: ${{ steps.host.outputs.manifest }}\n"
+_HOST_OWN_MANIFEST = (
+    "          # This job's own dist run writes this one; the sign job never sees it\n"
+    "          rm -f artifacts/dist-manifest.json\n"
+)
+_HOST_PRERELEASE_OLD = "fromJson(steps.host.outputs.manifest).announcement_is_prerelease"
+_HOST_PRERELEASE_NEW = "fromJson(needs.plan.outputs.val).announcement_is_prerelease"
+_HOST_UPLOAD_STEP = "      - name: Upload the artifacts to the draft release\n"
 
-    The mint step sits right before the dist step that creates the release. The three
-    steps that write carry the token in their own env, so GITHUB_TOKEN only reads.
+
+def _publish_without_dist(text: str) -> str:
+    """Make `host` publish with a minted App token and without running any dist.
+
+    `host` used to run a cached dist binary while it held the write token, before any
+    signature was checked. It now installs and runs no dist and executes no downloaded
+    file: it fetches the artifacts and signatures, verifies each signature against the
+    committed key, and only then mints the contents-write token (the mint sits right
+    before the upload). The token goes only to the `gh` steps that write.
     """
-    return _replace_once(
-        text, _HOST_STEP_OLD, _RELEASE_TOKEN_STEP + _HOST_STEP_NEW, "host dist step"
-    )
-
+    chunks = _split_jobs(text)
+    hosts = [i for i, c in enumerate(chunks) if c.startswith("  host:\n")]
+    if len(hosts) != 1:
+        raise ValueError(f"expected exactly one host job, found {len(hosts)}")
+    host = chunks[hosts[0]]
+    for old, new, what in (
+        (_HOST_DIST_ENV, "", "host job env"),
+        (_HOST_DIST_OUTPUT, "", "host job outputs"),
+        (_HOST_OWN_MANIFEST, "", "host manifest cleanup"),
+        (_HOST_PRERELEASE_OLD, _HOST_PRERELEASE_NEW, "host prerelease flag"),
+        (
+            _HOST_UPLOAD_STEP,
+            _RELEASE_TOKEN_STEP + _HOST_UPLOAD_STEP,
+            "host upload step",
+        ),
+    ):
+        host = _replace_once(host, old, new, what)
+    for pattern, what in ((_HOST_DIST_SETUP, "dist setup"), (_HOST_DIST_RUN, "dist run")):
+        host, count = pattern.subn("", host)
+        if count != 1:
+            raise ValueError(f"expected exactly one host {what} block, found {count}")
+    chunks[hosts[0]] = host
+    return "".join(chunks)
 
 def _mint_tap_token(text: str) -> str:
     """Replace the HOMEBREW_TAP_TOKEN secret with a token minted from the release App.

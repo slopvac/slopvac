@@ -259,15 +259,14 @@ def test_the_local_build_step_runs_under_bash_so_the_tag_flag_expands(workflow):
     assert "$TAG_FLAG" in build["run"]
 
 
-def test_the_host_job_rechecks_the_tag_before_dist_and_before_the_release(workflow):
+def test_the_host_job_rechecks_the_tag_before_the_downloads_and_before_the_release(
+    workflow,
+):
     steps = workflow["jobs"]["host"]["steps"]
     checks = [i for i, s in enumerate(steps) if "verify-tag" in s.get("run", "")]
-    host = next(i for i, s in enumerate(steps) if s.get("id") == "host")
-    publish = next(
-        i for i, s in enumerate(steps) if s.get("name") == "Publish the release"
-    )
-    assert checks == [host - 2, publish - 1]
-    assert steps[host - 1]["id"] == "release-token"
+    names = [s.get("name") for s in steps]
+    publish = names.index("Publish the release")
+    assert checks == [names.index("Download GitHub Artifacts") - 1, publish - 1]
     assert "gh release edit" in steps[publish]["run"]
     assert "--draft=false" in steps[publish]["run"]
     for index in checks:
@@ -659,9 +658,11 @@ def test_the_host_job_fetches_and_verifies_the_signatures_before_the_upload(work
     assert "release_signing.py sign" not in verify
 
 
-def test_the_host_job_drops_its_own_manifest_so_every_upload_is_signed(workflow):
-    cleanup = _steps(workflow, "host")[_step_index(workflow, "host", "Cleanup")]["run"]
-    assert "rm -f artifacts/dist-manifest.json" in cleanup
+def test_the_host_job_downloads_no_dist_manifest_of_its_own(workflow):
+    steps = _steps(workflow, "host")
+    cleanup = steps[_step_index(workflow, "host", "Cleanup")]["run"]
+    assert "rm -f artifacts/*-dist-manifest.json" in cleanup
+    assert "dist-manifest.json" not in "".join(str(s.get("with", "")) for s in steps)
 
 
 # --- dist comes from a pinned archive ------------------------------------------
@@ -1202,7 +1203,7 @@ def test_hardening_refuses_a_quoted_workflow_level_permissions_key(raw, quote):
 # --- the finished workflow is pinned, job by job ---------------------------------
 
 PIN_FILE = ROOT / "scripts" / "release_workflow_pins.json"
-HOST_ANCHOR = "      - id: host\n"
+HOST_ANCHOR = '      - name: "Download GitHub Artifacts"\n'
 SECRET_ANCHOR = "      # So we have access to the formula\n"
 # `announce` reads no secret and holds no write permission.
 PLAIN_ANCHOR = "  announce:\n    needs:\n"
@@ -1620,3 +1621,87 @@ def test_only_the_signing_job_references_the_signing_key_and_it_uses_the_release
     assert holders == ["sign"]
     assert workflow["jobs"]["sign"]["environment"] == "release"
     assert text.count("secrets.MINISIGN_SECRET_KEY") == 1
+
+
+# --- no job that can publish runs build output ------------------------------------
+
+_RUNS_DIST = re.compile(r"(^|[\s;&|(])(dist|cargo-dist)\s")
+_RUNS_BUILD_OUTPUT = re.compile(
+    r"(~/\.cargo/bin|target/distrib|\./artifacts|bash\s+artifacts|sh\s+artifacts|chmod\s+\+x)"
+)
+_TOKEN_MINT = "actions/create-github-app-token"
+
+
+def _holds_publishing_power(job: dict) -> bool:
+    """A job with a publishing credential: `contents: write` or a release App token mint.
+
+    This leaves out `id-token: write` and `packages: write`. The attestation and GHCR
+    jobs hold those by approved departure (docs/engineering.md).
+    """
+    if (job.get("permissions") or {}).get("contents") == "write":
+        return True
+    return any(
+        str(step.get("uses", "")).startswith(_TOKEN_MINT)
+        for step in job.get("steps", [])
+    )
+
+
+def _publishing_jobs(workflow) -> dict[str, dict]:
+    return {
+        name: job
+        for name, job in workflow["jobs"].items()
+        if _holds_publishing_power(job)
+    }
+
+
+def test_the_workflow_has_jobs_that_publish(workflow):
+    assert {"host", "publish-homebrew-formula", "publish-legacy-release"} <= set(
+        _publishing_jobs(workflow)
+    )
+
+
+def test_no_publishing_job_installs_or_runs_dist_or_built_binaries(workflow):
+    for name, job in _publishing_jobs(workflow).items():
+        for step in job["steps"]:
+            run = step.get("run", "")
+            assert not _RUNS_DIST.search(run), (name, step)
+            assert step.get("with", {}).get("name") != "cargo-dist-cache", (name, step)
+            assert not _RUNS_BUILD_OUTPUT.search(run), (name, step)
+
+
+def test_no_job_that_runs_dist_holds_contents_write_or_an_app_token_mint(workflow):
+    runners = {
+        name
+        for name, job in workflow["jobs"].items()
+        if any(_RUNS_DIST.search(s.get("run", "")) for s in job.get("steps", []))
+    }
+    assert {"plan", "build-local-artifacts", "build-global-artifacts"} <= runners
+    assert "host" not in runners
+    for name in runners:
+        assert name not in _publishing_jobs(workflow), name
+
+
+def test_the_host_job_verifies_every_signature_before_it_mints_or_uploads(workflow):
+    steps = workflow["jobs"]["host"]["steps"]
+    runs = [s.get("run", "") for s in steps]
+    verify = next(i for i, r in enumerate(runs) if "release_signing.py verify" in r)
+    mint = next(
+        i for i, s in enumerate(steps) if str(s.get("uses", "")).startswith(_TOKEN_MINT)
+    )
+    uploads = [i for i, r in enumerate(runs) if "gh release upload" in r]
+    assert uploads
+    assert verify < mint < min(uploads)
+    assert "artifacts" in runs[verify]
+    assert "verify-dir artifacts" in runs[verify]
+
+
+def test_the_host_job_uploads_only_the_list_the_verify_step_wrote(workflow):
+    steps = workflow["jobs"]["host"]["steps"]
+    verify = next(s for s in steps if "release_signing.py verify" in s.get("run", ""))
+    upload = next(s for s in steps if "gh release upload" in s.get("run", ""))
+    assert verify["env"]["UPLOAD_LIST"] == upload["env"]["UPLOAD_LIST"]
+    assert 'verify-dir artifacts --list "$UPLOAD_LIST"' in verify["run"]
+    assert upload["run"].strip() == (
+        'xargs -0 -a "$UPLOAD_LIST" gh release upload "$RELEASE_TAG"'
+    )
+    assert "artifacts/" not in upload["run"]

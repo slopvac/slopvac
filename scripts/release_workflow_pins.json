@@ -5,12 +5,12 @@
     "build-global-artifacts": "562ef33393ece284a4819450a2e3105b34a2f56bf31ddcf6930f75185d2c9603",
     "build-local-artifacts": "8c2207e956e271ab8da69daa3f131a19e952a520f32e7bd2d4a15e8908f0e11c",
     "custom-release-provenance": "39602fd8a5ef4564eb96276cc0aac15d63420b47f5a6a0324b6dd2f970a90c4a",
-    "host": "a9c7513a14186ccfe715507ec6f967308374de593c25052ed1e28fe38cca9a78",
+    "host": "ba443c2a41e887ecb94b7979db31a19d45ca733ce4f06e27bb9d1e1509e09874",
     "plan": "0bf83d172582fc5ba3df1fb889f265ed29576fefb350a23abc1d84b6a4e460fe",
     "publish-homebrew-formula": "4d460a45a1058378200f89a878caa22cf91c897c5f6ce56a35203c4328e6d8c8",
     "publish-legacy-release": "b43c50244e9b1f3470f9e9e6f91b88beab364fef941b628ce39fb72dc20c43bb",
     "route": "4b0d2358b81f0d9ba0f852f5f4b8ee2a59a32d21bf17bb0a8f2c1f6614ce8237",
-    "sign": "f260ca882b0b27cf4cb66ab46effbd65b6d0e9c1d9b3afc2e4110c5d55865ff8"
+    "sign": "b47601a9bd300cc3be09dfe755355368ff8ceaf89195612f702c070b8c626fe8"
   },
   "workflow": {
     "_jobs_header": "2012b182a308b22cd153966064559bd30abe875313792b4e218e73cacb6e00c6",
