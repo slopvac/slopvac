@@ -48,7 +48,13 @@ Limits, all of which fail closed:
   unless the same position in the new schema carries ``"x-slopvac-extensible": true``;
   a marked ``oneOf`` also skips ``narrowing-possible`` for appended members. Removing
   a marker from an output schema is ``extensible-removed``. In an input schema all of
-  these stay allowed. A finding reached through a ``$ref`` follows the referrer's file.
+  these stay allowed. An output-only finding is reported once, at the definition and in
+  the direction of the file that holds it, never again through a ``$ref``; so a shared
+  definition that an output schema references belongs in an output or ``both`` file.
+  An appended ``oneOf`` member in an unmarked output position gets two findings with
+  different meanings: ``alternative-added`` says consumers see a new variant, and
+  ``narrowing-possible`` says the member may overlap an old one, so a document that
+  validated can fail ``oneOf``. The marker covers both.
 - A keyword the check does not model is reported as ``unverified`` when it is
   added, removed or changed. Only the annotations in ``_ANNOTATIONS`` are exempt:
   ``description``, ``title``, ``examples``, ``$comment``, ``deprecated``,
@@ -797,8 +803,14 @@ def compare_snapshots(
             )
             continue
         found = comparer.compare(name, Docs(name, name), "", old_schema, new[name])
-        if (directions or {}).get(name, "input") == "input":
-            found = (f for f in found if f.kind not in OUTPUT_ONLY_KINDS)
+        # Output-only kinds are reported at the definition, never again through a
+        # reference; an input file reports none.
+        is_input = (directions or {}).get(name, "input") == "input"
+        found = (
+            f
+            for f in found
+            if f.kind not in OUTPUT_ONLY_KINDS or not (is_input or "/$ref(" in f.pointer)
+        )
         findings.extend(found)
     return findings
 
