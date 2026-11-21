@@ -1548,6 +1548,38 @@ def test_a_marker_does_not_excuse_a_loosened_bound(tmp_path):
     assert kinds(findings) == [("/properties/e/minLength", "constraint-loosened")]
 
 
+def test_a_discriminator_proves_disjointness_only_for_objects(tmp_path):
+    """Without an object type, a non-object instance matches both required-based branches."""
+    old = schema(properties={"e": {"oneOf": [KIND_A]}})
+    new = schema(properties={"e": {"oneOf": [KIND_A, KIND_B]}})
+    findings = run(tmp_path, old, new)
+    assert kinds(findings) == [("/properties/e/oneOf/1", "narrowing-possible")]
+
+
+OBJECT_PROOFS = {
+    "both-branches-typed": (
+        {"oneOf": [{**KIND_A, "type": "object"}, {**KIND_B, "type": "object"}]},
+        {"oneOf": [{**KIND_A, "type": "object"}]},
+    ),
+    "one-branch-typed": (
+        {"oneOf": [{**KIND_A, "type": "object"}, KIND_B]},
+        {"oneOf": [{**KIND_A, "type": "object"}]},
+    ),
+    "parent-typed": (
+        {"type": "object", "oneOf": [KIND_A, KIND_B]},
+        {"type": "object", "oneOf": [KIND_A]},
+    ),
+}
+
+
+@pytest.mark.parametrize(("new", "old"), OBJECT_PROOFS.values(), ids=OBJECT_PROOFS)
+def test_a_discriminator_with_an_object_type_proves_disjointness(tmp_path, new, old):
+    findings = run(
+        tmp_path, schema(properties={"e": old}), schema(properties={"e": new})
+    )
+    assert findings == []
+
+
 def test_registry_must_list_every_schema_file(tmp_path):
     base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
     new_dir = write_dir(tmp_path / "new", {FILE: schema()})
