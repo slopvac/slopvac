@@ -5,6 +5,7 @@ mod common;
 use std::fmt::Write as _;
 
 use common::{category, ruleset, settings};
+use rstest::rstest;
 use slopvac_diagrams::Format;
 use slopvac_engine::{
     DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, Engine, Input,
@@ -318,6 +319,23 @@ fn a_start_marker_inside_a_plantuml_comment_is_not_a_block() {
             );
         }
     }
+}
+
+#[rstest]
+#[case::multiline_comment("/'\n@startuml\n'/\n")]
+#[case::one_line_comment("/' @startuml '/\n")]
+fn a_start_marker_only_inside_a_comment_leaves_a_markerless_source_one_block(
+    #[case] comment: &str,
+) {
+    let source = format!("{comment}rectangle \"{LONG_LABEL}\" as R\n");
+    let (doc, notices) = engine()
+        .lint_with_notices(&Input::diagram("d.puml", &source, Format::PlantUml))
+        .unwrap();
+    assert_eq!(doc.findings.len(), 1);
+    assert_eq!(doc.findings[0].matched_text, LONG_LABEL);
+    assert!(notices.is_empty(), "{notices:?}");
+    assert!(doc.unchecked.is_empty(), "{:?}", codes(&doc));
+    assert!(doc.gate.is_passed(), "{:?}", doc.gate.reasons());
 }
 
 #[test]
