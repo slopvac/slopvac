@@ -38,15 +38,17 @@ Limits, all of which fail closed:
   the backstop.
 - ``allOf``, ``anyOf``, ``oneOf`` and ``prefixItems`` are compared by position. A
   list whose members all survive in another order is reported as ``list-reordered``
-  and needs an allow entry. A new ``anyOf``/``oneOf``, and an appended ``oneOf`` or
-  ``prefixItems`` member, are reported as ``narrowing-possible``. An appended ``anyOf``
-  member passes in an input schema.
+  and needs an allow entry. A new ``anyOf``/``oneOf``, and an appended ``oneOf`` member
+  that is not provably disjoint from the earlier members (different ``type``, different
+  ``const``/``enum`` values, or a shared required property with different values), are
+  reported as ``narrowing-possible``, as is an appended ``prefixItems`` member. An
+  appended ``anyOf`` member passes in an input schema.
 - Direction: schemas/v3/directions.toml classes each schema file as ``input``,
   ``output`` or ``both``; it must list every schema file and nothing else. ``both``
   follows the output rule. In an output schema, a new ``enum`` value or an appended
   ``anyOf``/``oneOf`` member is reported (``enum-widened``, ``alternative-added``)
   unless the same position in the new schema carries ``"x-slopvac-extensible": true``;
-  a marked ``oneOf`` also skips ``narrowing-possible`` for appended members. Removing
+  a marked ``oneOf`` also skips ``narrowing-possible`` for members appended to an existing list (a newly introduced ``anyOf``/``oneOf`` is always checked). Removing
   a marker from an output schema is ``extensible-removed``. In an input schema all of
   these stay allowed. An output-only finding is reported once, at the definition and in
   the direction of the file that holds it, never again through a ``$ref``; so a shared
@@ -644,8 +646,7 @@ class Comparer:
                         "(absent)",
                         _show(new[i]),
                     )
-        if not (key == "oneOf" and _extensible(n)):
-            yield from self._narrowing_possible(file, ptr, key, old, new)
+        yield from self._narrowing_possible(file, ptr, key, old, new, _extensible(n))
         for i, member in enumerate(old):
             child = f"{ptr}/{key}/{i}"
             if i >= len(new):
@@ -660,13 +661,14 @@ class Comparer:
 
     @staticmethod
     def _narrowing_possible(
-        file: str, ptr: str, key: str, old: list, new: list
+        file: str, ptr: str, key: str, old: list, new: list, marked: bool
     ) -> Iterator[Finding]:
         """Fail closed on additions that can reject values that used to pass.
 
-        A new ``anyOf`` or ``oneOf`` requires a match. An appended ``oneOf`` branch can
-        overlap an existing one, which fails ``oneOf``. An appended ``prefixItems``
-        entry constrains a position that was free.
+        A new ``anyOf`` or ``oneOf`` requires a match, marked or not. An appended
+        ``oneOf`` member can overlap an earlier one, which fails ``oneOf``; a member that
+        is provably disjoint from every earlier member, or a marked position, passes. An
+        appended ``prefixItems`` entry constrains a position that was free.
         """
         if key in ("anyOf", "oneOf") and new and not old:
             yield Finding(
@@ -674,6 +676,10 @@ class Comparer:
             )
         elif key in ("oneOf", "prefixItems"):
             for i in range(len(old), len(new)):
+                if key == "oneOf" and (
+                    marked or all(_disjoint(new[j], new[i]) for j in range(i))
+                ):
+                    continue
                 yield Finding(
                     file,
                     f"{ptr}/{key}/{i}",
@@ -681,6 +687,45 @@ class Comparer:
                     "(absent)",
                     _show(new[i]),
                 )
+
+
+def _type_set(schema: dict) -> set[str] | None:
+    types = _types(schema.get("type"))
+    if types is None:
+        return None
+    return types | ({"integer"} if "number" in types else set())
+
+
+def _value_set(schema: dict) -> set[str] | None:
+    if "const" in schema:
+        return {_canon(schema["const"])}
+    if isinstance(schema.get("enum"), list):
+        return {_canon(v) for v in schema["enum"]}
+    return None
+
+
+def _disjoint(a: object, b: object) -> bool:
+    """True only when no instance can match both schemas; unknown means False.
+
+    Provable cases: disjoint ``type`` sets, disjoint ``const``/``enum`` values, or a
+    property that both schemas require with disjoint ``const``/``enum`` values. A
+    ``$ref`` or a boolean schema is never provably disjoint.
+    """
+    if not isinstance(a, dict) or not isinstance(b, dict) or "$ref" in a or "$ref" in b:
+        return False
+    ta, tb = _type_set(a), _type_set(b)
+    if ta is not None and tb is not None and not ta & tb:
+        return True
+    va, vb = _value_set(a), _value_set(b)
+    if va is not None and vb is not None and not va & vb:
+        return True
+    props_a, props_b = a.get("properties", {}), b.get("properties", {})
+    required = set(a.get("required", [])) & set(b.get("required", []))
+    for name in required & set(props_a) & set(props_b):
+        pa, pb = props_a[name], props_b[name]
+        if isinstance(pa, dict) and isinstance(pb, dict) and _disjoint(pa, pb):
+            return True
+    return False
 
 
 def _compare_unmodelled(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]:
