@@ -111,9 +111,9 @@ fn check_names(
             && head == "categories"
             && category_of(rules, key).is_none()
         {
-            return Err(CliError::new(
+            return Err(CliError::escaping(
                 "config-unknown-category",
-                format!(
+                &format!(
                     "{}: unknown category {key:?}; use a category from `slopvac rules`",
                     describe(&setting.source)
                 ),

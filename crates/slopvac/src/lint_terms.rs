@@ -89,7 +89,10 @@ fn failed(path: &Path, what: &str, error: &TermsError, cwd: &Path) -> CliError {
         } => format!("entry {number} {}", problem.describe()),
         TermsError::Entry { problem, .. } => format!("has an entry that {}", problem.describe()),
     };
-    CliError::new("terms-invalid", format!("{shown}: {what}: {detail}"))
+    // The path is the user's own text, so it is escaped for the terminal. The report keeps it raw.
+    let text = |shown: &str| format!("{shown}: {what}: {detail}");
+    CliError::new("terms-invalid", text(&slopvac_sanitize::line(&shown)))
+        .with_report_message(&text(&shown))
 }
 
 /// Build the engine for `sets` and `settings` with the project's terms and blocklists.

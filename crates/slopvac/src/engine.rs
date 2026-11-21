@@ -17,6 +17,7 @@ use slopvac_engine::{EngineError, Input, Kind};
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
+use slopvac_sanitize::line;
 use slopvac_styles::{BuiltinSource, StylePresets};
 
 use crate::errors::CliError;
@@ -127,12 +128,16 @@ struct Run {
 
 impl Run {
     /// Record an input that was not checked: an exit-2 error and a report notice.
+    ///
+    /// `message` is raw text that may hold a hostile file name. The report formats escape it
+    /// for their own output, so the notice keeps it raw. The error goes to stderr as it is,
+    /// so it carries the message escaped once.
     fn skip(&mut self, code: &'static str, shown: &str, message: String) {
-        let error = CliError::new(code, message);
+        let error = CliError::new(code, line(&message));
         self.notices.push(Notice {
             code: KebabName::new(code).expect("skip codes are kebab-case"),
             level: NoticeLevel::Warning,
-            message: NonEmptyString::new(error.message.clone()).expect("messages are not empty"),
+            message: NonEmptyString::new(message).expect("messages are not empty"),
             path: Some(shown.to_owned()),
             data: serde_json::Map::new(),
         });
@@ -150,7 +155,7 @@ impl Run {
             }
             _ => "lint-failed",
         };
-        self.skip(code, shown, format!("{shown}: {err}"));
+        self.skip(code, shown, format!("{shown}: {}", err.raw_message()));
     }
 }
 
@@ -214,7 +219,15 @@ fn redact_quoted(text: &str, root: &Path) -> String {
 /// A refused config from its structured fields: each diagnostic's message, its
 /// `file:line:column` pointer and its help. The source excerpt is left out because it quotes
 /// the user's own text, paths included.
-fn describe_rejected(rejected: &slopvac_config::Rejected, root: &Path) -> String {
+///
+/// `esc` escapes the untrusted parts: the message and help quote the user's own values, and
+/// the pointer holds the file's name. The layout newlines and the `error[..]` prefixes are
+/// ours and stay.
+fn describe_rejected(
+    rejected: &slopvac_config::Rejected,
+    root: &Path,
+    esc: &dyn Fn(&str) -> String,
+) -> String {
     use std::fmt::Write as _;
     rejected
         .diagnostics
@@ -227,11 +240,11 @@ fn describe_rejected(rejected: &slopvac_config::Rejected, root: &Path) -> String
             } else {
                 format!("error[{}]: ", d.code.as_str())
             };
-            text.push_str(&redact_quoted(&d.message, root));
-            let _ = write!(text, "\n --> {}:{line}:{column}", rejected.file);
+            text.push_str(&esc(&redact_quoted(&d.message, root)));
+            let _ = write!(text, "\n --> {}:{line}:{column}", esc(&rejected.file));
             if let Some(help) = &d.help {
                 text.push_str("\nhelp: ");
-                text.push_str(&redact_quoted(help, root));
+                text.push_str(&esc(&redact_quoted(help, root)));
             }
             text
         })
@@ -239,19 +252,28 @@ fn describe_rejected(rejected: &slopvac_config::Rejected, root: &Path) -> String
         .join("\n")
 }
 
-pub(crate) fn config_error(err: &ConfigError, root: &Path) -> CliError {
+/// The text of a refused config, with `esc` applied to every untrusted part.
+fn config_message(err: &ConfigError, root: &Path, esc: &dyn Fn(&str) -> String) -> String {
     let mut message = match err {
-        ConfigError::Rejected(rejected) => describe_rejected(rejected, root),
+        ConfigError::Rejected(rejected) => describe_rejected(rejected, root, esc),
         ConfigError::Io { path, .. } | ConfigError::TooLarge { path, .. } => {
-            // The path is the label the caller gave, which may be absolute.
-            err.to_string()
-                .replace(path.as_str(), &redact::shown_path(Path::new(path), root))
+            // The path is the label the caller gave, which may be absolute. The rest of the
+            // message is fixed wording, so escaping the whole line escapes the path.
+            esc(&err
+                .to_string()
+                .replace(path.as_str(), &redact::shown_path(Path::new(path), root)))
         }
     };
     if err.is_legacy() {
         message.push_str("\nhelp: run `slopvac migrate` to convert it");
     }
-    let error = CliError::new(err.code().as_str(), message);
+    message
+}
+
+pub(crate) fn config_error(err: &ConfigError, root: &Path) -> CliError {
+    let message = config_message(err, root, &|text| line(text));
+    let raw = config_message(err, root, &str::to_owned);
+    let error = CliError::new(err.code().as_str(), message).with_report_message(&raw);
     match budget_data(err) {
         Some(data) => error.with_data(data),
         None => error,
@@ -361,9 +383,9 @@ fn prepare(request: &LintRequest, run: &mut Run) -> Result<(Catalog, Vec<Item>),
     if let Some(given) = &request.config {
         let shown = redact::shown_path(given, &request.root);
         if !request.root.join(given).is_file() {
-            return Err(CliError::new(
+            return Err(CliError::escaping(
                 "config-not-found",
-                format!("--config {shown}: no such file"),
+                &format!("--config {shown}: no such file"),
             ));
         }
         // A config that cannot be read lints nothing (policies V7).
@@ -437,12 +459,14 @@ fn validate_configs(
 
 /// An outcome for a run that could not start.
 fn failed(_request: &LintRequest, mut run: Run, error: &CliError) -> RunOutcome {
+    // The notice keeps the raw text when the error text was escaped for stderr.
+    let notice_message = error.report_message.as_deref().unwrap_or(&error.message);
     // The report must not read as a clean run: a notice marks it unsuccessful.
     run.notices.push(Notice {
         code: KebabName::new(error.code)
             .unwrap_or_else(|_| KebabName::new("lint-failed").expect("lint-failed is kebab-case")),
         level: NoticeLevel::Warning,
-        message: NonEmptyString::new(error.message.clone())
+        message: NonEmptyString::new(notice_message.to_owned())
             .unwrap_or_else(|_| NonEmptyString::new("lint failed").expect("not empty")),
         path: None,
         data: error.data.clone(),
@@ -827,14 +851,17 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
         for notice in &document.unchecked {
             if notice.level == NoticeLevel::Warning {
                 // Part of the check did not run, so the result cannot establish a pass.
+                // The notice keeps raw text for the report formats. The error reaches stderr, so
+                // it gets the project root redacted and the whole text escaped once.
+                let raw = format!(
+                    "{}: {}: {}",
+                    document.path,
+                    notice.code.as_str(),
+                    notice.message
+                );
                 run.incomplete.push(CliError::new(
                     "check-incomplete",
-                    format!(
-                        "{}: {}: {}",
-                        document.path,
-                        notice.code.as_str(),
-                        notice.message
-                    ),
+                    line(&redact::redact_root(&raw, &request.root)),
                 ));
             }
         }
@@ -1018,6 +1045,42 @@ mod read_tests {
         }
     }
 
+    /// The read refusal escapes the file name: the name shows as `\u{..}` text, never raw.
+    #[rstest::rstest]
+    #[case::esc("a\u{1b}]0;x\u{7}b.md", "a\\u{1b}]0;x\\u{7}b.md")]
+    #[case::newline("a\nb.md", "a\\u{a}b.md")]
+    #[case::bidi("a\u{202e}b.md", "a\\u{202e}b.md")]
+    fn an_unreadable_file_is_reported_with_an_escaped_name(
+        #[case] name: &str,
+        #[case] escaped: &str,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let doc = root.join(name);
+        std::fs::write(&doc, "Hello there.\n").unwrap();
+        let swap = doc.clone();
+        let outcome = lint_within_timeout(
+            &doc,
+            request(&root, &doc),
+            Some(Box::new(move || {
+                std::fs::remove_file(&swap).unwrap();
+                assert!(
+                    std::process::Command::new("mkfifo")
+                        .arg(&swap)
+                        .status()
+                        .unwrap()
+                        .success()
+                );
+            })),
+        );
+        let messages: Vec<&str> = outcome
+            .incomplete
+            .iter()
+            .map(|e| e.message.as_str())
+            .collect();
+        assert_eq!(messages, [format!("{escaped}: cannot read")]);
+    }
+
     /// Discovery lists a regular file; the file becomes a FIFO before the read. The run must
     /// report it as unreadable and finish.
     #[test]
@@ -1139,5 +1202,23 @@ mod skip_tests {
         assert_eq!(run.notices[0].code.as_str(), code);
         assert_eq!(run.notices[0].level, NoticeLevel::Warning);
         assert_eq!(run.notices[0].path.as_deref(), Some("docs/a.md"));
+    }
+
+    /// A context failure holds a pattern with a backslash and a newline. The engine error keeps
+    /// the raw text: the notice carries it as it is, and stderr gets it escaped once.
+    #[test]
+    fn a_context_failure_is_raw_in_the_notice_and_escaped_once_on_stderr() {
+        let err = EngineError::Context("pattern `\\d+\n` failed while matching".into());
+        let mut run = Run::default();
+        run.skip_engine_error("docs/a.md", &err);
+
+        assert_eq!(
+            run.notices[0].message.as_str(),
+            "docs/a.md: context tagger failed: pattern `\\d+\n` failed while matching"
+        );
+        assert_eq!(
+            run.incomplete[0].message,
+            "docs/a.md: context tagger failed: pattern `\\\\d+\\u{a}` failed while matching"
+        );
     }
 }

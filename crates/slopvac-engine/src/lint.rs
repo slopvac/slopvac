@@ -222,8 +222,9 @@ pub enum EngineError {
     /// A pattern failed while matching, for example on a match limit.
     #[error(transparent)]
     Text(#[from] TextError),
-    /// A context tagger failed.
-    #[error("{}", crate::messages::context(.0))]
+    /// A context tagger failed. The text is raw: it can hold a pattern, an id or a path, so
+    /// `Display` escapes it and a caller that builds its own output escapes it once there.
+    #[error("{}", crate::messages::context(&slopvac_sanitize::line(.0)))]
     Context(String),
     /// A computed position was not valid for the file.
     #[error(transparent)]
@@ -478,7 +479,7 @@ impl Engine {
         mut settings: Settings,
     ) -> Result<Self, EngineError> {
         let genres =
-            slopvac_context::builtin_genres().map_err(|e| EngineError::Context(e.to_string()))?;
+            slopvac_context::builtin_genres().map_err(|e| EngineError::from_context(&e))?;
         // Per-document genres apply their levels to each document's findings. Otherwise the
         // run's genre sets the genre levels now. Levels the caller already filled stay.
         let genres = if settings.genre_assignments.is_some() {
@@ -490,7 +491,7 @@ impl Engine {
             None
         };
         let tagger =
-            slopvac_context::builtin_registry().map_err(|e| EngineError::Context(e.to_string()))?;
+            slopvac_context::builtin_registry().map_err(|e| EngineError::from_context(&e))?;
         let mut engine = Self {
             sets,
             blocklist: Blocklist::default(),
@@ -891,10 +892,7 @@ impl Engine {
                 &parsed,
                 front_matter.as_ref(),
             )
-            .map_err(|e| match e {
-                tagging::TagError::Budget { limit } => EngineError::TagBuildBudget { limit },
-                other => EngineError::Context(other.to_string()),
-            })?,
+            .map_err(EngineError::from_tag)?,
         };
         let genre = self.genre_of(input, &parsed, front_matter.as_ref())?;
         let lines = Lines::new(input.source);
@@ -1001,7 +999,7 @@ impl Engine {
             parsed,
             front_matter,
         )
-        .map_err(|e| EngineError::Context(e.to_string()))?;
+        .map_err(|e| EngineError::from_context(&e))?;
         Ok(GenreResult {
             id: GenreId::new(found.id).map_err(|e| EngineError::Internal(e.to_string()))?,
             source: match found.source {
