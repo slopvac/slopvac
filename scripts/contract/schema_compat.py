@@ -671,7 +671,7 @@ class Comparer:
 
     def _effective(
         self, side: str, doc: str, node: Any, seen: frozenset = frozenset()
-    ) -> "Eff":
+    ) -> Eff:
         """The restrictions of ``node`` with its ``$ref`` target and ``allOf`` members."""
         if not isinstance(node, dict):
             return Eff()
@@ -722,9 +722,7 @@ class Comparer:
             new_eff = self._effective("new", doc.new, n)
         marked = self._marked("new", doc.new, n)
         key = "enum"
-        if "enum" not in n and "const" not in n and "const" in o and "enum" not in o:
-            key = "const"
-        elif "enum" not in n and "const" in n:
+        if "enum" not in n and "const" not in n and "const" in o and "enum" not in o or "enum" not in n and "const" in n:
             key = "const"
         yield from _loosened(file, ptr, old_eff, new_eff, marked, key)
 
