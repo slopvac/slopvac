@@ -436,6 +436,8 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 - Message text can change in any release. Codes, rule IDs, and exit codes form the interface.
 - A `fix` refusal carries its code through `Refusal::code`: `document-too-large`, `fix-outside-root`, `fix-symlink`, `fix-not-regular`, `fix-hardlinked`, `fix-not-owner`, `fix-unsafe-directory`, `fix-group-mismatch`, `fix-acl-present`, `fix-unsupported-platform` and `fix-changed`.
 
+A `fix` that fails for any other reason, such as an I/O error during the write, reports `fix-failed` and exits 2. The write is atomic (section 1.8), so the target keeps its old content. A staged temporary file may remain beside it.
+
 The `slopvac plugins` group reserves this code. It is not emitted yet: nothing in the code raises it, and the message registry does not list it. Plugin-protocol.md, section 10, lists the other plugin host codes.
 
 | Code | Meaning | Exit |
