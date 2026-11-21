@@ -27,7 +27,7 @@ The 3.0 engine is a Cargo workspace under `crates/`. It sits beside the Python p
 
 ```sh
 cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo nextest run --workspace --no-tests=pass
 ```
 

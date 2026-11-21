@@ -1,5 +1,6 @@
 //! `slopvac claims` through the installed binary: the report, the errors that stop a run,
 //! paths kept out of messages, and no traffic through a configured proxy.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use assert_cmd::Command;
 use serde_json::Value;

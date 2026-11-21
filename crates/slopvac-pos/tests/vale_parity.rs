@@ -1,6 +1,16 @@
 //! Vale parity: the crate's tags against the tags Vale 3.27 (prose v3.3.1)
 //! reports for the same text. The expected values are recorded in
 //! `tests/fixtures/`; `tools/gen_fixtures.py --check` proves they are current.
+#![allow(
+    clippy::panic,
+    clippy::print_stderr,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 use std::collections::{BTreeMap, BTreeSet};
 

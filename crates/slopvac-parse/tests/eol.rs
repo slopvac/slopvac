@@ -1,4 +1,5 @@
-#![allow(missing_docs)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 //! Line endings. Every input in the corpus is parsed with LF, CRLF and lone CR, and the
 //! results must match: the same blocks, prose, token kinds and spans, shifted to the
 //! converted offsets.

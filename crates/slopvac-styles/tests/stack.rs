@@ -1,4 +1,10 @@
 //! Styles as layer 2 of the config stack: values keep the preset and line that set them.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

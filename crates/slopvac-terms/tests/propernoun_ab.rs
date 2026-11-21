@@ -1,4 +1,5 @@
 //! The H1 against H4 transformation of stored eval results.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use serde_json::{Value, json};
 use slopvac_terms::propernoun::ab::transform;

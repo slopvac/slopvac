@@ -1,5 +1,6 @@
 //! `Blocklist::merge`: the first list wins for a word and part of speech it shares with a
 //! later one, and distinct entries from both survive.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use slopvac_terms::{Blocklist, Pos};
 

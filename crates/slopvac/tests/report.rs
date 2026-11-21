@@ -4,6 +4,7 @@
 //! The inputs here are clean, so each test checks the shape of an empty-findings report:
 //! that the output parses in its format and names the document. Reports with findings are
 //! checked in `lint_engine.rs`, and content per finding in `slopvac-report`'s own tests.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 mod support;
 

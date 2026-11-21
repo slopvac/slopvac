@@ -1,6 +1,10 @@
 //! Report types must not hold, accept or emit a state the lint-report contract forbids.
-
-#![allow(missing_docs)]
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

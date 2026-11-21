@@ -1,6 +1,11 @@
 //! A pack error never repeats text from a pack file. File text can hold a credential or hostile
 //! text, so an error carries a location and a fixed reason only
 //! (docs/contract/policies.md section 1.7).
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::error::Error;
 use std::fs;

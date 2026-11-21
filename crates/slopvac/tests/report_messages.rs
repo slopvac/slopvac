@@ -3,7 +3,11 @@
 //! Each test runs the real binary into one failure and checks the `error[<code>]: <text>` line
 //! against the entry registered for that code: the code must be registered, and the text must be
 //! the registered template with its parameters filled in.
-
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
 
 use std::os::unix::fs::PermissionsExt;

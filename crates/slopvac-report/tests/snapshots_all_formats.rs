@@ -1,4 +1,9 @@
 //! Every format's full output for one rich report, pinned byte for byte.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::collections::HashMap;
 

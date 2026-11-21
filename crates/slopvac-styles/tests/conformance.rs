@@ -1,4 +1,9 @@
 //! The shared style conformance corpus (`schemas/v3/conformance/style/`) through the loader.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::collections::BTreeMap;
 use std::fs;

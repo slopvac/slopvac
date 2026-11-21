@@ -1,6 +1,12 @@
 //! A program that never calls `launch::intercept` cannot start a plugin
 //! through `Launcher::CurrentExe`. This test binary never calls it, so the
 //! host must refuse before it spawns anything.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
 
 mod common;

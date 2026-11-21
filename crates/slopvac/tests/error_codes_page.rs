@@ -1,8 +1,12 @@
 //! The generated error-code page lists each code with its kind, message and parameters,
 //! and keeps retired codes.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 #[path = "../examples/reference.rs"]
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "test support: each test binary uses a subset of the helpers"
+)]
 mod reference;
 
 use slopvac_cli::messages::Retired;

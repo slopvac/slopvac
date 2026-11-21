@@ -1,5 +1,6 @@
 //! How a plugin's JSON-RPC error codes become the host's reported codes
 //! (plugin-protocol.md section 10).
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use rstest::rstest;
 use serde_json::json;

@@ -26,6 +26,11 @@
 //!
 //! The retained bytes of one extraction therefore grow linearly with its input. draw.io
 //! has its own limits on inflated bytes (32 MiB) and XML nodes (1,000,000) per file.
+#![allow(
+    clippy::allow_attributes_without_reason,
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod drawio;
 mod excalidraw;

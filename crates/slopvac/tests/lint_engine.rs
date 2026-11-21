@@ -1,6 +1,7 @@
 //! `slopvac lint` through the installed binary with the real engine: findings, gate, exit
 //! codes, config and the report formats (compat rows `cmd:lint`, `behavior:lint-exit-codes`;
 //! docs/contract/lint-report.md).
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use assert_cmd::Command;
 use predicates::prelude::*;

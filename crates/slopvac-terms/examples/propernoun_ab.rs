@@ -13,6 +13,12 @@
 //!
 //! The inference sees committed corpus text plus, when given, documents under
 //! `<cache>/docs/<id>.txt`.
+#![allow(
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::path::PathBuf;
 use std::{env, fs};

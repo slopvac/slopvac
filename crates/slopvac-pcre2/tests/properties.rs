@@ -1,5 +1,6 @@
 //! Property tests: arbitrary patterns and subjects never panic, spans are always safe to
 //! slice with, and the JIT and the interpreter agree whenever both finish.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use proptest::prelude::*;
 use slopvac_pcre2::{Limits, Options, Regex};

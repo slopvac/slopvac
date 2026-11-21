@@ -3,7 +3,11 @@
 //! `fixtures/word_class_differential.json` holds seeded patterns, Unicode edge-case texts and
 //! the spans Python finds (`fixtures/generate_word_class.py`). Python is the oracle; no
 //! expected value comes from this crate.
-
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![allow(missing_docs, clippy::cast_possible_truncation)]
 
 use serde_json::Value;

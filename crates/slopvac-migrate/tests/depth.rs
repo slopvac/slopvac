@@ -3,6 +3,7 @@
 //! Every input is under `MAX_CONFIG_BYTES`. The parser allows 79 levels of inline tables, 79
 //! parts in one dotted key or header, and 79 in each key of each nested inline table, so
 //! these shapes sit inside its limits but far past what the recursive walks can take.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 

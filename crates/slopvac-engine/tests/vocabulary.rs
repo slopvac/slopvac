@@ -3,7 +3,16 @@
 //! The expected tags are linguistic facts worked out apart from the code (a noun follows
 //! "the", a verb follows "we"), and the scope cases state what Vale lints: prose inside
 //! inline HTML, no inline code, hyphenated words whole.
-
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![allow(
     missing_docs,
     clippy::assert_is_empty,

@@ -1,4 +1,9 @@
 //! Every character of a fragment maps back to its own bytes in the source.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

@@ -1,6 +1,10 @@
 //! Agent guidance for slopvac: prime topics, harness setup and review.
 //!
 //! The CLI crate mounts each subcommand through its `command()` and `run()`.
+#![allow(
+    clippy::unwrap_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.12.33"
+)]
 
 pub mod block;
 pub mod claims;

@@ -1,5 +1,11 @@
 //! The cache and install metadata sit on user-writable paths. A FIFO, a directory or an
 //! oversized file there must be refused without hanging.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
 
 use std::path::Path;

@@ -372,7 +372,10 @@ pub struct PatternMatch {
     ext: Extensions,
 }
 
-#[allow(clippy::zero_sized_map_values)] // `PlaceholderSource` gains variants when a second source appears.
+#[allow(
+    clippy::zero_sized_map_values,
+    reason = "`PlaceholderSource` gains variants when a second source appears"
+)]
 fn non_empty_placeholders<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<BTreeMap<PlaceholderName, PlaceholderSource>>, D::Error> {

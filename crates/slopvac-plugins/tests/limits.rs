@@ -1,5 +1,11 @@
 //! Resource limits, the stalled-frame rule and stderr logging (threat model
 //! P6, TM-5, P14; plugin-protocol.md sections 6.3 and 7).
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
 
 mod common;

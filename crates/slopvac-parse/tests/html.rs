@@ -1,4 +1,5 @@
-#![allow(missing_docs)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 //! Behaviour of `parse_html` through its public interface.
 //!
 //! Expected values are worked out from the HTML in each test, not from the parser output.

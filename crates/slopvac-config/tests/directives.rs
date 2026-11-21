@@ -1,4 +1,9 @@
 //! Inline directives for documents without front matter, through the public interface.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

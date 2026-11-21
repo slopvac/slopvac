@@ -2,6 +2,7 @@
 //!
 //! `cargo run -p slopvac-terms --example reference -- <out-dir>` writes
 //! `terms/index.md` below `<out-dir>`.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::path::PathBuf;
 

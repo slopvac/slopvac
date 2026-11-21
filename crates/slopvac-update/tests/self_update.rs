@@ -1,4 +1,9 @@
 //! `slopvac self update` through the public `Runtime` interface, with an injected fetcher.
+#![allow(
+    clippy::clone_on_ref_ptr,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;

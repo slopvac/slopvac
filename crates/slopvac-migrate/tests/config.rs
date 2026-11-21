@@ -1,4 +1,9 @@
 //! Config rewrite behavior.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use slopvac_migrate::{Error, Options, RenameTable, migrate_config};
 

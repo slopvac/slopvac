@@ -1,6 +1,12 @@
 //! Genre tolerances reach the findings: `docs-discipline.history-internal-reference` is off in
 //! change-comms, a suggestion in internal and a warning in consumer and reference. Explicit
 //! configuration sits above a genre default (`docs/contract/config.md`, section 1.1).
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

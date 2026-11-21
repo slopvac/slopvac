@@ -34,7 +34,10 @@ const COMMAND: &str = "The exact command or commands you ran. Pipe the sample in
 
 /// Every report category, in the order of the Python registry.
 #[must_use]
-#[allow(clippy::too_many_lines)] // One literal table: splitting it would hide the forms.
+#[allow(
+    clippy::too_many_lines,
+    reason = "One literal table: splitting it would hide the forms"
+)]
 pub fn categories() -> Vec<Category> {
     vec![
         Category {

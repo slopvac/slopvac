@@ -1,5 +1,10 @@
 //! A scripted HTTP/1.1 server for the OCI client tests.
-#![allow(dead_code, unreachable_pub, missing_docs)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    missing_docs,
+    reason = "test support: each test binary uses a subset of the helpers; test support: items are shared across test binaries; test crate: nothing public to document"
+)]
 
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};

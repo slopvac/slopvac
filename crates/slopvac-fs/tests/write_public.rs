@@ -1,4 +1,5 @@
 //! Atomic writes through the public API: visibility, cleanup and path-free errors.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fmt::Write;
 use std::os::unix::fs::PermissionsExt;

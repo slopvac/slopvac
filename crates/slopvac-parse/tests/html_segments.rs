@@ -1,4 +1,9 @@
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 //! `parse_html_segments`: several source ranges read as one HTML stream. Expected values
 //! are the source text each range covers, worked out from the input.
 

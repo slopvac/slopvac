@@ -4,6 +4,7 @@
 //! against the glob with `globset` directly (native brace handling, no bounding),
 //! and applies a small reference model of gitwildmatch excludes. Discovery bounds
 //! its traversal by the pattern, so a bug there shows up as a dropped match.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::{Path, PathBuf};

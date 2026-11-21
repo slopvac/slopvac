@@ -1,4 +1,5 @@
-#![allow(missing_docs)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 //! Parity with the Python projection on the documents in `fixtures/reference.json`.
 //!
 //! The fixture comes from `slopvac.projection.project`. See `fixtures/divergences.md` for

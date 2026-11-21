@@ -1,5 +1,14 @@
 //! Safe fixes: parity with the 2.x `--fix`, and the refusals 3.0 adds.
-
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![allow(
     missing_docs,
     clippy::assert_is_empty,
@@ -26,7 +35,10 @@ fn manifest() -> &'static Path {
 /// `find` occurs once in the reference text.
 #[derive(serde::Deserialize)]
 struct Divergence {
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "test support: each test binary uses a subset of the helpers"
+    )]
     reason: String,
     expected: Vec<(String, String)>,
 }

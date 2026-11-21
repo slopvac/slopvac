@@ -7,6 +7,10 @@
 //! tables of word, part of speech and reason, under `schema_version = 3`.
 //! [`propernoun`] infers candidate names from body prose, for `terms suggest`
 //! and heading checks.
+#![allow(
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.2.32"
+)]
 
 mod blocklist;
 mod casing;

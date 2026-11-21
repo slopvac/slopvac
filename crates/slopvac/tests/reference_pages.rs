@@ -1,8 +1,16 @@
 //! The generated CLI reference documents every visible argument, default, possible value,
 //! built-in help and version flag, and `help` subcommand, and keeps help text inert.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 #[path = "../examples/cli-reference.rs"]
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "test support: each test binary uses a subset of the helpers"
+)]
 mod reference;
 
 use clap::{Arg, ArgAction, Command};

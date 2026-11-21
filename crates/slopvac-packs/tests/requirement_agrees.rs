@@ -1,5 +1,10 @@
 //! The parser and the schema agree on which version requirements are valid. The schema's
 //! `VersionReq` pattern is read from `schemas/v3/plugin-manifest.schema.json`, not copied here.
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::fs;
 use std::path::PathBuf;

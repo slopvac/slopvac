@@ -1,4 +1,5 @@
 //! Signature verification tests (TM-22 to TM-25, TM-30 parts, threat model section 7.3).
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 mod oci_server;
 

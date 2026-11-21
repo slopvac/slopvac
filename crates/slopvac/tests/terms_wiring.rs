@@ -1,6 +1,7 @@
 //! Terms in `slopvac lint` and `slopvac lsp`: project terms files, `terms.allow`, blocklists
 //! and the term-casing rule (bead 8.10 acceptance: a project term spelled wrongly is flagged,
 //! `terms.allow` suppresses it, the language server reports the same).
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use assert_cmd::Command;
 use predicates::prelude::*;

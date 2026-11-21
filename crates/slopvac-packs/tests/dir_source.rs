@@ -1,4 +1,5 @@
 //! A pack folder is confined: no symlink on the way to a pack file reaches outside it.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::os::unix::fs::symlink;

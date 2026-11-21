@@ -1,4 +1,5 @@
 //! Safety and fidelity tests for `slopvac setup`: containment, scale, line endings.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::Path;

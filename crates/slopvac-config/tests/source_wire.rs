@@ -1,4 +1,5 @@
 //! `ConfigSource` values built by the config crate match `common.schema.json`.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use jsonschema::Validator;
 use serde_json::{Value, json};

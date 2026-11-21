@@ -3,6 +3,11 @@
 //! `--profile` (removed), `behavior:init-flags`, `behavior:init-idempotence`).
 //!
 //! The written file is checked with `slopvac validate`.
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use assert_cmd::Command;
 use predicates::prelude::*;

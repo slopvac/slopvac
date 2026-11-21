@@ -2,6 +2,7 @@
 //!
 //! The 2.x inputs follow what the 2.x loader accepted: no `schema_version`, and a `pos` that
 //! it trimmed and lower-cased before matching its 25 listed spellings.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::Path;

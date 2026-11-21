@@ -1,5 +1,9 @@
 //! Reads `docs/site.toml` at build time so rule links share the docs address with the docs
 //! pipeline. The file may be absent (a crate built outside the repository); links are then off.
+#![allow(
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.2.32"
+)]
 
 use std::path::Path;
 

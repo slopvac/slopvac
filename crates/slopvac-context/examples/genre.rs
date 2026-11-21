@@ -1,6 +1,11 @@
 //! Prints the genre of each file given, as `slopvac genre` will.
 //!
 //! Usage: `cargo run -p slopvac-context --example genre -- <files...>`
+#![allow(
+    clippy::print_stderr,
+    clippy::print_stdout,
+    reason = "test code: a panic is a failed test"
+)]
 
 fn main() {
     let matches = slopvac_context::command()

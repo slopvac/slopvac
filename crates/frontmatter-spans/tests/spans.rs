@@ -2,6 +2,16 @@
 //!
 //! YAML collection spans are zero-width at the start of their first entry. TOML and JSON
 //! collection spans come straight from `toml_edit` and the crate's own JSON parser.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod common;
 

@@ -6,6 +6,10 @@
 //! listed wins per setting. A style's `extends` entries resolve before it.
 //! Styles can declare `conflicts`; when both sides are active the resolution
 //! reports the winner, and strict mode turns the report into an error.
+#![allow(
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod detect;
 mod error;

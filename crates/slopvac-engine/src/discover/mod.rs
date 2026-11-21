@@ -175,7 +175,10 @@ pub enum DiscoverError {
 }
 
 /// Expand `targets` into the files to lint.
-#[allow(clippy::needless_pass_by_value)] // callers build `Options` inline
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "callers build `Options` inline"
+)]
 pub fn discover<S: AsRef<str>>(
     targets: &[S],
     options: Options,

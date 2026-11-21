@@ -10,6 +10,11 @@
 //!
 //! The contract: every position 2.x kept is still extracted, and the only additions are
 //! the ones listed in `extra_over_2x.txt`, each with its reason.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::collections::BTreeSet;
 use std::fs;

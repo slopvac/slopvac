@@ -1,4 +1,5 @@
 //! Config errors from `prime` keep their values out of the error chain.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::Path;

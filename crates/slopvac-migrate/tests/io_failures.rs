@@ -1,5 +1,11 @@
 //! The CLI-facing failure, budgeted discovery, capped diagnostics, excluded candidates,
 //! the schema version type and MDX handling.
+#![allow(
+    clippy::panic,
+    clippy::print_stderr,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::fs;
 use std::path::Path;

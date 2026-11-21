@@ -22,7 +22,7 @@ fn per_100(findings: usize, words: usize) -> Density {
     if words == 0 {
         Density::ZERO
     } else {
-        #[allow(clippy::cast_precision_loss)] // counts far below 2^52
+        #[allow(clippy::cast_precision_loss, reason = "counts far below 2^52")]
         density(round(findings as f64 / words as f64 * 100.0, 3))
     }
 }
@@ -51,7 +51,7 @@ pub fn summarize(documents: &[Document]) -> RunSummary {
         100.0
     } else {
         let weight = |d: &Document| d.words.max(1);
-        #[allow(clippy::cast_precision_loss)] // word counts far below 2^52
+        #[allow(clippy::cast_precision_loss, reason = "word counts far below 2^52")]
         let denominator: f64 = documents.iter().map(|d| weight(d) as f64).sum();
         #[allow(clippy::cast_precision_loss)]
         if words > 0 {

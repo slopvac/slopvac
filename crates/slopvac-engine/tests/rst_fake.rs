@@ -3,6 +3,16 @@
 //! Each fake is a shell script, so these tests run on Unix. The JSON fixtures under
 //! `tests/fixtures/rst` come from the real driver on docutils 0.23 (`generate.py`), so the
 //! position mapping runs on real docutils output without Python on the test machine.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![cfg(unix)]
 #![allow(
     missing_docs,

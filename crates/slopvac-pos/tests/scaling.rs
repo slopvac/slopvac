@@ -7,6 +7,15 @@
 //!
 //! The deterministic linearity gate is the work-counter test in
 //! `src/tokenize.rs`.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 use std::time::{Duration, Instant};
 

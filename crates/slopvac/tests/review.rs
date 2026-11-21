@@ -1,5 +1,6 @@
 //! `slopvac review` through the installed binary: help, the dry-run plan, the errors that
 //! stop a run, and paths kept out of messages.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use assert_cmd::Command;
 use predicates::prelude::*;

@@ -1,5 +1,6 @@
 //! Fixer-edit validation against the shared position vectors in
 //! `schemas/v3/conformance/positions` (docs/contract/positions.md).
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::collections::HashMap;
 use std::fs;

@@ -24,6 +24,10 @@
 //!
 //! Every mistake is a compile error. The `slopvac-messages` crate documents the
 //! generated API and holds the compile-fail tests.
+#![allow(
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod expand;
 mod model;

@@ -6,8 +6,12 @@
 //! 3. a report built through public constructors serializes schema-valid.
 //!
 //! Set `PROPTEST_CASES` to change the case count (default 256).
-
-#![allow(missing_docs)]
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

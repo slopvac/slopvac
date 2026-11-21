@@ -1,5 +1,6 @@
 //! The `files` patterns of a `[[genres]]` block select the same documents in the config
 //! stack and in genre resolution, because both use one matcher on the native path.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::path::Path;
 

@@ -5,7 +5,16 @@
 //! * the schema generated from the Rust types does the same;
 //! * `Deserialize` accepts every valid instance, and rejects each invalid one for the
 //!   reason the instance names.
-
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![allow(missing_docs, clippy::single_range_in_vec_init)]
 
 mod common;

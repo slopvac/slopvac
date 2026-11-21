@@ -207,7 +207,10 @@ fn plain_scalars_resolve_by_the_yaml_core_schema() {
 
 /// Reads the first entry of a table and ignores the rest, as a careless visitor would.
 #[derive(Debug)]
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "test support: each test binary uses a subset of the helpers"
+)]
 struct FirstOnly(String);
 
 impl<'de> Deserialize<'de> for FirstOnly {
@@ -242,7 +245,10 @@ fn table_entries_a_visitor_leaves_unread_are_an_error_at_the_first_unread_key() 
 
 #[derive(Debug, DeriveDeserialize)]
 #[serde(try_from = "String")]
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "test support: each test binary uses a subset of the helpers"
+)]
 struct Slug(String);
 
 impl TryFrom<String> for Slug {

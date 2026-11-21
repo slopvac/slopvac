@@ -5,6 +5,11 @@
 //!   pointer that `cases.toml` names;
 //! * the structs load every valid file and reject every invalid one;
 //! * the built-in genre and tagger files satisfy the same schemas.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::fs;
 use std::path::{Path, PathBuf};

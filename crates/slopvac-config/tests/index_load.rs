@@ -1,4 +1,10 @@
 //! Extra-index sources never reach rendered output, and the extra-index count is capped.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod common;
 

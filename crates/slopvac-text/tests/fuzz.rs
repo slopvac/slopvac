@@ -3,7 +3,7 @@
 //!
 //! Set `PROPTEST_CASES` to change the case count (default 512).
 
-#![allow(missing_docs)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 use proptest::prelude::*;
 use slopvac_text::Pattern;

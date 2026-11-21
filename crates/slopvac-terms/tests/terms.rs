@@ -1,4 +1,5 @@
 //! Behavior of the casing check, term files and blocklists through the public API.
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use rstest::rstest;
 use slopvac_terms::{Blocklist, Pos, TermEntry, TermSet, TermsError, TermsFile};

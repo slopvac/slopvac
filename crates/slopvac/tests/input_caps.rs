@@ -4,6 +4,7 @@
 //!
 //! `lint` accepts `--fix` and `--diff-base` but does not yet pass them to the engine, so those
 //! refusals have no CLI test.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 mod support;
 

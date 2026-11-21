@@ -1,5 +1,10 @@
 //! Matching semantics through the public API. Expected spans are worked out by hand from
 //! Python's `re.finditer` rules (the empty-match cases follow `CPython` 3.7+).
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![allow(clippy::single_range_in_vec_init)]
 
 use rstest::rstest;

@@ -5,6 +5,11 @@
 //! sums the tags the taggers push and the pieces the table-cell split pushes, so it is an
 //! upper bound on the entries the index holds. Measurement tooling for the tag ceiling, not a
 //! public interface.
+#![allow(
+    clippy::expect_used,
+    clippy::print_stdout,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::process::ExitCode;
 

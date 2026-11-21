@@ -1,5 +1,11 @@
 //! `kill_all_live` kills every plugin of the process, so these tests run in
 //! their own binary and one at a time.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 #![cfg(unix)]
 
 mod common;

@@ -1,6 +1,11 @@
 //! Installed-binary smoke tests for the commands whose logic lives in owner crates:
 //! `terms`, `genre`, `validate`, `setup` and `prime`. Each gets its help and one real
 //! behaviour, plus path redaction where the command prints a user path.
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use assert_cmd::Command;
 use predicates::prelude::*;

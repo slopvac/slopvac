@@ -1,4 +1,9 @@
 //! Installed-binary tests for the command tree, exit codes and global settings.
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod support;
 

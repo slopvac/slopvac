@@ -1,4 +1,5 @@
-#![allow(missing_docs)]
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 //! Differential test: the prose `parse_html` extracts must match the text that html5ever's
 //! full tree builder renders.
 //!

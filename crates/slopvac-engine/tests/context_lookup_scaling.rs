@@ -10,7 +10,13 @@
 //!
 //! The tests count index steps with `take_lookup_steps`, not time, so a loaded runner
 //! cannot make them fail.
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

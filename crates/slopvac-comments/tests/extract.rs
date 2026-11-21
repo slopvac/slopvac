@@ -1,4 +1,5 @@
 //! Extraction results per language, worked out by hand in `common`.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 mod common;
 

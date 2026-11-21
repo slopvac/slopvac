@@ -2,6 +2,11 @@
 //!
 //! The binary is a thin shell over [`main_with`]. Tests and the reference
 //! generators build the same tree through [`cli::command`].
+#![allow(
+    clippy::allow_attributes_without_reason,
+    clippy::expect_used,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.12.33"
+)]
 
 pub mod cli;
 pub mod color;

@@ -1,6 +1,6 @@
 //! The `slopvac-schemas` binary's exit codes: 0 when the committed files match, 1 when one
 //! differs, 2 when the check could not run.
-
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 #![allow(missing_docs, reason = "an integration test crate has no public API")]
 
 use std::fs;

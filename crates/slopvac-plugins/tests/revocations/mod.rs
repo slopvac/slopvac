@@ -1,6 +1,11 @@
 //! A revocation-list registry for tests: a root key, hand-written list JSON and
 //! a server that serves the list as an OCI artifact.
-#![allow(dead_code, unreachable_pub, missing_docs)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    missing_docs,
+    reason = "test support: each test binary uses a subset of the helpers; test support: items are shared across test binaries; test crate: nothing public to document"
+)]
 
 use std::collections::BTreeMap;
 use std::io::Cursor;

@@ -2,6 +2,16 @@
 //!
 //! The interpreter is a shell script that prints the driver output that real docutils wrote
 //! for `tests/fixtures/rst/sections.rst.in`, so the test runs without Python.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 #![cfg(unix)]
 #![allow(
     missing_docs,

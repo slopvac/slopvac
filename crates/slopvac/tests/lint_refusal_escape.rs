@@ -2,6 +2,7 @@
 //! from a path (threat model O1 to O4): terminal controls, newlines and bidi overrides never
 //! reach stderr raw, and the code, wording and exit code stay the same. Report notices keep
 //! the raw text, which each report format escapes for itself.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::path::Path;
 use std::time::Duration;

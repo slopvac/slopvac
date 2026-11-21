@@ -2,6 +2,7 @@
 //!
 //! `cargo run -p slopvac-context --example reference -- <out-dir>` writes
 //! `genres/index.md` and one page per built-in genre below `<out-dir>`.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::path::PathBuf;
 

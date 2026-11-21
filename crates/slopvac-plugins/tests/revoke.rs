@@ -4,6 +4,11 @@
 //! The fixed vectors in `fixtures/revoke` come from the `minisign` command line
 //! and Python; see the README there. Scenario tests sign at run time with the
 //! `minisign` crate and write the JSON by hand.
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 mod oci_server;
 mod revocations;

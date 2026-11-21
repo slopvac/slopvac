@@ -4,8 +4,13 @@
 //! `fixtures` and `next` are exhaustive `match`es on `MatchKind`: a new kind does not compile
 //! until it has a fixture and a place in the chain of kinds. A kind whose rules run a matcher
 //! before checking the genre fails the test below, named by its kind.
-
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

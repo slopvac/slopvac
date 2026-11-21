@@ -1,5 +1,10 @@
 //! The checklist adapter: judgement rules loaded from category files keep their gates, and
 //! checked rules stay out.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::path::PathBuf;
 

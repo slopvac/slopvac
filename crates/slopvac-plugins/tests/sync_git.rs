@@ -1,6 +1,16 @@
 //! Git sources in `plugins sync` (bead 8l4.9.27; threat model F5, K11, N10, E8,
 //! TM-40, TM-46). Repositories are local and reach the syncer through the
 //! test-only rewrite seam, since a lock accepts `git+https://` alone.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.2.32"
+)]
 
 mod oci_server;
 mod revocations;

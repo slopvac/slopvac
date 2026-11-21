@@ -12,6 +12,7 @@
 //!
 //! The scanner is not reproducible here, so the test checks the whole command line and
 //! every piece split at `;`, `&`, `|` and newlines, and requires all of them to be allowed.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::fmt;
 

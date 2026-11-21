@@ -1,6 +1,7 @@
 //! Safe application of fixer edits and recipe plans: threats O6 to O9 of
 //! `docs/contract/threat-model.md`. Test names cite the test ids TM-14 to TM-18
 //! and H22 (`docs/contract/plugin-protocol.md` section 12.1).
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 mod support;
 

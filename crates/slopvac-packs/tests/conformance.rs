@@ -1,5 +1,6 @@
 //! The `schemas/v3/conformance/plugin-manifest` corpus: every `valid/` case parses and every
 //! `invalid/` case fails at the JSON Pointer that `cases.toml` names.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
 use std::path::PathBuf;

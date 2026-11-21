@@ -1,4 +1,9 @@
 //! Extraction tests: the malicious-archive corpus (TM-43 to TM-47).
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::collections::HashSet;
 use std::fs;

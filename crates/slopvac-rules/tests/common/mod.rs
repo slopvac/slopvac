@@ -1,6 +1,10 @@
 //! Shared helpers for the integration tests.
 
-#![allow(dead_code, unreachable_pub)]
+#![allow(
+    dead_code,
+    unreachable_pub,
+    reason = "test support: each test binary uses a subset of the helpers; test support: items are shared across test binaries"
+)]
 
 use std::fs;
 use std::path::{Path, PathBuf};

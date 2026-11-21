@@ -3,6 +3,12 @@
 //!
 //! Every JSON document the binary prints in these tests is also validated against
 //! `schemas/v3/doctor-report.schema.json`.
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::fs;
 use std::path::{Path, PathBuf};

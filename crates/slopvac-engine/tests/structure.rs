@@ -1,7 +1,12 @@
 //! Structure rules: `heading-hierarchy` runs as the 2.x script ran it, and the five checks
 //! that 2.x never implemented stay silent.
-
-#![allow(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
+#![allow(missing_docs, reason = "test crate: nothing public to document")]
 
 mod common;
 

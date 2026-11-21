@@ -28,6 +28,10 @@
 //!   the call on the interpreter when the JIT gives up.
 //! * [`Regex::find_all`] follows Python's `re.finditer`: an empty match may follow a
 //!   non-empty one, but not another empty match at the same position.
+#![allow(
+    clippy::allow_attributes_without_reason,
+    reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
+)]
 
 mod ffi;
 mod version;

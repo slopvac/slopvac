@@ -1,5 +1,6 @@
 //! No internal tracking ids in anything a user can read: help, errors and the generated
 //! reference.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use assert_cmd::Command;
 use std::path::Path;

@@ -2,6 +2,11 @@
 //! wraps a small body in tiny TLS records, is cut off, whatever the fetch
 //! (threat model section 6.4, resource exhaustion). The cap counts raw bytes
 //! read from the socket, below TLS and below a proxy.
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::fmt::Write as _;
 use std::io::{Read, Write};

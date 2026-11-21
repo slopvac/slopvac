@@ -1,4 +1,9 @@
 //! Every output format against the shared position vectors and injection cases.
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use serde_json::{Value, json};
 use slopvac_model::Report;

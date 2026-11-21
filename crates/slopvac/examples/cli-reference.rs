@@ -3,6 +3,7 @@
 //! `cargo run -p slopvac --example cli-reference -- <out-dir>` writes `cli/index.md` and one
 //! page per top-level command below `<out-dir>`. It reads the clap tree through its public
 //! API and changes nothing in it.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::fmt::Write as _;
 use std::path::PathBuf;

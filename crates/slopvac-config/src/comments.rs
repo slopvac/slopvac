@@ -21,7 +21,10 @@ use std::ops::Range;
 
 /// What a family of languages does with strings and comments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(clippy::struct_excessive_bools)] // independent language features, not a state
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent language features, not a state"
+)]
 pub(crate) struct Family {
     /// `//` and `/* */` comments.
     c_like: bool,

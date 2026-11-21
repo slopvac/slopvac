@@ -1,4 +1,5 @@
 //! Output failures exit 2 with a stable code instead of panicking or passing.
+#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
 use std::io::{self, Write};
 use std::process::ExitCode;
