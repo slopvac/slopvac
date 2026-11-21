@@ -18,9 +18,11 @@ impl EngineError {
 }
 
 impl EngineError {
-    /// The message of this error with its untrusted parts left raw, for a caller that
-    /// escapes the text itself, once, where it writes it (a terminal line, a report).
-    /// `Display` is the same text, escaped.
+    /// The message of this error with its untrusted parts left unescaped. `Display` is the
+    /// same text, escaped.
+    ///
+    /// The caller must escape the result once where it writes it (a terminal line or a
+    /// report). It must never reach a log, a panic or an error chain.
     #[must_use]
     pub fn raw_message(&self) -> String {
         match self {

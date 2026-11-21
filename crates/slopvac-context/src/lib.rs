@@ -132,7 +132,10 @@ pub enum Error {
 
 impl Error {
     /// The message of this error with its untrusted parts (patterns, ids, paths, OS and
-    /// parser messages) left raw. `Display` is this text, escaped.
+    /// parser messages) left unescaped. `Display` is this text, escaped.
+    ///
+    /// The caller must escape the result once where it writes it (a terminal line or a
+    /// report). It must never reach a log, a panic or an error chain.
     #[must_use]
     pub fn raw_message(&self) -> String {
         self.render(str::to_owned)
