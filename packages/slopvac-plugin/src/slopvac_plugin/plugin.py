@@ -38,7 +38,7 @@ PROTOCOL_MIN = 1
 PROTOCOL_MAX = 1
 DEFAULT_MAX_BATCH_DOCUMENTS = 64
 DEFAULT_MAX_IN_FLIGHT = 1
-FEATURE_NAME = re.compile(r"^[a-z][a-z0-9-]*$|^x-[a-z0-9-]+$")
+FEATURE_NAME = re.compile(r"^[a-z][a-z0-9-]*\Z|^x-[a-z0-9-]+\Z")
 
 
 @dataclass(frozen=True)
