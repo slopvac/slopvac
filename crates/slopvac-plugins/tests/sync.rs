@@ -123,6 +123,18 @@ fn publish(key: &Key, namespace: &str, files: &[(&str, &[u8])]) -> Published {
     }
 }
 
+/// The artifact of [`publish`] with its statement and signature layers removed.
+fn publish_without_signature(key: &Key, namespace: &str, files: &[(&str, &[u8])]) -> Published {
+    let mut p = publish(key, namespace, files);
+    let mut manifest: Manifest = serde_json::from_slice(&p.manifest).unwrap();
+    manifest
+        .layers
+        .retain(|l| l.media_type != MEDIA_STATEMENT && l.media_type != MEDIA_MINISIG);
+    p.manifest = serde_json::to_vec(&manifest).unwrap();
+    p.digest = Digest::of(&p.manifest).to_string();
+    p
+}
+
 /// A registry that serves `artifacts` by digest (and any manifest tag as the first one).
 fn registry(artifacts: &[&Published]) -> Server {
     let mut manifests: HashMap<String, Vec<u8>> = HashMap::new();
@@ -458,6 +470,30 @@ fn a_lock_entry_without_a_signature_reports_sync_unsigned() {
     .unwrap_err();
     assert_eq!(err.code(), "sync-unsigned");
     assert_eq!(err.exit_code(), 2);
+}
+
+#[test]
+fn an_artifact_without_the_signature_its_lock_entry_records_reports_signature_invalid() {
+    let key = Key::new();
+    let stripped = publish_without_signature(&key, "acme", FILES);
+    let server = registry(&[&stripped]);
+    let env = Env::new();
+    let c = client();
+    // The lock entry records a signature; the registry serves the artifact without one.
+    let lock = oci_lock(&server.registry(), &stripped);
+    let err = run(&env, Network::Online(&c), &policy("acme", &[&key]), &lock).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            SyncError::Sign {
+                source: SignError::MissingSignature,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(err.code(), "signature-invalid");
+    env.assert_no_trees();
 }
 
 #[test]
