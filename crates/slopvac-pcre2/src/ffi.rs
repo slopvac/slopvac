@@ -9,7 +9,10 @@
 //!   a character boundary no greater than the length. That justifies `PCRE2_NO_UTF_CHECK`.
 //! * A compiled `Code` is never modified after construction; `Contexts` and `MatchData`
 //!   are used by one thread at a time (see their docs).
-#![allow(unsafe_code)]
+#![allow(
+    unsafe_code,
+    reason = "FFI boundary: the only module in this crate that may use unsafe"
+)]
 
 use std::cell::{OnceCell, RefCell};
 use std::ffi::c_void;
