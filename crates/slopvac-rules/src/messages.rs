@@ -7,6 +7,8 @@
 
 use slopvac_messages::{Catalog, Entry};
 
+use crate::PackBudget;
+
 /// The text of each [`crate::LoadErrorKind`] variant.
 #[derive(Debug, Clone, PartialEq, Eq, Catalog)]
 pub(crate) enum RulesMessage {
@@ -81,6 +83,70 @@ pub(crate) enum RulesMessage {
     #[code("rules-match-failed")]
     #[text("matching failed: {reason}")]
     MatchFailed { reason: String },
+}
+
+pub(crate) fn read_failed(reason: &str) -> RulesMessage {
+    RulesMessage::ReadFailed {
+        reason: reason.to_owned(),
+    }
+}
+
+pub(crate) fn file_too_large(cap: u64) -> RulesMessage {
+    RulesMessage::FileTooLarge { cap }
+}
+
+pub(crate) fn budget_exceeded(budget: PackBudget, limit: u64) -> RulesMessage {
+    RulesMessage::BudgetExceeded {
+        limit,
+        unit: budget.unit().to_owned(),
+        budget: budget.as_str().to_owned(),
+    }
+}
+
+pub(crate) fn pattern_too_long(len: usize, limit: usize) -> RulesMessage {
+    RulesMessage::PatternTooLong { len, limit }
+}
+
+pub(crate) fn parse_failed(reason: &str) -> RulesMessage {
+    RulesMessage::ParseFailed {
+        reason: reason.to_owned(),
+    }
+}
+
+pub(crate) fn duplicate_category(id: &str) -> RulesMessage {
+    RulesMessage::DuplicateCategory { id: id.to_owned() }
+}
+
+pub(crate) fn duplicate_rule(id: &str) -> RulesMessage {
+    RulesMessage::DuplicateRule { id: id.to_owned() }
+}
+
+pub(crate) fn pattern_invalid(reason: &str) -> RulesMessage {
+    RulesMessage::PatternInvalid {
+        reason: reason.to_owned(),
+    }
+}
+
+/// The example text shows quoted, as a string literal.
+pub(crate) fn bad_example(index: usize, text: &str) -> RulesMessage {
+    RulesMessage::BadExampleNoMatch {
+        index,
+        text: format!("{text:?}"),
+    }
+}
+
+/// The example text shows quoted, as a string literal.
+pub(crate) fn good_example(index: usize, text: &str) -> RulesMessage {
+    RulesMessage::GoodExampleMatches {
+        index,
+        text: format!("{text:?}"),
+    }
+}
+
+pub(crate) fn match_failed(reason: &str) -> RulesMessage {
+    RulesMessage::MatchFailed {
+        reason: reason.to_owned(),
+    }
 }
 
 /// The entries of the rules catalog.

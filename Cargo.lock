@@ -2536,6 +2536,7 @@ dependencies = [
  "slopvac-config",
  "slopvac-context",
  "slopvac-fs",
+ "slopvac-messages",
  "slopvac-model",
  "slopvac-pcre2",
  "slopvac-rules",

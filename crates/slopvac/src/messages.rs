@@ -17,6 +17,7 @@ pub static ALL: &[Registered] = &[
     ("slopvac-config", slopvac_config::error_entries),
     ("slopvac-config-text", slopvac_config::text_entries),
     ("slopvac-config-phrases", slopvac_config::phrase_entries),
+    ("slopvac-context", slopvac_context::message_entries),
     ("slopvac-engine-text", slopvac_engine::text_entries),
     ("slopvac-engine-details", slopvac_engine::detail_entries),
     ("slopvac-engine-phrases", slopvac_engine::phrase_entries),

@@ -194,6 +194,19 @@ config-value-not-valid text
 config-value-out-of-range text
 config-version-newer text
 config-version-unsupported text
+context-data-invalid text
+context-file-too-large text
+context-file-unreadable text
+context-genre-unknown text
+context-glob-invalid text
+context-glob-set-invalid text
+context-match-failed text
+context-pattern-invalid text
+context-read-failed text
+context-signal-glob-invalid text
+context-tag-limit text
+context-tagger-duplicate text
+context-yaml-invalid text
 credential-helper-project-unknown error
 credential-helper-untrusted error
 digest-mismatch error
@@ -1513,6 +1526,7 @@ style-too-large error
 sync-failed error
 sync-fetch error
 sync-unsigned error
+tagger-pattern-too-long error
 terms-about text
 terms-accept-help text
 terms-accept-unknown text
