@@ -32,6 +32,7 @@ agents-help-setup-reviewer-model text
 agents-help-setup-root text
 agents-notice-invalid error
 cache-tampered error
+cases-rule-unchecked notice
 claims-dropped-covered text
 claims-dropped-fact text
 claims-json-failed text

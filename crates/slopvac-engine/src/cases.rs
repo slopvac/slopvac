@@ -12,24 +12,26 @@
 //! Each rule runs in an engine of its own with every other rule switched off
 //! ([`Engine::isolate`]), so an unrelated rule cannot change or abort a case.
 //!
-//! A check passes only after the engine executed the rule. A rule the engine cannot run
-//! (switched off, limited by `applies_to` to another genre or mode, or of a kind or style
-//! the engine does not implement), a rule that is testable but has no cases or checkable
-//! examples, and a selected judgement rule all report [`Outcome::Incomplete`], never
-//! [`Outcome::Passed`]. An id that names no rule is a [`CasesError`].
-//! A mechanical rule is a lexical one: `tokens`, `pattern` or `substitution`.
-//! An example of a heading-scoped rule holds the heading text, so the runner lints it as a
+//! A check passes only after the engine executed the rule. An inactive rule (switched off,
+//! or limited by `applies_to` to another genre or mode) is skipped and reports nothing.
+//! An active rule of a kind or style the engine does not implement, and one that has no
+//! cases or checkable examples, report [`Outcome::Incomplete`], never [`Outcome::Passed`]. A
+//! judgement rule is documentation only: it never runs and never reports. An id that
+//! names no rule is a [`CasesError`].
+//! A mechanically checkable rule is any rule that is not a judgement rule. An example of a
+//! heading-scoped rule holds the heading text, so the runner lints it as a
 //! Markdown heading (`# text`), as the Python reference does. Case inputs run as written.
+//! [`CaseReport::unchecked_notice`] names the incomplete rules in a warning notice.
 //!
-//! [`coverage`] lints a corpus once and lists the mechanical rules that matched nothing in
-//! it. [`cli`] wraps both as the `cases` command that the CLI mounts.
+//! [`coverage`] lints a corpus once and lists the mechanically checkable rules that matched
+//! nothing in it. [`cli`] wraps both as the `cases` command that the CLI mounts.
 
 pub mod cli;
 
 use std::collections::BTreeMap;
 use std::fmt;
 
-use slopvac_model::RuleId;
+use slopvac_model::{Notice, NoticeLevel, RuleId};
 use slopvac_rules::{Case, LoadedRule, MatchKind, Scope, Want};
 
 use crate::{Engine, EngineError, Input, Level};
@@ -129,8 +131,33 @@ impl CaseReport {
         self.failures().next().is_none() && self.incomplete().next().is_none()
     }
 
-    /// The exit code: 1 when a case failed, 2 when nothing failed but a check was
-    /// incomplete (`docs/contract/policies.md` section 3.5), else 0.
+    /// The warning notice for the rules the runner could not check, or `None` when it
+    /// checked them all. `data.rules` lists their ids. Judgement rules never appear in it.
+    #[must_use]
+    pub fn unchecked_notice(&self) -> Option<Notice> {
+        let rules = self.incomplete_rules();
+        if rules.is_empty() {
+            return None;
+        }
+        let data = serde_json::Map::from_iter([(
+            "rules".to_owned(),
+            rules
+                .iter()
+                .map(|id| serde_json::Value::String(id.to_string()))
+                .collect(),
+        )]);
+        Some(
+            crate::lint::notice(
+                NoticeLevel::Warning,
+                &crate::messages::EngineNotice::CasesRuleUnchecked { count: rules.len() },
+            )
+            .with_data(data),
+        )
+    }
+
+    /// The exit code, by the contract ruling in `docs/contract/rules.md`: 1 when a case or
+    /// example failed, else 2 when a rule went unchecked, else 0. Judgement rules never
+    /// reach a result, so they never change it.
     #[must_use]
     pub fn exit_code(&self) -> i32 {
         if self.failures().next().is_some() {
@@ -213,9 +240,6 @@ pub enum CasesError {
     /// The selected id names no rule of the engine.
     #[error("{}", crate::messages::no_rule(.0))]
     UnknownRule(RuleId),
-    /// The engine holds no rule with cases or checkable examples, so nothing would run.
-    #[error("{}", crate::messages::EngineText::NoCases)]
-    NothingToRun,
     /// The engine failed.
     #[error(transparent)]
     Engine(#[from] EngineError),
@@ -349,7 +373,7 @@ fn checks_of(rule: &LoadedRule) -> Vec<Check<'_>> {
             judge: Box::new(move |s| check_case(case, s)),
         });
     }
-    if rule.matcher().is_some() {
+    if rule.kind() != MatchKind::Judgement {
         for (i, example) in spec.examples().iter().enumerate() {
             checks.push(Check {
                 origin: Origin::ExampleBad(i),
@@ -386,7 +410,6 @@ fn checks_of(rule: &LoadedRule) -> Vec<Check<'_>> {
 fn run_rule(
     engine: &Engine,
     rule: &LoadedRule,
-    selected: bool,
     out: &mut Vec<CaseResult>,
 ) -> Result<(), EngineError> {
     let mut push = |origin, outcome| {
@@ -397,17 +420,17 @@ fn run_rule(
         });
     };
     let checks = checks_of(rule);
+    if !engine.running.contains(rule.id().as_str()) {
+        // A switched-off rule, or one limited to another genre or mode, is not active:
+        // nothing is expected of it, so it neither runs nor counts as unchecked.
+        return Ok(());
+    }
     if checks.is_empty() {
-        // A judgement rule has no mechanical check, so only a selection asks for one.
+        // A judgement rule is documentation only: it never runs and never reports.
         if rule.kind() != MatchKind::Judgement {
             push(
                 Origin::Missing,
                 Outcome::Incomplete(crate::messages::EnginePhrase::CaseNoExamples.text()),
-            );
-        } else if selected {
-            push(
-                Origin::Missing,
-                Outcome::Incomplete(crate::messages::EnginePhrase::CaseJudgement.text()),
             );
         }
         return Ok(());
@@ -433,21 +456,22 @@ fn run_rule(
     Ok(())
 }
 
-/// Run the cases and mechanical examples of every rule `engine` holds, or of `only`.
+/// Run the cases and examples of every mechanically checkable rule `engine` holds, or of
+/// `only`.
 ///
-/// A testable rule that has no cases and no checkable example reports
+/// A checkable rule that has no cases and no example reports
 /// [`Outcome::Incomplete`], as does every check of a rule the engine does not execute.
-/// A judgement rule reports nothing unless `only` selects it.
+/// A judgement rule reports nothing, even when `only` selects it. A run whose rules are all
+/// judgement or inactive is an empty report that exits 0. An id that names no rule is an error.
 pub fn run_cases(engine: &Engine, only: Option<&RuleId>) -> Result<CaseReport, CasesError> {
     let mut report = CaseReport::default();
     let mut found = false;
     for rule in effective_rules(engine).filter(|r| only.is_none_or(|o| o == r.id())) {
         found = true;
-        run_rule(engine, rule, only.is_some(), &mut report.results)?;
+        run_rule(engine, rule, &mut report.results)?;
     }
     match only {
         Some(id) if !found => Err(CasesError::UnknownRule(id.clone())),
-        _ if report.results.is_empty() => Err(CasesError::NothingToRun),
         _ => Ok(report),
     }
 }
@@ -515,7 +539,7 @@ impl fmt::Display for Coverage {
 /// Lint `corpus` and count the findings of each mechanical rule the engine runs.
 pub fn coverage(engine: &Engine, corpus: &[Input<'_>]) -> Result<Coverage, EngineError> {
     let mut findings: BTreeMap<RuleId, usize> = effective_rules(engine)
-        .filter(|r| r.matcher().is_some() && engine.running.contains(r.id().as_str()))
+        .filter(|r| r.kind() != MatchKind::Judgement && engine.running.contains(r.id().as_str()))
         .map(|r| (r.id().clone(), 0))
         .collect();
     for doc in engine.lint_all(corpus) {

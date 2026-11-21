@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use slopvac_model::{Document, Report, Score, Severity};
+use slopvac_model::{Document, Notice, Report, Score, Severity};
 use slopvac_sanitize::line;
 
 use crate::messages::{Label, Line};
@@ -25,20 +25,21 @@ pub(crate) fn score_text(score: Score) -> String {
     format!("{:.1}", f64::from(score))
 }
 
+pub(crate) fn notice_line(notice: &Notice) -> String {
+    Line::TextNotice {
+        code: line(notice.code.as_str()),
+        message: line(notice.message.as_str()),
+    }
+    .to_string()
+}
+
 pub(crate) fn render(report: &Report) -> String {
     let mut out = String::new();
     for doc in &report.documents {
         document(&mut out, doc);
     }
     for notice in &report.notices {
-        let _ = writeln!(
-            out,
-            "{}",
-            Line::TextNotice {
-                code: line(notice.code.as_str()),
-                message: line(notice.message.as_str()),
-            }
-        );
+        let _ = writeln!(out, "{}", notice_line(notice));
     }
     let s = &report.summary;
     let _ = writeln!(

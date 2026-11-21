@@ -182,7 +182,7 @@ fn reasons(report: &CaseReport) -> Vec<(Origin, String)> {
 }
 
 #[test]
-fn a_rule_that_is_switched_off_is_incomplete_not_passed() {
+fn a_rule_that_is_switched_off_is_not_run_and_not_passed() {
     let set = ruleset(vec![common::category(
         "cat",
         &[foo_rule(&json!({"cases": [{"input": "foo", "want": 1}]}))],
@@ -190,15 +190,8 @@ fn a_rule_that_is_switched_off_is_incomplete_not_passed() {
     let mut s = settings();
     s.rule_levels.insert(id("core:cat.r"), Level::Off);
     let report = run_cases(&Engine::new(vec![set], s).unwrap(), None).unwrap();
-    assert_eq!(report.passed(), 0);
-    assert_eq!(
-        reasons(&report),
-        [(
-            Origin::Case(0),
-            "the rule is switched off or does not apply under the engine settings".to_owned()
-        )]
-    );
-    assert_eq!(report.exit_code(), 2);
+    assert!(report.results.is_empty(), "{report}");
+    assert_eq!(report.exit_code(), 0);
 }
 
 fn passed_flags(report: &CaseReport) -> Vec<bool> {
@@ -286,17 +279,15 @@ fn a_vocabulary_rule_needs_a_blocklist_and_isolation_keeps_it() {
 }
 
 #[test]
-fn an_engine_without_checkable_rules_is_an_error_not_a_pass() {
+fn an_engine_without_checkable_rules_is_an_empty_run_that_exits_0() {
     let judgement = common::rule(
         "j",
         &json!({"kind": "judgement", "question": "Is it vague?"}),
         &json!({"severity": "suggestion"}),
     );
-    let err = run_cases(&engine(&[judgement]), None).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "no rule has cases or checkable examples to run"
-    );
+    let report = run_cases(&engine(&[judgement]), None).unwrap();
+    assert!(report.results.is_empty(), "{report}");
+    assert_eq!(report.exit_code(), 0);
 }
 
 #[test]
@@ -362,17 +353,6 @@ fn a_testable_rule_without_cases_or_examples_is_incomplete() {
             "the rule has no cases or checkable examples".to_owned()
         )]
     );
-    assert_eq!(report.exit_code(), 2);
-}
-
-#[test]
-fn a_selected_judgement_rule_is_incomplete() {
-    let judgement = common::rule(
-        "j",
-        &json!({"kind": "judgement", "question": "Is it vague?"}),
-        &json!({"severity": "suggestion"}),
-    );
-    let report = run_cases(&engine(&[judgement]), Some(&id("core:cat.j"))).unwrap();
     assert_eq!(report.exit_code(), 2);
 }
 
@@ -489,7 +469,7 @@ fn core_engine() -> Engine {
 /// starts to pass must leave the list.
 const KNOWN_FAILURES: &[(&str, &str)] = &[];
 
-const METRIC: &str = "metric rule: no cases, and examples do not run for non-lexical rules";
+const METRIC: &str = "metric rule: no cases or examples, or a metric the engine does not measure";
 const STRUCTURE: &str = "structure rule: no cases or checkable examples";
 const VOCABULARY: &str = "vocabulary rule: no cases, and it needs a word blocklist to run";
 
@@ -506,20 +486,7 @@ const NO_EXECUTABLE_CHECK: &[(&str, &str)] = &[
     ("core:ai-tells-formatting.inline-header-list", METRIC),
     ("core:ai-tells-formatting.heading-hierarchy", STRUCTURE),
     ("core:prose-craft.sentence-length", METRIC),
-    ("core:prose-discipline.run-on", METRIC),
     ("core:prose-format.prose-block", METRIC),
-    ("core:ste-descriptive.sentence-too-long-descriptive", METRIC),
-    ("core:ste-descriptive.paragraph-too-many-sentences", METRIC),
-    ("core:ste-nouns.multiword-noun-too-long", METRIC),
-    ("core:ste-procedural.sentence-too-long-procedural", METRIC),
-    (
-        "core:ste-punctuation.colon-terminates-sentence-for-count",
-        METRIC,
-    ),
-    (
-        "core:ste-sentences.complex-text-not-in-vertical-list",
-        METRIC,
-    ),
     ("core:ste-verbs.verb-form-not-listed", VOCABULARY),
     (
         "core:ste-words.word-outside-controlled-vocabulary",
@@ -607,12 +574,13 @@ fn the_command_exits_2_on_an_incomplete_check() {
     assert_eq!(
         out,
         "core:cat.bare cases: incomplete: the rule has no cases or checkable examples\n\
-         0 passed, 0 failed, 1 incomplete\n"
+         0 passed, 0 failed, 1 incomplete\n\
+         notice[cases-rule-unchecked]: 1 active rule(s) of a mechanically checkable kind were not checked by the case runner\n"
     );
 }
 
 #[test]
-fn the_command_rejects_a_pack_with_nothing_to_run() {
+fn the_command_exits_0_on_a_pack_with_only_judgement_rules() {
     let dir = tempfile::tempdir().unwrap();
     let judgement = common::rule(
         "j",
@@ -621,13 +589,10 @@ fn the_command_rejects_a_pack_with_nothing_to_run() {
     );
     let (name, text) = common::category("cat", &[judgement]);
     std::fs::write(dir.path().join(name), text).unwrap();
-    let m = slopvac_engine::cases::cli::command()
-        .try_get_matches_from(["cases", dir.path().to_str().unwrap()])
-        .unwrap();
-    let err = slopvac_engine::cases::cli::run(&m, &mut Vec::new()).unwrap_err();
+    let (code, out) = cli(&[dir.path().to_str().unwrap()]);
     assert_eq!(
-        err.to_string(),
-        "no rule has cases or checkable examples to run"
+        (code, out.as_str()),
+        (0, "0 passed, 0 failed, 0 incomplete\n")
     );
 }
 
@@ -727,8 +692,8 @@ fn core_coverage_report(docs: &[&(String, String)], file: &str) {
     std::fs::write(&out, format!("{report}\n")).unwrap();
     eprintln!("{report}\nwritten to {}", out.display());
     assert_eq!(cov.documents, docs.len());
-    // The lexical rules: tokens, substitution and pattern.
-    assert_eq!(cov.findings.len(), 146);
+    // Every mechanically checkable rule the engine runs: all kinds but judgement.
+    assert_eq!(cov.findings.len(), 164);
     assert!(
         cov.findings.values().any(|n| *n > 0),
         "no core rule matched anything in the corpus"
