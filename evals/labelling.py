@@ -118,16 +118,54 @@ def check_identity(family: str, model: str) -> None:
         )
 
 
+MAX_ATTEMPTS = 3  # provider calls per (item, order) pair, counted across runs
+FAILED = "failed"
+CREDENTIAL_MESSAGE = "could not resolve credentials"
+
+
+class CredentialFailure(runner.EngineError):
+    """The provider could not get credentials; a retry cannot help."""
+
+
 def completed(
     rows: Iterable[Mapping[str, Any]], model: str, prompt_version: str | None = None
 ) -> set[tuple[str, str]]:
-    """(item, order) pairs already judged by this model under this prompt version."""
+    """(item, order) pairs already judged by this model under this prompt version.
+
+    A row with `status: failed` is an attempt, not a judgment. Rows with no
+    status field (older files) count as judgments.
+    """
     version = PROMPT_VERSION if prompt_version is None else prompt_version
     return {
         (r["item"], r["order"])
         for r in rows
-        if r.get("model") == model and r.get("prompt_version") == version
+        if r.get("model") == model
+        and r.get("prompt_version") == version
+        and r.get("status") != FAILED
     }
+
+
+def failed_attempts(
+    rows: Iterable[Mapping[str, Any]], model: str, prompt_version: str | None = None
+) -> Counter[tuple[str, str]]:
+    """Failed provider calls recorded for each (item, order) pair."""
+    version = PROMPT_VERSION if prompt_version is None else prompt_version
+    return Counter(
+        (r["item"], r["order"])
+        for r in rows
+        if r.get("model") == model
+        and r.get("prompt_version") == version
+        and r.get("status") == FAILED
+    )
+
+
+def skipped_pairs(
+    rows: Sequence[Mapping[str, Any]], model: str, prompt_version: str | None = None
+) -> list[tuple[str, str]]:
+    """Pairs with no verdict after `MAX_ATTEMPTS` failed calls, in file order."""
+    done = completed(rows, model, prompt_version)
+    spent = failed_attempts(rows, model, prompt_version)
+    return [pair for pair, n in spent.items() if n >= MAX_ATTEMPTS and pair not in done]
 
 
 def usable_judgments(
@@ -324,6 +362,7 @@ def judge_items(
     cache: Path,
     notes: Mapping[str, str],
     done: Iterable[tuple[str, str]] = (),
+    attempts: Mapping[tuple[str, str], int] | None = None,
     sink: Callable[[dict[str, Any]], None] | None = None,
     budget: models.Budget | None = None,
 ) -> list[dict[str, Any]]:
@@ -332,37 +371,65 @@ def judge_items(
     With a `budget`, each call is charged before it runs. `models.BudgetExceeded`
     then stops the run, and the rows already passed to `sink` stay.
 
+    A provider failure (`runner.EngineError`) becomes a row with `status: failed`
+    and no verdict, and the pair is asked again until `attempts` (failed calls
+    from earlier runs) plus this run's reach `MAX_ATTEMPTS`; then it is skipped.
+    A `CredentialFailure` also leaves a failed row (`error: credential`), is never
+    retried, and then propagates.
+
     `sink` receives each judgment as soon as it exists, so a caller can persist it
     before the next paid call. A run that stops half way then resumes without
     asking the same question twice.
     """
     check_identity(family, model)
     docs = {d["id"]: d for d in manifest["documents"]}
-    skip = set(done)
+    skip = set(
+        done
+    )  # grows with each success, so a repeated item id asks nothing twice
+    tried_by_pair: dict[tuple[str, str], int] = dict(attempts or {})
     texts: dict[str, str] = {}
     rows: list[dict[str, Any]] = []
     for item in items:
         for order in ORDERS:
-            if (item["id"], order) in skip:
-                continue
+            pair = (item["id"], order)
+            if pair in skip or tried_by_pair.get(pair, 0) >= MAX_ATTEMPTS:
+                continue  # settled pairs need no document and no prompt
             if item["doc"] not in texts:
                 texts[item["doc"]] = runner.text_path(
                     docs[item["doc"]], cache
                 ).read_text("utf-8")
             prompt, letters = build_prompt(item, order, texts[item["doc"]], notes)
-            row = {
+            base = {
                 "item": item["id"],
                 "family": family,
                 "model": model,
                 "order": order,
                 "prompt_version": PROMPT_VERSION,
-                "verdict": parse_answer(
-                    _charged_ask(ask, prompt, budget, model), letters
-                ),
             }
-            if sink:
-                sink(row)
-            rows.append(row)
+            while tried_by_pair.get(pair, 0) < MAX_ATTEMPTS:
+                try:
+                    answer = _charged_ask(ask, prompt, budget, model)
+                    row = {**base, "verdict": parse_answer(answer, letters)}
+                except (CredentialFailure, runner.EngineError) as exc:
+                    # The message may carry document text, so only the kind is kept.
+                    tried_by_pair[pair] = tried_by_pair.get(pair, 0) + 1
+                    kind = (
+                        "credential"
+                        if isinstance(exc, CredentialFailure)
+                        else "provider-exit"
+                    )
+                    row = {**base, "status": FAILED, "error": kind}
+                    if sink:
+                        sink(row)
+                    rows.append(row)
+                    if kind == "credential":
+                        raise  # the charged attempt is on file; a retry cannot help
+                    continue
+                if sink:
+                    sink(row)
+                rows.append(row)
+                skip.add(pair)
+                break
     return rows
 
 
@@ -392,6 +459,10 @@ def command_asker(command: str) -> Callable[[str], str]:
             argv, input=prompt, capture_output=True, text=True, check=False
         )
         if proc.returncode != 0:
+            if CREDENTIAL_MESSAGE in proc.stderr:
+                raise CredentialFailure(
+                    f"provider command exited {proc.returncode}: {CREDENTIAL_MESSAGE}"
+                )
             raise runner.EngineError(
                 f"provider command exited {proc.returncode}: {procs.redact(proc.stderr)[:300]}"
             )
@@ -404,12 +475,44 @@ def command_asker(command: str) -> Callable[[str], str]:
 
 
 def family_verdict(rows: Sequence[Mapping[str, Any]]) -> str:
-    """One family's verdict: stable only if both option orders give the same answer."""
-    by_order = {r["order"]: r["verdict"] for r in rows}
+    """One family's verdict: stable only if both option orders give the same answer.
+
+    Failed attempts carry no verdict. When an order has several verdict rows, the
+    first in file order counts; `duplicate_report` lists the rest.
+    """
+    by_order: dict[str, str] = {}
+    for r in rows:
+        if r.get("status") != FAILED:
+            by_order.setdefault(r["order"], r["verdict"])
     if set(by_order) != set(ORDERS):
         return "missing"
     first, second = by_order[ORDERS[0]], by_order[ORDERS[1]]
     return first if first == second and first != "unsure" else "unstable"
+
+
+def duplicate_report(
+    judgments: Iterable[Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Per family: unique (item, order) pairs with a verdict, duplicate verdict rows
+    and the pairs whose verdict rows disagree, as (item, order, verdicts)."""
+    seen: dict[str, dict[tuple[str, str], list[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for j in judgments:
+        if j.get("status") != FAILED and "verdict" in j:
+            seen[j["family"]][(j["item"], j["order"])].append(j["verdict"])
+    return {
+        fam: {
+            "pairs": len(pairs),
+            "duplicates": sum(len(v) - 1 for v in pairs.values()),
+            "conflicts": [
+                (item, order, v)
+                for (item, order), v in pairs.items()
+                if len(set(v)) > 1
+            ],
+        }
+        for fam, pairs in sorted(seen.items())
+    }
 
 
 def cohen_kappa(pairs: Sequence[tuple[str, str]]) -> float | None:
@@ -425,6 +528,20 @@ def cohen_kappa(pairs: Sequence[tuple[str, str]]) -> float | None:
     return (observed - expected) / (1 - expected)
 
 
+def findings_by_id(
+    items: Iterable[Mapping[str, Any]],
+) -> dict[str, list[Mapping[str, Any]]]:
+    """Group item rows by id, keeping one row per distinct flagged text, first first.
+
+    An id is built from document, rule and line, so findings with different text on
+    one line share it. Repeated rows with the same text are plain duplicates.
+    """
+    groups: dict[str, dict[str, Mapping[str, Any]]] = {}
+    for it in items:
+        groups.setdefault(it["id"], {}).setdefault(it.get("text", ""), it)
+    return {iid: list(g.values()) for iid, g in groups.items()}
+
+
 def merge(
     items: Sequence[Mapping[str, Any]],
     judgments: Sequence[Mapping[str, Any]],
@@ -433,7 +550,15 @@ def merge(
     spot_rate: float = SPOT_CHECK_RATE,
     seed: str = SAMPLE_SEED,
 ) -> dict[str, Any]:
-    """Combine judge and human verdicts into labels, disputes and a spot-check queue."""
+    """Combine judge and human verdicts into labels, disputes and a spot-check queue.
+
+    A repeated item id counts once: its first row wins. An id that covers several
+    findings is never labelled from the judges, who saw only the first one: it
+    stays a dispute until a human gave the whole id a verdict.
+    """
+    groups = findings_by_id(items)
+    items = [g[0] for g in groups.values()]
+    collisions = {iid for iid, g in groups.items() if len(g) > 1}
     by_item: dict[str, dict[str, list[Mapping[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
     )
@@ -462,7 +587,7 @@ def merge(
             and len(set(verdicts.values())) == 1
             and next(iter(verdicts.values())) in ("tp", "fp")
         )
-        if agree:
+        if agree and item["id"] not in collisions:
             # The spot-check sample is drawn from every judged agreement, also
             # after a human re-checked it, so the sample stays the same.
             auto.append({**base, "label": next(iter(verdicts.values()))})
@@ -470,8 +595,10 @@ def merge(
             h = people[item["id"]]
             labels.append({**base, "label": h["label"], "source": "human"})
             continue
-        if agree:
+        if agree and item["id"] not in collisions:
             labels.append({**auto[-1], "source": "judges", "models": dict(models)})
+        elif item["id"] in collisions:
+            disputes.append({**base, "verdicts": verdicts, "collision": True})
         else:
             disputes.append({**base, "verdicts": verdicts})
     rng = random.Random(f"{seed}|spot")
@@ -511,6 +638,7 @@ def merge(
 WORKSHEET_HEAD = (
     "queue",
     "item",
+    "collision",
     "rule",
     "doc",
     "line",
@@ -547,7 +675,7 @@ def worksheet_rows(
     writes only after a clean run. Disputes come first, then rule, then document.
     """
     merged = merge(items, judgments, human)
-    by_id = {i["id"]: i for i in items}
+    groups = findings_by_id(items)
     families = sorted({j["family"] for j in judgments})
     grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
     for j in judgments:
@@ -556,20 +684,23 @@ def worksheet_rows(
     queued += [("spot", i) for i in merged["spot_pending"]]
     rows: list[dict[str, str]] = []
     for queue, iid in queued:
-        item = by_id[iid]
-        row = {
-            "queue": queue,
-            "item": iid,
-            "rule": item["rule"],
-            "doc": item["doc"],
-            "line": str(item["line"]),
-            "flagged text": item["text"],
-            "context": context_for(doc_text(item["doc"]), item["line"])[2],
-            "rule note": notes.get(item["rule"], ""),
-        }
-        for fam in families:
-            row[f"judge {fam}"] = family_verdict(grouped[(iid, fam)])
-        rows.append(row)
+        findings = groups[iid]
+        collision = len(findings) > 1
+        for item in findings:
+            row = {
+                "queue": queue,
+                "item": iid,
+                "collision": "yes" if collision else "",
+                "rule": item["rule"],
+                "doc": item["doc"],
+                "line": str(item["line"]),
+                "flagged text": item["text"],
+                "context": context_for(doc_text(item["doc"]), item["line"])[2],
+                "rule note": notes.get(item["rule"], ""),
+            }
+            for fam in families:
+                row[f"judge {fam}"] = family_verdict(grouped[(iid, fam)])
+            rows.append(row)
     rows.sort(
         key=lambda r: (r["queue"] != "dispute", r["rule"], r["doc"], int(r["line"]))
     )
@@ -601,7 +732,9 @@ def worksheet_verdicts(
     Raises ValueError naming the spreadsheet row (the header is row 1) on the first
     problem, so a caller writes nothing. Rows with a blank verdict are skipped, and
     so is a row that repeats a human entry with the same item, reviewer, verdict
-    and reason.
+    and reason. Several filled rows for one item, as an id that covers several
+    findings has, must give one verdict. They become one human row for the item, and
+    conflicting verdicts raise a ValueError that names the item and the rows.
     """
     known = set(known_items)
     seen = {
@@ -621,7 +754,7 @@ def worksheet_verdicts(
                     f"row 1: the worksheet has no {', '.join(sorted(missing))} column"
                 )
             at = {name: header.index(name) for name in ("item", "verdict", "reason")}
-            out: list[dict[str, Any]] = []
+            by_item: dict[str, list[tuple[int, dict[str, Any]]]] = {}
             for fields in reader:
                 number += 1
                 if not fields:  # a blank line, as spreadsheets leave at the end
@@ -647,12 +780,22 @@ def worksheet_verdicts(
                     )
                 except ValueError as exc:
                     raise ValueError(f"row {number}: {exc}") from None
-                key = (item, reviewer, verdict, reason)
-                if key not in seen:
-                    seen.add(key)
-                    out.append(human)
+                by_item.setdefault(item, []).append((number, human))
         except csv.Error as exc:
             raise ValueError(f"row {number + 1}: malformed CSV ({exc})") from None
+    out: list[dict[str, Any]] = []
+    for item, rows in by_item.items():
+        if len({h["label"] for _, h in rows}) > 1:
+            numbers = ", ".join(str(n) for n, _ in rows)
+            raise ValueError(
+                f"item {item!r} has conflicting verdicts in rows {numbers}"
+            )
+        reasons = list(dict.fromkeys(h["reason"] for _, h in rows))
+        human = {**rows[0][1], "reason": "; ".join(reasons)}
+        key = (item, reviewer, human["label"], human["reason"])
+        if key not in seen:
+            seen.add(key)
+            out.append(human)
     return out
 
 
@@ -667,7 +810,12 @@ def underlabelled(
 
 
 def record_human(
-    *, item: str, label: str, reviewer: str, reason: str, date: str
+    *,
+    item: str,
+    label: str,
+    reviewer: str,
+    reason: str,
+    date: str,
 ) -> dict[str, Any]:
     """Build one human verdict row. The file is append-only; the last row wins."""
     if label not in ("tp", "fp"):
