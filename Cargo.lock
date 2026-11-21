@@ -2475,6 +2475,7 @@ dependencies = [
  "slopvac-migrate",
  "slopvac-model",
  "slopvac-packs",
+ "slopvac-sanitize",
  "slopvac-text",
  "slopvac-update",
  "tempfile",

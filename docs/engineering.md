@@ -55,6 +55,7 @@ Each rule gives a source. A repository source is a link. A source written as ski
 ## Dependencies and crate layout
 
 - Dependencies point downward. A leaf crate depends on no crate above it. The `slopvac` binary wires the libraries together. Dev-dependency cycles are also not allowed. Target for the existing `slopvac-migrate` to `slopvac-agents` dev cycle: after `slopvac-8l4.14.26`. Source: skill `lang-rust-packaging`.
+- `slopvac-agents` depends on `slopvac-sanitize` to escape the project's `.slopvac/PRIME.md` notes for the terminal before `prime` prints them, and on `slopvac-fs` for the confined, capped read. Both are leaf crates below it, and neither adds a new layer. Source: [`prime.rs`](../crates/slopvac-agents/src/prime.rs).
 - A library may expose a clap `command()` and `run()` for the CLI to wire. The CLI relies on that pattern. Sources: [`cli.rs`](../crates/slopvac/src/cli.rs), bead `slopvac-8l4.12.13`.
 - Build command trees with the clap builder API (`Command`, `Arg`) only. Why: one style, trees built by each library's `command()`, and no unused proc-macro build cost. Target: after `slopvac-8l4.21.3`, which drops the `derive` feature from `clap` in [`Cargo.toml`](../Cargo.toml).
 - No async runtime. Use rayon for CPU work, and threads with crossbeam-channel for waiting work. `tokio` and `async-std` are banned in `deny.toml`. Sources: [architecture record, decision 3](design/0001-slopvac-3-architecture.md#3-no-async-runtime), [`deny.toml`](../deny.toml).

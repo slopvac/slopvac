@@ -22,11 +22,11 @@
 - Offline is sticky: no other source turns it off.
 - `lint`, `rules`, `explain`, `prime` and `claims` read local files only.
 {% endif %}
-## Override a topic
+## Add project notes to a topic
 
-- `.slopvac/PRIME.md` replaces topics. A line `<!-- slopvac:topic NAME -->` starts the text for topic NAME.
-- A file with no such line replaces the base topic.
-- Overrides are plain Markdown. Slopvac renders no template in them.
+- `.slopvac/PRIME.md` adds notes after the built-in text of a topic, which stays first and unchanged. A line `<!-- slopvac:topic NAME -->` starts the notes for topic NAME. Notes before any such line go to the base topic.
+- Notes are plain Markdown, shown escaped as data in a fenced block. Where they conflict with the built-in text, follow the built-in text.
+- Slopvac prints a notice instead of the notes, with exit 0, for a file over 64 KiB, not UTF-8, unreadable, hard-linked, not regular, with a marker that names no topic, or reached through a symlink in any path component.
 {% if level == "full" %}
 - Guidance detail is `minimal`, `default` or `full`. `slopvac prime --level <level>` sets it for one run.
 {% endif %}

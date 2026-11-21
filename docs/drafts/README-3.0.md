@@ -164,7 +164,7 @@ slopvac prime review   # at hand-off
 workflow. The agent lints first, answers the judgment checklist for the genre, and checks factual
 claims against the source. The agent's own model runs the review. slopvac prints the workflow and
 does not call a model. Set `[guidance] level` in `slopvac.toml` to change the detail of each topic. A
-`.slopvac/PRIME.md` file overrides a topic.
+`.slopvac/PRIME.md` file adds project notes after a topic, labelled as data.
 
 ## CI integration
 
