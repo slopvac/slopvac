@@ -12,7 +12,7 @@ use crate::schema;
 
 /// A number or text that breaks its constraint.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("invalid {kind}: {value}")]
+#[error("{}", crate::messages::invalid_value(.kind, .value))]
 pub struct ValueError {
     kind: &'static str,
     value: String,
@@ -33,7 +33,7 @@ impl Density {
             Ok(Self(value))
         } else {
             Err(ValueError {
-                kind: "density",
+                kind: crate::messages::ModelPhrase::Density.as_static(),
                 value: value.to_string(),
             })
         }
@@ -66,7 +66,7 @@ impl JsonSchema for Density {
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
-            "description": "Findings per 100 words.",
+            "description": crate::messages::ModelPhrase::DensityDescription.as_static(),
             "type": "number",
             "minimum": 0,
         })
@@ -88,7 +88,7 @@ impl Score {
             Ok(Self(value))
         } else {
             Err(ValueError {
-                kind: "score",
+                kind: crate::messages::ModelPhrase::Score.as_static(),
                 value: value.to_string(),
             })
         }
@@ -121,7 +121,7 @@ impl JsonSchema for Score {
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
-            "description": "Quality score from 0 (worst) to 100.",
+            "description": crate::messages::ModelPhrase::ScoreDescription.as_static(),
             "type": "number",
             "minimum": 0,
             "maximum": 100,
@@ -140,8 +140,8 @@ impl NonEmptyString {
         let value = value.into();
         if value.is_empty() {
             Err(ValueError {
-                kind: "text",
-                value: "empty string".into(),
+                kind: crate::messages::ModelPhrase::Text.as_static(),
+                value: crate::messages::ModelPhrase::EmptyString.as_static().into(),
             })
         } else {
             Ok(Self(value))
@@ -189,7 +189,7 @@ impl JsonSchema for NonEmptyString {
 }
 
 macro_rules! id_newtype {
-    ($(#[$meta:meta])* $name:ident, $schema_name:literal, $inline:literal, $description:literal, $kind:literal, $check:path, $pattern:expr) => {
+    ($(#[$meta:meta])* $name:ident, $schema_name:literal, $inline:literal, $description:expr, $kind:expr, $check:path, $pattern:expr) => {
         $(#[$meta])*
         #[derive(
             Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
@@ -256,15 +256,15 @@ macro_rules! id_newtype {
 
 id_newtype!(
     /// Category identifier: a lower-case letter, then lower-case letters, digits and hyphens.
-    CategoryId, "CategoryId", false, "", "category id", is_pack, schema::SLUG
+    CategoryId, "CategoryId", false, "", crate::messages::ModelPhrase::CategoryId.as_static(), is_pack, schema::SLUG
 );
 id_newtype!(
     /// Genre identifier: a lower-case letter, then lower-case letters, digits and hyphens.
-    GenreId, "Genre", false, "Genre id.", "genre id", is_pack, schema::SLUG
+    GenreId, "Genre", false, crate::messages::ModelPhrase::GenreDescription.as_static(), crate::messages::ModelPhrase::GenreId.as_static(), is_pack, schema::SLUG
 );
 id_newtype!(
     /// Stable kebab-case name, such as a notice code or genre signal.
-    KebabName, "KebabName", true, "", "kebab-case name", is_kebab, schema::KEBAB
+    KebabName, "KebabName", true, "", crate::messages::ModelPhrase::KebabName.as_static(), is_kebab, schema::KEBAB
 );
 
 /// Read an optional member that is either absent or a real value, never `null`.

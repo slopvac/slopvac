@@ -61,6 +61,7 @@ mod lint;
 pub mod locale;
 mod matcher_work;
 mod matching;
+mod messages;
 mod metrics;
 mod prepare;
 mod protect;
@@ -87,6 +88,7 @@ pub use lint::{nearby_block_visits, prose_finding_bytes};
 #[cfg(feature = "test-counters")]
 #[doc(hidden)]
 pub use matcher_work::matcher_entries;
+pub use messages::{detail_entries, notice_entries, phrase_entries, refusal_entries, text_entries};
 pub use score::{CategoryInfo, Scoring, score_document};
 pub use settings::{CategoryDials, Level, Mode, Settings, Thresholds};
 pub use skip::{SkipRanges, skip_ranges};

@@ -41,11 +41,25 @@ pub enum SkipReason {
 impl std::fmt::Display for SkipReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::EmptyEntry => f.write_str("empty PATH entry"),
-            Self::RelativeEntry => f.write_str("relative PATH entry"),
-            Self::InsideProject(root) => write!(f, "inside the project {}", root.display()),
-            Self::WorldWritable => f.write_str("world-writable directory"),
-            Self::NoDocutils => f.write_str("docutils 0.21 or later is not importable"),
+            Self::EmptyEntry => {
+                f.write_str(crate::messages::EnginePhrase::RstPathEmpty.as_static())
+            }
+            Self::RelativeEntry => {
+                f.write_str(crate::messages::EnginePhrase::RstPathRelative.as_static())
+            }
+            Self::InsideProject(root) => write!(
+                f,
+                "{}",
+                crate::messages::EngineDetails::RstInsideProject {
+                    root: root.display().to_string()
+                }
+            ),
+            Self::WorldWritable => {
+                f.write_str(crate::messages::EnginePhrase::RstWorldWritable.as_static())
+            }
+            Self::NoDocutils => {
+                f.write_str(crate::messages::EnginePhrase::RstNotImportable.as_static())
+            }
         }
     }
 }
@@ -69,24 +83,17 @@ pub struct Discovery {
 }
 
 /// Why an explicit interpreter is not usable.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum OverrideError {
     /// The path is not absolute.
+    #[error("{}", crate::messages::EnginePhrase::RstOverrideRelative.as_static())]
     NotAbsolute,
     /// The path is not an executable file.
+    #[error("{}", crate::messages::EnginePhrase::RstOverrideNotExecutable.as_static())]
     NotExecutable,
     /// The interpreter resolves inside a project root.
+    #[error("{}", crate::messages::override_inside(.0))]
     InsideProject(PathBuf),
-}
-
-impl std::fmt::Display for OverrideError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NotAbsolute => f.write_str("it is not an absolute path"),
-            Self::NotExecutable => f.write_str("it is not an executable file"),
-            Self::InsideProject(root) => write!(f, "it is inside the project {}", root.display()),
-        }
-    }
 }
 
 /// Canonical forms of the project roots. A root that does not exist is dropped.

@@ -246,13 +246,18 @@ fn failure_reasons(
         .map(|n| n.message.as_str())
         .collect();
     if !incomplete.is_empty() {
-        reasons.push(format!("incomplete check: {}", incomplete.join("; ")));
+        reasons.push(
+            crate::messages::EngineText::GateIncomplete {
+                reasons: incomplete.join("; "),
+            }
+            .to_string(),
+        );
     }
     if let Some(limit) = thresholds.max_errors.filter(|l| errors > *l) {
-        reasons.push(format!("{errors} error(s), limit {limit}"));
+        reasons.push(crate::messages::EngineText::GateErrors { errors, limit }.to_string());
     }
     if let Some(limit) = thresholds.max_warnings.filter(|l| warnings > *l) {
-        reasons.push(format!("{warnings} warning(s), limit {limit}"));
+        reasons.push(crate::messages::EngineText::GateWarnings { warnings, limit }.to_string());
     }
     if let Some(limit) = thresholds.max_unicode_dashes {
         let dashes = findings
@@ -260,7 +265,7 @@ fn failure_reasons(
             .filter(|f| f.rule_id.local() == UNICODE_DASH_RULE)
             .count();
         if dashes > limit {
-            reasons.push(format!("{dashes} Unicode dash(es), limit {limit}"));
+            reasons.push(crate::messages::EngineText::GateDashes { dashes, limit }.to_string());
         }
     }
     let blocking = blocking_density(gated, words);
@@ -268,25 +273,35 @@ fn failure_reasons(
         && measurable(words)
         && blocking > budget
     {
-        reasons.push(format!(
-            "{blocking:.2} severity-weighted findings per 100 words, budget {}",
-            py_float(budget)
-        ));
+        reasons.push(
+            crate::messages::EngineText::GateDensity {
+                density: format!("{blocking:.2}"),
+                budget: py_float(budget),
+            }
+            .to_string(),
+        );
     }
     if let Some(minimum) = thresholds.min_score
         && (errors > 0 || warnings > 0)
         && overall < minimum
     {
-        reasons.push(format!("score {overall:.1}, minimum {}", py_float(minimum)));
+        reasons.push(
+            crate::messages::EngineText::GateScore {
+                score: format!("{overall:.1}"),
+                minimum: py_float(minimum),
+            }
+            .to_string(),
+        );
     }
     reasons.extend(categories.iter().filter(|c| c.over_budget).map(|c| {
-        format!(
-            "{} at {:.2} severity-weighted findings per 100 words, budget {}",
-            c.category,
-            c.gating_per_100_words.get(),
-            c.budget
-                .map_or_else(|| "None".to_owned(), |b| py_float(b.get()))
-        )
+        crate::messages::EngineText::GateCategory {
+            category: c.category.to_string(),
+            density: format!("{:.2}", c.gating_per_100_words.get()),
+            budget: c
+                .budget
+                .map_or_else(|| "None".to_owned(), |b| py_float(b.get())),
+        }
+        .to_string()
     }));
     reasons
 }

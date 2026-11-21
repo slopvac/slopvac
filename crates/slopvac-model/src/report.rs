@@ -83,6 +83,32 @@ pub struct Notice {
 }
 
 impl Notice {
+    /// Build a notice from an already-validated catalog message without further checks.
+    #[must_use]
+    pub fn from_catalog(level: NoticeLevel, catalog: crate::NoticeMessage) -> Self {
+        let (code, message) = catalog.into_parts();
+        Self {
+            code,
+            level,
+            message,
+            path: None,
+            data: serde_json::Map::new(),
+        }
+    }
+
+    /// Validate and render an arbitrary catalog before constructing its notice.
+    ///
+    /// # Errors
+    ///
+    /// Returns the validation error from [`crate::NoticeMessage::try_from_catalog`].
+    pub fn try_from_catalog(
+        level: NoticeLevel,
+        catalog: &dyn slopvac_messages::Catalog,
+    ) -> crate::NoticeResult<Self> {
+        crate::NoticeMessage::try_from_catalog(catalog)
+            .map(|message| Self::from_catalog(level, message))
+    }
+
     /// Returns the notice with `data` attached.
     #[must_use]
     pub fn with_data(mut self, data: serde_json::Map<String, Value>) -> Self {
@@ -200,7 +226,7 @@ struct FixWire {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum FixError {
     /// A fix needs at least one edit.
-    #[error("a fix needs at least one edit")]
+    #[error("{}", crate::messages::ModelText::FixEmpty)]
     Empty,
     /// Two edits overlap.
     #[error(transparent)]
@@ -253,10 +279,10 @@ pub enum FindingError {
     #[error(transparent)]
     Position(#[from] LineColError),
     /// `span`, `end_line` and `end_column` must all be present or all absent.
-    #[error("span, end_line and end_column must all be present or all absent")]
+    #[error("{}", crate::messages::ModelText::FindingRange)]
     PartialExtent,
     /// A binary-host finding (one with an `origin`) cannot carry a `fix`.
-    #[error("a finding with an origin cannot carry a fix")]
+    #[error("{}", crate::messages::ModelText::FindingOriginFix)]
     OriginWithFix,
 }
 
@@ -649,13 +675,13 @@ struct GateWire {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum GateError {
     /// A failed gate names at least one reason.
-    #[error("a failed gate needs at least one reason")]
+    #[error("{}", crate::messages::ModelText::GateEmpty)]
     NoReasons,
     /// A reason is an empty string.
-    #[error("a gate reason must not be empty")]
+    #[error("{}", crate::messages::ModelText::GateEmptyReason)]
     EmptyReason,
     /// `passed` disagrees with the reasons.
-    #[error("passed is {passed} but there are {count} reasons")]
+    #[error("{}", crate::messages::gate_inconsistent(*.passed, *.count))]
     Mismatch {
         /// The `passed` value given.
         passed: bool,

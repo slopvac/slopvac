@@ -21,6 +21,7 @@ use slopvac_terms::{Blocklist, Pos};
 use super::{Active, Candidate, Engine, EngineError, Kind, Run, notice};
 use crate::matcher_work;
 use crate::matching::format_message;
+use crate::messages::EngineNotice;
 use crate::skip;
 
 /// The rules that may own the sweep, most preferred first. STE 1.1 is the clause that a
@@ -85,11 +86,11 @@ impl Vocabulary {
 impl Engine {
     /// Index `blocklist` and elect the owner of the sweep for each genre, replacing any
     /// earlier plan. Only the rules that apply to a genre can own the sweep for it.
-    pub(super) fn plan_vocabulary(&mut self, blocklist: &Blocklist) -> Result<(), EngineError> {
+    pub(super) fn plan_vocabulary(&mut self, blocklist: &Blocklist) {
         let mut vocabulary = Vocabulary::default();
         if self.vocabulary_rules.is_empty() {
             self.vocabulary = vocabulary;
-            return Ok(());
+            return;
         }
         // A word that is not alphabetic, or has fewer than three letters, cannot be tagged
         // reliably. 2.x skipped it, and so do we.
@@ -106,49 +107,38 @@ impl Engine {
             }
         }
         let usable = !vocabulary.words.is_empty();
-        vocabulary.run = self.plan_for(&self.settings.genre.id, blocklist, usable)?;
+        vocabulary.run = self.plan_for(&self.settings.genre.id, blocklist, usable);
         if let Some(registry) = &self.genres {
             for id in registry.ids() {
                 let Ok(id) = GenreId::new(id) else { continue };
-                let plan = self.plan_for(&id, blocklist, usable)?;
+                let plan = self.plan_for(&id, blocklist, usable);
                 vocabulary.plans.insert(id, plan);
             }
         }
         self.vocabulary = vocabulary;
-        Ok(())
     }
 
     /// The plan for documents of `genre`. `usable` tells whether the blocklist holds an entry
     /// that the sweep can match.
-    fn plan_for(
-        &self,
-        genre: &GenreId,
-        blocklist: &Blocklist,
-        usable: bool,
-    ) -> Result<Plan, EngineError> {
+    fn plan_for(&self, genre: &GenreId, blocklist: &Blocklist, usable: bool) -> Plan {
         let mut plan = Plan::default();
         let rules: Vec<usize> = (0..self.vocabulary_rules.len())
             .filter(|&i| self.applies_to(&self.vocabulary_rules[i], genre))
             .collect();
         let count = rules.len();
         if count == 0 {
-            return Ok(plan);
+            return plan;
         }
         if blocklist.is_empty() {
             plan.notices.push(notice(
-                "vocabulary-no-blocklist",
                 NoticeLevel::Info,
-                format!("{count} active vocabulary rule(s) did not run: no word blocklist is set"),
-            )?);
+                &EngineNotice::VocabularyNoBlocklist { count },
+            ));
         } else if !usable {
             plan.notices.push(notice(
-                "vocabulary-no-taggable-entries",
                 NoticeLevel::Info,
-                format!(
-                    "{count} active vocabulary rule(s) did not run: the blocklist holds no \
-                     noun, verb, adjective or adverb entry of three or more letters"
-                ),
-            )?);
+                &EngineNotice::VocabularyNoTaggable { count },
+            ));
         } else {
             let id_of = |i: usize| {
                 let active = &self.vocabulary_rules[i];
@@ -162,19 +152,16 @@ impl Engine {
                 .unwrap_or(rules[0]);
             if count > 1 {
                 plan.notices.push(notice(
-                    "vocabulary-sweep-shared",
                     NoticeLevel::Info,
-                    format!(
-                        "{} other vocabulary rule(s) did not run separately: the blocklist \
-                         sweep runs once, under {}",
-                        count - 1,
-                        id_of(owner)
-                    ),
-                )?);
+                    &EngineNotice::VocabularyShared {
+                        count: count - 1,
+                        owner: id_of(owner).into(),
+                    },
+                ));
             }
             plan.owner = Some(owner);
         }
-        Ok(plan)
+        plan
     }
 
     /// Whether the active rule applies to documents of `genre`.
@@ -295,11 +282,12 @@ impl Run<'_> {
                 let message = if sweep.loaded.id().local() == OWNER_PREFERENCE[0] {
                     format_message(rule.message.as_str(), matched, "")
                 } else {
-                    format!(
-                        "\"{matched}\" is on this project's word blocklist as {} {}.",
-                        article(pos),
-                        pos_name(pos)
-                    )
+                    crate::messages::EngineDetails::VocabularyMatch {
+                        matched: matched.into(),
+                        article: article(pos).into(),
+                        pos: pos_name(pos).into(),
+                    }
+                    .to_string()
                 };
                 out.push(self.finding(Candidate {
                     rule_id: sweep.loaded.id(),

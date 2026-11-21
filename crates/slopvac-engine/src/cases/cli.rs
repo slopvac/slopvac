@@ -18,7 +18,7 @@ use crate::{Engine, EngineError, Input, Settings};
 #[non_exhaustive]
 pub enum CasesError {
     /// An argument is not a valid value.
-    #[error("{0}")]
+    #[error("{}", crate::messages::git_error(.0))]
     Argument(String),
     /// The pack did not load.
     #[error(transparent)]
@@ -30,7 +30,7 @@ pub enum CasesError {
     #[error(transparent)]
     Cases(#[from] super::CasesError),
     /// A corpus file is larger than the document cap. Its stable code is `document-too-large`.
-    #[error("[document-too-large] {path} is larger than {cap} bytes")]
+    #[error("{}", crate::messages::document_too_large(.path.clone(), *.cap))]
     TooLarge {
         /// The file.
         path: String,
@@ -38,7 +38,7 @@ pub enum CasesError {
         cap: u64,
     },
     /// A corpus file or the output failed.
-    #[error("{path}: {source}")]
+    #[error("{}", crate::messages::path_error(.path, .source))]
     Io {
         /// The file, or `output`.
         path: String,
@@ -51,32 +51,32 @@ pub enum CasesError {
 #[must_use]
 pub fn command() -> Command {
     Command::new("cases")
-        .about("Run the test cases of the rules in a plugin")
+        .about(crate::messages::EnginePhrase::CasesAbout.as_static())
         .arg(
             Arg::new("dir")
                 .required(true)
                 .value_name("DIR")
-                .help("Directory of category files"),
+                .help(crate::messages::EnginePhrase::CasesDirHelp.as_static()),
         )
         .arg(
             Arg::new("plugin")
                 .long("plugin")
                 .value_name("ID")
                 .default_value("core")
-                .help("Plugin id of the rules"),
+                .help(crate::messages::EnginePhrase::CasesPluginHelp.as_static()),
         )
         .arg(
             Arg::new("rule")
                 .long("rule")
                 .value_name("ID")
-                .help("Run one rule only"),
+                .help(crate::messages::EnginePhrase::CasesRuleHelp.as_static()),
         )
         .arg(
             Arg::new("coverage")
                 .long("coverage")
                 .value_name("FILE")
                 .action(ArgAction::Append)
-                .help("Also report the rules that match nothing in these Markdown files"),
+                .help(crate::messages::EnginePhrase::CasesCoverageHelp.as_static()),
         )
 }
 
@@ -87,12 +87,27 @@ pub fn command() -> Command {
 /// Unmatched rules in a coverage report do not change the code.
 pub fn run(matches: &ArgMatches, out: &mut dyn Write) -> Result<i32, CasesError> {
     let text = |name: &str| matches.get_one::<String>(name);
-    let pack = PackId::new(text("plugin").map_or("core", String::as_str))
-        .map_err(|e| CasesError::Argument(format!("--plugin: {e}")))?;
+    let pack = PackId::new(text("plugin").map_or("core", String::as_str)).map_err(|e| {
+        CasesError::Argument(
+            crate::messages::EngineDetails::CaseArgument {
+                argument: "--plugin".into(),
+                reason: e.to_string(),
+            }
+            .to_string(),
+        )
+    })?;
     let only = text("rule")
         .map(|r| RuleId::new(r.as_str()))
         .transpose()
-        .map_err(|e| CasesError::Argument(format!("--rule: {e}")))?;
+        .map_err(|e| {
+            CasesError::Argument(
+                crate::messages::EngineDetails::CaseArgument {
+                    argument: "--rule".into(),
+                    reason: e.to_string(),
+                }
+                .to_string(),
+            )
+        })?;
     let dir = PathBuf::from(text("dir").map_or("", String::as_str));
     let set = RuleSet::load_dir(&pack, &dir, &CompileOptions::default())?;
     let engine = Engine::new(vec![set], default_settings()?)?;

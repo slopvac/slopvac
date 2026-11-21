@@ -6,6 +6,8 @@
 
 mod edit;
 mod ids;
+mod messages;
+mod notice;
 mod origin;
 mod report;
 mod schema;
@@ -18,6 +20,8 @@ pub use ids::{
     ApiVersion, ContextTag, Contexts, DuplicateContext, IdError, PackId, RuleId, SchemaVersion,
     Severity,
 };
+pub use messages::{message_entries, phrase_entries};
+pub use notice::{NoticeError, NoticeMessage, Result as NoticeResult};
 pub use origin::{
     Origin, OriginError, OriginLabel, OriginLocator, Result as OriginResult, SegmentId,
     SegmentRange,

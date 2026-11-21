@@ -26,16 +26,16 @@ fn forbidden(c: char) -> bool {
 #[non_exhaustive]
 pub enum OriginError {
     /// A locator is empty, too long, has a forbidden character or a bad `%` escape.
-    #[error("invalid origin locator: {0}")]
+    #[error("{}", crate::messages::origin_locator(.0))]
     Locator(&'static str),
     /// A label is empty, too long or has a forbidden character.
-    #[error("invalid origin label: {0}")]
+    #[error("{}", crate::messages::origin_label(.0))]
     Label(&'static str),
     /// A segment id is not 1 to 64 characters of `[A-Za-z0-9._-]` starting with a letter or digit.
-    #[error("invalid segment id")]
+    #[error("{}", crate::messages::ModelText::SegmentId)]
     SegmentId,
     /// A range starts after it ends.
-    #[error("segment range start {start} is after end {end}")]
+    #[error("{}", crate::messages::ModelText::SegmentRange { start: *.start, end: *.end })]
     Range {
         /// Start offset.
         start: usize,
@@ -49,16 +49,20 @@ pub type Result<T> = std::result::Result<T, OriginError>;
 
 fn check_locator(s: &str) -> Result<()> {
     if s.is_empty() {
-        return Err(OriginError::Locator("empty"));
+        return Err(OriginError::Locator(
+            crate::messages::ModelPhrase::Empty.as_static(),
+        ));
     }
     if s.chars().count() > LOCATOR_MAX_CHARS {
-        return Err(OriginError::Locator("too long"));
+        return Err(OriginError::Locator(
+            crate::messages::ModelPhrase::TooLong.as_static(),
+        ));
     }
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
         if forbidden(c) {
             return Err(OriginError::Locator(
-                "forbidden character, percent-escape it",
+                crate::messages::ModelPhrase::LocatorCharacter.as_static(),
             ));
         }
         if c == '%' {
@@ -69,7 +73,7 @@ fn check_locator(s: &str) -> Result<()> {
             });
             if !ok {
                 return Err(OriginError::Locator(
-                    "`%` must start %XX with uppercase hex",
+                    crate::messages::ModelPhrase::LocatorEscape.as_static(),
                 ));
             }
         }
@@ -79,11 +83,17 @@ fn check_locator(s: &str) -> Result<()> {
 
 fn check_label(s: &str) -> Result<()> {
     if s.is_empty() {
-        Err(OriginError::Label("empty"))
+        Err(OriginError::Label(
+            crate::messages::ModelPhrase::Empty.as_static(),
+        ))
     } else if s.chars().count() > LABEL_MAX_CHARS {
-        Err(OriginError::Label("too long"))
+        Err(OriginError::Label(
+            crate::messages::ModelPhrase::TooLong.as_static(),
+        ))
     } else if s.chars().any(forbidden) {
-        Err(OriginError::Label("forbidden character"))
+        Err(OriginError::Label(
+            crate::messages::ModelPhrase::LabelCharacter.as_static(),
+        ))
     } else {
         Ok(())
     }

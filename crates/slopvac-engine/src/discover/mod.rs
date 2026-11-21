@@ -138,10 +138,10 @@ pub struct Discovery {
 #[derive(Debug, thiserror::Error)]
 pub enum DiscoverError {
     /// A target is not a file, a directory or a pattern with a match.
-    #[error("no such file or directory: {0}")]
+    #[error("{}", crate::messages::discover_missing(.0))]
     NoSuchTarget(String),
     /// An explicit file is not a supported source language in comment mode.
-    #[error("{path}: {message}")]
+    #[error("{}", crate::messages::unsupported_source(.path, .message))]
     UnsupportedSource {
         /// The offending file.
         path: PathBuf,
@@ -149,7 +149,7 @@ pub enum DiscoverError {
         message: String,
     },
     /// A glob target holds more brace alternatives than discovery will expand.
-    #[error("glob {pattern} expands to more than {limit} alternatives")]
+    #[error("{}", crate::messages::glob_limit(.pattern, *.limit))]
     TooManyAlternatives {
         /// The pattern as given.
         pattern: String,
@@ -157,7 +157,7 @@ pub enum DiscoverError {
         limit: usize,
     },
     /// A glob target does not parse.
-    #[error("invalid glob {pattern}: {source}")]
+    #[error("{}", crate::messages::glob_invalid(.pattern, .source))]
     InvalidGlob {
         /// The pattern as given.
         pattern: String,
@@ -165,7 +165,7 @@ pub enum DiscoverError {
         source: globset::Error,
     },
     /// The directory walk hit an I/O error.
-    #[error("walking {path}: {source}")]
+    #[error("{}", crate::messages::walk_error(.path, .source))]
     Walk {
         /// The walk root.
         path: PathBuf,
@@ -237,7 +237,7 @@ fn explicit(path: &Path, options: &Options, out: &mut Discovery) -> Result<(), D
     if is_excluded(options, path) {
         out.skipped.push(Skipped {
             path: path.to_path_buf(),
-            reason: "matches an exclude pattern".to_owned(),
+            reason: crate::messages::EnginePhrase::DiscoverExcluded.text(),
         });
         return Ok(());
     }
@@ -248,7 +248,7 @@ fn explicit(path: &Path, options: &Options, out: &mut Discovery) -> Result<(), D
         }),
         None => out.skipped.push(Skipped {
             path: path.to_path_buf(),
-            reason: "not a file kind this run lints".to_owned(),
+            reason: crate::messages::EnginePhrase::DiscoverKindSkipped.text(),
         }),
     }
     Ok(())
@@ -261,10 +261,11 @@ fn unsupported_message(name: &str) -> String {
         None if lower.is_empty() => "<extensionless>".to_owned(),
         None => lower,
     };
-    format!(
-        "unsupported source language for '{shown}'; supported extensions: {}",
-        kind::supported_extensions()
-    )
+    crate::messages::EngineDetails::DiscoverUnsupported {
+        path: shown,
+        extensions: kind::supported_extensions(),
+    }
+    .to_string()
 }
 
 fn walk_dir(root: &Path, options: &Options, out: &mut Discovery) -> Result<(), DiscoverError> {
@@ -313,11 +314,13 @@ fn walk_dir(root: &Path, options: &Options, out: &mut Discovery) -> Result<(), D
         if let Some(kind) = select(&name, options.selection) {
             out.files.push(DiscoveredFile { path, kind });
         } else if options.selection != Selection::Prose && FileKind::prose(&name).is_none() {
-            out.notes.push(format!(
-                "unsupported source language skipped: {} ({})",
-                path.display(),
-                unsupported_message(&name)
-            ));
+            out.notes.push(
+                crate::messages::EngineDetails::DiscoverSkipped {
+                    path: path.display().to_string(),
+                    extensions: unsupported_message(&name),
+                }
+                .to_string(),
+            );
         }
     }
     Ok(())

@@ -58,18 +58,20 @@ impl Refusal {
     /// that starts with `fix-`.
     #[must_use]
     pub fn code(self) -> &'static str {
+        use crate::messages::FixRefusal;
+        use slopvac_messages::Catalog;
         match self {
-            Refusal::OutsideRoot => "fix-outside-root",
-            Refusal::Symlink => "fix-symlink",
-            Refusal::NotRegular => "fix-not-regular",
-            Refusal::Hardlinked => "fix-hardlinked",
-            Refusal::NotOwner => "fix-not-owner",
-            Refusal::TooLarge => "document-too-large",
-            Refusal::UnsafeDirectory => "fix-unsafe-directory",
-            Refusal::GroupMismatch => "fix-group-mismatch",
-            Refusal::AclPresent => "fix-acl-present",
-            Refusal::UnsupportedPlatform => "fix-unsupported-platform",
-            Refusal::Changed => "fix-changed",
+            Refusal::OutsideRoot => FixRefusal::OutsideRoot.code(),
+            Refusal::Symlink => FixRefusal::Symlink.code(),
+            Refusal::NotRegular => FixRefusal::NotRegular.code(),
+            Refusal::Hardlinked => FixRefusal::Hardlinked.code(),
+            Refusal::NotOwner => FixRefusal::NotOwner.code(),
+            Refusal::TooLarge => slopvac_config::Code::DocumentTooLarge.as_str(),
+            Refusal::UnsafeDirectory => FixRefusal::UnsafeDirectory.code(),
+            Refusal::GroupMismatch => FixRefusal::GroupMismatch.code(),
+            Refusal::AclPresent => FixRefusal::AclPresent.code(),
+            Refusal::UnsupportedPlatform => FixRefusal::UnsupportedPlatform.code(),
+            Refusal::Changed => FixRefusal::Changed.code(),
         }
     }
 }

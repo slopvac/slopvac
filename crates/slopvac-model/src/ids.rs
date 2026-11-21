@@ -8,7 +8,7 @@ use crate::schema;
 
 /// A malformed identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("invalid {kind} {value:?}")]
+#[error("{}", crate::messages::invalid_id(.kind, .value))]
 pub struct IdError {
     kind: &'static str,
     value: String,
@@ -64,7 +64,7 @@ impl PackId {
             Ok(Self(value))
         } else {
             Err(IdError {
-                kind: "plugin id",
+                kind: crate::messages::ModelPhrase::PluginId.as_static(),
                 value,
             })
         }
@@ -114,7 +114,7 @@ impl RuleId {
         match value.split_once(':') {
             Some((pack, local)) if is_pack(pack) && is_local(local) => Ok(Self(value)),
             _ => Err(IdError {
-                kind: "rule id",
+                kind: crate::messages::ModelPhrase::RuleId.as_static(),
                 value,
             }),
         }
@@ -189,7 +189,7 @@ impl ContextTag {
             Ok(Self(value))
         } else {
             Err(IdError {
-                kind: "context tag",
+                kind: crate::messages::ModelPhrase::ContextTag.as_static(),
                 value,
             })
         }
@@ -236,10 +236,12 @@ impl<'de> Deserialize<'de> for SchemaVersion {
         if n == u64::from(Self::VALUE) {
             Ok(Self)
         } else {
-            Err(serde::de::Error::custom(format!(
-                "schema_version must be {}, got {n}",
-                Self::VALUE
-            )))
+            Err(serde::de::Error::custom(
+                crate::messages::ModelText::SchemaVersion {
+                    expected: Self::VALUE.to_string(),
+                    actual: n.to_string(),
+                },
+            ))
         }
     }
 }
@@ -251,7 +253,7 @@ impl JsonSchema for SchemaVersion {
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
-            "description": "Root artifact schema version.",
+            "description": crate::messages::ModelPhrase::SchemaVersionDescription.as_static(),
             "const": SchemaVersion::VALUE,
         })
     }
@@ -275,7 +277,7 @@ impl ApiVersion {
             Ok(Self(value))
         } else {
             Err(IdError {
-                kind: "api version",
+                kind: crate::messages::ModelPhrase::ApiVersion.as_static(),
                 value: value.to_string(),
             })
         }
@@ -307,7 +309,7 @@ pub struct Contexts(Vec<ContextTag>);
 
 /// A context tag listed twice.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("context tag {0:?} is listed twice")]
+#[error("{}", crate::messages::duplicate_context(.0))]
 pub struct DuplicateContext(String);
 
 impl Contexts {

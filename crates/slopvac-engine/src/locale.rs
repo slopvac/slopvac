@@ -17,7 +17,6 @@
 //! spellings of its terms) neither flag nor trigger a replacement.
 
 use std::collections::{BTreeSet, HashMap};
-use std::fmt;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
@@ -108,38 +107,20 @@ impl Locale {
 }
 
 /// Why the spelling rule could not be built.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum LocaleError {
     /// The tag is not a known locale. 2.x reported this as a note and skipped the check, so a
     /// typo did not stop the other rules.
+    #[error("{}", crate::messages::locale_unknown(.0))]
     Unknown(String),
     /// The rules have no `ste-words` category to hold the rule.
+    #[error("{}", crate::messages::locale_category(CATEGORY))]
     MissingCategory,
     /// The generated rule failed to load: a pattern did not compile, or an example
     /// disagreed with it.
+    #[error("{}", crate::messages::locale_load(.0))]
     Load(LoadErrors),
 }
-
-impl fmt::Display for LocaleError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown(tag) => write!(
-                f,
-                "locale \"{tag}\" is not known, so spelling was NOT checked. Known: {}.",
-                Locale::known().join(", ")
-            ),
-            Self::MissingCategory => {
-                write!(
-                    f,
-                    "the {CATEGORY} category is missing, so spelling was NOT checked."
-                )
-            }
-            Self::Load(e) => write!(f, "the generated spelling rule failed to load: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for LocaleError {}
 
 /// The inflected forms of a base word. Only regular patterns, and only where the result is
 /// unambiguous: a form this misses is a miss, and a form it invents is a false finding.
@@ -246,8 +227,8 @@ fn rule_json(spelling: &Spelling) -> Value {
         .collect();
     json!({
         "id": RULE,
-        "name": format!("Use {tag} spelling"),
-        "message": format!("Use the {tag} spelling \"{{replacement}}\"."),
+        "name": crate::messages::EngineDetails::LocaleRuleName { tag: tag.into() }.to_string(),
+        "message": crate::messages::EngineDetails::LocaleRuleMessage { tag: tag.into() }.to_string(),
         "severity": "warning",
         "scope": "prose",
         "match": {"kind": "substitution", "substitutions": substitutions, "ignore_case": true},
@@ -260,16 +241,13 @@ fn rule_json(spelling: &Spelling) -> Value {
         ],
         "allowlist": spelling.allowlist,
         "examples": examples,
-        "fix": format!("Use the {tag} spelling."),
+        "fix": crate::messages::EngineDetails::LocaleRuleFix { tag: tag.into() }.to_string(),
         "ai_signal": "none",
         "ai_signal_source": "unmeasured",
         "citation": {
             "source": "ASD-STE100",
             "ste_ref": "9:1.14",
-            "note": "Generated from the locale table rather than written as a rule, because the \
-                correct spelling depends on the project and a rule's substitution map has only \
-                one direction. Rule 1.14 asks for American spelling; that is `locale = \"en-US\"`, \
-                the default, rather than a rule a British English project cannot turn off.",
+            "note": crate::messages::EnginePhrase::LocaleCitation.as_static(),
         },
     })
 }
@@ -318,7 +296,9 @@ pub fn spelling_rules(
         doc["recommended_for"] =
             serde_json::to_value(category.recommended_for()).expect("genre ids serialize");
     }
-    let file = PathBuf::from(format!("<generated locale {tag}>.json"));
+    let file = PathBuf::from(
+        crate::messages::EngineDetails::LocaleSourceLabel { tag: tag.into() }.to_string(),
+    );
     RuleSet::from_sources(pack, [(file, doc.to_string())], options)
         .map(Some)
         .map_err(LocaleError::Load)

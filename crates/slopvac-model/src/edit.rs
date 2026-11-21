@@ -22,10 +22,10 @@ pub struct Edit {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EditError {
     /// An edit span is not valid for the file.
-    #[error("invalid edit span: {0}")]
+    #[error("{}", crate::messages::edit_position(.0))]
     Position(#[from] PositionError),
     /// Two edits overlap.
-    #[error("edits at {first:?} and {second:?} overlap")]
+    #[error("{}", crate::messages::overlap(.first, .second))]
     Overlap {
         /// Earlier edit in sort order.
         first: Span,

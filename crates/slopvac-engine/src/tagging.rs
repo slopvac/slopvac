@@ -362,13 +362,13 @@ pub(crate) enum TagError {
     #[error(transparent)]
     Tagger(ContextError),
     /// The document has more tags than its size allows, so no index was built.
-    #[error("the document has more than {limit} context tags")]
+    #[error("{}", crate::messages::EngineText::TagLimit { limit: *.limit })]
     Budget {
         /// The most tags, or pieces of tags, the document was allowed.
         limit: usize,
     },
     /// The sentences of a block do not lie on the text the block was projected from.
-    #[error("the sentences of a block do not map onto its projected text")]
+    #[error("{}", crate::messages::EngineText::SentenceMapping)]
     Unmapped,
 }
 

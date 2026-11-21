@@ -104,13 +104,13 @@ pub enum FixError {
     #[error(transparent)]
     Parse(#[from] ParseError),
     /// An RST file could not be read, so its code and link targets are unknown.
-    #[error("cannot tell the code and links of an RST file apart: {0}")]
+    #[error("{}", crate::messages::fix_rst(.0))]
     Rst(#[from] RstError),
     /// The accepted edits did not apply. This is a bug: they were checked first.
     #[error(transparent)]
     Edit(#[from] EditError),
     /// A file could not be read or written.
-    #[error("{path}: {source}")]
+    #[error("{}", crate::messages::path_error(.path, .source))]
     Io {
         /// The file.
         path: String,
@@ -118,7 +118,7 @@ pub enum FixError {
         source: std::io::Error,
     },
     /// The file is not UTF-8.
-    #[error("{0}: not valid UTF-8")]
+    #[error("{}", crate::messages::not_utf8(.0))]
     NotUtf8(String),
 }
 
