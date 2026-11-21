@@ -625,3 +625,40 @@ mod unix {
 fn each_refusal_has_its_stable_code(#[case] refusal: Refusal, #[case] code: &str) {
     assert_eq!(refusal.code(), code);
 }
+
+/// The root path is replaced by a link to another directory after the root was opened, as
+/// happens between collecting files and writing a fix. The held handle still names the
+/// original root, so the fix lands there and the outside directory is untouched.
+#[cfg(unix)]
+#[test]
+fn a_root_swapped_for_a_link_after_it_was_opened_still_writes_in_the_original_root() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("doc.md"), DOC).unwrap();
+    let outside = project();
+
+    let held = Root::open(&root).unwrap();
+    std::fs::rename(&root, parent.path().join("moved")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), &root).unwrap();
+
+    let out = fix_file_hooked(
+        &swaps(),
+        &held,
+        Path::new("doc.md"),
+        Kind::Markdown,
+        false,
+        None,
+        &mut |_| Ok(()),
+    )
+    .unwrap();
+
+    assert!(done(out).written);
+    assert_eq!(read(parent.path().join("moved/doc.md")), FIXED);
+    assert_eq!(read(outside.path().join("doc.md")), DOC);
+    assert_eq!(
+        names(outside.path()),
+        ["doc.md"],
+        "nothing was staged outside"
+    );
+}
