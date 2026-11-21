@@ -7,6 +7,7 @@
 //! `style-detect-file-too-large`. The code `style-too-large` belongs to the config catalog,
 //! so [`StyleMessage::TooLarge`] takes it as a parameter.
 
+use slopvac_config::Code;
 use slopvac_messages::{Catalog, Entry};
 
 /// Every sentence `slopvac-styles` produces for a user.
@@ -157,7 +158,7 @@ pub(crate) fn conflict_warning(loser: &str, winner: &str, keys: &[String]) -> St
 
 pub(crate) fn too_large(style: &str, cap: u64) -> StyleMessage {
     StyleMessage::TooLarge {
-        code: "style-too-large".to_owned(),
+        code: Code::StyleTooLarge.as_str().to_owned(),
         style: style.to_owned(),
         cap,
     }
