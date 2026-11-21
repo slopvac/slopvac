@@ -429,16 +429,10 @@ pub(crate) fn tag(
 ) -> Result<TagIndex, TagError> {
     let view = View::new(path, source, doc, front_matter);
     let max_tags = tag_budget(source.len());
-    let mut tags = registry.collect_tags(&view, max_tags)?;
-    if let Some(declared) = declared {
-        // One tag for each declared context, so this holds at most the genre's list past
-        // the ceiling for a moment. The ceiling counts them all the same.
-        tags.extend(declared.tag(&view)?);
-        slopvac_context::normalize_tags(&mut tags);
-        if tags.len() > max_tags {
-            return Err(TagError::Budget { limit: max_tags });
-        }
-    }
+    // The declared contexts count against the ceiling like any other emission, before
+    // duplicates go, so the ceiling does not depend on how the tags overlap.
+    let extra: Vec<&dyn Tagger> = declared.iter().map(|d| *d as &dyn Tagger).collect();
+    let tags = registry.collect_tags_with(&view, max_tags, &extra)?;
     if view.unmapped.get() {
         return Err(TagError::Unmapped);
     }
