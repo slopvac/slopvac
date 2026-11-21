@@ -37,6 +37,7 @@ import argparse
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -137,7 +138,8 @@ def artifacts(directory: Path) -> list[Path]:
     if not directory.is_dir():
         raise SigningError(f"{directory} is not a directory")
     entries = sorted(directory.iterdir())
-    nested = [e.name for e in entries if not e.is_file()]
+    # lstat, not is_file: a symlink is not a regular file, whatever it points at.
+    nested = [e.name for e in entries if not stat.S_ISREG(e.lstat().st_mode)]
     if nested:
         raise SigningError(f"expected only files in {directory}, found: {nested}")
     files = [e for e in entries if not e.name.endswith(SIGNATURE_SUFFIX)]
