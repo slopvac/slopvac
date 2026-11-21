@@ -172,13 +172,14 @@ fn the_report_goes_to_out_and_the_fix_is_still_written() {
 }
 
 #[test]
-fn standard_input_is_linted_as_given_and_nothing_is_written() {
+fn standard_input_is_refused_as_a_usage_error_and_nothing_is_written() {
     let dir = tempfile::tempdir().expect("tempdir");
     slopvac(dir.path())
         .args(["lint", "--fix", "--stdin", "--language", "markdown"])
         .write_stdin(FIXABLE)
         .assert()
-        .code(1)
-        .stdout(predicate::str::contains("slop-lexicon"));
+        .code(2)
+        .stdout("")
+        .stderr(predicate::str::contains("error[usage]"));
     assert!(entries(dir.path()).is_empty(), "stdin produced a file");
 }
