@@ -1458,7 +1458,7 @@ fn a_later_good_reload_restores_the_findings_and_clears_the_config_error() {
     assert_eq!(count(&seen[CONFIG_URI]), 0);
     let doc = &seen[URI]["diagnostics"];
     assert_eq!(doc.as_array().unwrap().len(), 1);
-    assert_eq!(doc[0]["code"], "cat.swap");
+    assert_eq!(doc[0]["code"], "core:cat.swap");
     client.finish().unwrap();
 }
 
