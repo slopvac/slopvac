@@ -580,8 +580,14 @@ fn doctor_changes_nothing_on_disk() {
         found
     };
     let before = snapshot(w.root.path());
-    w.json(&[], |_| {});
-    w.doctor().assert().code(0);
+    // The opt-out keeps the update notice, which may refresh the cache, out of this test.
+    w.json(&[], |c| {
+        c.env("SLOPVAC_NO_UPDATE_CHECK", "1");
+    });
+    w.doctor()
+        .env("SLOPVAC_NO_UPDATE_CHECK", "1")
+        .assert()
+        .code(0);
     assert_eq!(snapshot(w.root.path()), before);
 }
 
@@ -943,7 +949,10 @@ fn the_text_report_points_a_cargo_install_at_the_releases_page_when_an_update_is
 #[test]
 fn doctor_never_writes_the_update_cache() {
     let w = World::new();
-    let (_, _) = w.json(&[], |_| {});
+    // The opt-out keeps the update notice, which may refresh the cache, out of this test.
+    let (_, _) = w.json(&[], |c| {
+        c.env("SLOPVAC_NO_UPDATE_CHECK", "1");
+    });
     assert!(!w.cache().join("update-check.json").exists());
 }
 
