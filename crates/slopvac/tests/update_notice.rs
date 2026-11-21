@@ -4,11 +4,9 @@
 //! The network is never reached. A cache entry stamped far in the future counts as fresh, so
 //! the notice comes from the cache and no refresh starts.
 
-#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
-
 use std::cell::RefCell;
 use std::fs;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -18,14 +16,13 @@ use snapbox::cmd::{Command, cargo_bin};
 const NOTICE: &str = "notice[update-available]: slopvac 99.0.0 is available (you have ";
 
 /// A cache directory that says 99.0.0 is out.
-fn seeded_cache() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().expect("tempdir");
+fn seeded_cache() -> io::Result<tempfile::TempDir> {
+    let dir = tempfile::tempdir()?;
     fs::write(
         dir.path().join("update-check.json"),
         r#"{"checked_at":4102444800,"latest":"99.0.0"}"#,
-    )
-    .expect("seed the cache");
-    dir
+    )?;
+    Ok(dir)
 }
 
 /// The binary in `work`, with home, cache and config directories inside `home`, and every
@@ -58,14 +55,14 @@ struct Fixture {
     home: tempfile::TempDir,
 }
 
-fn fixture() -> Fixture {
-    let work = tempfile::tempdir().expect("tempdir");
-    fs::write(work.path().join("slopvac.toml"), "schema_version = 3\n").expect("config");
-    fs::write(work.path().join("doc.md"), "# Title\n\nPlain words here.\n").expect("doc");
-    Fixture {
+fn fixture() -> io::Result<Fixture> {
+    let work = tempfile::tempdir()?;
+    fs::write(work.path().join("slopvac.toml"), "schema_version = 3\n")?;
+    fs::write(work.path().join("doc.md"), "# Title\n\nPlain words here.\n")?;
+    Ok(Fixture {
         work,
-        home: tempfile::tempdir().expect("tempdir"),
-    }
+        home: tempfile::tempdir()?,
+    })
 }
 
 fn run(fx: &Fixture, cache: &Path, args: &[&str]) -> std::process::Output {
@@ -80,9 +77,11 @@ fn run(fx: &Fixture, cache: &Path, args: &[&str]) -> std::process::Output {
 #[case::lint(&["lint", "doc.md"])]
 #[case::doctor(&["doctor"])]
 #[case::prime(&["prime"])]
-fn a_cached_newer_release_is_noticed_on_stderr_after_the_output(#[case] args: &[&str]) {
-    let fx = fixture();
-    let cache = seeded_cache();
+fn a_cached_newer_release_is_noticed_on_stderr_after_the_output(
+    #[case] args: &[&str],
+) -> io::Result<()> {
+    let fx = fixture()?;
+    let cache = seeded_cache()?;
     let out = run(&fx, cache.path(), args);
     let stderr = String::from_utf8_lossy(&out.stderr);
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -90,19 +89,22 @@ fn a_cached_newer_release_is_noticed_on_stderr_after_the_output(#[case] args: &[
     assert!(!stdout.contains("update-available"), "stdout: {stdout}");
     let last = stderr.lines().last().unwrap_or_default();
     assert!(last.starts_with(NOTICE), "the notice comes last: {stderr}");
+    Ok(())
 }
 
 // `doctor` is left out: its report names the offline state this comparison turns on.
 #[rstest]
 #[case::lint(&["lint", "doc.md"])]
 #[case::prime(&["prime"])]
-fn the_notice_leaves_stdout_and_the_exit_code_alone(#[case] args: &[&str]) {
-    let fx = fixture();
-    let quiet = tempfile::tempdir().expect("tempdir");
-    let with = run(&fx, seeded_cache().path(), args);
+fn the_notice_leaves_stdout_and_the_exit_code_alone(#[case] args: &[&str]) -> io::Result<()> {
+    let fx = fixture()?;
+    let quiet = tempfile::tempdir()?;
+    let seeded = seeded_cache()?;
+    let with = run(&fx, seeded.path(), args);
     let without = run(&fx, quiet.path(), &[args, &["--offline"]].concat());
     assert_eq!(with.status.code(), without.status.code());
     assert_eq!(with.stdout, without.stdout);
+    Ok(())
 }
 
 #[rstest]
@@ -110,9 +112,12 @@ fn the_notice_leaves_stdout_and_the_exit_code_alone(#[case] args: &[&str]) {
 #[case::no_update_notifier("NO_UPDATE_NOTIFIER", "1")]
 #[case::no_update_check("SLOPVAC_NO_UPDATE_CHECK", "1")]
 #[case::do_not_track("DO_NOT_TRACK", "1")]
-fn an_opt_out_variable_suppresses_the_notice(#[case] name: &str, #[case] value: &str) {
-    let fx = fixture();
-    let cache = seeded_cache();
+fn an_opt_out_variable_suppresses_the_notice(
+    #[case] name: &str,
+    #[case] value: &str,
+) -> io::Result<()> {
+    let fx = fixture()?;
+    let cache = seeded_cache()?;
     let out = slopvac(fx.work.path(), fx.home.path(), cache.path())
         .env(name, value)
         .args(["lint", "doc.md"])
@@ -121,55 +126,59 @@ fn an_opt_out_variable_suppresses_the_notice(#[case] name: &str, #[case] value: 
         .clone();
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.contains("update-available"), "stderr: {stderr}");
+    Ok(())
 }
 
 #[test]
-fn update_check_false_in_the_project_config_suppresses_the_notice() {
-    let fx = fixture();
+fn update_check_false_in_the_project_config_suppresses_the_notice() -> io::Result<()> {
+    let fx = fixture()?;
     fs::write(
         fx.work.path().join("slopvac.toml"),
         "schema_version = 3\n[network]\nupdate_check = false\n",
-    )
-    .expect("config");
-    let cache = seeded_cache();
+    )?;
+    let cache = seeded_cache()?;
     let out = run(&fx, cache.path(), &["lint", "doc.md"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.contains("update-available"), "stderr: {stderr}");
+    Ok(())
 }
 
 #[rstest]
 #[case::lint(&["lint", "doc.md"])]
 #[case::doctor(&["doctor"])]
 #[case::prime(&["prime"])]
-fn offline_gives_no_notice_even_from_a_cache(#[case] args: &[&str]) {
-    let fx = fixture();
-    let cache = seeded_cache();
+fn offline_gives_no_notice_even_from_a_cache(#[case] args: &[&str]) -> io::Result<()> {
+    let fx = fixture()?;
+    let cache = seeded_cache()?;
     let out = run(&fx, cache.path(), &[args, &["--offline"]].concat());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.contains("update-available"), "stderr: {stderr}");
+    Ok(())
 }
 
 #[rstest]
 #[case::lint(&["lint", "doc.md"])]
 #[case::doctor(&["doctor"])]
 #[case::prime(&["prime"])]
-fn offline_starts_no_refresh_and_writes_no_cache(#[case] args: &[&str]) {
-    let fx = fixture();
-    let cache = tempfile::tempdir().expect("tempdir");
+fn offline_starts_no_refresh_and_writes_no_cache(#[case] args: &[&str]) -> io::Result<()> {
+    let fx = fixture()?;
+    let cache = tempfile::tempdir()?;
     run(&fx, cache.path(), &[args, &["--offline"]].concat());
     assert!(!cache.path().join("update-check.json").exists());
+    Ok(())
 }
 
 #[rstest]
 #[case::version(&["--version"])]
 #[case::rules(&["rules", "--help"])]
 #[case::self_update_help(&["self", "update", "--help"])]
-fn other_commands_print_no_notice(#[case] args: &[&str]) {
-    let fx = fixture();
-    let cache = seeded_cache();
+fn other_commands_print_no_notice(#[case] args: &[&str]) -> io::Result<()> {
+    let fx = fixture()?;
+    let cache = seeded_cache()?;
     let out = run(&fx, cache.path(), args);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.contains("update-available"), "stderr: {stderr}");
+    Ok(())
 }
 
 /// One ordered log of every write and flush on either stream.
@@ -202,10 +211,10 @@ struct WorkingDir {
 }
 
 impl WorkingDir {
-    fn enter(dir: &Path) -> Self {
-        let previous = std::env::current_dir().expect("current directory");
-        std::env::set_current_dir(dir).expect("enter the project");
-        Self { previous }
+    fn enter(dir: &Path) -> io::Result<Self> {
+        let previous = std::env::current_dir()?;
+        std::env::set_current_dir(dir)?;
+        Ok(Self { previous })
     }
 }
 
@@ -217,14 +226,14 @@ impl Drop for WorkingDir {
 }
 
 #[test]
-fn stdout_is_flushed_before_the_notice_is_written() {
-    let cache = seeded_cache();
-    let home = tempfile::tempdir().expect("tempdir");
+fn stdout_is_flushed_before_the_notice_is_written() -> io::Result<()> {
+    let cache = seeded_cache()?;
+    let home = tempfile::tempdir()?;
     // `main_with_io` reads the working directory. This is the only test here that runs in the
     // test process rather than in the binary, so changing it cannot race another test.
-    let fx = fixture();
+    let fx = fixture()?;
     // Declared after `fx`, so it drops first and leaves the directory before it is removed.
-    let _back = WorkingDir::enter(fx.work.path());
+    let _back = WorkingDir::enter(fx.work.path())?;
     let cache_dir = cache.path().to_string_lossy().into_owned();
     let home_dir = home.path().to_string_lossy().into_owned();
     let env = slopvac_cli::env::MapEnv::new(
@@ -258,4 +267,5 @@ fn stdout_is_flushed_before_the_notice_is_written() {
         last_out_flush < notice,
         "stdout is flushed before the notice: {log:?}"
     );
+    Ok(())
 }
