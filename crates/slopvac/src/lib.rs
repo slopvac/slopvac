@@ -17,6 +17,7 @@ pub mod lint_messages;
 pub mod lint_settings;
 pub mod lint_terms;
 pub mod logging;
+mod lsp_project;
 pub mod messages;
 pub mod offline;
 pub mod output;

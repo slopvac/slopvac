@@ -45,6 +45,65 @@ pub trait Linter: Send + Sync {
     /// the document's format has no directive syntax the engine reads (only Markdown does),
     /// or `site` is in front matter or a fenced code block.
     fn allow_reasons(&self, path: &str, text: &str, site: usize, rule: &RuleId) -> Vec<String>;
+
+    /// Read the config again. The server calls it after a config file was saved or changed
+    /// on disk, then lints every open buffer again. The default has no config to read.
+    fn reload(&self) -> Reloaded {
+        Reloaded::default()
+    }
+
+    /// Absolute paths of the config files in use, which the server watches. The default
+    /// has none.
+    fn watched(&self) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+/// Why the project config could not be read on a reload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigFailure {
+    /// The stable error code, the one `slopvac lint` reports for the same failure.
+    pub code: String,
+    /// The error text, without the source excerpt.
+    pub message: String,
+    /// The config file that failed, as an absolute path.
+    pub path: String,
+    /// Zero-based line and column of the error in that file, when it has a position.
+    pub position: Option<(u32, u32)>,
+}
+
+impl ConfigFailure {
+    /// A failure in the file at `path` with no position.
+    #[must_use]
+    pub fn new(
+        code: impl Into<String>,
+        message: impl Into<String>,
+        path: impl Into<String>,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            path: path.into(),
+            position: None,
+        }
+    }
+
+    /// The same failure at zero-based `line` and `column`.
+    #[must_use]
+    pub fn at(mut self, line: u32, column: u32) -> Self {
+        self.position = Some((line, column));
+        self
+    }
+}
+
+/// What a [`Linter::reload`] found.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Reloaded {
+    /// Warnings about the config that was read, such as an unknown rule id.
+    pub notices: Vec<Notice>,
+    /// Set when the config could not be read. Until a later reload succeeds, the linter
+    /// reports every buffer as not linted.
+    pub failure: Option<ConfigFailure>,
 }
 
 /// A problem found by a [`Check`], shown as a diagnostic.
@@ -143,8 +202,17 @@ fn kind_of(path: &str) -> Kind {
     }
 }
 
-impl Linter for EngineLinter {
-    fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
+impl EngineLinter {
+    /// Lint `text` as `Linter::lint` does, for a document whose path relative to its config
+    /// root is `relative` and whose front matter declares `genre`. The relative path is what
+    /// the `files` globs of `[[genres]]` blocks match, and the declared genre outranks them.
+    pub fn lint_resolved(
+        &self,
+        path: &str,
+        text: &str,
+        relative: Option<&str>,
+        genre: Option<&str>,
+    ) -> Result<Linted, LintError> {
         if is_binary_host(path) {
             return Ok(Linted {
                 findings: Vec::new(),
@@ -152,9 +220,15 @@ impl Linter for EngineLinter {
                 notices: Vec::new(),
             });
         }
-        let input = Input::new(path, text)
+        let mut input = Input::new(path, text)
             .with_kind(kind_of(path))
             .with_bom(BomMode::Buffer);
+        if let Some(relative) = relative {
+            input = input.with_relative_path(relative);
+        }
+        if let Some(genre) = genre {
+            input = input.with_declared_genre(genre);
+        }
         self.engine
             .lint_with_notices(&input)
             .map(|(document, notices)| Linted {
@@ -163,6 +237,12 @@ impl Linter for EngineLinter {
                 notices,
             })
             .map_err(|e| LintError(e.to_string()))
+    }
+}
+
+impl Linter for EngineLinter {
+    fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
+        self.lint_resolved(path, text, None, None)
     }
 
     fn allow_reasons(&self, path: &str, text: &str, site: usize, rule: &RuleId) -> Vec<String> {

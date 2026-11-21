@@ -112,6 +112,7 @@ fn reject_legacy(dir: &Path) -> Result<(), ConfigError> {
     if dotfile.is_file() {
         let text = read(&dotfile)?;
         return Err(legacy(
+            dotfile.clone(),
             ".slopvac.toml",
             text.clone(),
             0..text.find('\n').unwrap_or(text.len()),
@@ -125,6 +126,7 @@ fn reject_legacy(dir: &Path) -> Result<(), ConfigError> {
             && let Some(span) = tool_slopvac_span(&root)
         {
             return Err(legacy(
+                pyproject.clone(),
                 "pyproject.toml",
                 text,
                 span,
@@ -149,6 +151,7 @@ fn read(path: &Path) -> Result<String, ConfigError> {
 }
 
 fn legacy(
+    path: PathBuf,
     file: &str,
     text: String,
     span: std::ops::Range<usize>,
@@ -156,6 +159,7 @@ fn legacy(
 ) -> ConfigError {
     ConfigError::Rejected(Box::new(Rejected {
         file: file.to_owned(),
+        path: Some(path),
         text,
         diagnostics: vec![Diagnostic {
             code: Code::LegacyVersion,

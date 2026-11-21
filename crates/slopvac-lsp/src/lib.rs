@@ -11,6 +11,11 @@
 //! [`slopvac_model::PositionEncoding::negotiate`] and derives every range from the buffer
 //! text it received.
 //!
+//! A [`Linter`] can read its config again: the server calls [`Linter::reload`] when a config
+//! file is saved or changes on disk, shows the config warnings, shows a config that fails to
+//! load on the file that failed, and lints every open document again. It asks the client to
+//! watch the config files when the client can.
+//!
 //! [`command`] and [`run`] are the `slopvac lsp` subcommand.
 
 mod analysis;
@@ -27,7 +32,10 @@ use slopvac_messages::render;
 use messages::LspMessage;
 
 pub use checks::FrontMatterCheck;
-pub use linter::{Check, EngineLinter, LintError, Linted, Linter, Problem, exception_names};
+pub use linter::{
+    Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
+    exception_names,
+};
 pub use messages::{RunError, ServerError, entries as message_entries};
 pub use server::{Exit, Server};
 
@@ -49,13 +57,10 @@ pub fn command() -> Command {
 /// with no `shutdown` ([`Exit::WithoutShutdown`]).
 pub fn run(
     _matches: &ArgMatches,
-    linter: EngineLinter,
+    linter: impl Linter + 'static,
     startup_notices: Vec<slopvac_model::Notice>,
     checks: Vec<std::sync::Arc<dyn Check>>,
 ) -> Result<Exit, RunError> {
-    // STUB(slopvac-8l4.12.15): the caller builds `linter` from the project config found at
-    // startup. A document in an `[[overrides]]` block still gets the project settings, and a
-    // config change shows only after a restart.
     let (connection, io_threads) = lsp_server::Connection::stdio();
     let configured = checks
         .into_iter()
