@@ -16,7 +16,6 @@
 //! It does not use `axoupdater`: that crate downloads and runs the installer script itself, so
 //! there is no point between download and replace where the minisign signature could be checked.
 
-mod bounded;
 pub mod command;
 pub mod fetch;
 pub mod install;

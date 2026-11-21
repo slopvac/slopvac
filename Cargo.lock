@@ -2900,6 +2900,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "slopvac-fs",
  "slopvac-messages",
  "tar",
  "tempfile",

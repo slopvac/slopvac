@@ -146,7 +146,8 @@ impl Cache {
     /// The cached entry, or `None` when missing or unreadable.
     #[must_use]
     pub fn read(&self) -> Option<Entry> {
-        serde_json::from_slice(&crate::bounded::read_regular(&self.path, MAX_CACHE_BYTES)?).ok()
+        let bytes = slopvac_fs::read_capped_regular(&self.path, MAX_CACHE_BYTES, slopvac_fs::ReadOptions::new()).ok()?;
+        serde_json::from_slice(&bytes).ok()
     }
 
     /// Store an entry. The caller may ignore the error.

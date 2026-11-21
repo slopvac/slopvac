@@ -4,7 +4,13 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::bounded::read_text;
+use slopvac_fs::{ReadOptions, read_capped_regular_to_string};
+
+/// The text of a regular file of at most `cap` bytes, else `None`: a missing, special, oversized
+/// or non-UTF-8 file all read as absent.
+fn read_text(path: &Path, cap: u64) -> Option<String> {
+    read_capped_regular_to_string(path, cap, ReadOptions::new()).ok()
+}
 
 /// Largest install receipt read; a real one is a few hundred bytes.
 const MAX_RECEIPT_BYTES: u64 = 64 * 1024;
