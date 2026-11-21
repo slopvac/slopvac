@@ -72,7 +72,7 @@ mod structure;
 mod tagging;
 mod terms;
 
-pub use commit::{MAX_FILE_BYTES, Refusal, Step};
+pub use commit::{MAX_FILE_BYTES, Refusal, Root, Step};
 pub use diagrams::{
     DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker,
     diagram_rule_set,
