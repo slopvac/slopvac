@@ -41,6 +41,7 @@ mod common;
 
 use common::{core_set, legacy_engine, legacy_settings, read_json, root};
 
+use rstest::rstest;
 use serde_json::{Value, json};
 use slopvac_comments::Language;
 use slopvac_engine::locale::spelling_rules;
@@ -551,6 +552,36 @@ fn divergence_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden-divergences.json")
 }
 
+/// 2.x recorded the replacement of a substitution as the rule gives it and cased it when it
+/// applied the fix (`diff_scope.py`): an upper-case match gives an upper-case replacement and
+/// a capitalised match a capitalised one. Rust reports the replacement in that final case, so
+/// the recorded one is cased the same way before the comparison. The golden data stays as
+/// recorded.
+fn recase_replacements(want: &mut Value) {
+    let findings = want["document"]["findings"].as_array_mut().unwrap();
+    for f in findings {
+        let (Some(matched), Some(replacement)) = (
+            f["matched_text"].as_str().map(str::to_owned),
+            f["replacement"].as_str().map(str::to_owned),
+        ) else {
+            continue;
+        };
+        let cased = if matched.chars().any(char::is_uppercase)
+            && !matched.chars().any(char::is_lowercase)
+        {
+            replacement.to_uppercase()
+        } else if matched.chars().next().is_some_and(char::is_uppercase) {
+            let mut chars = replacement.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(chars).collect()
+            })
+        } else {
+            replacement
+        };
+        f["replacement"] = Value::String(cased);
+    }
+}
+
 /// The difference between one engine document and the parity golden of `profile/id` with the
 /// reviewed `deltas` applied. This is the comparison every run goes through.
 fn compare_run(
@@ -562,6 +593,7 @@ fn compare_run(
     let path = format!("tests/golden/v3/parity/{profile}/{id}.json");
     let mut want = read_json(&root().join(path));
     apply_deltas(&mut want, deltas, profile, id);
+    recase_replacements(&mut want);
     mask(&mut want, &mut got);
     differences(&want, &got)
 }
@@ -812,6 +844,30 @@ fn a_changed_fact_of_a_matched_finding_is_a_difference() {
         set_first(&mut got, key, value);
         assert!(differences(&want, &got).contains_key("changed"), "{key}");
     }
+}
+
+/// The recorded replacement takes the case of the match, as 2.x applied it, and Rust must
+/// report that case: the other cases of the same text are differences.
+#[rstest]
+#[case::lower_match_lower_replacement("example", "following one", true)]
+#[case::title_match_title_replacement("Example", "Following one", true)]
+#[case::upper_match_upper_replacement("EXAMPLE", "FOLLOWING ONE", true)]
+#[case::title_match_lower_replacement("Example", "following one", false)]
+#[case::title_match_upper_replacement("Example", "FOLLOWING ONE", false)]
+#[case::upper_match_title_replacement("EXAMPLE", "Following one", false)]
+#[case::lower_match_title_replacement("example", "Following one", false)]
+fn the_recorded_replacement_is_cased_like_the_match(
+    #[case] matched: &str,
+    #[case] reported: &str,
+    #[case] agrees: bool,
+) {
+    let (mut want, mut got) = base_pair();
+    want["document"]["findings"][0]["matched_text"] = json!(matched);
+    want["document"]["findings"][0]["replacement"] = json!("following one");
+    set_first(&mut got, "matched_text", json!(matched));
+    set_first(&mut got, "replacement", json!(reported));
+    recase_replacements(&mut want);
+    assert_eq!(differences(&want, &got).is_empty(), agrees);
 }
 
 /// An extra finding is recorded whole: a changed fact makes a different record.
