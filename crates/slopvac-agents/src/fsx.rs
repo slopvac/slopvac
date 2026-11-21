@@ -11,8 +11,9 @@ use std::ffi::{OsStr, OsString};
 use std::io::{ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
 
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
-use cap_std::fs::{Dir, OpenOptions};
+use cap_std::fs::{Dir, OpenOptions, Permissions};
 
 use crate::error::AgentsError;
 
@@ -28,6 +29,8 @@ pub struct Project {
 /// A point inside a write or delete where a test can change the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Stage {
+    /// The temporary file holds the new bytes, and its final mode is not set yet.
+    Filled,
     /// The new state is ready, and the final check against the expected bytes
     /// comes next.
     BeforeCommit,
@@ -73,6 +76,62 @@ pub fn target(relative: &str) -> Result<PathBuf, AgentsError> {
         return Err(bad());
     }
     Ok(clean)
+}
+
+/// Set `O_NONBLOCK`, so an open of a FIFO or device swapped in at the leaf returns at once.
+#[cfg(unix)]
+fn nonblocking(options: &mut OpenOptions) {
+    use cap_std::fs::OpenOptionsExt;
+    // `cast_signed` keeps every bit; the flag is a small positive value.
+    options.custom_flags(rustix::fs::OFlags::NONBLOCK.bits().cast_signed());
+}
+
+#[cfg(not(unix))]
+fn nonblocking(_: &mut OpenOptions) {}
+
+/// Return the permissions of the regular file `name`, read from a handle opened
+/// without following a symlink and without blocking. Return `None` if the file
+/// does not exist. A symlink, FIFO, socket, device or directory is an unsafe target.
+/// Any other failure keeps its I/O cause.
+///
+/// `resolve` already rewrote every link in the path. Refusing a leaf that
+/// became a link since then keeps a swapped link from lending its target's
+/// mode (CWE-59, CWE-367). The cap-std handle still confines the open to the
+/// project. `rel` is the path shown in an error.
+///
+/// The mode and the content come from separate opens of the name. A process
+/// of the same user that swaps the file between them changes the mode this
+/// copies. The project accepts that race for a same-user CLI.
+fn source_mode(
+    parent: &Dir,
+    name: &std::ffi::OsStr,
+    rel: &Path,
+) -> Result<Option<Permissions>, AgentsError> {
+    let unsafe_target = || AgentsError::UnsafeTarget(rel.display().to_string());
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    nonblocking(&mut options);
+    match parent.open_with(name, &options) {
+        Ok(source) => {
+            let meta = source.metadata().map_err(|e| Project::map(rel, e))?;
+            if meta.is_file() {
+                Ok(Some(meta.permissions()))
+            } else {
+                Err(unsafe_target())
+            }
+        }
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+        Err(e) => {
+            // The open fails on a link, and on a socket. Any entry that is not a
+            // regular file is an unsafe target. A regular file keeps its I/O cause.
+            let not_regular = parent.symlink_metadata(name).is_ok_and(|m| !m.is_file());
+            Err(if not_regular {
+                unsafe_target()
+            } else {
+                Project::map(rel, e)
+            })
+        }
+    }
 }
 
 impl Project {
@@ -231,7 +290,8 @@ impl Project {
     }
 
     /// [`Project::write_atomic`], calling `hook` at each [`Stage`], so a test can
-    /// change the target there.
+    /// observe or change the target there. [`Stage::Filled`] comes once the
+    /// temporary file holds the new bytes and before the code sets its mode.
     fn write_atomic_staged(
         &self,
         rel: &Path,
@@ -250,8 +310,17 @@ impl Project {
         let name = rel
             .file_name()
             .ok_or_else(|| AgentsError::UnsafeTarget(rel.display().to_string()))?;
+        // The mode comes from metadata on a no-follow, non-blocking source
+        // handle, not from a path stat.
+        let mode = source_mode(&parent, name, &rel)?;
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
+        // Temporary file stays private until the fill ends and its final mode is applied.
+        #[cfg(unix)]
+        {
+            use cap_std::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.subsec_nanos());
@@ -264,10 +333,11 @@ impl Project {
                 Err(e) => return Err(Self::map(&rel, e)),
             }
         };
-        let mut finish = || -> std::io::Result<()> {
+        let finish = || -> std::io::Result<()> {
             file.write_all(after)?;
-            if let Ok(meta) = parent.metadata(name) {
-                file.set_permissions(meta.permissions())?;
+            hook(Stage::Filled);
+            if let Some(mode) = mode {
+                file.set_permissions(mode)?;
             }
             file.sync_all()
         };
@@ -385,5 +455,115 @@ mod tests {
 
         assert!(matches!(got, Err(AgentsError::Conflict(p)) if p == Path::new("a.md")));
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "theirs");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod mode_tests {
+    use super::*;
+    use std::ffi::OsStr;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn mode_of(path: &Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn the_temporary_file_is_private_while_filled_and_the_target_keeps_its_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("a.md");
+        std::fs::write(&target, "old").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let project = Project::open(dir.path()).unwrap();
+        let mut seen = Vec::new();
+        let changed = project
+            .write_atomic_staged(Path::new("a.md"), Some(b"old"), b"new", &mut |stage| {
+                if stage != Stage::Filled {
+                    return;
+                }
+                let temp = std::fs::read_dir(dir.path())
+                    .unwrap()
+                    .map(|e| e.unwrap().path())
+                    .find(|p| {
+                        p.file_name()
+                            .is_some_and(|n| n.to_string_lossy().starts_with(".slopvac-"))
+                    })
+                    .unwrap();
+                seen.push((std::fs::read(&temp).unwrap(), mode_of(&temp)));
+            })
+            .unwrap();
+        assert!(changed);
+        assert_eq!(seen, [(b"new".to_vec(), 0o600)]);
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+        assert_eq!(mode_of(&target), 0o644);
+    }
+
+    /// What `source_mode` decided, reduced to the data a case compares.
+    fn verdict(dir: &Path, name: &str) -> &'static str {
+        let handle = Dir::open_ambient_dir(dir, ambient_authority()).unwrap();
+        match source_mode(&handle, OsStr::new(name), Path::new(name)) {
+            Ok(Some(_)) => "mode",
+            Ok(None) => "absent",
+            Err(AgentsError::UnsafeTarget(_)) => "unsafe",
+            Err(_) => "other",
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::regular_file("real.md", "mode")]
+    #[case::missing("gone.md", "absent")]
+    #[case::symlink_to_a_file("link.md", "unsafe")]
+    #[case::directory("dir.md", "unsafe")]
+    fn the_source_mode_is_taken_only_from_a_regular_file(
+        #[case] name: &str,
+        #[case] expected: &str,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("real.md"), "x").unwrap();
+        std::fs::create_dir(dir.path().join("dir.md")).unwrap();
+        std::os::unix::fs::symlink("real.md", dir.path().join("link.md")).unwrap();
+        assert_eq!(verdict(dir.path(), name), expected);
+    }
+
+    #[test]
+    fn a_socket_at_the_source_is_an_unsafe_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let _listener = std::os::unix::net::UnixListener::bind(dir.path().join("sock.md")).unwrap();
+        assert_eq!(verdict(dir.path(), "sock.md"), "unsafe");
+    }
+
+    #[test]
+    fn a_fifo_at_the_source_is_refused_without_blocking() {
+        let dir = tempfile::tempdir().unwrap();
+        let made = std::process::Command::new("mkfifo")
+            .arg(dir.path().join("pipe.md"))
+            .status()
+            .unwrap();
+        assert!(made.success());
+        // Run the open on a thread and bound the wait, so a blocked open fails
+        // the test instead of hanging it. A pass returns at once.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let path = dir.path().to_owned();
+        std::thread::spawn(move || {
+            let handle = Dir::open_ambient_dir(&path, ambient_authority()).unwrap();
+            // The receiver may have timed out and gone; the send result does not matter.
+            let _ = tx.send(source_mode(
+                &handle,
+                OsStr::new("pipe.md"),
+                Path::new("pipe.md"),
+            ));
+        });
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the open blocked on a FIFO");
+        assert!(matches!(got, Err(AgentsError::UnsafeTarget(_))));
+    }
+
+    #[test]
+    fn a_new_file_ends_private() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = Project::open(dir.path()).unwrap();
+        project.write_atomic(Path::new("n.md"), None, b"x").unwrap();
+        assert_eq!(mode_of(&dir.path().join("n.md")), 0o600);
     }
 }
