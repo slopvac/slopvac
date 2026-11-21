@@ -2,6 +2,7 @@ import math
 import time
 
 import pytest
+from slopvac_plugin import Plugin
 from slopvac_plugin.errors import OutputInvalid
 from slopvac_plugin.types import Edit, Finding, RecipeFile, Segment, Span, Tag
 from slopvac_plugin.validate import (
@@ -196,3 +197,29 @@ def test_a_reply_with_hundreds_of_thousands_of_invalid_entries_is_checked_quickl
     assert problems
     assert len(problems) <= 3
     assert time.monotonic() - started < 2
+
+
+def test_tag_kind_with_a_trailing_newline_is_rejected():
+    with pytest.raises(OutputInvalid, match="kebab"):
+        check_tag(b"abc", Tag("prose\n", Span(0, 1), 1, "e"))
+
+
+def test_segment_context_with_a_trailing_newline_is_rejected():
+    with pytest.raises(OutputInvalid, match="kebab"):
+        check_segments(b"abc", [Segment(Span(0, 3), "prose\n")])
+
+
+def test_recipe_path_with_a_trailing_newline_is_rejected():
+    with pytest.raises(OutputInvalid, match="relative"):
+        check_recipe([RecipeFile("a/b.md\n", "write", "c")])
+
+
+def test_hook_id_with_a_trailing_newline_is_rejected():
+    with pytest.raises(ValueError, match="invalid hook id"):
+        Plugin("p", "0.0.1").hook("tagger", "id\n")
+
+
+@pytest.mark.parametrize("feature", ["feat\n", "x-feat\n"])
+def test_feature_name_with_a_trailing_newline_is_rejected(feature):
+    with pytest.raises(ValueError, match="invalid feature name"):
+        Plugin("p", "0.0.1", optional_features=(feature,))

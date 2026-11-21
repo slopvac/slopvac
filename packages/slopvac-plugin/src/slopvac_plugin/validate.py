@@ -10,9 +10,11 @@ from .errors import OutputInvalid
 from .framing import MAX_SAFE_INT
 from .types import Edit, Finding, RecipeFile, Segment, Span, Tag
 
-KEBAB = re.compile(r"^[a-z][a-z0-9-]*$")
+# The schemas end a pattern with (?![\s\S]). Python's $ also matches before a
+# trailing newline, so these use \Z.
+KEBAB = re.compile(r"^[a-z][a-z0-9-]*\Z")
 # Same pattern as RecipeFile.path in the schema.
-RELATIVE_PATH = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*\\)(?!(.*/)?\.\.(/|$)).+$")
+RELATIVE_PATH = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*\\)(?!(.*/)?\.\.(/|\Z)).+\Z")
 ACTIONS = ("write", "merge", "remove")
 
 
