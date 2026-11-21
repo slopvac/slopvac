@@ -441,7 +441,7 @@ fn fix_positions(
             }
             PosFix::Unknown => problems.push(Dropped::new(
                 label,
-                &format!("{key}.pos"),
+                format!("{key}.pos"),
                 pos_line,
                 MigratePhrase::BlocklistUnknownPos.as_static().to_owned(),
             )),
