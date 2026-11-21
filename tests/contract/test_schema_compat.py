@@ -1335,6 +1335,79 @@ def test_a_new_marked_alternative_list_is_still_a_constraint(tmp_path, direction
     assert kinds(findings) == [(f"/{key}", "narrowing-possible")]
 
 
+WIDENINGS = {
+    "type-gains-null": (
+        {"type": "string"},
+        {"type": ["string", "null"]},
+        "/properties/e/type",
+        "type-widened",
+    ),
+    "integer-to-number": (
+        {"type": "integer"},
+        {"type": "number"},
+        "/properties/e/type",
+        "type-widened",
+    ),
+    "type-removed": (
+        {"type": "string"},
+        {},
+        "/properties/e/type",
+        "type-widened",
+    ),
+    "enum-removed": (
+        {"type": "string", "enum": ["a"]},
+        {"type": "string"},
+        "/properties/e/enum",
+        "enum-widened",
+    ),
+    "const-removed": (
+        {"type": "string", "const": "a"},
+        {"type": "string"},
+        "/properties/e/const",
+        "enum-widened",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), WIDENINGS.values(), ids=WIDENINGS.keys()
+)
+def test_other_widenings_of_an_output_schema_are_breaking(
+    tmp_path, direction, old, new, pointer, kind
+):
+    old_s, new_s = (schema(properties={"e": b}) for b in (old, new))
+    findings = run(tmp_path, old_s, new_s, direction=direction)
+    assert kinds(findings) == [(pointer, kind)]
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), WIDENINGS.values(), ids=WIDENINGS.keys()
+)
+def test_other_widenings_are_allowed_in_an_input_schema(
+    tmp_path, old, new, pointer, kind
+):
+    old_s, new_s = (schema(properties={"e": b}) for b in (old, new))
+    assert run(tmp_path, old_s, new_s, direction="input") == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [(w[0], {**w[1], **EXT}) for w in WIDENINGS.values()],
+    ids=WIDENINGS.keys(),
+)
+def test_a_marked_position_may_widen_in_an_output_schema(tmp_path, old, new):
+    old_s, new_s = (schema(properties={"e": b}) for b in (old, new))
+    assert run(tmp_path, old_s, new_s, direction="output") == []
+
+
+def test_moving_an_enum_into_a_ref_is_not_a_removal(tmp_path):
+    defs = {"E": {"type": "string", "enum": ["a"]}}
+    old = schema(properties={"e": {"type": "string", "enum": ["a"]}}, **{"$defs": defs})
+    new = schema(properties={"e": {"$ref": "#/$defs/E"}}, **{"$defs": defs})
+    assert run(tmp_path, old, new, direction="output") == []
+
+
 def test_registry_must_list_every_schema_file(tmp_path):
     base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
     new_dir = write_dir(tmp_path / "new", {FILE: schema()})

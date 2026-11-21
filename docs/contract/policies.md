@@ -519,7 +519,7 @@ Owners: `slopvac-8l4.9.7`, `slopvac-8l4.19.1`.
 - a removed property or `$defs` entry, at any depth
 - a new `required` entry
 - a narrowed `type`, `enum` or `const`
-- in an output or `both` schema, a new `enum` value or an appended `anyOf` or `oneOf` member at a position without `x-slopvac-extensible: true` (`enum-widened`, `alternative-added`), or a removed marker (`extensible-removed`)
+- in an output or `both` schema, a new `enum` value or an appended `anyOf` or `oneOf` member at a position without `x-slopvac-extensible: true` (`enum-widened`, `alternative-added`), a widened `type` or a dropped `enum` or `const` (`type-widened`, `enum-widened`), or a removed marker (`extensible-removed`)
 - a raised `min*` bound or a lowered `max*` bound
 - a changed `pattern`
 - `additionalProperties` that is newly `false`, or newly a narrower schema
