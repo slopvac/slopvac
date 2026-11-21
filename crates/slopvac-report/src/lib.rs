@@ -146,6 +146,12 @@ impl RenderOptions {
 /// The docs path segment for this schema line.
 pub const API_VERSION: &str = "v3";
 
+/// Render one notice as the text format shows it in a report, without a trailing newline.
+#[must_use]
+pub fn render_notice(notice: &slopvac_model::Notice) -> String {
+    text::notice_line(notice)
+}
+
 /// Render `report` in `format` with default options. Output ends with one newline, or is empty (no findings in a line format).
 pub fn render(
     format: Format,

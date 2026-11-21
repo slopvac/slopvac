@@ -116,10 +116,7 @@ pub fn run(matches: &ArgMatches, out: &mut dyn Write) -> Result<i32, CasesError>
     let report = run_cases(&engine, only.as_ref())?;
     emit(out, &report.to_string())?;
     if let Some(notice) = report.unchecked_notice() {
-        emit(
-            out,
-            &format!("warning[{}]: {}", notice.code, notice.message),
-        )?;
+        emit(out, &slopvac_report::render_notice(&notice))?;
     }
     let files: Vec<&String> = matches
         .get_many::<String>("coverage")
