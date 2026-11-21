@@ -172,18 +172,18 @@ fn an_override_block_turns_a_rule_off_only_for_the_documents_it_matches() {
 }
 
 #[test]
-fn a_genres_block_sets_the_level_of_the_documents_it_matches() {
-    let config = "schema_version = 3\n\n[[genres]]\nfiles = [\"guide/**\"]\ngenre = \"consumer\"\n";
+fn a_genres_block_gives_the_documents_it_matches_the_genre_level() {
+    let config = "schema_version = 3\n\n[[genres]]\nfiles = [\"log/**\"]\ngenre = \"change-comms\"\n";
     let dir = project(config, &[]);
     let root = dir.path().canonicalize().expect("canonical");
     let mut session = Session::start(&root);
-    session.open(&root, "guide/a.md", HISTORY);
+    session.open(&root, "log/c.md", HISTORY);
     session.open(&root, "reference/e.md", HISTORY);
-    let assigned = session.codes(&root, "guide/a.md");
+    let assigned = session.codes(&root, "log/c.md");
     let unassigned = session.codes(&root, "reference/e.md");
-    assert!(assigned.iter().any(|c| c == HISTORY_RULE), "{assigned:?}");
+    assert!(!assigned.iter().any(|c| c == HISTORY_RULE), "{assigned:?}");
     assert!(
-        !unassigned.iter().any(|c| c == HISTORY_RULE),
+        unassigned.iter().any(|c| c == HISTORY_RULE),
         "{unassigned:?}"
     );
     session.finish();
