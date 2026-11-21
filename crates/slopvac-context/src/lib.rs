@@ -17,6 +17,7 @@ mod view;
 mod work;
 
 use messages::ContextMessage;
+use slopvac_messages::Catalog as _;
 
 pub use builtin::{
     BuiltinFile, EnforcedInvariantTagger, GENRE_FILES, ListLeadInTagger, RequirementTagger,
