@@ -722,7 +722,14 @@ class Comparer:
             new_eff = self._effective("new", doc.new, n)
         marked = self._marked("new", doc.new, n)
         key = "enum"
-        if "enum" not in n and "const" not in n and "const" in o and "enum" not in o or "enum" not in n and "const" in n:
+        if (
+            "enum" not in n
+            and "const" not in n
+            and "const" in o
+            and "enum" not in o
+            or "enum" not in n
+            and "const" in n
+        ):
             key = "const"
         yield from _loosened(file, ptr, old_eff, new_eff, marked, key)
 
@@ -856,7 +863,9 @@ class Comparer:
                         "(absent)",
                         _show(new[i]),
                     )
-        yield from self._narrowing_possible(file, ptr, key, old, new, _extensible(n))
+        yield from self._narrowing_possible(
+            file, ptr, key, old, new, _extensible(n), _type_set(n)
+        )
         for i, member in enumerate(old):
             child = f"{ptr}/{key}/{i}"
             if i >= len(new):
@@ -871,7 +880,13 @@ class Comparer:
 
     @staticmethod
     def _narrowing_possible(
-        file: str, ptr: str, key: str, old: list, new: list, marked: bool
+        file: str,
+        ptr: str,
+        key: str,
+        old: list,
+        new: list,
+        marked: bool,
+        parent: set[str] | None,
     ) -> Iterator[Finding]:
         """Fail closed on additions that can reject values that used to pass.
 
@@ -887,7 +902,7 @@ class Comparer:
         elif key in ("oneOf", "prefixItems"):
             for i in range(len(old), len(new)):
                 if key == "oneOf" and (
-                    marked or all(_disjoint(new[j], new[i]) for j in range(i))
+                    marked or all(_disjoint(new[j], new[i], parent) for j in range(i))
                 ):
                     continue
                 yield Finding(
@@ -914,12 +929,14 @@ def _value_set(schema: dict) -> set[str] | None:
     return None
 
 
-def _disjoint(a: object, b: object) -> bool:
+def _disjoint(a: object, b: object, parent: set[str] | None = None) -> bool:
     """True only when no instance can match both schemas; unknown means False.
 
     Provable cases: disjoint ``type`` sets, disjoint ``const``/``enum`` values, or a
-    property that both schemas require with disjoint ``const``/``enum`` values. A
-    ``$ref`` or a boolean schema is never provably disjoint.
+    property that both schemas require with disjoint ``const``/``enum`` values. The
+    required-property proof holds only for objects (``required`` and ``properties`` ignore
+    other instances), so it needs the types the two schemas and their parent allow to be
+    only ``object``. A ``$ref`` or a boolean schema is never provably disjoint.
     """
     if not isinstance(a, dict) or not isinstance(b, dict) or "$ref" in a or "$ref" in b:
         return False
@@ -929,6 +946,9 @@ def _disjoint(a: object, b: object) -> bool:
     va, vb = _value_set(a), _value_set(b)
     if va is not None and vb is not None and not va & vb:
         return True
+    shared = [t for t in (ta, tb, parent) if t is not None]
+    if not shared or not set.intersection(*shared) <= {"object"}:
+        return False
     props_a, props_b = a.get("properties", {}), b.get("properties", {})
     required = set(a.get("required", [])) & set(b.get("required", []))
     for name in required & set(props_a) & set(props_b):
