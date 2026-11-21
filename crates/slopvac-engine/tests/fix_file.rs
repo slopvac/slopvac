@@ -440,6 +440,16 @@ mod unix {
         );
     }
 
+    /// Skip an ACL test on a host that cannot set ACLs. CI and `SLOPVAC_REQUIRE_ACL=1`
+    /// turn the skip into a failure, so a runner that lost ACL support cannot pass silently.
+    fn skip_without_acl_support(why: &str) {
+        assert!(
+            std::env::var_os("CI").is_none() && std::env::var_os("SLOPVAC_REQUIRE_ACL").is_none(),
+            "ACL support is required here: {why}"
+        );
+        eprintln!("skipped: {why}");
+    }
+
     /// Run `setfacl` on `path`; false when the tool or the file system cannot.
     #[cfg(target_os = "linux")]
     fn setfacl(args: &[&str], path: &Path) -> bool {
@@ -448,6 +458,31 @@ mod unix {
             .arg(path)
             .status()
             .is_ok_and(|s| s.success())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_file_with_an_extended_acl_is_refused_and_left_untouched() {
+        let root = project();
+        let path = root.path().join("doc.md");
+        let set = std::process::Command::new("chmod")
+            .args(["+a", "everyone allow read"])
+            .arg(&path)
+            .status()
+            .is_ok_and(|s| s.success());
+        if !set {
+            skip_without_acl_support("chmod +a failed");
+            return;
+        }
+        assert!(
+            !done(run(root.path(), "doc.md", true)).written,
+            "a dry run still works"
+        );
+        let out = run(root.path(), "doc.md", false);
+        assert_eq!(refused(&out), Refusal::AclPresent);
+        assert_eq!(refused(&out).code(), "fix-acl-present");
+        assert_eq!(read(&path), DOC);
+        assert_eq!(names(root.path()), ["doc.md"], "nothing was staged");
     }
 
     #[cfg(target_os = "linux")]
@@ -465,7 +500,8 @@ mod unix {
             };
             let args: Vec<&str> = args.into_iter().filter(|a| !a.is_empty()).collect();
             if !setfacl(&args, &target) {
-                return; // no setfacl, or no ACL support here
+                skip_without_acl_support("setfacl failed: no tool, or no ACL support here");
+                return;
             }
             assert!(
                 !done(run(root.path(), "doc.md", true)).written,

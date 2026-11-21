@@ -370,19 +370,67 @@ mod unix {
         }
     }
 
-    /// Whether `fd` carries the ACL attribute `name`. Only Linux exposes ACLs as extended
-    /// attributes. macOS keeps them in a hidden attribute and other systems elsewhere, so
-    /// there an ACL is not detected.
+    /// Which ACL a check looks for.
+    #[derive(Clone, Copy)]
+    pub(super) enum Acl {
+        /// An ACL on the file itself, which a replacement file would lose.
+        Access,
+        /// An ACL on a directory that new files in it would inherit.
+        Inherited,
+    }
+
+    /// Whether `fd` carries the ACL. Linux keeps ACLs in extended attributes.
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    fn has_acl(fd: impl std::os::fd::AsFd, name: &str) -> std::io::Result<bool> {
+    fn has_acl(fd: impl std::os::fd::AsFd, which: Acl) -> std::io::Result<bool> {
+        let name = match which {
+            Acl::Access => "system.posix_acl_access",
+            Acl::Inherited => "system.posix_acl_default",
+        };
         let mut buffer = [0u8; 4096];
         acl_decision(rustix::fs::fgetxattr(fd, name, &mut buffer[..]))
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    /// Whether `fd` carries the ACL. macOS hides its ACL attribute from the extended
+    /// attribute calls, and `acl_get_fd` is an `unsafe` foreign call that this workspace
+    /// forbids. So `ls -lde`, which prints the entries under the file, answers for the path
+    /// the descriptor names. An error fails the check instead of passing the file.
+    #[cfg(target_os = "macos")]
+    fn has_acl(fd: impl std::os::fd::AsFd, which: Acl) -> std::io::Result<bool> {
+        use std::os::unix::ffi::OsStrExt;
+        let path = rustix::fs::getpath(fd)?;
+        let output = std::process::Command::new("/bin/ls")
+            .env("LC_ALL", "C")
+            .arg("-lde")
+            .arg("--")
+            .arg(OsStr::from_bytes(path.to_bytes()))
+            .output()?;
+        if !output.status.success() {
+            return Err(std::io::Error::other("ls -lde failed"));
+        }
+        Ok(lists_acl(&String::from_utf8_lossy(&output.stdout), which))
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
     #[allow(clippy::unnecessary_wraps)]
-    fn has_acl(_: impl std::os::fd::AsFd, _: &str) -> std::io::Result<bool> {
+    fn has_acl(_: impl std::os::fd::AsFd, _: Acl) -> std::io::Result<bool> {
         Ok(false)
+    }
+
+    /// Whether `ls -lde` output lists an ACL entry (a line like `" 0: group:everyone allow
+    /// read"` under the file line), and for [`Acl::Inherited`] one that new files inherit.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(super) fn lists_acl(output: &str, which: Acl) -> bool {
+        output.lines().skip(1).any(|line| {
+            let Some((index, _)) = line.trim_start().split_once(": ") else {
+                return false;
+            };
+            !index.is_empty()
+                && index.chars().all(|c| c.is_ascii_digit())
+                && match which {
+                    Acl::Access => true,
+                    Acl::Inherited => line.contains("file_inherit"),
+                }
+        })
     }
 
     /// An open file with the directory it was found in.
@@ -485,9 +533,7 @@ mod unix {
             // attribute calls reject with EBADF. A readable handle to the same directory,
             // opened relative to it, does not have that limit.
             let readable_parent = self.parent.open(".")?;
-            if has_acl(&self.file, "system.posix_acl_access")?
-                || has_acl(&readable_parent, "system.posix_acl_default")?
-            {
+            if has_acl(&self.file, Acl::Access)? || has_acl(&readable_parent, Acl::Inherited)? {
                 return Ok(Some(Refusal::AclPresent));
             }
             hook(Step::Create)?;
@@ -608,7 +654,7 @@ mod unix {
 
         use std::path::Path;
 
-        use super::{acl_decision, directory_trusted, open, owner_trusted};
+        use super::{Acl, acl_decision, directory_trusted, lists_acl, open, owner_trusted};
         use crate::commit::{Refusal, seam};
 
         fn project(text: &str) -> tempfile::TempDir {
@@ -710,6 +756,20 @@ mod unix {
                 acl_decision(Err(Errno::IO)).is_err(),
                 "other errors are errors"
             );
+        }
+
+        #[test]
+        fn listed_entries_under_the_file_line_are_an_acl() {
+            let plain = "-rw-r--r--  1 u  staff  2 Nov 21 14:33 f\n";
+            let with_acl =
+                "-rw-r--r--+ 1 u  staff  2 Nov 21 14:33 f\n 0: group:everyone allow read\n";
+            let inheriting = "drwxr-xr-x+ 2 u  staff 64 Nov 21 14:33 d\n 0: group:everyone allow add_file,file_inherit\n";
+            assert!(!lists_acl(plain, Acl::Access));
+            assert!(lists_acl(with_acl, Acl::Access));
+            assert!(!lists_acl(with_acl, Acl::Inherited), "not inherited");
+            assert!(lists_acl(inheriting, Acl::Inherited));
+            // A name that looks like an entry is on the first line, which is skipped.
+            assert!(!lists_acl(" 0: x\n", Acl::Access));
         }
     }
 }

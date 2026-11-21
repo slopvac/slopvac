@@ -23,9 +23,10 @@
 //! not caught. Only the directory's owner or root can make one, because a write needs a
 //! directory that group and others cannot change.
 //!
-//! A file with an access ACL, or in a directory with a default ACL, is refused with
-//! [`Refusal::AclPresent`] on Linux. macOS keeps ACLs in an attribute that `rustix` cannot
-//! read, so an ACL is not detected there.
+//! A file with an access ACL, or in a directory whose ACL new files would inherit, is
+//! refused with [`Refusal::AclPresent`]. Linux reads the ACL attributes. macOS hides its
+//! ACL from the attribute calls and reading it takes an `unsafe` foreign call, so it asks
+//! `ls -lde` for the entries instead. A failure of that check fails the write.
 //!
 //! In-place writes exist on unix only. Elsewhere a dry run and a diff work, and a write is
 //! refused with [`Refusal::UnsupportedPlatform`] (bead slopvac-8l4.3.35 tracks a safe
