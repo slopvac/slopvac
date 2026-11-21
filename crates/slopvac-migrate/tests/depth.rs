@@ -25,7 +25,12 @@ fn header(levels: usize) -> String {
 
 /// 70 dotted parts inside each of 70 nested inline tables: about 4900 tables.
 fn dotted_in_inline(levels: usize) -> String {
-    let path = vec!["k"; 70].join(".");
+    dotted_in_inline_parts(70, levels)
+}
+
+/// `parts` dotted parts inside each of `levels` nested inline tables.
+fn dotted_in_inline_parts(parts: usize, levels: usize) -> String {
+    let path = vec!["k"; parts].join(".");
     format!(
         "{}x = 1{}\n",
         format!("{path} = {{ ").repeat(levels),
@@ -78,5 +83,24 @@ fn plan_refuses_a_deep_pyproject_table_with_its_line() {
     assert_eq!(
         error.to_string(),
         "pyproject.toml:5: `tables`: tables nest more than 32 levels deep"
+    );
+}
+
+/// The deepest tree the parser accepts, 80 dotted parts in each of 80 nested inline tables,
+/// is refused from a thread with a small stack. Recursion over a tree that deep, to build,
+/// walk or drop it, needs far more than this stack on any target and in any build profile.
+#[test]
+fn the_deepest_tree_the_parser_accepts_is_refused_from_a_small_stack() {
+    let text = format!("profile = \"normal\"\n{}", dotted_in_inline_parts(80, 80));
+    let error = std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(move || refused(&text))
+        .expect("the test thread starts")
+        .join()
+        .expect("the refusal returns instead of panicking");
+    assert_eq!(error.code(), "config-legacy-dropped");
+    assert_eq!(
+        error.to_string(),
+        "slopvac.toml:2: `tables`: tables nest more than 32 levels deep"
     );
 }

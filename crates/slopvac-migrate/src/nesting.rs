@@ -56,13 +56,37 @@ enum Node<'a> {
     Value(&'a Value),
 }
 
+/// Stack for the thread that parses, checks and drops a document in [`check`].
+///
+/// The parser takes about 80 dotted parts in each of about 80 nested inline tables, so a
+/// tree it accepts can nest some 6,500 levels. Building the tree and dropping it both
+/// recurse once per level, and an unoptimized build spends a few hundred bytes a level, more
+/// than a default 2 MiB thread stack holds. 16 MiB leaves several times that worst case.
+/// The pages are reserved, not committed, until the recursion reaches them.
+const CHECK_STACK_BYTES: usize = 16 << 20;
+
 /// Parse `text` and check its nesting. Text that is not valid TOML passes: the caller's own
 /// parse reports it.
+///
+/// The parse, the check and the drop of the parsed tree run on a thread of their own with
+/// [`CHECK_STACK_BYTES`] of stack, so a refused document cannot overflow the caller's stack.
 pub(crate) fn check(text: &str) -> Result<(), TooDeep> {
-    match Document::parse(text) {
-        Ok(doc) => check_document(&doc, text),
-        Err(_) => Ok(()),
-    }
+    std::thread::scope(|scope| {
+        let worker = std::thread::Builder::new()
+            .name("slopvac-migrate-nesting".to_owned())
+            .stack_size(CHECK_STACK_BYTES)
+            .spawn_scoped(scope, || match Document::parse(text) {
+                Ok(doc) => check_document(&doc, text),
+                Err(_) => Ok(()),
+            });
+        match worker {
+            Ok(handle) => handle
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
+            // No thread, no check: refuse rather than walk an unchecked document.
+            Err(_) => Err(TooDeep { line: 1 }),
+        }
+    })
 }
 
 /// Check the nesting of a document parsed from `text`.
