@@ -506,3 +506,37 @@ fn a_category_error_in_an_external_extended_file_is_shown_on_that_file_at_the_ke
     );
     session.finish();
 }
+
+#[test]
+fn a_nested_config_that_breaks_fails_the_reload_and_a_fix_restores_every_document() {
+    let dir = project("schema_version = 3\n", &[]);
+    let root = dir.path().canonicalize().expect("canonical");
+    fs::create_dir_all(root.join("sub")).expect("mkdir");
+    fs::write(root.join("sub/slopvac.toml"), "schema_version = 3\n").expect("nested");
+    let mut session = Session::start(&root);
+    session.open(&root, "top.md", SLOPPY);
+    session.open(&root, "sub/a.md", SLOPPY);
+    assert!(session.codes(&root, "top.md").iter().any(|c| c == LEXICON));
+    assert!(
+        session
+            .codes(&root, "sub/a.md")
+            .iter()
+            .any(|c| c == LEXICON)
+    );
+    let nested = uri_of(&root, "sub/slopvac.toml");
+    fs::write(
+        root.join("sub/slopvac.toml"),
+        "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
+    )
+    .expect("break");
+    changed(&mut session, &nested);
+    let shown = diagnostics_on(&session, &nested);
+    assert_eq!(shown[0]["code"], "config-unknown-category", "{shown}");
+    // The document outside the nested folder is not left looking checked.
+    assert_eq!(session.codes(&root, "top.md"), ["lsp-lint-incomplete"]);
+    fs::write(root.join("sub/slopvac.toml"), "schema_version = 3\n").expect("fix");
+    changed(&mut session, &nested);
+    assert_eq!(diagnostics_on(&session, &nested), json!([]));
+    assert!(session.codes(&root, "top.md").iter().any(|c| c == LEXICON));
+    session.finish();
+}

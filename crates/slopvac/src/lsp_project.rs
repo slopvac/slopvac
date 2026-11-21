@@ -89,6 +89,13 @@ impl<K: Eq + Hash, V> Bounded<K, V> {
         self.map.get(key)
     }
 
+    fn keys(&self) -> Vec<K>
+    where
+        K: Clone,
+    {
+        self.map.keys().cloned().collect()
+    }
+
     fn insert(&mut self, key: K, value: V) {
         if self.map.len() >= self.cap && !self.map.contains_key(&key) {
             self.map.clear();
@@ -269,7 +276,13 @@ impl Project {
     /// Replace everything with a fresh read of the project config.
     fn load(&self) -> Result<Vec<Notice>, Box<LoadFailure>> {
         let mut dependencies = BTreeSet::new();
-        let result = self.read(&mut dependencies);
+        // The directories whose config documents were linted under. A reload checks the config
+        // of each, not only the project's, so a break in one of them fails the reload.
+        let active = match &self.loaded().state {
+            State::Ready(ready) => ready.configs.keys(),
+            State::Failed(_) => Vec::new(),
+        };
+        let result = self.read(&mut dependencies, &active);
         let mut loaded = self.loaded();
         let epoch = loaded.epoch + 1;
         match result {
@@ -295,6 +308,7 @@ impl Project {
     fn read(
         &self,
         dependencies: &mut BTreeSet<PathBuf>,
+        active: &[PathBuf],
     ) -> Result<(Ready, Vec<Notice>), Box<LoadFailure>> {
         let fallback = |error: CliError| {
             Box::new(LoadFailure {
@@ -324,6 +338,31 @@ impl Project {
             pending: Vec::new(),
         };
         ready.configs.insert(self.root.clone(), config);
+        let mut notices = notices;
+        let presets = StylePresets(BuiltinSource);
+        let discovery = Discovery::new(&presets);
+        for dir in active.iter().filter(|dir| **dir != self.root) {
+            let found = match discovery.nearest(dir) {
+                Ok(found) => found,
+                // The folder is gone, and so is whatever was open in it.
+                Err(ConfigError::Io { file: None, .. }) => continue,
+                Err(error) => {
+                    watch_all(dependencies, error.dependencies());
+                    return Err(Box::new(self.failure_of(&error)));
+                }
+            };
+            if let Some(config) = &found {
+                watch_all(dependencies, config.dependencies());
+                let fresh = lint_settings::validate_located(config, &ready.catalog)
+                    .map_err(|located| Box::new(self.located_failure(config, located)))?;
+                for notice in fresh {
+                    if ready.notified.insert(notice_key(&notice)) {
+                        notices.push(notice);
+                    }
+                }
+            }
+            ready.configs.insert(dir.clone(), found);
+        }
         Ok((ready, notices))
     }
 
