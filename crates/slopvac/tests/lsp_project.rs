@@ -540,3 +540,61 @@ fn a_nested_config_that_breaks_fails_the_reload_and_a_fix_restores_every_documen
     assert!(session.codes(&root, "top.md").iter().any(|c| c == LEXICON));
     session.finish();
 }
+
+/// The diagnostic codes of the next publication for each of `files`, in whatever order they come.
+fn after_reload(
+    session: &Session,
+    root: &Path,
+    files: &[&str],
+) -> std::collections::HashMap<String, Vec<String>> {
+    let uris: Vec<String> = files.iter().map(|f| uri_of(root, f)).collect();
+    let mut seen = std::collections::HashMap::new();
+    while seen.len() < files.len() {
+        let frame = session.wait_for(|m| {
+            m["method"] == "textDocument/publishDiagnostics"
+                && uris.iter().any(|u| m["params"]["uri"] == *u)
+        });
+        let uri = frame["params"]["uri"].as_str().expect("uri");
+        let file = files[uris.iter().position(|u| u == uri).expect("known")];
+        let codes = frame["params"]["diagnostics"]
+            .as_array()
+            .expect("diagnostics")
+            .iter()
+            .map(|d| d["code"].as_str().expect("code").to_owned())
+            .collect();
+        seen.insert(file.to_owned(), codes);
+    }
+    seen
+}
+
+#[test]
+fn a_second_reload_of_a_still_broken_nested_config_keeps_the_error_and_every_document_incomplete() {
+    let dir = project("schema_version = 3\n", &[]);
+    let root = dir.path().canonicalize().expect("canonical");
+    fs::create_dir_all(root.join("sub")).expect("mkdir");
+    fs::write(root.join("sub/slopvac.toml"), "schema_version = 3\n").expect("nested");
+    let mut session = Session::start(&root);
+    session.open(&root, "top.md", SLOPPY);
+    session.open(&root, "sub/a.md", SLOPPY);
+    session.codes(&root, "top.md");
+    session.codes(&root, "sub/a.md");
+    let nested = uri_of(&root, "sub/slopvac.toml");
+    fs::write(
+        root.join("sub/slopvac.toml"),
+        "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
+    )
+    .expect("break");
+    changed(&mut session, &nested);
+    let files = ["sub/slopvac.toml", "top.md", "sub/a.md"];
+    let first = after_reload(&session, &root, &files);
+    assert_eq!(first["sub/slopvac.toml"], ["config-unknown-category"]);
+    assert_eq!(first["top.md"], ["lsp-lint-incomplete"]);
+    assert_eq!(first["sub/a.md"], ["lsp-lint-incomplete"]);
+    // The file is still broken: a second notification must not forget that.
+    changed(&mut session, &nested);
+    let again = after_reload(&session, &root, &files);
+    assert_eq!(again["sub/slopvac.toml"], ["config-unknown-category"]);
+    assert_eq!(again["top.md"], ["lsp-lint-incomplete"]);
+    assert_eq!(again["sub/a.md"], ["lsp-lint-incomplete"]);
+    session.finish();
+}

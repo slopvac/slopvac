@@ -89,13 +89,6 @@ impl<K: Eq + Hash, V> Bounded<K, V> {
         self.map.get(key)
     }
 
-    fn keys(&self) -> Vec<K>
-    where
-        K: Clone,
-    {
-        self.map.keys().cloned().collect()
-    }
-
     fn insert(&mut self, key: K, value: V) {
         if self.map.len() >= self.cap && !self.map.contains_key(&key) {
             self.map.clear();
@@ -154,6 +147,10 @@ type Pause = Arc<dyn Fn(Stage) + Send + Sync>;
 struct Project {
     root: PathBuf,
     loaded: Mutex<Loaded>,
+    /// The folders documents were linted under. A reload checks the config of each. Unlike the
+    /// caches in [`Loaded`] it survives a reload that fails and the eviction of a full cache,
+    /// so a config that is still broken stays broken.
+    active: Mutex<BTreeSet<PathBuf>>,
     #[cfg(test)]
     pause: Mutex<Option<Pause>>,
 }
@@ -191,6 +188,7 @@ pub(crate) fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
             // Replaced by the load below. A project whose first load fails is never served.
             state: State::Failed(String::new()),
         }),
+        active: Mutex::new(BTreeSet::new()),
         #[cfg(test)]
         pause: Mutex::new(None),
     });
@@ -278,9 +276,11 @@ impl Project {
         let mut dependencies = BTreeSet::new();
         // The directories whose config documents were linted under. A reload checks the config
         // of each, not only the project's, so a break in one of them fails the reload.
-        let active = match &self.loaded().state {
-            State::Ready(ready) => ready.configs.keys(),
-            State::Failed(_) => Vec::new(),
+        let active: Vec<PathBuf> = {
+            let mut active = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+            // A folder that is gone has nothing open in it any more.
+            active.retain(|dir| dir.is_dir());
+            active.iter().cloned().collect()
         };
         let result = self.read(&mut dependencies, &active);
         let mut loaded = self.loaded();
@@ -412,6 +412,10 @@ impl Project {
     /// The config that applies to the files in `dir`: the nearest one, else none, so a buffer
     /// with no config on its path gets the core defaults, as a file does in a lint run.
     fn config_in(&self, dir: &Path, epoch: u64) -> Result<Option<Arc<LoadedConfig>>, CliError> {
+        self.active
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(dir.to_path_buf());
         if let State::Ready(ready) = &self.loaded().state
             && let Some(found) = ready.configs.get(dir)
         {
