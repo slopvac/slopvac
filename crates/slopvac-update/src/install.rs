@@ -4,7 +4,13 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::bounded::read_text;
+use slopvac_fs::{ReadOptions, read_capped_regular_to_string};
+
+/// The text of a regular file of at most `cap` bytes, else `None`: a missing, special, oversized
+/// or non-UTF-8 file all read as absent.
+fn read_text(path: &Path, cap: u64) -> Option<String> {
+    read_capped_regular_to_string(path, cap, ReadOptions::new()).ok()
+}
 
 /// Largest install receipt read; a real one is a few hundred bytes.
 const MAX_RECEIPT_BYTES: u64 = 64 * 1024;
@@ -553,6 +559,136 @@ mod tests {
             detect(&root.join("bin/slopvac"), &var),
             InstallMethod::Unknown
         );
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Special {
+        Fifo,
+        Directory,
+        Oversized,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Target {
+        Record,
+        Installer,
+    }
+
+    /// Run `f` on a thread and wait for its result.
+    ///
+    /// - A panic in `f` is resumed here, and the FIFO is not touched.
+    /// - A hang fails the test. The FIFO is opened read-write first, so a worker stuck opening it
+    ///   can end: an `O_RDWR` open of a FIFO never blocks on Linux or macOS, which a write-only
+    ///   open does when no reader exists. Then the worker is given a bounded time to finish.
+    #[cfg(unix)]
+    fn run_bounded<T: Send + 'static>(
+        fifo: &Path,
+        hung: &str,
+        f: impl FnOnce() -> T + Send + 'static,
+    ) -> T {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(value) => {
+                handle.join().expect("the worker finished after sending");
+                value
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => match handle.join() {
+                Err(panic) => std::panic::resume_unwind(panic),
+                Ok(()) => panic!("the worker ended without a result"),
+            },
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let _ = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(fifo);
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                while !handle.is_finished() && std::time::Instant::now() < deadline {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                panic!("{hung}");
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn detect_within_timeout(exe: PathBuf, fifo: &Path) -> InstallMethod {
+        run_bounded(fifo, "detection hung on a metadata file", move || {
+            detect(&exe, &|_: &str| None)
+        })
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[should_panic(expected = "worker boom")]
+    fn a_worker_that_panics_before_opening_the_fifo_is_reported_without_waiting() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fifo = tmp.path().join("fifo");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        run_bounded(&fifo, "hung", || -> () { panic!("worker boom") });
+    }
+
+    // One metadata file is special, the other is valid. A special `RECORD` hides the binary, so
+    // the install is unknown. A special `INSTALLER` reads as absent, so the wheel is a pip
+    // install: the oversized `INSTALLER` says `uv` once trimmed, which an unbounded read would
+    // take at its word.
+    #[cfg(unix)]
+    #[rstest::rstest]
+    #[case::record_fifo(Target::Record, Special::Fifo, InstallMethod::Unknown)]
+    #[case::record_directory(Target::Record, Special::Directory, InstallMethod::Unknown)]
+    #[case::record_oversized(Target::Record, Special::Oversized, InstallMethod::Unknown)]
+    #[case::installer_fifo(Target::Installer, Special::Fifo, InstallMethod::Wheel(WheelTool::Pip))]
+    #[case::installer_directory(
+        Target::Installer,
+        Special::Directory,
+        InstallMethod::Wheel(WheelTool::Pip)
+    )]
+    #[case::installer_oversized(
+        Target::Installer,
+        Special::Oversized,
+        InstallMethod::Wheel(WheelTool::Pip)
+    )]
+    fn a_special_metadata_file_is_refused_without_hanging(
+        #[case] target: Target,
+        #[case] special: Special,
+        #[case] want: InstallMethod,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join(".local");
+        let record = "../../../bin/slopvac,sha256=y,99\n";
+        let (exe, bad) = match target {
+            Target::Record => (pip_layout(&root, None, Some("pip\n")), "RECORD"),
+            Target::Installer => (pip_layout(&root, Some(record), None), "INSTALLER"),
+        };
+        let path = root
+            .join("lib/python3.13/site-packages/slopvac-3.0.0.dist-info")
+            .join(bad);
+        match special {
+            Special::Fifo => assert!(
+                std::process::Command::new("mkfifo")
+                    .arg(&path)
+                    .status()
+                    .unwrap()
+                    .success()
+            ),
+            Special::Directory => std::fs::create_dir(&path).unwrap(),
+            Special::Oversized => {
+                let body = match target {
+                    Target::Record => format!("{record}{}", "x".repeat(2 << 20)),
+                    Target::Installer => format!("uv{}", " ".repeat(8 * 1024)),
+                };
+                std::fs::write(&path, body).unwrap();
+            }
+        }
+        assert_eq!(detect_within_timeout(exe, &path), want);
     }
 
     #[test]

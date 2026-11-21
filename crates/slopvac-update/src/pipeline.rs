@@ -32,7 +32,9 @@ const MAX_SIGNATURE_BYTES: u64 = 16 * 1024;
 const MAX_BINARY_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Why an update stopped. The installed binary is unchanged for every variant except
-/// [`UpdateError::Replace`], which fails before the final rename.
+/// [`UpdateError::Replace`], which can fail at any step of the write: before the rename, at
+/// the rename, or when the directory is synced after it. After the rename the new binary may
+/// already be in place.
 #[derive(Debug, Error)]
 pub enum UpdateError {
     /// This platform has no published archive that `self update` can read.
@@ -71,16 +73,16 @@ pub enum UpdateError {
     /// installed version cannot be established.
     #[error(transparent)]
     Refused(#[from] UpdateMessage),
-    /// Writing the new binary failed.
+    /// Writing the new binary failed. The source is the underlying I/O or filesystem error.
     #[error("{}", replace_text(.0))]
-    Replace(String),
+    Replace(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<LockError> for UpdateError {
     fn from(e: LockError) -> Self {
         match e {
             LockError::Refused(message) => Self::Refused(message),
-            LockError::Io { .. } => Self::Replace(e.to_string()),
+            LockError::Io { .. } => Self::Replace(Box::new(e)),
         }
     }
 }
@@ -122,9 +124,9 @@ fn archive_text(detail: &str) -> String {
     .to_string()
 }
 
-fn replace_text(detail: &str) -> String {
+fn replace_text(cause: &dyn std::fmt::Display) -> String {
     UpdateText::ReplaceFailed {
-        detail: detail.to_owned(),
+        detail: cause.to_string(),
     }
     .to_string()
 }
@@ -332,22 +334,23 @@ fn extract_binary(archive: &[u8]) -> Result<Vec<u8>, UpdateError> {
     Err(UpdateError::NoBinary)
 }
 
-/// Write `bytes` beside `exe` and rename them over it, keeping the old file's permissions.
+/// Write `bytes` over `exe` durably: synced, renamed within the install directory, and the
+/// directory synced. An existing file keeps its permissions; a missing one starts executable.
 fn replace(exe: &Path, bytes: &[u8]) -> Result<(), UpdateError> {
-    let fail = |e: &dyn std::fmt::Display| UpdateError::Replace(e.to_string());
+    fn fail<E: std::error::Error + Send + Sync + 'static>(e: E) -> UpdateError {
+        UpdateError::Replace(Box::new(e))
+    }
     let dir = exe
         .parent()
-        .ok_or_else(|| fail(&UpdatePhrase::NoParentDirectory.as_static()))?;
-    let mut tmp = tempfile::Builder::new()
-        .prefix(".slopvac-update-")
-        .tempfile_in(dir)
-        .map_err(|e| fail(&e))?;
-    std::io::Write::write_all(&mut tmp, bytes).map_err(|e| fail(&e))?;
-    if let Ok(meta) = std::fs::metadata(exe) {
-        std::fs::set_permissions(tmp.path(), meta.permissions()).map_err(|e| fail(&e))?;
-    }
-    tmp.persist(exe).map_err(|e| fail(&e.error))?;
-    Ok(())
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = exe
+        .file_name()
+        .ok_or_else(|| UpdateError::Replace(UpdatePhrase::NoParentDirectory.as_static().into()))?;
+    let root =
+        cap_std::fs::Dir::open_ambient_dir(dir, cap_std::ambient_authority()).map_err(fail)?;
+    let opts = slopvac_fs::WriteOptions::new().new_file_mode(0o755);
+    slopvac_fs::write_atomic(&root, Path::new(name), bytes, opts).map_err(fail)
 }
 
 #[cfg(test)]
@@ -466,6 +469,82 @@ mod tests {
         )
         .unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"new");
+    }
+
+    /// The error and every `source()` below it, as their types' messages.
+    fn chain(e: &dyn std::error::Error) -> Vec<String> {
+        let mut out = vec![e.to_string()];
+        let mut next = e.source();
+        while let Some(s) = next {
+            out.push(s.to_string());
+            next = s.source();
+        }
+        out
+    }
+
+    // The message is the catalog's and stays as it was; the cause hangs below it.
+    #[test]
+    fn a_failed_replacement_keeps_its_cause_in_the_source_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("missing/slopvac");
+        let err = replace(&exe, b"new").unwrap_err();
+        let io = std::fs::File::open(&exe).unwrap_err().to_string();
+        let msgs = chain(&err);
+        assert_eq!(
+            msgs[0],
+            format!("cannot replace the installed binary: {io}")
+        );
+        assert_eq!(msgs[1], io);
+    }
+
+    #[test]
+    fn a_replacement_refused_by_the_filesystem_layer_keeps_that_error_as_its_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("slopvac");
+        std::fs::create_dir(&exe).unwrap();
+        let err = replace(&exe, b"new").unwrap_err();
+        let msgs = chain(&err);
+        assert!(
+            msgs.len() >= 2,
+            "the filesystem error is below Replace: {msgs:?}"
+        );
+        assert!(msgs[1].contains("not a regular file"), "{msgs:?}");
+        assert_eq!(
+            msgs[0],
+            format!("cannot replace the installed binary: {}", msgs[1])
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replacement_keeps_a_nonstandard_mode_in_a_nested_install_dir() {
+        use std::os::unix::fs::PermissionsExt;
+        let (dir, _exe) = installed();
+        let nested = dir.path().join("opt/slopvac/bin");
+        std::fs::create_dir_all(&nested).unwrap();
+        let exe = nested.join("slopvac");
+        std::fs::write(&exe, b"old").unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o711)).unwrap();
+        replace(&exe, b"new").unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), b"new");
+        assert_eq!(
+            std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777,
+            0o711
+        );
+        assert_eq!(leftovers(&nested), ["slopvac"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_replacement_with_no_existing_file_is_executable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("slopvac");
+        replace(&exe, b"new").unwrap();
+        assert_eq!(
+            std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
     }
 
     #[cfg(unix)]

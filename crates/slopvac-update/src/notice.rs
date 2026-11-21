@@ -146,38 +146,33 @@ impl Cache {
     /// The cached entry, or `None` when missing or unreadable.
     #[must_use]
     pub fn read(&self) -> Option<Entry> {
-        serde_json::from_slice(&crate::bounded::read_regular(&self.path, MAX_CACHE_BYTES)?).ok()
+        let bytes = slopvac_fs::read_capped_regular(
+            &self.path,
+            MAX_CACHE_BYTES,
+            slopvac_fs::ReadOptions::new(),
+        )
+        .ok()?;
+        serde_json::from_slice(&bytes).ok()
     }
 
-    /// Store an entry. The caller may ignore the error.
+    /// Store an entry, durably: the bytes are synced before the rename and the directory after
+    /// it. The caller may ignore the error.
     pub fn write(&self, entry: &Entry) -> std::io::Result<()> {
-        self.write_with(entry, |tmp| {
-            tmp.persist(&self.path)
-                .map(|_| ())
-                .map_err(|e| (e.error, e.file))
-        })
-    }
-
-    /// [`Cache::write`] with the rename step supplied, so a test can make it fail.
-    ///
-    /// This is the only place that retries the rename: `write` calls it, so a test that
-    /// injects a failing step here fails when the retry is removed.
-    fn write_with<F>(&self, entry: &Entry, persist: F) -> std::io::Result<()>
-    where
-        F: FnMut(tempfile::NamedTempFile) -> Result<(), (std::io::Error, tempfile::NamedTempFile)>,
-    {
         let dir = self.path.parent().unwrap_or_else(|| Path::new("."));
+        let name = self
+            .path
+            .file_name()
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
         std::fs::create_dir_all(dir)?;
-        // A unique temp file per writer, renamed over the target: readers see the old or the new
-        // entry, never a mix, and writers never share a file.
-        let mut tmp = tempfile::Builder::new()
-            .prefix(".update-check-")
-            .tempfile_in(dir)?;
-        std::io::Write::write_all(
-            &mut tmp,
-            &serde_json::to_vec(entry).map_err(std::io::Error::other)?,
-        )?;
-        persist_retrying(tmp, persist, PERSIST_RETRIES, PERSIST_PAUSE)
+        let root = cap_std::fs::Dir::open_ambient_dir(dir, cap_std::ambient_authority())?;
+        let bytes = serde_json::to_vec(entry).map_err(std::io::Error::other)?;
+        slopvac_fs::write_atomic(
+            &root,
+            Path::new(name),
+            &bytes,
+            slopvac_fs::WriteOptions::new(),
+        )
+        .map_err(std::io::Error::other)
     }
 
     /// Path of the cache file.
@@ -189,41 +184,6 @@ impl Cache {
 
 /// Largest cache file read. A real entry is a few dozen bytes.
 const MAX_CACHE_BYTES: u64 = 64 * 1024;
-
-/// How often a rename that Windows refuses for a moment is retried.
-const PERSIST_RETRIES: u32 = 20;
-const PERSIST_PAUSE: Duration = Duration::from_millis(10);
-
-/// Run `persist` until it succeeds.
-///
-/// On Windows a rename over a file that another writer is replacing can fail with
-/// `PermissionDenied` for a moment, so that error is retried up to `retries` times, with `pause`
-/// between tries. Any other error, or the last `PermissionDenied`, is returned at once. The temp file
-/// is deleted whenever this returns an error.
-fn persist_retrying<F>(
-    mut tmp: tempfile::NamedTempFile,
-    mut persist: F,
-    retries: u32,
-    pause: Duration,
-) -> std::io::Result<()>
-where
-    F: FnMut(tempfile::NamedTempFile) -> Result<(), (std::io::Error, tempfile::NamedTempFile)>,
-{
-    let mut attempt = 0;
-    loop {
-        match persist(tmp) {
-            Ok(()) => return Ok(()),
-            Err((e, file))
-                if e.kind() == std::io::ErrorKind::PermissionDenied && attempt < retries =>
-            {
-                attempt += 1;
-                std::thread::sleep(pause);
-                tmp = file;
-            }
-            Err((e, _file)) => return Err(e),
-        }
-    }
-}
 
 fn set(var: VarFn<'_>, name: &str) -> bool {
     var(name).is_some_and(|v| !v.is_empty())
@@ -606,80 +566,6 @@ mod tests {
         assert_eq!(v["level"], "info");
     }
 
-    fn temp_in(dir: &Path) -> tempfile::NamedTempFile {
-        tempfile::Builder::new()
-            .prefix(".update-check-")
-            .tempfile_in(dir)
-            .unwrap()
-    }
-
-    fn denied() -> std::io::Error {
-        std::io::Error::from(std::io::ErrorKind::PermissionDenied)
-    }
-
-    fn dir_is_empty(dir: &Path) -> bool {
-        std::fs::read_dir(dir).unwrap().next().is_none()
-    }
-
-    #[test]
-    fn a_transient_permission_denied_is_retried_until_it_succeeds() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut calls = 0;
-        let result = persist_retrying(
-            temp_in(dir.path()),
-            |tmp| {
-                calls += 1;
-                if calls < 4 {
-                    Err((denied(), tmp))
-                } else {
-                    Ok(())
-                }
-            },
-            20,
-            Duration::ZERO,
-        );
-        assert!(result.is_ok());
-        assert_eq!(calls, 4);
-    }
-
-    #[test]
-    fn persistent_permission_denied_returns_the_last_error_after_the_retry_budget() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut calls = 0;
-        let err = persist_retrying(
-            temp_in(dir.path()),
-            |tmp| {
-                calls += 1;
-                Err((denied(), tmp))
-            },
-            3,
-            Duration::ZERO,
-        )
-        .unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
-        assert_eq!(calls, 4, "one try plus three retries");
-        assert!(dir_is_empty(dir.path()), "the temp file is cleaned up");
-    }
-
-    #[test]
-    fn other_errors_are_not_retried() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut calls = 0;
-        let err = persist_retrying(
-            temp_in(dir.path()),
-            |tmp| {
-                calls += 1;
-                Err((std::io::Error::from(std::io::ErrorKind::NotFound), tmp))
-            },
-            20,
-            Duration::ZERO,
-        )
-        .unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
-        assert_eq!(calls, 1);
-        assert!(dir_is_empty(dir.path()), "the temp file is cleaned up");
-    }
-
     #[cfg(unix)]
     #[test]
     fn a_fifo_cache_reads_as_missing_without_blocking() {
@@ -712,56 +598,6 @@ mod tests {
         );
         std::fs::write(cache.path(), big).unwrap();
         assert!(cache.read().is_none());
-    }
-
-    /// Fail the rename `failures` times with `PermissionDenied`, then do the real rename.
-    fn flaky_persist(
-        target: &Path,
-        failures: u32,
-        calls: &std::cell::Cell<u32>,
-    ) -> impl FnMut(tempfile::NamedTempFile) -> Result<(), (std::io::Error, tempfile::NamedTempFile)>
-    {
-        let target = target.to_path_buf();
-        move |tmp| {
-            calls.set(calls.get() + 1);
-            if calls.get() <= failures {
-                Err((denied(), tmp))
-            } else {
-                tmp.persist(&target)
-                    .map(|_| ())
-                    .map_err(|e| (e.error, e.file))
-            }
-        }
-    }
-
-    #[test]
-    fn cache_write_retries_a_transient_permission_denied_and_stores_the_entry() {
-        let (_dir, cache) = cache();
-        let calls = std::cell::Cell::new(0);
-        cache
-            .write_with(&entry(7, "9.9.9"), flaky_persist(cache.path(), 3, &calls))
-            .expect("the write succeeds after the retries");
-        assert_eq!(calls.get(), 4, "three refusals and one success");
-        assert_eq!(cache.read().expect("stored").latest, "9.9.9");
-    }
-
-    #[test]
-    fn cache_write_gives_up_after_its_retry_budget_and_leaves_no_temp_file() {
-        let (dir, cache) = cache();
-        let calls = std::cell::Cell::new(0);
-        let err = cache
-            .write_with(
-                &entry(7, "9.9.9"),
-                flaky_persist(cache.path(), u32::MAX, &calls),
-            )
-            .unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
-        assert_eq!(calls.get(), PERSIST_RETRIES + 1, "one try plus the retries");
-        assert!(cache.read().is_none());
-        assert!(
-            dir_is_empty(&dir.path().join("c")),
-            "the temp file is cleaned up"
-        );
     }
 
     #[test]
