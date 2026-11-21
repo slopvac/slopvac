@@ -33,6 +33,7 @@ mod run;
 pub mod severity;
 pub mod stdin;
 pub mod summary;
+mod update_notice;
 
 pub use env::{Env, SystemEnv};
 pub use run::{
