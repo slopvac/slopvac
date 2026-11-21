@@ -363,7 +363,12 @@ mod tests {
     }
 
     fn run(ctx: &Context<'_>, cache: &Cache, f: &Arc<Canned>) -> Option<Notice> {
-        notice(ctx, cache, Some(Arc::clone(f)), Duration::from_secs(5))
+        notice(
+            ctx,
+            cache,
+            Some(Arc::<Canned>::clone(f)),
+            Duration::from_secs(5),
+        )
     }
 
     #[test]
