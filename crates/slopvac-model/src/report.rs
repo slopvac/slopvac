@@ -146,7 +146,7 @@ pub struct RuleProvenance {
 /// A config layer, lowest priority first; `env` marks the sticky environment switches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-#[schemars(inline)]
+#[schemars(inline, extend("x-slopvac-extensible" = true))]
 pub enum ConfigLayer {
     /// Built-in defaults.
     Core,

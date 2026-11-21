@@ -34,7 +34,8 @@
             "directive",
             "cli",
             "env"
-          ]
+          ],
+          "x-slopvac-extensible": true
         },
         "line": {
           "description": "One-based line.",
@@ -136,6 +137,11 @@
     "SchemaVersion": {
       "const": 3,
       "description": "Root artifact schema version."
+    },
+    "Semver": {
+      "description": "Semantic version 2.0.0 without build metadata. Numeric prerelease identifiers have no leading zeros.",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\\s\\S])",
+      "type": "string"
     },
     "Severity": {
       "description": "Finding severity. Excludes off: 2.x config accepts off to disable a rule, so off belongs to config, not to findings.",
