@@ -129,8 +129,22 @@ impl TagRegistry {
     /// [`Error::TagLimit`] once the taggers so far hold more than `max_tags` tags, so a
     /// document cannot make the caller build an index of unbounded size.
     pub fn collect_tags(&self, doc: &dyn DocumentView, max_tags: usize) -> Result<Vec<Tag>, Error> {
+        self.collect_tags_with(doc, max_tags, &[])
+    }
+
+    /// Like [`Self::collect_tags`], with `extra` taggers run after the registered ones. Their
+    /// emissions count against `max_tags` the same way, before duplicates go.
+    pub fn collect_tags_with(
+        &self,
+        doc: &dyn DocumentView,
+        max_tags: usize,
+        extra: &[&dyn Tagger],
+    ) -> Result<Vec<Tag>, Error> {
         let mut sink = TagSink::new(max_tags);
         for t in &self.taggers {
+            t.tag_into(doc, &mut sink)?;
+        }
+        for t in extra {
             t.tag_into(doc, &mut sink)?;
         }
         let mut tags = sink.into_tags();

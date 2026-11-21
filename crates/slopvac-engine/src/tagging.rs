@@ -10,8 +10,9 @@ use std::ops::Range;
 
 use frontmatter_spans::{FrontMatter, Value};
 use slopvac_context::{
-    BlockKind as ViewKind, BlockView, DocumentView, Error as ContextError, GenreRegistry,
-    GenreResult, ResolveOptions, Scalar, SentenceView, Tag, TagIndex, TagRegistry, TagSink,
+    BlockKind as ViewKind, BlockView, DeclaredContextTagger, DocumentView, Error as ContextError,
+    GenreRegistry, GenreResult, ResolveOptions, Scalar, SentenceView, Tag, TagIndex, TagRegistry,
+    TagSink, Tagger,
 };
 use slopvac_parse::{BlockKind, ByteMapper, Container, Document};
 
@@ -417,17 +418,21 @@ pub(crate) fn tag_budget(source_len: usize) -> usize {
     (source_len / BYTES_PER_TAG).saturating_add(TAG_HEADROOM)
 }
 
-/// Run every tagger over `doc`.
+/// Run every tagger over `doc`, then add the contexts its genre declares.
 pub(crate) fn tag(
     registry: &TagRegistry,
     path: &str,
     source: &str,
     doc: &Document,
     front_matter: Option<&FrontMatter<'_>>,
+    declared: Option<&DeclaredContextTagger>,
 ) -> Result<TagIndex, TagError> {
     let view = View::new(path, source, doc, front_matter);
     let max_tags = tag_budget(source.len());
-    let tags = registry.collect_tags(&view, max_tags)?;
+    // The declared contexts count against the ceiling like any other emission, before
+    // duplicates go, so the ceiling does not depend on how the tags overlap.
+    let extra: Vec<&dyn Tagger> = declared.iter().map(|d| *d as &dyn Tagger).collect();
+    let tags = registry.collect_tags_with(&view, max_tags, &extra)?;
     if view.unmapped.get() {
         return Err(TagError::Unmapped);
     }
@@ -511,7 +516,7 @@ mod tests {
         let doc = row_of_fallback_cells(count);
         let registry = slopvac_context::builtin_registry().unwrap();
         let _ = entry::counted::take_built();
-        tag(&registry, "t.rst", "", &doc, None).unwrap();
+        tag(&registry, "t.rst", "", &doc, None, None).unwrap();
         // The built-in taggers each ask for the blocks. A rebuild per tagger would multiply
         // the count by the number of taggers.
         assert_eq!(entry::counted::take_built(), count);
