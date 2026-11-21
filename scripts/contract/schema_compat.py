@@ -175,6 +175,9 @@ class Finding:
     kind: str
     old: str
     new: str
+    # True for a finding that applies to input schemas too. It does not take part in
+    # equality, so an allow entry still matches on file, pointer and kind.
+    everywhere: bool = field(default=False, compare=False)
 
     def render(self) -> str:
         return f"{self.file}:{self.pointer}: {self.kind}: {self.old} -> {self.new}"
@@ -428,7 +431,11 @@ class Eff:
     required: set[str] = field(default_factory=set)
     unique: bool = False
     nothing: bool = False  # the schema is ``false``: it accepts no value
-    contains: bool = False  # a ``contains`` keyword needs at least one match
+    contains: frozenset[str] = (
+        frozenset()
+    )  # the contains/minContains/maxContains groups
+    unevaluated: bool = False  # an ``unevaluatedItems`` or ``unevaluatedProperties``
+    applicators: dict[str, frozenset[str]] = field(default_factory=dict)
     cond: frozenset[str] = frozenset()  # the ``if`` schemas
     branches: bool = False  # a ``then`` or ``else`` exists
     other: dict[str, frozenset[str]] = field(default_factory=dict)
@@ -468,6 +475,35 @@ _EFFECTIVE_HANDLED = frozenset(
 )
 
 
+_UNEVALUATED = ("unevaluatedItems", "unevaluatedProperties")
+# Applicators whose results feed ``unevaluated*``. In a schema object that has an
+# ``unevaluated*`` keyword, any change to one of them (presence included) is reported.
+_EVALUATION_APPLICATORS = (
+    "properties",
+    "patternProperties",
+    "additionalProperties",
+    "items",
+    "prefixItems",
+    "contains",
+    "allOf",
+    "anyOf",
+    "oneOf",
+    "not",
+    "if",
+    "then",
+    "else",
+    "dependentSchemas",
+    "$ref",
+)
+_CONTAINS_GROUP = ("contains", "minContains", "maxContains")
+
+
+def _contains_group(node: dict) -> frozenset[str]:
+    """``contains`` with its bounds, as one value: the bounds belong to this object."""
+    group = {k: node[k] for k in _CONTAINS_GROUP if k in node}
+    return frozenset({_canon(group)}) if group else frozenset()
+
+
 def _own_eff(node: dict | bool) -> Eff:
     if node is False:
         return Eff(nothing=True)
@@ -483,11 +519,25 @@ def _own_eff(node: dict | bool) -> Eff:
     return Eff(
         types=_type_set(node),
         values=values,
-        mins={k: node[k] for k in _MIN_KEYWORDS if _is_number(node.get(k))},
-        maxs={k: node[k] for k in _MAX_KEYWORDS if _is_number(node.get(k))},
+        mins={
+            k: node[k]
+            for k in _MIN_KEYWORDS
+            if k != "minContains" and _is_number(node.get(k))
+        },
+        maxs={
+            k: node[k]
+            for k in _MAX_KEYWORDS
+            if k != "maxContains" and _is_number(node.get(k))
+        },
         required=set(required) if isinstance(required, list) else set(),
         unique=node.get("uniqueItems") is True,
-        contains="contains" in node,
+        contains=_contains_group(node),
+        unevaluated=any(k in node for k in _UNEVALUATED),
+        applicators={
+            k: frozenset({_canon(node[k])})
+            for k in _EVALUATION_APPLICATORS
+            if k in node
+        },
         cond=frozenset({_canon(node["if"])}) if "if" in node else frozenset(),
         branches="then" in node or "else" in node,
         other={
@@ -520,7 +570,12 @@ def _meet(a: Eff, b: Eff) -> Eff:
         required=a.required | b.required,
         unique=a.unique or b.unique,
         nothing=a.nothing or b.nothing,
-        contains=a.contains or b.contains,
+        contains=a.contains | b.contains,
+        unevaluated=a.unevaluated or b.unevaluated,
+        applicators={
+            k: a.applicators.get(k, frozenset()) | b.applicators.get(k, frozenset())
+            for k in a.applicators.keys() | b.applicators.keys()
+        },
         cond=a.cond | b.cond,
         branches=a.branches or b.branches,
         other={
@@ -554,8 +609,6 @@ def _loosened(
                 _show(None if new.values is None else sorted(new.values)),
             )
     for key, bound in sorted(old.mins.items()):
-        if key in ("minContains", "maxContains") and not new.contains:
-            continue  # no contains left: the bound constrains nothing
         if key not in new.mins or new.mins[key] < bound:
             yield Finding(
                 file,
@@ -565,8 +618,6 @@ def _loosened(
                 _show(new.mins.get(key)),
             )
     for key, bound in sorted(old.maxs.items()):
-        if key == "maxContains" and not new.contains:
-            continue
         if key not in new.maxs or new.maxs[key] > bound:
             yield Finding(
                 file,
@@ -597,10 +648,32 @@ def _loosened(
             _show(sorted(old.cond)),
             _show(sorted(new.cond)),
         )
-    if _needs_match(old) and not _needs_match(new):
+    if old.contains != new.contains:
+        # Any change to contains, minContains or maxContains is reported conservatively,
+        # in every direction: the group can both loosen and narrow what is accepted.
         yield Finding(
-            file, f"{ptr}/contains", "constraint-loosened", "(required)", "(absent)"
+            file,
+            f"{ptr}/contains",
+            "constraint-changed",
+            _show(sorted(old.contains)),
+            _show(sorted(new.contains)),
+            everywhere=True,
         )
+    if old.unevaluated or new.unevaluated:
+        # ``unevaluated*`` reacts to everything the other applicators evaluate, so any
+        # change to them (presence included) is reported in every direction.
+        for key in sorted(old.applicators.keys() | new.applicators.keys()):
+            before = old.applicators.get(key, frozenset())
+            after = new.applicators.get(key, frozenset())
+            if before != after:
+                yield Finding(
+                    file,
+                    f"{ptr}/{_esc(key)}",
+                    "constraint-changed",
+                    _show(sorted(before)) if before else "(absent)",
+                    _show(sorted(after)) if after else "(absent)",
+                    everywhere=True,
+                )
     for key in sorted(old.other):
         if old.other[key] != new.other.get(key):
             yield Finding(
@@ -610,11 +683,6 @@ def _loosened(
                 _show(sorted(old.other[key])),
                 _show(sorted(new.other[key])) if key in new.other else "(absent)",
             )
-
-
-def _needs_match(eff: Eff) -> bool:
-    """``contains`` demands a match unless ``minContains`` is 0."""
-    return eff.contains and eff.mins.get("minContains", 1) > 0
 
 
 @dataclass(frozen=True)
@@ -737,7 +805,9 @@ class Comparer:
         if sides[0] is not None and sides[0] == sides[1]:
             # The same definition on both sides: the definition's own comparison reports
             # an output-only change once, under its own file's direction.
-            inner = [f for f in inner if f.kind not in OUTPUT_ONLY_KINDS]
+            inner = [
+                f for f in inner if f.kind not in OUTPUT_ONLY_KINDS and not f.everywhere
+            ]
         self._cuts.discard(sides)
         if key is not None and not self._cuts:
             self._cache[key] = inner
@@ -793,6 +863,8 @@ class Comparer:
         if old_t is not None and new_t is not None and old_t[:2] == new_t[:2]:
             rest = {k: v for k, v in n.items() if k != "$ref"}
             rest_eff = self._effective("new", doc.new, rest)
+            # The reference itself is an applicator of this object, as on the old side.
+            rest_eff.applicators["$ref"] = frozenset({_canon(n["$ref"])})
             new_eff = _meet(rest_eff, self._effective("old", old_t[0], old_t[2]))
         else:
             new_eff = self._effective("new", doc.new, n)
@@ -1174,7 +1246,11 @@ def compare_snapshots(
         # only from a retarget or an added or removed reference; a change to one shared
         # definition is reported once, at the definition.
         is_input = (directions or {}).get(name, "input") == "input"
-        found = (f for f in found if f.kind not in OUTPUT_ONLY_KINDS or not is_input)
+        found = (
+            f
+            for f in found
+            if f.kind not in OUTPUT_ONLY_KINDS or f.everywhere or not is_input
+        )
         findings.extend(found)
     return findings
 

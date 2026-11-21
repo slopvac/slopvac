@@ -680,7 +680,11 @@ def test_tightening_keyword_is_reported(tmp_path, old, new, pointer, kind):
     findings = run(
         tmp_path, schema(properties={"x": old}), schema(properties={"x": new})
     )
-    assert kinds(findings) == [(pointer, kind)]
+    # A change to the contains group is also reported, in every direction.
+    expected = [(pointer, kind)]
+    if "Contains" in pointer:
+        expected.insert(0, ("/properties/x/contains", "constraint-changed"))
+    assert kinds(findings) == expected
 
 
 LOOSENING = {
@@ -691,10 +695,6 @@ LOOSENING = {
     "dependent-required-shrunk": (
         {"dependentRequired": {"a": ["b", "c"]}},
         {"dependentRequired": {"a": ["b"]}},
-    ),
-    "max-contains-raised": (
-        {"contains": {}, "maxContains": 3},
-        {"contains": {}, "maxContains": 5},
     ),
 }
 
@@ -1683,7 +1683,12 @@ def test_dropping_a_child_schema_restriction_of_an_input_is_allowed(
     tmp_path, old, new, pointer, kind
 ):
     old_s, new_s = (_prop_schema(b) for b in (old, new))
-    assert run(tmp_path, old_s, new_s, direction="input") == []
+    found = run(tmp_path, old_s, new_s, direction="input")
+    if pointer.startswith("/contains"):
+        # The contains group is reported in every direction.
+        assert kinds(found) == [("/properties/e/contains", "constraint-changed")]
+    else:
+        assert found == []
 
 
 KEYWORD_BODIES = {
@@ -1804,30 +1809,103 @@ def test_an_if_without_branches_does_nothing_so_removing_it_is_silent(tmp_path):
     assert run(tmp_path, old_s, new_s, direction="output") == []
 
 
-@pytest.mark.parametrize("direction", ["output", "both"])
-def test_removing_contains_drops_its_at_least_one_requirement(tmp_path, direction):
-    old, new = _prop_schema({"contains": {}}), _prop_schema({})
+CONTAINS_AND_UNEVALUATED = {
+    "bounds-and-contains-removed": (
+        _prop_schema({"contains": {}, "minContains": 0, "maxContains": 0}),
+        _prop_schema({}),
+        "/properties/e/contains",
+    ),
+    "sibling-bound-does-not-cancel-a-target-contains": (
+        _prop_schema({**REF_A, "minContains": 0}, A={"contains": {}}, B={}),
+        _prop_schema({**REF_B, "minContains": 0}, A={"contains": {}}, B={}),
+        "/properties/e/contains",
+    ),
+    "contains-added": (
+        _prop_schema({}),
+        _prop_schema({"contains": {}}),
+        "/properties/e/contains",
+    ),
+    "contains-true-added": (
+        _prop_schema({}),
+        _prop_schema({"contains": True}),
+        "/properties/e/contains",
+    ),
+    "min-contains-zero-dropped": (
+        _prop_schema({"contains": {}, "minContains": 0}),
+        _prop_schema({"contains": {}}),
+        "/properties/e/contains",
+    ),
+    "max-contains-raised": (
+        _prop_schema({"contains": {}, "maxContains": 3}),
+        _prop_schema({"contains": {}, "maxContains": 5}),
+        "/properties/e/contains",
+    ),
+    "contains-removed-through-a-ref": (
+        _prop_schema(REF_A, A={"contains": {}}),
+        _prop_schema({}, A={"contains": {}}),
+        "/properties/e/contains",
+    ),
+    "items-added-beside-unevaluatedItems": (
+        _prop_schema({"unevaluatedItems": False}),
+        _prop_schema({"unevaluatedItems": False, "items": {}}),
+        "/properties/e/items",
+    ),
+    "if-removed-beside-unevaluatedItems": (
+        _prop_schema({"if": {"items": True}, "unevaluatedItems": False}),
+        _prop_schema({"unevaluatedItems": False}),
+        "/properties/e/if",
+    ),
+    "additionalProperties-removed-beside-unevaluatedProperties": (
+        _prop_schema({"additionalProperties": True, "unevaluatedProperties": False}),
+        _prop_schema({"unevaluatedProperties": False}),
+        "/properties/e/additionalProperties",
+    ),
+    "property-added-beside-unevaluatedProperties-in-a-ref-target": (
+        _prop_schema(REF_A, A={"unevaluatedProperties": False}),
+        _prop_schema(
+            {**REF_A, "properties": {"x": {}}}, A={"unevaluatedProperties": False}
+        ),
+        "/properties/e/properties",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "pointer"),
+    CONTAINS_AND_UNEVALUATED.values(),
+    ids=CONTAINS_AND_UNEVALUATED,
+)
+def test_contains_group_and_unevaluated_changes_are_reported_in_every_direction(
+    tmp_path, direction, old, new, pointer
+):
     findings = run(tmp_path, old, new, direction=direction)
-    assert ("/properties/e/contains", "constraint-loosened") in kinds(findings)
+    assert (pointer, "constraint-changed") in kinds(findings)
 
 
-@pytest.mark.parametrize("direction", ["output", "both"])
-def test_removing_contains_through_a_ref_is_reported(tmp_path, direction):
-    old = _prop_schema(REF_A, A={"contains": {}})
-    new = _prop_schema({}, A={"contains": {}})
-    findings = run(tmp_path, old, new, direction=direction)
-    assert ("/properties/e/contains", "constraint-loosened") in kinds(findings)
+def test_unchanged_contains_and_unevaluated_report_nothing(tmp_path):
+    body = {
+        "contains": {"type": "string"},
+        "minContains": 1,
+        "unevaluatedProperties": False,
+        "properties": {"a": {}},
+    }
+    for direction in ("input", "output", "both"):
+        found = run(
+            tmp_path / direction,
+            _prop_schema(body),
+            _prop_schema(body),
+            direction=direction,
+        )
+        assert found == []
 
 
-def test_removing_contains_is_allowed_in_an_input_schema(tmp_path):
-    old, new = _prop_schema({"contains": {}}), _prop_schema({})
-    assert run(tmp_path, old, new, direction="input") == []
-
-
-def test_removing_contains_that_needs_no_match_is_harmless(tmp_path):
-    old = _prop_schema({"contains": {}, "minContains": 0})
-    findings = run(tmp_path, old, _prop_schema({}), direction="output")
-    assert findings == []
+def test_unchanged_ref_beside_unevaluated_reports_nothing(tmp_path):
+    body = {**REF_A, "unevaluatedProperties": False}
+    old = _prop_schema(body, A={"properties": {"a": {}}})
+    for direction in ("input", "output", "both"):
+        found = run(tmp_path / direction, old, old, direction=direction)
+        assert found == []
 
 
 def test_registry_must_list_every_schema_file(tmp_path):
