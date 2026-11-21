@@ -65,18 +65,18 @@ impl Spec {
             "schema_version = 3\nid = \"{}\"\nversion = \"{}\"\nslopvac_api = {}\nkind = \"data\"\n\n[provides]\n{}\n",
             self.id, self.version, self.api, self.provides
         );
-        for (id, req) in &self.requires {
-            text.push_str(&format!(
-                "\n[[requires]]\nid = \"{id}\"\nversion = \"{req}\"\n"
-            ));
-        }
+        let requires = self
+            .requires
+            .iter()
+            .map(|(id, req)| format!("\n[[requires]]\nid = \"{id}\"\nversion = \"{req}\"\n"));
+        text.extend(requires);
         text
     }
 }
 
 struct World {
     tmp: tempfile::TempDir,
-    entries: String,
+    entries: Vec<String>,
     count: u32,
 }
 
@@ -88,7 +88,7 @@ impl World {
         }
         Self {
             tmp,
-            entries: String::new(),
+            entries: Vec::new(),
             count: 0,
         }
     }
@@ -141,7 +141,7 @@ impl World {
             .map(|r| format!("\"{r}\""))
             .collect::<Vec<_>>()
             .join(", ");
-        self.entries.push_str(&format!(
+        self.entries.push(format!(
             "\n[[plugins]]\nid = \"{}\"\nkind = \"data\"\nversion = \"{}\"\nslopvac_api = {}\nsource = \"dist/{}.tar.gz\"\ndigest = \"sha256:{}\"\nrequires = [{requires}]\n",
             spec.id,
             spec.version,
@@ -152,7 +152,7 @@ impl World {
     }
 
     fn lock(&self) -> Lockfile {
-        Lockfile::parse(&format!("schema_version = 3\n{}", self.entries)).unwrap()
+        Lockfile::parse(&format!("schema_version = 3\n{}", self.entries.concat())).unwrap()
     }
 
     fn load(&self, requested: &[&str]) -> Result<Vec<LoadedPack>, SyncedError> {
@@ -326,7 +326,9 @@ fn a_manifest_that_differs_from_its_lock_entry_is_refused() {
     });
     w.entries = w
         .entries
-        .replace("version = \"1.1.0\"", "version = \"1.0.0\"");
+        .iter()
+        .map(|e| e.replace("version = \"1.1.0\"", "version = \"1.0.0\""))
+        .collect();
 
     let err = w.load(&["acme"]).unwrap_err();
 

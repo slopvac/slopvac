@@ -27,7 +27,7 @@ pub(crate) fn expand(source: &dyn PackSource, provides: &Provides) -> Result<Pro
         &provides.prime,
         &provides.blocklists,
     ];
-    let has_glob = lists.iter().flat_map(|l| l.iter()).any(|p| is_glob(p));
+    let has_glob = lists.iter().flat_map(|l| l.iter()).any(is_glob);
     let files = if has_glob {
         source.files()?
     } else {
