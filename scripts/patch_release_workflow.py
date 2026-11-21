@@ -310,7 +310,7 @@ def harden(text: str) -> str:
         text = _replace_once(text, run, first + _ZIZMOR_WHY + rest, what)
     text = _replace_once(text, _SBOM_OLD, _SBOM_NEW, "SBOM output reference")
     text = _verify_tag_before_publishing(text)
-    text = _mint_release_token(text)
+    text = _split_publish(text)
     text = _mint_tap_token(text)
     text = _isolate_tap_push(text)
     text = _route_by_major_version(text)
@@ -434,14 +434,74 @@ _TAP_CHECKOUT = re.compile(
 )
 
 
-def _mint_release_token(text: str) -> str:
-    """Make `host` write its release with a minted App token instead of GITHUB_TOKEN.
+_TAIL_ANCHOR = "      # Create a GitHub Release while uploading all files to it\n"
+_UPLOAD_STEP = "      - name: Upload the artifacts to the draft release\n"
+_DIST_RELEASE_OLD = "--steps=upload --steps=release "
+_DIST_RELEASE_NEW = "--steps=upload "
+_PRERELEASE_OLD = "fromJson(steps.host.outputs.manifest).announcement_is_prerelease"
+_PRERELEASE_NEW = "fromJson(needs.plan.outputs.val).announcement_is_prerelease"
+# `host` runs dist (a cached binary) and so holds no write token. `publish` holds the
+# release App token but runs only repository scripts, minisign and gh: it never installs
+# or runs dist or anything the build jobs produced. It verifies every signature first
+# and mints the token only after that.
+_PUBLISH_HEAD = """\
+  # Publishes the release. It runs no dist and no build output: it verifies the
+  # signatures, then mints the write token and uploads the verified files.
+  publish:
+    name: Publish the verified release
+    needs:
+      - plan
+      - custom-release-provenance
+      - sign
+      - host
+    permissions:
+      "contents": "read"
+    runs-on: "ubuntu-22.04"
+    steps:
+      - uses: {checkout}
+        with:
+          persist-credentials: false
+{verify}\
+"""
 
-    The mint step sits right before the dist step that creates the release. The three
-    steps that write carry the token in their own env, so GITHUB_TOKEN only reads.
+
+def _split_publish(text: str) -> str:
+    """Move the release writes out of `host` into a `publish` job that runs no dist.
+
+    `host` keeps `dist host --steps=upload` under its read-only token. The tail of the
+    job (download, signature check, upload, undraft) moves to `publish`, which mints the
+    App token after the signatures verify.
     """
+    chunks = _split_jobs(text)
+    jobs = [i for i, c in enumerate(chunks) if c.startswith("  host:\n")]
+    if len(jobs) != 1:
+        raise ValueError(f"expected exactly one host job, found {len(jobs)}")
+    host = chunks[jobs[0]]
+    host = _replace_once(host, _DIST_RELEASE_OLD, _DIST_RELEASE_NEW, "host dist command")
+    cut = host.index(_TAIL_ANCHOR) if host.count(_TAIL_ANCHOR) == 1 else -1
+    if cut < 0:
+        raise ValueError("expected exactly one release tail in the host job")
+    tail = host[cut:].rstrip("\n") + "\n"
+    host = host[:cut].rstrip("\n") + "\n\n"
+    tail = tail.replace(_TAIL_ANCHOR, "", 1)
+    tail = _replace_once(tail, _PRERELEASE_OLD, _PRERELEASE_NEW, "prerelease flag")
+    tail = _replace_once(tail, _UPLOAD_STEP, _RELEASE_TOKEN_STEP + _UPLOAD_STEP, "upload step")
+    head = _PUBLISH_HEAD.replace("{checkout}", _pin(text, "checkout")).replace(
+        "{verify}", _VERIFY_STEP
+    )
+    chunks[jobs[0]] = host + head + tail + "\n"
+    out = "".join(chunks)
+    out = _replace_once(
+        out,
+        "  publish-homebrew-formula:\n    needs:\n      - plan\n      - host\n",
+        "  publish-homebrew-formula:\n    needs:\n      - plan\n      - publish\n",
+        "Homebrew needs",
+    )
+    out = _replace_once(
+        out, "      - host\n      - publish-homebrew-formula\n", "      - publish\n      - publish-homebrew-formula\n", "announce needs"
+    )
     return _replace_once(
-        text, _HOST_STEP_OLD, _RELEASE_TOKEN_STEP + _HOST_STEP_NEW, "host dist step"
+        out, "needs.host.result == 'success' && (needs.publish-homebrew", "needs.publish.result == 'success' && (needs.publish-homebrew", "announce condition"
     )
 
 
