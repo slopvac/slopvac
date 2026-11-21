@@ -246,6 +246,14 @@ mod tests {
     }
 
     #[test]
+    fn a_header_line_without_a_colon_is_a_framing_error() {
+        assert!(is_framing(&read(
+            b"Content-Length: 2\r\nContent-Type\r\n\r\n{}",
+            10
+        )));
+    }
+
+    #[test]
     fn bare_newline_is_a_framing_error() {
         assert!(is_framing(&read(b"Content-Length: 2\n\n{}", 10)));
     }

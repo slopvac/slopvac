@@ -123,7 +123,7 @@ What is signed. The signed bytes are the canonical statement, byte for byte, and
   - `artifactType`;
   - `config`, the digest of the config blob;
   - `layers`, the digest, size and media type of every layer except the two signature layers, in manifest order;
-  - `keyId`, 16 uppercase hex digits;
+  - `keyId`, the minisign key id: 16 uppercase hex digits;
   - `notBefore`, a time as `YYYY-MM-DDTHH:MM:SSZ` in UTC.
 
 The verifier runs these steps in order, and the first failure ends the check:
@@ -153,6 +153,7 @@ The plugin index is rebuilt by a job. Whoever controls that job, or a pull reque
 - A pinned key that differs from the index is a hard failure with exit 2. A pin stays in force whatever the index lists.
 - A namespace binds to a key at first pin, per registry host. A plugin that claims the namespace `slopvac` must verify against the compiled plugins key. The id and namespace `core` belong to the built-in plugin, which is compiled in and never published. Any claim of `core` fails closed: a statement, lock entry, index entry, config entry or pin that names it is refused with exit 2.
 - A key id inside a statement selects among the keys the policy already holds. It adds none.
+- A **key fingerprint** is the SHA-256 of the raw 42-byte minisign public key, written as 64 lowercase hex digits (`PublicKey::fingerprint` in `sign.rs`). It is the value that `slopvac plugins pin` takes, that the trust record stores and that the trust hash covers (section 5.4). It is not the **minisign key id**, the 8-byte id in the public key, written as 16 uppercase hex digits, that statements, the lockfile and the revocation list carry. Any key can claim a key id, so a key id alone never identifies a key.
 
 ### 5.3 Rotation and revocation
 
@@ -179,7 +180,7 @@ Trust records one **trust hash**. It must cover everything that can execute or c
 - the plugin manifest, including the `PluginDeclaration` (hooks, network, features) and the argument list;
 - every file of the extracted plugin tree, by relative path and content;
 - for a Python plugin, the interpreter identity (version and build) and the locked, hash-pinned dependency set plus the file listing of the managed environment (section 6.6). The interpreter slot holds the version, the build and the path, size and sha256 of each interpreter executable. The environment slot holds a digest of the lock, the interpreter request and every entry of the environment: path, type, size, executable bit, sha256 and link target. Modification times are not in the hash;
-- the manifest digest and the publisher key id.
+- the manifest digest and the publisher key fingerprint.
 
 Any change to any of these changes the trust hash and revokes trust (plugin-protocol.md section 4.3). `plugins update` shows the old and new declaration side by side. A data plugin has no code, needs no trust, and `plugins trust` refuses it. It still has a digest in the lockfile, because its rules decide the lint verdict (T1, A7).
 
@@ -211,7 +212,9 @@ The process limits (CPU time, open files, file size, core files and memory) are 
 | Redirects per request | 5, HTTPS only (loopback may use HTTP in tests) | `slopvac-8l4.9.2` |
 | Credential helper output and time | 64 KiB and 10 s | `slopvac-8l4.9.2` |
 | Compressed layer | 64 MiB | `slopvac-8l4.9.3` |
-| Expanded size of one artifact | 256 MiB, with a compression ratio of at most 100 to 1 | `slopvac-8l4.9.3` |
+| Expanded size of one artifact | 256 MiB. The expansion-ratio row below sets the ratio limit. | `slopvac-8l4.9.3` |
+| Expansion ratio | The check starts when the expanded size passes 1,048,576 bytes. The archive is rejected when the integer quotient of the expanded size divided by the larger of the compressed bytes read so far and 1 exceeds 100. | `crates/slopvac-plugins/src/extract.rs` |
+| Nodes in one extracted tree | 20,000 files and directories, counting the implicit parents of nested files and the sidecar that lists the executable files. A limit set above 20,000 is clamped to it, so every tree that extracts also verifies. | `crates/slopvac-plugins/src/extract.rs` |
 | Entries in one archive | 10,000 | `slopvac-8l4.9.3` |
 | Path length and depth in an archive | 1,024 bytes and 32 segments | `slopvac-8l4.9.3` |
 | Signed statement | 64 KiB | `slopvac-8l4.9.5` |
@@ -220,6 +223,8 @@ The process limits (CPU time, open files, file size, core files and memory) are 
 | Plugin index document | 32 MiB | `slopvac-8l4.9.8` |
 | Regex pattern length in a data plugin | 4,096 bytes | `slopvac-8l4.3.20` |
 | PCRE2 match, depth and heap limits | fixed in `slopvac-8l4.3.20`; a limit hit is an error, never a no-match | `slopvac-8l4.3.20` |
+
+An archive over the expanded-size, expansion-ratio, entry or node limit is rejected whole. Nothing reaches the store, `plugins sync` exits 2, and the code is `sync-failed` (policies.md, section 3.5).
 
 ### 5.6 Limits for binary containers
 
@@ -314,7 +319,7 @@ Columns: L and I are likelihood and impact (L low, M medium, H high). "Owner" is
 | O4 | Newlines in a message become GitHub Actions workflow commands (`::set-output`, `::error`) or forge annotations. | T, E | CWE-93, CWE-117 | M/H | The Action escapes `%`, `\r`, `\n` and `::` for every annotation. The text reporter writes a line that starts with `::` only after it escapes the start. | `slopvac-8l4.9.32`, `slopvac-8l4.13.6` | TM-13 |
 | O5 | A fixer rewrites more than the selected findings through many edits. | T | CWE-20 | M/M | Edit-in-envelope rule, plus the per-document limits in section 5.5. Over a limit, the document fails with `plugin-output-invalid`. | `slopvac-8l4.9.6`, `slopvac-8l4.3.17` | H27, H28, H29, TM-14 (1,001 edits rejected; inserted bytes over the cap rejected) |
 | O6 | Applying edits or recipes tears a file, loses an update, or follows a swapped path. | T, D | CWE-367, CWE-362 | M/M | Write a temporary file in the same directory, check the source is unchanged (size, mtime and content hash), check the staged file is still the one created (device and inode) before the rename, rename atomically. Open with no-follow flags and parent descriptors. Refuse a hardlinked target (link count above 1) and a path whose parent chain contains a symlink that leaves the root. | `slopvac-8l4.9.14` | TM-15 (rename race, hardlink and symlink swap tests); `a_staged_file_replaced_before_the_rename_fails_closed` (a replaced temporary file fails the write) |
-| O7 | A recipe targets a sensitive in-project file: `.git/`, hooks, `.slopvac/` state, CI workflows, `.env*`, `.gitmodules`, `.gitattributes`, `slopvac.toml`, `.mise.toml`, `.envrc`, `.vscode/tasks.json`. | E | CWE-73, CWE-22 | M/H | A deny list the host enforces. A recipe may touch a denied path only after a separate approval per path, in a command that allows writes (`--allow-sensitive <path>`). The plan output marks them. No plugin sets the flag. | `slopvac-8l4.9.14` | TM-16 (each denied path refused without the flag, nothing written) |
+| O7 | A recipe targets a sensitive in-project file: `.git/`, hooks, `.slopvac/` state, CI workflows, `.env*`, `.gitmodules`, `.gitattributes`, `slopvac.toml`, `.mise.toml`, `.envrc`, `.vscode/tasks.json`. | E | CWE-73, CWE-22 | M/H | A deny list the host enforces. `.github/workflows/` matches only at the project root, because GitHub reads workflows only there. `.git/`, `slopvac.toml`, `.mise.toml`, `mise.toml`, `.gitmodules`, `.gitattributes`, `.env*` and `.vscode/tasks.json` match at any depth, in any letter case. A recipe may touch a denied path only after a separate approval per path, in a command that allows writes (`--allow-sensitive <path>`). The plan output marks them. No plugin sets the flag. | `slopvac-8l4.9.14` | TM-16 (each denied path refused without the flag, nothing written) |
 | O8 | A recipe writes agent harness files (`AGENTS.md`, hooks, MCP server entries, `.claude/`, `.opencode/`) that later run code with an agent's rights. Writing these files is the recipe's purpose, and it is also an escalation path. | E | CWE-94, CWE-829 | M/H | Show the full plan and content before applying. Hook-like and command-bearing entries are marked in the plan. Apply only with an explicit write command, only from a command that allows writes. | `slopvac-8l4.9.14` | TM-17 (a plan with a hook entry prints a marked warning and writes nothing under `--dry-run`) |
 | O9 | A recipe path escapes the root: absolute, `..`, Windows drive, case-folding tricks, reserved device names, or a symlink. | T, E | CWE-22, CWE-59, CWE-178 | M/H | Host check is the boundary (plugin-protocol.md section 8.2). Resolve symlinks, compare case-insensitively on case-insensitive file systems, refuse reserved device names (CON, NUL, COM and LPT, with superscript digits), trailing dots or spaces, and a colon (NTFS streams) on every platform. This also covers WSL projects on `/mnt`. | `slopvac-8l4.9.14` | H22, TM-18 (Windows path forms and case-fold collisions) |
 | O10 | A provider receives more text than the review type needs, or secrets from the document. | I | CWE-201, CWE-359 | M/H | `review --dry-run` prints the payload. Only the review type's text is sent (policies.md section 1.5). A provider runs only when trusted, named in config and online. The plugin may still forward anything it received (R4). | `slopvac-8l4.9.6`, `slopvac-8l4.11.3` | N12, TM-19 (payload equals the dry-run output) |
