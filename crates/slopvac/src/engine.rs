@@ -1194,6 +1194,7 @@ mod read_tests {
             config: None,
             code_comments: false,
             overrides: Overrides::default(),
+            fix: false,
         }
     }
 
