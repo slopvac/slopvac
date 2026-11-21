@@ -561,6 +561,91 @@ mod tests {
         );
     }
 
+    #[derive(Clone, Copy, Debug)]
+    enum Special {
+        Fifo,
+        Directory,
+        Oversized,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Target {
+        Record,
+        Installer,
+    }
+
+    /// Detect on a thread. A hang fails the test; a FIFO is opened for writing so the stuck
+    /// thread can end.
+    #[cfg(unix)]
+    fn detect_within_timeout(exe: PathBuf, fifo: &Path) -> InstallMethod {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(detect(&exe, &|_: &str| None));
+        });
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(method) => method,
+            Err(_) => {
+                let _ = std::fs::OpenOptions::new().write(true).open(fifo);
+                panic!("detection hung on a metadata file");
+            }
+        }
+    }
+
+    // One metadata file is special, the other is valid. A special `RECORD` hides the binary, so
+    // the install is unknown. A special `INSTALLER` reads as absent, so the wheel is a pip
+    // install: the oversized `INSTALLER` says `uv` once trimmed, which an unbounded read would
+    // take at its word.
+    #[cfg(unix)]
+    #[rstest::rstest]
+    #[case::record_fifo(Target::Record, Special::Fifo, InstallMethod::Unknown)]
+    #[case::record_directory(Target::Record, Special::Directory, InstallMethod::Unknown)]
+    #[case::record_oversized(Target::Record, Special::Oversized, InstallMethod::Unknown)]
+    #[case::installer_fifo(Target::Installer, Special::Fifo, InstallMethod::Wheel(WheelTool::Pip))]
+    #[case::installer_directory(
+        Target::Installer,
+        Special::Directory,
+        InstallMethod::Wheel(WheelTool::Pip)
+    )]
+    #[case::installer_oversized(
+        Target::Installer,
+        Special::Oversized,
+        InstallMethod::Wheel(WheelTool::Pip)
+    )]
+    fn a_special_metadata_file_is_refused_without_hanging(
+        #[case] target: Target,
+        #[case] special: Special,
+        #[case] want: InstallMethod,
+    ) {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join(".local");
+        let record = "../../../bin/slopvac,sha256=y,99\n";
+        let (exe, bad) = match target {
+            Target::Record => (pip_layout(&root, None, Some("pip\n")), "RECORD"),
+            Target::Installer => (pip_layout(&root, Some(record), None), "INSTALLER"),
+        };
+        let path = root
+            .join("lib/python3.13/site-packages/slopvac-3.0.0.dist-info")
+            .join(bad);
+        match special {
+            Special::Fifo => assert!(
+                std::process::Command::new("mkfifo")
+                    .arg(&path)
+                    .status()
+                    .unwrap()
+                    .success()
+            ),
+            Special::Directory => std::fs::create_dir(&path).unwrap(),
+            Special::Oversized => {
+                let body = match target {
+                    Target::Record => format!("{record}{}", "x".repeat(2 << 20)),
+                    Target::Installer => format!("uv{}", " ".repeat(8 * 1024)),
+                };
+                std::fs::write(&path, body).unwrap();
+            }
+        }
+        assert_eq!(detect_within_timeout(exe, &path), want);
+    }
+
     #[test]
     fn dist_info_that_does_not_list_the_binary_does_not_claim_it() {
         let tmp = tempfile::tempdir().unwrap();
