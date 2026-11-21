@@ -50,3 +50,23 @@ pub enum LintFixMessage {
         reason: String,
     },
 }
+
+/// Why `slopvac lint --fix` could not fix a file, as the `reason` of [`LintFixMessage::Failed`].
+#[derive(Debug, Catalog)]
+pub enum LintFixReason {
+    /// The file is not UTF-8.
+    #[code("lint-fix-reason-not-utf8")]
+    #[text("not valid UTF-8")]
+    NotUtf8,
+    /// The check for an access control list could not run.
+    #[code("lint-fix-reason-acl-check")]
+    #[text("the access control list check failed")]
+    AclCheck,
+    /// A read or write failed, with the system's own wording.
+    #[code("lint-fix-reason-io")]
+    #[text("{detail}")]
+    Io {
+        /// The system's description of the failure, without the path.
+        detail: String,
+    },
+}

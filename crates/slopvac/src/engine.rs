@@ -10,12 +10,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::lint_messages::LintFixMessage;
+use crate::lint_messages::{LintFixMessage, LintFixReason};
 use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{
-    Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, Root, fix_file_in,
+    AclCheckFailed, Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, Root,
+    fix_file_in,
 };
 use slopvac_messages::Catalog as _;
 use slopvac_model::{
@@ -928,6 +929,27 @@ fn retain<T: Clone>(values: &[T], keep: &[bool]) -> Vec<T> {
         .collect()
 }
 
+/// The reason text for a fix that failed for a cause other than a refusal or a lint error.
+fn fix_failure_reason(err: FixError) -> String {
+    let reason = match err {
+        FixError::NotUtf8(_) => LintFixReason::NotUtf8,
+        FixError::Io { source, .. }
+            if source
+                .get_ref()
+                .is_some_and(|inner| inner.is::<AclCheckFailed>()) =>
+        {
+            LintFixReason::AclCheck
+        }
+        FixError::Io { source, .. } => LintFixReason::Io {
+            detail: source.to_string(),
+        },
+        other => LintFixReason::Io {
+            detail: other.to_string(),
+        },
+    };
+    slopvac_messages::render(&reason)
+}
+
 /// Write the safe replacements of each file in `indexes` and swap the text of the item for
 /// the fixed text, so the report that follows describes the file as it is now.
 ///
@@ -997,14 +1019,9 @@ fn fix_group(
             }
             Err(err) => {
                 let shown = item.shown.clone();
-                let reason = match err {
-                    FixError::Io { source, .. } => source.to_string(),
-                    FixError::NotUtf8(_) => "not valid UTF-8".to_owned(),
-                    other => other.to_string(),
-                };
                 let failed = LintFixMessage::Failed {
                     shown: shown.clone(),
-                    reason,
+                    reason: fix_failure_reason(err),
                 };
                 run.skip(failed.code(), &shown, slopvac_messages::render(&failed));
                 keep.push(false);
@@ -1529,5 +1546,26 @@ mod fix_tests {
 
         assert_eq!(keep, [true]);
         assert_eq!(items[0].text, "# New\n");
+    }
+    #[test]
+    fn a_fix_that_failed_gives_a_reason_for_each_kind_of_failure() {
+        let io = |source| FixError::Io {
+            path: "a.md".to_owned(),
+            source,
+        };
+        assert_eq!(
+            fix_failure_reason(FixError::NotUtf8("a.md".to_owned())),
+            "not valid UTF-8"
+        );
+        assert_eq!(
+            fix_failure_reason(io(std::io::Error::other(AclCheckFailed))),
+            "the access control list check failed"
+        );
+        assert_eq!(
+            fix_failure_reason(io(std::io::Error::from(
+                std::io::ErrorKind::PermissionDenied
+            ))),
+            "permission denied"
+        );
     }
 }
