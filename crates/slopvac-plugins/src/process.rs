@@ -1039,8 +1039,13 @@ mod unix {
         args: &[S],
         deadline: Instant,
     ) -> Option<Vec<u8>> {
+        drain_bounded(spawn_bounded(program, args)?, deadline)
+    }
+
+    /// Start the helper as [`run_bounded`] describes, without a deadline.
+    pub(super) fn spawn_bounded<S: AsRef<OsStr>>(program: &Path, args: &[S]) -> Option<Child> {
         use std::os::unix::process::CommandExt;
-        let mut child = Command::new(program)
+        Command::new(program)
             .args(args)
             .env_clear()
             .env("LC_ALL", "C")
@@ -1050,7 +1055,12 @@ mod unix {
             .stderr(Stdio::null())
             .process_group(0)
             .spawn()
-            .ok()?;
+            .ok()
+    }
+
+    /// Collect the output of a helper from [`spawn_bounded`] by `deadline`,
+    /// then kill its group and reap it.
+    pub(super) fn drain_bounded(mut child: Child, deadline: Instant) -> Option<Vec<u8>> {
         let out = read_bounded(child.stdout.take(), deadline);
         let exited = out.is_some() && exited_by(&child, deadline);
         // Still unreaped, so the helper's ids are its own. The helper itself
@@ -1416,10 +1426,15 @@ mod tests {
 
     #[cfg(unix)]
     mod helper {
+        use std::io::Read;
         use std::path::Path;
         use std::time::{Duration, Instant};
 
-        use super::super::unix::{Entry, TABLE_MAX_BYTES, parse_table, run_bounded};
+        use rustix::process::Signal;
+
+        use super::super::unix::{
+            Entry, TABLE_MAX_BYTES, drain_bounded, parse_table, pid, run_bounded, spawn_bounded,
+        };
 
         fn sh(script: &str, within: Duration) -> Option<Vec<u8>> {
             run_bounded(
@@ -1493,30 +1508,165 @@ mod tests {
             }
         }
 
-        /// Run `script` with a 500 ms deadline; it writes a pid to the file
-        /// named by `$0`. Returns the output, the time taken and that pid.
-        fn hung(script: &str) -> (Option<Vec<u8>>, Duration, String) {
-            let dir = std::env::temp_dir().join(format!(
-                "slopvac-hung-{}-{}",
-                std::process::id(),
-                script.len()
-            ));
-            std::fs::create_dir_all(&dir).unwrap();
-            let pidfile = dir.join("pid");
-            let started = Instant::now();
-            let got = run_bounded(
+        /// How long a script gets to report its pid. It bounds a broken
+        /// script only; no result depends on it.
+        const READY_LIMIT: Duration = Duration::from_secs(60);
+
+        /// Wait for the script to write a pid and a newline to the FIFO at
+        /// `fifo`, without blocking on it. On any failure, kill the helper's
+        /// group, reap it and return the reason. This is the only exit that
+        /// leaves a failure, so no failure can leave the helper running.
+        fn await_pid(
+            child: &mut std::process::Child,
+            fifo: &Path,
+            limit: Duration,
+        ) -> Result<String, String> {
+            read_pid(child, fifo, limit).inspect_err(|_| {
+                if let Some(g) = pid(child.id()) {
+                    let _ = rustix::process::kill_process_group(g, Signal::KILL);
+                }
+                let _ = child.kill();
+                let _ = child.wait();
+            })
+        }
+
+        /// Poll the FIFO for the pid; the caller cleans up after a failure.
+        fn read_pid(
+            child: &mut std::process::Child,
+            fifo: &Path,
+            limit: Duration,
+        ) -> Result<String, String> {
+            use rustix::fs::{Mode, OFlags, open};
+            // Read and write, so the open never blocks and a writer that
+            // closes cannot end the stream under the reader.
+            let fd = open(fifo, OFlags::RDWR | OFlags::NONBLOCK, Mode::empty())
+                .map_err(|e| format!("cannot open the pid FIFO: {e}"))?;
+            let mut reader = std::fs::File::from(fd);
+            let end = Instant::now() + limit;
+            let mut got = Vec::new();
+            loop {
+                let mut chunk = [0_u8; 64];
+                match reader.read(&mut chunk) {
+                    Ok(n) => got.extend_from_slice(&chunk[..n]),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(e) => return Err(format!("cannot read the pid FIFO: {e}")),
+                }
+                if got.contains(&b'\n') {
+                    let text = String::from_utf8_lossy(&got).trim().to_owned();
+                    return text
+                        .parse::<u32>()
+                        .map(|_| text.clone())
+                        .map_err(|_| format!("the helper wrote {text:?}, not a pid"));
+                }
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        return Err(format!(
+                            "the helper exited ({status}) before it wrote a pid"
+                        ));
+                    }
+                    Ok(None) if Instant::now() < end => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Ok(None) => return Err(format!("the helper wrote no pid within {limit:?}")),
+                    Err(e) => return Err(format!("cannot poll the helper: {e}")),
+                }
+            }
+        }
+
+        /// Spawn `script` under `/bin/sh -c`, with the FIFO path as `$0`.
+        fn spawn_reporting(script: &str, fifo: &Path) -> std::process::Child {
+            spawn_bounded(
                 Path::new("/bin/sh"),
                 &[
                     std::ffi::OsStr::new("-c"),
                     script.as_ref(),
-                    pidfile.as_os_str(),
+                    fifo.as_os_str(),
                 ],
-                started + Duration::from_millis(500),
-            );
+            )
+            .expect("spawn the helper")
+        }
+
+        fn make_fifo(dir: &Path) -> std::path::PathBuf {
+            let fifo = dir.join("pid");
+            let made = std::process::Command::new("/usr/bin/mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap();
+            assert!(made.success(), "mkfifo failed");
+            fifo
+        }
+
+        /// Run `script` with a 500 ms deadline; it writes a pid and a newline
+        /// to the FIFO named by `$0`. Returns the output, the time taken and
+        /// that pid.
+        ///
+        /// The deadline starts once the script has reported its pid, so a
+        /// slow shell start cannot leave the pid missing or half written.
+        fn hung(script: &str) -> (Option<Vec<u8>>, Duration, String) {
+            let dir = tempfile::tempdir().unwrap();
+            let fifo = make_fifo(dir.path());
+            let mut child = spawn_reporting(script, &fifo);
+            let pid =
+                await_pid(&mut child, &fifo, READY_LIMIT).unwrap_or_else(|why| panic!("{why}"));
+            let started = Instant::now();
+            let got = drain_bounded(child, started + Duration::from_millis(500));
             let took = started.elapsed();
-            let pid = std::fs::read_to_string(&pidfile).unwrap().trim().to_owned();
-            std::fs::remove_dir_all(&dir).unwrap();
             (got, took, pid)
+        }
+
+        #[test]
+        fn a_script_that_exits_before_reporting_a_pid_fails_the_wait_at_once() {
+            let dir = tempfile::tempdir().unwrap();
+            let fifo = make_fifo(dir.path());
+            let mut child = spawn_reporting("exit 3", &fifo);
+            let started = Instant::now();
+            let got = await_pid(&mut child, &fifo, READY_LIMIT);
+            let took = started.elapsed();
+            let why = got.unwrap_err();
+            assert!(why.contains("exited"), "{why}");
+            assert!(took < Duration::from_secs(10), "{took:?}");
+        }
+
+        #[test]
+        fn a_script_that_reports_nothing_fails_the_wait_at_the_limit_and_is_reaped() {
+            let dir = tempfile::tempdir().unwrap();
+            let fifo = make_fifo(dir.path());
+            let mut child = spawn_reporting("sleep 60", &fifo);
+            let got = await_pid(&mut child, &fifo, Duration::from_millis(200));
+            assert!(got.unwrap_err().contains("no pid"));
+            assert_killed_and_reaped(&mut child);
+        }
+
+        /// A failed wait leaves the helper dead and reaped, killed by a signal
+        /// rather than exited on its own.
+        fn assert_killed_and_reaped(child: &mut std::process::Child) {
+            use std::os::unix::process::ExitStatusExt;
+            let status = child
+                .try_wait()
+                .unwrap()
+                .expect("the helper was not reaped");
+            assert_eq!(status.signal(), Some(9), "{status:?}");
+        }
+
+        #[rstest::rstest]
+        #[case::fifo_cannot_be_opened("sleep 60", false, "cannot open")]
+        #[case::pid_is_malformed("echo not-a-pid > \"$0\"; sleep 60", true, "not a pid")]
+        fn a_failed_readiness_wait_kills_and_reaps_a_running_helper(
+            #[case] script: &str,
+            #[case] fifo_exists: bool,
+            #[case] reason: &str,
+        ) {
+            let dir = tempfile::tempdir().unwrap();
+            let fifo = if fifo_exists {
+                make_fifo(dir.path())
+            } else {
+                dir.path().join("missing")
+            };
+            let mut child = spawn_reporting(script, &fifo);
+            let got = await_pid(&mut child, &fifo, READY_LIMIT);
+            let why = got.unwrap_err();
+            assert!(why.contains(reason), "{why}");
+            assert_killed_and_reaped(&mut child);
         }
 
         #[test]
@@ -1533,7 +1683,8 @@ mod tests {
         #[test]
         fn a_hung_helper_that_left_its_group_is_killed_at_the_deadline() {
             // The helper leads its own group, so it moves into the host's.
-            let script = r#"echo $$ > "$0"; exec /usr/bin/perl -e 'setpgrp(0, getpgrp(getppid())) or die; sleep 60'"#;
+            // Perl reports its pid only after the move.
+            let script = r#"exec /usr/bin/perl -e 'setpgrp(0, getpgrp(getppid())) or die; open(F, ">", $ARGV[0]) or die; print F "$$\n"; close F; sleep 60' "$0""#;
             let (got, took, helper) = hung(script);
             assert_eq!(got, None);
             assert!(took < Duration::from_secs(30), "{took:?}");

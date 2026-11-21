@@ -1,5 +1,7 @@
 [profile.default]
 fail-fast = true
+# Matches CI, so a hung test ends a local run in minutes.
+slow-timeout = { period = "60s", terminate-after = 5 }
 
 # Timing-sensitive budget tests (module prefix `perf_budget::`) are noisy on the
 # shared matrix runners. They run only under the `perf` profile, serially.
