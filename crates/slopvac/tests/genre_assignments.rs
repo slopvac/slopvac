@@ -297,3 +297,34 @@ fn a_hostile_file_name_is_escaped_in_the_block_error() {
     );
     assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
 }
+
+/// A key, map key or array index that the document wrote is its own data: the error shows the
+/// schema-owned part of the key path and stops there.
+#[rstest::rstest]
+#[case::unknown_top_level_key("  PRIVATE_SENTINEL: true\n", "/slopvac")]
+#[case::unknown_key_under_a_table(
+    "  thresholds:\n    PRIVATE_SENTINEL: 1\n",
+    "/slopvac/thresholds"
+)]
+#[case::map_key("  rules:\n    PRIVATE_SENTINEL: error\n", "/slopvac/rules")]
+#[case::array_index(
+    "  terms:\n    allow:\n      - fine\n      - PRIVATE_SENTINEL: 1\n",
+    "/slopvac/terms/allow"
+)]
+fn block_errors_show_only_the_schema_owned_key_path(#[case] body: &str, #[case] pointer: &str) {
+    let config = format!(
+        "{ASSIGNED}\n[frontmatter]\nallow = [\"genre\", \"locale\", \"thresholds\", \"rules\", \"terms\"]\n"
+    );
+    let text = format!("---\nslopvac:\n  v: 3\n{body}---\n{HISTORY}");
+    for format in ["text", "json"] {
+        let out = run_named_note(&config, "n.md", &text, format);
+        assert_eq!(out.status.code(), Some(2), "{format}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let all = format!("{}{stderr}", String::from_utf8_lossy(&out.stdout));
+        assert!(!all.contains("PRIVATE_SENTINEL"), "{format}: {all}");
+        assert!(
+            stderr.lines().any(|l| l.ends_with(&format!(": {pointer}"))),
+            "{format}: want a line ending in {pointer}: {stderr}"
+        );
+    }
+}
