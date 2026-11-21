@@ -136,12 +136,22 @@ fn update_check_false_in_the_project_config_suppresses_the_notice() {
 #[case::lint(&["lint", "doc.md"])]
 #[case::doctor(&["doctor"])]
 #[case::prime(&["prime"])]
-fn offline_starts_no_refresh_and_writes_no_cache(#[case] args: &[&str]) {
+fn offline_gives_no_notice_even_from_a_cache(#[case] args: &[&str]) {
     let fx = fixture();
-    let cache = tempfile::tempdir().expect("tempdir");
+    let cache = seeded_cache();
     let out = run(&fx, cache.path(), &[args, &["--offline"]].concat());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.contains("update-available"), "stderr: {stderr}");
+}
+
+#[rstest]
+#[case::lint(&["lint", "doc.md"])]
+#[case::doctor(&["doctor"])]
+#[case::prime(&["prime"])]
+fn offline_starts_no_refresh_and_writes_no_cache(#[case] args: &[&str]) {
+    let fx = fixture();
+    let cache = tempfile::tempdir().expect("tempdir");
+    run(&fx, cache.path(), &[args, &["--offline"]].concat());
     assert!(!cache.path().join("update-check.json").exists());
 }
 

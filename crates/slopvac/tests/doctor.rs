@@ -580,7 +580,8 @@ fn doctor_changes_nothing_on_disk() {
         found
     };
     let before = snapshot(w.root.path());
-    // The opt-out keeps the update notice, which may refresh the cache, out of this test.
+    // Policy lets `doctor` refresh the update cache, and `tests/update_notice.rs` covers that.
+    // The opt-out keeps this test on what else `doctor` might write: nothing.
     w.json(&[], |c| {
         c.env("SLOPVAC_NO_UPDATE_CHECK", "1");
     });
@@ -944,16 +945,6 @@ fn the_text_report_points_a_cargo_install_at_the_releases_page_when_an_update_is
         ),
         "{text}"
     );
-}
-
-#[test]
-fn doctor_never_writes_the_update_cache() {
-    let w = World::new();
-    // The opt-out keeps the update notice, which may refresh the cache, out of this test.
-    let (_, _) = w.json(&[], |c| {
-        c.env("SLOPVAC_NO_UPDATE_CHECK", "1");
-    });
-    assert!(!w.cache().join("update-check.json").exists());
 }
 
 /// Make a FIFO with no writer at `path`.
