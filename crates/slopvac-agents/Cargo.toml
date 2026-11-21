@@ -13,11 +13,12 @@ publish.workspace = true
 test-counters = []
 
 # O_NONBLOCK for the source open in `fsx`, so a FIFO swapped in at the leaf
-# cannot block it. `cap-fs-ext` supplies the public no-follow open option.
+# cannot block it.
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["fs"] }
 
 [dependencies]
+# The public no-follow open option for the source open in `fsx`.
 cap-fs-ext.workspace = true
 cap-std.workspace = true
 clap.workspace = true

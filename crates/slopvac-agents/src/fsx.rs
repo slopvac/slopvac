@@ -315,7 +315,7 @@ impl Project {
         let mode = source_mode(&parent, name, &rel)?;
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
-        // Private until filled, so the new bytes are never readable by others.
+        // Temporary file stays private until the fill ends and its final mode is applied.
         #[cfg(unix)]
         {
             use cap_std::fs::OpenOptionsExt;
@@ -534,16 +534,12 @@ mod mode_tests {
 
     #[test]
     fn a_fifo_at_the_source_is_refused_without_blocking() {
-        use rustix::fs::{CWD, FileType, Mode, mknodat};
         let dir = tempfile::tempdir().unwrap();
-        mknodat(
-            CWD,
-            dir.path().join("pipe.md"),
-            FileType::Fifo,
-            Mode::RUSR | Mode::WUSR,
-            0,
-        )
-        .unwrap();
+        let made = std::process::Command::new("mkfifo")
+            .arg(dir.path().join("pipe.md"))
+            .status()
+            .unwrap();
+        assert!(made.success());
         // Run the open on a thread and bound the wait, so a blocked open fails
         // the test instead of hanging it. A pass returns at once.
         let (tx, rx) = std::sync::mpsc::channel();
