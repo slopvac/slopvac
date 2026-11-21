@@ -1245,6 +1245,20 @@ fn kinds_of<'t>(tags: &'t TagIndex, span: Span, covering: &[Range<usize>]) -> Ve
     }
 }
 
+/// [`kinds_of`] restricted to the kinds in `wanted`.
+fn kinds_among<'k>(
+    tags: &TagIndex,
+    span: Span,
+    covering: &[Range<usize>],
+    wanted: &[&'k str],
+) -> Vec<&'k str> {
+    if covering.len() > 1 {
+        tags.kinds_covering_among(covering, wanted)
+    } else {
+        tags.kinds_at_among(&(span.start()..span.end()), wanted)
+    }
+}
+
 /// The context tag of comment text in a source file (`docs/contract/lint-report.md`).
 const COMMENT_CONTEXT: &str = "code-comment";
 
@@ -1591,10 +1605,19 @@ impl Run<'_> {
         covering: &[Range<usize>],
     ) -> bool {
         let gate = rule.contexts.as_ref();
-        let mut kinds = if gate.is_some() || !detectors.is_empty() {
-            kinds_of(tags, span, covering)
-        } else {
-            Vec::new()
+        let mut kinds = match gate {
+            // Only the kinds the gate names matter, so ask for those: the cost then does not
+            // grow with the kinds a pack's taggers put on the same text.
+            Some(gate) if detectors.is_empty() => {
+                let named: Vec<&str> = [&gate.only, &gate.skip]
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|names| names.iter().map(ContextTag::as_str))
+                    .collect();
+                kinds_among(tags, span, covering, &named)
+            }
+            _ if gate.is_some() || !detectors.is_empty() => kinds_of(tags, span, covering),
+            _ => Vec::new(),
         };
         kinds.extend(extra.filter(|e| !kinds.contains(e)));
         if let Some(gate) = gate {
