@@ -203,6 +203,12 @@ fn nonblocking(_: &mut OpenOptions) -> std::io::Result<()> {
 #[error("the ACL check failed")]
 pub struct AclCheckFailed;
 
+/// The source of the I/O error that [`Root::open`] returns when the root path was replaced
+/// while it was being opened.
+#[derive(Debug, thiserror::Error)]
+#[error("the project root changed while it was opened")]
+struct RootChanged;
+
 /// The project root as an open directory handle.
 ///
 /// [`Root::open`] is the only place the root is opened by pathname. Every later open, stage
@@ -223,15 +229,50 @@ impl Root {
     ///
     /// Returns the I/O error when `path` is not an openable directory.
     pub fn open(path: &Path) -> std::io::Result<Self> {
+        Self::open_hooked(path, &mut || {})
+    }
+
+    /// [`Root::open`] with a callback that runs after the directory is open and before its
+    /// canonical path is resolved. Tests use it to swap the path in that window.
+    #[doc(hidden)]
+    pub fn open_hooked(path: &Path, between: &mut dyn FnMut()) -> std::io::Result<Self> {
         let dir = Dir::open_ambient_dir(path, ambient_authority())?;
+        between();
         // Resolved here, once, so a link or a relative root still has an absolute spelling
         // to match targets against. It is never resolved again.
         let canonical = path.canonicalize().ok();
+        if let Some(canonical) = &canonical {
+            Self::check_same_directory(&dir, canonical)?;
+        }
         Ok(Self {
             dir,
             path: path.to_path_buf(),
             canonical,
         })
+    }
+
+    /// Refuse a canonical path that names another directory than the one held: the path was
+    /// swapped between the open and the lookup. A failure to read either side fails too.
+    #[cfg(unix)]
+    fn check_same_directory(dir: &Dir, canonical: &Path) -> std::io::Result<()> {
+        use cap_std::fs::MetadataExt as _;
+        use std::os::unix::fs::MetadataExt as _;
+        let held = dir.dir_metadata()?;
+        let named = std::fs::metadata(canonical)?;
+        if (held.dev(), held.ino()) == (named.dev(), named.ino()) {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(RootChanged))
+        }
+    }
+
+    #[cfg(not(unix))]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the same signature as the unix check, which can fail"
+    )]
+    fn check_same_directory(_: &Dir, _: &Path) -> std::io::Result<()> {
+        Ok(())
     }
 
     /// The spellings of the root that an absolute target may start with: the path the root

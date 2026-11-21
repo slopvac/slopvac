@@ -779,3 +779,28 @@ fn a_root_swapped_for_a_link_after_it_was_opened_still_writes_in_the_original_ro
         "nothing was staged outside"
     );
 }
+
+/// The root path is swapped for a link to another directory after the directory is open and
+/// before its canonical path is resolved. The canonical path would then name the other
+/// directory while the handle holds the original, so the open is refused.
+#[cfg(unix)]
+#[test]
+fn a_root_swapped_between_the_open_and_the_canonical_lookup_is_refused() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("doc.md"), DOC).unwrap();
+    let outside = project();
+
+    let opened = Root::open_hooked(&root, &mut || {
+        std::fs::rename(&root, parent.path().join("moved")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), &root).unwrap();
+    });
+
+    assert!(
+        opened.is_err(),
+        "the held directory is not the canonical one"
+    );
+    assert_eq!(read(outside.path().join("doc.md")), DOC);
+    assert_eq!(read(parent.path().join("moved/doc.md")), DOC);
+}
