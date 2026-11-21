@@ -197,6 +197,12 @@ fn nonblocking(_: &mut OpenOptions) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The source of the I/O error that a failed ACL check returns, so a caller can tell it
+/// from other I/O errors and word it itself.
+#[derive(Debug, thiserror::Error)]
+#[error("the ACL check failed")]
+pub struct AclCheckFailed;
+
 /// The project root as an open directory handle.
 ///
 /// [`Root::open`] is the only place the root is opened by pathname. Every later open, stage
@@ -398,27 +404,40 @@ mod unix {
     fn has_acl(fd: impl std::os::fd::AsFd, which: Acl) -> std::io::Result<bool> {
         use std::os::unix::ffi::OsStrExt;
         let path = rustix::fs::getpath(fd)?;
+        // `ls` prints the name unescaped, so a newline in it would split the first line and
+        // could pass for an entry. Do not guess: treat the ACL as present.
+        if path.to_bytes().contains(&b'\n') {
+            return Ok(true);
+        }
         let output = std::process::Command::new("/bin/ls")
+            .env_clear()
             .env("LC_ALL", "C")
+            .stdin(std::process::Stdio::null())
             .arg("-lde")
             .arg("--")
             .arg(OsStr::from_bytes(path.to_bytes()))
             .output()?;
         if !output.status.success() {
-            return Err(std::io::Error::other("ls -lde failed"));
+            return Err(std::io::Error::other(super::AclCheckFailed));
         }
         Ok(lists_acl(&String::from_utf8_lossy(&output.stdout), which))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
-    #[allow(clippy::unnecessary_wraps)]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the same signature as the platforms that read an ACL and can fail"
+    )]
     fn has_acl(_: impl std::os::fd::AsFd, _: Acl) -> std::io::Result<bool> {
         Ok(false)
     }
 
     /// Whether `ls -lde` output lists an ACL entry (a line like `" 0: group:everyone allow
     /// read"` under the file line), and for [`Acl::Inherited`] one that new files inherit.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(
+        all(not(target_os = "macos"), not(test)),
+        expect(dead_code, reason = "only the macOS ACL check parses `ls` output")
+    )]
     pub(super) fn lists_acl(output: &str, which: Acl) -> bool {
         output.lines().skip(1).any(|line| {
             let Some((index, _)) = line.trim_start().split_once(": ") else {

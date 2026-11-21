@@ -462,6 +462,19 @@ mod unix {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn a_path_with_a_newline_is_refused_because_its_acl_cannot_be_read_safely() {
+        let root = tempfile::tempdir().unwrap();
+        let name = "doc\nnote.md";
+        let path = root.path().join(name);
+        std::fs::write(&path, DOC).unwrap();
+        let out = run(root.path(), name, false);
+        assert_eq!(refused(&out), Refusal::AclPresent);
+        assert_eq!(read(&path), DOC);
+        assert_eq!(names(root.path()), [name], "nothing was staged");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn a_file_with_an_extended_acl_is_refused_and_left_untouched() {
         let root = project();
         let path = root.path().join("doc.md");

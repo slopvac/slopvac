@@ -26,7 +26,10 @@
 //! A file with an access ACL, or in a directory whose ACL new files would inherit, is
 //! refused with [`Refusal::AclPresent`]. Linux reads the ACL attributes. macOS hides its
 //! ACL from the attribute calls and reading it takes an `unsafe` foreign call, so it asks
-//! `ls -lde` for the entries instead. A failure of that check fails the write.
+//! `ls -lde` for the entries instead. A failure of that check fails the write. The one gap
+//! is that `ls` looks the target up again by path, so a swap between the descriptor's path
+//! and the `ls` call can hide an ACL. The write itself still goes through the held handle,
+//! and a path with a newline in it is refused as if it had an ACL.
 //!
 //! In-place writes exist on unix only. Elsewhere a dry run and a diff work, and a write is
 //! refused with [`Refusal::UnsupportedPlatform`] (bead slopvac-8l4.3.35 tracks a safe
