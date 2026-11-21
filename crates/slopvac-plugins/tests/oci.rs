@@ -1300,14 +1300,19 @@ mod helpers {
 
     #[test]
     fn tm38_a_helper_that_exits_but_leaves_a_descendant_holding_stdout_times_out() {
-        let err = lookup_within(
-            "orphan",
-            "leaky",
-            Some(r#"cat >/dev/null; echo '{"Username":"u","Secret":"s"}'; sleep 60 &"#),
-            SHORT_DEADLINE,
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("timed out"), "{err}");
+        // The helper replies, starts its descendant and exits. The lookup
+        // counts only once the descendant has written its pid, so a timeout
+        // that fired during startup cannot satisfy the assertion.
+        let script = format!(
+            "cat >/dev/null\necho '{{\"Username\":\"u\",\"Secret\":\"s\"}}'\n{SPAWN_SLEEPER}"
+        );
+        let (result, pid) = lookup_with_descendant("orphan", &script, SHORT_DEADLINE);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("timed out"), "{err}");
+        assert!(
+            process_is_gone(pid),
+            "descendant {pid} survived the timeout"
+        );
     }
 
     /// Run `script` as the helper, with `$MARKER` naming a file. Returns the
@@ -1344,13 +1349,16 @@ mod helpers {
         panic!("the descendant never wrote its pid before any of the deadlines");
     }
 
+    /// Whether `pid` is gone. A killed process whose parent has not reaped it
+    /// yet is a zombie (state `Z`) and counts as gone.
     fn process_is_gone(pid: u32) -> bool {
         let alive = || {
-            std::process::Command::new("kill")
-                .args(["-0", &pid.to_string()])
-                .stderr(std::process::Stdio::null())
-                .status()
-                .is_ok_and(|s| s.success())
+            let out = std::process::Command::new("/bin/ps")
+                .args(["-o", "stat=", "-p", &pid.to_string()])
+                .output()
+                .unwrap();
+            let stat = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+            !(stat.is_empty() || stat.starts_with('Z'))
         };
         // Killing is asynchronous: wait for it, with a generous limit.
         let deadline = Instant::now() + Duration::from_secs(20);

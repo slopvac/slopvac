@@ -1426,11 +1426,14 @@ mod tests {
 
     #[cfg(unix)]
     mod helper {
+        use std::io::Read;
         use std::path::Path;
         use std::time::{Duration, Instant};
 
+        use rustix::process::Signal;
+
         use super::super::unix::{
-            Entry, TABLE_MAX_BYTES, drain_bounded, parse_table, run_bounded, spawn_bounded,
+            Entry, TABLE_MAX_BYTES, drain_bounded, parse_table, pid, run_bounded, spawn_bounded,
         };
 
         fn sh(script: &str, within: Duration) -> Option<Vec<u8>> {
@@ -1505,8 +1508,87 @@ mod tests {
             }
         }
 
-        /// Run `script` with a 500 ms deadline; it writes a pid to the FIFO
-        /// named by `$0`. Returns the output, the time taken and that pid.
+        /// How long a script gets to report its pid. It bounds a broken
+        /// script only; no result depends on it.
+        const READY_LIMIT: Duration = Duration::from_secs(60);
+
+        /// Wait for the script to write a pid and a newline to the FIFO at
+        /// `fifo`, without blocking on it. On a script that exits first, or
+        /// reports nothing within `limit`, kill its group, reap it and
+        /// return the reason.
+        fn await_pid(
+            child: &mut std::process::Child,
+            fifo: &Path,
+            limit: Duration,
+        ) -> Result<String, String> {
+            use rustix::fs::{Mode, OFlags, open};
+            // Read and write, so the open never blocks and a writer that
+            // closes cannot end the stream under the reader.
+            let fd = open(fifo, OFlags::RDWR | OFlags::NONBLOCK, Mode::empty())
+                .map_err(|e| format!("cannot open the pid FIFO: {e}"))?;
+            let mut reader = std::fs::File::from(fd);
+            let end = Instant::now() + limit;
+            let mut got = Vec::new();
+            let failure = loop {
+                let mut chunk = [0_u8; 64];
+                match reader.read(&mut chunk) {
+                    Ok(n) => got.extend_from_slice(&chunk[..n]),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(e) => break format!("cannot read the pid FIFO: {e}"),
+                }
+                if got.contains(&b'\n') {
+                    let text = String::from_utf8_lossy(&got).trim().to_owned();
+                    return text
+                        .parse::<u32>()
+                        .map(|_| text.clone())
+                        .map_err(|_| format!("the helper wrote {text:?}, not a pid"));
+                }
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        break format!("the helper exited ({status}) before it wrote a pid");
+                    }
+                    Ok(None) if Instant::now() < end => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Ok(None) => break format!("the helper wrote no pid within {limit:?}"),
+                    Err(e) => break format!("cannot poll the helper: {e}"),
+                }
+            };
+            if let Some(g) = pid(child.id()) {
+                let _ = rustix::process::kill_process_group(g, Signal::KILL);
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(failure)
+        }
+
+        /// Spawn `script` under `/bin/sh -c`, with the FIFO path as `$0`.
+        fn spawn_reporting(script: &str, fifo: &Path) -> std::process::Child {
+            spawn_bounded(
+                Path::new("/bin/sh"),
+                &[
+                    std::ffi::OsStr::new("-c"),
+                    script.as_ref(),
+                    fifo.as_os_str(),
+                ],
+            )
+            .expect("spawn the helper")
+        }
+
+        fn make_fifo(dir: &Path) -> std::path::PathBuf {
+            std::fs::create_dir_all(dir).unwrap();
+            let fifo = dir.join("pid");
+            let made = std::process::Command::new("/usr/bin/mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap();
+            assert!(made.success(), "mkfifo failed");
+            fifo
+        }
+
+        /// Run `script` with a 500 ms deadline; it writes a pid and a newline
+        /// to the FIFO named by `$0`. Returns the output, the time taken and
+        /// that pid.
         ///
         /// The deadline starts once the script has reported its pid, so a
         /// slow shell start cannot leave the pid missing or half written.
@@ -1516,30 +1598,46 @@ mod tests {
                 std::process::id(),
                 script.len()
             ));
-            std::fs::create_dir_all(&dir).unwrap();
-            let pidfile = dir.join("pid");
-            let made = std::process::Command::new("/usr/bin/mkfifo")
-                .arg(&pidfile)
-                .status()
-                .unwrap();
-            assert!(made.success(), "mkfifo failed");
-            let child = spawn_bounded(
-                Path::new("/bin/sh"),
-                &[
-                    std::ffi::OsStr::new("-c"),
-                    script.as_ref(),
-                    pidfile.as_os_str(),
-                ],
-            )
-            .expect("spawn the helper");
-            // Blocks until the script writes the pid and closes the FIFO.
-            let pid = std::fs::read_to_string(&pidfile).unwrap().trim().to_owned();
-            pid.parse::<u32>().expect("the helper wrote a pid");
+            let fifo = make_fifo(&dir);
+            let mut child = spawn_reporting(script, &fifo);
+            let pid = await_pid(&mut child, &fifo, READY_LIMIT);
+            let pid = pid.unwrap_or_else(|why| {
+                let _ = std::fs::remove_dir_all(&dir);
+                panic!("{why}");
+            });
             let started = Instant::now();
             let got = drain_bounded(child, started + Duration::from_millis(500));
             let took = started.elapsed();
             std::fs::remove_dir_all(&dir).unwrap();
             (got, took, pid)
+        }
+
+        #[test]
+        fn a_script_that_exits_before_reporting_a_pid_fails_the_wait_at_once() {
+            let dir = std::env::temp_dir().join(format!("slopvac-ready-{}", std::process::id()));
+            let fifo = make_fifo(&dir);
+            let mut child = spawn_reporting("exit 3", &fifo);
+            let started = Instant::now();
+            let got = await_pid(&mut child, &fifo, READY_LIMIT);
+            let took = started.elapsed();
+            std::fs::remove_dir_all(&dir).unwrap();
+            let why = got.unwrap_err();
+            assert!(why.contains("exited"), "{why}");
+            assert!(took < Duration::from_secs(10), "{took:?}");
+        }
+
+        #[test]
+        fn a_script_that_reports_nothing_fails_the_wait_at_the_limit_and_is_reaped() {
+            let dir = std::env::temp_dir().join(format!("slopvac-silent-{}", std::process::id()));
+            let fifo = make_fifo(&dir);
+            let mut child = spawn_reporting("sleep 60", &fifo);
+            let got = await_pid(&mut child, &fifo, Duration::from_millis(200));
+            std::fs::remove_dir_all(&dir).unwrap();
+            assert!(got.unwrap_err().contains("no pid"));
+            assert!(
+                child.try_wait().unwrap().is_some(),
+                "the helper was not reaped"
+            );
         }
 
         #[test]
@@ -1556,7 +1654,8 @@ mod tests {
         #[test]
         fn a_hung_helper_that_left_its_group_is_killed_at_the_deadline() {
             // The helper leads its own group, so it moves into the host's.
-            let script = r#"echo $$ > "$0"; exec /usr/bin/perl -e 'setpgrp(0, getpgrp(getppid())) or die; sleep 60'"#;
+            // Perl reports its pid only after the move.
+            let script = r#"exec /usr/bin/perl -e 'setpgrp(0, getpgrp(getppid())) or die; open(F, ">", $ARGV[0]) or die; print F "$$\n"; close F; sleep 60' "$0""#;
             let (got, took, helper) = hung(script);
             assert_eq!(got, None);
             assert!(took < Duration::from_secs(30), "{took:?}");
