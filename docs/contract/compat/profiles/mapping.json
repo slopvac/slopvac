@@ -21,7 +21,7 @@
         "ste-practices.latin-abbreviation": "off",
         "ste-practices.unclear-pronoun": "off"
       },
-      "rule_entries": 121,
+      "rule_entries": 120,
       "severity_shift": 0,
       "style": "core:legacy-normal",
       "thresholds": {
@@ -42,7 +42,7 @@
         "ste-practices.latin-abbreviation": "off",
         "ste-practices.unclear-pronoun": "off"
       },
-      "rule_entries": 159,
+      "rule_entries": 158,
       "severity_shift": 0,
       "style": "core:legacy-relaxed",
       "thresholds": {
@@ -73,6 +73,16 @@
         "max_unicode_dashes": 0,
         "min_score": 85.0
       }
+    }
+  },
+  "removed_rules": {
+    "file": "docs/contract/compat/removed-rules.toml",
+    "ids": {
+      "ste-practices.inconsistent-wording-for-same-step": "user decision, 2026-11-16, see slopvac-8l4.3.43",
+      "ste-safety.safety-block-missing-consequence": "user decision, 2026-11-16, see slopvac-8l4.3.43",
+      "ste-sentences.vertical-list-item-punctuation": "user decision, 2026-11-16, see slopvac-8l4.3.43",
+      "ste-sentences.vertical-list-lead-in-missing-colon": "user decision, 2026-11-16, see slopvac-8l4.3.43",
+      "ste-words.inconsistent-term-for-same-thing": "user decision, 2026-11-16, see slopvac-8l4.3.43"
     }
   }
 }

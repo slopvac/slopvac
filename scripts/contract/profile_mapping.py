@@ -16,11 +16,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "docs" / "contract" / "compat" / "profiles"
 MAPPING_JSON = OUT / "mapping.json"
+REMOVED_RULES_FILE = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
 PROFILES = ("strict", "normal", "relaxed")
 THRESHOLD_KEYS = (
     "max_total_per_100_words",
@@ -29,6 +31,12 @@ THRESHOLD_KEYS = (
     "min_score",
     "max_unicode_dashes",
 )
+
+
+def load_removed_rules(path: Path = REMOVED_RULES_FILE) -> dict[str, str]:
+    """Map each removed 3.0 rule id to its decision source; a missing file raises."""
+    entries = tomllib.loads(path.read_text(encoding="utf-8"))["rules"]
+    return {entry["id"]: entry["source"] for entry in entries}
 
 
 def style_name(profile: str) -> str:
@@ -95,8 +103,12 @@ def build_style(profile: str) -> dict:
             dials["weight"] = settings.weight
         categories[name] = dials
     rules: dict[str, str] = {}
+    removed = load_removed_rules()
     for rule in ruleset.all_rules:
         qid = rule.qualified_id
+        if qid in removed:
+            # 3.0 has no such rule, and a style entry for it would be an unknown id.
+            continue
         want = states[qid][1]
         if rule.kind.value == "judgement":
             rules[qid] = want
@@ -171,7 +183,15 @@ def render_style(style: dict, profile: str) -> str:
 
 def build() -> dict[str, str]:
     files: dict[str, str] = {}
-    mapping: dict = {"profiles": {}, "genres": genres()}
+    mapping: dict = {
+        "profiles": {},
+        "genres": genres(),
+        # 2.x rules that 3.0 removed: the styles carry no entry for them.
+        "removed_rules": {
+            "file": "docs/contract/compat/removed-rules.toml",
+            "ids": load_removed_rules(),
+        },
+    }
     for profile in PROFILES:
         style = build_style(profile)
         files[f"{style['id']}.toml"] = render_style(style, profile)
