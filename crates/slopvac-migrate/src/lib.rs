@@ -17,6 +17,7 @@ mod legacy;
 mod limits;
 mod lint;
 mod messages;
+mod nesting;
 pub mod overlap;
 mod plan;
 mod preserve;
