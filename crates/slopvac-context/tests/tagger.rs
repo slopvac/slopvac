@@ -185,38 +185,61 @@ fn compiles(matcher: &str) -> Result<(), slopvac_context::Error> {
 }
 
 #[test]
-fn a_pattern_is_capped_at_4096_bytes() {
-    assert!(compiles(&format!("pattern: '{}'", "a".repeat(4096))).is_ok());
-    let err = compiles(&format!("pattern: '{}'", "a".repeat(4097))).unwrap_err();
+fn a_pattern_is_capped_at_8192_bytes() {
+    assert!(compiles(&format!("pattern: '{}'", "a".repeat(8192))).is_ok());
+    let err = compiles(&format!("pattern: '{}'", "a".repeat(8193))).unwrap_err();
     assert!(
         matches!(
             err,
             slopvac_context::Error::PatternTooLong {
-                len: 4097,
-                max: 4096
+                len: 8193,
+                max: 8192
             }
         ),
         "{err:?}"
     );
     assert_eq!(
         err.to_string(),
-        "pattern is 4097 bytes, over the 4096-byte limit"
+        "pattern is 8193 bytes, over the 8192-byte limit"
     );
 }
 
+#[rstest::rstest]
+#[case::at_the_authored_cap_plus_wrapper(8155)]
+#[case::one_byte_past_it(8156)]
+// 4,078 dots are 4,078 bytes as written and 8,156 escaped (`\.` each), 8,193 with the wrapper.
+#[case::escaped_form_past_the_authored_cap(4078)]
+fn a_generated_words_pattern_is_not_held_to_the_authored_cap(#[case] len: usize) {
+    let c = if len == 4078 { "." } else { "a" };
+    assert!(compiles(&format!("words: ['{}']", c.repeat(len))).is_ok());
+}
+
 #[test]
-fn the_generated_words_pattern_is_capped_at_4096_bytes_after_escaping() {
-    // The wrapper around the alternation is 37 bytes, so 4059 literal bytes fill the cap.
-    assert!(compiles(&format!("words: ['{}']", "a".repeat(4059))).is_ok());
-    assert!(compiles(&format!("words: ['{}']", "a".repeat(4060))).is_err());
-    // 2030 dots are 2030 bytes raw and 4060 escaped (`\.` each), so 4097 with the wrapper.
-    assert!(matches!(
-        compiles(&format!("words: ['{}']", ".".repeat(2030))),
-        Err(slopvac_context::Error::PatternTooLong {
-            len: 4097,
-            max: 4096
-        })
-    ));
+fn a_generated_words_pattern_keeps_the_pcre2_compile_limit() {
+    // 70,000 bytes pass the 64 KiB (65,536-byte) limit of `slopvac-pcre2`.
+    let err = compiles(&format!("words: ['{}']", "a".repeat(70_000))).unwrap_err();
+    assert!(
+        matches!(err, slopvac_context::Error::Pattern { .. }),
+        "{err:?}"
+    );
+}
+
+#[rstest::rstest]
+#[case::heading_path("heading_path", 8192, true)]
+#[case::heading_path_over("heading_path", 8193, false)]
+#[case::sentence("sentence", 8192, true)]
+#[case::sentence_over("sentence", 8193, false)]
+fn an_authored_when_pattern_is_capped_at_8192_bytes(
+    #[case] field: &str,
+    #[case] len: usize,
+    #[case] loads: bool,
+) {
+    let y = format!(
+        "schema_version: 3\nid: t\ntag: k\nscope: paragraph\nwhen:\n  {field}: '{}'\n",
+        "a".repeat(len)
+    );
+    let result = TaggerSpec::from_yaml(&y).and_then(|s| s.compile().map(|_| ()));
+    assert_eq!(result.is_ok(), loads, "{result:?}");
 }
 
 #[test]

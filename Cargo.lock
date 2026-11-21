@@ -2805,6 +2805,7 @@ name = "slopvac-rules"
 version = "0.0.0"
 dependencies = [
  "jsonschema",
+ "rstest",
  "schemars",
  "serde",
  "serde-saphyr",

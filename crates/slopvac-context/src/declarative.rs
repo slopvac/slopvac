@@ -205,7 +205,10 @@ impl Matcher {
         let fail = |msg: &str| Error::Parse(format!("tagger `{tagger}`: {msg}"));
         let source = match (&self.pattern, &self.words) {
             (Some(p), None) if p.is_empty() => return Err(fail("pattern is empty")),
-            (Some(p), None) => p.clone(),
+            (Some(p), None) => {
+                crate::pattern::check_authored(p)?;
+                p.clone()
+            }
             (None, Some(w)) => words_pattern(w)
                 .ok_or_else(|| fail("`words` needs at least one distinct, non-empty entry"))?,
             _ => return Err(fail("a matcher takes exactly one of `pattern` and `words`")),

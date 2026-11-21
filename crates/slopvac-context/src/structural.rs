@@ -102,6 +102,13 @@ impl When {
         {
             return Err(fail("`when` conditions need at least one character"));
         }
+        for authored in strings
+            .iter()
+            .filter_map(|o| o.as_deref())
+            .chain(fm.and_then(|f| f.matches.as_deref()))
+        {
+            crate::pattern::check_authored(authored)?;
+        }
         let c = |o: &Option<String>| o.as_deref().map(Pattern::new_caseless).transpose();
         let fm = match fm {
             Some(f) => Some((

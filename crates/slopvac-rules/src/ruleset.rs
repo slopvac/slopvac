@@ -17,6 +17,11 @@ use crate::model::{Category, LocalRuleId, Match, MatchKind, ProfileName, Rule, S
 /// 2 MiB leaves more than a tenfold margin for a pack.
 pub const MAX_RULE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 
+/// The longest authored pattern a rule or category file may carry, in UTF-8 bytes as written,
+/// before placeholders expand. Patterns that the loader builds keep the larger
+/// `slopvac-pcre2` limit.
+pub const MAX_AUTHORED_PATTERN_BYTES: usize = 8192;
+
 // Budget names in `docs/contract/policies.md` section 1.9 and their constants:
 // `plugin-files` is `MAX_PACK_FILES`, `plugin-bytes` is `MAX_PACK_BYTES`, `plugin-entries` is
 // `MAX_PACK_ENTRIES`, and `rule-entries` is `MAX_RULE_ENTRIES`.
@@ -435,6 +440,16 @@ fn load_rules(
             errors.push(e);
             continue;
         }
+        if let Some(len) = longest_over_cap(&rule.match_) {
+            // The loader keeps no position for a value inside a rule, so the error carries
+            // the line where the rule starts.
+            let e = error(LoadErrorKind::PatternTooLong {
+                len,
+                limit: MAX_AUTHORED_PATTERN_BYTES,
+            });
+            errors.push(e);
+            continue;
+        }
         let matcher = match compile(&rule.match_, options) {
             Ok(m) => m,
             Err(e) => {
@@ -461,6 +476,30 @@ fn load_rules(
         });
     }
     loaded
+}
+
+/// The authored patterns of a match: the `pattern` of a pattern match and the keys of a
+/// substitution map. Tokens are literals, and the loader builds their pattern.
+fn authored_patterns(m: &Match) -> Vec<&str> {
+    match m {
+        Match::Pattern(p) => vec![p.pattern.as_str()],
+        Match::Substitution(s) => s
+            .substitutions
+            .entries()
+            .iter()
+            .map(|(p, _)| p.as_str())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The length of the longest authored pattern, when it is over the cap.
+fn longest_over_cap(m: &Match) -> Option<usize> {
+    authored_patterns(m)
+        .into_iter()
+        .map(str::len)
+        .filter(|len| *len > MAX_AUTHORED_PATTERN_BYTES)
+        .max()
 }
 
 /// How many tokens or substitutions a rule lists, the part of a match that grows with the file.

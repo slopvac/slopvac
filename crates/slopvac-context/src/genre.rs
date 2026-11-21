@@ -874,6 +874,9 @@ fn compile(spec: GenreSpec) -> Result<Genre, Error> {
         min_score = d.min_score;
         for s in &d.signals {
             let field = |v: &Option<String>| v.clone().unwrap_or_default();
+            if matches!(s.kind, SignalKind::Heading | SignalKind::Text) {
+                crate::pattern::check_authored(&field(&s.pattern))?;
+            }
             let matcher = match s.kind {
                 SignalKind::Heading => Matcher::Heading(Pattern::new_caseless(&field(&s.pattern))?),
                 SignalKind::Text => Matcher::Text(Pattern::new_caseless(&field(&s.pattern))?),

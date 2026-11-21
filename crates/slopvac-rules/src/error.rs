@@ -63,6 +63,17 @@ pub enum LoadErrorKind {
         /// absolute: relative to the working directory, or `<external>/<name>` outside it.
         path: String,
     },
+    /// An authored pattern is longer than
+    /// [`MAX_AUTHORED_PATTERN_BYTES`](crate::MAX_AUTHORED_PATTERN_BYTES). The loader refuses the
+    /// whole load, as for [`LoadErrorKind::TooLarge`]. Its stable code is
+    /// `rules-pattern-too-long`. The error never holds the pattern text. Its line is the line where
+    /// the rule starts, because the loader keeps no position for a value inside a rule.
+    PatternTooLong {
+        /// The pattern length as written, in UTF-8 bytes.
+        len: usize,
+        /// The limit in bytes, `data.limit`.
+        limit: usize,
+    },
     /// The file does not parse as a rule or category file.
     Parse(String),
     /// The extension names no supported format (`json`, `yaml`, `yml`, `toml`).
@@ -103,6 +114,10 @@ impl fmt::Display for LoadErrorKind {
                 "[rules-budget-exceeded] the input passes the limit of {limit} {} ({})",
                 budget.unit(),
                 budget.as_str()
+            ),
+            Self::PatternTooLong { len, limit } => write!(
+                f,
+                "[rules-pattern-too-long] a pattern is {len} bytes, over the {limit}-byte limit"
             ),
             Self::Parse(e) => f.write_str(e),
             Self::UnsupportedFormat => {
