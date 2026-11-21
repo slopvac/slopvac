@@ -32,12 +32,23 @@ def schema(**body: object) -> dict:
     }
 
 
+def write_directions(directory: Path, names, direction: str = "input") -> None:
+    lines = ["[directions]"] + [f'"{name}" = "{direction}"' for name in names]
+    (directory / compat.DIRECTIONS_FILE).write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    )
+
+
 def write_dir(
-    directory: Path, schemas: dict[str, dict], corpus: dict[str, str] | None = None
+    directory: Path,
+    schemas: dict[str, dict],
+    corpus: dict[str, str] | None = None,
+    direction: str = "input",
 ) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     for name, body in schemas.items():
         (directory / name).write_text(json.dumps(body), encoding="utf-8")
+    write_directions(directory, schemas, direction)
     for rel, text in (corpus or {}).items():
         target = directory / "conformance" / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -45,9 +56,12 @@ def write_dir(
     return directory
 
 
-def run(tmp_path: Path, old: dict, new: dict, allow=(), corpus=None) -> list:
+def run(
+    tmp_path: Path, old: dict, new: dict, allow=(), corpus=None, direction="input"
+) -> list:
     base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: old}, corpus))
-    return compat.check(base, write_dir(tmp_path / "new", {FILE: new}), list(allow))
+    new_dir = write_dir(tmp_path / "new", {FILE: new}, direction=direction)
+    return compat.check(base, new_dir, list(allow))
 
 
 def kinds(findings: list) -> list[tuple[str, str]]:
