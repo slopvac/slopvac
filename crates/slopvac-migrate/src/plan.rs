@@ -233,7 +233,8 @@ fn plan_dir(
     let label = rel(root, &source).display().to_string();
     let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
     let outer = py.and_then(|t| key_lines(t).ok());
-    let rewrite = match migrate_config_in(&old, &label, renames, options, outer.as_ref()) {
+    let migrate = |options| migrate_config_in(&old, &label, renames, options, outer.as_ref());
+    let rewrite = match migrate(options) {
         Ok(rw) => rw,
         Err(Error::AlreadyMigrated { .. }) => return Ok(()),
         Err(e) => {
@@ -246,19 +247,8 @@ fn plan_dir(
             };
         }
     };
-    // The before side lints under what the 2.x config meant: the `--preserve-behavior`
-    // rewrite reproduces its gates. When that rewrite cannot run on this config, such as an
-    // override glob outside its grammar, the before side falls back to the plain rewrite.
-    let meant = if options.preserve_behavior {
-        rewrite.text.clone()
-    } else {
-        let preserve = Options {
-            preserve_behavior: true,
-        };
-        migrate_config_in(&old, &label, renames, preserve, outer.as_ref())
-            .map_or_else(|_| rewrite.text.clone(), |rw| rw.text)
-    };
-    plan.before.push((rel(root, &main_cfg), meant));
+    plan.before
+        .push((rel(root, &main_cfg), meant(options, &rewrite.text, migrate)));
     for n in rewrite.notes {
         plan.notes.push(format!("{label}: {n}"));
     }
@@ -298,6 +288,24 @@ fn plan_dir(
         dropped,
     )?;
     Ok(())
+}
+
+/// What the 2.x config meant, in 3.0 terms, for the before side of the lint: the
+/// `--preserve-behavior` rewrite from `migrate`, which reproduces the 2.x gates. When that
+/// rewrite cannot run on the config, such as on an override glob outside its grammar, the
+/// before side takes `plain`, the rewrite the plan writes.
+fn meant(
+    options: Options,
+    plain: &str,
+    migrate: impl Fn(Options) -> Result<crate::Rewrite, Error>,
+) -> String {
+    if options.preserve_behavior {
+        return plain.to_owned();
+    }
+    migrate(Options {
+        preserve_behavior: true,
+    })
+    .map_or_else(|_| plain.to_owned(), |rw| rw.text)
 }
 
 /// The blocklist settings of one config, with where to find their lines.

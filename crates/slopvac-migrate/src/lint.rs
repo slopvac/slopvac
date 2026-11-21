@@ -1,5 +1,6 @@
 //! The [`Linter`] over `slopvac-engine`.
 
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -167,11 +168,11 @@ impl Linter for EngineLinter {
             }
         }
         for dir in found.dirs.iter().filter(|d| d.main) {
-            let path = canonical(&dir.path).join(CONFIG_NAME);
-            if !configs.contains_key(&path) {
-                let shown = root.join(path.strip_prefix(&base).unwrap_or(&path));
-                let text = budget.read(&path, Kind::Config).map_err(|e| e.at(&shown))?;
-                configs.insert(path, text);
+            if let Entry::Vacant(slot) = configs.entry(canonical(&dir.path).join(CONFIG_NAME)) {
+                let path = slot.key();
+                let shown = root.join(path.strip_prefix(&base).unwrap_or(path));
+                let text = budget.read(path, Kind::Config).map_err(|e| e.at(&shown))?;
+                slot.insert(text);
             }
         }
         let mut docs = Vec::new();

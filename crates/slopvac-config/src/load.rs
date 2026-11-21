@@ -185,7 +185,7 @@ pub fn load_text(
         Some(name) => dir.join(name),
         None => dir.join(crate::discover::FILE_NAME),
     };
-    load_from(abs, text, presets).map(|(config, _)| config)
+    load_from(&abs, text, presets).map(|(config, _)| config)
 }
 
 /// As [`load_labeled`], also returning how many files were read.
@@ -196,12 +196,12 @@ fn load_counted(
 ) -> Result<(LoadedConfig, usize), ConfigError> {
     let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(label, source))?;
     let text = ConfigError::read_config(&abs, label)?;
-    load_from(abs, text, presets)
+    load_from(&abs, text, presets)
 }
 
 /// Load `text` as the config at the absolute path `abs`, and everything it extends.
 fn load_from(
-    abs: PathBuf,
+    abs: &Path,
     text: String,
     presets: &dyn Presets,
 ) -> Result<(LoadedConfig, usize), ConfigError> {
@@ -218,8 +218,8 @@ fn load_from(
         reads: 1,
     };
     loader.load_text(
-        &Key::Path(abs.clone()),
-        &relative_display(&abs, &root),
+        &Key::Path(abs.to_path_buf()),
+        &relative_display(abs, &root),
         text,
         ConfigLayer::Project,
     )?;
