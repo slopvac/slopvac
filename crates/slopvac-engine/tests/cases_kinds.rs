@@ -1,8 +1,6 @@
 //! The case runner checks the examples of every mechanically checkable rule kind and
 //! sets its exit code by the contract ruling in `docs/contract/rules.md`.
 
-#![allow(missing_docs)]
-
 mod common;
 
 use common::{engine, id, rule, tokens};
