@@ -6,8 +6,10 @@
 
 mod core;
 mod error;
+mod expand;
 mod genre_layer;
 mod manifest;
+mod messages;
 mod name;
 mod pack;
 mod pack_id;
@@ -15,11 +17,16 @@ mod problem;
 mod provenance;
 mod registry;
 mod source;
+mod synced;
 
 pub use core::core_source;
 pub use error::PackError;
-pub use pack::{LoadedPack, Packs};
-pub use problem::{ArtifactFault, RuleFault, RuleProblem};
+pub use messages::message_entries;
+pub use pack::{
+    LoadedPack, MAX_PACK_BYTES, MAX_PACK_FILES, MAX_RUN_BYTES, MAX_RUN_RULES, Packs,
+};
+pub use problem::{ArtifactFault, LimitKind, RuleFault, RuleProblem};
+pub use synced::{SyncedError, load_synced};
 pub use source::{DirSource, EmbeddedSource, FileTable, MANIFEST_FILE, PackSource, SourceError};
 
 pub use manifest::{

@@ -8,7 +8,7 @@
 
 use slopvac_messages::{Catalog, Entry};
 
-use crate::{Provenance, QualifiedName, Reference};
+use crate::{LimitKind, Provenance, QualifiedName, Reference};
 
 /// Every sentence the loader reports for a synced plugin.
 #[derive(Debug, Clone, PartialEq, Eq, Catalog)]
@@ -106,6 +106,25 @@ pub(crate) fn name_ambiguous(
         }),
         name: name.to_owned(),
         claims: claims_text(claims),
+    }
+    .to_string()
+}
+
+/// One pack over a cap.
+pub(crate) fn pack_limit(id: &str, what: LimitKind, limit: u64) -> String {
+    PackMessage::PluginLimit {
+        id: id.to_owned(),
+        what: what.to_string(),
+        limit: limit.to_string(),
+    }
+    .to_string()
+}
+
+/// All packs together over a cap.
+pub(crate) fn run_limit(what: LimitKind, limit: u64) -> String {
+    PackMessage::RunLimit {
+        what: what.to_string(),
+        limit: limit.to_string(),
     }
     .to_string()
 }

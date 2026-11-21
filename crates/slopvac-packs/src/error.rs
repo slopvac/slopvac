@@ -1,6 +1,6 @@
 //! Why a pack failed to load.
 
-use crate::problem::{ArtifactFault, RuleProblem, render_problems};
+use crate::problem::{ArtifactFault, LimitKind, RuleProblem, render_problems};
 use crate::{ManifestError, NameError, RegistryError, SourceError};
 
 /// A location suffix when line and column are known, else nothing.
@@ -31,8 +31,8 @@ pub enum PackError {
     /// A pack other than the built-in core uses the reserved id `core`.
     #[error("the id `core` is reserved for the built-in pack")]
     ReservedId,
-    /// A `provides` entry is a glob, which the loader does not expand yet.
-    #[error("`{}` is a glob; list each file", slopvac_sanitize::line(.path))]
+    /// A `provides` entry is a glob that does not parse.
+    #[error("`{}` is not a valid glob", slopvac_sanitize::line(.path))]
     Glob {
         /// The `provides` entry.
         path: String,
@@ -74,6 +74,24 @@ pub enum PackError {
         line: Option<usize>,
         /// The one-based column of its `extends` key.
         column: Option<usize>,
+    },
+    /// One pack is over a size cap (X3).
+    #[error("{}", crate::messages::pack_limit(.id, *.what, *.limit))]
+    Limit {
+        /// The pack id.
+        id: String,
+        /// What the cap counts.
+        what: LimitKind,
+        /// The cap.
+        limit: u64,
+    },
+    /// The loaded packs together are over a size cap (X3).
+    #[error("{}", crate::messages::run_limit(*.what, *.limit))]
+    RunLimit {
+        /// What the cap counts.
+        what: LimitKind,
+        /// The cap.
+        limit: u64,
     },
     /// An artifact name is not valid.
     #[error(transparent)]

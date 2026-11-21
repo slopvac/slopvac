@@ -40,6 +40,7 @@ slopvac-lsp.workspace = true
 slopvac-messages.workspace = true
 slopvac-migrate.workspace = true
 slopvac-model.workspace = true
+slopvac-packs.workspace = true
 slopvac-parse.workspace = true
 slopvac-plugins.workspace = true
 slopvac-pos.workspace = true
