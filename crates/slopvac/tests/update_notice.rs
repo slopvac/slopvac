@@ -194,6 +194,26 @@ impl Write for Recorder {
     }
 }
 
+/// Enters a directory and returns to the previous one on drop, also while unwinding.
+struct WorkingDir {
+    previous: std::path::PathBuf,
+}
+
+impl WorkingDir {
+    fn enter(dir: &Path) -> Self {
+        let previous = std::env::current_dir().expect("current directory");
+        std::env::set_current_dir(dir).expect("enter the project");
+        Self { previous }
+    }
+}
+
+impl Drop for WorkingDir {
+    fn drop(&mut self) {
+        // A failure here has nowhere to go, and the test process ends soon after.
+        let _ = std::env::set_current_dir(&self.previous);
+    }
+}
+
 #[test]
 fn stdout_is_flushed_before_the_notice_is_written() {
     let cache = seeded_cache();
@@ -201,7 +221,8 @@ fn stdout_is_flushed_before_the_notice_is_written() {
     // `main_with_io` reads the working directory. This is the only test here that runs in the
     // test process rather than in the binary, so changing it cannot race another test.
     let fx = fixture();
-    std::env::set_current_dir(fx.work.path()).expect("enter the project");
+    // Declared after `fx`, so it drops first and leaves the directory before it is removed.
+    let _back = WorkingDir::enter(fx.work.path());
     let cache_dir = cache.path().to_string_lossy().into_owned();
     let home_dir = home.path().to_string_lossy().into_owned();
     let env = slopvac_cli::env::MapEnv::new(
