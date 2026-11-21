@@ -75,17 +75,15 @@ fn a_document_with_a_few_kinds_on_a_wrapped_cell_is_checked() {
 }
 
 #[test]
-fn many_kinds_on_a_wrapped_cell_with_rules_across_its_lines_make_the_run_incomplete() {
+fn many_kinds_on_a_wrapped_cell_with_rules_across_its_lines_are_checked_in_linear_work() {
     let (kinds, rules, lines) = (400, 40, 60);
     let (steps, result) = run(kinds, rules, lines);
-    let bytes = wrapped_table(lines).len();
-    let limit = 8 * bytes + 16_384;
-    assert_eq!(result, Err(EngineError::TagLookupBudget { limit }));
-    // Without the budget the lookups look at each of the 400 kinds for each of the 40 rules'
-    // 59 breaks: over nine hundred thousand looks. A look costs about ten steps with the walk
-    // to it, so the budget stops the run at about sixteen times its size in steps.
-    assert!(
-        steps <= 32 * limit,
-        "{steps} steps for a budget of {limit} looks"
-    );
+    // Each gate names one kind that no tagger makes, so a lookup asks about that kind alone
+    // and the 400 kinds on the cell cost it nothing. Looking at every kind took over nine
+    // hundred thousand looks and stopped at the budget.
+    assert_eq!(result, Ok(0));
+    // Building the per-kind indexes is linear in the tags, and each of the 40 rules' 59
+    // lookups takes a few steps. Kinds times lookups would be far over this cap.
+    let cap = 50_000;
+    assert!(steps < cap, "{steps} steps for a cap of {cap}");
 }
