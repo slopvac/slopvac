@@ -6,6 +6,7 @@ mod cli;
 mod declarative;
 mod declared;
 mod genre;
+mod messages;
 mod mixed;
 mod pattern;
 mod reference;
@@ -14,6 +15,8 @@ mod structural;
 mod tag;
 mod view;
 mod work;
+
+use messages::ContextMessage;
 
 pub use builtin::{
     BuiltinFile, EnforcedInvariantTagger, GENRE_FILES, ListLeadInTagger, RequirementTagger,
@@ -30,6 +33,7 @@ pub use genre::{
     GenreResult, GenreSource, GenreSpec, NoBudget, Profile, Reason, ResolveOptions, RuleLevel,
     Scalar, Signal, SignalKind, parse_genres,
 };
+pub use messages::message_entries;
 pub use mixed::mixed_types_entry;
 pub use pattern::{Pattern, normalize_path};
 pub use reference::reference_pages;
@@ -131,6 +135,12 @@ pub enum Error {
 }
 
 impl Error {
+    /// The stable message code of this error, from the message catalog.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        self.message(str::to_owned).code()
+    }
+
     /// The message of this error with its untrusted parts (patterns, ids, paths, OS and
     /// parser messages) left unescaped. `Display` is this text, escaped.
     ///
@@ -141,53 +151,61 @@ impl Error {
         self.render(str::to_owned)
     }
 
-    /// The one wording of every message; `escape` is applied to each untrusted part.
+    /// The one wording of every message, from the catalog; `escape` is applied to each
+    /// untrusted part.
     fn render(&self, escape: fn(&str) -> String) -> String {
+        self.message(escape).to_string()
+    }
+
+    /// The catalog entry for this error, with `escape` applied to each untrusted part.
+    fn message(&self, escape: fn(&str) -> String) -> ContextMessage {
         match self {
-            Self::Pattern { pattern, source } => format!(
-                "invalid pattern `{}`: {}",
-                escape(pattern),
-                escape(&source.to_string())
-            ),
-            Self::PatternTooLong { len, max } => {
-                format!("pattern is {len} bytes, over the {max}-byte limit")
-            }
-            Self::Match { pattern, source } => format!(
-                "pattern `{}` failed while matching: {}",
-                escape(pattern),
-                escape(&source.to_string())
-            ),
-            Self::DuplicateTagger(id) => format!("tagger `{}` is already registered", escape(id)),
-            Self::TagLimit { limit } => format!("the document has more than {limit} context tags"),
-            Self::UnknownGenre(id) => format!("unknown genre `{}`", escape(id)),
-            Self::Yaml(source) => escape(&source.to_string()),
-            Self::Glob { pattern, source } => format!(
-                "glob `{}`: {}",
-                escape(pattern),
-                escape(&source.to_string())
-            ),
-            Self::GlobSet(source) => escape(&source.to_string()),
+            Self::Pattern { pattern, source } => ContextMessage::PatternInvalid {
+                pattern: escape(pattern),
+                reason: escape(&source.to_string()),
+            },
+            Self::PatternTooLong { len, max } => ContextMessage::PatternTooLong {
+                len: *len,
+                max: *max,
+            },
+            Self::Match { pattern, source } => ContextMessage::MatchFailed {
+                pattern: escape(pattern),
+                reason: escape(&source.to_string()),
+            },
+            Self::DuplicateTagger(id) => ContextMessage::TaggerDuplicate { id: escape(id) },
+            Self::TagLimit { limit } => ContextMessage::TagLimit { limit: *limit },
+            Self::UnknownGenre(id) => ContextMessage::GenreUnknown { id: escape(id) },
+            Self::Yaml(source) => ContextMessage::YamlInvalid {
+                reason: escape(&source.to_string()),
+            },
+            Self::Glob { pattern, source } => ContextMessage::GlobInvalid {
+                glob: escape(pattern),
+                reason: escape(&source.to_string()),
+            },
+            Self::GlobSet(source) => ContextMessage::GlobSetInvalid {
+                reason: escape(&source.to_string()),
+            },
             Self::SignalGlob {
                 genre,
                 glob,
                 source,
-            } => format!(
-                "genre `{}`: glob `{}`: {}",
-                escape(genre),
-                escape(glob),
-                escape(&source.to_string())
-            ),
-            Self::Read { path, source } => {
-                format!("{}: {}", escape(path), escape(&source.to_string()))
-            }
-            Self::TooLarge { path, cap } => {
-                format!(
-                    "{}: larger than the {cap}-byte document limit",
-                    escape(path)
-                )
-            }
-            Self::Unreadable { path } => format!("{}: cannot read", escape(path)),
-            Self::Parse(text) => escape(text),
+            } => ContextMessage::SignalGlobInvalid {
+                genre: escape(genre),
+                glob: escape(glob),
+                reason: escape(&source.to_string()),
+            },
+            Self::Read { path, source } => ContextMessage::ReadFailed {
+                path: escape(path),
+                reason: escape(&source.to_string()),
+            },
+            Self::TooLarge { path, cap } => ContextMessage::FileTooLarge {
+                path: escape(path),
+                cap: *cap,
+            },
+            Self::Unreadable { path } => ContextMessage::FileUnreadable { path: escape(path) },
+            Self::Parse(text) => ContextMessage::DataInvalid {
+                reason: escape(text),
+            },
         }
     }
 }
