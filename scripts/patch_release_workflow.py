@@ -310,7 +310,7 @@ def harden(text: str) -> str:
         text = _replace_once(text, run, first + _ZIZMOR_WHY + rest, what)
     text = _replace_once(text, _SBOM_OLD, _SBOM_NEW, "SBOM output reference")
     text = _verify_tag_before_publishing(text)
-    text = _split_publish(text)
+    text = _publish_without_dist(text)
     text = _mint_tap_token(text)
     text = _isolate_tap_push(text)
     text = _route_by_major_version(text)
@@ -434,76 +434,53 @@ _TAP_CHECKOUT = re.compile(
 )
 
 
-_TAIL_ANCHOR = "      # Create a GitHub Release while uploading all files to it\n"
-_UPLOAD_STEP = "      - name: Upload the artifacts to the draft release\n"
-_DIST_RELEASE_OLD = "--steps=upload --steps=release "
-_DIST_RELEASE_NEW = "--steps=upload "
-_PRERELEASE_OLD = "fromJson(steps.host.outputs.manifest).announcement_is_prerelease"
-_PRERELEASE_NEW = "fromJson(needs.plan.outputs.val).announcement_is_prerelease"
-# `host` runs dist (a cached binary) and so holds no write token. `publish` holds the
-# release App token but runs only repository scripts, minisign and gh: it never installs
-# or runs dist or anything the build jobs produced. It verifies every signature first
-# and mints the token only after that.
-_PUBLISH_HEAD = """\
-  # Publishes the release. It runs no dist and no build output: it verifies the
-  # signatures, then mints the write token and uploads the verified files.
-  publish:
-    name: Publish the verified release
-    needs:
-      - plan
-      - custom-release-provenance
-      - sign
-      - host
-    permissions:
-      "contents": "read"
-    runs-on: "ubuntu-22.04"
-    steps:
-      - uses: {checkout}
-        with:
-          persist-credentials: false
-{verify}\
-"""
+_HOST_DIST_SETUP = re.compile(
+    r"      - name: Install cached dist\n.*?(?=" + re.escape(_VERIFY_STEP) + r")", re.S
+)
+_HOST_DIST_RUN = re.compile(r"      - id: host\n.*?(?=      # Create a GitHub Release)", re.S)
+_HOST_DIST_ENV = "    env:\n      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n      TAG_FLAG: ${{ needs.plan.outputs.tag-flag }}\n"
+_HOST_DIST_OUTPUT = "    outputs:\n      val: ${{ steps.host.outputs.manifest }}\n"
+_HOST_OWN_MANIFEST = (
+    "          # This job's own dist run writes this one; the sign job never sees it\n"
+    "          rm -f artifacts/dist-manifest.json\n"
+)
+_HOST_PRERELEASE_OLD = "fromJson(steps.host.outputs.manifest).announcement_is_prerelease"
+_HOST_PRERELEASE_NEW = "fromJson(needs.plan.outputs.val).announcement_is_prerelease"
+_HOST_UPLOAD_STEP = "      - name: Upload the artifacts to the draft release\n"
 
 
-def _split_publish(text: str) -> str:
-    """Move the release writes out of `host` into a `publish` job that runs no dist.
+def _publish_without_dist(text: str) -> str:
+    """Make `host` publish with a minted App token and without running any dist.
 
-    `host` keeps `dist host --steps=upload` under its read-only token. The tail of the
-    job (download, signature check, upload, undraft) moves to `publish`, which mints the
-    App token after the signatures verify.
+    `host` used to run a cached dist binary while it held the write token, before any
+    signature was checked. It now installs and runs no dist and executes no downloaded
+    file: it fetches the artifacts and signatures, verifies each signature against the
+    committed key, and only then mints the contents-write token (the mint sits right
+    before the upload). The token goes only to the `gh` steps that write.
     """
     chunks = _split_jobs(text)
-    jobs = [i for i, c in enumerate(chunks) if c.startswith("  host:\n")]
-    if len(jobs) != 1:
-        raise ValueError(f"expected exactly one host job, found {len(jobs)}")
-    host = chunks[jobs[0]]
-    host = _replace_once(host, _DIST_RELEASE_OLD, _DIST_RELEASE_NEW, "host dist command")
-    cut = host.index(_TAIL_ANCHOR) if host.count(_TAIL_ANCHOR) == 1 else -1
-    if cut < 0:
-        raise ValueError("expected exactly one release tail in the host job")
-    tail = host[cut:].rstrip("\n") + "\n"
-    host = host[:cut].rstrip("\n") + "\n\n"
-    tail = tail.replace(_TAIL_ANCHOR, "", 1)
-    tail = _replace_once(tail, _PRERELEASE_OLD, _PRERELEASE_NEW, "prerelease flag")
-    tail = _replace_once(tail, _UPLOAD_STEP, _RELEASE_TOKEN_STEP + _UPLOAD_STEP, "upload step")
-    head = _PUBLISH_HEAD.replace("{checkout}", _pin(text, "checkout")).replace(
-        "{verify}", _VERIFY_STEP
-    )
-    chunks[jobs[0]] = host + head + tail + "\n"
-    out = "".join(chunks)
-    out = _replace_once(
-        out,
-        "  publish-homebrew-formula:\n    needs:\n      - plan\n      - host\n",
-        "  publish-homebrew-formula:\n    needs:\n      - plan\n      - publish\n",
-        "Homebrew needs",
-    )
-    out = _replace_once(
-        out, "      - host\n      - publish-homebrew-formula\n", "      - publish\n      - publish-homebrew-formula\n", "announce needs"
-    )
-    return _replace_once(
-        out, "needs.host.result == 'success' && (needs.publish-homebrew", "needs.publish.result == 'success' && (needs.publish-homebrew", "announce condition"
-    )
-
+    hosts = [i for i, c in enumerate(chunks) if c.startswith("  host:\n")]
+    if len(hosts) != 1:
+        raise ValueError(f"expected exactly one host job, found {len(hosts)}")
+    host = chunks[hosts[0]]
+    for old, new, what in (
+        (_HOST_DIST_ENV, "", "host job env"),
+        (_HOST_DIST_OUTPUT, "", "host job outputs"),
+        (_HOST_OWN_MANIFEST, "", "host manifest cleanup"),
+        (_HOST_PRERELEASE_OLD, _HOST_PRERELEASE_NEW, "host prerelease flag"),
+        (
+            _HOST_UPLOAD_STEP,
+            _RELEASE_TOKEN_STEP + _HOST_UPLOAD_STEP,
+            "host upload step",
+        ),
+    ):
+        host = _replace_once(host, old, new, what)
+    for pattern, what in ((_HOST_DIST_SETUP, "dist setup"), (_HOST_DIST_RUN, "dist run")):
+        host, count = pattern.subn("", host)
+        if count != 1:
+            raise ValueError(f"expected exactly one host {what} block, found {count}")
+    chunks[hosts[0]] = host
+    return "".join(chunks)
 
 def _mint_tap_token(text: str) -> str:
     """Replace the HOMEBREW_TAP_TOKEN secret with a token minted from the release App.

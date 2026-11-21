@@ -5,7 +5,7 @@
     "build-global-artifacts": "562ef33393ece284a4819450a2e3105b34a2f56bf31ddcf6930f75185d2c9603",
     "build-local-artifacts": "8c2207e956e271ab8da69daa3f131a19e952a520f32e7bd2d4a15e8908f0e11c",
     "custom-release-provenance": "39602fd8a5ef4564eb96276cc0aac15d63420b47f5a6a0324b6dd2f970a90c4a",
-    "host": "a9c7513a14186ccfe715507ec6f967308374de593c25052ed1e28fe38cca9a78",
+    "host": "e749c6212dda2ec2315e21a3f460d3727c2ae75b652ad3a91e113deca44bf77a",
     "plan": "0bf83d172582fc5ba3df1fb889f265ed29576fefb350a23abc1d84b6a4e460fe",
     "publish-homebrew-formula": "4d460a45a1058378200f89a878caa22cf91c897c5f6ce56a35203c4328e6d8c8",
     "publish-legacy-release": "b43c50244e9b1f3470f9e9e6f91b88beab364fef941b628ce39fb72dc20c43bb",

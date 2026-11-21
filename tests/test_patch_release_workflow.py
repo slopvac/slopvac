@@ -1624,11 +1624,11 @@ def test_only_the_signing_job_references_the_signing_key_and_it_uses_the_release
 
 # --- no job that can publish runs build output ------------------------------------
 
-_DIST_PATH_STEP = re.compile(r"(^|[\s;&|(])(dist|cargo-dist)\s")
-_RUN_BUILD_OUTPUT = re.compile(
-    r"(~/\.cargo/bin|cargo-dist-cache|target/distrib|\./artifacts|bash\s+artifacts|"
-    r"sh\s+artifacts|chmod\s+\+x)"
+_RUNS_DIST = re.compile(r"(^|[\s;&|(])(dist|cargo-dist)\s")
+_RUNS_BUILD_OUTPUT = re.compile(
+    r"(~/\.cargo/bin|target/distrib|\./artifacts|bash\s+artifacts|sh\s+artifacts|chmod\s+\+x)"
 )
+_TOKEN_MINT = "actions/create-github-app-token"
 
 
 def _holds_publishing_power(job: dict) -> bool:
@@ -1636,7 +1636,7 @@ def _holds_publishing_power(job: dict) -> bool:
     if (job.get("permissions") or {}).get("contents") == "write":
         return True
     return any(
-        str(step.get("uses", "")).startswith("actions/create-github-app-token")
+        str(step.get("uses", "")).startswith(_TOKEN_MINT)
         for step in job.get("steps", [])
     )
 
@@ -1650,39 +1650,41 @@ def _publishing_jobs(workflow) -> dict[str, dict]:
 
 
 def test_the_workflow_has_jobs_that_publish(workflow):
-    assert {"publish", "publish-homebrew-formula", "publish-legacy-release"} <= set(
+    assert {"host", "publish-homebrew-formula", "publish-legacy-release"} <= set(
         _publishing_jobs(workflow)
     )
 
 
-def test_no_publishing_job_runs_dist_or_cached_or_built_binaries(workflow):
+def test_no_publishing_job_installs_or_runs_dist_or_built_binaries(workflow):
     for name, job in _publishing_jobs(workflow).items():
-        if name == "publish-legacy-release":
-            continue  # no dist at all; covered by its own tests
         for step in job["steps"]:
             run = step.get("run", "")
-            assert not _DIST_PATH_STEP.search(run), (name, step)
+            assert not _RUNS_DIST.search(run), (name, step)
             assert step.get("with", {}).get("name") != "cargo-dist-cache", (name, step)
-            assert not _RUN_BUILD_OUTPUT.search(run), (name, step)
+            assert not _RUNS_BUILD_OUTPUT.search(run), (name, step)
 
 
-def test_the_job_that_runs_dist_holds_no_publishing_power(workflow):
-    runners = [
+def test_the_job_that_runs_dist_holds_no_release_publishing_power(workflow):
+    runners = {
         name
         for name, job in workflow["jobs"].items()
-        if any(_DIST_PATH_STEP.search(s.get("run", "")) for s in job.get("steps", []))
-    ]
-    assert "host" in runners
+        if any(_RUNS_DIST.search(s.get("run", "")) for s in job.get("steps", []))
+    }
+    assert {"plan", "build-local-artifacts", "build-global-artifacts"} <= runners
+    assert "host" not in runners
     for name in runners:
         assert name not in _publishing_jobs(workflow), name
 
 
-def test_the_publish_job_verifies_every_signature_before_it_uploads(workflow):
-    steps = workflow["jobs"]["publish"]["steps"]
+def test_the_host_job_verifies_every_signature_before_it_mints_or_uploads(workflow):
+    steps = workflow["jobs"]["host"]["steps"]
     runs = [s.get("run", "") for s in steps]
     verify = next(i for i, r in enumerate(runs) if "release_signing.py verify" in r)
-    mint = next(i for i, s in enumerate(steps) if s.get("id") == "release-token")
-    uploads = [i for i, r in enumerate(runs) if "gh release" in r]
+    mint = next(
+        i for i, s in enumerate(steps) if str(s.get("uses", "")).startswith(_TOKEN_MINT)
+    )
+    uploads = [i for i, r in enumerate(runs) if "gh release upload" in r]
     assert uploads
     assert verify < mint < min(uploads)
     assert "artifacts" in runs[verify]
+    assert "! -name '*.minisig'" in runs[verify]
