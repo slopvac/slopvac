@@ -14,8 +14,8 @@ publish.workspace = true
 rustix = { workspace = true, features = ["fs", "process"] }
 
 [dependencies]
-clap.workspace = true
 cap-std.workspace = true
+clap.workspace = true
 crossbeam-channel.workspace = true
 flate2.workspace = true
 minisign-verify.workspace = true
