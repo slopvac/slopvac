@@ -83,7 +83,7 @@ import tomllib
 import urllib.parse
 from collections import Counter
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -101,10 +101,20 @@ ALLOW_FIELDS = ("file", "pointer", "kind", "reason", "approved_by")
 DIRECTIONS_FILE = "directions.toml"
 DIRECTIONS = ("input", "output", "both")
 EXTENSIBLE = "x-slopvac-extensible"
+# Principle for output and ``both`` schemas: fail closed. A change to any constraint
+# keyword is reported unless the checker can prove that the new effective schema (a
+# ``$ref`` target intersected with its sibling keywords) accepts no value the old one
+# rejected. Where it cannot prove that, it reports the change. An input schema may loosen.
 # Kinds that only an output schema (or a "both" schema) reports: an input schema may
 # grow its enums and alternatives, but a consumer of output must be told it can.
 OUTPUT_ONLY_KINDS = frozenset(
-    {"enum-widened", "alternative-added", "extensible-removed", "type-widened"}
+    {
+        "enum-widened",
+        "alternative-added",
+        "extensible-removed",
+        "type-widened",
+        "constraint-loosened",
+    }
 )
 
 LOADERS: dict[str, Callable[[str], Any]] = {
@@ -406,6 +416,133 @@ def _resolve(
     return file, pointer, node
 
 
+@dataclass
+class Eff:
+    """The restrictions that bound what a schema accepts; None means unrestricted."""
+
+    types: set[str] | None = None
+    values: set[str] | None = None
+    mins: dict[str, Any] = field(default_factory=dict)
+    maxs: dict[str, Any] = field(default_factory=dict)
+    required: set[str] = field(default_factory=set)
+    unique: bool = False
+
+
+def _own_eff(node: dict) -> Eff:
+    values = None
+    if "const" in node:
+        values = {_canon(node["const"])}
+    if isinstance(node.get("enum"), list):
+        enum = {_canon(v) for v in node["enum"]}
+        values = enum if values is None else values & enum
+    required = node.get("required")
+    return Eff(
+        types=_type_set(node),
+        values=values,
+        mins={k: node[k] for k in _MIN_KEYWORDS if _is_number(node.get(k))},
+        maxs={k: node[k] for k in _MAX_KEYWORDS if _is_number(node.get(k))},
+        required=set(required) if isinstance(required, list) else set(),
+        unique=node.get("uniqueItems") is True,
+    )
+
+
+def _meet(a: Eff, b: Eff) -> Eff:
+    """Both restrictions at once: the intersection of what the two schemas accept."""
+
+    def both(x, y):
+        return y if x is None else x if y is None else x & y
+
+    return Eff(
+        types=both(a.types, b.types),
+        values=both(a.values, b.values),
+        mins={
+            k: max(a.mins.get(k, b.mins.get(k)), b.mins.get(k, a.mins.get(k)))
+            for k in a.mins.keys() | b.mins.keys()
+        },
+        maxs={
+            k: min(a.maxs.get(k, b.maxs.get(k)), b.maxs.get(k, a.maxs.get(k)))
+            for k in a.maxs.keys() | b.maxs.keys()
+        },
+        required=a.required | b.required,
+        unique=a.unique or b.unique,
+    )
+
+
+def _loosened(
+    file: str, ptr: str, old: Eff, new: Eff, marked: bool, value_key: str
+) -> Iterator[Finding]:
+    """One finding for each restriction of ``old`` that ``new`` does not keep."""
+    if not marked:
+        if old.types is not None and (new.types is None or not new.types <= old.types):
+            yield Finding(
+                file,
+                f"{ptr}/type",
+                "type-widened",
+                _show(sorted(old.types)),
+                _show(None if new.types is None else sorted(new.types)),
+            )
+        if old.values is not None and (
+            new.values is None or not new.values <= old.values
+        ):
+            yield Finding(
+                file,
+                f"{ptr}/{value_key}",
+                "enum-widened",
+                _show(sorted(old.values)),
+                _show(None if new.values is None else sorted(new.values)),
+            )
+    for key, bound in sorted(old.mins.items()):
+        if key not in new.mins or new.mins[key] < bound:
+            yield Finding(
+                file,
+                f"{ptr}/{key}",
+                "constraint-loosened",
+                _show(bound),
+                _show(new.mins.get(key)),
+            )
+    for key, bound in sorted(old.maxs.items()):
+        if key not in new.maxs or new.maxs[key] > bound:
+            yield Finding(
+                file,
+                f"{ptr}/{key}",
+                "constraint-loosened",
+                _show(bound),
+                _show(new.maxs.get(key)),
+            )
+    for name in sorted(old.required - new.required):
+        yield Finding(
+            file,
+            f"{ptr}/required/{_esc(name)}",
+            "constraint-loosened",
+            _show(name),
+            "(absent)",
+        )
+    if old.unique and not new.unique:
+        yield Finding(
+            file, f"{ptr}/uniqueItems", "constraint-loosened", "true", "(absent)"
+        )
+
+
+def _compare_dropped(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]:
+    """Keywords that the effective restriction does not model: report a removal."""
+    for key in ("format", "multipleOf", "not"):
+        if key in o and key not in n:
+            yield Finding(
+                file, f"{ptr}/{key}", "constraint-loosened", _show(o[key]), "(absent)"
+            )
+    for key, names in o.get("dependentRequired", {}).items():
+        kept = n.get("dependentRequired", {}).get(key, [])
+        for name in names:
+            if name not in kept:
+                yield Finding(
+                    file,
+                    f"{ptr}/dependentRequired/{_esc(key)}/{_esc(name)}",
+                    "constraint-loosened",
+                    _show(name),
+                    "(absent)",
+                )
+
+
 @dataclass(frozen=True)
 class Docs:
     """The schema file each side's current subschema lives in; they differ after a hop."""
@@ -440,12 +577,20 @@ class Comparer:
         return known
 
     def compare(
-        self, file: str, doc: Docs, ptr: str, old: Any, new: Any
+        self,
+        file: str,
+        doc: Docs,
+        ptr: str,
+        old: Any,
+        new: Any,
+        hop_root: bool = False,
     ) -> Iterator[Finding]:
         """Yield a finding for each way ``new`` accepts less than ``old``.
 
         ``file`` is the schema file the finding is reported against; ``doc`` names the
         file each side's current subschema lives in, which differ after a ``$ref`` hop.
+        ``hop_root`` marks the first pair of a hop: the referrer already compared the
+        effective restriction there, with its siblings, so the root skips that check.
         """
         if old is False or (_same(old, new) and not self._has_ref(old)):
             return
@@ -454,7 +599,8 @@ class Comparer:
             return
         o, n = _as_schema(old), _as_schema(new)
         yield from self._compare_refs(file, doc, ptr, o, n)
-        new_has_ref = "$ref" in n
+        if not hop_root:
+            yield from self._compare_effective(file, doc, ptr, o, n)
         removed = "$ref" in o and "$ref" not in n
         o = {k: v for k, v in o.items() if k != "$ref"}
         n = {k: v for k, v in n.items() if k != "$ref"}
@@ -463,8 +609,8 @@ class Comparer:
             # the inline replacement; the bare siblings would read as additions.
             return
         yield from _compare_scalars(file, ptr, o, n)
-        if not new_has_ref:
-            yield from _compare_widening(file, ptr, o, n)
+        if not hop_root:
+            yield from _compare_dropped(file, ptr, o, n)
         yield from _compare_unmodelled(file, ptr, o, n)
         yield from _compare_required(file, ptr, o, n)
         yield from self._compare_additional(file, doc, ptr, o, n)
@@ -509,7 +655,7 @@ class Comparer:
         outer_cuts, self._cuts = self._cuts, set()
         self._stack.add(sides)
         try:
-            inner = list(self.compare("", docs, "", old, new))
+            inner = list(self.compare("", docs, "", old, new, True))
         finally:
             self._stack.discard(sides)
         if sides[0] is not None and sides[0] == sides[1]:
@@ -522,6 +668,65 @@ class Comparer:
         self._cuts |= outer_cuts
         for found in inner:
             yield replace(found, file=file, pointer=f"{ptr}{name}{found.pointer}")
+
+    def _effective(
+        self, side: str, doc: str, node: Any, seen: frozenset = frozenset()
+    ) -> "Eff":
+        """The restrictions of ``node`` with its ``$ref`` target and ``allOf`` members."""
+        if not isinstance(node, dict):
+            return Eff()
+        schemas, uris = (
+            (self.old, self._old_uris) if side == "old" else (self.new, self._new_uris)
+        )
+        eff = _own_eff(node)
+        target = _resolve(schemas, uris, doc, node.get("$ref"))
+        if target is not None and target[:2] not in seen:
+            eff = _meet(
+                eff,
+                self._effective(side, target[0], target[2], seen | {target[:2]}),
+            )
+        for member in node.get("allOf", []):
+            eff = _meet(eff, self._effective(side, doc, member, seen))
+        return eff
+
+    def _marked(self, side: str, doc: str, node: Any, seen: frozenset = frozenset()):
+        """True when ``node``, or a ``$ref`` target it reaches, carries the marker."""
+        if not isinstance(node, dict):
+            return False
+        if _extensible(node):
+            return True
+        schemas, uris = (
+            (self.old, self._old_uris) if side == "old" else (self.new, self._new_uris)
+        )
+        target = _resolve(schemas, uris, doc, node.get("$ref"))
+        if target is None or target[:2] in seen:
+            return False
+        return self._marked(side, target[0], target[2], seen | {target[:2]})
+
+    def _compare_effective(
+        self, file: str, doc: Docs, ptr: str, o: dict, n: dict
+    ) -> Iterator[Finding]:
+        """Report each way the effective restriction of ``n`` is looser than ``o``'s.
+
+        When both sides reference the same target, the new side is read against the old
+        target, so a change to the definition itself is reported once, at the definition.
+        """
+        old_eff = self._effective("old", doc.old, o)
+        old_t = _resolve(self.old, self._old_uris, doc.old, o.get("$ref"))
+        new_t = _resolve(self.new, self._new_uris, doc.new, n.get("$ref"))
+        if old_t is not None and new_t is not None and old_t[:2] == new_t[:2]:
+            rest = {k: v for k, v in n.items() if k != "$ref"}
+            rest_eff = self._effective("new", doc.new, rest)
+            new_eff = _meet(rest_eff, self._effective("old", old_t[0], old_t[2]))
+        else:
+            new_eff = self._effective("new", doc.new, n)
+        marked = self._marked("new", doc.new, n)
+        key = "enum"
+        if "enum" not in n and "const" not in n and "const" in o and "enum" not in o:
+            key = "const"
+        elif "enum" not in n and "const" in n:
+            key = "const"
+        yield from _loosened(file, ptr, old_eff, new_eff, marked, key)
 
     def _compare_refs(
         self, file: str, doc: Docs, ptr: str, o: dict, n: dict
@@ -747,33 +952,6 @@ def _compare_unmodelled(file: str, ptr: str, o: dict, n: dict) -> Iterator[Findi
             )
 
 
-def _compare_widening(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]:
-    """Widenings by ``type``, or by dropping an ``enum``/``const``, that a closed output forbids.
-
-    Skipped where the new schema has a ``$ref`` (the target carries the constraint) and
-    where the position is marked extensible.
-    """
-    if _extensible(n):
-        return
-    old_types, new_types = _types(o.get("type")), _types(n.get("type"))
-    if old_types is not None and (
-        new_types is None
-        or not all(_type_satisfied(t, old_types) for t in new_types)
-    ):
-        yield Finding(
-            file,
-            f"{ptr}/type",
-            "type-widened",
-            _show(o.get("type")),
-            _show(n.get("type")) if "type" in n else "(absent)",
-        )
-    for key in ("enum", "const"):
-        if key in o and "enum" not in n and "const" not in n:
-            yield Finding(
-                file, f"{ptr}/{key}", "enum-widened", _show(o[key]), "(absent)"
-            )
-
-
 def _compare_scalars(file: str, ptr: str, o: dict, n: dict) -> Iterator[Finding]:
     def find(key: str, kind: str) -> Finding:
         return Finding(
@@ -844,12 +1022,6 @@ def _compare_value_sets(file: str, ptr: str, o: dict, n: dict) -> Iterator[Findi
                 f"{key}-narrowed",
                 _show(o.get(old_key)),
                 _show(n[key]),
-            )
-        elif not _extensible(n) and not {_canon(v) for v in new_vals} <= {
-            _canon(v) for v in old_vals
-        }:
-            yield Finding(
-                file, f"{ptr}/{key}", "enum-widened", _show(old_vals), _show(n[key])
             )
 
 
@@ -957,7 +1129,9 @@ def check_directions(directions: dict[str, str], schemas: dict[str, dict]) -> No
         raise CompatError(f"{', '.join(unlisted)}: not in {DIRECTIONS_FILE}")
     unknown = sorted(set(directions) - set(schemas))
     if unknown:
-        raise CompatError(f"{DIRECTIONS_FILE} lists no such schema: {', '.join(unknown)}")
+        raise CompatError(
+            f"{DIRECTIONS_FILE} lists no such schema: {', '.join(unknown)}"
+        )
 
 
 # --- corpus re-validation --------------------------------------------------------
