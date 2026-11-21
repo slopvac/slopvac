@@ -19,7 +19,7 @@ use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 
 use pcre2_sys::{
-    PCRE2_CONFIG_JIT, PCRE2_CONFIG_VERSION, PCRE2_INFO_JITSIZE, PCRE2_JIT_COMPLETE, PCRE2_NO_JIT,
+    PCRE2_CONFIG_JIT, PCRE2_CONFIG_VERSION, PCRE2_INFO_JITSIZE, PCRE2_INFO_SIZE, PCRE2_JIT_COMPLETE, PCRE2_NO_JIT,
     PCRE2_NO_UTF_CHECK, PCRE2_NOTEMPTY_ATSTART, PCRE2_UNSET, pcre2_code_8, pcre2_code_free_8,
     pcre2_compile_8, pcre2_compile_context_8, pcre2_compile_context_create_8,
     pcre2_compile_context_free_8, pcre2_config_8, pcre2_get_error_message_8,
@@ -147,6 +147,22 @@ impl Code {
             pcre2_pattern_info_8(
                 self.ptr.as_ptr(),
                 PCRE2_INFO_JITSIZE,
+                (&raw mut size).cast::<c_void>(),
+            )
+        };
+        if rc == 0 { size } else { 0 }
+    }
+
+    /// Size in bytes of the compiled pattern, not counting JIT code, or zero if PCRE2 does not
+    /// report it.
+    pub(crate) fn compiled_size(&self) -> usize {
+        let mut size = 0_usize;
+        // SAFETY: `self.ptr` is a live compiled pattern; `PCRE2_INFO_SIZE` writes one `usize`
+        // to `where`, which is valid for it.
+        let rc = unsafe {
+            pcre2_pattern_info_8(
+                self.ptr.as_ptr(),
+                PCRE2_INFO_SIZE,
                 (&raw mut size).cast::<c_void>(),
             )
         };

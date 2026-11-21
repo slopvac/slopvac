@@ -80,6 +80,12 @@ impl Pattern {
             .map_err(|e| PatternError(e.to_string()))
     }
 
+    /// Size in bytes of the compiled pattern (`PCRE2_INFO_SIZE`).
+    #[must_use]
+    pub fn compiled_size(&self) -> usize {
+        self.0.compiled_size()
+    }
+
     /// Byte ranges of every non-overlapping match, left to right.
     pub fn find_all(&self, text: &str) -> Result<Vec<std::ops::Range<usize>>, TextError> {
         Ok(self.0.find_all(text)?)
