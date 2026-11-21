@@ -1,6 +1,6 @@
 //! Tags, the tagger trait, the registry and the context gate.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -171,6 +171,9 @@ pub struct TagIndex {
     groups: Vec<usize>,
     /// For a group of several pieces, its pieces.
     members: HashMap<usize, Pieces>,
+    /// The groups that repeat an earlier group of the same kind and pieces, left out of the
+    /// stabbing structures because the earlier group answers for them.
+    repeated: HashSet<usize>,
     /// Per kind, over every tag: answers [`Self::kinds_at`].
     all: Spatial,
     /// Per kind, over the tags of a single piece: answers the single-piece part of
@@ -474,9 +477,27 @@ impl TagIndex {
         for (i, &g) in groups.iter().enumerate() {
             by_group.entry(g).or_default().push(i);
         }
-        let members: HashMap<usize, Pieces> = by_group
+        // A group with the same kind and the same pieces as an earlier group answers every
+        // lookup the same way, so only the first of them goes into the stabbing structures.
+        // Many taggers or matches that tag one cell then cost a lookup one visit, not one each.
+        let mut seen: HashSet<(&str, Vec<(usize, usize)>)> = HashSet::new();
+        let mut repeated: HashSet<usize> = HashSet::new();
+        let mut multi_groups: Vec<(usize, Vec<usize>)> =
+            by_group.into_iter().filter(|(_, m)| m.len() > 1).collect();
+        multi_groups.sort_unstable_by_key(|(g, _)| *g);
+        for (g, m) in &multi_groups {
+            let key = (
+                tags[m[0]].kind.as_str(),
+                m.iter()
+                    .map(|&i| (tags[i].span.start, tags[i].span.end))
+                    .collect(),
+            );
+            if !seen.insert(key) {
+                repeated.insert(*g);
+            }
+        }
+        let members: HashMap<usize, Pieces> = multi_groups
             .into_iter()
-            .filter(|(_, m)| m.len() > 1)
             .map(|(g, m)| (g, Pieces::build(&tags, &m)))
             .collect();
         let all = Spatial::build(tags.iter());
@@ -488,10 +509,10 @@ impl TagIndex {
                     .map(|(_, t)| t),
             )
         });
-        let multi_ids = (0..tags.len())
-            .filter(|&i| members.contains_key(&groups[i]))
+        let multi_ids: Vec<usize> = (0..tags.len())
+            .filter(|&i| members.contains_key(&groups[i]) && !repeated.contains(&groups[i]))
             .collect();
-        let multi = if members.is_empty() {
+        let multi = if multi_ids.is_empty() {
             Stab::default()
         } else {
             Stab::build(&tags, multi_ids)
@@ -500,6 +521,7 @@ impl TagIndex {
             tags,
             groups,
             members,
+            repeated,
             all,
             single,
             multi,
@@ -519,7 +541,11 @@ impl TagIndex {
                 .map(|(kind, ids)| {
                     let is_multi = |i: &usize| self.members.contains_key(&self.groups[*i]);
                     let all = Spatial::build(ids.iter().map(|&i| &self.tags[i]));
-                    let multi_ids: Vec<usize> = ids.iter().copied().filter(is_multi).collect();
+                    let multi_ids: Vec<usize> = ids
+                        .iter()
+                        .copied()
+                        .filter(|i| is_multi(i) && !self.repeated.contains(&self.groups[*i]))
+                        .collect();
                     let (single, multi) = if multi_ids.is_empty() {
                         (None, Stab::default())
                     } else {

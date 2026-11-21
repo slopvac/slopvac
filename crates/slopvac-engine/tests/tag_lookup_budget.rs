@@ -36,14 +36,15 @@ fn taggers(kinds: usize) -> TagRegistry {
 }
 
 /// `rules` document-scope rules that each match the break between two lines of the cell. A
-/// context gate on a kind no tagger makes leaves them without findings.
+/// context gate skips `k0`, a kind the cell has, so each lookup reaches a real kind and the
+/// rules have no findings.
 fn engine(kinds: usize, rules: usize, lines: usize) -> Engine {
     let rules: Vec<_> = (0..rules)
         .map(|i| {
             common::rule(
                 &format!("r{i}"),
                 &json!({"kind": "pattern", "pattern": r"go\.\s+Must"}),
-                &json!({"scope": "document", "contexts": {"only": ["absent"]}}),
+                &json!({"scope": "document", "contexts": {"skip": ["k0"]}}),
             )
         })
         .collect();
@@ -78,12 +79,13 @@ fn a_document_with_a_few_kinds_on_a_wrapped_cell_is_checked() {
 fn many_kinds_on_a_wrapped_cell_with_rules_across_its_lines_are_checked_in_linear_work() {
     let (kinds, rules, lines) = (400, 40, 60);
     let (steps, result) = run(kinds, rules, lines);
-    // Each gate names one kind that no tagger makes, so a lookup asks about that kind alone
-    // and the 400 kinds on the cell cost it nothing. Looking at every kind took over nine
+    // Each gate names `k0` alone, so a lookup asks about that kind and the other 399 kinds
+    // on the cell cost it nothing. Looking at every kind took over nine
     // hundred thousand looks and stopped at the budget.
     assert_eq!(result, Ok(0));
-    // Building the per-kind indexes is linear in the tags, and each of the 40 rules' 59
-    // lookups takes a few steps. Kinds times lookups would be far over this cap.
-    let cap = 50_000;
+    // Building the indexes is linear in the 24,000 pieces (about 66,000 steps, three
+    // structures each), and the 2,360 lookups take a few steps each. The old code stopped
+    // at the budget after about 270,000 steps, so this cap sits well under that.
+    let cap = 100_000;
     assert!(steps < cap, "{steps} steps for a cap of {cap}");
 }
