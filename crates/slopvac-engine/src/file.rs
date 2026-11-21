@@ -210,13 +210,7 @@ pub fn fix_file_in(
 /// `path` below `root` as plain names, or `None` when it is outside or climbs with `..`.
 fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
     let relative = if path.is_absolute() {
-        path.strip_prefix(root)
-            .ok()
-            .map(Path::to_path_buf)
-            .or_else(|| {
-                let canonical = root.canonicalize().ok()?;
-                path.strip_prefix(canonical).ok().map(Path::to_path_buf)
-            })?
+        path.strip_prefix(root).ok().map(Path::to_path_buf)?
     } else {
         path.to_path_buf()
     };

@@ -635,6 +635,37 @@ fn each_refusal_has_its_stable_code(#[case] refusal: Refusal, #[case] code: &str
     assert_eq!(refusal.code(), code);
 }
 
+/// After the root path is swapped for a link, an absolute path into the link's target is
+/// not under the root that was opened. It is refused, not mapped onto the original root.
+#[cfg(unix)]
+#[test]
+fn an_absolute_path_into_the_directory_a_swapped_root_now_points_at_is_refused() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("doc.md"), DOC).unwrap();
+    let outside = project();
+    let held = Root::open(&root).unwrap();
+    std::fs::rename(&root, parent.path().join("moved")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), &root).unwrap();
+    let target = outside.path().canonicalize().unwrap().join("doc.md");
+
+    let out = fix_file_hooked(
+        &swaps(),
+        &held,
+        &target,
+        Kind::Markdown,
+        false,
+        None,
+        &mut |_| Ok(()),
+    )
+    .unwrap();
+
+    assert_eq!(refused(&out), Refusal::OutsideRoot);
+    assert_eq!(read(parent.path().join("moved/doc.md")), DOC);
+    assert_eq!(read(outside.path().join("doc.md")), DOC);
+}
+
 /// The root path is replaced by a link to another directory after the root was opened, as
 /// happens between collecting files and writing a fix. The held handle still names the
 /// original root, so the fix lands there and the outside directory is untouched.
