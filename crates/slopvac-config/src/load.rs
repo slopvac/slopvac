@@ -393,6 +393,14 @@ struct Loader<'a> {
     reads: usize,
 }
 
+/// The file a key names, when it names one.
+fn key_path(key: &Key) -> Option<PathBuf> {
+    match key {
+        Key::Path(p) => Some(p.clone()),
+        Key::Pack(_) => None,
+    }
+}
+
 impl Loader<'_> {
     fn load_text(
         &mut self,
@@ -405,6 +413,7 @@ impl Loader<'_> {
         let reject = |text: String, diagnostics: Vec<Diagnostic>| {
             ConfigError::Rejected(Box::new(Rejected {
                 file: label.clone(),
+                path: key_path(key),
                 text,
                 diagnostics,
             }))
@@ -832,6 +841,7 @@ impl Loader<'_> {
             let fail = |r: Refusal| {
                 ConfigError::Rejected(Box::new(Rejected {
                     file: label.clone(),
+                    path: key_path(key),
                     text: text.to_owned(),
                     diagnostics: vec![Diagnostic {
                         code: r.code,

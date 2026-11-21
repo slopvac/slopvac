@@ -4,6 +4,8 @@ use std::io;
 
 use slopvac_messages::Catalog;
 
+use std::path::PathBuf;
+
 use crate::diag::{Code, Diagnostic, SourceFile, render_config};
 use crate::messages::{ConfigMessage, ConfigPhrase, ConfigText};
 
@@ -12,6 +14,9 @@ use crate::messages::{ConfigMessage, ConfigPhrase, ConfigText};
 pub struct Rejected {
     /// Path shown in messages, relative to the project root.
     pub file: String,
+    /// The file itself, which `file` hides when it sits outside the project root. It is for
+    /// finding the file again and never appears in a message.
+    pub path: Option<PathBuf>,
     /// The full text the diagnostic spans index into.
     pub text: String,
     /// What is wrong, in document order.
@@ -46,6 +51,9 @@ pub enum ConfigError {
         /// The operating-system error, kept for debugging and left out of the message.
         #[source]
         source: io::Error,
+        /// The file itself, when the caller knows it. It is for finding the file again and
+        /// never appears in the message.
+        file: Option<PathBuf>,
     },
     /// A config file is larger than [`crate::MAX_CONFIG_BYTES`].
     #[error("{}", too_large_text(.path, *.cap))]
@@ -54,6 +62,8 @@ pub enum ConfigError {
         path: String,
         /// The cap that the file exceeded, in bytes.
         cap: u64,
+        /// The file itself, as for [`ConfigError::Io`].
+        file: Option<PathBuf>,
     },
     /// A file was read and refused.
     #[error("{}", summary(.0))]
@@ -119,6 +129,18 @@ impl ConfigError {
         ConfigError::Io {
             path: label.into(),
             source,
+            file: None,
+        }
+    }
+
+    /// The file this error is about, when it is known. A refusal carries the file it
+    /// refused, and a read failure the file it could not read. The shown path hides the
+    /// directory of a file outside the project root, so use this one to find the file.
+    #[must_use]
+    pub fn source_file(&self) -> Option<&std::path::Path> {
+        match self {
+            ConfigError::Io { file, .. } | ConfigError::TooLarge { file, .. } => file.as_deref(),
+            ConfigError::Rejected(rejected) => rejected.path.as_deref(),
         }
     }
 
@@ -130,8 +152,13 @@ impl ConfigError {
             ReadFailure::TooLarge(cap) => ConfigError::TooLarge {
                 path: label.to_owned(),
                 cap,
+                file: Some(path.to_path_buf()),
             },
-            ReadFailure::Io(source) => ConfigError::io(label, source),
+            ReadFailure::Io(source) => ConfigError::Io {
+                path: label.to_owned(),
+                source,
+                file: Some(path.to_path_buf()),
+            },
         })
     }
 
