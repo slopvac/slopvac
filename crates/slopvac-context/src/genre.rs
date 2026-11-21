@@ -456,7 +456,7 @@ struct Genre {
     spec: GenreSpec,
     /// The pack that supplies the genre, when the registry was built from packs.
     pack: Option<String>,
-    /// The registry key: `<pack>/<genre>` for a pack genre, the bare id otherwise.
+    /// The registry key: `<pack>:<genre>` for a pack genre, the bare id otherwise.
     key: String,
     min_score: f64,
     signals: Vec<CompiledSignal>,
@@ -579,7 +579,7 @@ impl GenreRegistry {
 
     /// Validate and compile the genres of several packs, each given as `(pack, spec)`.
     ///
-    /// Every genre has the qualified key `<pack>/<genre>`. Two packs may define the same bare
+    /// Every genre has the qualified key `<pack>:<genre>`. Two packs may define the same bare
     /// id: a bare reference then resolves only when one genre claims it ([`GenreRegistry::claims`]
     /// lists the qualified ids that do). A bare `extends` entry names a genre of the same pack
     /// first. `default` is a qualified or bare key.
@@ -638,17 +638,19 @@ impl GenreRegistry {
     /// Declare more context tags for a genre than its file lists. Documents of the genre, and of genres that extend
     /// it, carry the tags for the whole document (see `DeclaredContextTagger`).
     pub fn with_contexts(mut self, genre: &str, tags: &[&str]) -> Result<Self, Error> {
-        self.get(genre)
-            .ok_or_else(|| Error::UnknownGenre(genre.to_string()))?;
+        let key = self
+            .get(genre)
+            .ok_or_else(|| Error::UnknownGenre(genre.to_string()))?
+            .key
+            .clone();
         if let Some(t) = tags.iter().find(|t| !is_name(t)) {
             return Err(Error::Parse(format!(
                 "genre `{genre}`: `{t}` is not a context tag (lowercase kebab-case)"
             )));
         }
-        self.contexts.insert(
-            genre.to_string(),
-            tags.iter().map(|t| (*t).to_string()).collect(),
-        );
+        // The tags belong to the resolved genre, so a qualified and a bare reference agree.
+        self.contexts
+            .insert(key, tags.iter().map(|t| (*t).to_string()).collect());
         Ok(self)
     }
 
@@ -656,27 +658,34 @@ impl GenreRegistry {
         self.find(None, id)
     }
 
-    /// Resolve a reference. `<pack>/<genre>` names one genre exactly. `<pack>:<genre>` prefers
-    /// that pack and otherwise falls back to the bare name. A bare name prefers a genre of the
-    /// pack `from`, then needs exactly one genre with that id.
+    /// Resolve a reference. `<pack>:<genre>` names one genre of that pack exactly (the `Ref`
+    /// form of `config.schema.json`), and never falls back to a bare claim. A registry that
+    /// no pack built (`GenreRegistry::new`) has no pack names, so there the pack part only says
+    /// where the genre came from and the bare name decides. A bare name prefers a genre of
+    /// the pack `from`, then needs exactly one genre with that id.
     fn find(&self, from: Option<&str>, r: &str) -> Option<&Genre> {
-        if r.contains('/') {
-            return self.genres.iter().find(|g| g.key == r);
-        }
-        let (pack, name) = r.rsplit_once(':').map_or((from, r), |(p, n)| (Some(p), n));
-        if let Some(pack) = pack
-            && let Some(g) = self
+        let unique = |name: &str| {
+            let mut same = self.genres.iter().filter(|g| g.spec.id == name);
+            match (same.next(), same.next()) {
+                (Some(g), None) => Some(g),
+                _ => None,
+            }
+        };
+        if let Some((pack, name)) = r.rsplit_once(':') {
+            if self.genres.iter().all(|g| g.pack.is_none()) {
+                return unique(name);
+            }
+            return self
                 .genres
                 .iter()
-                .find(|g| g.pack.as_deref() == Some(pack) && g.spec.id == name)
-        {
-            return Some(g);
+                .find(|g| g.pack.as_deref() == Some(pack) && g.spec.id == name);
         }
-        let mut same = self.genres.iter().filter(|g| g.spec.id == name);
-        match (same.next(), same.next()) {
-            (Some(g), None) => Some(g),
-            _ => None,
-        }
+        from.and_then(|pack| {
+            self.genres
+                .iter()
+                .find(|g| g.pack.as_deref() == Some(pack) && g.spec.id == r)
+        })
+        .or_else(|| unique(r))
     }
 
     /// Genre ids in definition order.
@@ -760,11 +769,12 @@ impl GenreRegistry {
     /// Declared context tags for a genre, lowest first, without duplicates.
     pub fn contexts(&self, id: &str) -> Result<Vec<String>, Error> {
         let mut out: Vec<String> = Vec::new();
-        for s in self.chain(id)? {
-            for c in s
+        for g in self.chain_genres(None, id)? {
+            for c in g
+                .spec
                 .contexts
                 .iter()
-                .chain(self.contexts.get(&s.id).into_iter().flatten())
+                .chain(self.contexts.get(&g.key).into_iter().flatten())
             {
                 if !out.contains(c) {
                     out.push(c.clone());
@@ -1029,7 +1039,7 @@ fn compile_in(pack: Option<String>, spec: GenreSpec) -> Result<Genre, Error> {
     }
     let key = pack
         .as_ref()
-        .map_or_else(|| spec.id.clone(), |p| format!("{p}/{}", spec.id));
+        .map_or_else(|| spec.id.clone(), |p| format!("{p}:{}", spec.id));
     Ok(Genre {
         spec,
         pack,
