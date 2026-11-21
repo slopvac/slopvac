@@ -366,17 +366,6 @@ fn a_testable_rule_without_cases_or_examples_is_incomplete() {
 }
 
 #[test]
-fn a_selected_judgement_rule_is_incomplete() {
-    let judgement = common::rule(
-        "j",
-        &json!({"kind": "judgement", "question": "Is it vague?"}),
-        &json!({"severity": "suggestion"}),
-    );
-    let report = run_cases(&engine(&[judgement]), Some(&id("core:cat.j"))).unwrap();
-    assert_eq!(report.exit_code(), 2);
-}
-
-#[test]
 fn an_unknown_selected_rule_is_an_error() {
     let e = engine(&[foo_rule(&json!({}))]);
     let err = run_cases(&e, Some(&id("core:cat.nope"))).unwrap_err();
@@ -489,7 +478,7 @@ fn core_engine() -> Engine {
 /// starts to pass must leave the list.
 const KNOWN_FAILURES: &[(&str, &str)] = &[];
 
-const METRIC: &str = "metric rule: no cases, and examples do not run for non-lexical rules";
+const METRIC: &str = "metric rule: no cases or examples, or a metric the engine does not measure";
 const STRUCTURE: &str = "structure rule: no cases or checkable examples";
 const VOCABULARY: &str = "vocabulary rule: no cases, and it needs a word blocklist to run";
 
@@ -506,20 +495,7 @@ const NO_EXECUTABLE_CHECK: &[(&str, &str)] = &[
     ("core:ai-tells-formatting.inline-header-list", METRIC),
     ("core:ai-tells-formatting.heading-hierarchy", STRUCTURE),
     ("core:prose-craft.sentence-length", METRIC),
-    ("core:prose-discipline.run-on", METRIC),
     ("core:prose-format.prose-block", METRIC),
-    ("core:ste-descriptive.sentence-too-long-descriptive", METRIC),
-    ("core:ste-descriptive.paragraph-too-many-sentences", METRIC),
-    ("core:ste-nouns.multiword-noun-too-long", METRIC),
-    ("core:ste-procedural.sentence-too-long-procedural", METRIC),
-    (
-        "core:ste-punctuation.colon-terminates-sentence-for-count",
-        METRIC,
-    ),
-    (
-        "core:ste-sentences.complex-text-not-in-vertical-list",
-        METRIC,
-    ),
     ("core:ste-verbs.verb-form-not-listed", VOCABULARY),
     (
         "core:ste-words.word-outside-controlled-vocabulary",
@@ -607,7 +583,8 @@ fn the_command_exits_2_on_an_incomplete_check() {
     assert_eq!(
         out,
         "core:cat.bare cases: incomplete: the rule has no cases or checkable examples\n\
-         0 passed, 0 failed, 1 incomplete\n"
+         0 passed, 0 failed, 1 incomplete\n\
+         warning[cases-rule-unchecked]: 1 active rule(s) of a mechanically checkable kind were not checked by the case runner\n"
     );
 }
 
@@ -727,8 +704,8 @@ fn core_coverage_report(docs: &[&(String, String)], file: &str) {
     std::fs::write(&out, format!("{report}\n")).unwrap();
     eprintln!("{report}\nwritten to {}", out.display());
     assert_eq!(cov.documents, docs.len());
-    // The lexical rules: tokens, substitution and pattern.
-    assert_eq!(cov.findings.len(), 146);
+    // Every mechanically checkable rule the engine runs: all kinds but judgement.
+    assert_eq!(cov.findings.len(), 164);
     assert!(
         cov.findings.values().any(|n| *n > 0),
         "no core rule matched anything in the corpus"

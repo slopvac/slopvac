@@ -734,6 +734,10 @@ pub(crate) enum EnginePhrase {
     /// A judgement rule cannot be executed.
     #[code("engine-case-judgement")]
     #[text("a judgement rule has nothing to execute")]
+    #[expect(
+        dead_code,
+        reason = "the case runner no longer reports a judgement rule; the code stays registered"
+    )]
     CaseJudgement,
     /// A suppression has invalid syntax.
     #[code("engine-suppression-syntax")]
@@ -862,6 +866,13 @@ pub(crate) enum EngineNotice {
         #[count]
         count: usize,
         rules: String,
+    },
+    /// The case runner could not check active rules of a checkable kind.
+    #[code("cases-rule-unchecked")]
+    #[notice("{count} active rule(s) of a mechanically checkable kind were not checked by the case runner")]
+    CasesRuleUnchecked {
+        #[count]
+        count: usize,
     },
     /// Vocabulary rules lack a blocklist.
     #[code("vocabulary-no-blocklist")]
