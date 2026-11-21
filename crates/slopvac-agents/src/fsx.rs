@@ -26,11 +26,13 @@ pub struct Project {
     root: PathBuf,
 }
 
-/// A point inside a write or delete where a test can change the target.
+/// A point inside a read, write or delete where a test can change the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Stage {
     /// The temporary file holds the new bytes, and its final mode is not set yet.
     Filled,
+    /// The path is resolved, and the open comes next.
+    BeforeOpen,
     /// The new state is ready, and the final check against the expected bytes
     /// comes next.
     BeforeCommit,
@@ -217,7 +219,23 @@ impl Project {
     }
 
     /// The bytes of the file at `rel`, or `None` if it does not exist.
+    ///
+    /// The file opens once, without following links and without blocking, and the
+    /// handle is checked to be a regular file. A FIFO or other special file, also one
+    /// that replaces the file after the path is resolved, fails with `UnsafeTarget`
+    /// instead of blocking the read. A file with several hard links is accepted, and
+    /// there is no size limit.
     pub fn read(&self, rel: &Path) -> Result<Option<Vec<u8>>, AgentsError> {
+        self.read_staged(rel, &mut |_| {})
+    }
+
+    /// [`Project::read`], calling `hook` at each [`Stage`], so a test can change the
+    /// target there.
+    fn read_staged(
+        &self,
+        rel: &Path,
+        hook: &mut dyn FnMut(Stage),
+    ) -> Result<Option<Vec<u8>>, AgentsError> {
         let rel = self.resolve(rel)?;
         match self.dir.metadata(&rel) {
             Ok(m) if !m.is_file() => {
@@ -227,6 +245,7 @@ impl Project {
             Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(Self::map(&rel, e)),
         }
+        hook(Stage::BeforeOpen);
         self.dir
             .read(&rel)
             .map(Some)
@@ -455,6 +474,84 @@ mod tests {
 
         assert!(matches!(got, Err(AgentsError::Conflict(p)) if p == Path::new("a.md")));
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "theirs");
+    }
+
+    #[cfg(unix)]
+    fn mkfifo(path: &Path) {
+        let made = std::process::Command::new("mkfifo")
+            .arg(path)
+            .status()
+            .unwrap();
+        assert!(made.success(), "mkfifo failed");
+    }
+
+    #[test]
+    fn a_missing_file_reads_as_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        assert_eq!(project.read(Path::new("a.md")).unwrap(), None);
+    }
+
+    #[test]
+    fn a_regular_file_reads_whole_whatever_its_size() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bytes = vec![b'x'; 2 * 1024 * 1024];
+        std::fs::write(tmp.path().join("a.md"), &bytes).unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        assert_eq!(project.read(Path::new("a.md")).unwrap(), Some(bytes));
+    }
+
+    #[test]
+    fn a_hard_linked_file_is_still_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.md"), "steering").unwrap();
+        std::fs::hard_link(tmp.path().join("a.md"), tmp.path().join("b.md")).unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        assert_eq!(
+            project.read(Path::new("b.md")).unwrap().as_deref(),
+            Some(&b"steering"[..])
+        );
+    }
+
+    #[test]
+    fn a_directory_is_an_unsafe_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("a.md")).unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        assert!(matches!(
+            project.read(Path::new("a.md")),
+            Err(AgentsError::UnsafeTarget(_))
+        ));
+    }
+
+    /// The path resolves to a regular file, and a FIFO takes its place before the open. A
+    /// blocking open on it would wait for a writer that never comes, so the read must refuse
+    /// it at once. The read runs on its own thread, so a regression fails by timeout.
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_swapped_in_after_the_path_is_resolved_is_refused_promptly() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        const LIMIT: Duration = Duration::from_secs(10);
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("a.md");
+        std::fs::write(&file, "steering").unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let got = project.read_staged(Path::new("a.md"), &mut |stage| {
+                if stage == Stage::BeforeOpen {
+                    std::fs::remove_file(&file).unwrap();
+                    mkfifo(&file);
+                }
+            });
+            let _ = tx.send(got.map(|_| ()).map_err(|e| e.code()));
+        });
+        let got = rx
+            .recv_timeout(LIMIT)
+            .expect("the read blocked on a FIFO swapped in before the open");
+        assert_eq!(got, Err("steering-unsafe-target"));
     }
 }
 
