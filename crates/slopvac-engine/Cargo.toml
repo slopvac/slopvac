@@ -35,6 +35,7 @@ slopvac-messages = { workspace = true }
 slopvac-model = { workspace = true }
 slopvac-parse = { workspace = true }
 slopvac-pos = { workspace = true }
+slopvac-report = { workspace = true }
 slopvac-rules = { workspace = true }
 slopvac-sanitize = { workspace = true }
 slopvac-terms = { workspace = true }

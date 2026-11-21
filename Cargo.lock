@@ -2585,6 +2585,7 @@ dependencies = [
  "slopvac-model",
  "slopvac-parse",
  "slopvac-pos",
+ "slopvac-report",
  "slopvac-rules",
  "slopvac-sanitize",
  "slopvac-terms",
