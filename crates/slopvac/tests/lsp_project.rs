@@ -440,3 +440,34 @@ fn a_nested_config_is_checked_as_lint_checks_it() {
     );
     session.finish();
 }
+
+#[test]
+fn a_symlinked_document_gets_the_settings_of_the_file_it_links_to() {
+    let dir = project(OVERRIDE_OFF, &[("docs/real.md", SLOPPY)]);
+    let root = dir.path().canonicalize().expect("canonical");
+    std::os::unix::fs::symlink(root.join("docs/real.md"), root.join("alias.md")).expect("link");
+    let mut session = Session::start(&root);
+    session.open(&root, "alias.md", SLOPPY);
+    // `slopvac lint alias.md` resolves the link first, so the `docs/**` block applies.
+    let codes = session.codes(&root, "alias.md");
+    assert!(!codes.iter().any(|c| c == LEXICON), "{codes:?}");
+    session.finish();
+}
+
+#[test]
+fn a_change_to_the_target_of_a_symlinked_extended_file_lints_the_open_document_again() {
+    let dir = project(
+        "schema_version = 3\nextends = [\"link.toml\"]\n",
+        &[("real/base.toml", LEXICON_OFF)],
+    );
+    let root = dir.path().canonicalize().expect("canonical");
+    std::os::unix::fs::symlink(root.join("real/base.toml"), root.join("link.toml")).expect("link");
+    let mut session = Session::start(&root);
+    session.open(&root, "a.md", SLOPPY);
+    assert!(!session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
+    fs::write(root.join("real/base.toml"), "schema_version = 3\n").expect("edit");
+    // An editor that resolves links reports the file the link points to.
+    changed(&mut session, &uri_of(&root, "real/base.toml"));
+    assert!(session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
+    session.finish();
+}

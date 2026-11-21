@@ -203,6 +203,18 @@ fn nearest(dir: &Path) -> Result<Option<Arc<LoadedConfig>>, ConfigError> {
     Discovery::new(&presets).nearest(dir)
 }
 
+/// Add `files` to the set of files to watch, each under the name the config gave it and, when
+/// that is a link, under the name of the file it points to as well: an editor reports a change
+/// under either. A file that does not exist yet has no other name.
+fn watch_all(watched: &mut BTreeSet<PathBuf>, files: &[PathBuf]) {
+    for file in files {
+        watched.insert(file.clone());
+        if let Ok(real) = std::fs::canonicalize(file) {
+            watched.insert(real);
+        }
+    }
+}
+
 fn notice_key(notice: &Notice) -> (String, String) {
     (notice.code.to_string(), notice.message.as_str().to_owned())
 }
@@ -269,11 +281,11 @@ impl Project {
         };
         let catalog = Catalog::load().map_err(fallback)?;
         let config = nearest(&self.root).map_err(|e| {
-            dependencies.extend(e.dependencies().iter().cloned());
+            watch_all(dependencies, e.dependencies());
             Box::new(self.failure_of(&e))
         })?;
         if let Some(config) = &config {
-            dependencies.extend(config.dependencies().iter().cloned());
+            watch_all(dependencies, config.dependencies());
         }
         let notices = match &config {
             Some(config) => lint_settings::validate(config, &catalog).map_err(fallback)?,
@@ -328,9 +340,7 @@ impl Project {
         match found {
             Ok(config) => {
                 if let Some(config) = &config {
-                    loaded
-                        .dependencies
-                        .extend(config.dependencies().iter().cloned());
+                    watch_all(&mut loaded.dependencies, config.dependencies());
                 }
                 let State::Ready(ready) = &mut loaded.state else {
                     return Ok(config);
@@ -347,20 +357,26 @@ impl Project {
                 Ok(config)
             }
             Err(error) => {
-                loaded
-                    .dependencies
-                    .extend(error.dependencies().iter().cloned());
+                watch_all(&mut loaded.dependencies, error.dependencies());
                 Err(config_error(&error, &self.root))
             }
         }
     }
 
-    /// Where the document at `path` sits: its canonical path, and the nearest directory
-    /// above it that exists, where the config search starts. A buffer that was never saved
-    /// has no file, and its folder may not exist either, but its path still selects the
-    /// `[[overrides]]` and `[[genres]]` blocks. Outside any existing directory, the project
-    /// root stands in.
+    /// Where the document at `path` sits: its canonical path, link resolved, and the directory
+    /// the config search starts in. A buffer that was never saved has no file, and its folder
+    /// may not exist either, but its path still selects the `[[overrides]]` and `[[genres]]`
+    /// blocks: the search then starts in the nearest directory above it that exists. Outside
+    /// any existing directory, the project root stands in.
     fn locate(&self, path: &Path) -> (PathBuf, PathBuf) {
+        // `slopvac lint` resolves a file that exists before it looks for its config, so a
+        // link takes the settings of the file it points to.
+        if let Ok(real) = std::fs::canonicalize(path)
+            && let Some(dir) = real.parent()
+        {
+            let dir = dir.to_path_buf();
+            return (real, dir);
+        }
         for ancestor in path.ancestors().skip(1) {
             if let Ok(real) = std::fs::canonicalize(ancestor)
                 && let Ok(tail) = path.strip_prefix(ancestor)
