@@ -447,6 +447,11 @@ use slopvac_messages::Kind;
     Kind::Notice,
     "{count} active rule(s) do not run on code comments, which only the tokens, pattern, substitution and capitalization rules read: {rules}"
 )]
+#[case::cases_rule_unchecked(
+    "cases-rule-unchecked",
+    Kind::Notice,
+    "{count} active rule(s) of a mechanically checkable kind were not checked by the case runner"
+)]
 #[case::vocabulary_no_blocklist(
     "vocabulary-no-blocklist",
     Kind::Notice,

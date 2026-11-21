@@ -168,6 +168,9 @@ A case needs at least one of the three.
 `examples` are before-and-after pairs for the rule's documentation page.
 For a mechanical rule the runner also treats `bad` as a case with at least one finding
 and `good` as a case with none.
+
+The case runner exits 1 when any case or example of a mechanically checkable rule fails, whatever else it could not check. Otherwise it exits 2 when an active rule of a mechanically checkable kind was not checked, which it reports as the warning notice `cases-rule-unchecked` with the rule ids in `data.rules`. Otherwise it exits 0. Judgement rules are documentation only: they never run as cases and never change the exit code.
+
 A judgement rule has examples and no cases.
 
 ## Category

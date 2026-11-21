@@ -82,8 +82,9 @@ pub fn command() -> Command {
 
 /// Run a parsed `cases` command and write the report to `out`.
 ///
-/// Returns the exit code: 0 when every check passes, 1 when a case fails, 2 when no case failed but a
-/// check was incomplete. An `Err` is invalid input, which the caller maps to exit 2 as well.
+/// Returns the exit code: 0 when every check passes, 1 when a case or example fails, 2 when
+/// none failed but a rule went unchecked, which the output reports as the warning notice
+/// `cases-rule-unchecked`. An `Err` is invalid input, which the caller maps to exit 2 as well.
 /// Unmatched rules in a coverage report do not change the code.
 pub fn run(matches: &ArgMatches, out: &mut dyn Write) -> Result<i32, CasesError> {
     let text = |name: &str| matches.get_one::<String>(name);
@@ -114,6 +115,9 @@ pub fn run(matches: &ArgMatches, out: &mut dyn Write) -> Result<i32, CasesError>
 
     let report = run_cases(&engine, only.as_ref())?;
     emit(out, &report.to_string())?;
+    if let Some(notice) = report.unchecked_notice() {
+        emit(out, &slopvac_report::render_notice(&notice))?;
+    }
     let files: Vec<&String> = matches
         .get_many::<String>("coverage")
         .into_iter()
