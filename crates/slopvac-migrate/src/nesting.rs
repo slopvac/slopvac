@@ -20,6 +20,9 @@
 use frontmatter_spans::LineIndex;
 use toml_edit::{ArrayOfTables, Document, Item, Key, TableLike, Value};
 
+use crate::Dropped;
+use crate::messages::MigrateText;
+
 /// Most levels of tables and arrays between the root and any value.
 pub(crate) const MAX_DEPTH: usize = 32;
 
@@ -30,9 +33,21 @@ pub(crate) struct TooDeep {
     pub(crate) line: usize,
 }
 
-/// The message for a diagnostic, without the file and line.
-pub(crate) fn message() -> String {
-    format!("tables nest more than {MAX_DEPTH} levels deep")
+/// The key a record names when the refusal is about the document as a whole.
+pub(crate) const TABLES_KEY: &str = "tables";
+
+impl TooDeep {
+    /// The refusal as a blocking record: `config-legacy-dropped`, exit 2. The content parses
+    /// but migrate cannot carry it over, so it is not a syntax failure. `key` is the key the
+    /// record names.
+    pub(crate) fn dropped(self, file: &str, key: &str) -> Dropped {
+        Dropped::new(
+            file,
+            key,
+            self.line,
+            MigrateText::NestingTooDeep { limit: MAX_DEPTH }.to_string(),
+        )
+    }
 }
 
 enum Node<'a> {

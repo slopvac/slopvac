@@ -332,7 +332,7 @@ fn rewrite(
     if format == "toml"
         && let Err(e) = nesting::check(text)
     {
-        return Err(blocked(e.line, "entries", nesting::message()));
+        return Err(vec![e.dropped(label, "entries")]);
     }
     let Err(refused) = Blocklist::parse(label, format, text) else {
         return Ok(None);

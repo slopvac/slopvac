@@ -48,14 +48,14 @@ fn refused(text: &str) -> Error {
 #[case::dotted_keys(dotted(70))]
 #[case::headers(header(70))]
 #[case::dotted_keys_in_inline_tables(dotted_in_inline(70))]
-fn migrate_config_refuses_with_a_located_parse_error(#[case] body: String) {
+fn migrate_config_refuses_with_a_located_dropped_record(#[case] body: String) {
     let text = format!("profile = \"normal\"\n{body}");
     assert!(u64::try_from(text.len()).unwrap() < slopvac_config::MAX_CONFIG_BYTES);
     let error = refused(&text);
-    assert_eq!(error.code(), "config-invalid-toml");
+    assert_eq!(error.code(), "config-legacy-dropped");
     assert_eq!(
         error.to_string(),
-        "slopvac.toml: line 2: tables nest more than 32 levels deep"
+        "slopvac.toml:2: `tables`: tables nest more than 32 levels deep"
     );
 }
 
@@ -74,11 +74,9 @@ fn plan_refuses_a_deep_pyproject_table_with_its_line() {
         STEERING,
     )
     .expect_err("a config this deep is refused");
-    assert_eq!(error.code(), "config-invalid-toml");
-    assert!(
-        error
-            .to_string()
-            .ends_with("line 5: tables nest more than 32 levels deep"),
-        "{error}"
+    assert_eq!(error.code(), "config-legacy-dropped");
+    assert_eq!(
+        error.to_string(),
+        "pyproject.toml:5: `tables`: tables nest more than 32 levels deep"
     );
 }

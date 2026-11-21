@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use frontmatter_spans::LineIndex;
 use toml_edit::{Document, Item, Key, TableLike, Value};
 
+use crate::messages::MigrateText;
 use crate::nesting;
 
 /// The node of the empty path.
@@ -187,8 +188,15 @@ impl KeyLines {
 /// The parser's message when `text` is not valid TOML.
 pub(crate) fn key_lines(text: &str) -> Result<KeyLines, String> {
     let doc = Document::parse(text.to_owned()).map_err(|e| e.to_string())?;
-    nesting::check_document(&doc, text)
-        .map_err(|e| format!("line {}: {}", e.line, nesting::message()))?;
+    nesting::check_document(&doc, text).map_err(|e| {
+        format!(
+            "line {}: {}",
+            e.line,
+            MigrateText::NestingTooDeep {
+                limit: nesting::MAX_DEPTH
+            }
+        )
+    })?;
     let index = LineIndex::new(text);
     let mut out = KeyLines::default();
     out.walk(doc.as_table(), ROOT, &index);
