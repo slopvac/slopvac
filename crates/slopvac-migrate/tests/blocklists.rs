@@ -540,3 +540,32 @@ fn a_missing_absolute_reference_is_reported_relative_to_the_project() {
         "error[config-legacy-dropped]: slopvac.toml:2: `vocabulary.path`: blocklist `docs/missing.toml`: file not found\n"
     );
 }
+
+/// Dotted keys inside nested inline tables stay within the parser's per-construct limits and
+/// build thousands of tables, past what the recursive walks take.
+#[test]
+fn a_deeply_nested_blocklist_exits_2_with_its_file_and_line_and_nothing_is_written() {
+    let path = vec!["k"; 70].join(".");
+    let old = format!(
+        "# Words we refuse\n{}x = 1{}\n",
+        format!("{path} = {{ ").repeat(70),
+        " }".repeat(70)
+    );
+    let dir = project(CONFIG, &old);
+    let e = plan_of(dir.path()).unwrap_err();
+    assert_eq!(
+        dropped_text(&e),
+        "words.toml:2: `entries`: tables nest more than 32 levels deep"
+    );
+
+    let (code, _, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"]);
+    assert_eq!(code, 2);
+    assert!(
+        err.starts_with(
+            "error[config-legacy-dropped]: words.toml:2: `entries`: tables nest more than 32 levels deep"
+        ),
+        "{err}"
+    );
+    assert_eq!(read(dir.path(), "words.toml"), old);
+    assert_eq!(read(dir.path(), "slopvac.toml"), CONFIG);
+}

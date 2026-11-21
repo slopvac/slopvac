@@ -148,6 +148,10 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
             "3 more blocking settings suppressed",
         ),
         (
+            MigrateText::NestingTooDeep { limit: 32 },
+            "tables nest more than 32 levels deep",
+        ),
+        (
             MigrateText::SuppressedNotes { count: 3 },
             "3 more notes suppressed",
         ),

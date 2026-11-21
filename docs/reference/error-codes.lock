@@ -419,6 +419,7 @@ migrate-io-nonblock text
 migrate-lint-document-failed text
 migrate-lint-failed error
 migrate-lint-not-fully-checked text
+migrate-nesting-too-deep text
 migrate-not-checked-irregular text
 migrate-not-checked-kind text
 migrate-not-checked-symlink text

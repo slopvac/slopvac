@@ -134,6 +134,13 @@ pub(crate) enum MigrateText {
         #[count]
         count: usize,
     },
+    /// A TOML document nests tables and arrays deeper than migrate reads. `limit` is the most levels.
+    #[code("migrate-nesting-too-deep")]
+    #[text("tables nest more than {limit} levels deep")]
+    NestingTooDeep {
+        #[count]
+        limit: usize,
+    },
     /// The closing line of a capped list of notes.
     #[code("migrate-suppressed-notes")]
     #[text("{count} more notes suppressed")]
