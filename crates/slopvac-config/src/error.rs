@@ -1,10 +1,9 @@
 //! Errors from loading configuration.
 
 use std::io;
+use std::path::PathBuf;
 
 use slopvac_messages::Catalog;
-
-use std::path::PathBuf;
 
 use crate::diag::{Code, Diagnostic, SourceFile, render_config};
 use crate::messages::{ConfigMessage, ConfigPhrase, ConfigText};
@@ -17,6 +16,9 @@ pub struct Rejected {
     /// The file itself, which `file` hides when it sits outside the project root. It is for
     /// finding the file again and never appears in a message.
     pub path: Option<PathBuf>,
+    /// Every file the load reached before it stopped, the refused one and an extended file
+    /// that does not exist included. See [`ConfigError::dependencies`].
+    pub reads: Vec<PathBuf>,
     /// The full text the diagnostic spans index into.
     pub text: String,
     /// What is wrong, in document order.
@@ -142,6 +144,26 @@ impl ConfigError {
             ConfigError::Io { file, .. } | ConfigError::TooLarge { file, .. } => file.as_deref(),
             ConfigError::Rejected(rejected) => rejected.path.as_deref(),
         }
+    }
+
+    /// The files a load reached before it failed, in the order it reached them: the config
+    /// itself, the extended files read so far, the one that failed, and an extended file that
+    /// does not exist. They are absolute and lexically normalised, so a watcher can wait for
+    /// any of them to change and try again. A read failure names its own file.
+    #[must_use]
+    pub fn dependencies(&self) -> &[PathBuf] {
+        match self {
+            ConfigError::Io { file, .. } | ConfigError::TooLarge { file, .. } => file.as_slice(),
+            ConfigError::Rejected(rejected) => &rejected.reads,
+        }
+    }
+
+    /// Record `reads` as the files the failed load reached. Only a refusal keeps them.
+    pub(crate) fn with_reads(mut self, reads: Vec<PathBuf>) -> Self {
+        if let ConfigError::Rejected(rejected) = &mut self {
+            rejected.reads = reads;
+        }
+        self
     }
 
     /// Read the config file at `path`, naming it `label` in errors, within

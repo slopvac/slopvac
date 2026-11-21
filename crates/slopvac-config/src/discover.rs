@@ -159,6 +159,7 @@ fn legacy(
 ) -> ConfigError {
     ConfigError::Rejected(Box::new(Rejected {
         file: file.to_owned(),
+        reads: vec![path.clone()],
         path: Some(path),
         text,
         diagnostics: vec![Diagnostic {
