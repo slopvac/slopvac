@@ -207,12 +207,13 @@ pub struct AclCheckFailed;
 ///
 /// [`Root::open`] is the only place the root is opened by pathname. Every later open, stage
 /// and rename goes through the handle, so replacing the path with a link afterwards cannot
-/// move a fix to another directory. The path is kept only to turn an absolute file path into
-/// a relative one.
+/// move a fix to another directory. The path, and its canonical form resolved once at open,
+/// are kept only to turn an absolute file path into a relative one.
 #[derive(Debug)]
 pub struct Root {
     dir: Dir,
     path: PathBuf,
+    canonical: Option<PathBuf>,
 }
 
 impl Root {
@@ -222,15 +223,21 @@ impl Root {
     ///
     /// Returns the I/O error when `path` is not an openable directory.
     pub fn open(path: &Path) -> std::io::Result<Self> {
+        let dir = Dir::open_ambient_dir(path, ambient_authority())?;
+        // Resolved here, once, so a link or a relative root still has an absolute spelling
+        // to match targets against. It is never resolved again.
+        let canonical = path.canonicalize().ok();
         Ok(Self {
-            dir: Dir::open_ambient_dir(path, ambient_authority())?,
+            dir,
             path: path.to_path_buf(),
+            canonical,
         })
     }
 
-    /// The path the root was opened under. Do not open it again.
-    pub(crate) fn path(&self) -> &Path {
-        &self.path
+    /// The spellings of the root that an absolute target may start with: the path the root
+    /// was opened under and its canonical form. Do not open either again.
+    pub(crate) fn spellings(&self) -> impl Iterator<Item = &Path> {
+        std::iter::once(self.path.as_path()).chain(self.canonical.as_deref())
     }
 }
 

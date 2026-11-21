@@ -169,7 +169,7 @@ pub fn fix_file_in(
         path: shown.clone(),
         source,
     };
-    let Some(relative) = relative_to(root.path(), path) else {
+    let Some(relative) = relative_to(root, path) else {
         return Ok(FileFix::Refused(Refusal::OutsideRoot));
     };
     let (mut handle, bytes) = match open(root, &relative).map_err(io)? {
@@ -211,9 +211,11 @@ pub fn fix_file_in(
 }
 
 /// `path` below `root` as plain names, or `None` when it is outside or climbs with `..`.
-fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
+fn relative_to(root: &Root, path: &Path) -> Option<PathBuf> {
     let relative = if path.is_absolute() {
-        path.strip_prefix(root).ok().map(Path::to_path_buf)?
+        root.spellings()
+            .find_map(|spelling| path.strip_prefix(spelling).ok())
+            .map(Path::to_path_buf)?
     } else {
         path.to_path_buf()
     };

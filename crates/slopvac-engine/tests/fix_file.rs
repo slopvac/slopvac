@@ -126,6 +126,49 @@ fn an_absolute_path_inside_the_root_works_and_a_nested_one_too() {
     assert!(done(out).written);
 }
 
+/// A root given as a link: the canonical absolute path of a file in it, which is what file
+/// discovery produces, is inside the root.
+#[cfg(unix)]
+#[test]
+fn a_root_given_as_a_symlink_accepts_the_canonical_path_of_a_file_in_it() {
+    let parent = tempfile::tempdir().unwrap();
+    let real = parent.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+    std::fs::write(real.join("doc.md"), DOC).unwrap();
+    let alias = parent.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let canonical = real.canonicalize().unwrap().join("doc.md");
+
+    let out = fix_file(&swaps(), &alias, &canonical, Kind::Markdown, false, None).unwrap();
+
+    assert!(done(out).written);
+    assert_eq!(read(real.join("doc.md")), FIXED);
+}
+
+/// A root given as a relative path: the absolute path of a file in it is inside the root.
+#[cfg(unix)]
+#[test]
+fn a_relative_root_accepts_the_absolute_path_of_a_file_in_it() {
+    let here = std::env::current_dir().unwrap();
+    let dir = tempfile::tempdir_in(&here).unwrap();
+    std::fs::write(dir.path().join("doc.md"), DOC).unwrap();
+    let relative_root = Path::new(dir.path().file_name().unwrap());
+    let absolute = dir.path().canonicalize().unwrap().join("doc.md");
+
+    let out = fix_file(
+        &swaps(),
+        relative_root,
+        &absolute,
+        Kind::Markdown,
+        false,
+        None,
+    )
+    .unwrap();
+
+    assert!(done(out).written);
+    assert_eq!(read(dir.path().join("doc.md")), FIXED);
+}
+
 #[test]
 fn a_file_with_nothing_to_fix_is_not_written() {
     let root = project();
