@@ -332,22 +332,21 @@ fn extract_binary(archive: &[u8]) -> Result<Vec<u8>, UpdateError> {
     Err(UpdateError::NoBinary)
 }
 
-/// Write `bytes` beside `exe` and rename them over it, keeping the old file's permissions.
+/// Write `bytes` over `exe` durably: synced, renamed within the install directory, and the
+/// directory synced. An existing file keeps its permissions; a missing one starts executable.
 fn replace(exe: &Path, bytes: &[u8]) -> Result<(), UpdateError> {
     let fail = |e: &dyn std::fmt::Display| UpdateError::Replace(e.to_string());
     let dir = exe
         .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = exe
+        .file_name()
         .ok_or_else(|| fail(&UpdatePhrase::NoParentDirectory.as_static()))?;
-    let mut tmp = tempfile::Builder::new()
-        .prefix(".slopvac-update-")
-        .tempfile_in(dir)
+    let root = cap_std::fs::Dir::open_ambient_dir(dir, cap_std::ambient_authority())
         .map_err(|e| fail(&e))?;
-    std::io::Write::write_all(&mut tmp, bytes).map_err(|e| fail(&e))?;
-    if let Ok(meta) = std::fs::metadata(exe) {
-        std::fs::set_permissions(tmp.path(), meta.permissions()).map_err(|e| fail(&e))?;
-    }
-    tmp.persist(exe).map_err(|e| fail(&e.error))?;
-    Ok(())
+    let opts = slopvac_fs::WriteOptions::new().new_file_mode(0o755);
+    slopvac_fs::write_atomic(&root, Path::new(name), bytes, opts).map_err(|e| fail(&e))
 }
 
 #[cfg(test)]
@@ -466,6 +465,38 @@ mod tests {
         )
         .unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replacement_keeps_a_nonstandard_mode_in_a_nested_install_dir() {
+        use std::os::unix::fs::PermissionsExt;
+        let (dir, _exe) = installed();
+        let nested = dir.path().join("opt/slopvac/bin");
+        std::fs::create_dir_all(&nested).unwrap();
+        let exe = nested.join("slopvac");
+        std::fs::write(&exe, b"old").unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o711)).unwrap();
+        replace(&exe, b"new").unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), b"new");
+        assert_eq!(
+            std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777,
+            0o711
+        );
+        assert_eq!(leftovers(&nested), ["slopvac"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_replacement_with_no_existing_file_is_executable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("slopvac");
+        replace(&exe, b"new").unwrap();
+        assert_eq!(
+            std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
     }
 
     #[cfg(unix)]
