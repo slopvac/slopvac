@@ -12,10 +12,10 @@
 //! Each rule runs in an engine of its own with every other rule switched off
 //! ([`Engine::isolate`]), so an unrelated rule cannot change or abort a case.
 //!
-//! A check passes only after the engine executed the rule. A rule the engine cannot run
-//! (switched off, limited by `applies_to` to another genre or mode, or of a kind or style
-//! the engine does not implement) and a rule that is testable but has no cases or
-//! checkable examples report [`Outcome::Incomplete`], never [`Outcome::Passed`]. A
+//! A check passes only after the engine executed the rule. An inactive rule (switched off,
+//! or limited by `applies_to` to another genre or mode) is skipped and reports nothing.
+//! An active rule of a kind or style the engine does not implement, and one that has no
+//! cases or checkable examples, report [`Outcome::Incomplete`], never [`Outcome::Passed`]. A
 //! judgement rule is documentation only: it never runs and never reports. An id that
 //! names no rule is a [`CasesError`].
 //! A mechanically checkable rule is any rule that is not a judgement rule. An example of a
@@ -423,6 +423,11 @@ fn run_rule(
         });
     };
     let checks = checks_of(rule);
+    if !engine.running.contains(rule.id().as_str()) {
+        // A switched-off rule, or one limited to another genre or mode, is not active:
+        // nothing is expected of it, so it neither runs nor counts as unchecked.
+        return Ok(());
+    }
     if checks.is_empty() {
         // A judgement rule is documentation only: it never runs and never reports.
         if rule.kind() != MatchKind::Judgement {

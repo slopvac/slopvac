@@ -182,23 +182,18 @@ fn reasons(report: &CaseReport) -> Vec<(Origin, String)> {
 }
 
 #[test]
-fn a_rule_that_is_switched_off_is_incomplete_not_passed() {
+fn a_rule_that_is_switched_off_is_not_run_and_not_passed() {
     let set = ruleset(vec![common::category(
         "cat",
         &[foo_rule(&json!({"cases": [{"input": "foo", "want": 1}]}))],
     )]);
     let mut s = settings();
     s.rule_levels.insert(id("core:cat.r"), Level::Off);
-    let report = run_cases(&Engine::new(vec![set], s).unwrap(), None).unwrap();
-    assert_eq!(report.passed(), 0);
+    let err = run_cases(&Engine::new(vec![set], s).unwrap(), None).unwrap_err();
     assert_eq!(
-        reasons(&report),
-        [(
-            Origin::Case(0),
-            "the rule is switched off or does not apply under the engine settings".to_owned()
-        )]
+        err.to_string(),
+        "no rule has cases or checkable examples to run"
     );
-    assert_eq!(report.exit_code(), 2);
 }
 
 fn passed_flags(report: &CaseReport) -> Vec<bool> {
@@ -584,7 +579,7 @@ fn the_command_exits_2_on_an_incomplete_check() {
         out,
         "core:cat.bare cases: incomplete: the rule has no cases or checkable examples\n\
          0 passed, 0 failed, 1 incomplete\n\
-         warning[cases-rule-unchecked]: 1 active rule(s) of a mechanically checkable kind were not checked by the case runner\n"
+         notice[cases-rule-unchecked]: 1 active rule(s) of a mechanically checkable kind were not checked by the case runner\n"
     );
 }
 
