@@ -189,11 +189,9 @@ fn a_rule_that_is_switched_off_is_not_run_and_not_passed() {
     )]);
     let mut s = settings();
     s.rule_levels.insert(id("core:cat.r"), Level::Off);
-    let err = run_cases(&Engine::new(vec![set], s).unwrap(), None).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "no rule has cases or checkable examples to run"
-    );
+    let report = run_cases(&Engine::new(vec![set], s).unwrap(), None).unwrap();
+    assert!(report.results.is_empty(), "{report}");
+    assert_eq!(report.exit_code(), 0);
 }
 
 fn passed_flags(report: &CaseReport) -> Vec<bool> {
@@ -281,17 +279,15 @@ fn a_vocabulary_rule_needs_a_blocklist_and_isolation_keeps_it() {
 }
 
 #[test]
-fn an_engine_without_checkable_rules_is_an_error_not_a_pass() {
+fn an_engine_without_checkable_rules_is_an_empty_run_that_exits_0() {
     let judgement = common::rule(
         "j",
         &json!({"kind": "judgement", "question": "Is it vague?"}),
         &json!({"severity": "suggestion"}),
     );
-    let err = run_cases(&engine(&[judgement]), None).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "no rule has cases or checkable examples to run"
-    );
+    let report = run_cases(&engine(&[judgement]), None).unwrap();
+    assert!(report.results.is_empty(), "{report}");
+    assert_eq!(report.exit_code(), 0);
 }
 
 #[test]
@@ -584,7 +580,7 @@ fn the_command_exits_2_on_an_incomplete_check() {
 }
 
 #[test]
-fn the_command_rejects_a_pack_with_nothing_to_run() {
+fn the_command_exits_0_on_a_pack_with_only_judgement_rules() {
     let dir = tempfile::tempdir().unwrap();
     let judgement = common::rule(
         "j",
@@ -593,13 +589,10 @@ fn the_command_rejects_a_pack_with_nothing_to_run() {
     );
     let (name, text) = common::category("cat", &[judgement]);
     std::fs::write(dir.path().join(name), text).unwrap();
-    let m = slopvac_engine::cases::cli::command()
-        .try_get_matches_from(["cases", dir.path().to_str().unwrap()])
-        .unwrap();
-    let err = slopvac_engine::cases::cli::run(&m, &mut Vec::new()).unwrap_err();
+    let (code, out) = cli(&[dir.path().to_str().unwrap()]);
     assert_eq!(
-        err.to_string(),
-        "no rule has cases or checkable examples to run"
+        (code, out.as_str()),
+        (0, "0 passed, 0 failed, 0 incomplete\n")
     );
 }
 

@@ -231,6 +231,10 @@ pub(crate) enum EngineText {
     /// No rules have executable cases.
     #[code("engine-cases-none")]
     #[text("no rule has cases or checkable examples to run")]
+    #[expect(
+        dead_code,
+        reason = "the case runner no longer fails on an empty run; the code stays registered"
+    )]
     NoCases,
     /// Git could not start.
     #[code("engine-git-spawn")]

@@ -207,11 +207,16 @@ fn a_switched_off_rule_is_not_active_so_it_is_not_unchecked() {
 }
 
 #[test]
-fn selecting_only_a_judgement_rule_leaves_nothing_to_run() {
+fn selecting_only_a_judgement_rule_is_an_empty_run_that_exits_0() {
     let e: Engine = engine(&[judgement()]);
-    let err = run_cases(&e, Some(&id("core:cat.j"))).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "no rule has cases or checkable examples to run"
-    );
+    let report = run_cases(&e, Some(&id("core:cat.j"))).unwrap();
+    assert!(report.results.is_empty(), "{report}");
+    assert_eq!(report.exit_code(), 0);
+    assert!(report.unchecked_notice().is_none());
+}
+
+#[test]
+fn an_unknown_selected_rule_is_still_an_error() {
+    let err = run_cases(&engine(&[judgement()]), Some(&id("core:cat.nope"))).unwrap_err();
+    assert_eq!(err.to_string(), "no rule core:cat.nope");
 }

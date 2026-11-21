@@ -240,9 +240,6 @@ pub enum CasesError {
     /// The selected id names no rule of the engine.
     #[error("{}", crate::messages::no_rule(.0))]
     UnknownRule(RuleId),
-    /// The engine holds no rule with cases or checkable examples, so nothing would run.
-    #[error("{}", crate::messages::EngineText::NoCases)]
-    NothingToRun,
     /// The engine failed.
     #[error(transparent)]
     Engine(#[from] EngineError),
@@ -464,7 +461,8 @@ fn run_rule(
 ///
 /// A checkable rule that has no cases and no example reports
 /// [`Outcome::Incomplete`], as does every check of a rule the engine does not execute.
-/// A judgement rule reports nothing, even when `only` selects it.
+/// A judgement rule reports nothing, even when `only` selects it. A run whose rules are all
+/// judgement or inactive is an empty report that exits 0. An id that names no rule is an error.
 pub fn run_cases(engine: &Engine, only: Option<&RuleId>) -> Result<CaseReport, CasesError> {
     let mut report = CaseReport::default();
     let mut found = false;
@@ -474,7 +472,6 @@ pub fn run_cases(engine: &Engine, only: Option<&RuleId>) -> Result<CaseReport, C
     }
     match only {
         Some(id) if !found => Err(CasesError::UnknownRule(id.clone())),
-        _ if report.results.is_empty() => Err(CasesError::NothingToRun),
         _ => Ok(report),
     }
 }
