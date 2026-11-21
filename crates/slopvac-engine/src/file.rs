@@ -1,8 +1,9 @@
 //! Fixing a file on disk without trusting the path it was found under.
 //!
 //! [`fix_file`] takes the project root the caller trusts and a path inside it. It never
-//! hands the path to the system whole. It opens the root as a directory handle and walks to
-//! the file one component at a time relative to that handle, never following a link, so a
+//! hands the path to the system whole. The root is opened once, as a [`Root`] directory
+//! handle, and never again by name, so replacing the root path with a link later changes
+//! nothing. It walks to the file one component at a time relative to that handle, never following a link, so a
 //! symbolic link or other reparse point in any component ends the walk with
 //! [`Refusal::Symlink`]. It checks the open file (regular, one link, size, and on unix an
 //! owner that is the current user) and reads through that handle only. Nothing that is
@@ -35,7 +36,7 @@ use std::path::{Component, Path, PathBuf};
 
 use slopvac_model::Document;
 
-use crate::commit::{Refusal, Step, open};
+use crate::commit::{Refusal, Root, Step, open};
 use crate::fix::{FixError, FixReport, fix_document, unified_diff};
 use crate::lint::{Engine, Input, Kind};
 
@@ -94,7 +95,7 @@ impl FileContext<'_> {
 
 /// Lint the file at `path`, fix it and, unless `dry_run`, write the result.
 ///
-/// `root` is the project root the caller trusts; `path` is absolute inside it or relative
+/// `root` is the project root the caller trusts, opened here once; `path` is absolute inside it or relative
 /// to it, with no `..`. See the module notes for what is refused and how the write is
 /// made. The lint report of a written file is rerun on the fixed text. A dry run changes
 /// nothing and reports the diff the write would make.
@@ -106,9 +107,13 @@ pub fn fix_file(
     dry_run: bool,
     changed_lines: Option<&[RangeInclusive<usize>]>,
 ) -> Result<FileFix, FixError> {
+    let root = Root::open(root).map_err(|source| FixError::Io {
+        path: path.to_string_lossy().into_owned(),
+        source,
+    })?;
     fix_file_hooked(
         engine,
-        root,
+        &root,
         path,
         kind,
         dry_run,
@@ -123,7 +128,7 @@ pub fn fix_file(
 #[doc(hidden)]
 pub fn fix_file_hooked(
     engine: &Engine,
-    root: &Path,
+    root: &Root,
     path: &Path,
     kind: Kind,
     dry_run: bool,
@@ -145,7 +150,7 @@ pub fn fix_file_hooked(
 #[doc(hidden)]
 pub fn fix_file_in(
     engine: &Engine,
-    root: &Path,
+    root: &Root,
     path: &Path,
     context: &FileContext<'_>,
     dry_run: bool,
@@ -160,7 +165,7 @@ pub fn fix_file_in(
         path: shown.clone(),
         source,
     };
-    let Some(relative) = relative_to(root, path) else {
+    let Some(relative) = relative_to(root.path(), path) else {
         return Ok(FileFix::Refused(Refusal::OutsideRoot));
     };
     let (mut handle, bytes) = match open(root, &relative).map_err(io)? {

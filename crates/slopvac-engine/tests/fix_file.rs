@@ -22,7 +22,7 @@ use common::{engine, rule};
 use serde_json::json;
 use slopvac_engine::{Engine, FileFix, FileResult, Kind, Refusal, fix_file};
 #[cfg(unix)]
-use slopvac_engine::{Step, fix_file_hooked};
+use slopvac_engine::{Root, Step, fix_file_hooked};
 
 const DOC: &str = "Use delta here.\n";
 const FIXED: &str = "Use d here.\n";
@@ -203,9 +203,10 @@ fn at(
     step: Step,
     mut tamper: impl FnMut() -> std::io::Result<()>,
 ) -> Result<FileFix, slopvac_engine::FixError> {
+    let root = Root::open(root).unwrap();
     fix_file_hooked(
         &swaps(),
-        root,
+        &root,
         Path::new("doc.md"),
         Kind::Markdown,
         false,

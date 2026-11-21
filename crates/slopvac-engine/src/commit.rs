@@ -12,7 +12,7 @@
 //! exists in safe Rust today (bead slopvac-8l4.3.35).
 
 use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
@@ -197,13 +197,44 @@ fn nonblocking(_: &mut OpenOptions) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The project root as an open directory handle.
+///
+/// [`Root::open`] is the only place the root is opened by pathname. Every later open, stage
+/// and rename goes through the handle, so replacing the path with a link afterwards cannot
+/// move a fix to another directory. The path is kept only to turn an absolute file path into
+/// a relative one.
+#[derive(Debug)]
+pub struct Root {
+    dir: Dir,
+    path: PathBuf,
+}
+
+impl Root {
+    /// Open the directory at `path` and hold it. A link at `path` is followed here, once.
+    ///
+    /// # Errors
+    ///
+    /// Returns the I/O error when `path` is not an openable directory.
+    pub fn open(path: &Path) -> std::io::Result<Self> {
+        Ok(Self {
+            dir: Dir::open_ambient_dir(path, ambient_authority())?,
+            path: path.to_path_buf(),
+        })
+    }
+
+    /// The path the root was opened under. Do not open it again.
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 /// Walk to the parent of `relative` below `root` without following a link, and open the
 /// file for reading. The caller checks what the file is.
 fn open_file(
-    root: &Path,
+    root: &Root,
     relative: &Path,
 ) -> std::io::Result<Result<(Dir, OsString, File), Refusal>> {
-    let mut parent = Dir::open_ambient_dir(root, ambient_authority())?;
+    let mut parent = root.dir.try_clone()?;
     let mut names: Vec<&OsStr> = relative.iter().collect();
     let Some(name) = names.pop() else {
         return Ok(Err(Refusal::OutsideRoot));
@@ -241,7 +272,7 @@ pub(crate) use other::open;
 mod other {
     use std::path::Path;
 
-    use super::{Refusal, checked_len, max_bytes, open_file, read_all};
+    use super::{Refusal, Root, checked_len, max_bytes, open_file, read_all};
 
     /// Nothing to commit with: this platform does not write in place.
     pub(crate) struct Handle;
@@ -259,7 +290,7 @@ mod other {
     }
 
     pub(crate) fn open(
-        root: &Path,
+        root: &Root,
         relative: &Path,
     ) -> std::io::Result<Result<(Handle, Vec<u8>), Refusal>> {
         let (_, _, mut file) = match open_file(root, relative)? {
@@ -293,7 +324,7 @@ mod unix {
     use rustix::io::Errno;
 
     use super::{
-        Hook, Refusal, Step, checked_len, fits, max_bytes, nonblocking, open_file, read_all,
+        Hook, Refusal, Root, Step, checked_len, fits, max_bytes, nonblocking, open_file, read_all,
     };
 
     /// What names a file: device and inode, size and modification time.
@@ -366,7 +397,7 @@ mod unix {
 
     /// Open `relative` below `root` without following a link, check it and read it.
     pub(crate) fn open(
-        root: &Path,
+        root: &Root,
         relative: &Path,
     ) -> std::io::Result<Result<(Handle, Vec<u8>), Refusal>> {
         let (parent, name, mut file) = match open_file(root, relative)? {
@@ -591,7 +622,8 @@ mod unix {
             let dir = project("12345");
             // The check sees 0 bytes, as if the file had been empty when it ran.
             let _seam = seam::set(4, Some(0));
-            let opened = open(dir.path(), Path::new("doc.md")).unwrap();
+            let opened =
+                open(&super::Root::open(dir.path()).unwrap(), Path::new("doc.md")).unwrap();
             assert_eq!(opened.err(), Some(Refusal::TooLarge));
         }
 
@@ -599,7 +631,9 @@ mod unix {
         fn a_file_exactly_at_the_cap_is_read_whole() {
             let dir = project("1234");
             let _seam = seam::set(4, None);
-            let (_, bytes) = open(dir.path(), Path::new("doc.md")).unwrap().unwrap();
+            let (_, bytes) = open(&super::Root::open(dir.path()).unwrap(), Path::new("doc.md"))
+                .unwrap()
+                .unwrap();
             assert_eq!(bytes, b"1234");
         }
 
@@ -607,7 +641,10 @@ mod unix {
         fn a_replacement_over_the_cap_is_refused_before_staging() {
             let dir = project("1234");
             let _seam = seam::set(4, None);
-            let (mut handle, bytes) = open(dir.path(), Path::new("doc.md")).unwrap().unwrap();
+            let (mut handle, bytes) =
+                open(&super::Root::open(dir.path()).unwrap(), Path::new("doc.md"))
+                    .unwrap()
+                    .unwrap();
             let refusal = handle.commit("12345", &bytes, &mut |_| Ok(())).unwrap();
             assert_eq!(refusal, Some(Refusal::TooLarge));
             assert_eq!(std::fs::read(dir.path().join("doc.md")).unwrap(), b"1234");
@@ -619,7 +656,10 @@ mod unix {
         fn a_replacement_at_the_cap_is_written() {
             let dir = project("1234");
             let _seam = seam::set(4, None);
-            let (mut handle, bytes) = open(dir.path(), Path::new("doc.md")).unwrap().unwrap();
+            let (mut handle, bytes) =
+                open(&super::Root::open(dir.path()).unwrap(), Path::new("doc.md"))
+                    .unwrap()
+                    .unwrap();
             let refusal = handle.commit("abcd", &bytes, &mut |_| Ok(())).unwrap();
             assert_eq!(refusal, None);
             assert_eq!(std::fs::read(dir.path().join("doc.md")).unwrap(), b"abcd");

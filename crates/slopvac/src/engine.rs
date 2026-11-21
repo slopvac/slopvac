@@ -10,16 +10,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-<<<<<<< HEAD
-use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
-=======
 use crate::lint_messages::LintFixMessage;
-use slopvac_config::frontmatter::{Policy, read as read_front_matter};
->>>>>>> 82cb0ba (fix(cli): route lint --fix errors through the engine mapping and catalog)
+use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{
-    Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, fix_file_in,
+    Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, Root, fix_file_in,
 };
 use slopvac_messages::Catalog as _;
 use slopvac_model::{
@@ -348,8 +344,11 @@ impl Configs<'_> {
 impl Linter for EngineLinter {
     fn lint(&self, request: &LintRequest) -> RunOutcome {
         let mut run = Run::default();
+        // Open the root once, before any file is collected, so a later swap of its path for
+        // a link cannot move a fix elsewhere.
+        let root = request.fix.then(|| Root::open(&request.root));
         match prepare(request, &mut run) {
-            Ok((rules, items)) => lint_items(request, items, rules, run),
+            Ok((rules, items)) => lint_items(request, root.as_ref(), items, rules, run),
             Err(err) => failed(request, run, &err),
         }
     }
@@ -912,7 +911,8 @@ fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
 /// What a fix run needs besides the items: the engine of the group and, for each input of
 /// the group, the lint context `lint_items` gives the engine.
 struct FixContext<'a> {
-    request: &'a LintRequest,
+    /// The root handle opened before the files were collected.
+    root: &'a std::io::Result<Root>,
     engine: &'a Engine,
     relatives: &'a [Option<String>],
     declared: &'a [Option<String>],
@@ -953,9 +953,22 @@ fn fix_group(
             relative_path: context.relatives[position].as_deref(),
             declared_genre: context.declared[position].as_deref(),
         };
+        let root = match context.root {
+            Ok(root) => root,
+            Err(err) => {
+                let shown = item.shown.clone();
+                let failed = LintFixMessage::Failed {
+                    shown: shown.clone(),
+                    reason: err.to_string(),
+                };
+                run.skip(failed.code(), &shown, slopvac_messages::render(&failed));
+                keep.push(false);
+                continue;
+            }
+        };
         let fixed = fix_file_in(
             context.engine,
-            &context.request.root,
+            root,
             &path,
             &file_context,
             false,
@@ -1003,6 +1016,7 @@ fn fix_group(
 
 fn lint_items(
     request: &LintRequest,
+    root: Option<&std::io::Result<Root>>,
     mut items: Vec<Item>,
     rules: Catalog,
     mut run: Run,
@@ -1028,7 +1042,7 @@ fn lint_items(
             .iter()
             .map(|&i| items[i].config.as_ref().map(|(_, rel)| rel_text(rel)))
             .collect();
-        let (indexes, relatives) = if request.fix {
+        let (indexes, relatives) = if let Some(root) = root {
             // The fix needs the genre each file declares before it is fixed. The report
             // below reads the front matter again from the text that is left.
             let declared: Vec<Option<String>> = indexes
@@ -1036,7 +1050,7 @@ fn lint_items(
                 .map(|&i| declared_genre(&read_block(&items[i])))
                 .collect();
             let context = FixContext {
-                request,
+                root,
                 engine: &engine,
                 relatives: &relatives,
                 declared: &declared,
@@ -1502,8 +1516,9 @@ mod fix_tests {
             ),
         )
         .expect("engine");
+        let held = Root::open(&request.root);
         let context = FixContext {
-            request: &request,
+            root: &held,
             engine: &engine,
             relatives: &[None],
             declared: &[None],
