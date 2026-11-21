@@ -335,7 +335,7 @@ fn watch_config(shared: &Shared, out: &Sender<Message>) {
     let request = Request::new(
         RequestId::from("slopvac-watch-config".to_owned()),
         "client/registerCapability".to_owned(),
-        &serde_json::json!({"registrations": [{
+        serde_json::json!({"registrations": [{
             "id": "slopvac-watch-config",
             "method": "workspace/didChangeWatchedFiles",
             "registerOptions": {"watchers": watchers},

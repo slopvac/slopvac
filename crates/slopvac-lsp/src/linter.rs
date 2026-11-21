@@ -202,8 +202,17 @@ fn kind_of(path: &str) -> Kind {
     }
 }
 
-impl Linter for EngineLinter {
-    fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
+impl EngineLinter {
+    /// Lint `text` as `Linter::lint` does, for a document whose path relative to its config
+    /// root is `relative` and whose front matter declares `genre`. The relative path is what
+    /// the `files` globs of `[[genres]]` blocks match, and the declared genre outranks them.
+    pub fn lint_resolved(
+        &self,
+        path: &str,
+        text: &str,
+        relative: Option<&str>,
+        genre: Option<&str>,
+    ) -> Result<Linted, LintError> {
         if is_binary_host(path) {
             return Ok(Linted {
                 findings: Vec::new(),
@@ -211,9 +220,15 @@ impl Linter for EngineLinter {
                 notices: Vec::new(),
             });
         }
-        let input = Input::new(path, text)
+        let mut input = Input::new(path, text)
             .with_kind(kind_of(path))
             .with_bom(BomMode::Buffer);
+        if let Some(relative) = relative {
+            input = input.with_relative_path(relative);
+        }
+        if let Some(genre) = genre {
+            input = input.with_declared_genre(genre);
+        }
         self.engine
             .lint_with_notices(&input)
             .map(|(document, notices)| Linted {
@@ -222,6 +237,12 @@ impl Linter for EngineLinter {
                 notices,
             })
             .map_err(|e| LintError(e.to_string()))
+    }
+}
+
+impl Linter for EngineLinter {
+    fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
+        self.lint_resolved(path, text, None, None)
     }
 
     fn allow_reasons(&self, path: &str, text: &str, site: usize, rule: &RuleId) -> Vec<String> {

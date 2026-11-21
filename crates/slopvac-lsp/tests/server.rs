@@ -1470,7 +1470,7 @@ fn a_client_that_can_watch_files_is_asked_to_watch_the_config() {
     let init = Request::new(
         RequestId::from(1),
         "initialize".to_owned(),
-        &json!({"processId": null, "rootUri": null, "capabilities": {
+        json!({"processId": null, "rootUri": null, "capabilities": {
             "workspace": {"didChangeWatchedFiles": {"dynamicRegistration": true}}}}),
     );
     conn.sender.send(Message::Request(init)).unwrap();
@@ -1481,7 +1481,7 @@ fn a_client_that_can_watch_files_is_asked_to_watch_the_config() {
     conn.sender
         .send(Message::Notification(Notification::new(
             "initialized".to_owned(),
-            &json!({}),
+            json!({}),
         )))
         .unwrap();
     let Message::Request(register) = conn.receiver.recv_timeout(WAIT).unwrap() else {

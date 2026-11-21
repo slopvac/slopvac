@@ -52,13 +52,10 @@ pub fn command() -> Command {
 /// with no `shutdown` ([`Exit::WithoutShutdown`]).
 pub fn run(
     _matches: &ArgMatches,
-    linter: EngineLinter,
+    linter: impl Linter + 'static,
     startup_notices: Vec<slopvac_model::Notice>,
     checks: Vec<std::sync::Arc<dyn Check>>,
 ) -> Result<Exit, RunError> {
-    // STUB(slopvac-8l4.12.15): the caller builds `linter` from the project config found at
-    // startup. A document in an `[[overrides]]` block still gets the project settings, and a
-    // config change shows only after a restart.
     let (connection, io_threads) = lsp_server::Connection::stdio();
     let configured = checks
         .into_iter()
