@@ -1513,10 +1513,25 @@ mod tests {
         const READY_LIMIT: Duration = Duration::from_secs(60);
 
         /// Wait for the script to write a pid and a newline to the FIFO at
-        /// `fifo`, without blocking on it. On a script that exits first, or
-        /// reports nothing within `limit`, kill its group, reap it and
-        /// return the reason.
+        /// `fifo`, without blocking on it. On any failure, kill the helper's
+        /// group, reap it and return the reason. This is the only exit that
+        /// leaves a failure, so no failure can leave the helper running.
         fn await_pid(
+            child: &mut std::process::Child,
+            fifo: &Path,
+            limit: Duration,
+        ) -> Result<String, String> {
+            read_pid(child, fifo, limit).inspect_err(|_| {
+                if let Some(g) = pid(child.id()) {
+                    let _ = rustix::process::kill_process_group(g, Signal::KILL);
+                }
+                let _ = child.kill();
+                let _ = child.wait();
+            })
+        }
+
+        /// Poll the FIFO for the pid; the caller cleans up after a failure.
+        fn read_pid(
             child: &mut std::process::Child,
             fifo: &Path,
             limit: Duration,
@@ -1529,12 +1544,12 @@ mod tests {
             let mut reader = std::fs::File::from(fd);
             let end = Instant::now() + limit;
             let mut got = Vec::new();
-            let failure = loop {
+            loop {
                 let mut chunk = [0_u8; 64];
                 match reader.read(&mut chunk) {
                     Ok(n) => got.extend_from_slice(&chunk[..n]),
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                    Err(e) => break format!("cannot read the pid FIFO: {e}"),
+                    Err(e) => return Err(format!("cannot read the pid FIFO: {e}")),
                 }
                 if got.contains(&b'\n') {
                     let text = String::from_utf8_lossy(&got).trim().to_owned();
@@ -1545,21 +1560,17 @@ mod tests {
                 }
                 match child.try_wait() {
                     Ok(Some(status)) => {
-                        break format!("the helper exited ({status}) before it wrote a pid");
+                        return Err(format!(
+                            "the helper exited ({status}) before it wrote a pid"
+                        ));
                     }
                     Ok(None) if Instant::now() < end => {
                         std::thread::sleep(Duration::from_millis(5));
                     }
-                    Ok(None) => break format!("the helper wrote no pid within {limit:?}"),
-                    Err(e) => break format!("cannot poll the helper: {e}"),
+                    Ok(None) => return Err(format!("the helper wrote no pid within {limit:?}")),
+                    Err(e) => return Err(format!("cannot poll the helper: {e}")),
                 }
-            };
-            if let Some(g) = pid(child.id()) {
-                let _ = rustix::process::kill_process_group(g, Signal::KILL);
             }
-            let _ = child.kill();
-            let _ = child.wait();
-            Err(failure)
         }
 
         /// Spawn `script` under `/bin/sh -c`, with the FIFO path as `$0`.
@@ -1576,7 +1587,6 @@ mod tests {
         }
 
         fn make_fifo(dir: &Path) -> std::path::PathBuf {
-            std::fs::create_dir_all(dir).unwrap();
             let fifo = dir.join("pid");
             let made = std::process::Command::new("/usr/bin/mkfifo")
                 .arg(&fifo)
@@ -1593,34 +1603,25 @@ mod tests {
         /// The deadline starts once the script has reported its pid, so a
         /// slow shell start cannot leave the pid missing or half written.
         fn hung(script: &str) -> (Option<Vec<u8>>, Duration, String) {
-            let dir = std::env::temp_dir().join(format!(
-                "slopvac-hung-{}-{}",
-                std::process::id(),
-                script.len()
-            ));
-            let fifo = make_fifo(&dir);
+            let dir = tempfile::tempdir().unwrap();
+            let fifo = make_fifo(dir.path());
             let mut child = spawn_reporting(script, &fifo);
-            let pid = await_pid(&mut child, &fifo, READY_LIMIT);
-            let pid = pid.unwrap_or_else(|why| {
-                let _ = std::fs::remove_dir_all(&dir);
-                panic!("{why}");
-            });
+            let pid =
+                await_pid(&mut child, &fifo, READY_LIMIT).unwrap_or_else(|why| panic!("{why}"));
             let started = Instant::now();
             let got = drain_bounded(child, started + Duration::from_millis(500));
             let took = started.elapsed();
-            std::fs::remove_dir_all(&dir).unwrap();
             (got, took, pid)
         }
 
         #[test]
         fn a_script_that_exits_before_reporting_a_pid_fails_the_wait_at_once() {
-            let dir = std::env::temp_dir().join(format!("slopvac-ready-{}", std::process::id()));
-            let fifo = make_fifo(&dir);
+            let dir = tempfile::tempdir().unwrap();
+            let fifo = make_fifo(dir.path());
             let mut child = spawn_reporting("exit 3", &fifo);
             let started = Instant::now();
             let got = await_pid(&mut child, &fifo, READY_LIMIT);
             let took = started.elapsed();
-            std::fs::remove_dir_all(&dir).unwrap();
             let why = got.unwrap_err();
             assert!(why.contains("exited"), "{why}");
             assert!(took < Duration::from_secs(10), "{took:?}");
@@ -1628,16 +1629,44 @@ mod tests {
 
         #[test]
         fn a_script_that_reports_nothing_fails_the_wait_at_the_limit_and_is_reaped() {
-            let dir = std::env::temp_dir().join(format!("slopvac-silent-{}", std::process::id()));
-            let fifo = make_fifo(&dir);
+            let dir = tempfile::tempdir().unwrap();
+            let fifo = make_fifo(dir.path());
             let mut child = spawn_reporting("sleep 60", &fifo);
             let got = await_pid(&mut child, &fifo, Duration::from_millis(200));
-            std::fs::remove_dir_all(&dir).unwrap();
             assert!(got.unwrap_err().contains("no pid"));
-            assert!(
-                child.try_wait().unwrap().is_some(),
-                "the helper was not reaped"
-            );
+            assert_killed_and_reaped(&mut child);
+        }
+
+        /// A failed wait leaves the helper dead and reaped, killed by a signal
+        /// rather than exited on its own.
+        fn assert_killed_and_reaped(child: &mut std::process::Child) {
+            use std::os::unix::process::ExitStatusExt;
+            let status = child
+                .try_wait()
+                .unwrap()
+                .expect("the helper was not reaped");
+            assert_eq!(status.signal(), Some(9), "{status:?}");
+        }
+
+        #[rstest::rstest]
+        #[case::fifo_cannot_be_opened("sleep 60", false, "cannot open")]
+        #[case::pid_is_malformed("echo not-a-pid > \"$0\"; sleep 60", true, "not a pid")]
+        fn a_failed_readiness_wait_kills_and_reaps_a_running_helper(
+            #[case] script: &str,
+            #[case] fifo_exists: bool,
+            #[case] reason: &str,
+        ) {
+            let dir = tempfile::tempdir().unwrap();
+            let fifo = if fifo_exists {
+                make_fifo(dir.path())
+            } else {
+                dir.path().join("missing")
+            };
+            let mut child = spawn_reporting(script, &fifo);
+            let got = await_pid(&mut child, &fifo, READY_LIMIT);
+            let why = got.unwrap_err();
+            assert!(why.contains(reason), "{why}");
+            assert_killed_and_reaped(&mut child);
         }
 
         #[test]
