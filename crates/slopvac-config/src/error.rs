@@ -10,6 +10,7 @@ use crate::messages::{ConfigMessage, ConfigPhrase, ConfigText};
 
 /// A file whose text slopvac refused, with the reasons.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Rejected {
     /// Path shown in messages, relative to the project root.
     pub file: String,
@@ -45,6 +46,7 @@ impl Rejected {
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     /// A file could not be read.
+    #[non_exhaustive]
     #[error("{}", io_text(.path, .source))]
     Io {
         /// The path as the caller gave it, or relative to the project root. Never an absolute
@@ -58,6 +60,7 @@ pub enum ConfigError {
         file: Option<PathBuf>,
     },
     /// A config file is larger than [`crate::MAX_CONFIG_BYTES`].
+    #[non_exhaustive]
     #[error("{}", too_large_text(.path, *.cap))]
     TooLarge {
         /// The path as the caller gave it, or relative to the project root.

@@ -1681,6 +1681,19 @@ fn a_refused_config_still_lists_its_files_and_the_extended_file_that_is_missing(
 }
 
 #[test]
+fn an_extends_path_that_climbs_past_the_root_is_normalised_as_slopvac_fs_does() {
+    let fx = Fixture::new();
+    let climb = "../".repeat(64);
+    let project = fx.write(
+        "slopvac.toml",
+        &format!("schema_version = 3\nextends = [\"{climb}gone.toml\"]\n"),
+    );
+    let err = load(&project, &NoPresets).unwrap_err();
+    // `/..` is `/`, so the target is `/gone.toml`, the form the watcher compares with.
+    assert_eq!(err.dependencies(), [project, PathBuf::from("/gone.toml")]);
+}
+
+#[test]
 fn a_refused_extended_file_is_the_source_file_and_a_dependency() {
     let fx = Fixture::new();
     let base = fx.write("shared/base.toml", "schema_version = 3\nlocale = [\n");

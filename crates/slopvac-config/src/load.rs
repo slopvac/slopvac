@@ -285,21 +285,10 @@ pub(crate) fn normalise_join(dir: &Path, name: &str) -> PathBuf {
     normalise(&dir.join(name))
 }
 
-/// Lexically normalise `path`: drop `.` and fold `..` against the preceding component.
+/// Lexically normalise `path`, as every other part of slopvac does, so a path that a watcher
+/// compares is spelled the one way.
 fn normalise(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in path.components() {
-        match c {
-            Component::CurDir => {}
-            Component::ParentDir
-                if matches!(out.components().next_back(), Some(Component::Normal(_))) =>
-            {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
+    slopvac_fs::lexical_normalize(path)
 }
 
 /// Whether two path components name the same place. A verbatim prefix (`\\?\C:`) and its plain
