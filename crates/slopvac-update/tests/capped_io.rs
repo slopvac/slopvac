@@ -3,8 +3,6 @@
 #![cfg(unix)]
 
 use std::path::Path;
-use std::sync::mpsc::{RecvTimeoutError, channel};
-use std::time::Duration;
 
 use rstest::rstest;
 use slopvac_update::install::{InstallMethod, detect};
@@ -35,21 +33,55 @@ fn plant(kind: Plant, path: &Path, valid: &str) {
     }
 }
 
-/// Run `f` on a thread. A hang fails the test; a FIFO is opened for writing first, so the
-/// stuck thread can end.
-fn within_timeout<T: Send + 'static>(fifo: &Path, f: impl FnOnce() -> T + Send + 'static) -> T {
-    let (tx, rx) = channel();
-    std::thread::spawn(move || {
+/// Run `f` on a thread and wait for its result.
+///
+/// - A panic in `f` is resumed here, and the FIFO is not touched.
+/// - A hang fails the test. The FIFO is opened read-write first, so a worker stuck opening it
+///   can end: an `O_RDWR` open of a FIFO never blocks on Linux or macOS, which a write-only
+///   open does when no reader exists. Then the worker is given a bounded time to finish.
+fn run_bounded<T: Send + 'static>(
+    fifo: &Path,
+    hung: &str,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handle = std::thread::spawn(move || {
         let _ = tx.send(f());
     });
-    match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(v) => v,
-        Err(RecvTimeoutError::Timeout) => {
-            let _ = std::fs::OpenOptions::new().write(true).open(fifo);
-            panic!("the read hung");
+    match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(value) => {
+            handle.join().expect("the worker finished after sending");
+            value
         }
-        Err(RecvTimeoutError::Disconnected) => panic!("the read panicked"),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => match handle.join() {
+            Err(panic) => std::panic::resume_unwind(panic),
+            Ok(()) => panic!("the worker ended without a result"),
+        },
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            let _ = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(fifo);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !handle.is_finished() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            panic!("{hung}");
+        }
     }
+}
+
+fn within_timeout<T: Send + 'static>(fifo: &Path, f: impl FnOnce() -> T + Send + 'static) -> T {
+    run_bounded(fifo, "the read hung", f)
+}
+
+#[test]
+#[should_panic(expected = "worker boom")]
+fn a_worker_that_panics_before_opening_the_fifo_is_reported_without_waiting() {
+    let dir = tempfile::tempdir().unwrap();
+    let fifo = dir.path().join("fifo");
+    plant(Plant::Fifo, &fifo, "");
+    within_timeout(&fifo, || -> () { panic!("worker boom") });
 }
 
 #[rstest]
