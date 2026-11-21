@@ -604,6 +604,7 @@ impl JsonSchema for Match {
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
             "description": "The typed detection payload. match.kind selects the one allowed shape.",
+            "x-slopvac-extensible": true,
             "oneOf": [
                 generator.subschema_for::<TokensMatch>(),
                 generator.subschema_for::<PatternMatch>(),
