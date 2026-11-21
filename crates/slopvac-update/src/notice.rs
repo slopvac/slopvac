@@ -146,7 +146,12 @@ impl Cache {
     /// The cached entry, or `None` when missing or unreadable.
     #[must_use]
     pub fn read(&self) -> Option<Entry> {
-        let bytes = slopvac_fs::read_capped_regular(&self.path, MAX_CACHE_BYTES, slopvac_fs::ReadOptions::new()).ok()?;
+        let bytes = slopvac_fs::read_capped_regular(
+            &self.path,
+            MAX_CACHE_BYTES,
+            slopvac_fs::ReadOptions::new(),
+        )
+        .ok()?;
         serde_json::from_slice(&bytes).ok()
     }
 
