@@ -347,6 +347,27 @@ fn refused_notes_leave_the_built_in_text_and_one_fixed_notice(
     assert_refused(dir.path(), code, reason);
 }
 
+/// A bad marker fails closed: no notes reach any topic, not even the text before the marker
+/// or a good section after it.
+#[rstest::rstest]
+#[case::base(None)]
+#[case::section_before_the_bad_marker(Some("write"))]
+#[case::section_after_the_bad_marker(Some("rules"))]
+fn one_bad_marker_withholds_every_note_in_the_file(#[case] topic: Option<&str>) {
+    let dir = project_with_notes(
+        format!(
+            "{SENTINEL}-base\n<!-- slopvac:topic write -->\n{SENTINEL}-write\n\
+             <!-- slopvac:topic bogus -->\n{SENTINEL}-bogus\n\
+             <!-- slopvac:topic rules -->\n{SENTINEL}-rules\n"
+        )
+        .as_bytes(),
+    );
+    let out = render_in(dir.path(), topic);
+    let notice = "Ignored .slopvac/PRIME.md (prime-override-unknown-topic): a topic marker names no topic. The guidance above is complete.\n";
+    assert_eq!(out, format!("{}\n{notice}", builtin(topic)));
+    assert!(!out.contains(SENTINEL), "notes text leaked: {out:?}");
+}
+
 #[test]
 fn a_file_of_exactly_the_cap_is_not_a_too_large_refusal() {
     let exact = format!("{SENTINEL}\n{}", "a".repeat(64 * 1024 - SENTINEL.len() - 1));
