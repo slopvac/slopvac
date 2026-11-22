@@ -46,8 +46,10 @@ fn invalid_case_is_refused_at_its_pointer(
     let want = expected()
         .get(&name)
         .and_then(toml::Value::as_str)
-        .map(str::to_owned)
-        .unwrap_or_else(|| panic!("{name} is missing from cases.toml"));
+        .map_or_else(
+            || panic!("{name} is missing from cases.toml"),
+            str::to_owned,
+        );
     let err = load(&path).expect_err("an invalid case must be refused");
     assert_eq!(err.pointer(), Some(want.as_str()), "{name}: {err}");
 }
@@ -57,7 +59,12 @@ fn cases_toml_names_exactly_the_invalid_files() {
     let on_disk: BTreeSet<String> = fs::read_dir(corpus().join("invalid"))
         .expect("invalid dir")
         .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
-        .filter(|n| n.ends_with(".toml") && n != "cases.toml")
+        .filter(|n| {
+            Path::new(n)
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("toml"))
+                && n != "cases.toml"
+        })
         .collect();
     let listed: BTreeSet<String> = expected().keys().cloned().collect();
     assert_eq!(on_disk, listed);
