@@ -3,6 +3,7 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use rstest::rstest;
 use std::fs;
 
 fn slopvac() -> Command {
@@ -162,6 +163,72 @@ fn a_guard_that_repeats_a_block_scope_stops_the_write_and_changes_nothing() {
             "error[migrate-output-invalid]: ",
         ))
         .stderr(predicate::str::contains("config-duplicate-scope"));
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".slopvac.toml")).expect("source kept"),
+        config
+    );
+    assert!(!dir.path().join("slopvac.toml").exists());
+    assert!(!dir.path().join(".slopvac").exists());
+    assert_eq!(fs::read_dir(cache.path()).expect("cache").count(), 0);
+}
+
+#[rstest]
+// The switch to normal leaves the rule at the `off` of the relaxed style, where 2.x
+// applied the block's category level.
+#[case::stuck_off(
+    "profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n\
+     categories = { ai-tells-agentic = \"warning\" }\n"
+)]
+// A rule entry would lose the category's floor.
+#[case::floor(
+    "profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n\
+     categories = { \"ai-tells-agentic\" = { severity = \"warning\", minimum_severity = \"error\" } }\n"
+)]
+// A later block without a profile sets a category level inside the switched files.
+#[case::later_plain_block(
+    "profile = \"strict\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\n\
+     categories = { prose-craft = \"warning\" }\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+     profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/manual/**\"]\n\
+     categories = { prose-craft = \"error\" }\n"
+)]
+// An earlier block inside the switched files moves after the switch.
+#[case::moved_block(
+    "profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\n\
+     categories = { ai-tells-agentic = \"warning\" }\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+     profile = \"normal\"\n"
+)]
+// A category with no level still takes one from the profile in force.
+#[case::category_without_level(
+    "profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n\
+     categories = { ai-tells-agentic = { weight = 2.0 } }\n"
+)]
+// Every file under the switch inherits the top-level floor.
+#[case::top_level_floor(
+    "profile = \"relaxed\"\n\n[categories]\nai-tells-agentic = { minimum_severity = \"error\" }\n\n\
+     [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+)]
+// The switched block inherits the floor of an earlier block that holds its files.
+#[case::container_floor(
+    "profile = \"relaxed\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+     categories = { ai-tells-agentic = { minimum_severity = \"error\" } }\n\n\
+     [[overrides]]\nfiles = [\"docs/api/**\"]\nprofile = \"normal\"\n"
+)]
+fn a_category_level_above_a_profile_switch_stops_the_write_and_changes_nothing(
+    #[case] config: &str,
+) {
+    let dir = project(config);
+    let cache = tempfile::tempdir().expect("tempdir");
+    slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--preserve-behavior")
+        .arg("--write")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[migrate-output-invalid]: ",
+        ));
     assert_eq!(
         fs::read_to_string(dir.path().join(".slopvac.toml")).expect("source kept"),
         config

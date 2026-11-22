@@ -214,7 +214,8 @@ pub enum Error {
     /// The engine could not lint the project.
     #[error("{}", messages::text(self))]
     Lint(String),
-    /// A 3.0 config that the migration produced does not load in 3.0. Nothing is written.
+    /// A 3.0 config that the migration produced does not load in 3.0. Its code is
+    /// `migrate-output-invalid`. Nothing is written.
     #[error("{}", messages::text(self))]
     InvalidOutput {
         /// The config the migration would write.
@@ -222,6 +223,20 @@ pub enum Error {
         /// What the 3.0 loader refused, with its codes.
         #[source]
         cause: LoadRefusal,
+    },
+    /// `--preserve-behavior` refuses a category entry that applies above a profile switch,
+    /// because the migrated config would not keep the 2.x levels there. Its code is
+    /// `migrate-output-invalid`. Nothing is written.
+    #[error("{}", messages::text(self))]
+    CategoryUnderSwitch {
+        /// The file.
+        file: String,
+        /// One-based line of the block that authors the category entry.
+        line: usize,
+        /// Index in `overrides` of that block, or `None` for the top-level `categories`.
+        block: Option<usize>,
+        /// Index in `overrides` of the block whose profile switch the entry applies above.
+        switch: usize,
     },
     /// `schema_version` is not an integer.
     #[error("{}", messages::text(self))]

@@ -420,6 +420,20 @@ pub(crate) enum MigrateText {
         "added \"{style}\" to styles: 2.x ran the vocabulary rules once a word blocklist was set, at the level of the {profile} profile"
     )]
     NoteAddedVocabularyStyle { style: String, profile: String },
+    /// Why a migrated config is refused: the 3.0 loader refused it.
+    #[code("migrate-reason-does-not-load")]
+    #[text("it does not load in 3.0: {problems}")]
+    ReasonDoesNotLoad { problems: String },
+    /// Why a migrated config is refused: a category entry applies above a profile switch.
+    #[code("migrate-reason-category-under-switch")]
+    #[text(
+        "`{at}` on line {line} sets a category that applies above the profile switch in `{switch}`, and `--preserve-behavior` cannot keep the 2.x levels there"
+    )]
+    ReasonCategoryUnderSwitch {
+        at: String,
+        line: String,
+        switch: String,
+    },
     /// A rule level in a moved or switching block was changed to the level 2.x applied.
     #[code("migrate-note-set-rule-level-applied")]
     #[text("set {at} to \"{level}\", the level 2.x applied")]
@@ -898,6 +912,24 @@ pub(crate) fn path_reason(path: &str, reason: &str) -> String {
 
 /// The message a failure renders from this crate's catalogs, or `None` for a failure that the
 /// catalog of another crate renders.
+/// Why `--preserve-behavior` refuses a config whose category entry, on `line` of block
+/// `block` (or of the top-level `categories`), applies above the switch in block `switch`.
+pub(crate) fn category_under_switch_reason(
+    line: usize,
+    block: Option<usize>,
+    switch: usize,
+) -> String {
+    MigrateText::ReasonCategoryUnderSwitch {
+        at: block.map_or_else(
+            || "categories".to_owned(),
+            |b| format!("overrides[{b}].categories"),
+        ),
+        line: line.to_string(),
+        switch: format!("overrides[{switch}]"),
+    }
+    .to_string()
+}
+
 pub(crate) fn of(error: &Error) -> Option<Box<dyn Catalog>> {
     Some(match error {
         Error::Dropped(records) => Box::new(MigrateMessage::LegacyDropped {
@@ -946,7 +978,19 @@ pub(crate) fn of(error: &Error) -> Option<Box<dyn Catalog>> {
         }),
         Error::InvalidOutput { file, cause } => Box::new(MigrateMessage::OutputInvalid {
             file: file.clone(),
-            reason: cause.to_string(),
+            reason: MigrateText::ReasonDoesNotLoad {
+                problems: cause.to_string(),
+            }
+            .to_string(),
+        }),
+        Error::CategoryUnderSwitch {
+            file,
+            line,
+            block,
+            switch,
+        } => Box::new(MigrateMessage::OutputInvalid {
+            file: file.clone(),
+            reason: category_under_switch_reason(*line, *block, *switch),
         }),
         Error::InvalidType {
             file,

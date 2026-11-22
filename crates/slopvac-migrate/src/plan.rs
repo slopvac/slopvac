@@ -13,7 +13,7 @@ use crate::capped::{Blockers, Capped, Listed};
 use crate::config::{check_loads, migrate_config_in};
 use crate::directives::before_directives;
 use crate::limits::{Budget, Kind, Limits};
-use crate::messages::{MigratePhrase, MigrateText};
+use crate::messages::{self, MigratePhrase, MigrateText};
 use crate::nesting::Refusal;
 use crate::provenance::{KeyLines, key_lines};
 use crate::walk::{Dir, discover};
@@ -356,6 +356,15 @@ fn located(e: &Error) -> (usize, String) {
     match e {
         Error::OverrideOverlap { line, reason, .. }
         | Error::BlocklistLayout { line, reason, .. } => (*line, reason.clone()),
+        Error::CategoryUnderSwitch {
+            line,
+            block,
+            switch,
+            ..
+        } => (
+            *line,
+            messages::category_under_switch_reason(*line, *block, *switch),
+        ),
         Error::Dropped(records) => records
             .first()
             .map_or_else(|| (1, e.to_string()), |r| (r.line, r.reason.clone())),

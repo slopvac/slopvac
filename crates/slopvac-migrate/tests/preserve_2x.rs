@@ -4,7 +4,8 @@
 //! The 2.x levels are measured. `tests/fixtures/generate.py` runs the 2.x engine on
 //! each scenario's config and files and writes the result to `measured_2x` in
 //! `tests/fixtures/preserve/vectors.json`; `tests/contract/test_migrate_fixtures.py`
-//! fails when that file is stale.
+//! fails when that file is stale. A scenario that `tests/fixtures/preserve/refused.json`
+//! lists must stop with `migrate-output-invalid` instead.
 #![allow(
     clippy::panic,
     clippy::unwrap_used,
@@ -97,11 +98,18 @@ fn overlay(base: &Value, diff: &Value) -> BTreeMap<String, Value> {
     out
 }
 
-/// Scenarios whose migrated config 3.0 refuses for a repeated scope: a guard that must
-/// follow a later block and so cannot merge into the block with its files
-/// (docs/contract/profiles.md, E4, known limit). `migrate` stops on them before it
-/// writes. Their 2.x levels stay measured for the change that lifts the limit.
-const KNOWN_LIMIT: &[&str] = &["guard-held-back-by-a-later-category-level"];
+/// The scenarios that `--preserve-behavior` refuses, from `tests/fixtures/preserve/refused.json`.
+fn refused() -> Vec<String> {
+    let text =
+        fs::read_to_string(crate_dir().join("tests/fixtures/preserve/refused.json")).unwrap();
+    let data: Value = serde_json::from_str(&text).unwrap();
+    data["refused"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_owned())
+        .collect()
+}
 
 #[test]
 fn every_migrated_config_resolves_to_the_measured_2x_levels() {
@@ -122,32 +130,35 @@ fn every_migrated_config_resolves_to_the_measured_2x_levels() {
         env: &[],
     };
 
+    let refused = refused();
     let scenarios = measured["files"].as_object().unwrap();
+    for name in &refused {
+        assert!(scenarios.contains_key(name), "refused.json names {name}");
+    }
     assert!(scenarios.len() >= 29, "{}", scenarios.len());
     let mut wrong: Vec<String> = Vec::new();
     for (name, files) in scenarios {
         let input = vectors["expansions"][name]["input"].as_str().unwrap();
-        let text = migrate_config(
+        let migrated = migrate_config(
             input,
             "slopvac.toml",
             &renames,
             Options {
                 preserve_behavior: true,
             },
-        )
-        .unwrap_or_else(|e| panic!("{name}: {e}"))
-        .text;
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("slopvac.toml");
-        fs::write(&path, &text).unwrap();
-        if KNOWN_LIMIT.contains(&name.as_str()) {
-            match slopvac_config::load(&path, &presets) {
-                Err(e) if e.code() == slopvac_config::Code::DuplicateScope => {}
-                Err(e) => wrong.push(format!("{name}: refused with {}", e.code().as_str())),
-                Ok(_) => wrong.push(format!("{name}: loads; remove it from KNOWN_LIMIT")),
+        );
+        if refused.contains(name) {
+            match migrated {
+                Err(e) if e.code() == "migrate-output-invalid" => {}
+                Err(e) => wrong.push(format!("{name}: refused with {}", e.code())),
+                Ok(_) => wrong.push(format!("{name}: not refused")),
             }
             continue;
         }
+        let text = migrated.unwrap_or_else(|e| panic!("{name}: {e}")).text;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("slopvac.toml");
+        fs::write(&path, &text).unwrap();
         let config =
             slopvac_config::load(&path, &presets).unwrap_or_else(|e| panic!("{name}: {e}"));
 

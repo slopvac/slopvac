@@ -333,6 +333,65 @@ pub(crate) fn expand(config: &Config2, legacy: &Legacy) -> Result<Expanded, Unsu
     })
 }
 
+/// A category entry that `--preserve-behavior` refuses: one that applies above a profile
+/// switch, where the migrated config would not keep the 2.x levels
+/// (docs/contract/profiles.md, E3, limit).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CategoryUnderSwitch {
+    /// The override block that authors the category entry, or `None` for a
+    /// `minimum_severity` at the top level.
+    pub(crate) block: Option<usize>,
+    /// The override block whose profile switch the entry applies above.
+    pub(crate) switch: usize,
+}
+
+/// The first category entry that applies above a profile switch, if any.
+///
+/// For each block i that sets `profile`, these blocks apply to files of i above the
+/// switch: i itself, an earlier block that contains i (its entries are restated in i), an
+/// earlier block inside i (it moves after i) and a later block whose files meet those of
+/// i. Each of them is refused when it authors any field of a category, because E5 credits
+/// the category with a level. The top level is refused when it authors a
+/// `minimum_severity`, which every file under the switch inherits. Categories that 3.0
+/// removed are not in `config`. A block whose glob is outside the grammar finds nothing;
+/// [`expand`] reports it first.
+pub(crate) fn category_under_switch(config: &Config2) -> Option<CategoryUnderSwitch> {
+    let globs: Vec<Glob> = config
+        .overrides
+        .iter()
+        .map(|b| parse_glob(&b.files).ok())
+        .collect::<Option<_>>()?;
+    let top_floor = config
+        .layer
+        .categories
+        .values()
+        .any(|d| d.contains_key("minimum_severity"));
+    for (switch, _) in config
+        .overrides
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| b.profile.is_some())
+    {
+        if top_floor {
+            return Some(CategoryUnderSwitch {
+                block: None,
+                switch,
+            });
+        }
+        let authoring = config.overrides.iter().enumerate().find(|(b, block)| {
+            !block.layer.categories.is_empty()
+                && (*b == switch || relate(&globs[*b], &globs[switch]) != Relation::Disjoint)
+        });
+        if let Some((block, _)) = authoring {
+            return Some(CategoryUnderSwitch {
+                block: Some(block),
+                switch,
+            });
+        }
+    }
+    None
+}
+
 /// E4: put a guard into the last block with the same files, where that is exact: no
 /// block after it that contains or equals those files states a rule the guard turns
 /// off, or the `severity` of that rule's category, because either would outrank the
@@ -434,41 +493,6 @@ impl E3<'_> {
         }
     }
 
-    /// Give each rule in a category of `categories` that `layer` levels the level of that
-    /// category, as a `rules` entry.
-    ///
-    /// 2.x applied an authored category level to every rule of the category that the
-    /// profile in force runs. In 3.0 a `rules` entry at `off` in a lower layer, such as
-    /// the base style or an earlier switch, holds against a later category entry, so the
-    /// category level alone would leave the rule off. The entry is not written for a rule
-    /// that the profile excludes or gives a default, for a judgement rule, for a rule the
-    /// top level or `layer` already names, or for a category level of `off`, which would
-    /// hold against a later block's category in turn.
-    fn revive(&self, layer: &mut Layer, profile: &str, categories: &BTreeSet<&str>) {
-        for qid in named_rules(self.legacy, self.config) {
-            let category = category_of(qid);
-            if !categories.contains(category)
-                || self.top_rules.contains_key(qid)
-                || layer.rules.contains_key(qid)
-            {
-                continue;
-            }
-            let info = &self.legacy.rules[qid];
-            if info.judgement
-                || info.tier_for(profile) == Tier::Excluded
-                || self.legacy.defaults(profile).contains_key(qid)
-            {
-                continue;
-            }
-            if let Some(level) = layer.categories.get(category).and_then(severity)
-                && level != "off"
-            {
-                let level = level.to_owned();
-                layer.rules.insert(qid.clone(), level);
-            }
-        }
-    }
-
     fn category_names(&self, blocks: impl IntoIterator<Item = usize>) -> BTreeSet<&str> {
         blocks
             .into_iter()
@@ -508,12 +532,19 @@ impl E3<'_> {
             .collect();
 
         let own = self.category_names(containers.iter().copied().chain([index]));
-        let mut layer = switch_layer(self.legacy, self.config, self.top_rules, profile, &own);
+        let inner = self.category_names(nested.iter().copied());
+        let mut layer = switch_layer(
+            self.legacy,
+            self.config,
+            self.top_rules,
+            profile,
+            &own,
+            &inner,
+        );
         for r in restated.values() {
             merge_into(&mut layer, r);
         }
         merge_into(&mut layer, &self.blocks[index]);
-        self.revive(&mut layer, profile, &own);
 
         let (moved, stay): (Vec<Patched>, Vec<Patched>) = std::mem::take(out)
             .into_iter()
@@ -554,8 +585,6 @@ impl E3<'_> {
             }
             let mut layer = self.under(j, profile);
             yield_to(&mut layer, &over);
-            let levelled: BTreeSet<&str> = self.category_names([j]);
-            self.revive(&mut layer, profile, &levelled);
             out.push(Patched {
                 index: j,
                 layer,
@@ -569,31 +598,22 @@ impl E3<'_> {
     }
 }
 
-/// The rules that a legacy style or the top level names: the ones a lower layer can
-/// state as a `rules` entry.
-fn named_rules<'a>(legacy: &'a Legacy, config: &'a Config2) -> BTreeSet<&'a String> {
-    let mut keys: BTreeSet<&String> = BTreeSet::new();
-    for p in crate::legacy::PROFILES {
-        keys.extend(legacy.style(p).rules.keys());
-    }
-    keys.extend(config.layer.rules.keys());
-    keys
-}
-
 /// E3 and E6: the entries that switch a set of files to `profile`.
 ///
 /// `own` holds the categories that the block holding the switch authors or restates.
 /// 2.x applied an authored category level over the advisory demotion and over the
-/// profile's category level, so the switch states no target state for such a rule
-/// unless the profile excludes the rule or gives it a default. The block then states
-/// the authored level instead ([`E3::revive`]). A block placed after this one states
-/// the level of each category it authors the same way, over the switch entry.
+/// profile's category level, so the switch states no rule entry for such a rule unless
+/// the profile excludes the rule or gives it a default. `inner` holds the categories
+/// that a block placed after this one authors. A rule entry that only repeats the
+/// profile's category level would hold against such a category where it is `off`, so
+/// the switch states only the rule entries of the style there.
 fn switch_layer(
     legacy: &Legacy,
     config: &Config2,
     top_rules: &BTreeMap<String, String>,
     profile: &str,
     own: &BTreeSet<&str>,
+    inner: &BTreeSet<&str>,
 ) -> Layer {
     let top_real = &config.layer.categories;
     let empty = Dials::new();
@@ -626,8 +646,13 @@ fn switch_layer(
             categories.insert(name.clone(), kept);
         }
     }
+    let mut keys: BTreeSet<&String> = BTreeSet::new();
+    for p in crate::legacy::PROFILES {
+        keys.extend(legacy.style(p).rules.keys());
+    }
+    keys.extend(config.layer.rules.keys());
     let mut rules = BTreeMap::new();
-    for qid in named_rules(legacy, config) {
+    for qid in keys {
         if let Some(level) = top_rules.get(qid) {
             rules.insert(qid.clone(), level.clone());
             continue;
@@ -638,6 +663,9 @@ fn switch_layer(
             let excluded = info.tier_for(profile) == Tier::Excluded;
             let default = legacy.defaults(profile).contains_key(qid);
             if own.contains(category) && !excluded && !default {
+                continue;
+            }
+            if inner.contains(category) && !legacy.style(profile).rules.contains_key(qid) {
                 continue;
             }
         }

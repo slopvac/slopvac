@@ -526,6 +526,18 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
             },
             "Findings: the comparison is incomplete for slopvac.toml, sub/slopvac.toml, whose before side is approximate.",
         ),
+        (
+            MigrateText::ReasonDoesNotLoad { problems: s("p") },
+            "it does not load in 3.0: p",
+        ),
+        (
+            MigrateText::ReasonCategoryUnderSwitch {
+                at: s("overrides[0].categories"),
+                line: s("4"),
+                switch: s("overrides[1]"),
+            },
+            "`overrides[0].categories` on line 4 sets a category that applies above the profile switch in `overrides[1]`, and `--preserve-behavior` cannot keep the 2.x levels there",
+        ),
         (MigrateText::OutNote { message: s("m") }, "note: m"),
         (
             MigrateText::OutWrote {

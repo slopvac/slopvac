@@ -127,7 +127,8 @@ EXTRA_SCENARIOS = {
         ],
     },
     # The relaxed style turns the rule off by rule. The switch to normal and the
-    # block's own category level enable it again, as 2.x did.
+    # block's own category level enable it again in 2.x. `--preserve-behavior` refuses
+    # this layout (tests/fixtures/preserve/refused.json).
     "switching-block-category-revives-a-style-off-rule": {
         "profile": "relaxed",
         "overrides": [
@@ -146,9 +147,27 @@ EXTRA_SCENARIOS = {
             {"files": ["docs/**"], "profile": "normal"},
         ],
     },
+    # Two enclosing profile switches move the first block twice, with rule entries only.
+    # The second block's entry beat the first block's in 2.x, and still does after the
+    # second move.
+    "block-moved-twice-keeps-a-rule-entry-it-lost": {
+        "profile": "strict",
+        "overrides": [
+            {
+                "files": ["docs/api/v1/**"],
+                "rules": {"prose-inflation.business-jargon": "suggestion"},
+            },
+            {
+                "files": ["docs/api/**"],
+                "profile": "normal",
+                "rules": {"prose-inflation.business-jargon": "error"},
+            },
+            {"files": ["docs/**"], "profile": "relaxed"},
+        ],
+    },
     # A guard for docs/api cannot merge into the block with its files, because the later
-    # docs/** block sets the level of the guarded rule's category. 3.0 refuses the
-    # guard block that repeats those files, so the migration stops (a known limit).
+    # docs/** block sets the level of the guarded rule's category. That category level
+    # applies above the switch, so `--preserve-behavior` refuses this layout.
     "guard-held-back-by-a-later-category-level": {
         "profile": "strict",
         "rules": {"ai-tells-agentic.formulaic-universal-heading": "error"},
@@ -182,6 +201,12 @@ EXTRA_PATHS = {
         "a.md",
     ],
     "guard-held-back-by-a-later-category-level": ["docs/api/x.md", "docs/a.md", "a.md"],
+    "block-moved-twice-keeps-a-rule-entry-it-lost": [
+        "docs/api/v1/x.md",
+        "docs/api/x.md",
+        "docs/a.md",
+        "a.md",
+    ],
     "switching-block-category-revives-a-style-off-rule": ["docs/a.md", "a.md"],
     "moved-block-category-revives-a-style-off-rule": [
         "docs/api/x.md",

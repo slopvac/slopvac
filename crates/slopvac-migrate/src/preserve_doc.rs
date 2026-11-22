@@ -17,7 +17,9 @@ use toml_edit::{
 use crate::capped::Blockers;
 use crate::legacy::{Dials, Layer, Legacy, PROFILES, Scalar, read_dials};
 use crate::messages::{MigratePhrase, MigrateText};
-use crate::preserve::{Block2, Block3, Config2, DropReason, Expanded, Out, Patched, expand};
+use crate::preserve::{
+    Block2, Block3, Config2, DropReason, Expanded, Out, Patched, category_under_switch, expand,
+};
 use crate::{Error, RenameTable};
 
 /// The pack that ships the legacy styles (docs/contract/profiles.md, E1).
@@ -77,6 +79,17 @@ pub(crate) fn apply(
         block: e.block,
         reason: e.reason,
     })?;
+    if let Some(found) = category_under_switch(&config) {
+        let at = found
+            .block
+            .map_or_else(|| "categories".to_owned(), |b| format!("overrides[{b}]"));
+        return Err(Error::CategoryUnderSwitch {
+            file: ctx.file.to_owned(),
+            line: ctx.lines.of(&at),
+            block: found.block,
+            switch: found.switch,
+        });
+    }
     write(doc, &config, &expanded, blocklist, ctx);
     Ok(())
 }

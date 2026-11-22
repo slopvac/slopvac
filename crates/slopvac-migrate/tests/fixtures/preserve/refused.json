@@ -1,0 +1,12 @@
+{
+ "_doc": "Scenarios of vectors.json that `migrate --preserve-behavior` refuses with migrate-output-invalid, because a category entry applies above a profile switch (docs/contract/profiles.md, E3, limit). Their 2.x levels stay measured for the change that supports them. tests/preserve_2x.rs and tests/preserve.rs read this list.",
+ "refused": [
+  "authored-category-without-severity-in-override",
+  "block-moved-by-two-profile-switches",
+  "guard-held-back-by-a-later-category-level",
+  "moved-block-category-revives-a-style-off-rule",
+  "profile-override-around-an-earlier-category-block",
+  "profile-override-inside-an-earlier-category-block",
+  "switching-block-category-revives-a-style-off-rule"
+ ]
+}

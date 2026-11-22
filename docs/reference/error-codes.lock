@@ -535,6 +535,8 @@ migrate-place-top-level text
 migrate-reason-blocklist-in-override text
 migrate-reason-blocklist-under-switch text
 migrate-reason-category-gone text
+migrate-reason-category-under-switch text
+migrate-reason-does-not-load text
 migrate-reason-expected-boolean text
 migrate-reason-expected-level text
 migrate-reason-expected-level-or-table text
