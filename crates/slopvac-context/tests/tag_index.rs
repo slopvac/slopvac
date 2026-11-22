@@ -13,7 +13,7 @@ fn tag(kind: &str, span: Range<usize>) -> Tag {
         kind: kind.to_string(),
         span,
         confidence: 1.0,
-        evidence: String::new(),
+        evidence: "".into(),
     }
 }
 

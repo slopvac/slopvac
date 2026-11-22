@@ -47,7 +47,7 @@ fn a_matching_ancestor_heading_spares_a_descendant_heading_that_hits_the_match_l
     let tags = t.tag(&doc).unwrap();
     let got: Vec<(&str, &str)> = tags
         .iter()
-        .map(|tag| (&src[tag.span.clone()], tag.evidence.as_str()))
+        .map(|tag| (&src[tag.span.clone()], &*tag.evidence))
         .collect();
     assert_eq!(got, [("Text.", "t: block")]);
 }

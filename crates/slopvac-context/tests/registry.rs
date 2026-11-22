@@ -258,7 +258,7 @@ fn piece(kind: &str, span: std::ops::Range<usize>, group: usize) -> (slopvac_con
             kind: kind.to_owned(),
             span,
             confidence: 1.0,
-            evidence: String::new(),
+            evidence: "".into(),
         },
         group,
     )
@@ -368,7 +368,7 @@ fn a_structural_tagger_reports_the_evidence_it_was_given() {
         DOC,
     );
     assert_eq!(idx.tags().len(), 1);
-    assert_eq!(idx.tags()[0].evidence, "Says flag.");
+    assert_eq!(idx.tags()[0].evidence.as_ref(), "Says flag.");
 }
 
 #[test]
@@ -378,7 +378,7 @@ fn a_structural_tagger_without_evidence_names_itself_and_its_scope() {
         "a.md",
         DOC,
     );
-    assert_eq!(idx.tags()[0].evidence, "t: sentence");
+    assert_eq!(idx.tags()[0].evidence.as_ref(), "t: sentence");
 }
 
 #[rstest::rstest]

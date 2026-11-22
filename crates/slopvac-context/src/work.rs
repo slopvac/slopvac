@@ -17,6 +17,19 @@ mod enabled {
         static BUILD: Cell<usize> = const { Cell::new(0) };
         static MATERIALISED: Cell<usize> = const { Cell::new(0) };
         static NEGATION: Cell<usize> = const { Cell::new(0) };
+        static EVIDENCE: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn evidence(n: usize) {
+        EVIDENCE.with(|c| c.set(c.get() + n));
+    }
+
+    /// Bytes of evidence text that tags pushed through a tag sink held in allocations of
+    /// their own since the last call. Tags that share the evidence of the tag pushed just
+    /// before them add nothing.
+    #[must_use]
+    pub fn take_evidence_bytes() -> usize {
+        EVIDENCE.with(|c| c.replace(0))
     }
 
     pub(crate) fn negation(n: usize) {
@@ -105,12 +118,13 @@ mod enabled {
 
 #[cfg(feature = "work-counters")]
 pub(crate) use enabled::{
-    admonition, build, heading, lookup, materialised, negation, section, text,
+    admonition, build, evidence, heading, lookup, materialised, negation, section, text,
 };
 #[cfg(feature = "work-counters")]
 pub use enabled::{
-    take_admonition_steps, take_build_elements, take_heading_steps, take_lookup_steps,
-    take_materialised_tags, take_negation_steps, take_section_steps, take_text_steps,
+    take_admonition_steps, take_build_elements, take_evidence_bytes, take_heading_steps,
+    take_lookup_steps, take_materialised_tags, take_negation_steps, take_section_steps,
+    take_text_steps,
 };
 
 #[cfg(not(feature = "work-counters"))]
@@ -144,3 +158,7 @@ pub(crate) fn materialised(_n: usize) {}
 #[cfg(not(feature = "work-counters"))]
 #[inline(always)]
 pub(crate) fn negation(_n: usize) {}
+
+#[cfg(not(feature = "work-counters"))]
+#[inline(always)]
+pub(crate) fn evidence(_n: usize) {}

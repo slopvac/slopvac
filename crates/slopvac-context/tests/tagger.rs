@@ -83,7 +83,7 @@ fn the_tag_carries_the_confidence_and_the_evidence() {
     let idx = reg.tag_document(&doc).unwrap();
     assert_eq!(idx.tags()[0].kind, "k");
     assert!((idx.tags()[0].confidence - 0.4).abs() < f32::EPSILON);
-    assert_eq!(idx.tags()[0].evidence, "Says must.");
+    assert_eq!(idx.tags()[0].evidence.as_ref(), "Says must.");
 }
 
 #[test]

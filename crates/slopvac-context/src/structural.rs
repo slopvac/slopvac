@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::Arc;
 
 use serde::Deserialize;
 
@@ -275,8 +276,8 @@ impl StructuralTagger {
             confidence: self.confidence,
             evidence: self
                 .evidence
-                .clone()
-                .unwrap_or_else(|| format!("{}: {evidence}", self.id)),
+                .as_deref()
+                .map_or_else(|| format!("{}: {evidence}", self.id).into(), Arc::from),
         }
     }
 }

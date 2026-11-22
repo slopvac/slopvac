@@ -100,7 +100,10 @@ fn security_span_covers_every_original_byte_including_front_matter() {
     assert_eq!(idx.tags().len(), 1);
     assert_eq!(idx.tags()[0].kind, "security");
     assert_eq!(idx.tags()[0].span, 0..src.len());
-    assert_eq!(idx.tags()[0].evidence, "declared by genre `security`");
+    assert_eq!(
+        idx.tags()[0].evidence.as_ref(),
+        "declared by genre `security`"
+    );
     let last_char = src.len() - 1..src.len();
     assert_eq!(idx.kinds_at(&(0..1)), vec!["security"]);
     assert_eq!(idx.kinds_at(&last_char), vec!["security"]);
@@ -143,7 +146,7 @@ fn a_front_matter_genre_equal_to_the_assignment_declares_its_context_once() {
         .unwrap();
     let tags = slopvac_context::Tagger::tag(&tagger, &doc).unwrap();
     assert_eq!(tags.len(), 1);
-    assert_eq!(tags[0].evidence, "declared by genre `security`");
+    assert_eq!(tags[0].evidence.as_ref(), "declared by genre `security`");
 }
 
 #[test]
@@ -163,7 +166,7 @@ fn a_path_assigned_context_names_the_genre_that_declares_it() {
     let tags = slopvac_context::Tagger::tag(&tagger, &doc).unwrap();
     assert_eq!(tags.len(), 1);
     assert_eq!(tags[0].kind, "security");
-    assert_eq!(tags[0].evidence, "declared by genre `security`");
+    assert_eq!(tags[0].evidence.as_ref(), "declared by genre `security`");
 }
 
 /// What a document's front matter declares, worked out from the contract: only a valid,

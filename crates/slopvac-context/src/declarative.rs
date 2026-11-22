@@ -7,6 +7,7 @@
 //! (see `structural.rs`).
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use serde::Deserialize;
 
@@ -283,11 +284,10 @@ impl DeclarativeTagger {
             kind: self.spec.tag.clone(),
             span,
             confidence: to_f32(self.spec.confidence),
-            evidence: self
-                .spec
-                .evidence
-                .clone()
-                .unwrap_or_else(|| format!("{}: {}", self.spec.id, self.unit().as_str())),
+            evidence: self.spec.evidence.as_deref().map_or_else(
+                || format!("{}: {}", self.spec.id, self.unit().as_str()).into(),
+                Arc::from,
+            ),
         }
     }
 

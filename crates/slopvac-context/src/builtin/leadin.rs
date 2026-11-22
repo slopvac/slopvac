@@ -38,7 +38,7 @@ impl Tagger for ListLeadInTagger {
                     kind: "change-note".to_string(),
                     span: b.span.clone(),
                     confidence: 0.6,
-                    evidence: "change-note-list-lead-in: list under a version lead-in".to_string(),
+                    evidence: "change-note-list-lead-in: list under a version lead-in".into(),
                 })?,
                 BlockKind::ListItem => {}
                 BlockKind::Paragraph => {

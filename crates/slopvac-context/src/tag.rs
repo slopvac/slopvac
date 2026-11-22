@@ -2,8 +2,8 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use crate::{DocumentView, Error, work};
 
@@ -16,8 +16,8 @@ pub struct Tag {
     pub span: Range<usize>,
     /// Confidence in 0..=1.
     pub confidence: f32,
-    /// Why the tagger fired.
-    pub evidence: String,
+    /// Why the tagger fired. Pieces that a tag is split into share one allocation.
+    pub evidence: Arc<str>,
 }
 
 /// A deterministic tagger.
@@ -44,6 +44,9 @@ pub trait Tagger: Send + Sync {
 pub struct TagSink {
     tags: Vec<Tag>,
     limit: usize,
+    /// Address of the evidence of the last tag pushed, so that the work counter can tell a
+    /// piece that shares it from a tag that holds text of its own.
+    last_evidence: usize,
 }
 
 impl TagSink {
@@ -53,6 +56,7 @@ impl TagSink {
         Self {
             tags: Vec::new(),
             limit,
+            last_evidence: 0,
         }
     }
 
@@ -69,7 +73,13 @@ impl TagSink {
             return Err(Error::TagLimit { limit: self.limit });
         }
         work::materialised(1);
-        self.tags.push(make());
+        let tag = make();
+        let address = tag.evidence.as_ptr().addr();
+        if address != self.last_evidence {
+            work::evidence(tag.evidence.len());
+            self.last_evidence = address;
+        }
+        self.tags.push(tag);
         Ok(())
     }
 

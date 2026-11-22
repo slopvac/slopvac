@@ -75,7 +75,7 @@ fn new_tags(doc: &PlainDocument, scope: &str) -> Vec<(String, Range<usize>, Stri
     let tags: Vec<Tag> = tagger.tag(doc).unwrap();
     let mut out: Vec<(String, Range<usize>, String)> = Vec::new();
     for t in tags {
-        let tag = (t.kind, t.span, t.evidence);
+        let tag = (t.kind, t.span, t.evidence.to_string());
         if !out.contains(&tag) {
             out.push(tag);
         }
