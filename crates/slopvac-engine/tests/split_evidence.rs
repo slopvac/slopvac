@@ -35,9 +35,10 @@ const PATH_LEN: usize = 60_000;
 const CONTINUATIONS: usize = 10_000;
 
 fn source() -> String {
-    let path = format!("/{}", "a".repeat(PATH_LEN));
     let mut s = String::from("=  =  ====\n");
-    s.push_str(&format!("A  m  It has no {path}\n"));
+    s.push_str("A  m  It has no /");
+    s.push_str(&"a".repeat(PATH_LEN));
+    s.push('\n');
     for _ in 0..CONTINUATIONS {
         s.push_str("   m  a\n");
     }
