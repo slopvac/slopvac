@@ -11,6 +11,7 @@ use toml_edit::{DocumentMut, Item, Value};
 use crate::blocklist::{self, Planned};
 use crate::capped::{Blockers, Capped, Listed};
 use crate::config::migrate_config_in;
+use crate::directives::before_directives;
 use crate::limits::{Budget, Kind, Limits};
 use crate::messages::{MigratePhrase, MigrateText};
 use crate::nesting::Refusal;
@@ -62,7 +63,9 @@ pub struct Plan {
     /// root. The before side of the lint reads these in place of the 2.x files. For a config
     /// it is the `--preserve-behavior` rewrite at `slopvac.toml`. For a Markdown document
     /// whose `slopvac-allow` directives change, it is the document with only those
-    /// directives rewritten, so a directive 2.x accepts holds on the before side too.
+    /// directives rewritten, so a directive 2.x accepts holds on the before side too. A
+    /// directive of a removed rule becomes an empty comment there, which keeps the block
+    /// structure of the document.
     ///
     /// The rewrite reproduces the 2.x levels except in the known limit of
     /// `docs/contract/profiles.md`, section 4: when a block without `profile` that authors a
@@ -613,7 +616,8 @@ fn plan_document(
     }
     let (mut text, found) = rewrite_directives(&old, renames);
     if text != old {
-        plan.before.push((label.clone(), text.clone()));
+        plan.before
+            .push((label.clone(), before_directives(&old, renames)));
     }
     for r in &found.removed {
         plan.notes.push(

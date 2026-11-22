@@ -42,6 +42,31 @@ pub struct Found {
 /// deleted).
 #[must_use]
 pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Found) {
+    rewrite_with(text, renames, Removed::Delete)
+}
+
+/// `text` with each 2.x directive in its 3.0 form, for the before side of the lint.
+///
+/// A renamed id is qualified as in [`rewrite_directives`]. A directive of a removed rule
+/// becomes an empty comment in place of being deleted, so the document keeps its block
+/// structure and no other directive covers more text than it does in the file on disk.
+pub(crate) fn before_directives(text: &str, renames: &RenameTable) -> String {
+    rewrite_with(text, renames, Removed::Blank).0
+}
+
+/// What happens to a directive of a removed rule.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Removed {
+    /// Delete it, and its line when it stands alone there.
+    Delete,
+    /// Replace it with [`BLANK_COMMENT`].
+    Blank,
+}
+
+/// An HTML comment that is no directive.
+const BLANK_COMMENT: &str = "<!-- -->";
+
+fn rewrite_with(text: &str, renames: &RenameTable, removed: Removed) -> (String, Found) {
     let mut out = String::with_capacity(text.len());
     let mut found = Found::default();
     let mut fence: Option<(char, usize)> = None;
@@ -53,7 +78,9 @@ pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Found) 
         let blank = line.trim().is_empty();
         let indented_code = paragraph.is_empty() && is_indented_code(line);
         if in_fence || blank || indented_code {
-            out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut found));
+            out.push_str(&rewrite_paragraph(
+                &paragraph, start, renames, removed, &mut found,
+            ));
             paragraph.clear();
             out.push_str(line);
         } else {
@@ -63,7 +90,9 @@ pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Found) 
             paragraph.push_str(line);
         }
     }
-    out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut found));
+    out.push_str(&rewrite_paragraph(
+        &paragraph, start, renames, removed, &mut found,
+    ));
     (out, found)
 }
 
@@ -155,6 +184,7 @@ fn rewrite_paragraph(
     text: &str,
     start_line: usize,
     renames: &RenameTable,
+    removed: Removed,
     found: &mut Found,
 ) -> String {
     if text.is_empty() {
@@ -176,6 +206,8 @@ fn rewrite_paragraph(
             let line = start_line + text[..start].matches('\n').count();
             if let Some(new) = rewrite_comment(comment, line, renames, found) {
                 out.push_str(&new);
+            } else if removed == Removed::Blank {
+                out.push_str(BLANK_COMMENT);
             } else {
                 // A deleted directive alone on its line takes the whole line with it.
                 let line_start = out.rfind('\n').map_or(0, |n| n + 1);

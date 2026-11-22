@@ -97,6 +97,25 @@ fn a_2x_suppression_of_a_removed_rule_is_not_a_finding_on_the_before_side() {
 }
 
 #[test]
+fn a_removed_rule_directive_keeps_the_paragraph_boundary_on_the_before_side() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "doc.md",
+        "<!-- slopvac-allow: rule=orwell.stale-figure reason=dead-metaphor -->\nPlease leverage it.\n<!-- slopvac-allow: rule=ste-words.inconsistent-term-for-same-thing reason=r -->\nWe leverage more.\n",
+    );
+    let p = plan(dir.path(), &RenameTable::bundled(), Options::default(), "").unwrap();
+
+    let before = linter()
+        .lint(dir.path(), Phase::Before, &p.before_overlay(dir.path()))
+        .unwrap();
+
+    // The removed-rule directive ends the first paragraph, so the first suppression does
+    // not reach the second paragraph, and its finding stays.
+    assert_eq!(counts(&before), [("core:orwell.stale-figure", 1)]);
+}
+
+#[test]
 fn backup_directories_at_any_depth_are_not_linted() {
     for backup in [
         ".slopvac/migrate-backup/20261120T064000Z",
