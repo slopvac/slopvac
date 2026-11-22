@@ -106,13 +106,13 @@ fn check_names(
     rules: &Catalog,
     root: &Path,
     unknown: &mut Vec<UnknownRule>,
-) -> Result<(), Located> {
+) -> Result<(), Box<Located>> {
     for setting in settings {
         if let [head, key, ..] = setting.path.as_slice()
             && head == "categories"
             && category_of(rules, key).is_none()
         {
-            return Err(Located {
+            return Err(Box::new(Located {
                 error: CliError::escaping(
                     "config-unknown-category",
                     &format!(
@@ -121,7 +121,7 @@ fn check_names(
                     ),
                 ),
                 source: Some(setting.source.clone()),
-            });
+            }));
         }
     }
     unknown.extend(unknown_rules(settings, |key| {
@@ -189,7 +189,10 @@ pub fn validate(config: &LoadedConfig, rules: &Catalog) -> Result<Vec<Notice>, C
 ///
 /// # Errors
 /// As [`validate`]; `source` names the key of a `config-unknown-category`.
-pub fn validate_located(config: &LoadedConfig, rules: &Catalog) -> Result<Vec<Notice>, Located> {
+pub fn validate_located(
+    config: &LoadedConfig,
+    rules: &Catalog,
+) -> Result<Vec<Notice>, Box<Located>> {
     let listed = config.project_value(&["styles"]);
     for name in listed
         .iter()
@@ -198,7 +201,7 @@ pub fn validate_located(config: &LoadedConfig, rules: &Catalog) -> Result<Vec<No
         .filter_map(Json::as_str)
     {
         if legacy_name(name).is_none() && !BuiltinSource::names().any(|known| known == name) {
-            return Err(Located {
+            return Err(Box::new(Located {
                 error: CliError::new(
                     "unknown-style",
                     format!(
@@ -214,7 +217,7 @@ pub fn validate_located(config: &LoadedConfig, rules: &Catalog) -> Result<Vec<No
                     .flat_map(|file| file.settings.iter())
                     .rfind(|setting| setting.path == ["styles"])
                     .map(|setting| setting.source.clone()),
-            });
+            }));
         }
     }
     let mut unknown = Vec::new();
@@ -231,9 +234,11 @@ pub fn validate_located(config: &LoadedConfig, rules: &Catalog) -> Result<Vec<No
         .iter()
         .map(unknown_rule_notice)
         .collect::<Result<_, _>>()
-        .map_err(|error| Located {
-            error,
-            source: None,
+        .map_err(|error| {
+            Box::new(Located {
+                error,
+                source: None,
+            })
         })
 }
 

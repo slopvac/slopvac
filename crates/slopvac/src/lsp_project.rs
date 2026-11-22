@@ -321,7 +321,7 @@ impl Project {
         }
         let notices = match &config {
             Some(config) => lint_settings::validate_located(config, &catalog)
-                .map_err(|located| Box::new(self.located_failure(config, located)))?,
+                .map_err(|located| Box::new(self.located_failure(config, *located)))?,
             None => Vec::new(),
         };
         let mut ready = Ready {
@@ -348,7 +348,7 @@ impl Project {
             if let Some(config) = &found {
                 watch_all(dependencies, config.dependencies());
                 let fresh = lint_settings::validate_located(config, &ready.catalog)
-                    .map_err(|located| Box::new(self.located_failure(config, located)))?;
+                    .map_err(|located| Box::new(self.located_failure(config, *located)))?;
                 for notice in fresh {
                     if ready.notified.insert(notice_key(&notice)) {
                         notices.push(notice);

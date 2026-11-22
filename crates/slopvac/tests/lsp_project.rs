@@ -1,5 +1,11 @@
 //! `slopvac lsp` with a real project config: per-document `[[overrides]]` and `[[genres]]`
 //! settings, and a reload when a config file is saved or changes on disk.
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
