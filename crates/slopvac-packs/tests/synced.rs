@@ -3,6 +3,12 @@
 //! The store is built by hand in the layout its documentation gives (`trees/tree-<hex>` and
 //! `refs/<digest hex>`), so the tests need no registry and no signing.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is a failed test"
+)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -745,6 +751,31 @@ fn every_budget_refusal_has_one_code_and_names_its_budget(
     assert_eq!(error.code(), Some("rules-budget-exceeded"));
     assert_eq!(budget.as_str(), name);
     assert!(error.to_string().contains(name), "{error}");
+}
+
+#[rstest]
+#[case::files(PackBudget::Files, 256, "plugin-files")]
+#[case::bytes(PackBudget::Bytes, 33_554_432, "plugin-bytes")]
+#[case::run_bytes(PackBudget::RunBytes, 134_217_728, "plugin-run-bytes")]
+#[case::run_rules(PackBudget::RunRules, 20_000, "plugin-run-rules")]
+#[case::run_pattern_bytes(PackBudget::RunPatternBytes, 67_108_864, "plugin-run-pattern-bytes")]
+fn a_budget_refusal_exposes_its_budget_name_and_limit(
+    #[case] budget: PackBudget,
+    #[case] limit: u64,
+    #[case] name: &str,
+) {
+    let pack = PackError::Budget { budget, limit };
+    let synced = SyncedError::Pack(PackError::Budget { budget, limit });
+
+    for (got, code) in [
+        (pack.budget(), pack.code()),
+        (synced.budget(), synced.code()),
+    ] {
+        let (b, l) = got.unwrap();
+        assert_eq!((b.as_str(), l), (name, limit));
+        assert_eq!(code, Some("rules-budget-exceeded"));
+    }
+    assert!(PackError::NotCore.budget().is_none());
 }
 
 #[rstest]

@@ -1,5 +1,6 @@
 //! Genres from several packs keep qualified keys `<pack>:<genre>`.
 
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 use rstest::rstest;
 use slopvac_context::{GenreRegistry, GenreSpec};
 

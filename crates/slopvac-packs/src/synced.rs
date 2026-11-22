@@ -89,6 +89,16 @@ pub enum SyncedError {
 }
 
 impl SyncedError {
+    /// The budget this refusal crossed and its limit, as [`PackError::budget`] reports them for
+    /// a wrapped pack error. `None` for any other error.
+    #[must_use]
+    pub const fn budget(&self) -> Option<(slopvac_rules::PackBudget, u64)> {
+        match self {
+            Self::Pack(e) => e.budget(),
+            _ => None,
+        }
+    }
+
     /// The stable code of this error, read from the message catalog. A wrapped [`PackError`]
     /// reports its own code, and `None` when it has none.
     #[must_use]

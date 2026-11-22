@@ -21,6 +21,16 @@ impl From<slopvac_rules::BudgetHit> for PackError {
 }
 
 impl PackError {
+    /// The budget this refusal crossed and its limit, which are the `data.budget` and
+    /// `data.limit` of a `rules-budget-exceeded` report. `None` for any other error.
+    #[must_use]
+    pub const fn budget(&self) -> Option<(slopvac_rules::PackBudget, u64)> {
+        match self {
+            Self::Budget { budget, limit } => Some((*budget, *limit)),
+            _ => None,
+        }
+    }
+
     /// The stable code of this error, for the variants that have one. A wrapped error reports
     /// its own code.
     #[must_use]
