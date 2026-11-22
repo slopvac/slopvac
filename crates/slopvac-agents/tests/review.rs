@@ -231,7 +231,7 @@ fn a_run_needs_a_trusted_provider_and_an_online_session() {
 }
 
 #[test]
-fn a_provider_on_the_authors_model_is_refused_before_any_call() {
+fn a_provider_on_the_authors_model_still_runs_and_the_plan_carries_a_notice() {
     let dir = tempfile::tempdir().unwrap();
     let mock = Mock {
         model: "anthropic/claude-sonnet-5-5",
@@ -242,9 +242,10 @@ fn a_provider_on_the_authors_model_is_refused_before_any_call() {
         author_model: Some("claude-sonnet-5-5#high".into()),
         ..ReviewEnv::default()
     };
-    let err = run(&args(dir.path(), &[]), &env).unwrap_err();
-    assert_eq!(err.code(), "review-same-model");
-    assert_eq!(mock.calls.get(), 0);
+    let json = plan_json(dir.path(), &[], &env);
+    assert!(notice_codes(&json).contains(&"review-model-same"), "{json}");
+    assert_eq!(json["report"], "no findings");
+    assert_eq!(mock.calls.get(), 1);
 }
 
 #[test]
@@ -572,9 +573,9 @@ fn both_models_known_and_different_are_checked_without_a_notice() {
 }
 
 #[test]
-fn the_author_flag_names_the_author_for_the_same_model_rule() {
+fn the_author_flag_names_the_author_for_the_same_model_notice() {
     let dir = tempfile::tempdir().unwrap();
-    let argv = args(
+    let json = plan_json(
         dir.path(),
         &[
             "--dry-run",
@@ -583,9 +584,10 @@ fn the_author_flag_names_the_author_for_the_same_model_rule() {
             "--reviewer-model",
             "gpt-5",
         ],
+        &ReviewEnv::default(),
     );
-    let err = run(&argv, &ReviewEnv::default()).unwrap_err();
-    assert_eq!(err.code(), "review-same-model");
+    assert!(notice_codes(&json).contains(&"review-model-same"), "{json}");
+    assert_eq!(json["reviewer_model_checked"], true);
 }
 
 #[test]

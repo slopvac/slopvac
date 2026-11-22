@@ -135,9 +135,9 @@ fn project_with_author_model(model: &str) -> tempfile::TempDir {
 }
 
 #[test]
-fn a_reviewer_that_is_the_configured_author_model_is_refused() {
+fn a_reviewer_that_is_the_configured_author_model_gets_a_notice_and_the_run_passes() {
     let dir = project_with_author_model("claude-sonnet-5-5");
-    slopvac(dir.path())
+    let out = slopvac(dir.path())
         .args([
             "review",
             "new.md",
@@ -147,9 +147,17 @@ fn a_reviewer_that_is_the_configured_author_model_is_refused() {
             "--reviewer-model",
             "claude-sonnet-5-5#high",
         ])
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains("error[review-same-model]"));
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(0));
+    let plan: Value = serde_json::from_slice(&out.stdout).expect("a JSON plan");
+    let codes: Vec<&str> = plan["notices"]
+        .as_array()
+        .expect("notices")
+        .iter()
+        .filter_map(|n| n["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"review-model-same"), "{plan}");
 }
 
 #[test]
