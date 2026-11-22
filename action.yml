@@ -76,6 +76,22 @@ inputs:
       Pin it for reproducible CI.
     required: false
     default: ""
+  profile:
+    description: Removed in 3.0. Setting it fails the step; see the migration guide.
+    required: false
+    default: ""
+  vale:
+    description: Removed in 3.0. Setting it fails the step; see the migration guide.
+    required: false
+    default: ""
+  vale-version:
+    description: Removed in 3.0. Setting it fails the step; see the migration guide.
+    required: false
+    default: ""
+  rules-dir:
+    description: Removed in 3.0. Setting it fails the step; see the migration guide.
+    required: false
+    default: ""
   binary:
     description: Use this slopvac binary instead of installing one from PyPI. For testing an unreleased build.
     required: false
@@ -116,6 +132,30 @@ outputs:
 runs:
   using: composite
   steps:
+    # A composite action cannot see an undeclared `with:` key, so the removed
+    # 2.x inputs are declared and refused here, before anything installs.
+    - name: Refuse removed 2.x inputs
+      shell: bash
+      env:
+        REMOVED_PROFILE: ${{ inputs.profile }}
+        REMOVED_VALE: ${{ inputs.vale }}
+        REMOVED_VALE_VERSION: ${{ inputs.vale-version }}
+        REMOVED_RULES_DIR: ${{ inputs.rules-dir }}
+      run: |
+        set -euo pipefail
+        failed=0
+        check() {
+          if [[ -n "$2" ]]; then
+            echo "::error title=slopvac::the input '$1' was removed in 3.0; delete it from the workflow. See docs/migrate-2-to-3.md#6-removed-in-30"
+            failed=1
+          fi
+        }
+        check profile "$REMOVED_PROFILE"
+        check vale "$REMOVED_VALE"
+        check vale-version "$REMOVED_VALE_VERSION"
+        check rules-dir "$REMOVED_RULES_DIR"
+        exit $(( failed * 2 ))
+
     - name: Install uv
       if: inputs.binary == ''
       uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3

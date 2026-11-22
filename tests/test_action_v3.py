@@ -8,6 +8,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
@@ -944,3 +945,56 @@ def test_resolved_target_names_reach_the_linter_unchanged(run, tmp_path, name, l
     assert code == 0
     assert log
     assert all(argv[-1] == name for argv in log)
+
+
+DISPOSITIONS = ROOT / "docs" / "contract" / "compat" / "dispositions.toml"
+REFUSE_STEP = "Refuse removed 2.x inputs"
+
+
+def _removed_inputs():
+    rows = tomllib.loads(DISPOSITIONS.read_text(encoding="utf-8"))
+    return sorted(
+        key.removeprefix("action:input:")
+        for key, row in rows.items()
+        if key.startswith("action:input:") and row["disposition"] == "remove"
+    )
+
+
+def _refuse(**inputs):
+    """Run the refusal step's script with the given inputs set, as the runner would."""
+    step = _step(REFUSE_STEP)
+    env = {k: "" for k in step["env"]}
+    for name, value in inputs.items():
+        marker = "${{ inputs." + name.replace("_", "-") + " }}"
+        (var,) = [k for k, v in step["env"].items() if v == marker]
+        env[var] = value
+    return subprocess.run(
+        ["bash", "-c", step["run"]], env=env, capture_output=True, text=True
+    )
+
+
+def test_the_declared_removed_inputs_match_the_contract_dispositions():
+    declared = {
+        name
+        for name, spec in yaml.safe_load(ACTION.read_text(encoding="utf-8"))[
+            "inputs"
+        ].items()
+        if spec["description"].startswith("Removed in 3.0")
+    }
+    assert declared == set(_removed_inputs())
+
+
+def test_the_refusal_step_runs_before_anything_installs():
+    assert _steps()[0]["name"] == REFUSE_STEP
+
+
+@pytest.mark.parametrize("name", _removed_inputs())
+def test_a_removed_input_fails_with_exit_2_and_guidance(name):
+    done = _refuse(**{name.replace("-", "_"): "x"})
+    assert done.returncode == 2
+    assert f"the input '{name}' was removed in 3.0" in done.stdout
+    assert "docs/migrate-2-to-3.md#6-removed-in-30" in done.stdout
+
+
+def test_no_removed_input_set_passes_the_refusal_step():
+    assert _refuse().returncode == 0
