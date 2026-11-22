@@ -929,27 +929,26 @@ fn retain<T: Clone>(values: &[T], keep: &[bool]) -> Vec<T> {
         .collect()
 }
 
+/// The reason for an I/O error: the typed causes the engine raises get their catalog text,
+/// anything else the system's own wording.
+fn io_reason(source: &std::io::Error) -> LintFixReason {
+    let cause = source.get_ref();
+    if cause.is_some_and(<dyn std::error::Error + Send + Sync>::is::<AclCheckFailed>) {
+        LintFixReason::AclCheck
+    } else if cause.is_some_and(<dyn std::error::Error + Send + Sync>::is::<RootChanged>) {
+        LintFixReason::RootChanged
+    } else {
+        LintFixReason::Io {
+            detail: source.to_string(),
+        }
+    }
+}
+
 /// The reason text for a fix that failed for a cause other than a refusal or a lint error.
 fn fix_failure_reason(err: FixError) -> String {
     let reason = match err {
         FixError::NotUtf8(_) => LintFixReason::NotUtf8,
-        FixError::Io { source, .. }
-            if source
-                .get_ref()
-                .is_some_and(<dyn std::error::Error + Send + Sync>::is::<AclCheckFailed>) =>
-        {
-            LintFixReason::AclCheck
-        }
-        FixError::Io { source, .. }
-            if source
-                .get_ref()
-                .is_some_and(<dyn std::error::Error + Send + Sync>::is::<RootChanged>) =>
-        {
-            LintFixReason::RootChanged
-        }
-        FixError::Io { source, .. } => LintFixReason::Io {
-            detail: source.to_string(),
-        },
+        FixError::Io { source, .. } => io_reason(&source),
         other => LintFixReason::Io {
             detail: other.to_string(),
         },
@@ -988,7 +987,7 @@ fn fix_group(
                 let shown = item.shown.clone();
                 let failed = LintFixMessage::Failed {
                     shown: shown.clone(),
-                    reason: err.to_string(),
+                    reason: slopvac_messages::render(&io_reason(err)),
                 };
                 run.skip(failed.code(), &shown, slopvac_messages::render(&failed));
                 keep.push(false);
@@ -1576,24 +1575,58 @@ mod fix_tests {
         );
     }
 
+    /// An engine with no rules, for tests that never lint.
+    fn bare_engine() -> Engine {
+        Engine::new(
+            Vec::new(),
+            Settings::new(
+                NonEmptyString::new("normal").expect("profile"),
+                GenreResult {
+                    id: GenreId::new("reference").expect("genre"),
+                    source: GenreSource::Default,
+                    reasons: Vec::new(),
+                },
+            ),
+        )
+        .expect("engine")
+    }
+
     #[cfg(unix)]
     #[test]
-    fn a_root_replaced_while_it_was_opened_gets_the_registry_reason() {
-        let parent = tempfile::tempdir().unwrap();
+    fn a_root_replaced_while_it_was_opened_is_reported_with_the_registry_reason() {
+        let parent = tempfile::tempdir().expect("tempdir");
         let root = parent.path().join("root");
-        std::fs::create_dir(&root).unwrap();
-        let elsewhere = tempfile::tempdir().unwrap();
-        let source = Root::open_hooked(&root, &mut || {
-            std::fs::rename(&root, parent.path().join("moved")).unwrap();
-            std::os::unix::fs::symlink(elsewhere.path(), &root).unwrap();
-        })
-        .unwrap_err();
-
-        let reason = fix_failure_reason(FixError::Io {
-            path: "a.md".to_owned(),
-            source,
+        std::fs::create_dir(&root).expect("root");
+        let elsewhere = tempfile::tempdir().expect("tempdir");
+        let held = Root::open_hooked(&root, &mut || {
+            std::fs::rename(&root, parent.path().join("moved")).expect("move the root");
+            std::os::unix::fs::symlink(elsewhere.path(), &root).expect("link in its place");
         });
+        let mut items = vec![Item {
+            shown: "a.md".to_owned(),
+            text: "# Old\n".to_owned(),
+            kind: Kind::Markdown,
+            config: None,
+            dir: Some(root.clone()),
+            path: Some(root.join("a.md")),
+        }];
+        let engine = bare_engine();
+        let context = FixContext {
+            root: &held,
+            engine: &engine,
+            relatives: &[None],
+            declared: &[None],
+        };
+        let mut run = Run::default();
 
-        assert_eq!(reason, "the project root was replaced while it was opened");
+        let keep = fix_group(&context, &[0], &mut items, &mut run);
+
+        assert_eq!(keep, [false]);
+        let notice = run.notices.first().expect("a notice");
+        assert_eq!(notice.code.as_str(), "fix-failed");
+        assert_eq!(
+            notice.message.as_str(),
+            "a.md: not fixed: the project root was replaced while it was opened"
+        );
     }
 }
