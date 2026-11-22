@@ -14,6 +14,7 @@ mod messages;
 mod notice;
 mod origin;
 mod report;
+mod reserved;
 mod schema;
 mod source;
 mod span;
@@ -34,6 +35,9 @@ pub use report::{
     AiRegister, AiRegisterSummary, AiSignal, CategoryScore, CategorySummary, ConfigLayer,
     ConfigSource, Document, Extent, Finding, FindingError, Fix, FixError, Gate, GateError,
     GenreReason, GenreResult, GenreSource, Notice, NoticeLevel, Report, RuleProvenance, RunSummary,
+};
+pub use reserved::{
+    FIRST_PARTY_NAMESPACE, RESERVED_ID, RESERVED_NAMESPACES, is_reserved_namespace,
 };
 pub use schema::{
     SLUG, absent_not_null, id as schema_id, if_then, settings as schema_settings, x_extensions,

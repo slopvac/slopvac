@@ -11,6 +11,7 @@ use schemars::{JsonSchema, Schema};
 use semver::{Version, VersionReq};
 use serde_json::{Value as Json, json};
 use slopvac_model::{ApiVersion, PackId, absent_not_null, if_then, x_extensions};
+use slopvac_plugins::sign::RESERVED_ID;
 use toml::{Table, Value};
 
 /// Largest manifest the reader accepts, in bytes.
@@ -611,7 +612,7 @@ fn parse_root(value: &Value, allow_core: bool) -> Result<Manifest> {
         _ => return Err(err("/schema_version", "must be 3")),
     }
     let id = pack_id(root.string("id")?).map_err(|m| err("/id", m))?;
-    if id.as_str() == "core" && !allow_core {
+    if id.as_str() == RESERVED_ID && !allow_core {
         return Err(err("/id", "`core` is reserved for the built-in plugin"));
     }
     let version = parse_version(root.string("version")?).map_err(|m| err("/version", m))?;

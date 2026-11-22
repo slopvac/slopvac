@@ -7,6 +7,7 @@ use semver::Version;
 use slopvac_config::{PackFile, PresetFailure, Presets, Setting};
 use slopvac_context::{GenreSpec, TaggerSpec};
 use slopvac_model::PackId;
+use slopvac_plugins::sign::RESERVED_ID;
 use slopvac_rules::{CompileOptions, PackBudget, RuleSet};
 use slopvac_styles::{Style, StyleError, StylePresets, StyleSource};
 
@@ -18,9 +19,6 @@ use crate::{
     ArtifactFault, Manifest, PackError, PackPath, PackSource, Provenance, Provides, QualifiedName,
     Reference, Registry, RegistryError, RuleFault, RuleProblem, Source,
 };
-
-/// The id of the built-in pack.
-const CORE_ID: &str = "core";
 
 /// One pack with its files read and checked.
 #[derive(Debug)]
@@ -155,7 +153,7 @@ impl LoadedPack {
         }
         budget.charge_bytes(manifest_bytes)?;
         let mut manifest = Manifest::parse_allowing_core(&manifest_text)?;
-        let is_core = manifest.id.as_str() == CORE_ID;
+        let is_core = manifest.id.as_str() == RESERVED_ID;
         match (origin, is_core) {
             (Source::Core, false) => return Err(PackError::NotCore),
             (Source::Pack | Source::Plugin, true) => return Err(PackError::ReservedId),

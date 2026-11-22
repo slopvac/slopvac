@@ -10,15 +10,13 @@ use std::collections::HashSet;
 use semver::Version;
 use slopvac_model::{ApiVersion, PackId};
 use slopvac_plugins::lock::{LockedPack, Lockfile, PackId as LockPackId, PackKind as LockKind};
+use slopvac_plugins::sign::RESERVED_ID;
 use slopvac_plugins::sync::{Store, SyncError, TreeState};
 
 use crate::messages::PackMessage;
 use crate::{
     Budget, DirSource, Limits, LoadedPack, PackError, PackKind, Packs, Source, to_lock_id,
 };
-
-/// The id of the built-in pack, which no lock pins.
-const CORE_ID: &str = "core";
 
 /// Why the synced plugins did not load. Every text comes from the message catalog.
 #[derive(Debug, thiserror::Error)]
@@ -143,7 +141,7 @@ fn dependency_order(requested: &[PackId], lock: &Lockfile) -> Result<Vec<LockedP
         done: &mut HashSet<String>,
         out: &mut Vec<LockedPack>,
     ) -> Result<(), SyncedError> {
-        if id.as_str() == CORE_ID || done.contains(id.as_str()) {
+        if id.as_str() == RESERVED_ID || done.contains(id.as_str()) {
             return Ok(());
         }
         if let Some(at) = stack.iter().position(|s| s == id.as_str()) {
@@ -203,7 +201,7 @@ fn check_manifest(locked: &LockedPack, pack: &LoadedPack) -> Result<(), SyncedEr
 fn check_requirements(pack: &LoadedPack, loaded: &[LoadedPack]) -> Result<(), SyncedError> {
     let manifest = pack.manifest();
     for requirement in &manifest.requires {
-        let version: Option<Version> = if requirement.id.as_str() == CORE_ID {
+        let version: Option<Version> = if requirement.id.as_str() == RESERVED_ID {
             Version::parse(env!("CARGO_PKG_VERSION")).ok()
         } else {
             loaded
