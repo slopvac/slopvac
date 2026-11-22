@@ -161,7 +161,7 @@ Owners for the behavior: `slopvac-8l4.16.1` for `migrate`, `slopvac-8l4.4.5` for
 
 ### 5.2 Mapping table
 
-Rule and category names change with the plugin model. `migrate` maps a 2.x name such as `prose-format.no-unicode-dash` to its 3.0 qualified id through the rename table in the binary. A name with no entry stops the migration. The table is part of the profile and rule mapping (`slopvac-8l4.2.10`). The rows below call this "rename".
+Rule and category names change with the plugin model. `migrate` maps a 2.x name such as `prose-format.no-unicode-dash` to its 3.0 qualified id through the rename table in the binary. A name with no entry stops the migration, except in a `slopvac-allow` comment that ends on a later line. 2.x read each directive on one line and rejected that comment, so `migrate` leaves it as written, prints a warning and continues. The table is part of the profile and rule mapping (`slopvac-8l4.2.10`). The rows below call this "rename".
 
 | 2.x setting | Disposition | 3.0 | `slopvac migrate` |
 |---|---|---|---|
