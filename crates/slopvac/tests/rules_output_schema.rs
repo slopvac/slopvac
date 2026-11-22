@@ -28,7 +28,7 @@ fn read_schema(name: &str) -> Value {
 /// A validator for `schema`, with every schema file of the directory that it may reference.
 fn validator(schema: &Value) -> Validator {
     let mut registry = jsonschema::Registry::new();
-    for name in ["common", "rule", "rules-output"] {
+    for name in ["common", "lint-report", "rule", "rules-output"] {
         let doc = read_schema(&format!("{name}.schema.json"));
         let id = doc["$id"].as_str().expect("$id").to_owned();
         registry = registry.add(id, doc).expect("register schema");
@@ -46,6 +46,10 @@ fn listing_validator() -> Validator {
 
 fn explain_validator() -> Validator {
     validator(&json!({ "$ref": format!("{OUTPUT_ID}#/$defs/ExplainOutput") }))
+}
+
+fn rejects(validator: &Validator, instance: &Value) -> bool {
+    !validator.is_valid(instance)
 }
 
 fn errors(validator: &Validator, instance: &Value) -> Vec<String> {
@@ -152,7 +156,7 @@ fn a_configured_severity_validates_in_the_listing_and_in_explain() {
 #[test]
 fn a_category_file_is_not_a_rules_listing() {
     let category = read_category_fixture();
-    assert!(!errors(&listing_validator(), &category).is_empty());
+    assert!(rejects(&listing_validator(), &category));
 }
 
 #[test]
@@ -170,7 +174,7 @@ fn an_unqualified_rule_id_is_rejected() {
 fn explain_output_without_schema_version_is_rejected() {
     let mut rule = run(&["explain", CHAT_LEAKAGE, "--format", "json"]);
     rule.as_object_mut().unwrap().remove("schema_version");
-    assert!(!errors(&explain_validator(), &rule).is_empty());
+    assert!(rejects(&explain_validator(), &rule));
 }
 
 #[test]
