@@ -2752,6 +2752,7 @@ dependencies = [
  "cap-fs-ext",
  "cap-std",
  "caseless",
+ "clap",
  "crossbeam-channel",
  "flate2",
  "getrandom 0.4.3",
