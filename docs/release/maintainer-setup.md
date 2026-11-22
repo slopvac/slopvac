@@ -39,7 +39,7 @@ The environment is separate from `release` so that adding `rc/v*` never lets a c
 
 Create a second ruleset that targets `refs/tags/rc/v*` with the same settings as the `v*` ruleset in [distribution](distribution.md#protect-version-tags): active, with the update, deletion and non-fast-forward rules, and a bypass list that is empty or admin-only.
 
-No workflow checks this ruleset. `scripts/release_ruleset.py` accepts only plain `vX.Y.Z` tags. The stable gate does not rely on it: it needs a passed `publish-pypi.yml` push run for the candidate tag at its current commit, so a moved tag has no passed run until its run passes. The ruleset keeps the tag that testers installed from fixed.
+No workflow checks this ruleset. `scripts/release_ruleset.py` accepts release `vX.Y.Z` tags and plugin tags, and it does not accept `rc/v*` candidate tags. The stable gate does not rely on it: it needs a passed `publish-pypi.yml` push run for the candidate tag at its current commit, so a moved tag has no passed run until its run passes. The ruleset keeps the tag that testers installed from fixed.
 
 ## Pin the tag rulesets
 
