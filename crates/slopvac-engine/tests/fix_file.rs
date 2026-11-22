@@ -488,16 +488,16 @@ mod unix {
 
     /// Skip an ACL test on a host that cannot set ACLs. CI and `SLOPVAC_REQUIRE_ACL=1`
     /// turn the skip into a failure, so a runner that lost ACL support cannot pass silently.
-    #[expect(
-        clippy::print_stderr,
-        reason = "a test that skips says so on the test's own stderr"
-    )]
     fn skip_without_acl_support(why: &str) {
+        use std::io::Write as _;
         assert!(
             std::env::var_os("CI").is_none() && std::env::var_os("SLOPVAC_REQUIRE_ACL").is_none(),
             "ACL support is required here: {why}"
         );
-        eprintln!("skipped: {why}");
+        assert!(
+            writeln!(std::io::stderr(), "skipped: {why}").is_ok(),
+            "stderr is writable"
+        );
     }
 
     /// Run `setfacl` on `path`; false when the tool or the file system cannot.
