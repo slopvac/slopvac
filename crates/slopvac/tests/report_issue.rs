@@ -1252,6 +1252,8 @@ fn a_non_utf8_environment_variable_does_not_crash_or_print() {
 
 fn slopvac() -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+    // Tests stay off the network: the update notice may refresh its cache after lint, doctor and prime.
+    cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1");
     let empty = std::env::temp_dir().join("slopvac-report-no-gh-on-path");
     std::fs::create_dir_all(&empty).unwrap();
     for var in [

@@ -1,8 +1,8 @@
 //! The cached update notice (`docs/contract/policies.md`, sections 1.2 and 1.3).
 //!
 //! Reading the notice never touches the network. A refresh runs only for the commands in
-//! [`REFRESH_COMMANDS`], only when the cache is older than 24 hours, never in offline mode, and
-//! never under `CI` or an opt-out. It also runs when stderr is not a terminal, because agents
+//! [`REFRESH_COMMANDS`], only when the cache is older than 24 hours, and never under `CI` or an
+//! opt-out. Offline mode gives a command no refresh and no notice. It also runs when stderr is not a terminal, because agents
 //! read notices from machine output. A failed refresh is silent and leaves the cache alone.
 
 use std::path::{Path, PathBuf};
@@ -268,7 +268,12 @@ pub fn notice(
     if silenced(ctx.var, ctx.config_update_check) {
         return None;
     }
-    let may_refresh = !ctx.offline && ctx.command.is_some_and(|c| REFRESH_COMMANDS.contains(&c));
+    // Offline mode silences the check and its notice for every command. Only `--version --json`
+    // (no command) still reads the cache, because its document lists the known state.
+    if ctx.offline && ctx.command.is_some() {
+        return None;
+    }
+    let may_refresh = ctx.command.is_some_and(|c| REFRESH_COMMANDS.contains(&c));
     let mut entry = cache.read();
     let stale = entry
         .as_ref()
@@ -406,13 +411,26 @@ mod tests {
     }
 
     #[test]
-    fn offline_never_fetches_but_shows_the_cached_notice() {
+    fn offline_commands_get_no_notice_and_no_refresh_even_from_a_cache() {
         let (_d, cache) = cache();
-        let f = Canned::new(GH);
-        let mut c = ctx(Some("lint"), NO_ENV, T0);
-        c.offline = true;
-        assert_eq!(run(&c, &cache, &f), None);
         cache.write(&entry(1, "3.5.0")).unwrap();
+        let f = Canned::new(GH);
+        for command in ["lint", "doctor", "prime", "self update"] {
+            let mut c = ctx(Some(command), NO_ENV, T0);
+            c.offline = true;
+            assert_eq!(run(&c, &cache, &f), None, "{command}");
+        }
+        assert_eq!(f.calls(), 0);
+        assert_eq!(cache.read().unwrap(), entry(1, "3.5.0"));
+    }
+
+    #[test]
+    fn offline_version_json_still_reads_the_cached_notice() {
+        let (_d, cache) = cache();
+        cache.write(&entry(1, "3.5.0")).unwrap();
+        let f = Canned::new(GH);
+        let mut c = ctx(None, NO_ENV, T0);
+        c.offline = true;
         assert_eq!(run(&c, &cache, &f).unwrap().latest, "3.5.0");
         assert_eq!(f.calls(), 0);
     }

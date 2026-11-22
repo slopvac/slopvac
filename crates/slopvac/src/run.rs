@@ -177,8 +177,15 @@ where
         color = globals.color,
         "resolved globals"
     );
+    let offline = globals.offline;
     match dispatch(&matches, globals, policy.update_check, env, out, err_out) {
-        Ok(code) => exit::code(code),
+        Ok(code) => {
+            if let Some((command, _)) = matches.subcommand() {
+                let rt = update_runtime(env, offline, policy.update_check);
+                crate::update_notice::emit(&rt, command, err_out);
+            }
+            exit::code(code)
+        }
         Err(err) => {
             let _ = writeln!(err_out, "{err}");
             exit::code(exit::INCOMPLETE)

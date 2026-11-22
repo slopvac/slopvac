@@ -15,6 +15,8 @@ const CAP: usize = 64 * 1024 * 1024;
 
 fn slopvac() -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
+    // Tests stay off the network: the update notice may refresh its cache after lint, doctor and prime.
+    cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1");
     cmd.current_dir(support::neutral_dir()).env("NO_COLOR", "1");
     for var in ["SLOPVAC_OFFLINE", "SLOPVAC_LOG", "FORCE_COLOR"] {
         cmd.env_remove(var);

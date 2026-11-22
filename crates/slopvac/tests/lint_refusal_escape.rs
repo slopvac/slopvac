@@ -33,6 +33,7 @@ fn slopvac(dir: &Path) -> Command {
         cmd = cmd.env_remove(var);
     }
     cmd.env("NO_COLOR", "1")
+        .env("SLOPVAC_NO_UPDATE_CHECK", "1")
         .current_dir(dir)
         .timeout(Duration::from_secs(30))
 }
