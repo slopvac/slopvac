@@ -29,7 +29,7 @@ pub struct Project {
 /// A point inside a read, write or delete where a test can change the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Stage {
-    /// The final look at the target has found a regular file, and the open comes next.
+    /// The final look at the target comes next, and its open follows.
     BeforeFinalOpen,
     /// The temporary file holds the new bytes, and its final mode is not set yet.
     Filled,
@@ -293,21 +293,33 @@ impl Project {
     ///
     /// This is the last look before a commit, so it does not resolve links
     /// again: a name that has turned into a symlink, a directory or another
-    /// special file since the first check counts as changed.
+    /// special file since the first check counts as changed. The file opens once,
+    /// through the shared confined reader, without following links and without
+    /// blocking, so a FIFO swapped in before the open is refused and never waited
+    /// on. A file with several hard links is accepted, and there is no size limit.
     fn current(
         parent: &Dir,
         name: &OsStr,
         rel: &Path,
         hook: &mut dyn FnMut(Stage),
     ) -> Result<Option<Vec<u8>>, AgentsError> {
-        match parent.symlink_metadata(name) {
-            Ok(m) if !m.is_file() => Err(AgentsError::Conflict(rel.to_path_buf())),
-            Ok(_) => {
-                hook(Stage::BeforeFinalOpen);
-                parent.read(name).map(Some).map_err(|e| Self::map(rel, e))
-            }
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(Self::map(rel, e)),
+        hook(Stage::BeforeFinalOpen);
+        match slopvac_fs::read_capped_regular_in_with(
+            parent,
+            Path::new(name),
+            u64::MAX,
+            slopvac_fs::ReadOptions::new(),
+        ) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(e) => match e.input_kind() {
+                Some(slopvac_fs::InputKind::NotFound) => Ok(None),
+                Some(
+                    slopvac_fs::InputKind::NotRegular
+                    | slopvac_fs::InputKind::Symlink
+                    | slopvac_fs::InputKind::UnsafePath,
+                ) => Err(AgentsError::Conflict(rel.to_path_buf())),
+                _ => Err(AgentsError::io(rel, read_failure(&e))),
+            },
         }
     }
 
