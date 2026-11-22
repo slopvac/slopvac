@@ -36,9 +36,63 @@ static MARK: LazyLock<Regex> = LazyLock::new(|| re(r"\A\p{M}\z"));
 
 pub(crate) static CODE_SPAN: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?<!`)`{1,}(?P<body>[^`\n]*?)`{1,}(?!`)"));
+// Path characters and the characters that may end a path. Both go into the pattern text.
+macro_rules! path_class {
+    () => {
+        r"[\p{L}\p{Nd}_.-]"
+    };
+}
+macro_rules! path_end {
+    () => {
+        r"[\p{L}\p{Nd}_]"
+    };
+}
+
+// A path match that fails at one start fails at every start inside the same chain of
+// path characters and slashes, because each later start sees a suffix of the same text.
+// Without a rule for that, each start rescans the chain, so a long run such as `.....`
+// followed by `/` costs quadratic time and no PCRE2 limit stops it. This branch runs
+// only when the path match fails. It reads the rest of the chain without backtracking,
+// then `(*SKIP)` moves the next start to where the branch stopped. It stops five
+// characters short of the end of the last run, so the matcher still tries a `https://` or
+// `ftp://` that starts inside the run. The URL alternative has no lookbehind and needs those
+// characters.
+macro_rules! skip_failed_chain {
+    () => {
+        concat!(
+            r"(?:",
+            path_class!(),
+            r"+/)*+",
+            r"(?:",
+            path_class!(),
+            r"(?=",
+            path_class!(),
+            r"{5}))*+",
+            r"(*SKIP)(*FAIL)"
+        )
+    };
+}
+
 static URL_OR_PATH_SRC: &str = concat!(
-    r"(?:https?://|ftp://)[^\s<>]+|(?<!\w)/(?:[\p{L}\p{Nd}_.-]+/)+[\p{L}\p{Nd}_.-]*[\p{L}\p{Nd}_]|",
-    r"(?<!\w)(?:\./)?(?:[\p{L}\p{Nd}_.-]+/)+[\p{L}\p{Nd}_.-]*[\p{L}\p{Nd}_]"
+    r"(?:https?://|ftp://)[^\s<>]+|",
+    r"(?<!\w)/(?:(?:",
+    path_class!(),
+    r"+/)+",
+    path_class!(),
+    r"*",
+    path_end!(),
+    r"|",
+    skip_failed_chain!(),
+    r")|",
+    r"(?<!\w)(?:(?:\./)?(?:",
+    path_class!(),
+    r"+/)+",
+    path_class!(),
+    r"*",
+    path_end!(),
+    r"|",
+    skip_failed_chain!(),
+    r")"
 );
 pub(crate) static URL_OR_PATH: LazyLock<Regex> = LazyLock::new(|| re(URL_OR_PATH_SRC));
 static FLAG_OR_ENV: LazyLock<Regex> =
@@ -212,4 +266,93 @@ fn split_words(text: &str) -> Vec<String> {
 /// Count words per the ordered phases in `docs/metrics.md`.
 pub fn count_words(text: &str) -> Result<usize, TextError> {
     Ok(tokens(text)?.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use rstest::rstest;
+    use slopvac_pcre2::{Limits, Options, Regex};
+
+    use super::{URL_OR_PATH, URL_OR_PATH_SRC, find_all, tokens};
+    use crate::rewrite::compat;
+
+    /// The pattern before it learned to skip a failed chain. It is the reference for
+    /// "the same matches".
+    const OLD_SRC: &str = concat!(
+        r"(?:https?://|ftp://)[^\s<>]+|(?<!\w)/(?:[\p{L}\p{Nd}_.-]+/)+[\p{L}\p{Nd}_.-]*[\p{L}\p{Nd}_]|",
+        r"(?<!\w)(?:\./)?(?:[\p{L}\p{Nd}_.-]+/)+[\p{L}\p{Nd}_.-]*[\p{L}\p{Nd}_]"
+    );
+
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+    fn compile(src: &str) -> Result<Regex, slopvac_pcre2::CompileError> {
+        Regex::with_limits(&compat(src), Options::new().ucp(true), Limits::POLICY)
+    }
+
+    fn matched<'a>(text: &'a str, ranges: &[(usize, usize)]) -> Vec<&'a str> {
+        ranges.iter().map(|&(s, e)| &text[s..e]).collect()
+    }
+
+    #[rstest]
+    #[case::url("see https://example.com/a?b=1 now", &["https://example.com/a?b=1"])]
+    #[case::ftp("get ftp://host/file now", &["ftp://host/file"])]
+    #[case::absolute("open /usr/local/bin now", &["/usr/local/bin"])]
+    #[case::dot_relative("edit ./src/main.rs please", &["./src/main.rs"])]
+    #[case::relative("edit src/lib.rs", &["src/lib.rs"])]
+    #[case::alternatives("and/or", &["and/or"])]
+    #[case::trailing_slash_dropped("see src/lib/ now", &["src/lib"])]
+    #[case::url_inside_failed_chain("a.http://x", &["http://x"])]
+    #[case::chain_without_word_character("./././", &[])]
+    #[case::start_after_mark("e\u{301}.foo/bar", &["foo/bar"])]
+    #[case::double_slash_restarts("a//b/c", &["/b/c"])]
+    #[case::plain_words("no paths here", &[])]
+    fn url_or_path_matches(#[case] text: &str, #[case] expected: &[&str]) -> TestResult {
+        let ranges = find_all(&URL_OR_PATH, text)?;
+        assert_eq!(matched(text, &ranges), expected);
+        Ok(())
+    }
+
+    const PIECES: &[&str] = &[
+        "a", "Z", "1", "_", ".", "-", "/", "//", "./", "http", "https", "ftp", ":", "://", " ",
+        "<", "\u{301}", "é", "x",
+    ];
+
+    proptest! {
+        #[test]
+        fn new_pattern_matches_what_the_old_one_did(
+            pieces in proptest::collection::vec(proptest::sample::select(PIECES), 0..40)
+        ) {
+            let text = pieces.concat();
+            let old = compile(OLD_SRC)?.find_all(&text)?;
+            let new = compile(URL_OR_PATH_SRC)?.find_all(&text)?;
+            prop_assert_eq!(old, new, "text {:?}", text);
+        }
+    }
+
+    /// Scaling guard. The old pattern spent its time scanning, outside PCRE2's counted
+    /// match calls, so the match limit stayed silent. `slopvac-pcre2` has no call
+    /// counter, so the guard is a size. The old pattern took 0.33 s at 20 000 characters
+    /// on a release build and four times that at 40 000, which is many minutes at this
+    /// length. The fixed pattern finishes in well under a second. A regression shows as a
+    /// test that nextest terminates for running too long. No assertion reads a clock.
+    const N: usize = 1_000_000;
+
+    #[rstest]
+    #[case::dots(".".repeat(N) + "/")]
+    #[case::letter_dot_pairs("a.".repeat(N / 2) + "/")]
+    #[case::dot_slash_pairs("./".repeat(N / 2))]
+    #[case::absolute_dot_slash_pairs(format!("/{}", "./".repeat(N / 2)))]
+    #[case::hyphen_run_before_url("-".repeat(N) + "http://x")]
+    fn long_punctuation_runs_finish(#[case] text: String) -> TestResult {
+        find_all(&URL_OR_PATH, &text)?;
+        Ok(())
+    }
+
+    #[test]
+    fn tokenizer_counts_a_long_run_as_plain_text() -> TestResult {
+        let text = ".".repeat(N) + "/";
+        assert_eq!(tokens(&text)?, Vec::<String>::new());
+        Ok(())
+    }
 }
