@@ -7,7 +7,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use slopvac_migrate::{EngineLinter, Error, Finding, Linter, Options, Phase, RenameTable, plan};
+use slopvac_migrate::{
+    EngineLinter, Error, Finding, Linter, Options, Phase, RenameTable, command, plan, run,
+};
 use slopvac_model::PackId;
 use slopvac_rules::{CompileOptions, RuleSet};
 
@@ -96,23 +98,45 @@ fn a_2x_suppression_of_a_removed_rule_is_not_a_finding_on_the_before_side() {
     assert_eq!(counts(&before), [("core:orwell.stale-figure", 1)]);
 }
 
-#[test]
-fn a_removed_rule_directive_keeps_the_paragraph_boundary_on_the_before_side() {
-    let dir = tempfile::tempdir().unwrap();
-    write(
-        dir.path(),
-        "doc.md",
-        "<!-- slopvac-allow: rule=orwell.stale-figure reason=dead-metaphor -->\nPlease leverage it.\n<!-- slopvac-allow: rule=ste-words.inconsistent-term-for-same-thing reason=r -->\nWe leverage more.\n",
-    );
-    let p = plan(dir.path(), &RenameTable::bundled(), Options::default(), "").unwrap();
+/// A suppression above a paragraph, then a directive of a removed rule on its own line
+/// between that paragraph and the next.
+const BETWEEN_PARAGRAPHS: &str = "<!-- slopvac-allow: rule=orwell.stale-figure reason=dead-metaphor -->\nPlease leverage it.\n<!-- slopvac-allow: rule=ste-words.inconsistent-term-for-same-thing reason=r -->\nWe leverage more.\n";
 
-    let before = linter()
+#[test]
+fn a_removed_rule_directive_keeps_the_paragraph_boundary_on_both_sides() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "doc.md", BETWEEN_PARAGRAPHS);
+    let p = plan(dir.path(), &RenameTable::bundled(), Options::default(), "").unwrap();
+    let linter = linter();
+
+    let before = linter
         .lint(dir.path(), Phase::Before, &p.before_overlay(dir.path()))
+        .unwrap();
+    let after = linter
+        .lint(dir.path(), Phase::After, &p.overlay(dir.path()))
         .unwrap();
 
     // The removed-rule directive ends the first paragraph, so the first suppression does
     // not reach the second paragraph, and its finding stays.
     assert_eq!(counts(&before), [("core:orwell.stale-figure", 1)]);
+    assert_eq!(counts(&after), [("core:orwell.stale-figure", 1)]);
+}
+
+#[test]
+fn the_written_file_keeps_the_paragraph_boundary_of_a_removed_rule_directive() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    write(dir.path(), "doc.md", BETWEEN_PARAGRAPHS);
+    let linter = linter();
+    let m = command().get_matches_from(["migrate", dir.path().to_str().unwrap(), "--write"]);
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+
+    let code = run(&m, &linter, "", cache.path(), &mut out, &mut err);
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    // Linted from disk, the migrated file still holds the second paragraph's finding.
+    let written = linter.lint(dir.path(), Phase::After, &[]).unwrap();
+    assert_eq!(counts(&written), [("core:orwell.stale-figure", 1)]);
 }
 
 #[test]

@@ -193,7 +193,7 @@ fn documents_get_directive_ids_and_steering_rewritten() {
 }
 
 #[test]
-fn directives_for_removed_rules_are_dropped_with_a_note() {
+fn directives_for_removed_rules_leave_an_empty_comment_and_a_note() {
     for id in [
         "ste-practices.inconsistent-wording-for-same-step",
         "ste-safety.safety-block-missing-consequence",
@@ -210,7 +210,7 @@ fn directives_for_removed_rules_are_dropped_with_a_note() {
         let p = plan_of(dir.path()).unwrap_or_else(|e| panic!("{id}: {e:?}"));
         apply(dir.path(), &p, cache().path()).unwrap();
         let a = fs::read_to_string(dir.path().join("docs/a.md")).unwrap();
-        assert_eq!(a, "Text\n", "{id}");
+        assert_eq!(a, "<!-- -->\nText\n", "{id}");
         assert_eq!(
             p.notes,
             vec![format!(
@@ -566,6 +566,32 @@ fn an_unmapped_directive_id_stops_the_command_and_writes_nothing() {
         doc
     );
     assert!(!dir.path().join(".slopvac").exists());
+}
+
+#[test]
+fn a_directive_over_more_than_one_line_with_an_unmapped_id_is_a_warning_not_a_stop() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = "# Title\n\n<!-- slopvac-allow: rule=prose-craft.no-such-rule reason=x\n-->\nText\n";
+    write(dir.path(), "slopvac.toml", "profile = \"strict\"\n");
+    write(dir.path(), "docs/a.md", doc);
+    let (code, out, err) = run_cli(&[dir.path().to_str().unwrap(), "--write"], &NullLinter);
+    assert_eq!(code, 0, "{err}");
+    let shown = Path::new("docs").join("a.md").display().to_string();
+    assert!(
+        out.contains(&format!(
+            "warning: {shown}:3: invalid 2.x directive, left as is\n"
+        )),
+        "{out}"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("docs/a.md")).unwrap(),
+        doc
+    );
+    assert!(
+        fs::read_to_string(dir.path().join("slopvac.toml"))
+            .unwrap()
+            .contains("schema_version = 3")
+    );
 }
 
 #[test]

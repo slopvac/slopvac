@@ -40,7 +40,8 @@ pub struct Found {
 /// Directives inside fenced code or inline code spans are documentation and stay as
 /// they are. The second value lists ids that the rename table does not know (those
 /// directives are left unchanged) and ids of removed rules (those directives are
-/// deleted).
+/// deleted). A deleted directive alone on its line leaves an empty comment there, so the
+/// line still ends the block above it and no other directive covers more text.
 #[must_use]
 pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Found) {
     rewrite_with(text, renames, Removed::Delete)
@@ -58,7 +59,8 @@ pub(crate) fn before_directives(text: &str, renames: &RenameTable) -> String {
 /// What happens to a directive of a removed rule.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Removed {
-    /// Delete it, and its line when it stands alone there.
+    /// Delete it inside a line of text, and replace it with [`BLANK_COMMENT`] when it
+    /// stands alone on its line.
     Delete,
     /// Replace it with [`BLANK_COMMENT`].
     Blank,
@@ -210,17 +212,15 @@ fn rewrite_paragraph(
                 out.push_str(comment);
             } else if let Some(new) = rewrite_comment(comment, line, renames, found) {
                 out.push_str(&new);
-            } else if removed == Removed::Blank {
-                out.push_str(BLANK_COMMENT);
             } else {
-                // A deleted directive alone on its line takes the whole line with it.
                 let line_start = out.rfind('\n').map_or(0, |n| n + 1);
                 let rest = &text[end..];
                 let line_end = rest.find('\n').unwrap_or(rest.len());
-                if out[line_start..].trim().is_empty() && rest[..line_end].trim().is_empty() {
-                    out.truncate(line_start);
-                    consumed = (end + line_end + 1).min(text.len());
-                    continue;
+                let alone =
+                    out[line_start..].trim().is_empty() && rest[..line_end].trim().is_empty();
+                // Deleting a directive alone on its line would join the blocks around it.
+                if removed == Removed::Blank || alone {
+                    out.push_str(BLANK_COMMENT);
                 }
             }
         } else {
@@ -317,10 +317,10 @@ mod tests {
     }
 
     #[test]
-    fn a_directive_for_a_removed_rule_is_deleted_with_its_line() {
+    fn a_directive_for_a_removed_rule_alone_on_its_line_leaves_an_empty_comment() {
         let text = format!("Intro\n<!-- slopvac-allow: rule={GONE} reason=x -->\nBody\n");
         let (out, found) = rewrite(&text);
-        assert_eq!(out, "Intro\nBody\n");
+        assert_eq!(out, "Intro\n<!-- -->\nBody\n");
         assert_eq!(
             found.removed,
             vec![RemovedId {
@@ -340,10 +340,10 @@ mod tests {
     }
 
     #[test]
-    fn an_indented_or_trailing_space_directive_takes_its_whole_line() {
+    fn an_indented_or_trailing_space_directive_keeps_its_line() {
         let text = format!("A\n   <!-- slopvac-allow: rule={GONE} reason=x -->  \nB\n");
         let (out, _) = rewrite(&text);
-        assert_eq!(out, "A\nB\n");
+        assert_eq!(out, "A\n   <!-- -->  \nB\n");
     }
 
     #[test]
