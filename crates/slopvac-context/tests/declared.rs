@@ -100,7 +100,10 @@ fn security_span_covers_every_original_byte_including_front_matter() {
     assert_eq!(idx.tags().len(), 1);
     assert_eq!(idx.tags()[0].kind, "security");
     assert_eq!(idx.tags()[0].span, 0..src.len());
-    assert_eq!(idx.tags()[0].evidence.as_ref(), "declared by genre `security`");
+    assert_eq!(
+        idx.tags()[0].evidence.as_ref(),
+        "declared by genre `security`"
+    );
     let last_char = src.len() - 1..src.len();
     assert_eq!(idx.kinds_at(&(0..1)), vec!["security"]);
     assert_eq!(idx.kinds_at(&last_char), vec!["security"]);

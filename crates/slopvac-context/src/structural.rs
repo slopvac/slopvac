@@ -6,8 +6,8 @@
 //! it may tag a whole section or document.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::ops::Range;
+use std::sync::Arc;
 
 use serde::Deserialize;
 
@@ -274,10 +274,10 @@ impl StructuralTagger {
             kind: self.tag.clone(),
             span,
             confidence: self.confidence,
-            evidence: self.evidence.as_deref().map_or_else(
-                || format!("{}: {evidence}", self.id).into(),
-                Arc::from,
-            ),
+            evidence: self
+                .evidence
+                .as_deref()
+                .map_or_else(|| format!("{}: {evidence}", self.id).into(), Arc::from),
         }
     }
 }
