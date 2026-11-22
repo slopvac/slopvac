@@ -61,6 +61,11 @@ pub struct Plan {
     /// What each 2.x config meant, in 3.0 terms: the `--preserve-behavior` rewrite, keyed
     /// by the `slopvac.toml` path relative to the project root. The before side of the
     /// lint reads these in place of the 2.x files.
+    ///
+    /// The rewrite reproduces the 2.x levels except in the known limit of
+    /// `docs/contract/profiles.md`, section 4: when a block without `profile` that authors a
+    /// category matches a file that a profile override also matches, three rule defaults can
+    /// differ from 2.x. There the before side is approximate.
     pub before: Vec<(PathBuf, String)>,
 }
 

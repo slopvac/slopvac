@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use rstest::rstest;
-use slopvac_cli::migrate_lint::MigrateConfigure;
+use slopvac_cli::MigrateConfigure;
 use slopvac_cli::rule_catalog;
 use slopvac_migrate::{EngineLinter, Finding, Linter, Options, Phase, RenameTable, plan};
 use snapbox::cmd::{Command, cargo_bin};

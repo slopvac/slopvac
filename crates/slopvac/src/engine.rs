@@ -843,7 +843,7 @@ type Groups = BTreeMap<String, (slopvac_engine::Settings, TermInputs, Vec<usize>
 ///
 /// # Errors
 /// As [`lint_settings::build`].
-pub fn file_settings(
+pub(crate) fn file_settings(
     rules: &Catalog,
     config: &LoadedConfig,
     rel: &Path,
