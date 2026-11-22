@@ -417,6 +417,7 @@ fn version_json_lists_supported_versions_from_the_owning_crates() {
             "genre": [slopvac_context::GENRE_SCHEMA_VERSION],
             "lint-report": [slopvac_model::SchemaVersion::VALUE],
             "plugins-lock": [slopvac_plugins::lock::LOCK_SCHEMA_VERSION],
+            "rules-output": [slopvac_model::SchemaVersion::VALUE],
             "style": [slopvac_config::version::SUPPORTED],
             "tagger": [slopvac_context::TAGGER_SCHEMA_VERSION],
             "terms": [slopvac_terms::TERMS_SCHEMA_VERSION],

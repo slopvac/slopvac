@@ -11,10 +11,10 @@
 
 use std::path::PathBuf;
 
-use assert_cmd::Command;
 use jsonschema::Validator;
 use rstest::rstest;
 use serde_json::{Value, json};
+use snapbox::cmd::{Command, cargo_bin};
 
 const SCHEMA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schemas/v3");
 const OUTPUT_ID: &str = "https://slopvac.github.io/slopvac/schemas/v3/rules-output.schema.json";
@@ -60,19 +60,26 @@ fn errors(validator: &Validator, instance: &Value) -> Vec<String> {
 }
 
 fn run(args: &[&str]) -> Value {
-    let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
-    cmd.env("SLOPVAC_NO_UPDATE_CHECK", "1").env("NO_COLOR", "1");
+    let mut cmd = Command::new(cargo_bin!("slopvac"));
     for var in [
         "SLOPVAC_OFFLINE",
         "SLOPVAC_LOG",
         "FORCE_COLOR",
         "CLICOLOR_FORCE",
     ] {
-        cmd.env_remove(var);
+        cmd = cmd.env_remove(var);
     }
     // From `/` no config is found, so a run without `--config` sees the rules as shipped.
-    cmd.current_dir("/");
-    let out = cmd.args(args).assert().code(0).get_output().stdout.clone();
+    let out = cmd
+        .env("SLOPVAC_NO_UPDATE_CHECK", "1")
+        .env("NO_COLOR", "1")
+        .current_dir("/")
+        .args(args)
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
     serde_json::from_slice(&out).expect("json output")
 }
 

@@ -97,9 +97,8 @@
       "x-slopvac-extensible": true
     },
     "EffectiveSeverity": {
-      "description": "The level a rule runs at after the configuration layers. `off` means the configuration disables the rule, which a shipped rule never does.",
-      "enum": ["suggestion", "warning", "error", "off"],
-      "x-slopvac-extensible": true
+      "description": "The level a rule runs at after the configuration layers. The set is closed, because gate and score logic depend on these values. `off` means the configuration disables the rule, which a shipped rule never does.",
+      "enum": ["suggestion", "warning", "error", "off"]
     },
     "RuleBody": {
       "description": "The members that every rule entry carries. The rule members come from the authoring shape (rule.schema.json, `$defs/Rule`) with the qualified `id`; the schema reuses its member definitions, and its `id` and closing rule do not apply here. Not closed: a `$defs` that uses it closes the shape.",
@@ -202,7 +201,7 @@
           "$ref": "#/$defs/EffectiveSeverity"
         },
         "severity_from": {
-          "description": "The configuration layer and location that moved the severity, such as `project slopvac.toml:4:1`. Absent when the rule runs at its shipped level.",
+          "description": "The configuration source that set the effective severity, such as `project slopvac.toml:4:1`. Present when the configuration set it, including to the level the rule ships with.",
           "type": "string",
           "minLength": 1
         },

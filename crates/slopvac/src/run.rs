@@ -671,6 +671,7 @@ fn supported_versions() -> slopvac_update::command::Supported {
             ),
             ("lint-report", vec![report]),
             ("plugins-lock", vec![lock]),
+            ("rules-output", vec![report]),
             ("style", vec![config]),
             (
                 "tagger",
