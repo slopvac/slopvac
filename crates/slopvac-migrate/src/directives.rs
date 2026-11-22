@@ -27,8 +27,9 @@ pub struct Found {
     pub unknown: Vec<UnknownId>,
     /// Ids of removed rules; those directives are deleted.
     pub removed: Vec<RemovedId>,
-    /// One-based lines of comma-list directives. 2.x took one id per directive, so
-    /// these were already invalid; they stay as written.
+    /// One-based start lines of comma-list directives and of directives whose comment
+    /// ends on a later line. 2.x took one id per directive and read each directive on one
+    /// line, so 2.x rejects these too. They stay as written.
     pub invalid: Vec<usize>,
     /// One-based lines of directives whose id was renamed.
     pub renamed: Vec<usize>,
@@ -204,7 +205,10 @@ fn rewrite_paragraph(
         let quoted = spans.iter().any(|&(a, b)| a <= start && start < b);
         if !quoted && is_directive(comment) {
             let line = start_line + text[..start].matches('\n').count();
-            if let Some(new) = rewrite_comment(comment, line, renames, found) {
+            if comment.contains('\n') {
+                found.invalid.push(line);
+                out.push_str(comment);
+            } else if let Some(new) = rewrite_comment(comment, line, renames, found) {
                 out.push_str(&new);
             } else if removed == Removed::Blank {
                 out.push_str(BLANK_COMMENT);
@@ -292,6 +296,8 @@ fn rewrite_comment(
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     fn run(text: &str) -> (String, Vec<UnknownId>) {
@@ -356,6 +362,20 @@ mod tests {
             assert_eq!(found.removed, Vec::<RemovedId>::new(), "{value}");
             assert_eq!(found.unknown, Vec::<UnknownId>::new(), "{value}");
         }
+    }
+
+    /// 2.x reads a directive on one line, so one whose comment ends on a later line was
+    /// already invalid there.
+    #[rstest]
+    #[case::removed(GONE)]
+    #[case::renamed("prose-format.no-unicode-dash")]
+    fn a_directive_over_more_than_one_line_stays_as_written_and_is_reported(#[case] id: &str) {
+        let text = format!("A\n<!-- slopvac-allow: rule={id} reason=x\n-->\nB\n");
+        let (out, found) = rewrite(&text);
+        assert_eq!(out, text);
+        assert_eq!(found.invalid, vec![2]);
+        assert_eq!(found.removed, Vec::<RemovedId>::new());
+        assert_eq!(found.renamed, Vec::<usize>::new());
     }
 
     #[test]

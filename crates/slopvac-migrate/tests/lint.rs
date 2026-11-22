@@ -116,6 +116,34 @@ fn a_removed_rule_directive_keeps_the_paragraph_boundary_on_the_before_side() {
 }
 
 #[test]
+fn a_directive_over_more_than_one_line_does_not_widen_the_suppression_above_it() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "doc.md",
+        "<!-- slopvac-allow: rule=core:orwell.stale-figure reason=dead-metaphor -->\n<!-- slopvac-allow: rule=ste-words.inconsistent-term-for-same-thing reason=r\n-->\nPlease leverage it.\n",
+    );
+    let p = plan(dir.path(), &RenameTable::bundled(), Options::default(), "").unwrap();
+    let linter = linter();
+
+    let before = linter
+        .lint(dir.path(), Phase::Before, &p.before_overlay(dir.path()))
+        .unwrap();
+    let after = linter
+        .lint(dir.path(), Phase::After, &p.overlay(dir.path()))
+        .unwrap();
+
+    // The first directive covers the `-->` line, so the prose keeps its finding. The
+    // second directive does not end on its own line, so the engine reports it, as 2.x did.
+    let expected = [
+        ("core:meta.invalid-suppression", 1),
+        ("core:orwell.stale-figure", 1),
+    ];
+    assert_eq!(counts(&before), expected);
+    assert_eq!(counts(&after), expected);
+}
+
+#[test]
 fn backup_directories_at_any_depth_are_not_linted() {
     for backup in [
         ".slopvac/migrate-backup/20261120T064000Z",
