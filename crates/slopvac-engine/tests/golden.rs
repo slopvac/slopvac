@@ -41,6 +41,7 @@ mod common;
 
 use common::{core_set, legacy_engine, legacy_settings, read_json, root};
 
+use rstest::rstest;
 use serde_json::{Value, json};
 use slopvac_comments::Language;
 use slopvac_engine::locale::spelling_rules;
@@ -551,6 +552,44 @@ fn divergence_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden-divergences.json")
 }
 
+/// 2.x recorded the replacement of a substitution as the rule gives it and cased it when it
+/// applied the fix (`diff_scope.py`): an upper-case match gives an upper-case replacement and
+/// a capitalised match a capitalised one. Rust reports the replacement in that final case, so
+/// the recorded one is cased the same way before the comparison. The golden data stays as
+/// recorded.
+///
+/// A run without a `document` is left as it is. A `document` whose `findings` is not an
+/// array is a broken golden file, and the panic names `run`.
+fn recase_replacements(run: &str, want: &mut Value) {
+    let Some(document) = want.get_mut("document").filter(|d| !d.is_null()) else {
+        return;
+    };
+    let Some(findings) = document.get_mut("findings").and_then(Value::as_array_mut) else {
+        panic!("golden {run}: `document.findings` is not an array");
+    };
+    for f in findings {
+        let (Some(matched), Some(replacement)) = (
+            f["matched_text"].as_str().map(str::to_owned),
+            f["replacement"].as_str().map(str::to_owned),
+        ) else {
+            continue;
+        };
+        let cased = if matched.chars().any(char::is_uppercase)
+            && !matched.chars().any(char::is_lowercase)
+        {
+            replacement.to_uppercase()
+        } else if matched.chars().next().is_some_and(char::is_uppercase) {
+            let mut chars = replacement.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(chars).collect()
+            })
+        } else {
+            replacement
+        };
+        f["replacement"] = Value::String(cased);
+    }
+}
+
 /// The difference between one engine document and the parity golden of `profile/id` with the
 /// reviewed `deltas` applied. This is the comparison every run goes through.
 fn compare_run(
@@ -562,6 +601,7 @@ fn compare_run(
     let path = format!("tests/golden/v3/parity/{profile}/{id}.json");
     let mut want = read_json(&root().join(path));
     apply_deltas(&mut want, deltas, profile, id);
+    recase_replacements(&format!("{profile}/{id}"), &mut want);
     mask(&mut want, &mut got);
     differences(&want, &got)
 }
@@ -812,6 +852,56 @@ fn a_changed_fact_of_a_matched_finding_is_a_difference() {
         set_first(&mut got, key, value);
         assert!(differences(&want, &got).contains_key("changed"), "{key}");
     }
+}
+
+/// The recorded replacement takes the case of the match, as 2.x applied it, and Rust must
+/// report that case: the other cases of the same text are differences.
+#[rstest]
+#[case::lower_match_lower_replacement("example", "following one", true)]
+#[case::title_match_title_replacement("Example", "Following one", true)]
+#[case::upper_match_upper_replacement("EXAMPLE", "FOLLOWING ONE", true)]
+#[case::title_match_lower_replacement("Example", "following one", false)]
+#[case::title_match_upper_replacement("Example", "FOLLOWING ONE", false)]
+#[case::upper_match_title_replacement("EXAMPLE", "Following one", false)]
+#[case::lower_match_title_replacement("example", "Following one", false)]
+fn the_recorded_replacement_is_cased_like_the_match(
+    #[case] matched: &str,
+    #[case] reported: &str,
+    #[case] agrees: bool,
+) {
+    let (mut want, mut got) = base_pair();
+    want["document"]["findings"][0]["matched_text"] = json!(matched);
+    want["document"]["findings"][0]["replacement"] = json!("following one");
+    set_first(&mut got, "matched_text", json!(matched));
+    set_first(&mut got, "replacement", json!(reported));
+    recase_replacements("test", &mut want);
+    assert_eq!(differences(&want, &got).is_empty(), agrees);
+}
+
+/// A run without a document is left alone, and a normal one is recased.
+#[rstest]
+#[case::no_document(json!({"exit_code": 0}), json!({"exit_code": 0}))]
+#[case::null_document(json!({"document": null}), json!({"document": null}))]
+#[case::normal_document(
+    json!({"document": {"findings": [{"matched_text": "Example", "replacement": "following one"}]}}),
+    json!({"document": {"findings": [{"matched_text": "Example", "replacement": "Following one"}]}})
+)]
+fn recasing_accepts_the_shapes_of_a_golden_run(#[case] mut want: Value, #[case] expected: Value) {
+    recase_replacements("normal/some-run", &mut want);
+    assert_eq!(want, expected);
+}
+
+/// A document without a findings array is a broken golden file: the run stops and the
+/// message names it.
+#[rstest]
+#[case::findings_missing(json!({"document": {}}))]
+#[case::findings_null(json!({"document": {"findings": null}}))]
+#[case::findings_not_array(json!({"document": {"findings": "none"}}))]
+#[case::document_is_string(json!({"document": "none"}))]
+#[case::document_is_array(json!({"document": []}))]
+#[should_panic(expected = "golden normal/some-run:")]
+fn recasing_rejects_a_document_without_a_findings_array(#[case] mut want: Value) {
+    recase_replacements("normal/some-run", &mut want);
 }
 
 /// An extra finding is recorded whole: a changed fact makes a different record.
