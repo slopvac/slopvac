@@ -293,6 +293,15 @@ impl Shared {
 
     /// Mark a reload as running. Under the document lock, so a publication either happened
     /// before this or sees the new epoch.
+    /// The paths of the documents open now. A path that is not text is left out, as such a
+    /// document is not linted.
+    fn open_paths(&self) -> Vec<String> {
+        self.docs()
+            .keys()
+            .filter_map(|uri| document_path(uri))
+            .collect()
+    }
+
     fn begin_reload(&self) {
         let _docs = self.docs();
         self.epoch.fetch_add(1, Ordering::SeqCst);
@@ -451,7 +460,8 @@ fn watch_id(n: u64) -> String {
 /// Read the config again, show what that found, and lint every open document again.
 fn reload(shared: &Shared, jobs: &Sender<String>, out: &Sender<Message>) {
     shared.begin_reload();
-    let reloaded = shared.linter.reload();
+    let open = shared.open_paths();
+    let reloaded = shared.linter.reload(&open);
     // Every open document starts over before anything of the reload is shown.
     let open = shared.end_reload();
     for notice in &reloaded.notices {

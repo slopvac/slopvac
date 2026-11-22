@@ -1294,7 +1294,7 @@ impl Linter for Reloadable {
         Vec::new()
     }
 
-    fn reload(&self) -> Reloaded {
+    fn reload(&self, _open: &[String]) -> Reloaded {
         let config = self.on_disk.lock().unwrap().clone();
         *self.active.lock().unwrap() = config.clone();
         Reloaded::new(
@@ -1565,7 +1565,7 @@ impl Linter for Growing {
         Vec::new()
     }
 
-    fn reload(&self) -> Reloaded {
+    fn reload(&self, _open: &[String]) -> Reloaded {
         self.add(self.on_reload.as_ref());
         Reloaded::default()
     }
@@ -1705,7 +1705,7 @@ impl Linter for Swapping {
         Vec::new()
     }
 
-    fn reload(&self) -> Reloaded {
+    fn reload(&self, _open: &[String]) -> Reloaded {
         *self.state.lock().unwrap() = "new";
         self.swapped.send(()).unwrap();
         self.proceed.recv_timeout(WAIT).unwrap();
@@ -1940,7 +1940,7 @@ impl Linter for Overtaken {
         Vec::new()
     }
 
-    fn reload(&self) -> Reloaded {
+    fn reload(&self, _open: &[String]) -> Reloaded {
         *self.state.lock().unwrap() = "new";
         let notice = Notice {
             code: KebabName::new("config-unknown-rule").unwrap(),

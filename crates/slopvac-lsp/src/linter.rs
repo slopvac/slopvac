@@ -48,8 +48,10 @@ pub trait Linter: Send + Sync {
     fn allow_reasons(&self, path: &str, text: &str, site: usize, rule: &RuleId) -> Vec<String>;
 
     /// Read the config again. The server calls it after a config file was saved or changed
-    /// on disk, then lints every open buffer again. The default has no config to read.
-    fn reload(&self) -> Reloaded {
+    /// on disk, then lints every open buffer again. `open` holds the paths of the buffers that
+    /// are open now, so a reload checks the config of those folders and no others. The default
+    /// has no config to read.
+    fn reload(&self, _open: &[String]) -> Reloaded {
         Reloaded::default()
     }
 

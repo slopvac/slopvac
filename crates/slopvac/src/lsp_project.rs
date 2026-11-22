@@ -147,10 +147,6 @@ type Pause = Arc<dyn Fn(Stage) + Send + Sync>;
 struct Project {
     root: PathBuf,
     loaded: Mutex<Loaded>,
-    /// The folders documents were linted under. A reload checks the config of each. Unlike the
-    /// caches in [`Loaded`] it survives a reload that fails and the eviction of a full cache,
-    /// so a config that is still broken stays broken.
-    active: Mutex<BTreeSet<PathBuf>>,
     #[cfg(test)]
     pause: Mutex<Option<Pause>>,
 }
@@ -188,11 +184,10 @@ pub(crate) fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
             // Replaced by the load below. A project whose first load fails is never served.
             state: State::Failed(String::new()),
         }),
-        active: Mutex::new(BTreeSet::new()),
         #[cfg(test)]
         pause: Mutex::new(None),
     });
-    let notices = project.load().map_err(|failure| failure.error)?;
+    let notices = project.load(&[]).map_err(|failure| failure.error)?;
     Ok(ProjectServer {
         linter: ProjectLinter {
             project: Arc::clone(&project),
@@ -271,17 +266,16 @@ impl Project {
         }
     }
 
-    /// Replace everything with a fresh read of the project config.
-    fn load(&self) -> Result<Vec<Notice>, Box<LoadFailure>> {
+    /// Replace everything with a fresh read of the project config. `open` holds the paths of
+    /// the documents open now: the config of each one's folder is checked as well, so a break
+    /// in one of them fails the reload. The folders come from the open documents each time, so
+    /// a failed reload or a full cache forgets none, and a closed document leaves none behind.
+    fn load(&self, open: &[String]) -> Result<Vec<Notice>, Box<LoadFailure>> {
         let mut dependencies = BTreeSet::new();
-        // The directories whose config documents were linted under. A reload checks the config
-        // of each, not only the project's, so a break in one of them fails the reload.
-        let active: Vec<PathBuf> = {
-            let mut active = self.active.lock().unwrap_or_else(PoisonError::into_inner);
-            // A folder that is gone has nothing open in it any more.
-            active.retain(|dir| dir.is_dir());
-            active.iter().cloned().collect()
-        };
+        let active: BTreeSet<PathBuf> = open
+            .iter()
+            .map(|path| self.locate(Path::new(path)).1)
+            .collect();
         let result = self.read(&mut dependencies, &active);
         let mut loaded = self.loaded();
         let epoch = loaded.epoch + 1;
@@ -308,7 +302,7 @@ impl Project {
     fn read(
         &self,
         dependencies: &mut BTreeSet<PathBuf>,
-        active: &[PathBuf],
+        active: &BTreeSet<PathBuf>,
     ) -> Result<(Ready, Vec<Notice>), Box<LoadFailure>> {
         let fallback = |error: CliError| {
             Box::new(LoadFailure {
@@ -412,10 +406,6 @@ impl Project {
     /// The config that applies to the files in `dir`: the nearest one, else none, so a buffer
     /// with no config on its path gets the core defaults, as a file does in a lint run.
     fn config_in(&self, dir: &Path, epoch: u64) -> Result<Option<Arc<LoadedConfig>>, CliError> {
-        self.active
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(dir.to_path_buf());
         if let State::Ready(ready) = &self.loaded().state
             && let Some(found) = ready.configs.get(dir)
         {
@@ -575,8 +565,8 @@ impl Linter for ProjectLinter {
         )
     }
 
-    fn reload(&self) -> Reloaded {
-        match self.project.load() {
+    fn reload(&self, open: &[String]) -> Reloaded {
+        match self.project.load(open) {
             Ok(notices) => Reloaded::new(notices, None),
             Err(failure) => {
                 let mut shown =
@@ -713,7 +703,7 @@ mod tests {
             // The lookup has read the nested config and is about to cache it.
             reached.recv_timeout(WAIT).unwrap();
             std::fs::write(root.join("sub/slopvac.toml"), "schema_version = 3\n").unwrap();
-            linter.reload();
+            linter.reload(&[document.display().to_string()]);
             proceed.send(()).unwrap();
             // It read the config before the edit, so what it saw is out of date.
             assert!(!early.join().unwrap());
@@ -732,7 +722,7 @@ mod tests {
         std::thread::scope(|scope| {
             let early = scope.spawn(|| lexicon_found(&linter, &document));
             reached.recv_timeout(WAIT).unwrap();
-            linter.reload();
+            linter.reload(&[]);
             proceed.send(()).unwrap();
             early.join().unwrap();
         });

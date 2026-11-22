@@ -626,3 +626,31 @@ fn an_unknown_style_in_an_extended_file_is_shown_on_its_styles_key() {
     );
     session.finish();
 }
+
+#[test]
+fn a_broken_config_in_a_folder_with_no_open_document_does_not_fail_the_reload() {
+    let dir = project("schema_version = 3\n", &[]);
+    let root = dir.path().canonicalize().expect("canonical");
+    fs::create_dir_all(root.join("sub")).expect("mkdir");
+    fs::write(root.join("sub/slopvac.toml"), "schema_version = 3\n").expect("nested");
+    let mut session = Session::start(&root);
+    session.open(&root, "top.md", SLOPPY);
+    session.open(&root, "sub/a.md", SLOPPY);
+    session.codes(&root, "top.md");
+    session.codes(&root, "sub/a.md");
+    session.notify(
+        "textDocument/didClose",
+        &json!({"textDocument": {"uri": uri_of(&root, "sub/a.md")}}),
+    );
+    // The close is done once the server clears the document's diagnostics.
+    assert_eq!(session.codes(&root, "sub/a.md"), Vec::<String>::new());
+    fs::write(
+        root.join("sub/slopvac.toml"),
+        "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
+    )
+    .expect("break");
+    changed(&mut session, &uri_of(&root, "slopvac.toml"));
+    // Nothing is open under `sub`, so its config is not part of this reload.
+    assert!(session.codes(&root, "top.md").iter().any(|c| c == LEXICON));
+    session.finish();
+}
