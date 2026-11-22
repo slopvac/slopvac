@@ -74,7 +74,8 @@
         },
         "install_method": {
           "description": "How this binary was installed. `unknown` when no channel matches.",
-          "enum": ["installer", "uv-tool", "uvx", "pip", "uv-pip", "homebrew", "mise", "cargo", "unknown"]
+          "enum": ["installer", "uv-tool", "uvx", "pip", "uv-pip", "homebrew", "mise", "cargo", "unknown"],
+          "x-slopvac-extensible": true
         },
         "upgrade_command": {
           "description": "The command that upgrades this install, or null when the channel is unknown.",
@@ -117,7 +118,8 @@
         },
         "disabled_by": {
           "description": "Why checks are off: offline mode, the CI variable, an opt-out variable, or `[network] update_check = false`. Null when enabled.",
-          "enum": [null, "offline", "ci", "env", "config"]
+          "enum": [null, "offline", "ci", "env", "config"],
+          "x-slopvac-extensible": true
         },
         "state": {
           "description": "`available` when the cached latest release is newer than the running version, `current` when it is not, `unknown` when no cached answer exists or the cached version is not a semantic version.",
@@ -151,7 +153,8 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "enum": ["flag", "env", "config"]
+            "enum": ["flag", "env", "config"],
+            "x-slopvac-extensible": true
           }
         }
       },
@@ -173,7 +176,8 @@
         },
         "status": {
           "description": "`ok` when the file parses and declares schema_version 3. `legacy` for a 2.x file (no schema_version or 2). `missing`, `unreadable` or `invalid` otherwise.",
-          "enum": ["ok", "legacy", "missing", "unreadable", "invalid"]
+          "enum": ["ok", "legacy", "missing", "unreadable", "invalid"],
+          "x-slopvac-extensible": true
         },
         "error": {
           "oneOf": [
@@ -224,7 +228,8 @@
         },
         "state": {
           "description": "`recorded`: installed and intact. `in-place`: a project directory that matches the lock. `changed`: a project directory that differs from the lock. `tampered`: installed but differs from its record. `not-installed`: absent from the store.",
-          "enum": ["recorded", "in-place", "changed", "tampered", "not-installed"]
+          "enum": ["recorded", "in-place", "changed", "tampered", "not-installed"],
+          "x-slopvac-extensible": true
         }
       },
       "required": ["id", "version", "kind", "state"],

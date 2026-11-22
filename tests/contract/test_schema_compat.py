@@ -32,12 +32,23 @@ def schema(**body: object) -> dict:
     }
 
 
+def write_directions(directory: Path, names, direction: str = "input") -> None:
+    lines = ["[directions]"] + [f'"{name}" = "{direction}"' for name in names]
+    (directory / compat.DIRECTIONS_FILE).write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    )
+
+
 def write_dir(
-    directory: Path, schemas: dict[str, dict], corpus: dict[str, str] | None = None
+    directory: Path,
+    schemas: dict[str, dict],
+    corpus: dict[str, str] | None = None,
+    direction: str = "input",
 ) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     for name, body in schemas.items():
         (directory / name).write_text(json.dumps(body), encoding="utf-8")
+    write_directions(directory, schemas, direction)
     for rel, text in (corpus or {}).items():
         target = directory / "conformance" / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -45,9 +56,12 @@ def write_dir(
     return directory
 
 
-def run(tmp_path: Path, old: dict, new: dict, allow=(), corpus=None) -> list:
+def run(
+    tmp_path: Path, old: dict, new: dict, allow=(), corpus=None, direction="input"
+) -> list:
     base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: old}, corpus))
-    return compat.check(base, write_dir(tmp_path / "new", {FILE: new}), list(allow))
+    new_dir = write_dir(tmp_path / "new", {FILE: new}, direction=direction)
+    return compat.check(base, new_dir, list(allow))
 
 
 def kinds(findings: list) -> list[tuple[str, str]]:
@@ -666,7 +680,11 @@ def test_tightening_keyword_is_reported(tmp_path, old, new, pointer, kind):
     findings = run(
         tmp_path, schema(properties={"x": old}), schema(properties={"x": new})
     )
-    assert kinds(findings) == [(pointer, kind)]
+    # A change to the contains group is also reported, in every direction.
+    expected = [(pointer, kind)]
+    if "Contains" in pointer:
+        expected.insert(0, ("/properties/x/contains", "constraint-changed"))
+    assert kinds(findings) == expected
 
 
 LOOSENING = {
@@ -677,10 +695,6 @@ LOOSENING = {
     "dependent-required-shrunk": (
         {"dependentRequired": {"a": ["b", "c"]}},
         {"dependentRequired": {"a": ["b"]}},
-    ),
-    "max-contains-raised": (
-        {"contains": {}, "maxContains": 3},
-        {"contains": {}, "maxContains": 5},
     ),
 }
 
@@ -1138,6 +1152,902 @@ def test_narrowing_possible_is_suppressed_by_an_allow_entry(tmp_path):
         allow=[allow],
     )
     assert findings == []
+
+
+EXT = {"x-slopvac-extensible": True}
+ENUM_A = schema(properties={"e": {"enum": ["a"]}})
+ENUM_AB = schema(properties={"e": {"enum": ["a", "b"]}})
+ENUM_AB_OPEN = schema(properties={"e": {"enum": ["a", "b"], **EXT}})
+ANY_A = schema(anyOf=[{"type": "string"}])
+ANY_AB = schema(anyOf=[{"type": "string"}, {"type": "null"}])
+ANY_AB_OPEN = schema(anyOf=[{"type": "string"}, {"type": "null"}], **EXT)
+ONE_A = schema(oneOf=[{"required": ["a"]}])
+ONE_AB = schema(oneOf=[{"required": ["a"]}, {"required": ["b"]}])
+ONE_AB_OPEN = schema(oneOf=[{"required": ["a"]}, {"required": ["b"]}], **EXT)
+
+OUTPUT_GROWTH = {
+    "enum-value": (ENUM_A, ENUM_AB, "/properties/e/enum", "enum-widened"),
+    "anyOf-branch": (ANY_A, ANY_AB, "/anyOf/1", "alternative-added"),
+    "oneOf-branch": (ONE_A, ONE_AB, "/oneOf/1", "alternative-added"),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), OUTPUT_GROWTH.values(), ids=OUTPUT_GROWTH.keys()
+)
+def test_growth_in_an_output_schema_is_breaking_unless_marked(
+    tmp_path, direction, old, new, pointer, kind
+):
+    findings = run(tmp_path, old, new, direction=direction)
+    expected = [(pointer, kind)]
+    if kind == "alternative-added" and "oneOf" in pointer:
+        expected.append((pointer, "narrowing-possible"))
+    assert sorted(kinds(findings)) == sorted(expected)
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [(ENUM_A, ENUM_AB_OPEN), (ANY_A, ANY_AB_OPEN), (ONE_A, ONE_AB_OPEN)],
+    ids=["enum", "anyOf", "oneOf"],
+)
+def test_marked_growth_in_an_output_schema_is_allowed(tmp_path, direction, old, new):
+    assert run(tmp_path, old, new, direction=direction) == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [(ENUM_A, ENUM_AB), (ANY_A, ANY_AB)],
+    ids=["enum", "anyOf"],
+)
+def test_unmarked_growth_in_an_input_schema_is_allowed(tmp_path, old, new):
+    assert run(tmp_path, old, new, direction="input") == []
+
+
+def test_marker_on_another_position_does_not_cover_the_growth(tmp_path):
+    new = schema(properties={"e": {"enum": ["a", "b"]}, "f": {**EXT}})
+    old = schema(properties={"e": {"enum": ["a"]}, "f": {}})
+    findings = run(tmp_path, old, new, direction="output")
+    assert kinds(findings) == [("/properties/e/enum", "enum-widened")]
+
+
+def test_marker_value_other_than_true_does_not_cover_the_growth(tmp_path):
+    new = schema(properties={"e": {"enum": ["a", "b"], "x-slopvac-extensible": False}})
+    findings = run(tmp_path, ENUM_A, new, direction="output")
+    assert kinds(findings) == [("/properties/e/enum", "enum-widened")]
+
+
+def test_adding_the_marker_alone_is_allowed(tmp_path):
+    new = schema(properties={"e": {"enum": ["a"], **EXT}})
+    assert run(tmp_path, ENUM_A, new, direction="output") == []
+
+
+def test_removing_the_marker_from_an_output_schema_is_breaking(tmp_path):
+    old = schema(properties={"e": {"enum": ["a"], **EXT}})
+    findings = run(tmp_path, old, ENUM_A, direction="output")
+    assert kinds(findings) == [("/properties/e", "extensible-removed")]
+
+
+def test_removing_the_marker_from_an_input_schema_is_allowed(tmp_path):
+    old = schema(properties={"e": {"enum": ["a"], **EXT}})
+    assert run(tmp_path, old, ENUM_A, direction="input") == []
+
+
+def test_growth_reached_through_a_ref_follows_the_referrer_direction(tmp_path):
+    def referrer(defn: dict) -> dict:
+        return schema(properties={"e": {"$ref": "#/$defs/E"}}, **{"$defs": {"E": defn}})
+
+    old = referrer({"enum": ["a"]})
+    assert run(tmp_path / "in", old, referrer({"enum": ["a", "b"]})) == []
+    out = run(tmp_path / "out", old, referrer({"enum": ["a", "b"]}), direction="output")
+    # Reported once, at the definition, and not again at the referrer.
+    assert kinds(out) == [("/$defs/E/enum", "enum-widened")]
+    marked = referrer({"enum": ["a", "b"], **EXT})
+    assert run(tmp_path / "ok", old, marked, direction="output") == []
+
+
+def _ref_schema(target: str, **defs: dict) -> dict:
+    return schema(properties={"e": {"$ref": f"#/$defs/{target}"}}, **{"$defs": defs})
+
+
+ENUM_DEF_A = {"enum": ["a"]}
+ENUM_DEF_AB = {"enum": ["a", "b"]}
+
+REF_TRANSITIONS = {
+    "retarget": (
+        _ref_schema("A", A=ENUM_DEF_A, B=ENUM_DEF_AB),
+        _ref_schema("B", A=ENUM_DEF_A, B=ENUM_DEF_AB),
+    ),
+    "inline-to-ref": (
+        schema(properties={"e": ENUM_DEF_A}, **{"$defs": {"B": ENUM_DEF_AB}}),
+        _ref_schema("B", B=ENUM_DEF_AB),
+    ),
+    "ref-to-inline": (
+        _ref_schema("A", A=ENUM_DEF_A),
+        schema(properties={"e": ENUM_DEF_AB}, **{"$defs": {"A": ENUM_DEF_A}}),
+    ),
+}
+
+
+@pytest.mark.parametrize(("old", "new"), REF_TRANSITIONS.values(), ids=REF_TRANSITIONS)
+def test_a_ref_transition_that_widens_an_output_is_reported(tmp_path, old, new):
+    findings = run(tmp_path, old, new, direction="output")
+    assert "enum-widened" in [f.kind for f in findings]
+
+
+@pytest.mark.parametrize(("old", "new"), REF_TRANSITIONS.values(), ids=REF_TRANSITIONS)
+def test_a_ref_transition_that_widens_an_input_is_allowed(tmp_path, old, new):
+    assert run(tmp_path, old, new, direction="input") == []
+
+
+STR, NUL = {"type": "string"}, {"type": "null"}
+KIND_A = {"properties": {"kind": {"const": "a"}}, "required": ["kind"]}
+KIND_B = {"properties": {"kind": {"const": "b"}}, "required": ["kind"]}
+KIND_AB = {"properties": {"kind": {"enum": ["a", "b"]}}, "required": ["kind"]}
+KIND_A_OPTIONAL = {"properties": {"kind": {"const": "b"}}}
+
+DISJOINT_APPENDS = {
+    "types": ([STR], [STR, NUL]),
+    "const-discriminator": ([KIND_A], [KIND_A, KIND_B]),
+}
+OVERLAPPING_APPENDS = {
+    "same-type": ([STR], [STR, {"type": "string", "minLength": 1}]),
+    "integer-in-number": (
+        [{"type": "number"}],
+        [{"type": "number"}, {"type": "integer"}],
+    ),
+    "enum-shares-a-value": ([KIND_A], [KIND_A, KIND_AB]),
+    "discriminator-not-required": ([KIND_A], [KIND_A, KIND_A_OPTIONAL]),
+    "ref-member": ([STR], [STR, {"$ref": "#/$defs/X"}]),
+}
+
+
+@pytest.mark.parametrize(
+    ("old", "new"), DISJOINT_APPENDS.values(), ids=DISJOINT_APPENDS.keys()
+)
+def test_disjoint_oneOf_append_is_allowed_in_an_input_schema(tmp_path, old, new):
+    assert run(tmp_path, schema(oneOf=old), schema(oneOf=new)) == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new"), OVERLAPPING_APPENDS.values(), ids=OVERLAPPING_APPENDS.keys()
+)
+def test_overlapping_oneOf_append_is_flagged_in_an_input_schema(tmp_path, old, new):
+    findings = run(tmp_path, schema(oneOf=old), schema(oneOf=new))
+    assert kinds(findings) == [("/oneOf/1", "narrowing-possible")]
+
+
+def test_disjoint_oneOf_append_in_an_output_schema_is_only_an_added_alternative(
+    tmp_path,
+):
+    findings = run(
+        tmp_path, schema(oneOf=[STR]), schema(oneOf=[STR, NUL]), direction="output"
+    )
+    assert kinds(findings) == [("/oneOf/1", "alternative-added")]
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "both"])
+@pytest.mark.parametrize("key", ["anyOf", "oneOf"])
+def test_a_new_marked_alternative_list_is_still_a_constraint(tmp_path, direction, key):
+    new = schema(**{key: [{"required": ["a"]}]}, **EXT)
+    findings = run(tmp_path, schema(), new, direction=direction)
+    assert kinds(findings) == [(f"/{key}", "narrowing-possible")]
+
+
+WIDENINGS = {
+    "type-gains-null": (
+        {"type": "string"},
+        {"type": ["string", "null"]},
+        "/properties/e/type",
+        "type-widened",
+    ),
+    "integer-to-number": (
+        {"type": "integer"},
+        {"type": "number"},
+        "/properties/e/type",
+        "type-widened",
+    ),
+    "type-removed": (
+        {"type": "string"},
+        {},
+        "/properties/e/type",
+        "type-widened",
+    ),
+    "enum-removed": (
+        {"type": "string", "enum": ["a"]},
+        {"type": "string"},
+        "/properties/e/enum",
+        "enum-widened",
+    ),
+    "const-removed": (
+        {"type": "string", "const": "a"},
+        {"type": "string"},
+        "/properties/e/const",
+        "enum-widened",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), WIDENINGS.values(), ids=WIDENINGS.keys()
+)
+def test_other_widenings_of_an_output_schema_are_breaking(
+    tmp_path, direction, old, new, pointer, kind
+):
+    old_s, new_s = (schema(properties={"e": b}) for b in (old, new))
+    findings = run(tmp_path, old_s, new_s, direction=direction)
+    assert kinds(findings) == [(pointer, kind)]
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), WIDENINGS.values(), ids=WIDENINGS.keys()
+)
+def test_other_widenings_are_allowed_in_an_input_schema(
+    tmp_path, old, new, pointer, kind
+):
+    old_s, new_s = (schema(properties={"e": b}) for b in (old, new))
+    assert run(tmp_path, old_s, new_s, direction="input") == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [(w[0], {**w[1], **EXT}) for w in WIDENINGS.values()],
+    ids=WIDENINGS.keys(),
+)
+def test_a_marked_position_may_widen_in_an_output_schema(tmp_path, old, new):
+    old_s, new_s = (schema(properties={"e": b}) for b in (old, new))
+    assert run(tmp_path, old_s, new_s, direction="output") == []
+
+
+def test_moving_an_enum_into_a_ref_is_not_a_removal(tmp_path):
+    defs = {"E": {"type": "string", "enum": ["a"]}}
+    old = schema(properties={"e": {"type": "string", "enum": ["a"]}}, **{"$defs": defs})
+    new = schema(properties={"e": {"$ref": "#/$defs/E"}}, **{"$defs": defs})
+    assert run(tmp_path, old, new, direction="output") == []
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+def test_a_reference_into_an_input_file_is_reported_from_output_and_both(
+    tmp_path, direction
+):
+    other = "other.schema.json"
+    other_body = {**schema(), "$id": "https://example.test/schemas/v3/" + other}
+    referrer = schema(properties={"v": {"$ref": f"{other}#/$defs/V"}})
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = tmp_path / "new"
+    write_dir(new_dir, {FILE: referrer, other: other_body})
+    (new_dir / compat.DIRECTIONS_FILE).write_text(
+        f'[directions]\n"{FILE}" = "{direction}"\n"{other}" = "input"\n',
+        encoding="utf-8",
+    )
+    findings = compat.check(base, new_dir, [])
+    assert kinds(findings) == [("/properties/v/$ref", "input-definition-referenced")]
+
+
+def test_a_reference_into_an_input_file_is_fine_from_an_input_file(tmp_path):
+    other = "other.schema.json"
+    other_body = {**schema(), "$id": "https://example.test/schemas/v3/" + other}
+    referrer = schema(properties={"v": {"$ref": f"{other}#/$defs/V"}})
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = write_dir(tmp_path / "new", {FILE: referrer, other: other_body})
+    assert compat.check(base, new_dir, []) == []
+
+
+def test_committed_output_schemas_reference_no_input_file():
+    schemas_dir = ROOT / "schemas" / "v3"
+    directions = compat.load_directions(schemas_dir / compat.DIRECTIONS_FILE)
+    schemas = compat.snapshot_from_dir(schemas_dir).schemas
+    assert compat.input_references(schemas, directions) == []
+
+
+def _prop_schema(prop: dict, **defs: dict) -> dict:
+    return schema(properties={"e": prop}, **({"$defs": defs} if defs else {}))
+
+
+REF_A = {"$ref": "#/$defs/A"}
+REF_B = {"$ref": "#/$defs/B"}
+STRING_DEF = {"type": "string"}
+
+SIBLING_WIDENINGS = {
+    "sibling-enum-dropped": (
+        _prop_schema({**REF_A, "enum": ["a"]}, A=STRING_DEF),
+        _prop_schema(REF_A, A=STRING_DEF),
+        "enum-widened",
+    ),
+    "sibling-type-widened": (
+        _prop_schema({**REF_A, "type": "string"}, A={"minLength": 1}),
+        _prop_schema({**REF_A, "type": ["string", "null"]}, A={"minLength": 1}),
+        "type-widened",
+    ),
+    "retarget-with-sibling": (
+        _prop_schema(
+            {**REF_A, "type": "string"}, A={"enum": ["a"]}, B={"enum": ["a", "b"]}
+        ),
+        _prop_schema(
+            {**REF_B, "type": "string"}, A={"enum": ["a"]}, B={"enum": ["a", "b"]}
+        ),
+        "enum-widened",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "kind"), SIBLING_WIDENINGS.values(), ids=SIBLING_WIDENINGS
+)
+def test_siblings_of_a_ref_are_part_of_the_effective_restriction(
+    tmp_path, direction, old, new, kind
+):
+    findings = run(tmp_path, old, new, direction=direction)
+    assert kind in [f.kind for f in findings]
+    assert run(tmp_path / "in", old, new, direction="input") == []
+
+
+RELOCATIONS = {
+    "type-moves-into-the-ref": (
+        _prop_schema({"type": "string", "enum": ["a"]}),
+        _prop_schema({**REF_A, "enum": ["a"]}, A=STRING_DEF),
+    ),
+    "enum-moves-into-the-ref": (
+        _prop_schema({"type": "string", "enum": ["a"]}),
+        _prop_schema({**REF_A, "type": "string"}, A={"enum": ["a"]}),
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(("old", "new"), RELOCATIONS.values(), ids=RELOCATIONS)
+def test_relocating_a_restriction_without_loosening_it_is_allowed(
+    tmp_path, direction, old, new
+):
+    assert run(tmp_path, old, new, direction=direction) == []
+
+
+LOOSENED = {
+    "minLength-lowered": ({"minLength": 5}, {"minLength": 2}, "/minLength"),
+    "minLength-removed": ({"minLength": 5}, {}, "/minLength"),
+    "maxLength-raised": ({"maxLength": 5}, {"maxLength": 9}, "/maxLength"),
+    "maximum-removed": ({"maximum": 5}, {}, "/maximum"),
+    "minItems-lowered": ({"minItems": 2}, {"minItems": 1}, "/minItems"),
+    "required-dropped": ({"required": ["a"]}, {}, "/required/a"),
+    "uniqueItems-dropped": ({"uniqueItems": True}, {}, "/uniqueItems"),
+    "format-removed": ({"format": "date"}, {}, "/format"),
+    "multipleOf-removed": ({"multipleOf": 2}, {}, "/multipleOf"),
+    "not-removed": ({"not": {"type": "null"}}, {}, "/not"),
+    "dependentRequired-dropped": (
+        {"dependentRequired": {"a": ["b"]}},
+        {},
+        "/dependentRequired",
+    ),
+}
+
+# Keywords that the effective restriction does not model are caught by the catch-all.
+CATCH_ALL_KEYWORDS = {"format", "multipleOf", "not", "dependentRequired"}
+
+
+def _loosened_kind(pointer: str) -> str:
+    changed = pointer.lstrip("/") in CATCH_ALL_KEYWORDS
+    return "constraint-changed" if changed else "constraint-loosened"
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(("old", "new", "pointer"), LOOSENED.values(), ids=LOOSENED)
+def test_loosening_a_constraint_of_an_output_schema_is_breaking(
+    tmp_path, direction, old, new, pointer
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    findings = run(tmp_path, old_s, new_s, direction=direction)
+    assert kinds(findings) == [(f"/properties/e{pointer}", _loosened_kind(pointer))]
+
+
+@pytest.mark.parametrize(("old", "new", "pointer"), LOOSENED.values(), ids=LOOSENED)
+def test_loosening_a_constraint_of_an_input_schema_is_allowed(
+    tmp_path, old, new, pointer
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    assert run(tmp_path, old_s, new_s, direction="input") == []
+
+
+def test_a_marker_does_not_excuse_a_loosened_bound(tmp_path):
+    old_s, new_s = _prop_schema({"minLength": 5}), _prop_schema({"minLength": 2, **EXT})
+    findings = run(tmp_path, old_s, new_s, direction="output")
+    assert kinds(findings) == [("/properties/e/minLength", "constraint-loosened")]
+
+
+def test_a_discriminator_proves_disjointness_only_for_objects(tmp_path):
+    """Without an object type, a non-object instance matches both required-based branches."""
+    old = schema(properties={"e": {"oneOf": [KIND_A]}})
+    new = schema(properties={"e": {"oneOf": [KIND_A, KIND_B]}})
+    findings = run(tmp_path, old, new)
+    assert kinds(findings) == [("/properties/e/oneOf/1", "narrowing-possible")]
+
+
+OBJECT_PROOFS = {
+    "both-branches-typed": (
+        {"oneOf": [{**KIND_A, "type": "object"}, {**KIND_B, "type": "object"}]},
+        {"oneOf": [{**KIND_A, "type": "object"}]},
+    ),
+    "one-branch-typed": (
+        {"oneOf": [{**KIND_A, "type": "object"}, KIND_B]},
+        {"oneOf": [{**KIND_A, "type": "object"}]},
+    ),
+    "parent-typed": (
+        {"type": "object", "oneOf": [KIND_A, KIND_B]},
+        {"type": "object", "oneOf": [KIND_A]},
+    ),
+}
+
+
+@pytest.mark.parametrize(("new", "old"), OBJECT_PROOFS.values(), ids=OBJECT_PROOFS)
+def test_a_discriminator_with_an_object_type_proves_disjointness(tmp_path, new, old):
+    findings = run(
+        tmp_path, schema(properties={"e": old}), schema(properties={"e": new})
+    )
+    assert findings == []
+
+
+CHILD_KEYS = {
+    "additionalProperties-enum-to-true": (
+        {"additionalProperties": {"enum": ["a"]}},
+        {"additionalProperties": True},
+        "/additionalProperties/enum",
+        "enum-widened",
+    ),
+    "additionalProperties-enum-removed": (
+        {"additionalProperties": {"enum": ["a"]}},
+        {},
+        "/additionalProperties/enum",
+        "enum-widened",
+    ),
+    "additionalProperties-const-removed": (
+        {"additionalProperties": {"const": "a"}},
+        {},
+        "/additionalProperties/const",
+        "enum-widened",
+    ),
+    "additionalProperties-type-removed": (
+        {"additionalProperties": {"type": "string"}},
+        {},
+        "/additionalProperties/type",
+        "type-widened",
+    ),
+    "additionalProperties-closed-then-opened": (
+        {"additionalProperties": False},
+        {"additionalProperties": True},
+        "/additionalProperties",
+        "constraint-loosened",
+    ),
+    "additionalProperties-closed-then-removed": (
+        {"additionalProperties": False},
+        {},
+        "/additionalProperties",
+        "constraint-loosened",
+    ),
+    "additionalProperties-closed-then-schema": (
+        {"additionalProperties": False},
+        {"additionalProperties": {"type": "string"}},
+        "/additionalProperties",
+        "constraint-loosened",
+    ),
+    "items-enum-removed": (
+        {"items": {"enum": ["a"]}},
+        {},
+        "/items/enum",
+        "enum-widened",
+    ),
+    "items-type-removed": (
+        {"items": {"type": "string"}},
+        {},
+        "/items/type",
+        "type-widened",
+    ),
+    "patternProperties-enum-dropped": (
+        {"patternProperties": {"^x": {"enum": ["a"]}}},
+        {"patternProperties": {"^x": {}}},
+        "/patternProperties/^x/enum",
+        "enum-widened",
+    ),
+    "propertyNames-enum-removed": (
+        {"propertyNames": {"enum": ["a"]}},
+        {},
+        "/propertyNames/enum",
+        "enum-widened",
+    ),
+    "contains-type-removed": (
+        {"contains": {"type": "string"}},
+        {},
+        "/contains/type",
+        "type-widened",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), CHILD_KEYS.values(), ids=CHILD_KEYS
+)
+def test_dropping_a_child_schema_restriction_of_an_output_is_breaking(
+    tmp_path, direction, old, new, pointer, kind
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    findings = run(tmp_path, old_s, new_s, direction=direction)
+    assert (f"/properties/e{pointer}", kind) in kinds(findings)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "pointer", "kind"), CHILD_KEYS.values(), ids=CHILD_KEYS
+)
+def test_dropping_a_child_schema_restriction_of_an_input_is_allowed(
+    tmp_path, old, new, pointer, kind
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    found = run(tmp_path, old_s, new_s, direction="input")
+    if pointer.startswith("/contains"):
+        # The contains group is reported in every direction.
+        assert kinds(found) == [("/properties/e/contains", "constraint-changed")]
+    else:
+        assert found == []
+
+
+KEYWORD_BODIES = {
+    "multipleOf": {"multipleOf": 2},
+    "not": {"not": {"type": "null"}},
+    "dependentRequired": {"dependentRequired": {"a": ["b"]}},
+    "format": {"format": "date"},
+}
+
+
+def _hop_pair(kind: str, body: dict) -> tuple[dict, dict]:
+    if kind == "retarget":
+        defs = {"A": body, "B": {}}
+        return _prop_schema(REF_A, **defs), _prop_schema(REF_B, **defs)
+    return _prop_schema(REF_A, A=body), _prop_schema({}, A=body)
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize("transition", ["retarget", "ref-to-inline"])
+@pytest.mark.parametrize("keyword", KEYWORD_BODIES)
+def test_a_keyword_dropped_across_a_ref_hop_is_reported(
+    tmp_path, direction, transition, keyword
+):
+    old, new = _hop_pair(transition, KEYWORD_BODIES[keyword])
+    findings = run(tmp_path, old, new, direction=direction)
+    assert ("/properties/e/" + keyword, "constraint-changed") in kinds(findings)
+
+
+@pytest.mark.parametrize("transition", ["retarget", "ref-to-inline"])
+@pytest.mark.parametrize("keyword", KEYWORD_BODIES)
+def test_a_keyword_dropped_across_a_ref_hop_is_allowed_in_an_input(
+    tmp_path, transition, keyword
+):
+    old, new = _hop_pair(transition, KEYWORD_BODIES[keyword])
+    assert run(tmp_path, old, new, direction="input") == []
+
+
+def test_an_unknown_keyword_changed_in_an_output_is_reported_once_modelled(tmp_path):
+    old = _prop_schema({"contentEncoding": "base64"})
+    new = _prop_schema({"contentEncoding": "base32"})
+    findings = run(tmp_path, old, new, direction="output")
+    assert ("/properties/e/contentEncoding", "constraint-changed") in kinds(findings)
+
+
+def test_annotation_changes_are_not_constraint_changes(tmp_path):
+    old = _prop_schema({"title": "a", "default": 1, "examples": [1]})
+    new = _prop_schema(
+        {"title": "b", "default": 2, "examples": [2], "deprecated": True}
+    )
+    findings = run(tmp_path, old, new, direction="output")
+    assert "constraint-changed" not in [f.kind for f in findings]
+
+
+FALSE_BODIES = {
+    "items": ({"items": False}, {}),
+    "unevaluatedProperties": ({"unevaluatedProperties": False}, {}),
+    "prefixItems": ({"prefixItems": [False]}, {"prefixItems": [True]}),
+    "allOf-member": ({"allOf": [False]}, {}),
+    "property": ({"properties": {"x": False}}, {"properties": {"x": {}}}),
+}
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+@pytest.mark.parametrize(("old", "new"), FALSE_BODIES.values(), ids=FALSE_BODIES)
+def test_opening_a_false_schema_in_an_output_is_a_loosening(
+    tmp_path, direction, old, new
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    findings = run(tmp_path, old_s, new_s, direction=direction)
+    assert "constraint-loosened" in [f.kind for f in findings]
+
+
+@pytest.mark.parametrize(("old", "new"), FALSE_BODIES.values(), ids=FALSE_BODIES)
+def test_opening_a_false_schema_in_an_input_is_allowed(tmp_path, old, new):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    assert run(tmp_path, old_s, new_s, direction="input") == []
+
+
+@pytest.mark.parametrize("direction", ["output", "both"])
+def test_a_false_ref_target_replaced_by_an_open_one_is_a_loosening(tmp_path, direction):
+    defs = {"A": False, "B": {}}
+    old, new = _prop_schema(REF_A, **defs), _prop_schema(REF_B, **defs)
+    findings = run(tmp_path, old, new, direction=direction)
+    assert "constraint-loosened" in [f.kind for f in findings]
+
+
+CONDITIONAL = {"if": {"type": "string"}, "then": {"minLength": 5}}
+IF_CHANGES = {
+    "if-removed": (CONDITIONAL, {"then": {"minLength": 5}}),
+    "if-added": ({"then": {"minLength": 5}}, CONDITIONAL),
+    "else-only-if-removed": (
+        {"if": {"type": "string"}, "else": {"minimum": 1}},
+        {"else": {"minimum": 1}},
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "both"])
+@pytest.mark.parametrize(("old", "new"), IF_CHANGES.values(), ids=IF_CHANGES)
+def test_adding_or_removing_an_if_changes_the_branches_in_every_direction(
+    tmp_path, direction, old, new
+):
+    old_s, new_s = (_prop_schema(b) for b in (old, new))
+    findings = run(tmp_path, old_s, new_s, direction=direction)
+    assert ("/properties/e/if", "if-changed") in kinds(findings)
+
+
+@pytest.mark.parametrize("direction", ["input", "output"])
+def test_an_if_removed_through_a_ref_transition_is_reported(tmp_path, direction):
+    old = _prop_schema(REF_A, A=CONDITIONAL)
+    new = _prop_schema({"then": {"minLength": 5}}, A=CONDITIONAL)
+    findings = run(tmp_path, old, new, direction=direction)
+    assert ("/properties/e/if", "if-changed") in kinds(findings)
+
+
+def test_an_if_without_branches_does_nothing_so_removing_it_is_silent(tmp_path):
+    old_s, new_s = _prop_schema({"if": {"type": "string"}}), _prop_schema({})
+    assert run(tmp_path, old_s, new_s, direction="output") == []
+
+
+CONTAINS_AND_UNEVALUATED = {
+    "bounds-and-contains-removed": (
+        _prop_schema({"contains": {}, "minContains": 0, "maxContains": 0}),
+        _prop_schema({}),
+        "/properties/e/contains",
+    ),
+    "sibling-bound-does-not-cancel-a-target-contains": (
+        _prop_schema({**REF_A, "minContains": 0}, A={"contains": {}}, B={}),
+        _prop_schema({**REF_B, "minContains": 0}, A={"contains": {}}, B={}),
+        "/properties/e/contains",
+    ),
+    "contains-added": (
+        _prop_schema({}),
+        _prop_schema({"contains": {}}),
+        "/properties/e/contains",
+    ),
+    "contains-true-added": (
+        _prop_schema({}),
+        _prop_schema({"contains": True}),
+        "/properties/e/contains",
+    ),
+    "min-contains-zero-dropped": (
+        _prop_schema({"contains": {}, "minContains": 0}),
+        _prop_schema({"contains": {}}),
+        "/properties/e/contains",
+    ),
+    "max-contains-raised": (
+        _prop_schema({"contains": {}, "maxContains": 3}),
+        _prop_schema({"contains": {}, "maxContains": 5}),
+        "/properties/e/contains",
+    ),
+    "contains-removed-through-a-ref": (
+        _prop_schema(REF_A, A={"contains": {}}),
+        _prop_schema({}, A={"contains": {}}),
+        "/properties/e/contains",
+    ),
+    "items-added-beside-unevaluatedItems": (
+        _prop_schema({"unevaluatedItems": False}),
+        _prop_schema({"unevaluatedItems": False, "items": {}}),
+        "/properties/e/items",
+    ),
+    "if-removed-beside-unevaluatedItems": (
+        _prop_schema({"if": {"items": True}, "unevaluatedItems": False}),
+        _prop_schema({"unevaluatedItems": False}),
+        "/properties/e/if",
+    ),
+    "additionalProperties-removed-beside-unevaluatedProperties": (
+        _prop_schema({"additionalProperties": True, "unevaluatedProperties": False}),
+        _prop_schema({"unevaluatedProperties": False}),
+        "/properties/e/additionalProperties",
+    ),
+    "property-added-beside-unevaluatedProperties-in-a-ref-target": (
+        _prop_schema(REF_A, A={"unevaluatedProperties": False}),
+        _prop_schema(
+            {**REF_A, "properties": {"x": {}}}, A={"unevaluatedProperties": False}
+        ),
+        "/properties/e/properties",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "pointer"),
+    CONTAINS_AND_UNEVALUATED.values(),
+    ids=CONTAINS_AND_UNEVALUATED,
+)
+def test_contains_group_and_unevaluated_changes_are_reported_in_every_direction(
+    tmp_path, direction, old, new, pointer
+):
+    findings = run(tmp_path, old, new, direction=direction)
+    assert (pointer, "constraint-changed") in kinds(findings)
+
+
+def test_unchanged_contains_and_unevaluated_report_nothing(tmp_path):
+    body = {
+        "contains": {"type": "string"},
+        "minContains": 1,
+        "unevaluatedProperties": False,
+        "properties": {"a": {}},
+    }
+    for direction in ("input", "output", "both"):
+        found = run(
+            tmp_path / direction,
+            _prop_schema(body),
+            _prop_schema(body),
+            direction=direction,
+        )
+        assert found == []
+
+
+def test_unchanged_ref_beside_unevaluated_reports_nothing(tmp_path):
+    body = {**REF_A, "unevaluatedProperties": False}
+    old = _prop_schema(body, A={"properties": {"a": {}}})
+    for direction in ("input", "output", "both"):
+        found = run(tmp_path / direction, old, old, direction=direction)
+        assert found == []
+
+
+TARGET_ONLY_UNEVALUATED = {
+    "target-gains-items": (
+        _prop_schema({**REF_A, "unevaluatedItems": False}, A={}),
+        _prop_schema({**REF_A, "unevaluatedItems": False}, A={"items": {}}),
+        "/properties/e/items",
+    ),
+    "target-loses-additionalProperties": (
+        _prop_schema(
+            {**REF_A, "unevaluatedProperties": False},
+            A={"additionalProperties": True},
+        ),
+        _prop_schema({**REF_A, "unevaluatedProperties": False}, A={}),
+        "/properties/e/additionalProperties",
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new", "pointer"),
+    TARGET_ONLY_UNEVALUATED.values(),
+    ids=TARGET_ONLY_UNEVALUATED,
+)
+def test_a_change_only_in_the_target_is_reported_when_the_referrer_is_closed(
+    tmp_path, direction, old, new, pointer
+):
+    findings = run(tmp_path, old, new, direction=direction)
+    assert (pointer, "constraint-changed") in kinds(findings)
+
+
+CLOSED = {"unevaluatedProperties": False}
+FLAT = {"properties": {"a": {"type": "string"}}, **CLOSED}
+ADDED_B = {"properties": {"a": {"type": "string"}, "b": {"type": "integer"}}, **CLOSED}
+CARVE_OUT_POINTER = "/properties/e/properties"
+
+
+A_DEF = {"additionalProperties": True}
+DYNAMIC_OLD = {
+    "$id": "https://example.test/thing",
+    "$defs": {
+        "A": {
+            "$id": "https://example.test/A",
+            "$dynamicAnchor": "x",
+            "type": "number",
+        }
+    },
+    "properties": {
+        "e": {
+            "properties": {"a": {"$dynamicRef": "https://example.test/A#x"}},
+            "unevaluatedProperties": False,
+        }
+    },
+}
+DYNAMIC_NEW = {
+    **DYNAMIC_OLD,
+    "properties": {
+        "e": {
+            "properties": {
+                "a": {"$dynamicRef": "https://example.test/A#x"},
+                "b": {"$dynamicAnchor": "x", "type": "string"},
+            },
+            "unevaluatedProperties": False,
+        }
+    },
+}
+
+# Adding a property to a closed object reports in every direction, whatever else the
+# object holds, because a new name can retarget a reference or an anchor.
+CLOSED_ADDITIONS = {
+    "flat-optional-property": (_prop_schema(FLAT), _prop_schema(ADDED_B)),
+    "dynamicRef-in-the-object": (
+        _prop_schema({**FLAT, "$dynamicRef": "#/$defs/A"}, A=A_DEF),
+        _prop_schema({**ADDED_B, "$dynamicRef": "#/$defs/A"}, A=A_DEF),
+    ),
+    "unlisted-minProperties": (
+        _prop_schema({**FLAT, "minProperties": 1}),
+        _prop_schema({**ADDED_B, "minProperties": 1}),
+    ),
+    "new-property-retargets-a-dynamicRef": (
+        schema(**DYNAMIC_OLD),
+        schema(**DYNAMIC_NEW),
+    ),
+}
+
+
+@pytest.mark.parametrize("direction", ["input", "output", "both"])
+@pytest.mark.parametrize(
+    ("old", "new"), CLOSED_ADDITIONS.values(), ids=CLOSED_ADDITIONS
+)
+def test_adding_a_property_to_a_closed_object_reports_in_every_direction(
+    tmp_path, direction, old, new
+):
+    found = run(tmp_path, old, new, direction=direction)
+    assert (CARVE_OUT_POINTER, "constraint-changed") in kinds(found)
+
+
+def test_an_added_property_of_an_open_object_is_not_a_closed_object_change(tmp_path):
+    old = _prop_schema({"properties": {"a": {"type": "string"}}})
+    new = _prop_schema(
+        {"properties": {"a": {"type": "string"}, "b": {"type": "integer"}}}
+    )
+    assert run(tmp_path, old, new) == []
+
+
+def test_registry_must_list_every_schema_file(tmp_path):
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = write_dir(tmp_path / "new", {FILE: schema()})
+    write_directions(new_dir, [])
+    with pytest.raises(compat.CompatError, match="not in directions"):
+        compat.check(base, new_dir, [])
+
+
+def test_registry_must_not_list_a_missing_file(tmp_path):
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = write_dir(tmp_path / "new", {FILE: schema()})
+    write_directions(new_dir, [FILE, "gone.schema.json"])
+    with pytest.raises(compat.CompatError, match="gone.schema.json"):
+        compat.check(base, new_dir, [])
+
+
+def test_registry_rejects_an_unknown_direction(tmp_path):
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = write_dir(tmp_path / "new", {FILE: schema()}, direction="sideways")
+    with pytest.raises(compat.CompatError, match="sideways"):
+        compat.check(base, new_dir, [])
+
+
+def test_registry_is_required_in_the_checked_tree(tmp_path):
+    base = compat.snapshot_from_dir(write_dir(tmp_path / "old", {FILE: schema()}))
+    new_dir = write_dir(tmp_path / "new", {FILE: schema()})
+    (new_dir / compat.DIRECTIONS_FILE).unlink()
+    with pytest.raises(compat.CompatError, match=compat.DIRECTIONS_FILE):
+        compat.check(base, new_dir, [])
+
+
+def test_committed_registry_covers_exactly_the_committed_schemas():
+    schemas_dir = ROOT / "schemas" / "v3"
+    registry = compat.load_directions(schemas_dir / compat.DIRECTIONS_FILE)
+    committed = {p.name for p in schemas_dir.glob(f"*{compat.SCHEMA_SUFFIX}")}
+    assert set(registry) == committed
 
 
 def test_each_added_required_field_has_its_own_finding(tmp_path):

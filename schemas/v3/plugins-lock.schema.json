@@ -44,7 +44,7 @@
           ]
         },
         "version": {
-          "$ref": "plugin-manifest.schema.json#/$defs/Semver"
+          "$ref": "common.schema.json#/$defs/Semver"
         },
         "slopvac_api": {
           "$ref": "common.schema.json#/$defs/ApiVersion"
