@@ -246,7 +246,10 @@ fn at(
     step: Step,
     mut tamper: impl FnMut() -> std::io::Result<()>,
 ) -> Result<FileFix, slopvac_engine::FixError> {
-    let root = Root::open(root).unwrap();
+    let root = Root::open(root).map_err(|source| slopvac_engine::FixError::Io {
+        path: "root".to_owned(),
+        source,
+    })?;
     fix_file_hooked(
         &swaps(),
         &root,
@@ -485,6 +488,10 @@ mod unix {
 
     /// Skip an ACL test on a host that cannot set ACLs. CI and `SLOPVAC_REQUIRE_ACL=1`
     /// turn the skip into a failure, so a runner that lost ACL support cannot pass silently.
+    #[expect(
+        clippy::print_stderr,
+        reason = "a test that skips says so on the test's own stderr"
+    )]
     fn skip_without_acl_support(why: &str) {
         assert!(
             std::env::var_os("CI").is_none() && std::env::var_os("SLOPVAC_REQUIRE_ACL").is_none(),
