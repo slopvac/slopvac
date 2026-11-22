@@ -585,62 +585,6 @@ def _meet(a: Eff, b: Eff) -> Eff:
     )
 
 
-# Keywords a flat object may hold for the additive-property carve-out. Anything else,
-# including every reference and applicator, blocks it.
-_FLAT_OBJECT_KEYWORDS = frozenset(
-    {
-        "type",
-        "properties",
-        "required",
-        "unevaluatedProperties",
-        "title",
-        "description",
-        "default",
-        "examples",
-        "deprecated",
-        "readOnly",
-        "writeOnly",
-        "$comment",
-    }
-)
-
-
-def _plain_keys(o: dict) -> set[str]:
-    """Keys of ``o`` that are not ``x-`` annotations."""
-    return {k for k in o if not k.startswith("x-")}
-
-
-def _additive_properties(o: dict, n: dict) -> bool:
-    """True when ``n`` only adds optional properties to a flat, closed object ``o``.
-
-    Sound for an input only. Every one of these must hold: both sides use only keywords
-    from ``_FLAT_OBJECT_KEYWORDS`` (an allow-list, so an unlisted keyword such as
-    ``$ref`` or ``$dynamicRef`` fails closed); both sides have
-    ``unevaluatedProperties: false``; every old property is unchanged; ``required`` is the
-    same set, so no new property is required. A new name was rejected before and is
-    accepted now, which an input may do. With another applicator the new name could
-    already be evaluated, and the added schema would then narrow it.
-    """
-    if not (
-        _FLAT_OBJECT_KEYWORDS.issuperset(_plain_keys(o))
-        and _FLAT_OBJECT_KEYWORDS.issuperset(_plain_keys(n))
-    ):
-        return False
-    if o.get("unevaluatedProperties") is not False:
-        return False
-    if n.get("unevaluatedProperties") is not False:
-        return False
-    old_props, new_props = o.get("properties", {}), n.get("properties", {})
-    if not isinstance(old_props, dict) or not isinstance(new_props, dict):
-        return False
-    if any(
-        k not in new_props or _canon(new_props[k]) != _canon(v)
-        for k, v in old_props.items()
-    ):
-        return False
-    return set(o.get("required", [])) == set(n.get("required", []))
-
-
 def _loosened(
     file: str,
     ptr: str,
@@ -648,13 +592,8 @@ def _loosened(
     new: Eff,
     marked: bool,
     value_key: str,
-    additive: bool = False,
 ) -> Iterator[Finding]:
-    """One finding for each restriction of ``old`` that ``new`` does not keep.
-
-    ``additive`` marks the one input-only exception to the unevaluated rule: new optional
-    properties on a flat, closed object (see ``_additive_properties``).
-    """
+    """One finding for each restriction of ``old`` that ``new`` does not keep."""
     if not marked:
         if old.types is not None and (new.types is None or not new.types <= old.types):
             yield Finding(
@@ -738,7 +677,7 @@ def _loosened(
                     "constraint-changed",
                     _show(sorted(before)) if before else "(absent)",
                     _show(sorted(after)) if after else "(absent)",
-                    everywhere=not additive,
+                    everywhere=True,
                 )
     for key in sorted(old.other):
         if old.other[key] != new.other.get(key):
@@ -952,9 +891,7 @@ class Comparer:
             and "const" in n
         ):
             key = "const"
-        yield from _loosened(
-            file, ptr, old_eff, new_eff, marked, key, _additive_properties(o, n)
-        )
+        yield from _loosened(file, ptr, old_eff, new_eff, marked, key)
 
     def _compare_refs(
         self, file: str, doc: Docs, ptr: str, o: dict, n: dict

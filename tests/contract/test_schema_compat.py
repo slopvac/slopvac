@@ -1944,81 +1944,62 @@ ADDED_B = {"properties": {"a": {"type": "string"}, "b": {"type": "integer"}}, **
 CARVE_OUT_POINTER = "/properties/e/properties"
 
 
-@pytest.mark.parametrize("direction", ["output", "both"])
-def test_the_additive_property_carve_out_still_reports_in_an_output(
-    tmp_path, direction
-):
-    findings = run(
-        tmp_path, _prop_schema(FLAT), _prop_schema(ADDED_B), direction=direction
-    )
-    assert (CARVE_OUT_POINTER, "constraint-changed") in kinds(findings)
-
-
-def test_an_added_optional_property_of_a_flat_closed_object_passes_in_an_input(
-    tmp_path,
-):
-    assert run(tmp_path, _prop_schema(FLAT), _prop_schema(ADDED_B)) == []
-
-
-NOT_ADDITIVE = {
-    "additionalProperties-true-makes-the-name-evaluated": (
-        {"additionalProperties": True, **CLOSED},
-        {
-            "additionalProperties": True,
-            "properties": {"a": {"type": "string"}},
-            **CLOSED,
-        },
-    ),
-    "new-property-is-required": (
-        FLAT,
-        {**ADDED_B, "required": ["b"]},
-    ),
-    "existing-property-changed": (
-        FLAT,
-        {
-            "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
-            **CLOSED,
-        },
-    ),
-    "existing-property-removed": ({**ADDED_B}, FLAT),
-    "object-has-allOf": (
-        {"allOf": [{}], **FLAT},
-        {"allOf": [{}], **ADDED_B},
-    ),
-    "object-has-patternProperties": (
-        {"patternProperties": {"^x": {}}, **FLAT},
-        {"patternProperties": {"^x": {}}, **ADDED_B},
-    ),
-    "object-has-a-ref": (
-        {**REF_A, **FLAT},
-        {**REF_A, **ADDED_B},
-    ),
+A_DEF = {"additionalProperties": True}
+DYNAMIC_OLD = {
+    "$id": "https://example.test/thing",
+    "$defs": {
+        "A": {
+            "$id": "https://example.test/A",
+            "$dynamicAnchor": "x",
+            "type": "number",
+        }
+    },
+    "properties": {
+        "e": {
+            "properties": {"a": {"$dynamicRef": "https://example.test/A#x"}},
+            "unevaluatedProperties": False,
+        }
+    },
+}
+DYNAMIC_NEW = {
+    **DYNAMIC_OLD,
+    "properties": {
+        "e": {
+            "properties": {
+                "a": {"$dynamicRef": "https://example.test/A#x"},
+                "b": {"$dynamicAnchor": "x", "type": "string"},
+            },
+            "unevaluatedProperties": False,
+        }
+    },
 }
 
-
-@pytest.mark.parametrize(("old", "new"), NOT_ADDITIVE.values(), ids=NOT_ADDITIVE)
-def test_anything_beyond_the_additive_carve_out_still_reports_in_an_input(
-    tmp_path, old, new
-):
-    found = run(tmp_path, _prop_schema(old, A={}), _prop_schema(new, A={}))
-    assert (CARVE_OUT_POINTER, "constraint-changed") in kinds(found)
-
-
-DYNAMIC_REF = {"$dynamicRef": "#/$defs/A"}
-NOT_FLAT = {
-    "dynamicRef-may-evaluate-the-name": DYNAMIC_REF,
-    "dynamicAnchor": {"$dynamicAnchor": "x"},
-    "unlisted-keyword": {"minProperties": 1},
+# Adding a property to a closed object reports in every direction, whatever else the
+# object holds, because a new name can retarget a reference or an anchor.
+CLOSED_ADDITIONS = {
+    "flat-optional-property": (_prop_schema(FLAT), _prop_schema(ADDED_B)),
+    "dynamicRef-in-the-object": (
+        _prop_schema({**FLAT, "$dynamicRef": "#/$defs/A"}, A=A_DEF),
+        _prop_schema({**ADDED_B, "$dynamicRef": "#/$defs/A"}, A=A_DEF),
+    ),
+    "unlisted-minProperties": (
+        _prop_schema({**FLAT, "minProperties": 1}),
+        _prop_schema({**ADDED_B, "minProperties": 1}),
+    ),
+    "new-property-retargets-a-dynamicRef": (
+        schema(**DYNAMIC_OLD),
+        schema(**DYNAMIC_NEW),
+    ),
 }
 
 
 @pytest.mark.parametrize("direction", ["input", "output", "both"])
-@pytest.mark.parametrize("extra", NOT_FLAT.values(), ids=NOT_FLAT)
-def test_a_keyword_outside_the_flat_object_allow_list_blocks_the_carve_out(
-    tmp_path, direction, extra
+@pytest.mark.parametrize(
+    ("old", "new"), CLOSED_ADDITIONS.values(), ids=CLOSED_ADDITIONS
+)
+def test_adding_a_property_to_a_closed_object_reports_in_every_direction(
+    tmp_path, direction, old, new
 ):
-    old = _prop_schema({**extra, **FLAT}, A={"additionalProperties": True})
-    new = _prop_schema({**extra, **ADDED_B}, A={"additionalProperties": True})
     found = run(tmp_path, old, new, direction=direction)
     assert (CARVE_OUT_POINTER, "constraint-changed") in kinds(found)
 
