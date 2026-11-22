@@ -408,6 +408,19 @@ def test_2x_and_v3_reports_project_to_the_same_document():
     assert golden.project_document(v3, SOURCE, 3) == two
 
 
+def test_v3_metric_finding_without_a_range_is_a_point_at_its_offset():
+    doc = _doc_2x()
+    f = doc["findings"][0]
+    f.update(rule_id="core:metric.x", column=6, matched_text="")
+    f.pop("end_column")
+    f.pop("replacement")
+    doc["gate"] = {"passed": True, "reasons": []}
+    finding = golden.project_document(doc, SOURCE, 3)["findings"][0]
+    # "Café " is 5 code points and 6 bytes, so column 6 is byte offset 6.
+    assert finding["span"] == {"start": 6, "end": 6}
+    assert (finding["end_line"], finding["end_column"]) == (1, 6)
+
+
 def test_multi_edit_fix_has_no_2x_replacement():
     doc = _doc_2x()
     f = doc["findings"][0]
