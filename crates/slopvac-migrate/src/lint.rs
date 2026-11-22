@@ -105,25 +105,51 @@ fn unchecked(label: &str, notices: &[Notice]) -> Result<(), Error> {
     }
 }
 
-/// One document to lint: its label, kind, text and resolved path.
+/// One document to lint: its label, kind, text and resolved path, and its path relative to
+/// the directory of its config when a config covers it.
 struct Doc {
     label: String,
     kind: FileKind,
     text: String,
     path: PathBuf,
+    rel: Option<String>,
+}
+
+impl Doc {
+    /// The engine input. A document under a config carries its path relative to that
+    /// config, which `[[genres]]` and override patterns match, as in `slopvac lint`.
+    fn input(&self) -> Input<'_> {
+        let input = match self.kind {
+            FileKind::Mdx => Input::mdx(&self.label, &self.text),
+            _ => Input::markdown(&self.label, &self.text),
+        };
+        match &self.rel {
+            Some(rel) => input.with_relative_path(rel),
+            None => input,
+        }
+    }
+}
+
+/// `rel` with `/` between its components, the form config patterns match.
+fn slash_path(rel: &Path) -> String {
+    rel.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 impl EngineLinter {
-    /// The settings of each document, from the nearest config at or below `base`.
+    /// The settings of each document, from the nearest config at or below `base`. Each
+    /// document under a config gets its path relative to that config.
     fn settings_of(
         &self,
         base: &Path,
-        docs: &[Doc],
+        docs: &mut [Doc],
         configs: &HashMap<PathBuf, String>,
     ) -> Result<Vec<Settings>, Error> {
         let mut loaded: HashMap<PathBuf, SettingsOf<'_>> = HashMap::new();
         let mut out = Vec::with_capacity(docs.len());
-        for doc in docs {
+        for doc in docs.iter_mut() {
             let dir = doc
                 .path
                 .ancestors()
@@ -137,8 +163,11 @@ impl EngineLinter {
                 let of = self.configure.load(&dir, config)?;
                 loaded.insert(dir.clone(), of);
             }
-            let rel = doc.path.strip_prefix(&dir).unwrap_or(&doc.path);
-            out.push(loaded[&dir](rel)?);
+            let rel = doc.path.strip_prefix(&dir).unwrap_or(&doc.path).to_owned();
+            out.push(loaded[&dir](&rel)?);
+            if configs.contains_key(&dir.join(CONFIG_NAME)) {
+                doc.rel = Some(slash_path(&rel));
+            }
         }
         Ok(out)
     }
@@ -194,9 +223,10 @@ impl Linter for EngineLinter {
                 kind,
                 text,
                 path,
+                rel: None,
             });
         }
-        let settings = self.settings_of(&base, &docs, &configs)?;
+        let settings = self.settings_of(&base, &mut docs, &configs)?;
         // One engine per distinct settings, as `slopvac lint` groups its files.
         let mut groups: BTreeMap<String, (Settings, Vec<usize>)> = BTreeMap::new();
         for (index, s) in settings.into_iter().enumerate() {
@@ -210,16 +240,7 @@ impl Linter for EngineLinter {
         for (settings, indexes) in groups.into_values() {
             let engine = Engine::new_shared(self.sets.clone(), settings)
                 .map_err(|e| Error::Lint(e.to_string()))?;
-            let inputs: Vec<Input<'_>> = indexes
-                .iter()
-                .map(|&i| {
-                    let doc = &docs[i];
-                    match doc.kind {
-                        FileKind::Mdx => Input::mdx(&doc.label, &doc.text),
-                        _ => Input::markdown(&doc.label, &doc.text),
-                    }
-                })
-                .collect();
+            let inputs: Vec<Input<'_>> = indexes.iter().map(|&i| docs[i].input()).collect();
             for (result, &i) in engine.lint_all(&inputs).into_iter().zip(&indexes) {
                 let label = &docs[i].label;
                 let doc = result.map_err(|e| {

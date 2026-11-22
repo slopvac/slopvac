@@ -67,6 +67,11 @@ pub struct Plan {
     /// category matches a file that a profile override also matches, three rule defaults can
     /// differ from 2.x. There the before side is approximate.
     pub before: Vec<(PathBuf, String)>,
+    /// The configs, named as in diagnostics, whose 2.x settings the `--preserve-behavior`
+    /// rewrite could not reproduce, such as one with an override glob outside its grammar.
+    /// The before side takes the plain rewrite for each, so the comparison is incomplete
+    /// there, and [`Plan::warnings`] says why.
+    pub approximate: Vec<String>,
 }
 
 impl Plan {
@@ -105,6 +110,8 @@ struct Sink {
     blocklists: BTreeSet<PathBuf>,
     /// The 3.0 meaning of each 2.x config, for the before side of the lint.
     before: Vec<(PathBuf, String)>,
+    /// The configs whose before side is approximate.
+    approximate: Vec<String>,
 }
 
 /// Plan the migration of the project under `root`.
@@ -142,6 +149,7 @@ pub fn plan_with_limits(
         warnings: Capped::new(Listed::Warnings),
         blocklists: BTreeSet::new(),
         before: Vec::new(),
+        approximate: Vec::new(),
     };
     let mut dropped = Blockers::default();
     let tree = discover(root, &mut budget, &mut sink.warnings)?;
@@ -173,6 +181,7 @@ pub fn plan_with_limits(
         notes: sink.notes.finish(),
         warnings: sink.warnings.finish(),
         before: sink.before,
+        approximate: sink.approximate,
     };
     let dropped = dropped.finish();
     if dropped.is_empty() {
@@ -252,8 +261,14 @@ fn plan_dir(
             };
         }
     };
-    plan.before
-        .push((rel(root, &main_cfg), meant(options, &rewrite.text, migrate)));
+    record_before(
+        plan,
+        rel(root, &main_cfg),
+        &label,
+        options,
+        &rewrite.text,
+        migrate,
+    );
     for n in rewrite.notes {
         plan.notes.push(format!("{label}: {n}"));
     }
@@ -295,22 +310,53 @@ fn plan_dir(
     Ok(())
 }
 
-/// What the 2.x config meant, in 3.0 terms, for the before side of the lint: the
-/// `--preserve-behavior` rewrite from `migrate`, which reproduces the 2.x gates. When that
-/// rewrite cannot run on the config, such as on an override glob outside its grammar, the
-/// before side takes `plain`, the rewrite the plan writes.
-fn meant(
+/// Record what the 2.x config `label` meant, in 3.0 terms, for the before side of the lint
+/// at `path`: the `--preserve-behavior` rewrite from `migrate`, which reproduces the 2.x
+/// gates. When that rewrite cannot run on the config, such as on an override glob outside
+/// its grammar, the before side takes `plain`, the rewrite the plan writes, and the plan
+/// warns that the baseline of this config is approximate.
+fn record_before(
+    plan: &mut Sink,
+    path: PathBuf,
+    label: &str,
     options: Options,
     plain: &str,
     migrate: impl Fn(Options) -> Result<crate::Rewrite, Error>,
-) -> String {
-    if options.preserve_behavior {
-        return plain.to_owned();
+) {
+    let meant = if options.preserve_behavior {
+        plain.to_owned()
+    } else {
+        match migrate(Options {
+            preserve_behavior: true,
+        }) {
+            Ok(rw) => rw.text,
+            Err(e) => {
+                let (line, reason) = located(&e);
+                plan.warnings.push(
+                    MigrateText::NoteBeforeApproximate {
+                        file: label.to_owned(),
+                        line: line.to_string(),
+                        reason,
+                    }
+                    .to_string(),
+                );
+                plan.approximate.push(label.to_owned());
+                plain.to_owned()
+            }
+        }
+    };
+    plan.before.push((path, meant));
+}
+
+/// The line and the reason of a failed `--preserve-behavior` rewrite.
+fn located(e: &Error) -> (usize, String) {
+    match e {
+        Error::OverrideOverlap { line, reason, .. } => (*line, reason.clone()),
+        Error::Dropped(records) => records
+            .first()
+            .map_or_else(|| (1, e.to_string()), |r| (r.line, r.reason.clone())),
+        other => (1, other.to_string()),
     }
-    migrate(Options {
-        preserve_behavior: true,
-    })
-    .map_or_else(|_| plain.to_owned(), |rw| rw.text)
 }
 
 /// The blocklist settings of one config, with where to find their lines.

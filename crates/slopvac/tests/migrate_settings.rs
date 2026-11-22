@@ -17,6 +17,10 @@ const HYPHEN: &str = "We ship a newly-added flag.\n";
 const PROMPT: &str = "Install it.\n\n```sh\n$ npm install\n```\n";
 const HYPHENS: &str = "core:prose-craft.hyphens";
 const COMMAND_PROMPT: &str = "core:prose-craft.command-prompt";
+/// One `docs-discipline.history-internal-reference` finding under the `reference` genre.
+/// The `change-comms` genre turns the rule off.
+const HISTORY: &str = "# Title\n\nThe retry loop landed in commit 3f9a2c1 after the outage.\n";
+const HISTORY_RULE: &str = "core:docs-discipline.history-internal-reference";
 
 /// A project with the 2.x `config` as `slopvac.toml` and `doc` as `doc.md`.
 fn project(config: &str, doc: &str) -> std::io::Result<tempfile::TempDir> {
@@ -111,5 +115,50 @@ fn the_report_shows_a_gate_the_migration_drops(
         "{stdout}"
     );
     assert_eq!(stdout.contains(COMMAND_PROMPT), shown, "{stdout}");
+    Ok(())
+}
+
+/// A relaxed 2.x config with an override glob that `--preserve-behavior` cannot place, so its
+/// 2.x settings cannot be reproduced for the before side. The block starts on line 4.
+const UNREPRODUCIBLE: &str = "schema_version = 2\nprofile = \"relaxed\"\n\n[[overrides]]\n\
+                              files = [\"docs/*.md\"]\n\n[overrides.thresholds]\nmax_errors = 0\n";
+
+#[test]
+fn a_config_whose_2x_settings_cannot_be_reproduced_makes_the_comparison_incomplete()
+-> std::io::Result<()> {
+    let dir = project(UNREPRODUCIBLE, HYPHEN)?;
+    let assert = slopvac().arg("migrate").arg(dir.path()).assert().code(0);
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let notice = stdout
+        .lines()
+        .find(|l| l.contains("before baseline for this config is approximate"));
+    assert!(
+        notice.is_some_and(|l| l.starts_with("warning: slopvac.toml:4: ")),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("no per-rule change"), "{stdout}");
+    assert!(
+        stdout.contains("Findings: the comparison is incomplete for slopvac.toml"),
+        "{stdout}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_nested_config_assigns_genres_by_paths_relative_to_its_own_directory()
+-> Result<(), Box<dyn Error>> {
+    // The 2.x root config gives the migration something to plan. `sub` already holds a 3.0
+    // config, which both sides read from disk.
+    let dir = project("schema_version = 2\nprofile = \"normal\"\n", "Plain.\n")?;
+    fs::create_dir_all(dir.path().join("sub/log"))?;
+    fs::create_dir_all(dir.path().join("sub/notes"))?;
+    fs::write(
+        dir.path().join("sub/slopvac.toml"),
+        "schema_version = 3\n\n[[genres]]\nfiles = [\"log/**\"]\ngenre = \"change-comms\"\n",
+    )?;
+    fs::write(dir.path().join("sub/log/a.md"), HISTORY)?;
+    fs::write(dir.path().join("sub/notes/b.md"), HISTORY)?;
+    // `sub/log/a.md` is `change-comms`, so only `sub/notes/b.md` reports, on each side.
+    assert_eq!(sides(dir.path(), false, HISTORY_RULE)?, (1, 1));
     Ok(())
 }

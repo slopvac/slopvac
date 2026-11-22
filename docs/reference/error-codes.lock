@@ -483,6 +483,7 @@ migrate-note-added-rule-entries text
 migrate-note-added-rule-entry text
 migrate-note-added-style text
 migrate-note-added-switch-blocks text
+migrate-note-before-approximate text
 migrate-note-deleted-vale text
 migrate-note-dropped-extension-key text
 migrate-note-dropped-ignored text
@@ -496,6 +497,7 @@ migrate-note-renamed-category text
 migrate-note-renamed-dotfile text
 migrate-note-set-rule-level text
 migrate-out-by-rule text
+migrate-out-incomplete text
 migrate-out-kept text
 migrate-out-no-change text
 migrate-out-note text
