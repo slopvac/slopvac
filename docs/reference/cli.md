@@ -301,7 +301,7 @@ Install or remove project-local steering for a harness
 | `--block` | Size of the steering block |
 | `--no-skill` | Install no slopvac-prose skill |
 | `--agent` | Install the reviewer agent file, which runs only when `slopvac prime review` calls it |
-| `--reviewer-model` | Model for the reviewer agent; it must differ from the author's model |
+| `--reviewer-model` | Model for the reviewer agent; use one from a different family than the author's model |
 | `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |

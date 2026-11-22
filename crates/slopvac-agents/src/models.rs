@@ -192,7 +192,7 @@ pub fn markdown(evals: &Evals) -> String {
     if let Some(sentence) = coverage(evals) {
         let _ = write!(out, "{sentence} ");
     }
-    out.push_str("Pick the first available model in a table. The reviewer must differ from the author's model.\n");
+    out.push_str("Pick the first available model in a table. Use a reviewer from a different family than the author's model.\n");
     out.push_str(GUIDE_LINK);
     for kind in TYPES {
         let _ = write!(out, "\n## {}\n\n", kind.name());

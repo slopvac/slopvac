@@ -1479,8 +1479,11 @@ review-json-failed text
 review-missing-author text
 review-missing-both text
 review-missing-reviewer text
+review-model-reported-mismatch notice
+review-model-same notice
 review-model-unchecked notice
 review-provider-missing error
+review-provider-reply-invalid error
 review-reason-chosen text
 review-reason-fact text
 review-reason-genre text

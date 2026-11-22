@@ -9,8 +9,8 @@ use slopvac_agents::claims::compare;
 use slopvac_agents::error::AgentsError;
 use slopvac_agents::prime::{self, Level, Settings};
 use slopvac_agents::review::{
-    Approval, ChangeStats, ModelProvider, Payload, ReviewEnv, ReviewType, Scope,
-    check_reviewer_model, command, payload, run, select_type,
+    Approval, ChangeStats, ModelCheck, ModelProvider, Payload, ProviderReply, ReportedItem,
+    ReviewEnv, ReviewType, Scope, command, compare_models, payload, run, select_type,
 };
 
 const ORIGINAL: &str = include_str!("fixtures/claims/original.md");
@@ -75,17 +75,26 @@ fn scope_budget_scales_with_the_change_and_asks_above_it() {
 }
 
 #[test]
-fn reviewer_model_must_differ_from_the_author_model() {
+fn reviewer_model_is_compared_with_the_author_model_without_a_refusal() {
     let same = [
         ("anthropic/claude-sonnet-5-5#high", "claude-sonnet-5-5"),
         ("Claude-Sonnet-5-5", "amazon-bedrock/claude-sonnet-5-5"),
     ];
     for (author, reviewer) in same {
-        let err = check_reviewer_model(Some(author), reviewer).unwrap_err();
-        assert_eq!(err.code(), "review-same-model", "{author} {reviewer}");
+        assert_eq!(
+            compare_models(Some(author), reviewer),
+            ModelCheck::Same,
+            "{author} {reviewer}"
+        );
     }
-    assert!(check_reviewer_model(Some("gpt-5"), "claude-sonnet-5-5").unwrap());
-    assert!(!check_reviewer_model(None, "claude-sonnet-5-5").unwrap());
+    assert_eq!(
+        compare_models(Some("gpt-5"), "claude-sonnet-5-5"),
+        ModelCheck::Different
+    );
+    assert_eq!(
+        compare_models(None, "claude-sonnet-5-5"),
+        ModelCheck::Unchecked
+    );
 }
 
 #[test]
@@ -162,9 +171,32 @@ impl ModelProvider for Mock {
     fn model(&self) -> &str {
         self.model
     }
-    fn review(&self, _: &Payload) -> Result<String, AgentsError> {
+    fn review(&self, _: &Payload) -> Result<ProviderReply, AgentsError> {
         self.calls.set(self.calls.get() + 1);
-        Ok("no findings".into())
+        Ok(ProviderReply::new("no findings", Vec::new()))
+    }
+}
+
+/// A provider that declares one model and reports the given model for each listed item.
+struct Reporting {
+    declared: &'static str,
+    reported: Vec<(usize, &'static str)>,
+}
+
+impl ModelProvider for Reporting {
+    fn name(&self) -> &'static str {
+        "reporting"
+    }
+    fn model(&self) -> &str {
+        self.declared
+    }
+    fn review(&self, _: &Payload) -> Result<ProviderReply, AgentsError> {
+        let items = self
+            .reported
+            .iter()
+            .map(|&(i, m)| ReportedItem::new(i, m))
+            .collect();
+        Ok(ProviderReply::new("reported", items))
     }
 }
 
@@ -339,7 +371,7 @@ fn prime_review_documents_scope_approval_and_the_reviewer_rule() {
     assert!(ask.contains("ask the user to confirm the exact scope"));
     assert!(ask.contains("--scope-approved"));
     assert!(ask.contains("`review_approval = \"auto\"` in the config skips the question"));
-    assert!(ask.contains("must differ from the author's"));
+    assert!(ask.contains("should differ from the author's"));
     let auto = review_topic(None, Approval::Auto, Level::Default);
     assert!(auto.contains("so go ahead without asking"));
 }
@@ -363,9 +395,9 @@ impl ModelProvider for Recorder {
     fn model(&self) -> &'static str {
         "gpt-5"
     }
-    fn review(&self, payload: &Payload) -> Result<String, AgentsError> {
+    fn review(&self, payload: &Payload) -> Result<ProviderReply, AgentsError> {
         self.seen.borrow_mut().push(payload.clone());
-        Ok("ok".into())
+        Ok(ProviderReply::new("ok", Vec::new()))
     }
 }
 
@@ -749,4 +781,135 @@ fn a_mechanical_review_ignores_matching_author_and_provider_models() {
         assert_eq!(notice_codes(&json), Vec::<&str>::new());
     }
     assert_eq!(mock.calls.get(), 0);
+}
+
+fn rewrite_plan(
+    reported: Vec<(usize, &'static str)>,
+    declared: &'static str,
+    extra: &[&str],
+) -> serde_json::Value {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Reporting { declared, reported };
+    let env = ReviewEnv {
+        provider: Some(&provider),
+        author_model: Some("claude-sonnet-5-5".into()),
+        ..ReviewEnv::default()
+    };
+    let mut argv = vec!["--type", "rewrite"];
+    argv.extend_from_slice(extra);
+    let out = run(&pair(dir.path(), ORIGINAL, REVISED, &argv), &env).unwrap();
+    serde_json::from_str(&out).unwrap()
+}
+
+fn notice_with<'a>(json: &'a serde_json::Value, code: &str) -> Vec<&'a serde_json::Value> {
+    json["notices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|n| n["code"] == code)
+        .collect()
+}
+
+#[test]
+fn a_reported_author_model_gets_a_notice_that_locates_its_items() {
+    let json = rewrite_plan(vec![(1, "anthropic/claude-sonnet-5-5#high")], "gpt-5", &[]);
+    let found = notice_with(&json, "review-model-same");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(found[0]["level"], "warning");
+    assert_eq!(found[0]["data"]["reviewer_source"], "reported");
+    assert_eq!(found[0]["data"]["author_source"], "config");
+    assert_eq!(
+        found[0]["data"]["items"],
+        serde_json::json!([{"role": "revised_document", "line": 1}])
+    );
+    assert!(found[0].get("path").is_none());
+}
+
+#[test]
+fn a_reported_model_other_than_the_requested_one_gets_an_info_notice() {
+    let json = rewrite_plan(
+        vec![(0, "gemini-3"), (1, "gemini-3")],
+        "gpt-5",
+        &["--reviewer-model", "gpt-5"],
+    );
+    let found = notice_with(&json, "review-model-reported-mismatch");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(found[0]["level"], "info");
+    let data = &found[0]["data"];
+    assert_eq!(data["requested"], "gpt-5");
+    assert_eq!(data["requested_source"], "flag");
+    assert_eq!(data["reported"], "gemini-3");
+    assert_eq!(
+        data["items"],
+        serde_json::json!([
+            {"role": "original_document", "line": 1},
+            {"role": "revised_document", "line": 1}
+        ])
+    );
+}
+
+#[test]
+fn a_reported_model_that_matches_the_request_adds_no_notice() {
+    let json = rewrite_plan(vec![(0, "openai/gpt-5#high"), (1, "GPT-5")], "gpt-5", &[]);
+    assert!(json["notices"].as_array().unwrap().is_empty(), "{json}");
+}
+
+#[test]
+fn reported_models_group_by_normalized_name_across_spellings() {
+    let json = rewrite_plan(
+        vec![(0, "claude-sonnet-5-5"), (1, "bedrock/Claude-Sonnet-5-5#x")],
+        "gpt-5",
+        &[],
+    );
+    let same = notice_with(&json, "review-model-same");
+    assert_eq!(same.len(), 1, "{json}");
+    assert_eq!(same[0]["data"]["items"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn a_reply_may_name_only_some_items() {
+    let json = rewrite_plan(vec![], "gpt-5", &[]);
+    assert_eq!(json["report"], "reported");
+    assert_eq!(json["notices"], serde_json::json!([]));
+}
+
+#[test]
+fn a_reply_that_repeats_or_invents_an_item_fails_with_a_code() {
+    for reported in [vec![(2, "gpt-5")], vec![(0, "gpt-5"), (0, "gpt-5")]] {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Reporting {
+            declared: "gpt-5",
+            reported,
+        };
+        let env = ReviewEnv {
+            provider: Some(&provider),
+            ..ReviewEnv::default()
+        };
+        let argv = pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]);
+        let err = run(&argv, &env).unwrap_err();
+        assert_eq!(err.code(), "review-provider-reply-invalid");
+    }
+}
+
+#[test]
+fn a_dry_run_reports_no_model_notice() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = plan_json(
+        dir.path(),
+        &["--dry-run", "--reviewer-model", "gpt-5"],
+        &ReviewEnv {
+            author_model: Some("claude-sonnet-5-5".into()),
+            ..ReviewEnv::default()
+        },
+    );
+    assert!(notice_codes(&json).is_empty(), "{json}");
+}
+
+#[test]
+fn a_declared_provider_on_the_author_model_adds_one_notice_with_its_source() {
+    let json = rewrite_plan(vec![], "claude-sonnet-5-5", &[]);
+    let found = notice_with(&json, "review-model-same");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(found[0]["data"]["reviewer_source"], "provider");
+    assert!(found[0]["data"].get("items").is_none());
 }

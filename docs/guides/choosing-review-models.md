@@ -73,7 +73,7 @@ Either way, the reviewer can be the author's model. Setup then does the followin
 
 ## What slopvac checks
 
-Slopvac compares the author name and the reviewer name and refuses a match with the error `review-same-model`. The comparison ignores the provider prefix and the `#variant` suffix, so `anthropic/claude-sonnet-5-5#high` matches `claude-sonnet-5-5`.
+Slopvac compares the author name and the reviewer name. A match never stops a review. The plan carries the warning `review-model-same`, and `reviewer_model_checked` is `true`. The comparison ignores the provider prefix and the `#variant` suffix, so `anthropic/claude-sonnet-5-5#high` matches `claude-sonnet-5-5`.
 
 When either name is unknown, slopvac cannot run the check. The plan then carries the notice `review-model-unchecked`, which names the missing side, and `reviewer_model_checked` stays `false`. To close the gap, pass `--author-model` and `--reviewer-model`, or set `author_model` and `model` under `[review]`.
 
