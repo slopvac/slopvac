@@ -28,6 +28,9 @@ expression: doc
     "plugins-lock": [
       3
     ],
+    "rules-output": [
+      3
+    ],
     "style": [
       3
     ],

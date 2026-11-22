@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/rules-output.schema.json",
+  "title": "slopvac v3 rules output",
+  "description": "The document that `slopvac rules --format json` prints. `slopvac explain RULE --format json` prints one entry of its `rules` list, described by `$defs/ExplainOutput`. Rule entries carry the qualified rule id and the facts the binary adds to the authoring shape in rule.schema.json: the category, the match kind, the documentation link and the severity after the configuration layers. This is an output document, so it is not valid input for a rule or category file. Unknown keys are errors, and keys that start with `x-` are ignored.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    },
+    "plugin": {
+      "description": "The first plugin in `plugins`, or `core` when the list is empty.",
+      "$ref": "common.schema.json#/$defs/PackId"
+    },
+    "plugins": {
+      "description": "The plugins that own the listed rules, in catalogue order, each once.",
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/PackId"
+      },
+      "uniqueItems": true
+    },
+    "categories": {
+      "description": "Every category the catalogue loads, in catalogue order. A filter on the rules does not shorten this list.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CategoryOutput"
+      }
+    },
+    "rules": {
+      "description": "The rules that pass the filters, in catalogue order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RuleOutput"
+      }
+    }
+  },
+  "required": ["schema_version", "plugin", "plugins", "categories", "rules"],
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "CategoryOutput": {
+      "description": "A category as the listing shows it: the metadata of a category file without its rules and without `schema_version`.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "lint-report.schema.json#/$defs/CategoryId"
+        },
+        "plugin": {
+          "description": "The plugin of the category's first rule, or `core` for a category with no rules.",
+          "$ref": "common.schema.json#/$defs/PackId"
+        },
+        "title": {
+          "description": "Display title.",
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "description": "What the category covers.",
+          "type": "string",
+          "minLength": 1
+        },
+        "weight": {
+          "description": "Contribution to the overall score before any config override.",
+          "type": "number",
+          "minimum": 0
+        },
+        "recommended_for": {
+          "description": "Genres this category suits.",
+          "type": "array",
+          "items": {
+            "$ref": "rule.schema.json#/$defs/Genre"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": ["id", "plugin", "title", "description", "weight", "recommended_for"],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false
+    },
+    "MatchKind": {
+      "description": "The kind of the rule's match, as `--kind` names it. It repeats `match.kind`.",
+      "enum": [
+        "tokens",
+        "pattern",
+        "substitution",
+        "metric",
+        "structure",
+        "capitalization",
+        "vocabulary",
+        "judgement"
+      ],
+      "x-slopvac-extensible": true
+    },
+    "EffectiveSeverity": {
+      "description": "The level a rule runs at after the configuration layers. The set is closed, because gate and score logic depend on these values. `off` means the configuration disables the rule, which a shipped rule never does.",
+      "enum": ["suggestion", "warning", "error", "off"]
+    },
+    "RuleBody": {
+      "description": "The members that every rule entry carries. The rule members come from the authoring shape (rule.schema.json, `$defs/Rule`) with the qualified `id`; the schema reuses its member definitions, and its `id` and closing rule do not apply here. Not closed: a `$defs` that uses it closes the shape.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/RuleId"
+        },
+        "name": {
+          "description": "Short imperative label.",
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "description": "Shown on a finding. Names the fix, not the violation. {match} and {replacement} interpolate.",
+          "type": "string",
+          "minLength": 1
+        },
+        "match": {
+          "$ref": "rule.schema.json#/$defs/Match"
+        },
+        "citation": {
+          "$ref": "rule.schema.json#/$defs/Citation"
+        },
+        "fix": {
+          "description": "The rewrite operation, as guidance.",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "rule.schema.json#/$defs/Scope"
+        },
+        "text_type": {
+          "$ref": "rule.schema.json#/$defs/TextType"
+        },
+        "ai_signal": {
+          "description": "How strongly a finding indicates machine-written text.",
+          "enum": ["strong", "weak", "none"]
+        },
+        "ai_signal_source": {
+          "description": "Where the `ai_signal` value comes from.",
+          "enum": ["measured", "catalog", "unmeasured"]
+        },
+        "allowlist": {
+          "description": "Literal strings that never fire, even when the match holds.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "applies_to": {
+          "$ref": "rule.schema.json#/$defs/AppliesTo"
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "rule.schema.json#/$defs/Case"
+          }
+        },
+        "contexts": {
+          "$ref": "rule.schema.json#/$defs/Contexts"
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "rule.schema.json#/$defs/Example"
+          }
+        },
+        "exceptions": {
+          "type": "array",
+          "items": {
+            "$ref": "rule.schema.json#/$defs/Exception"
+          },
+          "uniqueItems": true
+        },
+        "exclude_blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "rule.schema.json#/$defs/BlockKind"
+          },
+          "uniqueItems": true
+        },
+        "severity": {
+          "description": "The level the rule ships with.",
+          "$ref": "common.schema.json#/$defs/Severity"
+        },
+        "category": {
+          "description": "The category that holds the rule.",
+          "$ref": "lint-report.schema.json#/$defs/CategoryId"
+        },
+        "plugin": {
+          "description": "The plugin that supplies the rule. It is the part of `id` before the colon.",
+          "$ref": "common.schema.json#/$defs/PackId"
+        },
+        "kind": {
+          "$ref": "#/$defs/MatchKind"
+        },
+        "effective_severity": {
+          "$ref": "#/$defs/EffectiveSeverity"
+        },
+        "severity_from": {
+          "description": "The configuration source that set the effective severity, such as `project slopvac.toml:4:1`. Present when the configuration set it, including to the level the rule ships with.",
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "description": "The documentation page of the rule. Absent when the rule has none.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "message",
+        "match",
+        "citation",
+        "scope",
+        "text_type",
+        "ai_signal",
+        "ai_signal_source",
+        "severity",
+        "category",
+        "plugin",
+        "kind",
+        "effective_severity"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "match": {
+                "properties": {
+                  "kind": {
+                    "const": "judgement"
+                  }
+                },
+                "required": ["kind"]
+              }
+            },
+            "required": ["match"]
+          },
+          "then": {
+            "properties": {
+              "cases": {
+                "maxItems": 0
+              },
+              "exceptions": {
+                "maxItems": 0
+              },
+              "severity": {
+                "const": "suggestion"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RuleOutput": {
+      "description": "One entry of the `rules` list.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/RuleBody"
+        }
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "unevaluatedProperties": false
+    },
+    "ExplainOutput": {
+      "description": "The document that `slopvac explain RULE --format json` prints: a rule entry with `schema_version` and, when the rule has an exception, the comment that suppresses it.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/RuleBody"
+        },
+        {
+          "properties": {
+            "schema_version": {
+              "$ref": "common.schema.json#/$defs/SchemaVersion"
+            },
+            "suppression": {
+              "description": "The `slopvac-allow` comment that suppresses the rule, naming the rule and its first exception.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["schema_version"]
+        }
+      ],
+      "patternProperties": {
+        "^x-": {}
+      },
+      "unevaluatedProperties": false
+    }
+  }
+}

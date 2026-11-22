@@ -8,7 +8,7 @@ The schemas in schemas/v3 are generated from the Rust types by slopvac-schemas. 
 - `schemas/v3/<artifact>.schema.json` uses kebab-case names. The artifacts are:
   `common`, `lint-report`, `rule`, `category`, `config`, `frontmatter`,
   `plugin-manifest`, `style`, `genre`, `tagger`, `blocklist`, `terms`, `plugins-lock`,
-  `plugin-index`, `doctor-report` and `plugin-protocol`.
+  `plugin-index`, `doctor-report`, `rules-output` and `plugin-protocol`.
 - `schemas/v3/conformance/<artifact>/valid/` and `invalid/` hold instances in native
   TOML, YAML or JSON.
 - `invalid/cases.toml` maps each invalid file to a JSON pointer where it must fail.

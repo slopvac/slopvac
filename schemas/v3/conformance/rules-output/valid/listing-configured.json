@@ -1,0 +1,63 @@
+{
+  "schema_version": 3,
+  "plugin": "core",
+  "plugins": [
+    "core"
+  ],
+  "categories": [
+    {
+      "description": "Artifacts of the generating session that reached a shipped document. Never a style judgement: a cutoff disclaimer or a tool citation token is a defect in every genre.",
+      "id": "ai-residue",
+      "plugin": "core",
+      "recommended_for": [
+        "consumer",
+        "internal",
+        "change-comms"
+      ],
+      "title": "AI residue",
+      "weight": 1.5
+    }
+  ],
+  "rules": [
+    {
+      "ai_signal": "none",
+      "ai_signal_source": "unmeasured",
+      "category": "ai-residue",
+      "citation": {
+        "note": "Enforced at every tier because the match is never a register question.",
+        "source": "vale-styles/ai-residue/ChatLeakage.yml",
+        "url": "https://github.com/slopvac/slopvac"
+      },
+      "effective_severity": "off",
+      "examples": [
+        {
+          "bad": "As of my last update, the loader retried twice.",
+          "good": "The loader retries twice."
+        },
+        {
+          "bad": "As a large language model, I cannot browse the internet.",
+          "good": "The documentation describes the supported behaviour."
+        }
+      ],
+      "exceptions": [
+        {
+          "detector": "quotation",
+          "name": "quotation"
+        }
+      ],
+      "id": "core:ai-residue.chat-leakage",
+      "kind": "pattern",
+      "match": {
+        "kind": "pattern",
+        "pattern": "\\b(as an AI|as a large language model)\\b"
+      },
+      "message": "chat-session leakage: {match} -- delete it, then audit the surrounding prose",
+      "name": "Delete chat-session leakage",
+      "plugin": "core",
+      "scope": "prose",
+      "severity": "error",
+      "text_type": "any",
+      "severity_from": "project slopvac.toml:4:1"
+    }
+  ]
+}

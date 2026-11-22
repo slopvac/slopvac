@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 use clap::ArgMatches;
 use serde::Serialize;
 use serde_json::{Value, json};
-use slopvac_model::GenreId;
+use slopvac_model::{GenreId, SchemaVersion};
 use slopvac_report::RenderOptions;
 use slopvac_rules::{Example, LoadedCategory, LoadedRule, Match, MatchKind};
 
@@ -276,6 +276,7 @@ fn rules_json(
         }
     }
     let payload = json!({
+        "schema_version": SchemaVersion::VALUE,
         "plugin": plugins.first().copied().unwrap_or("core"),
         "plugins": plugins,
         "categories": categories,
@@ -479,8 +480,11 @@ pub fn explain(m: &ArgMatches, out: &mut dyn std::io::Write) -> Result<u8, CliEr
     let text = match format_of(m) {
         "json" => {
             let mut value = rule_json(category, rule, &sev);
-            if let (Value::Object(map), Some(s)) = (&mut value, suppression(rule)) {
-                map.insert("suppression".into(), json!(s));
+            if let Value::Object(map) = &mut value {
+                map.insert("schema_version".into(), json!(SchemaVersion::VALUE));
+                if let Some(s) = suppression(rule) {
+                    map.insert("suppression".into(), json!(s));
+                }
             }
             pretty(&value)
         }
