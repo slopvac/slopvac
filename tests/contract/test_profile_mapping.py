@@ -211,6 +211,23 @@ def test_a_legacy_style_names_exactly_the_2x_rules_and_categories(truth):
     assert "ste-words.spelling" in rule_ids
 
 
+@pytest.mark.parametrize("profile", PROFILES)
+def test_a_legacy_style_turns_every_vocabulary_rule_off(profile):
+    # Vocabulary checking is opt-in: a style cannot set a blocklist, and an
+    # enabled vocabulary rule without one reports a notice on every document.
+    ruleset = mapping.engine_states(profile)[0]
+    vocabulary = {
+        rule.qualified_id
+        for rule in ruleset.all_rules
+        if rule.kind.value == "vocabulary"
+    } - REMOVED
+    assert vocabulary, "the rule data marks no vocabulary rule"
+    entries = _style(profile)["rules"]
+    assert {qid: entries.get(qid) for qid in vocabulary} == dict.fromkeys(
+        vocabulary, "off"
+    )
+
+
 @pytest.mark.parametrize(
     ("profile", "level"), [("strict", None), ("normal", None), ("relaxed", "off")]
 )

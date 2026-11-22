@@ -53,7 +53,7 @@ def engine_states(profile: str, config=None, path: str = "doc.md"):
     Checked rules come from ``is_active`` and ``severity_for``. A judgement rule
     never fires, so its review level comes from its tier: enforced blocks the
     review verdict (``error``), advisory reports (``suggestion``), excluded skips
-    (``off``).
+    (``off``). A vocabulary rule is ``off``: the engine has no blocklist to give it.
     """
     from slopvac.config import Config, resolve_for
     from slopvac.engine import Engine
@@ -72,6 +72,11 @@ def engine_states(profile: str, config=None, path: str = "doc.md"):
     for rule in ruleset.rules:
         active = engine.is_active(rule)
         severity = engine.severity_for(rule).value if active else "off"
+        if rule.kind.value == "vocabulary":
+            # Vocabulary checking is opt-in: 2.x ran it only when `vocabulary.path`
+            # was set, and a style cannot set a blocklist. An enabled rule without
+            # one reports `vocabulary-no-blocklist` on every document in 3.0.
+            active, severity = False, "off"
         states[rule.qualified_id] = (active, severity)
     for rule in ruleset.judgement_rules:
         level = JUDGEMENT_LEVEL[rule.tier_for(resolved.profile.value).value]
@@ -115,7 +120,12 @@ def build_style(profile: str) -> dict:
             continue
         cat_level = categories[rule.category].get("severity")
         expected = shipped[qid] if cat_level is None else cat_level
-        if want != expected or rule.tier_for(profile).value == "excluded":
+        # A vocabulary rule always gets an entry, so it stays off whatever the category says.
+        if (
+            want != expected
+            or rule.tier_for(profile).value == "excluded"
+            or rule.kind.value == "vocabulary"
+        ):
             rules[qid] = want
     return {"id": style_name(profile), "categories": categories, "rules": rules}
 
