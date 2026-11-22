@@ -80,10 +80,10 @@ def resolve_targets(env: Mapping[str, str] = os.environ) -> int:
     if not changed_only:
         paths = input_paths
     elif not base_sha:
-        print(
-            "::error title=slopvac::changed-files-only requires "
-            "github.event.pull_request.base.sha. Fetch the pull request base "
-            "or set changed-files-only: false."
+        emit(
+            "error",
+            "changed-files-only requires github.event.pull_request.base.sha. "
+            "Fetch the pull request base or set changed-files-only: false.",
         )
         return 1
     else:
@@ -94,10 +94,10 @@ def resolve_targets(env: Mapping[str, str] = os.environ) -> int:
             stderr=subprocess.DEVNULL,
         )
         if check.returncode != 0:
-            print(
-                "::error title=slopvac::the merge base is not in this clone. "
-                "Set fetch-depth: 0 on actions/checkout, or set "
-                "changed-files-only: false."
+            emit(
+                "error",
+                "the merge base is not in this clone. Set fetch-depth: 0 on "
+                "actions/checkout, or set changed-files-only: false.",
             )
             return 1
         diff = subprocess.run(
@@ -120,13 +120,12 @@ def resolve_targets(env: Mapping[str, str] = os.environ) -> int:
             capture_output=True,
         )
         if diff.returncode != 0:
-            print("::error title=slopvac::could not determine changed prose files")
-            if diff.stderr:
-                print(diff.stderr.decode(errors="replace"), end="")
+            emit("error", "could not determine changed prose files")
+            _relay_stderr(diff.stderr)
             return 1
         paths = [path.decode() for path in diff.stdout.split(b"\0") if path]
         if not paths:
-            print("::notice title=slopvac::no prose files changed")
+            emit("notice", "no prose files changed")
 
     _write_paths(paths_file, paths)
     _write_outputs(env, {"list": paths_file})
@@ -265,6 +264,16 @@ def escape_workflow_data(text: str) -> str:
     return "".join(out).replace("::", "%3A%3A").replace("##[", "\\u{23}#[")
 
 
+def emit(kind: str, message: str) -> None:
+    """Print one workflow command, ``kind`` being ``error``, ``warning`` or ``notice``.
+
+    The whole message goes through ``escape_workflow_data``, so a value in it
+    (a path, an OS error, a reporter name) cannot end the line or start another
+    command. Every ``::<kind>`` line the script prints comes from here.
+    """
+    print(f"::{kind} title=slopvac::{escape_workflow_data(message)}")
+
+
 def _relay_stderr(raw: bytes) -> None:
     """Re-emit the binary's stderr line by line through ``escape_workflow_data``.
 
@@ -298,11 +307,11 @@ def sync(env: Mapping[str, str] = os.environ) -> int:
     """
     lockfile = Path(env.get("LOCKFILE") or LOCKFILE)
     if not lockfile.is_file():
-        print(f"::notice title=slopvac::no {lockfile}; skipping plugins sync")
+        emit("notice", f"no {lockfile}; skipping plugins sync")
         return OK
     code = _run([_binary(env), "plugins", "sync"], env)
     if code != OK:
-        print(f"::error title=slopvac::plugins sync failed (status {code})")
+        emit("error", f"plugins sync failed (status {code})")
         return INCOMPLETE
     return OK
 
@@ -319,7 +328,7 @@ def lint(env: Mapping[str, str] = os.environ) -> int:
     targets = _read_paths(Path(env["PATH_LIST"])) if env.get("PATH_LIST") else []
     if not targets:
         _write_outputs(env, {"passed": "true"})
-        print("::notice title=slopvac::no target paths; nothing to lint")
+        emit("notice", "no target paths; nothing to lint")
         return 0
 
     reports = {
@@ -347,7 +356,7 @@ def lint(env: Mapping[str, str] = os.environ) -> int:
         # Renderers may exit 1 for findings; that is not a failure to render.
         if code not in {OK, FINDINGS}:
             incomplete = True
-            print(f"::error title=slopvac::{fmt} run ended abnormally (status {code})")
+            emit("error", f"{fmt} run ended abnormally (status {code})")
 
     outputs: dict[str, object] = {
         f"{fmt}-file": out for fmt, out in reports.items() if out.is_file()
@@ -381,7 +390,7 @@ def report(env: Mapping[str, str] = os.environ) -> int:
         return 0
     source = Path(env.get("RDJSONL") or "")
     if not source.is_file():
-        print("::warning title=slopvac::no rdjsonl report; skipping reviewdog")
+        emit("warning", "no rdjsonl report; skipping reviewdog")
         return 0
     attempts = [reporter, PR_ANNOTATIONS] if reporter == REVIEW else [reporter]
     code = OK
@@ -400,16 +409,16 @@ def report(env: Mapping[str, str] = os.environ) -> int:
                     command, check=False, stdin=stdin, env={**os.environ, **env}
                 ).returncode
         except OSError as err:
-            print(f"::warning title=slopvac::reviewdog is unavailable: {err}")
+            emit("warning", f"reviewdog is unavailable: {err}")
             return 0
         if code == 0:
             return 0
         if index + 1 < len(attempts):
-            print(
-                f"::warning title=slopvac::reviewdog {name} exited {code}; "
-                f"falling back to {attempts[index + 1]}"
+            emit(
+                "warning",
+                f"reviewdog {name} exited {code}; falling back to {attempts[index + 1]}",
             )
-    print(f"::warning title=slopvac::reviewdog could not post findings (status {code})")
+    emit("warning", f"reviewdog could not post findings (status {code})")
     return 0
 
 
@@ -426,7 +435,7 @@ def main(argv: Sequence[str]) -> int:
     try:
         return commands[argv[1]]()
     except ActionError as err:
-        print(f"::error title=slopvac::{err}")
+        emit("error", str(err))
         return 2
 
 
