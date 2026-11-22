@@ -977,6 +977,12 @@ def test_an_action_error_message_is_escaped(monkeypatch, capfd):
     _assert_one_command(capfd.readouterr(), "error")
 
 
+def test_a_notice_message_is_escaped(capfd):
+    # The full payload is a valid POSIX file name: only "/" and NUL are barred.
+    assert action.sync({"LOCKFILE": f"/nonexistent/{INJECTION}"}) == 0
+    _assert_one_command(capfd.readouterr(), "notice")
+
+
 def test_the_reviewdog_unavailable_warning_is_escaped(report, capfd):
     report(PR, REVIEWDOG=f"/nonexistent/{INJECTION}")
     _assert_one_command(capfd.readouterr(), "warning")
