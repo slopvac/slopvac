@@ -557,9 +557,15 @@ fn divergence_path() -> PathBuf {
 /// a capitalised match a capitalised one. Rust reports the replacement in that final case, so
 /// the recorded one is cased the same way before the comparison. The golden data stays as
 /// recorded.
-fn recase_replacements(want: &mut Value) {
-    let Some(findings) = want["document"]["findings"].as_array_mut() else {
+///
+/// A run without a `document` is left as it is. A `document` whose `findings` is not an
+/// array is a broken golden file, and the panic names `run`.
+fn recase_replacements(run: &str, want: &mut Value) {
+    let Some(document) = want.get_mut("document").filter(|d| !d.is_null()) else {
         return;
+    };
+    let Some(findings) = document["findings"].as_array_mut() else {
+        panic!("golden {run}: `document.findings` is not an array");
     };
     for f in findings {
         let (Some(matched), Some(replacement)) = (
@@ -595,7 +601,7 @@ fn compare_run(
     let path = format!("tests/golden/v3/parity/{profile}/{id}.json");
     let mut want = read_json(&root().join(path));
     apply_deltas(&mut want, deltas, profile, id);
-    recase_replacements(&mut want);
+    recase_replacements(&format!("{profile}/{id}"), &mut want);
     mask(&mut want, &mut got);
     differences(&want, &got)
 }
@@ -868,8 +874,40 @@ fn the_recorded_replacement_is_cased_like_the_match(
     want["document"]["findings"][0]["replacement"] = json!("following one");
     set_first(&mut got, "matched_text", json!(matched));
     set_first(&mut got, "replacement", json!(reported));
-    recase_replacements(&mut want);
+    recase_replacements("test", &mut want);
     assert_eq!(differences(&want, &got).is_empty(), agrees);
+}
+
+/// A run without a document is left alone, a normal one is recased, and a document with no
+/// findings array is a broken golden file that stops the run and names it.
+#[rstest]
+#[case::no_document(json!({"exit_code": 0}), Some(json!({"exit_code": 0})))]
+#[case::null_document(json!({"document": null}), Some(json!({"document": null})))]
+#[case::findings_null(json!({"document": {"findings": null}}), None)]
+#[case::normal_document(
+    json!({"document": {"findings": [{"matched_text": "Example", "replacement": "following one"}]}}),
+    Some(json!({"document": {"findings": [{"matched_text": "Example", "replacement": "Following one"}]}}))
+)]
+fn recasing_handles_the_shape_of_a_golden_run(
+    #[case] mut want: Value,
+    #[case] expected: Option<Value>,
+) {
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        recase_replacements("normal/some-run", &mut want);
+        want.clone()
+    }));
+    match (outcome, expected) {
+        (Ok(got), Some(expected)) => assert_eq!(got, expected),
+        (Err(payload), None) => {
+            let message = payload
+                .downcast_ref::<String>()
+                .cloned()
+                .unwrap_or_default();
+            assert!(message.contains("normal/some-run"), "{message}");
+        }
+        (Ok(_), None) => panic!("a document without a findings array must panic"),
+        (Err(_), Some(_)) => panic!("the shape must be accepted"),
+    }
 }
 
 /// An extra finding is recorded whole: a changed fact makes a different record.
