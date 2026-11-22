@@ -105,7 +105,7 @@ fn the_preview_section_labels_the_counts_as_the_3_0_engine_on_both_sides() {
         text.contains("from the 3.0 engine on your files before and after migration"),
         "{text}"
     );
-    // The counts make no claim that the migration keeps 2.x behaviour.
+    // Each of these words would present the before side as a 2.x run.
     for claim in ["baseline", "preserve", "same as 2.x"] {
         assert!(!text.contains(claim), "{claim}: {text}");
     }
