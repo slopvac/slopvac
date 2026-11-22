@@ -21,15 +21,14 @@ use serde_json::json;
 use slopvac_engine::Input;
 
 /// The most memory the process has held at once, in bytes, from `VmHWM` in `/proc`.
-fn peak_bytes() -> usize {
-    let status = std::fs::read_to_string("/proc/self/status").unwrap();
+fn peak_bytes() -> Result<usize, Box<dyn std::error::Error>> {
+    let status = std::fs::read_to_string("/proc/self/status")?;
     let kib = status
         .lines()
         .find_map(|l| l.strip_prefix("VmHWM:"))
         .and_then(|v| v.trim().strip_suffix("kB"))
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .expect("VmHWM is in /proc/self/status");
-    kib * 1024
+        .ok_or("no VmHWM line in /proc/self/status")?;
+    Ok(kib.trim().parse::<usize>()? * 1024)
 }
 
 const PATH_LEN: usize = 60_000;
@@ -63,30 +62,29 @@ fn driver_output(last: usize) -> String {
 }
 
 #[test]
-fn the_pieces_of_a_split_tag_share_its_long_evidence() {
+fn the_pieces_of_a_split_tag_share_its_long_evidence() -> Result<(), Box<dyn std::error::Error>> {
     use std::os::unix::fs::PermissionsExt as _;
     let source = source();
     let last = CONTINUATIONS + 2;
     let dir = common::private_dir("rst-split-evidence");
     let json_path = dir.join("out.json");
-    std::fs::write(&json_path, driver_output(last)).unwrap();
+    std::fs::write(&json_path, driver_output(last))?;
     let python = dir.join("python");
     std::fs::write(
         &python,
         format!("#!/bin/sh\ncat >/dev/null\ncat '{}'\n", json_path.display()),
-    )
-    .unwrap();
-    std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
+    )?;
+    std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755))?;
     let mut options = slopvac_engine::rst::RstOptions::default();
     options.interpreter = Some(python);
     let gate = json!({"contexts": {"only": ["requirement"]}});
     let engine = common::engine(&[common::tokens("dull", "has", &gate)]).with_rst(options);
 
-    let before = peak_bytes();
+    let before = peak_bytes()?;
     let result = engine.lint(&Input::rst("t.rst", &source));
-    let allocated = peak_bytes().saturating_sub(before);
+    let allocated = peak_bytes()?.saturating_sub(before);
 
-    result.unwrap();
+    result?;
     // Copying the evidence into every piece would take PATH_LEN * CONTINUATIONS bytes, 610 MB.
     let limit = 250 * source.len();
     assert!(
@@ -94,4 +92,5 @@ fn the_pieces_of_a_split_tag_share_its_long_evidence() {
         "{allocated} bytes of peak growth, limit {limit} for a {} byte document",
         source.len()
     );
+    Ok(())
 }
