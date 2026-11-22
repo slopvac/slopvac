@@ -74,7 +74,7 @@ fn targz(files: &[(&str, &[u8])]) -> Vec<u8> {
     gz.finish().unwrap()
 }
 
-/// One signed version of a pack, ready to serve.
+/// One signed version of a plugin, ready to serve.
 struct Release {
     tag: String,
     manifest: Vec<u8>,

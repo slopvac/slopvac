@@ -1,4 +1,4 @@
-//! Behavior of the pack index through its public interface.
+//! Behavior of the plugin index through its public interface.
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fs;
@@ -33,7 +33,7 @@ fn listing(namespace: &str, id: &str, name: &str, description: &str) -> Listing 
 }
 
 fn entry(namespace: &str, id: &str) -> IndexEntry {
-    listing(namespace, id, id, "A pack.").into()
+    listing(namespace, id, id, "A plugin.").into()
 }
 
 // ---- conformance corpus (shared with the JSON Schema harness) ----

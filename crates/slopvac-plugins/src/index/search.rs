@@ -1,4 +1,4 @@
-//! `packs search`: match and rank index entries, and render hits for a terminal.
+//! `plugins search`: match and rank index entries, and render hits for a terminal.
 //!
 //! Ranking. The query is lowercased and split into tokens at every character
 //! that is not alphanumeric. An entry matches when every token is a substring

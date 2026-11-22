@@ -4,7 +4,7 @@
 //! The catalogs sit in five files by area: [`host`] (the plugin host, its protocol and its
 //! process), [`trust`] (trust store, signatures, revocation and strict mode), [`transport`]
 //! (the OCI client, safe extraction and applying fixes), [`sync`] (sync, the lock and update)
-//! and [`pyenv`] (the pack index and managed Python environments). Each file derives `Catalog`
+//! and [`pyenv`] (the plugin index and managed Python environments). Each file derives `Catalog`
 //! for three kinds of entry: one per published error code, sentences with parameters, and fixed phrases
 //! that callers read as `&'static str`. The binary registers all of them through
 //! [`message_entries`].

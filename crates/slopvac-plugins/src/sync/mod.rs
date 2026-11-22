@@ -672,7 +672,7 @@ impl<'a> Syncer<'a> {
         })
     }
 
-    /// The launcher path for a git fetch of pack `id`.
+    /// The launcher path for a git fetch of plugin `id`.
     fn launcher_for(&self, id: &PackId) -> Result<PathBuf, SyncError> {
         self.git.launcher.path().map_err(|e| match e {
             crate::launch::LaunchError::NotInstalled => SyncError::Launcher {

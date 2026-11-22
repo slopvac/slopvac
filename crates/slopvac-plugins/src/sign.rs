@@ -1,11 +1,11 @@
-//! Signed statements for packs and plugins (threat model sections 5.1 to 5.3).
+//! Signed statements for plugins (threat model sections 5.1 to 5.3).
 //!
 //! A layer cannot sign the manifest that holds it, so a minisign signature
 //! covers a canonical JSON *statement* that names the manifest's other content.
 //! The verifier recomputes the match. The statement and the `.minisig` text are
 //! two layers of the artifact, found by media type.
 //!
-//! Key authority never comes from the pack index. A key is accepted only from
+//! Key authority never comes from the plugin index. A key is accepted only from
 //! the keys compiled into the binary (first-party namespaces) or from the keys
 //! the user pinned, which [`KeyPolicy`] carries.
 //!

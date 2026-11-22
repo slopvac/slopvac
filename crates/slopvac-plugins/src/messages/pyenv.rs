@@ -1,4 +1,4 @@
-//! The messages of managed Python environments and the pack index: sentences with parameters
+//! The messages of managed Python environments and the plugin index: sentences with parameters
 //! and fixed phrases.
 //!
 //! [`PyenvText`] holds sentences with named parameters. [`PyenvPhrase`] holds fixed phrases,
@@ -747,7 +747,7 @@ pub(crate) enum PyenvPhrase {
     PythonWithoutRuntime,
     /// `runtime` is set in a pack that is not a code pack.
     #[code("plugins-pyenv-runtime-needs-code-kind")]
-    #[text("`runtime` belongs to a `kind = \"code\"` pack")]
+    #[text("`runtime` belongs to a `kind = \"code\"` plugin")]
     RuntimeNeedsCodeKind,
     /// `python` is not a version request.
     #[code("plugins-pyenv-python-not-a-request")]
@@ -755,7 +755,7 @@ pub(crate) enum PyenvPhrase {
     PythonNotARequest,
     /// `command` is not a relative script path.
     #[code("plugins-pyenv-command-not-a-script")]
-    #[text("`command` is not a relative script path inside the pack")]
+    #[text("`command` is not a relative script path inside the plugin")]
     CommandNotAScript,
     /// `runtime` is neither `native` nor `python`.
     #[code("plugins-pyenv-unknown-runtime")]
@@ -1484,7 +1484,7 @@ mod tests {
             ),
             (
                 PyenvPhrase::RuntimeNeedsCodeKind,
-                "`runtime` belongs to a `kind = \"code\"` pack",
+                "`runtime` belongs to a `kind = \"code\"` plugin",
             ),
             (
                 PyenvPhrase::PythonNotARequest,
@@ -1492,7 +1492,7 @@ mod tests {
             ),
             (
                 PyenvPhrase::CommandNotAScript,
-                "`command` is not a relative script path inside the pack",
+                "`command` is not a relative script path inside the plugin",
             ),
             (
                 PyenvPhrase::UnknownRuntime,

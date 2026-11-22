@@ -785,7 +785,7 @@ fn a_manifest_error_shows_the_file_not_the_cache_path() {
     assert_eq!(
         text,
         "the manifest <external>/slopvac-plugin.toml cannot select a Python environment: \
-         `command` is not a relative script path inside the pack"
+         `command` is not a relative script path inside the plugin"
     );
 }
 
