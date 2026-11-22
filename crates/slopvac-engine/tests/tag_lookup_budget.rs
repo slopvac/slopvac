@@ -35,15 +35,16 @@ fn taggers(kinds: usize) -> TagRegistry {
     registry
 }
 
-/// `rules` document-scope rules that each match the break between two lines of the cell. A
-/// context gate on a kind no tagger makes leaves them without findings.
-fn engine(kinds: usize, rules: usize, lines: usize) -> Engine {
+/// `rules` document-scope rules that each match the break between two lines of the cell, with
+/// the context gate `gate`. A gate on `k0`, a kind the cell has, makes each lookup reach a real
+/// kind.
+fn engine(kinds: usize, rules: usize, lines: usize, gate: &serde_json::Value) -> Engine {
     let rules: Vec<_> = (0..rules)
         .map(|i| {
             common::rule(
                 &format!("r{i}"),
                 &json!({"kind": "pattern", "pattern": r"go\.\s+Must"}),
-                &json!({"scope": "document", "contexts": {"only": ["absent"]}}),
+                &json!({"scope": "document", "contexts": gate}),
             )
         })
         .collect();
@@ -52,9 +53,19 @@ fn engine(kinds: usize, rules: usize, lines: usize) -> Engine {
         .with_taggers(taggers(kinds))
 }
 
-/// The looks one run makes, and whether it finished.
+/// The looks one run makes, and whether it finished. The gate skips `k0`, so the rules have no
+/// findings.
 fn run(kinds: usize, rules: usize, lines: usize) -> (usize, Result<usize, EngineError>) {
-    let engine = engine(kinds, rules, lines);
+    run_gated(kinds, rules, lines, &json!({"skip": ["k0"]}))
+}
+
+fn run_gated(
+    kinds: usize,
+    rules: usize,
+    lines: usize,
+    gate: &serde_json::Value,
+) -> (usize, Result<usize, EngineError>) {
+    let engine = engine(kinds, rules, lines, gate);
     let source = wrapped_table(lines);
     let _ = take_lookup_steps();
     let result = engine
@@ -75,17 +86,26 @@ fn a_document_with_a_few_kinds_on_a_wrapped_cell_is_checked() {
 }
 
 #[test]
-fn many_kinds_on_a_wrapped_cell_with_rules_across_its_lines_make_the_run_incomplete() {
+fn many_kinds_on_a_wrapped_cell_with_rules_across_its_lines_are_checked_in_linear_work() {
     let (kinds, rules, lines) = (400, 40, 60);
     let (steps, result) = run(kinds, rules, lines);
-    let bytes = wrapped_table(lines).len();
-    let limit = 8 * bytes + 16_384;
-    assert_eq!(result, Err(EngineError::TagLookupBudget { limit }));
-    // Without the budget the lookups look at each of the 400 kinds for each of the 40 rules'
-    // 59 breaks: over nine hundred thousand looks. A look costs about ten steps with the walk
-    // to it, so the budget stops the run at about sixteen times its size in steps.
-    assert!(
-        steps <= 32 * limit,
-        "{steps} steps for a budget of {limit} looks"
-    );
+    // Each gate names `k0` alone, so a lookup asks about that kind and the other 399 kinds
+    // on the cell cost it nothing. Looking at every kind took over nine
+    // hundred thousand looks and stopped at the budget.
+    assert_eq!(result, Ok(0));
+    // Building the indexes is linear in the 24,000 pieces (about 66,000 steps, three
+    // structures each), and the 2,360 lookups take a few steps each. The old code stopped
+    // at the budget after about 270,000 steps, so this cap sits well under that.
+    let cap = 100_000;
+    assert!(steps < cap, "{steps} steps for a cap of {cap}");
+}
+
+#[test]
+fn a_kind_that_both_gate_lists_name_is_looked_up_once() {
+    // One tagger and 400 rules whose gates name `k0` in `only` and in `skip`. Each lookup
+    // visits the cell's piece of `k0` once: 400 rules x 59 breaks, about 23,600 visits, under
+    // the budget of 26,800. A lookup per list would visit twice and pass the budget.
+    let gate = json!({"only": ["k0"], "skip": ["k0"]});
+    let (_, result) = run_gated(1, 400, 60, &gate);
+    assert_eq!(result, Ok(0));
 }

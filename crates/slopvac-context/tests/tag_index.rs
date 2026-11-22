@@ -111,8 +111,17 @@ proptest! {
         prop_assert_eq!(index.kinds_seen(), oracle.kinds_seen());
         for ranges in &queries {
             prop_assert_eq!(index.kinds_covering(ranges), oracle.kinds_covering(ranges));
+            let wanted = ["d", "b", "absent"];
+            let among = |all: Vec<&str>| -> Vec<&str> {
+                wanted.iter().copied().filter(|k| all.contains(k)).collect::<BTreeSet<_>>().into_iter().collect()
+            };
+            prop_assert_eq!(
+                index.kinds_covering_among(ranges, &wanted),
+                among(oracle.kinds_covering(ranges))
+            );
             for r in ranges {
                 prop_assert_eq!(index.kinds_at(r), oracle.kinds_at(r));
+                prop_assert_eq!(index.kinds_at_among(r, &wanted), among(oracle.kinds_at(r)));
             }
         }
     }
@@ -314,4 +323,53 @@ fn lookups_within_the_budget_answer_as_without_one() {
         assert_eq!(capped.kinds_covering(ranges), free.kinds_covering(ranges));
     }
     assert!(!capped.lookup_budget_exceeded());
+}
+
+/// `groups` tags of one kind, each in the same two pieces. A lookup that the first cell holds
+/// and the second range misses meets every group, unless identical groups count as one: then
+/// it costs the same however many groups there are.
+#[test]
+fn identical_split_groups_cost_a_lookup_one_visit() {
+    for groups in [1_000, 2_000, 4_000, 8_000] {
+        let pieces: Vec<(Tag, usize)> = (0..groups)
+            .flat_map(|g| [(tag("cell", 0..10), g), (tag("cell", 20..30), g)])
+            .collect();
+        let index = TagIndex::from_pieces(pieces);
+        let _ = take_lookup_steps();
+        for _ in 0..groups {
+            assert_eq!(index.kinds_covering(&MISSES), Vec::<&str>::new());
+            assert_eq!(
+                index.kinds_covering_among(&MISSES, &["cell"]),
+                Vec::<&str>::new()
+            );
+        }
+        let used = take_lookup_steps();
+        let bound = 12 * probes(groups) * groups;
+        assert!(used > 0, "no work counted at {groups} groups");
+        assert!(
+            used <= bound,
+            "{used} steps for {groups} lookups, bound {bound}"
+        );
+    }
+}
+
+/// Two groups with the same extents and the same first kind, whose second pieces differ in
+/// kind. A query that starts in the second piece answers with the kinds of both groups.
+#[test]
+fn groups_that_differ_in_a_later_piece_kind_are_not_merged() {
+    let pieces = vec![
+        (tag("a", 0..10), 0),
+        (tag("b", 20..30), 0),
+        (tag("a", 0..10), 1),
+        (tag("c", 20..30), 1),
+    ];
+    let oracle = Scan::from_pieces(pieces.clone());
+    let index = TagIndex::from_pieces(pieces);
+    let query = [22..25, 2..5];
+    assert_eq!(oracle.kinds_covering(&query), ["b", "c"]);
+    assert_eq!(index.kinds_covering(&query), ["b", "c"]);
+    assert_eq!(
+        index.kinds_covering_among(&query, &["c", "b", "z"]),
+        ["b", "c"]
+    );
 }
