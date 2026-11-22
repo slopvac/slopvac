@@ -28,11 +28,9 @@ OIDC = {"id-token"}
 DEPARTURES: dict[str, set[tuple[str, str]]] = {
     "packages": {("revocations.yml", "push")},
     "security-events": {
-        ("lint.yml", "action"),
         ("security.yml", "codeql"),
         ("security.yml", "osv"),
         ("security.yml", "trivy"),
-        ("test.yml", "lint"),
         ("test.yml", "security"),
     },
     "attestations": {

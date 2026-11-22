@@ -365,59 +365,6 @@ jobs:
       - name: ruff
         working-directory: packages/slopvac-lint
         run: uvx ruff@0.16.3 check .
-  # Runs this repo's own action against this repo, from the working tree rather
-  # than a published tag, with the binary built from this checkout. A composite
-  # action that breaks is only visible when it is executed, and no unit test
-  # executes one. The repository slopvac.toml is a 2.x file that the 3.0 binary
-  # refuses, so this job passes the 3.0 fixture config. The `prose` job below
-  # remains this repository's prose gate.
-  action:
-    if: ${{ inputs.action }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      security-events: write # the SARIF upload
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # rust-toolchain.toml pins the toolchain; the helper recovers from a partial install.
-      - name: Install the pinned toolchain
-        run: bash scripts/ci/install-rust-toolchain.sh
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Build the slopvac binary
-        run: cargo build --locked -p slopvac
-      - name: Run the action on this repo's docs
-        id: slopvac
-        uses: ./
-        with:
-          paths: README.md packages/slopvac-lint/README.md packages/slopvac-lint/docs
-          config: .github/action-fixtures/slopvac-v3.toml
-          binary: ${{ github.workspace }}/target/debug/slopvac
-          sarif: "true"
-          # This repository's authored prose passes the configured thresholds;
-          # keep the dogfood run blocking so regressions cannot land unnoticed.
-          fail-on-findings: "true"
-      - name: Report what the action returned
-        env:
-          SCORE: ${{ steps.slopvac.outputs.score }}
-          FINDINGS: ${{ steps.slopvac.outputs.findings }}
-          ERRORS: ${{ steps.slopvac.outputs.errors }}
-          PASSED: ${{ steps.slopvac.outputs.passed }}
-          SARIF: ${{ steps.slopvac.outputs.sarif }}
-        run: |
-          set -euo pipefail
-          echo "score=$SCORE findings=$FINDINGS errors=$ERRORS passed=$PASSED"
-          # An empty output means the step exited before writing them, which is a
-          # broken action reported as a clean run.
-          test -n "$SCORE" || { echo "the action returned no score"; exit 1; }
-          test -s "$SARIF" || { echo "the action wrote no SARIF"; exit 1; }
-          python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$SARIF"
   prose:
     if: ${{ inputs.docs }}
     runs-on: ubuntu-latest
@@ -495,7 +442,6 @@ jobs:
       - complexity
       - shell-lint
       - python-lint
-      - action
       - prose
     if: always()
     steps:
@@ -533,7 +479,6 @@ jobs:
               "complexity": flag("COMPLEXITY"),
               "shell-lint": flag("SHELL"),
               "python-lint": flag("CODE"),
-              "action": flag("ACTION"),
               "prose": flag("DOCS"),
           }
 

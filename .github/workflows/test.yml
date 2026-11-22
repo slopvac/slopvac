@@ -717,7 +717,6 @@ jobs:
     uses: ./.github/workflows/lint.yml
     permissions:
       contents: read
-      security-events: write
     with:
       code: ${{ needs.changes.outputs.force_all == 'true' || needs.changes.outputs.code == 'true' }}
       docs: ${{ needs.changes.outputs.force_all == 'true' || needs.changes.outputs.docs == 'true' }}
