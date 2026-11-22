@@ -44,6 +44,9 @@ pub mod trust;
 mod trusted_path;
 pub mod update;
 
+#[cfg(test)]
+mod protocol_corpus;
+
 pub use api::{DocOutcome, plan_batches};
 pub use budget::{BudgetCaps, RunBudget};
 pub use error::{PluginError, RpcError, StartError};

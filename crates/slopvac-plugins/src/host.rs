@@ -481,10 +481,6 @@ impl Shared {
 
     /// Route one message. `Ok(true)` means a pending request got its reply.
     fn dispatch(&self, msg: &Value, unsolicited: &mut u32) -> Result<bool, String> {
-        let obj = msg.as_object().ok_or(HostPhrase::NotObject.as_static())?;
-        if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
-            return Err(HostPhrase::BadJsonrpc.as_static().into());
-        }
         let unmatched = |n: &mut u32| {
             *n += 1;
             // Counts even when the message also crosses the plugin's own cap.
@@ -498,25 +494,9 @@ impl Shared {
                 charged.map(|()| false)
             }
         };
-        if obj.contains_key("method") {
-            // v1 has no plugin-to-host requests; notifications are dropped.
-            return unmatched(unsolicited);
-        }
-        let id = match obj.get("id") {
-            Some(Value::Null) => return unmatched(unsolicited),
-            Some(v) => v
-                .as_u64()
-                .filter(|&i| (1..=MAX_REQUEST_ID).contains(&i))
-                .ok_or(HostPhrase::BadId.as_static())?,
-            None => return Err(HostPhrase::NoMethodOrId.as_static().into()),
-        };
-        let reply = match (obj.get("result"), obj.get("error")) {
-            (Some(r), None) => Ok(r.clone()),
-            (None, Some(e)) => Err(match parse_error_object(e) {
-                Ok(rpc) => PluginError::Rpc(rpc),
-                Err(e) => e,
-            }),
-            _ => return Err(HostPhrase::ResultOrError.as_static().into()),
+        let (id, reply) = match check_envelope(msg)? {
+            Envelope::Unsolicited => return unmatched(unsolicited),
+            Envelope::Reply { id, reply } => (id, reply),
         };
         match lock(&self.pending).remove(&id) {
             Some(p) => {
@@ -526,6 +506,52 @@ impl Shared {
             None => unmatched(unsolicited),
         }
     }
+}
+
+/// What an incoming message is, once its envelope passed the checks.
+#[derive(Debug)]
+pub(crate) enum Envelope {
+    /// A notification, a request or a reply with a null id. v1 has no plugin-to-host
+    /// requests, so the host counts these and drops them.
+    Unsolicited,
+    /// A reply that carries a request id.
+    Reply {
+        /// The request id it answers.
+        id: u64,
+        /// The result, or the error the plugin sent.
+        reply: Reply,
+    },
+}
+
+/// Check the JSON-RPC envelope of one message the plugin sent (plugin-protocol.md section 2).
+///
+/// # Errors
+/// The reason the message breaks the protocol.
+pub(crate) fn check_envelope(msg: &Value) -> Result<Envelope, String> {
+    let obj = msg.as_object().ok_or(HostPhrase::NotObject.as_static())?;
+    if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return Err(HostPhrase::BadJsonrpc.as_static().into());
+    }
+    if obj.contains_key("method") {
+        return Ok(Envelope::Unsolicited);
+    }
+    let id = match obj.get("id") {
+        Some(Value::Null) => return Ok(Envelope::Unsolicited),
+        Some(v) => v
+            .as_u64()
+            .filter(|&i| (1..=MAX_REQUEST_ID).contains(&i))
+            .ok_or(HostPhrase::BadId.as_static())?,
+        None => return Err(HostPhrase::NoMethodOrId.as_static().into()),
+    };
+    let reply = match (obj.get("result"), obj.get("error")) {
+        (Some(r), None) => Ok(r.clone()),
+        (None, Some(e)) => Err(match parse_error_object(e) {
+            Ok(rpc) => PluginError::Rpc(rpc),
+            Err(e) => e,
+        }),
+        _ => return Err(HostPhrase::ResultOrError.as_static().into()),
+    };
+    Ok(Envelope::Reply { id, reply })
 }
 
 /// Counts every byte read from the stream, charges it to the whole-run

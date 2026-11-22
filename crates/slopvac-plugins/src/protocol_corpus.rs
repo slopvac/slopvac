@@ -1,6 +1,7 @@
 //! The `schemas/v3/conformance/plugin-protocol` corpus, one test per file, run through the
-//! host's own decode and strict checks: `strict::parse`, the `InitializeResult` and
-//! `PluginDeclaration` types, and the `hooks` result parsers the host applies to plugin output.
+//! host's own decode and strict checks: `strict::parse`, `check_envelope`, the
+//! `InitializeResult` and `PluginDeclaration` types, `parse_error_object` and the `hooks` result
+//! parsers.
 //!
 //! Every `valid/` file must be accepted. Every `invalid/` file must be rejected, and the
 //! rejection must name the field that `invalid/cases.toml` gives as the instance location.
@@ -12,9 +13,14 @@
 //!   host entry that decodes it.
 //! - Any other file is one whole JSON-RPC message, read as a frame body without framing.
 //!
-//! Where the host has no decoder for a file's kind ([`Decoder::Undecoded`]), the file only
-//! goes through `strict::parse`. An `invalid/` file of such a kind is therefore accepted, and the
-//! test fails for it: that gap is the finding.
+//! Two tables name files that the host does not decode, each by exact file name:
+//! - [`HOST_BUILT`]: messages the host builds and sends. It never reads them, so it has nothing
+//!   to accept or reject. The schema corpus run (`tests/contract/test_schemas.py`) covers them.
+//! - [`PENDING_BINARY`]: binary-extractor files. The host has no binary extractor yet.
+//!
+//! The inventory tests check that every corpus file is decoded or listed in exactly one table,
+//! and that every listed name exists. Every file outside the tables must behave as
+//! `invalid/cases.toml` says. No case is marked expected-fail.
 #![allow(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -28,13 +34,15 @@ use std::path::{Path, PathBuf};
 
 use rstest::rstest;
 use serde_json::Value;
-use slopvac_plugins::PluginError;
-use slopvac_plugins::hooks::{
+
+use crate::PluginError;
+use crate::hooks::{
     Finding, Span, match_entries, parse_completions, parse_edits, parse_error_object, parse_recipe,
     parse_rendered, parse_score, parse_segments, parse_tags,
 };
-use slopvac_plugins::protocol::{InitializeResult, PluginDeclaration};
-use slopvac_plugins::strict;
+use crate::host::{Envelope, check_envelope};
+use crate::protocol::{InitializeResult, PluginDeclaration};
+use crate::strict;
 
 fn corpus() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/conformance/plugin-protocol")
@@ -50,6 +58,11 @@ fn file_name(path: &Path) -> String {
         .expect("file name")
         .to_string_lossy()
         .into_owned()
+}
+
+/// The corpus directory (`valid` or `invalid`) that holds `path`.
+fn dir_name(path: &Path) -> String {
+    file_name(path.parent().expect("parent dir"))
 }
 
 /// How the host decodes one kind of instance.
@@ -73,8 +86,10 @@ enum Decoder {
     RecipeResult,
     /// `parse_rendered`.
     RenderResult,
-    /// The host has no type for this kind: it builds the message or has no binary support.
-    Undecoded,
+    /// The host builds this kind. Its files sit in [`HOST_BUILT`].
+    HostBuilt,
+    /// The host has no type for this kind yet. Its files sit in [`PENDING_BINARY`].
+    Pending,
 }
 
 /// Each `#/$defs/<Def>` in the corpus and the host entry that decodes it.
@@ -89,22 +104,186 @@ const DEFS: &[(&str, Decoder)] = &[
     ("RecipeResult", Decoder::RecipeResult),
     ("RenderResult", Decoder::RenderResult),
     // The host sends `initialize` params from a `json!` literal and never reads them back.
-    ("InitializeParams", Decoder::Undecoded),
+    ("InitializeParams", Decoder::HostBuilt),
     // The host has no binary-extractor hook yet.
-    ("BinaryExtractResult", Decoder::Undecoded),
+    ("BinaryExtractResult", Decoder::Pending),
 ];
 
 /// The result type of the request that a `response-*.json` file answers. The method comes from
-/// the file name. The `Undecoded` rows are envelope-only files and replies without a result
-/// type.
-const RESPONSES: &[(&str, Decoder)] = &[
-    ("response-initialize.json", Decoder::InitializeResult),
-    // `shutdown` answers `null`.
-    ("response-shutdown.json", Decoder::Undecoded),
+/// the file name. `response-shutdown.json` answers `null`.
+const RESPONSES: &[(&str, Option<Decoder>)] = &[
+    ("response-initialize.json", Some(Decoder::InitializeResult)),
+    ("response-shutdown.json", None),
     // Answers a `tagger/tag` request (id 2 in `request-tag.json`).
-    ("response-unknown-result-fields.json", Decoder::TagResult),
-    ("response-null-id-success.json", Decoder::Undecoded),
-    ("response-result-and-error.json", Decoder::Undecoded),
+    (
+        "response-unknown-result-fields.json",
+        Some(Decoder::TagResult),
+    ),
+];
+
+/// Host-built, not host-decoded: messages from the host to a plugin. The host builds and sends
+/// them (`Plugin::call`, the handshake, `$/cancelRequest`) and has no reader for them, and the
+/// outgoing types get no `Deserialize`. Each entry is `(directory, file name)`.
+const HOST_BUILT: &[(&str, &str)] = &[
+    ("valid", "InitializeParams--minimal-range.json"),
+    ("valid", "InitializeParams--unknown-fields-ignored.json"),
+    ("valid", "notification-cancel.json"),
+    ("valid", "notification-exit.json"),
+    ("valid", "notification-initialized-empty-params.json"),
+    ("valid", "notification-initialized.json"),
+    ("valid", "request-binary-extract-empty-file.json"),
+    ("valid", "request-binary-extract-one-padding.json"),
+    ("valid", "request-binary-extract-ppsm.json"),
+    ("valid", "request-binary-extract-ppsx.json"),
+    ("valid", "request-binary-extract.json"),
+    ("valid", "request-complete.json"),
+    ("valid", "request-extract.json"),
+    ("valid", "request-fix.json"),
+    ("valid", "request-initialize.json"),
+    ("valid", "request-max-id.json"),
+    ("valid", "request-recipe.json"),
+    ("valid", "request-render.json"),
+    ("valid", "request-score.json"),
+    ("valid", "request-shutdown.json"),
+    ("valid", "request-tag.json"),
+    ("valid", "request-unknown-fields.json"),
+    ("valid", "request-unknown-method.json"),
+    ("invalid", "cancel-with-request-id.json"),
+    ("invalid", "cancel-without-id.json"),
+    ("invalid", "complete-unknown-task.json"),
+    ("invalid", "complete-without-model.json"),
+    ("invalid", "fix-bad-severity.json"),
+    ("invalid", "fix-without-findings.json"),
+    ("invalid", "initialize-feature-trailing-newline.json"),
+    ("invalid", "initialize-feature-uppercase.json"),
+    ("invalid", "initialize-missing-limits.json"),
+    ("invalid", "initialize-missing-params.json"),
+    ("invalid", "initialize-small-max-message.json"),
+    ("invalid", "initialize-version-zero.json"),
+    ("invalid", "render-report-wrong-version.json"),
+    ("invalid", "tag-absolute-path.json"),
+    ("invalid", "tag-drive-path.json"),
+    ("invalid", "tag-duplicate-document.json"),
+    ("invalid", "tag-empty-batch.json"),
+    ("invalid", "tag-hook-id-trailing-newline.json"),
+    ("invalid", "tag-hook-id-uppercase.json"),
+    ("invalid", "tag-parent-path.json"),
+    ("invalid", "tag-path-trailing-newline.json"),
+];
+
+/// `STUB(slopvac-agx)`: binary-extractor files that wait for the host's binary-extractor
+/// adapter (plugin-protocol.md section 5.5). The swap removes this table and decodes the files
+/// through the real types. Each entry is `(directory, file name)`.
+const PENDING_BINARY: &[(&str, &str)] = &[
+    ("valid", "BinaryExtractResult--budget-error.json"),
+    ("valid", "BinaryExtractResult--declined.json"),
+    ("valid", "BinaryExtractResult--encrypted.json"),
+    ("valid", "BinaryExtractResult--extracted.json"),
+    ("valid", "BinaryExtractResult--locator-1024.json"),
+    (
+        "valid",
+        "BinaryExtractResult--open-span-and-unknown-role.json",
+    ),
+    ("valid", "BinaryExtractResult--outcomes.json"),
+    ("valid", "BinaryExtractResult--unsupported-parts.json"),
+    ("invalid", "binary-extract-bytes-line-break.json"),
+    ("invalid", "binary-extract-bytes-trailing-lf.json"),
+    ("invalid", "binary-extract-bytes-unpadded.json"),
+    ("invalid", "binary-extract-bytes-urlsafe.json"),
+    ("invalid", "binary-extract-empty-batch.json"),
+    ("invalid", "binary-extract-format-trailing-lf.json"),
+    ("invalid", "binary-extract-format-uppercase.json"),
+    ("invalid", "binary-extract-negative-byte-length.json"),
+    ("invalid", "binary-extract-path-trailing-dotdot.json"),
+    ("invalid", "binary-extract-path-trailing-lf.json"),
+    ("invalid", "binary-extract-text-document.json"),
+    ("invalid", "binary-extract-without-byte-length.json"),
+    ("invalid", "binary-extract-without-format.json"),
+    ("invalid", "BinaryExtractResult--budget-as-outcome.json"),
+    (
+        "invalid",
+        "BinaryExtractResult--budget-without-budget-name.json",
+    ),
+    ("invalid", "BinaryExtractResult--budget-without-limit.json"),
+    (
+        "invalid",
+        "BinaryExtractResult--declined-unknown-reason.json",
+    ),
+    (
+        "invalid",
+        "BinaryExtractResult--declined-without-reason.json",
+    ),
+    ("invalid", "BinaryExtractResult--empty-with-segments.json"),
+    ("invalid", "BinaryExtractResult--error-with-segments.json"),
+    (
+        "invalid",
+        "BinaryExtractResult--error-with-unsupported.json",
+    ),
+    ("invalid", "BinaryExtractResult--extracted-no-segments.json"),
+    (
+        "invalid",
+        "BinaryExtractResult--extracted-without-segments.json",
+    ),
+    (
+        "invalid",
+        "BinaryExtractResult--locator-1024-trailing-lf.json",
+    ),
+    (
+        "invalid",
+        "BinaryExtractResult--locator-control-character.json",
+    ),
+    ("invalid", "BinaryExtractResult--locator-too-long.json"),
+    ("invalid", "BinaryExtractResult--negative-span.json"),
+    (
+        "invalid",
+        "BinaryExtractResult--no-source-with-unsupported.json",
+    ),
+    ("invalid", "BinaryExtractResult--outcome-and-error.json"),
+    ("invalid", "BinaryExtractResult--part-bidi-override.json"),
+    ("invalid", "BinaryExtractResult--part-too-long.json"),
+    ("invalid", "BinaryExtractResult--part-trailing-lf.json"),
+    ("invalid", "BinaryExtractResult--role-trailing-lf.json"),
+    ("invalid", "BinaryExtractResult--segment-empty-text.json"),
+    ("invalid", "BinaryExtractResult--segment-without-part.json"),
+    ("invalid", "BinaryExtractResult--segment-without-role.json"),
+    ("invalid", "BinaryExtractResult--unsupported-as-error.json"),
+    (
+        "invalid",
+        "BinaryExtractResult--unsupported-locator-trailing-lf.json",
+    ),
+    (
+        "invalid",
+        "BinaryExtractResult--unsupported-part-trailing-lf.json",
+    ),
+    (
+        "invalid",
+        "BinaryExtractResult--unsupported-without-part.json",
+    ),
+    ("invalid", "BinaryExtractResult--without-outcome.json"),
+    (
+        "invalid",
+        "InitializeResult--binary-extractor-without-formats.json",
+    ),
+    (
+        "invalid",
+        "PluginDeclaration--binary-extractor-duplicate-formats.json",
+    ),
+    (
+        "invalid",
+        "PluginDeclaration--binary-extractor-empty-formats.json",
+    ),
+    (
+        "invalid",
+        "PluginDeclaration--binary-extractor-format-trailing-lf.json",
+    ),
+    (
+        "invalid",
+        "PluginDeclaration--binary-extractor-unknown-format.json",
+    ),
+    (
+        "invalid",
+        "PluginDeclaration--binary-extractor-without-formats.json",
+    ),
 ];
 
 /// Error codes of plugin-protocol.md section 10, worked out from the document's table.
@@ -121,18 +300,18 @@ const DOCUMENTED_CODES: &[(i64, &str)] = &[
     (-32005, "request-cancelled"),
     (-32006, "document-invalid"),
     (-32007, "offline"),
-    (-32008, "binary-input-declined"),
-    (-32009, "extract-malformed"),
-    (-32010, "extract-budget"),
-    (-32011, "binary-encrypted"),
 ];
 
 fn def_of(name: &str) -> Option<&str> {
     name.split_once("--").map(|(def, _)| def)
 }
 
-fn lookup(table: &[(&str, Decoder)], key: &str) -> Option<Decoder> {
+fn lookup<T: Copy>(table: &[(&str, T)], key: &str) -> Option<T> {
     table.iter().find(|(k, _)| *k == key).map(|(_, d)| *d)
+}
+
+fn listed(table: &[(&str, &str)], dir: &str, name: &str) -> bool {
+    table.iter().any(|(d, n)| *d == dir && *n == name)
 }
 
 /// Every `span` bound in `v`, to build a document long enough for the spans of an instance.
@@ -188,7 +367,9 @@ fn per_document(
 fn decode(decoder: Decoder, value: Value) -> Result<(), String> {
     let text = "x".repeat(usize::try_from(longest_span(&value).min(1 << 16)).unwrap());
     let outcome: Result<(), PluginError> = match decoder {
-        Decoder::Undecoded => Ok(()),
+        Decoder::HostBuilt | Decoder::Pending => {
+            panic!("{decoder:?} files are listed in a table and never decoded")
+        }
         Decoder::InitializeResult => serde_json::from_value::<InitializeResult>(value)
             .map(drop)
             .map_err(|e| PluginError::OutputInvalid(e.to_string())),
@@ -236,32 +417,32 @@ fn decode(decoder: Decoder, value: Value) -> Result<(), String> {
 }
 
 /// The host's decode of one corpus file: the frame body through `strict::parse`, then the
-/// check for the file's kind.
+/// check for the file's kind. The caller has already left out the files in the two tables.
 fn host_decode(name: &str, bytes: &[u8]) -> Result<(), String> {
     let value = strict::parse(bytes)?;
     if let Some(def) = def_of(name) {
         let decoder = lookup(DEFS, def).unwrap_or_else(|| panic!("{name}: no DEFS row for {def}"));
         return decode(decoder, value);
     }
-    let Some(msg) = value.as_object() else {
-        // A batch or a bare value: the host's reader checks this after `strict::parse`.
-        return Ok(());
-    };
-    if msg.contains_key("method") {
-        // Host-to-plugin request or notification. The host builds these and never reads them.
-        return Ok(());
+    match check_envelope(&value)? {
+        // A well-formed error object is a valid reply.
+        Envelope::Unsolicited
+        | Envelope::Reply {
+            reply: Err(PluginError::Rpc(_)),
+            ..
+        } => Ok(()),
+        Envelope::Reply { reply: Err(e), .. } => Err(e.to_string()),
+        Envelope::Reply {
+            reply: Ok(result), ..
+        } => {
+            let decoder = RESPONSES
+                .iter()
+                .find(|(n, _)| *n == name)
+                .unwrap_or_else(|| panic!("{name}: no RESPONSES row for this reply"))
+                .1;
+            decoder.map_or(Ok(()), |d| decode(d, result))
+        }
     }
-    if let Some(error) = msg.get("error") {
-        return parse_error_object(error)
-            .map(drop)
-            .map_err(|e| e.to_string());
-    }
-    if let Some(result) = msg.get("result") {
-        let decoder = lookup(RESPONSES, name)
-            .unwrap_or_else(|| panic!("{name}: no RESPONSES row for this reply"));
-        return decode(decoder, result.clone());
-    }
-    Ok(())
 }
 
 /// Files whose diagnostic cannot contain the last field of the `cases.toml` pointer, with the
@@ -276,6 +457,7 @@ const PINNED: &[(&str, &str)] = &[
         "ExtractResult--segment-without-context.json",
         "missing field `context`",
     ),
+    ("FixResult--edit-without-text.json", "missing field `text`"),
     (
         "FixResult--edit-without-finding.json",
         "missing field `finding`",
@@ -339,6 +521,9 @@ fn valid_file_is_accepted(
     #[files("../../schemas/v3/conformance/plugin-protocol/valid/*.json")] path: PathBuf,
 ) {
     let name = file_name(&path);
+    if listed(HOST_BUILT, &dir_name(&path), &name) || listed(PENDING_BINARY, "valid", &name) {
+        return;
+    }
     let bytes = fs::read(&path).expect("read case");
     if let Err(e) = host_decode(&name, &bytes) {
         panic!("{name} should be accepted: {e}");
@@ -350,6 +535,9 @@ fn invalid_file_is_rejected_at_its_location(
     #[files("../../schemas/v3/conformance/plugin-protocol/invalid/*.json")] path: PathBuf,
 ) {
     let name = file_name(&path);
+    if listed(HOST_BUILT, &dir_name(&path), &name) || listed(PENDING_BINARY, "invalid", &name) {
+        return;
+    }
     let bytes = fs::read(&path).expect("read case");
     let pointer = cases()
         .get(&name)
@@ -391,9 +579,9 @@ fn error_response_code_is_in_its_documented_range(
     );
 }
 
-#[test]
-fn every_def_prefix_in_the_corpus_has_a_host_decoder_row() {
-    let mut missing = BTreeSet::new();
+/// Every `(directory, file name)` pair in the corpus.
+fn corpus_files() -> BTreeSet<(String, String)> {
+    let mut files = BTreeSet::new();
     for dir in ["valid", "invalid"] {
         for entry in fs::read_dir(corpus().join(dir)).expect("corpus dir") {
             let name = entry
@@ -401,26 +589,81 @@ fn every_def_prefix_in_the_corpus_has_a_host_decoder_row() {
                 .file_name()
                 .to_string_lossy()
                 .into_owned();
-            if let Some(def) = def_of(&name)
-                && lookup(DEFS, def).is_none()
+            if Path::new(&name)
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("json"))
             {
-                missing.insert(def.to_owned());
+                files.insert((dir.to_owned(), name));
             }
         }
     }
+    files
+}
+
+#[test]
+fn every_def_prefix_in_the_corpus_has_a_host_decoder_row() {
+    let missing: BTreeSet<String> = corpus_files()
+        .iter()
+        .filter_map(|(_, n)| def_of(n))
+        .filter(|def| lookup(DEFS, def).is_none())
+        .map(str::to_owned)
+        .collect();
     assert!(missing.is_empty(), "add these to DEFS: {missing:?}");
 }
 
 #[test]
+fn every_corpus_file_is_decoded_or_listed_in_exactly_one_table() {
+    for (dir, name) in corpus_files() {
+        let tables = usize::from(listed(HOST_BUILT, &dir, &name))
+            + usize::from(listed(PENDING_BINARY, &dir, &name));
+        assert!(tables <= 1, "{dir}/{name} is in both tables");
+        // A file of a def that the host builds or cannot read yet has to be in its table.
+        if let Some(decoder) = def_of(&name).and_then(|d| lookup(DEFS, d)) {
+            match decoder {
+                Decoder::HostBuilt => {
+                    assert!(
+                        listed(HOST_BUILT, &dir, &name),
+                        "{dir}/{name}: add to HOST_BUILT"
+                    );
+                }
+                Decoder::Pending => {
+                    assert!(
+                        listed(PENDING_BINARY, &dir, &name),
+                        "{dir}/{name}: add to PENDING_BINARY"
+                    );
+                }
+                // A decoded def may still hold binary files that wait for the adapter.
+                _ => assert!(
+                    !listed(HOST_BUILT, &dir, &name),
+                    "{dir}/{name} has a decoder but sits in HOST_BUILT"
+                ),
+            }
+        }
+    }
+}
+
+#[test]
+fn every_name_in_a_table_exists_once() {
+    let files = corpus_files();
+    for (label, table) in [
+        ("HOST_BUILT", HOST_BUILT),
+        ("PENDING_BINARY", PENDING_BINARY),
+    ] {
+        let mut seen = BTreeSet::new();
+        for (dir, name) in table {
+            let key = ((*dir).to_owned(), (*name).to_owned());
+            assert!(files.contains(&key), "{label}: {dir}/{name} does not exist");
+            assert!(seen.insert(key), "{label}: {dir}/{name} is listed twice");
+        }
+    }
+}
+
+#[test]
 fn cases_toml_names_exactly_the_invalid_files() {
-    let on_disk: BTreeSet<String> = fs::read_dir(corpus().join("invalid"))
-        .expect("invalid dir")
-        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
-        .filter(|n| {
-            Path::new(n)
-                .extension()
-                .is_some_and(|x| x.eq_ignore_ascii_case("json"))
-        })
+    let on_disk: BTreeSet<String> = corpus_files()
+        .into_iter()
+        .filter(|(d, _)| d == "invalid")
+        .map(|(_, n)| n)
         .collect();
     let listed: BTreeSet<String> = cases().keys().cloned().collect();
     assert_eq!(on_disk, listed);
