@@ -118,7 +118,7 @@ language = "markdown"
 id = "rule-examples-prose-inflation"
 tier = "rule-examples"
 path = "tests/golden/v3/inputs/rule-examples/prose-inflation.md"
-sha256 = "e91dee8ebf87b544b869105355ae5d45948d3318661c915af1072a8b63283b30"
+sha256 = "bc8cf2c2583721bfa8faa81220bf7e12547030d4871bc4b3a3dbeebf3dc09345"
 surface = "prose"
 language = "markdown"
 

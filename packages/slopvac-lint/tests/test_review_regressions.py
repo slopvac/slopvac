@@ -416,3 +416,45 @@ def test_history_internal_reference_severity_by_profile(profile, expected):
     findings = engine.run(parse("note.md", "Timeouts apply to every call, see PR 482."))
     severities = [f.severity for f in findings if f.rule_id == rule_id]
     assert severities == ([] if expected is None else [expected])
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("The AWS Well-Architected Framework guides the review.", False),
+        ("We ran a well-architected review.", True),
+        ("Well-architected systems scale.", True),
+        ("Well-Architecting the platform took months.", True),
+        ("The Well Architected tool lists risks.", False),
+        ("We architected the platform last year.", True),
+        ("Teams keep architecting around the limit.", True),
+    ],
+)
+def test_business_jargon_spares_only_the_well_architected_name(text, expected):
+    engine = Engine(load_ruleset().rules, resolve_for(Config(), Path("note.md")))
+    findings = engine.run(parse("note.md", text))
+    assert (
+        any(f.rule_id.endswith(".business-jargon") for f in findings) == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "separator,expected",
+    [
+        pytest.param("-", False, id="ascii-hyphen"),
+        pytest.param("\u2010", False, id="hyphen"),
+        pytest.param("\u2011", False, id="non-breaking-hyphen"),
+        pytest.param("\u2013", True, id="en-dash"),
+        pytest.param("\u2014", True, id="em-dash"),
+        pytest.param("\u2212", True, id="minus-sign"),
+    ],
+)
+def test_business_jargon_name_exemption_accepts_only_hyphen_separators(
+    separator, expected
+):
+    text = f"The AWS Well{separator}Architected Framework guides the review."
+    engine = Engine(load_ruleset().rules, resolve_for(Config(), Path("note.md")))
+    findings = engine.run(parse("note.md", text))
+    assert (
+        any(f.rule_id.endswith(".business-jargon") for f in findings) == expected
+    )
