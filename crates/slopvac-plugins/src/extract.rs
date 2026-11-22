@@ -432,8 +432,9 @@ fn claim_with_parents(
 ///
 /// Both keys first drop every `Default_Ignorable_Code_Point` (zero-width
 /// space, soft hyphen, the joiners, variation selectors and so on). ext4
-/// casefold strips them before it folds, and the HFS+ comparison table skips
-/// some of them, so `.slopvac` and `.slop\u{200B}vac` name the same file there.
+/// casefold strips them before it folds, so `.slopvac` and `.slop\u{200B}vac`
+/// name the same file there. The HFS+ comparison table skips some of them, such
+/// as U+200C and U+FEFF, so `.slop\u{200C}vac` is the same file there too.
 ///
 /// The canonical key is the caseless match of Unicode 3.13 (D145):
 /// `NFD(toCasefold(NFD(x)))`. The case fold is the full, table-backed
