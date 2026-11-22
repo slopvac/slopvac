@@ -24,9 +24,10 @@ mod common;
 
 use std::path::Path;
 
-use common::{legacy_engine, read_json, root};
+use common::{core_set, legacy_settings, read_json, root};
 use serde_json::Value;
-use slopvac_engine::Input;
+use slopvac_engine::{Engine, Input, Level};
+use slopvac_model::{RuleId, Severity};
 use slopvac_terms::Blocklist;
 
 const OWNER: &str = "core:ste-words.word-outside-controlled-vocabulary";
@@ -52,7 +53,16 @@ fn the_native_sweep_matches_the_recorded_vale_results() {
     );
     let blocklist =
         Blocklist::load(&root().join("packages/slopvac-lint/examples/blocklist.toml")).unwrap();
-    let engine = legacy_engine("normal").with_blocklist(&blocklist).unwrap();
+    // The legacy style leaves the vocabulary rules off until a blocklist is set. The oracle
+    // ran 2.x with the blocklist, so the rule under test is on at its 2.x `normal` level.
+    let mut settings = legacy_settings("normal");
+    settings
+        .rule_levels
+        .insert(RuleId::new(OWNER).unwrap(), Level::On(Severity::Suggestion));
+    let engine = Engine::new(vec![core_set()], settings)
+        .unwrap()
+        .with_blocklist(&blocklist)
+        .unwrap();
     let mut problems = Vec::new();
     let mut compared = 0;
     for entry in fixture["documents"].as_array().unwrap() {
