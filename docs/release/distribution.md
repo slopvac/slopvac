@@ -116,6 +116,19 @@ The release flow creates only immutable `vX.Y.Z` tags, plus the release candidat
 
 Without this ruleset, someone who can write tags could move a tag after the checks pass. The `verify-tag` check narrows that window, and the ruleset closes it.
 
+### Protect plugin tags
+
+Plugin releases use `plugin-<name>-vX.Y.Z` tags, and they need their own ruleset. The `v*` ruleset does not match them. Create a second repository ruleset with the same settings as the `v*` ruleset, except for the target:
+
+- Target: tags, matching `refs/tags/plugin-*`.
+- Enforcement: active.
+- Rules: `update`, `deletion` and `non_fast_forward`.
+- Bypass list: empty, or only the repository admin role.
+
+`scripts/release_ruleset.py` holds one spec for each tag family: the `v*` release tags and the `plugin-*` plugin tags. `check` picks the spec from the tag. A `vX.Y.Z` tag needs a trusted ruleset that covers `refs/tags/v<semver>`, and a `plugin-<name>-vX.Y.Z` tag needs one that covers its own ref. A ruleset on `refs/tags/v*` never counts for a plugin tag, and one on `refs/tags/plugin-*` never counts for a release tag. For a plugin tag the script counts an include only if it is `~ALL`, `refs/tags/*`, `refs/tags/**`, `refs/tags/**/*`, `refs/tags/plugin-*`, or the exact tag ref. No workflow calls the check for plugin tags yet; the plugin release workflow will.
+
+GitHub can restrict who creates a matching tag. The `creation` rule allows only the bypass actors to create it, and a bypass list can hold a GitHub App. This repository does not use it for `plugin-*` yet. The script cannot verify a bypass for a non-admin actor, because only an admin token sees `bypass_actors`, and it rejects such a bypass on a ruleset that protects tags. The limit would need a separate ruleset that the script does not read. Decide it together with the plugin release workflow, which sets who creates plugin tags.
+
 `release-provenance.yml` runs `scripts/release_ruleset.py check` on every `vX.Y.Z` tag of major 3 and later, and the 2.x publish job runs it too. The script is read-only. It lists the tag rulesets (`GET /repos/{owner}/{repo}/rulesets`) and reads each one (`GET /repos/{owner}/{repo}/rulesets/{id}`). It trusts a ruleset that covers the tag only when all of these hold: the ruleset is active, `current_user_can_bypass` is `never` for the reading token, and its ID and `updated_at` match an entry in `scripts/release_ruleset_pins.json`. The active, trusted rulesets that cover the tag must together enforce the update, deletion and non-fast-forward rules. If the ruleset was edited, the check fails until a maintainer reviews it and updates the pin. When GitHub shows `bypass_actors`, the script also requires them to be the repository admin role (role id 5) or organization admins. It fails the release when the ruleset is missing, inactive, too narrow, changed since it was pinned, bypassable, or unreadable.
 
 GitHub matches ref patterns with `fnmatch` under `File::FNM_PATHNAME` and adds the `~ALL` and `~DEFAULT_BRANCH` tokens (see [Creating rulesets for a repository](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository)). The check does not reimplement that matching. It counts an include only if it is `~ALL`, `refs/tags/*`, `refs/tags/**`, `refs/tags/**/*`, `refs/tags/v*`, or the exact tag ref, so use one of these. It treats an exclude as excluding the tag unless it provably cannot match.

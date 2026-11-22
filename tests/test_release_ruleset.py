@@ -157,6 +157,90 @@ def test_excludes_that_cannot_match_the_tag_do_not_exclude_it(exclude):
     check([ruleset(exclude=exclude)])
 
 
+# --- both tag families: release `v*` and plugin `plugin-*` ------------------------
+
+SPEC_CASES = [
+    pytest.param("v3.0.0", "refs/tags/v*", "refs/tags/plugin-*", id="release"),
+    pytest.param(
+        "plugin-example-v1.0.0", "refs/tags/plugin-*", "refs/tags/v*", id="plugin"
+    ),
+]
+
+
+@pytest.mark.parametrize(("tag", "own", "other"), SPEC_CASES)
+def test_each_tag_family_passes_with_its_own_ruleset(tag, own, other):
+    check([ruleset(include=[own])], tag=tag)
+
+
+@pytest.mark.parametrize(("tag", "own", "other"), SPEC_CASES)
+def test_the_other_families_ruleset_does_not_cover_the_tag(tag, own, other):
+    with pytest.raises(ValueError, match="deletion, non_fast_forward, update"):
+        check([ruleset(include=[other])], tag=tag)
+
+
+@pytest.mark.parametrize(("tag", "own", "other"), SPEC_CASES)
+@pytest.mark.parametrize(
+    ("rules", "missing"),
+    [
+        (["deletion", "non_fast_forward"], "update"),
+        (["update", "non_fast_forward"], "deletion"),
+        (["update", "deletion"], "non_fast_forward"),
+    ],
+)
+def test_each_tag_family_needs_all_three_rules(tag, own, other, rules, missing):
+    with pytest.raises(ValueError, match=missing):
+        check([ruleset(include=[own], rules=rules)], tag=tag)
+
+
+@pytest.mark.parametrize(("tag", "own", "other"), SPEC_CASES)
+@pytest.mark.parametrize(
+    "narrow",
+    ["refs/tags/{p}x*", "refs/tags/{p}*-v1.0.0", "refs/tags/release-*"],
+)
+def test_an_include_narrower_than_the_family_fails(tag, own, other, narrow):
+    prefix = own.removeprefix("refs/tags/").removesuffix("*")
+    pattern = narrow.format(p=prefix)
+    with pytest.raises(ValueError, match="update"):
+        check([ruleset(include=[pattern])], tag=tag)
+
+
+@pytest.mark.parametrize(("tag", "own", "other"), SPEC_CASES)
+@pytest.mark.parametrize("exclude", ["refs/tags/**", "~ALL"])
+def test_an_exclude_that_hits_the_family_fails(tag, own, other, exclude):
+    with pytest.raises(ValueError, match="update"):
+        check([ruleset(include=[own], exclude=[exclude])], tag=tag)
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "plugin-v1.0.0",
+        "plugin-Example-v1.0.0",
+        "plugin-example-v01.0.0",
+        "plugin-example-v1.0.0$(id)",
+        "plugin-example",
+        "plugin--example-v1.0.0",
+    ],
+)
+def test_a_tag_that_is_not_a_plugin_tag_is_rejected(tag):
+    with pytest.raises(ValueError, match="not a release tag"):
+        check([ruleset(include=["refs/tags/plugin-*"])], tag=tag)
+
+
+def test_the_release_spec_is_unchanged():
+    assert rs.RELEASE.sample_tag == "v3.0.0"
+    assert rs.RELEASE.includes == {
+        "~ALL",
+        "refs/tags/*",
+        "refs/tags/**/*",
+        "refs/tags/**",
+        "refs/tags/v*",
+    }
+    assert rs.PLUGIN.includes == (rs.RELEASE.includes - {"refs/tags/v*"}) | {
+        "refs/tags/plugin-*"
+    }
+
+
 @pytest.mark.parametrize("tag", ["v3.0.0$(id)", "v03.0.0", "v3.00.0", "v3.0.00"])
 def test_a_tag_that_is_not_a_release_tag_is_rejected(tag):
     with pytest.raises(ValueError, match="not a release tag"):
@@ -379,3 +463,55 @@ def test_the_update_pins_command_exits_one_with_the_hint_when_refused(
     err = capsys.readouterr().err
     assert "admin token" in err
     assert "update-pins" in err
+
+
+PLUGIN_RULESET = {"include": ["refs/tags/plugin-*"], **ADMIN_VIEW}
+
+
+def test_update_pins_for_all_specs_pins_both_rulesets(tmp_path):
+    release = ruleset(7, **ADMIN_VIEW)
+    plugin = ruleset(8, **PLUGIN_RULESET)
+    path = tmp_path / "pins.json"
+    rs.update_pins("o/r", fake_api([release, plugin]), path, list(rs.SPECS.values()))
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert sorted(written["rulesets"]) == ["7", "8"]
+
+
+def test_update_pins_for_the_plugin_spec_skips_the_release_ruleset(tmp_path):
+    release = ruleset(7, **ADMIN_VIEW)
+    plugin = ruleset(8, **PLUGIN_RULESET)
+    path = tmp_path / "pins.json"
+    rs.update_pins("o/r", fake_api([release, plugin]), path, [rs.PLUGIN])
+    assert sorted(json.loads(path.read_text(encoding="utf-8"))["rulesets"]) == ["8"]
+
+
+def test_update_pins_refuses_when_a_spec_has_no_ruleset(tmp_path):
+    path = tmp_path / "pins.json"
+    with pytest.raises(ValueError, match="refs/tags/plugin-example-v1.0.0"):
+        rs.update_pins(
+            "o/r",
+            fake_api([ruleset(7, **ADMIN_VIEW)]),
+            path,
+            list(rs.SPECS.values()),
+        )
+    assert not path.exists()
+
+
+def test_one_wide_ruleset_pins_once_and_serves_both_specs(tmp_path):
+    wide = ruleset(7, include=["refs/tags/*"], **ADMIN_VIEW)
+    path = tmp_path / "pins.json"
+    rs.update_pins("o/r", fake_api([wide]), path, list(rs.SPECS.values()))
+    assert sorted(json.loads(path.read_text(encoding="utf-8"))["rulesets"]) == ["7"]
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [([], ["release", "plugin"]), (["--spec", "plugin"], ["plugin"])],
+)
+def test_the_update_pins_command_selects_specs(monkeypatch, flags, expected):
+    seen = []
+    monkeypatch.setattr(
+        rs, "update_pins", lambda repo, specs: seen.append([s.key for s in specs])
+    )
+    assert rs.main(["update-pins", "--repo", "o/r", *flags]) == 0
+    assert seen == [expected]
