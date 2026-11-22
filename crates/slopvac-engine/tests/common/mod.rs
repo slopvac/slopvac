@@ -6,6 +6,12 @@
     missing_docs,
     reason = "test support: each test binary uses a subset of the helpers; test support: items are shared across test binaries; test crate: nothing public to document"
 )]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test support: a panic in a helper is a failed test, and the helpers are shared across test binaries"
+)]
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
