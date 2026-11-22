@@ -1,4 +1,14 @@
-name: Composite action contract
+name: Action contract
+
+# Builds the slopvac binary from this checkout once, runs the composite action
+# at the repository root with it against a sloppy document, and checks the
+# reports it feeds to reviewdog, code scanning and the Code Climate artifact.
+# test.yml calls it as the `action-contract` job, routed by the `action` class
+# in .github/ci-paths.yml, so a change to the renderers runs it too. The pytest
+# suites that run the same binary are in test.yml's `Full test suite` job. A
+# fork pull request cannot be simulated here: the event is whatever triggered
+# the run. The pytest suites cover the fork path with the reporter choice and
+# the fork-review artifact check.
 
 on:
   workflow_call:
@@ -9,214 +19,159 @@ permissions:
 
 jobs:
   action:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # This case also exercises resolution of a published version instead
-          # of the source checkout used by the other cases.
-          - name: blocking
-            paths: .github/action-fixtures/slop-laden.md
-            source: ""
-            version: "2.2.0"
-            changed: "false"
-            fail: "true"
-            sarif: "false"
-            upload: "true"
-          - name: non-blocking
-            paths: .github/action-fixtures/slop-laden.md
-            source: ./packages/slopvac-lint
-            version: ""
-            changed: "false"
-            fail: "false"
-            sarif: "false"
-            upload: "true"
-          - name: empty-targets
-            paths: ""
-            source: ./packages/slopvac-lint
-            version: ""
-            changed: "false"
-            fail: "true"
-            sarif: "false"
-            upload: "true"
-          - name: sarif-without-upload
-            paths: .github/action-fixtures/slop-laden.md
-            source: ./packages/slopvac-lint
-            version: ""
-            changed: "false"
-            fail: "false"
-            sarif: "true"
-            upload: "false"
-          # On a pull_request this fixture is the one prose file changed by the
-          # fixture-focused PR. The clean fixture is already present on its base
-          # branch in that run, so changed-files-only must select only this file.
-          - name: changed-files
-            paths: .github/action-fixtures/slop-laden.md
-            source: ./packages/slopvac-lint
-            version: ""
-            changed: "true"
-            fail: "false"
-            sarif: "false"
-            upload: "true"
-
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SLOPVAC_BIN: ${{ github.workspace }}/target/debug/slopvac
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 0 # the changed-files case needs the pull request base
 
-      - name: Install docutils for changed RST files
-        # A changed .rst file (the golden suite's RST sample) needs rst2html on PATH;
-        # without it the run is incomplete (exit 2).
-        if: matrix.name == 'changed-files' && github.event_name == 'pull_request'
-        run: pipx install "docutils==0.23"
+      # rust-toolchain.toml pins the toolchain; the helper recovers from a partial install.
+      - name: Install the pinned toolchain
+        run: bash scripts/ci/install-rust-toolchain.sh
 
-      - name: Run slopvac action
-        if: matrix.name != 'changed-files' || github.event_name == 'pull_request'
-        id: slopvac
-        uses: ./
-        continue-on-error: ${{ matrix.fail == 'true' }}
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          paths: ${{ matrix.paths }}
-          source: ${{ matrix.source }}
-          version: ${{ matrix.version }}
-          changed-files-only: ${{ matrix.changed }}
-          fail-on-findings: ${{ matrix.fail }}
-          min-score: "100"
-          max-per-100-words: "0"
-          sarif: ${{ matrix.sarif }}
-          upload-sarif: ${{ matrix.upload }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Skip PR-only changed-files case outside pull requests
-        if: matrix.name == 'changed-files' && github.event_name != 'pull_request'
-        run: echo "changed-files-only contract is pull-request specific"
+      - name: Build the slopvac binary
+        run: cargo build --locked -p slopvac
 
-      - name: Assert blocking findings fail
-        if: matrix.name == 'blocking'
+      - name: Run the action, blocking
+        id: blocking
+        continue-on-error: true
+        uses: ./
+        with:
+          paths: .github/action-fixtures/slop-laden.md
+          config: .github/action-fixtures/slopvac-v3.toml
+          binary: ${{ env.SLOPVAC_BIN }}
+          fail-on-findings: "true"
+          reporter: annotations
+
+      - name: Run the action, non-blocking
+        id: non-blocking
+        continue-on-error: true
+        uses: ./
+        with:
+          paths: .github/action-fixtures/slop-laden.md
+          config: .github/action-fixtures/slopvac-v3.toml
+          binary: ${{ env.SLOPVAC_BIN }}
+          fail-on-findings: "false"
+          reporter: annotations
+          rdjsonl-file: reports/non-blocking.rdjsonl
+          sarif-file: reports/non-blocking.sarif
+          codeclimate: "false"
+
+      - name: Check the gate
         env:
-          OUTCOME: ${{ steps.slopvac.outcome }}
+          BLOCKING: ${{ steps.blocking.outcome }}
+          NON_BLOCKING: ${{ steps.non-blocking.outcome }}
         run: |
-          observed="$OUTCOME"
-          if [ "$observed" != failure ]; then
-            echo "expected blocking action to fail, observed: $observed"
+          set -euo pipefail
+          if [[ "$BLOCKING" != "failure" ]]; then
+            echo "blocking run: expected failure, got $BLOCKING" >&2
+            exit 1
+          fi
+          if [[ "$NON_BLOCKING" != "success" ]]; then
+            echo "non-blocking run: expected success, got $NON_BLOCKING" >&2
             exit 1
           fi
 
-      - name: Assert non-blocking findings pass and publish outputs
-        if: matrix.name == 'non-blocking'
+      - name: Check the reports the consumers read
         env:
-          OUTCOME: ${{ steps.slopvac.outcome }}
-          FINDINGS: ${{ steps.slopvac.outputs.findings }}
-          SCORE: ${{ steps.slopvac.outputs.score }}
-          PASSED: ${{ steps.slopvac.outputs.passed }}
-          ERRORS: ${{ steps.slopvac.outputs.errors }}
+          FINDINGS: ${{ steps.blocking.outputs.findings }}
+          PASSED: ${{ steps.blocking.outputs.passed }}
+          RDJSONL: ${{ steps.blocking.outputs.rdjsonl }}
+          SARIF: ${{ steps.blocking.outputs.sarif }}
+          CODECLIMATE: ${{ steps.blocking.outputs.codeclimate }}
         run: |
-          # The step summary file is per step, so a later step cannot read the
-          # action's; the outputs are the observable contract instead.
-          if [ "$OUTCOME" != success ]; then
-            echo "expected non-blocking action to pass, observed: $OUTCOME"
+          set -euo pipefail
+          if [[ "$PASSED" != "false" || "$FINDINGS" -lt 1 ]]; then
+            echo "bad outputs: findings=$FINDINGS passed=$PASSED" >&2
             exit 1
           fi
-          if [ -z "$FINDINGS" ] || [ "$FINDINGS" = 0 ]; then
-            echo "expected findings, observed: $FINDINGS"
-            exit 1
-          fi
-          if [ -z "$SCORE" ] || [ -z "$ERRORS" ]; then
-            echo "expected score and errors outputs, observed: score=$SCORE errors=$ERRORS"
-            exit 1
-          fi
-          if [ "$PASSED" != false ]; then
-            echo "expected passed=false on a slop-laden fixture, observed: $PASSED"
-            exit 1
-          fi
+          # Every report holds the same number of findings as the JSON summary.
+          [[ "$(wc -l < "$RDJSONL")" -eq "$FINDINGS" ]]
+          [[ "$(jq '.runs[0].results | length' "$SARIF")" -eq "$FINDINGS" ]]
+          [[ "$(jq 'length' "$CODECLIMATE")" -eq "$FINDINGS" ]]
+          # reviewdog, installed by the action, parses the rdjsonl report.
+          posted="$(reviewdog -f=rdjsonl -name=slopvac -reporter=local \
+            -filter-mode=nofilter -fail-level=none < "$RDJSONL")"
+          grep -q 'core:prose-promotion' <<< "$posted"
 
-      - name: Assert empty targets pass cleanly
-        if: matrix.name == 'empty-targets'
+      - name: Check the non-blocking reports exist
+        run: test -s reports/non-blocking.rdjsonl && test -s reports/non-blocking.sarif
+
+      - name: Run the action on no target paths
+        id: empty
+        continue-on-error: true
+        uses: ./
+        with:
+          paths: ""
+          binary: ${{ env.SLOPVAC_BIN }}
+          fail-on-findings: "true"
+          reporter: none
+          sarif: "false"
+          codeclimate: "false"
+
+      - name: Check an empty target list passes cleanly
         env:
-          OUTCOME: ${{ steps.slopvac.outcome }}
-          SCORE: ${{ steps.slopvac.outputs.score }}
-          FINDINGS: ${{ steps.slopvac.outputs.findings }}
-          DOCUMENTS: ${{ steps.slopvac.outputs.documents }}
-          PASSED: ${{ steps.slopvac.outputs.passed }}
+          OUTCOME: ${{ steps.empty.outcome }}
+          PASSED: ${{ steps.empty.outputs.passed }}
         run: |
-          observed="$OUTCOME score=$SCORE findings=$FINDINGS documents=$DOCUMENTS passed=$PASSED"
-          if [ "$OUTCOME" != success ] || [ "$SCORE" != 100 ] || \
-             [ "$FINDINGS" != 0 ] || [ "$DOCUMENTS" != 0 ] || [ "$PASSED" != true ]; then
-            echo "expected an empty-target success (score=100 findings=0 documents=0 passed=true), observed: $observed"
+          set -euo pipefail
+          if [[ "$OUTCOME" != "success" || "$PASSED" != "true" ]]; then
+            echo "expected an empty-target success with passed=true, got outcome=$OUTCOME passed=$PASSED" >&2
             exit 1
           fi
 
-      - name: Assert SARIF is written without upload
-        if: matrix.name == 'sarif-without-upload'
-        env:
-          OUTCOME: ${{ steps.slopvac.outcome }}
-          SARIF: ${{ steps.slopvac.outputs.sarif }}
-        run: |
-          observed="outcome=$OUTCOME sarif=$SARIF"
-          if [ "$OUTCOME" != success ] || [ -z "$SARIF" ] || [ ! -s "$SARIF" ]; then
-            echo "expected SARIF output with upload disabled (the upload step must be skipped), observed: $observed"
-            exit 1
-          fi
+      - name: Run the action on the changed files
+        if: github.event_name == 'pull_request'
+        id: changed
+        continue-on-error: true
+        uses: ./
+        with:
+          changed-files-only: "true"
+          config: .github/action-fixtures/slopvac-v3.toml
+          binary: ${{ env.SLOPVAC_BIN }}
+          fail-on-findings: "false"
+          reporter: none
+          sarif: "false"
+          codeclimate: "false"
 
-      - name: Assert changed-files lints exactly the PR's changed prose
-        if: matrix.name == 'changed-files' && github.event_name == 'pull_request'
+      - name: Check the action linted exactly the changed prose
+        if: github.event_name == 'pull_request'
         env:
-          OUTCOME: ${{ steps.slopvac.outcome }}
-          REPORT: ${{ steps.slopvac.outputs.json }}
+          OUTCOME: ${{ steps.changed.outcome }}
+          REPORT: ${{ steps.changed.outputs.json }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          python3 - "$OUTCOME" "$REPORT" "$BASE_SHA" <<'PY'
-          import json
-          import os
-          import subprocess
-          import sys
-
-          outcome, report_path, base_sha = sys.argv[1:]
-          if outcome != "success":
-              print(f"expected the changed-files action to succeed, observed: outcome={outcome}")
-              raise SystemExit(1)
-
-          # The contract: the action lints exactly the files the CLI would lint
-          # when handed this PR's changed prose paths. The CLI applies the
-          # repository's slopvac.toml, so an excluded file (CHANGELOG.md on a
-          # release PR) is in the git diff and in neither set; a code-only PR
-          # has an empty diff and no report at all.
-          changed = sorted(
-              subprocess.check_output(
-                  ["git", "diff", "--name-only", "--diff-filter=AM", f"{base_sha}...HEAD", "--",
-                   "*.md", "*.mdx", "*.markdown", "*.txt", "*.rst", "*.html"],
-                  text=True,
-              ).splitlines()
-          ) if base_sha else [".github/action-fixtures/slop-laden.md"]
-          if not changed:
-              if report_path and os.path.exists(report_path):
-                  print(f"expected no report on a PR with no prose changes, observed: {report_path}")
-                  raise SystemExit(1)
-              print("no prose changed in this PR; the action reported that and produced no report")
-              raise SystemExit(0)
-
-          # Exit 1 (findings) and 2 (--no-vale marks the run incomplete) both still
-          # write the JSON report; only the document list is read here.
-          completed = subprocess.run(
-              ["uvx", "--no-cache", "--from", "./packages/slopvac-lint", "slopvac", "lint", *changed,
-               "--format", "json", "--no-vale"],
-              text=True,
-              capture_output=True,
-          )
-          reference = json.loads(completed.stdout)
-          expected = sorted(document["path"] for document in reference["documents"])
-          with open(report_path) as handle:
-              report = json.load(handle)
-          observed_paths = sorted(document["path"] for document in report["documents"])
-          observed = f"outcome={outcome} documents={observed_paths} expected={expected} changed={changed}"
-          if observed_paths != expected:
-              print(f"expected exactly the lintable changed prose files, observed: {observed}")
-              raise SystemExit(1)
-          if ".github/action-fixtures/slop-laden.md" in expected and report["summary"]["findings"] == 0:
-              print(f"expected findings on the slop-laden fixture, observed: {observed}")
-              raise SystemExit(1)
-          print(f"changed-files contract held: {observed}")
-          PY
+          set -euo pipefail
+          if [[ "$OUTCOME" != "success" ]]; then
+            echo "expected the changed-files run to succeed, got $OUTCOME" >&2
+            exit 1
+          fi
+          # The contract: the action lints the files the binary lints when it is
+          # handed this pull request's changed prose paths. A pull request with
+          # no prose change has an empty list and no report.
+          mapfile -d '' changed < <(git diff -z --name-only --diff-filter=d \
+            "${BASE_SHA}...HEAD" -- '*.md' '*.mdx' '*.markdown' '*.txt' '*.rst' '*.html')
+          if (( ${#changed[@]} == 0 )); then
+            [[ -z "$REPORT" || ! -e "$REPORT" ]] || { echo "unexpected report $REPORT" >&2; exit 1; }
+            echo "no prose changed in this pull request; no report expected"
+            exit 0
+          fi
+          reference="$RUNNER_TEMP/reference.json"
+          # Exit 1 (findings) and 2 (incomplete) still write the report.
+          "$SLOPVAC_BIN" --offline lint --config .github/action-fixtures/slopvac-v3.toml \
+            --format json --out "$reference" -- "${changed[@]}" || true
+          expected="$(jq -c '[.documents[].path] | sort' "$reference")"
+          observed="$(jq -c '[.documents[].path] | sort' "$REPORT")"
+          if [[ "$observed" != "$expected" ]]; then
+            echo "expected the changed prose files $expected, got $observed" >&2
+            exit 1
+          fi

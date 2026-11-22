@@ -1,8 +1,9 @@
 """Generate the 2.x compatibility matrix.
 
-Rows come from the 2.x click tree (``slopvac.cli:main``), ``action.yml`` and
+Rows come from the 2.x click tree (``slopvac.cli:main``),
+``sources/action-2x.yml`` (a frozen copy of the 2.x Action) and
 ``sources/pre-commit-hooks-2x.yaml`` (a frozen copy of the 2.x hooks file). Behaviour
-rows exist only in ``dispositions.toml``.
+rows exist only in ``dispositions.toml``. The Action rows keep the label ``action.yml``.
 The hand-written dispositions supply the disposition, note and owner per row.
 
     uv run python scripts/contract/compat_matrix.py          # rewrite the files
@@ -72,7 +73,9 @@ def click_rows() -> list[dict]:
 
 
 def action_rows() -> list[dict]:
-    data = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))
+    data = yaml.safe_load(
+        (COMPAT / "sources" / "action-2x.yml").read_text(encoding="utf-8")
+    )
     rows = []
     for name, spec in data.get("inputs", {}).items():
         rows.append(

@@ -1,5 +1,5 @@
 name: slopvac
-description: Lint prose with Slopvac's unified ruleset for AI writing patterns, prose quality, documentation discipline, and technical-writing constraints.
+description: Lint prose and source comments with slopvac 3.0, report findings through reviewdog, code scanning and Code Climate, and gate the job on the linter's exit code.
 author: Sjors Robroek
 
 branding:
@@ -8,96 +8,93 @@ branding:
 
 inputs:
   paths:
-    description: >-
-      Files or directories to lint, space separated. Ignored when
-      changed-files-only is true.
+    description: Files or directories to lint, space separated. Ignored when changed-files-only is true.
     required: false
     default: "."
-  profile:
-    description: "Strictness tier: strict, normal, or relaxed. Overrides slopvac.toml."
-    required: false
-    default: ""
-  config:
-    description: >-
-      Config file path. Defaults to the nearest slopvac.toml, .slopvac.toml, or
-      pyproject.toml with a [tool.slopvac] table.
-    required: false
-    default: ""
   changed-files-only:
     description: >-
-      Lint only the prose files this pull request touches. Requires the pull
-      request base commit to be available in the checkout; missing base data
-      fails the step instead of falling back to whole-file linting.
+      Lint only the prose files this pull request touches. Needs the pull
+      request base commit in the checkout (fetch-depth: 0).
     required: false
     default: "false"
+  config:
+    description: Config file path. Empty uses the nearest slopvac.toml.
+    required: false
+    default: ""
   min-score:
-    description: Empty preserves the effective threshold from config or profile.
+    description: Fail below this 0-100 score. Empty keeps the configured threshold.
     required: false
     default: ""
   max-per-100-words:
-    description: >-
-      Fail above this severity-weighted error/warning density. Errors count 1.0
-      and warnings 0.5. Empty preserves the effective threshold from config or
-      profile.
+    description: Fail above this severity-weighted density. Empty keeps the configured threshold.
     required: false
     default: ""
   fail-on-findings:
+    description: Set false to report findings without failing the job. Only exit 1 is softened. Exit 2, other statuses and signals always fail.
+    required: false
+    default: "true"
+  reporter:
     description: >-
-      Fail the job when a threshold fails. Set false to annotate the diff
-      without blocking the merge.
+      auto, review, annotations or none. auto tries a reviewdog pull request
+      review with suggestions for a same-repository pull request that
+      Dependabot did not open, and falls back to annotations when the review
+      fails (for example a read-only token). Other pull requests use
+      annotations. Pushes report through a check run. Reporting never fails
+      the job.
     required: false
-    default: "true"
-  annotate:
-    description: Emit workflow annotations on the diff.
+    default: auto
+  github-token:
+    description: Token reviewdog uses to post. Needs pull-requests write for review mode, checks write for check runs.
     required: false
-    default: "true"
+    default: ${{ github.token }}
+  rdjsonl-file:
+    description: Where to write the reviewdog rdjsonl report.
+    required: false
+    default: slopvac.rdjsonl
   sarif:
-    description: >-
-      Write SARIF to sarif-file and attempt upload to GitHub code scanning. The
-      calling job needs `permissions: security-events: write`. Upload failures
-      are tolerated by this action. Set upload-sarif false to write the file
-      without attempting an upload.
+    description: Write SARIF and upload it to code scanning. The job needs security-events write.
     required: false
-    default: "false"
+    default: "true"
   sarif-file:
     description: Where to write SARIF.
     required: false
     default: slopvac.sarif
-  upload-sarif:
-    description: >-
-      Upload sarif-file to code scanning. Ignored when sarif is false.
+  sarif-category:
+    description: Code scanning category for the upload.
+    required: false
+    default: slopvac
+  codeclimate:
+    description: Write a Code Climate report and upload it as a workflow artifact.
     required: false
     default: "true"
-  vale:
-    description: >-
-      Install Vale and run the Vale-backed rules as well. When false the linter
-      runs with --no-vale: those rules report as UNCHECKED and the run exits 2.
-    required: false
-    default: "true"
-  vale-version:
-    description: >-
-      Vale release to install, 3.18.0 or later. Empty installs the release
-      pinned in scripts/install_vale.py.
-    required: false
-    default: ""
   version:
     description: >-
-      slopvac version specifier, e.g. "0.1.0" or ">=0.1,<0.2". Empty uses
-      unpinned slopvac through uvx, which may reuse a cached version. Pin it to
-      keep CI reproducible. Ignored when source is set.
+      slopvac version to install, for example "3.0.0".
+      Until 3.0.0 is released, set it to "3.0.0rc1" or later.
+      An empty value installs the latest stable release, which is still a 2.x package,
+      and the Action refuses a slopvac older than 3.0.
+      Pin it for reproducible CI.
     required: false
     default: ""
-  source:
-    description: >-
-      Install from this path or URL instead of PyPI, e.g. a checkout at
-      ./packages/slopvac-lint. For testing an unreleased linter; leave it empty
-      in normal use.
+  profile:
+    description: Removed in 3.0. Setting it fails the step; see the migration guide.
+    required: false
+    default: ""
+  vale:
+    description: Removed in 3.0. Setting it fails the step; see the migration guide.
+    required: false
+    default: ""
+  vale-version:
+    description: Removed in 3.0. Setting it fails the step; see the migration guide.
     required: false
     default: ""
   rules-dir:
-    description: >-
-      Add rules over the packaged rules. A same-ID project category replaces
-      the packaged category; it does not merge with it.
+    description: Removed in 3.0. Setting it fails the step; see the migration guide.
+    required: false
+    default: ""
+  binary:
+    description: Use this slopvac binary instead of installing one from PyPI. For testing an unreleased build.
+    required: false
     default: ""
 
 outputs:
@@ -116,45 +113,101 @@ outputs:
   suggestions:
     description: Suggestion-severity finding count.
     value: ${{ steps.lint.outputs.suggestions }}
-  documents:
-    description: Number of documents linted.
-    value: ${{ steps.lint.outputs.documents }}
-  words:
-    description: Total words linted.
-    value: ${{ steps.lint.outputs.words }}
-  per-100-words:
-    description: Finding density per 100 words.
-    value: ${{ steps.lint.outputs.per-100-words }}
   passed:
-    description: '"true" when every threshold was met; with no paths, true is returned without a report.'
+    description: '"true" when every threshold was met.'
     value: ${{ steps.lint.outputs.passed }}
   json:
-    description: Path to the full JSON report; empty when no target paths were selected.
-    value: ${{ steps.lint.outputs.json }}
+    description: Path to the JSON report.
+    value: ${{ steps.lint.outputs.json-file }}
+  rdjsonl:
+    description: Path to the reviewdog rdjsonl report.
+    value: ${{ steps.lint.outputs.rdjsonl-file }}
   sarif:
-    description: Path to the SARIF report, empty when SARIF is disabled or no target paths were selected.
-    value: ${{ steps.lint.outputs.sarif }}
+    description: Path to the SARIF report, empty when SARIF is off.
+    value: ${{ steps.lint.outputs.sarif-file }}
+  codeclimate:
+    description: Path to the Code Climate report, empty when it is off.
+    value: ${{ steps.lint.outputs.codeclimate-file }}
 
 runs:
   using: composite
   steps:
-    - name: Install uv
-      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-      with:
-        enable-cache: true
-
-    - name: Install Vale
-      if: inputs.vale == 'true'
+    # A composite action cannot see an undeclared `with:` key, so the removed
+    # 2.x inputs are declared and refused here, before anything installs.
+    - name: Refuse removed 2.x inputs
       shell: bash
       env:
-        VALE_VERSION: ${{ inputs.vale-version }}
-        ACTION_PATH: ${{ github.action_path }}
-      run: python3 "$ACTION_PATH/scripts/install_vale.py" --prefix "$RUNNER_TEMP/slopvac-bin" "$VALE_VERSION"
+        REMOVED_PROFILE: ${{ inputs.profile }}
+        REMOVED_VALE: ${{ inputs.vale }}
+        REMOVED_VALE_VERSION: ${{ inputs.vale-version }}
+        REMOVED_RULES_DIR: ${{ inputs.rules-dir }}
+      run: |
+        set -euo pipefail
+        failed=0
+        check() {
+          if [[ -n "$2" ]]; then
+            echo "::error title=slopvac::the input '$1' was removed in 3.0; delete it from the workflow. See docs/migrate-2-to-3.md#6-removed-in-30"
+            failed=1
+          fi
+        }
+        check profile "$REMOVED_PROFILE"
+        check vale "$REMOVED_VALE"
+        check vale-version "$REMOVED_VALE_VERSION"
+        check rules-dir "$REMOVED_RULES_DIR"
+        exit $(( failed * 2 ))
 
-    - name: Add Vale to PATH
-      if: inputs.vale == 'true'
+    - name: Install uv
+      if: inputs.binary == ''
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+    - name: Install slopvac
+      if: inputs.binary == ''
       shell: bash
-      run: echo "$RUNNER_TEMP/slopvac-bin" >> "$GITHUB_PATH"
+      env:
+        VERSION: ${{ inputs.version }}
+        UV_TOOL_BIN_DIR: ${{ runner.temp }}/slopvac-bin
+      run: |
+        set -euo pipefail
+        if [[ -n "$VERSION" ]]; then
+          uv tool install --quiet "slopvac==$VERSION"
+        else
+          uv tool install --quiet slopvac
+        fi
+
+    # An empty `version` resolves to PyPI's latest stable release, which is a
+    # 2.x package without the 3.x command line. Fail closed here, with
+    # guidance, instead of failing later with an unrelated exit 2. Only the
+    # parsed digits reach the annotation, never the binary's raw output.
+    - name: Check the slopvac version
+      if: inputs.binary == ''
+      shell: bash
+      env:
+        BINARY: ${{ format('{0}/slopvac-bin/slopvac', runner.temp) }}
+      run: |
+        set -euo pipefail
+        guidance='set `version: 3.0.0rc1` (or later) on this Action until 3.0.0 is released'
+        out="$("$BINARY" --version 2>/dev/null)" || out=""
+        # Accept only a line that starts with the program name: the Rust CLI
+        # prints `slopvac X.Y.Z[-pre]`, the 2.x package `slopvac, version X.Y.Z`.
+        # Anything else, a date or another tool's version included, is unreadable.
+        pattern='^slopvac(, version)? ([0-9]+)\.([0-9]+)\.([0-9]+)([-+.]?[0-9A-Za-z.+-]*)$'
+        major="" found=""
+        while IFS= read -r line; do
+          line="${line%$'\r'}"
+          if [[ "$line" =~ $pattern ]]; then
+            major="${BASH_REMATCH[2]}"
+            found="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.${BASH_REMATCH[4]}"
+            break
+          fi
+        done <<< "$out"
+        if [[ -z "$found" ]]; then
+          echo "::error::could not read the slopvac version after install; $guidance"
+          exit 1
+        fi
+        if (( 10#$major < 3 )); then
+          echo "::error::slopvac $found is older than 3.0; $guidance"
+          exit 1
+        fi
 
     - name: Resolve target paths
       id: targets
@@ -164,43 +217,81 @@ runs:
         CHANGED_ONLY: ${{ inputs.changed-files-only }}
         INPUT_PATHS: ${{ inputs.paths }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      run: python3 "$ACTION_PATH/scripts/action_entry.py" resolve-targets
+      run: python3 "$ACTION_PATH/scripts/action_v3.py" resolve-targets
 
+    # policies.md 1.4: plugins come from the lockfile in a named step of their
+    # own, so the lint step below can run offline. A failed sync fails the
+    # action. Without a lockfile the step does nothing.
+    - name: Sync plugins
+      id: sync
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BINARY: ${{ inputs.binary || format('{0}/slopvac-bin/slopvac', runner.temp) }}
+      run: python3 "$ACTION_PATH/scripts/action_v3.py" sync
+
+    # The binary is the gate. The outcome is checked in the last step, so the
+    # reports below still upload when the lint fails.
     - name: Lint
       id: lint
+      continue-on-error: true
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
         PATH_LIST: ${{ steps.targets.outputs.list }}
-        VALE: ${{ inputs.vale }}
-        PROFILE: ${{ inputs.profile }}
+        BINARY: ${{ inputs.binary || format('{0}/slopvac-bin/slopvac', runner.temp) }}
         CONFIG: ${{ inputs.config }}
         MIN_SCORE: ${{ inputs.min-score }}
         MAX_PER_100: ${{ inputs.max-per-100-words }}
-        RULES_DIR: ${{ inputs.rules-dir }}
-        ANNOTATE: ${{ inputs.annotate }}
+        FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+        RDJSONL_FILE: ${{ inputs.rdjsonl-file }}
         SARIF: ${{ inputs.sarif }}
         SARIF_FILE: ${{ inputs.sarif-file }}
-        FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
-        VERSION: ${{ inputs.version }}
-        SOURCE: ${{ inputs.source }}
-        CHANGED_ONLY: ${{ inputs.changed-files-only }}
-        BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      run: python3 "$ACTION_PATH/scripts/action_entry.py" lint
+        CODECLIMATE: ${{ inputs.codeclimate }}
+      run: python3 "$ACTION_PATH/scripts/action_v3.py" lint
 
-    # `always()`, because the whole point is to see the findings on a run that
-    # failed on them. Without it the upload is skipped exactly when it matters.
-    #
-    # `steps.lint.outputs.sarif` as well as the inputs. The lint step exits early when it
-    # resolves no paths to check, and sets `sarif=` to say it wrote no file. Uploading on the
-    # input alone then fails the job with `Path does not exist: slopvac.sarif` -- a run that
-    # correctly found nothing to do, reported as a broken action.
+    # Reporting never gates: a failed install or post only warns.
+    - name: Install reviewdog
+      id: reviewdog
+      if: always() && inputs.reporter != 'none' && steps.lint.outputs.rdjsonl-file != ''
+      continue-on-error: true
+      uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # v1.5.0
+      with:
+        reviewdog_version: v0.21.3
+
+    - name: Report with reviewdog
+      if: always() && inputs.reporter != 'none' && steps.lint.outputs.rdjsonl-file != ''
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        REVIEWDOG_GITHUB_API_TOKEN: ${{ inputs.github-token }}
+        REPORTER: ${{ inputs.reporter }}
+        EVENT_NAME: ${{ github.event_name }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        BASE_REPO: ${{ github.repository }}
+        ACTOR: ${{ github.actor }}
+        RDJSONL: ${{ steps.lint.outputs.rdjsonl-file }}
+      run: python3 "$ACTION_PATH/scripts/action_v3.py" report
+
     - name: Upload SARIF to code scanning
-      if: >-
-        always() && inputs.sarif == 'true' && inputs.upload-sarif == 'true'
-        && steps.lint.outputs.sarif != ''
+      if: always() && inputs.sarif == 'true' && steps.lint.outputs.sarif-file != ''
       continue-on-error: true
       uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
       with:
-        sarif_file: ${{ inputs.sarif-file }}
-        category: slopvac
+        sarif_file: ${{ steps.lint.outputs.sarif-file }}
+        category: ${{ inputs.sarif-category }}
+
+    - name: Upload the Code Climate report
+      if: always() && inputs.codeclimate == 'true' && steps.lint.outputs.codeclimate-file != ''
+      continue-on-error: true
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: slopvac-codeclimate
+        path: ${{ steps.lint.outputs.codeclimate-file }}
+
+    - name: Fail the job when slopvac failed
+      if: always() && steps.lint.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::error title=slopvac::the lint step failed; see its log for findings and exit code"
+        exit 1

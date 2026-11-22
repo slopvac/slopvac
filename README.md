@@ -225,11 +225,13 @@ Add these steps to a workflow job:
 
 ```yaml
 - uses: actions/checkout@v7
-- uses: slopvac/slopvac@v2.18.1 # x-release-please-version
+- uses: slopvac/slopvac@<full commit SHA of the v3.0.0 tag> # v3.0.0
   with:
     paths: README.md docs/
-    profile: normal
+    version: 3.0.0
 ```
+
+Pin the action to a full commit SHA and keep the version as a trailing comment.
 
 The action supports annotations and SARIF output, plus configuration and
 changed-file selection. See [action.yml](action.yml) for its inputs and outputs.

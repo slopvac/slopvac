@@ -1,6 +1,6 @@
 # GitHub Action
 
-The action installs slopvac, lints the files you choose, and reports the findings. The exit code of `slopvac lint` is the gate: the job passes or fails on it, whatever the reporters do. Until the 3.0 cutover the action lives in `action-v3/`; at release it moves to the repository root and the examples below apply as written.
+The action installs slopvac, lints the files you choose, and reports the findings. The exit code of `slopvac lint` is the gate: the job passes or fails on it, whatever the reporters do. The action lives at the repository root, so the examples below apply as written.
 
 Pin the action to a full commit SHA, with the version as a trailing comment. The repository publishes no moving major tag such as `v3`, and its `v*` tags are immutable. Replace the placeholder with a SHA from `git ls-remote https://github.com/slopvac/slopvac 'refs/tags/v3.0.0' 'refs/tags/v3.0.0^{}'`. Copy it from the `^{}` row when that row is present (an annotated tag), otherwise from the plain row. Dependabot and Renovate update a SHA pin and its version comment together.
 
@@ -87,4 +87,4 @@ The action itself refuses `rdjsonl-file`, `sarif-file` and the Code Climate path
 
 ## Inputs and outputs
 
-See `action-v3/action.yml` for every input and output. The binary version comes from `version`. Until 3.0.0 is released, set `version: 3.0.0rc1` or later. An empty value installs the latest stable release, which is still a 2.x package, and the Action then stops with an error that says so. Once 3.0.0 is released, an empty value installs it. Pin the version for reproducible runs.
+See `action.yml` at the repository root for every input and output. The action has no 2.x compatibility mode. The binary version comes from `version`. Until 3.0.0 is released, set `version: 3.0.0rc1` or later. An empty value installs the latest stable release, which is still a 2.x package, and the Action then stops with an error that says so. Once 3.0.0 is released, an empty value installs it. Pin the version for reproducible runs.

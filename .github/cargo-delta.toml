@@ -28,7 +28,7 @@ trip_wire_patterns = [
   "**/build.rs",
   # Top-level directories whose files the crates read (schemas, conformance corpora, keys,
   # docs, evals, scripts, packages) or that hold their own checks.
-  "action-v3/**",
+  "action.yml",
   "ast-grep/**",
   "assets/**",
   "docs/**",

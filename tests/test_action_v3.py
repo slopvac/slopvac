@@ -8,7 +8,10 @@ import signal
 import stat
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
+from subprocess import CompletedProcess
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -19,7 +22,7 @@ pytest_plugins = ["real_binary"]  # the real-binary fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "action_v3.py"
-ACTION = ROOT / "action-v3" / "action.yml"
+ACTION = ROOT / "action.yml"
 SCHEMAS = ROOT / "schemas" / "v3"
 SPEC = importlib.util.spec_from_file_location("action_v3", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
@@ -833,3 +836,165 @@ def test_version_check_sits_between_install_and_the_first_use_of_the_binary():
     )
     assert install < check < first_use
     assert steps[check]["if"] == steps[install]["if"]
+
+
+def test_input_paths_keep_a_quoted_path_with_spaces_whole():
+    assert action.parse_input_paths('README.md "docs/release notes.md"') == [
+        "README.md",
+        "docs/release notes.md",
+    ]
+
+
+def test_changed_only_without_pull_request_base_fails_closed(tmp_path, capsys):
+    env = {"CHANGED_ONLY": "true", "INPUT_PATHS": ".", "RUNNER_TEMP": str(tmp_path)}
+    assert action.resolve_targets(env) == 1
+    assert "requires" in capsys.readouterr().out
+    assert not (tmp_path / "slopvac-paths").exists()
+
+
+def test_changed_only_resolves_exact_base_and_prose_paths(tmp_path):
+    env = {
+        "CHANGED_ONLY": "true",
+        "INPUT_PATHS": "ignored.md",
+        "BASE_SHA": "abc123",
+        "RUNNER_TEMP": str(tmp_path),
+    }
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command[:3] == ["git", "cat-file", "-e"]:
+            return CompletedProcess(command, 0, stdout="", stderr="")
+        return CompletedProcess(
+            command, 0, stdout=b"docs/release notes.md\0", stderr=b""
+        )
+
+    with patch("action_v3.subprocess.run", side_effect=fake_run):
+        assert action.resolve_targets(env) == 0
+
+    assert calls[0] == ["git", "cat-file", "-e", "abc123^{commit}"]
+    assert "abc123...HEAD" in calls[1]
+    assert "--" in calls[1]
+    assert action._read_paths(tmp_path / "slopvac-paths") == ["docs/release notes.md"]
+
+
+def test_changed_only_missing_merge_base_fails_closed(tmp_path, capsys):
+    env = {
+        "CHANGED_ONLY": "true",
+        "INPUT_PATHS": ".",
+        "BASE_SHA": "missing",
+        "RUNNER_TEMP": str(tmp_path),
+    }
+
+    def missing_base(command, **kwargs):
+        return CompletedProcess(command, 128, stdout=b"", stderr=b"missing object")
+
+    with patch("action_v3.subprocess.run", side_effect=missing_base):
+        assert action.resolve_targets(env) == 1
+    assert "merge base" in capsys.readouterr().out
+
+
+# (file name, the line the log must show). Worked out from the workflow-command
+# grammar: the runner acts on `::` and `##[` anywhere in a line, so both must go,
+# along with `%`, CR and LF, which would otherwise end or forge a command.
+HOSTILE_NAMES = [
+    ("a.md\n::error::forged.md", "a.md%0A%3A%3Aerror%3A%3Aforged.md"),
+    ("a.md\r::add-mask::secret.md", "a.md%0D%3A%3Aadd-mask%3A%3Asecret.md"),
+    ("::stop-commands::tok.md", "%3A%3Astop-commands%3A%3Atok.md"),
+    ("mid::dle.md", "mid%3A%3Adle.md"),
+    ("##[add-mask]x.md", "\\u{23}#[add-mask]x.md"),
+    ("100%0A.md", "100%250A.md"),
+    ("a\rb.md", "a%0Db.md"),
+    ("a\nb.md", "a%0Ab.md"),
+    ("bell\x07esc\x1b.md", "bell\\u{7}esc\\u{1b}.md"),
+]
+
+
+def _changed_file(name):
+    def fake_run(command, **kwargs):
+        if command[:3] == ["git", "cat-file", "-e"]:
+            return CompletedProcess(command, 0, stdout="", stderr="")
+        return CompletedProcess(command, 0, stdout=name.encode() + b"\0", stderr=b"")
+
+    return fake_run
+
+
+@pytest.mark.parametrize(("name", "logged"), HOSTILE_NAMES)
+def test_changed_file_names_are_escaped_in_log_output(tmp_path, capsys, name, logged):
+    env = {"CHANGED_ONLY": "true", "BASE_SHA": "abc123", "RUNNER_TEMP": str(tmp_path)}
+    with patch("action_v3.subprocess.run", side_effect=_changed_file(name)):
+        assert action.resolve_targets(env) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == [f"- {logged}"]
+    assert not any("::" in line or "##[" in line for line in lines)
+
+
+@pytest.mark.parametrize(("name", "logged"), HOSTILE_NAMES)
+def test_resolved_target_names_reach_the_linter_unchanged(run, tmp_path, name, logged):
+    resolve_env = {
+        "CHANGED_ONLY": "true",
+        "BASE_SHA": "abc123",
+        "RUNNER_TEMP": str(tmp_path),
+    }
+    with patch("action_v3.subprocess.run", side_effect=_changed_file(name)):
+        assert action.resolve_targets(resolve_env) == 0
+
+    code, log, _ = run(PATH_LIST=str(tmp_path / "slopvac-paths"))
+
+    assert code == 0
+    assert log
+    assert all(argv[-1] == name for argv in log)
+
+
+DISPOSITIONS = ROOT / "docs" / "contract" / "compat" / "dispositions.toml"
+REFUSE_STEP = "Refuse removed 2.x inputs"
+
+
+def _removed_inputs():
+    rows = tomllib.loads(DISPOSITIONS.read_text(encoding="utf-8"))
+    return sorted(
+        key.removeprefix("action:input:")
+        for key, row in rows.items()
+        if key.startswith("action:input:") and row["disposition"] == "remove"
+    )
+
+
+def _refuse(**inputs):
+    """Run the refusal step's script with the given inputs set, as the runner would."""
+    step = _step(REFUSE_STEP)
+    env = {k: "" for k in step["env"]}
+    for name, value in inputs.items():
+        marker = "${{ inputs." + name.replace("_", "-") + " }}"
+        (var,) = [k for k, v in step["env"].items() if v == marker]
+        env[var] = value
+    return subprocess.run(
+        ["bash", "-c", step["run"]], env=env, capture_output=True, text=True
+    )
+
+
+def test_the_declared_removed_inputs_match_the_contract_dispositions():
+    declared = {
+        name
+        for name, spec in yaml.safe_load(ACTION.read_text(encoding="utf-8"))[
+            "inputs"
+        ].items()
+        if spec["description"].startswith("Removed in 3.0")
+    }
+    assert declared == set(_removed_inputs())
+
+
+def test_the_refusal_step_runs_before_anything_installs():
+    assert _steps()[0]["name"] == REFUSE_STEP
+
+
+@pytest.mark.parametrize("name", _removed_inputs())
+def test_a_removed_input_fails_with_exit_2_and_guidance(name):
+    done = _refuse(**{name.replace("-", "_"): "x"})
+    assert done.returncode == 2
+    assert f"the input '{name}' was removed in 3.0" in done.stdout
+    assert "docs/migrate-2-to-3.md#6-removed-in-30" in done.stdout
+
+
+def test_no_removed_input_set_passes_the_refusal_step():
+    assert _refuse().returncode == 0
