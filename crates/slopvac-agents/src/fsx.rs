@@ -29,6 +29,8 @@ pub struct Project {
 /// A point inside a read, write or delete where a test can change the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Stage {
+    /// The final look at the target comes next, and its open follows.
+    BeforeFinalOpen,
     /// The temporary file holds the new bytes, and its final mode is not set yet.
     Filled,
     /// The path is resolved, and the open comes next.
@@ -291,13 +293,33 @@ impl Project {
     ///
     /// This is the last look before a commit, so it does not resolve links
     /// again: a name that has turned into a symlink, a directory or another
-    /// special file since the first check counts as changed.
-    fn current(parent: &Dir, name: &OsStr, rel: &Path) -> Result<Option<Vec<u8>>, AgentsError> {
-        match parent.symlink_metadata(name) {
-            Ok(m) if !m.is_file() => Err(AgentsError::Conflict(rel.to_path_buf())),
-            Ok(_) => parent.read(name).map(Some).map_err(|e| Self::map(rel, e)),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(Self::map(rel, e)),
+    /// special file since the first check counts as changed. The file opens once,
+    /// through the shared confined reader, without following links and without
+    /// blocking, so a FIFO swapped in before the open is refused and never waited
+    /// on. A file with several hard links is accepted, and there is no size limit.
+    fn current(
+        parent: &Dir,
+        name: &OsStr,
+        rel: &Path,
+        hook: &mut dyn FnMut(Stage),
+    ) -> Result<Option<Vec<u8>>, AgentsError> {
+        hook(Stage::BeforeFinalOpen);
+        match slopvac_fs::read_capped_regular_in_with(
+            parent,
+            Path::new(name),
+            u64::MAX,
+            slopvac_fs::ReadOptions::new(),
+        ) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(e) => match e.input_kind() {
+                Some(slopvac_fs::InputKind::NotFound) => Ok(None),
+                Some(
+                    slopvac_fs::InputKind::NotRegular
+                    | slopvac_fs::InputKind::Symlink
+                    | slopvac_fs::InputKind::UnsafePath,
+                ) => Err(AgentsError::Conflict(rel.to_path_buf())),
+                _ => Err(AgentsError::io(rel, read_failure(&e))),
+            },
         }
     }
 
@@ -380,7 +402,7 @@ impl Project {
         let result = finish().map_err(|e| Self::map(&rel, e)).and_then(|()| {
             drop(file);
             hook(Stage::BeforeCommit);
-            if Self::current(&parent, name, &rel)?.as_deref() != before {
+            if Self::current(&parent, name, &rel, hook)?.as_deref() != before {
                 return Err(AgentsError::Conflict(rel.clone()));
             }
             parent
@@ -420,7 +442,7 @@ impl Project {
             .file_name()
             .ok_or_else(|| AgentsError::UnsafeTarget(rel.display().to_string()))?;
         hook(Stage::BeforeCommit);
-        if Self::current(&parent, name, &rel)?.as_deref() != Some(expected) {
+        if Self::current(&parent, name, &rel, hook)?.as_deref() != Some(expected) {
             return Err(AgentsError::Conflict(rel));
         }
         parent.remove_file(name).map_err(|e| Self::map(&rel, e))?;
@@ -569,6 +591,64 @@ mod tests {
             .recv_timeout(LIMIT)
             .expect("the read blocked on a FIFO swapped in before the open");
         assert_eq!(got, Err("steering-unsafe-target"));
+    }
+
+    /// Run `op` on a project whose `a.md` holds `old`. Once the final look at the target has
+    /// found that regular file, and before the open, a FIFO takes its place. A blocking open
+    /// on it would wait for a writer that never comes, so `op` must come back at once. It
+    /// runs on its own thread, so a regression fails by timeout instead of hanging the test.
+    #[cfg(unix)]
+    fn with_fifo_swapped_in_before_the_final_open<T: Send + 'static>(
+        op: impl FnOnce(&Project, &mut dyn FnMut(Stage)) -> T + Send + 'static,
+    ) -> (T, tempfile::TempDir) {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        const LIMIT: Duration = Duration::from_secs(10);
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("a.md");
+        std::fs::write(&file, "old").unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let swap = file.clone();
+        std::thread::spawn(move || {
+            let got = op(&project, &mut |stage| {
+                if stage == Stage::BeforeFinalOpen {
+                    std::fs::remove_file(&swap).unwrap();
+                    mkfifo(&swap);
+                }
+            });
+            // The receiver is gone only when the test already failed by timeout.
+            let _ = tx.send(got);
+        });
+        let Ok(got) = rx.recv_timeout(LIMIT) else {
+            // Release the blocked open, so the thread ends, then fail.
+            let _ = std::fs::OpenOptions::new().write(true).open(&file);
+            panic!("the final check blocked on a FIFO swapped in before its open");
+        };
+        (got, tmp)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_write_refuses_a_fifo_swapped_in_before_the_final_check_opens() {
+        let (got, tmp) = with_fifo_swapped_in_before_the_final_open(|project, hook| {
+            project.write_atomic_staged(Path::new("a.md"), Some(b"old"), b"new", hook)
+        });
+
+        assert!(matches!(got, Err(AgentsError::Conflict(p)) if p == Path::new("a.md")));
+        assert_eq!(names(tmp.path()), ["a.md"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_delete_refuses_a_fifo_swapped_in_before_the_final_check_opens() {
+        let (got, tmp) = with_fifo_swapped_in_before_the_final_open(|project, hook| {
+            project.remove_file_staged(Path::new("a.md"), b"old", hook)
+        });
+
+        assert!(matches!(got, Err(AgentsError::Conflict(p)) if p == Path::new("a.md")));
+        assert_eq!(names(tmp.path()), ["a.md"]);
     }
 }
 
