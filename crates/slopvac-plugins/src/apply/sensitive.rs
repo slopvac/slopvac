@@ -3,39 +3,18 @@
 //! Matching is case-insensitive on every platform, so the list fails closed on
 //! case-insensitive file systems. Paths are root-relative with `/` separators.
 
-use unicode_normalization::UnicodeNormalization;
-
+use crate::extract::collision_keys;
 use crate::messages::transport::TransportPhrase;
 
-/// The path components under the canonical caseless match of Unicode 3.13
-/// (D145), `NFD(toCasefold(NFD(x)))`, the same fold `extract.rs` uses for
-/// collisions. It maps `ſ` (U+017F) to `s`, which `str::to_lowercase` does not.
-fn canonical_parts(path: &str) -> Vec<String> {
-    path.split('/').map(fold_name).collect()
-}
-
-/// One name under the canonical caseless match.
-fn fold_name(name: &str) -> String {
-    let decomposed: String = name.nfd().collect();
-    caseless::default_case_fold_str(&decomposed).nfd().collect()
-}
-
-/// The path components under the NTFS name comparison, which uppercases per
-/// character and so merges `i` with the dotless `ı` (U+0131), where the
-/// canonical fold keeps them apart. The result is ASCII-lowercased to meet the
-/// deny list constants.
-fn ntfs_parts(path: &str) -> Vec<String> {
-    path.split('/')
-        .map(|c| {
-            c.nfc()
-                .map(|ch| {
-                    let mut up = ch.to_uppercase();
-                    match (up.next(), up.next()) {
-                        (Some(u), None) => u.to_ascii_lowercase(),
-                        _ => ch,
-                    }
-                })
-                .collect()
+/// The path components of each equivalence key of `path`, from the one shared
+/// fold in `extract.rs`. A key is the canonical caseless match or the NTFS
+/// uppercase form; each is ASCII-lowercased to meet the deny list constants.
+fn key_parts(path: &str) -> Vec<Vec<String>> {
+    collision_keys(path)
+        .iter()
+        .map(|key| {
+            let body = key.split_once(':').map_or(key.as_str(), |(_, rest)| rest);
+            body.split('/').map(str::to_ascii_lowercase).collect()
         })
         .collect()
 }
@@ -54,7 +33,7 @@ fn ntfs_parts(path: &str) -> Vec<String> {
 /// the list fails closed on case-insensitive file systems.
 #[must_use]
 pub fn deny_reason(path: &str) -> Option<&'static str> {
-    classify(&canonical_parts(path)).or_else(|| classify(&ntfs_parts(path)))
+    key_parts(path).iter().find_map(|parts| classify(parts))
 }
 
 /// The deny list over components already folded to lowercase.

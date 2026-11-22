@@ -818,7 +818,6 @@ fn tm18_a_path_that_differs_only_in_case_from_an_existing_file_is_refused() {
 /// Name pairs that one case-insensitive file system treats as the same name,
 /// worked out from Unicode `CaseFolding.txt` and the NTFS uppercase table.
 #[rstest::rstest]
-#[case::ascii("Docs/A.md", "docs/a.MD")]
 #[case::long_s("docs/\u{17F}.md", "docs/s.md")]
 #[case::kelvin("docs/\u{212A}.md", "docs/k.md")]
 #[case::dotless_i("docs/\u{131}.md", "docs/I.md")]
@@ -838,11 +837,9 @@ fn tm18_plan_entries_that_collide_under_full_folding_are_duplicates(
 }
 
 #[rstest::rstest]
-#[case::ascii("Notes.md", "notes.md")]
 #[case::long_s("\u{17F}.md", "s.md")]
 #[case::kelvin("\u{212A}.md", "k.md")]
 #[case::dotless_i("\u{131}.md", "I.md")]
-#[case::nfd_vs_nfc("\u{E9}.md", "e\u{301}.md")]
 fn tm18_an_existing_file_that_differs_only_under_full_folding_is_a_case_twin(
     #[case] existing: &str,
     #[case] planned: &str,
@@ -860,6 +857,69 @@ fn tm18_an_existing_file_that_differs_only_under_full_folding_is_a_case_twin(
             path: planned.into(),
             existing: existing.into(),
         })
+    );
+}
+
+/// The existing file has the decomposed name, as HFS+ stores it, and the plan
+/// asks for the composed one.
+#[test]
+fn tm18_an_existing_decomposed_name_is_a_case_twin_of_the_composed_one() {
+    let s = sandbox();
+    fs::write(s.root.join("e\u{301}.md"), "mine").unwrap();
+    let report = apply_plan(
+        &s.root,
+        &[write_file("\u{E9}.md", "x")],
+        &PlanOptions::default(),
+    );
+    assert_eq!(
+        *only_status(&report, 0),
+        EntryStatus::Refused(ApplyError::CaseCollision {
+            path: "\u{E9}.md".into(),
+            existing: "e\u{301}.md".into(),
+        })
+    );
+}
+
+/// Code points that ext4 casefold strips and HFS+ partly skips.
+#[rstest::rstest]
+#[case::zero_width_space("\u{200B}")]
+#[case::soft_hyphen("\u{AD}")]
+#[case::zero_width_non_joiner("\u{200C}")]
+fn tm18_an_ignorable_code_point_does_not_hide_a_sensitive_path(#[case] ignorable: &str) {
+    for clean in ["slopvac.toml", ".slopvac/plugins.lock"] {
+        let at = clean.find('v').unwrap();
+        let hidden = format!("{}{ignorable}{}", &clean[..at], &clean[at..]);
+        let s = sandbox();
+        let report = apply_plan(
+            &s.root,
+            &[write_file(&hidden, "x")],
+            &PlanOptions::default(),
+        );
+        let status = only_status(&report, 0);
+        assert!(
+            matches!(status, EntryStatus::Refused(ApplyError::Sensitive { .. })),
+            "{hidden:?}: {status:?}"
+        );
+        assert!(report.entries[0].sensitive.is_some(), "{hidden:?}");
+        assert!(names(&s.root).is_empty(), "{hidden:?}");
+    }
+}
+
+#[rstest::rstest]
+#[case::zero_width_space("\u{200B}")]
+#[case::soft_hyphen("\u{AD}")]
+#[case::zero_width_non_joiner("\u{200C}")]
+fn tm18_plan_entries_that_differ_only_by_an_ignorable_code_point_are_duplicates(
+    #[case] ignorable: &str,
+) {
+    let s = sandbox();
+    let second = format!("docs/no{ignorable}tes.md");
+    let plan = [write_file("docs/notes.md", "1"), write_file(&second, "2")];
+    let report = apply_plan(&s.root, &plan, &PlanOptions::default());
+    assert_eq!(*only_status(&report, 0), ok_status("docs/notes.md"));
+    assert_eq!(
+        *only_status(&report, 1),
+        EntryStatus::Refused(ApplyError::DuplicatePath(second))
     );
 }
 

@@ -11,11 +11,12 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, SystemTime};
 
 use flate2::read::MultiGzDecoder;
+use regex::Regex;
 use sha2::{Digest as _, Sha256};
 use slopvac_sanitize::line as esc;
 use unicode_normalization::UnicodeNormalization;
@@ -426,7 +427,13 @@ fn claim_with_parents(
 }
 
 /// Keys under which two names count as the same file. Names collide when any
-/// key matches; the prefixes keep the two key spaces apart.
+/// key matches; the prefixes keep the two key spaces apart. The sensitive-path
+/// deny list classifies from these same keys.
+///
+/// Both keys first drop every `Default_Ignorable_Code_Point` (zero-width
+/// space, soft hyphen, the joiners, variation selectors and so on). ext4
+/// casefold strips them before it folds, and the HFS+ comparison table skips
+/// some of them, so `.slopvac` and `.slop\u{200B}vac` name the same file there.
 ///
 /// The canonical key is the caseless match of Unicode 3.13 (D145):
 /// `NFD(toCasefold(NFD(x)))`. The case fold is the full, table-backed
@@ -442,6 +449,14 @@ fn claim_with_parents(
 /// which only refuses more archives; pack paths are not limited to ASCII, so
 /// refusing non-ASCII names was not an option.
 pub(crate) fn collision_keys(path: &str) -> [String; 2] {
+    static IGNORABLE: LazyLock<Regex> = LazyLock::new(|| {
+        #[expect(
+            clippy::expect_used,
+            reason = "a constant pattern that always compiles"
+        )]
+        Regex::new(r"\p{Default_Ignorable_Code_Point}").expect("a valid constant pattern")
+    });
+    let path = IGNORABLE.replace_all(path, "");
     let decomposed: String = path.nfd().collect();
     let canonical: String = caseless::default_case_fold_str(&decomposed).nfd().collect();
     let upper: String = path
