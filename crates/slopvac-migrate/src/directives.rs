@@ -218,7 +218,8 @@ fn rewrite_paragraph(
                 let line_end = rest.find('\n').unwrap_or(rest.len());
                 let alone =
                     out[line_start..].trim().is_empty() && rest[..line_end].trim().is_empty();
-                // Deleting a directive alone on its line would join the blocks around it.
+                // A directive alone on its line leaves an empty comment, so the blocks
+                // around it stay apart.
                 if removed == Removed::Blank || alone {
                     out.push_str(BLANK_COMMENT);
                 }
