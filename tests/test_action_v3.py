@@ -893,13 +893,19 @@ def test_changed_only_missing_merge_base_fails_closed(tmp_path, capsys):
     assert "merge base" in capsys.readouterr().out
 
 
+# (file name, the line the log must show). Worked out from the workflow-command
+# grammar: the runner acts on `::` and `##[` anywhere in a line, so both must go,
+# along with `%`, CR and LF, which would otherwise end or forge a command.
 HOSTILE_NAMES = [
-    ("a.md\n::error::forged.md", "a.md%0A::error::forged.md"),
-    ("a.md\r::add-mask::secret.md", "a.md%0D::add-mask::secret.md"),
-    ("a.md\n::stop-commands::tok.md", "a.md%0A::stop-commands::tok.md"),
-    ("::error::lead.md", "::error::lead.md"),
+    ("a.md\n::error::forged.md", "a.md%0A%3A%3Aerror%3A%3Aforged.md"),
+    ("a.md\r::add-mask::secret.md", "a.md%0D%3A%3Aadd-mask%3A%3Asecret.md"),
+    ("::stop-commands::tok.md", "%3A%3Astop-commands%3A%3Atok.md"),
+    ("mid::dle.md", "mid%3A%3Adle.md"),
+    ("##[add-mask]x.md", "\\u{23}#[add-mask]x.md"),
     ("100%0A.md", "100%250A.md"),
-    ("bell\x07esc\x1b.md", "bell%07esc%1B.md"),
+    ("a\rb.md", "a%0Db.md"),
+    ("a\nb.md", "a%0Ab.md"),
+    ("bell\x07esc\x1b.md", "bell\\u{7}esc\\u{1b}.md"),
 ]
 
 
@@ -920,7 +926,7 @@ def test_changed_file_names_are_escaped_in_log_output(tmp_path, capsys, name, lo
 
     lines = capsys.readouterr().out.splitlines()
     assert lines == [f"- {logged}"]
-    assert not any(line.lstrip().startswith("::") for line in lines)
+    assert not any("::" in line or "##[" in line for line in lines)
 
 
 @pytest.mark.parametrize(("name", "logged"), HOSTILE_NAMES)

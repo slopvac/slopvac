@@ -39,20 +39,6 @@ class ActionError(RuntimeError):
     """Raised for an action failure that should produce exit code 2."""
 
 
-def _escape_log(text: str) -> str:
-    """Encode text so GitHub cannot read it as a workflow command.
-
-    Uses the runner's encoding (`%` -> `%25`, CR -> `%0D`, LF -> `%0A`) and
-    extends it to the other C0 controls and DEL.
-    """
-    return "".join(
-        f"%{ord(char):02X}"
-        if char == "%" or ord(char) < 0x20 or ord(char) == 0x7F
-        else char
-        for char in text
-    )
-
-
 def _write_paths(paths_file: Path, paths: list[str]) -> None:
     paths_file.parent.mkdir(parents=True, exist_ok=True)
     paths_file.write_bytes(b"".join(path.encode() + b"\0" for path in paths))
@@ -144,9 +130,11 @@ def resolve_targets(env: Mapping[str, str] = os.environ) -> int:
 
     _write_paths(paths_file, paths)
     _write_outputs(env, {"list": paths_file})
-    # Prefix each line: a name that begins with "::" must not start a command.
+    # The runner acts on a workflow command anywhere in a line, so a prefix is
+    # not enough: escape the whole name. Only the log line is escaped; the path
+    # list written above keeps the real bytes for the linter.
     for path in paths:
-        print(f"- {_escape_log(path)}")
+        print(f"- {escape_workflow_data(path)}")
     return 0
 
 
