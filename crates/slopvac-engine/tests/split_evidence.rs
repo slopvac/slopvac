@@ -1,35 +1,19 @@
-//! A tag whose evidence is long, and that is split into many pieces, costs memory in
-//! proportion to the document, not to the evidence times the pieces.
+//! A tag whose evidence is long, and that is split into many pieces, holds the evidence
+//! once, so the work to build the tags follows the size of the document.
 //!
 //! The document is an RST simple table. Its last column holds one sentence that says
 //! "no" before a very long path, and then runs over many short continuation lines. The
 //! middle column wraps beside it, so the sentence's tag is split into one piece for each
-//! line. The test counts the growth of the process's peak memory over the lint, not the time. Peak
-//! memory is per process, and nextest gives each test its own.
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unwrap_used,
-    reason = "test code: a panic is a failed test"
-)]
-#![cfg(target_os = "linux")]
-#![allow(missing_docs, reason = "test crate: nothing public to document")]
+//! line. The test counts the pieces built and the bytes of evidence text that tags hold in
+//! allocations of their own, with the `work-counters` feature. It counts no time and reads
+//! no `/proc`. It runs where the fake interpreter script does, on Unix.
+#![cfg(unix)]
 
 mod common;
 
 use serde_json::json;
+use slopvac_context::{take_evidence_bytes, take_materialised_tags};
 use slopvac_engine::Input;
-
-/// The most memory the process has held at once, in bytes, from `VmHWM` in `/proc`.
-fn peak_bytes() -> Result<usize, Box<dyn std::error::Error>> {
-    let status = std::fs::read_to_string("/proc/self/status")?;
-    let kib = status
-        .lines()
-        .find_map(|l| l.strip_prefix("VmHWM:"))
-        .and_then(|v| v.trim().strip_suffix("kB"))
-        .ok_or("no VmHWM line in /proc/self/status")?;
-    Ok(kib.trim().parse::<usize>()? * 1024)
-}
 
 const PATH_LEN: usize = 60_000;
 const CONTINUATIONS: usize = 10_000;
@@ -81,17 +65,26 @@ fn the_pieces_of_a_split_tag_share_its_long_evidence() -> Result<(), Box<dyn std
     let gate = json!({"contexts": {"only": ["requirement"]}});
     let engine = common::engine(&[common::tokens("dull", "has", &gate)]).with_rst(options);
 
-    let before = peak_bytes()?;
-    let result = engine.lint(&Input::rst("t.rst", &source));
-    let allocated = peak_bytes()?.saturating_sub(before);
+    let _ = (take_evidence_bytes(), take_materialised_tags());
+    engine.lint(&Input::rst("t.rst", &source))?;
+    let (evidence, pieces) = (take_evidence_bytes(), take_materialised_tags());
 
-    result?;
-    // Copying the evidence into every piece would take PATH_LEN * CONTINUATIONS bytes, 610 MB.
-    let limit = 250 * source.len();
+    // The sentence has one piece for each of its lines, so the trigger split the tag.
     assert!(
-        allocated <= limit,
-        "{allocated} bytes of peak growth, limit {limit} for a {} byte document",
-        source.len()
+        pieces > CONTINUATIONS,
+        "{pieces} tags built, but the sentence has {CONTINUATIONS} continuation lines"
+    );
+    // The requirement tagger fired: its evidence quotes the path, so it holds at least that.
+    assert!(
+        evidence >= PATH_LEN,
+        "{evidence} bytes of evidence, but the path alone has {PATH_LEN}"
+    );
+    // The evidence is held once, plus a short line for each other tag. Copying it into
+    // every piece would hold PATH_LEN * CONTINUATIONS bytes, 600 MB.
+    let limit = 2 * (PATH_LEN + CONTINUATIONS);
+    assert!(
+        evidence <= limit,
+        "{evidence} bytes of evidence, limit {limit} for a {PATH_LEN} byte path over {CONTINUATIONS} lines"
     );
     Ok(())
 }
