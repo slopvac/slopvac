@@ -1,7 +1,14 @@
-//! Messages of the `slopvac plugins` command group: help text, the status lines and the
-//! failures of the group itself.
+//! Messages of the `slopvac plugins` command group: help text, the lines the commands print and
+//! the failures of the group itself.
 
 use slopvac_messages::{Catalog, Entry};
+use slopvac_update::messages::UpdateMessage;
+
+use crate::lock::LockError;
+use crate::oci::OciError;
+use crate::revoke::RevocationError;
+use crate::sync::SyncError;
+use crate::update::UpdateError;
 
 /// Help text of the group, its subcommands and their arguments, and the lines the commands
 /// print.
@@ -25,7 +32,7 @@ pub(crate) enum CliText {
     HelpSync,
     /// Help for `plugins status`.
     #[code("plugins-help-status")]
-    #[text("Show each locked plugin and whether it is installed.")]
+    #[text("Show each locked plugin with its kind, install state and trust state.")]
     HelpStatus,
     /// Help for `plugins outdated`.
     #[code("plugins-help-outdated")]
@@ -107,18 +114,133 @@ pub(crate) enum CliText {
     #[code("plugins-help-arg-path")]
     #[text("The plugin directory. Default: the current directory.")]
     ArgPath,
-    /// A locked plugin whose tree is installed and intact.
-    #[code("plugins-status-installed")]
-    #[text("{id} {version}: installed")]
-    StatusInstalled { id: String, version: String },
-    /// A locked plugin that is not installed.
-    #[code("plugins-status-not-installed")]
-    #[text("{id} {version}: not installed; run `slopvac plugins sync`")]
-    StatusNotInstalled { id: String, version: String },
-    /// A locked plugin whose installed tree differs from the lock.
-    #[code("plugins-status-changed")]
-    #[text("{id} {version}: changed since it was locked; run `slopvac plugins sync`")]
-    StatusChanged { id: String, version: String },
+    /// One plugin in `status` or `list`: its id, version, kind and the parts that describe it.
+    #[code("plugins-line")]
+    #[text("{id} {version} ({kind}): {parts}")]
+    Line {
+        id: String,
+        version: String,
+        kind: String,
+        parts: String,
+    },
+    /// The plugin's tree is installed and intact.
+    #[code("plugins-part-installed")]
+    #[text("installed")]
+    PartInstalled,
+    /// The plugin's tree is not installed.
+    #[code("plugins-part-not-installed")]
+    #[text("not installed; run `slopvac plugins sync`")]
+    PartNotInstalled,
+    /// The installed tree differs from the lock.
+    #[code("plugins-part-changed")]
+    #[text("changed since it was locked; run `slopvac plugins sync`")]
+    PartChanged,
+    /// The revocation list names the plugin's digest or signing key.
+    #[code("plugins-part-revoked")]
+    #[text("revoked")]
+    PartRevoked,
+    /// The code plugin's content hash has a trust record.
+    #[code("plugins-part-trusted")]
+    #[text("trusted")]
+    PartTrusted,
+    /// The code plugin's content hash is named in `SLOPVAC_TRUST`.
+    #[code("plugins-part-trusted-env")]
+    #[text("trusted by SLOPVAC_TRUST")]
+    PartTrustedEnv,
+    /// The revocation list names the code plugin's content hash.
+    #[code("plugins-part-trust-revoked")]
+    #[text("trust revoked")]
+    PartTrustRevoked,
+    /// The code plugin has no trust record.
+    #[code("plugins-part-untrusted")]
+    #[text("not trusted; run `slopvac plugins trust {id}`")]
+    PartUntrusted { id: String },
+    /// The trust state could not be worked out.
+    #[code("plugins-part-trust-unknown")]
+    #[text("trust state unknown: {why}")]
+    PartTrustUnknown { why: String },
+    /// The managed Python environment passes its full check.
+    #[code("plugins-part-python-verified")]
+    #[text("python environment verified")]
+    PartPythonVerified,
+    /// The managed Python environment is not built.
+    #[code("plugins-part-python-missing")]
+    #[text("python environment missing; run `slopvac plugins sync`")]
+    PartPythonMissing,
+    /// The managed Python environment fails its check.
+    #[code("plugins-part-python-failed")]
+    #[text("python environment failed: {why}")]
+    PartPythonFailed { why: String },
+    /// The built-in core in `list`.
+    #[code("plugins-list-core")]
+    #[text("core {version}: built in")]
+    ListCore { version: String },
+    /// A plugin that the config names and the lock does not.
+    #[code("plugins-list-not-locked")]
+    #[text("{id}: named in the config, not locked; run `slopvac plugins update`")]
+    ListNotLocked { id: String },
+    /// One plugin that `sync` handled.
+    #[code("plugins-sync-line")]
+    #[text("{id} {version}: {change}")]
+    SyncLine {
+        id: String,
+        version: String,
+        change: String,
+    },
+    /// Sync extracted the plugin for the first time.
+    #[code("plugins-change-installed")]
+    #[text("installed")]
+    ChangeInstalled,
+    /// Sync found the plugin installed.
+    #[code("plugins-change-unchanged")]
+    #[text("unchanged")]
+    ChangeUnchanged,
+    /// Sync replaced a modified tree.
+    #[code("plugins-change-reinstalled")]
+    #[text("reinstalled")]
+    ChangeReinstalled,
+    /// Sync used a project directory in place.
+    #[code("plugins-change-in-place")]
+    #[text("in place")]
+    ChangeInPlace,
+    /// A notice that does not fail the run.
+    #[code("plugins-notice-line")]
+    #[text("notice[{code}]: {message}")]
+    NoticeLine { code: String, message: String },
+    /// `update` moved a plugin to a newer version.
+    #[code("plugins-update-updated")]
+    #[text("{id}: updated {from} to {to}")]
+    UpdateUpdated {
+        id: String,
+        from: String,
+        to: String,
+    },
+    /// `update` found nothing newer in range.
+    #[code("plugins-update-unchanged")]
+    #[text("{id}: unchanged at {version}")]
+    UpdateUnchanged { id: String, version: String },
+    /// `update` found a newer version and refused it.
+    #[code("plugins-update-refused")]
+    #[text("{id}: refused: {reason}")]
+    UpdateRefused { id: String, reason: String },
+    /// A newer version exists outside the configured range.
+    #[code("plugins-update-outside-range")]
+    #[text("{id}: {version} is newer than the range allows")]
+    UpdateOutsideRange { id: String, version: String },
+    /// A plugin that `outdated` could not check.
+    #[code("plugins-outdated-failed")]
+    #[text("{id}: cannot check for newer versions: {reason}")]
+    OutdatedFailed { id: String, reason: String },
+    /// Trust was recorded for a code plugin.
+    #[code("plugins-trusted")]
+    #[text("trusted `{id}` with content hash {hash}")]
+    Trusted { id: String, hash: String },
+    /// Residual risk R1, said at each `trust`.
+    #[code("plugins-trust-not-containment")]
+    #[text(
+        "Trust is not containment: a trusted plugin runs with your rights, and slopvac has no sandbox."
+    )]
+    TrustNotContainment,
     /// Trust for a plugin was removed.
     #[code("plugins-untrusted")]
     #[text("removed the trust recorded for `{id}`")]
@@ -126,28 +248,110 @@ pub(crate) enum CliText {
 }
 
 /// Why a `slopvac plugins` command stopped. Each one exits 2.
-#[derive(Debug, Clone, PartialEq, Eq, Catalog)]
+///
+/// The variants that wrap a library failure keep it as their `source`. A trust store failure
+/// is kept as redacted text, because the store's own error names an absolute path.
+#[derive(Debug, Catalog)]
+#[non_exhaustive]
 pub enum RunError {
     /// The subcommand exists in the command tree but has no implementation in this build.
-    #[code("plugins-command-unavailable")]
+    #[code("command-not-wired")]
     #[message("`slopvac plugins {command}` is not available in this build yet.")]
-    Unavailable {
+    NotWired {
         /// The subcommand, as the user typed it.
         command: String,
     },
-    /// The lock file could not be read or parsed. The detail is the sentence of the failure.
+    /// The lock file could not be read.
     #[code("plugins-lock-unreadable")]
-    #[message("{detail}")]
+    #[message("cannot read the lock file: {detail}")]
     LockUnreadable {
         /// What went wrong.
         detail: String,
+        /// The read failure, which names no path outside the root.
+        #[source]
+        source: slopvac_fs::Error,
     },
-    /// The store could not be read or written. The detail is the sentence of the failure.
+    /// The lock file is not a valid lock.
+    #[code("plugins-lock-invalid")]
+    #[message("{detail}")]
+    LockInvalid {
+        /// The sentence of the failure.
+        detail: String,
+        /// The parse failure.
+        #[source]
+        source: LockError,
+    },
+    /// Sync failed.
+    #[code("plugins-sync-failed")]
+    #[message("{detail}")]
+    Sync {
+        /// The sentence of the failure.
+        detail: String,
+        /// The sync failure.
+        #[source]
+        source: Box<SyncError>,
+    },
+    /// Update could not run.
+    #[code("plugins-update-failed")]
+    #[message("{detail}")]
+    Update {
+        /// The sentence of the failure.
+        detail: String,
+        /// The update failure.
+        #[source]
+        source: Box<UpdateError>,
+    },
+    /// The revocation list could not be read.
+    #[code("plugins-revocation-failed")]
+    #[message("{detail}")]
+    Revocation {
+        /// The sentence of the failure.
+        detail: String,
+        /// The revocation failure.
+        #[source]
+        source: Box<RevocationError>,
+    },
+    /// A registry could not be listed.
+    #[code("plugins-fetch-failed")]
+    #[message("{detail}")]
+    Fetch {
+        /// The sentence of the failure.
+        detail: String,
+        /// The registry failure.
+        #[source]
+        source: Box<OciError>,
+    },
+    /// The trust store failed. The cause is redacted text: the store's own error names the
+    /// absolute path of the file.
     #[code("plugins-store-failed")]
     #[message("{detail}")]
-    StoreFailed {
-        /// What went wrong.
+    Store {
+        /// The sentence of the failure, with paths shown under the project root.
         detail: String,
+        /// The same sentence as a cause, with no further chain.
+        #[source]
+        source: Redacted,
+    },
+    /// A command that needs the network ran in offline mode.
+    #[code(delegate)]
+    Offline {
+        /// The shared `offline-network-needed` message.
+        #[from]
+        source: UpdateMessage,
+    },
+    /// The id names no plugin in the lock.
+    #[code("plugins-unknown-plugin")]
+    #[message("`{id}` is not in the lock")]
+    UnknownPlugin {
+        /// The plugin id.
+        id: String,
+    },
+    /// `trust` or `untrust` named a data plugin.
+    #[code("plugin-not-code")]
+    #[message("`{id}` is a data plugin; it runs no code, so trust does not apply to it")]
+    NotCode {
+        /// The plugin id.
+        id: String,
     },
     /// `untrust` named a plugin that has no trust record.
     #[code("plugins-untrust-not-trusted")]
@@ -155,6 +359,22 @@ pub enum RunError {
     NotTrusted {
         /// The plugin id.
         id: String,
+    },
+    /// The revocation list names the plugin, so trust is refused.
+    #[code("plugins-trust-revoked-plugin")]
+    #[message("`{id}` is on the revocation list; trust is refused")]
+    Revoked {
+        /// The plugin id.
+        id: String,
+    },
+    /// The files of a code plugin could not be loaded for trust.
+    #[code("plugins-trust-inputs-failed")]
+    #[message("cannot load `{id}` to record trust: {detail}")]
+    TrustInputs {
+        /// The plugin id.
+        id: String,
+        /// What went wrong.
+        detail: String,
     },
     /// Writing the output failed.
     #[code("plugins-output-failed")]
@@ -164,6 +384,18 @@ pub enum RunError {
         detail: String,
     },
 }
+
+/// A sentence kept as a cause, with no chain behind it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Redacted(pub(crate) String);
+
+impl std::fmt::Display for Redacted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Redacted {}
 
 /// The entries of the group's catalogs.
 pub(super) fn entries() -> Vec<Entry> {
