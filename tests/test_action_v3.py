@@ -947,6 +947,66 @@ def test_resolved_target_names_reach_the_linter_unchanged(run, tmp_path, name, l
     assert all(argv[-1] == name for argv in log)
 
 
+# ---- every message the script prints is one escaped workflow command ---------
+
+# LF would end the command and let the next line start another; a literal `%0A`
+# would decode to LF at the runner unless `%` is escaped; `::` and `##[` start a
+# command anywhere in a line.
+INJECTION = "a\n%0A::warning::x\n##[error]x"
+
+
+def _assert_one_command(captured, kind):
+    """The grammar: ``::<kind> <props>::<data>`` on one line, nothing else.
+
+    A command line holds exactly two ``::`` (the property and data separators)
+    and the runner reads no other command, so no ``::`` or ``##[`` may remain in
+    the data, and stderr (a relay) may hold neither at all.
+    """
+    lines = captured.out.splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith(f"::{kind} title=slopvac::")
+    assert lines[0].count("::") == 2
+    assert "%250A" in lines[0]  # the literal %0A in the input, now inert
+    assert "##[" not in captured.out + captured.err
+    assert "::" not in captured.err
+
+
+def test_an_action_error_message_is_escaped(monkeypatch, capfd):
+    monkeypatch.setenv("PATH_LIST", f"/nonexistent/{INJECTION}")
+    assert action.main(["action_v3.py", "lint"]) == 2
+    _assert_one_command(capfd.readouterr(), "error")
+
+
+def test_the_reviewdog_unavailable_warning_is_escaped(report, capfd):
+    report(PR, REVIEWDOG=f"/nonexistent/{INJECTION}")
+    _assert_one_command(capfd.readouterr(), "warning")
+
+
+def test_the_fallback_warning_is_escaped(report, monkeypatch, capfd):
+    monkeypatch.setattr(action, "REVIEW", INJECTION)
+    monkeypatch.setattr(action, "choose_reporter", lambda env: (INJECTION, True))
+    code, seen, _ = report(PR, RD_FAIL=INJECTION)
+    assert (code, seen) == (0, [INJECTION, "github-pr-annotations"])
+    _assert_one_command(capfd.readouterr(), "warning")
+
+
+def test_git_diff_stderr_is_escaped(tmp_path, capfd):
+    env = {"CHANGED_ONLY": "true", "BASE_SHA": "abc123", "RUNNER_TEMP": str(tmp_path)}
+
+    def fake_run(command, **kwargs):
+        if command[:3] == ["git", "cat-file", "-e"]:
+            return CompletedProcess(command, 0, stdout="", stderr="")
+        return CompletedProcess(command, 128, stdout=b"", stderr=INJECTION.encode())
+
+    with patch("action_v3.subprocess.run", side_effect=fake_run):
+        assert action.resolve_targets(env) == 1
+    captured = capfd.readouterr()
+    assert captured.out.splitlines() == [
+        "::error title=slopvac::could not determine changed prose files"
+    ]
+    assert captured.err == "a\n%250A%3A%3Awarning%3A%3Ax\n\\u{23}#[error]x\n"
+
+
 DISPOSITIONS = ROOT / "docs" / "contract" / "compat" / "dispositions.toml"
 REFUSE_STEP = "Refuse removed 2.x inputs"
 
