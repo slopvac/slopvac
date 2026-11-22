@@ -1654,11 +1654,14 @@ impl Run<'_> {
             // Only the kinds the gate names matter, so ask for those: the cost then does not
             // grow with the kinds a pack's taggers put on the same text.
             Some(gate) if detectors.is_empty() => {
-                let named: Vec<&str> = [&gate.only, &gate.skip]
+                // A kind that `only` and `skip` both name is one lookup, not two.
+                let mut named: Vec<&str> = [&gate.only, &gate.skip]
                     .into_iter()
                     .flatten()
                     .flat_map(|names| names.iter().map(ContextTag::as_str))
                     .collect();
+                named.sort_unstable();
+                named.dedup();
                 kinds_among(tags, span, covering, &named)
             }
             _ if gate.is_some() || !detectors.is_empty() => kinds_of(tags, span, covering),

@@ -477,28 +477,22 @@ impl TagIndex {
         for (i, &g) in groups.iter().enumerate() {
             by_group.entry(g).or_default().push(i);
         }
-        // A group with the same kind and the same pieces as an earlier group answers every
+        // A group with the same pieces, kinds included, as an earlier group answers every
         // lookup the same way, so only the first of them goes into the stabbing structures.
         // Many taggers or matches that tag one cell then cost a lookup one visit, not one each.
-        let mut seen: HashSet<(&str, Vec<(usize, usize)>)> = HashSet::new();
+        let mut seen: HashSet<Vec<(&str, usize, usize)>> = HashSet::new();
         let mut repeated: HashSet<usize> = HashSet::new();
         let mut multi_groups: Vec<(usize, Vec<usize>)> =
             by_group.into_iter().filter(|(_, m)| m.len() > 1).collect();
         multi_groups.sort_unstable_by_key(|(g, _)| *g);
         for (g, m) in &multi_groups {
-            let Some(kind) = m
-                .first()
-                .and_then(|&i| tags.get(i))
-                .map(|t| t.kind.as_str())
-            else {
-                continue;
-            };
-            let extents = m
+            // Every piece counts with its own kind, since a query can start in any piece.
+            let key = m
                 .iter()
                 .filter_map(|&i| tags.get(i))
-                .map(|t| (t.span.start, t.span.end))
+                .map(|t| (t.kind.as_str(), t.span.start, t.span.end))
                 .collect();
-            if !seen.insert((kind, extents)) {
+            if !seen.insert(key) {
                 repeated.insert(*g);
             }
         }

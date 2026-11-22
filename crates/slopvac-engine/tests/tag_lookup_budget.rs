@@ -35,16 +35,16 @@ fn taggers(kinds: usize) -> TagRegistry {
     registry
 }
 
-/// `rules` document-scope rules that each match the break between two lines of the cell. A
-/// context gate skips `k0`, a kind the cell has, so each lookup reaches a real kind and the
-/// rules have no findings.
-fn engine(kinds: usize, rules: usize, lines: usize) -> Engine {
+/// `rules` document-scope rules that each match the break between two lines of the cell, with
+/// the context gate `gate`. A gate on `k0`, a kind the cell has, makes each lookup reach a real
+/// kind.
+fn engine(kinds: usize, rules: usize, lines: usize, gate: &serde_json::Value) -> Engine {
     let rules: Vec<_> = (0..rules)
         .map(|i| {
             common::rule(
                 &format!("r{i}"),
                 &json!({"kind": "pattern", "pattern": r"go\.\s+Must"}),
-                &json!({"scope": "document", "contexts": {"skip": ["k0"]}}),
+                &json!({"scope": "document", "contexts": gate}),
             )
         })
         .collect();
@@ -53,9 +53,19 @@ fn engine(kinds: usize, rules: usize, lines: usize) -> Engine {
         .with_taggers(taggers(kinds))
 }
 
-/// The looks one run makes, and whether it finished.
+/// The looks one run makes, and whether it finished. The gate skips `k0`, so the rules have no
+/// findings.
 fn run(kinds: usize, rules: usize, lines: usize) -> (usize, Result<usize, EngineError>) {
-    let engine = engine(kinds, rules, lines);
+    run_gated(kinds, rules, lines, &json!({"skip": ["k0"]}))
+}
+
+fn run_gated(
+    kinds: usize,
+    rules: usize,
+    lines: usize,
+    gate: &serde_json::Value,
+) -> (usize, Result<usize, EngineError>) {
+    let engine = engine(kinds, rules, lines, gate);
     let source = wrapped_table(lines);
     let _ = take_lookup_steps();
     let result = engine
@@ -88,4 +98,14 @@ fn many_kinds_on_a_wrapped_cell_with_rules_across_its_lines_are_checked_in_linea
     // at the budget after about 270,000 steps, so this cap sits well under that.
     let cap = 100_000;
     assert!(steps < cap, "{steps} steps for a cap of {cap}");
+}
+
+#[test]
+fn a_kind_that_both_gate_lists_name_is_looked_up_once() {
+    // One tagger and 400 rules whose gates name `k0` in `only` and in `skip`. Each lookup
+    // visits the cell's piece of `k0` once: 400 rules x 59 breaks, about 23,600 visits, under
+    // the budget of 26,800. A lookup per list would visit twice and pass the budget.
+    let gate = json!({"only": ["k0"], "skip": ["k0"]});
+    let (_, result) = run_gated(1, 400, 60, &gate);
+    assert_eq!(result, Ok(0));
 }
