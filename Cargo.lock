@@ -2696,6 +2696,7 @@ dependencies = [
  "proptest",
  "regex",
  "rstest",
+ "schemars",
  "semver",
  "serde_json",
  "slopvac-config",
