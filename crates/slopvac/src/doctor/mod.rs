@@ -11,6 +11,7 @@ pub mod update;
 
 use std::path::{Path, PathBuf};
 
+use schemars::JsonSchema;
 use serde::Serialize;
 use slopvac_plugins::lock::{LockError, Lockfile, PackKind};
 use slopvac_plugins::sign::PublicKey;
@@ -63,7 +64,7 @@ pub trait UpdateProbe {
 }
 
 /// One status of a config source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SourceStatus {
     /// Parses and declares `schema_version` 3.
@@ -173,7 +174,7 @@ pub struct Inputs<'a> {
 pub const SCHEMA_VERSION: u8 = 3;
 
 /// The report. Field order is the JSON key order.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct Report {
     schema_version: u8,
     /// Nothing needs attention.
@@ -188,20 +189,20 @@ pub struct Report {
     directories: Directories,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct Binary {
     version: String,
     install_method: &'static str,
     upgrade_command: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct Platform {
     os: &'static str,
     arch: &'static str,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct Update {
     checks: &'static str,
     disabled_by: Option<&'static str>,
@@ -210,13 +211,13 @@ struct Update {
     checked_at: Option<u64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct Offline {
     effective: bool,
     sources: Vec<&'static str>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct DoctorConfigFile {
     layer: &'static str,
     file: String,
@@ -224,13 +225,13 @@ struct DoctorConfigFile {
     error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct Config {
     ok: bool,
     sources: Vec<DoctorConfigFile>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct PackEntry {
     id: String,
     version: String,
@@ -238,26 +239,26 @@ struct PackEntry {
     state: &'static str,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct Lock {
     file: String,
     status: &'static str,
     error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct Packs {
     lockfile: Lock,
     items: Vec<PackEntry>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct PinnedKey {
     namespace: String,
     fingerprint: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct Trust {
     status: &'static str,
     error: Option<String>,
@@ -265,7 +266,7 @@ struct Trust {
     pinned_keys: Vec<PinnedKey>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct Directory {
     path: String,
     source: String,
@@ -274,7 +275,7 @@ struct Directory {
     truncated: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 struct Directories {
     cache: Directory,
     data: Directory,
