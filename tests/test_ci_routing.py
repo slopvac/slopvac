@@ -175,7 +175,7 @@ def evaluate(condition: str, true_outputs: set[str]) -> bool:
     [
         ("evals-ratchet", "evals"),
         ("docs-site", "docs-site"),
-        ("action-v3", "action-v3"),
+        ("action-contract", "action"),
         ("diagram-adapter", "diagram-adapter"),
     ],
 )
@@ -334,22 +334,22 @@ def test_fixtures_read_by_contract_tests_run_the_full_suite(path):
 )
 def test_a_change_to_the_binary_sources_runs_the_real_binary_suites(path):
     outputs = classes_of([path])
-    assert {"code", "action-v3"} <= outputs
+    assert {"code", "action"} <= outputs
     assert evaluate(JOBS["test"]["if"], outputs) is True
-    assert evaluate(JOBS["action-v3"]["if"], outputs) is True
+    assert evaluate(JOBS["action-contract"]["if"], outputs) is True
 
 
 def test_a_change_to_the_action_alone_runs_its_contract_tests():
-    # tests/test_action_v3.py reads action-v3/action.yml, so the full suite must run.
-    outputs = classes_of(["action-v3/action.yml"])
-    assert {"code", "action-v3"} <= outputs
+    # tests/test_action_v3.py reads action.yml, so the full suite must run.
+    outputs = classes_of(["action.yml"])
+    assert {"code", "action"} <= outputs
     assert evaluate(JOBS["test"]["if"], outputs) is True
-    assert evaluate(JOBS["action-v3"]["if"], outputs) is True
+    assert evaluate(JOBS["action-contract"]["if"], outputs) is True
 
 
 @pytest.mark.parametrize("path", ["README.md", "docs/design/x.md"])
-def test_prose_only_changes_skip_the_action_v3_job(path):
-    assert evaluate(JOBS["action-v3"]["if"], classes_of([path])) is False
+def test_prose_only_changes_skip_the_action_contract_job(path):
+    assert evaluate(JOBS["action-contract"]["if"], classes_of([path])) is False
 
 
 def test_the_pytest_job_builds_the_binary_before_it_runs_the_suites():
@@ -380,7 +380,7 @@ def test_the_rust_job_allows_user_namespaces_before_the_tests_run():
     [
         ("evals-ratchet", "evals-ratchet.yml"),
         ("docs-site", "docs-site.yml"),
-        ("action-v3", "action-v3-test.yml"),
+        ("action-contract", "action-test.yml"),
     ],
 )
 def test_folded_job_calls_its_workflow_with_read_only_token(job, workflow):
@@ -393,7 +393,7 @@ def test_folded_job_calls_its_workflow_with_read_only_token(job, workflow):
 
 
 @pytest.mark.parametrize(
-    "workflow", ["evals-ratchet.yml", "docs-site.yml", "action-v3-test.yml"]
+    "workflow", ["evals-ratchet.yml", "docs-site.yml", "action-test.yml"]
 )
 def test_folded_workflow_has_no_standalone_pr_or_push_trigger(workflow):
     triggers = load(workflow)["on"]
@@ -434,7 +434,6 @@ FLAG_ENV = {
     "PACKAGE": "package",
     "RUST": "rust",
     "ACTION": "action",
-    "ACTION_V3": "action-v3",
     "LINT": "lint",
     "DOCS": "docs",
     "SECRETS": "secrets",
@@ -490,7 +489,7 @@ def test_gate_needs_include_the_folded_jobs():
         (set(), ok()),
         ({"evals"}, ok("evals-ratchet")),
         ({"docs-site"}, ok("docs-site")),
-        ({"action-v3"}, ok("action-v3")),
+        ({"action"}, ok("action-contract")),
         ({"evals", "docs-site"}, ok("evals-ratchet", "docs-site")),
         ({"diagram-adapter"}, ok("diagram-adapter")),
         ({"force_all"}, ok(*(set(GATE_NEEDS) - ALWAYS))),
@@ -506,8 +505,8 @@ def test_gate_accepts_runs_and_skips_matching_the_classification(flags, results)
     [
         ({"evals"}, ok(), "evals-ratchet: got skipped, expected success"),
         ({"docs-site"}, ok(), "docs-site: got skipped, expected success"),
-        ({"action-v3"}, ok(), "action-v3: got skipped, expected success"),
-        (set(), ok("action-v3"), "action-v3: got success, expected skipped"),
+        ({"action"}, ok(), "action-contract: got skipped, expected success"),
+        (set(), ok("action-contract"), "action-contract: got success, expected skipped"),
         ({"diagram-adapter"}, ok(), "diagram-adapter: got skipped, expected success"),
         (
             set(),

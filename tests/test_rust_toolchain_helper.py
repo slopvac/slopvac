@@ -127,11 +127,9 @@ def test_malformed_toml_fails_before_rustup(tmp_path: Path) -> None:
 # new job, or list it here with a reason.
 _NO_RUST_GROUPS = {
     "Python-only or installed-package job; no cargo": [
-        ("action-test.yml", "action"),
         ("publish-pypi.yml", "validate"),
         ("cli-e2e.yml", "e2e"),
         ("cli-e2e.yml", "smoke"),
-        ("lint.yml", "action"),
         ("lint.yml", "prose"),
         ("markdown-audit.yml", "inventory-and-audit"),
         ("publish-lint.yml", "build"),

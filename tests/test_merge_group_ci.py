@@ -265,7 +265,7 @@ def test_only_pull_request_runs_cancel_a_superseded_run(context, cancels):
 
 def rust_cache_steps() -> dict[tuple[str, str], dict]:
     found = {}
-    for workflow in ("test.yml", "docs-site.yml", "action-v3-test.yml"):
+    for workflow in ("test.yml", "docs-site.yml", "action-test.yml"):
         for name, job in load(workflow)["jobs"].items():
             for step in job.get("steps", []):
                 if step.get("uses", "").startswith("Swatinem/rust-cache@"):
@@ -280,7 +280,7 @@ def test_every_rust_cache_step_is_checked():
         ("test.yml", "rust-msrv"),
         ("test.yml", "test"),
         ("docs-site.yml", "build"),
-        ("action-v3-test.yml", "action"),
+        ("action-test.yml", "action"),
     }
 
 

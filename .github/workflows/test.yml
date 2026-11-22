@@ -46,7 +46,6 @@ jobs:
       diagram-adapter: ${{ steps.filter.outputs.diagram-adapter }}
       docs-site: ${{ steps.filter.outputs.docs-site }}
       action: ${{ steps.filter.outputs.action }}
-      action-v3: ${{ steps.filter.outputs.action-v3 }}
       docs: ${{ steps.filter.outputs.docs }}
       ci: ${{ steps.filter.outputs.ci }}
       config: ${{ steps.filter.outputs.config }}
@@ -709,16 +708,6 @@ jobs:
     permissions:
       contents: read
 
-  action-v3:
-    name: Action 3.0 contract
-    needs: changes
-    if: >-
-      needs.changes.outputs.force_all == 'true' ||
-      needs.changes.outputs['action-v3'] == 'true'
-    uses: ./.github/workflows/action-v3-test.yml
-    permissions:
-      contents: read
-
   lint:
     name: Relevant lint suites
     needs: changes
@@ -807,7 +796,6 @@ jobs:
       - lint-package
       - cli-e2e
       - action-contract
-      - action-v3
       - lint
       - markdown-audit
       - security
@@ -828,7 +816,6 @@ jobs:
           PACKAGE: ${{ needs.changes.outputs.package }}
           RUST: ${{ needs.changes.outputs.rust }}
           ACTION: ${{ needs.changes.outputs.action }}
-          ACTION_V3: ${{ needs.changes.outputs['action-v3'] }}
           LINT: ${{ needs.changes.outputs.lint }}
           DOCS: ${{ needs.changes.outputs.docs }}
           SECRETS: ${{ needs.changes.outputs.secrets }}
@@ -863,7 +850,6 @@ jobs:
           package = os.environ["PACKAGE"] == "true"
           rust = os.environ["RUST"] == "true"
           action = os.environ["ACTION"] == "true"
-          action_v3 = os.environ["ACTION_V3"] == "true"
           lint = os.environ["LINT"] == "true"
           docs = os.environ["DOCS"] == "true"
           secrets = os.environ["SECRETS"] == "true"
@@ -884,7 +870,6 @@ jobs:
               "lint-package": force_all or package,
               "cli-e2e": force_all or package or docs,
               "action-contract": force_all or action,
-              "action-v3": force_all or action_v3,
               "lint": force_all or lint,
               "markdown-audit": force_all or docs,
               "security": force_all or secrets or code or dependencies or filesystem,
