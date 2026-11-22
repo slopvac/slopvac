@@ -132,9 +132,30 @@ fn matcher(path: &PackPath) -> Result<Regex, PackError> {
             path: path.as_str().to_owned(),
         })?;
     RegexBuilder::new(glob.regex())
+        .dot_matches_new_line(true)
         .nest_limit(REGEX_NEST_LIMIT)
         .size_limit(REGEX_SIZE_LIMIT)
         .dfa_size_limit(REGEX_SIZE_LIMIT)
         .build()
         .map_err(|_| PackError::GlobTooComplex)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_double_star_matches_a_segment_with_a_newline_as_globset_does() {
+        let glob = "genres/**/a.yaml";
+        let path = "genres/sub\n/a.yaml";
+        let ours = matcher(&PackPath::parse(glob).unwrap()).unwrap();
+        let theirs = GlobBuilder::new(glob)
+            .literal_separator(true)
+            .build()
+            .unwrap()
+            .compile_matcher();
+
+        assert!(theirs.is_match(path));
+        assert_eq!(ours.is_match(path.as_bytes()), theirs.is_match(path));
+    }
 }

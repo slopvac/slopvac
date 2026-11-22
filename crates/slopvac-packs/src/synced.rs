@@ -236,7 +236,7 @@ pub fn load_synced(
 /// the same `budget` makes the budget cover the whole run.
 ///
 /// # Errors
-/// As [`load_synced`], and [`PackError::Limit`] or [`PackError::RunLimit`] (wrapped in
+/// As [`load_synced`], and [`PackError::Budget`] (wrapped in
 /// [`SyncedError::Pack`]) when a budget is crossed.
 pub fn load_synced_within(
     requested: &[PackId],

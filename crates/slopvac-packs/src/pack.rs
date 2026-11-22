@@ -140,7 +140,7 @@ impl LoadedPack {
     /// pack that crosses a budget stops the load at once.
     ///
     /// # Errors
-    /// As [`LoadedPack::load`], and [`PackError::Limit`] or [`PackError::RunLimit`] when the
+    /// As [`LoadedPack::load`], and [`PackError::Budget`] when the
     /// pack crosses a budget.
     pub fn load_within(
         source: &dyn PackSource,
@@ -316,7 +316,7 @@ impl Packs {
     /// Register the genres and styles of `packs`, in order.
     ///
     /// # Errors
-    /// [`PackError::RunLimit`] when the packs together pass a cap (X3),
+    /// [`PackError::Budget`] when the packs together pass a cap (X3),
     /// [`PackError::Registry`] when two packs supply the same qualified name,
     /// [`PackError::MissingParent`] for a genre that extends one no pack supplies, and
     /// [`PackError::GenreCycle`] for a genre that extends itself through its parents.
