@@ -2,7 +2,7 @@
 
 `matrix.md` and `matrix.json` list every 2.x command, option, Action input and output, pre-commit hook ID, and hand-listed behaviour. Each row has a disposition, a 3.0 note, and an owning bead.
 
-The generator reads the click tree (`slopvac.cli:main`), `action.yml`, and `sources/pre-commit-hooks-2x.yaml`, a frozen copy of the 2.x `.pre-commit-hooks.yaml`. It merges `dispositions.toml`, which is the only file to edit by hand. Behaviour rows exist only in that file, under `behavior:` keys.
+The generator reads the click tree (`slopvac.cli:main`), `sources/action-2x.yml`, a frozen copy of the 2.x `action.yml`, and `sources/pre-commit-hooks-2x.yaml`, a frozen copy of the 2.x `.pre-commit-hooks.yaml`. It merges `dispositions.toml`, which is the only file to edit by hand. Behaviour rows exist only in that file, under `behavior:` keys.
 
 Row IDs use these prefixes: `cmd:`, `opt:<command>:<flag>`, `action:input:`, `action:output:`, `hook:`, and `behavior:`.
 
