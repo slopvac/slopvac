@@ -19,7 +19,9 @@ const FIXED: &str = "# Title\n\nWe use the parser.\n";
 
 fn slopvac(dir: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("slopvac").expect("binary builds");
-    cmd.current_dir(dir).env("NO_COLOR", "1");
+    cmd.current_dir(dir)
+        .env("NO_COLOR", "1")
+        .env("SLOPVAC_NO_UPDATE_CHECK", "1");
     for var in ["SLOPVAC_OFFLINE", "SLOPVAC_LOG", "FORCE_COLOR"] {
         cmd.env_remove(var);
     }
