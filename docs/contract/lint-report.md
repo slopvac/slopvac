@@ -311,9 +311,8 @@ models in `slopvac.report` and `slopvac.model`.
 ## Consumers to migrate
 
 These 2.x readers and writers use the old keys. The 3.0 output beads own the move:
-slopvac-8l4.12.2 for the formats and slopvac-8l4.13.6 for the action.
+slopvac-8l4.12.2 for the formats.
 
-- `action_entry.py` reads the JSON report. Owner: slopvac-8l4.13.6.
 - The SARIF builder in `report.py`. Owner: slopvac-8l4.12.2.
 - `html.py`. Owner: slopvac-8l4.12.2.
 - The annotation output in `pipeline.py`. Owner: slopvac-8l4.12.2.
