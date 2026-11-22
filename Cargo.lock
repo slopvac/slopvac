@@ -2413,6 +2413,7 @@ dependencies = [
  "roxmltree",
  "rstest",
  "rustix",
+ "schemars",
  "semver",
  "serde",
  "serde_json",
