@@ -31,7 +31,7 @@ fn sentence_tags(
                     kind: kind.to_string(),
                     span: s.span,
                     confidence,
-                    evidence,
+                    evidence: evidence.into(),
                 })?;
             }
         }

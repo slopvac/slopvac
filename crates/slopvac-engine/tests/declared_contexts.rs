@@ -150,7 +150,7 @@ impl Tagger for Many {
                 kind: format!("k{i}"),
                 span: 0..1,
                 confidence: 1.0,
-                evidence: String::new(),
+                evidence: "".into(),
             })
             .collect())
     }
@@ -200,7 +200,7 @@ impl Tagger for Repeat {
                 kind: self.kind.to_owned(),
                 span: 0..self.end,
                 confidence: 1.0,
-                evidence: String::new(),
+                evidence: "".into(),
             })
             .collect())
     }

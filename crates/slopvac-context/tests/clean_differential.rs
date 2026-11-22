@@ -101,7 +101,7 @@ mod old {
                         kind: kind.to_string(),
                         span: s.span,
                         confidence,
-                        evidence,
+                        evidence: evidence.into(),
                     });
                 }
             }
@@ -208,7 +208,7 @@ type Observed = Vec<(String, std::ops::Range<usize>, u32, String)>;
 fn observed(tags: Result<Vec<Tag>, Error>) -> Observed {
     tags.unwrap()
         .into_iter()
-        .map(|t| (t.kind, t.span, t.confidence.to_bits(), t.evidence))
+        .map(|t| (t.kind, t.span, t.confidence.to_bits(), t.evidence.to_string()))
         .collect()
 }
 

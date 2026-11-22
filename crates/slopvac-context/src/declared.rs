@@ -68,7 +68,7 @@ impl Tagger for DeclaredContextTagger {
                 kind: kind.clone(),
                 span: 0..doc.source_len(),
                 confidence: 1.0,
-                evidence: format!("declared by genre `{genre}`"),
+                evidence: format!("declared by genre `{genre}`").into(),
             })
             .collect())
     }

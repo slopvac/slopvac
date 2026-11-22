@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{DocumentView, Error, work};
@@ -16,8 +16,8 @@ pub struct Tag {
     pub span: Range<usize>,
     /// Confidence in 0..=1.
     pub confidence: f32,
-    /// Why the tagger fired.
-    pub evidence: String,
+    /// Why the tagger fired. Pieces that a tag is split into share one allocation.
+    pub evidence: Arc<str>,
 }
 
 /// A deterministic tagger.
