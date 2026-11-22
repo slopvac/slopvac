@@ -1,11 +1,5 @@
 //! `slopvac lsp` with a real project config: per-document `[[overrides]]` and `[[genres]]`
 //! settings, and a reload when a config file is saved or changes on disk.
-#![allow(
-    clippy::expect_used,
-    clippy::unwrap_used,
-    clippy::panic,
-    reason = "test code: a panic is a failed test"
-)]
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -24,6 +18,9 @@ const WAIT: Duration = Duration::from_secs(20);
 
 const OVERRIDE_OFF: &str = "schema_version = 3\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\n[overrides.rules]\n\"prose-inflation.slop-lexicon\" = \"off\"\n";
 
+/// What a test body and its helpers return, so a failure is an `Err` and not a panic.
+type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
 /// A running `slopvac lsp` in a project directory.
 struct Session {
     child: Child,
@@ -33,7 +30,7 @@ struct Session {
 }
 
 impl Session {
-    fn start(dir: &Path) -> Self {
+    fn start(dir: &Path) -> TestResult<Self> {
         let mut child = Command::new(env!("CARGO_BIN_EXE_slopvac"))
             .arg("lsp")
             .current_dir(dir)
@@ -41,11 +38,12 @@ impl Session {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .spawn()
-            .expect("slopvac lsp starts");
-        let stdin = child.stdin.take().expect("stdin");
-        let stdout = child.stdout.take().expect("stdout");
+            .spawn()?;
+        let stdin = child.stdin.take().ok_or("the child has no stdin")?;
+        let stdout = child.stdout.take().ok_or("the child has no stdout")?;
         let (tx, frames) = channel();
+        // A frame that cannot be read ends the thread, which closes the channel, and the
+        // waiting test then fails with "the server closed its output".
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
             loop {
@@ -63,11 +61,16 @@ impl Session {
                         length = n.parse::<usize>().ok();
                     }
                 }
-                let mut body = vec![0; length.expect("a length")];
+                let Some(length) = length else {
+                    return;
+                };
+                let mut body = vec![0; length];
                 if reader.read_exact(&mut body).is_err() {
                     return;
                 }
-                let value = serde_json::from_slice(&body).expect("a JSON body");
+                let Ok(value) = serde_json::from_slice(&body) else {
+                    return;
+                };
                 if tx.send(value).is_err() {
                     return;
                 }
@@ -82,67 +85,86 @@ impl Session {
         session.request(
             "initialize",
             &json!({"processId": null, "rootUri": null, "capabilities": {}}),
-        );
-        session.notify("initialized", &json!({}));
-        session
+        )?;
+        session.notify("initialized", &json!({}))?;
+        Ok(session)
     }
 
-    fn send(&mut self, body: &Value) {
+    fn send(&mut self, body: &Value) -> TestResult {
         let text = body.to_string();
-        write!(self.stdin, "Content-Length: {}\r\n\r\n{text}", text.len()).expect("write frame");
-        self.stdin.flush().expect("flush");
+        write!(self.stdin, "Content-Length: {}\r\n\r\n{text}", text.len())?;
+        self.stdin.flush()?;
+        Ok(())
     }
 
-    fn notify(&mut self, method: &str, params: &Value) {
-        self.send(&json!({"jsonrpc": "2.0", "method": method, "params": params}));
+    fn notify(&mut self, method: &str, params: &Value) -> TestResult {
+        self.send(&json!({"jsonrpc": "2.0", "method": method, "params": params}))
     }
 
-    fn request(&mut self, method: &str, params: &Value) {
+    fn request(&mut self, method: &str, params: &Value) -> TestResult {
         self.next_id += 1;
         let id = self.next_id;
-        self.send(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
-        self.wait_for(|m| m["id"] == id);
+        self.send(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))?;
+        self.wait_for(|m| m["id"] == id)?;
+        Ok(())
     }
 
     /// The next frame that satisfies `pred`; earlier frames are dropped.
-    fn wait_for(&self, pred: impl Fn(&Value) -> bool) -> Value {
+    fn wait_for(&self, pred: impl Fn(&Value) -> bool) -> TestResult<Value> {
         loop {
             match self.frames.recv_timeout(WAIT) {
-                Ok(frame) if pred(&frame) => return frame,
+                Ok(frame) if pred(&frame) => return Ok(frame),
                 Ok(_) => {}
-                Err(RecvTimeoutError::Timeout) => panic!("no matching message in {WAIT:?}"),
-                Err(RecvTimeoutError::Disconnected) => panic!("the server closed its output"),
+                Err(RecvTimeoutError::Timeout) => {
+                    return Err(format!("no matching message in {WAIT:?}").into());
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err("the server closed its output".into());
+                }
             }
         }
     }
 
-    fn open(&mut self, dir: &Path, rel: &str, text: &str) {
+    fn open(&mut self, dir: &Path, rel: &str, text: &str) -> TestResult {
         let uri = uri_of(dir, rel);
         self.notify(
             "textDocument/didOpen",
             &json!({"textDocument": {"uri": uri, "languageId": "markdown", "version": 1, "text": text}}),
-        );
+        )
     }
 
     /// Diagnostic codes of the next `publishDiagnostics` for the document at `rel`.
-    fn codes(&self, dir: &Path, rel: &str) -> Vec<String> {
+    fn codes(&self, dir: &Path, rel: &str) -> TestResult<Vec<String>> {
         let uri = uri_of(dir, rel);
         let published = self.wait_for(|m| {
             m["method"] == "textDocument/publishDiagnostics" && m["params"]["uri"] == uri
-        });
-        published["params"]["diagnostics"]
-            .as_array()
-            .expect("diagnostics")
-            .iter()
-            .map(|d| d["code"].as_str().expect("code").to_owned())
-            .collect()
+        })?;
+        codes_of(&published["params"]["diagnostics"])
     }
 
-    fn finish(mut self) {
-        self.request("shutdown", &Value::Null);
-        self.notify("exit", &Value::Null);
-        assert!(self.child.wait().expect("exit").success());
+    fn finish(mut self) -> TestResult {
+        self.request("shutdown", &Value::Null)?;
+        self.notify("exit", &Value::Null)?;
+        if !self.child.wait()?.success() {
+            return Err("the server exited with a failure".into());
+        }
+        Ok(())
     }
+}
+
+/// The codes of a `diagnostics` array.
+fn codes_of(diagnostics: &Value) -> TestResult<Vec<String>> {
+    diagnostics
+        .as_array()
+        .ok_or("diagnostics is not an array")?
+        .iter()
+        .map(|d| {
+            d["code"]
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| "a diagnostic has no code".into())
+        })
+        .collect()
 }
 
 fn uri_of(dir: &Path, rel: &str) -> String {
@@ -150,59 +172,61 @@ fn uri_of(dir: &Path, rel: &str) -> String {
 }
 
 /// A canonical project directory, so the document paths match what the server resolves.
-fn project(config: &str, files: &[(&str, &str)]) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().expect("tempdir");
-    fs::write(dir.path().join("slopvac.toml"), config).expect("config");
+fn project(config: &str, files: &[(&str, &str)]) -> TestResult<tempfile::TempDir> {
+    let dir = tempfile::tempdir()?;
+    fs::write(dir.path().join("slopvac.toml"), config)?;
     for (rel, text) in files {
         let path = dir.path().join(rel);
-        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
-        fs::write(path, text).expect("document");
+        fs::create_dir_all(path.parent().ok_or("a path with no parent")?)?;
+        fs::write(path, text)?;
     }
-    dir
+    Ok(dir)
 }
 
 #[test]
-fn an_override_block_turns_a_rule_off_only_for_the_documents_it_matches() {
-    let dir = project(OVERRIDE_OFF, &[]);
+fn an_override_block_turns_a_rule_off_only_for_the_documents_it_matches() -> TestResult {
+    let dir = project(OVERRIDE_OFF, &[])?;
     let root = dir.path().canonicalize().expect("canonical");
-    let mut session = Session::start(&root);
-    session.open(&root, "docs/a.md", SLOPPY);
-    session.open(&root, "top.md", SLOPPY);
-    let inside = session.codes(&root, "docs/a.md");
-    let outside = session.codes(&root, "top.md");
+    let mut session = Session::start(&root)?;
+    session.open(&root, "docs/a.md", SLOPPY)?;
+    session.open(&root, "top.md", SLOPPY)?;
+    let inside = session.codes(&root, "docs/a.md")?;
+    let outside = session.codes(&root, "top.md")?;
     assert!(!inside.iter().any(|c| c == LEXICON), "{inside:?}");
     assert!(outside.iter().any(|c| c == LEXICON), "{outside:?}");
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_genres_block_gives_the_documents_it_matches_the_genre_level() {
+fn a_genres_block_gives_the_documents_it_matches_the_genre_level() -> TestResult {
     let config =
         "schema_version = 3\n\n[[genres]]\nfiles = [\"log/**\"]\ngenre = \"change-comms\"\n";
-    let dir = project(config, &[]);
+    let dir = project(config, &[])?;
     let root = dir.path().canonicalize().expect("canonical");
-    let mut session = Session::start(&root);
-    session.open(&root, "log/c.md", HISTORY);
-    session.open(&root, "reference/e.md", HISTORY);
-    let assigned = session.codes(&root, "log/c.md");
-    let unassigned = session.codes(&root, "reference/e.md");
+    let mut session = Session::start(&root)?;
+    session.open(&root, "log/c.md", HISTORY)?;
+    session.open(&root, "reference/e.md", HISTORY)?;
+    let assigned = session.codes(&root, "log/c.md")?;
+    let unassigned = session.codes(&root, "reference/e.md")?;
     assert!(!assigned.iter().any(|c| c == HISTORY_RULE), "{assigned:?}");
     assert!(
         unassigned.iter().any(|c| c == HISTORY_RULE),
         "{unassigned:?}"
     );
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn saving_the_edited_config_lints_an_open_document_under_the_new_settings() {
-    let dir = project("schema_version = 3\n", &[]);
+fn saving_the_edited_config_lints_an_open_document_under_the_new_settings() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
     let root = dir.path().canonicalize().expect("canonical");
-    let mut session = Session::start(&root);
-    session.open(&root, "docs/a.md", SLOPPY);
+    let mut session = Session::start(&root)?;
+    session.open(&root, "docs/a.md", SLOPPY)?;
     assert!(
         session
-            .codes(&root, "docs/a.md")
+            .codes(&root, "docs/a.md")?
             .iter()
             .any(|c| c == LEXICON)
     );
@@ -210,20 +234,22 @@ fn saving_the_edited_config_lints_an_open_document_under_the_new_settings() {
     session.notify(
         "textDocument/didSave",
         &json!({"textDocument": {"uri": uri_of(&root, "slopvac.toml")}}),
-    );
-    let after = session.codes(&root, "docs/a.md");
+    )?;
+    let after = session.codes(&root, "docs/a.md")?;
     assert!(!after.iter().any(|c| c == LEXICON), "{after:?}");
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_watched_change_of_an_extended_file_lints_an_open_document_under_the_new_settings() {
-    let dir = project("schema_version = 3\nextends = [\"base.toml\"]\n", &[]);
+fn a_watched_change_of_an_extended_file_lints_an_open_document_under_the_new_settings() -> TestResult
+{
+    let dir = project("schema_version = 3\nextends = [\"base.toml\"]\n", &[])?;
     let root = dir.path().canonicalize().expect("canonical");
     fs::write(root.join("base.toml"), "schema_version = 3\n").expect("base");
-    let mut session = Session::start(&root);
-    session.open(&root, "a.md", SLOPPY);
-    assert!(session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
+    let mut session = Session::start(&root)?;
+    session.open(&root, "a.md", SLOPPY)?;
+    assert!(session.codes(&root, "a.md")?.iter().any(|c| c == LEXICON));
     fs::write(
         root.join("base.toml"),
         "schema_version = 3\n\n[rules]\n\"prose-inflation.slop-lexicon\" = \"off\"\n",
@@ -232,17 +258,18 @@ fn a_watched_change_of_an_extended_file_lints_an_open_document_under_the_new_set
     session.notify(
         "workspace/didChangeWatchedFiles",
         &json!({"changes": [{"uri": uri_of(&root, "base.toml"), "type": 2}]}),
-    );
-    let after = session.codes(&root, "a.md");
+    )?;
+    let after = session.codes(&root, "a.md")?;
     assert!(!after.iter().any(|c| c == LEXICON), "{after:?}");
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_reload_shows_an_unknown_rule_in_the_new_config() {
-    let dir = project("schema_version = 3\n", &[]);
+fn a_reload_shows_an_unknown_rule_in_the_new_config() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
     let root = dir.path().canonicalize().expect("canonical");
-    let mut session = Session::start(&root);
+    let mut session = Session::start(&root)?;
     fs::write(
         root.join("slopvac.toml"),
         "schema_version = 3\n\n[rules]\n\"core:orwell.no-such-rule\" = \"off\"\n",
@@ -251,34 +278,35 @@ fn a_reload_shows_an_unknown_rule_in_the_new_config() {
     session.notify(
         "textDocument/didSave",
         &json!({"textDocument": {"uri": uri_of(&root, "slopvac.toml")}}),
-    );
-    let shown = session.wait_for(|m| m["method"] == "window/showMessage");
+    )?;
+    let shown = session.wait_for(|m| m["method"] == "window/showMessage")?;
     let message = shown["params"]["message"].as_str().expect("message");
     assert!(
         message.contains("unknown rule core:orwell.no-such-rule"),
         "{message}"
     );
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_config_that_breaks_is_shown_on_the_file_and_a_fixed_one_restores_the_findings() {
-    let dir = project(OVERRIDE_OFF, &[]);
+fn a_config_that_breaks_is_shown_on_the_file_and_a_fixed_one_restores_the_findings() -> TestResult {
+    let dir = project(OVERRIDE_OFF, &[])?;
     let root = dir.path().canonicalize().expect("canonical");
-    let mut session = Session::start(&root);
-    session.open(&root, "top.md", SLOPPY);
-    assert!(session.codes(&root, "top.md").iter().any(|c| c == LEXICON));
+    let mut session = Session::start(&root)?;
+    session.open(&root, "top.md", SLOPPY)?;
+    assert!(session.codes(&root, "top.md")?.iter().any(|c| c == LEXICON));
     fs::write(
         root.join("slopvac.toml"),
         "schema_version = 3\nprofile = [\n",
     )
     .expect("break");
     let save = json!({"textDocument": {"uri": uri_of(&root, "slopvac.toml")}});
-    session.notify("textDocument/didSave", &save);
+    session.notify("textDocument/didSave", &save)?;
     let config_uri = uri_of(&root, "slopvac.toml");
     let on_config = session.wait_for(|m| {
         m["method"] == "textDocument/publishDiagnostics" && m["params"]["uri"] == config_uri
-    });
+    })?;
     let shown = &on_config["params"]["diagnostics"];
     assert_eq!(shown.as_array().map(Vec::len), Some(1), "{shown}");
     assert_eq!(shown[0]["severity"], 1);
@@ -288,72 +316,75 @@ fn a_config_that_breaks_is_shown_on_the_file_and_a_fixed_one_restores_the_findin
             .is_some_and(|c| c.starts_with("config-")),
         "{shown}"
     );
-    let incomplete = session.codes(&root, "top.md");
+    let incomplete = session.codes(&root, "top.md")?;
     assert_eq!(incomplete, ["lsp-lint-incomplete"]);
     fs::write(root.join("slopvac.toml"), "schema_version = 3\n").expect("fix");
-    session.notify("textDocument/didSave", &save);
+    session.notify("textDocument/didSave", &save)?;
     let cleared = session.wait_for(|m| {
         m["method"] == "textDocument/publishDiagnostics" && m["params"]["uri"] == config_uri
-    });
+    })?;
     assert_eq!(cleared["params"]["diagnostics"], json!([]));
-    assert!(session.codes(&root, "top.md").iter().any(|c| c == LEXICON));
-    session.finish();
+    assert!(session.codes(&root, "top.md")?.iter().any(|c| c == LEXICON));
+    session.finish()?;
+    Ok(())
 }
 
 const LEXICON_OFF: &str =
     "schema_version = 3\n\n[rules]\n\"prose-inflation.slop-lexicon\" = \"off\"\n";
 
 /// Tell the server that the file at `path` changed on disk.
-fn changed(session: &mut Session, uri: &str) {
+fn changed(session: &mut Session, uri: &str) -> TestResult {
     session.notify(
         "workspace/didChangeWatchedFiles",
         &json!({"changes": [{"uri": uri, "type": 2}]}),
-    );
+    )
 }
 
-fn diagnostics_on(session: &Session, uri: &str) -> Value {
-    session
-        .wait_for(|m| m["method"] == "textDocument/publishDiagnostics" && m["params"]["uri"] == uri)
-        ["params"]["diagnostics"]
-        .clone()
+fn diagnostics_on(session: &Session, uri: &str) -> TestResult<Value> {
+    let frame = session.wait_for(|m| {
+        m["method"] == "textDocument/publishDiagnostics" && m["params"]["uri"] == uri
+    })?;
+    Ok(frame["params"]["diagnostics"].clone())
 }
 
 #[test]
-fn a_buffer_outside_the_project_with_no_config_on_its_path_gets_the_core_defaults() {
-    let dir = project(LEXICON_OFF, &[]);
+fn a_buffer_outside_the_project_with_no_config_on_its_path_gets_the_core_defaults() -> TestResult {
+    let dir = project(LEXICON_OFF, &[])?;
     let root = dir.path().canonicalize().expect("canonical");
     let elsewhere = tempfile::tempdir().expect("tempdir");
     let other = elsewhere.path().canonicalize().expect("canonical");
-    let mut session = Session::start(&root);
-    session.open(&other, "a.md", SLOPPY);
-    let codes = session.codes(&other, "a.md");
+    let mut session = Session::start(&root)?;
+    session.open(&other, "a.md", SLOPPY)?;
+    let codes = session.codes(&other, "a.md")?;
     assert!(codes.iter().any(|c| c == LEXICON), "{codes:?}");
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_config_that_fails_in_an_extended_file_recovers_when_only_that_file_is_fixed() {
-    let dir = project("schema_version = 3\nextends = [\"base.toml\"]\n", &[]);
+fn a_config_that_fails_in_an_extended_file_recovers_when_only_that_file_is_fixed() -> TestResult {
+    let dir = project("schema_version = 3\nextends = [\"base.toml\"]\n", &[])?;
     let root = dir.path().canonicalize().expect("canonical");
     fs::write(root.join("base.toml"), LEXICON_OFF).expect("base");
-    let mut session = Session::start(&root);
-    session.open(&root, "a.md", SLOPPY);
-    assert!(!session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
+    let mut session = Session::start(&root)?;
+    session.open(&root, "a.md", SLOPPY)?;
+    assert!(!session.codes(&root, "a.md")?.iter().any(|c| c == LEXICON));
     let base = uri_of(&root, "base.toml");
     fs::write(root.join("base.toml"), "schema_version = 3\nprofile = [\n").expect("break");
-    changed(&mut session, &base);
-    let shown = diagnostics_on(&session, &base);
+    changed(&mut session, &base)?;
+    let shown = diagnostics_on(&session, &base)?;
     assert_eq!(shown.as_array().map(Vec::len), Some(1), "{shown}");
-    assert_eq!(session.codes(&root, "a.md"), ["lsp-lint-incomplete"]);
+    assert_eq!(session.codes(&root, "a.md")?, ["lsp-lint-incomplete"]);
     fs::write(root.join("base.toml"), "schema_version = 3\n").expect("fix");
-    changed(&mut session, &base);
-    assert_eq!(diagnostics_on(&session, &base), json!([]));
-    assert!(session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
-    session.finish();
+    changed(&mut session, &base)?;
+    assert_eq!(diagnostics_on(&session, &base)?, json!([]));
+    assert!(session.codes(&root, "a.md")?.iter().any(|c| c == LEXICON));
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn an_extended_file_outside_the_project_is_watched_and_shows_its_own_error() {
+fn an_extended_file_outside_the_project_is_watched_and_shows_its_own_error() -> TestResult {
     let dir = tempfile::tempdir().expect("tempdir");
     let top = dir.path().canonicalize().expect("canonical");
     fs::create_dir_all(top.join("shared")).expect("mkdir");
@@ -365,9 +396,9 @@ fn an_extended_file_outside_the_project_is_watched_and_shows_its_own_error() {
     )
     .expect("config");
     let root = top.join("proj");
-    let mut session = Session::start(&root);
-    session.open(&root, "a.md", SLOPPY);
-    assert!(!session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
+    let mut session = Session::start(&root)?;
+    session.open(&root, "a.md", SLOPPY)?;
+    assert!(!session.codes(&root, "a.md")?.iter().any(|c| c == LEXICON));
     let base = uri_of(&top, "shared/base.toml");
     fs::write(
         top.join("shared/base.toml"),
@@ -375,18 +406,19 @@ fn an_extended_file_outside_the_project_is_watched_and_shows_its_own_error() {
     )
     .expect("break");
     // The client may name the file with a `..` in it.
-    changed(&mut session, &uri_of(&root, "../shared/base.toml"));
-    let shown = diagnostics_on(&session, &base);
+    changed(&mut session, &uri_of(&root, "../shared/base.toml"))?;
+    let shown = diagnostics_on(&session, &base)?;
     assert_eq!(shown.as_array().map(Vec::len), Some(1), "{shown}");
     fs::write(top.join("shared/base.toml"), "schema_version = 3\n").expect("fix");
-    changed(&mut session, &base);
-    assert_eq!(diagnostics_on(&session, &base), json!([]));
-    session.finish();
+    changed(&mut session, &base)?;
+    assert_eq!(diagnostics_on(&session, &base)?, json!([]));
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_change_to_a_file_that_a_nested_config_extends_lints_the_open_document_again() {
-    let dir = project("schema_version = 3\n", &[]);
+fn a_change_to_a_file_that_a_nested_config_extends_lints_the_open_document_again() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
     let root = dir.path().canonicalize().expect("canonical");
     fs::create_dir_all(root.join("shared")).expect("mkdir");
     fs::create_dir_all(root.join("sub")).expect("mkdir");
@@ -396,28 +428,29 @@ fn a_change_to_a_file_that_a_nested_config_extends_lints_the_open_document_again
         "schema_version = 3\nextends = [\"../shared/nested.toml\"]\n",
     )
     .expect("nested config");
-    let mut session = Session::start(&root);
-    session.open(&root, "sub/a.md", SLOPPY);
+    let mut session = Session::start(&root)?;
+    session.open(&root, "sub/a.md", SLOPPY)?;
     assert!(
         !session
-            .codes(&root, "sub/a.md")
+            .codes(&root, "sub/a.md")?
             .iter()
             .any(|c| c == LEXICON)
     );
     fs::write(root.join("shared/nested.toml"), "schema_version = 3\n").expect("edit");
-    changed(&mut session, &uri_of(&root, "shared/nested.toml"));
+    changed(&mut session, &uri_of(&root, "shared/nested.toml"))?;
     assert!(
         session
-            .codes(&root, "sub/a.md")
+            .codes(&root, "sub/a.md")?
             .iter()
             .any(|c| c == LEXICON)
     );
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_nested_config_is_checked_as_lint_checks_it() {
-    let dir = project("schema_version = 3\n", &[]);
+fn a_nested_config_is_checked_as_lint_checks_it() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
     let root = dir.path().canonicalize().expect("canonical");
     fs::create_dir_all(root.join("bad")).expect("mkdir");
     fs::create_dir_all(root.join("warn")).expect("mkdir");
@@ -431,55 +464,59 @@ fn a_nested_config_is_checked_as_lint_checks_it() {
         "schema_version = 3\n\n[rules]\n\"core:orwell.no-such-rule\" = \"off\"\n",
     )
     .expect("config");
-    let mut session = Session::start(&root);
-    session.open(&root, "bad/a.md", SLOPPY);
-    let published = diagnostics_on(&session, &uri_of(&root, "bad/a.md"));
+    let mut session = Session::start(&root)?;
+    session.open(&root, "bad/a.md", SLOPPY)?;
+    let published = diagnostics_on(&session, &uri_of(&root, "bad/a.md"))?;
     assert_eq!(published[0]["code"], "lsp-lint-incomplete");
     let message = published[0]["message"].as_str().expect("message");
     assert!(message.contains("no-such-category"), "{message}");
-    session.open(&root, "warn/a.md", SLOPPY);
-    let shown = session.wait_for(|m| m["method"] == "window/showMessage");
+    session.open(&root, "warn/a.md", SLOPPY)?;
+    let shown = session.wait_for(|m| m["method"] == "window/showMessage")?;
     let message = shown["params"]["message"].as_str().expect("message");
     assert!(
         message.contains("unknown rule core:orwell.no-such-rule"),
         "{message}"
     );
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_symlinked_document_gets_the_settings_of_the_file_it_links_to() {
-    let dir = project(OVERRIDE_OFF, &[("docs/real.md", SLOPPY)]);
+fn a_symlinked_document_gets_the_settings_of_the_file_it_links_to() -> TestResult {
+    let dir = project(OVERRIDE_OFF, &[("docs/real.md", SLOPPY)])?;
     let root = dir.path().canonicalize().expect("canonical");
     std::os::unix::fs::symlink(root.join("docs/real.md"), root.join("alias.md")).expect("link");
-    let mut session = Session::start(&root);
-    session.open(&root, "alias.md", SLOPPY);
+    let mut session = Session::start(&root)?;
+    session.open(&root, "alias.md", SLOPPY)?;
     // `slopvac lint alias.md` resolves the link first, so the `docs/**` block applies.
-    let codes = session.codes(&root, "alias.md");
+    let codes = session.codes(&root, "alias.md")?;
     assert!(!codes.iter().any(|c| c == LEXICON), "{codes:?}");
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_change_to_the_target_of_a_symlinked_extended_file_lints_the_open_document_again() {
+fn a_change_to_the_target_of_a_symlinked_extended_file_lints_the_open_document_again() -> TestResult
+{
     let dir = project(
         "schema_version = 3\nextends = [\"link.toml\"]\n",
         &[("real/base.toml", LEXICON_OFF)],
-    );
+    )?;
     let root = dir.path().canonicalize().expect("canonical");
     std::os::unix::fs::symlink(root.join("real/base.toml"), root.join("link.toml")).expect("link");
-    let mut session = Session::start(&root);
-    session.open(&root, "a.md", SLOPPY);
-    assert!(!session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
+    let mut session = Session::start(&root)?;
+    session.open(&root, "a.md", SLOPPY)?;
+    assert!(!session.codes(&root, "a.md")?.iter().any(|c| c == LEXICON));
     fs::write(root.join("real/base.toml"), "schema_version = 3\n").expect("edit");
     // An editor that resolves links reports the file the link points to.
-    changed(&mut session, &uri_of(&root, "real/base.toml"));
-    assert!(session.codes(&root, "a.md").iter().any(|c| c == LEXICON));
-    session.finish();
+    changed(&mut session, &uri_of(&root, "real/base.toml"))?;
+    assert!(session.codes(&root, "a.md")?.iter().any(|c| c == LEXICON));
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_category_error_in_an_external_extended_file_is_shown_on_that_file_at_the_key() {
+fn a_category_error_in_an_external_extended_file_is_shown_on_that_file_at_the_key() -> TestResult {
     let dir = tempfile::tempdir().expect("tempdir");
     let top = dir.path().canonicalize().expect("canonical");
     fs::create_dir_all(top.join("shared")).expect("mkdir");
@@ -491,15 +528,15 @@ fn a_category_error_in_an_external_extended_file_is_shown_on_that_file_at_the_ke
     )
     .expect("config");
     let root = top.join("proj");
-    let mut session = Session::start(&root);
+    let mut session = Session::start(&root)?;
     fs::write(
         top.join("shared/base.toml"),
         "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
     )
     .expect("break");
     let base = uri_of(&top, "shared/base.toml");
-    changed(&mut session, &base);
-    let shown = diagnostics_on(&session, &base);
+    changed(&mut session, &base)?;
+    let shown = diagnostics_on(&session, &base)?;
     assert_eq!(shown[0]["code"], "config-unknown-category", "{shown}");
     assert_eq!(
         shown[0]["range"]["start"],
@@ -510,22 +547,23 @@ fn a_category_error_in_an_external_extended_file_is_shown_on_that_file_at_the_ke
         !message.contains(top.to_str().expect("utf-8")),
         "an absolute path in {message}"
     );
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_nested_config_that_breaks_fails_the_reload_and_a_fix_restores_every_document() {
-    let dir = project("schema_version = 3\n", &[]);
+fn a_nested_config_that_breaks_fails_the_reload_and_a_fix_restores_every_document() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
     let root = dir.path().canonicalize().expect("canonical");
     fs::create_dir_all(root.join("sub")).expect("mkdir");
     fs::write(root.join("sub/slopvac.toml"), "schema_version = 3\n").expect("nested");
-    let mut session = Session::start(&root);
-    session.open(&root, "top.md", SLOPPY);
-    session.open(&root, "sub/a.md", SLOPPY);
-    assert!(session.codes(&root, "top.md").iter().any(|c| c == LEXICON));
+    let mut session = Session::start(&root)?;
+    session.open(&root, "top.md", SLOPPY)?;
+    session.open(&root, "sub/a.md", SLOPPY)?;
+    assert!(session.codes(&root, "top.md")?.iter().any(|c| c == LEXICON));
     assert!(
         session
-            .codes(&root, "sub/a.md")
+            .codes(&root, "sub/a.md")?
             .iter()
             .any(|c| c == LEXICON)
     );
@@ -535,16 +573,17 @@ fn a_nested_config_that_breaks_fails_the_reload_and_a_fix_restores_every_documen
         "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
     )
     .expect("break");
-    changed(&mut session, &nested);
-    let shown = diagnostics_on(&session, &nested);
+    changed(&mut session, &nested)?;
+    let shown = diagnostics_on(&session, &nested)?;
     assert_eq!(shown[0]["code"], "config-unknown-category", "{shown}");
     // The document outside the nested folder is not left looking checked.
-    assert_eq!(session.codes(&root, "top.md"), ["lsp-lint-incomplete"]);
+    assert_eq!(session.codes(&root, "top.md")?, ["lsp-lint-incomplete"]);
     fs::write(root.join("sub/slopvac.toml"), "schema_version = 3\n").expect("fix");
-    changed(&mut session, &nested);
-    assert_eq!(diagnostics_on(&session, &nested), json!([]));
-    assert!(session.codes(&root, "top.md").iter().any(|c| c == LEXICON));
-    session.finish();
+    changed(&mut session, &nested)?;
+    assert_eq!(diagnostics_on(&session, &nested)?, json!([]));
+    assert!(session.codes(&root, "top.md")?.iter().any(|c| c == LEXICON));
+    session.finish()?;
+    Ok(())
 }
 
 /// The diagnostic codes of the next publication for each of `files`, in whatever order they come.
@@ -552,60 +591,59 @@ fn after_reload(
     session: &Session,
     root: &Path,
     files: &[&str],
-) -> std::collections::HashMap<String, Vec<String>> {
+) -> TestResult<std::collections::HashMap<String, Vec<String>>> {
     let uris: Vec<String> = files.iter().map(|f| uri_of(root, f)).collect();
     let mut seen = std::collections::HashMap::new();
     while seen.len() < files.len() {
         let frame = session.wait_for(|m| {
             m["method"] == "textDocument/publishDiagnostics"
                 && uris.iter().any(|u| m["params"]["uri"] == *u)
-        });
-        let uri = frame["params"]["uri"].as_str().expect("uri");
-        let file = files[uris.iter().position(|u| u == uri).expect("known")];
-        let codes = frame["params"]["diagnostics"]
-            .as_array()
-            .expect("diagnostics")
-            .iter()
-            .map(|d| d["code"].as_str().expect("code").to_owned())
-            .collect();
-        seen.insert(file.to_owned(), codes);
+        })?;
+        let uri = frame["params"]["uri"]
+            .as_str()
+            .ok_or("a publication has no uri")?;
+        let at = uris.iter().position(|u| u == uri).ok_or("an unknown uri")?;
+        let codes = codes_of(&frame["params"]["diagnostics"])?;
+        seen.insert(files[at].to_owned(), codes);
     }
-    seen
+    Ok(seen)
 }
 
 #[test]
-fn a_second_reload_of_a_still_broken_nested_config_keeps_the_error_and_every_document_incomplete() {
-    let dir = project("schema_version = 3\n", &[]);
+fn a_second_reload_of_a_still_broken_nested_config_keeps_the_error_and_every_document_incomplete()
+-> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
     let root = dir.path().canonicalize().expect("canonical");
     fs::create_dir_all(root.join("sub")).expect("mkdir");
     fs::write(root.join("sub/slopvac.toml"), "schema_version = 3\n").expect("nested");
-    let mut session = Session::start(&root);
-    session.open(&root, "top.md", SLOPPY);
-    session.open(&root, "sub/a.md", SLOPPY);
-    session.codes(&root, "top.md");
-    session.codes(&root, "sub/a.md");
+    let mut session = Session::start(&root)?;
+    session.open(&root, "top.md", SLOPPY)?;
+    session.open(&root, "sub/a.md", SLOPPY)?;
+    session.codes(&root, "top.md")?;
+    session.codes(&root, "sub/a.md")?;
     let nested = uri_of(&root, "sub/slopvac.toml");
     fs::write(
         root.join("sub/slopvac.toml"),
         "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
     )
     .expect("break");
-    changed(&mut session, &nested);
+    changed(&mut session, &nested)?;
     let files = ["sub/slopvac.toml", "top.md", "sub/a.md"];
-    let first = after_reload(&session, &root, &files);
+    let first = after_reload(&session, &root, &files)?;
     assert_eq!(first["sub/slopvac.toml"], ["config-unknown-category"]);
     assert_eq!(first["top.md"], ["lsp-lint-incomplete"]);
     assert_eq!(first["sub/a.md"], ["lsp-lint-incomplete"]);
     // The file is still broken: a second notification must not forget that.
-    changed(&mut session, &nested);
-    let again = after_reload(&session, &root, &files);
+    changed(&mut session, &nested)?;
+    let again = after_reload(&session, &root, &files)?;
     assert_eq!(again["sub/slopvac.toml"], ["config-unknown-category"]);
     assert_eq!(again["top.md"], ["lsp-lint-incomplete"]);
     assert_eq!(again["sub/a.md"], ["lsp-lint-incomplete"]);
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 #[test]
-fn an_unknown_style_in_an_extended_file_is_shown_on_its_styles_key() {
+fn an_unknown_style_in_an_extended_file_is_shown_on_its_styles_key() -> TestResult {
     let dir = tempfile::tempdir().expect("tempdir");
     let top = dir.path().canonicalize().expect("canonical");
     fs::create_dir_all(top.join("shared")).expect("mkdir");
@@ -616,47 +654,49 @@ fn an_unknown_style_in_an_extended_file_is_shown_on_its_styles_key() {
         "schema_version = 3\nextends = [\"../shared/base.toml\"]\n",
     )
     .expect("config");
-    let mut session = Session::start(&top.join("proj"));
+    let mut session = Session::start(&top.join("proj"))?;
     fs::write(
         top.join("shared/base.toml"),
         "schema_version = 3\nstyles = [\"no-such-style\"]\n",
     )
     .expect("break");
     let base = uri_of(&top, "shared/base.toml");
-    changed(&mut session, &base);
-    let shown = diagnostics_on(&session, &base);
+    changed(&mut session, &base)?;
+    let shown = diagnostics_on(&session, &base)?;
     assert_eq!(shown[0]["code"], "unknown-style", "{shown}");
     assert_eq!(
         shown[0]["range"]["start"],
         json!({"line": 1, "character": 0})
     );
-    session.finish();
+    session.finish()?;
+    Ok(())
 }
 
 #[test]
-fn a_broken_config_in_a_folder_with_no_open_document_does_not_fail_the_reload() {
-    let dir = project("schema_version = 3\n", &[]);
+fn a_broken_config_in_a_folder_with_no_open_document_does_not_fail_the_reload() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
     let root = dir.path().canonicalize().expect("canonical");
     fs::create_dir_all(root.join("sub")).expect("mkdir");
     fs::write(root.join("sub/slopvac.toml"), "schema_version = 3\n").expect("nested");
-    let mut session = Session::start(&root);
-    session.open(&root, "top.md", SLOPPY);
-    session.open(&root, "sub/a.md", SLOPPY);
-    session.codes(&root, "top.md");
-    session.codes(&root, "sub/a.md");
+    let mut session = Session::start(&root)?;
+    session.open(&root, "top.md", SLOPPY)?;
+    session.open(&root, "sub/a.md", SLOPPY)?;
+    session.codes(&root, "top.md")?;
+    session.codes(&root, "sub/a.md")?;
     session.notify(
         "textDocument/didClose",
         &json!({"textDocument": {"uri": uri_of(&root, "sub/a.md")}}),
-    );
+    )?;
     // The close is done once the server clears the document's diagnostics.
-    assert_eq!(session.codes(&root, "sub/a.md"), Vec::<String>::new());
+    assert_eq!(session.codes(&root, "sub/a.md")?, Vec::<String>::new());
     fs::write(
         root.join("sub/slopvac.toml"),
         "schema_version = 3\n\n[categories]\nno-such-category = \"off\"\n",
     )
     .expect("break");
-    changed(&mut session, &uri_of(&root, "slopvac.toml"));
+    changed(&mut session, &uri_of(&root, "slopvac.toml"))?;
     // Nothing is open under `sub`, so its config is not part of this reload.
-    assert!(session.codes(&root, "top.md").iter().any(|c| c == LEXICON));
-    session.finish();
+    assert!(session.codes(&root, "top.md")?.iter().any(|c| c == LEXICON));
+    session.finish()?;
+    Ok(())
 }
