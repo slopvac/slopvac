@@ -12,7 +12,7 @@
 //!   host entry that decodes it.
 //! - Any other file is one whole JSON-RPC message, read as a frame body without framing.
 //!
-//! Where the host has no decoder for a file's kind ([`Decoder::NoHostDecoder`]), the file only
+//! Where the host has no decoder for a file's kind ([`Decoder::Undecoded`]), the file only
 //! goes through `strict::parse`. An `invalid/` file of such a kind is therefore accepted, and the
 //! test fails for it: that gap is the finding.
 #![allow(
@@ -74,7 +74,7 @@ enum Decoder {
     /// `parse_rendered`.
     RenderResult,
     /// The host has no type for this kind: it builds the message or has no binary support.
-    NoHostDecoder,
+    Undecoded,
 }
 
 /// Each `#/$defs/<Def>` in the corpus and the host entry that decodes it.
@@ -89,22 +89,22 @@ const DEFS: &[(&str, Decoder)] = &[
     ("RecipeResult", Decoder::RecipeResult),
     ("RenderResult", Decoder::RenderResult),
     // The host sends `initialize` params from a `json!` literal and never reads them back.
-    ("InitializeParams", Decoder::NoHostDecoder),
+    ("InitializeParams", Decoder::Undecoded),
     // The host has no binary-extractor hook yet.
-    ("BinaryExtractResult", Decoder::NoHostDecoder),
+    ("BinaryExtractResult", Decoder::Undecoded),
 ];
 
 /// The result type of the request that a `response-*.json` file answers. The method comes from
-/// the file name. The `NoHostDecoder` rows are envelope-only files and replies without a result
+/// the file name. The `Undecoded` rows are envelope-only files and replies without a result
 /// type.
 const RESPONSES: &[(&str, Decoder)] = &[
     ("response-initialize.json", Decoder::InitializeResult),
     // `shutdown` answers `null`.
-    ("response-shutdown.json", Decoder::NoHostDecoder),
+    ("response-shutdown.json", Decoder::Undecoded),
     // Answers a `tagger/tag` request (id 2 in `request-tag.json`).
     ("response-unknown-result-fields.json", Decoder::TagResult),
-    ("response-null-id-success.json", Decoder::NoHostDecoder),
-    ("response-result-and-error.json", Decoder::NoHostDecoder),
+    ("response-null-id-success.json", Decoder::Undecoded),
+    ("response-result-and-error.json", Decoder::Undecoded),
 ];
 
 /// Error codes of plugin-protocol.md section 10, worked out from the document's table.
@@ -188,7 +188,7 @@ fn per_document(
 fn decode(decoder: Decoder, value: Value) -> Result<(), String> {
     let text = "x".repeat(usize::try_from(longest_span(&value).min(1 << 16)).unwrap());
     let outcome: Result<(), PluginError> = match decoder {
-        Decoder::NoHostDecoder => Ok(()),
+        Decoder::Undecoded => Ok(()),
         Decoder::InitializeResult => serde_json::from_value::<InitializeResult>(value)
             .map(drop)
             .map_err(|e| PluginError::OutputInvalid(e.to_string())),
@@ -401,10 +401,10 @@ fn every_def_prefix_in_the_corpus_has_a_host_decoder_row() {
                 .file_name()
                 .to_string_lossy()
                 .into_owned();
-            if let Some(def) = def_of(&name) {
-                if lookup(DEFS, def).is_none() {
-                    missing.insert(def.to_owned());
-                }
+            if let Some(def) = def_of(&name)
+                && lookup(DEFS, def).is_none()
+            {
+                missing.insert(def.to_owned());
             }
         }
     }
