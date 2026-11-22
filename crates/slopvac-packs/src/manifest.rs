@@ -7,6 +7,7 @@
 use std::fmt;
 use std::io::Read;
 
+use schemars::JsonSchema;
 use semver::{Version, VersionReq};
 use slopvac_model::{ApiVersion, PackId};
 use toml::{Table, Value};
@@ -70,7 +71,8 @@ fn err(pointer: &str, message: impl Into<String>) -> ManifestError {
 }
 
 /// What a pack is: data only, or data plus a plugin command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, JsonSchema)]
+#[schemars(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum PackKind {
     /// Rules, styles, genres, terms and taggers. No code.
@@ -80,7 +82,8 @@ pub enum PackKind {
 }
 
 /// A path inside a pack: relative, with forward slashes and no `..` segment. A glob is allowed.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, JsonSchema)]
+#[schemars(with = "String")]
 pub struct PackPath(String);
 
 impl PackPath {
@@ -119,7 +122,7 @@ impl fmt::Display for PackPath {
 }
 
 /// The files a pack contributes, by kind.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[non_exhaustive]
 pub struct Provides {
     /// Category files.
@@ -141,12 +144,13 @@ pub struct Provides {
 }
 
 /// A pack this pack needs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[non_exhaustive]
 pub struct Requirement {
     /// The required pack.
     pub id: PackId,
     /// The versions that satisfy the requirement.
+    #[schemars(with = "String")]
     pub version: VersionReq,
 }
 
@@ -159,7 +163,7 @@ impl Requirement {
 }
 
 /// One hook a plugin may offer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[non_exhaustive]
 pub struct HookDecl {
     /// Hook kind, such as `tagger`. The form is checked; unknown kinds pass.
@@ -180,7 +184,8 @@ impl HookDecl {
 }
 
 /// How the host runs a plugin's `command`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
+#[schemars(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum PluginRuntime {
     /// A program from the pack, or a bare name the plugin's own environment provides.
@@ -191,7 +196,7 @@ pub enum PluginRuntime {
 }
 
 /// The `[plugin]` table: how to run the plugin and its pre-spawn declaration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[non_exhaustive]
 pub struct PluginTable {
     /// Executable inside the pack, or a bare name. With the Python runtime, a script inside the
@@ -236,12 +241,13 @@ impl PluginTable {
 }
 
 /// A parsed `slopvac-plugin.toml`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[non_exhaustive]
 pub struct Manifest {
     /// Pack id, the prefix of every rule id the pack provides.
     pub id: PackId,
     /// Pack version.
+    #[schemars(with = "String")]
     pub version: Version,
     /// Extension API the pack targets.
     pub slopvac_api: ApiVersion,
