@@ -169,59 +169,63 @@ pub(crate) fn check_loads(path: &Path, label: &str, text: &str) -> Result<(), Er
         })
 }
 
-/// Why the 3.0 loader refused a config that `migrate` produced: the code and message of
-/// each problem it named.
+/// Why the 3.0 loader refused a config that `migrate` produced, by the loader's codes.
 ///
-/// It keeps no config text, no source span and no path other than the label the
-/// migration gave the config. A read failure keeps the operating-system error as its
-/// source, which names no path.
+/// Its text pairs each code with the value-free summary of the loader's message catalog.
+/// It keeps no config text, no rejected value, no source span and no path. A failed read
+/// keeps the operating-system error as its source, which names no path.
 #[derive(Debug, thiserror::Error)]
-#[error("{}", self.reason())]
-pub struct LoadRefusal {
-    problems: Vec<(Code, String)>,
-    #[source]
-    io: Option<std::io::Error>,
+#[non_exhaustive]
+pub enum LoadRefusal {
+    /// The loader read the config and refused it: one code per problem, in document order.
+    #[error("{}", describe(.0))]
+    Rejected(Vec<Code>),
+    /// The loader could not resolve the directory the config would sit in.
+    #[error("{}", describe(&[Code::Io]))]
+    Unreadable(#[source] std::io::Error),
+    /// The config is larger than the loader accepts.
+    #[error("{}", describe(&[Code::TooLarge]))]
+    TooLarge,
 }
 
 impl LoadRefusal {
     fn new(error: ConfigError) -> Self {
-        let code = error.code();
         match error {
-            ConfigError::Rejected(rejected) => Self {
-                problems: rejected
-                    .diagnostics
-                    .iter()
-                    .map(|d| (d.code, d.to_string()))
-                    .collect(),
-                io: None,
-            },
-            other => {
-                let message = other.to_string();
-                let io = match other {
-                    ConfigError::Io { source, .. } => Some(source),
-                    _ => None,
-                };
-                Self {
-                    problems: vec![(code, message)],
-                    io,
-                }
+            ConfigError::Rejected(rejected) => {
+                Self::Rejected(rejected.diagnostics.iter().map(|d| d.code).collect())
             }
+            ConfigError::Io { source, .. } => Self::Unreadable(source),
+            ConfigError::TooLarge { .. } => Self::TooLarge,
         }
     }
 
     /// The code of each problem, in the order the loader gave them.
     pub fn codes(&self) -> impl Iterator<Item = Code> + '_ {
-        self.problems.iter().map(|(code, _)| *code)
+        let codes: &[Code] = match self {
+            Self::Rejected(codes) => codes,
+            Self::Unreadable(_) => &[Code::Io],
+            Self::TooLarge => &[Code::TooLarge],
+        };
+        codes.iter().copied()
     }
+}
 
-    /// Every problem, as the loader worded it, joined into one line.
-    fn reason(&self) -> String {
-        self.problems
-            .iter()
-            .map(|(_, message)| message.as_str())
-            .collect::<Vec<_>>()
-            .join("; ")
-    }
+/// Each code with the summary that the loader's catalog gives it, joined into one line.
+fn describe(codes: &[Code]) -> String {
+    codes
+        .iter()
+        .map(|code| {
+            let code = code.as_str();
+            slopvac_config::error_entries()
+                .iter()
+                .find(|entry| entry.code == code)
+                .map_or_else(
+                    || code.to_owned(),
+                    |entry| format!("{code}: {}", entry.summary),
+                )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// The loader's view of packs for [`check_loads`]: none.

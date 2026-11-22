@@ -126,6 +126,26 @@ EXTRA_SCENARIOS = {
             {"files": ["docs/**"], "profile": "relaxed"},
         ],
     },
+    # The relaxed style turns the rule off by rule. The switch to normal and the
+    # block's own category level enable it again, as 2.x did.
+    "switching-block-category-revives-a-style-off-rule": {
+        "profile": "relaxed",
+        "overrides": [
+            {
+                "files": ["docs/**"],
+                "profile": "normal",
+                "categories": {"ai-tells-agentic": "warning"},
+            }
+        ],
+    },
+    # The same, with the category level in an earlier block that the switch moves.
+    "moved-block-category-revives-a-style-off-rule": {
+        "profile": "relaxed",
+        "overrides": [
+            {"files": ["docs/api/**"], "categories": {"ai-tells-agentic": "warning"}},
+            {"files": ["docs/**"], "profile": "normal"},
+        ],
+    },
     # A guard for docs/api cannot merge into the block with its files, because the later
     # docs/** block sets the level of the guarded rule's category. 3.0 refuses the
     # guard block that repeats those files, so the migration stops (a known limit).
@@ -162,6 +182,12 @@ EXTRA_PATHS = {
         "a.md",
     ],
     "guard-held-back-by-a-later-category-level": ["docs/api/x.md", "docs/a.md", "a.md"],
+    "switching-block-category-revives-a-style-off-rule": ["docs/a.md", "a.md"],
+    "moved-block-category-revives-a-style-off-rule": [
+        "docs/api/x.md",
+        "docs/a.md",
+        "a.md",
+    ],
     "ignored-rule-entry-is-dropped": ["a.md"],
 }
 

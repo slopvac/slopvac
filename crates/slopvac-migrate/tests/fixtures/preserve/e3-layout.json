@@ -13,6 +13,11 @@
    {"files": ["docs/api/**"], "profile": "strict"}
   ],
   "budget-restored-by-the-reverse-switch": [{"files": ["docs/**"], "profile": "normal"}],
+  "moved-block-category-revives-a-style-off-rule": [
+   {"files": ["docs/**"], "profile": "normal"},
+   {"files": ["docs/api/**"], "profile": null}
+  ],
+  "switching-block-category-revives-a-style-off-rule": [{"files": ["docs/**"], "profile": "normal"}],
   "guard-held-back-by-a-later-category-level": [
    {"files": ["docs/api/**"], "profile": "relaxed"},
    {"files": ["docs/**"], "profile": null},
