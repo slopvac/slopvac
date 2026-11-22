@@ -116,10 +116,10 @@
         "category": "orwell",
         "errors": 3,
         "findings": 3,
-        "gating_per_100_words": 1.899,
+        "gating_per_100_words": 1.775,
         "over_budget": true,
-        "per_100_words": 1.899,
-        "score": 38.0,
+        "per_100_words": 1.775,
+        "score": 41.6,
         "suggestions": 0,
         "warnings": 0
       },
@@ -139,23 +139,23 @@
         "budget": 1.5,
         "category": "prose-craft",
         "errors": 0,
-        "findings": 3,
-        "gating_per_100_words": 0.0,
+        "findings": 4,
+        "gating_per_100_words": 0.296,
         "over_budget": false,
-        "per_100_words": 1.899,
-        "score": 95.3,
+        "per_100_words": 2.367,
+        "score": 89.6,
         "suggestions": 3,
-        "warnings": 0
+        "warnings": 1
       },
       {
         "budget": 0.8,
         "category": "prose-discipline",
         "errors": 2,
         "findings": 2,
-        "gating_per_100_words": 1.266,
+        "gating_per_100_words": 1.183,
         "over_budget": true,
-        "per_100_words": 1.266,
-        "score": 56.4,
+        "per_100_words": 1.183,
+        "score": 58.8,
         "suggestions": 0,
         "warnings": 0
       },
@@ -186,11 +186,11 @@
       {
         "budget": 0.6,
         "category": "prose-inflation",
-        "errors": 14,
-        "findings": 17,
-        "gating_per_100_words": 8.861,
+        "errors": 15,
+        "findings": 18,
+        "gating_per_100_words": 8.876,
         "over_budget": true,
-        "per_100_words": 10.759,
+        "per_100_words": 10.651,
         "score": 0.0,
         "suggestions": 3,
         "warnings": 0
@@ -250,8 +250,8 @@
         "findings": 1,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 0.633,
-        "score": 98.4,
+        "per_100_words": 0.592,
+        "score": 98.5,
         "suggestions": 1,
         "warnings": 0
       },
@@ -310,8 +310,8 @@
         "findings": 2,
         "gating_per_100_words": 0.0,
         "over_budget": false,
-        "per_100_words": 1.266,
-        "score": 96.8,
+        "per_100_words": 1.183,
+        "score": 97.0,
         "suggestions": 2,
         "warnings": 0
       },
@@ -319,16 +319,16 @@
         "budget": 1.5,
         "category": "ste-words",
         "errors": 0,
-        "findings": 0,
-        "gating_per_100_words": 0.0,
+        "findings": 2,
+        "gating_per_100_words": 0.592,
         "over_budget": false,
-        "per_100_words": 0.0,
-        "score": 100.0,
+        "per_100_words": 1.183,
+        "score": 88.2,
         "suggestions": 0,
-        "warnings": 0
+        "warnings": 2
       }
     ],
-    "errors": 19,
+    "errors": 20,
     "findings": [
       {
         "ai_signal": "none",
@@ -537,18 +537,86 @@
       {
         "ai_signal": "none",
         "category": "prose-inflation",
-        "column": 1,
-        "end_column": 30,
+        "column": 10,
+        "end_column": 21,
         "end_line": 9,
         "line": 9,
+        "matched_text": "architected",
+        "message": "business jargon: architected -- use the plain verb",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.business-jargon",
+        "severity": "error",
+        "span": {
+          "end": 196,
+          "start": 185
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 10,
+        "end_column": 21,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "architected",
+        "message": "Do not use \"architected\" as a verb. Use \"designed\".",
+        "replacement": "designed",
+        "rule_id": "core:ste-words.noun-used-as-verb",
+        "severity": "warning",
+        "span": {
+          "end": 196,
+          "start": 185
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-craft",
+        "column": 35,
+        "end_column": 44,
+        "end_line": 9,
+        "line": 9,
+        "matched_text": "last year",
+        "message": "relative date: last year -- give the absolute date or version",
+        "replacement": null,
+        "rule_id": "core:prose-craft.relative-date",
+        "severity": "warning",
+        "span": {
+          "end": 219,
+          "start": 210
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "ste-words",
+        "column": 14,
+        "end_column": 25,
+        "end_line": 11,
+        "line": 11,
+        "matched_text": "Architected",
+        "message": "Do not use \"Architected\" as a verb. Use \"designed\".",
+        "replacement": "designed",
+        "rule_id": "core:ste-words.noun-used-as-verb",
+        "severity": "warning",
+        "span": {
+          "end": 246,
+          "start": 235
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 1,
+        "end_column": 30,
+        "end_line": 13,
+        "line": 13,
         "matched_text": "The tradeoffs are significant",
         "message": "vague declarative: The tradeoffs are significant -- name the specific thing",
         "replacement": null,
         "rule_id": "core:prose-inflation.vague-declarative",
         "severity": "error",
         "span": {
-          "end": 205,
-          "start": 176
+          "end": 306,
+          "start": 277
         }
       },
       {
@@ -556,16 +624,16 @@
         "category": "prose-inflation",
         "column": 1,
         "end_column": 23,
-        "end_line": 13,
-        "line": 13,
+        "end_line": 17,
+        "line": 17,
         "matched_text": "Not only fast but also",
         "message": "additive hedge: Not only fast but also -- keep the claim that carries load",
         "replacement": null,
         "rule_id": "core:prose-inflation.additive-hedge",
         "severity": "error",
         "span": {
-          "end": 291,
-          "start": 269
+          "end": 392,
+          "start": 370
         }
       },
       {
@@ -573,16 +641,16 @@
         "category": "prose-inflation",
         "column": 6,
         "end_column": 17,
-        "end_line": 17,
-        "line": 17,
+        "end_line": 21,
+        "line": 21,
         "matched_text": "can help to",
         "message": "stacked hedge: can help to -- one hedge or none; commit to the claim or cut it",
         "replacement": null,
         "rule_id": "core:prose-inflation.hedge-stack",
         "severity": "error",
         "span": {
-          "end": 350,
-          "start": 339
+          "end": 451,
+          "start": 440
         }
       },
       {
@@ -590,23 +658,6 @@
         "category": "prose-inflation",
         "column": 15,
         "end_column": 20,
-        "end_line": 21,
-        "line": 21,
-        "matched_text": "very ",
-        "message": "intensifier: very  -- delete it, or replace the adjective with a number",
-        "replacement": null,
-        "rule_id": "core:prose-inflation.intensifier",
-        "severity": "error",
-        "span": {
-          "end": 441,
-          "start": 436
-        }
-      },
-      {
-        "ai_signal": "none",
-        "category": "prose-inflation",
-        "column": 3,
-        "end_column": 8,
         "end_line": 25,
         "line": 25,
         "matched_text": "very ",
@@ -615,8 +666,25 @@
         "rule_id": "core:prose-inflation.intensifier",
         "severity": "error",
         "span": {
-          "end": 493,
-          "start": 488
+          "end": 542,
+          "start": 537
+        }
+      },
+      {
+        "ai_signal": "none",
+        "category": "prose-inflation",
+        "column": 3,
+        "end_column": 8,
+        "end_line": 29,
+        "line": 29,
+        "matched_text": "very ",
+        "message": "intensifier: very  -- delete it, or replace the adjective with a number",
+        "replacement": null,
+        "rule_id": "core:prose-inflation.intensifier",
+        "severity": "error",
+        "span": {
+          "end": 594,
+          "start": 589
         }
       },
       {
@@ -624,16 +692,16 @@
         "category": "prose-inflation",
         "column": 3,
         "end_column": 14,
-        "end_line": 25,
-        "line": 25,
+        "end_line": 29,
+        "line": 29,
         "matched_text": "very unique",
         "message": "not comparable: very unique -- the adjective is already absolute; drop the intensifier",
         "replacement": null,
         "rule_id": "core:prose-inflation.uncomparables",
         "severity": "error",
         "span": {
-          "end": 499,
-          "start": 488
+          "end": 600,
+          "start": 589
         }
       },
       {
@@ -641,16 +709,16 @@
         "category": "prose-inflation",
         "column": 1,
         "end_column": 8,
-        "end_line": 29,
-        "line": 29,
+        "end_line": 33,
+        "line": 33,
         "matched_text": "Several",
         "message": "vague quantifier: Several -- give the count, or name the cases",
         "replacement": null,
         "rule_id": "core:prose-inflation.vague-quantifier",
         "severity": "suggestion",
         "span": {
-          "end": 538,
-          "start": 531
+          "end": 639,
+          "start": 632
         }
       },
       {
@@ -658,16 +726,16 @@
         "category": "prose-discipline",
         "column": 10,
         "end_column": 29,
-        "end_line": 33,
-        "line": 33,
+        "end_line": 37,
+        "line": 37,
         "matched_text": "performs validation",
         "message": "\"performs validation\" freezes the action in a noun. Use the plain verb.",
         "replacement": null,
         "rule_id": "core:prose-discipline.frozen-verb",
         "severity": "error",
         "span": {
-          "end": 603,
-          "start": 584
+          "end": 704,
+          "start": 685
         }
       },
       {
@@ -675,16 +743,16 @@
         "category": "prose-inflation",
         "column": 10,
         "end_column": 29,
-        "end_line": 33,
-        "line": 33,
+        "end_line": 37,
+        "line": 37,
         "matched_text": "performs validation",
         "message": "nominalisation: performs validation -- use the verb ('validate', not 'perform validation')",
         "replacement": null,
         "rule_id": "core:prose-inflation.nominalized-verb",
         "severity": "error",
         "span": {
-          "end": 603,
-          "start": 584
+          "end": 704,
+          "start": 685
         }
       },
       {
@@ -692,16 +760,16 @@
         "category": "ste-verbs",
         "column": 10,
         "end_column": 29,
-        "end_line": 33,
-        "line": 33,
+        "end_line": 37,
+        "line": 37,
         "matched_text": "performs validation",
         "message": "Nominalized action \"performs validation\". Use the verb.",
         "replacement": null,
         "rule_id": "core:ste-verbs.nominalized-action",
         "severity": "suggestion",
         "span": {
-          "end": 603,
-          "start": 584
+          "end": 704,
+          "start": 685
         }
       },
       {
@@ -709,16 +777,16 @@
         "category": "prose-inflation",
         "column": 12,
         "end_column": 32,
-        "end_line": 37,
-        "line": 37,
+        "end_line": 41,
+        "line": 41,
         "matched_text": "provides support for",
         "message": "nominalisation: provides support for -- use the verb ('validate', not 'perform validation')",
         "replacement": null,
         "rule_id": "core:prose-inflation.nominalized-verb",
         "severity": "error",
         "span": {
-          "end": 683,
-          "start": 663
+          "end": 784,
+          "start": 764
         }
       },
       {
@@ -726,16 +794,16 @@
         "category": "prose-inflation",
         "column": 1,
         "end_column": 24,
-        "end_line": 41,
-        "line": 41,
+        "end_line": 45,
+        "line": 45,
         "matched_text": "This document describes",
         "message": "preamble: This document describes -- the title already says this; start with the first fact",
         "replacement": null,
         "rule_id": "core:prose-inflation.document-preamble",
         "severity": "error",
         "span": {
-          "end": 743,
-          "start": 720
+          "end": 844,
+          "start": 821
         }
       },
       {
@@ -743,16 +811,16 @@
         "category": "prose-inflation",
         "column": 1,
         "end_column": 31,
-        "end_line": 45,
-        "line": 45,
+        "end_line": 49,
+        "line": 49,
         "matched_text": "Further benchmarking is needed",
         "message": "deferred claim: Further benchmarking is needed -- answer it, or cut the passage that raises it",
         "replacement": null,
         "rule_id": "core:prose-inflation.apologizing",
         "severity": "error",
         "span": {
-          "end": 836,
-          "start": 806
+          "end": 937,
+          "start": 907
         }
       },
       {
@@ -760,16 +828,16 @@
         "category": "ste-verbs",
         "column": 22,
         "end_column": 31,
-        "end_line": 45,
-        "line": 45,
+        "end_line": 49,
+        "line": 49,
         "matched_text": "is needed",
         "message": "Passive voice \"is needed\". Name the actor and use the active voice.",
         "replacement": null,
         "rule_id": "core:ste-verbs.passive-voice",
         "severity": "suggestion",
         "span": {
-          "end": 836,
-          "start": 827
+          "end": 937,
+          "start": 928
         }
       },
       {
@@ -777,16 +845,16 @@
         "category": "prose-inflation",
         "column": 1,
         "end_column": 10,
-        "end_line": 49,
-        "line": 49,
+        "end_line": 53,
+        "line": 53,
         "matched_text": "Obviously",
         "message": "borderline hype: Obviously -- keep it only if a number or example backs it",
         "replacement": null,
         "rule_id": "core:prose-inflation.borderline-hype",
         "severity": "suggestion",
         "span": {
-          "end": 911,
-          "start": 902
+          "end": 1012,
+          "start": 1003
         }
       },
       {
@@ -794,47 +862,47 @@
         "category": "prose-inflation",
         "column": 24,
         "end_column": 35,
-        "end_line": 49,
-        "line": 49,
+        "end_line": 53,
+        "line": 53,
         "matched_text": "easy to use",
         "message": "borderline hype: easy to use -- keep it only if a number or example backs it",
         "replacement": null,
         "rule_id": "core:prose-inflation.borderline-hype",
         "severity": "suggestion",
         "span": {
-          "end": 936,
-          "start": 925
+          "end": 1037,
+          "start": 1026
         }
       }
     ],
     "gate": {
       "passed": false,
       "reasons": [
-        "19 error(s), limit 0",
-        "12.03 severity-weighted findings per 100 words, budget 3.0",
+        "20 error(s), limit 0",
+        "12.72 severity-weighted findings per 100 words, budget 3.0",
         "score 0.0, minimum 70.0",
-        "orwell at 1.90 severity-weighted findings per 100 words, budget 0.8",
-        "prose-discipline at 1.27 severity-weighted findings per 100 words, budget 0.8",
-        "prose-inflation at 8.86 severity-weighted findings per 100 words, budget 0.6"
+        "orwell at 1.77 severity-weighted findings per 100 words, budget 0.8",
+        "prose-discipline at 1.18 severity-weighted findings per 100 words, budget 0.8",
+        "prose-inflation at 8.88 severity-weighted findings per 100 words, budget 0.6"
       ]
     },
-    "paragraphs": 26,
+    "paragraphs": 28,
     "path": "rule-examples-prose-inflation.md",
-    "per_100_words": 17.722,
+    "per_100_words": 18.935,
     "profile": "normal",
     "prose": {
-      "errors": 19,
-      "findings": 28,
-      "per_100_words": 17.722,
-      "warnings": 0
+      "errors": 20,
+      "findings": 32,
+      "per_100_words": 18.935,
+      "warnings": 3
     },
     "score": 0.0,
-    "sentences": 26,
+    "sentences": 28,
     "suggestions": 9,
-    "total_findings": 28,
+    "total_findings": 32,
     "unchecked": [],
-    "warnings": 0,
-    "words": 158
+    "warnings": 3,
+    "words": 169
   },
   "exit_code": 1
 }
