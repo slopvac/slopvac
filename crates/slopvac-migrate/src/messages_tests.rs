@@ -251,7 +251,7 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
                 line: s("4"),
                 reason: s("r"),
             },
-            "slopvac.toml:4: the before baseline for this config is approximate, because its 2.x settings could not be reproduced: r",
+            "slopvac.toml:4: the before side for this config is approximate, because its 2.x settings could not be reproduced: r",
         ),
         (
             MigrateText::NoteRenamedDotfile { label: s("l") },
@@ -459,7 +459,7 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
             MigrateText::OutIncomplete {
                 configs: s("slopvac.toml, sub/slopvac.toml"),
             },
-            "Findings: the comparison is incomplete for slopvac.toml, sub/slopvac.toml, whose before baseline is approximate.",
+            "Findings: the comparison is incomplete for slopvac.toml, sub/slopvac.toml, whose before side is approximate.",
         ),
         (MigrateText::OutNote { message: s("m") }, "note: m"),
         (
@@ -500,7 +500,7 @@ fn every_phrase_keeps_its_published_text_and_is_registered() {
         ),
         (
             P::HelpLongAbout,
-            "Shows a diff of every change by default. With --write, rewrites the files and keeps the originals in .slopvac/migrate-backup. Lints before and after and reports the change per rule.",
+            "Shows a diff of every change by default. With --write, rewrites the files and keeps the originals in .slopvac/migrate-backup. Runs the 3.0 engine on your files before and after migration and reports the change per rule.",
         ),
         (P::HelpPath, "Project root"),
         (P::HelpWrite, "Apply the changes instead of previewing them"),
@@ -514,8 +514,14 @@ fn every_phrase_keeps_its_published_text_and_is_registered() {
             "With --restore, also put back files that changed since the write",
         ),
         (P::OutNothing, "Nothing to migrate."),
-        (P::OutNoChange, "Findings: no per-rule change."),
-        (P::OutByRule, "Findings by rule (before -> after):"),
+        (
+            P::OutNoChange,
+            "Findings: the 3.0 engine finds the same count per rule on your files before and after migration.",
+        ),
+        (
+            P::OutByRule,
+            "Findings by rule, from the 3.0 engine on your files before and after migration (before -> after):",
+        ),
         (
             P::OutPreview,
             "Preview only. Run again with --write to apply.",

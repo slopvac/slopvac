@@ -228,11 +228,10 @@ pub(crate) enum MigrateText {
         "{path}:{line}: MDX is not rewritten; rename or remove this slopvac-allow directive by hand"
     )]
     DirectiveMdx { path: String, line: String },
-    /// The before side could not reproduce what a 2.x config meant, so its baseline is
-    /// approximate.
+    /// The before side could not reproduce what a 2.x config meant, so it is approximate.
     #[code("migrate-note-before-approximate")]
     #[text(
-        "{file}:{line}: the before baseline for this config is approximate, because its 2.x \
+        "{file}:{line}: the before side for this config is approximate, because its 2.x \
          settings could not be reproduced: {reason}"
     )]
     NoteBeforeApproximate {
@@ -452,7 +451,7 @@ pub(crate) enum MigrateText {
     /// The findings comparison cannot be trusted for some configs.
     #[code("migrate-out-incomplete")]
     #[text(
-        "Findings: the comparison is incomplete for {configs}, whose before baseline is approximate."
+        "Findings: the comparison is incomplete for {configs}, whose before side is approximate."
     )]
     OutIncomplete { configs: String },
     /// A note line of the preview.
@@ -490,8 +489,8 @@ pub(crate) enum MigratePhrase {
     #[code("migrate-help-long-about")]
     #[text(
         "Shows a diff of every change by default. With --write, rewrites the files \
-         and keeps the originals in .slopvac/migrate-backup. Lints before and after \
-         and reports the change per rule."
+         and keeps the originals in .slopvac/migrate-backup. Runs the 3.0 engine on \
+         your files before and after migration and reports the change per rule."
     )]
     HelpLongAbout,
     /// Help for the project root argument.
@@ -520,11 +519,17 @@ pub(crate) enum MigratePhrase {
     OutNothing,
     /// No rule changed its findings.
     #[code("migrate-out-no-change")]
-    #[text("Findings: no per-rule change.")]
+    #[text(
+        "Findings: the 3.0 engine finds the same count per rule on your files before and \
+         after migration."
+    )]
     OutNoChange,
     /// The heading of the per-rule table.
     #[code("migrate-out-by-rule")]
-    #[text("Findings by rule (before -> after):")]
+    #[text(
+        "Findings by rule, from the 3.0 engine on your files before and after migration \
+         (before -> after):"
+    )]
     OutByRule,
     /// The preview ends here.
     #[code("migrate-out-preview")]

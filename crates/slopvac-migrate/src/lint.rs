@@ -44,7 +44,8 @@ pub trait Configure {
 /// Each document takes the settings of the nearest `slopvac.toml` at or below the project
 /// root, through [`Configure`]. A config in the overlay replaces the one on disk, so the
 /// before side reads what each 2.x config meant and the after side reads the migrated
-/// configs. A document in the overlay replaces its text on disk the same way. Files under
+/// configs. A document in the overlay replaces its text on disk the same way, so the before
+/// side reads each 2.x directive under its 3.0 id. Files under
 /// [`crate::BACKUP_DIR`], at any depth, are never linted. A document the engine cannot
 /// read, or one it could not check in full, fails the lint.
 pub struct EngineLinter {

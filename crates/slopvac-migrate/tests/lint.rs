@@ -55,7 +55,7 @@ fn counts(findings: &[Finding]) -> Vec<(&str, usize)> {
 }
 
 #[test]
-fn before_and_after_counts_come_from_the_engine() {
+fn a_2x_bare_id_suppression_holds_on_the_before_side() {
     let dir = tempfile::tempdir().unwrap();
     write(
         dir.path(),
@@ -66,21 +66,34 @@ fn before_and_after_counts_come_from_the_engine() {
     let p = plan(dir.path(), &RenameTable::bundled(), Options::default(), "").unwrap();
     let linter = linter();
 
-    let before = linter.lint(dir.path(), Phase::Before, &[]).unwrap();
+    let before = linter
+        .lint(dir.path(), Phase::Before, &p.before_overlay(dir.path()))
+        .unwrap();
     let after = linter
         .lint(dir.path(), Phase::After, &p.overlay(dir.path()))
         .unwrap();
 
-    // Before, the 2.x id has no pack: the directive is reported and suppresses nothing.
-    assert_eq!(
-        counts(&before),
-        [
-            ("core:meta.invalid-suppression", 1),
-            ("core:orwell.stale-figure", 2)
-        ]
-    );
-    // After, the qualified id suppresses the paragraph below it and no other.
+    // 2.x accepts the bare id, so on both sides it suppresses the paragraph below it and
+    // no other, and no side reports it as an invalid suppression.
+    assert_eq!(counts(&before), [("core:orwell.stale-figure", 1)]);
     assert_eq!(counts(&after), [("core:orwell.stale-figure", 1)]);
+}
+
+#[test]
+fn a_2x_suppression_of_a_removed_rule_is_not_a_finding_on_the_before_side() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "doc.md",
+        "<!-- slopvac-allow: rule=ste-words.inconsistent-term-for-same-thing reason=r -->\nPlease leverage it.\n",
+    );
+    let p = plan(dir.path(), &RenameTable::bundled(), Options::default(), "").unwrap();
+
+    let before = linter()
+        .lint(dir.path(), Phase::Before, &p.before_overlay(dir.path()))
+        .unwrap();
+
+    assert_eq!(counts(&before), [("core:orwell.stale-figure", 1)]);
 }
 
 #[test]

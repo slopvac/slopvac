@@ -131,12 +131,12 @@ fn a_config_whose_2x_settings_cannot_be_reproduced_makes_the_comparison_incomple
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let notice = stdout
         .lines()
-        .find(|l| l.contains("before baseline for this config is approximate"));
+        .find(|l| l.contains("before side for this config is approximate"));
     assert!(
         notice.is_some_and(|l| l.starts_with("warning: slopvac.toml:4: ")),
         "{stdout}"
     );
-    assert!(!stdout.contains("no per-rule change"), "{stdout}");
+    assert!(!stdout.contains("same count per rule"), "{stdout}");
     assert!(
         stdout.contains("Findings: the comparison is incomplete for slopvac.toml"),
         "{stdout}"

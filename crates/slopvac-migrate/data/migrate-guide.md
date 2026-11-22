@@ -21,7 +21,7 @@ Look for:
 slopvac migrate
 ```
 
-It prints a diff and rules with changed finding counts, exits 0, and writes nothing.
+It prints a diff and the finding count of each rule that changed, from the 3.0 engine on your files before and after migration. On the before side, each 2.x config and `slopvac-allow` rule id reads in its 3.0 form. The counts do not come from 2.x and do not show that 2.x results stay the same. It exits 0 and writes nothing.
 
 ## 3. Resolve blockers
 <!-- prime: include -->

@@ -8,7 +8,7 @@ use crate::{Error, RenameTable};
 /// Which side of the migration a lint run covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
-    /// The 2.x project as it is.
+    /// The project as it is, with each 2.x config and directive read in 3.0 terms.
     Before,
     /// The project with the migrated files.
     After,
@@ -27,8 +27,8 @@ pub struct Finding {
 ///
 /// `overlay` holds (path, text) pairs that stand in for the files on disk. For `After` they
 /// are the files the plan would write ([`crate::Plan::overlay`]). For `Before` they are the
-/// 3.0 meaning of each 2.x config ([`crate::Plan::before_overlay`]), and every document is
-/// read from disk.
+/// 3.0 meaning of each 2.x config and of each document's 2.x `slopvac-allow` directives
+/// ([`crate::Plan::before_overlay`]), and every other document is read from disk.
 pub trait Linter {
     /// Lint `root` and return findings per rule.
     fn lint(

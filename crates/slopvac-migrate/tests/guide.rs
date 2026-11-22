@@ -93,6 +93,24 @@ fn markers_stay_out_of_the_doc_and_prime() {
     assert!(!prime_migrate().contains("<!-- prime:"));
 }
 
+#[test]
+fn the_preview_section_labels_the_counts_as_the_3_0_engine_on_both_sides() {
+    let sections = doc_sections();
+    let (_, preview) = sections
+        .iter()
+        .find(|(h, _)| h == "2. Preview")
+        .expect("doc has a Preview section");
+    let text = preview.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        text.contains("from the 3.0 engine on your files before and after migration"),
+        "{text}"
+    );
+    // The counts make no claim that the migration keeps 2.x behaviour.
+    for claim in ["baseline", "preserve", "same as 2.x"] {
+        assert!(!text.contains(claim), "{claim}: {text}");
+    }
+}
+
 /// The token a removed surface is named by in the guide.
 fn token(row: &str) -> Option<String> {
     let mut parts = row.split(':');

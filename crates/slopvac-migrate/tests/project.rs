@@ -346,6 +346,21 @@ fn cli_previews_by_default_and_reports_rule_changes() {
 }
 
 #[test]
+fn cli_labels_the_rule_table_as_the_3_0_engine_on_both_sides() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "slopvac.toml", "profile = \"strict\"\n");
+    let path = dir.path().to_str().unwrap();
+    let (_, out, _) = run_cli(&[path], &FakeLinter);
+    assert!(
+        out.contains(
+            "Findings by rule, from the 3.0 engine on your files before and after migration \
+             (before -> after):\n  core:orwell.not-un: 3 -> 1\n"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
 fn cli_write_applies() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "slopvac.toml", "profile = \"strict\"\n");

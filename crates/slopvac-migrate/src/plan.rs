@@ -58,9 +58,11 @@ pub struct Plan {
     pub notes: Vec<String>,
     /// Things the user should check, such as a malformed steering block.
     pub warnings: Vec<String>,
-    /// What each 2.x config meant, in 3.0 terms: the `--preserve-behavior` rewrite, keyed
-    /// by the `slopvac.toml` path relative to the project root. The before side of the
-    /// lint reads these in place of the 2.x files.
+    /// What each 2.x file meant, in 3.0 terms, keyed by its path relative to the project
+    /// root. The before side of the lint reads these in place of the 2.x files. For a config
+    /// it is the `--preserve-behavior` rewrite at `slopvac.toml`. For a Markdown document
+    /// whose `slopvac-allow` directives change, it is the document with only those
+    /// directives rewritten, so a directive 2.x accepts holds on the before side too.
     ///
     /// The rewrite reproduces the 2.x levels except in the known limit of
     /// `docs/contract/profiles.md`, section 4: when a block without `profile` that authors a
@@ -90,8 +92,8 @@ impl Plan {
             .collect()
     }
 
-    /// The 3.0 meaning of each 2.x config ([`Plan::before`]), for linting the project as it
-    /// is.
+    /// The 3.0 meaning of each 2.x config and directive ([`Plan::before`]), for linting the
+    /// project as it is.
     #[must_use]
     pub fn before_overlay(&self, root: &Path) -> Vec<(PathBuf, String)> {
         self.before
@@ -108,7 +110,7 @@ struct Sink {
     warnings: Capped,
     /// Blocklists already planned, so a file two settings share is planned once.
     blocklists: BTreeSet<PathBuf>,
-    /// The 3.0 meaning of each 2.x config, for the before side of the lint.
+    /// The 3.0 meaning of each 2.x config and directive, for the before side of the lint.
     before: Vec<(PathBuf, String)>,
     /// The configs whose before side is approximate.
     approximate: Vec<String>,
@@ -610,6 +612,9 @@ fn plan_document(
         return Ok(());
     }
     let (mut text, found) = rewrite_directives(&old, renames);
+    if text != old {
+        plan.before.push((label.clone(), text.clone()));
+    }
     for r in &found.removed {
         plan.notes.push(
             Dropped::new(
