@@ -1,0 +1,36 @@
+{
+  "ai_signal": "none",
+  "ai_signal_source": "unmeasured",
+  "category": "ai-residue",
+  "citation": {
+    "note": "Enforced at every tier because the match is never a register question.",
+    "source": "vale-styles/ai-residue/ChatLeakage.yml",
+    "url": "https://github.com/slopvac/slopvac"
+  },
+  "effective_severity": "error",
+  "examples": [
+    {
+      "bad": "As of my last update, the loader retried twice.",
+      "good": "The loader retries twice."
+    },
+    {
+      "bad": "As a large language model, I cannot browse the internet.",
+      "good": "The documentation describes the supported behaviour."
+    }
+  ],
+  "fix": "Delete the artifact, then re-read the surrounding paragraphs, which came from the same session.",
+  "id": "terms:terms.casing",
+  "kind": "pattern",
+  "match": {
+    "kind": "pattern",
+    "pattern": "\\b(as an AI|as a large language model)\\b"
+  },
+  "message": "chat-session leakage: {match} -- delete it, then audit the surrounding prose",
+  "name": "Delete chat-session leakage",
+  "plugin": "terms",
+  "scope": "prose",
+  "severity": "error",
+  "text_type": "any",
+  "url": "https://slopvac.github.io/slopvac/v3/rules/ai-residue/chat-leakage/",
+  "schema_version": 3
+}

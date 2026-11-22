@@ -23,6 +23,7 @@
 "plugin-protocol.schema.json" = "both"
 "plugins-lock.schema.json" = "both"
 "rule.schema.json" = "both"
+"rules-output.schema.json" = "output"
 "style.schema.json" = "input"
 "tagger.schema.json" = "input"
 "terms.schema.json" = "both"
