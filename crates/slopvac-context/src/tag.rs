@@ -2,8 +2,8 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
-use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use crate::{DocumentView, Error, work};
 
