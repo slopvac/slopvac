@@ -165,6 +165,21 @@ EXTRA_SCENARIOS = {
             {"files": ["docs/**"], "profile": "relaxed"},
         ],
     },
+    # A top-level category level with a switch away from the relaxed style, which turns
+    # `ai-tells-agentic.formulaic-universal-heading` off by rule. `--preserve-behavior`
+    # does not refuse a top-level `severity`.
+    "top-category-level-under-a-switch-from-relaxed": {
+        "profile": "relaxed",
+        "categories": {"ai-tells-agentic": "warning"},
+        "overrides": [{"files": ["docs/**"], "profile": "normal"}],
+    },
+    # The relaxed style gives `prose-craft` no weight and the strict style does, so the
+    # switch writes the category's own 2.x weight (E6).
+    "switch-writes-a-weight-the-target-style-lacks": {
+        "profile": "strict",
+        "categories": {"prose-craft": "warning"},
+        "overrides": [{"files": ["docs/**"], "profile": "relaxed"}],
+    },
     # A guard for docs/api cannot merge into the block with its files, because the later
     # docs/** block sets the level of the guarded rule's category. That category level
     # applies above the switch, so `--preserve-behavior` refuses this layout.
@@ -201,6 +216,8 @@ EXTRA_PATHS = {
         "a.md",
     ],
     "guard-held-back-by-a-later-category-level": ["docs/api/x.md", "docs/a.md", "a.md"],
+    "top-category-level-under-a-switch-from-relaxed": ["docs/a.md", "a.md"],
+    "switch-writes-a-weight-the-target-style-lacks": ["docs/a.md", "a.md"],
     "block-moved-twice-keeps-a-rule-entry-it-lost": [
         "docs/api/v1/x.md",
         "docs/api/x.md",
