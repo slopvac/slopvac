@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Fail closed unless a reviewed ruleset makes the release tag immutable.
+"""Fail closed unless a reviewed ruleset makes a release tag immutable.
 
 A tag-writer who can move a ``vX.Y.Z`` tag after the provenance check could
 publish a different commit under it. Only a repository ruleset that blocks
 updates, deletions and non-fast-forward pushes on ``refs/tags/v*`` closes that
-window, and only a maintainer can create it.
+window, and only a maintainer can create it. Plugin release tags
+(``plugin-<name>-vX.Y.Z``) get the same protection from their own ruleset on
+``refs/tags/plugin-*``. Each protected tag family is a ``RulesetSpec``.
 
 GitHub shows ``bypass_actors`` only to callers that can write the ruleset, so the
 read-only release token cannot inspect them. Instead ``check`` trusts a ruleset
@@ -15,7 +17,7 @@ admin token, which sees ``bypass_actors``.
 
 Usage:
     release_ruleset.py check TAG --repo OWNER/NAME
-    release_ruleset.py update-pins --repo OWNER/NAME
+    release_ruleset.py update-pins --repo OWNER/NAME [--spec release|plugin ...]
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -33,7 +36,36 @@ REQUIRED_RULES = frozenset({"update", "deletion", "non_fast_forward"})
 PER_PAGE = 100
 MAX_PAGES = 5
 _NUM = r"(?:0|[1-9][0-9]*)"  # SemVer: no leading zeros
-_TAG = re.compile(rf"v{_NUM}\.{_NUM}\.{_NUM}")
+_SEMVER = rf"v{_NUM}\.{_NUM}\.{_NUM}"
+_WIDE_INCLUDES = ("~ALL", "refs/tags/*", "refs/tags/**/*", "refs/tags/**")
+
+
+@dataclass(frozen=True)
+class RulesetSpec:
+    """One protected tag family: what its tags look like and which include patterns cover it."""
+
+    key: str
+    label: str
+    tag: re.Pattern[str]
+    sample_tag: str
+    includes: frozenset[str]
+
+
+RELEASE = RulesetSpec(
+    key="release",
+    label="vX.Y.Z",
+    tag=re.compile(_SEMVER),
+    sample_tag="v3.0.0",
+    includes=frozenset({*_WIDE_INCLUDES, "refs/tags/v*"}),
+)
+PLUGIN = RulesetSpec(
+    key="plugin",
+    label="plugin-<name>-vX.Y.Z",
+    tag=re.compile(rf"plugin-[a-z0-9]+(?:-[a-z0-9]+)*-{_SEMVER}"),
+    sample_tag="plugin-example-v1.0.0",
+    includes=frozenset({*_WIDE_INCLUDES, "refs/tags/plugin-*"}),
+)
+SPECS = {spec.key: spec for spec in (RELEASE, PLUGIN)}
 
 PINS_PATH = Path(__file__).with_name("release_ruleset_pins.json")
 PINS_COMMENT = (
@@ -41,13 +73,12 @@ PINS_COMMENT = (
     "Change this file only through release_ruleset.py update-pins, and review it "
     "like a change to the ruleset itself."
 )
-SAMPLE_TAG = "v3.0.0"
 
 Runner = Callable[[Sequence[str]], str]
 
 HINT = (
-    "Create a repository ruleset that targets tags matching refs/tags/v*, is "
-    "active, and has the update, deletion and non_fast_forward rules (see "
+    "Create a repository ruleset that targets the tags to protect (refs/tags/v* "
+    "or refs/tags/plugin-*), is active, and has the update, deletion and non_fast_forward rules (see "
     "docs/release/distribution.md). If you changed or added a ruleset, review it, "
     "then have a repository admin run `scripts/release_ruleset.py update-pins "
     "--repo OWNER/NAME` and commit the pin file."
@@ -86,16 +117,13 @@ def _list_tag_rulesets(repo: str, runner: Runner) -> list[dict]:
 # the tokens ~ALL and ~DEFAULT_BRANCH (docs.github.com, "Creating rulesets for a
 # repository", "Targeting by name"). Python's fnmatch lets `*` cross `/` and has no
 # `**/` zero-directory rule, so it must not decide here. Instead only include
-# patterns known to cover every refs/tags/v<semver> ref count, and any exclude that
-# might match counts as excluding. Both choices fail closed.
-_TAG_INCLUDES = frozenset(
-    {"~ALL", "refs/tags/*", "refs/tags/**/*", "refs/tags/**", "refs/tags/v*"}
-)
+# patterns known to cover every ref of the spec (``RulesetSpec.includes``) count, and
+# any exclude that might match counts as excluding. Both choices fail closed.
 _WILDCARDS = "*?[\\"
 
 
-def _includes(pattern: str, ref: str) -> bool:
-    return pattern == ref or pattern in _TAG_INCLUDES
+def _includes(pattern: str, ref: str, spec: RulesetSpec) -> bool:
+    return pattern == ref or pattern in spec.includes
 
 
 def _might_exclude(pattern: str, ref: str) -> bool:
@@ -111,10 +139,10 @@ def _might_exclude(pattern: str, ref: str) -> bool:
     return ref.startswith(pattern[:cut])
 
 
-def _covers(ruleset: dict, ref: str) -> bool:
+def _covers(ruleset: dict, ref: str, spec: RulesetSpec) -> bool:
     """The ruleset's ref conditions surely include ``ref`` and no exclude may match it."""
     ref_name = (ruleset.get("conditions") or {}).get("ref_name") or {}
-    included = any(_includes(p, ref) for p in ref_name.get("include", []))
+    included = any(_includes(p, ref, spec) for p in ref_name.get("include", []))
     excluded = any(_might_exclude(p, ref) for p in ref_name.get("exclude", []))
     return included and not excluded
 
@@ -184,9 +212,14 @@ def check_tag_protection(
     runner: Runner | None = None,
     pins: dict[int, datetime] | None = None,
 ) -> None:
-    """Raise ``ValueError`` unless pinned, active tag rulesets cover ``tag`` with every required rule."""
-    if _TAG.fullmatch(tag) is None:
-        raise ValueError(f"not a release tag (expected vX.Y.Z): {tag}")
+    """Raise ``ValueError`` unless pinned, active tag rulesets cover ``tag`` with every required rule.
+
+    The spec comes from the tag: ``vX.Y.Z`` is a release tag, ``plugin-<name>-vX.Y.Z`` a plugin tag.
+    """
+    spec = next((s for s in SPECS.values() if s.tag.fullmatch(tag)), None)
+    if spec is None:
+        expected = " or ".join(s.label for s in SPECS.values())
+        raise ValueError(f"not a release tag (expected {expected}): {tag}")
     runner = runner or run_command
     pins = load_pins(repo) if pins is None else pins
     ref = f"refs/tags/{tag}"
@@ -198,7 +231,7 @@ def check_tag_protection(
             raise TypeError("a ruleset response is not an object")
         if ruleset.get("target") != "tag" or ruleset.get("enforcement") != "active":
             continue
-        if not _covers(ruleset, ref):
+        if not _covers(ruleset, ref, spec):
             continue
         reason = _rejection(ruleset, pins)
         if reason is None:
@@ -213,53 +246,65 @@ def check_tag_protection(
         )
 
 
-def pin_entries(repo: str, runner: Runner | None = None) -> dict[str, dict[str, str]]:
+def pin_entries(
+    repo: str,
+    runner: Runner | None = None,
+    specs: Sequence[RulesetSpec] = (RELEASE,),
+) -> dict[str, dict[str, str]]:
     """Read the rulesets to pin; raise unless the caller is an admin who sees them all.
 
-    Pins every active tag ruleset that covers a sample release tag and has a
-    required rule, and refuses unless together they enforce all required rules.
+    For each spec, pins every active tag ruleset that covers its sample tag and has
+    a required rule, and refuses unless together they enforce all required rules.
+    A ruleset that covers several specs is pinned once.
     """
     runner = runner or run_command
-    ref = f"refs/tags/{SAMPLE_TAG}"
     entries: dict[str, dict[str, str]] = {}
-    enforced: set[str] = set()
+    details: list[dict] = []
     for summary in _list_tag_rulesets(repo, runner):
         if summary.get("target") != "tag" or summary.get("enforcement") != "active":
             continue
         ruleset = _get(f"repos/{repo}/rulesets/{summary['id']}", runner)
         if not isinstance(ruleset, dict):
             raise TypeError("a ruleset response is not an object")
-        types = {rule.get("type") for rule in ruleset.get("rules", [])}
-        if not _covers(ruleset, ref) or not types & REQUIRED_RULES:
-            continue
-        if "bypass_actors" not in ruleset:
+        details.append(ruleset)
+    for spec in specs:
+        ref = f"refs/tags/{spec.sample_tag}"
+        enforced: set[str] = set()
+        for ruleset in details:
+            types = {rule.get("type") for rule in ruleset.get("rules", [])}
+            if not _covers(ruleset, ref, spec) or not types & REQUIRED_RULES:
+                continue
+            if "bypass_actors" not in ruleset:
+                raise ValueError(
+                    f"ruleset {ruleset.get('id')} shows no bypass_actors: run update-pins with a repository admin token"
+                )
+            if not _admin_only_bypass(ruleset["bypass_actors"]):
+                raise ValueError(
+                    f"ruleset {ruleset.get('id')} has a bypass for a non-admin actor; fix the ruleset before pinning"
+                )
+            if _instant(ruleset.get("updated_at")) is None:
+                raise ValueError(f"ruleset {ruleset.get('id')} has no valid updated_at")
+            entries[str(ruleset["id"])] = {
+                "name": str(ruleset.get("name", "")),
+                "updated_at": ruleset["updated_at"],
+            }
+            enforced |= types
+        missing = sorted(REQUIRED_RULES - enforced)
+        if missing:
             raise ValueError(
-                f"ruleset {ruleset.get('id')} shows no bypass_actors: run update-pins with a repository admin token"
+                f"no active tag ruleset covers {ref} with the rules: {', '.join(missing)}"
             )
-        if not _admin_only_bypass(ruleset["bypass_actors"]):
-            raise ValueError(
-                f"ruleset {ruleset.get('id')} has a bypass for a non-admin actor; fix the ruleset before pinning"
-            )
-        if _instant(ruleset.get("updated_at")) is None:
-            raise ValueError(f"ruleset {ruleset.get('id')} has no valid updated_at")
-        entries[str(ruleset["id"])] = {
-            "name": str(ruleset.get("name", "")),
-            "updated_at": ruleset["updated_at"],
-        }
-        enforced |= types
-    missing = sorted(REQUIRED_RULES - enforced)
-    if missing:
-        raise ValueError(
-            f"no active tag ruleset covers {ref} with the rules: {', '.join(missing)}"
-        )
     return dict(sorted(entries.items(), key=lambda item: int(item[0])))
 
 
 def update_pins(
-    repo: str, runner: Runner | None = None, path: Path = PINS_PATH
+    repo: str,
+    runner: Runner | None = None,
+    path: Path = PINS_PATH,
+    specs: Sequence[RulesetSpec] = (RELEASE,),
 ) -> None:
     """Rewrite the pin file from the live rulesets; the only writer of that file."""
-    entries = pin_entries(repo, runner)
+    entries = pin_entries(repo, runner, specs)
     document = {"_comment": PINS_COMMENT, "repo": repo, "rulesets": entries}
     path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
@@ -274,12 +319,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "update-pins", help="rewrite the pin file; needs an admin token"
     )
     pins.add_argument("--repo", required=True, help="owner/name")
+    pins.add_argument(
+        "--spec",
+        action="append",
+        choices=sorted(SPECS),
+        help="tag family to pin (repeatable); default: all",
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "check":
             check_tag_protection(args.tag, args.repo)
         else:
-            update_pins(args.repo)
+            update_pins(args.repo, specs=[SPECS[k] for k in args.spec or SPECS])
     except (ValueError, TypeError, RuntimeError, KeyError, OSError) as err:
         print(f"error: {err}\n{HINT}", file=sys.stderr)
         return 1

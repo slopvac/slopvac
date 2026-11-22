@@ -43,11 +43,13 @@ No workflow checks this ruleset. `scripts/release_ruleset.py` accepts only plain
 
 ## Pin the tag rulesets
 
-`scripts/release_ruleset.py check` trusts a tag ruleset only while its ID and `updated_at` match `scripts/release_ruleset_pins.json`. After you create or edit a tag ruleset, review it, then run this as a repository admin and commit the result:
+`scripts/release_ruleset.py check` trusts a tag ruleset only while its ID and `updated_at` match `scripts/release_ruleset_pins.json`. The pins cover two tag families: the `v*` release tags and the `plugin-*` plugin tags, each with its own ruleset (see [protect version tags](distribution.md#protect-version-tags) and [protect plugin tags](distribution.md#protect-plugin-tags)). After you create or edit a tag ruleset, review it, then run this as a repository admin and commit the result:
 
 ```sh
 python3 scripts/release_ruleset.py update-pins --repo slopvac/slopvac
 ```
+
+Without `--spec`, `update-pins` pins both families and refuses to write unless each has a covering ruleset with all three rules. To pin one family, pass `--spec release` or `--spec plugin`. The file then holds only that family's rulesets, so pin both families together unless you mean to drop the other's pins.
 
 `update-pins` is the only writer of the pin file. It reads the rulesets with your token and refuses to write unless it can see each ruleset's `bypass_actors` and they are empty or admin-only. A token without admin rights therefore cannot update the pins. Review the pin file change like a change to the ruleset itself.
 
