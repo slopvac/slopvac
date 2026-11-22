@@ -21,7 +21,7 @@ Look for:
 slopvac migrate
 ```
 
-It prints a diff and rules with changed finding counts, exits 0, and writes nothing.
+It prints a diff and the finding count of each rule that changed, from the 3.0 engine on your files before and after migration. On the before side, each 2.x config and `slopvac-allow` rule id reads in its 3.0 form. The counts do not come from 2.x and do not show that 2.x results stay the same. It exits 0 and writes nothing.
 
 ## 3. Resolve blockers
 
@@ -30,7 +30,7 @@ A 2.x setting with no 3.0 equivalent stops the command with exit 2 and one `conf
 Causes:
 
 - `[vale]` with `enabled = true`, or with `binary`, `config` or `styles` and no `enabled = false`. Delete the table or set `enabled = false`.
-- A rule or category name that is not in the rename table.
+- A rule or category name that is not in the rename table. A `slopvac-allow` comment that ends on a later line does not stop the command, whatever id it names: 2.x rejected it, so migrate leaves it as written and warns `invalid 2.x directive, left as is` (`migrate-directive-invalid`).
 - An unknown key, or a `guidance` table inside an override.
 
 Edit and preview again.
@@ -60,7 +60,7 @@ It copies each replaced file to a new backup directory, `.slopvac/migrate-backup
 - Moves `locale.default` to `locale`, `locale.allow` to `terms.allow`, and `vocabulary.path` to `terms.blocklists`.
 - Rewrites each TOML blocklist it names: adds `schema_version = 3` and long-form `pos` values (`Noun` to `noun`).
 - Deletes a `[vale]` table that has `enabled = false`.
-- Qualifies the rule id in each `slopvac-allow` comment, except in code fences and code spans.
+- Qualifies the rule id in each `slopvac-allow` comment, except in code fences and code spans. A comment that ends on a later line stays as written, whatever id it names. A comment for a removed rule on its own line becomes `<!-- -->`, so the paragraphs around it stay apart.
 - Replaces each steering block with the 3.0 text.
 
 It stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml` and `[tool.slopvac]`. Remove the unused ones.

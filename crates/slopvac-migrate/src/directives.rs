@@ -27,8 +27,9 @@ pub struct Found {
     pub unknown: Vec<UnknownId>,
     /// Ids of removed rules; those directives are deleted.
     pub removed: Vec<RemovedId>,
-    /// One-based lines of comma-list directives. 2.x took one id per directive, so
-    /// these were already invalid; they stay as written.
+    /// One-based start lines of comma-list directives and of directives whose comment
+    /// ends on a later line. 2.x took one id per directive and read each directive on one
+    /// line, so 2.x rejects these too. They stay as written.
     pub invalid: Vec<usize>,
     /// One-based lines of directives whose id was renamed.
     pub renamed: Vec<usize>,
@@ -39,9 +40,36 @@ pub struct Found {
 /// Directives inside fenced code or inline code spans are documentation and stay as
 /// they are. The second value lists ids that the rename table does not know (those
 /// directives are left unchanged) and ids of removed rules (those directives are
-/// deleted).
+/// deleted). A deleted directive alone on its line leaves an empty comment there, so the
+/// line still ends the block above it and no other directive covers more text.
 #[must_use]
 pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Found) {
+    rewrite_with(text, renames, Removed::Delete)
+}
+
+/// `text` with each 2.x directive in its 3.0 form, for the before side of the lint.
+///
+/// A renamed id is qualified as in [`rewrite_directives`]. A directive of a removed rule
+/// becomes an empty comment in place of being deleted, so the document keeps its block
+/// structure and no other directive covers more text than it does in the file on disk.
+pub(crate) fn before_directives(text: &str, renames: &RenameTable) -> String {
+    rewrite_with(text, renames, Removed::Blank).0
+}
+
+/// What happens to a directive of a removed rule.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Removed {
+    /// Delete it inside a line of text, and replace it with [`BLANK_COMMENT`] when it
+    /// stands alone on its line.
+    Delete,
+    /// Replace it with [`BLANK_COMMENT`].
+    Blank,
+}
+
+/// An HTML comment that is no directive.
+const BLANK_COMMENT: &str = "<!-- -->";
+
+fn rewrite_with(text: &str, renames: &RenameTable, removed: Removed) -> (String, Found) {
     let mut out = String::with_capacity(text.len());
     let mut found = Found::default();
     let mut fence: Option<(char, usize)> = None;
@@ -53,7 +81,9 @@ pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Found) 
         let blank = line.trim().is_empty();
         let indented_code = paragraph.is_empty() && is_indented_code(line);
         if in_fence || blank || indented_code {
-            out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut found));
+            out.push_str(&rewrite_paragraph(
+                &paragraph, start, renames, removed, &mut found,
+            ));
             paragraph.clear();
             out.push_str(line);
         } else {
@@ -63,7 +93,9 @@ pub fn rewrite_directives(text: &str, renames: &RenameTable) -> (String, Found) 
             paragraph.push_str(line);
         }
     }
-    out.push_str(&rewrite_paragraph(&paragraph, start, renames, &mut found));
+    out.push_str(&rewrite_paragraph(
+        &paragraph, start, renames, removed, &mut found,
+    ));
     (out, found)
 }
 
@@ -155,6 +187,7 @@ fn rewrite_paragraph(
     text: &str,
     start_line: usize,
     renames: &RenameTable,
+    removed: Removed,
     found: &mut Found,
 ) -> String {
     if text.is_empty() {
@@ -174,17 +207,21 @@ fn rewrite_paragraph(
         let quoted = spans.iter().any(|&(a, b)| a <= start && start < b);
         if !quoted && is_directive(comment) {
             let line = start_line + text[..start].matches('\n').count();
-            if let Some(new) = rewrite_comment(comment, line, renames, found) {
+            if comment.contains('\n') {
+                found.invalid.push(line);
+                out.push_str(comment);
+            } else if let Some(new) = rewrite_comment(comment, line, renames, found) {
                 out.push_str(&new);
             } else {
-                // A deleted directive alone on its line takes the whole line with it.
                 let line_start = out.rfind('\n').map_or(0, |n| n + 1);
                 let rest = &text[end..];
                 let line_end = rest.find('\n').unwrap_or(rest.len());
-                if out[line_start..].trim().is_empty() && rest[..line_end].trim().is_empty() {
-                    out.truncate(line_start);
-                    consumed = (end + line_end + 1).min(text.len());
-                    continue;
+                let alone =
+                    out[line_start..].trim().is_empty() && rest[..line_end].trim().is_empty();
+                // A directive alone on its line leaves an empty comment, so the blocks
+                // around it stay apart.
+                if removed == Removed::Blank || alone {
+                    out.push_str(BLANK_COMMENT);
                 }
             }
         } else {
@@ -260,6 +297,8 @@ fn rewrite_comment(
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     fn run(text: &str) -> (String, Vec<UnknownId>) {
@@ -279,10 +318,10 @@ mod tests {
     }
 
     #[test]
-    fn a_directive_for_a_removed_rule_is_deleted_with_its_line() {
+    fn a_directive_for_a_removed_rule_alone_on_its_line_leaves_an_empty_comment() {
         let text = format!("Intro\n<!-- slopvac-allow: rule={GONE} reason=x -->\nBody\n");
         let (out, found) = rewrite(&text);
-        assert_eq!(out, "Intro\nBody\n");
+        assert_eq!(out, "Intro\n<!-- -->\nBody\n");
         assert_eq!(
             found.removed,
             vec![RemovedId {
@@ -302,10 +341,10 @@ mod tests {
     }
 
     #[test]
-    fn an_indented_or_trailing_space_directive_takes_its_whole_line() {
+    fn an_indented_or_trailing_space_directive_keeps_its_line() {
         let text = format!("A\n   <!-- slopvac-allow: rule={GONE} reason=x -->  \nB\n");
         let (out, _) = rewrite(&text);
-        assert_eq!(out, "A\nB\n");
+        assert_eq!(out, "A\n   <!-- -->  \nB\n");
     }
 
     #[test]
@@ -324,6 +363,20 @@ mod tests {
             assert_eq!(found.removed, Vec::<RemovedId>::new(), "{value}");
             assert_eq!(found.unknown, Vec::<UnknownId>::new(), "{value}");
         }
+    }
+
+    /// 2.x reads a directive on one line, so one whose comment ends on a later line was
+    /// already invalid there.
+    #[rstest]
+    #[case::removed(GONE)]
+    #[case::renamed("prose-format.no-unicode-dash")]
+    fn a_directive_over_more_than_one_line_stays_as_written_and_is_reported(#[case] id: &str) {
+        let text = format!("A\n<!-- slopvac-allow: rule={id} reason=x\n-->\nB\n");
+        let (out, found) = rewrite(&text);
+        assert_eq!(out, text);
+        assert_eq!(found.invalid, vec![2]);
+        assert_eq!(found.removed, Vec::<RemovedId>::new());
+        assert_eq!(found.renamed, Vec::<usize>::new());
     }
 
     #[test]

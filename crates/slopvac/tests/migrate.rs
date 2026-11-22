@@ -72,23 +72,24 @@ fn write_migrates_and_restore_undoes_it() {
 }
 
 #[test]
-fn preview_reports_the_findings_the_engine_counts_on_each_side() {
+fn a_2x_bare_id_suppression_is_not_a_new_finding_before_migration() {
     let dir = project("profile = \"normal\"\n");
     fs::write(
         dir.path().join("doc.md"),
         "<!-- slopvac-allow: rule=orwell.stale-figure reason=dead-metaphor -->\nPick the low-hanging fruit.\n",
     )
     .expect("write");
-    // Before, the directive names a 2.x id: the engine reports it and the stale figure.
-    // After, `core:orwell.stale-figure` with its listed `dead-metaphor` exception holds.
+    // 2.x accepts the bare id, and `core:orwell.stale-figure` lists `dead-metaphor`, so
+    // the directive holds on both sides and no rule changes its count.
     slopvac()
         .arg("migrate")
         .arg(dir.path())
         .assert()
         .code(0)
         .stdout(predicate::str::contains(
-            "Findings by rule (before -> after):\n  core:meta.invalid-suppression: 1 -> 0\n  core:orwell.stale-figure: 1 -> 0\n",
-        ));
+            "Findings: the 3.0 engine finds the same count per rule on your files before and after migration.\n",
+        ))
+        .stdout(predicate::str::contains("invalid-suppression").not());
 }
 
 #[test]
