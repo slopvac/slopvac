@@ -30,9 +30,9 @@ use slopvac_plugins::pyenv::EnvStore;
 use slopvac_plugins::revoke::Revocations;
 use slopvac_plugins::sign::KeyPolicy;
 use slopvac_plugins::sync::{Network, PythonBuild, SyncError};
-use slopvac_plugins::trust::{DeclSummary, TrustRecord, TrustStore, VerifiedPlugin};
+use slopvac_plugins::trust::{DeclSummary, TrustGate, TrustRecord, TrustStore, VerifiedPlugin};
 use slopvac_plugins::update::UpdateError;
-use slopvac_plugins::{Dirs, PluginLoader, PluginSpec, RunError, Runner, command, run};
+use slopvac_plugins::{Dirs, PluginLoader, PluginSpec, RunError, Runner, SpawnGate, command, run};
 
 const NOW: &str = "2026-11-22T00:00:00Z";
 const HASH: &str = "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
@@ -118,8 +118,24 @@ impl Fixture {
         online: bool,
         setup: impl FnOnce(Setup<'a>) -> Setup<'a>,
     ) -> Ran {
+        let mut out = Vec::new();
+        let result = self.run_into(args, online, setup, &mut out);
+        Ran {
+            result,
+            out: String::from_utf8(out).unwrap(),
+        }
+    }
+
+    /// [`Fixture::run`] writing to `out`.
+    fn run_into<'a>(
+        &self,
+        args: &[&str],
+        online: bool,
+        setup: impl FnOnce(Setup<'a>) -> Setup<'a>,
+        out: &mut dyn std::io::Write,
+    ) -> Result<u8, RunError> {
         let setup = setup(Setup::default());
-        let policy = KeyPolicy::default();
+        let policy = setup.policy.unwrap_or_default();
         let revocations = self.revocations();
         let c = client();
         let network = if online {
@@ -133,7 +149,7 @@ impl Fixture {
             .with_configured(setup.configured)
             .with_core_version("3.0.0");
         if let Some(loader) = &setup.loader {
-            runner = runner.with_loader(loader);
+            runner = runner.with_loader(loader.as_ref());
         }
         if let Some(envs) = setup.envs {
             runner = runner.with_envs(envs);
@@ -143,12 +159,7 @@ impl Fixture {
         }
         let words = std::iter::once("plugins").chain(args.iter().copied());
         let matches = command().try_get_matches_from(words).unwrap();
-        let mut out = Vec::new();
-        let result = run(&matches, &runner, &mut out);
-        Ran {
-            result,
-            out: String::from_utf8(out).unwrap(),
-        }
+        run(&matches, &runner, out)
     }
 }
 
@@ -156,7 +167,8 @@ impl Fixture {
 struct Setup<'a> {
     ranges: BTreeMap<PackId, VersionReq>,
     configured: Vec<String>,
-    loader: Option<TreeLoader>,
+    loader: Option<Box<dyn PluginLoader + 'a>>,
+    policy: Option<KeyPolicy>,
     envs: Option<&'a EnvStore>,
     python: Option<PythonBuild<'a>>,
 }
@@ -183,8 +195,13 @@ impl<'a> Setup<'a> {
         self
     }
 
-    fn loader(mut self, loader: TreeLoader) -> Self {
-        self.loader = Some(loader);
+    fn loader(mut self, loader: impl PluginLoader + 'a) -> Self {
+        self.loader = Some(Box::new(loader));
+        self
+    }
+
+    fn policy(mut self, policy: KeyPolicy) -> Self {
+        self.policy = Some(policy);
         self
     }
 }
@@ -203,7 +220,7 @@ fn client() -> Client {
 struct TreeLoader {
     id: String,
     root: PathBuf,
-    manifest_digest: String,
+    manifest_digest: Option<String>,
 }
 
 impl TreeLoader {
@@ -214,7 +231,7 @@ impl TreeLoader {
         Self {
             id: id.to_owned(),
             root,
-            manifest_digest: OTHER_HASH.to_owned(),
+            manifest_digest: Some(OTHER_HASH.to_owned()),
         }
     }
 }
@@ -230,7 +247,7 @@ impl PluginLoader for TreeLoader {
             source: "test".into(),
             root: self.root.clone(),
             tree: tree_hash(&self.root).unwrap(),
-            manifest_digest: Some(self.manifest_digest.clone()),
+            manifest_digest: self.manifest_digest.clone(),
             key_fingerprint: None,
             key_id: None,
         };
@@ -487,7 +504,7 @@ fn sync_keeps_its_verification_a_revoked_digest_stops_it_with_the_cause() {
     f.write_lock(&[path_entry("style", "1.0.0", "plugins/style", &digest)]);
     f.revoke(&[&digest]);
     let err = f.run(&["sync"], true, |s| s).result.unwrap_err();
-    assert_eq!(err.code(), "plugins-sync-failed");
+    assert_eq!(err.code(), "plugin-revoked");
     assert!(
         matches!(
             err.source()
@@ -570,7 +587,7 @@ fn update_offline_fails_with_the_update_error_as_its_cause() {
     let f = Fixture::new();
     f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
     let err = f.run(&["update"], false, |s| s).result.unwrap_err();
-    assert_eq!(err.code(), "plugins-update-failed");
+    assert_eq!(err.code(), "offline-network-needed");
     assert!(
         matches!(
             err.source()
@@ -752,6 +769,72 @@ mod python_env {
         }
     }
 
+    /// Hands out the in-place plugin `py` as its files are on disk.
+    struct PyLoader {
+        root: PathBuf,
+    }
+
+    impl PyLoader {
+        fn parts(&self) -> (VerifiedPlugin, PluginSpec) {
+            let vp = VerifiedPlugin {
+                name: "py".into(),
+                version: Some("1.0.0".into()),
+                source: "test".into(),
+                root: self.root.clone(),
+                tree: tree_hash(&self.root).unwrap(),
+                manifest_digest: None,
+                key_fingerprint: None,
+                key_id: None,
+            };
+            let spec = PluginSpec {
+                name: "py".into(),
+                program: self.root.join("plugin.py"),
+                args: vec![],
+                cwd: self.root.clone(),
+                declaration: common::decl(),
+                path_env: std::env::temp_dir().to_string_lossy().into_owned(),
+                env: vec![],
+            };
+            (vp, spec)
+        }
+    }
+
+    impl PluginLoader for PyLoader {
+        fn load(&self, _: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
+            Ok(self.parts())
+        }
+    }
+
+    #[test]
+    fn trust_for_a_managed_python_plugin_is_accepted_by_the_production_spawn_gate() {
+        let p = project();
+        p.f.run(&["sync"], false, |s| s.python(p.build()))
+            .result
+            .unwrap();
+        let loader = PyLoader {
+            root: p.f.project().join("plugins/py"),
+        };
+        let ran = p.f.run(&["trust", "py"], false, |s| {
+            s.envs(&p.envs).loader(PyLoader {
+                root: loader.root.clone(),
+            })
+        });
+        assert_eq!(ran.result.unwrap(), 0, "{}", ran.out);
+        // The spawn gate the host uses, wired to the managed environment of the plugin.
+        let (vp, spec) = loader.parts();
+        let gate = TrustGate::new(TrustStore::open(p.f.state()), vec![], vec![vp])
+            .with_python_plugins(&p.envs)
+            .unwrap()
+            .with_revocation_cache(p.f.revocations());
+        let (program, args) = gate.python_launch("py").unwrap();
+        let spec = PluginSpec {
+            program,
+            args,
+            ..spec
+        };
+        gate.check(&spec).unwrap();
+    }
+
     #[test]
     fn status_reports_a_built_environment_as_verified() {
         let p = project();
@@ -778,4 +861,136 @@ mod python_env {
              python environment missing; run `slopvac plugins sync`\n"
         );
     }
+}
+// ---- round 3: trust, revocation, codes, redaction, output -------------------------------
+
+/// A loader that hands out a plugin with a program path that the spec must be refused for.
+struct OutsideProgram {
+    inner: TreeLoader,
+    program: PathBuf,
+}
+
+impl PluginLoader for OutsideProgram {
+    fn load(&self, id: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        let (vp, mut spec) = self.inner.load(id)?;
+        spec.program.clone_from(&self.program);
+        Ok((vp, spec))
+    }
+}
+
+#[test]
+fn trust_refuses_a_locked_digest_that_the_revocation_list_names_even_when_the_loader_has_none() {
+    let f = Fixture::new();
+    // The loader's plugin carries no manifest digest or key id, as a path or git source does.
+    let mut loader = TreeLoader::new(f.base.path(), "fake");
+    loader.manifest_digest = None;
+    f.write_lock(&[code_path_entry("fake", "plugins/fake", OTHER_HASH)]);
+    f.revoke(&[OTHER_HASH]);
+    let err = f
+        .run(&["trust", "fake"], false, |s| s.loader(loader))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugins-trust-revoked-plugin");
+    assert_eq!(TrustStore::open(f.state()).records().unwrap().len(), 0);
+}
+
+#[test]
+fn a_sync_failure_keeps_the_code_of_its_cause() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
+    let err = f.run(&["sync"], false, |s| s).result.unwrap_err();
+    assert_eq!(err.code(), "offline-plugin-missing");
+}
+
+#[test]
+fn a_revoked_digest_stops_sync_with_plugin_revoked() {
+    let f = Fixture::new();
+    let digest = in_place_project(&f);
+    f.write_lock(&[path_entry("style", "1.0.0", "plugins/style", &digest)]);
+    f.revoke(&[&digest]);
+    let err = f.run(&["sync"], true, |s| s).result.unwrap_err();
+    assert_eq!(err.code(), "plugin-revoked");
+}
+
+#[test]
+fn an_offline_update_keeps_the_code_of_its_cause() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
+    let err = f.run(&["update"], false, |s| s).result.unwrap_err();
+    assert_eq!(err.code(), "offline-network-needed");
+}
+
+#[test]
+fn a_damaged_revocation_cache_keeps_its_code_and_names_no_absolute_path() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
+    fs::write(f.revocations().cache_file(), "not a list").unwrap();
+    let err = f.run(&["status"], false, |s| s).result.unwrap_err();
+    assert_eq!(err.code(), "revocation-cache-invalid");
+    let shown = names_in_chain(&err);
+    let base = f.base.path().to_string_lossy().into_owned();
+    assert!(!shown.contains(&base), "absolute path leaked: {shown}");
+}
+
+#[test]
+fn a_refused_program_path_is_shown_as_external_and_never_absolute() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    let outside = f.base.path().join("elsewhere/prog");
+    let loader = OutsideProgram {
+        inner: TreeLoader::new(f.base.path(), "fake"),
+        program: outside,
+    };
+    let err = f
+        .run(&["trust", "fake"], false, |s| s.loader(loader))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "plugins-store-failed");
+    let shown = names_in_chain(&err);
+    let base = f.base.path().to_string_lossy().into_owned();
+    assert!(!shown.contains(&base), "absolute path leaked: {shown}");
+    assert!(shown.contains("<external>/prog"), "{shown}");
+}
+
+/// A writer whose every write fails the way a closed pipe does.
+struct ClosedPipe;
+
+impl std::io::Write for ClosedPipe {
+    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn an_output_failure_keeps_the_io_error_as_its_source() {
+    let f = Fixture::new();
+    let err = f
+        .run_into(&["list"], false, |s| s, &mut ClosedPipe)
+        .unwrap_err();
+    assert_eq!(err.code(), "plugins-output-failed");
+    let kind = err
+        .source()
+        .and_then(|e| e.downcast_ref::<std::io::Error>())
+        .map(std::io::Error::kind);
+    assert_eq!(kind, Some(std::io::ErrorKind::BrokenPipe));
+}
+
+#[test]
+fn trust_without_a_loader_says_so_in_registered_text() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    let err = f.run(&["trust", "fake"], false, |s| s).result.unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "cannot load `fake` to record trust: the plugin files are not loaded"
+    );
+}
+
+/// A lock entry for a code plugin in a project directory.
+fn code_path_entry(id: &str, dir: &str, digest: &str) -> String {
+    path_entry(id, "1.0.0", dir, digest).replace("kind = \"data\"", "kind = \"code\"")
 }
