@@ -23,7 +23,9 @@ fn bytes_written_by_the_store_parse_back_to_the_same_counts() {
         .unwrap()
         .pk
         .to_base64();
-    store.pin_key("acme", &key, "2026-11-15T00:00:00Z").unwrap();
+    store
+        .pin_key("registry.example", "acme", &key, "2026-11-15T00:00:00Z")
+        .unwrap();
     let raw = std::fs::read(dir.path().join("trust.json")).unwrap();
     let snapshot = parse_store(&raw, Path::new(PATH)).unwrap();
     assert_eq!(snapshot.pins.len(), 1);

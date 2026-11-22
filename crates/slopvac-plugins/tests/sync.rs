@@ -35,7 +35,7 @@ use slopvac_plugins::oci::{
 use slopvac_plugins::revoke::{RevocationError, RevocationNotice, Revocations};
 use slopvac_plugins::sign::{
     ANNOTATION_ID, ANNOTATION_VERSION, KeyPolicy, MEDIA_MINISIG, MEDIA_STATEMENT, PublicKey,
-    SignError, Statement,
+    RegistryHost, SignError, Statement,
 };
 use slopvac_plugins::sync::{
     ARTIFACT_TYPE_PACK, Change, MEDIA_PACK_LAYER, Network, PackState, Store, SyncError, Syncer,
@@ -184,10 +184,10 @@ fn client() -> Client {
     Client::with_loopback_http_for_tests(Box::new(Anonymous))
 }
 
-fn policy(namespace: &str, keys: &[&Key]) -> KeyPolicy {
+fn policy(registry: &str, namespace: &str, keys: &[&Key]) -> KeyPolicy {
     KeyPolicy {
         pinned: BTreeMap::from([(
-            namespace.to_owned(),
+            (RegistryHost::parse(registry).unwrap(), namespace.to_owned()),
             keys.iter().map(|k| k.public()).collect(),
         )]),
         ..KeyPolicy::default()
@@ -315,7 +315,7 @@ fn sync_installs_exactly_the_locked_pack() {
     let report = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&key]),
+        &policy(&server.registry(), "acme", &[&key]),
         &oci_lock(&server.registry(), &p),
     )
     .unwrap();
@@ -348,7 +348,13 @@ fn a_registry_serving_other_content_for_the_locked_digest_installs_nothing() {
     let c = client();
     // The lock pins `locked_pack`, but the registry answers with the forged manifest.
     let lock = oci_lock(&server.registry(), &locked_pack);
-    let err = run(&env, Network::Online(&c), &policy("acme", &[&key]), &lock).unwrap_err();
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy(&server.registry(), "acme", &[&key]),
+        &lock,
+    )
+    .unwrap_err();
     assert!(
         matches!(
             err,
@@ -377,7 +383,13 @@ fn a_fetch_failure_with_no_code_of_its_own_reports_sync_fetch() {
         &missing,
         &good.key_id,
     )]);
-    let err = run(&env, Network::Online(&c), &policy("acme", &[&key]), &lock).unwrap_err();
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy(&server.registry(), "acme", &[&key]),
+        &lock,
+    )
+    .unwrap_err();
     assert!(matches!(err, SyncError::Fetch { .. }), "{err:?}");
     assert_eq!(err.code(), "sync-fetch");
     assert_eq!(err.exit_code(), 2);
@@ -395,7 +407,7 @@ fn a_key_that_is_not_pinned_is_refused_and_nothing_is_extracted() {
     let err = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&pinned]),
+        &policy(&server.registry(), "acme", &[&pinned]),
         &oci_lock(&server.registry(), &p),
     )
     .unwrap_err();
@@ -420,7 +432,7 @@ fn a_first_party_namespace_fails_closed_without_compiled_keys() {
     let server = registry(&[&p]);
     let env = Env::new();
     let c = client();
-    let mut pol = policy("acme", &[&key]);
+    let mut pol = policy(&server.registry(), "acme", &[&key]);
     pol.first_party_namespaces.push("acme".into());
     let err = run(
         &env,
@@ -454,7 +466,7 @@ fn a_lock_entry_without_a_signature_is_refused() {
     let err = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&key]),
+        &policy(&server.registry(), "acme", &[&key]),
         &lock_text(&[entry]),
     )
     .unwrap_err();
@@ -474,7 +486,7 @@ fn a_lock_entry_without_a_signature_reports_sync_unsigned() {
     let err = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&key]),
+        &policy(&server.registry(), "acme", &[&key]),
         &lock_text(&[entry]),
     )
     .unwrap_err();
@@ -491,7 +503,13 @@ fn an_artifact_without_the_signature_its_lock_entry_records_reports_signature_in
     let c = client();
     // The lock entry records a signature; the registry serves the artifact without one.
     let lock = oci_lock(&server.registry(), &stripped);
-    let err = run(&env, Network::Online(&c), &policy("acme", &[&key]), &lock).unwrap_err();
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy(&server.registry(), "acme", &[&key]),
+        &lock,
+    )
+    .unwrap_err();
     assert!(
         matches!(
             err,
@@ -523,7 +541,7 @@ fn a_signature_that_differs_from_the_lock_still_reports_signature_invalid() {
     let err = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&locked_key, &other]),
+        &policy(&server.registry(), "acme", &[&locked_key, &other]),
         &lock,
     )
     .unwrap_err();
@@ -551,7 +569,7 @@ fn a_signature_by_another_pinned_key_than_the_lock_records_is_refused() {
     let err = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&locked_key, &other]),
+        &policy(&server.registry(), "acme", &[&locked_key, &other]),
         &lock,
     )
     .unwrap_err();
@@ -575,7 +593,13 @@ fn one_bad_pack_leaves_the_store_without_any_tree() {
         oci_entry("style", &server.registry(), &good.digest, &good.key_id),
         oci_entry("z-bad", &server.registry(), &missing, &good.key_id),
     ]);
-    let err = run(&env, Network::Online(&c), &policy("acme", &[&key]), &lock).unwrap_err();
+    let err = run(
+        &env,
+        Network::Online(&c),
+        &policy(&server.registry(), "acme", &[&key]),
+        &lock,
+    )
+    .unwrap_err();
     assert!(matches!(err, SyncError::Fetch { .. }), "{err:?}");
     env.assert_no_trees();
 }
@@ -587,7 +611,7 @@ fn a_second_sync_changes_nothing_and_makes_no_request() {
     let server = registry(&[&p]);
     let env = Env::new();
     let c = client();
-    let pol = policy("acme", &[&key]);
+    let pol = policy(&server.registry(), "acme", &[&key]);
     let lock = oci_lock(&server.registry(), &p);
     let first = run(&env, Network::Online(&c), &pol, &lock).unwrap();
     let requests = server.requests().len();
@@ -602,13 +626,13 @@ fn offline_sync_from_a_warm_cache_succeeds_without_the_network() {
     let key = Key::new();
     let p = publish(&key, "acme", FILES);
     let env = Env::new();
-    let pol = policy("acme", &[&key]);
-    let (lock, requests) = {
+    let (lock, requests, pol) = {
         let server = registry(&[&p]);
+        let pol = policy(&server.registry(), "acme", &[&key]);
         let c = client();
         let lock = oci_lock(&server.registry(), &p);
         run(&env, Network::Online(&c), &pol, &lock).unwrap();
-        (lock, server.requests().len())
+        (lock, server.requests().len(), pol)
     };
     assert!(requests > 0);
     // The trees are gone (for example a cleaned data dir), the downloads are not.
@@ -628,7 +652,13 @@ fn offline_sync_from_a_cold_cache_names_the_missing_pack_and_digest() {
     let p = publish(&key, "acme", FILES);
     let env = Env::new();
     let lock = oci_lock("127.0.0.1:9", &p);
-    let err = run(&env, Network::Offline, &policy("acme", &[&key]), &lock).unwrap_err();
+    let err = run(
+        &env,
+        Network::Offline,
+        &policy("127.0.0.1:9", "acme", &[&key]),
+        &lock,
+    )
+    .unwrap_err();
     assert_eq!(err.code(), "offline-plugin-missing");
     assert_eq!(err.exit_code(), 2);
     let text = err.to_string();
@@ -641,8 +671,8 @@ fn offline_sync_rechecks_a_cached_blob_and_refuses_a_swapped_one() {
     let key = Key::new();
     let p = publish(&key, "acme", FILES);
     let env = Env::new();
-    let pol = policy("acme", &[&key]);
     let server = registry(&[&p]);
+    let pol = policy(&server.registry(), "acme", &[&key]);
     let c = client();
     let lock = oci_lock(&server.registry(), &p);
     run(&env, Network::Online(&c), &pol, &lock).unwrap();
@@ -687,7 +717,7 @@ fn a_tampered_tree_is_reinstalled_online() {
         let server = registry(&[&p]);
         let env = Env::new();
         let c = client();
-        let pol = policy("acme", &[&key]);
+        let pol = policy(&server.registry(), "acme", &[&key]);
         let lock = oci_lock(&server.registry(), &p);
         let first = run(&env, Network::Online(&c), &pol, &lock).unwrap();
         let tree = first.packs[0].tree.clone();
@@ -714,7 +744,7 @@ fn a_tampered_tree_is_refused_offline_and_removed() {
     let server = registry(&[&p]);
     let env = Env::new();
     let c = client();
-    let pol = policy("acme", &[&key]);
+    let pol = policy(&server.registry(), "acme", &[&key]);
     let lock = oci_lock(&server.registry(), &p);
     let first = run(&env, Network::Online(&c), &pol, &lock).unwrap();
     tamper_edit(&first.packs[0].tree);
@@ -735,7 +765,13 @@ fn status_reports_missing_then_installed() {
     let before = status(&env.store(), env.project.path(), &lock).unwrap();
     assert_eq!(before[0].state, PackState::NotInstalled);
     assert!(!before[0].is_recorded());
-    let report = run(&env, Network::Online(&c), &policy("acme", &[&key]), &lock).unwrap();
+    let report = run(
+        &env,
+        Network::Online(&c),
+        &policy(&server.registry(), "acme", &[&key]),
+        &lock,
+    )
+    .unwrap();
     let after = status(&env.store(), env.project.path(), &lock).unwrap();
     assert_eq!(
         after[0].state,
@@ -1122,7 +1158,7 @@ fn a_tampered_tree_too_large_to_delete_is_reported_as_quarantined_online() {
     let server = registry(&[&p]);
     let env = Env::new();
     let c = client();
-    let pol = policy("acme", &[&key]);
+    let pol = policy(&server.registry(), "acme", &[&key]);
     let lock = oci_lock(&server.registry(), &p);
     let first = run(&env, Network::Online(&c), &pol, &lock).unwrap();
     let tree = first.packs[0].tree.clone();
@@ -1152,7 +1188,7 @@ fn a_signature_newer_than_the_one_the_lock_records_is_refused() {
     let err = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&key]),
+        &policy(&server.registry(), "acme", &[&key]),
         &lock_text(&[entry]),
     )
     .unwrap_err();
@@ -1176,7 +1212,7 @@ fn tm26_a_revoked_manifest_digest_fails_sync_before_any_request_for_it() {
     let err = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&key]),
+        &policy(&server.registry(), "acme", &[&key]),
         &oci_lock(&server.registry(), &p),
     )
     .unwrap_err();
@@ -1198,7 +1234,7 @@ fn tm26_a_revoked_signing_key_fails_sync_and_extracts_nothing() {
     let err = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&key]),
+        &policy(&server.registry(), "acme", &[&key]),
         &oci_lock(&server.registry(), &p),
     )
     .unwrap_err();
@@ -1214,7 +1250,7 @@ fn tm26_a_revocation_published_after_install_fails_the_next_sync() {
     let server = registry(&[&p]);
     let env = Env::new();
     let c = client();
-    let pol = policy("acme", &[&key]);
+    let pol = policy(&server.registry(), "acme", &[&key]);
     let lock = oci_lock(&server.registry(), &p);
     run(&env, Network::Online(&c), &pol, &lock).unwrap();
     env.revoke(&[], &[&p.digest]);
@@ -1239,7 +1275,7 @@ fn a_list_that_names_other_artifacts_installs_normally() {
     let report = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&key]),
+        &policy(&server.registry(), "acme", &[&key]),
         &oci_lock(&server.registry(), &p),
     )
     .unwrap();
@@ -1261,7 +1297,7 @@ fn tm27_a_forged_list_fails_online_sync_with_exit_2() {
     let err = run(
         &env,
         Network::Online(&c),
-        &policy("acme", &[&key]),
+        &policy(&server.registry(), "acme", &[&key]),
         &oci_lock(&server.registry(), &p),
     )
     .unwrap_err();
@@ -1281,7 +1317,7 @@ fn tm27_a_stale_cache_offline_prints_a_notice_and_the_sync_runs() {
     let server = registry(&[&p]);
     let env = Env::new();
     let c = client();
-    let pol = policy("acme", &[&key]);
+    let pol = policy(&server.registry(), "acme", &[&key]);
     let lock = oci_lock(&server.registry(), &p);
     run(&env, Network::Online(&c), &pol, &lock).unwrap();
     // NOW plus 31 days.
@@ -1365,7 +1401,7 @@ mod io_boundary {
         let env = Env::new();
         let store = Store::new(env.data.path().join(ROOT_NAME));
         let c = client();
-        let pol = policy("acme", &[&key]);
+        let pol = policy(&server.registry(), "acme", &[&key]);
         let lock = oci_lock(&server.registry(), &p);
         let revs = env.revocations(NOW);
         let report = Syncer::new(&store, Network::Online(&c), &pol, env.project.path(), &revs)

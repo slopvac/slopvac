@@ -35,7 +35,7 @@ pub struct Reference {
     pub target: Target,
 }
 
-fn valid_registry(s: &str) -> bool {
+pub(crate) fn valid_registry(s: &str) -> bool {
     let (host, port) = match s.rsplit_once(':') {
         Some((h, p)) => (h, Some(p)),
         None => (s, None),

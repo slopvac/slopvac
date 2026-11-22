@@ -20,10 +20,12 @@ use std::path::PathBuf;
 use common::decl;
 use flate2::Compression;
 use flate2::write::GzEncoder;
+use rstest::rstest;
 use serde_json::json;
 use slopvac_plugins::extract::{Limits, TreeHash, evict, extract_targz};
 use slopvac_plugins::oci::Digest;
 use slopvac_plugins::protocol::{FeatureSet, HookDecl};
+use slopvac_plugins::sign::RegistryHost;
 use slopvac_plugins::trust::{
     DeclSummary, Revocation, TrustError, TrustGate, TrustInputs, TrustKey, TrustRecord, TrustState,
     TrustStore, VerifiedPlugin, is_forbidden_env_name, parse_trust_env, trust_hash,
@@ -915,42 +917,164 @@ fn concurrent_writers_do_not_lose_records() {
     assert_eq!(store.records().unwrap().len(), 39);
 }
 
+const REG: &str = "registry.example";
+
+fn new_key_b64() -> String {
+    minisign::KeyPair::generate_unencrypted_keypair()
+        .unwrap()
+        .pk
+        .to_base64()
+}
+
+fn pair(registry: &str, namespace: &str) -> (RegistryHost, String) {
+    (RegistryHost::parse(registry).unwrap(), namespace.to_owned())
+}
+
 #[test]
-fn tm22_key_pins_bind_a_namespace_and_feed_the_verifier() {
+fn tm22_key_pins_bind_a_pair_and_feed_the_verifier() {
     let s = Scratch::new("pins");
     let store = TrustStore::open(s.dir("state"));
-    let a = minisign::KeyPair::generate_unencrypted_keypair()
-        .unwrap()
-        .pk
-        .to_base64();
-    let b = minisign::KeyPair::generate_unencrypted_keypair()
-        .unwrap()
-        .pk
-        .to_base64();
-    let pin = store.pin_key("acme", &a, NOW).unwrap();
+    let (a, b) = (new_key_b64(), new_key_b64());
+    let pin = store.pin_key(REG, "acme", &a, NOW).unwrap();
     assert_eq!(pin.fingerprint.len(), 64);
+    assert_eq!(pin.registry, REG);
     assert_eq!(
-        store.pin_key("acme", &a, NOW).unwrap(),
+        store.pin_key(REG, "acme", &a, NOW).unwrap(),
         pin,
         "pinning the same key again is a no-op"
     );
-    let err = store.pin_key("acme", &b, NOW).unwrap_err();
+    let err = store.pin_key(REG, "acme", &b, NOW).unwrap_err();
     assert!(matches!(err, TrustError::NamespaceBound { .. }), "{err:?}");
-    assert!(store.pin_key("other", &b, NOW).is_ok());
+    assert!(store.pin_key(REG, "other", &b, NOW).is_ok());
     let pinned = store.pinned_map().unwrap();
     assert_eq!(
-        pinned.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["acme", "other"]
+        pinned.keys().cloned().collect::<Vec<_>>(),
+        [pair(REG, "acme"), pair(REG, "other")]
     );
-    assert_eq!(pinned["acme"].len(), 1);
-    assert_eq!(pinned["acme"][0].fingerprint(), pin.fingerprint);
-    assert!(!pinned.contains_key("nobody"));
+    assert_eq!(pinned[&pair(REG, "acme")].len(), 1);
+    assert_eq!(pinned[&pair(REG, "acme")][0].fingerprint(), pin.fingerprint);
+    assert!(!pinned.contains_key(&pair(REG, "nobody")));
     let policy = slopvac_plugins::sign::KeyPolicy {
         pinned,
         ..Default::default()
     };
-    assert_eq!(policy.pinned["other"].len(), 1);
-    assert!(store.pin_key("acme", "garbage", NOW).is_err());
+    assert_eq!(policy.pinned[&pair(REG, "other")].len(), 1);
+    assert!(store.pin_key(REG, "acme", "garbage", NOW).is_err());
+}
+
+#[test]
+fn one_namespace_holds_a_different_key_on_each_registry() {
+    let s = Scratch::new("pins-per-registry");
+    let store = TrustStore::open(s.dir("state"));
+    let (a, b) = (new_key_b64(), new_key_b64());
+    store.pin_key("one.example", "acme", &a, NOW).unwrap();
+    // Another registry is another pair: no conflict with the first pin.
+    store.pin_key("two.example", "acme", &b, NOW).unwrap();
+    let pinned = store.pinned_map().unwrap();
+    assert_eq!(pinned.len(), 2);
+    assert_ne!(
+        pinned[&pair("one.example", "acme")][0].key_id(),
+        pinned[&pair("two.example", "acme")][0].key_id()
+    );
+    // The first pair still refuses another key.
+    let err = store.pin_key("one.example", "acme", &b, NOW).unwrap_err();
+    assert!(matches!(err, TrustError::NamespaceBound { .. }), "{err:?}");
+}
+
+#[rstest]
+#[case::mixed_case("GHCR.io", "ghcr.io")]
+#[case::default_port("ghcr.io:443", "ghcr.io")]
+#[case::both("GHCR.IO:443", "ghcr.io")]
+#[case::other_port_kept("127.0.0.1:5000", "127.0.0.1:5000")]
+fn a_registry_is_stored_in_its_normal_form(#[case] given: &str, #[case] stored: &str) {
+    let s = Scratch::new("pins-normal-form");
+    let store = TrustStore::open(s.dir("state"));
+    let pin = store.pin_key(given, "acme", &new_key_b64(), NOW).unwrap();
+    assert_eq!(pin.registry, stored);
+    let again = store.pin_key(stored, "acme", &new_key_b64(), NOW);
+    assert!(
+        matches!(again, Err(TrustError::NamespaceBound { .. })),
+        "the spellings are one registry: {again:?}"
+    );
+    assert_eq!(store.pinned_map().unwrap().len(), 1);
+}
+
+#[rstest]
+#[case::user_info("user:secret@ghcr.io")]
+#[case::scheme("https://ghcr.io")]
+#[case::path("ghcr.io/acme")]
+#[case::empty("")]
+#[case::empty_label("ghcr..io")]
+#[case::port_not_a_number("ghcr.io:https")]
+fn a_value_that_is_not_a_host_pins_nothing(#[case] given: &str) {
+    let s = Scratch::new("pins-bad-host");
+    let store = TrustStore::open(s.dir("state"));
+    let err = store
+        .pin_key(given, "acme", &new_key_b64(), NOW)
+        .unwrap_err();
+    assert!(matches!(err, TrustError::Registry(_)), "{err:?}");
+    assert!(!err.to_string().contains(given) || given.is_empty());
+    assert!(store.pinned_map().unwrap().is_empty());
+}
+
+#[test]
+fn the_stored_pin_format_names_the_registry_and_round_trips() {
+    let s = Scratch::new("pins-format");
+    let dir = s.dir("state");
+    let store = TrustStore::open(&dir);
+    let key = new_key_b64();
+    let pin = store.pin_key("GHCR.io:443", "acme", &key, NOW).unwrap();
+    let text = fs::read_to_string(dir.join("trust.json")).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        doc["pins"],
+        json!([{
+            "registry": "ghcr.io",
+            "namespace": "acme",
+            "fingerprint": pin.fingerprint,
+            "key": key,
+            "pinned_at": NOW,
+        }])
+    );
+    let snapshot = slopvac_plugins::trust::parse_store(text.as_bytes(), &dir).unwrap();
+    assert_eq!(snapshot.pins, vec![pin]);
+    // A fresh store over the same directory reads the same pair back.
+    let reopened = TrustStore::open(&dir).pinned_map().unwrap();
+    assert_eq!(
+        reopened.keys().cloned().collect::<Vec<_>>(),
+        [pair("ghcr.io", "acme")]
+    );
+}
+
+#[test]
+fn a_pin_without_a_registry_is_refused_as_a_damaged_store() {
+    let s = Scratch::new("pins-no-registry");
+    let dir = s.dir("state");
+    fs::create_dir_all(&dir).unwrap();
+    let doc = json!({"schema_version": 1, "pins": [{
+        "namespace": "acme",
+        "fingerprint": "f".repeat(64),
+        "key": new_key_b64(),
+        "pinned_at": NOW,
+    }]});
+    fs::write(dir.join("trust.json"), doc.to_string()).unwrap();
+    let err = TrustStore::open(&dir).pinned_map().unwrap_err();
+    assert!(matches!(err, TrustError::Corrupt { .. }), "{err:?}");
+}
+
+#[test]
+fn a_stored_registry_that_is_not_in_normal_form_is_refused_on_load() {
+    let s = Scratch::new("pins-unnormal");
+    let dir = s.dir("state");
+    let store = TrustStore::open(&dir);
+    store
+        .pin_key("ghcr.io", "acme", &new_key_b64(), NOW)
+        .unwrap();
+    let file = dir.join("trust.json");
+    let text = fs::read_to_string(&file).unwrap();
+    fs::write(&file, text.replace("\"ghcr.io\"", "\"GHCR.io:443\"")).unwrap();
+    let err = store.pinned_map().unwrap_err();
+    assert!(matches!(err, TrustError::Registry(_)), "{err:?}");
 }
 
 fn with_env(mut spec: PluginSpec, name: &str, value: &str) -> PluginSpec {
@@ -1677,8 +1801,13 @@ fn pin_key_refuses_reserved_and_first_party_namespaces_with_a_code() {
         .unwrap()
         .pk
         .to_base64();
-    for ns in ["core", "slopvac"] {
-        let err = store.pin_key(ns, &key, NOW).unwrap_err();
+    for (registry, ns) in [
+        ("ghcr.io", "core"),
+        ("ghcr.io", "slopvac"),
+        ("registry.example", "slopvac"),
+        ("registry.example", "core"),
+    ] {
+        let err = store.pin_key(registry, ns, &key, NOW).unwrap_err();
         assert!(
             matches!(&err, TrustError::ReservedNamespace { namespace } if namespace == ns),
             "{err:?}"
@@ -1700,7 +1829,7 @@ fn a_store_that_pins_a_reserved_namespace_is_refused_on_load() {
         .unwrap()
         .pk
         .to_base64();
-    store.pin_key("acme", &key, NOW).unwrap();
+    store.pin_key(REG, "acme", &key, NOW).unwrap();
     let file = dir.join("trust.json");
     let text = fs::read_to_string(&file).unwrap();
     fs::write(&file, text.replace("\"acme\"", "\"core\"")).unwrap();

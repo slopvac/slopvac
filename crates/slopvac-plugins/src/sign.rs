@@ -13,7 +13,7 @@
 //!
 //! - The artifact id is the pack id from its manifest. The namespace is the owner segment of
 //!   the repository, and it is signed too, so a signed artifact cannot be passed off under
-//!   another owner. Keys are pinned per namespace.
+//!   another owner. Keys are pinned per registry host and namespace.
 //! - The signature layers use the media types [`MEDIA_STATEMENT`] and [`MEDIA_MINISIG`].
 //! - An artifact has exactly one layer of each. They are never listed in the statement.
 //! - The minisign trusted comment is signed but never used to decide anything.
@@ -28,7 +28,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::messages::trust::{self as messages, SignPhrase};
-use crate::oci::{Client, Descriptor, Digest, Manifest, OciError, Reference};
+use crate::oci::{Client, Descriptor, Digest, Manifest, OciError, Reference, valid_registry};
 use crate::strict;
 
 /// Media type of the layer that holds the canonical statement.
@@ -84,6 +84,47 @@ pub enum SignError {
     /// A public key does not parse.
     #[error("{}", messages::invalid_key(.0))]
     InvalidKey(String),
+    /// A registry host is not a host with an optional port. The error names no part of
+    /// the value, which can carry user-info.
+    #[error("{}", messages::invalid_registry())]
+    InvalidRegistry,
+}
+
+/// A registry host in the form pins are keyed by.
+///
+/// The form is `host` or `host:port`, in lowercase, with the default HTTPS port
+/// `443` removed, so `GHCR.io:443` and `ghcr.io` are one registry. A value with
+/// user-info, a scheme, a path or an empty label is refused, which also keeps a
+/// credential out of the trust store. Any other port stays: it names another
+/// registry.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RegistryHost(String);
+
+impl RegistryHost {
+    /// Normalise `text` into a registry host.
+    ///
+    /// # Errors
+    /// [`SignError::InvalidRegistry`] when `text` is not a host with an optional port.
+    pub fn parse(text: &str) -> Result<Self, SignError> {
+        let lower = text.to_ascii_lowercase();
+        if !valid_registry(&lower) {
+            return Err(SignError::InvalidRegistry);
+        }
+        let host = lower.strip_suffix(":443").unwrap_or(&lower);
+        Ok(Self(host.to_owned()))
+    }
+
+    /// The normalised text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for RegistryHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 /// A minisign public key.
@@ -219,9 +260,10 @@ pub struct KeyPolicy {
     pub first_party: Vec<PublicKey>,
     /// Namespaces that only first-party keys may sign.
     pub first_party_namespaces: Vec<String>,
-    /// Keys the user pinned, or an earlier verified sync pinned in the lockfile, by namespace.
-    /// A key pinned for one namespace never signs another.
-    pub pinned: BTreeMap<String, Vec<PublicKey>>,
+    /// Keys the user pinned, by registry host and namespace. A key pinned for one
+    /// pair never signs another: not the same namespace on another registry, and not
+    /// another namespace on the same registry.
+    pub pinned: BTreeMap<(RegistryHost, String), Vec<PublicKey>>,
 }
 
 impl KeyPolicy {
@@ -247,7 +289,7 @@ impl KeyPolicy {
         })
     }
 
-    fn candidates(&self, namespace: &str) -> &[PublicKey] {
+    fn candidates(&self, registry: &RegistryHost, namespace: &str) -> &[PublicKey] {
         if namespace == RESERVED_ID {
             // Fails closed: the built-in pack is never fetched.
             &[]
@@ -256,7 +298,9 @@ impl KeyPolicy {
         {
             &self.first_party
         } else {
-            self.pinned.get(namespace).map_or(&[], Vec::as_slice)
+            self.pinned
+                .get(&(registry.clone(), namespace.to_owned()))
+                .map_or(&[], Vec::as_slice)
         }
     }
 }
@@ -388,6 +432,9 @@ pub struct Expectation<'a> {
     pub id: &'a str,
     /// Namespace, from the repository the artifact is fetched from.
     pub namespace: &'a str,
+    /// Registry host the artifact is fetched from, as in [`Reference::registry`]. [`verify`]
+    /// normalises it with [`RegistryHost::parse`] and looks up pins for that host only.
+    pub registry: &'a str,
     /// Requested version.
     pub version: &'a str,
     /// Expected `artifactType`.
@@ -546,9 +593,11 @@ pub fn verify(
         ));
     }
 
+    let registry = RegistryHost::parse(expect.registry)?;
+
     // The key id only selects among keys the policy already trusts.
     let key = policy
-        .candidates(&namespace)
+        .candidates(&registry, &namespace)
         .iter()
         .find(|k| k.key_id() == statement.key_id)
         .ok_or_else(|| SignError::KeyNotPinned {

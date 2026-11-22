@@ -458,6 +458,10 @@ pub(crate) enum SignText {
         "key {key_id} is not pinned for namespace `{namespace}`; pin it with `slopvac plugins trust --key <fingerprint>`"
     )]
     KeyNotPinned { key_id: String, namespace: String },
+    /// A registry host is not a host with an optional port.
+    #[code("plugins-sign-invalid-registry")]
+    #[text("the registry is not a host with an optional port")]
+    InvalidRegistry,
     /// The statement and the manifest disagree.
     #[code("plugins-sign-mismatch")]
     #[text("the signed statement does not match the manifest: {why}")]
@@ -1102,6 +1106,10 @@ pub(crate) fn key_not_pinned(key_id: &str, namespace: &str) -> String {
     .to_string()
 }
 
+pub(crate) fn invalid_registry() -> String {
+    SignText::InvalidRegistry.to_string()
+}
+
 pub(crate) fn sign_mismatch(why: &str) -> String {
     SignText::Mismatch { why: esc(why) }.to_string()
 }
@@ -1700,6 +1708,10 @@ mod tests {
                     namespace: s("acme"),
                 },
                 "key AB is not pinned for namespace `acme`; pin it with `slopvac plugins trust --key <fingerprint>`",
+            ),
+            (
+                SignText::InvalidRegistry,
+                "the registry is not a host with an optional port",
             ),
             (
                 SignText::Mismatch { why: s("w") },
