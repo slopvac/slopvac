@@ -291,8 +291,6 @@ impl Shared {
         epoch.is_multiple_of(2) && self.epoch() == epoch
     }
 
-    /// Mark a reload as running. Under the document lock, so a publication either happened
-    /// before this or sees the new epoch.
     /// The paths of the documents open now. A path that is not text is left out, as such a
     /// document is not linted.
     fn open_paths(&self) -> Vec<String> {
@@ -302,6 +300,8 @@ impl Shared {
             .collect()
     }
 
+    /// Mark a reload as running. Under the document lock, so a publication either happened
+    /// before this or sees the new epoch.
     fn begin_reload(&self) {
         let _docs = self.docs();
         self.epoch.fetch_add(1, Ordering::SeqCst);
