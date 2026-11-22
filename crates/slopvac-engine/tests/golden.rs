@@ -564,7 +564,7 @@ fn recase_replacements(run: &str, want: &mut Value) {
     let Some(document) = want.get_mut("document").filter(|d| !d.is_null()) else {
         return;
     };
-    let Some(findings) = document["findings"].as_array_mut() else {
+    let Some(findings) = document.get_mut("findings").and_then(Value::as_array_mut) else {
         panic!("golden {run}: `document.findings` is not an array");
     };
     for f in findings {
@@ -878,36 +878,30 @@ fn the_recorded_replacement_is_cased_like_the_match(
     assert_eq!(differences(&want, &got).is_empty(), agrees);
 }
 
-/// A run without a document is left alone, a normal one is recased, and a document with no
-/// findings array is a broken golden file that stops the run and names it.
+/// A run without a document is left alone, and a normal one is recased.
 #[rstest]
-#[case::no_document(json!({"exit_code": 0}), Some(json!({"exit_code": 0})))]
-#[case::null_document(json!({"document": null}), Some(json!({"document": null})))]
-#[case::findings_null(json!({"document": {"findings": null}}), None)]
+#[case::no_document(json!({"exit_code": 0}), json!({"exit_code": 0}))]
+#[case::null_document(json!({"document": null}), json!({"document": null}))]
 #[case::normal_document(
     json!({"document": {"findings": [{"matched_text": "Example", "replacement": "following one"}]}}),
-    Some(json!({"document": {"findings": [{"matched_text": "Example", "replacement": "Following one"}]}}))
+    json!({"document": {"findings": [{"matched_text": "Example", "replacement": "Following one"}]}})
 )]
-fn recasing_handles_the_shape_of_a_golden_run(
-    #[case] mut want: Value,
-    #[case] expected: Option<Value>,
-) {
-    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        recase_replacements("normal/some-run", &mut want);
-        want.clone()
-    }));
-    match (outcome, expected) {
-        (Ok(got), Some(expected)) => assert_eq!(got, expected),
-        (Err(payload), None) => {
-            let message = payload
-                .downcast_ref::<String>()
-                .cloned()
-                .unwrap_or_default();
-            assert!(message.contains("normal/some-run"), "{message}");
-        }
-        (Ok(_), None) => panic!("a document without a findings array must panic"),
-        (Err(_), Some(_)) => panic!("the shape must be accepted"),
-    }
+fn recasing_accepts_the_shapes_of_a_golden_run(#[case] mut want: Value, #[case] expected: Value) {
+    recase_replacements("normal/some-run", &mut want);
+    assert_eq!(want, expected);
+}
+
+/// A document without a findings array is a broken golden file: the run stops and the
+/// message names it.
+#[rstest]
+#[case::findings_missing(json!({"document": {}}))]
+#[case::findings_null(json!({"document": {"findings": null}}))]
+#[case::findings_not_array(json!({"document": {"findings": "none"}}))]
+#[case::document_is_string(json!({"document": "none"}))]
+#[case::document_is_array(json!({"document": []}))]
+#[should_panic(expected = "golden normal/some-run:")]
+fn recasing_rejects_a_document_without_a_findings_array(#[case] mut want: Value) {
+    recase_replacements("normal/some-run", &mut want);
 }
 
 /// An extra finding is recorded whole: a changed fact makes a different record.
