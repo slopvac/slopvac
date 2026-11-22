@@ -90,7 +90,7 @@ impl PackPath {
         &self.0
     }
 
-    fn parse(s: &str) -> std::result::Result<Self, String> {
+    pub(crate) fn parse(s: &str) -> std::result::Result<Self, String> {
         let drive = s
             .as_bytes()
             .get(..2)

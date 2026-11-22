@@ -51,6 +51,12 @@ impl LexicalMatcher {
         &self.source
     }
 
+    /// Size in bytes of the compiled pattern, as PCRE2 reports it.
+    #[must_use]
+    pub fn compiled_size(&self) -> usize {
+        self.pattern.compiled_size()
+    }
+
     /// Whether matching ignores case.
     #[must_use]
     pub const fn ignore_case(&self) -> bool {
@@ -80,11 +86,53 @@ impl LexicalMatcher {
     }
 }
 
+/// A lexical match with its pattern text built and nothing compiled yet.
+pub(crate) struct Planned {
+    kind: MatchKind,
+    source: String,
+    ignore_case: bool,
+    match_all_caps: bool,
+}
+
+impl Planned {
+    /// Bytes of the pattern that [`Planned::compile`] will compile.
+    pub(crate) fn source_len(&self) -> usize {
+        self.source.len()
+    }
+
+    /// Compile the pattern.
+    pub(crate) fn compile(self) -> Result<LexicalMatcher, CompileError> {
+        let Self {
+            kind,
+            source,
+            ignore_case,
+            match_all_caps,
+        } = self;
+        let pattern = Pattern::new(&source, ignore_case).map_err(|e| CompileError {
+            message: e.to_string(),
+            source_text: source.clone(),
+        })?;
+        Ok(LexicalMatcher {
+            kind,
+            source,
+            pattern,
+            ignore_case,
+            match_all_caps,
+        })
+    }
+}
+
 /// Compile the lexical kinds; every other kind has nothing to compile.
+#[cfg(test)]
 pub(crate) fn compile(
     m: &Match,
     options: &CompileOptions,
 ) -> Result<Option<LexicalMatcher>, CompileError> {
+    plan(m, options).map(Planned::compile).transpose()
+}
+
+/// Build the pattern text of the lexical kinds; every other kind has nothing to compile.
+pub(crate) fn plan(m: &Match, options: &CompileOptions) -> Option<Planned> {
     let (kind, source, ignore_case, match_all_caps) = match m {
         Match::Tokens(t) => (
             MatchKind::Tokens,
@@ -104,19 +152,14 @@ pub(crate) fn compile(
             s.ignore_case,
             s.match_all_caps,
         ),
-        _ => return Ok(None),
+        _ => return None,
     };
-    let pattern = Pattern::new(&source, ignore_case).map_err(|e| CompileError {
-        message: e.to_string(),
-        source_text: source.clone(),
-    })?;
-    Ok(Some(LexicalMatcher {
+    Some(Planned {
         kind,
         source,
-        pattern,
         ignore_case,
         match_all_caps,
-    }))
+    })
 }
 
 /// Escape every ASCII character that is not a letter, digit or underscore.

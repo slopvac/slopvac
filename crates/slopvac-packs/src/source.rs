@@ -6,6 +6,7 @@ use cap_std::ambient_authority;
 use cap_std::fs::Dir;
 
 use crate::PackPath;
+use crate::messages::{PackMessage, code_of};
 
 /// File name of the manifest at the root of a pack.
 pub const MANIFEST_FILE: &str = "slopvac-plugin.toml";
@@ -26,6 +27,31 @@ pub enum SourceError {
     /// The file exists but could not be read.
     #[error("cannot read a pack file")]
     Read(#[from] slopvac_fs::Error),
+    /// The pack holds a link.
+    #[error("{}", PackMessage::FileLink { path: slopvac_sanitize::line(.path) })]
+    Link {
+        /// The pack-relative path of the link.
+        path: String,
+    },
+    /// The pack holds more entries or levels than a pack may.
+    #[error("{}", PackMessage::TooManyEntries { limit: MAX_ENTRIES })]
+    TooManyEntries,
+}
+
+/// Most directory entries the directory source lists, and most levels it descends.
+const MAX_ENTRIES: usize = 1024;
+const MAX_DEPTH: usize = 16;
+
+impl SourceError {
+    /// The stable code of this error, for the variants that have one.
+    #[must_use]
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::Link { .. } => Some(code_of!(FileLink { path })),
+            Self::TooManyEntries => Some(code_of!(TooManyEntries { limit })),
+            _ => None,
+        }
+    }
 }
 
 /// A pack's files, read by pack-relative path.
@@ -41,6 +67,13 @@ pub trait PackSource {
     /// # Errors
     /// [`SourceError::Missing`] when the pack has no such file.
     fn read(&self, path: &PackPath) -> Result<String, SourceError>;
+
+    /// Every file of the pack except the manifest, as pack-relative paths with `/`
+    /// separators, sorted. The loader matches a glob in `provides` against this list.
+    ///
+    /// # Errors
+    /// [`SourceError`] when the pack cannot be listed, holds a link or holds too many entries.
+    fn files(&self) -> Result<Vec<String>, SourceError>;
 }
 
 /// One embedded table of `(path, text)` files.
@@ -71,8 +104,14 @@ impl PackSource for EmbeddedSource {
         Ok(self.manifest.to_owned())
     }
 
+    fn files(&self) -> Result<Vec<String>, SourceError> {
+        let mut out: Vec<String> = Self::files(self).map(|(p, _)| p.to_owned()).collect();
+        out.sort();
+        Ok(out)
+    }
+
     fn read(&self, path: &PackPath) -> Result<String, SourceError> {
-        self.files()
+        Self::files(self)
             .find(|(p, _)| *p == path.as_str())
             .map(|(_, text)| text.to_owned())
             .ok_or_else(|| SourceError::Missing {
@@ -124,4 +163,51 @@ impl PackSource for DirSource {
     fn read(&self, path: &PackPath) -> Result<String, SourceError> {
         self.read_file(path.as_str())
     }
+
+    fn files(&self) -> Result<Vec<String>, SourceError> {
+        let root = Dir::open_ambient_dir(&self.root, ambient_authority())
+            .map_err(|e| SourceError::Read(slopvac_fs::Error::read(&e)))?;
+        let mut out = Vec::new();
+        let mut seen = 0;
+        walk(&root, "", 0, &mut seen, &mut out)?;
+        out.retain(|p| p != MANIFEST_FILE);
+        out.sort();
+        Ok(out)
+    }
+}
+
+/// Collect the files below `dir` without following links. A link, or more than
+/// [`MAX_ENTRIES`] entries or [`MAX_DEPTH`] levels, is an error.
+fn walk(
+    dir: &Dir,
+    prefix: &str,
+    depth: usize,
+    seen: &mut usize,
+    out: &mut Vec<String>,
+) -> Result<(), SourceError> {
+    let read = |e: &std::io::Error| SourceError::Read(slopvac_fs::Error::read(e));
+    for entry in dir.entries().map_err(|e| read(&e))? {
+        let entry = entry.map_err(|e| read(&e))?;
+        *seen += 1;
+        if *seen > MAX_ENTRIES || depth > MAX_DEPTH {
+            return Err(SourceError::TooManyEntries);
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}/{name}")
+        };
+        let kind = entry.file_type().map_err(|e| read(&e))?;
+        if kind.is_symlink() {
+            return Err(SourceError::Link { path });
+        }
+        if kind.is_dir() {
+            let child = entry.open_dir().map_err(|e| read(&e))?;
+            walk(&child, &path, depth + 1, seen, out)?;
+        } else if kind.is_file() {
+            out.push(path);
+        }
+    }
+    Ok(())
 }

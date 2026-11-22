@@ -317,6 +317,13 @@ impl Regex {
         })
     }
 
+    /// Size in bytes of the compiled pattern, as `PCRE2_INFO_SIZE` reports it. JIT code is not
+    /// counted. A host that bounds the work of loading patterns adds this up.
+    #[must_use]
+    pub fn compiled_size(&self) -> usize {
+        self.code.compiled_size()
+    }
+
     /// Whether the pattern has JIT code (false on targets without a JIT).
     #[must_use]
     pub fn is_jit(&self) -> bool {

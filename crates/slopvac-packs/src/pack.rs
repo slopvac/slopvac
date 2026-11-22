@@ -7,14 +7,16 @@ use semver::Version;
 use slopvac_config::{PackFile, PresetFailure, Presets, Setting};
 use slopvac_context::{GenreSpec, TaggerSpec};
 use slopvac_model::PackId;
-use slopvac_rules::{CompileOptions, RuleSet};
+use slopvac_rules::{CompileOptions, PackBudget, RuleSet};
 use slopvac_styles::{Style, StyleError, StylePresets, StyleSource};
 
+use crate::budget::{Budget, Limits, refusal};
+use crate::expand::expand;
 use crate::genre_layer::{GenreFile, display_path, settings};
 use crate::name::is_local;
 use crate::{
     ArtifactFault, Manifest, PackError, PackPath, PackSource, Provenance, Provides, QualifiedName,
-    Registry, RuleFault, RuleProblem, Source,
+    Reference, Registry, RegistryError, RuleFault, RuleProblem, Source,
 };
 
 /// The id of the built-in pack.
@@ -30,42 +32,33 @@ pub struct LoadedPack {
     taggers: Vec<TaggerSpec>,
     styles: Vec<(PackPath, String)>,
     configs: Vec<(PackPath, String)>,
+    pub(crate) bytes: u64,
+    pub(crate) pattern_bytes: u64,
 }
 
-fn not_glob(path: &PackPath) -> Result<(), PackError> {
-    if path.as_str().contains(['*', '?', '[', '{']) {
-        return Err(PackError::Glob {
-            path: path.as_str().to_owned(),
-        });
+/// Reads a pack's files and counts the bytes against the per-pack and the run budget.
+struct Reader<'a> {
+    source: &'a dyn PackSource,
+    budget: &'a mut Budget,
+    bytes: u64,
+}
+
+impl Reader<'_> {
+    fn read_all(&mut self, paths: &[PackPath]) -> Result<Vec<(PackPath, String)>, PackError> {
+        paths
+            .iter()
+            .map(|p| {
+                let text = self.source.read(p)?;
+                let len = text.len() as u64;
+                self.bytes = self.bytes.saturating_add(len);
+                if self.bytes > self.budget.limits().pack_bytes {
+                    return Err(refusal(PackBudget::Bytes, self.budget.limits().pack_bytes));
+                }
+                self.budget.charge_bytes(len)?;
+                Ok((p.clone(), text))
+            })
+            .collect()
     }
-    Ok(())
-}
-
-/// Refuse a glob in any `provides` list before a file is read.
-fn no_globs(provides: &Provides) -> Result<(), PackError> {
-    [
-        &provides.categories,
-        &provides.styles,
-        &provides.genres,
-        &provides.terms,
-        &provides.taggers,
-        &provides.configs,
-        &provides.prime,
-        &provides.blocklists,
-    ]
-    .into_iter()
-    .flatten()
-    .try_for_each(not_glob)
-}
-
-fn read_all(
-    source: &dyn PackSource,
-    paths: &[PackPath],
-) -> Result<Vec<(PackPath, String)>, PackError> {
-    paths
-        .iter()
-        .map(|p| Ok((p.clone(), source.read(p)?)))
-        .collect()
 }
 
 /// Reduce a parse failure of `text` to a location and a fixed reason.
@@ -98,6 +91,20 @@ fn syntax(path: &PackPath, text: &str, error: &slopvac_config::tree::ParseError)
 }
 
 fn rule_problems(errors: &slopvac_rules::LoadErrors) -> PackError {
+    use slopvac_rules::LoadErrorKind as K;
+    // A run budget the loader refused outranks the problems found before it.
+    let run_budget = errors.errors().iter().find_map(|e| match &e.kind {
+        K::BudgetExceeded {
+            budget:
+                budget @ (PackBudget::RunBytes | PackBudget::RunRules | PackBudget::RunPatternBytes),
+            limit,
+            ..
+        } => Some(refusal(*budget, *limit)),
+        _ => None,
+    });
+    if let Some(refusal) = run_budget {
+        return refusal;
+    }
     PackError::Rules {
         problems: errors
             .errors()
@@ -125,7 +132,29 @@ impl LoadedPack {
     /// not compile, a genre that does not parse, a glob entry, the id `core` in another pack,
     /// or a core pack with another id.
     pub fn load(source: &dyn PackSource, origin: Source) -> Result<Self, PackError> {
-        let mut manifest = Manifest::parse_allowing_core(&source.manifest_text()?)?;
+        Self::load_within(source, origin, &mut Budget::default())
+    }
+
+    /// Like [`LoadedPack::load`], and charges what the pack uses to `budget` as it goes: file
+    /// bytes as each file is read, rules before any is compiled, and pattern bytes after. A
+    /// pack that crosses a budget stops the load at once.
+    ///
+    /// # Errors
+    /// As [`LoadedPack::load`], and [`PackError::Budget`] when the
+    /// pack crosses a budget.
+    pub fn load_within(
+        source: &dyn PackSource,
+        origin: Source,
+        budget: &mut Budget,
+    ) -> Result<Self, PackError> {
+        // The manifest counts toward both byte budgets like any pack file, before it is parsed.
+        let manifest_text = source.manifest_text()?;
+        let manifest_bytes = manifest_text.len() as u64;
+        if manifest_bytes > budget.limits().pack_bytes {
+            return Err(refusal(PackBudget::Bytes, budget.limits().pack_bytes));
+        }
+        budget.charge_bytes(manifest_bytes)?;
+        let mut manifest = Manifest::parse_allowing_core(&manifest_text)?;
         let is_core = manifest.id.as_str() == CORE_ID;
         match (origin, is_core) {
             (Source::Core, false) => return Err(PackError::NotCore),
@@ -136,19 +165,43 @@ impl LoadedPack {
             manifest.version =
                 Version::parse(env!("CARGO_PKG_VERSION")).map_err(|_| PackError::BinaryVersion)?;
         }
+        manifest.provides = expand(source, &manifest.provides)?;
         let provides = &manifest.provides;
-        no_globs(provides)?;
-        let categories = read_all(source, &provides.categories)?;
-        let rules = RuleSet::from_sources(
+        if file_count(provides) > budget.limits().pack_files {
+            return Err(refusal(
+                PackBudget::Files,
+                budget.limits().pack_files as u64,
+            ));
+        }
+        let patterns_before = budget.pattern_used();
+        let mut reader = Reader {
+            source,
+            budget,
+            bytes: manifest_bytes,
+        };
+        let categories = reader.read_all(&provides.categories)?;
+        // Count the rules before compiling any: a file that does not parse counts as none here
+        // and fails in `from_sources` with its own location.
+        for (path, text) in &categories {
+            let file = PathBuf::from(path.as_str());
+            if let Ok(n) = slopvac_rules::count_rules(&file, text) {
+                reader.budget.charge_rules(n)?;
+            }
+        }
+        // Each pattern reserves its source bytes before it compiles and is charged its compiled
+        // size after, so the load stops at the first pattern that crosses the run budget.
+        let rules = RuleSet::from_sources_budgeted(
             &manifest.id,
             categories
                 .into_iter()
                 .map(|(p, text)| (PathBuf::from(p.as_str()), text)),
             &CompileOptions::default(),
+            &mut *reader.budget,
         )
         .map_err(|e| rule_problems(&e))?;
+        let pattern_bytes = reader.budget.pattern_used().saturating_sub(patterns_before);
         let mut genres = Vec::new();
-        for (path, text) in read_all(source, &provides.genres)? {
+        for (path, text) in reader.read_all(&provides.genres)? {
             let spec = GenreSpec::from_yaml(&text)
                 .and_then(|spec| spec.validate().map(|()| spec))
                 .map_err(|e| artifact(&path, &text, &e))?;
@@ -161,15 +214,24 @@ impl LoadedPack {
         }
         let mut taggers = Vec::new();
         if origin == Source::Core {
-            for (path, text) in read_all(source, &provides.taggers)? {
+            for (path, text) in reader.read_all(&provides.taggers)? {
                 let spec = TaggerSpec::from_yaml(&text)
                     .and_then(|spec| spec.clone().compile().map(|_| spec))
                     .map_err(|e| artifact(&path, &text, &e))?;
                 taggers.push(spec);
             }
+        } else if !provides.taggers.is_empty() {
+            // STUB(slopvac-8l4.5.44): a tagger from a synced pack stays unregistered until the
+            // tag-lookup amplification fix lands. The file is not read either.
+            tracing::debug!(
+                pack = %manifest.id,
+                count = provides.taggers.len(),
+                "skipping the taggers of a synced pack"
+            );
         }
-        let styles = read_all(source, &provides.styles)?;
-        let configs = read_all(source, &provides.configs)?;
+        let styles = reader.read_all(&provides.styles)?;
+        let configs = reader.read_all(&provides.configs)?;
+        let bytes = reader.bytes;
         Ok(Self {
             manifest,
             origin,
@@ -178,7 +240,18 @@ impl LoadedPack {
             taggers,
             styles,
             configs,
+            bytes,
+            pattern_bytes,
         })
+    }
+
+    /// The number of rules the pack supplies.
+    pub(crate) fn rule_count(&self) -> usize {
+        self.rules
+            .categories()
+            .iter()
+            .map(|c| c.rules().len())
+            .sum()
     }
 
     /// The pack's manifest.
@@ -209,6 +282,23 @@ impl LoadedPack {
     }
 }
 
+/// The number of files a `provides` table lists.
+fn file_count(p: &Provides) -> usize {
+    [
+        &p.categories,
+        &p.styles,
+        &p.genres,
+        &p.terms,
+        &p.taggers,
+        &p.configs,
+        &p.prime,
+        &p.blocklists,
+    ]
+    .into_iter()
+    .map(Vec::len)
+    .sum()
+}
+
 fn stem(path: &PackPath) -> &str {
     let file = path.as_str().rsplit('/').next().unwrap_or_default();
     file.rsplit_once('.').map_or(file, |(stem, _)| stem)
@@ -226,10 +316,23 @@ impl Packs {
     /// Register the genres and styles of `packs`, in order.
     ///
     /// # Errors
+    /// [`PackError::Budget`] when the packs together pass a cap (X3),
     /// [`PackError::Registry`] when two packs supply the same qualified name,
     /// [`PackError::MissingParent`] for a genre that extends one no pack supplies, and
     /// [`PackError::GenreCycle`] for a genre that extends itself through its parents.
     pub fn new(packs: Vec<LoadedPack>) -> Result<Self, PackError> {
+        Self::new_within(packs, Limits::default())
+    }
+
+    /// Like [`Packs::new`], under `limits` for the run.
+    ///
+    /// # Errors
+    /// As [`Packs::new`].
+    pub fn new_within(packs: Vec<LoadedPack>, limits: Limits) -> Result<Self, PackError> {
+        let mut budget = Budget::new(limits);
+        for pack in &packs {
+            budget.charge_pack(pack)?;
+        }
         let mut genres = Registry::new();
         let mut styles = Registry::new();
         for pack in &packs {
@@ -282,6 +385,30 @@ impl Packs {
     /// Every declarative tagger, in load order.
     pub fn taggers(&self) -> impl Iterator<Item = &TaggerSpec> {
         self.loaded.iter().flat_map(|p| p.taggers.iter())
+    }
+
+    /// Resolve a genre name written at `at`: `<pack>:<genre>` names one genre, and a bare name
+    /// needs exactly one pack to define it.
+    ///
+    /// # Errors
+    /// [`RegistryError::Ambiguous`] with the code `pack-name-ambiguous` when two packs (the core
+    /// included) define the bare name. The error names both qualified ids and points at `at`.
+    /// [`RegistryError::Unknown`] when no pack defines it.
+    pub fn resolve_genre(
+        &self,
+        name: &str,
+        at: &Reference,
+    ) -> Result<(&GenreSpec, &Provenance), RegistryError> {
+        let entry = self.genres.resolve_at(name, at)?;
+        Ok((&entry.value.spec, &entry.provenance))
+    }
+
+    /// Like [`Packs::resolve_genre`], for a style name.
+    ///
+    /// # Errors
+    /// As for [`Packs::resolve_genre`].
+    pub fn resolve_style(&self, name: &str, at: &Reference) -> Result<&Provenance, RegistryError> {
+        Ok(&self.styles.resolve_at(name, at)?.provenance)
     }
 
     fn style_presets(&self) -> StylePresets<PackStyles<'_>> {

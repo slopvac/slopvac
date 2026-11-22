@@ -2426,6 +2426,7 @@ dependencies = [
  "slopvac-messages",
  "slopvac-migrate",
  "slopvac-model",
+ "slopvac-packs",
  "slopvac-parse",
  "slopvac-pcre2",
  "slopvac-plugins",
@@ -2691,6 +2692,7 @@ name = "slopvac-packs"
 version = "0.0.0"
 dependencies = [
  "cap-std",
+ "globset",
  "proptest",
  "regex",
  "rstest",
@@ -2699,6 +2701,7 @@ dependencies = [
  "slopvac-config",
  "slopvac-context",
  "slopvac-fs",
+ "slopvac-messages",
  "slopvac-model",
  "slopvac-plugins",
  "slopvac-rules",
@@ -2707,6 +2710,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "tracing",
 ]
 
 [[package]]

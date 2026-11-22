@@ -18,6 +18,13 @@ pub enum PackBudget {
     /// Tokens or substitutions in one rule, in entries:
     /// [`MAX_RULE_ENTRIES`](crate::MAX_RULE_ENTRIES).
     RuleEntries,
+    /// Bytes of pack files that all packs of one run supply together. The host sets the limit.
+    RunBytes,
+    /// Rules that all packs of one run declare together. The host sets the limit.
+    RunRules,
+    /// Bytes of compiled patterns that all packs of one run hold together: the size PCRE2
+    /// reports for each pattern. The host sets the limit.
+    RunPatternBytes,
 }
 
 impl PackBudget {
@@ -29,7 +36,23 @@ impl PackBudget {
             Self::Entries => "plugin-entries",
             Self::Bytes => "plugin-bytes",
             Self::RuleEntries => "rule-entries",
+            Self::RunBytes => "plugin-run-bytes",
+            Self::RunRules => "plugin-run-rules",
+            Self::RunPatternBytes => "plugin-run-pattern-bytes",
         }
+    }
+
+    /// The stable error code of a refusal over this budget, read from the message catalog.
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        use slopvac_messages::Catalog as _;
+        crate::messages::budget_exceeded(self, 0).code()
+    }
+
+    /// The text of a refusal over this budget, with `limit` in the unit of the budget.
+    #[must_use]
+    pub fn message(self, limit: u64) -> String {
+        crate::messages::budget_exceeded(self, limit).to_string()
     }
 
     /// The unit of the limit.
@@ -38,7 +61,8 @@ impl PackBudget {
         match self {
             Self::Files => "files",
             Self::Entries | Self::RuleEntries => "entries",
-            Self::Bytes => "bytes",
+            Self::Bytes | Self::RunBytes | Self::RunPatternBytes => "bytes",
+            Self::RunRules => "rules",
         }
     }
 }

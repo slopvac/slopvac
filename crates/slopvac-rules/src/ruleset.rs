@@ -10,7 +10,7 @@ use slopvac_model::{CategoryId, Density, GenreId, NonEmptyString, PackId, RuleId
 use slopvac_text::TextError;
 
 use crate::error::{LoadError, LoadErrorKind, LoadErrors, PackBudget};
-use crate::matcher::{CompileOptions, LexicalMatcher, compile};
+use crate::matcher::{CompileOptions, LexicalMatcher, Planned, plan};
 use crate::model::{Category, LocalRuleId, Match, MatchKind, ProfileName, Rule, Scope, Weight};
 
 /// The most bytes of one rule or category file. The largest shipped file is about 130 KiB, so
@@ -174,6 +174,44 @@ pub struct RuleSet {
     index: HashMap<RuleId, (usize, usize)>,
 }
 
+/// A budget over the work of compiling patterns, which a host passes to
+/// [`RuleSet::from_sources_budgeted`]. The loader asks it around each pattern, so a load stops at
+/// the first pattern that would cross the budget and no later pattern compiles.
+pub trait CompileBudget {
+    /// Called before a pattern of `source_bytes` compiles. An error stops the load and no more
+    /// patterns compile.
+    ///
+    /// # Errors
+    /// The budget that the pattern would cross.
+    fn reserve(&mut self, source_bytes: usize) -> Result<(), BudgetHit>;
+
+    /// Called after a pattern of `source_bytes` compiled to `compiled_bytes` (the size PCRE2
+    /// reports), which settles the reservation.
+    ///
+    /// # Errors
+    /// The budget that the compiled size crossed.
+    fn settle(&mut self, source_bytes: usize, compiled_bytes: usize) -> Result<(), BudgetHit>;
+}
+
+/// The budget a [`CompileBudget`] refused, with its limit in the unit of the budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BudgetHit {
+    /// The budget.
+    pub budget: PackBudget,
+    /// Its limit.
+    pub limit: u64,
+}
+
+/// How many rules the category file `file` declares, from its text, with no pattern compiled.
+///
+/// A host that loads many files checks this against its own budget before it compiles anything.
+///
+/// # Errors
+/// The [`LoadError`] that loading the file would report for a file that does not parse.
+pub fn count_rules(file: &Path, text: &str) -> Result<usize, LoadError> {
+    Ok(parse::<Category>(file, text)?.rules.len())
+}
+
 impl RuleSet {
     /// Load every category file (`json`, `yaml`, `yml` or `toml`) directly inside `dir`, in
     /// file-name order.
@@ -220,7 +258,7 @@ impl RuleSet {
             }
             Ok((p, text))
         });
-        Self::build(pack, sources, options)
+        Self::build(pack, sources, options, None)
     }
 
     /// Load category files already read into memory. The extension of each path selects the
@@ -233,7 +271,22 @@ impl RuleSet {
         sources: impl IntoIterator<Item = (PathBuf, String)>,
         options: &CompileOptions,
     ) -> Result<Self, LoadErrors> {
-        Self::build(pack, sources.into_iter().map(Ok), options)
+        Self::build(pack, sources.into_iter().map(Ok), options, None)
+    }
+
+    /// Like [`RuleSet::from_sources`], and asks `budget` around the compile of each pattern. A
+    /// pattern the budget refuses ends the load: the errors found so far and one
+    /// [`LoadErrorKind::BudgetExceeded`] come back, and no later pattern compiles.
+    ///
+    /// # Errors
+    /// As [`RuleSet::load_dir`], and the budget refusal.
+    pub fn from_sources_budgeted(
+        pack: &PackId,
+        sources: impl IntoIterator<Item = (PathBuf, String)>,
+        options: &CompileOptions,
+        budget: &mut dyn CompileBudget,
+    ) -> Result<Self, LoadErrors> {
+        Self::build(pack, sources.into_iter().map(Ok), options, Some(budget))
     }
 
     /// Compile sources one at a time. A source that fails to arrive stops the load at once.
@@ -241,6 +294,7 @@ impl RuleSet {
         pack: &PackId,
         sources: impl IntoIterator<Item = Result<(PathBuf, String), LoadError>>,
         options: &CompileOptions,
+        mut budget: Option<&mut dyn CompileBudget>,
     ) -> Result<Self, LoadErrors> {
         let mut errors = Vec::new();
         let mut categories: Vec<LoadedCategory> = Vec::new();
@@ -264,15 +318,19 @@ impl RuleSet {
                 continue;
             }
             let rules = std::mem::take(&mut category.rules);
-            let loaded = load_rules(
+            let (loaded, hit) = load_rules(
                 pack,
                 &category.id,
                 rules,
-                &file,
-                &text,
+                (&file, &text),
                 options,
+                budget.as_mut().map(|b| &mut **b as &mut dyn CompileBudget),
                 &mut errors,
             );
+            if let Some(hit) = hit {
+                errors.push(over_budget(&file, hit.budget, hit.limit));
+                return Err(LoadErrors(errors));
+            }
             categories.push(LoadedCategory {
                 meta: category,
                 rules: loaded,
@@ -413,11 +471,11 @@ fn load_rules(
     pack: &PackId,
     category: &CategoryId,
     rules: Vec<Rule>,
-    file: &Path,
-    text: &str,
+    (file, text): (&Path, &str),
     options: &CompileOptions,
+    mut budget: Option<&mut dyn CompileBudget>,
     errors: &mut Vec<LoadError>,
-) -> Vec<LoadedRule> {
+) -> (Vec<LoadedRule>, Option<BudgetHit>) {
     let mut seen: HashSet<LocalRuleId> = HashSet::new();
     let mut loaded = Vec::new();
     for rule in rules {
@@ -450,13 +508,25 @@ fn load_rules(
             errors.push(e);
             continue;
         }
-        let matcher = match compile(&rule.match_, options) {
+        let planned = plan(&rule.match_, options);
+        if let (Some(p), Some(b)) = (&planned, budget.as_deref_mut())
+            && let Err(hit) = b.reserve(p.source_len())
+        {
+            return (loaded, Some(hit));
+        }
+        let source_len = planned.as_ref().map_or(0, Planned::source_len);
+        let matcher = match planned.map(Planned::compile).transpose() {
             Ok(m) => m,
             Err(e) => {
                 errors.push(error(LoadErrorKind::Compile(e.to_string())));
                 continue;
             }
         };
+        if let (Some(m), Some(b)) = (&matcher, budget.as_deref_mut())
+            && let Err(hit) = b.settle(source_len, m.compiled_size())
+        {
+            return (loaded, Some(hit));
+        }
         if let Some(m) = &matcher {
             let before = errors.len();
             check_examples(&rule, m, |kind| errors.push(error(kind)));
@@ -475,7 +545,7 @@ fn load_rules(
             line,
         });
     }
-    loaded
+    (loaded, None)
 }
 
 /// The authored patterns of a match: the `pattern` of a pattern match and the keys of a

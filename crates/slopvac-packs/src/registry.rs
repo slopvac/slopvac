@@ -22,12 +22,7 @@ pub enum RegistryError {
         second: Box<Provenance>,
     },
     /// A bare name is claimed by more than one pack. The stable code is `pack-name-ambiguous`.
-    #[error(
-        "{}{}: `{name}` is ambiguous: {}; use a qualified name",
-        AMBIGUOUS_CODE,
-        at_text(.at.as_ref()),
-        claims_text(.claims)
-    )]
+    #[error("{}", crate::messages::name_ambiguous(.name, .claims, .at.as_ref()))]
     Ambiguous {
         /// The bare name.
         name: String,
@@ -43,9 +38,6 @@ pub enum RegistryError {
     #[error(transparent)]
     Name(#[from] NameError),
 }
-
-/// The stable code of an ambiguous bare name.
-const AMBIGUOUS_CODE: &str = "pack-name-ambiguous";
 
 /// Where a name was written: a file and a one-based line and column.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,34 +63,19 @@ impl Reference {
     }
 }
 
-fn at_text(at: Option<&Reference>) -> String {
-    at.map_or_else(String::new, |r| {
-        format!(
-            " at {}:{}:{}",
-            slopvac_sanitize::line(&r.file),
-            r.line,
-            r.column
-        )
-    })
-}
-
 impl RegistryError {
     /// The stable code of this error, for the variants that have one.
     #[must_use]
     pub fn code(&self) -> Option<&'static str> {
         match self {
-            Self::Ambiguous { .. } => Some(AMBIGUOUS_CODE),
+            Self::Ambiguous { .. } => Some(crate::messages::code_of!(NameAmbiguous {
+                at,
+                name,
+                claims
+            })),
             _ => None,
         }
     }
-}
-
-fn claims_text(claims: &[(QualifiedName, Provenance)]) -> String {
-    claims
-        .iter()
-        .map(|(name, p)| format!("`{name}` ({p})"))
-        .collect::<Vec<_>>()
-        .join(" and ")
 }
 
 /// An item with the provenance that supplied it.
