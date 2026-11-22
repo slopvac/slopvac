@@ -9,3 +9,6 @@ You must leverage the cache.
 
 <!-- fires: a plain sentence after a requirement in the same paragraph -->
 You must restart the service. We leverage the cache.
+
+<!-- silent: a requirement sentence that holds an abbreviation -->
+You must use e.g. leverage here.
