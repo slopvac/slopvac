@@ -18,6 +18,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::extract::collision_keys;
 use crate::hooks::{RecipeAction, RecipeFile};
 
 use super::fs::{
@@ -126,9 +127,11 @@ fn check(
         let content = file.content.as_deref();
         merge_warnings(&mut entry.warnings, harness_warnings(&at.resolved, content));
     }
-    if !seen.insert(at.resolved.to_lowercase()) {
+    let keys = collision_keys(&at.resolved);
+    if keys.iter().any(|k| seen.contains(k)) {
         return Err(ApplyError::DuplicatePath(file.path.clone()));
     }
+    seen.extend(keys);
     let mut needs = Vec::new();
     for p in [file.path.as_str(), at.resolved.as_str()] {
         if let Some(why) = deny_reason(p) {

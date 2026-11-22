@@ -815,6 +815,54 @@ fn tm18_a_path_that_differs_only_in_case_from_an_existing_file_is_refused() {
     assert_eq!(fs::read_to_string(s.root.join("Notes.md")).unwrap(), "mine");
 }
 
+/// Name pairs that one case-insensitive file system treats as the same name,
+/// worked out from Unicode `CaseFolding.txt` and the NTFS uppercase table.
+#[rstest::rstest]
+#[case::ascii("Docs/A.md", "docs/a.MD")]
+#[case::long_s("docs/\u{17F}.md", "docs/s.md")]
+#[case::kelvin("docs/\u{212A}.md", "docs/k.md")]
+#[case::dotless_i("docs/\u{131}.md", "docs/I.md")]
+#[case::nfd_vs_nfc("docs/\u{E9}.md", "docs/e\u{301}.md")]
+fn tm18_plan_entries_that_collide_under_full_folding_are_duplicates(
+    #[case] first: &str,
+    #[case] second: &str,
+) {
+    let s = sandbox();
+    let plan = [write_file(first, "1"), write_file(second, "2")];
+    let report = apply_plan(&s.root, &plan, &PlanOptions::default());
+    assert_eq!(*only_status(&report, 0), ok_status(first));
+    assert_eq!(
+        *only_status(&report, 1),
+        EntryStatus::Refused(ApplyError::DuplicatePath(second.into()))
+    );
+}
+
+#[rstest::rstest]
+#[case::ascii("Notes.md", "notes.md")]
+#[case::long_s("\u{17F}.md", "s.md")]
+#[case::kelvin("\u{212A}.md", "k.md")]
+#[case::dotless_i("\u{131}.md", "I.md")]
+#[case::nfd_vs_nfc("\u{E9}.md", "e\u{301}.md")]
+fn tm18_an_existing_file_that_differs_only_under_full_folding_is_a_case_twin(
+    #[case] existing: &str,
+    #[case] planned: &str,
+) {
+    let s = sandbox();
+    fs::write(s.root.join(existing), "mine").unwrap();
+    let report = apply_plan(
+        &s.root,
+        &[write_file(planned, "x")],
+        &PlanOptions::default(),
+    );
+    assert_eq!(
+        *only_status(&report, 0),
+        EntryStatus::Refused(ApplyError::CaseCollision {
+            path: planned.into(),
+            existing: existing.into(),
+        })
+    );
+}
+
 // ---- review round 1 ----
 
 #[cfg(unix)]

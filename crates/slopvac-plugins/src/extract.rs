@@ -441,7 +441,7 @@ fn claim_with_parents(
 /// one character. The keys can merge more names than a given file system does,
 /// which only refuses more archives; pack paths are not limited to ASCII, so
 /// refusing non-ASCII names was not an option.
-fn collision_keys(path: &str) -> [String; 2] {
+pub(crate) fn collision_keys(path: &str) -> [String; 2] {
     let decomposed: String = path.nfd().collect();
     let canonical: String = caseless::default_case_fold_str(&decomposed).nfd().collect();
     let upper: String = path

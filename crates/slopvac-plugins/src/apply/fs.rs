@@ -10,6 +10,7 @@ use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
 use cap_std::fs::{Dir, OpenOptions, Permissions};
 
+use crate::extract::collision_keys;
 use crate::hooks::resolve_in_root;
 
 use super::{ApplyError, WriteOutcome};
@@ -450,13 +451,17 @@ pub(crate) fn remove(
     Ok(WriteOutcome::Removed)
 }
 
-/// An entry of `parent` whose name equals `name` except for case.
+/// An entry of `parent` whose name equals `name` except for case, under the
+/// same equivalence keys the archive collision check and the deny list use.
 pub(crate) fn case_twin(parent: &Dir, name: &OsStr) -> Option<String> {
-    let want = name.to_string_lossy().to_lowercase();
+    let want = collision_keys(&name.to_string_lossy());
     parent.entries().ok()?.flatten().find_map(|entry| {
         let have = entry.file_name();
-        (have != name && have.to_string_lossy().to_lowercase() == want)
-            .then(|| have.to_string_lossy().into_owned())
+        (have != name
+            && collision_keys(&have.to_string_lossy())
+                .iter()
+                .any(|k| want.contains(k)))
+        .then(|| have.to_string_lossy().into_owned())
     })
 }
 
