@@ -261,14 +261,8 @@ fn plan_dir(
             };
         }
     };
-    record_before(
-        plan,
-        rel(root, &main_cfg),
-        &label,
-        options,
-        &rewrite.text,
-        migrate,
-    );
+    let target = rel(root, &main_cfg);
+    plan.record_before(target, &label, options, &rewrite.text, migrate);
     for n in rewrite.notes {
         plan.notes.push(format!("{label}: {n}"));
     }
@@ -310,42 +304,44 @@ fn plan_dir(
     Ok(())
 }
 
-/// Record what the 2.x config `label` meant, in 3.0 terms, for the before side of the lint
-/// at `path`: the `--preserve-behavior` rewrite from `migrate`, which reproduces the 2.x
-/// gates. When that rewrite cannot run on the config, such as on an override glob outside
-/// its grammar, the before side takes `plain`, the rewrite the plan writes, and the plan
-/// warns that the baseline of this config is approximate.
-fn record_before(
-    plan: &mut Sink,
-    path: PathBuf,
-    label: &str,
-    options: Options,
-    plain: &str,
-    migrate: impl Fn(Options) -> Result<crate::Rewrite, Error>,
-) {
-    let meant = if options.preserve_behavior {
-        plain.to_owned()
-    } else {
-        match migrate(Options {
-            preserve_behavior: true,
-        }) {
-            Ok(rw) => rw.text,
-            Err(e) => {
-                let (line, reason) = located(&e);
-                plan.warnings.push(
-                    MigrateText::NoteBeforeApproximate {
-                        file: label.to_owned(),
-                        line: line.to_string(),
-                        reason,
-                    }
-                    .to_string(),
-                );
-                plan.approximate.push(label.to_owned());
-                plain.to_owned()
+impl Sink {
+    /// Record what the 2.x config `label` meant, in 3.0 terms, for the before side of the
+    /// lint at `path`: the `--preserve-behavior` rewrite from `migrate`, which reproduces
+    /// the 2.x gates. When that rewrite cannot run on the config, such as on an override glob
+    /// outside its grammar, the before side takes `written`, the rewrite the plan writes, and
+    /// the plan warns that the baseline of this config is approximate.
+    fn record_before(
+        &mut self,
+        path: PathBuf,
+        label: &str,
+        options: Options,
+        written: &str,
+        migrate: impl Fn(Options) -> Result<crate::Rewrite, Error>,
+    ) {
+        let meant = if options.preserve_behavior {
+            written.to_owned()
+        } else {
+            match migrate(Options {
+                preserve_behavior: true,
+            }) {
+                Ok(rw) => rw.text,
+                Err(e) => {
+                    let (line, reason) = located(&e);
+                    self.warnings.push(
+                        MigrateText::NoteBeforeApproximate {
+                            file: label.to_owned(),
+                            line: line.to_string(),
+                            reason,
+                        }
+                        .to_string(),
+                    );
+                    self.approximate.push(label.to_owned());
+                    written.to_owned()
+                }
             }
-        }
-    };
-    plan.before.push((path, meant));
+        };
+        self.before.push((path, meant));
+    }
 }
 
 /// The line and the reason of a failed `--preserve-behavior` rewrite.
