@@ -882,7 +882,7 @@ impl Engine {
         let index = SourceIndex::new(input.source, input.bom);
         let parsed = with_html_prose(input.source, &index, parsed)?;
         let prepared = Prepared::new(text, &parsed)?;
-        let (genre, tags) = self.genre_and_tags(input, &parsed, front_matter.as_ref())?;
+        let (genre, tags) = self.genre_and_tags(input, &parsed, &prepared, front_matter.as_ref())?;
         let lines = Lines::new(input.source);
         let lookup = |id: &str| self.directive_target(id);
         let directives = match input.kind {
@@ -950,9 +950,10 @@ impl Engine {
         &self,
         input: &Input<'_>,
         parsed: &Parsed,
+        prepared: &Prepared<'_>,
         front_matter: Option<&FrontMatter<'_>>,
     ) -> Result<(GenreResult, TagIndex), EngineError> {
-        let (genre, assigned) = self.genre_of(input, parsed, front_matter)?;
+        let (genre, assigned) = self.genre_of(input, parsed, prepared, front_matter)?;
         let declared = match (&self.genres, &self.run_declared) {
             (Some(registry), _) => {
                 declared_tagger(registry, genre.id.as_str(), assigned.as_deref())?
@@ -971,6 +972,7 @@ impl Engine {
             input.path,
             input.source,
             parsed,
+            prepared,
             front_matter,
             declared.as_ref(),
         )
@@ -1000,6 +1002,7 @@ impl Engine {
         &self,
         input: &Input<'_>,
         parsed: &Parsed,
+        prepared: &Prepared<'_>,
         front_matter: Option<&FrontMatter<'_>>,
     ) -> Result<(GenreResult, Option<String>), EngineError> {
         let (Some(registry), Some(assignments), false) = (
@@ -1020,6 +1023,7 @@ impl Engine {
             input.path,
             input.source,
             parsed,
+            prepared,
             front_matter,
         )
         .map_err(|e| EngineError::from_context(&e))?;

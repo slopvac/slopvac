@@ -14,7 +14,10 @@ use slopvac_context::{
     GenreRegistry, GenreResult, ResolveOptions, Scalar, SentenceView, Tag, TagIndex, TagRegistry,
     TagSink, Tagger,
 };
-use slopvac_parse::{BlockKind, ByteMapper, Container, Document};
+use slopvac_parse::{BlockKind, ByteMapper, Container, Document, Projection};
+use slopvac_text::Sentence;
+
+use crate::prepare::Prepared;
 
 mod entry;
 
@@ -102,8 +105,16 @@ struct View<'a> {
     views: Vec<BlockView<'a>>,
     /// The entry that reads each non-empty text, by the address and length of the text.
     by_text: HashMap<(usize, usize), usize>,
+    /// The sentences the engine split for each projection, by the address of the projection.
+    /// Rules and tags read the same boundaries.
+    prepared: HashMap<usize, &'a [Sentence]>,
     /// Set when a sentence offset did not lie on the text of its block.
     unmapped: Cell<bool>,
+}
+
+/// The key of a projection in `View::prepared`.
+fn projection_key(projection: &Projection) -> usize {
+    std::ptr::from_ref(projection).addr()
 }
 
 impl<'a> View<'a> {
@@ -112,6 +123,7 @@ impl<'a> View<'a> {
         source: &'a str,
         doc: &'a Document,
         front_matter: Option<&'a FrontMatter<'a>>,
+        prepared: &'a Prepared<'_>,
     ) -> Self {
         let mut entries: Vec<Entry<'a>> = Vec::new();
         let mut headings: Vec<(u8, &'a str)> = Vec::new();
@@ -184,6 +196,11 @@ impl<'a> View<'a> {
             .enumerate()
             .map(|(i, e)| ((e.span.start, e.span.end), i))
             .collect();
+        let prepared = prepared
+            .blocks()
+            .iter()
+            .map(|b| (projection_key(b.projection), b.sentences.as_slice()))
+            .collect();
         Self {
             path,
             owners: RefCell::new(owners),
@@ -194,6 +211,7 @@ impl<'a> View<'a> {
             scalars: front_matter.map(scalar_text).unwrap_or_default(),
             entries,
             by_text,
+            prepared,
             unmapped: Cell::new(false),
         }
     }
@@ -323,7 +341,6 @@ impl DocumentView for View<'_> {
     }
 
     fn sentences<'a>(&self, block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
-        let split = slopvac_context::split_sentences(block);
         // The entry is found by the text it reads, not by its span: cells that fell back to
         // line precision share the span of their row.
         let Some((owner, projection)) = self
@@ -331,25 +348,30 @@ impl DocumentView for View<'_> {
             .get(&(block.text.as_ptr().addr(), block.text.len()))
             .and_then(|&i| self.entries[i].projection.map(|p| (i, p)))
         else {
-            return split;
+            // No projection, so the engine split no sentences: a code block.
+            return slopvac_context::split_sentences(block);
+        };
+        let Some(sentences) = self.prepared.get(&projection_key(projection)) else {
+            return Vec::new();
         };
         let mapper = self.entries[owner]
             .mapper
             .get_or_init(|| ByteMapper::new(projection));
         let mut owners = self.owners.borrow_mut();
-        // The splitter assumes the text sits at the block span. Map each sentence through
-        // the projection so its span is a source range.
-        let mut located = Vec::with_capacity(split.len());
-        for s in &split {
-            let from = s.span.start - block.span.start;
-            let Some(span) = mapper.span(from, from + s.text.len()) else {
+        // The engine split the projection text, which is the block text. Map each sentence
+        // through the projection so its span is a source range.
+        let mut located = Vec::with_capacity(sentences.len());
+        for s in *sentences {
+            let (Some(text), Some(span)) =
+                (block.text.get(s.start..s.end), mapper.span(s.start, s.end))
+            else {
                 self.unmapped.set(true);
-                return split;
+                return Vec::new();
             };
             owners.insert((span.start(), span.end()), owner);
             located.push(SentenceView {
                 span: span.start()..span.end(),
-                text: s.text,
+                text,
             });
         }
         located
@@ -424,10 +446,11 @@ pub(crate) fn tag(
     path: &str,
     source: &str,
     doc: &Document,
+    prepared: &Prepared<'_>,
     front_matter: Option<&FrontMatter<'_>>,
     declared: Option<&DeclaredContextTagger>,
 ) -> Result<TagIndex, TagError> {
-    let view = View::new(path, source, doc, front_matter);
+    let view = View::new(path, source, doc, front_matter, prepared);
     let max_tags = tag_budget(source.len());
     // The declared contexts count against the ceiling like any other emission, before
     // duplicates go, so the ceiling does not depend on how the tags overlap.
@@ -448,9 +471,10 @@ pub(crate) fn genre(
     path: &str,
     source: &str,
     doc: &Document,
+    prepared: &Prepared<'_>,
     front_matter: Option<&FrontMatter<'_>>,
 ) -> Result<GenreResult, ContextError> {
-    registry.resolve(&View::new(path, source, doc, front_matter), opts)
+    registry.resolve(&View::new(path, source, doc, front_matter, prepared), opts)
 }
 
 /// Steps `split_interleaved` takes on this thread, for the tests that bound its work.
@@ -516,23 +540,26 @@ mod tests {
         let doc = row_of_fallback_cells(count);
         let registry = slopvac_context::builtin_registry().unwrap();
         let _ = entry::counted::take_built();
-        tag(&registry, "t.rst", "", &doc, None, None).unwrap();
+        let prepared = Prepared::new("", &doc).unwrap();
+        tag(&registry, "t.rst", "", &doc, &prepared, None, None).unwrap();
         // The built-in taggers each ask for the blocks. A rebuild per tagger would multiply
         // the count by the number of taggers.
         assert_eq!(entry::counted::take_built(), count);
     }
 
-    /// Spans of the sentences of `block`, each mapped by the old per-sentence scan.
+    /// Spans of the sentences of `block` as the engine splits them, each mapped by the old
+    /// per-sentence scan.
     fn oracle_sentence_spans(view: &View<'_>, block: &BlockView<'_>) -> Vec<Range<usize>> {
         let projection = view.entries
             [view.by_text[&(block.text.as_ptr().addr(), block.text.len())]]
             .projection
             .unwrap();
-        slopvac_context::split_sentences(block)
+        // The blocks of this test are table cells, which the engine reads as one sentence.
+        slopvac_text::cell_sentence(block.text)
+            .unwrap()
             .into_iter()
             .map(|s| {
-                let from = s.span.start - block.span.start;
-                let span = projection.span_for_bytes(from, from + s.text.len());
+                let span = projection.span_for_bytes(s.start, s.end);
                 span.start()..span.end()
             })
             .collect()
@@ -607,7 +634,8 @@ mod tests {
             spans in prop::collection::vec((0usize..40, 100usize..200), 1..4),
         ) {
             let doc = cells(projections, &spans);
-            let view = View::new("t.rst", "", &doc, None);
+            let prepared = Prepared::new("", &doc).unwrap();
+            let view = View::new("t.rst", "", &doc, None, &prepared);
             for block in view.blocks() {
                 let got: Vec<_> = view.sentences(&block).into_iter().map(|s| s.span).collect();
                 prop_assert_eq!(got, oracle_sentence_spans(&view, &block));
