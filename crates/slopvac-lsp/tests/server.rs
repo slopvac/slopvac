@@ -1909,6 +1909,9 @@ fn a_watched_path_is_registered_as_a_glob_that_matches_that_path_only(#[case] pa
     // A neighbour that the unescaped characters would also match stays out.
     for other in [
         "/work/a/b/cXdY.toml",
+        // Each differs from the registered path at one wildcard only.
+        "/work/[a]/{b}/cXd?.toml",
+        "/work/[a]/{b}/c*dY.toml",
         "/work/a/b/c.toml",
         "/work/a/bb/c.toml",
     ] {
