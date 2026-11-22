@@ -10,7 +10,7 @@ use toml_edit::{DocumentMut, Item, Value};
 
 use crate::blocklist::{self, Planned};
 use crate::capped::{Blockers, Capped, Listed};
-use crate::config::migrate_config_in;
+use crate::config::{check_loads, migrate_config_in};
 use crate::directives::before_directives;
 use crate::limits::{Budget, Kind, Limits};
 use crate::messages::{MigratePhrase, MigrateText};
@@ -126,7 +126,8 @@ struct Sink {
 ///
 /// # Errors
 /// A setting 3.0 cannot represent, or a file that is unreadable, not UTF-8, over its size
-/// cap, a malformed `pyproject.toml`, or over the default per-run [`Limits`].
+/// cap, a malformed `pyproject.toml`, or over the default per-run [`Limits`]. A migrated
+/// config that the 3.0 loader refuses is [`Error::InvalidOutput`].
 pub fn plan(
     root: &Path,
     renames: &RenameTable,
@@ -267,6 +268,7 @@ fn plan_dir(
         }
     };
     let target = rel(root, &main_cfg);
+    check_loads(&main_cfg, &target.display().to_string(), &rewrite.text)?;
     plan.record_before(target, &label, options, &rewrite.text, migrate);
     for n in rewrite.notes {
         plan.notes.push(format!("{label}: {n}"));

@@ -162,6 +162,29 @@ fn two_config_sources_in_one_directory_conflict() {
     assert!(matches!(plan_of(dir.path()), Err(Error::Conflict(_))));
 }
 
+#[rstest]
+#[case::plain(false)]
+#[case::preserve_behavior(true)]
+fn a_migrated_config_the_3_0_loader_refuses_stops_the_plan(#[case] preserve_behavior: bool) {
+    let dir = tempfile::tempdir().unwrap();
+    // 2.x read both blocks; 3.0 refuses two override blocks with the same files.
+    write(
+        dir.path(),
+        "slopvac.toml",
+        "[[overrides]]\nfiles = [\"docs/**\"]\nthresholds = { max_errors = 1 }\n\n\
+         [[overrides]]\nfiles = [\"docs/**\"]\nlocale = { default = \"en-GB\" }\n",
+    );
+    let err = plan(
+        dir.path(),
+        &RenameTable::bundled(),
+        Options { preserve_behavior },
+        STEERING,
+    )
+    .unwrap_err();
+    assert_eq!(err.code(), "migrate-output-invalid", "{err}");
+    assert!(err.to_string().contains("config-duplicate-scope"), "{err}");
+}
+
 #[test]
 fn nested_configs_each_migrate() {
     let dir = tempfile::tempdir().unwrap();

@@ -214,6 +214,14 @@ pub enum Error {
     /// The engine could not lint the project.
     #[error("{}", messages::text(self))]
     Lint(String),
+    /// A 3.0 config that the migration produced does not load in 3.0. Nothing is written.
+    #[error("{}", messages::text(self))]
+    InvalidOutput {
+        /// The config the migration would write.
+        file: String,
+        /// What the 3.0 loader refused, with its codes.
+        reason: String,
+    },
     /// `schema_version` is not an integer.
     #[error("{}", messages::text(self))]
     InvalidType {

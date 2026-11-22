@@ -69,7 +69,9 @@ It stops if one directory holds more than one of `slopvac.toml`, `.slopvac.toml`
 
 It stops, naming the file and line, for a blocklist that is outside the project, missing, 2.x JSON or YAML, or has a `pos` 2.x rejected.
 
-`--preserve-behavior` keeps the 2.x gates with the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Others fail with `migrate-override-overlap`.
+`--preserve-behavior` keeps the 2.x gates with the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Others fail with `migrate-override-overlap`. An override that sets a profile takes that profile's levels in its own block.
+
+Before it writes, the command loads each new config as 3.0 does. A config that 3.0 refuses stops it with exit 2 and `migrate-output-invalid`, and nothing is written.
 
 When the 2.x config sets `vocabulary.path`, `--preserve-behavior` also lists the companion style `core:legacy-<profile>-vocabulary`, so the word blocklist keeps reporting at the 2.x level. Two layouts stop with `migrate-output-invalid`, exit 2 and nothing written: a `vocabulary.path` that only an override sets, and a blocklist together with any profile switch in an override. A follow-up will support these layouts.
 

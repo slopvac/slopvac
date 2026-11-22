@@ -3,6 +3,9 @@
 //! The input is TOML text. The output keeps comments and key order. Settings with no
 //! 3.0 equivalent are collected as [`Dropped`] and block the rewrite.
 
+use std::path::Path;
+
+use slopvac_config::{ConfigError, PackFile, Presets, Setting};
 use toml_edit::{Array, DocumentMut, Item, RawString, Table, TableLike, Value, value};
 
 use crate::capped::Blockers;
@@ -145,6 +148,49 @@ pub(crate) fn migrate_config_in(
         })
     } else {
         Err(Error::Dropped(cx.dropped.finish()))
+    }
+}
+
+/// Load `text`, the migrated config that would be written at `path`, through the 3.0
+/// config loader, so `migrate` never writes a config that 3.0 refuses. `label` names it in
+/// the error. Only the directory of `path` must exist.
+///
+/// No pack is consulted: migrate writes no `extends` or genre, and a style name is checked
+/// when the lint resolves it.
+///
+/// # Errors
+/// [`Error::InvalidOutput`] with every reason the loader gives.
+pub(crate) fn check_loads(path: &Path, label: &str, text: &str) -> Result<(), Error> {
+    slopvac_config::load_text(path, label, text.to_owned(), &NoPacks)
+        .map(drop)
+        .map_err(|e| Error::InvalidOutput {
+            file: label.to_owned(),
+            reason: match &e {
+                ConfigError::Rejected(r) => r
+                    .diagnostics
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+                other => other.to_string(),
+            },
+        })
+}
+
+/// The loader's view of packs for [`check_loads`]: none.
+struct NoPacks;
+
+impl Presets for NoPacks {
+    fn style(&self, _name: &str) -> Option<Vec<Setting>> {
+        None
+    }
+
+    fn genre_chain(&self, _name: &str) -> Vec<Vec<Setting>> {
+        Vec::new()
+    }
+
+    fn pack_config(&self, _name: &str) -> Option<PackFile> {
+        None
     }
 }
 
