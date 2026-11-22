@@ -882,7 +882,8 @@ impl Engine {
         let index = SourceIndex::new(input.source, input.bom);
         let parsed = with_html_prose(input.source, &index, parsed)?;
         let prepared = Prepared::new(text, &parsed)?;
-        let (genre, tags) = self.genre_and_tags(input, &parsed, &prepared, front_matter.as_ref())?;
+        let (genre, tags) =
+            self.genre_and_tags(input, &parsed, &prepared, front_matter.as_ref())?;
         let lines = Lines::new(input.source);
         let lookup = |id: &str| self.directive_target(id);
         let directives = match input.kind {
