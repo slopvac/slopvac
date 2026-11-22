@@ -39,6 +39,10 @@ struct Spec {
     locked_requires: Vec<&'static str>,
     provides: String,
     files: Vec<(&'static str, String)>,
+    /// The `kind` in the installed manifest.
+    kind: &'static str,
+    /// The `kind` in the lock entry.
+    locked_kind: &'static str,
 }
 
 impl Spec {
@@ -52,6 +56,8 @@ impl Spec {
             locked_requires: Vec::new(),
             provides: String::new(),
             files: Vec::new(),
+            kind: "data",
+            locked_kind: "data",
         }
     }
 
@@ -94,9 +100,14 @@ impl Spec {
 
     fn manifest(&self) -> String {
         let mut text = format!(
-            "schema_version = 3\nid = \"{}\"\nversion = \"{}\"\nslopvac_api = {}\nkind = \"data\"\n\n[provides]\n{}\n",
-            self.id, self.version, self.api, self.provides
+            "schema_version = 3\nid = \"{}\"\nversion = \"{}\"\nslopvac_api = {}\nkind = \"{}\"\n\n[provides]\n{}\n",
+            self.id, self.version, self.api, self.kind, self.provides
         );
+        if self.kind == "code" {
+            text.push_str(
+                "\n[plugin]\ncommand = \"bin/acme\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n",
+            );
+        }
         let requires = self
             .requires
             .iter()
@@ -174,8 +185,9 @@ impl World {
             .collect::<Vec<_>>()
             .join(", ");
         self.entries.push(format!(
-            "\n[[plugins]]\nid = \"{}\"\nkind = \"data\"\nversion = \"{}\"\nslopvac_api = {}\nsource = \"dist/{}.tar.gz\"\ndigest = \"sha256:{}\"\nrequires = [{requires}]\n",
+            "\n[[plugins]]\nid = \"{}\"\nkind = \"{}\"\nversion = \"{}\"\nslopvac_api = {}\nsource = \"dist/{}.tar.gz\"\ndigest = \"sha256:{}\"\nrequires = [{requires}]\n",
             spec.id,
+            spec.locked_kind,
             spec.version,
             spec.locked_api,
             spec.id,
@@ -374,6 +386,35 @@ fn a_manifest_that_differs_from_its_lock_entry_is_refused() {
         ),
         "{err}"
     );
+}
+
+#[rstest]
+#[case::data_locked_code_installed("data", "code")]
+#[case::code_locked_data_installed("code", "data")]
+fn a_manifest_kind_that_differs_from_its_lock_entry_is_refused(
+    #[case] locked_kind: &'static str,
+    #[case] kind: &'static str,
+) {
+    let mut w = World::new();
+    w.install(&Spec {
+        kind,
+        locked_kind,
+        ..Spec::new("acme")
+    });
+
+    let err = w.load(&["acme"]).unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            SyncedError::ManifestMismatch {
+                ref id,
+                field: "kind"
+            } if id == "acme"
+        ),
+        "{err}"
+    );
+    assert_eq!(err.code(), Some("plugin-manifest-mismatch"));
 }
 
 #[test]
