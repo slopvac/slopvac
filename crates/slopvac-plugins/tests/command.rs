@@ -26,9 +26,10 @@ use slopvac_messages::Catalog;
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::{PackId, VersionReq, parse_version_req};
 use slopvac_plugins::oci::{Anonymous, Client};
+use slopvac_plugins::pyenv::EnvStore;
 use slopvac_plugins::revoke::Revocations;
 use slopvac_plugins::sign::KeyPolicy;
-use slopvac_plugins::sync::{Network, SyncError};
+use slopvac_plugins::sync::{Network, PythonBuild, SyncError};
 use slopvac_plugins::trust::{DeclSummary, TrustRecord, TrustStore, VerifiedPlugin};
 use slopvac_plugins::update::UpdateError;
 use slopvac_plugins::{Dirs, PluginLoader, PluginSpec, RunError, Runner, command, run};
@@ -111,7 +112,12 @@ impl Fixture {
     }
 
     /// Run `slopvac plugins <args>` with the given network mode.
-    fn run(&self, args: &[&str], online: bool, setup: impl FnOnce(Setup) -> Setup) -> Ran {
+    fn run<'a>(
+        &self,
+        args: &[&str],
+        online: bool,
+        setup: impl FnOnce(Setup<'a>) -> Setup<'a>,
+    ) -> Ran {
         let setup = setup(Setup::default());
         let policy = KeyPolicy::default();
         let revocations = self.revocations();
@@ -129,6 +135,12 @@ impl Fixture {
         if let Some(loader) = &setup.loader {
             runner = runner.with_loader(loader);
         }
+        if let Some(envs) = setup.envs {
+            runner = runner.with_envs(envs);
+        }
+        if let Some(python) = setup.python {
+            runner = runner.with_python(python);
+        }
         let words = std::iter::once("plugins").chain(args.iter().copied());
         let matches = command().try_get_matches_from(words).unwrap();
         let mut out = Vec::new();
@@ -141,13 +153,25 @@ impl Fixture {
 }
 
 #[derive(Default)]
-struct Setup {
+struct Setup<'a> {
     ranges: BTreeMap<PackId, VersionReq>,
     configured: Vec<String>,
     loader: Option<TreeLoader>,
+    envs: Option<&'a EnvStore>,
+    python: Option<PythonBuild<'a>>,
 }
 
-impl Setup {
+impl<'a> Setup<'a> {
+    fn envs(mut self, envs: &'a EnvStore) -> Self {
+        self.envs = Some(envs);
+        self
+    }
+
+    fn python(mut self, python: PythonBuild<'a>) -> Self {
+        self.python = Some(python);
+        self
+    }
+
     fn range(mut self, id: &str, req: &str) -> Self {
         self.ranges
             .insert(id.parse().unwrap(), parse_version_req(req).unwrap());
@@ -163,6 +187,12 @@ impl Setup {
         self.loader = Some(loader);
         self
     }
+}
+
+/// A setup step that gives the run a loader for the code plugin `fake`.
+fn with_loader<'a>(f: &Fixture) -> impl FnOnce(Setup<'a>) -> Setup<'a> {
+    let loader = TreeLoader::new(f.base.path(), "fake");
+    move |s| s.loader(loader)
 }
 
 fn client() -> Client {
@@ -379,18 +409,17 @@ fn status_flags_a_plugin_that_the_revocation_list_names() {
 fn status_says_a_code_plugin_is_not_trusted_until_trust_is_recorded() {
     let f = Fixture::new();
     f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
-    let with_loader = |s: Setup| s.loader(TreeLoader::new(f.base.path(), "fake"));
-    let before = f.run(&["status"], false, with_loader);
+    let before = f.run(&["status"], false, with_loader(&f));
     assert_eq!(before.result.unwrap(), 2);
     assert_eq!(
         before.out,
         "fake 1.0.0 (code): not installed; run `slopvac plugins sync`; \
          not trusted; run `slopvac plugins trust fake`\n"
     );
-    f.run(&["trust", "fake"], false, with_loader)
+    f.run(&["trust", "fake"], false, with_loader(&f))
         .result
         .unwrap();
-    let after = f.run(&["status"], false, with_loader);
+    let after = f.run(&["status"], false, with_loader(&f));
     assert_eq!(
         after.out,
         "fake 1.0.0 (code): not installed; run `slopvac plugins sync`; trusted\n"
@@ -669,4 +698,84 @@ fn a_corrupt_trust_store_is_reported_without_the_absolute_state_path() {
     let base = f.base.path().to_string_lossy().into_owned();
     assert!(!shown.contains(&base), "absolute path leaked: {shown}");
     assert!(shown.contains("<external>/trust.json"), "{shown}");
+}
+
+// ---- status: managed Python environments ----------------------------------------------
+
+#[cfg(unix)]
+mod python_env {
+    use super::*;
+    use crate::common::fake_uv::{Fake, fake_uv};
+
+    const MANIFEST: &str = "schema_version = 3\nid = \"py\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
+    const PYLOCK: &str = "lock-version = \"1.0\"\ncreated-by = \"test\"\n";
+
+    /// A project with one in-place Python plugin `py`, a fake uv and an environment store.
+    struct Project {
+        f: Fixture,
+        uv: PathBuf,
+        envs: EnvStore,
+    }
+
+    fn project() -> Project {
+        let f = Fixture::new();
+        let dir = f.project().join("plugins/py");
+        fs::create_dir_all(&dir).unwrap();
+        for (name, text) in [
+            ("slopvac-plugin.toml", MANIFEST),
+            ("plugin.py", "print('plugin')\n"),
+            ("pylock.toml", PYLOCK),
+        ] {
+            fs::write(dir.join(name), text).unwrap();
+        }
+        let digest = tree_hash(&dir).unwrap();
+        f.write_lock(&[format!(
+            "\n[[plugins]]\nid = \"py\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+             source = \"plugins/py\"\ndigest = \"{digest}\"\n"
+        )]);
+        let uv = fake_uv(&f.base.path().join("uv-bin"), &Fake::real());
+        let envs = EnvStore::open(f.base.path().join("envs"));
+        Project { f, uv, envs }
+    }
+
+    impl Project {
+        fn build(&self) -> PythonBuild<'_> {
+            PythonBuild {
+                envs: &self.envs,
+                uv: &self.uv,
+                python_install_dir: Path::new("/nonexistent/uv-python"),
+            }
+        }
+
+        fn status(&self) -> Ran {
+            self.f.run(&["status"], false, |s| s.envs(&self.envs))
+        }
+    }
+
+    #[test]
+    fn status_reports_a_built_environment_as_verified() {
+        let p = project();
+        p.f.run(&["sync"], false, |s| s.python(p.build()))
+            .result
+            .unwrap();
+        let ran = p.status();
+        assert_eq!(ran.result.unwrap(), 0);
+        assert_eq!(
+            ran.out,
+            "py 1.0.0 (code): installed; trust state unknown: the plugin files are not loaded; \
+             python environment verified\n"
+        );
+    }
+
+    #[test]
+    fn status_reports_an_environment_that_sync_never_built_as_missing_and_exits_2() {
+        let p = project();
+        let ran = p.status();
+        assert_eq!(ran.result.unwrap(), 2);
+        assert_eq!(
+            ran.out,
+            "py 1.0.0 (code): installed; trust state unknown: the plugin files are not loaded; \
+             python environment missing; run `slopvac plugins sync`\n"
+        );
+    }
 }
