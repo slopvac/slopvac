@@ -9,7 +9,7 @@ use cap_std::fs::Dir;
 use rstest::rstest;
 use slopvac_fs::{
     InputKind, ReadOptions, read_capped_regular, read_capped_regular_in,
-    read_capped_regular_to_string, read_capped_regular_to_string_in,
+    read_capped_regular_in_with, read_capped_regular_to_string, read_capped_regular_to_string_in,
 };
 
 fn root(dir: &tempfile::TempDir) -> Dir {
@@ -149,6 +149,21 @@ fn plain_reader_accepts_hard_links_unless_told_otherwise() {
     );
     let strict = ReadOptions::new().reject_multiply_linked(true);
     let err = read_capped_regular(&hard, 100, strict).unwrap_err();
+    assert_eq!(err.input_kind(), Some(InputKind::MultiplyLinked));
+}
+
+#[test]
+fn confined_reader_with_options_accepts_hard_links_unless_told_otherwise() {
+    let t = tree();
+    let r = root(&t);
+    let hard = Path::new("hard");
+    // No size limit: u64::MAX must not overflow the cap arithmetic.
+    assert_eq!(
+        read_capped_regular_in_with(&r, hard, u64::MAX, ReadOptions::new()).unwrap(),
+        b"hello"
+    );
+    let strict = ReadOptions::new().reject_multiply_linked(true);
+    let err = read_capped_regular_in_with(&r, hard, u64::MAX, strict).unwrap_err();
     assert_eq!(err.input_kind(), Some(InputKind::MultiplyLinked));
 }
 

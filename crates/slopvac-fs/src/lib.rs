@@ -38,6 +38,6 @@ pub use path::{
     EXTERNAL, display_physical, display_under_root, lexical_normalize, resolve_physical,
 };
 pub use read::{
-    ReadOptions, read_capped_regular, read_capped_regular_in, read_capped_regular_to_string,
-    read_capped_regular_to_string_in,
+    ReadOptions, read_capped_regular, read_capped_regular_in, read_capped_regular_in_with,
+    read_capped_regular_to_string, read_capped_regular_to_string_in,
 };
