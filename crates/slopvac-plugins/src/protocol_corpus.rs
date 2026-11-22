@@ -125,6 +125,11 @@ const RESPONSES: &[(&str, Option<Decoder>)] = &[
 /// them (`Plugin::call`, the handshake, `$/cancelRequest`) and has no reader for them, and the
 /// outgoing types get no `Deserialize`. Each entry is `(directory, file name)`.
 const HOST_BUILT: &[(&str, &str)] = &[
+    ("invalid", "id-fraction.json"),
+    ("invalid", "id-string.json"),
+    ("invalid", "id-zero.json"),
+    ("invalid", "notification-with-id.json"),
+    ("invalid", "request-without-id.json"),
     ("valid", "InitializeParams--minimal-range.json"),
     ("valid", "InitializeParams--unknown-fields-ignored.json"),
     ("valid", "notification-cancel.json"),
@@ -170,6 +175,12 @@ const HOST_BUILT: &[(&str, &str)] = &[
     ("invalid", "tag-parent-path.json"),
     ("invalid", "tag-path-trailing-newline.json"),
 ];
+
+/// Schema-invalid, host ignores per plugin-protocol.md section 6.1: replies that the schema
+/// refuses but the host drops without a failure. [`host_drops_a_null_id_reply`] pins the
+/// outcome. Each entry is `(directory, file name)`.
+const SCHEMA_INVALID_HOST_IGNORES: &[(&str, &str)] =
+    &[("invalid", "response-null-id-success.json")];
 
 /// `STUB(slopvac-agx)`: binary-extractor files that wait for the host's binary-extractor
 /// adapter (plugin-protocol.md section 5.5). The swap removes this table and decodes the files
@@ -312,6 +323,12 @@ fn lookup<T: Copy>(table: &[(&str, T)], key: &str) -> Option<T> {
 
 fn listed(table: &[(&str, &str)], dir: &str, name: &str) -> bool {
     table.iter().any(|(d, n)| *d == dir && *n == name)
+}
+
+const TABLES: [&[(&str, &str)]; 3] = [HOST_BUILT, SCHEMA_INVALID_HOST_IGNORES, PENDING_BINARY];
+
+fn in_a_table(dir: &str, name: &str) -> bool {
+    TABLES.iter().any(|t| listed(t, dir, name))
 }
 
 /// Every `span` bound in `v`, to build a document long enough for the spans of an instance.
@@ -521,7 +538,7 @@ fn valid_file_is_accepted(
     #[files("../../schemas/v3/conformance/plugin-protocol/valid/*.json")] path: PathBuf,
 ) {
     let name = file_name(&path);
-    if listed(HOST_BUILT, &dir_name(&path), &name) || listed(PENDING_BINARY, "valid", &name) {
+    if in_a_table(&dir_name(&path), &name) {
         return;
     }
     let bytes = fs::read(&path).expect("read case");
@@ -535,7 +552,7 @@ fn invalid_file_is_rejected_at_its_location(
     #[files("../../schemas/v3/conformance/plugin-protocol/invalid/*.json")] path: PathBuf,
 ) {
     let name = file_name(&path);
-    if listed(HOST_BUILT, &dir_name(&path), &name) || listed(PENDING_BINARY, "invalid", &name) {
+    if in_a_table(&dir_name(&path), &name) {
         return;
     }
     let bytes = fs::read(&path).expect("read case");
@@ -614,9 +631,8 @@ fn every_def_prefix_in_the_corpus_has_a_host_decoder_row() {
 #[test]
 fn every_corpus_file_is_decoded_or_listed_in_exactly_one_table() {
     for (dir, name) in corpus_files() {
-        let tables = usize::from(listed(HOST_BUILT, &dir, &name))
-            + usize::from(listed(PENDING_BINARY, &dir, &name));
-        assert!(tables <= 1, "{dir}/{name} is in both tables");
+        let tables = TABLES.iter().filter(|t| listed(t, &dir, &name)).count();
+        assert!(tables <= 1, "{dir}/{name} is in {tables} tables");
         // A file of a def that the host builds or cannot read yet has to be in its table.
         if let Some(decoder) = def_of(&name).and_then(|d| lookup(DEFS, d)) {
             match decoder {
@@ -647,6 +663,7 @@ fn every_name_in_a_table_exists_once() {
     let files = corpus_files();
     for (label, table) in [
         ("HOST_BUILT", HOST_BUILT),
+        ("SCHEMA_INVALID_HOST_IGNORES", SCHEMA_INVALID_HOST_IGNORES),
         ("PENDING_BINARY", PENDING_BINARY),
     ] {
         let mut seen = BTreeSet::new();
@@ -667,4 +684,13 @@ fn cases_toml_names_exactly_the_invalid_files() {
         .collect();
     let listed: BTreeSet<String> = cases().keys().cloned().collect();
     assert_eq!(on_disk, listed);
+}
+
+#[test]
+fn host_drops_a_null_id_reply() {
+    // The schema refuses a success reply with a null id. The host's reader counts any reply with
+    // a null id as unsolicited and drops it (plugin-protocol.md section 6.1).
+    let bytes = fs::read(corpus().join("invalid/response-null-id-success.json")).expect("read");
+    let value = strict::parse(&bytes).expect("strict parse");
+    assert!(matches!(check_envelope(&value), Ok(Envelope::Unsolicited)));
 }
