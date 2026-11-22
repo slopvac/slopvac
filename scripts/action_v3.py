@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
-"""Entry points for the slopvac 3.0 composite GitHub Action (action-v3/action.yml).
+"""Entry points for the slopvac 3.0 composite GitHub Action (action.yml).
 
+``resolve-targets``  write the files to lint: the ``paths`` input or changed prose.
 ``sync``      run ``slopvac plugins sync`` when the project has a plugin lockfile.
 ``lint``      run the binary once per report format and keep its gate exit code.
 ``report``    post the rdjsonl findings with reviewdog; never gates the job.
 
 The binary renders every format itself; this script never reformats findings.
-Target resolution reuses ``action_entry.py resolve-targets``.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
+import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from action_entry import ActionError, _read_paths
 
 REVIEW = "github-pr-review"
 PR_ANNOTATIONS = "github-pr-annotations"
@@ -35,6 +33,121 @@ INCOMPLETE = 2
 LOCKFILE = ".slopvac/plugins.lock"
 
 _SUMMARY_KEYS = ("score", "findings", "errors", "warnings", "suggestions", "passed")
+
+
+class ActionError(RuntimeError):
+    """Raised for an action failure that should produce exit code 2."""
+
+
+def _escape_log(text: str) -> str:
+    """Encode text so GitHub cannot read it as a workflow command.
+
+    Uses the runner's encoding (`%` -> `%25`, CR -> `%0D`, LF -> `%0A`) and
+    extends it to the other C0 controls and DEL.
+    """
+    return "".join(
+        f"%{ord(char):02X}"
+        if char == "%" or ord(char) < 0x20 or ord(char) == 0x7F
+        else char
+        for char in text
+    )
+
+
+def _write_paths(paths_file: Path, paths: list[str]) -> None:
+    paths_file.parent.mkdir(parents=True, exist_ok=True)
+    paths_file.write_bytes(b"".join(path.encode() + b"\0" for path in paths))
+
+
+def _read_paths(paths_file: Path) -> list[str]:
+    try:
+        content = paths_file.read_bytes()
+    except OSError as exc:
+        raise ActionError(
+            f"could not read target path list {paths_file}: {exc}"
+        ) from exc
+    if not content:
+        return []
+    if not content.endswith(b"\0"):
+        raise ActionError(f"target path list is not NUL-terminated: {paths_file}")
+    return [path.decode() for path in content.rstrip(b"\0").split(b"\0") if path]
+
+
+def parse_input_paths(value: str) -> list[str]:
+    """Parse the action's space-separated input with shell-style quoting.
+
+    Quoting is required for a path containing spaces (for example,
+    ``"docs/release notes.md"``); shlex keeps that path as one argv item.
+    """
+    try:
+        return shlex.split(value, comments=False, posix=True)
+    except ValueError as exc:
+        raise ActionError(f"invalid paths input: {exc}") from exc
+
+
+def resolve_targets(env: Mapping[str, str] = os.environ) -> int:
+    """Write the files to lint to ``$RUNNER_TEMP/slopvac-paths`` and its path to ``list``."""
+    paths_file = Path(env.get("RUNNER_TEMP", tempfile.gettempdir())) / "slopvac-paths"
+    changed_only = env.get("CHANGED_ONLY") == "true"
+    input_paths = parse_input_paths(env.get("INPUT_PATHS", "."))
+    base_sha = env.get("BASE_SHA", "")
+
+    if not changed_only:
+        paths = input_paths
+    elif not base_sha:
+        print(
+            "::error title=slopvac::changed-files-only requires "
+            "github.event.pull_request.base.sha. Fetch the pull request base "
+            "or set changed-files-only: false."
+        )
+        return 1
+    else:
+        check = subprocess.run(
+            ["git", "cat-file", "-e", f"{base_sha}^{{commit}}"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if check.returncode != 0:
+            print(
+                "::error title=slopvac::the merge base is not in this clone. "
+                "Set fetch-depth: 0 on actions/checkout, or set "
+                "changed-files-only: false."
+            )
+            return 1
+        diff = subprocess.run(
+            [
+                "git",
+                "diff",
+                "-z",
+                "--name-only",
+                "--diff-filter=d",
+                f"{base_sha}...HEAD",
+                "--",
+                "*.md",
+                "*.mdx",
+                "*.markdown",
+                "*.txt",
+                "*.rst",
+                "*.html",
+            ],
+            check=False,
+            capture_output=True,
+        )
+        if diff.returncode != 0:
+            print("::error title=slopvac::could not determine changed prose files")
+            if diff.stderr:
+                print(diff.stderr.decode(errors="replace"), end="")
+            return 1
+        paths = [path.decode() for path in diff.stdout.split(b"\0") if path]
+        if not paths:
+            print("::notice title=slopvac::no prose files changed")
+
+    _write_paths(paths_file, paths)
+    _write_outputs(env, {"list": paths_file})
+    # Prefix each line: a name that begins with "::" must not start a command.
+    for path in paths:
+        print(f"- {_escape_log(path)}")
+    return 0
 
 
 def _write_outputs(env: Mapping[str, str], values: Mapping[str, object]) -> None:
@@ -313,9 +426,14 @@ def report(env: Mapping[str, str] = os.environ) -> int:
 
 
 def main(argv: Sequence[str]) -> int:
-    commands = {"sync": sync, "lint": lint, "report": report}
+    commands = {
+        "resolve-targets": resolve_targets,
+        "sync": sync,
+        "lint": lint,
+        "report": report,
+    }
     if len(argv) != 2 or argv[1] not in commands:
-        print("usage: action_v3.py sync|lint|report", file=sys.stderr)
+        print("usage: action_v3.py resolve-targets|sync|lint|report", file=sys.stderr)
         return 2
     try:
         return commands[argv[1]]()

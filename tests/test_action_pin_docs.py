@@ -77,7 +77,7 @@ SHA = "0123456789abcdef0123456789abcdef01234567"
         "- uses: slopvac/slopvac@abc1234",
         f"- uses: slopvac/slopvac@{SHA}",
         f"- uses: slopvac/slopvac@{SHA} # latest",
-        "- uses: slopvac/slopvac/action-v3@v3",
+        "- uses: slopvac/slopvac/sub@v3",
         f"- uses: slopvac/slopvac@{SHA.upper()} # v3.0.0",
         '- uses: "slopvac/slopvac@v3"',
         "- uses: 'slopvac/slopvac@v3'",
@@ -93,7 +93,7 @@ def test_rejects_unpinned_or_uncommented_reference(line: str) -> None:
     "line",
     [
         f"- uses: slopvac/slopvac@{SHA} # v3.0.0",
-        f"      uses: slopvac/slopvac/action-v3@{SHA} # v3.1.12",
+        f"      uses: slopvac/slopvac/sub@{SHA} # v3.1.12",
         f"- uses: slopvac/slopvac@{PLACEHOLDER} # v3.0.0",
         f'- uses: "slopvac/slopvac@{SHA}" # v3.0.0',
         f"- uses: 'slopvac/slopvac@{SHA}' # v3.0.0",

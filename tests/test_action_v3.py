@@ -9,6 +9,8 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+from subprocess import CompletedProcess
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -19,7 +21,7 @@ pytest_plugins = ["real_binary"]  # the real-binary fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "action_v3.py"
-ACTION = ROOT / "action-v3" / "action.yml"
+ACTION = ROOT / "action.yml"
 SCHEMAS = ROOT / "schemas" / "v3"
 SPEC = importlib.util.spec_from_file_location("action_v3", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
@@ -833,3 +835,106 @@ def test_version_check_sits_between_install_and_the_first_use_of_the_binary():
     )
     assert install < check < first_use
     assert steps[check]["if"] == steps[install]["if"]
+
+
+def test_input_paths_keep_a_quoted_path_with_spaces_whole():
+    assert action.parse_input_paths('README.md "docs/release notes.md"') == [
+        "README.md",
+        "docs/release notes.md",
+    ]
+
+
+def test_changed_only_without_pull_request_base_fails_closed(tmp_path, capsys):
+    env = {"CHANGED_ONLY": "true", "INPUT_PATHS": ".", "RUNNER_TEMP": str(tmp_path)}
+    assert action.resolve_targets(env) == 1
+    assert "requires" in capsys.readouterr().out
+    assert not (tmp_path / "slopvac-paths").exists()
+
+
+def test_changed_only_resolves_exact_base_and_prose_paths(tmp_path):
+    env = {
+        "CHANGED_ONLY": "true",
+        "INPUT_PATHS": "ignored.md",
+        "BASE_SHA": "abc123",
+        "RUNNER_TEMP": str(tmp_path),
+    }
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command[:3] == ["git", "cat-file", "-e"]:
+            return CompletedProcess(command, 0, stdout="", stderr="")
+        return CompletedProcess(
+            command, 0, stdout=b"docs/release notes.md\0", stderr=b""
+        )
+
+    with patch("action_v3.subprocess.run", side_effect=fake_run):
+        assert action.resolve_targets(env) == 0
+
+    assert calls[0] == ["git", "cat-file", "-e", "abc123^{commit}"]
+    assert "abc123...HEAD" in calls[1]
+    assert "--" in calls[1]
+    assert action._read_paths(tmp_path / "slopvac-paths") == ["docs/release notes.md"]
+
+
+def test_changed_only_missing_merge_base_fails_closed(tmp_path, capsys):
+    env = {
+        "CHANGED_ONLY": "true",
+        "INPUT_PATHS": ".",
+        "BASE_SHA": "missing",
+        "RUNNER_TEMP": str(tmp_path),
+    }
+
+    def missing_base(command, **kwargs):
+        return CompletedProcess(command, 128, stdout=b"", stderr=b"missing object")
+
+    with patch("action_v3.subprocess.run", side_effect=missing_base):
+        assert action.resolve_targets(env) == 1
+    assert "merge base" in capsys.readouterr().out
+
+
+HOSTILE_NAMES = [
+    ("a.md\n::error::forged.md", "a.md%0A::error::forged.md"),
+    ("a.md\r::add-mask::secret.md", "a.md%0D::add-mask::secret.md"),
+    ("a.md\n::stop-commands::tok.md", "a.md%0A::stop-commands::tok.md"),
+    ("::error::lead.md", "::error::lead.md"),
+    ("100%0A.md", "100%250A.md"),
+    ("bell\x07esc\x1b.md", "bell%07esc%1B.md"),
+]
+
+
+def _changed_file(name):
+    def fake_run(command, **kwargs):
+        if command[:3] == ["git", "cat-file", "-e"]:
+            return CompletedProcess(command, 0, stdout="", stderr="")
+        return CompletedProcess(command, 0, stdout=name.encode() + b"\0", stderr=b"")
+
+    return fake_run
+
+
+@pytest.mark.parametrize(("name", "logged"), HOSTILE_NAMES)
+def test_changed_file_names_are_escaped_in_log_output(tmp_path, capsys, name, logged):
+    env = {"CHANGED_ONLY": "true", "BASE_SHA": "abc123", "RUNNER_TEMP": str(tmp_path)}
+    with patch("action_v3.subprocess.run", side_effect=_changed_file(name)):
+        assert action.resolve_targets(env) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == [f"- {logged}"]
+    assert not any(line.lstrip().startswith("::") for line in lines)
+
+
+@pytest.mark.parametrize(("name", "logged"), HOSTILE_NAMES)
+def test_resolved_target_names_reach_the_linter_unchanged(run, tmp_path, name, logged):
+    resolve_env = {
+        "CHANGED_ONLY": "true",
+        "BASE_SHA": "abc123",
+        "RUNNER_TEMP": str(tmp_path),
+    }
+    with patch("action_v3.subprocess.run", side_effect=_changed_file(name)):
+        assert action.resolve_targets(resolve_env) == 0
+
+    code, log, _ = run(PATH_LIST=str(tmp_path / "slopvac-paths"))
+
+    assert code == 0
+    assert log
+    assert all(argv[-1] == name for argv in log)
