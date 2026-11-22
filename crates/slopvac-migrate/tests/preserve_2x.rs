@@ -5,13 +5,18 @@
 //! each scenario's config and files and writes the result to `measured_2x` in
 //! `tests/fixtures/preserve/vectors.json`; `tests/contract/test_migrate_fixtures.py`
 //! fails when that file is stale.
+#![allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a panic is a failed test"
+)]
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use slopvac_config::{Inputs, Layer, PackFile, Presets, Setting};
+use slopvac_config::{ConfigLayer, Inputs, PackFile, Presets, Setting};
 use slopvac_migrate::{Options, RenameTable, migrate_config};
 
 fn crate_dir() -> PathBuf {
@@ -43,7 +48,7 @@ impl LegacyStyles {
                 let cat = renames.category(name).unwrap();
                 for (dial, v) in dials.as_table().unwrap() {
                     settings.push(Setting::bare(
-                        Layer::Style,
+                        ConfigLayer::Style,
                         &["categories", &cat, dial],
                         to_json(v),
                     ));
@@ -51,7 +56,11 @@ impl LegacyStyles {
             }
             for (qid, level) in style["rules"].as_table().unwrap() {
                 if let Some(id) = renames.rule(qid) {
-                    settings.push(Setting::bare(Layer::Style, &["rules", &id], to_json(level)));
+                    settings.push(Setting::bare(
+                        ConfigLayer::Style,
+                        &["rules", &id],
+                        to_json(level),
+                    ));
                 }
             }
             styles.insert(format!("core:legacy-{profile}"), settings);
@@ -138,8 +147,10 @@ fn every_migrated_config_resolves_to_the_measured_2x_levels() {
                 };
                 let category = qid.split_once('.').unwrap().0;
                 let category = (!judgement(&qid)).then(|| renames.category(category).unwrap());
-                let got = resolved.level(&id, category.as_deref()).map(|l| l.level);
-                if got.as_deref() != level.as_str() {
+                let got = resolved
+                    .level(&id, category.as_deref())
+                    .map(|l| l.level.as_str());
+                if got != level.as_str() {
                     wrong.push(format!("{name} {file} {qid}: {got:?}, 2.x {level}"));
                 }
             }

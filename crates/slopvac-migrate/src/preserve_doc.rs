@@ -438,7 +438,7 @@ fn note_layout(expanded: &Expanded, ctx: &mut Ctx<'_>) {
 /// Collect the document positions of `t` and of the tables inside it.
 fn positions(t: &Table, out: &mut Vec<isize>) {
     out.extend(t.position());
-    for (_, item) in t.iter() {
+    for (_, item) in t {
         match item {
             Item::Table(sub) => positions(sub, out),
             Item::ArrayOfTables(aot) => aot.iter().for_each(|sub| positions(sub, out)),

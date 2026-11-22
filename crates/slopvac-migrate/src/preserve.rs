@@ -493,14 +493,14 @@ impl E3<'_> {
         });
         for b in moved {
             let j = b.index;
-            let later: Vec<usize> = containers
+            let winners: Vec<usize> = containers
                 .iter()
                 .copied()
                 .filter(|&k| k > j)
                 .chain([index])
                 .collect();
             let mut over = Layer::default();
-            for &k in &later {
+            for &k in &winners {
                 merge_into(&mut over, restated.get(&k).unwrap_or(&self.blocks[k]));
             }
             let mut layer = self.under(j, profile);
@@ -511,7 +511,7 @@ impl E3<'_> {
                 switch: None,
                 restated: Vec::new(),
                 moved_after: Some(index),
-                yields_to: later,
+                yields_to: winners,
                 guarded: 0,
             });
         }
