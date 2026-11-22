@@ -1,6 +1,8 @@
 //! Before and after findings from the engine.
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
+mod support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -36,7 +38,7 @@ fn linter_with(rules: &[Value]) -> EngineLinter {
         &CompileOptions::default(),
     )
     .unwrap();
-    EngineLinter::new(vec![set]).unwrap()
+    EngineLinter::new(vec![set], Box::new(support::NoConfig))
 }
 
 fn write(root: &Path, name: &str, text: &str) {

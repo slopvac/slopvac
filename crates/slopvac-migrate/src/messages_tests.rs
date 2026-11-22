@@ -246,6 +246,14 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
             "a.mdx:5: MDX is not rewritten; rename or remove this slopvac-allow directive by hand",
         ),
         (
+            MigrateText::NoteBeforeApproximate {
+                file: s("slopvac.toml"),
+                line: s("4"),
+                reason: s("r"),
+            },
+            "slopvac.toml:4: the before baseline for this config is approximate, because its 2.x settings could not be reproduced: r",
+        ),
+        (
             MigrateText::NoteRenamedDotfile { label: s("l") },
             "l: renamed to slopvac.toml",
         ),
@@ -447,6 +455,12 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
             "Restored 4 files from the backup.",
         ),
         (MigrateText::OutWarning { message: s("m") }, "warning: m"),
+        (
+            MigrateText::OutIncomplete {
+                configs: s("slopvac.toml, sub/slopvac.toml"),
+            },
+            "Findings: the comparison is incomplete for slopvac.toml, sub/slopvac.toml, whose before baseline is approximate.",
+        ),
         (MigrateText::OutNote { message: s("m") }, "note: m"),
         (
             MigrateText::OutWrote {

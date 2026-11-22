@@ -851,6 +851,30 @@ fn rel_text(rel: &Path) -> String {
 /// Settings and the indexes of the items that share them.
 type Groups = BTreeMap<String, (slopvac_engine::Settings, TermInputs, Vec<usize>)>;
 
+/// The engine settings of the file at `rel`, relative to the root of `config`, and the
+/// resolved config they came from. `slopvac lint` and the before and after sides of
+/// `slopvac migrate` share it.
+///
+/// # Errors
+/// As [`lint_settings::build`].
+pub(crate) fn file_settings(
+    rules: &Catalog,
+    config: &LoadedConfig,
+    rel: &Path,
+    overrides: &Overrides,
+) -> Result<(slopvac_engine::Settings, slopvac_config::Resolved), CliError> {
+    let resolved = lint_settings::resolve(config, rel);
+    let files = config_files(config);
+    let mut settings = lint_settings::build(
+        rules,
+        &resolved,
+        lint_settings::config_sources(&files),
+        overrides,
+    )?;
+    settings.genre_assignments = Some(lint_settings::genre_assignments(config));
+    Ok((settings, resolved))
+}
+
 /// Group the items by their settings: one engine per distinct settings.
 fn group_by_settings(
     request: &LintRequest,
@@ -864,16 +888,8 @@ fn group_by_settings(
             Some((config, rel)) => (config.as_ref(), rel.clone()),
             None => (&none, PathBuf::from(&item.shown)),
         };
-        let resolved = lint_settings::resolve(config, &rel);
-        let files = config_files(config);
-        let mut settings = lint_settings::build(
-            rules,
-            &resolved,
-            lint_settings::config_sources(&files),
-            &request.overrides,
-        )?;
+        let (settings, resolved) = file_settings(rules, config, &rel, &request.overrides)?;
         let terms = lint_terms::inputs(&resolved, &config.root);
-        settings.genre_assignments = Some(lint_settings::genre_assignments(config));
         groups
             .entry(format!("{settings:?}{terms:?}"))
             .or_insert_with(|| (settings, terms, Vec::new()))

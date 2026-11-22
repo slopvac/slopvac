@@ -228,6 +228,18 @@ pub(crate) enum MigrateText {
         "{path}:{line}: MDX is not rewritten; rename or remove this slopvac-allow directive by hand"
     )]
     DirectiveMdx { path: String, line: String },
+    /// The before side could not reproduce what a 2.x config meant, so its baseline is
+    /// approximate.
+    #[code("migrate-note-before-approximate")]
+    #[text(
+        "{file}:{line}: the before baseline for this config is approximate, because its 2.x \
+         settings could not be reproduced: {reason}"
+    )]
+    NoteBeforeApproximate {
+        file: String,
+        line: String,
+        reason: String,
+    },
     /// A config file was renamed.
     #[code("migrate-note-renamed-dotfile")]
     #[text("{label}: renamed to slopvac.toml")]
@@ -437,6 +449,12 @@ pub(crate) enum MigrateText {
     #[code("migrate-out-warning")]
     #[text("warning: {message}")]
     OutWarning { message: String },
+    /// The findings comparison cannot be trusted for some configs.
+    #[code("migrate-out-incomplete")]
+    #[text(
+        "Findings: the comparison is incomplete for {configs}, whose before baseline is approximate."
+    )]
+    OutIncomplete { configs: String },
     /// A note line of the preview.
     #[code("migrate-out-note")]
     #[text("note: {message}")]

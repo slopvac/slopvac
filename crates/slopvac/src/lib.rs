@@ -23,6 +23,7 @@ pub mod lint_settings;
 pub mod lint_terms;
 pub mod logging;
 pub mod messages;
+mod migrate_lint;
 pub mod offline;
 pub mod output;
 pub mod owners;
@@ -36,6 +37,7 @@ pub mod summary;
 mod update_notice;
 
 pub use env::{Env, SystemEnv};
+pub use migrate_lint::MigrateConfigure;
 pub use run::{
     Globals, main_with, main_with_io, main_with_stdout, resolve_globals, resolve_globals_with,
 };

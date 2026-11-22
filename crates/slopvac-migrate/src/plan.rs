@@ -58,6 +58,20 @@ pub struct Plan {
     pub notes: Vec<String>,
     /// Things the user should check, such as a malformed steering block.
     pub warnings: Vec<String>,
+    /// What each 2.x config meant, in 3.0 terms: the `--preserve-behavior` rewrite, keyed
+    /// by the `slopvac.toml` path relative to the project root. The before side of the
+    /// lint reads these in place of the 2.x files.
+    ///
+    /// The rewrite reproduces the 2.x levels except in the known limit of
+    /// `docs/contract/profiles.md`, section 4: when a block without `profile` that authors a
+    /// category matches a file that a profile override also matches, three rule defaults can
+    /// differ from 2.x. There the before side is approximate.
+    pub before: Vec<(PathBuf, String)>,
+    /// The configs, named as in diagnostics, whose 2.x settings the `--preserve-behavior`
+    /// rewrite could not reproduce, such as one with an override glob outside its grammar.
+    /// The before side takes the plain rewrite for each, so the comparison is incomplete
+    /// there, and [`Plan::warnings`] says why.
+    pub approximate: Vec<String>,
 }
 
 impl Plan {
@@ -75,6 +89,16 @@ impl Plan {
             .filter_map(|c| Some((root.join(&c.path), c.new.clone()?)))
             .collect()
     }
+
+    /// The 3.0 meaning of each 2.x config ([`Plan::before`]), for linting the project as it
+    /// is.
+    #[must_use]
+    pub fn before_overlay(&self, root: &Path) -> Vec<(PathBuf, String)> {
+        self.before
+            .iter()
+            .map(|(path, text)| (root.join(path), text.clone()))
+            .collect()
+    }
 }
 
 /// What planning collects: the edits, and the bounded notes and warnings.
@@ -84,6 +108,10 @@ struct Sink {
     warnings: Capped,
     /// Blocklists already planned, so a file two settings share is planned once.
     blocklists: BTreeSet<PathBuf>,
+    /// The 3.0 meaning of each 2.x config, for the before side of the lint.
+    before: Vec<(PathBuf, String)>,
+    /// The configs whose before side is approximate.
+    approximate: Vec<String>,
 }
 
 /// Plan the migration of the project under `root`.
@@ -120,6 +148,8 @@ pub fn plan_with_limits(
         notes: Capped::new(Listed::Notes),
         warnings: Capped::new(Listed::Warnings),
         blocklists: BTreeSet::new(),
+        before: Vec::new(),
+        approximate: Vec::new(),
     };
     let mut dropped = Blockers::default();
     let tree = discover(root, &mut budget, &mut sink.warnings)?;
@@ -150,6 +180,8 @@ pub fn plan_with_limits(
         changes: sink.changes,
         notes: sink.notes.finish(),
         warnings: sink.warnings.finish(),
+        before: sink.before,
+        approximate: sink.approximate,
     };
     let dropped = dropped.finish();
     if dropped.is_empty() {
@@ -215,7 +247,8 @@ fn plan_dir(
     let label = rel(root, &source).display().to_string();
     let py = py_text.as_deref().filter(|_| origin == Origin::Pyproject);
     let outer = py.and_then(|t| key_lines(t).ok());
-    let rewrite = match migrate_config_in(&old, &label, renames, options, outer.as_ref()) {
+    let migrate = |options| migrate_config_in(&old, &label, renames, options, outer.as_ref());
+    let rewrite = match migrate(options) {
         Ok(rw) => rw,
         Err(Error::AlreadyMigrated { .. }) => return Ok(()),
         Err(e) => {
@@ -228,6 +261,8 @@ fn plan_dir(
             };
         }
     };
+    let target = rel(root, &main_cfg);
+    plan.record_before(target, &label, options, &rewrite.text, migrate);
     for n in rewrite.notes {
         plan.notes.push(format!("{label}: {n}"));
     }
@@ -267,6 +302,57 @@ fn plan_dir(
         dropped,
     )?;
     Ok(())
+}
+
+impl Sink {
+    /// Record what the 2.x config `label` meant, in 3.0 terms, for the before side of the
+    /// lint at `path`: the `--preserve-behavior` rewrite from `migrate`, which reproduces
+    /// the 2.x gates. When that rewrite cannot run on the config, such as on an override glob
+    /// outside its grammar, the before side takes `written`, the rewrite the plan writes, and
+    /// the plan warns that the baseline of this config is approximate.
+    fn record_before(
+        &mut self,
+        path: PathBuf,
+        label: &str,
+        options: Options,
+        written: &str,
+        migrate: impl Fn(Options) -> Result<crate::Rewrite, Error>,
+    ) {
+        let meant = if options.preserve_behavior {
+            written.to_owned()
+        } else {
+            match migrate(Options {
+                preserve_behavior: true,
+            }) {
+                Ok(rw) => rw.text,
+                Err(e) => {
+                    let (line, reason) = located(&e);
+                    self.warnings.push(
+                        MigrateText::NoteBeforeApproximate {
+                            file: label.to_owned(),
+                            line: line.to_string(),
+                            reason,
+                        }
+                        .to_string(),
+                    );
+                    self.approximate.push(label.to_owned());
+                    written.to_owned()
+                }
+            }
+        };
+        self.before.push((path, meant));
+    }
+}
+
+/// The line and the reason of a failed `--preserve-behavior` rewrite.
+fn located(e: &Error) -> (usize, String) {
+    match e {
+        Error::OverrideOverlap { line, reason, .. } => (*line, reason.clone()),
+        Error::Dropped(records) => records
+            .first()
+            .map_or_else(|| (1, e.to_string()), |r| (r.line, r.reason.clone())),
+        other => (1, other.to_string()),
+    }
 }
 
 /// The blocklist settings of one config, with where to find their lines.

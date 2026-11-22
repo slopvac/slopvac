@@ -158,6 +158,36 @@ pub fn load_labeled(
     load_counted(path, label, presets).map(|(config, _)| config)
 }
 
+/// Load `text` as the config at `path`, and everything it extends, naming it `label` in
+/// errors. `path` says where the file would sit, and only its directory must exist. Use it
+/// for a config that is not on disk yet, such as the one `slopvac migrate` would write.
+///
+/// # Errors
+/// As [`load_labeled`]: a `config-too-large` error when `text` is over
+/// [`crate::MAX_CONFIG_BYTES`], and a `config-io` error when the directory of `path` cannot
+/// be resolved.
+pub fn load_text(
+    path: &Path,
+    label: &str,
+    text: String,
+    presets: &dyn Presets,
+) -> Result<LoadedConfig, ConfigError> {
+    if text.len() as u64 > MAX_CONFIG_BYTES {
+        return Err(ConfigError::TooLarge {
+            path: label.to_owned(),
+            cap: MAX_CONFIG_BYTES,
+        });
+    }
+    let dir = path.parent().filter(|p| !p.as_os_str().is_empty());
+    let dir = fs::canonicalize(dir.unwrap_or_else(|| Path::new(".")))
+        .map_err(|source| ConfigError::io(label, source))?;
+    let abs = match path.file_name() {
+        Some(name) => dir.join(name),
+        None => dir.join(crate::discover::FILE_NAME),
+    };
+    load_from(&abs, text, presets).map(|(config, _)| config)
+}
+
 /// As [`load_labeled`], also returning how many files were read.
 fn load_counted(
     path: &Path,
@@ -165,8 +195,17 @@ fn load_counted(
     presets: &dyn Presets,
 ) -> Result<(LoadedConfig, usize), ConfigError> {
     let abs = fs::canonicalize(path).map_err(|source| ConfigError::io(label, source))?;
-    let root = abs.parent().map_or_else(PathBuf::new, Path::to_path_buf);
     let text = ConfigError::read_config(&abs, label)?;
+    load_from(&abs, text, presets)
+}
+
+/// Load `text` as the config at the absolute path `abs`, and everything it extends.
+fn load_from(
+    abs: &Path,
+    text: String,
+    presets: &dyn Presets,
+) -> Result<(LoadedConfig, usize), ConfigError> {
+    let root = abs.parent().map_or_else(PathBuf::new, Path::to_path_buf);
     let mut loader = Loader {
         root: &root,
         presets,
@@ -179,8 +218,8 @@ fn load_counted(
         reads: 1,
     };
     loader.load_text(
-        &Key::Path(abs.clone()),
-        &relative_display(&abs, &root),
+        &Key::Path(abs.to_path_buf()),
+        &relative_display(abs, &root),
         text,
         ConfigLayer::Project,
     )?;
@@ -981,6 +1020,23 @@ mod tests {
         // 7 files in the graph, 126 applications below the root.
         assert_eq!(reads, 7);
         assert_eq!(config.files.len(), 127);
+    }
+
+    #[test]
+    fn config_text_loads_as_the_file_at_a_path_that_does_not_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("slopvac.toml");
+        let config = load_text(
+            &path,
+            "slopvac.toml",
+            "schema_version = 3\nexclude = [\"drafts/\"]\n".to_owned(),
+            &NoPresets,
+        )
+        .unwrap();
+        assert_eq!(config.root, fs::canonicalize(dir.path()).unwrap());
+        assert!(config.is_excluded(Path::new("drafts/a.md")));
+        assert!(!config.is_excluded(Path::new("a.md")));
+        assert!(!path.exists());
     }
 
     #[test]

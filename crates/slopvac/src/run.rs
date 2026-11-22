@@ -495,8 +495,10 @@ fn update_runtime(
 }
 
 fn migrate(m: &ArgMatches, env: &dyn Env, out: &mut dyn std::io::Write) -> Result<u8, CliError> {
-    let linter = slopvac_migrate::EngineLinter::new(vec![crate::rule_catalog::core()?])
-        .map_err(|e| CliError::new(e.code(), e.to_string()))?;
+    let linter = slopvac_migrate::EngineLinter::new(
+        vec![crate::rule_catalog::core()?],
+        Box::new(crate::migrate_lint::MigrateConfigure::load()?),
+    );
     // The backup record lives in the per-user cache, outside the project it vouches for.
     let state = slopvac_fs::cache_dir_with(
         &|name| env.var(name).ok_or(std::env::VarError::NotPresent),

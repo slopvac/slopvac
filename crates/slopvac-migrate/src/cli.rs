@@ -188,15 +188,13 @@ fn execute_in(
         };
         writeln!(out, "{text}").map_err(io)?;
     }
-    let before = linter.lint(&root, Phase::Before, &[])?;
+    let before = linter.lint(&root, Phase::Before, &plan.before_overlay(&root))?;
     let after = linter.lint(&root, Phase::After, &plan.overlay(&root))?;
     let rows = compare(&before, &after, &renames);
     let changed: Vec<_> = rows.iter().filter(|r| r.changed()).collect();
-    if changed.is_empty() {
-        writeln!(out, "{}", MigratePhrase::OutNoChange.as_static()).map_err(io)?;
-    } else {
+    if !changed.is_empty() {
         writeln!(out, "{}", MigratePhrase::OutByRule.as_static()).map_err(io)?;
-        for r in changed {
+        for r in &changed {
             writeln!(
                 out,
                 "  {}: {} -> {}",
@@ -206,6 +204,16 @@ fn execute_in(
             )
             .map_err(io)?;
         }
+    }
+    // A config whose 2.x settings the before side could not reproduce leaves the comparison
+    // incomplete, so the report never claims that nothing changed.
+    if !plan.approximate.is_empty() {
+        let text = MigrateText::OutIncomplete {
+            configs: sanitize::line(&plan.approximate.join(", ")),
+        };
+        writeln!(out, "{text}").map_err(io)?;
+    } else if changed.is_empty() {
+        writeln!(out, "{}", MigratePhrase::OutNoChange.as_static()).map_err(io)?;
     }
     if matches.get_flag("write") {
         apply(&root, &plan, state)?;
