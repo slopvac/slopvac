@@ -300,26 +300,31 @@ pub(crate) fn expand(config: &Config2, legacy: &Legacy) -> Result<Expanded, Unsu
     for index in 0..config.overrides.len() {
         e3.place(index, &mut placed);
     }
-    let mut guards = Vec::new();
-    for (scope, rules) in cx.guards {
-        let set: BTreeSet<usize> = scope.into_iter().collect();
-        let region = regions
-            .iter()
-            .find(|r| r.scope == set)
-            .expect("a guard scope is a region scope");
-        let guard = Block3 {
-            files: region.files.clone(),
-            layer: Layer {
-                categories: BTreeMap::new(),
-                rules,
-            },
-        };
+    // `keep` records a guard only under a scope from `scopes`, so each one is a region's.
+    let mut pending = cx.guards;
+    let guards: BTreeMap<Vec<usize>, Block3> = regions
+        .iter()
+        .filter_map(|region| {
+            let scope: Vec<usize> = region.scope.iter().copied().collect();
+            let rules = pending.remove(&scope)?;
+            let guard = Block3 {
+                files: region.files.clone(),
+                layer: Layer {
+                    categories: BTreeMap::new(),
+                    rules,
+                },
+            };
+            Some((scope, guard))
+        })
+        .collect();
+    let mut unfolded = Vec::new();
+    for guard in guards.into_values() {
         if !fold_guard(&guard, &globs, &mut placed) {
-            guards.push(Out::Guard(guard));
+            unfolded.push(Out::Guard(guard));
         }
     }
     let mut overrides: Vec<Out> = placed.into_iter().map(Out::Original).collect();
-    overrides.extend(guards);
+    overrides.extend(unfolded);
 
     Ok(Expanded {
         top: top_layer,

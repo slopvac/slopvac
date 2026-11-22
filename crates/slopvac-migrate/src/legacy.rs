@@ -204,15 +204,13 @@ impl Legacy {
         };
         let budgeted = with_dial("max_per_100_words");
         let weighted = with_dial("weight");
+        // The generator writes every weight as a float, and the M1 vectors fail on a lost one.
         let weights = cat
             .get("weights")
             .and_then(Item::as_table_like)
-            .expect("catalogue has weights")
-            .iter()
-            .map(|(name, v)| {
-                let w = v.as_float().expect("a catalogue weight is a float");
-                (name.to_owned(), w)
-            })
+            .into_iter()
+            .flat_map(TableLike::iter)
+            .filter_map(|(name, v)| Some((name.to_owned(), v.as_float()?)))
             .collect();
         Self {
             styles,

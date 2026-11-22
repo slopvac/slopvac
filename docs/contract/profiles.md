@@ -68,11 +68,18 @@ The mapping relies on this precedence for the level of one checked rule. It is a
 
 - **E1.** Set `profile` to the 2.x profile and `styles` to `["core:legacy-<profile>"]`. Copy the authored `categories` and `rules`.
 - **E2.** For each category that a layer authors, write into that layer a `rules` entry for each profile default of that category that the layer does not set itself. The value is the default for the profile in force in that layer. In 2.x a per-rule default beat an authored category level.
-- **E3.** The 3.0 config forbids `styles` in an override. For each override that sets `profile`, insert before all override blocks one block with the same `files`. It holds:
+- **E3.** The 3.0 config forbids `styles` in an override, and it refuses two override blocks with the same `files`. For each override i that sets `profile`, fold the profile switch into block i, at the place of block i. The switch holds:
   - the category dials of the target style, minus any field the top level authors, and `max_per_100_words = "none"` for each category that the target style leaves without a budget while another style gives it one (this clears a budget that the base style or an earlier switch set);
   - one `rules` entry for each rule that any legacy style or the top level names, set to the state of the target profile;
   - for a rule that the top level authors, the authored level when 2.x does not ignore it under the target profile, and the target state otherwise;
-  - no entry for an advisory rule in a category that the top level authors.
+  - no entry for an advisory rule in a category that the top level authors;
+  - no entry for a checked rule in a category that block i or a restated block authors, unless the target profile excludes the rule or gives it a default, because 2.x applied the authored category level to that rule;
+  - no entry for a checked rule in a category that a moved block authors, unless the target style names the rule.
+
+  Inside block i, the authored entries of the block beat the switch entries. Each earlier override j that the containment forest relates to block i changes as follows:
+  - j contains i (every file of i matches j): restate the authored categories and rules of j in block i, under the keys that block i authors. This is exact, because 2.x applied j to every file of i.
+  - j lies inside i: move block j to directly after block i and expand it under the target profile. Drop from it every setting that block i, or a block after j that contains i, also sets. Then restate their `rules` entries in each category that block j still levels, because a category entry in a later block beats a rule entry in an earlier one. The block that won in 2.x then still wins. The order of the other blocks that relate to j stays.
+  - j and i are disjoint: no change.
 
   A second profile override then resets everything the first one set.
 - **E4.** Handle an authored `rules` entry that 2.x ignored. A file matches a set of override blocks, and 2.x decides from the final profile and category levels of that set. The expansion lists the sets that the block globs allow, using the containment of the globs. It drops an entry that is ignored in every set it can see, with a notice. An entry that is ignored in some sets stays, and a guard block at the end of the overrides sets the rule to `off` for the files of each such set. The guard `files` list uses a negated pattern for each block nested inside the region. 2.x ignored an entry for a judgement rule, a tier-excluded rule, or a rule in a category that is off in the final levels of the set. `migrate` always drops a judgement entry.
