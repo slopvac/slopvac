@@ -44,6 +44,9 @@ pub trait Tagger: Send + Sync {
 pub struct TagSink {
     tags: Vec<Tag>,
     limit: usize,
+    /// Address of the evidence of the last tag pushed, so that the work counter can tell a
+    /// piece that shares it from a tag that holds text of its own.
+    last_evidence: usize,
 }
 
 impl TagSink {
@@ -53,6 +56,7 @@ impl TagSink {
         Self {
             tags: Vec::new(),
             limit,
+            last_evidence: 0,
         }
     }
 
@@ -69,7 +73,13 @@ impl TagSink {
             return Err(Error::TagLimit { limit: self.limit });
         }
         work::materialised(1);
-        self.tags.push(make());
+        let tag = make();
+        let address = tag.evidence.as_ptr().addr();
+        if address != self.last_evidence {
+            work::evidence(tag.evidence.len());
+            self.last_evidence = address;
+        }
+        self.tags.push(tag);
         Ok(())
     }
 
