@@ -158,7 +158,10 @@ fn every_migrated_config_resolves_to_the_measured_2x_levels() {
                 if dials == json!("off") {
                     continue;
                 }
-                let id = renames.category(&cat).unwrap();
+                // A category that 3.0 removed has nothing to resolve.
+                let Some(id) = renames.category(&cat) else {
+                    continue;
+                };
                 let budget = resolved.budget(&id);
                 // With no weight set, 3.0 scores at the category's own weight.
                 let weight = resolved

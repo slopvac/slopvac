@@ -46,12 +46,9 @@
 "ai-tells-register" = 1.5
 "ai-tells-structure" = 1.5
 "docs-discipline" = 1.0
-"meta" = 1.0
 "orwell" = 1.5
-"orwell-voice" = 1.0
 "prose-agency" = 1.2
 "prose-craft" = 0.8
-"prose-density" = 1.0
 "prose-discipline" = 1.5
 "prose-format" = 0.8
 "prose-inclusive" = 0.8
@@ -66,7 +63,6 @@
 "ste-safety" = 1.5
 "ste-sentences" = 1.0
 "ste-verbs" = 1.0
-"ste-vocabulary" = 1.0
 "ste-words" = 1.0
 
 [rules]
