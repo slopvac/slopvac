@@ -1,7 +1,7 @@
 //! `slopvac migrate` lints each side under its own config: the before side under what the
 //! 2.x config meant, the after side under the migrated `slopvac.toml`.
-#![allow(clippy::expect_used, reason = "test code: a panic is a failed test")]
 
+use std::error::Error;
 use std::fs;
 use std::path::Path;
 
@@ -19,11 +19,11 @@ const HYPHENS: &str = "core:prose-craft.hyphens";
 const COMMAND_PROMPT: &str = "core:prose-craft.command-prompt";
 
 /// A project with the 2.x `config` as `slopvac.toml` and `doc` as `doc.md`.
-fn project(config: &str, doc: &str) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().expect("tempdir");
-    fs::write(dir.path().join("slopvac.toml"), config).expect("write config");
-    fs::write(dir.path().join("doc.md"), doc).expect("write document");
-    dir
+fn project(config: &str, doc: &str) -> std::io::Result<tempfile::TempDir> {
+    let dir = tempfile::tempdir()?;
+    fs::write(dir.path().join("slopvac.toml"), config)?;
+    fs::write(dir.path().join("doc.md"), doc)?;
+    Ok(dir)
 }
 
 fn count(findings: &[Finding], rule: &str) -> usize {
@@ -35,20 +35,20 @@ fn count(findings: &[Finding], rule: &str) -> usize {
 }
 
 /// The findings of `rule` before and after the migration of `root`.
-fn sides(root: &Path, preserve_behavior: bool, rule: &str) -> (usize, usize) {
+fn sides(
+    root: &Path,
+    preserve_behavior: bool,
+    rule: &str,
+) -> Result<(usize, usize), Box<dyn Error>> {
     let options = Options { preserve_behavior };
-    let plan = plan(root, &RenameTable::bundled(), options, "").expect("the migration plans");
+    let plan = plan(root, &RenameTable::bundled(), options, "")?;
     let linter = EngineLinter::new(
-        vec![rule_catalog::core().expect("the rules load")],
-        Box::new(MigrateConfigure::load().expect("the rules load")),
+        vec![rule_catalog::core()?],
+        Box::new(MigrateConfigure::load()?),
     );
-    let before = linter
-        .lint(root, Phase::Before, &plan.before_overlay(root))
-        .expect("the before side lints");
-    let after = linter
-        .lint(root, Phase::After, &plan.overlay(root))
-        .expect("the after side lints");
-    (count(&before, rule), count(&after, rule))
+    let before = linter.lint(root, Phase::Before, &plan.before_overlay(root))?;
+    let after = linter.lint(root, Phase::After, &plan.overlay(root))?;
+    Ok((count(&before, rule), count(&after, rule)))
 }
 
 #[rstest]
@@ -69,9 +69,10 @@ fn each_side_lints_under_its_own_config(
     #[case] config: &str,
     #[case] preserve_behavior: bool,
     #[case] expected: (usize, usize),
-) {
-    let dir = project(config, HYPHEN);
-    assert_eq!(sides(dir.path(), preserve_behavior, HYPHENS), expected);
+) -> Result<(), Box<dyn Error>> {
+    let dir = project(config, HYPHEN)?;
+    assert_eq!(sides(dir.path(), preserve_behavior, HYPHENS)?, expected);
+    Ok(())
 }
 
 fn slopvac() -> Command {
@@ -92,8 +93,11 @@ fn slopvac() -> Command {
 // `--preserve-behavior` the migration drops that gate, and the report says so.
 #[case::dropped(&[], true)]
 #[case::kept(&["--preserve-behavior"], false)]
-fn the_report_shows_a_gate_the_migration_drops(#[case] flags: &[&str], #[case] shown: bool) {
-    let dir = project("schema_version = 2\nprofile = \"normal\"\n", PROMPT);
+fn the_report_shows_a_gate_the_migration_drops(
+    #[case] flags: &[&str],
+    #[case] shown: bool,
+) -> std::io::Result<()> {
+    let dir = project("schema_version = 2\nprofile = \"normal\"\n", PROMPT)?;
     let assert = slopvac()
         .arg("migrate")
         .arg(dir.path())
@@ -107,4 +111,5 @@ fn the_report_shows_a_gate_the_migration_drops(#[case] flags: &[&str], #[case] s
         "{stdout}"
     );
     assert_eq!(stdout.contains(COMMAND_PROMPT), shown, "{stdout}");
+    Ok(())
 }
