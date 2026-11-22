@@ -39,6 +39,7 @@ flate2.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
 minisign-verify.workspace = true
+regex.workspace = true
 rustix.workspace = true
 semver.workspace = true
 serde.workspace = true

@@ -2754,6 +2754,7 @@ dependencies = [
  "hmac",
  "minisign",
  "minisign-verify",
+ "regex",
  "rstest",
  "rustix",
  "rustls",
