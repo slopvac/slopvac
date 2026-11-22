@@ -10,10 +10,15 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::lint_messages::{LintFixMessage, LintFixReason};
 use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
-use slopvac_engine::{EngineError, Input, Kind};
+use slopvac_engine::{
+    AclCheckFailed, Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, Root,
+    RootChanged, fix_file_in,
+};
+use slopvac_messages::Catalog as _;
 use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
@@ -45,6 +50,8 @@ pub struct LintRequest {
     pub code_comments: bool,
     /// Settings from the command line.
     pub overrides: Overrides,
+    /// `--fix`: write the safe replacements back to each file before it is reported.
+    pub fix: bool,
 }
 
 /// The result of one run.
@@ -117,6 +124,8 @@ struct Item {
     config: Option<(Arc<LoadedConfig>, PathBuf)>,
     /// The directory that holds the file, canonical. Not set for standard input.
     dir: Option<PathBuf>,
+    /// The file, canonical. Not set for standard input. `--fix` writes here.
+    path: Option<PathBuf>,
 }
 
 /// The run so far.
@@ -336,8 +345,11 @@ impl Configs<'_> {
 impl Linter for EngineLinter {
     fn lint(&self, request: &LintRequest) -> RunOutcome {
         let mut run = Run::default();
+        // Open the root once, before any file is collected, so a later swap of its path for
+        // a link cannot move a fix elsewhere.
+        let root = request.fix.then(|| Root::open(&request.root));
         match prepare(request, &mut run) {
-            Ok((rules, items)) => lint_items(request, items, rules, run),
+            Ok((rules, items)) => lint_items(request, root.as_ref(), items, rules, run),
             Err(err) => failed(request, run, &err),
         }
     }
@@ -582,6 +594,7 @@ fn collect_stdin(
             kind,
             config: config_for(configs, &request.root, Path::new(shown))?,
             dir: None,
+            path: None,
         }),
         (Err(why), _) => run.skip("input-unsupported", shown, format!("{shown}: {why}")),
         (_, Err(_)) => run.skip("input-not-utf8", shown, format!("{shown}: not valid UTF-8")),
@@ -692,6 +705,7 @@ fn collect_targets(
                 kind,
                 config,
                 dir: canonical.parent().map(Path::to_path_buf),
+                path: Some(canonical),
             });
         }
     }
@@ -895,7 +909,141 @@ fn project_roots(request: &LintRequest, items: &[Item]) -> Vec<PathBuf> {
     roots
 }
 
-fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: Run) -> RunOutcome {
+/// What a fix run needs besides the items: the engine of the group and, for each input of
+/// the group, the lint context `lint_items` gives the engine.
+struct FixContext<'a> {
+    /// The root handle opened before the files were collected.
+    root: &'a std::io::Result<Root>,
+    engine: &'a Engine,
+    relatives: &'a [Option<String>],
+    declared: &'a [Option<String>],
+}
+
+/// The entries of `values` whose flag in `keep` is set.
+fn retain<T: Clone>(values: &[T], keep: &[bool]) -> Vec<T> {
+    values
+        .iter()
+        .zip(keep)
+        .filter(|(_, keep)| **keep)
+        .map(|(value, _)| value.clone())
+        .collect()
+}
+
+/// The reason for an I/O error: the typed causes the engine raises get their catalog text,
+/// anything else the system's own wording.
+fn io_reason(source: &std::io::Error) -> LintFixReason {
+    let cause = source.get_ref();
+    if cause.is_some_and(<dyn std::error::Error + Send + Sync>::is::<AclCheckFailed>) {
+        LintFixReason::AclCheck
+    } else if cause.is_some_and(<dyn std::error::Error + Send + Sync>::is::<RootChanged>) {
+        LintFixReason::RootChanged
+    } else {
+        LintFixReason::Io {
+            detail: source.to_string(),
+        }
+    }
+}
+
+/// The reason text for a fix that failed for a cause other than a refusal or a lint error.
+fn fix_failure_reason(err: FixError) -> String {
+    let reason = match err {
+        FixError::NotUtf8(_) => LintFixReason::NotUtf8,
+        FixError::Io { source, .. } => io_reason(&source),
+        other => LintFixReason::Io {
+            detail: other.to_string(),
+        },
+    };
+    slopvac_messages::render(&reason)
+}
+
+/// Write the safe replacements of each file in `indexes` and swap the text of the item for
+/// the fixed text, so the report that follows describes the file as it is now.
+///
+/// Returns, for each index, whether the file is still to be reported: a file the engine
+/// refused to write is recorded as not checked (exit 2) and left out. Standard input has no
+/// file and is never written.
+fn fix_group(
+    context: &FixContext<'_>,
+    indexes: &[usize],
+    items: &mut [Item],
+    run: &mut Run,
+) -> Vec<bool> {
+    let mut keep = Vec::with_capacity(indexes.len());
+    for (position, &index) in indexes.iter().enumerate() {
+        let item = &mut items[index];
+        let Some(path) = item.path.clone() else {
+            keep.push(true);
+            continue;
+        };
+        let file_context = FileContext {
+            kind: item.kind,
+            shown: Some(&item.shown),
+            relative_path: context.relatives[position].as_deref(),
+            declared_genre: context.declared[position].as_deref(),
+        };
+        let root = match context.root {
+            Ok(root) => root,
+            Err(err) => {
+                let shown = item.shown.clone();
+                let failed = LintFixMessage::Failed {
+                    shown: shown.clone(),
+                    reason: slopvac_messages::render(&io_reason(err)),
+                };
+                run.skip(failed.code(), &shown, slopvac_messages::render(&failed));
+                keep.push(false);
+                continue;
+            }
+        };
+        let fixed = fix_file_in(
+            context.engine,
+            root,
+            &path,
+            &file_context,
+            false,
+            None,
+            &mut |_| Ok(()),
+        );
+        match fixed {
+            Ok(FileFix::Done(result)) => {
+                // The fix read the file again, so its text is the one to report even when
+                // nothing was written.
+                item.text = result.report.text;
+                keep.push(true);
+            }
+            Ok(FileFix::Refused(refusal)) => {
+                let shown = item.shown.clone();
+                let message = slopvac_messages::render(&LintFixMessage::Refused {
+                    shown: shown.clone(),
+                    reason: refusal.code().to_owned(),
+                });
+                run.skip(refusal.code(), &shown, message);
+                keep.push(false);
+            }
+            Err(FixError::Engine(err)) => {
+                run.skip_engine_error(&item.shown, &err);
+                keep.push(false);
+            }
+            Err(err) => {
+                let shown = item.shown.clone();
+                let failed = LintFixMessage::Failed {
+                    shown: shown.clone(),
+                    reason: fix_failure_reason(err),
+                };
+                run.skip(failed.code(), &shown, slopvac_messages::render(&failed));
+                keep.push(false);
+            }
+        }
+    }
+    keep
+}
+
+fn lint_items(
+    request: &LintRequest,
+    root: Option<&std::io::Result<Root>>,
+    mut items: Vec<Item>,
+    rules: Catalog,
+    mut run: Run,
+) -> RunOutcome {
     let groups = match group_by_settings(request, &items, &rules) {
         Ok(groups) => groups,
         Err(err) => return failed(request, run, &err),
@@ -917,6 +1065,24 @@ fn lint_items(request: &LintRequest, items: Vec<Item>, rules: Catalog, mut run: 
             .iter()
             .map(|&i| items[i].config.as_ref().map(|(_, rel)| rel_text(rel)))
             .collect();
+        let (indexes, relatives) = if let Some(root) = root {
+            // The fix needs the genre each file declares before it is fixed. The report
+            // below reads the front matter again from the text that is left.
+            let declared: Vec<Option<String>> = indexes
+                .iter()
+                .map(|&i| declared_genre(&read_block(&items[i])))
+                .collect();
+            let context = FixContext {
+                root,
+                engine: &engine,
+                relatives: &relatives,
+                declared: &declared,
+            };
+            let keep = fix_group(&context, &indexes, &mut items, &mut run);
+            (retain(&indexes, &keep), retain(&relatives, &keep))
+        } else {
+            (indexes, relatives)
+        };
         let reads: Vec<Read> = indexes.iter().map(|&i| read_block(&items[i])).collect();
         for (&i, read) in indexes.iter().zip(&reads) {
             run.front_matter_errors(&items[i], read);
@@ -1086,6 +1252,7 @@ mod read_tests {
             config: None,
             code_comments: false,
             overrides: Overrides::default(),
+            fix: false,
         }
     }
 
@@ -1324,6 +1491,142 @@ mod skip_tests {
         assert_eq!(
             run.incomplete[0].message,
             "docs/a.md: context tagger failed: pattern `\\\\d+\\u{a}` failed while matching"
+        );
+    }
+}
+
+#[cfg(test)]
+mod fix_tests {
+    use super::*;
+    use slopvac_engine::Settings;
+    use slopvac_model::{GenreId, GenreResult, GenreSource};
+
+    #[test]
+    fn the_report_uses_the_text_the_fix_read_even_when_it_wrote_nothing() {
+        // The file changed after the run read it. The fix read the new text and found
+        // nothing to write, so the report must still describe the new text.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        let path = root.join("a.md");
+        std::fs::write(&path, "# New\n").expect("write");
+        let mut items = vec![Item {
+            shown: "a.md".to_owned(),
+            text: "# Old\n".to_owned(),
+            kind: Kind::Markdown,
+            config: None,
+            dir: Some(root.clone()),
+            path: Some(path),
+        }];
+        let request = LintRequest {
+            root,
+            targets: Vec::new(),
+            stdin: None,
+            stdin_plan: None,
+            config: None,
+            code_comments: false,
+            overrides: crate::lint_settings::Overrides::default(),
+            fix: true,
+        };
+        let engine = Engine::new(
+            Vec::new(),
+            Settings::new(
+                NonEmptyString::new("normal").expect("profile"),
+                GenreResult {
+                    id: GenreId::new("reference").expect("genre"),
+                    source: GenreSource::Default,
+                    reasons: Vec::new(),
+                },
+            ),
+        )
+        .expect("engine");
+        let held = Root::open(&request.root);
+        let context = FixContext {
+            root: &held,
+            engine: &engine,
+            relatives: &[None],
+            declared: &[None],
+        };
+        let mut run = Run::default();
+
+        let keep = fix_group(&context, &[0], &mut items, &mut run);
+
+        assert_eq!(keep, [true]);
+        assert_eq!(items[0].text, "# New\n");
+    }
+    #[test]
+    fn a_fix_that_failed_gives_a_reason_for_each_kind_of_failure() {
+        let io = |source| FixError::Io {
+            path: "a.md".to_owned(),
+            source,
+        };
+        assert_eq!(
+            fix_failure_reason(FixError::NotUtf8("a.md".to_owned())),
+            "not valid UTF-8"
+        );
+        assert_eq!(
+            fix_failure_reason(io(std::io::Error::other(AclCheckFailed))),
+            "the access control list check failed"
+        );
+        assert_eq!(
+            fix_failure_reason(io(std::io::Error::from(
+                std::io::ErrorKind::PermissionDenied
+            ))),
+            "permission denied"
+        );
+    }
+
+    /// An engine with no rules, for tests that never lint.
+    fn bare_engine() -> Engine {
+        Engine::new(
+            Vec::new(),
+            Settings::new(
+                NonEmptyString::new("normal").expect("profile"),
+                GenreResult {
+                    id: GenreId::new("reference").expect("genre"),
+                    source: GenreSource::Default,
+                    reasons: Vec::new(),
+                },
+            ),
+        )
+        .expect("engine")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_root_replaced_while_it_was_opened_is_reported_with_the_registry_reason() {
+        let parent = tempfile::tempdir().expect("tempdir");
+        let root = parent.path().join("root");
+        std::fs::create_dir(&root).expect("root");
+        let elsewhere = tempfile::tempdir().expect("tempdir");
+        let held = Root::open_hooked(&root, &mut || {
+            std::fs::rename(&root, parent.path().join("moved")).expect("move the root");
+            std::os::unix::fs::symlink(elsewhere.path(), &root).expect("link in its place");
+        });
+        let mut items = vec![Item {
+            shown: "a.md".to_owned(),
+            text: "# Old\n".to_owned(),
+            kind: Kind::Markdown,
+            config: None,
+            dir: Some(root.clone()),
+            path: Some(root.join("a.md")),
+        }];
+        let engine = bare_engine();
+        let context = FixContext {
+            root: &held,
+            engine: &engine,
+            relatives: &[None],
+            declared: &[None],
+        };
+        let mut run = Run::default();
+
+        let keep = fix_group(&context, &[0], &mut items, &mut run);
+
+        assert_eq!(keep, [false]);
+        let notice = run.notices.first().expect("a notice");
+        assert_eq!(notice.code.as_str(), "fix-failed");
+        assert_eq!(
+            notice.message.as_str(),
+            "a.md: not fixed: the project root was replaced while it was opened"
         );
     }
 }

@@ -22,7 +22,7 @@ use common::{engine, rule};
 use serde_json::json;
 use slopvac_engine::{Engine, FileFix, FileResult, Kind, Refusal, fix_file};
 #[cfg(unix)]
-use slopvac_engine::{Step, fix_file_hooked};
+use slopvac_engine::{Root, Step, fix_file_hooked};
 
 const DOC: &str = "Use delta here.\n";
 const FIXED: &str = "Use d here.\n";
@@ -126,6 +126,49 @@ fn an_absolute_path_inside_the_root_works_and_a_nested_one_too() {
     assert!(done(out).written);
 }
 
+/// A root given as a link: the canonical absolute path of a file in it, which is what file
+/// discovery produces, is inside the root.
+#[cfg(unix)]
+#[test]
+fn a_root_given_as_a_symlink_accepts_the_canonical_path_of_a_file_in_it() {
+    let parent = tempfile::tempdir().unwrap();
+    let real = parent.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+    std::fs::write(real.join("doc.md"), DOC).unwrap();
+    let alias = parent.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let canonical = real.canonicalize().unwrap().join("doc.md");
+
+    let out = fix_file(&swaps(), &alias, &canonical, Kind::Markdown, false, None).unwrap();
+
+    assert!(done(out).written);
+    assert_eq!(read(real.join("doc.md")), FIXED);
+}
+
+/// A root given as a relative path: the absolute path of a file in it is inside the root.
+#[cfg(unix)]
+#[test]
+fn a_relative_root_accepts_the_absolute_path_of_a_file_in_it() {
+    let here = std::env::current_dir().unwrap();
+    let dir = tempfile::tempdir_in(&here).unwrap();
+    std::fs::write(dir.path().join("doc.md"), DOC).unwrap();
+    let relative_root = Path::new(dir.path().file_name().unwrap());
+    let absolute = dir.path().canonicalize().unwrap().join("doc.md");
+
+    let out = fix_file(
+        &swaps(),
+        relative_root,
+        &absolute,
+        Kind::Markdown,
+        false,
+        None,
+    )
+    .unwrap();
+
+    assert!(done(out).written);
+    assert_eq!(read(dir.path().join("doc.md")), FIXED);
+}
+
 #[test]
 fn a_file_with_nothing_to_fix_is_not_written() {
     let root = project();
@@ -203,9 +246,13 @@ fn at(
     step: Step,
     mut tamper: impl FnMut() -> std::io::Result<()>,
 ) -> Result<FileFix, slopvac_engine::FixError> {
+    let root = Root::open(root).map_err(|source| slopvac_engine::FixError::Io {
+        path: "root".to_owned(),
+        source,
+    })?;
     fix_file_hooked(
         &swaps(),
-        root,
+        &root,
         Path::new("doc.md"),
         Kind::Markdown,
         false,
@@ -439,6 +486,20 @@ mod unix {
         );
     }
 
+    /// Skip an ACL test on a host that cannot set ACLs. CI and `SLOPVAC_REQUIRE_ACL=1`
+    /// turn the skip into a failure, so a runner that lost ACL support cannot pass silently.
+    fn skip_without_acl_support(why: &str) {
+        use std::io::Write as _;
+        assert!(
+            std::env::var_os("CI").is_none() && std::env::var_os("SLOPVAC_REQUIRE_ACL").is_none(),
+            "ACL support is required here: {why}"
+        );
+        assert!(
+            writeln!(std::io::stderr(), "skipped: {why}").is_ok(),
+            "stderr is writable"
+        );
+    }
+
     /// Run `setfacl` on `path`; false when the tool or the file system cannot.
     #[cfg(target_os = "linux")]
     fn setfacl(args: &[&str], path: &Path) -> bool {
@@ -447,6 +508,44 @@ mod unix {
             .arg(path)
             .status()
             .is_ok_and(|s| s.success())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_path_with_a_newline_is_refused_because_its_acl_cannot_be_read_safely() {
+        let root = tempfile::tempdir().unwrap();
+        let name = "doc\nnote.md";
+        let path = root.path().join(name);
+        std::fs::write(&path, DOC).unwrap();
+        let out = run(root.path(), name, false);
+        assert_eq!(refused(&out), Refusal::AclPresent);
+        assert_eq!(read(&path), DOC);
+        assert_eq!(names(root.path()), [name], "nothing was staged");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_file_with_an_extended_acl_is_refused_and_left_untouched() {
+        let root = project();
+        let path = root.path().join("doc.md");
+        let set = std::process::Command::new("chmod")
+            .args(["+a", "everyone allow read"])
+            .arg(&path)
+            .status()
+            .is_ok_and(|s| s.success());
+        if !set {
+            skip_without_acl_support("chmod +a failed");
+            return;
+        }
+        assert!(
+            !done(run(root.path(), "doc.md", true)).written,
+            "a dry run still works"
+        );
+        let out = run(root.path(), "doc.md", false);
+        assert_eq!(refused(&out), Refusal::AclPresent);
+        assert_eq!(refused(&out).code(), "fix-acl-present");
+        assert_eq!(read(&path), DOC);
+        assert_eq!(names(root.path()), ["doc.md"], "nothing was staged");
     }
 
     #[cfg(target_os = "linux")]
@@ -464,7 +563,8 @@ mod unix {
             };
             let args: Vec<&str> = args.into_iter().filter(|a| !a.is_empty()).collect();
             if !setfacl(&args, &target) {
-                return; // no setfacl, or no ACL support here
+                skip_without_acl_support("setfacl failed: no tool, or no ACL support here");
+                return;
             }
             assert!(
                 !done(run(root.path(), "doc.md", true)).written,
@@ -596,4 +696,118 @@ mod unix {
 #[case::changed(Refusal::Changed, "fix-changed")]
 fn each_refusal_has_its_stable_code(#[case] refusal: Refusal, #[case] code: &str) {
     assert_eq!(refusal.code(), code);
+}
+
+/// A root that cannot be opened is an I/O error. The error names the target the way policies
+/// section 1.7 shows paths, not by the absolute path the caller passed.
+#[test]
+fn a_root_that_cannot_be_opened_does_not_leak_the_absolute_target_path() {
+    let parent = tempfile::tempdir().unwrap();
+    let target = parent.path().join("private-dir").join("doc.md");
+    let err = fix_file(
+        &swaps(),
+        &parent.path().join("missing-root"),
+        &target,
+        Kind::Markdown,
+        false,
+        None,
+    )
+    .unwrap_err();
+    let slopvac_engine::FixError::Io { path, .. } = &err else {
+        panic!("not an I/O error: {err}");
+    };
+    assert_eq!(path, "<external>/doc.md");
+}
+
+/// After the root path is swapped for a link, an absolute path into the link's target is
+/// not under the root that was opened. It is refused, not mapped onto the original root.
+#[cfg(unix)]
+#[test]
+fn an_absolute_path_into_the_directory_a_swapped_root_now_points_at_is_refused() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("doc.md"), DOC).unwrap();
+    let outside = project();
+    let held = Root::open(&root).unwrap();
+    std::fs::rename(&root, parent.path().join("moved")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), &root).unwrap();
+    let target = outside.path().canonicalize().unwrap().join("doc.md");
+
+    let out = fix_file_hooked(
+        &swaps(),
+        &held,
+        &target,
+        Kind::Markdown,
+        false,
+        None,
+        &mut |_| Ok(()),
+    )
+    .unwrap();
+
+    assert_eq!(refused(&out), Refusal::OutsideRoot);
+    assert_eq!(read(parent.path().join("moved/doc.md")), DOC);
+    assert_eq!(read(outside.path().join("doc.md")), DOC);
+}
+
+/// The root path is replaced by a link to another directory after the root was opened, as
+/// happens between collecting files and writing a fix. The held handle still names the
+/// original root, so the fix lands there and the outside directory is untouched.
+#[cfg(unix)]
+#[test]
+fn a_root_swapped_for_a_link_after_it_was_opened_still_writes_in_the_original_root() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("doc.md"), DOC).unwrap();
+    let outside = project();
+
+    let held = Root::open(&root).unwrap();
+    std::fs::rename(&root, parent.path().join("moved")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), &root).unwrap();
+
+    let out = fix_file_hooked(
+        &swaps(),
+        &held,
+        Path::new("doc.md"),
+        Kind::Markdown,
+        false,
+        None,
+        &mut |_| Ok(()),
+    )
+    .unwrap();
+
+    assert!(done(out).written);
+    assert_eq!(read(parent.path().join("moved/doc.md")), FIXED);
+    assert_eq!(read(outside.path().join("doc.md")), DOC);
+    assert_eq!(
+        names(outside.path()),
+        ["doc.md"],
+        "nothing was staged outside"
+    );
+}
+
+/// The root path is swapped for a link to another directory after the directory is open and
+/// before its canonical path is resolved. The canonical path would then name the other
+/// directory while the handle holds the original, so the open is refused.
+#[cfg(unix)]
+#[test]
+fn a_root_swapped_between_the_open_and_the_canonical_lookup_is_refused() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("doc.md"), DOC).unwrap();
+    let outside = project();
+
+    let opened = Root::open_hooked(&root, &mut || {
+        std::fs::rename(&root, parent.path().join("moved")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), &root).unwrap();
+    });
+
+    assert!(
+        opened.is_err(),
+        "the held directory is not the canonical one"
+    );
+    assert_eq!(read(outside.path().join("doc.md")), DOC);
+    assert_eq!(read(parent.path().join("moved/doc.md")), DOC);
 }

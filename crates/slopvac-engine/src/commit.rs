@@ -12,7 +12,7 @@
 //! exists in safe Rust today (bead slopvac-8l4.3.35).
 
 use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
@@ -197,13 +197,99 @@ fn nonblocking(_: &mut OpenOptions) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The source of the I/O error that a failed ACL check returns, so a caller can tell it
+/// from other I/O errors and word it itself.
+#[derive(Debug, thiserror::Error)]
+#[error("the ACL check failed")]
+pub struct AclCheckFailed;
+
+/// The source of the I/O error that [`Root::open`] returns when the root path was replaced
+/// while it was being opened, so a caller can tell it from other I/O errors and word it
+/// itself.
+#[derive(Debug, thiserror::Error)]
+#[error("the project root changed while it was opened")]
+pub struct RootChanged;
+
+/// The project root as an open directory handle.
+///
+/// [`Root::open`] is the only place the root is opened by pathname. Every later open, stage
+/// and rename goes through the handle, so replacing the path with a link afterwards cannot
+/// move a fix to another directory. The path, and its canonical form resolved once at open,
+/// are kept only to turn an absolute file path into a relative one.
+#[derive(Debug)]
+pub struct Root {
+    dir: Dir,
+    path: PathBuf,
+    canonical: Option<PathBuf>,
+}
+
+impl Root {
+    /// Open the directory at `path` and hold it. A link at `path` is followed here, once.
+    ///
+    /// # Errors
+    ///
+    /// Returns the I/O error when `path` is not an openable directory.
+    pub fn open(path: &Path) -> std::io::Result<Self> {
+        Self::open_hooked(path, &mut || {})
+    }
+
+    /// [`Root::open`] with a callback that runs after the directory is open and before its
+    /// canonical path is resolved. Tests use it to swap the path in that window.
+    #[doc(hidden)]
+    pub fn open_hooked(path: &Path, between: &mut dyn FnMut()) -> std::io::Result<Self> {
+        let dir = Dir::open_ambient_dir(path, ambient_authority())?;
+        between();
+        // Resolved here, once, so a link or a relative root still has an absolute spelling
+        // to match targets against. It is never resolved again.
+        let canonical = path.canonicalize().ok();
+        if let Some(canonical) = &canonical {
+            Self::check_same_directory(&dir, canonical)?;
+        }
+        Ok(Self {
+            dir,
+            path: path.to_path_buf(),
+            canonical,
+        })
+    }
+
+    /// Refuse a canonical path that names another directory than the one held: the path was
+    /// swapped between the open and the lookup. A failure to read either side fails too.
+    #[cfg(unix)]
+    fn check_same_directory(dir: &Dir, canonical: &Path) -> std::io::Result<()> {
+        use cap_std::fs::MetadataExt as _;
+        use std::os::unix::fs::MetadataExt as _;
+        let held = dir.dir_metadata()?;
+        let named = std::fs::metadata(canonical)?;
+        if (held.dev(), held.ino()) == (named.dev(), named.ino()) {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(RootChanged))
+        }
+    }
+
+    #[cfg(not(unix))]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the same signature as the unix check, which can fail"
+    )]
+    fn check_same_directory(_: &Dir, _: &Path) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    /// The spellings of the root that an absolute target may start with: the path the root
+    /// was opened under and its canonical form. Do not open either again.
+    pub(crate) fn spellings(&self) -> impl Iterator<Item = &Path> {
+        std::iter::once(self.path.as_path()).chain(self.canonical.as_deref())
+    }
+}
+
 /// Walk to the parent of `relative` below `root` without following a link, and open the
 /// file for reading. The caller checks what the file is.
 fn open_file(
-    root: &Path,
+    root: &Root,
     relative: &Path,
 ) -> std::io::Result<Result<(Dir, OsString, File), Refusal>> {
-    let mut parent = Dir::open_ambient_dir(root, ambient_authority())?;
+    let mut parent = root.dir.try_clone()?;
     let mut names: Vec<&OsStr> = relative.iter().collect();
     let Some(name) = names.pop() else {
         return Ok(Err(Refusal::OutsideRoot));
@@ -241,7 +327,7 @@ pub(crate) use other::open;
 mod other {
     use std::path::Path;
 
-    use super::{Refusal, checked_len, max_bytes, open_file, read_all};
+    use super::{Refusal, Root, checked_len, max_bytes, open_file, read_all};
 
     /// Nothing to commit with: this platform does not write in place.
     pub(crate) struct Handle;
@@ -259,7 +345,7 @@ mod other {
     }
 
     pub(crate) fn open(
-        root: &Path,
+        root: &Root,
         relative: &Path,
     ) -> std::io::Result<Result<(Handle, Vec<u8>), Refusal>> {
         let (_, _, mut file) = match open_file(root, relative)? {
@@ -293,7 +379,7 @@ mod unix {
     use rustix::io::Errno;
 
     use super::{
-        Hook, Refusal, Step, checked_len, fits, max_bytes, nonblocking, open_file, read_all,
+        Hook, Refusal, Root, Step, checked_len, fits, max_bytes, nonblocking, open_file, read_all,
     };
 
     /// What names a file: device and inode, size and modification time.
@@ -339,19 +425,80 @@ mod unix {
         }
     }
 
-    /// Whether `fd` carries the ACL attribute `name`. Only Linux exposes ACLs as extended
-    /// attributes. macOS keeps them in a hidden attribute and other systems elsewhere, so
-    /// there an ACL is not detected.
+    /// Which ACL a check looks for.
+    #[derive(Clone, Copy)]
+    pub(super) enum Acl {
+        /// An ACL on the file itself, which a replacement file would lose.
+        Access,
+        /// An ACL on a directory that new files in it would inherit.
+        Inherited,
+    }
+
+    /// Whether `fd` carries the ACL. Linux keeps ACLs in extended attributes.
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    fn has_acl(fd: impl std::os::fd::AsFd, name: &str) -> std::io::Result<bool> {
+    fn has_acl(fd: impl std::os::fd::AsFd, which: Acl) -> std::io::Result<bool> {
+        let name = match which {
+            Acl::Access => "system.posix_acl_access",
+            Acl::Inherited => "system.posix_acl_default",
+        };
         let mut buffer = [0u8; 4096];
         acl_decision(rustix::fs::fgetxattr(fd, name, &mut buffer[..]))
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
-    #[allow(clippy::unnecessary_wraps)]
-    fn has_acl(_: impl std::os::fd::AsFd, _: &str) -> std::io::Result<bool> {
+    /// Whether `fd` carries the ACL. macOS hides its ACL attribute from the extended
+    /// attribute calls, and `acl_get_fd` is an `unsafe` foreign call that this workspace
+    /// forbids. So `ls -lde`, which prints the entries under the file, answers for the path
+    /// the descriptor names. An error fails the check instead of passing the file.
+    #[cfg(target_os = "macos")]
+    fn has_acl(fd: impl std::os::fd::AsFd, which: Acl) -> std::io::Result<bool> {
+        use std::os::unix::ffi::OsStrExt;
+        let path = rustix::fs::getpath(fd)?;
+        // `ls` prints the name unescaped, so a newline in it would split the first line and
+        // could pass for an entry. Do not guess: treat the ACL as present.
+        if path.to_bytes().contains(&b'\n') {
+            return Ok(true);
+        }
+        let output = std::process::Command::new("/bin/ls")
+            .env_clear()
+            .env("LC_ALL", "C")
+            .stdin(std::process::Stdio::null())
+            .arg("-lde")
+            .arg("--")
+            .arg(OsStr::from_bytes(path.to_bytes()))
+            .output()?;
+        if !output.status.success() {
+            return Err(std::io::Error::other(super::AclCheckFailed));
+        }
+        Ok(lists_acl(&String::from_utf8_lossy(&output.stdout), which))
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the same signature as the platforms that read an ACL and can fail"
+    )]
+    fn has_acl(_: impl std::os::fd::AsFd, _: Acl) -> std::io::Result<bool> {
         Ok(false)
+    }
+
+    /// Whether `ls -lde` output lists an ACL entry (a line like `" 0: group:everyone allow
+    /// read"` under the file line), and for [`Acl::Inherited`] one that new files inherit.
+    #[cfg_attr(
+        all(not(target_os = "macos"), not(test)),
+        expect(dead_code, reason = "only the macOS ACL check parses `ls` output")
+    )]
+    pub(super) fn lists_acl(output: &str, which: Acl) -> bool {
+        output.lines().skip(1).any(|line| {
+            let Some((index, _)) = line.trim_start().split_once(": ") else {
+                return false;
+            };
+            !index.is_empty()
+                && index.chars().all(|c| c.is_ascii_digit())
+                && match which {
+                    Acl::Access => true,
+                    Acl::Inherited => line.contains("file_inherit"),
+                }
+        })
     }
 
     /// An open file with the directory it was found in.
@@ -366,7 +513,7 @@ mod unix {
 
     /// Open `relative` below `root` without following a link, check it and read it.
     pub(crate) fn open(
-        root: &Path,
+        root: &Root,
         relative: &Path,
     ) -> std::io::Result<Result<(Handle, Vec<u8>), Refusal>> {
         let (parent, name, mut file) = match open_file(root, relative)? {
@@ -454,9 +601,7 @@ mod unix {
             // attribute calls reject with EBADF. A readable handle to the same directory,
             // opened relative to it, does not have that limit.
             let readable_parent = self.parent.open(".")?;
-            if has_acl(&self.file, "system.posix_acl_access")?
-                || has_acl(&readable_parent, "system.posix_acl_default")?
-            {
+            if has_acl(&self.file, Acl::Access)? || has_acl(&readable_parent, Acl::Inherited)? {
                 return Ok(Some(Refusal::AclPresent));
             }
             hook(Step::Create)?;
@@ -577,7 +722,7 @@ mod unix {
 
         use std::path::Path;
 
-        use super::{acl_decision, directory_trusted, open, owner_trusted};
+        use super::{Acl, acl_decision, directory_trusted, lists_acl, open, owner_trusted};
         use crate::commit::{Refusal, seam};
 
         fn project(text: &str) -> tempfile::TempDir {
@@ -591,7 +736,8 @@ mod unix {
             let dir = project("12345");
             // The check sees 0 bytes, as if the file had been empty when it ran.
             let _seam = seam::set(4, Some(0));
-            let opened = open(dir.path(), Path::new("doc.md")).unwrap();
+            let opened =
+                open(&super::Root::open(dir.path()).unwrap(), Path::new("doc.md")).unwrap();
             assert_eq!(opened.err(), Some(Refusal::TooLarge));
         }
 
@@ -599,7 +745,9 @@ mod unix {
         fn a_file_exactly_at_the_cap_is_read_whole() {
             let dir = project("1234");
             let _seam = seam::set(4, None);
-            let (_, bytes) = open(dir.path(), Path::new("doc.md")).unwrap().unwrap();
+            let (_, bytes) = open(&super::Root::open(dir.path()).unwrap(), Path::new("doc.md"))
+                .unwrap()
+                .unwrap();
             assert_eq!(bytes, b"1234");
         }
 
@@ -607,7 +755,10 @@ mod unix {
         fn a_replacement_over_the_cap_is_refused_before_staging() {
             let dir = project("1234");
             let _seam = seam::set(4, None);
-            let (mut handle, bytes) = open(dir.path(), Path::new("doc.md")).unwrap().unwrap();
+            let (mut handle, bytes) =
+                open(&super::Root::open(dir.path()).unwrap(), Path::new("doc.md"))
+                    .unwrap()
+                    .unwrap();
             let refusal = handle.commit("12345", &bytes, &mut |_| Ok(())).unwrap();
             assert_eq!(refusal, Some(Refusal::TooLarge));
             assert_eq!(std::fs::read(dir.path().join("doc.md")).unwrap(), b"1234");
@@ -619,7 +770,10 @@ mod unix {
         fn a_replacement_at_the_cap_is_written() {
             let dir = project("1234");
             let _seam = seam::set(4, None);
-            let (mut handle, bytes) = open(dir.path(), Path::new("doc.md")).unwrap().unwrap();
+            let (mut handle, bytes) =
+                open(&super::Root::open(dir.path()).unwrap(), Path::new("doc.md"))
+                    .unwrap()
+                    .unwrap();
             let refusal = handle.commit("abcd", &bytes, &mut |_| Ok(())).unwrap();
             assert_eq!(refusal, None);
             assert_eq!(std::fs::read(dir.path().join("doc.md")).unwrap(), b"abcd");
@@ -670,6 +824,20 @@ mod unix {
                 acl_decision(Err(Errno::IO)).is_err(),
                 "other errors are errors"
             );
+        }
+
+        #[test]
+        fn listed_entries_under_the_file_line_are_an_acl() {
+            let plain = "-rw-r--r--  1 u  staff  2 Nov 21 14:33 f\n";
+            let with_acl =
+                "-rw-r--r--+ 1 u  staff  2 Nov 21 14:33 f\n 0: group:everyone allow read\n";
+            let inheriting = "drwxr-xr-x+ 2 u  staff 64 Nov 21 14:33 d\n 0: group:everyone allow add_file,file_inherit\n";
+            assert!(!lists_acl(plain, Acl::Access));
+            assert!(lists_acl(with_acl, Acl::Access));
+            assert!(!lists_acl(with_acl, Acl::Inherited), "not inherited");
+            assert!(lists_acl(inheriting, Acl::Inherited));
+            // A name that looks like an entry is on the first line, which is skipped.
+            assert!(!lists_acl(" 0: x\n", Acl::Access));
         }
     }
 }

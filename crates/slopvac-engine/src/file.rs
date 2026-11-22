@@ -1,8 +1,9 @@
 //! Fixing a file on disk without trusting the path it was found under.
 //!
 //! [`fix_file`] takes the project root the caller trusts and a path inside it. It never
-//! hands the path to the system whole. It opens the root as a directory handle and walks to
-//! the file one component at a time relative to that handle, never following a link, so a
+//! hands the path to the system whole. The root is opened once, as a [`Root`] directory
+//! handle, and never again by name, so replacing the root path with a link later changes
+//! nothing. It walks to the file one component at a time relative to that handle, never following a link, so a
 //! symbolic link or other reparse point in any component ends the walk with
 //! [`Refusal::Symlink`]. It checks the open file (regular, one link, size, and on unix an
 //! owner that is the current user) and reads through that handle only. Nothing that is
@@ -22,9 +23,13 @@
 //! not caught. Only the directory's owner or root can make one, because a write needs a
 //! directory that group and others cannot change.
 //!
-//! A file with an access ACL, or in a directory with a default ACL, is refused with
-//! [`Refusal::AclPresent`] on Linux. macOS keeps ACLs in an attribute that `rustix` cannot
-//! read, so an ACL is not detected there.
+//! A file with an access ACL, or in a directory whose ACL new files would inherit, is
+//! refused with [`Refusal::AclPresent`]. Linux reads the ACL attributes. macOS hides its
+//! ACL from the attribute calls and reading it takes an `unsafe` foreign call, so it asks
+//! `ls -lde` for the entries instead. A failure of that check fails the write. The one gap
+//! is that `ls` looks the target up again by path, so a swap between the descriptor's path
+//! and the `ls` call can hide an ACL. The write itself still goes through the held handle,
+//! and a path with a newline in it is refused as if it had an ACL.
 //!
 //! In-place writes exist on unix only. Elsewhere a dry run and a diff work, and a write is
 //! refused with [`Refusal::UnsupportedPlatform`] (bead slopvac-8l4.3.35 tracks a safe
@@ -35,7 +40,7 @@ use std::path::{Component, Path, PathBuf};
 
 use slopvac_model::Document;
 
-use crate::commit::{Refusal, Step, open};
+use crate::commit::{Refusal, Root, Step, open};
 use crate::fix::{FixError, FixReport, fix_document, unified_diff};
 use crate::lint::{Engine, Input, Kind};
 
@@ -62,9 +67,39 @@ pub struct FileResult {
     pub written: bool,
 }
 
+/// How the caller linted a file, so the fix run lints it the same way.
+///
+/// [`fix_file`] knows only the path and the kind. A caller that gave its lint run a display
+/// path, a root-relative path for `[[genres]]` matching or a declared genre sets the same
+/// here, or the fix could act on findings the lint run did not report.
+#[derive(Debug, Clone, Copy)]
+pub struct FileContext<'a> {
+    /// The kind of file.
+    pub kind: Kind,
+    /// The path to show in the report and in errors. Defaults to `path`.
+    pub shown: Option<&'a str>,
+    /// The path relative to the project root, for matching `[[genres]]` file patterns.
+    pub relative_path: Option<&'a str>,
+    /// The genre the document declares, as the config reader validated it.
+    pub declared_genre: Option<&'a str>,
+}
+
+impl FileContext<'_> {
+    /// A context that knows only the kind of file.
+    #[must_use]
+    pub const fn new(kind: Kind) -> Self {
+        Self {
+            kind,
+            shown: None,
+            relative_path: None,
+            declared_genre: None,
+        }
+    }
+}
+
 /// Lint the file at `path`, fix it and, unless `dry_run`, write the result.
 ///
-/// `root` is the project root the caller trusts; `path` is absolute inside it or relative
+/// `root` is the project root the caller trusts, opened here once; `path` is absolute inside it or relative
 /// to it, with no `..`. See the module notes for what is refused and how the write is
 /// made. The lint report of a written file is rerun on the fixed text. A dry run changes
 /// nothing and reports the diff the write would make.
@@ -76,9 +111,13 @@ pub fn fix_file(
     dry_run: bool,
     changed_lines: Option<&[RangeInclusive<usize>]>,
 ) -> Result<FileFix, FixError> {
+    let root = Root::open(root).map_err(|source| FixError::Io {
+        path: slopvac_fs::display_under_root(path, root),
+        source,
+    })?;
     fix_file_hooked(
         engine,
-        root,
+        &root,
         path,
         kind,
         dry_run,
@@ -93,14 +132,39 @@ pub fn fix_file(
 #[doc(hidden)]
 pub fn fix_file_hooked(
     engine: &Engine,
-    root: &Path,
+    root: &Root,
     path: &Path,
     kind: Kind,
     dry_run: bool,
     changed_lines: Option<&[RangeInclusive<usize>]>,
     hook: &mut dyn FnMut(Step) -> std::io::Result<()>,
 ) -> Result<FileFix, FixError> {
-    let shown = path.to_string_lossy().into_owned();
+    fix_file_in(
+        engine,
+        root,
+        path,
+        &FileContext::new(kind),
+        dry_run,
+        changed_lines,
+        hook,
+    )
+}
+
+/// [`fix_file_hooked`] with the lint context of the caller (see [`FileContext`]).
+#[doc(hidden)]
+pub fn fix_file_in(
+    engine: &Engine,
+    root: &Root,
+    path: &Path,
+    context: &FileContext<'_>,
+    dry_run: bool,
+    changed_lines: Option<&[RangeInclusive<usize>]>,
+    hook: &mut dyn FnMut(Step) -> std::io::Result<()>,
+) -> Result<FileFix, FixError> {
+    let kind = context.kind;
+    let shown = context
+        .shown
+        .map_or_else(|| path.to_string_lossy().into_owned(), str::to_owned);
     let io = |source| FixError::Io {
         path: shown.clone(),
         source,
@@ -113,7 +177,13 @@ pub fn fix_file_hooked(
         Err(refusal) => return Ok(FileFix::Refused(refusal)),
     };
     let source = String::from_utf8(bytes).map_err(|_| FixError::NotUtf8(shown.clone()))?;
-    let input = Input::new(&shown, &source).with_kind(kind);
+    let mut input = Input::new(&shown, &source).with_kind(kind);
+    if let Some(relative) = context.relative_path {
+        input = input.with_relative_path(relative);
+    }
+    if let Some(genre) = context.declared_genre {
+        input = input.with_declared_genre(genre);
+    }
     let document = engine.lint(&input)?;
     let report = fix_document(engine, &input, &document, changed_lines)?;
     let diff = unified_diff(&shown, &source, &report.text);
@@ -141,15 +211,11 @@ pub fn fix_file_hooked(
 }
 
 /// `path` below `root` as plain names, or `None` when it is outside or climbs with `..`.
-fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
+fn relative_to(root: &Root, path: &Path) -> Option<PathBuf> {
     let relative = if path.is_absolute() {
-        path.strip_prefix(root)
-            .ok()
-            .map(Path::to_path_buf)
-            .or_else(|| {
-                let canonical = root.canonicalize().ok()?;
-                path.strip_prefix(canonical).ok().map(Path::to_path_buf)
-            })?
+        root.spellings()
+            .find_map(|spelling| path.strip_prefix(spelling).ok())
+            .map(Path::to_path_buf)?
     } else {
         path.to_path_buf()
     };

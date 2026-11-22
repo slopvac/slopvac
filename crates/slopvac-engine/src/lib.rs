@@ -79,13 +79,13 @@ mod structure;
 mod tagging;
 mod terms;
 
-pub use commit::{MAX_FILE_BYTES, Refusal, Step};
+pub use commit::{AclCheckFailed, MAX_FILE_BYTES, Refusal, Root, RootChanged, Step};
 pub use diagrams::{
     DIAGRAM_PACK, DiagramChecker, DiagramHit, DiagramInput, DiagramRule, SignalChecker,
     diagram_rule_set,
 };
 pub use exceptions::{Detector, Detectors, DuplicateDetector, MatchSite, TextOrigin};
-pub use file::{FileFix, FileResult, fix_file, fix_file_hooked};
+pub use file::{FileContext, FileFix, FileResult, fix_file, fix_file_hooked, fix_file_in};
 pub use fix::{FixError, FixReport, SkipReason, Skipped, fix_document, unified_diff};
 pub use lint::{Engine, EngineError, Input, Kind, LintOutcome, extract_code};
 #[cfg(feature = "test-counters")]

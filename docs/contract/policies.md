@@ -217,7 +217,7 @@ How the budgets apply:
 
 Code changes that touch a cap record the new value here in the same change. The reader constants live in `slopvac-fs` (`MAX_DOCUMENT_BYTES`), `slopvac-config` (`MAX_CONFIG_BYTES`), `slopvac-update` (`MAX_CONFIG_BYTES`), `slopvac-rules` (`MAX_RULE_FILE_BYTES`), `slopvac-styles` (`MAX_STYLE_BYTES`, plus a private cap in house-style detection), `slopvac-plugins` (`MAX_LOCK_BYTES`) and `slopvac-packs` (`MAX_RUN_BYTES`, `MAX_RUN_RULES`, `MAX_RUN_PATTERN_BYTES`, `GLOB_MAX_BYTES`, `GLOB_MAX_DEPTH`, `GLOB_MAX_ALTERNATIVES`; the regex limits are private).
 
-The CLI file and stdin reads enforce their cap and report `document-too-large` with exit 2. The language server and `migrate` document reads, and the `migrate` config read, enforce theirs in a later change. The synced-plugin run budgets, the `provides` glob limits and the manifest byte accounting take effect with the synced-plugin loader. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and a `--diff` scoping read fails with `DiffError::FileTooLarge`. The `lint` command does not yet pass `--fix` or `--diff-base` to the engine. When it does, it reports both with `document-too-large`.
+The CLI file and stdin reads enforce their cap and report `document-too-large` with exit 2. The language server and `migrate` document reads, and the `migrate` config read, enforce theirs in a later change. The synced-plugin run budgets, the `provides` glob limits and the manifest byte accounting take effect with the synced-plugin loader. Every other row is enforced. A `fix` refusal for an oversized file carries the code through `Refusal::code`, and a `--diff` scoping read fails with `DiffError::FileTooLarge`. The `lint` command passes `--fix` to the engine, which reports an oversized file with `document-too-large` through `Refusal::code`. It does not yet pass `--diff-base`; when it does, it reports an oversized file with `document-too-large` too.
 
 A capped file read opens the file without blocking and accepts only a regular file. A FIFO, device, socket or directory at the path is refused at once, so a repository entry cannot hang a run. The refusal reports through the entry point's existing read-failure error, such as `input-unreadable` for a document, and not through a new code. Stdin is the exception: it reads a pipe by design.
 
@@ -435,6 +435,8 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 
 - Message text can change in any release. Codes, rule IDs, and exit codes form the interface.
 - A `fix` refusal carries its code through `Refusal::code`: `document-too-large`, `fix-outside-root`, `fix-symlink`, `fix-not-regular`, `fix-hardlinked`, `fix-not-owner`, `fix-unsafe-directory`, `fix-group-mismatch`, `fix-acl-present`, `fix-unsupported-platform` and `fix-changed`.
+
+A `fix` that fails for any other reason, such as an I/O error during the write, reports `fix-failed` and exits 2. The write is atomic (section 1.8), so the target keeps its old content. A staged temporary file may remain beside it.
 
 The `slopvac plugins` group reserves this code. It is not emitted yet: nothing in the code raises it, and the message registry does not list it. Plugin-protocol.md, section 10, lists the other plugin host codes.
 

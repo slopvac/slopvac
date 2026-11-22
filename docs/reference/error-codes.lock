@@ -383,11 +383,13 @@ extract-output-invalid notice
 extract-unsupported notice
 fix-acl-present error
 fix-changed error
+fix-failed error
 fix-group-mismatch error
 fix-hardlinked error
 fix-not-owner error
 fix-not-regular error
 fix-outside-root error
+fix-refused text
 fix-symlink error
 fix-unsafe-directory error
 fix-unsupported-platform error
@@ -395,6 +397,10 @@ internal-error error
 invalid-params error
 invalid-request error
 launcher-not-installed error
+lint-fix-reason-acl-check text
+lint-fix-reason-io text
+lint-fix-reason-not-utf8 text
+lint-fix-reason-root-changed text
 lock-mismatch error
 lsp-action-allow text
 lsp-action-fix text
