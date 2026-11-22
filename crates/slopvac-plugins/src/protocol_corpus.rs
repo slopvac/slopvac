@@ -502,6 +502,7 @@ const PINNED: &[(&str, &str)] = &[
     ),
     ("TagResult--span-end-missing.json", "missing field `end`"),
     // The text names the value or variant, not the field.
+    ("id-above-2-53.json", "integer 9007199254740992 outside"),
     (
         "error-code-below-range.json",
         "integer -9007199254740992 outside",
@@ -531,6 +532,70 @@ fn needle(name: &str, pointer: &str) -> String {
         .find(|s| !s.is_empty() && s.parse::<u64>().is_err())
         .unwrap_or_default()
         .to_owned()
+}
+
+/// Whether `haystack` holds `needle` as a whole token: the characters around it are not letters,
+/// digits or underscores. This stops `id` from matching inside `outside`.
+fn contains_token(haystack: &str, needle: &str) -> bool {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    haystack.match_indices(needle).any(|(at, _)| {
+        let before = haystack[..at].chars().next_back();
+        let after = haystack[at + needle.len()..].chars().next();
+        let left_ok = !(needle.chars().next().is_some_and(word) && before.is_some_and(word));
+        let right_ok = !(needle.chars().next_back().is_some_and(word) && after.is_some_and(word));
+        left_ok && right_ok
+    })
+}
+
+/// Messages that the host sends to a plugin (plugin-protocol.md sections 3 and 5.1). The last
+/// entry is the method of `request-unknown-method.json`, which shows a plugin an unknown request.
+const HOST_TO_PLUGIN_METHODS: &[&str] = &[
+    "initialize",
+    "initialized",
+    "shutdown",
+    "exit",
+    "$/cancelRequest",
+    "tagger/tag",
+    "extractor/extract",
+    "binary-extractor/extract",
+    "reporter/render",
+    "fixer/fix",
+    "scorer/score",
+    "provider/complete",
+    "recipe/plan",
+    "future/thing",
+];
+
+/// Whether `name` with content `msg` may sit in [`HOST_BUILT`]: an instance of a host-built def,
+/// or a request or notification whose method the host sends. A reply never qualifies.
+fn eligible_host_built(name: &str, msg: &Value) -> bool {
+    if let Some(def) = def_of(name) {
+        return matches!(lookup(DEFS, def), Some(Decoder::HostBuilt));
+    }
+    msg.as_object().is_some_and(|o| {
+        !o.contains_key("result")
+            && !o.contains_key("error")
+            && o.get("method")
+                .and_then(Value::as_str)
+                .is_some_and(|m| HOST_TO_PLUGIN_METHODS.contains(&m))
+    })
+}
+
+/// Whether `name` may sit in [`PENDING_BINARY`]: only binary-extractor files.
+fn eligible_pending(name: &str) -> bool {
+    [
+        "BinaryExtractResult--",
+        "binary-extract-",
+        "PluginDeclaration--binary-extractor-",
+        "InitializeResult--binary-extractor-",
+    ]
+    .iter()
+    .any(|p| name.starts_with(p))
+}
+
+/// Whether `name` may sit in [`SCHEMA_INVALID_HOST_IGNORES`].
+fn eligible_ignored(name: &str) -> bool {
+    name == "response-null-id-success.json"
 }
 
 #[rstest]
@@ -568,7 +633,7 @@ fn invalid_file_is_rejected_at_its_location(
     };
     let field = needle(&name, &pointer);
     assert!(
-        diagnostic.contains(&field),
+        contains_token(&diagnostic, &field),
         "{name}: cases.toml says `{pointer}`; the host rejected it without naming `{field}`: {diagnostic}"
     );
 }
@@ -673,6 +738,55 @@ fn every_name_in_a_table_exists_once() {
             assert!(seen.insert(key), "{label}: {dir}/{name} is listed twice");
         }
     }
+}
+
+#[test]
+fn every_table_entry_belongs_to_its_table() {
+    for (dir, name) in HOST_BUILT {
+        let bytes = fs::read(corpus().join(dir).join(name)).expect("read case");
+        let msg = strict::parse(&bytes).unwrap_or(Value::Null);
+        assert!(
+            eligible_host_built(name, &msg),
+            "{dir}/{name} is not host-built"
+        );
+    }
+    for (dir, name) in PENDING_BINARY {
+        assert!(
+            eligible_pending(name),
+            "{dir}/{name} is not a binary-extractor file"
+        );
+    }
+    for (dir, name) in SCHEMA_INVALID_HOST_IGNORES {
+        assert!(eligible_ignored(name), "{dir}/{name} is not allowed here");
+    }
+}
+
+#[test]
+fn a_reply_in_host_built_fails_the_check() {
+    let reply = serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": null});
+    assert!(!eligible_host_built("response-initialize.json", &reply));
+    assert!(!eligible_host_built("TagResult--x.json", &reply));
+    let request = serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "shutdown"});
+    assert!(eligible_host_built("request-shutdown.json", &request));
+}
+
+#[test]
+fn a_non_binary_file_in_the_pending_table_fails_the_check() {
+    assert!(!eligible_pending("TagResult--x.json"));
+    assert!(!eligible_pending("request-tag.json"));
+    assert!(eligible_pending("BinaryExtractResult--x.json"));
+}
+
+#[test]
+fn another_file_in_the_ignored_table_fails_the_check() {
+    assert!(!eligible_ignored("response-initialize.json"));
+    assert!(eligible_ignored("response-null-id-success.json"));
+}
+
+#[test]
+fn a_field_name_matches_only_as_a_whole_token() {
+    assert!(!contains_token("integer 9 outside range", "id"));
+    assert!(contains_token("missing field `id`", "id"));
 }
 
 #[test]
