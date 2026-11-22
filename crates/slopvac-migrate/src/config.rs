@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use slopvac_config::{ConfigError, PackFile, Presets, Setting};
+use slopvac_config::{Code, ConfigError, PackFile, Presets, Setting};
 use toml_edit::{Array, DocumentMut, Item, RawString, Table, TableLike, Value, value};
 
 use crate::capped::Blockers;
@@ -159,22 +159,69 @@ pub(crate) fn migrate_config_in(
 /// when the lint resolves it.
 ///
 /// # Errors
-/// [`Error::InvalidOutput`] with every reason the loader gives.
+/// [`Error::InvalidOutput`], with every problem the loader names as its [`LoadRefusal`].
 pub(crate) fn check_loads(path: &Path, label: &str, text: &str) -> Result<(), Error> {
     slopvac_config::load_text(path, label, text.to_owned(), &NoPacks)
         .map(drop)
         .map_err(|e| Error::InvalidOutput {
             file: label.to_owned(),
-            reason: match &e {
-                ConfigError::Rejected(r) => r
+            cause: LoadRefusal::new(e),
+        })
+}
+
+/// Why the 3.0 loader refused a config that `migrate` produced: the code and message of
+/// each problem it named.
+///
+/// It keeps no config text, no source span and no path other than the label the
+/// migration gave the config. A read failure keeps the operating-system error as its
+/// source, which names no path.
+#[derive(Debug, thiserror::Error)]
+#[error("{}", self.reason())]
+pub struct LoadRefusal {
+    problems: Vec<(Code, String)>,
+    #[source]
+    io: Option<std::io::Error>,
+}
+
+impl LoadRefusal {
+    fn new(error: ConfigError) -> Self {
+        let code = error.code();
+        match error {
+            ConfigError::Rejected(rejected) => Self {
+                problems: rejected
                     .diagnostics
                     .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join("; "),
-                other => other.to_string(),
+                    .map(|d| (d.code, d.to_string()))
+                    .collect(),
+                io: None,
             },
-        })
+            other => {
+                let message = other.to_string();
+                let io = match other {
+                    ConfigError::Io { source, .. } => Some(source),
+                    _ => None,
+                };
+                Self {
+                    problems: vec![(code, message)],
+                    io,
+                }
+            }
+        }
+    }
+
+    /// The code of each problem, in the order the loader gave them.
+    pub fn codes(&self) -> impl Iterator<Item = Code> + '_ {
+        self.problems.iter().map(|(code, _)| *code)
+    }
+
+    /// Every problem, as the loader worded it, joined into one line.
+    fn reason(&self) -> String {
+        self.problems
+            .iter()
+            .map(|(_, message)| message.as_str())
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
 }
 
 /// The loader's view of packs for [`check_loads`]: none.

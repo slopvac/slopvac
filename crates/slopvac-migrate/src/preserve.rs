@@ -334,8 +334,10 @@ pub(crate) fn expand(config: &Config2, legacy: &Legacy) -> Result<Expanded, Unsu
 }
 
 /// E4: put a guard into the last block with the same files, where that is exact: no
-/// block after it that matches those files has a rule entry the guard turns off. The
-/// loader refuses two blocks with the same files. Returns whether the guard was folded.
+/// block after it that contains or equals those files states a rule the guard turns
+/// off, or the `severity` of that rule's category, because either would outrank the
+/// merged `off`. The loader refuses two blocks with the same files. Returns whether the
+/// guard was folded.
 fn fold_guard(guard: &Block3, globs: &[Glob], placed: &mut [Patched]) -> bool {
     let Ok(glob) = parse_glob(&guard.files) else {
         return false;
@@ -347,11 +349,13 @@ fn fold_guard(guard: &Block3, globs: &[Glob], placed: &mut [Patched]) -> bool {
         matches!(
             relate(&globs[b.index], &glob),
             Relation::Contains | Relation::Equal
-        ) && guard
-            .layer
-            .rules
-            .keys()
-            .any(|qid| b.layer.rules.contains_key(qid))
+        ) && guard.layer.rules.keys().any(|qid| {
+            b.layer.rules.contains_key(qid)
+                || b.layer
+                    .categories
+                    .get(category_of(qid))
+                    .is_some_and(|d| d.contains_key("severity"))
+        })
     });
     if revived {
         return false;
@@ -498,15 +502,27 @@ impl E3<'_> {
         });
         for b in moved {
             let j = b.index;
-            let winners: Vec<usize> = containers
+            // The blocks that beat j in 2.x: those an earlier move put above it, the
+            // containers of this block after j, and this block. In 2.x order, so the
+            // last one wins where two set the same key.
+            let winners: BTreeSet<usize> = b
+                .yields_to
                 .iter()
                 .copied()
-                .filter(|&k| k > j)
+                .chain(containers.iter().copied().filter(|&k| k > j))
                 .chain([index])
                 .collect();
             let mut over = Layer::default();
             for &k in &winners {
-                merge_into(&mut over, restated.get(&k).unwrap_or(&self.blocks[k]));
+                let layer = if k == index {
+                    self.blocks[index].clone()
+                } else {
+                    restated
+                        .get(&k)
+                        .cloned()
+                        .unwrap_or_else(|| self.under(k, profile))
+                };
+                merge_into(&mut over, &layer);
             }
             let mut layer = self.under(j, profile);
             yield_to(&mut layer, &over);
@@ -516,7 +532,7 @@ impl E3<'_> {
                 switch: None,
                 restated: Vec::new(),
                 moved_after: Some(index),
-                yields_to: winners,
+                yields_to: winners.into_iter().collect(),
                 guarded: 0,
             });
         }

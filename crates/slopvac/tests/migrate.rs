@@ -141,6 +141,37 @@ fn restore_rejects_a_manifest_that_escapes_the_project() {
 }
 
 #[test]
+fn a_guard_that_repeats_a_block_scope_stops_the_write_and_changes_nothing() {
+    // 2.x ignored the later rule entry under docs/api, where orwell is off. The guard
+    // that turns it off there must follow the later block, so it cannot fold into the
+    // block with its files, and 3.0 refuses the repeated scope.
+    let config = "profile = \"strict\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\n\
+                  categories = { orwell = \"off\" }\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+                  rules = { \"orwell.not-un\" = \"warning\" }\n";
+    let dir = project(config);
+    let cache = tempfile::tempdir().expect("tempdir");
+    slopvac()
+        .env("SLOPVAC_CACHE_DIR", cache.path())
+        .arg("migrate")
+        .arg(dir.path())
+        .arg("--preserve-behavior")
+        .arg("--write")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[migrate-output-invalid]: ",
+        ))
+        .stderr(predicate::str::contains("config-duplicate-scope"));
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".slopvac.toml")).expect("source kept"),
+        config
+    );
+    assert!(!dir.path().join("slopvac.toml").exists());
+    assert!(!dir.path().join(".slopvac").exists());
+    assert_eq!(fs::read_dir(cache.path()).expect("cache").count(), 0);
+}
+
+#[test]
 fn missing_project_reports_a_coded_error_without_the_absolute_path() {
     let dir = tempfile::tempdir().expect("tempdir");
     let missing = dir.path().join("no-such-project");

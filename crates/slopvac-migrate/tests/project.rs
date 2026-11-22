@@ -6,9 +6,10 @@ use std::path::Path;
 
 use rstest::rstest;
 
+use slopvac_config::Code;
 use slopvac_migrate::{
-    Error, Finding, Linter, NullLinter, Options, Phase, RenameTable, apply, command, plan,
-    render_diff, restore, run,
+    Error, Finding, Linter, LoadRefusal, NullLinter, Options, Phase, RenameTable, apply, command,
+    plan, render_diff, restore, run,
 };
 
 const STEERING: &str = "<!-- slopvac:begin -->\nnew\n<!-- slopvac:end -->\n";
@@ -183,6 +184,55 @@ fn a_migrated_config_the_3_0_loader_refuses_stops_the_plan(#[case] preserve_beha
     .unwrap_err();
     assert_eq!(err.code(), "migrate-output-invalid", "{err}");
     assert!(err.to_string().contains("config-duplicate-scope"), "{err}");
+}
+
+/// The comment in [`refused_plan`]'s config, which no error may repeat.
+const PRIVATE_NOTE: &str = "private note 7f3a";
+
+/// Plan a project whose migrated config the 3.0 loader refuses for its repeated scope.
+fn refused_plan(root: &Path) -> Error {
+    write(
+        root,
+        "slopvac.toml",
+        &format!(
+            "# {PRIVATE_NOTE}\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+             thresholds = {{ max_errors = 1 }}\n\n\
+             [[overrides]]\nfiles = [\"docs/**\"]\nlocale = {{ default = \"en-GB\" }}\n"
+        ),
+    );
+    plan(root, &RenameTable::bundled(), Options::default(), STEERING).unwrap_err()
+}
+
+#[test]
+fn a_refused_config_keeps_the_loader_codes_as_a_typed_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let err = refused_plan(dir.path());
+    let codes: Vec<Code> = std::error::Error::source(&err)
+        .and_then(|s| s.downcast_ref::<LoadRefusal>())
+        .map(|cause| cause.codes().collect())
+        .unwrap_or_default();
+    assert_eq!(codes, [Code::DuplicateScope], "{err:?}");
+}
+
+#[test]
+fn a_refused_config_error_chain_holds_no_config_text_or_absolute_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let err = refused_plan(dir.path());
+    let root = dir.path().canonicalize().unwrap();
+    let mut chain: Vec<String> = Vec::new();
+    let mut next: Option<&dyn std::error::Error> = Some(&err);
+    while let Some(e) = next {
+        chain.push(format!("{e}"));
+        chain.push(format!("{e:?}"));
+        next = e.source();
+    }
+    for text in &chain {
+        assert!(!text.contains(PRIVATE_NOTE), "{text}");
+        assert!(!text.contains("en-GB"), "{text}");
+        for path in [dir.path(), root.as_path()] {
+            assert!(!text.contains(&*path.to_string_lossy()), "{text}");
+        }
+    }
 }
 
 #[test]

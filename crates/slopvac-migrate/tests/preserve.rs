@@ -204,6 +204,29 @@ fn an_earlier_block_inside_a_profile_override_moves_after_it_with_its_comments()
     );
 }
 
+#[test]
+fn a_block_moved_twice_still_gives_way_to_the_block_that_beat_it() {
+    // 2.x applied all three blocks to docs/api/v1, in order, so the locale of the
+    // second block won there.
+    let rw = preserve(
+        "profile = \"strict\"\n\n[[overrides]]\nfiles = [\"docs/api/v1/**\"]\n\
+         locale = \"en-GB\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\n\
+         profile = \"normal\"\nlocale = \"en-US\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n\
+         profile = \"relaxed\"\n",
+    )
+    .unwrap();
+    let doc = as_json(&rw.text);
+    let blocks = doc["overrides"].as_array().unwrap();
+    let block = |files: &str| {
+        blocks
+            .iter()
+            .find(|b| b["files"] == json!([files]))
+            .unwrap_or_else(|| panic!("no block for {files}: {}", rw.text))
+    };
+    assert_eq!(block("docs/api/**").get("locale"), Some(&json!("en-US")));
+    assert_eq!(block("docs/api/v1/**").get("locale"), None, "{}", rw.text);
+}
+
 fn config_validator() -> jsonschema::Validator {
     let schemas = crate_dir().join("../../schemas/v3");
     let read = |name: &str| -> Value {

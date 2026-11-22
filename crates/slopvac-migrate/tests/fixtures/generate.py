@@ -13,8 +13,9 @@ Every output comes from one snapshot of its source, so the crate cannot drift fr
 - `data/legacy/legacy-<profile>.toml`: the `core:legacy-<profile>` styles, copied
   verbatim from `docs/contract/compat/profiles/` (docs/contract/profiles.md).
 - `data/legacy/catalogue.toml`: each 2.x rule's kind and tier per profile, from the
-  2.x ruleset, and each profile's per-rule defaults, from
-  `docs/contract/compat/profiles/mapping.json`.
+  2.x ruleset, each profile's per-rule defaults, from
+  `docs/contract/compat/profiles/mapping.json`, and each category's own weight, from the
+  2.x ruleset.
 - `tests/fixtures/preserve/refused-blocklist.json`: the word blocklist layouts that
   `--preserve-behavior` refuses, with the key each refusal names.
 - `tests/fixtures/preserve/vectors.json`: what `expand()` and `build_regions()` in
@@ -111,6 +112,31 @@ EXTRA_SCENARIOS = {
             {"files": ["docs/**"], "profile": "relaxed"},
         ],
     },
+    # Two enclosing profile switches move the first block twice. The second block beat
+    # it in 2.x, and still does after the second move.
+    "block-moved-by-two-profile-switches": {
+        "profile": "strict",
+        "overrides": [
+            {"files": ["docs/api/v1/**"], "categories": {"prose-craft": "warning"}},
+            {
+                "files": ["docs/api/**"],
+                "profile": "normal",
+                "categories": {"prose-craft": "error"},
+            },
+            {"files": ["docs/**"], "profile": "relaxed"},
+        ],
+    },
+    # A guard for docs/api cannot merge into the block with its files, because the later
+    # docs/** block sets the level of the guarded rule's category. 3.0 refuses the
+    # guard block that repeats those files, so the migration stops (a known limit).
+    "guard-held-back-by-a-later-category-level": {
+        "profile": "strict",
+        "rules": {"ai-tells-agentic.formulaic-universal-heading": "error"},
+        "overrides": [
+            {"files": ["docs/api/**"], "profile": "relaxed"},
+            {"files": ["docs/**"], "categories": {"ai-tells-agentic": "warning"}},
+        ],
+    },
 }
 
 # The files each crate scenario is measured on, one per region.
@@ -129,6 +155,13 @@ EXTRA_PATHS = {
         "docs/a.md",
         "a.md",
     ],
+    "block-moved-by-two-profile-switches": [
+        "docs/api/v1/x.md",
+        "docs/api/x.md",
+        "docs/a.md",
+        "a.md",
+    ],
+    "guard-held-back-by-a-later-category-level": ["docs/api/x.md", "docs/a.md", "a.md"],
     "ignored-rule-entry-is-dropped": ["a.md"],
 }
 

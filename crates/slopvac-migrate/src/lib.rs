@@ -41,7 +41,7 @@ use crate::messages::{MigrateMessage, MigrateText};
 
 pub use backup::{Point, Restored, apply, apply_hooked, restore, restore_hooked};
 pub use cli::{CliFailure, command, execute, run};
-pub use config::{Rewrite, migrate_config};
+pub use config::{LoadRefusal, Rewrite, migrate_config};
 pub use directives::{Found, RemovedId, UnknownId, rewrite_directives};
 pub use guide::{doc as guide_doc, prime_migrate};
 pub use limits::Limits;
@@ -220,7 +220,8 @@ pub enum Error {
         /// The config the migration would write.
         file: String,
         /// What the 3.0 loader refused, with its codes.
-        reason: String,
+        #[source]
+        cause: LoadRefusal,
     },
     /// `schema_version` is not an integer.
     #[error("{}", messages::text(self))]

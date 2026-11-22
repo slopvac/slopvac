@@ -97,6 +97,12 @@ fn overlay(base: &Value, diff: &Value) -> BTreeMap<String, Value> {
     out
 }
 
+/// Scenarios whose migrated config 3.0 refuses for a repeated scope: a guard that must
+/// follow a later block and so cannot merge into the block with its files
+/// (docs/contract/profiles.md, E4, known limit). `migrate` stops on them before it
+/// writes. Their 2.x levels stay measured for the change that lifts the limit.
+const KNOWN_LIMIT: &[&str] = &["guard-held-back-by-a-later-category-level"];
+
 #[test]
 fn every_migrated_config_resolves_to_the_measured_2x_levels() {
     let vectors: Value = serde_json::from_str(
@@ -134,6 +140,14 @@ fn every_migrated_config_resolves_to_the_measured_2x_levels() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("slopvac.toml");
         fs::write(&path, &text).unwrap();
+        if KNOWN_LIMIT.contains(&name.as_str()) {
+            match slopvac_config::load(&path, &presets) {
+                Err(e) if e.code() == slopvac_config::Code::DuplicateScope => {}
+                Err(e) => wrong.push(format!("{name}: refused with {}", e.code().as_str())),
+                Ok(_) => wrong.push(format!("{name}: loads; remove it from KNOWN_LIMIT")),
+            }
+            continue;
+        }
         let config =
             slopvac_config::load(&path, &presets).unwrap_or_else(|e| panic!("{name}: {e}"));
 

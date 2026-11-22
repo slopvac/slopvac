@@ -944,9 +944,9 @@ pub(crate) fn of(error: &Error) -> Option<Box<dyn Catalog>> {
         Error::Lint(detail) => Box::new(MigrateMessage::LintFailed {
             detail: detail.clone(),
         }),
-        Error::InvalidOutput { file, reason } => Box::new(MigrateMessage::OutputInvalid {
+        Error::InvalidOutput { file, cause } => Box::new(MigrateMessage::OutputInvalid {
             file: file.clone(),
-            reason: reason.clone(),
+            reason: cause.to_string(),
         }),
         Error::InvalidType {
             file,
