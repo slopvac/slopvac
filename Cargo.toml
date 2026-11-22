@@ -157,6 +157,10 @@ clone_on_ref_ptr = "warn"
 # Libraries stay silent; the three binaries opt out at crate or file level.
 print_stdout = "warn"
 print_stderr = "warn"
+# Restriction lint, off by default; the allow records the decision. Offsets are bounded by
+# the input caps in policies.md; contract-only subtractions use checked_sub; indexing_slicing
+# and string_slice still warn in span crates.
+arithmetic_side_effects = "allow"
 
 [profile.release]
 lto = "thin"
