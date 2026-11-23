@@ -2849,6 +2849,7 @@ dependencies = [
  "slopvac-model",
  "slopvac-packs",
  "slopvac-rules",
+ "slopvac-sanitize",
  "snapbox",
  "tempfile",
  "thiserror",
