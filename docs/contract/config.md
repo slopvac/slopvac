@@ -139,7 +139,7 @@ The block is the mapping under the `slopvac:` key of a document's front matter. 
 - `rules` takes a bare level. The 2.x table form `[rules."x"] severity = "off"` is not valid, because a level is the only field.
 - Two blocks in `[[overrides]]` or `[[genres]]` with the same `files` set are an error: `config-duplicate-scope`. This keeps `Config._reject_duplicate_scopes` from 2.x. The patterns compare as a set after whitespace is trimmed.
 - A `[[genres]]` block assigns a genre to the files it matches and patches their settings. The genre itself is defined in a genre file (`genre.schema.json`, owned by another bead).
-- `exclude` and `files` patterns use gitignore semantics through the same engine as 2.x. A leading `!` negates, and the last matching pattern wins.
+- `exclude` and `files` patterns use gitignore syntax: a leading `!` negates, and the last matching pattern wins. A path that no pattern matches takes the result of the nearest parent directory that a pattern matches.
 - A threshold absent from a profile and from every layer is unset, and its gate does not run.
 
 ## 5. Moving from 2.x
