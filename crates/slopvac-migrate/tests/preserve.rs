@@ -576,7 +576,12 @@ fn an_authored_severity_table_rule_is_written_as_a_bare_level(
     #[case] at: &str,
 ) {
     let rw = preserve(config).unwrap();
-    assert_eq!(as_json(&rw.text).pointer(at), Some(&json!("error")), "{}", rw.text);
+    assert_eq!(
+        as_json(&rw.text).pointer(at),
+        Some(&json!("error")),
+        "{}",
+        rw.text
+    );
 }
 
 #[test]
