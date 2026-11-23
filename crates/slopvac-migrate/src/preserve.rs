@@ -354,13 +354,9 @@ pub(crate) struct CategoryUnderSwitch {
 /// switch: i itself, an earlier block that contains i (its entries are restated in i), an
 /// earlier block inside i (it moves after i) and a later block whose files meet those of
 /// i. Each of them is refused when it authors any field of a category, because E5 credits
-/// the category with a level. The top level is refused when its `categories` table names
-/// any category, whatever fields the entry sets: 2.x credits a named category as authored,
-/// every file under the switch inherits it, and the switch leaves an advisory rule of that
-/// category at the target style's level, where 2.x applied the authored one. The check is
-/// on the entry, not on a list of fields, and it counts a category that 3.0 removed. In the
-/// blocks, categories that 3.0 removed are not in `config`. A block whose glob is outside
-/// the grammar finds nothing; [`expand`] reports it first.
+/// the category with a level. In the blocks, categories that 3.0 removed are not in
+/// `config`. A block whose glob is outside the grammar finds nothing; [`expand`] reports it
+/// first. [`top_category_under_switch`] checks the top level, before the globs are read.
 pub(crate) fn category_under_switch(config: &Config2) -> Option<CategoryUnderSwitch> {
     let globs: Vec<Glob> = config
         .overrides
@@ -373,12 +369,6 @@ pub(crate) fn category_under_switch(config: &Config2) -> Option<CategoryUnderSwi
         .enumerate()
         .filter(|(_, b)| b.profile.is_some())
     {
-        if config.top_names_category {
-            return Some(CategoryUnderSwitch {
-                block: None,
-                switch,
-            });
-        }
         let authoring = config.overrides.iter().enumerate().find(|(b, block)| {
             !block.layer.categories.is_empty()
                 && (*b == switch || relate(&globs[*b], &globs[switch]) != Relation::Disjoint)
@@ -391,6 +381,23 @@ pub(crate) fn category_under_switch(config: &Config2) -> Option<CategoryUnderSwi
         }
     }
     None
+}
+
+/// The first profile switch, when the top-level `categories` table names any category,
+/// whatever fields the entry sets: 2.x credits a named category as authored, every file
+/// under the switch inherits it, and the switch leaves an advisory rule of that category at
+/// the target style's level, where 2.x applied the authored one. The check is on the entry,
+/// not on a list of fields, and it counts a category that 3.0 removed. It reads no glob, so
+/// it runs before [`expand`].
+pub(crate) fn top_category_under_switch(config: &Config2) -> Option<CategoryUnderSwitch> {
+    if !config.top_names_category {
+        return None;
+    }
+    let switch = config.overrides.iter().position(|b| b.profile.is_some())?;
+    Some(CategoryUnderSwitch {
+        block: None,
+        switch,
+    })
 }
 
 /// E4: put a guard into the last block with the same files, where that is exact: no

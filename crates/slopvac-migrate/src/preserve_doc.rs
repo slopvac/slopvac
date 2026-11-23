@@ -18,7 +18,8 @@ use crate::capped::Blockers;
 use crate::legacy::{Dials, Layer, Legacy, PROFILES, Scalar, read_dials};
 use crate::messages::{MigratePhrase, MigrateText};
 use crate::preserve::{
-    Block2, Block3, Config2, DropReason, Expanded, Out, Patched, category_under_switch, expand,
+    Block2, Block3, CategoryUnderSwitch, Config2, DropReason, Expanded, Out, Patched,
+    category_under_switch, expand, top_category_under_switch,
 };
 use crate::{Error, RenameTable, overrides};
 
@@ -74,6 +75,22 @@ pub(crate) fn apply(
     };
     let blocklist = has_blocklist(original.as_table());
     check_blocklist_layout(original, &config, blocklist, ctx)?;
+    let refuse = |found: CategoryUnderSwitch| {
+        let at = found
+            .block
+            .map_or_else(|| "categories".to_owned(), |b| format!("overrides[{b}]"));
+        Error::CategoryUnderSwitch {
+            file: ctx.file.to_owned(),
+            line: ctx.lines.of(&at),
+            block: found.block,
+            switch: found.switch,
+        }
+    };
+    // The top-level entry reads no glob, so it is refused before `expand` can stop on a
+    // glob outside the grammar (docs/contract/profiles.md, E3, limit).
+    if let Some(found) = top_category_under_switch(&config) {
+        return Err(refuse(found));
+    }
     let expanded = expand(&config, &legacy).map_err(|e| Error::OverrideOverlap {
         file: ctx.file.to_owned(),
         line: ctx.lines.of(&format!("overrides[{}]", e.block)),
@@ -81,15 +98,7 @@ pub(crate) fn apply(
         reason: e.reason,
     })?;
     if let Some(found) = category_under_switch(&config) {
-        let at = found
-            .block
-            .map_or_else(|| "categories".to_owned(), |b| format!("overrides[{b}]"));
-        return Err(Error::CategoryUnderSwitch {
-            file: ctx.file.to_owned(),
-            line: ctx.lines.of(&at),
-            block: found.block,
-            switch: found.switch,
-        });
+        return Err(refuse(found));
     }
     write(doc, &config, &expanded, blocklist, ctx);
     Ok(())
