@@ -394,3 +394,19 @@ fn a_paragraph_of_very_short_sentences_is_refused_with_the_budget_code() {
         result.map(|r| r.summary)
     );
 }
+
+#[test]
+fn many_paragraphs_that_together_pass_the_budget_are_refused_with_the_budget_code() {
+    // 30 paragraphs of 10000 sentences of 4 bytes, about 1.2 MB. Each paragraph fits the
+    // budget of its own length, 5,000 + 65,536, but the 300000 sentences of all of them pass
+    // the budget of the whole text, about 150,000 + 65,536.
+    let paragraph = "Go. ".repeat(10_000);
+    let revised = vec![paragraph; 30].join("\n\n");
+    let result = compare("The pack is signed.\n", &revised);
+    assert!(
+        matches!(&result, Err(slopvac_agents::AgentsError::Context(_))),
+        "{:?}",
+        result.map(|r| r.summary)
+    );
+    assert!(matches!(&result, Err(e) if e.code() == "context-budget-exceeded"));
+}
