@@ -157,6 +157,27 @@ fn a_moved_blocklist_reports_at_the_2x_level_in_every_file(
     );
 }
 
+/// Run `migrate --preserve-behavior --write` on a project with `config`, assert that it stops
+/// with exit 2 and `migrate-output-invalid` and leaves the project as it was, and return its
+/// stderr.
+fn refused(config: &str) -> String {
+    let dir = project(config);
+    let assert = slopvac()
+        .arg("migrate")
+        .arg(dir.path())
+        .args(["--write", "--preserve-behavior"])
+        .assert()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    assert!(stderr.contains("error[migrate-output-invalid]"), "{stderr}");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("slopvac.toml")).expect("config"),
+        config
+    );
+    assert!(!dir.path().join(".slopvac").exists());
+    stderr
+}
+
 #[rstest]
 // A blocklist that only an override sets.
 #[case::path_only_in_an_override(
@@ -180,19 +201,31 @@ fn a_layout_the_migration_cannot_keep_is_refused_and_nothing_is_written(
     #[case] config: &str,
     #[case] at: &str,
 ) {
-    let dir = project(config);
-    let assert = slopvac()
-        .arg("migrate")
-        .arg(dir.path())
-        .args(["--write", "--preserve-behavior"])
-        .assert()
-        .code(2);
-    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
-    assert!(stderr.contains("error[migrate-output-invalid]"), "{stderr}");
+    let stderr = refused(config);
     assert!(stderr.contains(&format!("`{at}`")), "{stderr}");
-    assert_eq!(
-        fs::read_to_string(dir.path().join("slopvac.toml")).expect("config"),
-        config
+}
+
+/// A blocklist, a top-level category and a profile switch break both limits of
+/// `--preserve-behavior`: the word blocklist limit and the E3 limit on a category above a
+/// switch. The blocklist check runs first, so the run names the switch and gives the blocklist
+/// reason.
+#[test]
+fn a_blocklist_with_a_top_level_category_and_a_switch_is_refused_for_the_blocklist() {
+    let config = "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n\
+                  [categories]\nai-tells-formatting = \"warning\"\n\n\
+                  [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"strict\"\n";
+    let stderr = refused(config);
+    assert!(
+        stderr.contains(
+            "`overrides[0].profile` on line 10 sets `profile` in an override, whatever its value, \
+             and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x \
+             vocabulary levels in the files that override covers. A follow-up will support these \
+             layouts."
+        ),
+        "{stderr}"
     );
-    assert!(!dir.path().join(".slopvac").exists());
+    assert!(
+        !stderr.contains("sets a category that applies above the profile switch"),
+        "{stderr}"
+    );
 }
