@@ -221,6 +221,7 @@ The process limits (CPU time, open files, file size, core files and memory) are 
 | Entries, depth and file bytes in one managed Python environment | 20,000 entries, 32 levels and 1 GiB | `slopvac-8l4.9.31` |
 | One `uv` run or interpreter probe during an environment build | 10 minutes, then kill | `slopvac-8l4.9.31` |
 | Plugin index document | 32 MiB | `slopvac-8l4.9.8` |
+| Each input file of `slopvac claims` | 64 MiB, then `claims-input-too-large` | `slopvac-e7j` |
 | Regex pattern length in a data plugin | 8,192 bytes | `slopvac-8l4.3.20` |
 | PCRE2 match, depth and heap limits | fixed in `slopvac-8l4.3.20`; a limit hit is an error, never a no-match | `slopvac-8l4.3.20` |
 
