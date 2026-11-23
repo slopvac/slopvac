@@ -610,9 +610,16 @@ pub fn render_text(report: &Report) -> String {
 /// Read the file the user named within the document cap, `slopvac_fs::MAX_DOCUMENT_BYTES`.
 /// A file over the cap is refused as `document-too-large`, the code every other document
 /// read uses, with the path shown under the working directory.
+///
+/// The capped reader refuses a final-component symlink, but a linked input has always worked
+/// here. As the sibling readers do (`slopvac-terms` `read.rs`), resolve the link first, then
+/// read the target under the cap. A link to a FIFO or a device then fails as not regular
+/// without blocking. When the path cannot be resolved, the original path is read, so a missing
+/// file keeps its error. Errors name the path the user gave, never the resolved one.
 fn read_input(path: PathBuf) -> Result<String, AgentsError> {
+    let resolved = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
     slopvac_fs::read_capped_regular_to_string(
-        &path,
+        &resolved,
         slopvac_fs::MAX_DOCUMENT_BYTES,
         slopvac_fs::ReadOptions::new(),
     )
