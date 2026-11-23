@@ -13,7 +13,8 @@ use frontmatter_spans::{FrontMatter, detect};
 use rayon::prelude::*;
 use slopvac_comments::Language;
 use slopvac_context::{
-    DeclaredContextTagger, DeclaredGenre, GenreRegistry, ResolveOptions, TagIndex, TagRegistry,
+    DeclaredContextTagger, DeclaredGenre, GenreAssignment, GenreRegistry, ResolveOptions, TagIndex,
+    TagRegistry,
 };
 use slopvac_diagrams::{
     Extraction, ExtractionStatus, Format as DiagramFormat, Signal, extract, extract_fenced,
@@ -97,6 +98,9 @@ pub struct Input<'a> {
     /// project's front matter policy allows. The engine never reads a genre from the raw
     /// front matter; without this, a document declares none.
     pub declared_genre: Option<&'a str>,
+    /// The document read already, for the same text and kind. The engine reads it again
+    /// when unset.
+    pub preparsed: Option<&'a Preparsed>,
 }
 
 impl<'a> Input<'a> {
@@ -110,7 +114,15 @@ impl<'a> Input<'a> {
             bom: BomMode::Disk,
             relative_path: None,
             declared_genre: None,
+            preparsed: None,
         }
+    }
+
+    /// The same input with the document read already, so the engine does not read it again.
+    #[must_use]
+    pub const fn with_preparsed(mut self, preparsed: &'a Preparsed) -> Self {
+        self.preparsed = Some(preparsed);
+        self
     }
 
     /// The same input with the genre its front matter declares, already validated against
@@ -849,40 +861,28 @@ impl Engine {
         &self,
         input: &Input<'_>,
     ) -> Result<(Document, Vec<Notice>), EngineError> {
-        // Front matter is metadata, not prose: the parser reads only what follows it.
-        let front = match input.kind {
-            Kind::Diagram(_) | Kind::Rst | Kind::Comments(_) => None,
-            _ => detect(input.source),
-        };
-        let body_start = front.as_ref().map_or(0, |b| b.body_start);
-        let front_span = front
-            .as_ref()
-            .map(|b| Span::new(0, b.body_start).expect("0 <= body start"))
-            .filter(|s| !s.is_empty());
-        let body = Span::new(body_start, input.source.len()).expect("body starts inside the file");
-        let front_matter = front.and_then(|b| FrontMatter::parse_block(input.source, b).ok());
-        let mut extra = Vec::new();
-        // The text rules read: the source, or the source with all but comment text blanked,
-        // and for the directive scan the same with directive text kept.
-        let mut masked = None;
-        let parsed = match input.kind {
-            Kind::Markdown => parse_markdown(input.source, body)?,
-            Kind::Mdx => parse_mdx(input.source, body)?,
-            Kind::Rst => self.parse_rst(input, &mut extra),
-            Kind::Diagram(_) => Parsed::default(),
-            Kind::Comments(language) => {
-                let text = comments::read(input.source, language)?;
-                masked = Some((text.masked, text.lexical));
-                text.parsed
+        let owned;
+        let pre = match input.preparsed {
+            Some(pre) => pre,
+            None => {
+                owned = Preparsed::read(input, &self.rst)?;
+                &owned
             }
         };
+        let front_span = pre.front_span();
+        let front_matter = pre
+            .front
+            .clone()
+            .and_then(|b| FrontMatter::parse_block(input.source, b).ok());
+        let mut extra = pre.extra.clone();
+        let masked = &pre.masked;
+        let parsed = &pre.parsed;
         let text = masked
             .as_ref()
             .map_or(input.source, |(_, lexical)| lexical.as_str());
         let index = SourceIndex::new(input.source, input.bom);
-        let parsed = with_html_prose(input.source, &index, parsed)?;
-        let prepared = Prepared::new(text, &parsed)?;
-        let (genre, tags) = self.genre_and_tags(input, &parsed, front_matter.as_ref())?;
+        let prepared = Prepared::new(text, parsed)?;
+        let (genre, tags) = self.genre_and_tags(input, parsed, front_matter.as_ref())?;
         let lines = Lines::new(input.source);
         let lookup = |id: &str| self.directive_target(id);
         let directives = match input.kind {
@@ -892,13 +892,13 @@ impl Engine {
                 masked.as_ref().map_or("", |(masked, _)| masked.as_str()),
                 lookup,
             ),
-            _ => scan(&parsed, &lines, front_span, lookup),
+            _ => scan(parsed, &lines, front_span, lookup),
         };
-        let subject = Subject::new(&prepared, &parsed, &lines, front_span);
+        let subject = Subject::new(&prepared, parsed, &lines, front_span);
         let run = Run {
             engine: self,
             input,
-            parsed: &parsed,
+            parsed,
             prepared: &prepared,
             tags: &tags,
             lines: &lines,
@@ -1009,41 +1009,7 @@ impl Engine {
         ) else {
             return Ok((self.settings.genre.clone(), None));
         };
-        let opts = ResolveOptions {
-            assignments,
-            relative_path: input.relative_path,
-            declared: DeclaredGenre::Given(input.declared_genre),
-        };
-        let found = tagging::genre(
-            registry,
-            &opts,
-            input.path,
-            input.source,
-            parsed,
-            front_matter,
-        )
-        .map_err(|e| EngineError::from_context(&e))?;
-        let assigned = found.assigned.clone();
-        let result = GenreResult {
-            id: GenreId::new(found.id).map_err(|e| EngineError::Internal(e.to_string()))?,
-            source: match found.source {
-                slopvac_context::GenreSource::Explicit => GenreSource::Explicit,
-                slopvac_context::GenreSource::Detected => GenreSource::Detected,
-                slopvac_context::GenreSource::Default => GenreSource::Default,
-            },
-            reasons: found
-                .reasons
-                .into_iter()
-                .map(|r| {
-                    Ok(GenreReason {
-                        signal: KebabName::new(r.signal)
-                            .map_err(|e| EngineError::Internal(e.to_string()))?,
-                        detail: r.detail,
-                    })
-                })
-                .collect::<Result<_, EngineError>>()?,
-        };
-        Ok((result, assigned))
+        choose_genre(registry, assignments, input, parsed, front_matter)
     }
 
     /// Give the findings of one document the levels of its genre. A rule or category level
@@ -1164,44 +1130,6 @@ impl Engine {
             )
             .with_data(data),
         )
-    }
-
-    /// Read an RST file. A file that cannot be read is an empty document with a warning
-    /// notice, so the run is incomplete and the file is never skipped silently.
-    fn parse_rst(&self, input: &Input<'_>, extra: &mut Vec<Notice>) -> Parsed {
-        let make = |level, message: &EngineNotice| {
-            let mut notice = notice(level, message);
-            notice.path = Some(input.path.to_owned());
-            notice
-        };
-        match self.rst.parse(input.source) {
-            Ok(parsed) => {
-                for n in parsed.notices {
-                    let level = if n.warning {
-                        NoticeLevel::Warning
-                    } else {
-                        NoticeLevel::Info
-                    };
-                    let message = if n.warning {
-                        EngineNotice::RstUnplaced { message: n.message }
-                    } else {
-                        EngineNotice::RstLinePrecise { message: n.message }
-                    };
-                    extra.push(make(level, &message));
-                }
-                parsed.document
-            }
-            Err(error) => {
-                let message = RstError::message(&error, &[std::path::Path::new(input.path)]);
-                let message = if error.is_missing() {
-                    EngineNotice::RstConverterMissing { message }
-                } else {
-                    EngineNotice::RstUnchecked { message }
-                };
-                extra.push(make(NoticeLevel::Warning, &message));
-                Parsed::default()
-            }
-        }
     }
 
     fn document(
@@ -2317,4 +2245,188 @@ fn preserve_case(original: &str, replacement: &str) -> String {
         }
     }
     replacement.to_owned()
+}
+
+/// Read an RST file. A file that cannot be read is an empty document with a warning
+/// notice, so the run is incomplete and the file is never skipped silently.
+fn parse_rst(adapter: &RstAdapter, input: &Input<'_>, extra: &mut Vec<Notice>) -> Parsed {
+    let make = |level, message: &EngineNotice| {
+        let mut notice = notice(level, message);
+        notice.path = Some(input.path.to_owned());
+        notice
+    };
+    match adapter.parse(input.source) {
+        Ok(parsed) => {
+            for n in parsed.notices {
+                let level = if n.warning {
+                    NoticeLevel::Warning
+                } else {
+                    NoticeLevel::Info
+                };
+                let message = if n.warning {
+                    EngineNotice::RstUnplaced { message: n.message }
+                } else {
+                    EngineNotice::RstLinePrecise { message: n.message }
+                };
+                extra.push(make(level, &message));
+            }
+            parsed.document
+        }
+        Err(error) => {
+            let message = RstError::message(&error, &[std::path::Path::new(input.path)]);
+            let message = if error.is_missing() {
+                EngineNotice::RstConverterMissing { message }
+            } else {
+                EngineNotice::RstUnchecked { message }
+            };
+            extra.push(make(NoticeLevel::Warning, &message));
+            Parsed::default()
+        }
+    }
+}
+
+/// The genre of a document under `assignments`, with the genre a `[[genres]]` block gave when
+/// the document's own declaration chose another one.
+fn choose_genre(
+    registry: &GenreRegistry,
+    assignments: &[GenreAssignment],
+    input: &Input<'_>,
+    parsed: &Parsed,
+    front_matter: Option<&FrontMatter<'_>>,
+) -> Result<(GenreResult, Option<String>), EngineError> {
+    let opts = ResolveOptions {
+        assignments,
+        relative_path: input.relative_path,
+        declared: DeclaredGenre::Given(input.declared_genre),
+    };
+    let found = tagging::genre(
+        registry,
+        &opts,
+        input.path,
+        input.source,
+        parsed,
+        front_matter,
+    )
+    .map_err(|e| EngineError::from_context(&e))?;
+    let assigned = found.assigned.clone();
+    let result = GenreResult {
+        id: GenreId::new(found.id).map_err(|e| EngineError::Internal(e.to_string()))?,
+        source: match found.source {
+            slopvac_context::GenreSource::Explicit => GenreSource::Explicit,
+            slopvac_context::GenreSource::Detected => GenreSource::Detected,
+            slopvac_context::GenreSource::Default => GenreSource::Default,
+        },
+        reasons: found
+            .reasons
+            .into_iter()
+            .map(|r| {
+                Ok(GenreReason {
+                    signal: KebabName::new(r.signal)
+                        .map_err(|e| EngineError::Internal(e.to_string()))?,
+                    detail: r.detail,
+                })
+            })
+            .collect::<Result<_, EngineError>>()?,
+    };
+    Ok((result, assigned))
+}
+
+/// A document read once: its front matter block, its parse and the notices the parse raised.
+/// Build it with [`Preparsed::read`], choose the genre from it with [`detect_genre`], and hand
+/// it to the engine with [`Input::with_preparsed`], so the engine does not read the text again.
+/// It is valid only for the text and kind it was read from.
+#[derive(Debug)]
+pub struct Preparsed {
+    front: Option<frontmatter_spans::Block>,
+    parsed: Parsed,
+    /// The text of a code-comment file with all but comment text blanked, and the same with
+    /// directive text kept.
+    masked: Option<(String, String)>,
+    extra: Vec<Notice>,
+}
+
+impl Preparsed {
+    /// Read `input`. `rst` reads reStructuredText files.
+    ///
+    /// # Errors
+    /// The parse errors that [`Engine::lint`] reports for the same input.
+    pub fn read(input: &Input<'_>, rst: &RstAdapter) -> Result<Self, EngineError> {
+        // Front matter is metadata, not prose: the parser reads only what follows it.
+        let front = match input.kind {
+            Kind::Diagram(_) | Kind::Rst | Kind::Comments(_) => None,
+            _ => detect(input.source),
+        };
+        let body_start = front.as_ref().map_or(0, |b| b.body_start);
+        let body = Span::new(body_start, input.source.len()).expect("body starts inside the file");
+        let mut extra = Vec::new();
+        let mut masked = None;
+        let parsed = match input.kind {
+            Kind::Markdown => parse_markdown(input.source, body)?,
+            Kind::Mdx => parse_mdx(input.source, body)?,
+            Kind::Rst => parse_rst(rst, input, &mut extra),
+            Kind::Diagram(_) => Parsed::default(),
+            Kind::Comments(language) => {
+                let text = comments::read(input.source, language)?;
+                masked = Some((text.masked, text.lexical));
+                text.parsed
+            }
+        };
+        let index = SourceIndex::new(input.source, input.bom);
+        let parsed = with_html_prose(input.source, &index, parsed)?;
+        Ok(Self {
+            front,
+            parsed,
+            masked,
+            extra,
+        })
+    }
+
+    fn front_span(&self) -> Option<Span> {
+        self.front
+            .as_ref()
+            .map(|b| Span::new(0, b.body_start).expect("0 <= body start"))
+            .filter(|s| !s.is_empty())
+    }
+}
+
+/// The genre of `input` as the engine chooses it under `assignments`: the genre the document
+/// declares, then a `[[genres]]` block, then detection. A diagram has none.
+///
+/// # Errors
+/// [`EngineError`] when the genres cannot be read or the choice fails.
+pub fn detect_genre(
+    input: &Input<'_>,
+    pre: &Preparsed,
+    assignments: &[GenreAssignment],
+) -> Result<Option<GenreResult>, EngineError> {
+    static REGISTRY: std::sync::OnceLock<Result<GenreRegistry, String>> =
+        std::sync::OnceLock::new();
+    if matches!(input.kind, Kind::Diagram(_)) {
+        return Ok(None);
+    }
+    let registry = REGISTRY
+        .get_or_init(|| slopvac_context::builtin_genres().map_err(|e| e.to_string()))
+        .as_ref()
+        .map_err(|e| EngineError::Internal(e.clone()))?;
+    let front_matter = pre
+        .front
+        .clone()
+        .and_then(|b| FrontMatter::parse_block(input.source, b).ok());
+    choose_genre(
+        registry,
+        assignments,
+        input,
+        &pre.parsed,
+        front_matter.as_ref(),
+    )
+    .map(|(genre, _)| Some(genre))
+}
+
+/// Read each of `inputs` once, in parallel.
+#[must_use]
+pub fn preparse_all(inputs: &[Input<'_>], rst: &RstAdapter) -> Vec<Result<Preparsed, EngineError>> {
+    inputs
+        .par_iter()
+        .map(|input| Preparsed::read(input, rst))
+        .collect()
 }

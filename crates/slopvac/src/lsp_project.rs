@@ -29,10 +29,12 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use slopvac_config::frontmatter::Policy;
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
+use slopvac_engine::rst::{RstAdapter, RstOptions};
+use slopvac_engine::{Input, Kind, Preparsed, detect_genre};
 use slopvac_lsp::{
     Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
 };
-use slopvac_model::{ConfigSource, Notice, RuleId};
+use slopvac_model::{BomMode, ConfigSource, Notice, RuleId};
 
 use crate::engine::{config_error, declared_genre, read_block_under, rel_text, settings_for};
 use crate::errors::CliError;
@@ -194,6 +196,31 @@ pub(crate) fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
         notices,
         checks: vec![Arc::new(ProjectCheck { project })],
     })
+}
+
+/// The genre that detection chooses for the buffer at `path`, which the settings of its genre
+/// follow. Only Markdown and MDX are read here: a reStructuredText buffer would start an
+/// interpreter for the sake of a genre.
+fn detected_genre(path: &str, text: &str, config: &LoadedConfig, rel: &Path) -> Option<String> {
+    let kind = match path.rsplit('.').next() {
+        Some("mdx") => Kind::Mdx,
+        Some("rst") => return None,
+        _ => Kind::Markdown,
+    };
+    let relative = rel_text(rel);
+    let mut input = Input::new(path, text)
+        .with_kind(kind)
+        .with_bom(BomMode::Buffer)
+        .with_relative_path(&relative);
+    let declared = declared_genre(&read_block_under(text, path, Some(config)));
+    if let Some(genre) = &declared {
+        input = input.with_declared_genre(genre);
+    }
+    let pre = Preparsed::read(&input, &RstAdapter::new(RstOptions::from_env())).ok()?;
+    detect_genre(&input, &pre, &lint_settings::genre_assignments(config))
+        .ok()
+        .flatten()
+        .map(|g| g.id.as_str().to_owned())
 }
 
 /// The nearest config of `dir`, found again from disk.
@@ -504,7 +531,8 @@ impl Project {
                 State::Ready(ready) => ready,
                 State::Failed(why) => return Err(LintError(why.clone())),
             };
-            let layers = DocumentLayers::read(text, path, config.as_deref());
+            let layers = DocumentLayers::read(text, path, config.as_deref())
+                .with_detected_genre(detected_genre(path, text, config_ref, &rel));
             let (settings, terms, key) = settings_for(
                 &ready.catalog,
                 config_ref,

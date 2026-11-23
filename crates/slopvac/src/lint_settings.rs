@@ -351,6 +351,8 @@ pub fn presets() -> &'static (dyn Presets + Send + Sync) {
 pub struct DocumentLayers {
     front_matter: Vec<Setting>,
     directives: Vec<Setting>,
+    /// The genre that detection chose, when nothing names one. It supplies the genre layer.
+    detected_genre: Option<String>,
 }
 
 impl DocumentLayers {
@@ -362,7 +364,15 @@ impl DocumentLayers {
         Self {
             front_matter: slopvac_config::frontmatter::read(text, shown, &policy).settings,
             directives: slopvac_config::directives::read(text, shown, &policy).settings,
+            detected_genre: None,
         }
+    }
+
+    /// The same layers with the genre that detection chose for the document.
+    #[must_use]
+    pub fn with_detected_genre(mut self, genre: Option<String>) -> Self {
+        self.detected_genre = genre;
+        self
     }
 }
 
@@ -383,7 +393,7 @@ pub fn genre_assignments(config: &LoadedConfig) -> Vec<GenreAssignment> {
 /// The merged settings of the file at `rel`, with the layers of its own document.
 #[must_use]
 pub fn resolve(config: &LoadedConfig, rel: &Path, layers: &DocumentLayers) -> Resolved {
-    config.resolve(
+    config.resolve_detecting(
         rel,
         &Inputs {
             presets: presets(),
@@ -392,6 +402,7 @@ pub fn resolve(config: &LoadedConfig, rel: &Path, layers: &DocumentLayers) -> Re
             cli: &[],
             env: &[],
         },
+        layers.detected_genre.as_deref(),
     )
 }
 

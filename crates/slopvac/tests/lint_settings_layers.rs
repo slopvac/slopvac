@@ -99,3 +99,42 @@ fn a_pack_qualified_style_loads_from_the_core_pack() {
     let text = explain(&path);
     assert!(text.contains("categories.ste-safety.severity"), "{text}");
 }
+
+/// Lint `dir`'s `path` and return the document object of the JSON report.
+fn document_at(dir: &std::path::Path, path: &str) -> Value {
+    let out = slopvac()
+        .args(["lint", "--format", "json"])
+        .arg(dir.join(path))
+        .output()
+        .expect("run");
+    let report: Value = serde_json::from_slice(&out.stdout).expect("json report");
+    report["documents"][0].clone()
+}
+
+#[test]
+fn a_detected_genre_feeds_its_profile_into_the_settings() {
+    // `reference/` is a path signal for the `reference` genre, whose file sets `profile:
+    // strict`. No config or front matter names a genre, so detection chooses it.
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("slopvac.toml"), "schema_version = 3\n").expect("config");
+    fs::create_dir(dir.path().join("reference")).expect("dir");
+    fs::write(dir.path().join("reference/e.md"), BODY).expect("doc");
+    let doc = document_at(dir.path(), "reference/e.md");
+    assert_eq!(doc["genre"]["source"], "detected", "{doc}");
+    assert_eq!(doc["genre"]["id"], "reference", "{doc}");
+    assert_eq!(doc["profile"], "strict", "{doc}");
+}
+
+#[test]
+fn an_explicit_genre_outranks_the_detected_one_and_keeps_its_source() {
+    // The path says `reference`; the front matter says `informal` (profile: relaxed).
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("slopvac.toml"), "schema_version = 3\n").expect("config");
+    fs::create_dir(dir.path().join("reference")).expect("dir");
+    let text = format!("---\nslopvac:\n  v: 3\n  genre: informal\n---\n{BODY}");
+    fs::write(dir.path().join("reference/e.md"), text).expect("doc");
+    let doc = document_at(dir.path(), "reference/e.md");
+    assert_eq!(doc["genre"]["source"], "explicit", "{doc}");
+    assert_eq!(doc["genre"]["id"], "informal", "{doc}");
+    assert_eq!(doc["profile"], "relaxed", "{doc}");
+}

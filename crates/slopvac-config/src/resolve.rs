@@ -409,6 +409,19 @@ impl LoadedConfig {
     /// Merge every layer for the file at `rel`, a path relative to the project root.
     #[must_use]
     pub fn resolve(&self, rel: &Path, inputs: &Inputs<'_>) -> Resolved {
+        self.resolve_detecting(rel, inputs, None)
+    }
+
+    /// As [`LoadedConfig::resolve`], with the genre that detection chose for the document.
+    /// It supplies the genre layer only when no `[[genres]]` block, front matter, directive
+    /// or flag names a genre: an explicit genre always wins and the layer then comes from it.
+    #[must_use]
+    pub fn resolve_detecting(
+        &self,
+        rel: &Path,
+        inputs: &Inputs<'_>,
+        detected: Option<&str>,
+    ) -> Resolved {
         let mut out = Resolved::default();
         out.apply_all(core_defaults());
 
@@ -442,7 +455,8 @@ impl LoadedConfig {
             .chain(inputs.directives)
             .chain(inputs.cli)
             .rfind(|s| s.path == ["genre"])
-            .and_then(|s| s.value.as_str());
+            .and_then(|s| s.value.as_str())
+            .or(detected);
         if let Some(name) = genre {
             for layer in inputs.presets.genre_chain(name) {
                 out.apply_all(layer);

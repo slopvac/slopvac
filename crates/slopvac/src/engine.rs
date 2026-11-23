@@ -14,9 +14,10 @@ use crate::lint_messages::{LintFixMessage, LintFixReason};
 use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
+use slopvac_engine::rst::{RstAdapter, RstOptions};
 use slopvac_engine::{
-    AclCheckFailed, Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, Root,
-    RootChanged, fix_file_in,
+    AclCheckFailed, Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, Preparsed,
+    Root, RootChanged, detect_genre, fix_file_in, preparse_all,
 };
 use slopvac_messages::Catalog as _;
 use slopvac_model::{
@@ -876,24 +877,71 @@ pub(crate) fn file_settings(
     Ok((settings, resolved))
 }
 
-/// Group the items by their settings: one engine per distinct settings.
+/// The engine input of `item`, as the lint of the item builds it.
+fn input_of<'a>(item: &'a Item, rel: Option<&'a str>, declared: Option<&'a str>) -> Input<'a> {
+    let mut input = Input::new(&item.shown, &item.text).with_kind(item.kind);
+    if let Some(rel) = rel {
+        input = input.with_relative_path(rel);
+    }
+    if let Some(genre) = declared {
+        input = input.with_declared_genre(genre);
+    }
+    input
+}
+
+/// Read each item once. A document that cannot be read comes back `None`, and the engine
+/// reports the failure when it lints the item.
+fn preparse(request: &LintRequest, items: &[Item]) -> Vec<Option<Preparsed>> {
+    let mut options = RstOptions::from_env();
+    options.project_roots = project_roots(request, items);
+    let adapter = RstAdapter::new(options);
+    let relatives: Vec<Option<String>> = items
+        .iter()
+        .map(|i| i.config.as_ref().map(|(_, rel)| rel_text(rel)))
+        .collect();
+    let declared: Vec<Option<String>> = items
+        .iter()
+        .map(|i| declared_genre(&read_block(i)))
+        .collect();
+    let inputs: Vec<Input<'_>> = items
+        .iter()
+        .zip(relatives.iter().zip(&declared))
+        .map(|(item, (rel, genre))| input_of(item, rel.as_deref(), genre.as_deref()))
+        .collect();
+    preparse_all(&inputs, &adapter)
+        .into_iter()
+        .map(Result::ok)
+        .collect()
+}
+
+/// Group the items by their settings: one engine per distinct settings. Each item is read
+/// once, to choose the genre its settings follow, and the read comes back for the engine.
 fn group_by_settings(
     request: &LintRequest,
     items: &[Item],
     rules: &Catalog,
-) -> Result<Groups, CliError> {
+) -> Result<(Groups, Vec<Option<Preparsed>>), CliError> {
     let mut groups = Groups::new();
     let none = LoadedConfig::without_files(request.root.clone());
+    let preparsed = preparse(request, items);
     for (index, item) in items.iter().enumerate() {
         let (config, rel) = match &item.config {
             Some((config, rel)) => (config.as_ref(), rel.clone()),
             None => (&none, PathBuf::from(&item.shown)),
         };
+        let relative = item.config.as_ref().map(|(_, rel)| rel_text(rel));
+        let declared = declared_genre(&read_block(item));
+        let detected = preparsed[index].as_ref().and_then(|pre| {
+            let input = input_of(item, relative.as_deref(), declared.as_deref());
+            let assignments = lint_settings::genre_assignments(config);
+            detect_genre(&input, pre, &assignments).ok().flatten()
+        });
         let layers = DocumentLayers::read(
             &item.text,
             &item.shown,
             item.config.as_ref().map(|(c, _)| &**c),
-        );
+        )
+        .with_detected_genre(detected.map(|g| g.id.as_str().to_owned()));
         let (settings, terms, key) =
             settings_for(rules, config, &rel, &request.overrides, &layers)?;
         groups
@@ -902,7 +950,7 @@ fn group_by_settings(
             .2
             .push(index);
     }
-    Ok(groups)
+    Ok((groups, preparsed))
 }
 
 /// The engine settings and term inputs for the file at `rel` under `config`, and the key
@@ -1082,11 +1130,15 @@ fn lint_items(
     rules: Catalog,
     mut run: Run,
 ) -> RunOutcome {
-    let groups = match group_by_settings(request, &items, &rules) {
-        Ok(groups) => groups,
+    let (groups, mut preparsed) = match group_by_settings(request, &items, &rules) {
+        Ok(found) => found,
         Err(err) => return failed(request, run, &err),
     };
 
+    // A fix changes the text, so what was read of it no longer holds.
+    if root.is_some() {
+        preparsed.iter_mut().for_each(|p| *p = None);
+    }
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
     let mut spare = Some(rules);
     for (settings, terms, indexes) in groups.into_values() {
@@ -1130,15 +1182,11 @@ fn lint_items(
             .iter()
             .zip(relatives.iter().zip(&declared))
             .map(|(&i, (rel, genre))| {
-                let mut input =
-                    Input::new(&items[i].shown, &items[i].text).with_kind(items[i].kind);
-                if let Some(rel) = rel {
-                    input = input.with_relative_path(rel);
+                let input = input_of(&items[i], rel.as_deref(), genre.as_deref());
+                match &preparsed[i] {
+                    Some(pre) => input.with_preparsed(pre),
+                    None => input,
                 }
-                if let Some(genre) = genre {
-                    input = input.with_declared_genre(genre);
-                }
-                input
             })
             .collect();
         for (&index, result) in indexes.iter().zip(engine.lint_all_with_notices(&inputs)) {
