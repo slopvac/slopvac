@@ -7,6 +7,7 @@
 //! the CLI builds, for `lint` and for the language server, goes through [`build_engine`].
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde_json::Value as Json;
 use slopvac_config::Resolved;
@@ -101,7 +102,7 @@ fn failed(path: &Path, what: &str, error: &TermsError, cwd: &Path) -> CliError {
 /// `terms-invalid` for a terms file or blocklist that cannot be read or is malformed, and
 /// `engine-unavailable` when the engine cannot be built.
 pub fn build_engine(
-    sets: Vec<RuleSet>,
+    sets: Vec<Arc<RuleSet>>,
     settings: Settings,
     terms: &TermInputs,
     cwd: &Path,
@@ -112,7 +113,7 @@ pub fn build_engine(
 /// [`build_engine`] with the terms file read passed in, so a test can change a file between
 /// the one read and anything that would read it again.
 fn build_engine_reading(
-    sets: Vec<RuleSet>,
+    sets: Vec<Arc<RuleSet>>,
     settings: Settings,
     terms: &TermInputs,
     cwd: &Path,
@@ -134,7 +135,7 @@ fn build_engine_reading(
     }
     let unavailable =
         |e: slopvac_engine::EngineError| CliError::new("engine-unavailable", e.to_string());
-    let mut engine = Engine::new(sets, settings).map_err(unavailable)?;
+    let mut engine = Engine::new_shared(sets, settings).map_err(unavailable)?;
     if !terms.files.is_empty() {
         engine = engine.with_term_entries(entries);
     }
@@ -183,7 +184,7 @@ mod tests {
             loaded
         };
         let engine = build_engine_reading(
-            catalog.into_sets(),
+            catalog.shared_sets(),
             settings,
             &inputs,
             dir.path(),

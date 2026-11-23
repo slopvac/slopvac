@@ -8,7 +8,7 @@ use slopvac_config::{PackFile, PresetFailure, Presets, Setting};
 use slopvac_context::{GenreSpec, TaggerSpec};
 use slopvac_model::PackId;
 use slopvac_plugins::sign::RESERVED_ID;
-use slopvac_rules::{CompileOptions, PackBudget, RuleSet};
+use slopvac_rules::{CompileBudget, CompileOptions, PackBudget, RuleSet};
 use slopvac_styles::{Style, StyleError, StylePresets, StyleSource};
 
 use crate::budget::{Budget, Limits, refusal};
@@ -28,6 +28,7 @@ pub struct LoadedPack {
     rules: RuleSet,
     genres: Vec<(PackPath, GenreFile)>,
     taggers: Vec<TaggerSpec>,
+    tagger_paths: Vec<PackPath>,
     styles: Vec<(PackPath, String)>,
     configs: Vec<(PackPath, String)>,
     pub(crate) bytes: u64,
@@ -97,17 +98,13 @@ fn syntax(path: &PackPath, text: &str, error: &slopvac_config::tree::ParseError)
 
 fn rule_problems(errors: &slopvac_rules::LoadErrors) -> PackError {
     use slopvac_rules::LoadErrorKind as K;
-    // A run budget the loader refused outranks the problems found before it.
-    let run_budget = errors.errors().iter().find_map(|e| match &e.kind {
-        K::BudgetExceeded {
-            budget:
-                budget @ (PackBudget::RunBytes | PackBudget::RunRules | PackBudget::RunPatternBytes),
-            limit,
-            ..
-        } => Some(refusal(*budget, *limit)),
+    // A budget the loader refused, per pack or per run, outranks the problems found before it
+    // and keeps its code and data (`rules-budget-exceeded`, `data.budget`, `data.limit`).
+    let crossed = errors.errors().iter().find_map(|e| match &e.kind {
+        K::BudgetExceeded { budget, limit, .. } => Some(refusal(*budget, *limit)),
         _ => None,
     });
-    if let Some(refusal) = run_budget {
+    if let Some(refusal) = crossed {
         return refusal;
     }
     PackError::Rules {
@@ -129,8 +126,8 @@ impl LoadedPack {
     /// Read the pack in `source` and check its rules, genres and styles.
     ///
     /// `origin` says who supplies the pack. The core pack takes the binary's version, whatever
-    /// its manifest says, and is the only pack whose taggers load: a declarative tagger from
-    /// any other pack stays unread until the tag-lookup amplification is closed.
+    /// its manifest says. Every pack's declarative taggers load, each pattern charged to the
+    /// run's compiled-pattern budget and capped at 8,192 bytes as written.
     ///
     /// # Errors
     /// [`PackError`] for a manifest that breaks the contract, a missing file, a rule that does
@@ -204,8 +201,7 @@ impl LoadedPack {
             &mut *reader.budget,
         )
         .map_err(|e| rule_problems(&e))?;
-        let pattern_bytes = reader.budget.pattern_used().saturating_sub(patterns_before);
-        let mut genres = Vec::new();
+                let mut genres = Vec::new();
         for (path, text) in reader.read_all(&provides.genres)? {
             let spec = GenreSpec::from_yaml(&text)
                 .and_then(|spec| spec.validate().map(|()| spec))
@@ -218,12 +214,22 @@ impl LoadedPack {
             genres.push((path, GenreFile::new(spec, text, root)));
         }
         let mut taggers = Vec::new();
+        let mut tagger_paths = Vec::new();
         for (path, text) in reader.read_all(&provides.taggers)? {
+            // The file's bytes bound its authored patterns, so they are reserved before the
+            // compile, as a rule pattern is. The compiled size settles the reservation.
+            reader.budget.reserve(text.len())?;
             let spec = TaggerSpec::from_yaml(&text)
-                .and_then(|spec| spec.clone().compile().map(|_| spec))
+                .and_then(|spec| {
+                    let compiled = spec.clone().compile()?;
+                    Ok((spec, compiled.compiled_size()))
+                })
                 .map_err(|e| artifact(&path, &text, &e))?;
-            taggers.push(spec);
+            reader.budget.settle(text.len(), spec.1)?;
+            taggers.push(spec.0);
+            tagger_paths.push(path);
         }
+        let pattern_bytes = reader.budget.pattern_used().saturating_sub(patterns_before);
         let styles = reader.read_all(&provides.styles)?;
         let configs = reader.read_all(&provides.configs)?;
         let bytes = reader.bytes;
@@ -233,6 +239,7 @@ impl LoadedPack {
             rules,
             genres,
             taggers,
+            tagger_paths,
             styles,
             configs,
             bytes,
@@ -299,6 +306,26 @@ fn stem(path: &PackPath) -> &str {
     file.rsplit_once('.').map_or(file, |(stem, _)| stem)
 }
 
+/// Refuse a tagger that takes the id of an earlier pack's tagger, or emits a context tag that a
+/// core tagger emits. A synced pack may add tags and taggers, never stand in for the core's:
+/// the core rules read those tags, so a pack that set `procedure` could turn them on or off.
+fn check_taggers(packs: &[LoadedPack]) -> Result<(), PackError> {
+    let mut ids: HashSet<&str> = HashSet::new();
+    let mut core_tags: HashSet<&str> = HashSet::new();
+    for pack in packs {
+        for (path, spec) in pack.tagger_paths.iter().zip(&pack.taggers) {
+            let reserved = pack.origin != Source::Core && core_tags.contains(spec.tag.as_str());
+            if reserved || !ids.insert(spec.id.as_str()) {
+                return Err(artifact_fault(path, ArtifactFault::Invalid));
+            }
+        }
+        if pack.origin == Source::Core {
+            core_tags.extend(pack.taggers.iter().map(|t| t.tag.as_str()));
+        }
+    }
+    Ok(())
+}
+
 /// The packs a run knows, with their genres and styles by qualified name.
 #[derive(Debug)]
 pub struct Packs {
@@ -328,6 +355,7 @@ impl Packs {
         for pack in &packs {
             budget.charge_pack(pack)?;
         }
+        check_taggers(&packs)?;
         let mut genres = Registry::new();
         let mut styles = Registry::new();
         for pack in &packs {

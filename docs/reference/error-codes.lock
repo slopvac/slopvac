@@ -731,6 +731,7 @@ plugins-budget-exceeded text
 plugins-budget-stderr-bytes text
 plugins-budget-stdout-bytes text
 plugins-budget-unsolicited text
+plugins-category-shared error
 plugins-change-in-place text
 plugins-change-installed text
 plugins-change-reinstalled text
@@ -1034,6 +1035,7 @@ plugins-lock-unknown-key text
 plugins-lock-unreadable error
 plugins-lock-version-invalid text
 plugins-lock-version-too-long text
+plugins-nested-config error
 plugins-notice-line text
 plugins-oci-archive text
 plugins-oci-auth-base64 text
@@ -1312,6 +1314,7 @@ plugins-sign-rotation-not-later text
 plugins-sign-statement-too-large text
 plugins-sign-version text
 plugins-store-failed error
+plugins-store-unavailable error
 plugins-strict-duplicate-key text
 plugins-strict-integer-range text
 plugins-strict-nesting text
@@ -1601,7 +1604,10 @@ rules-parse-failed text
 rules-pattern-invalid text
 rules-pattern-too-long error
 rules-read-failed text
+rules-unavailable error
 rules-unsupported-format text
+run-plugins-lock-invalid error
+run-plugins-lock-unreadable error
 self-about text
 self-unknown-subcommand text
 self-update-about text

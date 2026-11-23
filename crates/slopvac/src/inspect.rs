@@ -67,7 +67,8 @@ fn clean(text: &str) -> String {
 
 fn load(m: &ArgMatches) -> Result<(Catalog, Severities), CliError> {
     let severities = Severities::load(m)?;
-    Ok((Catalog::load()?, severities))
+    let root = std::env::current_dir().unwrap_or_default();
+    Ok((Catalog::configured(&root)?, severities))
 }
 
 fn url_of(rule: &LoadedRule) -> Option<String> {

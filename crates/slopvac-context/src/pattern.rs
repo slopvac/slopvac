@@ -52,6 +52,12 @@ impl Pattern {
         })
     }
 
+    /// Size in bytes of the compiled pattern, as PCRE2 reports it.
+    #[must_use]
+    pub fn compiled_size(&self) -> usize {
+        self.re.compiled_size()
+    }
+
     /// The pattern source.
     #[must_use]
     pub fn source(&self) -> &str {

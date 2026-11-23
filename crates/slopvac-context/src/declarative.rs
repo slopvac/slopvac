@@ -256,6 +256,22 @@ pub struct DeclarativeTagger {
 }
 
 impl DeclarativeTagger {
+    /// Total size in bytes of the compiled patterns, as PCRE2 reports it. A pack loader charges
+    /// this to its pattern budget.
+    #[must_use]
+    pub fn compiled_size(&self) -> usize {
+        let own: usize = self
+            .matching
+            .iter()
+            .chain(&self.unless)
+            .map(Pattern::compiled_size)
+            .sum();
+        own + self
+            .structural
+            .as_ref()
+            .map_or(0, StructuralTagger::compiled_size)
+    }
+
     fn fires(&self, text: &str) -> Result<bool, Error> {
         let mut any = false;
         for p in &self.matching {

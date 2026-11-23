@@ -517,7 +517,7 @@ impl Project {
             engine
         } else {
             // The engine owns its rule sets, and a set does not clone: load them again.
-            let sets = Catalog::load().map_err(shown)?.into_sets();
+            let sets = Catalog::load().map_err(shown)?.shared_sets();
             let reasons = slopvac_lsp::exception_names(&sets);
             let built =
                 lint_terms::build_engine(sets, settings, &terms, &self.root).map_err(shown)?;

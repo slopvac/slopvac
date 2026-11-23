@@ -44,6 +44,7 @@ pub static ALL: &[Registered] = &[
     ("slopvac-migrate-text", slopvac_migrate::text_entries),
     ("slopvac-migrate-phrases", slopvac_migrate::phrase_entries),
     ("lint options", lint_option_entries),
+    ("rule sources", rule_source_entries),
     ("lint fix", lint_fix_entries),
     ("lint fix reason", lint_fix_reason_entries),
     ("self update", slopvac_update::error_entries),
@@ -57,6 +58,10 @@ fn report_entries() -> &'static [Entry] {
 
 fn lint_option_entries() -> &'static [Entry] {
     <crate::lint_messages::LintOptionError as slopvac_messages::Catalog>::entries()
+}
+
+fn rule_source_entries() -> &'static [Entry] {
+    <crate::lint_messages::RuleSourceError as slopvac_messages::Catalog>::entries()
 }
 
 fn lint_fix_entries() -> &'static [Entry] {

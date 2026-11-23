@@ -162,6 +162,16 @@ pub(crate) struct StructuralTagger {
 }
 
 impl StructuralTagger {
+    /// Total compiled size of the tagger's patterns, in bytes.
+    pub(crate) fn compiled_size(&self) -> usize {
+        [&self.heading, &self.admonition, &self.path, &self.sentence]
+            .into_iter()
+            .flatten()
+            .chain(self.fm.iter().filter_map(|(_, p)| p.as_ref()))
+            .map(Pattern::compiled_size)
+            .sum()
+    }
+
     fn document_level_ok(&self, doc: &dyn DocumentView) -> Result<bool, Error> {
         if let Some(p) = &self.path
             && !p.is_match(&normalize_path(doc.path()))?

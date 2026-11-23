@@ -11,8 +11,9 @@ use crate::messages::{PackMessage, code_of};
 /// File name of the manifest at the root of a pack.
 pub const MANIFEST_FILE: &str = "slopvac-plugin.toml";
 
-/// Largest pack file the directory source reads, in bytes.
-const MAX_FILE_BYTES: u64 = 1024 * 1024;
+/// Largest pack file the directory source reads, in bytes: the cap of a rule or category file
+/// (policies, section 1.9), which is also the largest file a pack may ship.
+const MAX_FILE_BYTES: u64 = slopvac_rules::MAX_RULE_FILE_BYTES;
 
 /// Why a pack file could not be read.
 #[derive(Debug, thiserror::Error)]
@@ -27,6 +28,9 @@ pub enum SourceError {
     /// The file exists but could not be read.
     #[error("cannot read a pack file")]
     Read(#[from] slopvac_fs::Error),
+    /// A pack file is over the file cap. The code and the text are those of `slopvac-rules`.
+    #[error("{}", slopvac_rules::LoadErrorKind::TooLarge(MAX_FILE_BYTES))]
+    TooLarge,
     /// The pack holds a link.
     #[error("{}", PackMessage::FileLink { path: slopvac_sanitize::line(.path) })]
     Link {
@@ -49,6 +53,7 @@ impl SourceError {
         match self {
             Self::Link { .. } => Some(code_of!(FileLink { path })),
             Self::TooManyEntries => Some(code_of!(TooManyEntries { limit })),
+            Self::TooLarge => slopvac_rules::LoadErrorKind::TooLarge(MAX_FILE_BYTES).code(),
             _ => None,
         }
     }
@@ -149,6 +154,7 @@ impl DirSource {
                 Some(slopvac_fs::InputKind::NotFound) => SourceError::Missing {
                     path: rel.to_owned(),
                 },
+                Some(slopvac_fs::InputKind::TooLarge) => SourceError::TooLarge,
                 _ => SourceError::Read(e),
             },
         )

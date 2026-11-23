@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::lint_messages::{LintFixMessage, LintFixReason};
+use crate::lint_messages::{LintFixMessage, LintFixReason, RuleSourceError};
 use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
@@ -424,15 +424,36 @@ fn prepare(request: &LintRequest, run: &mut Run) -> Result<(Catalog, Vec<Item>),
             .map_err(|err| config_error(&err, &request.root))?;
         configs.explicit = Some(config);
     }
-    let selection = PluginSelection::from_config(
-        &request.root,
-        configs.of(&request.root).ok().flatten().as_deref(),
-    )?;
+    // The plugins come from the nearest config of the working directory, with the lock beside
+    // that config. A target whose own config lists other plugins is refused below: each
+    // target's plugins cannot load without a second pass over the configs.
+    let nearest = configs.of(&request.root).ok().flatten();
+    let selection = PluginSelection::from_config(nearest.as_deref(), &request.root)?;
     let rules = selection.load()?;
     run.notices
         .extend(validate_configs(request, &configs, &rules)?);
     let items = collect(request, &configs, run)?;
+    refuse_nested_plugins(request, &selection, &items)?;
     Ok((rules, items))
+}
+
+/// Refuse a run where a target's config lists a plugin that the nearest config of the working
+/// directory does not. Plugins load once per run from that config, so the rules of the extra
+/// plugin would be missing for that target.
+fn refuse_nested_plugins(
+    request: &LintRequest,
+    selection: &PluginSelection,
+    items: &[Item],
+) -> Result<(), CliError> {
+    for (config, _) in items.iter().filter_map(|i| i.config.as_ref()) {
+        if !selection.covers(config) {
+            return Err(RuleSourceError::NestedPlugins {
+                config: redact::shown_path(&config.root, &request.root),
+            }
+            .into());
+        }
+    }
+    Ok(())
 }
 
 /// Check every config the run reaches against the catalogue, even when no input is left to
@@ -1084,15 +1105,14 @@ fn lint_items(
     };
 
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
-    let selection = rules.selection();
-    let mut spare = Some(rules);
     for (settings, terms, indexes) in groups.into_values() {
-        // The engine owns its rule sets, and a set does not clone: reload them for later groups.
-        let sets = match spare.take().map_or_else(|| selection.load(), Ok) {
-            Ok(catalog) => catalog.into_sets(),
-            Err(err) => return failed(request, run, &err),
-        };
-        let engine = match lint_terms::build_engine(sets, settings, &terms, &request.root) {
+        // Every group's engine shares the rule sets the run loaded once.
+        let engine = match lint_terms::build_engine(
+            rules.shared_sets(),
+            settings,
+            &terms,
+            &request.root,
+        ) {
             Ok(engine) => engine.with_project_roots(project_roots(request, &items)),
             Err(err) => return failed(request, run, &err),
         };
