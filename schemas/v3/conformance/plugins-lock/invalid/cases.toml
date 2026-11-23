@@ -38,3 +38,4 @@
 "source-https-byte-order-mark.toml" = "/plugins/0/source"
 "source-path-line-separator.toml" = "/plugins/0/source"
 "source-path-paragraph-separator.toml" = "/plugins/0/source"
+"source-over-the-cap.toml" = "/plugins/0/source"
