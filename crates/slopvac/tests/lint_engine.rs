@@ -1407,8 +1407,11 @@ fn explain_config_prints_each_value_with_its_source_and_what_it_replaced_and_lin
         ),
         "{stdout}"
     );
+    // The input has no genre of its own, so the default genre `consumer` is layer 3 of its
+    // stack (docs/contract/config.md, section 1.1) and its file sets the profile.
     assert!(
-        stdout.contains("profile.name = \"normal\"  [core]\n"),
+        stdout
+            .contains("profile.name = \"normal\"  [genre plugin:core/genres/consumer.yaml:4:1]\n"),
         "{stdout}"
     );
     assert!(!stdout.contains("FAIL"), "{stdout}");
