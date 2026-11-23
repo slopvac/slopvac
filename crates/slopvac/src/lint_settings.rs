@@ -104,20 +104,24 @@ fn category_of(rules: &Catalog, key: &str) -> Option<String> {
 fn check_names(
     settings: &[Setting],
     rules: &Catalog,
+    root: &Path,
     unknown: &mut Vec<UnknownRule>,
-) -> Result<(), CliError> {
+) -> Result<(), Box<Located>> {
     for setting in settings {
         if let [head, key, ..] = setting.path.as_slice()
             && head == "categories"
             && category_of(rules, key).is_none()
         {
-            return Err(CliError::escaping(
-                "config-unknown-category",
-                &format!(
-                    "{}: unknown category {key:?}; use a category from `slopvac rules`",
-                    describe(&setting.source)
+            return Err(Box::new(Located {
+                error: CliError::escaping(
+                    "config-unknown-category",
+                    &format!(
+                        "{}: unknown category {key:?}; use a category from `slopvac rules`",
+                        describe(&redacted(&setting.source, root))
+                    ),
                 ),
-            ));
+                source: Some(setting.source.clone()),
+            }));
         }
     }
     unknown.extend(unknown_rules(settings, |key| {
@@ -147,6 +151,28 @@ fn unknown_rule_notice(unknown: &UnknownRule) -> Result<Notice, CliError> {
     })
 }
 
+/// A config failure and the place in the config it is about, when it has one. The error
+/// shows the place redacted, and `source` keeps its identity for a caller that must find the
+/// file again.
+#[derive(Debug)]
+pub struct Located {
+    /// The failure, as `slopvac lint` reports it.
+    pub error: CliError,
+    /// Where in the config the failure is.
+    pub source: Option<ConfigSource>,
+}
+
+/// `source` with its file shown as policies section 1.7 says: relative to `root` under it,
+/// else `<external>/<file name>`.
+fn redacted(source: &ConfigSource, root: &Path) -> ConfigSource {
+    let mut shown = source.clone();
+    shown.file = source
+        .file
+        .as_ref()
+        .map(|file| slopvac_fs::display_under_root(&root.join(file), root));
+    shown
+}
+
 /// Check a config against the catalogue.
 ///
 /// Returns one `config-unknown-rule` warning notice for each rule id that a config file, an
@@ -156,6 +182,17 @@ fn unknown_rule_notice(unknown: &UnknownRule) -> Result<Notice, CliError> {
 /// `config-unknown-category`, naming the file and line of the key, and `unknown-style` for a
 /// `styles` entry that does not ship.
 pub fn validate(config: &LoadedConfig, rules: &Catalog) -> Result<Vec<Notice>, CliError> {
+    validate_located(config, rules).map_err(|located| located.error)
+}
+
+/// As [`validate`], with the place of a failure.
+///
+/// # Errors
+/// As [`validate`]; `source` names the key of a `config-unknown-category`.
+pub fn validate_located(
+    config: &LoadedConfig,
+    rules: &Catalog,
+) -> Result<Vec<Notice>, Box<Located>> {
     let listed = config.project_value(&["styles"]);
     for name in listed
         .iter()
@@ -164,27 +201,45 @@ pub fn validate(config: &LoadedConfig, rules: &Catalog) -> Result<Vec<Notice>, C
         .filter_map(Json::as_str)
     {
         if legacy_name(name).is_none() && !BuiltinSource::names().any(|known| known == name) {
-            return Err(CliError::new(
-                "unknown-style",
-                format!(
-                    "slopvac.toml: unknown style {name:?}; the styles that ship are: {}, \
-                     core:legacy-strict, core:legacy-normal, core:legacy-relaxed.",
-                    BuiltinSource::names().collect::<Vec<_>>().join(", ")
+            return Err(Box::new(Located {
+                error: CliError::new(
+                    "unknown-style",
+                    format!(
+                        "slopvac.toml: unknown style {name:?}; the styles that ship are: {}, \
+                         core:legacy-strict, core:legacy-normal, core:legacy-relaxed.",
+                        BuiltinSource::names().collect::<Vec<_>>().join(", ")
+                    ),
                 ),
-            ));
+                // The `styles` setting that won is the one with the bad name.
+                source: config
+                    .files
+                    .iter()
+                    .flat_map(|file| file.settings.iter())
+                    .rfind(|setting| setting.path == ["styles"])
+                    .map(|setting| setting.source.clone()),
+            }));
         }
     }
     let mut unknown = Vec::new();
     for file in &config.files {
-        check_names(&file.settings, rules, &mut unknown)?;
+        check_names(&file.settings, rules, &config.root, &mut unknown)?;
         for block in &file.blocks {
-            check_names(&block.settings, rules, &mut unknown)?;
+            check_names(&block.settings, rules, &config.root, &mut unknown)?;
         }
     }
     // A config that `extends` reaches twice, by a repeated entry or a diamond, is applied
     // twice. Its keys are the same keys, so each id at each source location reports once.
     let unknown = without_repeats(unknown);
-    unknown.iter().map(unknown_rule_notice).collect()
+    unknown
+        .iter()
+        .map(unknown_rule_notice)
+        .collect::<Result<_, _>>()
+        .map_err(|error| {
+            Box::new(Located {
+                error,
+                source: None,
+            })
+        })
 }
 
 /// Drop the repeats of a rule id at one source: the same layer, file, line and column. The

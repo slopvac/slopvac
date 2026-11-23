@@ -8,6 +8,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -17,8 +18,8 @@ use serde_json::{Value, json};
 use slopvac_config::frontmatter::Policy;
 use slopvac_engine::{DIAGRAM_PACK, Settings, TERMS_PACK, diagram_rule_set, terms_rule_set};
 use slopvac_lsp::{
-    Check, EngineLinter, Exit, FrontMatterCheck, LintError, Linted, Linter, Problem, Server,
-    ServerError,
+    Check, ConfigFailure, EngineLinter, Exit, FrontMatterCheck, LintError, Linted, Linter, Problem,
+    Reloaded, Server, ServerError,
 };
 use slopvac_model::{
     GenreId, GenreResult, GenreSource, KebabName, NonEmptyString, Notice, NoticeLevel, PackId,
@@ -1241,5 +1242,741 @@ fn a_registered_check_adds_nothing_to_a_binary_container() {
         &json!({"textDocument": {"uri": uri}}),
     );
     assert_binary_host_diagnostic(&client.diagnostics());
+    client.finish().unwrap();
+}
+
+const CONFIG_URI: &str = "file:///work/slopvac.toml";
+
+/// Which settings a [`Reloadable`] lints with after its next reload.
+#[derive(Clone)]
+enum Config {
+    /// The `swap` rule is on.
+    Strict,
+    /// No rule is on.
+    Lax,
+    Broken(ConfigFailure),
+}
+
+/// A linter whose settings change when the server asks it to reload.
+struct Reloadable {
+    /// What "the file on disk" says. A reload copies it to `active`.
+    on_disk: Arc<Mutex<Config>>,
+    active: Mutex<Config>,
+    strict: EngineLinter,
+    lax: EngineLinter,
+    notices: Vec<Notice>,
+}
+
+impl Reloadable {
+    fn new(notices: Vec<Notice>) -> (Self, Arc<Mutex<Config>>) {
+        let on_disk = Arc::new(Mutex::new(Config::Strict));
+        let linter = Self {
+            on_disk: Arc::clone(&on_disk),
+            active: Mutex::new(Config::Strict),
+            strict: engine_linter(),
+            lax: EngineLinter::new(Vec::new(), engine_settings()).unwrap(),
+            notices,
+        };
+        (linter, on_disk)
+    }
+}
+
+impl Linter for Reloadable {
+    fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
+        match &*self.active.lock().unwrap() {
+            Config::Strict => self.strict.lint(path, text),
+            Config::Lax => self.lax.lint(path, text),
+            Config::Broken(failure) => Err(LintError(failure.message.clone())),
+        }
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn reload(&self, _open: &[String]) -> Reloaded {
+        let config = self.on_disk.lock().unwrap().clone();
+        *self.active.lock().unwrap() = config.clone();
+        Reloaded::new(
+            self.notices.clone(),
+            match config {
+                Config::Broken(failure) => Some(failure),
+                _ => None,
+            },
+        )
+    }
+
+    fn watched(&self) -> Vec<String> {
+        vec![
+            "/work/slopvac.toml".to_owned(),
+            "/shared/base.toml".to_owned(),
+        ]
+    }
+}
+
+fn reloadable_client() -> (Client, Arc<Mutex<Config>>) {
+    let (linter, on_disk) = Reloadable::new(Vec::new());
+    (Client::start(Server::new(Arc::new(linter)), None), on_disk)
+}
+
+fn count(published: &Value) -> usize {
+    published["diagnostics"].as_array().map_or(0, Vec::len)
+}
+
+fn save(client: &Client, uri: &str) {
+    client.notify(
+        "textDocument/didSave",
+        &json!({"textDocument": {"uri": uri}}),
+    );
+}
+
+#[test]
+fn saving_the_config_lints_an_open_document_under_the_new_settings() {
+    let (mut client, on_disk) = reloadable_client();
+    assert_eq!(count(&client.open("We utilize it.\n")), 1);
+    *on_disk.lock().unwrap() = Config::Lax;
+    save(&client, CONFIG_URI);
+    let republished = client.diagnostics();
+    assert_eq!(republished["uri"], URI);
+    assert_eq!(count(&republished), 0);
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_change_of_a_watched_config_file_lints_an_open_document_under_the_new_settings() {
+    let (mut client, on_disk) = reloadable_client();
+    assert_eq!(count(&client.open("We utilize it.\n")), 1);
+    *on_disk.lock().unwrap() = Config::Lax;
+    // An extended file is not named slopvac.toml, so only the watch list tells it apart.
+    client.notify(
+        "workspace/didChangeWatchedFiles",
+        &json!({"changes": [{"uri": "file:///shared/base.toml", "type": 2}]}),
+    );
+    let republished = client.diagnostics();
+    assert_eq!(republished["uri"], URI);
+    assert_eq!(count(&republished), 0);
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_change_to_an_unrelated_file_does_not_reload() {
+    let (mut client, on_disk) = reloadable_client();
+    assert_eq!(count(&client.open("We utilize it.\n")), 1);
+    *on_disk.lock().unwrap() = Config::Lax;
+    client.notify(
+        "workspace/didChangeWatchedFiles",
+        &json!({"changes": [{"uri": "file:///work/notes.txt", "type": 2}]}),
+    );
+    client.barrier();
+    assert!(client.queued.is_empty(), "{:?}", client.queued);
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_reload_shows_the_config_notices_again() {
+    let notice = Notice {
+        code: KebabName::new("config-unknown-rule").unwrap(),
+        level: NoticeLevel::Warning,
+        message: NonEmptyString::new("slopvac.toml:4:1: unknown rule a.b").unwrap(),
+        path: Some("slopvac.toml".to_owned()),
+        data: serde_json::Map::new(),
+    };
+    let (linter, _) = Reloadable::new(vec![notice]);
+    let mut client = Client::start(Server::new(Arc::new(linter)), None);
+    save(&client, CONFIG_URI);
+    let shown = client.next_notification();
+    assert_eq!(shown.method, "window/showMessage");
+    assert_eq!(
+        shown.params,
+        json!({"type": 2, "message": "slopvac.toml:4:1: unknown rule a.b"})
+    );
+    client.finish().unwrap();
+}
+
+fn broken() -> Config {
+    Config::Broken(
+        ConfigFailure::new(
+            "config-invalid",
+            "bad value for `profile`",
+            "/work/slopvac.toml",
+        )
+        .at_offset("a\nb\nxxxxy", 8),
+    )
+}
+
+#[test]
+fn a_config_that_fails_to_load_is_shown_and_leaves_no_document_clean() {
+    let (mut client, on_disk) = reloadable_client();
+    let second = "file:///work/two.md";
+    assert_eq!(count(&client.open("We utilize it.\n")), 1);
+    client.open_at(second, "Plain.\n");
+    assert_eq!(count(&client.diagnostics()), 0);
+    *on_disk.lock().unwrap() = broken();
+    save(&client, CONFIG_URI);
+    // The config error, and one incomplete item for each open document, in any order.
+    let mut seen = std::collections::HashMap::new();
+    for _ in 0..3 {
+        let published = client.diagnostics();
+        seen.insert(published["uri"].as_str().unwrap().to_owned(), published);
+    }
+    let config = &seen[CONFIG_URI]["diagnostics"];
+    assert_eq!(config.as_array().unwrap().len(), 1, "{config}");
+    assert_eq!(config[0]["code"], "config-invalid");
+    assert_eq!(config[0]["severity"], 1);
+    assert_eq!(config[0]["message"], "bad value for `profile`");
+    assert_eq!(range_of(&config[0]), [2, 4, 2, 4]);
+    for uri in [URI, second] {
+        let items = seen[uri]["diagnostics"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "no rule finding survives: {items:?}");
+        assert_eq!(items[0]["code"], "lsp-lint-incomplete");
+        assert_eq!(items[0]["severity"], 2);
+        assert!(
+            items[0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("bad value for `profile`")
+        );
+    }
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_later_good_reload_restores_the_findings_and_clears_the_config_error() {
+    let (mut client, on_disk) = reloadable_client();
+    client.open("We utilize it.\n");
+    *on_disk.lock().unwrap() = broken();
+    save(&client, CONFIG_URI);
+    client.diagnostics();
+    client.diagnostics();
+    *on_disk.lock().unwrap() = Config::Strict;
+    save(&client, CONFIG_URI);
+    let mut seen = std::collections::HashMap::new();
+    for _ in 0..2 {
+        let published = client.diagnostics();
+        seen.insert(published["uri"].as_str().unwrap().to_owned(), published);
+    }
+    assert_eq!(count(&seen[CONFIG_URI]), 0);
+    let doc = &seen[URI]["diagnostics"];
+    assert_eq!(doc.as_array().unwrap().len(), 1);
+    assert_eq!(doc[0]["code"], "core:cat.swap");
+    client.finish().unwrap();
+}
+
+/// A client that can register file watchers, past the handshake. The first message the
+/// server sends is the watcher registration, which the caller reads.
+fn watching_session(
+    linter: impl Linter + 'static,
+) -> (Connection, JoinHandle<Result<Exit, ServerError>>) {
+    let (server_side, conn) = Connection::memory();
+    let handle = std::thread::spawn(move || Server::new(Arc::new(linter)).serve(&server_side));
+    let init = Request::new(
+        RequestId::from(1),
+        "initialize".to_owned(),
+        json!({"processId": null, "rootUri": null, "capabilities": {
+            "workspace": {"didChangeWatchedFiles": {"dynamicRegistration": true}}}}),
+    );
+    conn.sender.send(Message::Request(init)).unwrap();
+    assert!(matches!(
+        conn.receiver.recv_timeout(WAIT).unwrap(),
+        Message::Response(_)
+    ));
+    conn.sender
+        .send(Message::Notification(Notification::new(
+            "initialized".to_owned(),
+            json!({}),
+        )))
+        .unwrap();
+    (conn, handle)
+}
+
+/// The next request from the server, past any notification.
+fn next_request(conn: &Connection) -> Request {
+    loop {
+        match conn.receiver.recv_timeout(WAIT).unwrap() {
+            Message::Request(request) => return request,
+            Message::Notification(_) => {}
+            Message::Response(other) => panic!("unexpected {other:?}"),
+        }
+    }
+}
+
+fn globs_of(register: &Request) -> Vec<String> {
+    let watchers = &register.params["registrations"][0]["registerOptions"]["watchers"];
+    watchers
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w["globPattern"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+fn end_session(conn: &Connection, handle: JoinHandle<Result<Exit, ServerError>>) {
+    conn.sender
+        .send(Message::Request(Request::new(
+            RequestId::from(900),
+            "shutdown".to_owned(),
+            &Value::Null,
+        )))
+        .unwrap();
+    conn.sender
+        .send(Message::Notification(Notification::new(
+            "exit".to_owned(),
+            &Value::Null,
+        )))
+        .unwrap();
+    handle.join().unwrap().unwrap();
+}
+
+#[test]
+fn a_client_that_can_watch_files_is_asked_to_watch_the_config() {
+    let (linter, _) = Reloadable::new(Vec::new());
+    let (conn, handle) = watching_session(linter);
+    let register = next_request(&conn);
+    assert_eq!(register.method, "client/registerCapability");
+    assert_eq!(
+        globs_of(&register),
+        ["**/slopvac.toml", "/work/slopvac.toml", "/shared/base.toml"]
+    );
+    end_session(&conn, handle);
+}
+
+/// A linter whose list of watched files grows: after a reload, and whenever it lints.
+struct Growing {
+    watched: Mutex<Vec<String>>,
+    on_reload: Option<String>,
+    on_lint: Option<String>,
+}
+
+impl Growing {
+    fn add(&self, path: Option<&String>) {
+        if let Some(path) = path {
+            self.watched.lock().unwrap().push(path.clone());
+        }
+    }
+}
+
+impl Linter for Growing {
+    fn lint(&self, _path: &str, _text: &str) -> Result<Linted, LintError> {
+        self.add(self.on_lint.as_ref());
+        Ok(Linted::default())
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn reload(&self, _open: &[String]) -> Reloaded {
+        self.add(self.on_reload.as_ref());
+        Reloaded::default()
+    }
+
+    fn watched(&self) -> Vec<String> {
+        self.watched.lock().unwrap().clone()
+    }
+}
+
+fn growing(on_reload: Option<&str>, on_lint: Option<&str>) -> Growing {
+    Growing {
+        watched: Mutex::new(vec!["/work/slopvac.toml".to_owned()]),
+        on_reload: on_reload.map(str::to_owned),
+        on_lint: on_lint.map(str::to_owned),
+    }
+}
+
+fn expect_new_registration(conn: &Connection, first: &Request, extra: &str) {
+    let unregister = next_request(conn);
+    assert_eq!(unregister.method, "client/unregisterCapability");
+    assert_eq!(
+        unregister.params["unregisterations"][0]["id"],
+        first.params["registrations"][0]["id"]
+    );
+    let register = next_request(conn);
+    assert_eq!(register.method, "client/registerCapability");
+    assert_ne!(
+        register.params["registrations"][0]["id"],
+        first.params["registrations"][0]["id"]
+    );
+    assert_eq!(
+        globs_of(&register),
+        ["**/slopvac.toml", "/work/slopvac.toml", extra]
+    );
+}
+
+#[test]
+fn a_reload_that_adds_an_extended_file_registers_the_new_watch_list() {
+    let (conn, handle) = watching_session(growing(Some("/shared/new-base.toml"), None));
+    let first = next_request(&conn);
+    conn.sender
+        .send(Message::Notification(Notification::new(
+            "textDocument/didSave".to_owned(),
+            json!({"textDocument": {"uri": CONFIG_URI}}),
+        )))
+        .unwrap();
+    expect_new_registration(&conn, &first, "/shared/new-base.toml");
+    end_session(&conn, handle);
+}
+
+#[test]
+fn linting_a_buffer_that_finds_a_nested_config_registers_its_files() {
+    let (conn, handle) = watching_session(growing(None, Some("/work/sub/base.toml")));
+    let first = next_request(&conn);
+    conn.sender
+        .send(Message::Notification(Notification::new(
+            "textDocument/didOpen".to_owned(),
+            json!({"textDocument": {"uri": URI, "languageId": "markdown", "version": 1, "text": "x"}}),
+        )))
+        .unwrap();
+    expect_new_registration(&conn, &first, "/work/sub/base.toml");
+    end_session(&conn, handle);
+}
+
+fn config_failure_published(path: &str, offered: &str, text: &str, offset: usize) -> Value {
+    let (linter, on_disk) = Reloadable::new(Vec::new());
+    let mut client = Client::start(Server::new(Arc::new(linter)), Some(&[offered]));
+    *on_disk.lock().unwrap() = Config::Broken(
+        ConfigFailure::new("config-invalid", "bad value", path).at_offset(text, offset),
+    );
+    save(&client, CONFIG_URI);
+    let published = client.diagnostics();
+    client.finish().unwrap();
+    published
+}
+
+#[test]
+fn a_config_error_on_a_path_with_a_space_is_published_on_a_valid_file_uri() {
+    let published = config_failure_published("/work dir/100%/slopvac.toml", "utf-8", "x", 0);
+    assert_eq!(published["uri"], "file:///work%20dir/100%25/slopvac.toml");
+}
+
+#[rstest::rstest]
+#[case::utf8("utf-8", 7)]
+#[case::utf16("utf-16", 5)]
+#[case::utf32("utf-32", 4)]
+fn a_config_error_column_is_counted_in_the_negotiated_unit(
+    #[case] encoding: &str,
+    #[case] column: u64,
+) {
+    // U+1D4B3 is 4 bytes, two UTF-16 units and one scalar. The error is at `bad`, after
+    // `X = `.
+    let text = "\u{1D4B3} = bad\n";
+    let published = config_failure_published("/work/slopvac.toml", encoding, text, 7);
+    assert_eq!(
+        range_of(&published["diagnostics"][0]),
+        [0, column, 0, column]
+    );
+}
+
+#[test]
+fn a_change_notice_for_an_encoded_path_of_a_watched_file_reloads() {
+    let (mut client, on_disk) = reloadable_client();
+    assert_eq!(count(&client.open("We utilize it.\n")), 1);
+    *on_disk.lock().unwrap() = Config::Lax;
+    // `%73` is `s`: the client may encode any character.
+    client.notify(
+        "workspace/didChangeWatchedFiles",
+        &json!({"changes": [{"uri": "file:///shared/ba%73e.toml", "type": 2}]}),
+    );
+    assert_eq!(count(&client.diagnostics()), 0);
+    client.finish().unwrap();
+}
+
+/// Lints text that contains "gate" only after the test lets it. Every lint reports its text
+/// on `starts`, and fails with the state it read when it began, so a published result shows
+/// which config produced it. A reload swaps the state, then tells the test and waits.
+struct Swapping {
+    state: Mutex<&'static str>,
+    starts: crossbeam_channel::Sender<String>,
+    release: crossbeam_channel::Receiver<()>,
+    swapped: crossbeam_channel::Sender<()>,
+    proceed: crossbeam_channel::Receiver<()>,
+}
+
+impl Linter for Swapping {
+    fn lint(&self, _path: &str, text: &str) -> Result<Linted, LintError> {
+        let state = *self.state.lock().unwrap();
+        self.starts.send(text.to_owned()).unwrap();
+        if text.contains("gate") {
+            self.release.recv_timeout(WAIT).unwrap();
+        }
+        Err(LintError(format!("state={state}")))
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn reload(&self, _open: &[String]) -> Reloaded {
+        *self.state.lock().unwrap() = "new";
+        self.swapped.send(()).unwrap();
+        self.proceed.recv_timeout(WAIT).unwrap();
+        Reloaded::default()
+    }
+}
+
+#[test]
+fn a_lint_that_began_before_a_reload_swapped_the_config_is_never_published() {
+    let (starts_tx, starts) = crossbeam_channel::unbounded();
+    let (release, release_rx) = crossbeam_channel::unbounded();
+    let (swapped_tx, swapped) = crossbeam_channel::unbounded();
+    let (proceed, proceed_rx) = crossbeam_channel::unbounded();
+    let linter = Swapping {
+        state: Mutex::new("old"),
+        starts: starts_tx,
+        release: release_rx,
+        swapped: swapped_tx,
+        proceed: proceed_rx,
+    };
+    let mut client = Client::start(Server::new(Arc::new(linter)), None);
+    let other = "file:///work/other.md";
+    client.open_at(URI, "gate-a");
+    assert_eq!(starts.recv_timeout(WAIT).unwrap(), "gate-a");
+    client.open_at(other, "plain");
+    // The reload swaps the config while the lint of the first document is still running.
+    save(&client, CONFIG_URI);
+    swapped.recv_timeout(WAIT).unwrap();
+    // One release for the lint that runs now, one for the lint after the reload.
+    release.send(()).unwrap();
+    release.send(()).unwrap();
+    // The worker handles one document at a time: it starts this lint only after it dropped
+    // or published the result of the first.
+    assert_eq!(starts.recv_timeout(WAIT).unwrap(), "plain");
+    proceed.send(()).unwrap();
+    let mut fresh = std::collections::HashSet::new();
+    while fresh.len() < 2 {
+        let published = client.diagnostics();
+        let uri = published["uri"].as_str().unwrap().to_owned();
+        let shown = message(&published);
+        assert!(
+            shown.ends_with("state=new"),
+            "{uri} shows a result of the old config: {shown}"
+        );
+        fresh.insert(uri);
+    }
+    client.finish().unwrap();
+}
+
+/// Finds a warning about a config while it lints, and hands it over once.
+struct Warns(Mutex<Vec<Notice>>);
+
+impl Linter for Warns {
+    fn lint(&self, _path: &str, _text: &str) -> Result<Linted, LintError> {
+        Ok(Linted::default())
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn take_notices(&self) -> Vec<Notice> {
+        std::mem::take(&mut *self.0.lock().unwrap())
+    }
+}
+
+#[test]
+fn a_warning_found_while_linting_reaches_the_client_once() {
+    let notice = Notice {
+        code: KebabName::new("config-unknown-rule").unwrap(),
+        level: NoticeLevel::Warning,
+        message: NonEmptyString::new("sub/slopvac.toml:2:1: unknown rule a.b").unwrap(),
+        path: Some("sub/slopvac.toml".to_owned()),
+        data: serde_json::Map::new(),
+    };
+    let mut client = Client::start(Server::new(Arc::new(Warns(Mutex::new(vec![notice])))), None);
+    client.open("Plain.\n");
+    let shown = client.next_notification();
+    assert_eq!(shown.method, "window/showMessage");
+    assert_eq!(
+        shown.params,
+        json!({"type": 2, "message": "sub/slopvac.toml:2:1: unknown rule a.b"})
+    );
+    client.finish().unwrap();
+}
+
+/// Counts the lints it is asked for, and reports the path of the last one.
+struct Counting {
+    calls: AtomicUsize,
+    last: Mutex<String>,
+}
+
+impl Linter for Counting {
+    fn lint(&self, path: &str, _text: &str) -> Result<Linted, LintError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        path.clone_into(&mut self.last.lock().unwrap());
+        Ok(Linted::default())
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+#[test]
+fn a_document_whose_path_is_not_utf8_is_reported_incomplete_and_not_linted_under_another_path() {
+    let linter = Arc::new(Counting {
+        calls: AtomicUsize::new(0),
+        last: Mutex::new(String::new()),
+    });
+    let mut client = Client::start(Server::new(Arc::clone(&linter) as Arc<dyn Linter>), None);
+    client.open_at("file:///work/a%FF.md", "Plain.\n");
+    let published = client.diagnostics();
+    let items = published["diagnostics"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{published}");
+    assert_eq!(items[0]["code"], "lsp-lint-incomplete");
+    assert_eq!(
+        linter.calls.load(Ordering::SeqCst),
+        0,
+        "linted as {}",
+        linter.last.lock().unwrap()
+    );
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_document_path_with_an_encoded_slash_is_the_path_with_a_slash() {
+    let linter = Arc::new(Counting {
+        calls: AtomicUsize::new(0),
+        last: Mutex::new(String::new()),
+    });
+    let mut client = Client::start(Server::new(Arc::clone(&linter) as Arc<dyn Linter>), None);
+    client.open_at("file:///work%2Fsub/a%20b.md", "Plain.\n");
+    client.diagnostics();
+    assert_eq!(*linter.last.lock().unwrap(), "/work/sub/a b.md");
+    client.finish().unwrap();
+}
+
+#[test]
+fn a_config_error_on_a_path_that_is_not_utf8_is_published_on_that_path() {
+    use std::os::unix::ffi::OsStringExt;
+    let (linter, on_disk) = Reloadable::new(Vec::new());
+    let mut client = Client::start(Server::new(Arc::new(linter)), None);
+    let path = std::path::PathBuf::from(std::ffi::OsString::from_vec(
+        b"/work/a\xFF/slopvac.toml".to_vec(),
+    ));
+    *on_disk.lock().unwrap() = Config::Broken(ConfigFailure::new("config-invalid", "bad", path));
+    save(&client, CONFIG_URI);
+    let published = client.diagnostics();
+    assert_eq!(published["uri"], "file:///work/a%FF/slopvac.toml");
+    client.finish().unwrap();
+}
+
+/// Whether `glob` matches the whole of `path`, with the glob syntax of VS Code: `*` and `?`
+/// stay inside a path segment, `[...]` is a class whose first `]` is a member when it comes
+/// right after the opening bracket, and a `]` outside a class reads as an empty class, which
+/// matches nothing. `{` and `}` open and close alternatives, so a bare one is never literal.
+fn glob_matches(glob: &[char], path: &[char]) -> bool {
+    let Some((&first, rest)) = glob.split_first() else {
+        return path.is_empty();
+    };
+    match first {
+        '*' => (0..=path.len())
+            .take_while(|&n| path[..n].iter().all(|&c| c != '/'))
+            .any(|n| glob_matches(rest, &path[n..])),
+        '?' => path.first().is_some_and(|&c| c != '/') && glob_matches(rest, &path[1..]),
+        '{' | '}' | ']' => false,
+        '[' => {
+            let members = usize::from(rest.first() == Some(&']'));
+            let Some(close) = rest[members..].iter().position(|&c| c == ']') else {
+                return false;
+            };
+            let class = &rest[..members + close];
+            path.first().is_some_and(|c| class.contains(c))
+                && glob_matches(&rest[members + close + 1..], &path[1..])
+        }
+        literal => path.first() == Some(&literal) && glob_matches(rest, &path[1..]),
+    }
+}
+
+fn matches(glob: &str, path: &str) -> bool {
+    let glob: Vec<char> = glob.chars().collect();
+    let path: Vec<char> = path.chars().collect();
+    glob_matches(&glob, &path)
+}
+
+#[rstest::rstest]
+#[case::brackets_and_wildcards("/work/[a]/{b}/c*d?.toml")]
+#[case::closing_bracket_alone("/work/a]b/c.toml")]
+#[case::plain("/work/plain/base.toml")]
+fn a_watched_path_is_registered_as_a_glob_that_matches_that_path_only(#[case] path: &str) {
+    let linter = Growing {
+        watched: Mutex::new(vec![path.to_owned()]),
+        on_reload: None,
+        on_lint: None,
+    };
+    let (conn, handle) = watching_session(linter);
+    let registered = globs_of(&next_request(&conn));
+    let glob = &registered[1];
+    assert!(matches(glob, path), "{glob} does not match {path}");
+    // A neighbour that the unescaped characters would also match stays out.
+    for other in [
+        "/work/a/b/cXdY.toml",
+        // Each differs from the registered path at one wildcard only.
+        "/work/[a]/{b}/cXd?.toml",
+        "/work/[a]/{b}/c*dY.toml",
+        "/work/a/b/c.toml",
+        "/work/a/bb/c.toml",
+    ] {
+        assert!(!matches(glob, other), "{glob} matches {other}");
+    }
+    end_session(&conn, handle);
+}
+
+/// Like [`Swapping`], with a reload that does not wait, and a notice so that the test can
+/// tell when the reload is over. Only the first lint of a gate text waits for the test.
+struct Overtaken {
+    state: Mutex<&'static str>,
+    started: crossbeam_channel::Sender<()>,
+    release: crossbeam_channel::Receiver<()>,
+    gated: std::sync::atomic::AtomicBool,
+}
+
+impl Linter for Overtaken {
+    fn lint(&self, _path: &str, _text: &str) -> Result<Linted, LintError> {
+        let state = *self.state.lock().unwrap();
+        if self.gated.swap(false, Ordering::SeqCst) {
+            self.started.send(()).unwrap();
+            self.release.recv_timeout(WAIT).unwrap();
+        }
+        Err(LintError(format!("state={state}")))
+    }
+
+    fn allow_reasons(&self, _path: &str, _text: &str, _site: usize, _rule: &RuleId) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn reload(&self, _open: &[String]) -> Reloaded {
+        *self.state.lock().unwrap() = "new";
+        let notice = Notice {
+            code: KebabName::new("config-unknown-rule").unwrap(),
+            level: NoticeLevel::Warning,
+            message: NonEmptyString::new("reloaded").unwrap(),
+            path: None,
+            data: serde_json::Map::new(),
+        };
+        Reloaded::new(vec![notice], None)
+    }
+}
+
+#[test]
+fn a_lint_released_after_the_reload_finished_is_never_published() {
+    let (started_tx, started) = crossbeam_channel::unbounded();
+    let (release, release_rx) = crossbeam_channel::unbounded();
+    let linter = Overtaken {
+        state: Mutex::new("old"),
+        started: started_tx,
+        release: release_rx,
+        gated: std::sync::atomic::AtomicBool::new(true),
+    };
+    let mut client = Client::start(Server::new(Arc::new(linter)), None);
+    client.open_at(URI, "text");
+    started.recv_timeout(WAIT).unwrap();
+    save(&client, CONFIG_URI);
+    // The reload has finished when its notice reaches the client. The lint began before it
+    // and is still waiting.
+    let shown = client.next_notification();
+    assert_eq!(shown.method, "window/showMessage");
+    release.send(()).unwrap();
+    // The first diagnostics for the document come from the lint that the reload queued.
+    let published = client.diagnostics();
+    assert!(message(&published).ends_with("state=new"), "{published}");
     client.finish().unwrap();
 }

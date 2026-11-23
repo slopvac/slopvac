@@ -88,10 +88,18 @@ pub struct LoadedConfig {
     pub root: PathBuf,
     /// Extended files first, in the order they apply, and the project config last.
     pub files: Vec<Arc<ConfigFile>>,
+    dependencies: Vec<PathBuf>,
     exclude: Gitignore,
 }
 
 impl LoadedConfig {
+    /// Every file the load read, the config itself first and then each extended file in the
+    /// order the load met it. The paths are absolute and lexically normalised, with no `..`,
+    /// wherever the file sits relative to the root. A watcher compares them by equality.
+    #[must_use]
+    pub fn dependencies(&self) -> &[PathBuf] {
+        &self.dependencies
+    }
     /// The final value of a whole-run key, from core defaults up through the config files.
     #[must_use]
     pub fn project_value(&self, path: &[&str]) -> Option<Json> {
@@ -127,6 +135,7 @@ impl LoadedConfig {
         Self {
             root,
             files: Vec::new(),
+            dependencies: Vec::new(),
             exclude: Gitignore::empty(),
         }
     }
@@ -176,6 +185,7 @@ pub fn load_text(
         return Err(ConfigError::TooLarge {
             path: label.to_owned(),
             cap: MAX_CONFIG_BYTES,
+            file: None,
         });
     }
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty());
@@ -216,20 +226,26 @@ fn load_from(
         deepest: 0,
         bytes: text.len() as u64,
         reads: 1,
+        attempted: vec![abs.to_path_buf()],
     };
-    loader.load_text(
+    let outcome = loader.load_text(
         &Key::Path(abs.to_path_buf()),
         &relative_display(abs, &root),
         text,
         ConfigLayer::Project,
-    )?;
+    );
+    if let Err(error) = outcome {
+        return Err(error.with_reads(loader.attempted));
+    }
     let exclude = build_exclude(&loader.files, &root);
     let reads = loader.reads;
+    let dependencies = loader.attempted;
     let files = loader.files.into_iter().map(|a| a.file).collect();
     Ok((
         LoadedConfig {
             root,
             files,
+            dependencies,
             exclude,
         },
         reads,
@@ -269,21 +285,10 @@ pub(crate) fn normalise_join(dir: &Path, name: &str) -> PathBuf {
     normalise(&dir.join(name))
 }
 
-/// Lexically normalise `path`: drop `.` and fold `..` against the preceding component.
+/// Lexically normalise `path`, as every other part of slopvac does, so a path that a watcher
+/// compares is spelled the one way.
 fn normalise(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in path.components() {
-        match c {
-            Component::CurDir => {}
-            Component::ParentDir
-                if matches!(out.components().next_back(), Some(Component::Normal(_))) =>
-            {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
+    slopvac_fs::lexical_normalize(path)
 }
 
 /// Whether two path components name the same place. A verbatim prefix (`\\?\C:`) and its plain
@@ -391,6 +396,17 @@ struct Loader<'a> {
     bytes: u64,
     /// Files read so far.
     reads: usize,
+    /// Every path the load reached, in the order it met them, each once. A path that cannot be
+    /// read is on the list too.
+    attempted: Vec<PathBuf>,
+}
+
+/// The file a key names, when it names one.
+fn key_path(key: &Key) -> Option<PathBuf> {
+    match key {
+        Key::Path(p) => Some(p.clone()),
+        Key::Pack(_) => None,
+    }
 }
 
 impl Loader<'_> {
@@ -405,6 +421,8 @@ impl Loader<'_> {
         let reject = |text: String, diagnostics: Vec<Diagnostic>| {
             ConfigError::Rejected(Box::new(Rejected {
                 file: label.clone(),
+                path: key_path(key),
+                reads: Vec::new(),
                 text,
                 diagnostics,
             }))
@@ -832,6 +850,8 @@ impl Loader<'_> {
             let fail = |r: Refusal| {
                 ConfigError::Rejected(Box::new(Rejected {
                     file: label.clone(),
+                    path: key_path(key),
+                    reads: Vec::new(),
                     text: text.to_owned(),
                     diagnostics: vec![Diagnostic {
                         code: r.code,
@@ -879,6 +899,11 @@ impl Loader<'_> {
                     .to_string(),
                     Some(ConfigPhrase::HelpBreakLoop.text()),
                 )));
+            }
+            if let Key::Path(p) = &target
+                && !self.attempted.contains(p)
+            {
+                self.attempted.push(p.clone());
             }
             if self.apply_cached(&target, key, display).map_err(fail)? {
                 continue;

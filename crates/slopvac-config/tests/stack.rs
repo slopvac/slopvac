@@ -1653,3 +1653,55 @@ fn named_level(name: &str) -> slopvac_config::ConfigLevel {
         other => panic!("unknown level {other}"),
     }
 }
+
+#[test]
+fn a_loaded_config_lists_every_file_it_read_as_a_normalised_absolute_path() {
+    let fx = Fixture::new();
+    let base = fx.write("shared/base.toml", "schema_version = 3\n");
+    let project = fx.write(
+        "proj/slopvac.toml",
+        "schema_version = 3\nextends = [\"../shared/base.toml\"]\n",
+    );
+    let cfg = load(&project, &NoPresets).unwrap();
+    // No `..` survives: a watcher and a change notice compare these paths by equality.
+    assert_eq!(cfg.dependencies(), [project, base]);
+}
+
+#[test]
+fn a_refused_config_still_lists_its_files_and_the_extended_file_that_is_missing() {
+    let fx = Fixture::new();
+    let project = fx.write(
+        "proj/slopvac.toml",
+        "schema_version = 3\nextends = [\"../shared/gone.toml\"]\n",
+    );
+    let gone = fx.root().join("shared/gone.toml");
+    let err = load(&project, &NoPresets).unwrap_err();
+    assert_eq!(err.dependencies(), [project.clone(), gone]);
+    assert_eq!(err.source_file(), Some(project.as_path()));
+}
+
+#[test]
+fn an_extends_path_that_climbs_past_the_root_is_normalised_as_slopvac_fs_does() {
+    let fx = Fixture::new();
+    let climb = "../".repeat(64);
+    let project = fx.write(
+        "slopvac.toml",
+        &format!("schema_version = 3\nextends = [\"{climb}gone.toml\"]\n"),
+    );
+    let err = load(&project, &NoPresets).unwrap_err();
+    // `/..` is `/`, so the target is `/gone.toml`, the form the watcher compares with.
+    assert_eq!(err.dependencies(), [project, PathBuf::from("/gone.toml")]);
+}
+
+#[test]
+fn a_refused_extended_file_is_the_source_file_and_a_dependency() {
+    let fx = Fixture::new();
+    let base = fx.write("shared/base.toml", "schema_version = 3\nlocale = [\n");
+    let project = fx.write(
+        "proj/slopvac.toml",
+        "schema_version = 3\nextends = [\"../shared/base.toml\"]\n",
+    );
+    let err = load(&project, &NoPresets).unwrap_err();
+    assert_eq!(err.source_file(), Some(base.as_path()));
+    assert_eq!(err.dependencies(), [project, base]);
+}

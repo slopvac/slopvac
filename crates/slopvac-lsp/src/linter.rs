@@ -1,6 +1,7 @@
 //! What the server asks of the lint engine, and the adapter for `slopvac-engine`.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use frontmatter_spans::detect;
 use slopvac_engine::{Engine, EngineError, Input, Kind, Settings};
@@ -45,6 +46,97 @@ pub trait Linter: Send + Sync {
     /// the document's format has no directive syntax the engine reads (only Markdown does),
     /// or `site` is in front matter or a fenced code block.
     fn allow_reasons(&self, path: &str, text: &str, site: usize, rule: &RuleId) -> Vec<String>;
+
+    /// Read the config again. The server calls it after a config file was saved or changed
+    /// on disk, then lints every open buffer again. `open` holds the paths of the buffers that
+    /// are open now, so a reload checks the config of those folders and no others. The default
+    /// has no config to read.
+    fn reload(&self, _open: &[String]) -> Reloaded {
+        Reloaded::default()
+    }
+
+    /// Absolute paths of the files the active configs were read from, which the server
+    /// watches: every config in use, the files they extend and an extended file that does
+    /// not exist yet. The default has none. The list can change after a reload or after a
+    /// buffer is linted, and the server registers the new list.
+    fn watched(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Warnings found since the last call, about configs the linter loaded while it linted,
+    /// such as the config of a nested folder. The server shows each as a warning message.
+    /// The default has none.
+    fn take_notices(&self) -> Vec<Notice> {
+        Vec::new()
+    }
+
+    /// Whether a change to the file at `path`, an absolute path as the client names it,
+    /// concerns a config file the linter reads. The default compares with
+    /// [`Linter::watched`] by equality. An implementation that knows how paths relate, such
+    /// as `a/../b` and `b`, overrides it.
+    fn watches(&self, path: &str) -> bool {
+        self.watched().iter().any(|w| w == path)
+    }
+}
+
+/// Why the project config could not be read on a reload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ConfigFailure {
+    /// The stable error code, the one `slopvac lint` reports for the same failure.
+    pub code: String,
+    /// The error text, without the source excerpt.
+    pub message: String,
+    /// The config file that failed, as an absolute path. It is not always text.
+    pub path: PathBuf,
+    /// The text of that file and the byte offset in it where the error is, when it has a
+    /// position. The server converts the offset to a line and column in the encoding the
+    /// client negotiated.
+    pub position: Option<(String, usize)>,
+}
+
+impl ConfigFailure {
+    /// A failure in the file at `path` with no position.
+    #[must_use]
+    pub fn new(
+        code: impl Into<String>,
+        message: impl Into<String>,
+        path: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            path: path.into(),
+            position: None,
+        }
+    }
+
+    /// The same failure at byte `offset` of `text`, the text of the file.
+    #[must_use]
+    pub fn at_offset(mut self, text: impl Into<String>, offset: usize) -> Self {
+        self.position = Some((text.into(), offset));
+        self
+    }
+}
+
+/// What a [`Linter::reload`] found.
+#[derive(Debug, Clone, Default, PartialEq)]
+#[non_exhaustive]
+pub struct Reloaded {
+    /// Warnings about the config that was read, such as an unknown rule id.
+    pub notices: Vec<Notice>,
+    /// Set when the config could not be read. Until a later reload succeeds, the linter
+    /// reports every buffer as not linted.
+    pub failure: Option<ConfigFailure>,
+}
+
+impl Reloaded {
+    /// What a reload found: the config `notices`, and the `failure` when the config could
+    /// not be read.
+    #[must_use]
+    pub fn new(notices: Vec<Notice>, failure: Option<ConfigFailure>) -> Self {
+        Self { notices, failure }
+    }
 }
 
 /// A problem found by a [`Check`], shown as a diagnostic.
@@ -143,8 +235,17 @@ fn kind_of(path: &str) -> Kind {
     }
 }
 
-impl Linter for EngineLinter {
-    fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
+impl EngineLinter {
+    /// Lint `text` as `Linter::lint` does, for a document whose path relative to its config
+    /// root is `relative` and whose front matter declares `genre`. The relative path is what
+    /// the `files` globs of `[[genres]]` blocks match, and the declared genre outranks them.
+    pub fn lint_resolved(
+        &self,
+        path: &str,
+        text: &str,
+        relative: Option<&str>,
+        genre: Option<&str>,
+    ) -> Result<Linted, LintError> {
         if is_binary_host(path) {
             return Ok(Linted {
                 findings: Vec::new(),
@@ -152,9 +253,15 @@ impl Linter for EngineLinter {
                 notices: Vec::new(),
             });
         }
-        let input = Input::new(path, text)
+        let mut input = Input::new(path, text)
             .with_kind(kind_of(path))
             .with_bom(BomMode::Buffer);
+        if let Some(relative) = relative {
+            input = input.with_relative_path(relative);
+        }
+        if let Some(genre) = genre {
+            input = input.with_declared_genre(genre);
+        }
         self.engine
             .lint_with_notices(&input)
             .map(|(document, notices)| Linted {
@@ -163,6 +270,12 @@ impl Linter for EngineLinter {
                 notices,
             })
             .map_err(|e| LintError(e.to_string()))
+    }
+}
+
+impl Linter for EngineLinter {
+    fn lint(&self, path: &str, text: &str) -> Result<Linted, LintError> {
+        self.lint_resolved(path, text, None, None)
     }
 
     fn allow_reasons(&self, path: &str, text: &str, site: usize, rule: &RuleId) -> Vec<String> {

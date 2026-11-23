@@ -292,10 +292,12 @@ fn frame(body: &str) -> String {
 
 /// The messages a `slopvac lsp` session writes for `text` opened in `dir`.
 fn lsp_output(dir: &Path, text: &str) -> String {
+    // The document sits in the project, so the project config applies to it.
+    let uri = format!("file://{}/doc.md", dir.display());
     let open = serde_json::json!({
         "jsonrpc": "2.0", "method": "textDocument/didOpen",
         "params": {"textDocument": {
-            "uri": "file:///work/doc.md", "languageId": "markdown", "version": 1, "text": text}}
+            "uri": uri, "languageId": "markdown", "version": 1, "text": text}}
     });
     let input = [
         r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#.to_owned(),
