@@ -39,6 +39,7 @@ pub fn cell_sentence(text: &str) -> Result<Option<Sentence>, TextError> {
         return Ok(None);
     }
     let leading = text.len() - py_lstrip(text).len();
+    counted::built();
     Ok(Some(Sentence {
         text: part.to_owned(),
         start: leading,
