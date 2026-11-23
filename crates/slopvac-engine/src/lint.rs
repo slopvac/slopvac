@@ -100,7 +100,7 @@ pub struct Input<'a> {
     pub declared_genre: Option<&'a str>,
     /// The document read already, for the same text and kind. The engine reads it again
     /// when unset.
-    pub preparsed: Option<&'a Preparsed>,
+    pub(crate) preparsed: Option<&'a Preparsed>,
 }
 
 impl<'a> Input<'a> {
@@ -844,6 +844,64 @@ impl Engine {
             .collect()
     }
 
+    /// Read `input` once, with this engine's own RST adapter, so that [`Engine::lint`] over the
+    /// result sees what a lint without it would.
+    ///
+    /// # Errors
+    /// The parse errors that [`Engine::lint`] reports for the same input.
+    pub fn preparse(&self, input: &Input<'_>) -> Result<Preparsed, EngineError> {
+        Preparsed::read(input, &self.rst)
+    }
+
+    /// [`Engine::preparse`] for each of `inputs`, in parallel.
+    #[must_use]
+    pub fn preparse_all(&self, inputs: &[Input<'_>]) -> Vec<Result<Preparsed, EngineError>> {
+        inputs
+            .par_iter()
+            .map(|input| self.preparse(input))
+            .collect()
+    }
+
+    /// The genre of `input` as this engine chooses it for the document: what the document
+    /// declares, then a `[[genres]]` block, then detection, over this engine's own genres. An
+    /// engine whose settings carry no per-document assignments uses the genre of its settings.
+    /// A diagram has none.
+    ///
+    /// # Errors
+    /// [`EngineError`] when `pre` was read from another input or the choice fails.
+    pub fn detect_genre(
+        &self,
+        input: &Input<'_>,
+        pre: &Preparsed,
+    ) -> Result<Option<GenreResult>, EngineError> {
+        pre.check(input)?;
+        if matches!(input.kind, Kind::Diagram(_)) {
+            return Ok(None);
+        }
+        let front_matter = pre
+            .front
+            .clone()
+            .and_then(|b| FrontMatter::parse_block(input.source, b).ok());
+        self.genre_of(input, &pre.parsed, front_matter.as_ref())
+            .map(|(genre, _)| Some(genre))
+    }
+
+    /// Use `registry` for the genres of documents, such as one that holds the genres of
+    /// plugins. Call it right after [`Engine::new`], and only for settings that choose a genre
+    /// per document (`genre_assignments` set).
+    ///
+    /// # Errors
+    /// [`EngineError::Internal`] when the settings choose one genre for the run.
+    pub fn with_genres(mut self, registry: GenreRegistry) -> Result<Self, EngineError> {
+        if self.settings.genre_assignments.is_none() {
+            return Err(EngineError::Internal(
+                "per-document genres need genre assignments in the settings".to_owned(),
+            ));
+        }
+        self.genres = Some(registry);
+        Ok(self)
+    }
+
     /// Lint one input.
     pub fn lint(&self, input: &Input<'_>) -> Result<Document, EngineError> {
         self.lint_with_notices(input).map(|(document, _)| document)
@@ -863,6 +921,7 @@ impl Engine {
     ) -> Result<(Document, Vec<Notice>), EngineError> {
         let owned;
         let pre = if let Some(pre) = input.preparsed {
+            pre.check(input)?;
             pre
         } else {
             owned = Preparsed::read(input, &self.rst)?;
@@ -2330,12 +2389,26 @@ fn choose_genre(
     Ok((result, assigned))
 }
 
+/// A digest of `text`, to tell that a read belongs to the text it is used with. It is not a
+/// security boundary.
+fn digest(text: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
+}
+
 /// A document read once: its front matter block, its parse and the notices the parse raised.
-/// Build it with [`Preparsed::read`], choose the genre from it with [`detect_genre`], and hand
-/// it to the engine with [`Input::with_preparsed`], so the engine does not read the text again.
-/// It is valid only for the text and kind it was read from.
+/// Build it with [`Engine::preparse`], choose the genre from it with [`Engine::detect_genre`],
+/// and hand it to the engine with [`Input::with_preparsed`], so the engine does not read the
+/// text again. It is valid only for the text and kind it was read from: [`Engine::lint`]
+/// refuses any other input.
 #[derive(Debug)]
 pub struct Preparsed {
+    /// What the document was read from, so a read can be refused for another input.
+    kind: Kind,
+    len: usize,
+    digest: u64,
     front: Option<frontmatter_spans::Block>,
     parsed: Parsed,
     /// The text of a code-comment file with all but comment text blanked, and the same with
@@ -2349,7 +2422,7 @@ impl Preparsed {
     ///
     /// # Errors
     /// The parse errors that [`Engine::lint`] reports for the same input.
-    pub fn read(input: &Input<'_>, rst: &RstAdapter) -> Result<Self, EngineError> {
+    fn read(input: &Input<'_>, rst: &RstAdapter) -> Result<Self, EngineError> {
         // Front matter is metadata, not prose: the parser reads only what follows it.
         let front = match input.kind {
             Kind::Diagram(_) | Kind::Rst | Kind::Comments(_) => None,
@@ -2373,11 +2446,29 @@ impl Preparsed {
         let index = SourceIndex::new(input.source, input.bom);
         let parsed = with_html_prose(input.source, &index, parsed)?;
         Ok(Self {
+            kind: input.kind,
+            len: input.source.len(),
+            digest: digest(input.source),
             front,
             parsed,
             masked,
             extra,
         })
+    }
+
+    /// Refuse a read made from other text or another kind of file: its spans would not fit
+    /// the input.
+    fn check(&self, input: &Input<'_>) -> Result<(), EngineError> {
+        if self.kind == input.kind
+            && self.len == input.source.len()
+            && self.digest == digest(input.source)
+        {
+            Ok(())
+        } else {
+            Err(EngineError::Internal(
+                "a preparsed document was read from other text or another kind of file".to_owned(),
+            ))
+        }
     }
 
     fn front_span(&self) -> Option<Span> {
@@ -2386,46 +2477,4 @@ impl Preparsed {
             .map(|b| Span::new(0, b.body_start).expect("0 <= body start"))
             .filter(|s| !s.is_empty())
     }
-}
-
-/// The genre of `input` as the engine chooses it under `assignments`: the genre the document
-/// declares, then a `[[genres]]` block, then detection. A diagram has none.
-///
-/// # Errors
-/// [`EngineError`] when the genres cannot be read or the choice fails.
-pub fn detect_genre(
-    input: &Input<'_>,
-    pre: &Preparsed,
-    assignments: &[GenreAssignment],
-) -> Result<Option<GenreResult>, EngineError> {
-    static REGISTRY: std::sync::OnceLock<Result<GenreRegistry, String>> =
-        std::sync::OnceLock::new();
-    if matches!(input.kind, Kind::Diagram(_)) {
-        return Ok(None);
-    }
-    let registry = REGISTRY
-        .get_or_init(|| slopvac_context::builtin_genres().map_err(|e| e.to_string()))
-        .as_ref()
-        .map_err(|e| EngineError::Internal(e.clone()))?;
-    let front_matter = pre
-        .front
-        .clone()
-        .and_then(|b| FrontMatter::parse_block(input.source, b).ok());
-    choose_genre(
-        registry,
-        assignments,
-        input,
-        &pre.parsed,
-        front_matter.as_ref(),
-    )
-    .map(|(genre, _)| Some(genre))
-}
-
-/// Read each of `inputs` once, in parallel.
-#[must_use]
-pub fn preparse_all(inputs: &[Input<'_>], rst: &RstAdapter) -> Vec<Result<Preparsed, EngineError>> {
-    inputs
-        .par_iter()
-        .map(|input| Preparsed::read(input, rst))
-        .collect()
 }

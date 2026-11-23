@@ -29,14 +29,15 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use slopvac_config::frontmatter::Policy;
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
-use slopvac_engine::rst::{RstAdapter, RstOptions};
-use slopvac_engine::{Input, Kind, Preparsed, detect_genre};
+use slopvac_engine::{Engine, Input, Kind};
 use slopvac_lsp::{
     Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
 };
 use slopvac_model::{BomMode, ConfigSource, Notice, RuleId};
 
-use crate::engine::{config_error, declared_genre, read_block_under, rel_text, settings_for};
+use crate::engine::{
+    config_error, declared_genre, file_settings, read_block_under, rel_text, settings_for,
+};
 use crate::errors::CliError;
 use crate::lint_settings::{self, DocumentLayers, Located, Overrides};
 use crate::lint_terms;
@@ -110,6 +111,9 @@ struct Ready {
     configs: Bounded<PathBuf, Option<Arc<LoadedConfig>>>,
     /// One engine for each distinct settings set.
     engines: Bounded<String, Arc<EngineLinter>>,
+    /// One engine for each config root, built from the settings before any genre layer. It
+    /// reads a buffer and chooses its genre, which the settings of the buffer then follow.
+    probes: Bounded<PathBuf, Arc<EngineLinter>>,
     /// The warnings shown so far, so a config that several directories share warns once.
     notified: HashSet<(String, String)>,
     /// Warnings from configs that linting found, not yet handed to the server.
@@ -196,31 +200,6 @@ pub(crate) fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
         notices,
         checks: vec![Arc::new(ProjectCheck { project })],
     })
-}
-
-/// The genre that detection chooses for the buffer at `path`, which the settings of its genre
-/// follow. Only Markdown and MDX are read here: a reStructuredText buffer would start an
-/// interpreter for the sake of a genre.
-fn detected_genre(path: &str, text: &str, config: &LoadedConfig, rel: &Path) -> Option<String> {
-    let kind = match path.rsplit('.').next() {
-        Some("mdx") => Kind::Mdx,
-        Some("rst") => return None,
-        _ => Kind::Markdown,
-    };
-    let relative = rel_text(rel);
-    let mut input = Input::new(path, text)
-        .with_kind(kind)
-        .with_bom(BomMode::Buffer)
-        .with_relative_path(&relative);
-    let declared = declared_genre(&read_block_under(text, path, Some(config)));
-    if let Some(genre) = &declared {
-        input = input.with_declared_genre(genre);
-    }
-    let pre = Preparsed::read(&input, &RstAdapter::new(RstOptions::from_env())).ok()?;
-    detect_genre(&input, &pre, &lint_settings::genre_assignments(config))
-        .ok()
-        .flatten()
-        .map(|g| g.id.as_str().to_owned())
 }
 
 /// The nearest config of `dir`, found again from disk.
@@ -353,6 +332,7 @@ impl Project {
             catalog,
             configs: Bounded::new(MAX_CONFIGS),
             engines: Bounded::new(MAX_ENGINES),
+            probes: Bounded::new(MAX_CONFIGS),
             notified: notices.iter().map(notice_key).collect(),
             pending: Vec::new(),
         };
@@ -508,6 +488,72 @@ impl Project {
         self.resolve_settings(path, text, epoch)
     }
 
+    /// The genre that the engine of `config` chooses for the buffer at `path`, which the
+    /// settings of the buffer then follow. Only Markdown and MDX are read here: a
+    /// reStructuredText buffer would start an interpreter for the sake of a genre.
+    fn detected_genre(
+        &self,
+        epoch: u64,
+        path: &str,
+        text: &str,
+        config: &LoadedConfig,
+        rel: &Path,
+    ) -> Option<String> {
+        let kind = match path.rsplit('.').next() {
+            Some("mdx") => Kind::Mdx,
+            Some("rst") => return None,
+            _ => Kind::Markdown,
+        };
+        let probe = self.probe(epoch, config, rel)?;
+        let relative = rel_text(rel);
+        let mut input = Input::new(path, text)
+            .with_kind(kind)
+            .with_bom(BomMode::Buffer)
+            .with_relative_path(&relative);
+        let declared = declared_genre(&read_block_under(text, path, Some(config)));
+        if let Some(genre) = &declared {
+            input = input.with_declared_genre(genre);
+        }
+        let engine = probe.engine();
+        let pre = engine.preparse(&input).ok()?;
+        engine
+            .detect_genre(&input, &pre)
+            .ok()
+            .flatten()
+            .map(|g| g.id.as_str().to_owned())
+    }
+
+    /// The probe engine of `config`, built once for each config root and load.
+    fn probe(&self, epoch: u64, config: &LoadedConfig, rel: &Path) -> Option<Arc<EngineLinter>> {
+        {
+            let loaded = self.loaded();
+            match &loaded.state {
+                State::Ready(ready) => {
+                    if let Some(found) = ready.probes.get(&config.root) {
+                        return Some(Arc::clone(found));
+                    }
+                }
+                State::Failed(_) => return None,
+            }
+        }
+        let catalog = Catalog::load().ok()?;
+        let (settings, _) = file_settings(
+            &catalog,
+            config,
+            rel,
+            &Overrides::default(),
+            &DocumentLayers::default(),
+        )
+        .ok()?;
+        let built = Engine::new(catalog.into_sets(), settings).ok()?;
+        let probe = Arc::new(EngineLinter::from_engine(built, HashMap::new()));
+        let mut loaded = self.current(epoch)?;
+        if let State::Ready(ready) = &mut loaded.state {
+            ready.probes.insert(config.root.clone(), Arc::clone(&probe));
+        }
+        Some(probe)
+    }
+
     fn resolve_settings(&self, path: &str, text: &str, epoch: u64) -> Result<Resolved, LintError> {
         let shown = |e: CliError| LintError(e.message);
         let file = Path::new(path);
@@ -532,7 +578,7 @@ impl Project {
                 State::Failed(why) => return Err(LintError(why.clone())),
             };
             let layers = DocumentLayers::read(text, path, config.as_deref())
-                .with_detected_genre(detected_genre(path, text, config_ref, &rel));
+                .with_detected_genre(self.detected_genre(epoch, path, text, config_ref, &rel));
             let (settings, terms, key) = settings_for(
                 &ready.catalog,
                 config_ref,

@@ -202,6 +202,12 @@ impl EngineLinter {
     pub fn from_engine(engine: Engine, reasons: HashMap<RuleId, Vec<String>>) -> Self {
         Self { engine, reasons }
     }
+
+    /// The engine behind the linter.
+    #[must_use]
+    pub const fn engine(&self) -> &Engine {
+        &self.engine
+    }
 }
 
 /// Whether the directive scanner reads a directive on the line that starts at `site`: not

@@ -14,10 +14,9 @@ use crate::lint_messages::{LintFixMessage, LintFixReason};
 use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
-use slopvac_engine::rst::{RstAdapter, RstOptions};
 use slopvac_engine::{
     AclCheckFailed, Engine, EngineError, FileContext, FileFix, FixError, Input, Kind, Preparsed,
-    Root, RootChanged, detect_genre, fix_file_in, preparse_all,
+    Root, RootChanged, fix_file_in,
 };
 use slopvac_messages::Catalog as _;
 use slopvac_model::{
@@ -889,29 +888,78 @@ fn input_of<'a>(item: &'a Item, rel: Option<&'a str>, declared: Option<&'a str>)
     input
 }
 
-/// Read each item once. A document that cannot be read comes back `None`, and the engine
-/// reports the failure when it lints the item.
-fn preparse(request: &LintRequest, items: &[Item]) -> Vec<Option<Preparsed>> {
-    let mut options = RstOptions::from_env();
-    options.project_roots = project_roots(request, items);
-    let adapter = RstAdapter::new(options);
-    let relatives: Vec<Option<String>> = items
-        .iter()
-        .map(|i| i.config.as_ref().map(|(_, rel)| rel_text(rel)))
-        .collect();
-    let declared: Vec<Option<String>> = items
-        .iter()
-        .map(|i| declared_genre(&read_block(i)))
-        .collect();
-    let inputs: Vec<Input<'_>> = items
-        .iter()
-        .zip(relatives.iter().zip(&declared))
-        .map(|(item, (rel, genre))| input_of(item, rel.as_deref(), genre.as_deref()))
-        .collect();
-    preparse_all(&inputs, &adapter)
-        .into_iter()
-        .map(Result::ok)
-        .collect()
+/// What reading the items once gives, for each item: its read, and the genre the engine
+/// chooses for it. Both are `None` for a document that cannot be read.
+struct Reads {
+    preparsed: Vec<Option<Preparsed>>,
+    detected: Vec<Option<String>>,
+}
+
+/// Read each item once, and ask the engine of its config for the genre of each.
+///
+/// The settings of an item follow its genre, and the engine needs the settings, so a probe
+/// engine per config reads and detects first. It is built from the settings of the config
+/// before any genre layer, which decide neither the genres nor the parse, and it is the only
+/// thing in the run that reads these documents: the engines of the groups take the reads.
+fn preparse(request: &LintRequest, items: &[Item]) -> Reads {
+    let none = LoadedConfig::without_files(request.root.clone());
+    let roots = project_roots(request, items);
+    let mut reads = Reads {
+        preparsed: items.iter().map(|_| None).collect(),
+        detected: vec![None; items.len()],
+    };
+    let mut by_config: BTreeMap<Option<usize>, Vec<usize>> = BTreeMap::new();
+    for (index, item) in items.iter().enumerate() {
+        let key = item.config.as_ref().map(|(c, _)| Arc::as_ptr(c) as usize);
+        by_config.entry(key).or_default().push(index);
+    }
+    for indexes in by_config.into_values() {
+        let first = &items[indexes[0]];
+        let (config, rel) = match &first.config {
+            Some((config, rel)) => (config.as_ref(), rel.clone()),
+            None => (&none, PathBuf::from(&first.shown)),
+        };
+        let probe = Catalog::load().ok().and_then(|catalog| {
+            let (settings, _) = file_settings(
+                &catalog,
+                config,
+                &rel,
+                &request.overrides,
+                &DocumentLayers::default(),
+            )
+            .ok()?;
+            Engine::new(catalog.into_sets(), settings)
+                .ok()
+                .map(|engine| engine.with_project_roots(roots.clone()))
+        });
+        let Some(probe) = probe else {
+            continue;
+        };
+        let relatives: Vec<Option<String>> = indexes
+            .iter()
+            .map(|&i| items[i].config.as_ref().map(|(_, rel)| rel_text(rel)))
+            .collect();
+        let declared: Vec<Option<String>> = indexes
+            .iter()
+            .map(|&i| declared_genre(&read_block(&items[i])))
+            .collect();
+        let inputs: Vec<Input<'_>> = indexes
+            .iter()
+            .zip(relatives.iter().zip(&declared))
+            .map(|(&i, (rel, genre))| input_of(&items[i], rel.as_deref(), genre.as_deref()))
+            .collect();
+        for ((&i, input), read) in indexes.iter().zip(&inputs).zip(probe.preparse_all(&inputs)) {
+            if let Ok(pre) = read {
+                reads.detected[i] = probe
+                    .detect_genre(input, &pre)
+                    .ok()
+                    .flatten()
+                    .map(|genre| genre.id.as_str().to_owned());
+                reads.preparsed[i] = Some(pre);
+            }
+        }
+    }
+    reads
 }
 
 /// Group the items by their settings: one engine per distinct settings. Each item is read
@@ -923,25 +971,18 @@ fn group_by_settings(
 ) -> Result<(Groups, Vec<Option<Preparsed>>), CliError> {
     let mut groups = Groups::new();
     let none = LoadedConfig::without_files(request.root.clone());
-    let preparsed = preparse(request, items);
+    let reads = preparse(request, items);
     for (index, item) in items.iter().enumerate() {
         let (config, rel) = match &item.config {
             Some((config, rel)) => (config.as_ref(), rel.clone()),
             None => (&none, PathBuf::from(&item.shown)),
         };
-        let relative = item.config.as_ref().map(|(_, rel)| rel_text(rel));
-        let declared = declared_genre(&read_block(item));
-        let detected = preparsed[index].as_ref().and_then(|pre| {
-            let input = input_of(item, relative.as_deref(), declared.as_deref());
-            let assignments = lint_settings::genre_assignments(config);
-            detect_genre(&input, pre, &assignments).ok().flatten()
-        });
         let layers = DocumentLayers::read(
             &item.text,
             &item.shown,
             item.config.as_ref().map(|(c, _)| &**c),
         )
-        .with_detected_genre(detected.map(|g| g.id.as_str().to_owned()));
+        .with_detected_genre(reads.detected[index].clone());
         let (settings, terms, key) =
             settings_for(rules, config, &rel, &request.overrides, &layers)?;
         groups
@@ -950,7 +991,7 @@ fn group_by_settings(
             .2
             .push(index);
     }
-    Ok((groups, preparsed))
+    Ok((groups, reads.preparsed))
 }
 
 /// The engine settings and term inputs for the file at `rel` under `config`, and the key
