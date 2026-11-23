@@ -398,6 +398,16 @@ mod tests {
     }
 
     #[test]
+    fn splitting_within_a_limit_stops_past_it_and_matches_the_plain_split_under_it() {
+        let text = "Go on. Stop it. Wait.";
+        assert_eq!(split_sentences_within(text, 2).unwrap(), None);
+        assert_eq!(
+            split_sentences_within(text, 3).unwrap(),
+            Some(split_sentences(text).unwrap())
+        );
+    }
+
+    #[test]
     fn a_cell_without_words_is_no_sentence() {
         assert_eq!(cell_sentence("  ---  ").unwrap(), None);
     }
