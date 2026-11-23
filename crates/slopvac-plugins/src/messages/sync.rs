@@ -130,7 +130,7 @@ pub(crate) enum SyncText {
     Layout { id: String, why: String },
     /// The managed Python environment of a pack could not be built.
     #[code("plugins-sync-pack-env")]
-    #[text("pack `{id}`: {cause}")]
+    #[text("plugin `{id}`: {cause}")]
     PackEnv { id: String, cause: String },
     /// The data directory could not be prepared or written.
     #[code("plugins-sync-data-dir")]
@@ -1629,7 +1629,7 @@ mod tests {
                     id: s("a"),
                     cause: s("c"),
                 },
-                "pack `a`: c",
+                "plugin `a`: c",
             ),
             (SyncText::DataDir { detail: s("d") }, "data directory: d"),
             (

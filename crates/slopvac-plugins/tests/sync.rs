@@ -1448,7 +1448,7 @@ mod python {
     const PLUGIN_MANIFEST: &str = "schema_version = 3\nid = \"py\"\nversion = \"1.0.0\"\nslopvac_api = 1\nkind = \"code\"\n\n[plugin]\ncommand = \"plugin.py\"\nruntime = \"python\"\npython = \"3.12\"\nnetwork = false\nhooks = []\nfeatures = { required = [], optional = [] }\n";
     const EMPTY_LOCK: &str = "lock-version = \"1.0\"\ncreated-by = \"test\"\n";
 
-    /// A project with one in-place pack `py`, a fake uv and an environment store.
+    /// A project with one in-place plugin `py`, a fake uv and an environment store.
     struct Setup {
         env: Env,
         hash: TreeHash,

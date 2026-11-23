@@ -394,11 +394,11 @@ impl<'a> Updater<'a> {
 }
 
 /// What listing the registries found, by pack id.
-struct Listed {
+pub(crate) struct Listed {
     /// Packs whose listing failed.
-    results: BTreeMap<PackId, SyncError>,
-    repos: BTreeMap<PackId, Reference>,
-    available: BTreeMap<PackId, Vec<Version>>,
+    pub(crate) results: BTreeMap<PackId, SyncError>,
+    pub(crate) repos: BTreeMap<PackId, Reference>,
+    pub(crate) available: BTreeMap<PackId, Vec<Version>>,
 }
 
 /// Most tag bytes update reads from registries in one run.
@@ -412,7 +412,7 @@ pub const LISTING_BUDGET_BYTES: u64 = 64 << 20;
 /// skipped before they reach semver parsing. The tag bytes read across all
 /// repositories count against `budget`; past it, the remaining packs are
 /// refused.
-fn list_candidates(
+pub(crate) fn list_candidates(
     client: &Client,
     lock: &Lockfile,
     ranges: &BTreeMap<PackId, VersionReq>,

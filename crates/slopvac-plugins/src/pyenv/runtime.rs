@@ -47,7 +47,7 @@ pub enum RuntimeError {
     MissingField(&'static str),
     /// The `python` value is not a plain version request.
     NotARequest,
-    /// The `command` value is not a relative script path inside the pack.
+    /// The `command` value is not a relative script path inside the plugin.
     NotAScript,
     /// The `runtime` value is neither `native` nor `python`.
     UnknownRuntime,

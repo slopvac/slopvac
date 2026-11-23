@@ -1,10 +1,10 @@
 //! The messages `slopvac-plugins` reports: error codes and the text of every failure, notice and
 //! summary line.
 //!
-//! The catalogs sit in five files by area: [`host`] (the plugin host, its protocol and its
+//! The catalogs sit in six files by area: [`cli`] (the `plugins` command group), [`host`] (the plugin host, its protocol and its
 //! process), [`trust`] (trust store, signatures, revocation and strict mode), [`transport`]
 //! (the OCI client, safe extraction and applying fixes), [`sync`] (sync, the lock and update)
-//! and [`pyenv`] (the pack index and managed Python environments). Each file derives `Catalog`
+//! and [`pyenv`] (the plugin index and managed Python environments). Each file derives `Catalog`
 //! for three kinds of entry: one per published error code, sentences with parameters, and fixed phrases
 //! that callers read as `&'static str`. The binary registers all of them through
 //! [`message_entries`].
@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 use slopvac_messages::Entry;
 use slopvac_update::messages::UpdateMessage;
 
+pub(crate) mod cli;
 pub(crate) mod host;
 pub(crate) mod pyenv;
 pub(crate) mod sync;
@@ -33,12 +34,13 @@ pub(crate) fn offline_network_needed(command: &str) -> String {
 }
 
 /// The entries of every plugins catalog, for the one registration of `slopvac-plugins`: the
-/// host, trust, transport, pyenv and sync catalogs in that order.
+/// command group, the host, trust, transport, pyenv and sync catalogs in that order.
 #[must_use]
 pub fn message_entries() -> &'static [Entry] {
     static ALL: OnceLock<Vec<Entry>> = OnceLock::new();
     ALL.get_or_init(|| {
         [
+            cli::entries(),
             host::entries(),
             trust::entries(),
             transport::entries(),
