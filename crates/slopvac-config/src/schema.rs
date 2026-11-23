@@ -9,6 +9,7 @@ use std::ops::Range;
 use crate::diag::{Code, Diagnostic, closest};
 use crate::messages::{ConfigPhrase, ConfigText};
 use crate::tree::{Entry, Node, Value};
+use slopvac_model::{RESERVED_ID, is_reserved_namespace};
 
 /// The shape a value must have.
 #[derive(Debug, Clone)]
@@ -190,11 +191,9 @@ fn pack_id() -> Shape {
     }
 }
 
-/// The id of the built-in plugin. It is compiled into the binary, so no config entry may name it.
-const BUILT_IN_PLUGIN: &str = "core";
-
+/// The built-in plugin is compiled into the binary, so no config entry may name it.
 fn is_plugin_id(s: &str) -> bool {
-    is_pack_id(s) && s != BUILT_IN_PLUGIN
+    is_pack_id(s) && s != RESERVED_ID
 }
 
 fn plugin_id() -> Shape {
@@ -204,8 +203,9 @@ fn plugin_id() -> Shape {
     }
 }
 
+/// No extra index may take a reserved namespace: `slopvac` names the signed first-party index.
 fn is_index_name(s: &str) -> bool {
-    is_pack_id(s) && s != BUILT_IN_PLUGIN && s != DEFAULT_INDEX
+    is_pack_id(s) && !is_reserved_namespace(s)
 }
 
 fn index_name() -> Shape {
@@ -214,9 +214,6 @@ fn index_name() -> Shape {
         check: is_index_name,
     }
 }
-
-/// The name of the signed first-party index, so no extra index may take it.
-const DEFAULT_INDEX: &str = "slopvac";
 
 /// The longest `source` of an extra index, in characters.
 const INDEX_SOURCE_MAX: usize = 2048;

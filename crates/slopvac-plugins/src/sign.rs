@@ -158,22 +158,13 @@ impl PublicKey {
 /// The secret half lives in release CI; see `docs/release/maintainer-setup.md`.
 pub(crate) const RELEASE_KEY_FILE: &str = include_str!("../../../keys/slopvac-release.pub");
 
-/// The only first-party namespace. Only a compiled key verifies an artifact in it.
-pub const FIRST_PARTY_NAMESPACE: &str = "slopvac";
+/// The reserved names live in `slopvac-model`, the one source; these re-exports keep the paths.
+pub use slopvac_model::{
+    FIRST_PARTY_NAMESPACE, RESERVED_ID, RESERVED_NAMESPACES, is_reserved_namespace,
+};
 
 /// Namespaces that only the compiled first-party key may sign.
 pub const FIRST_PARTY_NAMESPACES: &[&str] = &[FIRST_PARTY_NAMESPACE];
-
-/// Every namespace nobody can pin a key for: the first-party and the built-in
-/// one. Search flags them, `pin_key` refuses them and the trust store never
-/// loads a pin for them. This is the one list; do not copy it.
-pub const RESERVED_NAMESPACES: &[&str] = &[RESERVED_ID, FIRST_PARTY_NAMESPACE];
-
-/// Whether `namespace` is in [`RESERVED_NAMESPACES`].
-#[must_use]
-pub fn is_reserved_namespace(namespace: &str) -> bool {
-    RESERVED_NAMESPACES.contains(&namespace)
-}
 
 /// The compiled plugins key file, `keys/slopvac-plugins.pub`. The secret half
 /// lives in a protected release environment. The release key, which is the
@@ -191,12 +182,6 @@ const PLUGINS_KEY_FILE: &str = include_str!("../../../keys/slopvac-plugins.pub")
 pub fn plugins_key() -> Result<PublicKey, SignError> {
     PublicKey::from_pub_file(PLUGINS_KEY_FILE)
 }
-
-/// The id and namespace of the built-in plugin. It is reserved: the binary
-/// compiles it in and never fetches it, so no lock entry or index entry may use
-/// it, no key, compiled or pinned, verifies a fetched artifact in it, and a
-/// reader refuses one that does.
-pub const RESERVED_ID: &str = "core";
 
 /// The compiled release key. It signs release archives and the revocation list,
 /// and it is the revocation root. It signs no plugin.

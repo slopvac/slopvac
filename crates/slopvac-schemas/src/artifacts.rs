@@ -2,8 +2,8 @@ use schemars::generate::Contract;
 use schemars::{JsonSchema, SchemaGenerator};
 use serde_json::{Map, Value};
 use slopvac_model::{
-    ApiVersion, ConfigSource, ContextTag, Edit, LineCol, PackId, Report, RuleId, RuleProvenance,
-    SchemaVersion, Severity, Span, schema_settings,
+    ApiVersion, ConfigSource, ContextTag, Edit, LineCol, PackId, RESERVED_ID, Report, RuleId,
+    RuleProvenance, SchemaVersion, Severity, Span, schema_settings,
 };
 use slopvac_rules::{Category, RuleFile, schema_generator};
 
@@ -128,7 +128,7 @@ fn define<T: JsonSchema>(generator: &mut SchemaGenerator) {
 // Schema only. No crate has a Rust type for it yet: the plugin lock and index readers and the
 // config validator check the value themselves. The generator owns this definition until a model
 // type replaces it.
-#[schemars(with = "String", extend("pattern" = r"^(?!core(?![\s\S]))[a-z][a-z0-9-]*(?![\s\S])"))]
+#[schemars(with = "String", extend("pattern" = plugin_id_pattern()))]
 struct PluginId;
 
 /// Semantic version 2.0.0 without build metadata. Numeric prerelease identifiers have no
@@ -140,6 +140,11 @@ struct PluginId;
 // that follows the output rule.
 #[schemars(with = "String", extend("pattern" = r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\s\S])"))]
 struct Semver;
+
+/// Slug pattern that refuses the reserved id.
+fn plugin_id_pattern() -> String {
+    format!(r"^(?!{RESERVED_ID}(?![\s\S]))[a-z][a-z0-9-]*(?![\s\S])")
+}
 
 fn rule() -> Value {
     schema_generator()

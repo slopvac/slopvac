@@ -2768,6 +2768,7 @@ dependencies = [
  "sha2",
  "slopvac-fs",
  "slopvac-messages",
+ "slopvac-model",
  "slopvac-sanitize",
  "slopvac-update",
  "tar",
