@@ -9,7 +9,7 @@
     reason = "test code: a panic is a failed test"
 )]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -448,6 +448,19 @@ fn rule_ids(layer: &toml::Table) -> BTreeSet<String> {
         .unwrap_or_default()
 }
 
+/// The vocabulary and other rule entries of a layer, by id, with their authored value.
+fn rule_levels(layer: &toml::Table) -> BTreeMap<String, toml::Value> {
+    layer
+        .get("rules")
+        .and_then(toml::Value::as_table)
+        .map(|r| {
+            r.iter()
+                .map(|(k, v)| (k.strip_prefix("core:").unwrap_or(k).to_owned(), v.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
     doc.get("overrides")
         .and_then(toml::Value::as_array)
@@ -460,7 +473,8 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
 /// Why the sweep refused a written config.
 #[derive(Debug, PartialEq, Eq)]
 enum Offence {
-    /// A layer carries a vocabulary rule entry that its authored counterpart does not.
+    /// A layer carries a vocabulary rule entry that its authored counterpart lacks or sets to
+    /// another value.
     GeneratedEntry { rule: String, layer: usize },
     /// No written block with the authored `files` sits where the authored override must.
     AuthoredOverrideMissing { index: usize },
@@ -476,8 +490,14 @@ enum Offence {
 /// override blocks for each authored override that sets `profile`, the authored overrides
 /// keep their order, and E4 puts the guards after them. So authored override `i` is written
 /// block `k + i`, where `k` counts the authored overrides that set `profile`. That block
-/// must exist and have the authored `files`, or the authored override is missing. Switch
-/// and guard blocks have no authored counterpart and get no allowance.
+/// must exist and have the authored `files`, or the authored override is missing.
+///
+/// Position alone cannot tell the authored override from a guard in broken output: if the
+/// last authored override is dropped, a guard lands in its slot. So a vocabulary rule entry
+/// is allowed in a layer only when the authored layer has the same rule with the same value.
+/// A guard writes `off` (E4), so it matches only an authored `off`. In that one case a guard
+/// cannot be told from the authored override, and the layer's effect is the same either way.
+/// Switch and guard blocks have no authored counterpart and get no allowance.
 ///
 /// Returns the number of layers walked, or the first offence.
 fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usize, Offence> {
@@ -489,12 +509,26 @@ fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usi
         .iter()
         .filter(|a| a.contains_key("profile"))
         .count();
-    let mut layers: Vec<(&toml::Table, BTreeSet<String>)> = vec![(&doc, rule_ids(&authored))];
+    let mut layers: Vec<(&toml::Table, BTreeMap<String, toml::Value>)> =
+        vec![(&doc, rule_levels(&authored))];
     for (index, block) in written_blocks.iter().enumerate() {
         let counterpart = index
             .checked_sub(switches)
             .and_then(|i| authored_blocks.get(i));
-        layers.push((block, counterpart.map(|a| rule_ids(a)).unwrap_or_default()));
+        layers.push((
+            block,
+            counterpart.map(|a| rule_levels(a)).unwrap_or_default(),
+        ));
+    }
+    for (layer_at, (layer, allowed)) in layers.iter().enumerate() {
+        for (id, level) in rule_levels(layer) {
+            if VOCABULARY_RULES.contains(&id.as_str()) && allowed.get(&id) != Some(&level) {
+                return Err(Offence::GeneratedEntry {
+                    rule: id,
+                    layer: layer_at,
+                });
+            }
+        }
     }
     for (index, a) in authored_blocks.iter().enumerate() {
         let same_files = written_blocks
@@ -502,16 +536,6 @@ fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usi
             .is_some_and(|w| w.get("files") == a.get("files"));
         if !same_files {
             return Err(Offence::AuthoredOverrideMissing { index });
-        }
-    }
-    for (layer_at, (layer, allowed)) in layers.iter().enumerate() {
-        for id in rule_ids(layer) {
-            if VOCABULARY_RULES.contains(&id.as_str()) && !allowed.contains(&id) {
-                return Err(Offence::GeneratedEntry {
-                    rule: id,
-                    layer: layer_at,
-                });
-            }
         }
     }
     Ok(layers.len())
