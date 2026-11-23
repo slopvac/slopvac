@@ -178,6 +178,7 @@ fn read_config(doc: &DocumentMut, legacy: &Legacy, ctx: &mut Ctx<'_>) -> Option<
     }
     (ctx.dropped.total() == before).then_some(Config2 {
         profile,
+        blocklist: has_blocklist(doc.as_table()),
         layer,
         overrides,
     })
