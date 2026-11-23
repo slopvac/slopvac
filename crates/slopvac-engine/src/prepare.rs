@@ -1,6 +1,6 @@
 //! The text units a rule reads, cut from a parsed document by the rule's `scope`.
 
-use std::cell::OnceCell;
+use std::cell::{Cell, OnceCell};
 use std::ops::Range;
 
 use slopvac_model::SourceIndex;
@@ -9,7 +9,7 @@ use slopvac_parse::{
     Block, BlockKind, Document, ParseError, Projection, TokenKind, parse_html_segments,
 };
 use slopvac_rules::Scope;
-use slopvac_text::{Sentence, TextError, cell_sentence, split_sentences, split_sentences_within};
+use slopvac_text::{Sentence, cell_sentence, split_sentences_within};
 
 use crate::directives::Lines;
 use crate::exceptions::TextOrigin;
@@ -326,7 +326,10 @@ pub(crate) fn cell_budget(source_len: usize) -> usize {
 pub(crate) struct Prepared<'a> {
     source: &'a str,
     blocks: Vec<ProseBlock<'a>>,
-    composite: OnceCell<Result<Composite, TextError>>,
+    composite: OnceCell<Result<Composite, EngineError>>,
+    /// The prose sentences the document may still hold, after those of the blocks and of
+    /// the composite text.
+    left: Cell<usize>,
 }
 
 impl<'a> Prepared<'a> {
@@ -373,7 +376,16 @@ impl<'a> Prepared<'a> {
             source,
             blocks,
             composite: OnceCell::new(),
+            left: Cell::new(left),
         })
+    }
+
+    /// The prose sentences the document may still hold, and the whole budget it had.
+    ///
+    /// A split that is not kept, such as a tagger reading the sentences of a code block, may
+    /// build up to the first number and no more.
+    pub(crate) fn sentences_left(&self) -> (usize, usize) {
+        (self.left.get(), sentence_budget(self.source.len()))
     }
 
     /// The blocks with prose, in document order.
@@ -408,11 +420,15 @@ impl<'a> Prepared<'a> {
     /// a block still joins the one text, so a document rule sees every block, anchors and
     /// sentence splits work over all of it, and a match that crosses blocks maps to the hull
     /// of the source spans of its tokens.
-    fn composite(&self) -> Result<&Composite, TextError> {
+    fn composite(&self) -> Result<&Composite, EngineError> {
         self.composite
             .get_or_init(|| {
                 let projection = join(self.blocks.iter().map(|b| b.projection));
-                let sentences = split_sentences(projection.text())?;
+                // The composite is kept, so its sentences are charged to the document.
+                let (left, limit) = self.sentences_left();
+                let sentences = split_sentences_within(projection.text(), left)?
+                    .ok_or(EngineError::TagBuildBudget { limit })?;
+                self.left.set(left - sentences.len());
                 Ok(Composite {
                     projection,
                     sentences,
@@ -423,7 +439,7 @@ impl<'a> Prepared<'a> {
     }
 
     /// The units a rule of `scope` matches in.
-    pub(crate) fn units(&self, scope: Scope) -> Result<Vec<Unit<'_>>, TextError> {
+    pub(crate) fn units(&self, scope: Scope) -> Result<Vec<Unit<'_>>, EngineError> {
         let mut units = Vec::new();
         match scope {
             Scope::Raw => {

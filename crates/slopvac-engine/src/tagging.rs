@@ -110,6 +110,10 @@ struct View<'a> {
     prepared: HashMap<usize, &'a [Sentence]>,
     /// Set when a sentence offset did not lie on the text of its block.
     unmapped: Cell<bool>,
+    /// The prose sentences the document may still hold, and the whole budget it had.
+    sentences_left: (usize, usize),
+    /// Set when a block that no projection backs held more sentences than that.
+    over_budget: Cell<bool>,
 }
 
 /// The key of a projection in `View::prepared`.
@@ -196,6 +200,7 @@ impl<'a> View<'a> {
             .enumerate()
             .map(|(i, e)| ((e.span.start, e.span.end), i))
             .collect();
+        let prepared_budget = prepared.sentences_left();
         let prepared = prepared
             .blocks()
             .iter()
@@ -213,6 +218,8 @@ impl<'a> View<'a> {
             by_text,
             prepared,
             unmapped: Cell::new(false),
+            sentences_left: prepared_budget,
+            over_budget: Cell::new(false),
         }
     }
 }
@@ -348,8 +355,14 @@ impl DocumentView for View<'_> {
             .get(&(block.text.as_ptr().addr(), block.text.len()))
             .and_then(|&i| self.entries[i].projection.map(|p| (i, p)))
         else {
-            // No projection, so the engine split no sentences: a code block.
-            return slopvac_context::split_sentences(block);
+            // No projection, so the engine split no sentences: a code block. A tagger may
+            // read the sentences of a code block whether or not any matches, so the split
+            // stops at what the document may still hold.
+            return slopvac_context::split_sentences_within(block, self.sentences_left.0)
+                .unwrap_or_else(|| {
+                    self.over_budget.set(true);
+                    Vec::new()
+                });
         };
         let Some(sentences) = self.prepared.get(&projection_key(projection)) else {
             return Vec::new();
@@ -458,6 +471,11 @@ pub(crate) fn tag(
     let tags = registry.collect_tags_with(&view, max_tags, &extra)?;
     if view.unmapped.get() {
         return Err(TagError::Unmapped);
+    }
+    if view.over_budget.get() {
+        return Err(TagError::Budget {
+            limit: view.sentences_left.1,
+        });
     }
     Ok(view
         .split_interleaved(tags, max_tags)?
