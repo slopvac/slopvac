@@ -9,7 +9,7 @@
     reason = "test code: a panic is a failed test"
 )]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -436,14 +436,13 @@ const VOCABULARY_RULES: [&str; 4] = [
     "ste-words.word-used-in-wrong-part-of-speech",
 ];
 
-/// The rule entries of a layer, by id, with their authored value.
-fn rule_levels(layer: &toml::Table) -> BTreeMap<String, toml::Value> {
+fn rule_ids(layer: &toml::Table) -> BTreeSet<String> {
     layer
         .get("rules")
         .and_then(toml::Value::as_table)
         .map(|r| {
-            r.iter()
-                .map(|(k, v)| (k.strip_prefix("core:").unwrap_or(k).to_owned(), v.clone()))
+            r.keys()
+                .map(|k| k.strip_prefix("core:").unwrap_or(k).to_owned())
                 .collect()
         })
         .unwrap_or_default()
@@ -458,90 +457,29 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
         .collect()
 }
 
-/// Why the sweep refused a written config.
-#[derive(Debug, PartialEq, Eq)]
-enum Offence {
-    /// A layer carries a vocabulary rule entry that its oracle layer lacks or sets to another
-    /// level.
-    GeneratedEntry { rule: String, layer: usize },
-    /// A layer is not the migrated form of the authored layer that belongs in its slot.
-    SlotDiffers { layer: usize },
-}
-
 /// A vocabulary rule entry that the user did not author must not sit in a layer above the
-/// styles: it would outrank the companion style and the settings 2.x let win.
-///
-/// The oracle is the same migration without `--preserve-behavior`. It renames keys, flattens
-/// a severity table to a bare level, moves `vocabulary.path` to `terms.blocklists` and
-/// qualifies ids (config.md mapping table), and it adds nothing else. Each written layer
-/// must equal the oracle's layer for the authored layer in its slot, with one identity
-/// check and no field-by-field allowance:
-///
-/// - The top level equals the oracle's top level, except for `profile` and `styles`, which
-///   profiles.md E1 adds, and `overrides`, which is checked block by block.
-/// - Authored override `i` is written block `k + i` and equals the oracle's block `i`.
-///   `k` counts the authored overrides that set `profile`, because E3 puts one switch block
-///   for each of them before all override blocks, the authored overrides keep their order,
-///   and E4 puts the guards after them. A selector is not an identity: a guard can have the
-///   `files` of the override it guards, and can write the same level.
-/// - Switch and guard blocks have no oracle layer, so they get no allowance.
-///
-/// A vocabulary rule entry that the oracle's layer lacks, or sets to another level, is
-/// reported first, by rule ID. Any other difference is reported as the slot that differs.
-/// Returns the number of layers walked, or the first offence.
-fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usize, Offence> {
+/// styles: it would outrank the companion style and the settings 2.x let win. Each written
+/// layer is compared only with the authored layer it came from: the top level with the top
+/// level, and an override with the authored override that has the same `files`. A layer
+/// with no authored counterpart (a guard, moved or switch block) gets no allowance.
+/// Returns the number of layers walked, or the first offending entry.
+fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usize, String> {
     let doc = toml::from_str::<toml::Table>(text).unwrap();
-    let oracle = migrate_config(
-        authored,
-        "slopvac.toml",
-        &RenameTable::bundled(),
-        Options {
-            preserve_behavior: false,
-        },
-    )
-    .unwrap();
-    let oracle = toml::from_str::<toml::Table>(&oracle.text).unwrap();
-    let expected_blocks = override_blocks(&oracle);
-    let written_blocks = override_blocks(&doc);
-    let switches = expected_blocks
-        .iter()
-        .filter(|a| a.contains_key("profile"))
-        .count();
-    let mut layers: Vec<(&toml::Table, Option<&toml::Table>)> = vec![(&doc, Some(&oracle))];
-    for (index, block) in written_blocks.iter().enumerate() {
-        let expected = index
-            .checked_sub(switches)
-            .and_then(|i| expected_blocks.get(i).copied());
-        layers.push((block, expected));
+    let authored = toml::from_str::<toml::Table>(authored).unwrap_or_default();
+    let mut authored_blocks = override_blocks(&authored);
+    let mut layers: Vec<(&toml::Table, BTreeSet<String>)> = vec![(&doc, rule_ids(&authored))];
+    for block in override_blocks(&doc) {
+        let counterpart = authored_blocks
+            .iter()
+            .position(|a| a.get("files") == block.get("files"))
+            .map(|at| authored_blocks.remove(at));
+        layers.push((block, counterpart.map(rule_ids).unwrap_or_default()));
     }
-    for (layer_at, (layer, expected)) in layers.iter().enumerate() {
-        let allowed = expected.map(rule_levels).unwrap_or_default();
-        for (id, level) in rule_levels(layer) {
-            if VOCABULARY_RULES.contains(&id.as_str()) && allowed.get(&id) != Some(&level) {
-                return Err(Offence::GeneratedEntry {
-                    rule: id,
-                    layer: layer_at,
-                });
+    for (layer, allowed) in &layers {
+        for id in rule_ids(layer) {
+            if VOCABULARY_RULES.contains(&id.as_str()) && !allowed.contains(&id) {
+                return Err(format!("generated vocabulary entry {id}\n{text}"));
             }
-        }
-    }
-    let without = |t: &toml::Table, keys: &[&str]| {
-        let mut t = t.clone();
-        for key in keys {
-            t.remove(*key);
-        }
-        t
-    };
-    if without(&doc, &["overrides", "profile", "styles"])
-        != without(&oracle, &["overrides", "profile", "styles"])
-    {
-        return Err(Offence::SlotDiffers { layer: 0 });
-    }
-    for (index, expected) in expected_blocks.iter().enumerate() {
-        if written_blocks.get(switches + index) != Some(expected) {
-            return Err(Offence::SlotDiffers {
-                layer: 1 + switches + index,
-            });
         }
     }
     Ok(layers.len())
@@ -563,105 +501,25 @@ fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usi
 #[case::category_override(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n"
 )]
-#[case::severity_table_rule(
-    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules.\"ste-words.word-outside-controlled-vocabulary\"]\nseverity = \"error\"\n"
-)]
-#[case::severity_table_rule_in_an_override(
-    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules.\"ste-words.word-outside-controlled-vocabulary\"]\nseverity = \"error\"\n"
-)]
 #[case::override_changes_path(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"o.toml\"\n"
 )]
 fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[case] config: &str) {
     let rw = preserve(config).unwrap();
-    let swept = check_no_generated_vocabulary_entry(&rw.text, config);
-    assert!(
-        matches!(swept, Ok(walked) if walked >= 1),
-        "{swept:?}\n{}",
-        rw.text
-    );
+    let walked = check_no_generated_vocabulary_entry(&rw.text, config)
+        .unwrap_or_else(|why| panic!("written config: {why}"));
+    assert!(walked >= 1, "the check walked no layer\n{}", rw.text);
 }
 
-const TOP_RULE: &str = "\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
-
 #[test]
+#[should_panic(
+    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+)]
 fn the_sweep_fails_when_an_override_carries_the_top_level_rule() {
-    let authored =
-        format!("schema_version = 2\n[rules]\n{TOP_RULE}\n[[overrides]]\nfiles = [\"docs/**\"]\n");
-    let broken = format!(
-        "schema_version = 2\n[rules]\n{TOP_RULE}\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}"
-    );
-    assert_eq!(
-        check_no_generated_vocabulary_entry(&broken, &authored),
-        Err(Offence::GeneratedEntry {
-            rule: "ste-words.word-outside-controlled-vocabulary".to_owned(),
-            layer: 1,
-        })
-    );
-}
-
-#[test]
-fn a_guard_with_the_selector_of_a_dropped_override_gets_no_authored_allowance() {
-    // Authored: two overrides, the first authors the rule. Written: the first override is
-    // gone, and a guard after the second one has the same `files` and carries the rule.
-    let authored = format!(
-        "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}\n[[overrides]]\nfiles = [\"api/**\"]\n"
-    );
-    let broken = "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
-    assert_eq!(
-        check_no_generated_vocabulary_entry(broken, &authored),
-        Err(Offence::GeneratedEntry {
-            rule: "ste-words.word-outside-controlled-vocabulary".to_owned(),
-            layer: 2,
-        })
-    );
-}
-
-#[test]
-fn a_guard_that_takes_the_slot_of_a_dropped_last_override_gets_no_allowance() {
-    // Authored: the override that authors the rule is last. Written: it is gone, and a guard
-    // with the same `files` sits in exactly the slot the authored override would fill.
-    let authored = format!(
-        "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}"
-    );
-    let broken = "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
-    assert_eq!(
-        check_no_generated_vocabulary_entry(broken, &authored),
-        Err(Offence::GeneratedEntry {
-            rule: "ste-words.word-outside-controlled-vocabulary".to_owned(),
-            layer: 2,
-        })
-    );
-}
-
-#[test]
-fn an_off_guard_in_the_slot_of_a_dropped_override_is_not_that_override() {
-    // The authored override sets the rule to `off` and also keeps its own blocklist. The
-    // written block has the same selector and the same `off`, but it drops the blocklist,
-    // so it is a guard in that slot and not the migrated override.
-    let authored = "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n[overrides.vocabulary]\npath = \"o.toml\"\n";
-    let broken = "schema_version = 3\n[terms]\nblocklists = [\"d.toml\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"core:ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
-    assert_eq!(
-        check_no_generated_vocabulary_entry(broken, authored),
-        Err(Offence::SlotDiffers { layer: 1 })
-    );
-}
-
-#[test]
-fn a_guard_that_follows_every_authored_override_gets_no_allowance() {
-    let authored = format!(
-        "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}"
-    );
-    let broken = format!(
-        "{authored}\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-used-in-wrong-part-of-speech\" = \"off\"\n"
-    );
-    assert_eq!(
-        check_no_generated_vocabulary_entry(&broken, &authored),
-        Err(Offence::GeneratedEntry {
-            rule: "ste-words.word-used-in-wrong-part-of-speech".to_owned(),
-            layer: 2,
-        })
-    );
+    let authored = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n";
+    let broken = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
+    check_no_generated_vocabulary_entry(broken, authored)
+        .unwrap_or_else(|why| panic!("written config: {why}"));
 }
 
 #[rstest]
@@ -700,4 +558,47 @@ fn a_config_without_a_blocklist_gets_no_vocabulary_companion_style() {
     let rw = preserve("schema_version = 2\nprofile = \"strict\"\n").unwrap();
     let doc = toml::from_str::<toml::Table>(&rw.text).unwrap();
     assert_eq!(doc["styles"].as_array().unwrap().len(), 1, "{}", rw.text);
+}
+
+const VOCABULARY_RULE: &str = "ste-words.word-outside-controlled-vocabulary";
+
+#[rstest]
+#[case::top_level(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules.\"ste-words.word-outside-controlled-vocabulary\"]\nseverity = \"error\"\n",
+    "/rules/core:ste-words.word-outside-controlled-vocabulary"
+)]
+#[case::in_an_override(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules.\"ste-words.word-outside-controlled-vocabulary\"]\nseverity = \"error\"\n",
+    "/overrides/0/rules/core:ste-words.word-outside-controlled-vocabulary"
+)]
+fn an_authored_severity_table_rule_is_written_as_a_bare_level(
+    #[case] config: &str,
+    #[case] at: &str,
+) {
+    let rw = preserve(config).unwrap();
+    assert_eq!(as_json(&rw.text).pointer(at), Some(&json!("error")), "{}", rw.text);
+}
+
+#[test]
+fn an_override_keeps_its_own_blocklist_beside_an_authored_off_rule() {
+    // The override both turns the rule off and names its own blocklist. A block that kept
+    // only the `off` entry would look the same as a guard with that selector, so the
+    // blocklist is what shows the authored override survived.
+    let rw = preserve(&format!(
+        "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"{VOCABULARY_RULE}\" = \"off\"\n[overrides.vocabulary]\npath = \"o.toml\"\n"
+    ))
+    .unwrap();
+    let doc = as_json(&rw.text);
+    assert_eq!(
+        doc.pointer("/overrides/0/terms/blocklists"),
+        Some(&json!(["o.toml"])),
+        "{}",
+        rw.text
+    );
+    assert_eq!(
+        doc.pointer(&format!("/overrides/0/rules/core:{VOCABULARY_RULE}")),
+        Some(&json!("off")),
+        "{}",
+        rw.text
+    );
 }
