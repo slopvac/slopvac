@@ -1383,7 +1383,10 @@ fn library_sites() -> Vec<Site> {
 }
 
 fn sites() -> Vec<Site> {
-    [python_and_loader_sites(), store_sites(), library_sites()].concat()
+    [python_and_loader_sites(), store_sites(), library_sites()]
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 #[test]
