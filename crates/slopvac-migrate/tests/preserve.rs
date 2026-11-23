@@ -466,6 +466,8 @@ enum Offence {
     GeneratedEntry { rule: String, layer: usize },
     /// No written block with the authored `files` sits where the authored override must.
     AuthoredOverrideMissing { index: usize },
+    /// A layer is not the migrated form of the authored layer that belongs in its slot.
+    SlotDiffers { layer: usize },
 }
 
 /// A vocabulary rule entry that the user did not author must not sit in a layer above the
@@ -545,14 +547,23 @@ fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usi
 #[case::category_override(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n"
 )]
+#[case::severity_table_rule(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules.\"ste-words.word-outside-controlled-vocabulary\"]\nseverity = \"error\"\n"
+)]
+#[case::severity_table_rule_in_an_override(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules.\"ste-words.word-outside-controlled-vocabulary\"]\nseverity = \"error\"\n"
+)]
 #[case::override_changes_path(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"o.toml\"\n"
 )]
 fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[case] config: &str) {
     let rw = preserve(config).unwrap();
-    let walked = check_no_generated_vocabulary_entry(&rw.text, config)
-        .unwrap_or_else(|why| panic!("{why:?}\n{}", rw.text));
-    assert!(walked >= 1, "the check walked no layer\n{}", rw.text);
+    let swept = check_no_generated_vocabulary_entry(&rw.text, config);
+    assert!(
+        matches!(swept, Ok(walked) if walked >= 1),
+        "{swept:?}\n{}",
+        rw.text
+    );
 }
 
 const TOP_RULE: &str = "\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
@@ -604,6 +615,19 @@ fn a_guard_that_takes_the_slot_of_a_dropped_last_override_gets_no_allowance() {
             rule: "ste-words.word-outside-controlled-vocabulary".to_owned(),
             layer: 2,
         })
+    );
+}
+
+#[test]
+fn an_off_guard_in_the_slot_of_a_dropped_override_is_not_that_override() {
+    // The authored override sets the rule to `off` and also keeps its own blocklist. The
+    // written block has the same selector and the same `off`, but it drops the blocklist,
+    // so it is a guard in that slot and not the migrated override.
+    let authored = "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n[overrides.vocabulary]\npath = \"o.toml\"\n";
+    let broken = "schema_version = 3\n[terms]\nblocklists = [\"d.toml\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"core:ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
+    assert_eq!(
+        check_no_generated_vocabulary_entry(broken, authored),
+        Err(Offence::SlotDiffers { layer: 1 })
     );
 }
 
