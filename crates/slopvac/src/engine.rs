@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::lint_messages::{LintFixMessage, LintFixReason};
-use slopvac_config::frontmatter::{Policy, Read, read as read_front_matter};
 use slopvac_config::{ConfigError, Discovery, LoadedConfig};
 use slopvac_engine::discover::{DiscoverError, FileKind, Options, Selection, discover};
 use slopvac_engine::{
@@ -25,7 +24,7 @@ use slopvac_model::{
 use slopvac_sanitize::line;
 
 use crate::errors::CliError;
-use crate::lint_settings::{self, DocumentLayers, Overrides};
+use crate::lint_settings::{self, DocumentBlocks, DocumentLayers, Overrides};
 use crate::lint_terms::{self, TermInputs};
 use crate::redact;
 use crate::rule_catalog::Catalog;
@@ -156,8 +155,8 @@ impl Run {
     /// notice for each diagnostic. The block then contributes nothing and the document is
     /// still linted. The error text is escaped for a terminal; the notice keeps the raw
     /// text, which each report format escapes for itself.
-    fn front_matter_errors(&mut self, item: &Item, read: &Read) {
-        for e in block_errors(&item.shown, &item.text, read) {
+    fn front_matter_errors(&mut self, item: &Item, blocks: &DocumentBlocks) {
+        for e in block_errors(&item.shown, &item.text, blocks) {
             self.notices.push(Notice {
                 code: KebabName::new(e.code).expect("diagnostic codes are kebab-case"),
                 level: NoticeLevel::Warning,
@@ -779,9 +778,14 @@ fn schema_pointer(path: &[String]) -> String {
     let owned = (1..=path.len())
         .take_while(|&n| {
             SCHEMA_PATHS.iter().any(|known| {
-                known
-                    .iter()
-                    .copied()
+                // A directive names the same fields as the block, under its own root.
+                let root = if path[0] == "directive" {
+                    "directive"
+                } else {
+                    known[0]
+                };
+                std::iter::once(root)
+                    .chain(known[1..].iter().copied())
                     .eq(path[..n].iter().map(String::as_str))
             })
         })
@@ -799,9 +803,10 @@ fn schema_pointer(path: &[String]) -> String {
 /// The problems that `read` found in the block of the document `text`, shown as `shown`. Only
 /// the code, the position and the key path are reported: a diagnostic's own message quotes
 /// the offending value, and front matter values stay out of error output (policies 1.7).
-pub(crate) fn block_errors(shown: &str, text: &str, read: &Read) -> Vec<BlockError> {
-    read.diagnostics
-        .iter()
+pub(crate) fn block_errors(shown: &str, text: &str, blocks: &DocumentBlocks) -> Vec<BlockError> {
+    [&blocks.front_matter, &blocks.directives]
+        .into_iter()
+        .flat_map(|read| &read.diagnostics)
         .map(|d| {
             let (line, column) = d.location(text);
             let pointer = schema_pointer(&d.path);
@@ -818,26 +823,26 @@ pub(crate) fn block_errors(shown: &str, text: &str, read: &Read) -> Vec<BlockErr
         .collect()
 }
 
-/// The `slopvac:` block of the item's front matter, read under the project's front matter
-/// policy. A top-level `genre` key is ordinary data and never counts.
-fn read_block(item: &Item) -> Read {
+/// The `slopvac:` block and the inline directives of the item, read under the project's front
+/// matter policy. A top-level `genre` key is ordinary data and never counts.
+fn read_block(item: &Item) -> DocumentBlocks {
     let config = item.config.as_ref().map(|(config, _)| &**config);
     read_block_under(&item.text, &item.shown, config)
 }
 
-/// Read the `slopvac:` block of `text` under the policy of `config`, or the core defaults
-/// when no config applies.
-pub(crate) fn read_block_under(text: &str, shown: &str, config: Option<&LoadedConfig>) -> Read {
-    let policy = config.map_or_else(Policy::core, Policy::from_config);
-    read_front_matter(text, shown, &policy)
+/// Read the `slopvac:` block and the inline directives of `text` under the policy of
+/// `config`, or the core defaults when no config applies.
+pub(crate) fn read_block_under(
+    text: &str,
+    shown: &str,
+    config: Option<&LoadedConfig>,
+) -> DocumentBlocks {
+    DocumentBlocks::read(text, shown, config)
 }
 
-/// The genre that a read block sets, when the policy allows it and the block is valid.
-pub(crate) fn declared_genre(read: &Read) -> Option<String> {
-    read.settings
-        .iter()
-        .rfind(|s| s.path == ["genre"])
-        .and_then(|s| s.value.as_str().map(str::to_owned))
+/// The genre that a document sets, when the policy allows it and the block is valid.
+pub(crate) fn declared_genre(blocks: &DocumentBlocks) -> Option<String> {
+    blocks.declared_genre()
 }
 
 /// A config-relative path as the forward-slash text that `files` patterns match against.
@@ -1214,11 +1219,12 @@ fn lint_items(
         } else {
             (indexes, relatives)
         };
-        let reads: Vec<Read> = indexes.iter().map(|&i| read_block(&items[i])).collect();
+        let reads: Vec<DocumentBlocks> = indexes.iter().map(|&i| read_block(&items[i])).collect();
         for (&i, read) in indexes.iter().zip(&reads) {
             run.front_matter_errors(&items[i], read);
         }
-        let declared: Vec<Option<String>> = reads.iter().map(declared_genre).collect();
+        let declared: Vec<Option<String>> =
+            reads.iter().map(DocumentBlocks::declared_genre).collect();
         let inputs: Vec<Input<'_>> = indexes
             .iter()
             .zip(relatives.iter().zip(&declared))

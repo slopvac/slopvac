@@ -18,7 +18,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use serde_json::Value as Json;
-use slopvac_config::frontmatter::Policy;
+use slopvac_config::frontmatter::{Policy, Read as FrontMatterRead};
 use slopvac_config::{ConfigLevel, LevelFrom, LoadedConfig, Resolved, Setting, describe};
 use slopvac_config::{Inputs, PackFile, PresetFailure, Presets, UnknownRule, unknown_rules};
 use slopvac_context::GenreAssignment;
@@ -344,6 +344,43 @@ pub fn presets() -> &'static (dyn Presets + Send + Sync) {
     })
 }
 
+/// What the document's own `slopvac:` front-matter block and inline directives read as, with
+/// their diagnostics.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DocumentBlocks {
+    /// The `slopvac:` front-matter block.
+    pub front_matter: FrontMatterRead,
+    /// The inline directives.
+    pub directives: FrontMatterRead,
+}
+
+impl DocumentBlocks {
+    /// Read the document `text`, shown as `shown`, under the policy of `config` (the core
+    /// policy when no config applies).
+    #[must_use]
+    pub fn read(text: &str, shown: &str, config: Option<&LoadedConfig>) -> Self {
+        let policy = config.map_or_else(Policy::core, Policy::from_config);
+        Self {
+            front_matter: slopvac_config::frontmatter::read(text, shown, &policy),
+            directives: slopvac_config::directives::read(text, shown, &policy),
+        }
+    }
+
+    /// The genre the document declares for itself. An inline directive outranks the front
+    /// matter, as the layers do (docs/contract/config.md, section 1.1).
+    #[must_use]
+    pub fn declared_genre(&self) -> Option<String> {
+        [&self.directives, &self.front_matter]
+            .iter()
+            .find_map(|read| {
+                read.settings
+                    .iter()
+                    .rfind(|s| s.path == ["genre"])
+                    .and_then(|s| s.value.as_str().map(str::to_owned))
+            })
+    }
+}
+
 /// The settings a document carries itself: its `slopvac:` front-matter block and its inline
 /// directives, each already limited by the project's `[frontmatter] allow` list. A block with
 /// a diagnostic contributes nothing, and the run reports the diagnostic elsewhere.
@@ -360,10 +397,15 @@ impl DocumentLayers {
     /// (the core policy when no config applies).
     #[must_use]
     pub fn read(text: &str, shown: &str, config: Option<&LoadedConfig>) -> Self {
-        let policy = config.map_or_else(Policy::core, Policy::from_config);
+        Self::from_blocks(&DocumentBlocks::read(text, shown, config))
+    }
+
+    /// The layers of blocks that were read already.
+    #[must_use]
+    pub fn from_blocks(blocks: &DocumentBlocks) -> Self {
         Self {
-            front_matter: slopvac_config::frontmatter::read(text, shown, &policy).settings,
-            directives: slopvac_config::directives::read(text, shown, &policy).settings,
+            front_matter: blocks.front_matter.settings.clone(),
+            directives: blocks.directives.settings.clone(),
             detected_genre: None,
         }
     }

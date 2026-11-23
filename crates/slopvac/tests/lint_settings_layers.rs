@@ -138,3 +138,47 @@ fn an_explicit_genre_outranks_the_detected_one_and_keeps_its_source() {
     assert_eq!(doc["genre"]["id"], "informal", "{doc}");
     assert_eq!(doc["profile"], "relaxed", "{doc}");
 }
+
+/// A run over `doc.md` with `text`: the exit code, the standard error and the report.
+fn run_doc(text: &str) -> (Option<i32>, String, Value) {
+    let (_dir, path) = project("schema_version = 3\n", text);
+    let out = slopvac()
+        .args(["lint", "--format", "json"])
+        .arg(&path)
+        .output()
+        .expect("run");
+    let report = serde_json::from_slice(&out.stdout).expect("json report");
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+        report,
+    )
+}
+
+/// An inline directive is checked like the front-matter block: a field the project does not
+/// allow, or a key that is no setting, is an error at its key, and the run is incomplete
+/// (docs/contract/config.md, section 1.1, and the exit codes of `docs/engineering.md`).
+/// `<!-- slopvac: ` is 14 bytes, so the key starts at column 15 of line 1.
+#[rstest::rstest]
+#[case::a_field_the_project_does_not_allow("profile=strict", "config-frontmatter-field-denied")]
+#[case::a_key_that_is_no_setting("network.offline=true", "config-unknown-key")]
+fn a_bad_inline_directive_is_an_error_and_the_run_is_incomplete(
+    #[case] payload: &str,
+    #[case] code: &str,
+) {
+    let (status, stderr, _) = run_doc(&format!("<!-- slopvac: {payload} -->\n{BODY}"));
+    assert_eq!(status, Some(2), "{stderr}");
+    assert!(stderr.contains(code), "{stderr}");
+    assert!(stderr.contains("doc.md:1:15:"), "{stderr}");
+}
+
+#[test]
+fn an_inline_genre_is_the_genre_of_the_document_and_of_its_settings() {
+    // `informal` has `profile: relaxed` and the directive layer sits above detection.
+    let (status, stderr, report) = run_doc(&format!("<!-- slopvac: genre=informal -->\n{BODY}"));
+    assert_eq!(status, Some(0), "{stderr}");
+    let doc = &report["documents"][0];
+    assert_eq!(doc["genre"]["id"], "informal", "{doc}");
+    assert_eq!(doc["genre"]["source"], "explicit", "{doc}");
+    assert_eq!(doc["profile"], "relaxed", "{doc}");
+}
