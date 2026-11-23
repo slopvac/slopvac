@@ -142,7 +142,36 @@ pub(crate) fn split_plain(rel: &Path) -> Result<(&OsStr, Vec<&OsStr>)> {
 ///   Then the directory is synced so the rename survives a crash.
 /// - An existing destination keeps its permission bits, read without following links. The
 ///   temporary file is removed on failure.
+///
+/// For a check right before the rename, use [`write_atomic_if`].
 pub fn write_atomic(root: &Dir, rel: &Path, bytes: &[u8], opts: WriteOptions) -> Result<()> {
+    write_atomic_if(root, rel, bytes, opts, |_, _| Ok(true))
+}
+
+/// [`write_atomic`] with a last check before the rename.
+///
+/// `guard` runs once the staged file holds `bytes`, is synced and is verified, and right before
+/// it would replace the destination. It gets the directory handle that holds the destination
+/// and the destination's file name, so it can look at the destination through the same handle.
+/// Return `Ok(true)` to let the replace go on. Return `Ok(false)` to refuse: the staged file is
+/// removed, the destination stays as it was, and the write fails with [`Error::Precondition`].
+/// A guard error removes the staged file too, and fails with [`Error::Io`] and
+/// [`Op::Precondition`](crate::Op::Precondition).
+///
+/// This lets a caller that read the destination earlier compare it again after the slow steps,
+/// so a change made while the file was staged is kept. It narrows the lost-update window to the
+/// gap between the guard and the rename. It is not a lock, and it assumes that no process that
+/// tries to attack the destination's directory can write to it, like [`write_atomic`].
+///
+/// # Errors
+/// Those of [`write_atomic`], and [`Error::Precondition`] when the guard refuses.
+pub fn write_atomic_if(
+    root: &Dir,
+    rel: &Path,
+    bytes: &[u8],
+    opts: WriteOptions,
+    guard: impl FnOnce(&Dir, &OsStr) -> std::io::Result<bool>,
+) -> Result<()> {
     let io = |op, source: std::io::Error| Error::io(op, rel, &source);
     let (name, ancestors) = split_plain(rel)?;
     let parent =
@@ -186,6 +215,18 @@ pub fn write_atomic(root: &Dir, rel: &Path, bytes: &[u8], opts: WriteOptions) ->
         Err(e) => {
             let _ = parent.remove_file(&temp);
             return Err(io(Op::VerifyStaged, e));
+        }
+    }
+    match guard(&parent, name) {
+        Ok(true) => {}
+        Ok(false) => {
+            // Best effort: the refusal is the error to report.
+            let _ = parent.remove_file(&temp);
+            return Err(Error::precondition(rel));
+        }
+        Err(e) => {
+            let _ = parent.remove_file(&temp);
+            return Err(io(Op::Precondition, e));
         }
     }
     if let Err(e) = parent.rename(&temp, &parent, name) {
@@ -694,5 +735,108 @@ mod tests {
             panic!("expected Error::Io, got {result:?}");
         };
         assert_eq!(op, Op::VerifyStaged);
+    }
+
+    /// The names in `dir`, sorted, so a leftover temporary file shows up.
+    fn names(dir: &Path) -> Vec<OsString> {
+        let mut out: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_refusing_guard_keeps_the_destination_and_leaves_no_temporary_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("f"), b"old").unwrap();
+        let handle = root(tmp.path());
+
+        let result = write_atomic_if(
+            &handle,
+            Path::new("f"),
+            b"new",
+            WriteOptions::new(),
+            |_, _| Ok(false),
+        );
+
+        assert!(
+            matches!(result, Err(Error::Precondition { .. })),
+            "{result:?}"
+        );
+        assert_eq!(result.unwrap_err().path(), Some(Path::new("f")));
+        assert_eq!(std::fs::read(tmp.path().join("f")).unwrap(), b"old");
+        assert_eq!(names(tmp.path()), [OsString::from("f")]);
+    }
+
+    #[test]
+    fn a_guard_sees_the_destination_unreplaced_through_the_same_handle() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("sub_f"), b"old").unwrap();
+        let handle = root(tmp.path());
+        let mut seen = None;
+
+        write_atomic_if(
+            &handle,
+            Path::new("sub_f"),
+            b"new",
+            WriteOptions::new(),
+            |dir, name| {
+                seen = Some((name.to_owned(), dir.read(name)?));
+                Ok(true)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(seen, Some((OsString::from("sub_f"), b"old".to_vec())));
+        assert_eq!(std::fs::read(tmp.path().join("sub_f")).unwrap(), b"new");
+    }
+
+    #[test]
+    fn a_failing_guard_keeps_the_destination_and_reports_its_io_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("f"), b"old").unwrap();
+        let handle = root(tmp.path());
+
+        let result = write_atomic_if(
+            &handle,
+            Path::new("f"),
+            b"new",
+            WriteOptions::new(),
+            |_, _| Err(std::io::Error::from_raw_os_error(5)),
+        );
+
+        let Err(Error::Io { op, source, .. }) = result else {
+            panic!("expected Error::Io, got {result:?}");
+        };
+        assert_eq!(op, Op::Precondition);
+        assert_eq!(source.raw_os_error(), Some(5));
+        assert_eq!(std::fs::read(tmp.path().join("f")).unwrap(), b"old");
+        assert_eq!(names(tmp.path()), [OsString::from("f")]);
+    }
+
+    #[test]
+    fn temporary_names_are_random_and_not_derived_from_the_process_or_the_clock() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("f"), b"x").unwrap();
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        for _ in 0..8 {
+            let sink = std::rc::Rc::clone(&seen);
+            BEFORE_VERIFY.set(Some(Box::new(move |temp| {
+                sink.borrow_mut().push(temp.to_string_lossy().into_owned());
+            })));
+            write(&tmp, "f", b"y", WriteOptions::default()).unwrap();
+        }
+        let seen = seen.borrow();
+        let unique: std::collections::HashSet<_> = seen.iter().collect();
+        assert_eq!(unique.len(), 8, "{seen:?}");
+        for name in seen.iter() {
+            let random = name
+                .strip_prefix(".f.slopvac-")
+                .unwrap_or_else(|| panic!("{name}"));
+            assert_eq!(random.len(), 16, "{name}");
+            assert!(random.bytes().all(|b| b.is_ascii_hexdigit()), "{name}");
+        }
     }
 }
