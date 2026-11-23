@@ -421,8 +421,5 @@ fn a_refused_paragraph_names_the_sentence_budget_and_none_of_the_text() {
         .map(|r| r.summary)
         .expect_err("the text passes the sentence budget");
     let message = error.to_string();
-    assert_eq!(
-        message,
-        format!("the text has more than {limit} sentences")
-    );
+    assert_eq!(message, format!("the text has more than {limit} sentences"));
 }

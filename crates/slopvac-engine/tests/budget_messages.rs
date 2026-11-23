@@ -62,5 +62,8 @@ fn a_refusal_names_its_budget_and_limit_and_none_of_the_document(
     let message = error.to_string();
     let expected = format!("the document has more than {limit} {noun}");
     assert!(message.starts_with(&expected), "{message}");
-    assert!(!message.contains("must") && !message.contains("Go."), "{message}");
+    assert!(
+        !message.contains("must") && !message.contains("Go."),
+        "{message}"
+    );
 }
