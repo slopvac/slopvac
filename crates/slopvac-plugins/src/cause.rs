@@ -8,21 +8,48 @@
 use std::path::Path;
 
 use slopvac_fs::display_under_root;
-use slopvac_messages::render;
+use slopvac_messages::{Catalog, Entry, render};
 
-use crate::messages::cli::{CliText, Reported};
+use crate::messages::cli::Reported;
 use crate::messages::sync::{cache_tampered, update_busy};
 use crate::revoke::RevocationError;
 use crate::sync::SyncError;
 use crate::trust::TrustError;
 use crate::update::UpdateError;
 
+/// The one sentence that stands in for withheld detail. It is private, so the only way to render
+/// it is [`withheld`], which always puts the code of the failure beside it.
+#[derive(Debug, Clone, PartialEq, Eq, Catalog)]
+enum WithheldText {
+    /// Stands in for failure text that can name a local path.
+    #[code("plugins-detail-withheld")]
+    #[text("{code}: details are withheld because they can name paths outside the project")]
+    Withheld { code: String },
+}
+
+/// The registered entry of the withheld sentence, for the group's message registry.
+pub(crate) fn entries() -> &'static [Entry] {
+    WithheldText::entries()
+}
+
 /// The sentence that stands in for withheld detail, with the code of the failure it replaces.
 /// Every withheld text goes through here, so the code always shows beside it.
 pub(crate) fn withheld(code: &str) -> String {
-    render(&CliText::Withheld {
+    render(&WithheldText::Withheld {
         code: code.to_owned(),
     })
+}
+
+/// The code that the spawn path reports for a trust failure that has none of its own, so that
+/// `status` and `trust` report the same code the host reports at spawn.
+fn spawn_code(e: &TrustError) -> Option<&'static str> {
+    match e {
+        TrustError::Program(_) | TrustError::Environment(_) => Some("plugin-usage"),
+        TrustError::KeyMissing { .. } => Some("trust-key-missing"),
+        TrustError::KeyMismatch => Some("trust-key-mismatch"),
+        TrustError::KeyUnusable { .. } => Some("trust-key-unusable"),
+        _ => None,
+    }
 }
 
 /// The code of a trust store failure that has none of its own: the group's store failure.
@@ -78,6 +105,8 @@ pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
 }
 
 /// A trust store failure: the reported failure when it has a code, else the sentence alone.
+/// A refused program or environment, and an unusable trust key, report the code of the spawn
+/// path. A failure of the store itself has no code of its own and reports `plugins-store-failed`.
 pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
     let text = match e {
         TrustError::Revocation(inner) => return Ok(revocation(inner)),
@@ -87,17 +116,17 @@ pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
         | TrustError::NotPinned(_)
         | TrustError::Revoked(_)
         | TrustError::TooLarge { .. } => e.to_string(),
-        _ => withheld(e.code().unwrap_or(STORE_FAILED)),
+        _ => withheld(e.code().or_else(|| spawn_code(e)).unwrap_or(STORE_FAILED)),
     };
-    match e.code() {
+    match e.code().or_else(|| spawn_code(e)) {
         Some(code) => Ok(Reported::new(code, text)),
         None => Err(text),
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     #[test]
     fn a_fallback_variant_shows_its_own_code_beside_the_withheld_sentence() {
@@ -114,37 +143,49 @@ mod tests {
         assert!(withheld("some-code").starts_with("some-code: "));
     }
 
-    /// Every source file under `dir`, as its path and text.
-    fn sources(dir: &Path, out: &mut Vec<(String, String)>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                sources(&path, out);
-            } else if path.extension().is_some_and(|x| x == "rs") {
-                out.push((
-                    path.to_string_lossy().into_owned(),
-                    fs::read_to_string(&path).unwrap(),
-                ));
-            }
+    #[test]
+    fn a_refused_program_reports_the_spawn_code_not_the_store_code() {
+        let e = TrustError::Program("/home/someone/prog".to_owned());
+        let r = store(&e).unwrap();
+        assert_eq!(slopvac_messages::Catalog::code(&r), "plugin-usage");
+        assert_eq!(
+            r.to_string(),
+            "plugin-usage: details are withheld because they can name paths outside the project"
+        );
+    }
+
+    #[test]
+    fn each_key_failure_reports_its_own_spawn_code() {
+        for (e, code) in [
+            (
+                TrustError::KeyMissing {
+                    file: "k".to_owned(),
+                },
+                "trust-key-missing",
+            ),
+            (TrustError::KeyMismatch, "trust-key-mismatch"),
+            (
+                TrustError::KeyUnusable {
+                    file: "k".to_owned(),
+                    why: "w".to_owned(),
+                },
+                "trust-key-unusable",
+            ),
+        ] {
+            let r = store(&e).unwrap();
+            assert_eq!(slopvac_messages::Catalog::code(&r), code);
         }
     }
 
     #[test]
-    fn no_code_outside_the_renderer_builds_the_withheld_sentence() {
-        let mut files = Vec::new();
-        sources(
-            &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
-            &mut files,
+    fn a_failure_of_the_store_itself_has_only_the_store_code() {
+        let e = TrustError::Corrupt {
+            path: "/x/trust.json".into(),
+            why: "w".to_owned(),
+        };
+        assert_eq!(
+            store(&e).unwrap_err(),
+            "plugins-store-failed: details are withheld because they can name paths outside the project"
         );
-        let offenders: Vec<&str> = files
-            .iter()
-            .filter(|(path, text)| {
-                !path.ends_with("/cause.rs")
-                    && !path.ends_with("/messages/cli.rs")
-                    && text.contains("CliText::Withheld")
-            })
-            .map(|(path, _)| path.as_str())
-            .collect();
-        assert!(offenders.is_empty(), "{offenders:?}");
     }
 }

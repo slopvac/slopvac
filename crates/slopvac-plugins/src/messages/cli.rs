@@ -249,10 +249,6 @@ pub(crate) enum CliText {
     #[code("plugins-why-no-envs")]
     #[text("the managed Python environments are not available")]
     WhyNoEnvs,
-    /// Stands in for failure text that can name a local path.
-    #[code("plugins-detail-withheld")]
-    #[text("{code}: details are withheld because they can name paths outside the project")]
-    Withheld { code: String },
     /// Trust for a plugin was removed.
     #[code("plugins-untrusted")]
     #[text("removed the trust recorded for `{id}`")]
@@ -461,5 +457,10 @@ impl std::error::Error for Reported {}
 
 /// The entries of the group's catalogs.
 pub(super) fn entries() -> Vec<Entry> {
-    [CliText::entries(), RunError::entries()].concat()
+    [
+        CliText::entries(),
+        RunError::entries(),
+        crate::cause::entries(),
+    ]
+    .concat()
 }
