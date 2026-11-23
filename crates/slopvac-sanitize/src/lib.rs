@@ -86,6 +86,16 @@ pub fn is_unsafe(c: char) -> bool {
         .is_ok()
 }
 
+/// The code points that [`is_unsafe`] flags, as sorted, non-overlapping, inclusive `(low, high)`
+/// ranges.
+///
+/// A caller that must state the same set in another form, such as a schema pattern, builds it
+/// from these ranges, so the set has one source.
+#[must_use]
+pub fn unsafe_ranges() -> &'static [(u32, u32)] {
+    tables::UNSAFE
+}
+
 fn push_escape(out: &mut String, c: char) {
     let _ = write!(out, "\\u{{{:x}}}", u32::from(c));
 }
@@ -338,6 +348,15 @@ mod tests {
         for c in "Zürich – ok ✓ 日本語 😀 \u{a0}~\u{378}".chars() {
             assert!(!is_unsafe(c), "{c:?}");
         }
+    }
+
+    #[test]
+    fn unsafe_ranges_hold_exactly_the_flagged_code_points() {
+        let in_ranges = |code: u32| unsafe_ranges().iter().any(|&(l, h)| l <= code && code <= h);
+        let bad: Vec<u32> = (0..0x11_0000_u32)
+            .filter(|&code| char::from_u32(code).is_some_and(|c| is_unsafe(c) != in_ranges(code)))
+            .collect();
+        assert!(bad.is_empty(), "{bad:x?}");
     }
 
     #[test]
