@@ -302,6 +302,15 @@ pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
     split_sentences_counted(text, &mut Work::default())
 }
 
+/// Split prose as [`split_sentences`] does, but stop as soon as more than `max` sentences
+/// are found, so the result never holds more than `max`. Returns `None` in that case.
+///
+/// # Errors
+/// Returns a [`TextError`] when a pattern fails.
+pub fn split_sentences_within(text: &str, max: usize) -> Result<Option<Vec<Sentence>>, TextError> {
+    split_limited(text, &mut Work::default(), max)
+}
+
 /// Units of scanning the splitter does outside the single pass each pattern makes over a
 /// chunk. One unit is a byte handed to a matcher, a span or table entry visited by a
 /// lookup, or a line visited while building a list tail. Tests bound it by the input
@@ -316,8 +325,17 @@ impl Work {
 }
 
 fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>, TextError> {
+    Ok(split_limited(text, work, usize::MAX)?.unwrap_or_default())
+}
+
+/// The sentences of `text`, or `None` when there are more than `max`.
+fn split_limited(
+    text: &str,
+    work: &mut Work,
+    max: usize,
+) -> Result<Option<Vec<Sentence>>, TextError> {
     if py_strip(text).is_empty() {
-        return Ok(Vec::new());
+        return Ok(Some(Vec::new()));
     }
     let mut out = Vec::new();
     for (chunk, chunk_offset) in split_vertical_list(text, work)? {
@@ -353,6 +371,9 @@ fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>,
             if part.is_empty() || !WORDLIKE.is_match(part)? {
                 continue;
             }
+            if out.len() >= max {
+                return Ok(None);
+            }
             out.push(Sentence {
                 text: part.to_owned(),
                 start: absolute,
@@ -362,7 +383,7 @@ fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>,
             });
         }
     }
-    Ok(out)
+    Ok(Some(out))
 }
 
 #[cfg(test)]

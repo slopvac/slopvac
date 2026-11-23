@@ -101,3 +101,17 @@ fn a_normal_document_is_checked_and_builds_its_index_once() {
     // them counts 4000; a second index over the same tags would count 8000.
     assert_eq!(take_build_elements(), 4_000);
 }
+
+#[test]
+fn a_paragraph_of_one_character_sentences_is_not_checked_before_its_sentences_are_all_built() {
+    // 300000 sentences of 4 bytes, none of which any tagger tags. One sentence for every 8
+    // bytes, plus 65,536, allows 150,000 + 65,536 = 215,536 of them, so the split stops there
+    // and the run ends before it holds the rest.
+    let source = paragraph("Go.", 300_000);
+    let limit = source.len() / 8 + 65_536;
+    let result = engine().lint(&Input::markdown("a.md", &source));
+    assert_eq!(
+        result.map(|d| d.findings.len()),
+        Err(EngineError::TagBuildBudget { limit })
+    );
+}

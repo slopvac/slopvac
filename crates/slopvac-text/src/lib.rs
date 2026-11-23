@@ -32,5 +32,5 @@ pub use measure::{
 };
 pub use messages::message_entries;
 pub use pattern::{Pattern, PatternError, TextError};
-pub use sentences::{Sentence, cell_sentence, split_sentences};
+pub use sentences::{Sentence, cell_sentence, split_sentences, split_sentences_within};
 pub use tokens::{count_words, joined_words, tokens};

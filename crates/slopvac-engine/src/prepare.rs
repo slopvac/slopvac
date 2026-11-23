@@ -9,10 +9,11 @@ use slopvac_parse::{
     Block, BlockKind, Document, ParseError, Projection, TokenKind, parse_html_segments,
 };
 use slopvac_rules::Scope;
-use slopvac_text::{Sentence, TextError, cell_sentence, split_sentences};
+use slopvac_text::{Sentence, TextError, cell_sentence, split_sentences, split_sentences_within};
 
 use crate::directives::Lines;
 use crate::exceptions::TextOrigin;
+use crate::lint::EngineError;
 
 /// `doc` with its raw HTML blocks (`<td>`, `<em>`, `<p>`) read as 2.x reads them: the prose
 /// of one block is one paragraph of the kind `Paragraph`, in source order. Every consumer of
@@ -293,6 +294,21 @@ struct Composite {
     sentences: Vec<Sentence>,
 }
 
+/// Bytes of the document for each sentence it may hold.
+///
+/// Prose holds a sentence every few dozen bytes. One for every 8 bytes sits far above what
+/// prose needs, and keeps a document of one-character sentences from building sentence
+/// records, and the tag views over them, of gigabytes.
+const BYTES_PER_SENTENCE: usize = 8;
+
+/// Sentences allowed whatever the size of the document.
+const SENTENCE_HEADROOM: usize = 65_536;
+
+/// The sentences that a document of `source_len` bytes may hold.
+pub(crate) fn sentence_budget(source_len: usize) -> usize {
+    (source_len / BYTES_PER_SENTENCE).saturating_add(SENTENCE_HEADROOM)
+}
+
 /// A parsed document with its sentences split.
 pub(crate) struct Prepared<'a> {
     source: &'a str,
@@ -301,7 +317,15 @@ pub(crate) struct Prepared<'a> {
 }
 
 impl<'a> Prepared<'a> {
-    pub(crate) fn new(source: &'a str, doc: &'a Document) -> Result<Self, TextError> {
+    /// Split the sentences of every prose block, holding at most [`sentence_budget`] of them
+    /// for the whole document.
+    ///
+    /// # Errors
+    /// Returns [`EngineError::TagBuildBudget`] when the document has more sentences than
+    /// its size allows, before the rest are built, and a text error when a split fails.
+    pub(crate) fn new(source: &'a str, doc: &'a Document) -> Result<Self, EngineError> {
+        let limit = sentence_budget(source.len());
+        let mut left = limit;
         let mut blocks = Vec::new();
         for block in &doc.blocks {
             let Some(projection) = &block.projection else {
@@ -314,8 +338,12 @@ impl<'a> Prepared<'a> {
             let sentences = if matches!(block.kind, BlockKind::TableCell { .. }) {
                 cell_sentence(projection.text())?.into_iter().collect()
             } else {
-                split_sentences(projection.text())?
+                split_sentences_within(projection.text(), left)?
+                    .ok_or(EngineError::TagBuildBudget { limit })?
             };
+            left = left
+                .checked_sub(sentences.len())
+                .ok_or(EngineError::TagBuildBudget { limit })?;
             blocks.push(ProseBlock {
                 kind: &block.kind,
                 contained: !block.containers.is_empty(),
