@@ -638,3 +638,30 @@ fn regressions_that_the_first_scanner_failed() {
         assert_eq!(found(doc, file), want, "{name}");
     }
 }
+
+/// One directive line of 31 bytes that sets one setting.
+const LOCALE_LINE: &str = "<!-- slopvac: locale=en-GB -->\n";
+
+#[test]
+fn directives_past_the_cap_that_grows_with_the_document_are_refused() {
+    // 20 000 lines of 31 bytes make 620 000 bytes, so the cap is 1024 + 620 000 / 32 = 20 399.
+    // The lines hold 20 000 directives and 20 000 settings, which is 40 000 units.
+    let doc = LOCALE_LINE.repeat(20_000);
+    let read = read(&doc, "doc.md", &default_policy());
+    assert_eq!(read.settings, Vec::new());
+    let codes: Vec<Code> = read.diagnostics.iter().map(|d| d.code).collect();
+    assert_eq!(codes, [Code::InvalidValue]);
+    assert_eq!(
+        read.diagnostics[0].message,
+        "the list holds more than 20399 entries"
+    );
+}
+
+#[test]
+fn directives_at_an_ordinary_density_stay_under_the_cap() {
+    // 500 lines make 15 500 bytes, so the cap is 1024 + 484 = 1508. The lines use 1 000 units.
+    let doc = LOCALE_LINE.repeat(500);
+    let read = read(&doc, "doc.md", &default_policy());
+    assert_eq!(read.diagnostics, Vec::new());
+    assert_eq!(read.settings.len(), 500);
+}

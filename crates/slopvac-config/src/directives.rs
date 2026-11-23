@@ -18,11 +18,11 @@ use std::path::Path;
 
 use crate::comments::{Family, comments, family_of, family_of_name};
 use crate::diag::{Code, Diagnostic};
-use crate::flatten::{Origin, flatten};
+use crate::flatten::{Origin, flatten_with};
 use crate::frontmatter::{Policy, Read, denied};
-use crate::messages::ConfigPhrase;
+use crate::messages::{ConfigPhrase, ConfigText};
 use crate::schema::validate_directive;
-use crate::tree::{Entry, Node, Value};
+use crate::tree::{Entry, LineIndex, Node, Value};
 use slopvac_model::ConfigLayer;
 
 /// One directive comment: where it is and the fields it sets.
@@ -415,16 +415,50 @@ impl From<Value> for Rawish {
     }
 }
 
+/// The directives and settings a document may hold before its directives are refused: this
+/// many, plus one for each [`DIRECTIVE_BYTES_PER_UNIT`] bytes of the document. The cap grows
+/// with the document, so a long document with ordinary directives stays far below it, and the
+/// work stays linear in the size of the document.
+pub const DIRECTIVE_BASE_UNITS: usize = 1024;
+
+/// Bytes of document that add one unit to the directive cap.
+pub const DIRECTIVE_BYTES_PER_UNIT: usize = 32;
+
+fn directive_cap(doc: &str) -> usize {
+    DIRECTIVE_BASE_UNITS + doc.len() / DIRECTIVE_BYTES_PER_UNIT
+}
+
+/// The refusal of a document whose directives pass the cap, at `span`.
+fn over_cap(cap: usize, span: Range<usize>) -> Read {
+    Read {
+        settings: Vec::new(),
+        diagnostics: vec![Diagnostic {
+            code: Code::InvalidValue,
+            message: ConfigText::ListTooLong { max_items: cap }.to_string(),
+            label: ConfigPhrase::LabelNotValidHere.text(),
+            span,
+            help: None,
+            path: vec!["directive".into()],
+            data: None,
+        }],
+    }
+}
+
 /// Read every directive in `doc`. `file` is the path shown in provenance.
 ///
 /// Directives apply in document order, so a later one wins. A field outside the policy's allow
-/// list is an error, and then the document's directives contribute nothing.
+/// list is an error, and then the document's directives contribute nothing. So does a document
+/// whose directives and settings together pass a cap that grows with its size.
 #[must_use]
 pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
     if !policy.enabled {
         return Read::default();
     }
     let directives = find(doc, file);
+    let cap = directive_cap(doc);
+    if let Some(excess) = directives.get(cap) {
+        return over_cap(cap, excess.payload.clone());
+    }
     let mut diagnostics = Vec::new();
     for d in &directives {
         diagnostics.extend(validate_directive(&d.node, doc));
@@ -449,20 +483,26 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
             diagnostics,
         };
     }
-    let settings = directives
-        .iter()
-        .flat_map(|d| {
-            flatten(
-                &d.node,
-                Origin {
-                    layer: ConfigLayer::Directive,
-                    file,
-                    text: doc,
-                },
-                &[],
-            )
-        })
-        .collect();
+    let lines = LineIndex::new(doc);
+    let mut units = directives.len();
+    let mut settings = Vec::new();
+    for d in &directives {
+        let found = flatten_with(
+            &d.node,
+            Origin {
+                layer: ConfigLayer::Directive,
+                file,
+                text: doc,
+            },
+            &[],
+            &lines,
+        );
+        units = units.saturating_add(found.len());
+        if units > cap {
+            return over_cap(cap, d.payload.clone());
+        }
+        settings.extend(found);
+    }
     Read {
         settings,
         diagnostics,
