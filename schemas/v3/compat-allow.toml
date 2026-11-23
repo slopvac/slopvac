@@ -562,21 +562,21 @@ approved_by = "contract owner (8l4.2)"
 file = "plugin-index.schema.json"
 pointer = "/properties/plugins/items/$ref(plugin-index.schema.json#/$defs/PackIndexEntry)/properties/source/$ref(plugin-index.schema.json#/$defs/PackIndexSource)/pattern"
 kind = "pattern-changed"
-reason = "The index source pattern now spells out the white space class that the shorthand classes stood for, which the portable pattern subset requires. The class is the one that Python reads for white space, so the reference validator judges every document as before, and the Rust validator now agrees with it. The reader accepts four control characters (U+001C to U+001F) that the schema refused before and still refuses. Contract ruling on slopvac-8l4.2.56: the contract owner approves the rewrite."
+reason = "The index source pattern now spells out the white space class that the shorthand classes stood for, which the portable pattern subset requires. The class is the union of what Python and ECMA-262 read as white space, so no engine accepts a character that it refused before. The reader accepts U+001C to U+001F and U+FEFF in an index source, which the schema refused in at least one engine before and still refuses. Contract ruling on slopvac-8l4.2.56: the contract owner approves the rewrite."
 approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-index.schema.json"
 pointer = "/$defs/PackIndexSource/pattern"
 kind = "pattern-changed"
-reason = "The index source pattern now spells out the white space class that the shorthand classes stood for, which the portable pattern subset requires. The class is the one that Python reads for white space, so the reference validator judges every document as before, and the Rust validator now agrees with it. The reader accepts four control characters (U+001C to U+001F) that the schema refused before and still refuses. Contract ruling on slopvac-8l4.2.56: the contract owner approves the rewrite."
+reason = "The index source pattern now spells out the white space class that the shorthand classes stood for, which the portable pattern subset requires. The class is the union of what Python and ECMA-262 read as white space, so no engine accepts a character that it refused before. The reader accepts U+001C to U+001F and U+FEFF in an index source, which the schema refused in at least one engine before and still refuses. Contract ruling on slopvac-8l4.2.56: the contract owner approves the rewrite."
 approved_by = "contract owner (8l4.2)"
 
 [[allow]]
 file = "plugin-index.schema.json"
 pointer = "/$defs/PackIndexEntry/properties/source/$ref(plugin-index.schema.json#/$defs/PackIndexSource)/pattern"
 kind = "pattern-changed"
-reason = "The index source pattern now spells out the white space class that the shorthand classes stood for, which the portable pattern subset requires. The class is the one that Python reads for white space, so the reference validator judges every document as before, and the Rust validator now agrees with it. The reader accepts four control characters (U+001C to U+001F) that the schema refused before and still refuses. Contract ruling on slopvac-8l4.2.56: the contract owner approves the rewrite."
+reason = "The index source pattern now spells out the white space class that the shorthand classes stood for, which the portable pattern subset requires. The class is the union of what Python and ECMA-262 read as white space, so no engine accepts a character that it refused before. The reader accepts U+001C to U+001F and U+FEFF in an index source, which the schema refused in at least one engine before and still refuses. Contract ruling on slopvac-8l4.2.56: the contract owner approves the rewrite."
 approved_by = "contract owner (8l4.2)"
 
 [[allow]]

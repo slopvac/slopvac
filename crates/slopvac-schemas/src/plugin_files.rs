@@ -12,11 +12,12 @@ use slopvac_model::{ApiVersion, PackId, SchemaVersion, absent_not_null, x_extens
 
 use crate::artifacts::{PluginId, Semver};
 
-/// The characters Python's `\s` reads as white space, spelled out because the engines read `\s`
-/// differently. It holds Unicode `White_Space`, the set the readers' `char::is_whitespace` uses,
-/// and also U+001C to U+001F.
+/// The characters that count as white space in a source, spelled out because the engines read
+/// `\s` differently. It is the union of what Python and ECMA-262 read as `\s`, so the pattern
+/// refuses a character if either engine refuses it. That holds Unicode `White_Space`, the set the
+/// readers' `char::is_whitespace` uses, plus U+001C to U+001F (Python) and U+FEFF (ECMA).
 const WHITESPACE: &str =
-    r"\x09-\x0D\x1C-\x20\x85\xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000";
+    r"\x09-\x0D\x1C-\x20\x85\xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF";
 
 /// The longest source the index reader accepts, in characters.
 const INDEX_SOURCE_CHARS: u64 = 2048;
@@ -57,7 +58,7 @@ fn lock_source(schema: &mut Schema) {
     schema.insert(
         "pattern".into(),
         json!(with_whitespace(
-            r"^((oci|https)://(?=[^{WS}@])[^{WS}/?#@]*([/?#][^{WS}]*)?|git\+https://(?=[^{WS}@])[^{WS}/?#@]*([/?#][^{WS}]*)?@[0-9a-f]{40}|(?=[^{WS}/\\:])(?!([^/]*/)*\.\.(/|(?![\s\S])))[^\\:\n\r]*)(?![\s\S])"
+            r"^((oci|https)://(?=[^{WS}@])[^{WS}/?#@]*([/?#][^{WS}]*)?|git\+https://(?=[^{WS}@])[^{WS}/?#@]*([/?#][^{WS}]*)?@[0-9a-f]{40}|(?=[^{WS}/\\:])(?!([^/]*/)*\.\.(/|(?![\s\S])))[^\\:\n\r\u2028\u2029]*)(?![\s\S])"
         )),
     );
 }

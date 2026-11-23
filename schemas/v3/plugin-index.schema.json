@@ -73,7 +73,7 @@
     "PackIndexSource": {
       "description": "Where to fetch the plugin: an oci:// reference, an https:// release archive URL, or a git+https:// URL pinned to a full commit hash after @. The URL carries no user-info. http:// and path sources are invalid: a public listing has no project root.",
       "maxLength": 2048,
-      "pattern": "^((oci|https)://[^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000/?#@]+([/?#][^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]*)?|git\\+https://[^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000/?#@]+([/?#][^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]*)?@[0-9a-f]{40})(?![\\s\\S])",
+      "pattern": "^((oci|https)://[^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF/?#@]+([/?#][^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]*)?|git\\+https://[^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF/?#@]+([/?#][^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]*)?@[0-9a-f]{40})(?![\\s\\S])",
       "type": "string"
     },
     "PublisherKey": {

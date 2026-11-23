@@ -35,3 +35,6 @@
 "source-path-carriage-return.toml" = "/plugins/0/source"
 "source-https-space.toml" = "/plugins/0/source"
 "source-https-no-break-space.toml" = "/plugins/0/source"
+"source-https-byte-order-mark.toml" = "/plugins/0/source"
+"source-path-line-separator.toml" = "/plugins/0/source"
+"source-path-paragraph-separator.toml" = "/plugins/0/source"
