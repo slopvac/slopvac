@@ -28,6 +28,7 @@ use slopvac_rules::MatchKind;
 use slopvac_styles::{BuiltinSource, Style, StylePresets};
 
 use crate::errors::CliError;
+use crate::lint_messages::LintOptionError;
 use crate::rule_catalog::Catalog;
 
 /// What the command line adds on top of the files.
@@ -212,16 +213,11 @@ pub fn validate_located(
     {
         if legacy_name(name).is_none() && !BuiltinSource::names().any(|known| known == name) {
             return Err(Box::new(Located {
-                error: CliError::new(
-                    "unknown-style",
-                    format!(
-                        "slopvac.toml: unknown style {name:?}; the styles that ship are: {}, \
-                         core:legacy-strict, core:legacy-normal, core:legacy-relaxed, \
-                         core:legacy-strict-vocabulary, core:legacy-normal-vocabulary, \
-                         core:legacy-relaxed-vocabulary.",
-                        BuiltinSource::names().collect::<Vec<_>>().join(", ")
-                    ),
-                ),
+                error: LintOptionError::UnknownStyle {
+                    name: format!("{name:?}"),
+                    shipped: shipped_styles(),
+                }
+                .into(),
                 // The `styles` setting that won is the one with the bad name.
                 source: config
                     .files
@@ -270,6 +266,15 @@ fn without_repeats(mut unknown: Vec<UnknownRule>) -> Vec<UnknownRule> {
         ))
     });
     unknown
+}
+
+/// The names of every style that ships, for the unknown-style message.
+fn shipped_styles() -> String {
+    BuiltinSource::names()
+        .map(str::to_owned)
+        .chain(LEGACY.iter().map(|(name, _)| format!("core:{name}")))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The name a config lists to ask for the 2.x levels of a profile: `core:legacy-normal`,

@@ -19,6 +19,15 @@ pub enum LintOptionError {
         /// The option as written, one of a fixed list of flag names.
         option: String,
     },
+    /// `styles` in the project config lists a style that does not ship.
+    #[code("unknown-style")]
+    #[message("slopvac.toml: unknown style {name}; the styles that ship are: {shipped}.")]
+    UnknownStyle {
+        /// The listed name, quoted.
+        name: String,
+        /// The names of the shipped styles, comma separated.
+        shipped: String,
+    },
 }
 
 impl From<LintOptionError> for crate::errors::CliError {

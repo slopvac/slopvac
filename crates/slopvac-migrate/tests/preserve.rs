@@ -388,28 +388,124 @@ fn a_rule_less_category_is_dropped_with_one_notice_per_use(
     assert!(errors.is_empty(), "{errors:?}");
 }
 
-fn refused_blocklist_layouts() -> Value {
+/// The 2.x config and the key that the refusal names, from `refused-blocklist.json`.
+fn refused_layout(name: &str) -> (String, String) {
     let text =
         fs::read_to_string(crate_dir().join("tests/fixtures/preserve/refused-blocklist.json"))
             .unwrap();
-    serde_json::from_str::<Value>(&text).unwrap()["layouts"].clone()
+    let doc: Value = serde_json::from_str(&text).unwrap();
+    let layout = &doc["layouts"][name];
+    (
+        layout["config"].as_str().unwrap().to_owned(),
+        layout["at"].as_str().unwrap().to_owned(),
+    )
+}
+
+#[rstest]
+#[case::path_only_in_an_override("path-only-in-an-override")]
+#[case::path_only_in_an_override_with_a_nested_switch(
+    "path-only-in-an-override-with-a-nested-switch"
+)]
+#[case::switch_to_another_profile("switch-to-another-profile")]
+#[case::moved_path_with_a_nested_switch("moved-path-with-a-nested-switch")]
+#[case::switch_to_the_same_profile_normal("switch-to-the-same-profile-normal")]
+#[case::switch_to_the_same_profile_strict("switch-to-the-same-profile-strict")]
+#[case::top_profile_differs_from_the_switch("top-profile-differs-from-the-switch")]
+fn a_blocklist_layout_the_companion_style_cannot_keep_is_refused(#[case] name: &str) {
+    let (config, at) = refused_layout(name);
+    let err = preserve(&config).unwrap_err();
+    assert!(matches!(err, Error::BlocklistLayout { .. }), "{err}");
+    let text = err.to_string();
+    assert!(text.contains(&format!("`{at}`")), "{text}");
+    assert!(text.contains("nothing is written"), "{text}");
 }
 
 #[test]
-fn a_blocklist_layout_the_companion_style_cannot_keep_is_refused() {
-    let layouts = refused_blocklist_layouts();
-    assert!(layouts.as_object().unwrap().len() >= 5);
-    for (name, layout) in layouts.as_object().unwrap() {
-        let err = preserve(layout["config"].as_str().unwrap()).unwrap_err();
-        assert!(
-            matches!(err, Error::BlocklistLayout { .. }),
-            "{name}: {err}"
-        );
-        let at = layout["at"].as_str().unwrap();
-        let text = err.to_string();
-        assert!(text.contains(&format!("`{at}`")), "{name}: {text}");
-        assert!(text.contains("nothing is written"), "{name}: {text}");
+fn every_refusal_vector_has_a_case() {
+    let text =
+        fs::read_to_string(crate_dir().join("tests/fixtures/preserve/refused-blocklist.json"))
+            .unwrap();
+    let doc: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(doc["layouts"].as_object().unwrap().len(), 7);
+}
+
+/// A vocabulary rule entry that the user did not author must not sit in a layer above the
+/// styles: it would outrank the companion style and the settings 2.x let win.
+fn assert_no_generated_vocabulary_entry(text: &str, authored: &str, what: &str) {
+    let doc = toml::from_str::<toml::Table>(text).unwrap();
+    let authored = toml::from_str::<toml::Table>(authored).unwrap_or_default();
+    let is_vocab = |id: &str| {
+        [
+            "ste-verbs.verb-form-not-listed",
+            "ste-words.verb-or-adjective-form-not-permitted",
+            "ste-words.word-outside-controlled-vocabulary",
+            "ste-words.word-used-in-wrong-part-of-speech",
+        ]
+        .iter()
+        .any(|v| id.ends_with(v))
+    };
+    let authored_ids = |table: &toml::Table| -> BTreeSet<String> {
+        let mut ids: BTreeSet<String> = table
+            .get("rules")
+            .and_then(toml::Value::as_table)
+            .map(|r| r.keys().cloned().collect())
+            .unwrap_or_default();
+        for block in table
+            .get("overrides")
+            .and_then(toml::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(r) = block.get("rules").and_then(toml::Value::as_table) {
+                ids.extend(r.keys().cloned());
+            }
+        }
+        ids
+    };
+    let allowed: BTreeSet<String> = authored_ids(&authored);
+    let mut layers: Vec<&toml::Table> = vec![&doc];
+    layers.extend(
+        doc.get("overrides")
+            .and_then(toml::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(toml::Value::as_table),
+    );
+    for layer in layers {
+        for id in layer
+            .get("rules")
+            .and_then(toml::Value::as_table)
+            .into_iter()
+            .flat_map(toml::map::Map::keys)
+        {
+            let bare = id.strip_prefix("core:").unwrap_or(id);
+            assert!(
+                !is_vocab(id) || allowed.contains(bare) || allowed.contains(id),
+                "{what}: generated vocabulary entry {id}\n{text}"
+            );
+        }
     }
+}
+
+#[rstest]
+#[case::normal("schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n")]
+#[case::strict("schema_version = 2\nprofile = \"strict\"\n[vocabulary]\npath = \"d.toml\"\n")]
+#[case::relaxed("schema_version = 2\nprofile = \"relaxed\"\n[vocabulary]\npath = \"d.toml\"\n")]
+#[case::authored_rule(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n"
+)]
+#[case::authored_category(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n"
+)]
+#[case::category_override(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n"
+)]
+#[case::override_changes_path(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"o.toml\"\n"
+)]
+fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[case] config: &str) {
+    let rw = preserve(config).unwrap();
+    assert_no_generated_vocabulary_entry(&rw.text, config, "written config");
 }
 
 #[rstest]
@@ -448,13 +544,4 @@ fn a_config_without_a_blocklist_gets_no_vocabulary_companion_style() {
     let rw = preserve("schema_version = 2\nprofile = \"strict\"\n").unwrap();
     let doc = toml::from_str::<toml::Table>(&rw.text).unwrap();
     assert_eq!(doc["styles"].as_array().unwrap().len(), 1, "{}", rw.text);
-}
-
-#[test]
-fn a_switch_to_the_profile_of_the_top_level_keeps_a_blocklist() {
-    let rw = preserve(
-        "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n\
-         [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n",
-    );
-    assert!(rw.is_ok(), "{rw:?}");
 }

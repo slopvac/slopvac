@@ -1731,6 +1731,7 @@ text-pattern-invalid text
 trust-key-mismatch error
 trust-key-missing error
 trust-key-unusable error
+unknown-style error
 unsupported-on-windows error
 update-available notice
 update-check-failed error
