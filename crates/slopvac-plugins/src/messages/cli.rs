@@ -44,7 +44,9 @@ pub(crate) enum CliText {
     HelpUpdate,
     /// Help for `plugins trust`.
     #[code("plugins-help-trust")]
-    #[text("Record trust for the content hash of a code plugin. This build cannot load plugin files yet, so it refuses.")]
+    #[text(
+        "Record trust for the content hash of a code plugin. This build cannot load plugin files yet, so it refuses."
+    )]
     HelpTrust,
     /// Help for `plugins untrust`.
     #[code("plugins-help-untrust")]

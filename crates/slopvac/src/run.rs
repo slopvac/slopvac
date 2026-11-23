@@ -426,17 +426,11 @@ fn plugins(
     };
     // CI runs `sync` from the lock only (policies.md, 1.4).
     let ci = env.var("CI").is_some();
-    let runner = Runner::new(
-        dirs,
-        network,
-        &policy,
-        &revocations,
-        now,
-    )
-    .with_ranges(ranges)
-    .with_configured(configured)
-    .with_core_version(env!("CARGO_PKG_VERSION"))
-    .with_locked(ci);
+    let runner = Runner::new(dirs, network, &policy, &revocations, now)
+        .with_ranges(ranges)
+        .with_configured(configured)
+        .with_core_version(env!("CARGO_PKG_VERSION"))
+        .with_locked(ci);
     slopvac_plugins::run(m, &runner, out).map_err(|e| CliError::new(e.code(), e.to_string()))
 }
 
@@ -950,7 +944,15 @@ mod plugin_dir_tests {
             false,
         );
         let dirs = plugin_dirs(&env, PathBuf::from("/project")).unwrap();
-        assert!(dirs.cache_dir.starts_with("/xdg/data"), "{:?}", dirs.cache_dir);
-        assert!(dirs.state_dir.starts_with("/xdg/state"), "{:?}", dirs.state_dir);
+        assert!(
+            dirs.cache_dir.starts_with("/xdg/data"),
+            "{:?}",
+            dirs.cache_dir
+        );
+        assert!(
+            dirs.state_dir.starts_with("/xdg/state"),
+            "{:?}",
+            dirs.state_dir
+        );
     }
 }

@@ -427,7 +427,7 @@ Move the lock to the newest versions that the config allows.
 
 #### `slopvac plugins trust`
 
-Record trust for the content hash of a code plugin.
+Record trust for the content hash of a code plugin. This build cannot load plugin files yet, so it refuses.
 
 | Argument | Description |
 | --- | --- |

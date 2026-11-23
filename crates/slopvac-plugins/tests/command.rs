@@ -182,7 +182,6 @@ impl<'a> Setup<'a> {
         self
     }
 
-
     fn envs(mut self, envs: &'a EnvStore) -> Self {
         self.envs = Some(envs);
         self
@@ -575,10 +574,21 @@ fn outdated_lists_a_newer_version_from_the_registry() {
 fn outdated_names_the_failure_by_its_code_and_never_echoes_the_registry() {
     let f = Fixture::new();
     // Nothing listens on this port, so the listing fails at connect.
-    f.write_lock(&[oci_entry("style", "data", "1.2.0", "127.0.0.1:1", OTHER_HASH)]);
+    f.write_lock(&[oci_entry(
+        "style",
+        "data",
+        "1.2.0",
+        "127.0.0.1:1",
+        OTHER_HASH,
+    )]);
     let ran = f.run(&["outdated"], true, |s| s.range("style", "^1.2"));
     assert_eq!(ran.result.unwrap(), 2);
-    assert!(ran.out.starts_with("style: cannot check for newer versions: "), "{}", ran.out);
+    assert!(
+        ran.out
+            .starts_with("style: cannot check for newer versions: "),
+        "{}",
+        ran.out
+    );
     assert!(!ran.out.contains("127.0.0.1"), "{}", ran.out);
 }
 
