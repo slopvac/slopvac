@@ -69,7 +69,7 @@ pub(crate) fn apply(
         return Ok(());
     };
     let blocklist = has_blocklist(original.as_table());
-    check_blocklist_layout(original, &config, blocklist, &legacy, ctx)?;
+    check_blocklist_layout(original, &config, blocklist, ctx)?;
     let expanded = expand(&config, &legacy).map_err(|e| Error::OverrideOverlap {
         file: ctx.file.to_owned(),
         line: ctx.lines.of(&format!("overrides[{}]", e.block)),
@@ -89,13 +89,13 @@ fn has_blocklist(t: &dyn TableLike) -> bool {
 }
 
 /// Refuse the layouts where the companion style cannot keep the 2.x vocabulary levels: a
-/// blocklist that only an override sets, and a blocklist together with a profile switch to a
-/// profile whose vocabulary levels differ from the top-level profile's.
+/// blocklist that only an override sets, and a blocklist together with any profile switch. A
+/// switch block restates the category levels of the target profile, and those outrank the
+/// companion style's rule levels.
 fn check_blocklist_layout(
     original: &DocumentMut,
     config: &Config2,
     blocklist: bool,
-    legacy: &Legacy,
     ctx: &Ctx<'_>,
 ) -> Result<(), Error> {
     let refuse = |path: String, reason: String| Error::BlocklistLayout {
@@ -114,18 +114,12 @@ fn check_blocklist_layout(
         return Err(refuse(at, reason));
     }
     if blocklist {
-        let top = legacy.vocabulary(&config.profile);
         for (i, block) in config.overrides.iter().enumerate() {
-            let Some(profile) = &block.profile else {
-                continue;
-            };
-            if legacy.vocabulary(profile) != top {
+            if block.profile.is_some() {
                 let at = format!("overrides[{i}].profile");
                 let reason = MigrateText::ReasonBlocklistUnderSwitch {
                     at: at.clone(),
                     line: ctx.lines.of(&at).to_string(),
-                    profile: profile.clone(),
-                    top: config.profile.clone(),
                 }
                 .to_string();
                 return Err(refuse(at, reason));
@@ -178,7 +172,6 @@ fn read_config(doc: &DocumentMut, legacy: &Legacy, ctx: &mut Ctx<'_>) -> Option<
     }
     (ctx.dropped.total() == before).then_some(Config2 {
         profile,
-        blocklist: has_blocklist(doc.as_table()),
         layer,
         overrides,
     })

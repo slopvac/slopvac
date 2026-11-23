@@ -17,6 +17,14 @@
    "at": "overrides[0].profile",
    "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"strict\"\n"
   },
+  "switch-to-the-same-profile-normal": {
+   "at": "overrides[0].profile",
+   "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+  },
+  "switch-to-the-same-profile-strict": {
+   "at": "overrides[0].profile",
+   "config": "schema_version = 2\nprofile = \"strict\"\n[vocabulary]\npath = \"deploy.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"strict\"\n"
+  },
   "top-profile-differs-from-the-switch": {
    "at": "overrides[0].profile",
    "config": "schema_version = 2\nprofile = \"relaxed\"\n[vocabulary]\npath = \"deploy.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"

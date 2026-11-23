@@ -398,10 +398,8 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
             MigrateText::ReasonBlocklistUnderSwitch {
                 at: s("overrides[0].profile"),
                 line: s("5"),
-                profile: s("strict"),
-                top: s("normal"),
             },
-            "`overrides[0].profile` on line 5 switches files to the 2.x strict profile, which gives the vocabulary rules a different level than the normal profile, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels there. A follow-up will support these layouts.",
+            "`overrides[0].profile` on line 5 switches files to another 2.x profile, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels in the switched files. A follow-up will support these layouts.",
         ),
         (
             MigrateText::NoteAddedSwitchBlocks {

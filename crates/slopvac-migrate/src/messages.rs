@@ -378,17 +378,12 @@ pub(crate) enum MigrateText {
         "`{at}` on line {line} sets a word blocklist, and the top level sets none. `--preserve-behavior` cannot keep the 2.x vocabulary levels for a blocklist that applies to some files only. A follow-up will support these layouts."
     )]
     ReasonBlocklistInOverride { at: String, line: String },
-    /// Why a migrated config is refused: a blocklist and a profile switch to another level.
+    /// Why a migrated config is refused: a blocklist and a profile switch.
     #[code("migrate-reason-blocklist-under-switch")]
     #[text(
-        "`{at}` on line {line} switches files to the 2.x {profile} profile, which gives the vocabulary rules a different level than the {top} profile, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels there. A follow-up will support these layouts."
+        "`{at}` on line {line} switches files to another 2.x profile, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels in the switched files. A follow-up will support these layouts."
     )]
-    ReasonBlocklistUnderSwitch {
-        at: String,
-        line: String,
-        profile: String,
-        top: String,
-    },
+    ReasonBlocklistUnderSwitch { at: String, line: String },
     /// The vocabulary companion style was added.
     #[code("migrate-note-added-vocabulary-style")]
     #[text(

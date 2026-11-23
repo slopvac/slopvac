@@ -21,8 +21,6 @@ pub(crate) struct Block2 {
 #[derive(Debug, Clone)]
 pub(crate) struct Config2 {
     pub(crate) profile: String,
-    /// The top level sets `vocabulary.path`, so the companion vocabulary style is listed.
-    pub(crate) blocklist: bool,
     pub(crate) layer: Layer,
     pub(crate) overrides: Vec<Block2>,
 }
@@ -315,15 +313,6 @@ fn switch_layer(
     keys.extend(config.layer.rules.keys());
     let mut rules = BTreeMap::new();
     for qid in keys {
-        // The legacy styles leave the vocabulary rules off. With a blocklist the companion
-        // style sets their level, and an entry here would pin them off in the switched
-        // files. A rule the top level authors keeps the handling below.
-        if config.blocklist
-            && !config.layer.rules.contains_key(qid)
-            && legacy.vocabulary(profile).contains_key(qid)
-        {
-            continue;
-        }
         if let Some(level) = top_rules.get(qid) {
             rules.insert(qid.clone(), level.clone());
             continue;
