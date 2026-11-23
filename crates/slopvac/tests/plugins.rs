@@ -85,7 +85,10 @@ fn packs_is_no_longer_a_command() {
         .args(["packs"])
         .assert()
         .code(2)
-        .stderr(predicate::str::starts_with("error[usage]: "));
+        // An unknown first word is a path to lint, so `packs` is not a command.
+        .stderr(predicate::str::starts_with(
+            "error[input-unreadable]: packs: ",
+        ));
 }
 
 #[test]
@@ -118,7 +121,7 @@ fn sync_exits_0_when_the_lock_is_in_place() {
 }
 
 #[test]
-fn sync_offline_with_an_uncached_plugin_exits_2_with_its_own_code() {
+fn sync_of_an_unsigned_oci_plugin_exits_2_with_its_own_code() {
     let sandbox = Sandbox::new();
     sandbox.write_lock(
         "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
@@ -130,9 +133,7 @@ fn sync_offline_with_an_uncached_plugin_exits_2_with_its_own_code() {
         .args(["--offline", "plugins", "sync"])
         .assert()
         .code(2)
-        .stderr(predicate::str::starts_with(
-            "error[offline-plugin-missing]: ",
-        ));
+        .stderr(predicate::str::starts_with("error[sync-unsigned]: "));
 }
 
 #[rstest::rstest]
