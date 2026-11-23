@@ -113,7 +113,7 @@ struct Ready {
     engines: Bounded<String, Arc<EngineLinter>>,
     /// One engine for each config root, built from the settings before any genre layer. It
     /// reads a buffer and chooses its genre, which the settings of the buffer then follow.
-    probes: Bounded<PathBuf, Arc<EngineLinter>>,
+    probes: Box<Bounded<PathBuf, Arc<EngineLinter>>>,
     /// The warnings shown so far, so a config that several directories share warns once.
     notified: HashSet<(String, String)>,
     /// Warnings from configs that linting found, not yet handed to the server.
@@ -332,7 +332,7 @@ impl Project {
             catalog,
             configs: Bounded::new(MAX_CONFIGS),
             engines: Bounded::new(MAX_ENGINES),
-            probes: Bounded::new(MAX_CONFIGS),
+            probes: Box::new(Bounded::new(MAX_CONFIGS)),
             notified: notices.iter().map(notice_key).collect(),
             pending: Vec::new(),
         };
