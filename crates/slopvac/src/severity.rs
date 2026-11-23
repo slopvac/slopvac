@@ -11,7 +11,7 @@ use std::sync::Arc;
 use clap::ArgMatches;
 use slopvac_config::{ConfigError, Discovery, Inputs, Rejected, Resolved, describe, load_labeled};
 use slopvac_rules::{LoadedRule, MatchKind};
-use slopvac_styles::{BuiltinSource, StylePresets};
+use slopvac_styles::BuiltinSource;
 
 use crate::errors::CliError;
 use crate::redact;
@@ -118,7 +118,7 @@ impl Severities {
     /// that does not ship, and the config error code for a file that is refused.
     pub fn load(m: &ArgMatches) -> Result<Self, CliError> {
         let cwd = std::env::current_dir().unwrap_or_default();
-        let presets = StylePresets(BuiltinSource);
+        let presets = crate::lint_settings::presets();
         let config = if let Some(path) = m.get_one::<std::path::PathBuf>("config") {
             let shown = redact::shown_path(path, &cwd);
             if !path.is_file() {
@@ -128,12 +128,12 @@ impl Severities {
                 ));
             }
             Some(
-                load_labeled(path, &shown, &presets)
+                load_labeled(path, &shown, presets)
                     .map(Arc::new)
                     .map_err(|e| config_error(&e, &cwd))?,
             )
         } else {
-            Discovery::new(&presets)
+            Discovery::new(presets)
                 .nearest(&cwd)
                 .map_err(|e| config_error(&e, &cwd))?
         };
@@ -161,7 +161,7 @@ impl Severities {
             }
         }
         let inputs = Inputs {
-            presets: &presets,
+            presets,
             front_matter: &[],
             directives: &[],
             cli: &[],

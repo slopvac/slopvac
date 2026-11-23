@@ -23,10 +23,9 @@ use slopvac_model::{
     Document, KebabName, NonEmptyString, Notice, NoticeLevel, Report, SchemaVersion,
 };
 use slopvac_sanitize::line;
-use slopvac_styles::{BuiltinSource, StylePresets};
 
 use crate::errors::CliError;
-use crate::lint_settings::{self, Overrides};
+use crate::lint_settings::{self, DocumentLayers, Overrides};
 use crate::lint_terms::{self, TermInputs};
 use crate::redact;
 use crate::rule_catalog::Catalog;
@@ -370,7 +369,9 @@ impl Linter for EngineLinter {
                 Some((config, rel)) => (config.as_ref(), rel.clone()),
                 None => (&none, PathBuf::from(&item.shown)),
             };
-            let mut explained = lint_settings::resolve(config, &rel).explain();
+            let mut explained =
+                lint_settings::resolve(config, &rel, &lint_settings::DocumentLayers::default())
+                    .explain();
             for entry in &mut explained {
                 redact_urls(&mut entry.value);
                 for replaced in &mut entry.overridden {
@@ -404,9 +405,8 @@ fn redact_urls(value: &mut serde_json::Value) {
 
 /// Load the configs, the rules and the inputs of a run, or say why it cannot start.
 fn prepare(request: &LintRequest, run: &mut Run) -> Result<(Catalog, Vec<Item>), CliError> {
-    let presets = StylePresets(BuiltinSource);
     let mut configs = Configs {
-        discovery: Discovery::new(&presets),
+        discovery: Discovery::new(lint_settings::presets()),
         explicit: None,
     };
     if let Some(given) = &request.config {
@@ -862,8 +862,9 @@ pub(crate) fn file_settings(
     config: &LoadedConfig,
     rel: &Path,
     overrides: &Overrides,
+    layers: &DocumentLayers,
 ) -> Result<(slopvac_engine::Settings, slopvac_config::Resolved), CliError> {
-    let resolved = lint_settings::resolve(config, rel);
+    let resolved = lint_settings::resolve(config, rel, layers);
     let files = config_files(config);
     let mut settings = lint_settings::build(
         rules,
@@ -888,7 +889,13 @@ fn group_by_settings(
             Some((config, rel)) => (config.as_ref(), rel.clone()),
             None => (&none, PathBuf::from(&item.shown)),
         };
-        let (settings, terms, key) = settings_for(rules, config, &rel, &request.overrides)?;
+        let layers = DocumentLayers::read(
+            &item.text,
+            &item.shown,
+            item.config.as_ref().map(|(c, _)| &**c),
+        );
+        let (settings, terms, key) =
+            settings_for(rules, config, &rel, &request.overrides, &layers)?;
         groups
             .entry(key)
             .or_insert_with(|| (settings, terms, Vec::new()))
@@ -906,8 +913,9 @@ pub(crate) fn settings_for(
     config: &LoadedConfig,
     rel: &Path,
     cli: &Overrides,
+    layers: &DocumentLayers,
 ) -> Result<(slopvac_engine::Settings, TermInputs, String), CliError> {
-    let (settings, resolved) = file_settings(rules, config, rel, cli)?;
+    let (settings, resolved) = file_settings(rules, config, rel, cli, layers)?;
     let terms = lint_terms::inputs(&resolved, &config.root);
     let key = format!("{settings:?}{terms:?}");
     Ok((settings, terms, key))

@@ -5,11 +5,10 @@ use std::path::Path;
 
 use slopvac_config::LoadedConfig;
 use slopvac_migrate::{Configure, Error, SettingsOf};
-use slopvac_styles::{BuiltinSource, StylePresets};
 
 use crate::engine::{config_error, file_settings};
 use crate::errors::CliError;
-use crate::lint_settings::{self, Overrides};
+use crate::lint_settings::{self, DocumentLayers, Overrides};
 use crate::rule_catalog::Catalog;
 
 /// The file name of a 3.0 config.
@@ -45,7 +44,7 @@ impl Configure for MigrateConfigure {
                 &dir.join(CONFIG_NAME),
                 CONFIG_NAME,
                 text.to_owned(),
-                &StylePresets(BuiltinSource),
+                lint_settings::presets(),
             )
             .map_err(|e| lint_error(config_error(&e, dir)))?,
             None => LoadedConfig::without_files(dir.to_owned()),
@@ -53,9 +52,15 @@ impl Configure for MigrateConfigure {
         // Unknown rule ids only warn in `slopvac lint`, so they do not stop the comparison.
         lint_settings::validate(&loaded, &self.rules).map_err(lint_error)?;
         Ok(Box::new(move |rel| {
-            file_settings(&self.rules, &loaded, rel, &Overrides::default())
-                .map(|(settings, _)| settings)
-                .map_err(lint_error)
+            file_settings(
+                &self.rules,
+                &loaded,
+                rel,
+                &Overrides::default(),
+                &DocumentLayers::default(),
+            )
+            .map(|(settings, _)| settings)
+            .map_err(lint_error)
         }))
     }
 }

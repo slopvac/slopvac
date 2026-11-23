@@ -167,7 +167,11 @@ mod tests {
         )
         .expect("terms");
         let config = LoadedConfig::without_files(dir.path().to_path_buf());
-        let resolved = lint_settings::resolve(&config, Path::new("doc.md"));
+        let resolved = lint_settings::resolve(
+            &config,
+            Path::new("doc.md"),
+            &lint_settings::DocumentLayers::default(),
+        );
         let catalog = Catalog::load().expect("the rules load");
         let settings = lint_settings::build(&catalog, &resolved, Vec::new(), &Overrides::default())
             .expect("settings");

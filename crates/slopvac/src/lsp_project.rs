@@ -33,11 +33,10 @@ use slopvac_lsp::{
     Check, ConfigFailure, EngineLinter, LintError, Linted, Linter, Problem, Reloaded,
 };
 use slopvac_model::{ConfigSource, Notice, RuleId};
-use slopvac_styles::{BuiltinSource, StylePresets};
 
 use crate::engine::{config_error, declared_genre, read_block_under, rel_text, settings_for};
 use crate::errors::CliError;
-use crate::lint_settings::{self, Located, Overrides};
+use crate::lint_settings::{self, DocumentLayers, Located, Overrides};
 use crate::lint_terms;
 use crate::rule_catalog::Catalog;
 
@@ -199,8 +198,7 @@ pub(crate) fn project_linter(root: &Path) -> Result<ProjectServer, CliError> {
 
 /// The nearest config of `dir`, found again from disk.
 fn nearest(dir: &Path) -> Result<Option<Arc<LoadedConfig>>, ConfigError> {
-    let presets = StylePresets(BuiltinSource);
-    Discovery::new(&presets).nearest(dir)
+    Discovery::new(lint_settings::presets()).nearest(dir)
 }
 
 /// The text of the config file at `path` and the byte offset of `source` in it. `None` when
@@ -333,8 +331,7 @@ impl Project {
         };
         ready.configs.insert(self.root.clone(), config);
         let mut notices = notices;
-        let presets = StylePresets(BuiltinSource);
-        let discovery = Discovery::new(&presets);
+        let discovery = Discovery::new(lint_settings::presets());
         for dir in active.iter().filter(|dir| **dir != self.root) {
             let found = match discovery.nearest(dir) {
                 Ok(found) => found,
@@ -507,9 +504,15 @@ impl Project {
                 State::Ready(ready) => ready,
                 State::Failed(why) => return Err(LintError(why.clone())),
             };
-            let (settings, terms, key) =
-                settings_for(&ready.catalog, config_ref, &rel, &Overrides::default())
-                    .map_err(shown)?;
+            let layers = DocumentLayers::read(text, path, config.as_deref());
+            let (settings, terms, key) = settings_for(
+                &ready.catalog,
+                config_ref,
+                &rel,
+                &Overrides::default(),
+                &layers,
+            )
+            .map_err(shown)?;
             let cached = ready.engines.get(&key).cloned();
             (settings, terms, key, cached)
         };
