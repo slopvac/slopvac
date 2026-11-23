@@ -45,6 +45,25 @@ fn embedded_and_on_disk_copies_load_the_same_rule_ids() {
 }
 
 #[test]
+fn owned_rule_sets_keep_load_order_and_the_rules_of_each_pack() {
+    let packs = Packs::core().unwrap();
+    let expected: Vec<(String, usize)> = packs
+        .rule_sets()
+        .map(|s| (s.pack().to_string(), s.rules().count()))
+        .collect();
+
+    let owned = Packs::core().unwrap().into_rule_sets();
+
+    let got: Vec<(String, usize)> = owned
+        .iter()
+        .map(|s| (s.pack().to_string(), s.rules().count()))
+        .collect();
+    assert_eq!(got, expected);
+    assert_eq!(got[0].0, "core");
+    assert!(got[0].1 > 100);
+}
+
+#[test]
 fn core_genres_keep_the_registration_order_of_the_built_ins() {
     let packs = Packs::core().unwrap();
     let ids: Vec<&str> = packs.genres().map(|g| g.id.as_str()).collect();

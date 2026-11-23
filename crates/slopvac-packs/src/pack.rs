@@ -373,6 +373,13 @@ impl Packs {
         self.loaded.iter().map(LoadedPack::rules)
     }
 
+    /// Every pack's rule set, in load order, handed over. A rule set does not clone, so a caller
+    /// that builds several engines loads the packs again for each.
+    #[must_use]
+    pub fn into_rule_sets(self) -> Vec<RuleSet> {
+        self.loaded.into_iter().map(|p| p.rules).collect()
+    }
+
     /// Every genre in load order, then file order. Order breaks detection ties.
     pub fn genres(&self) -> impl Iterator<Item = &GenreSpec> {
         self.loaded
