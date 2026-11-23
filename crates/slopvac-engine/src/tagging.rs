@@ -468,14 +468,17 @@ pub(crate) fn tag(
     // The declared contexts count against the ceiling like any other emission, before
     // duplicates go, so the ceiling does not depend on how the tags overlap.
     let extra: Vec<&dyn Tagger> = declared.iter().map(|d| *d as &dyn Tagger).collect();
-    let tags = registry.collect_tags_with(&view, max_tags, &extra)?;
-    if view.unmapped.get() {
-        return Err(TagError::Unmapped);
-    }
+    let tags = registry.collect_tags_with(&view, max_tags, &extra);
+    // A split that hit the budget left no sentences, so a tagger that failed after it may
+    // have failed on that account. The budget is the first failure and the one reported.
     if view.over_budget.get() {
         return Err(TagError::Budget {
             limit: view.sentences_left.1,
         });
+    }
+    let tags = tags?;
+    if view.unmapped.get() {
+        return Err(TagError::Unmapped);
     }
     Ok(view
         .split_interleaved(tags, max_tags)?

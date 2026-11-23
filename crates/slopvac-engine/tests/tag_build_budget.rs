@@ -356,3 +356,28 @@ fn a_code_block_draws_on_the_budget_the_prose_already_used()
     );
     Ok(())
 }
+
+#[test]
+fn a_budget_failure_in_a_code_block_wins_over_a_later_tagger_that_fails()
+-> Result<(), Box<dyn std::error::Error>> {
+    // The first tagger reads the 300000 sentences of the code block and hits the budget. The
+    // second hits the PCRE2 match limit on a heading. The run ends on the budget, which is the
+    // first failure, not on the later one.
+    let mut registry = code_sentence_tagger()?;
+    let yaml = "schema_version: 3\nid: z\ntag: k\nscope: paragraph\nwhen:\n  block_kind: paragraph\n  heading_path: '^(a|aa)+$'\n";
+    registry.register(Box::new(TaggerSpec::from_yaml(yaml)?.compile()?))?;
+    let source = format!(
+        "```\n{}\n```\n\n# {}b\n\nText.\n",
+        "Go. ".repeat(300_000),
+        "a".repeat(64)
+    );
+    let limit = source.len() / 8 + 65_536;
+    let result = engine()
+        .with_taggers(registry)
+        .lint(&Input::markdown("a.md", &source));
+    assert_eq!(
+        result.map(|d| d.findings.len()),
+        Err(EngineError::TagBuildBudget { limit })
+    );
+    Ok(())
+}
