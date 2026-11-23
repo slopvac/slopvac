@@ -48,6 +48,9 @@ fn spawn_code(e: &TrustError) -> Option<&'static str> {
         TrustError::KeyMissing { .. } => Some("trust-key-missing"),
         TrustError::KeyMismatch => Some("trust-key-mismatch"),
         TrustError::KeyUnusable { .. } => Some("trust-key-unusable"),
+        // Verification failures: the spawn path reports the tree and the environment as a
+        // hash mismatch, so `trust` reports the same code.
+        TrustError::Tree(_) | TrustError::PythonEnv(_) => Some("plugin-hash-mismatch"),
         _ => None,
     }
 }
@@ -105,8 +108,8 @@ pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
 }
 
 /// A trust store failure: the reported failure when it has a code, else the sentence alone.
-/// A refused program or environment, and an unusable trust key, report the code of the spawn
-/// path. A failure of the store itself has no code of its own and reports `plugins-store-failed`.
+/// A refused program or environment, an unusable trust key, and a tree or managed environment
+/// that fails verification report the code of the spawn path. A failure of the store itself has no code of its own and reports `plugins-store-failed`.
 pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
     let text = match e {
         TrustError::Revocation(inner) => return Ok(revocation(inner)),
