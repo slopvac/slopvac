@@ -7,6 +7,8 @@ use slopvac_model::{
 };
 use slopvac_rules::{Category, RuleFile, schema_generator};
 
+use crate::plugin_files::{PackIndex, PluginsLock};
+
 /// One generated file in `schemas/v3`.
 #[derive(Debug, Clone, Copy)]
 pub struct Artifact {
@@ -79,7 +81,76 @@ pub const ARTIFACTS: &[Artifact] = &[
         inline: &[],
         build: manifest,
     },
+    Artifact {
+        file: "doctor-report.schema.json",
+        title: "slopvac v3 doctor report",
+        description: Some(
+            "The document that `slopvac doctor --format json` prints. It reports the binary, \
+             update state, configuration sources, locked plugins, plugin trust and the per-user \
+             directories. Doctor reads local files only and never changes them. Paths are \
+             relative to the working directory, or `<external>/<name>` outside it (policies.md, \
+             section 1.7). Unknown keys are errors, and keys that start with `x-` are ignored. \
+             Semantics are specified in docs/contract/doctor.md.",
+        ),
+        imports: &["common.schema.json"],
+        inline: &[],
+        build: doctor_report,
+    },
+    Artifact {
+        file: "plugin-index.schema.json",
+        title: "slopvac v3 plugin index",
+        description: Some(
+            "The plugin index document that `slopvac plugins search` reads. A scheduled job \
+             rebuilds it from plugins that follow the naming convention. The index lists plugins \
+             for discovery and nothing more: it is not an authority for keys, and `publisher_key` \
+             is display-only (threat-model.md, section 5.2). A reader refuses a document over 32 \
+             MiB before it parses. Unknown keys are errors, and keys that start with `x-` are \
+             ignored. Semantics are specified in docs/contract/plugin-index.md.",
+        ),
+        imports: &["common.schema.json"],
+        inline: &[],
+        build: plugin_index,
+    },
+    Artifact {
+        file: "plugins-lock.schema.json",
+        title: "slopvac v3 plugins lockfile",
+        description: Some(
+            "The .slopvac/plugins.lock file. `slopvac plugins sync` writes it and a run reads \
+             it. It pins each data plugin and code plugin to a version, a source and a content \
+             digest, so a run on another machine loads the same bytes. A digest mismatch makes \
+             the run fail with exit 2. The lockfile records no trust: trust is a separate \
+             per-user record. The built-in core plugin is compiled into the binary and never \
+             appears here. Semantics are specified in docs/contract/plugins.md.",
+        ),
+        imports: &["common.schema.json"],
+        inline: &[],
+        build: plugins_lock,
+    },
 ];
+
+/// The plugin index. Both the index and the lockfile are read and written by slopvac, so the
+/// output rule applies to them.
+fn plugin_index() -> Value {
+    schema_settings(Contract::Deserialize)
+        .into_generator()
+        .into_root_schema_for::<PackIndex>()
+        .to_value()
+}
+
+fn plugins_lock() -> Value {
+    schema_settings(Contract::Deserialize)
+        .into_generator()
+        .into_root_schema_for::<PluginsLock>()
+        .to_value()
+}
+
+/// The producer contract: what the doctor report serializes.
+fn doctor_report() -> Value {
+    schema_settings(Contract::Serialize)
+        .into_generator()
+        .into_root_schema_for::<slopvac_cli::doctor::Report>()
+        .to_value()
+}
 
 fn manifest() -> Value {
     schema_settings(Contract::Deserialize)
@@ -129,7 +200,7 @@ fn define<T: JsonSchema>(generator: &mut SchemaGenerator) {
 // config validator check the value themselves. The generator owns this definition until a model
 // type replaces it.
 #[schemars(with = "String", extend("pattern" = plugin_id_pattern()))]
-struct PluginId;
+pub(crate) struct PluginId;
 
 /// Semantic version 2.0.0 without build metadata. Numeric prerelease identifiers have no
 /// leading zeros.
@@ -139,7 +210,7 @@ struct PluginId;
 // the index are read and written by slopvac, and a definition they share must sit in a file
 // that follows the output rule.
 #[schemars(with = "String", extend("pattern" = r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\s\S])"))]
-struct Semver;
+pub(crate) struct Semver;
 
 /// Slug pattern that refuses the reserved id.
 fn plugin_id_pattern() -> String {

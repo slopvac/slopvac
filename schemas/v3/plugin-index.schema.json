@@ -1,112 +1,55 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://slopvac.github.io/slopvac/schemas/v3/plugin-index.schema.json",
-  "title": "slopvac v3 plugin index",
-  "description": "The plugin index document that `slopvac plugins search` reads. A scheduled job rebuilds it from plugins that follow the naming convention. The index lists plugins for discovery and nothing more: it is not an authority for keys, and `publisher_key` is display-only (threat-model.md, section 5.2). A reader refuses a document over 32 MiB before it parses. Unknown keys are errors, and keys that start with `x-` are ignored. Semantics are specified in docs/contract/plugin-index.md. Owner: slopvac-8l4.9.8.",
-  "type": "object",
-  "properties": {
-    "schema_version": {
-      "$ref": "common.schema.json#/$defs/SchemaVersion"
-    },
-    "plugins": {
-      "description": "One entry per plugin, sorted by namespace and then id, with no pair repeated. At most 100000 entries.",
-      "type": "array",
-      "maxItems": 100000,
-      "items": {
-        "$ref": "#/$defs/PackIndexEntry"
-      }
-    }
-  },
-  "required": [
-    "schema_version",
-    "plugins"
-  ],
-  "patternProperties": {
-    "^x-": {}
-  },
-  "additionalProperties": false,
   "$defs": {
-    "PackIndexSemver": {
-      "description": "Semantic version 2.0.0 without build metadata. Major, minor and patch have at most nine digits (at most 999999999), which is the bound the reader enforces. Otherwise the pattern is the Semver def of plugin-manifest.schema.json, repeated here until that schema is on main.",
-      "type": "string",
-      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\\s\\S])"
-    },
-    "PackIndexSource": {
-      "description": "Where to fetch the plugin: an oci:// reference, an https:// release archive URL, or a git+https:// URL pinned to a full commit hash after @. The URL carries no user-info. http:// and path sources are invalid: a public listing has no project root.",
-      "type": "string",
-      "maxLength": 2048,
-      "pattern": "^((oci|https)://[^\\s/?#@]+([/?#]\\S*)?|git\\+https://[^\\s/?#@]+([/?#]\\S*)?@[0-9a-f]{40})(?![\\s\\S])"
-    },
-    "PublisherKey": {
-      "description": "The key the publisher signs with, for display. Never a trust anchor: a first install shows the fingerprint and waits for the explicit pinning command, and a pinned key wins over this value.",
-      "type": "object",
-      "properties": {
-        "key_id": {
-          "description": "Minisign key id, 16 uppercase hex digits.",
-          "type": "string",
-          "pattern": "^[0-9A-F]{16}(?![\\s\\S])"
-        },
-        "fingerprint": {
-          "description": "SHA-256 of the raw public key bytes, 64 lowercase hex digits. This is the value that `slopvac plugins pin` takes.",
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
-        }
-      },
-      "required": [
-        "key_id",
-        "fingerprint"
-      ],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
-    },
     "PackIndexEntry": {
-      "type": "object",
+      "additionalProperties": false,
+      "description": "One listed plugin.",
+      "patternProperties": {
+        "^x-": true
+      },
       "properties": {
-        "id": {
-          "description": "Plugin id from the plugin manifest. `core` is reserved and never listed.",
-          "$ref": "common.schema.json#/$defs/PluginId",
-          "maxLength": 64
-        },
-        "namespace": {
-          "description": "Publisher namespace that the key and the source are bound to. Same character set as a plugin id. `core` is reserved and never listed. An entry may claim `slopvac`, but only the compiled plugins key verifies that namespace.",
-          "$ref": "common.schema.json#/$defs/PluginId",
-          "maxLength": 64
-        },
-        "name": {
-          "description": "Display name. Text from the index: a reader escapes control characters before it prints.",
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
         "description": {
           "description": "One-line summary. Text from the index: a reader escapes control characters before it prints.",
-          "type": "string",
+          "maxLength": 1024,
           "minLength": 1,
-          "maxLength": 1024
+          "type": "string"
         },
-        "version": {
-          "description": "Latest listed version.",
-          "$ref": "#/$defs/PackIndexSemver"
+        "id": {
+          "$ref": "common.schema.json#/$defs/PluginId",
+          "description": "Plugin id from the plugin manifest. `core` is reserved and never listed.",
+          "maxLength": 64
         },
         "kind": {
-          "description": "data for a data plugin, code for a code plugin. The same values as the manifest kind.",
+          "description": "`data` for a data plugin, `code` for a code plugin. The same values as the manifest kind.",
           "enum": [
             "data",
             "code"
           ]
         },
+        "name": {
+          "description": "Display name. Text from the index: a reader escapes control characters before it prints.",
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "namespace": {
+          "$ref": "common.schema.json#/$defs/PluginId",
+          "description": "Publisher namespace that the key and the source are bound to. Same character set as a plugin id. `core` is reserved and never listed. An entry may claim `slopvac`, but only the compiled plugins key verifies that namespace.",
+          "maxLength": 64
+        },
+        "publisher_key": {
+          "$ref": "#/$defs/PublisherKey"
+        },
         "slopvac_api": {
-          "description": "Lowest plugin extension API the host must implement. A host with a lower API cannot load the plugin. At most 4294967295, the bound the reader enforces. A whole number written with a fraction, such as 2.0, is an integer here and in the reader.",
           "$ref": "common.schema.json#/$defs/ApiVersion",
+          "description": "Lowest plugin extension API the host must implement. A host with a lower API cannot load the plugin. At most 4294967295, the bound the reader enforces. A whole number written with a fraction, such as 2.0, is an integer here and in the reader.",
           "maximum": 4294967295
         },
         "source": {
           "$ref": "#/$defs/PackIndexSource"
         },
-        "publisher_key": {
-          "$ref": "#/$defs/PublisherKey"
+        "version": {
+          "$ref": "#/$defs/PackIndexSemver",
+          "description": "Latest listed version."
         }
       },
       "required": [
@@ -120,10 +63,68 @@
         "source",
         "publisher_key"
       ],
+      "type": "object"
+    },
+    "PackIndexSemver": {
+      "description": "Semantic version 2.0.0 without build metadata. Major, minor and patch have at most nine digits (at most 999999999), which is the bound the reader enforces. Otherwise the pattern is the `Semver` definition of `common.schema.json`.",
+      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?![\\s\\S])",
+      "type": "string"
+    },
+    "PackIndexSource": {
+      "description": "Where to fetch the plugin: an oci:// reference, an https:// release archive URL, or a git+https:// URL pinned to a full commit hash after @. The URL carries no user-info. http:// and path sources are invalid: a public listing has no project root.",
+      "maxLength": 2048,
+      "pattern": "^((oci|https)://[^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000/?#@]+([/?#][^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]*)?|git\\+https://[^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000/?#@]+([/?#][^\\x09-\\x0D\\x1C-\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]*)?@[0-9a-f]{40})(?![\\s\\S])",
+      "type": "string"
+    },
+    "PublisherKey": {
+      "additionalProperties": false,
+      "description": "The key the publisher signs with, for display. Never a trust anchor: a first install shows the fingerprint and waits for the explicit pinning command, and a pinned key wins over this value.",
       "patternProperties": {
-        "^x-": {}
+        "^x-": true
       },
-      "additionalProperties": false
+      "properties": {
+        "fingerprint": {
+          "description": "SHA-256 of the raw public key bytes, 64 lowercase hex digits. This is the value that `slopvac plugins pin` takes.",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+          "type": "string"
+        },
+        "key_id": {
+          "description": "Minisign key id, 16 uppercase hex digits.",
+          "pattern": "^[0-9A-F]{16}(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key_id",
+        "fingerprint"
+      ],
+      "type": "object"
     }
-  }
+  },
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/plugin-index.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The plugin index document that `slopvac plugins search` reads. A scheduled job rebuilds it from plugins that follow the naming convention. The index lists plugins for discovery and nothing more: it is not an authority for keys, and `publisher_key` is display-only (threat-model.md, section 5.2). A reader refuses a document over 32 MiB before it parses. Unknown keys are errors, and keys that start with `x-` are ignored. Semantics are specified in docs/contract/plugin-index.md.",
+  "patternProperties": {
+    "^x-": true
+  },
+  "properties": {
+    "plugins": {
+      "description": "One entry per plugin, sorted by namespace and then id, with no pair repeated. At most 100000 entries.",
+      "items": {
+        "$ref": "#/$defs/PackIndexEntry"
+      },
+      "maxItems": 100000,
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
+    }
+  },
+  "required": [
+    "schema_version",
+    "plugins"
+  ],
+  "title": "slopvac v3 plugin index",
+  "type": "object"
 }

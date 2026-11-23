@@ -2845,6 +2845,7 @@ dependencies = [
  "schemars",
  "serde_json",
  "similar 3.2.1",
+ "slopvac",
  "slopvac-model",
  "slopvac-packs",
  "slopvac-rules",
