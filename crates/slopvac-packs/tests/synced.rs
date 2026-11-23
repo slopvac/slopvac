@@ -866,3 +866,100 @@ fn a_budget_refusal_exposes_its_budget_name_and_limit(
 fn every_error_reports_its_catalog_code(#[case] error: SyncedError, #[case] code: Option<&str>) {
     assert_eq!(error.code(), code);
 }
+
+/// A pack that supplies one tagger file.
+fn with_tagger(id: &'static str, tagger: &str) -> Spec {
+    let mut spec = Spec::new(id);
+    spec.provides = "taggers = [\"taggers/t.yaml\"]".into();
+    spec.files.push(("taggers/t.yaml", tagger.to_owned()));
+    spec
+}
+
+fn core_tagger() -> (String, String) {
+    let packs = Packs::core().unwrap();
+    let t = packs.taggers().next().expect("the core pack has taggers");
+    (t.id.clone(), t.tag.clone())
+}
+
+#[test]
+fn owned_rule_sets_list_the_core_first_then_each_pack_in_load_order() {
+    let mut w = World::new();
+    w.install(&Spec::new("base").rules(&["a"]));
+    w.install(&Spec::new("top").requires("base").rules(&["b", "c"]));
+
+    let sets = Packs::with_synced(&ids(&["top"]), &w.lock(), &w.store())
+        .unwrap()
+        .into_rule_sets();
+
+    let got: Vec<(String, usize)> = sets
+        .iter()
+        .map(|s| (s.pack().to_string(), s.rules().count()))
+        .collect();
+    assert_eq!(got[1..], [("base".to_owned(), 1), ("top".to_owned(), 2)]);
+    assert_eq!(got[0].0, "core");
+}
+
+#[test]
+fn a_synced_tagger_that_takes_a_core_tagger_id_is_refused() {
+    let (id, _) = core_tagger();
+    let mut w = World::new();
+    w.install(&with_tagger(
+        "acme",
+        &format!("schema_version: 3\nid: {id}\ntag: acme-tag\nmatch:\n  - pattern: 'a'\n"),
+    ));
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
+}
+
+#[test]
+fn a_synced_tagger_that_emits_a_core_tag_is_refused() {
+    let (_, tag) = core_tagger();
+    let mut w = World::new();
+    w.install(&with_tagger(
+        "acme",
+        &format!("schema_version: 3\nid: acme-t\ntag: {tag}\nmatch:\n  - pattern: 'a'\n"),
+    ));
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert!(err.to_string().contains("taggers/t.yaml"), "{err}");
+}
+
+// A tagger pattern counts against the run's compiled-pattern budget (X3), like a rule pattern.
+#[test]
+fn a_tagger_pattern_is_charged_to_the_compiled_pattern_budget() {
+    let w = base_then_unread_top(&with_tagger(
+        "base",
+        "schema_version: 3\nid: acme-t\ntag: acme-tag\nmatch:\n  - pattern: 'a'\n",
+    ));
+
+    let e = run_error(&w, small(|l| l.run_pattern_bytes = 1));
+
+    assert!(
+        matches!(
+            e,
+            PackError::Budget {
+                budget: PackBudget::RunPatternBytes,
+                limit: 1
+            }
+        ),
+        "{e}"
+    );
+}
+
+// Policies section 1.9: the cap of a rule or category file is 2 MiB, so a 1.5 MiB file loads
+// and a file over the cap is refused with `rules-file-too-large`.
+#[test]
+fn the_directory_source_reads_a_file_up_to_two_mebibytes() {
+    use slopvac_packs::{DirSource, PackPath, PackSource};
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.json"), "x".repeat(1_536 * 1024)).unwrap();
+    fs::write(dir.path().join("b.json"), "x".repeat(2 * 1024 * 1024 + 1)).unwrap();
+    let source = DirSource::new(dir.path());
+
+    assert!(source.read(&PackPath::new("a.json").unwrap()).is_ok());
+    let err = source.read(&PackPath::new("b.json").unwrap()).unwrap_err();
+    assert_eq!(err.code(), Some("rules-file-too-large"), "{err}");
+}
