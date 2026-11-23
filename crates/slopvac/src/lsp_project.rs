@@ -571,14 +571,16 @@ impl Project {
         };
         // The catalog stays in the shared state, so take what the settings need under the
         // lock and build the engine outside it.
+        // The buffer is read and its genre chosen before the lock: both take the lock
+        // themselves, and neither should hold it while it parses.
+        let layers = DocumentLayers::read(text, path, config.as_deref())
+            .with_detected_genre(self.detected_genre(epoch, path, text, config_ref, &rel));
         let (settings, terms, key, cached) = {
             let loaded = self.loaded();
             let ready = match &loaded.state {
                 State::Ready(ready) => ready,
                 State::Failed(why) => return Err(LintError(why.clone())),
             };
-            let layers = DocumentLayers::read(text, path, config.as_deref())
-                .with_detected_genre(self.detected_genre(epoch, path, text, config_ref, &rel));
             let (settings, terms, key) = settings_for(
                 &ready.catalog,
                 config_ref,
