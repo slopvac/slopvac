@@ -787,8 +787,8 @@ fn rewrite_plan(
     reported: Vec<(usize, &'static str)>,
     declared: &'static str,
     extra: &[&str],
-) -> serde_json::Value {
-    let dir = tempfile::tempdir().unwrap();
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
     let provider = Reporting { declared, reported };
     let env = ReviewEnv {
         provider: Some(&provider),
@@ -797,22 +797,23 @@ fn rewrite_plan(
     };
     let mut argv = vec!["--type", "rewrite"];
     argv.extend_from_slice(extra);
-    let out = run(&pair(dir.path(), ORIGINAL, REVISED, &argv), &env).unwrap();
-    serde_json::from_str(&out).unwrap()
+    let out = run(&pair(dir.path(), ORIGINAL, REVISED, &argv), &env)?;
+    Ok(serde_json::from_str(&out)?)
 }
 
 fn notice_with<'a>(json: &'a serde_json::Value, code: &str) -> Vec<&'a serde_json::Value> {
     json["notices"]
         .as_array()
-        .unwrap()
-        .iter()
+        .into_iter()
+        .flatten()
         .filter(|n| n["code"] == code)
         .collect()
 }
 
 #[test]
-fn a_reported_author_model_gets_a_notice_that_locates_its_items() {
-    let json = rewrite_plan(vec![(1, "anthropic/claude-sonnet-5-5#high")], "gpt-5", &[]);
+fn a_reported_author_model_gets_a_notice_that_locates_its_items()
+-> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(vec![(1, "anthropic/claude-sonnet-5-5#high")], "gpt-5", &[])?;
     let found = notice_with(&json, "review-model-same");
     assert_eq!(found.len(), 1, "{json}");
     assert_eq!(found[0]["level"], "warning");
@@ -823,15 +824,17 @@ fn a_reported_author_model_gets_a_notice_that_locates_its_items() {
         serde_json::json!([{"role": "revised_document", "line": 1}])
     );
     assert!(found[0].get("path").is_none());
+    Ok(())
 }
 
 #[test]
-fn a_reported_model_other_than_the_requested_one_gets_an_info_notice() {
+fn a_reported_model_other_than_the_requested_one_gets_an_info_notice()
+-> Result<(), Box<dyn std::error::Error>> {
     let json = rewrite_plan(
         vec![(0, "gemini-3"), (1, "gemini-3")],
         "gpt-5",
         &["--reviewer-model", "gpt-5"],
-    );
+    )?;
     let found = notice_with(&json, "review-model-reported-mismatch");
     assert_eq!(found.len(), 1, "{json}");
     assert_eq!(found[0]["level"], "info");
@@ -846,31 +849,37 @@ fn a_reported_model_other_than_the_requested_one_gets_an_info_notice() {
             {"role": "revised_document", "line": 1}
         ])
     );
+    Ok(())
 }
 
 #[test]
-fn a_reported_model_that_matches_the_request_adds_no_notice() {
-    let json = rewrite_plan(vec![(0, "openai/gpt-5#high"), (1, "GPT-5")], "gpt-5", &[]);
+fn a_reported_model_that_matches_the_request_adds_no_notice()
+-> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(vec![(0, "openai/gpt-5#high"), (1, "GPT-5")], "gpt-5", &[])?;
     assert!(json["notices"].as_array().unwrap().is_empty(), "{json}");
+    Ok(())
 }
 
 #[test]
-fn reported_models_group_by_normalized_name_across_spellings() {
+fn reported_models_group_by_normalized_name_across_spellings()
+-> Result<(), Box<dyn std::error::Error>> {
     let json = rewrite_plan(
         vec![(0, "claude-sonnet-5-5"), (1, "bedrock/Claude-Sonnet-5-5#x")],
         "gpt-5",
         &[],
-    );
+    )?;
     let same = notice_with(&json, "review-model-same");
     assert_eq!(same.len(), 1, "{json}");
     assert_eq!(same[0]["data"]["items"].as_array().unwrap().len(), 2);
+    Ok(())
 }
 
 #[test]
-fn a_reply_may_name_only_some_items() {
-    let json = rewrite_plan(vec![], "gpt-5", &[]);
+fn a_reply_may_name_only_some_items() -> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(vec![], "gpt-5", &[])?;
     assert_eq!(json["report"], "reported");
     assert_eq!(json["notices"], serde_json::json!([]));
+    Ok(())
 }
 
 #[test]
@@ -906,10 +915,12 @@ fn a_dry_run_reports_no_model_notice() {
 }
 
 #[test]
-fn a_declared_provider_on_the_author_model_adds_one_notice_with_its_source() {
-    let json = rewrite_plan(vec![], "claude-sonnet-5-5", &[]);
+fn a_declared_provider_on_the_author_model_adds_one_notice_with_its_source()
+-> Result<(), Box<dyn std::error::Error>> {
+    let json = rewrite_plan(vec![], "claude-sonnet-5-5", &[])?;
     let found = notice_with(&json, "review-model-same");
     assert_eq!(found.len(), 1, "{json}");
     assert_eq!(found[0]["data"]["reviewer_source"], "provider");
     assert!(found[0]["data"].get("items").is_none());
+    Ok(())
 }
