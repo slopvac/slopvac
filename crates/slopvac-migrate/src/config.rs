@@ -12,7 +12,7 @@ use crate::capped::Blockers;
 use crate::messages::{MigratePhrase, MigrateText};
 use crate::nesting::{self, Refusal, TABLES_KEY};
 use crate::provenance::{KeyLines, key_lines};
-use crate::{Dropped, Error, Options, RenameTable, preserve_doc};
+use crate::{Dropped, Error, Options, RenameTable, overrides, preserve_doc};
 
 const THRESHOLD_KEYS: &[&str] = &[
     "max_total_per_100_words",
@@ -115,10 +115,12 @@ pub(crate) fn migrate_config_in(
         });
     }
     let original = doc.clone();
+    let checked = overrides::check(&original, file, lines)?;
     let mut cx = Cx {
         file,
         lines,
         renames,
+        checked,
         dropped: Blockers::default(),
         notes: Vec::new(),
         removed_categories: Vec::new(),
@@ -133,6 +135,7 @@ pub(crate) fn migrate_config_in(
                 file,
                 lines,
                 renames,
+                checked,
                 dropped: &mut cx.dropped,
                 notes: &mut cx.notes,
             },
@@ -303,6 +306,7 @@ struct Cx<'a> {
     file: &'a str,
     lines: Lines<'a>,
     renames: &'a RenameTable,
+    checked: overrides::Checked,
     dropped: Blockers,
     notes: Vec<String>,
     removed_categories: Vec<Dropped>,
@@ -398,19 +402,8 @@ fn check_keys(t: &mut dyn TableLike, key: &str, path: &str, known: &[&str], cx: 
 }
 
 fn migrate_overrides(t: &mut dyn TableLike, path: &str, cx: &mut Cx<'_>) {
-    let Some(item) = t.get_mut("overrides") else {
-        return;
-    };
-    if let Item::ArrayOfTables(aot) = item {
-        for (i, table) in aot.iter_mut().enumerate() {
-            migrate_scope(table, &format!("{path}[{i}]"), Scope::Override, cx);
-        }
-    } else if let Some(arr) = item.as_array_mut() {
-        for (i, v) in arr.iter_mut().enumerate() {
-            if let Some(table) = v.as_inline_table_mut() {
-                migrate_scope(table, &format!("{path}[{i}]"), Scope::Override, cx);
-            }
-        }
+    for (i, table) in overrides::tables_mut(cx.checked, t).into_iter().enumerate() {
+        migrate_scope(table, &format!("{path}[{i}]"), Scope::Override, cx);
     }
 }
 

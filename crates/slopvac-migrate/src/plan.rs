@@ -365,6 +365,9 @@ fn located(e: &Error) -> (usize, String) {
             *line,
             messages::category_under_switch_reason(*line, *block, *switch),
         ),
+        Error::OverrideShape { line, at, .. } => {
+            (*line, messages::override_shape_reason(*line, at))
+        }
         Error::Dropped(records) => records
             .first()
             .map_or_else(|| (1, e.to_string()), |r| (r.line, r.reason.clone())),

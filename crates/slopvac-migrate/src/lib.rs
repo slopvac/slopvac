@@ -24,6 +24,7 @@ mod lint;
 mod messages;
 mod nesting;
 pub mod overlap;
+mod overrides;
 mod plan;
 mod preserve;
 mod preserve_doc;
@@ -207,6 +208,18 @@ pub enum Error {
         line: usize,
         /// Why the layout is refused, from the message catalog.
         reason: String,
+    },
+    /// `overrides` is not a list of tables, so the migration cannot rewrite it without
+    /// dropping an entry. Its code is `migrate-output-invalid`. Nothing is written.
+    #[error("{}", messages::text(self))]
+    OverrideShape {
+        /// The file.
+        file: String,
+        /// One-based line of the entry, or of `overrides`.
+        line: usize,
+        /// The first entry that is not a table, as `overrides[<i>]`, or `overrides` when
+        /// the value is not a list.
+        at: String,
     },
     /// The rename table is malformed.
     #[error("{}", messages::text(self))]

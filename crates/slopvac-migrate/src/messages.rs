@@ -414,6 +414,12 @@ pub(crate) enum MigrateText {
         "`{at}` on line {line} sets `profile` in an override, whatever its value, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels in the files that override covers. A follow-up will support these layouts."
     )]
     ReasonBlocklistUnderSwitch { at: String, line: String },
+    /// Why a migrated config is refused: `overrides` holds an entry that is not a table.
+    #[code("migrate-reason-override-not-table")]
+    #[text(
+        "`{at}` on line {line} is not an override table. 2.x reads `overrides` as a list of tables, and the migration cannot rewrite the list without dropping that entry."
+    )]
+    ReasonOverrideNotTable { at: String, line: String },
     /// The vocabulary companion style was added.
     #[code("migrate-note-added-vocabulary-style")]
     #[text(
@@ -930,6 +936,15 @@ pub(crate) fn category_under_switch_reason(
     .to_string()
 }
 
+/// Why the migration refuses `overrides` when the entry `at`, on `line`, is not a table.
+pub(crate) fn override_shape_reason(line: usize, at: &str) -> String {
+    MigrateText::ReasonOverrideNotTable {
+        at: at.to_owned(),
+        line: line.to_string(),
+    }
+    .to_string()
+}
+
 pub(crate) fn of(error: &Error) -> Option<Box<dyn Catalog>> {
     Some(match error {
         Error::Dropped(records) => Box::new(MigrateMessage::LegacyDropped {
@@ -969,6 +984,10 @@ pub(crate) fn of(error: &Error) -> Option<Box<dyn Catalog>> {
         Error::BlocklistLayout { file, reason, .. } => Box::new(MigrateMessage::OutputInvalid {
             file: file.clone(),
             reason: reason.clone(),
+        }),
+        Error::OverrideShape { file, line, at } => Box::new(MigrateMessage::OutputInvalid {
+            file: file.clone(),
+            reason: override_shape_reason(*line, at),
         }),
         Error::RenameTable(detail) => Box::new(MigrateMessage::RenameTable {
             detail: detail.clone(),

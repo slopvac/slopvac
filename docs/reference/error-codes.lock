@@ -544,6 +544,7 @@ migrate-reason-expected-two text
 migrate-reason-guidance-override text
 migrate-reason-no-equivalent text
 migrate-reason-no-equivalent-rewrite text
+migrate-reason-override-not-table text
 migrate-reason-rejected-category text
 migrate-reason-rejected-rule text
 migrate-reason-rule-gone text

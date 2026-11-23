@@ -402,6 +402,13 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
             "`overrides[0].profile` on line 5 sets `profile` in an override, whatever its value, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels in the files that override covers. A follow-up will support these layouts.",
         ),
         (
+            MigrateText::ReasonOverrideNotTable {
+                at: s("overrides[1]"),
+                line: s("1"),
+            },
+            "`overrides[1]` on line 1 is not an override table. 2.x reads `overrides` as a list of tables, and the migration cannot rewrite the list without dropping that entry.",
+        ),
+        (
             MigrateText::NoteMergedSwitch {
                 profile: s("relaxed"),
                 at: s("overrides[1]"),

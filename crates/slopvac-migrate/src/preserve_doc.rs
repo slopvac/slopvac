@@ -20,7 +20,7 @@ use crate::messages::{MigratePhrase, MigrateText};
 use crate::preserve::{
     Block2, Block3, Config2, DropReason, Expanded, Out, Patched, category_under_switch, expand,
 };
-use crate::{Error, RenameTable};
+use crate::{Error, RenameTable, overrides};
 
 /// The pack that ships the legacy styles (docs/contract/profiles.md, E1).
 const STYLE_PREFIX: &str = "core:legacy-";
@@ -39,6 +39,7 @@ pub(crate) struct Ctx<'a> {
     pub(crate) file: &'a str,
     pub(crate) lines: crate::config::Lines<'a>,
     pub(crate) renames: &'a RenameTable,
+    pub(crate) checked: overrides::Checked,
     pub(crate) dropped: &'a mut Blockers,
     pub(crate) notes: &'a mut Vec<String>,
 }
@@ -117,7 +118,7 @@ fn check_blocklist_layout(
         line: ctx.lines.of(&path),
         reason,
     };
-    let blocks = override_tables(original);
+    let blocks = overrides::tables(original.as_table());
     if !blocklist && let Some(i) = blocks.iter().position(|t| has_blocklist(*t)) {
         let at = format!("overrides[{i}].vocabulary.path");
         let reason = MigrateText::ReasonBlocklistInOverride {
@@ -143,22 +144,6 @@ fn check_blocklist_layout(
     Ok(())
 }
 
-fn override_tables(doc: &DocumentMut) -> Vec<&dyn TableLike> {
-    match doc.get("overrides") {
-        Some(Item::ArrayOfTables(aot)) => aot.iter().map(|t| t as &dyn TableLike).collect(),
-        Some(item) => item
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(Value::as_inline_table)
-                    .map(|t| t as &dyn TableLike)
-                    .collect()
-            })
-            .unwrap_or_default(),
-        None => Vec::new(),
-    }
-}
-
 /// Read the 2.x settings the expansion uses. Returns `None` after recording an
 /// unknown profile, category or rule.
 fn read_config(doc: &DocumentMut, legacy: &Legacy, ctx: &mut Ctx<'_>) -> Option<Config2> {
@@ -167,7 +152,7 @@ fn read_config(doc: &DocumentMut, legacy: &Legacy, ctx: &mut Ctx<'_>) -> Option<
         read_profile(doc.as_table(), "profile", ctx).unwrap_or_else(|| DEFAULT_PROFILE.to_owned());
     let layer = read_layer(doc.as_table(), "", legacy, ctx);
     let mut overrides = Vec::new();
-    for (i, t) in override_tables(doc).into_iter().enumerate() {
+    for (i, t) in overrides::tables(doc.as_table()).into_iter().enumerate() {
         let path = format!("overrides[{i}]");
         let files = t
             .get("files")
@@ -309,7 +294,7 @@ fn write(
         ctx,
     );
     note_layout(expanded, ctx);
-    match doc.get_mut("overrides") {
+    match overrides::item_mut(ctx.checked, doc.as_table_mut()) {
         Some(Item::ArrayOfTables(aot)) => {
             let originals: Vec<Table> = aot.iter().cloned().collect();
             let views: Vec<&dyn TableLike> =
@@ -619,7 +604,7 @@ fn reconcile_dials(t: &mut dyn TableLike, d: &Dials) {
 /// The document position of the first `[[overrides]]` table. New tables placed
 /// relative to it render in front of the original overrides.
 fn first_override_position(doc: &DocumentMut) -> Option<isize> {
-    match doc.get("overrides") {
+    match overrides::item(doc.as_table()) {
         Some(Item::ArrayOfTables(aot)) => aot.iter().filter_map(Table::position).min(),
         _ => None,
     }
