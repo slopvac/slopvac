@@ -46,8 +46,8 @@ pub use schema::{GENRE_SCHEMA_VERSION, TAGGER_SCHEMA_VERSION};
 pub use structural::{FrontMatterCondition, Scope, When};
 pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, TagSink, Tagger, normalize_tags};
 pub use view::{
-    BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, split_sentences,
-    split_sentences_within,
+    BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, sentence_budget,
+    split_sentences, split_sentences_within,
 };
 #[cfg(feature = "work-counters")]
 #[doc(hidden)]

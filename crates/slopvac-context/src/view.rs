@@ -10,6 +10,8 @@ use std::ops::Range;
 use slopvac_config::frontmatter::{self, Policy, extract, parse_block};
 use slopvac_config::tree::Value;
 
+use crate::Error;
+
 /// Block kinds a tagger can see.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -73,13 +75,31 @@ pub trait DocumentView {
     /// Blocks in document order.
     fn blocks(&self) -> Vec<BlockView<'_>>;
     /// Sentences of one block.
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the default serves in-memory documents the caller holds; the engine's view overrides it with a split that stops at the document's budget"
-    )]
-    fn sentences<'a>(&self, block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
-        split_sentences(block)
+    ///
+    /// The default splits the block text and stops at [`sentence_budget`] of the document's
+    /// length, so a document of very short sentences cannot make a tagger build a record for
+    /// each.
+    ///
+    /// # Errors
+    /// Returns [`Error::TagLimit`] when the block holds more sentences than that.
+    fn sentences<'a>(&self, block: &BlockView<'a>) -> Result<Vec<SentenceView<'a>>, Error> {
+        let limit = sentence_budget(self.source_len());
+        split_sentences_within(block, limit).ok_or(Error::TagLimit { limit })
     }
+}
+
+/// Bytes of a document for each sentence it may hold. Prose holds one every few dozen bytes,
+/// so one for every 8 sits far above what prose needs.
+const BYTES_PER_SENTENCE: usize = 8;
+
+/// Sentences allowed whatever the length of the document.
+const SENTENCE_HEADROOM: usize = 65_536;
+
+/// The sentences a document of `source_len` bytes may hold, and the most a split of its text
+/// may build.
+#[must_use]
+pub fn sentence_budget(source_len: usize) -> usize {
+    (source_len / BYTES_PER_SENTENCE).saturating_add(SENTENCE_HEADROOM)
 }
 
 /// Split a block into sentences at `.`, `!` or `?` followed by whitespace.

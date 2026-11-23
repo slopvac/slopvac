@@ -34,7 +34,7 @@ fn main() {
             if matches!(b.kind, BlockKind::Heading | BlockKind::CodeBlock) {
                 continue;
             }
-            for s in doc.sentences(&b) {
+            for s in doc.sentences(&b).expect("a sentence limit") {
                 total += 1;
                 for k in idx.kinds_at(&s.span) {
                     *per_kind.entry(k.to_string()).or_default() += 1;

@@ -95,7 +95,7 @@ mod old {
             if matches!(b.kind, BlockKind::Heading | BlockKind::CodeBlock) {
                 continue;
             }
-            for s in doc.sentences(&b) {
+            for s in doc.sentences(&b).unwrap() {
                 if let Some(evidence) = test(s.text)? {
                     out.push(Tag {
                         kind: kind.to_string(),

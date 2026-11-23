@@ -294,19 +294,10 @@ struct Composite {
     sentences: Vec<Sentence>,
 }
 
-/// Bytes of the document for each sentence it may hold.
-///
-/// Prose holds a sentence every few dozen bytes. One for every 8 bytes sits far above what
-/// prose needs, and keeps a document of one-character sentences from building sentence
-/// records, and the tag views over them, of gigabytes.
-const BYTES_PER_SENTENCE: usize = 8;
-
-/// Sentences allowed whatever the size of the document.
-const SENTENCE_HEADROOM: usize = 65_536;
-
-/// The sentences that a document of `source_len` bytes may hold.
+/// The sentences that a document of `source_len` bytes may hold: the budget that
+/// `slopvac-context` gives every document view.
 pub(crate) fn sentence_budget(source_len: usize) -> usize {
-    (source_len / BYTES_PER_SENTENCE).saturating_add(SENTENCE_HEADROOM)
+    slopvac_context::sentence_budget(source_len)
 }
 
 /// Bytes of the document for each table cell it may hold.
@@ -317,9 +308,12 @@ pub(crate) fn sentence_budget(source_len: usize) -> usize {
 /// 4 bytes leaves that table a margin of 7 times.
 const BYTES_PER_CELL: usize = 4;
 
+/// Cells allowed whatever the size of the document.
+const CELL_HEADROOM: usize = 65_536;
+
 /// The table cells that a document of `source_len` bytes may hold.
 pub(crate) fn cell_budget(source_len: usize) -> usize {
-    (source_len / BYTES_PER_CELL).saturating_add(SENTENCE_HEADROOM)
+    (source_len / BYTES_PER_CELL).saturating_add(CELL_HEADROOM)
 }
 
 /// A parsed document with its sentences split.

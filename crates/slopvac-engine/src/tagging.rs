@@ -112,8 +112,6 @@ struct View<'a> {
     unmapped: Cell<bool>,
     /// The prose sentences the document may still hold, and the whole budget it had.
     sentences_left: (usize, usize),
-    /// Set when a block that no projection backs held more sentences than that.
-    over_budget: Cell<bool>,
 }
 
 /// The key of a projection in `View::prepared`.
@@ -219,7 +217,6 @@ impl<'a> View<'a> {
             prepared,
             unmapped: Cell::new(false),
             sentences_left: prepared_budget,
-            over_budget: Cell::new(false),
         }
     }
 }
@@ -347,7 +344,7 @@ impl DocumentView for View<'_> {
         self.views.clone()
     }
 
-    fn sentences<'a>(&self, block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
+    fn sentences<'a>(&self, block: &BlockView<'a>) -> Result<Vec<SentenceView<'a>>, ContextError> {
         // The entry is found by the text it reads, not by its span: cells that fell back to
         // line precision share the span of their row.
         let Some((owner, projection)) = self
@@ -358,14 +355,14 @@ impl DocumentView for View<'_> {
             // No projection, so the engine split no sentences: a code block. A tagger may
             // read the sentences of a code block whether or not any matches, so the split
             // stops at what the document may still hold.
-            return slopvac_context::split_sentences_within(block, self.sentences_left.0)
-                .unwrap_or_else(|| {
-                    self.over_budget.set(true);
-                    Vec::new()
-                });
+            return slopvac_context::split_sentences_within(block, self.sentences_left.0).ok_or(
+                ContextError::TagLimit {
+                    limit: self.sentences_left.1,
+                },
+            );
         };
         let Some(sentences) = self.prepared.get(&projection_key(projection)) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let mapper = self.entries[owner]
             .mapper
@@ -379,7 +376,7 @@ impl DocumentView for View<'_> {
                 (block.text.get(s.start..s.end), mapper.span(s.start, s.end))
             else {
                 self.unmapped.set(true);
-                return Vec::new();
+                return Ok(Vec::new());
             };
             owners.insert((span.start(), span.end()), owner);
             located.push(SentenceView {
@@ -387,7 +384,7 @@ impl DocumentView for View<'_> {
                 text,
             });
         }
-        located
+        Ok(located)
     }
 }
 
@@ -468,15 +465,9 @@ pub(crate) fn tag(
     // The declared contexts count against the ceiling like any other emission, before
     // duplicates go, so the ceiling does not depend on how the tags overlap.
     let extra: Vec<&dyn Tagger> = declared.iter().map(|d| *d as &dyn Tagger).collect();
-    let tags = registry.collect_tags_with(&view, max_tags, &extra);
-    // A split that hit the budget left no sentences, so a tagger that failed after it may
-    // have failed on that account. The budget is the first failure and the one reported.
-    if view.over_budget.get() {
-        return Err(TagError::Budget {
-            limit: view.sentences_left.1,
-        });
-    }
-    let tags = tags?;
+    // A split that hits the budget ends the run at once, with the budget error, so a later
+    // tagger never runs on the sentences it left out.
+    let tags = registry.collect_tags_with(&view, max_tags, &extra)?;
     if view.unmapped.get() {
         return Err(TagError::Unmapped);
     }
@@ -658,7 +649,7 @@ mod tests {
             let prepared = Prepared::new("", &doc).unwrap();
             let view = View::new("t.rst", "", &doc, None, &prepared);
             for block in view.blocks() {
-                let got: Vec<_> = view.sentences(&block).into_iter().map(|s| s.span).collect();
+                let got: Vec<_> = view.sentences(&block).unwrap().into_iter().map(|s| s.span).collect();
                 prop_assert_eq!(got, oracle_sentence_spans(&view, &block));
             }
         }

@@ -25,7 +25,7 @@ fn sentence_tags(
         if matches!(b.kind, BlockKind::Heading | BlockKind::CodeBlock) {
             continue;
         }
-        for s in doc.sentences(&b) {
+        for s in doc.sentences(&b)? {
             if let Some(evidence) = test(s.text)? {
                 sink.push_with(|| Tag {
                     kind: kind.to_string(),
