@@ -168,6 +168,18 @@ pub(crate) fn command<'a>(
 /// failure the launcher prints one line to standard error and exits with
 /// status 127, so the plugin fails to start.
 pub fn intercept() {
+    intercept_with(fail);
+}
+
+/// Like [`intercept`], for a program that people also run by hand: a malformed launcher
+/// invocation prints the reason and the usage line, then exits 2, the usage-error status.
+/// The plugin host always sends a well-formed invocation, so this differs from [`intercept`]
+/// only for a typed command. A failure after the arguments parse still exits 127.
+pub fn intercept_for_users() {
+    intercept_with(usage_failure);
+}
+
+fn intercept_with(on_malformed: fn(&str) -> !) {
     INSTALLED.store(true, Ordering::Release);
     let mut argv = std::env::args_os();
     let _ = argv.next();
@@ -177,7 +189,7 @@ pub fn intercept() {
     let rest: Vec<OsString> = argv.collect();
     match parse(&rest) {
         Ok(plan) => run(&plan),
-        Err(m) => fail(&m),
+        Err(m) => on_malformed(&m),
     }
 }
 
@@ -189,6 +201,17 @@ pub fn usage() -> String {
         flag: FLAG.to_owned(),
     }
     .to_string()
+}
+
+fn usage_failure(msg: &str) -> ! {
+    eprintln!(
+        "{}",
+        HostText::LaunchFailure {
+            message: msg.to_owned()
+        }
+    );
+    eprintln!("{}", usage());
+    std::process::exit(2)
 }
 
 fn fail(msg: &str) -> ! {

@@ -997,6 +997,7 @@ plugins-lock-diff-changed text
 plugins-lock-diff-digest text
 plugins-lock-diff-removed text
 plugins-lock-diff-source text
+plugins-lock-diff-unlocked text
 plugins-lock-diff-version text
 plugins-lock-digest-invalid text
 plugins-lock-error text

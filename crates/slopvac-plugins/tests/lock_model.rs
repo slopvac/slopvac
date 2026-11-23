@@ -544,3 +544,22 @@ fn a_path_source_never_has_a_colon_in_any_segment() {
         assert!(source.parse::<Source>().is_err(), "accepted {source:?}");
     }
 }
+
+#[test]
+fn config_drift_keeps_a_locked_pack_that_a_configured_pack_requires() {
+    let text = format!(
+        "schema_version = 3\n\
+         [[plugins]]\nid = \"app\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/app\"\ndigest = \"{D1}\"\nrequires = [\"base\"]\n\
+         [[plugins]]\nid = \"base\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/base\"\ndigest = \"{D2}\"\n\
+         [[plugins]]\nid = \"stale\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/stale\"\ndigest = \"{D1}\"\n"
+    );
+    let lock = Lockfile::parse(&text).unwrap();
+    let configured: Vec<PackId> = ["app", "new"].iter().map(|id| id.parse().unwrap()).collect();
+    let drift = slopvac_plugins::lock::config_drift(&lock, &configured);
+    let ids = |v: &[PackId]| v.iter().map(ToString::to_string).collect::<Vec<_>>();
+    assert_eq!(ids(&drift.unlocked), ["new"]);
+    assert_eq!(ids(&drift.removed), ["stale"]);
+}

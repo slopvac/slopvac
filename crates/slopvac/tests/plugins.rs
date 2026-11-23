@@ -41,6 +41,8 @@ impl Sandbox {
             .env("SLOPVAC_NO_UPDATE_CHECK", "1")
             .env("HOME", &home)
             .env("XDG_CACHE_HOME", home.join("cache"))
+            .env("XDG_CONFIG_HOME", home.join("config"))
+            .env("XDG_DATA_HOME", home.join("data"))
             .env("XDG_STATE_HOME", home.join("state"))
             .env("NO_COLOR", "1");
         for var in [
@@ -107,6 +109,20 @@ fn sync_exits_0_when_the_lock_is_in_place() {
         .stdout(predicate::str::starts_with("style 1.0.0: in place\n"));
 }
 
+/// The plugin store is the per-user data directory (doctor.md, "Directories"), never the cache.
+#[test]
+fn sync_writes_the_plugin_store_to_the_data_directory_and_not_the_cache() {
+    let sandbox = Sandbox::new();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+    let home = sandbox.dir.path().join("home");
+    assert!(home.join("data/slopvac/trees").is_dir(), "no store in the data directory");
+    assert!(!home.join("cache/slopvac").exists(), "the cache directory holds a store");
+}
+
 #[test]
 fn sync_of_an_unsigned_oci_plugin_exits_2_with_its_own_code() {
     let sandbox = Sandbox::new();
@@ -139,6 +155,12 @@ const SIGNED_UNCACHED: &str = "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nv
 )]
 #[case::extended_config(
     &["plugins", "sync"], &[], Some(("slopvac.toml", "schema_version = 3\nextends = [\"base.toml\"]\n"))
+)]
+#[case::extended_true_then_project_false(
+    &["plugins", "sync"], &[], Some((
+        "slopvac.toml",
+        "schema_version = 3\nextends = [\"base.toml\"]\n[network]\noffline = false\n"
+    ))
 )]
 fn sync_offline_from_any_source_reports_the_missing_cache_entry(
     #[case] args: &[&str],
@@ -210,6 +232,39 @@ fn sync_in_ci_without_a_lock_exits_2() {
         ));
 }
 
+const STYLE_CONFIG: &str = "schema_version = 3\n[[plugins]]\nid = \"style\"\n\
+    source = \"oci://registry.invalid/acme/style\"\n";
+
+#[test]
+fn sync_in_ci_exits_2_when_a_configured_plugin_is_not_in_the_lock() {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock("");
+    fs::write(sandbox.project().join("slopvac.toml"), STYLE_CONFIG).unwrap();
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[lock-mismatch]: "))
+        .stderr(predicate::str::contains("unlocked: style"));
+}
+
+#[test]
+fn sync_in_ci_exits_2_when_a_locked_plugin_is_no_longer_configured() {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    fs::write(sandbox.project().join("slopvac.toml"), "schema_version = 3\n").unwrap();
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[lock-mismatch]: "))
+        .stderr(predicate::str::contains("removed: style"));
+}
+
 /// The plugin host starts this executable as the plugin launcher. The binary has to run that
 /// mode, or no git plugin source can be fetched.
 #[test]
@@ -231,6 +286,41 @@ fn the_binary_runs_as_the_plugin_launcher() {
         .assert()
         .success()
         .stdout("launched\n");
+}
+
+/// A launcher call typed by hand with a part missing is a usage error, not a plugin failure.
+#[test]
+fn a_malformed_launcher_invocation_exits_2_with_the_usage_line() {
+    let sandbox = Sandbox::new();
+    sandbox
+        .slopvac()
+        .args(["--slopvac-plugin-launcher", "cpu=60"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("slopvac plugin launcher: "))
+        .stderr(predicate::str::contains("usage: slopvac-plugin-launcher"));
+}
+
+/// A valid launcher call hands back the status of the program it ran.
+#[test]
+fn a_valid_launcher_invocation_relays_the_childs_exit_status() {
+    let sandbox = Sandbox::new();
+    sandbox
+        .slopvac()
+        .args([
+            "--slopvac-plugin-launcher",
+            "cpu=60",
+            "nofile=256",
+            "fsize=1048576",
+            "data=4294967296",
+            "sweep=100",
+            "--",
+            "/bin/sh",
+            "-c",
+            "exit 3",
+        ])
+        .assert()
+        .code(3);
 }
 
 #[rstest::rstest]

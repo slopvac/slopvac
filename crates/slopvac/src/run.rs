@@ -379,11 +379,11 @@ fn plugins(
         .as_ref()
         .map_or_else(|| cwd.clone(), |c| c.root.clone());
     // The preflight reads the nearest file only, so an `[network] offline` in an extended file
-    // reaches this command through the resolved config. Offline is sticky: any source wins.
+    // reaches this command through the resolved config. The resolver keeps offline sticky across
+    // every layer (policies.md, 1.3; config.md, "Layer order"): a later `false` never wins.
     let config_offline = config
         .as_ref()
-        .and_then(|c| c.project_value(&["network", "offline"]))
-        .and_then(|v| v.as_bool());
+        .map(|c| crate::lint_settings::resolve(c, std::path::Path::new(".")).is_offline());
     let offline = offline::resolve(offline, env, config_offline);
     let dirs = plugin_dirs(env, root.clone())?;
     let dirs_state = dirs.state_dir.clone();

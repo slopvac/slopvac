@@ -451,6 +451,10 @@ pub(crate) enum SyncText {
     #[code("plugins-lock-diff-removed")]
     #[text("removed: {id} is locked but was not resolved")]
     DiffRemoved { id: String },
+    /// A configured pack has no entry in the lock.
+    #[code("plugins-lock-diff-unlocked")]
+    #[text("unlocked: {id} is configured but not in the lock")]
+    DiffUnlocked { id: String },
     /// The start of a changed pack.
     #[code("plugins-lock-diff-changed")]
     #[text("changed: {id}")]
@@ -1311,6 +1315,11 @@ pub(crate) fn diff_removed(id: &impl Display) -> String {
     SyncText::DiffRemoved { id: s(id) }.to_string()
 }
 
+/// The diff line for a configured pack that is not locked.
+pub(crate) fn diff_unlocked(id: &impl Display) -> String {
+    SyncText::DiffUnlocked { id: s(id) }.to_string()
+}
+
 /// The start of the diff line for a changed pack.
 pub(crate) fn diff_changed(id: &impl Display) -> String {
     SyncText::DiffChanged { id: s(id) }.to_string()
@@ -1901,6 +1910,10 @@ mod tests {
             (
                 SyncText::DiffRemoved { id: s("a") },
                 "removed: a is locked but was not resolved",
+            ),
+            (
+                SyncText::DiffUnlocked { id: s("a") },
+                "unlocked: a is configured but not in the lock",
             ),
             (SyncText::DiffChanged { id: s("a") }, "changed: a"),
             (

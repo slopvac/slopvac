@@ -14,7 +14,8 @@ use slopvac_update::messages::UpdateMessage;
 use crate::PluginSpec;
 use crate::cause::{self, withheld};
 use crate::lock::{
-    LockedPack, Lockfile, MAX_LOCK_BYTES, PackId, PackKind, VersionReq, outdated as lock_outdated,
+    LockedPack, Lockfile, MAX_LOCK_BYTES, PackId, PackKind, VersionReq, config_drift,
+    outdated as lock_outdated,
 };
 use crate::messages::cli::{CliText, Redacted, RunError};
 use crate::oci::Digest;
@@ -22,8 +23,8 @@ use crate::pyenv::{EnvStore, PythonRuntime};
 use crate::revoke::{RevocationError, RevocationNotice, Revocations};
 use crate::sign::KeyPolicy;
 use crate::sync::{
-    Change, Network, PackState, PackStatus, PythonBuild, PythonState, Store, Syncer, status,
-    status_with_python, update_notices,
+    Change, Network, PackState, PackStatus, PythonBuild, PythonState, Store, SyncError, Syncer,
+    status, status_with_python, update_notices,
 };
 use crate::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
 use crate::update::{LISTING_BUDGET_BYTES, Outcome, Updater, list_candidates};
@@ -384,10 +385,16 @@ fn notices(out: &mut dyn Write, list: &[RevocationNotice]) -> Result<(), RunErro
 
 fn read_lock(runner: &Runner<'_>, required: bool) -> Result<Lockfile, RunError> {
     let path = runner.dirs.project_root.join(".slopvac/plugins.lock");
-    let invalid = |source: crate::lock::LockError| RunError::LockInvalid {
-        detail: source.diagnostic(),
-        source,
+    let invalid = |source: crate::lock::LockError| {
+        let detail = source.diagnostic();
+        RunError::LockInvalid {
+            // The parser's own error can echo the rejected value, so the cause keeps only the
+            // location.
+            source: Redacted::new(detail.clone()),
+            detail,
+        }
     };
+
     match read_capped_regular_to_string(&path, MAX_LOCK_BYTES as u64, ReadOptions::default()) {
         Ok(text) => Lockfile::parse(&text).map_err(invalid),
         Err(e) if !required && e.input_kind() == Some(InputKind::NotFound) => {
@@ -570,6 +577,23 @@ fn run_list(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
 
 fn run_sync(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> {
     let lock = read_lock(runner, runner.locked)?;
+    if runner.locked {
+        // CI runs from the lock, so a lock that the config has outgrown is a failure
+        // (policies.md, 1.4). Only ids are checked here: versions, sources and digests need
+        // the resolver.
+        let configured: Vec<PackId> = runner
+            .configured
+            .iter()
+            .filter(|id| id.as_str() != "core")
+            .filter_map(|id| id.parse().ok())
+            .collect();
+        let drift = config_drift(&lock, &configured);
+        if !drift.is_empty() {
+            return Err(RunError::Failed {
+                source: cause::sync(&runner.dirs.project_root, &SyncError::LockMismatch(drift)),
+            });
+        }
+    }
     let store = Store::new(&runner.dirs.cache_dir);
     let mut syncer = Syncer::new(
         &store,

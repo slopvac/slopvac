@@ -541,11 +541,68 @@ fn a_lock_that_does_not_parse_reports_where_and_never_what_it_said() {
 }
 
 #[test]
+fn a_lock_that_does_not_parse_carries_none_of_its_text_in_the_error_chain() {
+    let f = Fixture::new();
+    f.write_lock(&[
+        "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"plugins/style\"\ndigest = \"SECRET-VALUE\"\n"
+            .to_owned(),
+    ]);
+    let err = f.run(&["status"], false, |s| s).result.unwrap_err();
+    let mut chain = vec![err.to_string()];
+    let mut next = std::error::Error::source(&err);
+    while let Some(cause) = next {
+        chain.push(cause.to_string());
+        next = cause.source();
+    }
+    assert!(chain.len() > 1, "the error keeps a cause: {chain:?}");
+    assert!(
+        chain.iter().all(|link| !link.contains("SECRET-VALUE")),
+        "{chain:?}"
+    );
+}
+
+#[test]
 fn sync_in_ci_without_a_lock_fails_and_outside_ci_passes() {
     let f = Fixture::new();
     assert_eq!(f.run(&["sync"], false, |s| s).result.unwrap(), 0);
     let err = f.run(&["sync"], false, Setup::locked).result.unwrap_err();
     assert_eq!(err.code(), "plugins-lock-unreadable");
+}
+
+#[test]
+fn sync_in_ci_refuses_a_configured_plugin_that_is_not_locked() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
+    let err = f
+        .run(&["sync"], false, |s| s.locked().configured(&["style", "extra"]))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "lock-mismatch");
+    assert!(
+        err.to_string()
+            .contains("unlocked: extra is configured but not in the lock"),
+        "{err}"
+    );
+}
+
+#[test]
+fn sync_in_ci_refuses_a_locked_plugin_that_is_no_longer_configured() {
+    let f = Fixture::new();
+    f.write_lock(&[
+        oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH),
+        oci_entry("old", "data", "1.0.0", "r.example", HASH),
+    ]);
+    let err = f
+        .run(&["sync"], false, |s| s.locked().configured(&["style"]))
+        .result
+        .unwrap_err();
+    assert_eq!(err.code(), "lock-mismatch");
+    assert!(
+        err.to_string()
+            .contains("removed: old is locked but was not resolved"),
+        "{err}"
+    );
 }
 
 // ---- outdated and update ------------------------------------------------------------

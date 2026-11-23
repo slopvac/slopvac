@@ -7,7 +7,6 @@ use std::sync::{Mutex, PoisonError};
 use slopvac_messages::{Arg, Catalog, Entry, Kind, Param, ParamKind, Value};
 use slopvac_update::messages::UpdateMessage;
 
-use crate::lock::LockError;
 use crate::oci::OciError;
 
 /// Help text of the group, its subcommands and their arguments, and the lines the commands
@@ -299,9 +298,9 @@ pub enum RunError {
     LockInvalid {
         /// The sentence of the failure.
         detail: String,
-        /// The parse failure.
+        /// The same sentence as a cause: the location only, never the text of the lock.
         #[source]
-        source: LockError,
+        source: Redacted,
     },
     /// A sync, update, revocation or trust store operation failed. The code and the message are
     /// those of the failure, with every path shown under the project root.
