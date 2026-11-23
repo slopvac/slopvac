@@ -770,6 +770,23 @@ mod tests {
             .any(|f| f.rule_id.to_string() == LEXICON)
     }
 
+    /// A buffer chooses the same genre whatever its kind: the probe engine reads a
+    /// reStructuredText buffer with its own adapter, as the lint of the buffer does. The path
+    /// `design/` is a weight 3 signal of `internal`, whose minimum score is 3.
+    #[rstest::rstest]
+    #[case::markdown("design/a.md")]
+    #[case::mdx("design/a.mdx")]
+    #[case::restructuredtext("design/a.rst")]
+    fn a_buffer_of_any_kind_gets_the_detected_genre(#[case] path: &str) {
+        let (_dir, root, server) = nested_project();
+        let project = Arc::clone(&server.linter.project);
+        let epoch = project.epoch().expect("a loaded project");
+        let config = LoadedConfig::without_files(root.clone());
+        let detected =
+            project.detected_genre(epoch, path, "# Notes\n\nText.\n", &config, Path::new(path));
+        assert_eq!(detected.as_deref(), Some("internal"));
+    }
+
     #[test]
     fn a_config_read_that_a_reload_overtook_does_not_refill_the_cache() {
         let (_dir, root, server) = nested_project();
