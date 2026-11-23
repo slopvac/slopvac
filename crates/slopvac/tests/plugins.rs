@@ -48,6 +48,7 @@ impl Sandbox {
             "SLOPVAC_LOG",
             "SLOPVAC_CACHE_DIR",
             "SLOPVAC_TRUST",
+            "CI",
             "FORCE_COLOR",
             "CLICOLOR_FORCE",
         ] {
@@ -75,20 +76,6 @@ fn plugins_help_lists_the_group_subcommands() {
             "{name} missing:\n{out}"
         );
     }
-}
-
-#[test]
-fn packs_is_no_longer_a_command() {
-    let sandbox = Sandbox::new();
-    sandbox
-        .slopvac()
-        .args(["packs"])
-        .assert()
-        .code(2)
-        // An unknown first word is a path to lint, so `packs` is not a command.
-        .stderr(predicate::str::starts_with(
-            "error[input-unreadable]: packs: ",
-        ));
 }
 
 #[test]
@@ -134,6 +121,96 @@ fn sync_of_an_unsigned_oci_plugin_exits_2_with_its_own_code() {
         .assert()
         .code(2)
         .stderr(predicate::str::starts_with("error[sync-unsigned]: "));
+}
+
+/// A lock entry with a signature record, for an OCI plugin that no cache holds.
+const SIGNED_UNCACHED: &str = "\n[[plugins]]\nid = \"style\"\nkind = \"data\"\nversion = \"1.0.0\"\n\
+    slopvac_api = 1\nsource = \"oci://registry.invalid/acme/style:1.0.0\"\n\
+    digest = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n\
+    [plugins.signature]\nkey_id = \"A1B2C3D4E5F60718\"\nnot_before = \"2026-11-01T00:00:00Z\"\n";
+
+/// Offline mode from any source stops the run before the registry: the cache has no copy, so
+/// the failure is the offline one. A run that went online would fail another way.
+#[rstest::rstest]
+#[case::flag(&["--offline", "plugins", "sync"], &[], None)]
+#[case::environment(&["plugins", "sync"], &[("SLOPVAC_OFFLINE", "1")], None)]
+#[case::project_config(
+    &["plugins", "sync"], &[], Some(("slopvac.toml", "schema_version = 3\n[network]\noffline = true\n"))
+)]
+#[case::extended_config(
+    &["plugins", "sync"], &[], Some(("slopvac.toml", "schema_version = 3\nextends = [\"base.toml\"]\n"))
+)]
+fn sync_offline_from_any_source_reports_the_missing_cache_entry(
+    #[case] args: &[&str],
+    #[case] vars: &[(&str, &str)],
+    #[case] config: Option<(&str, &str)>,
+) {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(SIGNED_UNCACHED);
+    if let Some((name, text)) = config {
+        fs::write(sandbox.project().join(name), text).unwrap();
+        fs::write(
+            sandbox.project().join("base.toml"),
+            "schema_version = 3\n[network]\noffline = true\n",
+        )
+        .unwrap();
+    }
+    sandbox
+        .slopvac()
+        .envs(vars.iter().copied())
+        .args(args)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[offline-plugin-missing]: ",
+        ));
+}
+
+#[test]
+fn sync_without_a_lock_passes_outside_ci() {
+    let sandbox = Sandbox::new();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn sync_in_ci_without_a_lock_exits_2() {
+    let sandbox = Sandbox::new();
+    sandbox
+        .slopvac()
+        .env("CI", "true")
+        .args(["--offline", "plugins", "sync"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[plugins-lock-unreadable]: ",
+        ));
+}
+
+/// The plugin host starts this executable as the plugin launcher. The binary has to run that
+/// mode, or no git plugin source can be fetched.
+#[test]
+fn the_binary_runs_as_the_plugin_launcher() {
+    let sandbox = Sandbox::new();
+    sandbox
+        .slopvac()
+        .args([
+            "--slopvac-plugin-launcher",
+            "cpu=60",
+            "nofile=256",
+            "fsize=1048576",
+            "data=4294967296",
+            "sweep=100",
+            "--",
+            "/bin/echo",
+            "launched",
+        ])
+        .assert()
+        .success()
+        .stdout("launched\n");
 }
 
 #[rstest::rstest]

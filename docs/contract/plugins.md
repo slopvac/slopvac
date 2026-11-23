@@ -118,7 +118,7 @@ Any other value, such as `Noun`, `adp`, or `noun` with a leading space, is inval
 | `plugins status` | Reports each locked plugin with its kind, install state and revocation state, and the trust state of each code plugin. |
 | `plugins outdated` | Lists newer versions and digests from the pinned sources. |
 | `plugins update` | Moves the lock to the newest versions that the config allows. Only `plugins trust` records trust. |
-| `plugins trust <id>`, `plugins untrust <id>` | Records or removes trust for the content hash of a code plugin. |
+| `plugins trust <id>`, `plugins untrust <id>` | Records or removes trust for the content hash of a code plugin. The binary does not load code plugin files yet, so `plugins trust` exits 2 with `plugins-trust-inputs-failed` and records nothing. |
 | `plugins pin <namespace> <fingerprint> [--registry <host>]` | Pins a publisher key for one namespace on one registry host. |
 | `plugins rotate <namespace> [--registry <host>]` | Accepts a key rotation for a pinned key and replaces the pin (threat-model.md, section 5.3). |
 | `plugins new`, `validate`, `test`, `build`, `publish` | Author a plugin: create its files, check them against their schemas, run its tests, build the artifact and push it. |

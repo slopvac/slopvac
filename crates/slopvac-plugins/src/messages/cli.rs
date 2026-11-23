@@ -44,7 +44,7 @@ pub(crate) enum CliText {
     HelpUpdate,
     /// Help for `plugins trust`.
     #[code("plugins-help-trust")]
-    #[text("Record trust for the content hash of a code plugin.")]
+    #[text("Record trust for the content hash of a code plugin. This build cannot load plugin files yet, so it refuses.")]
     HelpTrust,
     /// Help for `plugins untrust`.
     #[code("plugins-help-untrust")]
@@ -315,8 +315,8 @@ pub enum RunError {
         #[source]
         source: Box<OciError>,
     },
-    /// The trust store failed. The cause is redacted text: the store's own error names the
-    /// absolute path of the file.
+    /// The trust store failed, or the group could not be set up. The cause is redacted text: the
+    /// store's own error names the absolute path of the file.
     #[code("plugins-store-failed")]
     #[message("{detail}")]
     Store {

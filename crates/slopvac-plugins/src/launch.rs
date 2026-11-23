@@ -83,9 +83,6 @@ pub enum Launcher {
     /// `main`. Production uses this. A process that never called
     /// [`intercept`] gets [`PluginError::LauncherNotInstalled`](crate::PluginError::LauncherNotInstalled)
     /// and nothing starts.
-    // STUB(slopvac-8l4.9.24): the `slopvac` binary does not call `intercept`
-    // yet, so a plugin it starts this way fails closed with
-    // `launcher-not-installed`.
     #[default]
     CurrentExe,
     /// Another program that calls [`intercept`], such as this package's
