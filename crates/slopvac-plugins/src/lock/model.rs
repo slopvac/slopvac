@@ -59,6 +59,52 @@ pub struct LockError {
 }
 
 impl LockError {
+    /// Keys a lock file may hold. A pointer segment outside this set came from the file.
+    const KEYS: [&'static str; 12] = [
+        "schema_version",
+        "plugins",
+        "id",
+        "kind",
+        "version",
+        "slopvac_api",
+        "source",
+        "digest",
+        "signature",
+        "key_id",
+        "not_before",
+        "requires",
+    ];
+
+    /// Where the lock file is wrong, with nothing the file said. The parser message can echo
+    /// the rejected value, so only the location survives, and only the segments that are lock
+    /// keys or array indexes: any other segment shows as `*`.
+    #[must_use]
+    pub fn diagnostic(&self) -> String {
+        use crate::messages::cli::CliText;
+        if self.pointer.is_empty() {
+            return slopvac_messages::render(&CliText::LockDiagnosticWhole);
+        }
+        let shown: Vec<&str> = self
+            .pointer
+            .split('/')
+            .skip(1)
+            .map(|seg| {
+                if Self::KEYS.contains(&seg)
+                    || (!seg.is_empty()
+                        && seg.len() <= 6
+                        && seg.bytes().all(|b| b.is_ascii_digit()))
+                {
+                    seg
+                } else {
+                    "*"
+                }
+            })
+            .collect();
+        slopvac_messages::render(&CliText::LockDiagnosticAt {
+            pointer: format!("/{}", shown.join("/")),
+        })
+    }
+
     pub(super) fn new(pointer: impl Into<String>, message: impl AsRef<str>) -> Self {
         Self {
             pointer: pointer.into(),

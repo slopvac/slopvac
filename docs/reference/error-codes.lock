@@ -989,6 +989,8 @@ plugins-lock-api-range text
 plugins-lock-build-metadata text
 plugins-lock-canonical-too-large text
 plugins-lock-comparator-invalid text
+plugins-lock-diagnostic-at text
+plugins-lock-diagnostic-whole text
 plugins-lock-diff-added text
 plugins-lock-diff-changed text
 plugins-lock-diff-digest text

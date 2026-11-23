@@ -231,6 +231,14 @@ pub(crate) enum CliText {
     #[code("plugins-outdated-failed")]
     #[text("{id}: cannot check for newer versions: {reason}")]
     OutdatedFailed { id: String, reason: String },
+    /// A lock file that does not parse, with no location.
+    #[code("plugins-lock-diagnostic-whole")]
+    #[text("not a valid lockfile")]
+    LockDiagnosticWhole,
+    /// Where a lock file is wrong. The segments are known keys or indexes.
+    #[code("plugins-lock-diagnostic-at")]
+    #[text("invalid value at {pointer}")]
+    LockDiagnosticAt { pointer: String },
     /// Trust was recorded for a code plugin.
     #[code("plugins-trusted")]
     #[text("trusted `{id}` with content hash {hash}")]
@@ -264,9 +272,9 @@ pub(crate) enum CliText {
 pub enum RunError {
     /// The subcommand exists in the command tree but has no implementation in this build.
     #[code("command-not-wired")]
-    #[message("`slopvac plugins {command}` is not available in this build yet.")]
+    #[message("`slopvac {command}` is not available in this build yet.")]
     NotWired {
-        /// The subcommand, as the user typed it.
+        /// The command after `slopvac`, as the user typed it, such as `plugins search`.
         command: String,
     },
     /// The lock file could not be read.
