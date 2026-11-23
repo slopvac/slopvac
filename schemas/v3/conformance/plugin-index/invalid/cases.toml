@@ -33,3 +33,7 @@
 "source-trailing-newline.json" = "/plugins/0/source"
 "key-id-trailing-newline.json" = "/plugins/0/publisher_key/key_id"
 "fingerprint-trailing-newline.json" = "/plugins/0/publisher_key/fingerprint"
+"source-no-break-space.json" = "/plugins/0/source"
+"source-ideographic-space.json" = "/plugins/0/source"
+"source-next-line.json" = "/plugins/0/source"
+"source-empty-authority.json" = "/plugins/0/source"

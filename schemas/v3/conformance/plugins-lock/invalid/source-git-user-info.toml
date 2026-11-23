@@ -1,0 +1,9 @@
+schema_version = 3
+
+[[plugins]]
+id = "p0000"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "git+https://user@example.org/r.git@0123456789abcdef0123456789abcdef01234567"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

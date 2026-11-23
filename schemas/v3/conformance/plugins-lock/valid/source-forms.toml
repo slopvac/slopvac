@@ -1,0 +1,49 @@
+schema_version = 3
+
+[[plugins]]
+id = "p0000"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "oci:///registry-path"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0001"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "https://example.org/a@b/p.tar.gz"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0002"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "git+https://example.org/a@b/r.git@0123456789abcdef0123456789abcdef01234567"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0003"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/with space/inside"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0004"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/trailing/"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[plugins]]
+id = "p0005"
+kind = "data"
+version = "1.0.0"
+slopvac_api = 1
+source = "packs/..hidden"
+digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
