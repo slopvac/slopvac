@@ -309,6 +309,19 @@ pub(crate) fn sentence_budget(source_len: usize) -> usize {
     (source_len / BYTES_PER_SENTENCE).saturating_add(SENTENCE_HEADROOM)
 }
 
+/// Bytes of the document for each table cell it may hold.
+///
+/// A cell is one sentence and costs no split, so it gets a looser divisor than prose. A
+/// table of cells of one character, `|a|a|a|`, has one for every 2 bytes and is no real
+/// table: a table in the repository's own docs holds one for every 30 bytes. One for every
+/// 4 bytes leaves that table a margin of 7 times.
+const BYTES_PER_CELL: usize = 4;
+
+/// The table cells that a document of `source_len` bytes may hold.
+pub(crate) fn cell_budget(source_len: usize) -> usize {
+    (source_len / BYTES_PER_CELL).saturating_add(SENTENCE_HEADROOM)
+}
+
 /// A parsed document with its sentences split.
 pub(crate) struct Prepared<'a> {
     source: &'a str,
@@ -318,7 +331,7 @@ pub(crate) struct Prepared<'a> {
 
 impl<'a> Prepared<'a> {
     /// Split the sentences of every prose block, holding at most [`sentence_budget`] of them
-    /// for the whole document.
+    /// for the whole document, and at most [`cell_budget`] table cells.
     ///
     /// # Errors
     /// Returns [`EngineError::TagBuildBudget`] when the document has more sentences than
@@ -326,6 +339,8 @@ impl<'a> Prepared<'a> {
     pub(crate) fn new(source: &'a str, doc: &'a Document) -> Result<Self, EngineError> {
         let limit = sentence_budget(source.len());
         let mut left = limit;
+        let cell_limit = cell_budget(source.len());
+        let mut cells_left = cell_limit;
         let mut blocks = Vec::new();
         for block in &doc.blocks {
             let Some(projection) = &block.projection else {
@@ -336,8 +351,10 @@ impl<'a> Prepared<'a> {
             }
             // The reference counts a table cell as one sentence, whatever it contains.
             let sentences = if matches!(block.kind, BlockKind::TableCell { .. }) {
-                // One sentence for each cell, which is one for each block the parser
-                // already holds, so a table of tiny cells needs no charge of its own.
+                // A cell is charged on its own budget, before its record is built.
+                cells_left = cells_left
+                    .checked_sub(1)
+                    .ok_or(EngineError::TagBuildBudget { limit: cell_limit })?;
                 cell_sentence(projection.text())?.into_iter().collect()
             } else {
                 let found = split_sentences_within(projection.text(), left)?

@@ -116,11 +116,32 @@ fn a_paragraph_of_one_character_sentences_is_not_checked_before_its_sentences_ar
     );
 }
 
+/// A table of `rows` rows of `columns` cells of one character, with its header.
+fn table(rows: usize, columns: usize) -> String {
+    let row = format!("{}|\n", "|a".repeat(columns));
+    let rule = format!("{}|\n", "|-".repeat(columns));
+    format!("{row}{rule}{}", row.repeat(rows))
+}
+
 #[test]
-fn a_table_of_one_character_cells_is_checked_whatever_the_sentence_budget() {
-    // 300000 rows of one cell of 4 bytes: a cell is one sentence, so the table holds one
-    // sentence for every 4 bytes, over the one for every 8 that prose may hold.
-    let source = format!("|a|\n|-|\n{}", "|a|\n".repeat(300_000));
+fn a_table_of_cells_of_one_character_is_not_checked_and_builds_no_index() {
+    // 3000 rows of 100 cells of 2 bytes each: 300000 cells in about 603000 bytes, one for
+    // every 2 bytes, over the one for every 4 that the cell budget allows.
+    let source = table(3_000, 100);
+    let limit = source.len() / 4 + 65_536;
+    let _ = (take_build_elements(), take_materialised_tags());
+    let result = engine().lint(&Input::markdown("a.md", &source));
+    assert_eq!(
+        result.map(|d| d.findings.len()),
+        Err(EngineError::TagBuildBudget { limit })
+    );
+    assert_eq!(take_build_elements(), 0, "an index was built");
+}
+
+#[test]
+fn a_table_with_one_cell_in_every_four_bytes_is_checked() {
+    // 300000 rows of one cell: `|a|` and a newline, one cell for every 4 bytes.
+    let source = table(300_000, 1);
     let result = engine().lint(&Input::markdown("a.md", &source));
     assert!(result.is_ok(), "{:?}", result.map(|d| d.findings.len()));
 }
