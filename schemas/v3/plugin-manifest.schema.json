@@ -1,67 +1,203 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://slopvac.github.io/slopvac/schemas/v3/plugin-manifest.schema.json",
-  "title": "slopvac v3 plugin manifest",
-  "description": "The slopvac-plugin.toml file at the root of a plugin. A data plugin holds rules, styles, genres, terms, taggers and prime snippets, and no code. A code plugin adds one [plugin] table with the command to run and the embedded plugin declaration. The manifest of a code plugin is part of the content hash that `slopvac plugins trust` records. Semantics are specified in docs/contract/plugins.md. Owner: slopvac-8l4.2.4.",
-  "type": "object",
-  "properties": {
-    "schema_version": {
-      "$ref": "common.schema.json#/$defs/SchemaVersion"
+  "$defs": {
+    "PackPath": {
+      "description": "A path inside a pack: relative, with forward slashes and no `..` segment. A glob is allowed.",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S])))",
+      "type": "string"
     },
-    "id": {
-      "description": "Plugin id. It prefixes every rule id the plugin provides. `core` is reserved for the built-in plugin.",
-      "$ref": "common.schema.json#/$defs/PluginId"
-    },
-    "version": {
-      "$ref": "common.schema.json#/$defs/Semver"
-    },
-    "slopvac_api": {
-      "description": "Plugin extension API the plugin was written for. A host that implements a lower version refuses the plugin.",
-      "$ref": "common.schema.json#/$defs/ApiVersion"
-    },
-    "kind": {
-      "description": "data: a data plugin, which holds declarative files only and forbids a plugin table. code: a code plugin, which requires the plugin table and runs as a subprocess. Either kind may provide data files.",
-      "enum": [
-        "data",
-        "code"
-      ]
-    },
-    "description": {
-      "type": "string",
-      "minLength": 1
-    },
-    "license": {
-      "description": "SPDX license expression.",
-      "type": "string",
-      "minLength": 1
-    },
-    "homepage": {
-      "type": "string",
-      "format": "uri"
-    },
-    "provides": {
-      "$ref": "#/$defs/Provides"
-    },
-    "requires": {
-      "description": "Plugins this plugin needs. The host resolves them before it loads this one.",
-      "type": "array",
+    "PathList": {
+      "description": "A list of pack paths with no repeats.",
       "items": {
-        "$ref": "#/$defs/Requirement"
-      }
+        "$ref": "#/$defs/PackPath"
+      },
+      "type": "array",
+      "uniqueItems": true
     },
-    "plugin": {
-      "$ref": "#/$defs/Plugin"
+    "Plugin": {
+      "allOf": [
+        {
+          "$ref": "plugin-protocol.schema.json#/$defs/PluginDeclaration"
+        }
+      ],
+      "description": "How to run the code plugin, plus its pre-spawn declaration. The declaration fields (network, hooks, features) sit flat in this table, so the host reads them from the same bytes that it hashes. See the PluginDeclaration def in plugin-protocol.schema.json. The manifest closes the hook entries and the features table: they take only the declared keys and x- keys, so the hashed bytes carry no unreviewed data.",
+      "else": {
+        "not": {
+          "required": [
+            "python"
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "runtime": {
+            "const": "python"
+          }
+        },
+        "required": [
+          "runtime"
+        ]
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "properties": {
+        "args": {
+          "description": "Arguments.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "description": "Executable inside the plugin, or a bare name that the plugin's own environment provides. With runtime python it is a script inside the plugin (PackPath, no leading dash).",
+          "minLength": 1,
+          "type": "string"
+        },
+        "env": {
+          "description": "Names of environment variables the plugin may receive when the user allows them. Nothing else passes through.",
+          "items": {
+            "pattern": "^[A-Z_][A-Z0-9_]*(?![\\s\\S])",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "features": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x-": {}
+          },
+          "properties": {
+            "optional": true,
+            "required": true
+          },
+          "type": "object"
+        },
+        "hooks": {
+          "items": {
+            "$ref": "plugin-protocol.schema.json#/$defs/HookDecl",
+            "patternProperties": {
+              "^x-": {}
+            },
+            "unevaluatedProperties": false
+          },
+          "type": "array"
+        },
+        "python": {
+          "$ref": "#/$defs/VersionReq",
+          "description": "The Python version request for the managed environment, for example 3.12. Required with runtime python and invalid otherwise. It is a VersionReq without whitespace, so it can never start with a dash that uv would read as an option.",
+          "maxLength": 64,
+          "pattern": "^\\S+(?![\\s\\S])"
+        },
+        "runtime": {
+          "description": "How the host runs the command. native (the default) runs it as a program from the plugin. python runs it as a script of the plugin in a managed Python environment that sync builds from the plugin's pylock.toml (threat-model.md section 6.6).",
+          "enum": [
+            "native",
+            "python"
+          ]
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "then": {
+        "properties": {
+          "command": {
+            "$ref": "#/$defs/PackPath",
+            "description": "With runtime python, a script inside the plugin that the interpreter runs.",
+            "pattern": "^[^-]"
+          }
+        },
+        "required": [
+          "python"
+        ]
+      },
+      "type": "object",
+      "unevaluatedProperties": false
+    },
+    "Provides": {
+      "additionalProperties": false,
+      "description": "Files the plugin contributes, as paths or globs inside the plugin. Each path holds one artifact of the named kind, and the host validates it against that schema.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "blocklists": {
+          "$ref": "#/$defs/PathList",
+          "description": "Word blocklist files (blocklist.schema.json)."
+        },
+        "categories": {
+          "$ref": "#/$defs/PathList",
+          "description": "Category files (category.schema.json)."
+        },
+        "configs": {
+          "$ref": "#/$defs/PathList",
+          "description": "Config files that a project may extend as <plugin>:<name> (config.schema.json)."
+        },
+        "genres": {
+          "$ref": "#/$defs/PathList",
+          "description": "Genre files (genre.schema.json)."
+        },
+        "prime": {
+          "$ref": "#/$defs/PathList",
+          "description": "Markdown snippets that `slopvac prime` appends to a topic."
+        },
+        "styles": {
+          "$ref": "#/$defs/PathList",
+          "description": "Style files (style.schema.json)."
+        },
+        "taggers": {
+          "$ref": "#/$defs/PathList",
+          "description": "Declarative tagger files (tagger.schema.json)."
+        },
+        "terms": {
+          "$ref": "#/$defs/PathList",
+          "description": "Terms files (terms.schema.json)."
+        }
+      },
+      "type": "object"
+    },
+    "Requirement": {
+      "additionalProperties": false,
+      "description": "A pack this pack needs.",
+      "patternProperties": {
+        "^x-": true
+      },
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/PackId",
+          "description": "The required pack."
+        },
+        "version": {
+          "$ref": "#/$defs/VersionReq",
+          "description": "The versions that satisfy the requirement."
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "type": "object"
+    },
+    "VersionReq": {
+      "description": "Version requirement: comma-separated comparators, each an optional operator (^ ~ = > >= < <=) and a version with one to three numeric parts. A pre-release suffix is allowed only after a full MAJOR.MINOR.PATCH, so 1.0.0-rc.1 is valid and 1.0-rc is not. Numbers have no leading zeros and a pre-release has no empty segment, as in the Semver def of common.schema.json. Spaces are allowed after an operator and around a comma, and nowhere else: no leading or trailing space, no newline.",
+      "pattern": "^((\\^|~|=|>=|<=|>|<) *)?(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)?)?( *, *((\\^|~|=|>=|<=|>|<) *)?(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)?)?)*(?![\\s\\S])",
+      "type": "string"
     }
   },
-  "required": [
-    "schema_version",
-    "id",
-    "version",
-    "slopvac_api",
-    "kind"
-  ],
+  "$id": "https://slopvac.github.io/slopvac/schemas/v3/plugin-manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
   "allOf": [
     {
+      "else": {
+        "not": {
+          "required": [
+            "plugin"
+          ]
+        }
+      },
       "if": {
         "properties": {
           "kind": {
@@ -73,199 +209,74 @@
         "required": [
           "plugin"
         ]
-      },
-      "else": {
-        "not": {
-          "required": [
-            "plugin"
-          ]
-        }
       }
     }
   ],
+  "description": "The slopvac-plugin.toml file at the root of a plugin. A data plugin holds rules, styles, genres, terms, taggers and prime snippets, and no code. A code plugin adds one [plugin] table with the command to run and the embedded plugin declaration. The manifest of a code plugin is part of the content hash that `slopvac plugins trust` records. Semantics are specified in docs/contract/plugins.md.",
   "patternProperties": {
-    "^x-": {}
+    "^x-": true
   },
-  "additionalProperties": false,
-  "$defs": {
-    "VersionReq": {
-      "description": "Version requirement: comma-separated comparators, each an optional operator (^ ~ = > >= < <=) and a version with one to three numeric parts. A pre-release suffix is allowed only after a full MAJOR.MINOR.PATCH, so 1.0.0-rc.1 is valid and 1.0-rc is not. Numbers have no leading zeros and a pre-release has no empty segment, as in the Semver def of common.schema.json. Spaces are allowed after an operator and around a comma, and nowhere else: no leading or trailing space, no newline.",
-      "type": "string",
-      "pattern": "^((\\^|~|=|>=|<=|>|<) *)?(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)?)?( *, *((\\^|~|=|>=|<=|>|<) *)?(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)?)?)*(?![\\s\\S])"
-    },
-    "PackPath": {
-      "description": "A path inside the plugin: relative, with forward slashes, and no .. segment. A glob is allowed.",
-      "type": "string",
+  "properties": {
+    "description": {
+      "description": "One-line description.",
       "minLength": 1,
-      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?!.*\\\\)(?!(.*/)?\\.\\.(/|(?![\\s\\S])))"
+      "type": "string"
     },
-    "PathList": {
-      "type": "array",
+    "homepage": {
+      "description": "Home page URI.",
+      "format": "uri",
+      "type": "string"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/PluginId",
+      "description": "Plugin id. It prefixes every rule id the plugin provides. `core` is reserved for the built-in plugin."
+    },
+    "kind": {
+      "description": "data: a data plugin, which holds declarative files only and forbids a plugin table. code: a code plugin, which requires the plugin table and runs as a subprocess. Either kind may provide data files.",
+      "enum": [
+        "data",
+        "code"
+      ]
+    },
+    "license": {
+      "description": "SPDX license expression.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "plugin": {
+      "$ref": "#/$defs/Plugin",
+      "description": "The plugin table; present exactly when `kind` is [`PackKind::Code`]."
+    },
+    "provides": {
+      "$ref": "#/$defs/Provides",
+      "description": "Files the pack contributes."
+    },
+    "requires": {
+      "description": "Plugins this plugin needs. The host resolves them before it loads this one.",
       "items": {
-        "$ref": "#/$defs/PackPath"
+        "$ref": "#/$defs/Requirement"
       },
-      "uniqueItems": true
+      "type": "array"
     },
-    "Provides": {
-      "description": "Files the plugin contributes, as paths or globs inside the plugin. Each path holds one artifact of the named kind, and the host validates it against that schema.",
-      "type": "object",
-      "properties": {
-        "categories": {
-          "description": "Category files (category.schema.json).",
-          "$ref": "#/$defs/PathList"
-        },
-        "styles": {
-          "description": "Style files (style.schema.json).",
-          "$ref": "#/$defs/PathList"
-        },
-        "genres": {
-          "description": "Genre files (genre.schema.json).",
-          "$ref": "#/$defs/PathList"
-        },
-        "terms": {
-          "description": "Terms files (terms.schema.json).",
-          "$ref": "#/$defs/PathList"
-        },
-        "taggers": {
-          "description": "Declarative tagger files (tagger.schema.json).",
-          "$ref": "#/$defs/PathList"
-        },
-        "configs": {
-          "description": "Config files that a project may extend as <plugin>:<name> (config.schema.json).",
-          "$ref": "#/$defs/PathList"
-        },
-        "prime": {
-          "description": "Markdown snippets that `slopvac prime` appends to a topic.",
-          "$ref": "#/$defs/PathList"
-        },
-        "blocklists": {
-          "description": "Word blocklist files (blocklist.schema.json).",
-          "$ref": "#/$defs/PathList"
-        }
-      },
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/SchemaVersion"
     },
-    "Requirement": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "$ref": "common.schema.json#/$defs/PackId"
-        },
-        "version": {
-          "$ref": "#/$defs/VersionReq"
-        }
-      },
-      "required": [
-        "id",
-        "version"
-      ],
-      "patternProperties": {
-        "^x-": {}
-      },
-      "additionalProperties": false
+    "slopvac_api": {
+      "$ref": "common.schema.json#/$defs/ApiVersion",
+      "description": "Plugin extension API the plugin was written for. A host that implements a lower version refuses the plugin."
     },
-    "Plugin": {
-      "description": "How to run the code plugin, plus its pre-spawn declaration. The declaration fields (network, hooks, features) sit flat in this table, so the host reads them from the same bytes that it hashes. See the PluginDeclaration def in plugin-protocol.schema.json. The manifest closes the hook entries and the features table: they take only the declared keys and x- keys, so the hashed bytes carry no unreviewed data.",
-      "allOf": [
-        {
-          "$ref": "plugin-protocol.schema.json#/$defs/PluginDeclaration"
-        }
-      ],
-      "properties": {
-        "command": {
-          "description": "Executable inside the plugin, or a bare name that the plugin's own environment provides. With runtime python it is a script inside the plugin (PackPath, no leading dash).",
-          "type": "string",
-          "minLength": 1
-        },
-        "runtime": {
-          "description": "How the host runs the command. native (the default) runs it as a program from the plugin. python runs it as a script of the plugin in a managed Python environment that sync builds from the plugin's pylock.toml (threat-model.md section 6.6).",
-          "enum": [
-            "native",
-            "python"
-          ]
-        },
-        "python": {
-          "description": "The Python version request for the managed environment, for example 3.12. Required with runtime python and invalid otherwise. It is a VersionReq without whitespace, so it can never start with a dash that uv would read as an option.",
-          "$ref": "#/$defs/VersionReq",
-          "maxLength": 64,
-          "pattern": "^\\S+(?![\\s\\S])"
-        },
-        "args": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "env": {
-          "description": "Names of environment variables the plugin may receive when the user allows them. Nothing else passes through.",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^[A-Z_][A-Z0-9_]*(?![\\s\\S])"
-          },
-          "uniqueItems": true
-        },
-        "hooks": {
-          "type": "array",
-          "items": {
-            "$ref": "plugin-protocol.schema.json#/$defs/HookDecl",
-            "patternProperties": {
-              "^x-": {}
-            },
-            "unevaluatedProperties": false
-          }
-        },
-        "features": {
-          "type": "object",
-          "properties": {
-            "required": true,
-            "optional": true
-          },
-          "patternProperties": {
-            "^x-": {}
-          },
-          "additionalProperties": false
-        }
-      },
-      "required": [
-        "command"
-      ],
-      "if": {
-        "properties": {
-          "runtime": {
-            "const": "python"
-          }
-        },
-        "required": [
-          "runtime"
-        ]
-      },
-      "then": {
-        "properties": {
-          "command": {
-            "description": "With runtime python, a script inside the plugin that the interpreter runs.",
-            "$ref": "#/$defs/PackPath",
-            "pattern": "^[^-]"
-          }
-        },
-        "required": [
-          "python"
-        ]
-      },
-      "else": {
-        "not": {
-          "required": [
-            "python"
-          ]
-        }
-      },
-      "patternProperties": {
-        "^x-": {}
-      },
-      "unevaluatedProperties": false
+    "version": {
+      "$ref": "common.schema.json#/$defs/Semver",
+      "description": "Pack version."
     }
-  }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "slopvac_api",
+    "kind"
+  ],
+  "title": "slopvac v3 plugin manifest",
+  "type": "object"
 }
