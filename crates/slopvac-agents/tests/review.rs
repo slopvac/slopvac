@@ -5,6 +5,7 @@ use std::cell::Cell;
 use std::fs;
 use std::path::Path;
 
+use rstest::rstest;
 use slopvac_agents::claims::compare;
 use slopvac_agents::error::AgentsError;
 use slopvac_agents::prime::{self, Level, Settings};
@@ -74,27 +75,25 @@ fn scope_budget_scales_with_the_change_and_asks_above_it() {
     assert!(bigger.extra_budget >= 5);
 }
 
-#[test]
-fn reviewer_model_is_compared_with_the_author_model_without_a_refusal() {
-    let same = [
-        ("anthropic/claude-sonnet-5-5#high", "claude-sonnet-5-5"),
-        ("Claude-Sonnet-5-5", "amazon-bedrock/claude-sonnet-5-5"),
-    ];
-    for (author, reviewer) in same {
-        assert_eq!(
-            compare_models(Some(author), reviewer),
-            ModelCheck::Same,
-            "{author} {reviewer}"
-        );
-    }
-    assert_eq!(
-        compare_models(Some("gpt-5"), "claude-sonnet-5-5"),
-        ModelCheck::Different
-    );
-    assert_eq!(
-        compare_models(None, "claude-sonnet-5-5"),
-        ModelCheck::Unchecked
-    );
+#[rstest]
+#[case::variant_and_prefix(
+    Some("anthropic/claude-sonnet-5-5#high"),
+    "claude-sonnet-5-5",
+    ModelCheck::Same
+)]
+#[case::case_and_provider(
+    Some("Claude-Sonnet-5-5"),
+    "amazon-bedrock/claude-sonnet-5-5",
+    ModelCheck::Same
+)]
+#[case::other_model(Some("gpt-5"), "claude-sonnet-5-5", ModelCheck::Different)]
+#[case::unknown_author(None, "claude-sonnet-5-5", ModelCheck::Unchecked)]
+fn reviewer_model_is_compared_with_the_author_model_without_a_refusal(
+    #[case] author: Option<&str>,
+    #[case] reviewer: &str,
+    #[case] expected: ModelCheck,
+) {
+    assert_eq!(compare_models(author, reviewer), expected);
 }
 
 #[test]
@@ -882,40 +881,26 @@ fn a_reply_may_name_only_some_items() -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-#[test]
-fn a_reply_that_repeats_or_invents_an_item_fails_with_a_code() {
-    for reported in [vec![(2, "gpt-5")], vec![(0, "gpt-5"), (0, "gpt-5")]] {
-        let dir = tempfile::tempdir().unwrap();
-        let provider = Reporting {
-            declared: "gpt-5",
-            reported,
-        };
-        let env = ReviewEnv {
-            provider: Some(&provider),
-            ..ReviewEnv::default()
-        };
-        let argv = pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]);
-        let err = run(&argv, &env).unwrap_err();
-        assert_eq!(err.code(), "review-provider-reply-invalid");
-    }
-}
-
-#[test]
-fn a_reply_that_reports_an_empty_model_fails_with_a_code() {
-    for model in ["", "  "] {
-        let dir = tempfile::tempdir().unwrap();
-        let provider = Reporting {
-            declared: "gpt-5",
-            reported: vec![(0, model)],
-        };
-        let env = ReviewEnv {
-            provider: Some(&provider),
-            ..ReviewEnv::default()
-        };
-        let argv = pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]);
-        let err = run(&argv, &env).unwrap_err();
-        assert_eq!(err.code(), "review-provider-reply-invalid", "{model:?}");
-    }
+#[rstest]
+#[case::outside_the_payload(vec![(2, "gpt-5")])]
+#[case::repeated_item(vec![(0, "gpt-5"), (0, "gpt-5")])]
+#[case::empty_model(vec![(0, "")])]
+#[case::blank_model(vec![(0, "  ")])]
+fn a_reply_the_protocol_would_refuse_fails_with_a_code(
+    #[case] reported: Vec<(usize, &'static str)>,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Reporting {
+        declared: "gpt-5",
+        reported,
+    };
+    let setting = ReviewEnv {
+        provider: Some(&provider),
+        ..ReviewEnv::default()
+    };
+    let argv = pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]);
+    let err = run(&argv, &setting).unwrap_err();
+    assert_eq!(err.code(), "review-provider-reply-invalid");
 }
 
 #[test]
@@ -983,4 +968,40 @@ fn every_data_key_a_model_notice_carries_is_documented() -> Result<(), Box<dyn s
         assert!(row.contains(&format!("`{code}`")), "{code} {key}: {row}");
     }
     Ok(())
+}
+
+/// Policies section 1.5: the same model, detected before the call, adds `review-model-same`
+/// (warning). Here the reviewer flag names another model, so only the provider's declared model
+/// matches the author. A dry run reports the notice and calls nothing.
+#[rstest]
+#[case::real_run(false, 1)]
+#[case::dry_run(true, 0)]
+fn a_declared_provider_on_the_author_model_adds_one_notice_when_the_reviewer_flag_differs(
+    #[case] dry_run: bool,
+    #[case] calls: usize,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let mock = Mock {
+        model: "claude-sonnet-5-5",
+        calls: Cell::new(0),
+    };
+    let setting = ReviewEnv {
+        provider: Some(&mock),
+        author_model: Some("claude-sonnet-5-5#high".into()),
+        ..ReviewEnv::default()
+    };
+    let mut extra = vec!["--reviewer-model", "gpt-5"];
+    if dry_run {
+        extra.push("--dry-run");
+    }
+    let json = plan_json(dir.path(), &extra, &setting);
+    let found = notice_with(&json, "review-model-same");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(found[0]["level"], "warning");
+    assert_eq!(found[0]["data"]["reviewer"], "claude-sonnet-5-5");
+    assert_eq!(found[0]["data"]["reviewer_source"], "provider");
+    assert_eq!(found[0]["data"]["author_source"], "config");
+    assert!(found[0]["data"].get("items").is_none());
+    assert_eq!(json.get("report").is_some(), !dry_run, "{json}");
+    assert_eq!(mock.calls.get(), calls);
 }
