@@ -461,11 +461,9 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
 /// Why the sweep refused a written config.
 #[derive(Debug, PartialEq, Eq)]
 enum Offence {
-    /// A layer carries a vocabulary rule entry that its authored counterpart lacks or sets to
-    /// another value.
+    /// A layer carries a vocabulary rule entry that its oracle layer lacks or sets to another
+    /// level.
     GeneratedEntry { rule: String, layer: usize },
-    /// No written block with the authored `files` sits where the authored override must.
-    AuthoredOverrideMissing { index: usize },
     /// A layer is not the migrated form of the authored layer that belongs in its slot.
     SlotDiffers { layer: usize },
 }
@@ -473,44 +471,51 @@ enum Offence {
 /// A vocabulary rule entry that the user did not author must not sit in a layer above the
 /// styles: it would outrank the companion style and the settings 2.x let win.
 ///
-/// Each written layer is compared only with the authored layer it came from. The top level
-/// pairs with the top level. An authored override pairs by position, never by `files`,
-/// because a generated guard can have the same `files` as the override it guards
-/// (profiles.md E4). The layout comes from profiles.md: E3 puts one switch block before all
-/// override blocks for each authored override that sets `profile`, the authored overrides
-/// keep their order, and E4 puts the guards after them. So authored override `i` is written
-/// block `k + i`, where `k` counts the authored overrides that set `profile`. That block
-/// must exist and have the authored `files`, or the authored override is missing.
+/// The oracle is the same migration without `--preserve-behavior`. It renames keys, flattens
+/// a severity table to a bare level, moves `vocabulary.path` to `terms.blocklists` and
+/// qualifies ids (config.md mapping table), and it adds nothing else. Each written layer
+/// must equal the oracle's layer for the authored layer in its slot, with one identity
+/// check and no field-by-field allowance:
 ///
-/// Position alone cannot tell the authored override from a guard in broken output: if the
-/// last authored override is dropped, a guard lands in its slot. So a vocabulary rule entry
-/// is allowed in a layer only when the authored layer has the same rule with the same value.
-/// A guard writes `off` (E4), so it matches only an authored `off`. In that one case a guard
-/// cannot be told from the authored override, and the layer's effect is the same either way.
-/// Switch and guard blocks have no authored counterpart and get no allowance.
+/// - The top level equals the oracle's top level, except for `profile` and `styles`, which
+///   profiles.md E1 adds, and `overrides`, which is checked block by block.
+/// - Authored override `i` is written block `k + i` and equals the oracle's block `i`.
+///   `k` counts the authored overrides that set `profile`, because E3 puts one switch block
+///   for each of them before all override blocks, the authored overrides keep their order,
+///   and E4 puts the guards after them. A selector is not an identity: a guard can have the
+///   `files` of the override it guards, and can write the same level.
+/// - Switch and guard blocks have no oracle layer, so they get no allowance.
 ///
+/// A vocabulary rule entry that the oracle's layer lacks, or sets to another level, is
+/// reported first, by rule ID. Any other difference is reported as the slot that differs.
 /// Returns the number of layers walked, or the first offence.
 fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usize, Offence> {
     let doc = toml::from_str::<toml::Table>(text).unwrap();
-    let authored = toml::from_str::<toml::Table>(authored).unwrap_or_default();
-    let authored_blocks = override_blocks(&authored);
+    let oracle = migrate_config(
+        authored,
+        "slopvac.toml",
+        &RenameTable::bundled(),
+        Options {
+            preserve_behavior: false,
+        },
+    )
+    .unwrap();
+    let oracle = toml::from_str::<toml::Table>(&oracle.text).unwrap();
+    let expected_blocks = override_blocks(&oracle);
     let written_blocks = override_blocks(&doc);
-    let switches = authored_blocks
+    let switches = expected_blocks
         .iter()
         .filter(|a| a.contains_key("profile"))
         .count();
-    let mut layers: Vec<(&toml::Table, BTreeMap<String, toml::Value>)> =
-        vec![(&doc, rule_levels(&authored))];
+    let mut layers: Vec<(&toml::Table, Option<&toml::Table>)> = vec![(&doc, Some(&oracle))];
     for (index, block) in written_blocks.iter().enumerate() {
-        let counterpart = index
+        let expected = index
             .checked_sub(switches)
-            .and_then(|i| authored_blocks.get(i));
-        layers.push((
-            block,
-            counterpart.map(|a| rule_levels(a)).unwrap_or_default(),
-        ));
+            .and_then(|i| expected_blocks.get(i).copied());
+        layers.push((block, expected));
     }
-    for (layer_at, (layer, allowed)) in layers.iter().enumerate() {
+    for (layer_at, (layer, expected)) in layers.iter().enumerate() {
+        let allowed = expected.map(rule_levels).unwrap_or_default();
         for (id, level) in rule_levels(layer) {
             if VOCABULARY_RULES.contains(&id.as_str()) && allowed.get(&id) != Some(&level) {
                 return Err(Offence::GeneratedEntry {
@@ -520,12 +525,23 @@ fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usi
             }
         }
     }
-    for (index, a) in authored_blocks.iter().enumerate() {
-        let same_files = written_blocks
-            .get(switches + index)
-            .is_some_and(|w| w.get("files") == a.get("files"));
-        if !same_files {
-            return Err(Offence::AuthoredOverrideMissing { index });
+    let without = |t: &toml::Table, keys: &[&str]| {
+        let mut t = t.clone();
+        for key in keys {
+            t.remove(*key);
+        }
+        t
+    };
+    if without(&doc, &["overrides", "profile", "styles"])
+        != without(&oracle, &["overrides", "profile", "styles"])
+    {
+        return Err(Offence::SlotDiffers { layer: 0 });
+    }
+    for (index, expected) in expected_blocks.iter().enumerate() {
+        if written_blocks.get(switches + index) != Some(expected) {
+            return Err(Offence::SlotDiffers {
+                layer: 1 + switches + index,
+            });
         }
     }
     Ok(layers.len())
