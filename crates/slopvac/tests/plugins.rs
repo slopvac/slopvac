@@ -151,3 +151,23 @@ fn a_command_not_wired_yet_reports_its_code_and_exits_2(#[case] args: &[&str]) {
         .code(2)
         .stderr(predicate::str::starts_with("error[command-not-wired]: "));
 }
+
+/// Pins today's behaviour: the binary gives `plugins trust` no loader for code plugin files,
+/// so trust is refused with its own code. Change this test when the loader is wired.
+#[test]
+fn trust_of_a_locked_code_plugin_exits_2_because_no_loader_is_wired() {
+    let sandbox = Sandbox::new();
+    sandbox.write_lock(
+        "\n[[plugins]]\nid = \"fmt\"\nkind = \"code\"\nversion = \"1.0.0\"\nslopvac_api = 1\n\
+         source = \"oci://registry.invalid/acme/fmt:1.0.0\"\n\
+         digest = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n",
+    );
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "trust", "fmt"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with(
+            "error[plugins-trust-inputs-failed]: ",
+        ));
+}

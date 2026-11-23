@@ -363,7 +363,9 @@ fn plugins(
     let config = slopvac_config::Discovery::new(&presets)
         .nearest(&cwd)
         .map_err(|e| crate::engine::config_error(&e, &cwd))?;
-    let root = config.as_ref().map_or_else(|| cwd.clone(), |c| c.root.clone());
+    let root = config
+        .as_ref()
+        .map_or_else(|| cwd.clone(), |c| c.root.clone());
     let lookup = |name: &str| env.var(name).ok_or(std::env::VarError::NotPresent);
     let cache = slopvac_fs::cache_dir_with(&lookup, &std::env::home_dir)
         .map_err(|e| io_failed("cache directory", &e))?;
