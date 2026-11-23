@@ -1227,15 +1227,22 @@ fn corrupt_store(f: &Fixture) {
     fs::write(f.state().join("trust.json"), "not json").unwrap();
 }
 
+/// The arguments of `command`: `trust` also names the plugin.
+fn command_args(command: &str) -> Vec<&str> {
+    if command == "trust" {
+        vec![command, "fake"]
+    } else {
+        vec![command]
+    }
+}
+
 fn run_with_missing_env(f: &Fixture, command: &str) -> String {
     let loader = TreeLoader::new(f.base.path(), "fake");
     fs::write(loader.root.join("slopvac-plugin.toml"), PY_MANIFEST).unwrap();
     let envs = EnvStore::open(f.base.path().join("envs"));
-    seen(&f.run(
-        &[command, "fake"][..1 + usize::from(command == "trust")],
-        false,
-        |s| s.loader(loader).envs(&envs),
-    ))
+    seen(&f.run(&command_args(command), false, |s| {
+        s.loader(loader).envs(&envs)
+    }))
 }
 
 fn run_with_program_outside(f: &Fixture, command: &str) -> String {
@@ -1243,11 +1250,7 @@ fn run_with_program_outside(f: &Fixture, command: &str) -> String {
         inner: TreeLoader::new(f.base.path(), "fake"),
         program: f.base.path().join("elsewhere/prog"),
     };
-    seen(&f.run(
-        &[command, "fake"][..1 + usize::from(command == "trust")],
-        false,
-        |s| s.loader(loader),
-    ))
+    seen(&f.run(&command_args(command), false, |s| s.loader(loader)))
 }
 
 /// A site that renders the withheld sentence: how to reach it through `run()`, and the code
@@ -1258,7 +1261,7 @@ struct Site {
     reach: fn() -> String,
 }
 
-fn sites() -> Vec<Site> {
+fn python_and_loader_sites() -> Vec<Site> {
     vec![
         Site {
             name: "python manifest, trust",
@@ -1300,6 +1303,11 @@ fn sites() -> Vec<Site> {
                 seen(&code_fixture().run(&["trust", "fake"], false, |s| s.loader(FailingLoader)))
             },
         },
+    ]
+}
+
+fn store_sites() -> Vec<Site> {
+    vec![
         Site {
             name: "damaged store, status",
             code: "plugins-store-failed",
@@ -1337,6 +1345,11 @@ fn sites() -> Vec<Site> {
             code: "plugin-usage",
             reach: || run_with_program_outside(&code_fixture(), "status"),
         },
+    ]
+}
+
+fn library_sites() -> Vec<Site> {
+    vec![
         Site {
             name: "revocation list unavailable, sync",
             code: "revocation-list-unavailable",
@@ -1367,6 +1380,10 @@ fn sites() -> Vec<Site> {
             },
         },
     ]
+}
+
+fn sites() -> Vec<Site> {
+    [python_and_loader_sites(), store_sites(), library_sites()].concat()
 }
 
 #[test]
