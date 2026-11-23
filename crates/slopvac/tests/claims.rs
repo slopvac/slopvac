@@ -202,3 +202,81 @@ fn an_input_exactly_at_the_cap_is_read(#[case] big: &str) {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// Replace `dir/name` with a relative symlink to the file moved to `dir/real/name`, the way a
+/// project links a shared document into place.
+#[cfg(unix)]
+fn relink(dir: &std::path::Path, name: &str) {
+    let real = dir.join("real");
+    fs::create_dir_all(&real).expect("real dir");
+    fs::rename(dir.join(name), real.join(name)).expect("move");
+    std::os::unix::fs::symlink(std::path::Path::new("real").join(name), dir.join(name))
+        .expect("link");
+}
+
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::original("old.md")]
+#[case::revised("new.md")]
+fn a_symlinked_input_is_read_like_the_file_it_points_to(#[case] linked: &str) {
+    let args = ["claims", "new.md", "--original", "old.md"];
+    let plain = project();
+    let expected = slopvac(plain.path()).args(args).output().expect("run");
+    assert_eq!(expected.status.code(), Some(0));
+
+    let dir = project();
+    relink(dir.path(), linked);
+    let out = slopvac(dir.path()).args(args).output().expect("run");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(out.stdout, expected.stdout);
+}
+
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::original("old.md")]
+#[case::revised("new.md")]
+fn a_symlink_to_a_file_over_the_cap_is_refused_under_the_name_the_user_gave(#[case] linked: &str) {
+    let dir = project();
+    sized_file(dir.path(), linked, DOCUMENT_CAP + 1, true);
+    relink(dir.path(), linked);
+    let out = slopvac(dir.path())
+        .args(["claims", "new.md", "--original", "old.md"])
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert_eq!(
+        stderr.as_ref(),
+        format!("error[document-too-large]: {linked} is larger than {DOCUMENT_CAP} bytes\n"),
+    );
+}
+
+#[cfg(unix)]
+#[rstest::rstest]
+#[case::original("old.md")]
+#[case::revised("new.md")]
+fn a_symlink_to_a_fifo_is_refused_without_blocking(#[case] linked: &str) {
+    let dir = project();
+    fs::remove_file(dir.path().join(linked)).expect("remove");
+    fs::create_dir(dir.path().join("real")).expect("real dir");
+    let fifo = dir.path().join("real").join(linked);
+    let made = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .expect("mkfifo");
+    assert!(made.success());
+    std::os::unix::fs::symlink(std::path::Path::new("real").join(linked), dir.path().join(linked))
+        .expect("link");
+    let out = slopvac(dir.path())
+        .args(["claims", "new.md", "--original", "old.md"])
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(stderr.starts_with("error[setup-io]"), "{stderr}");
+}
