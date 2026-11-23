@@ -12,7 +12,6 @@ use slopvac_messages::render;
 
 use crate::messages::cli::{CliText, Reported};
 use crate::messages::sync::{cache_tampered, update_busy};
-use crate::messages::trust::{revoke_cache_damaged, store_damaged};
 use crate::revoke::RevocationError;
 use crate::sync::SyncError;
 use crate::trust::TrustError;
@@ -27,11 +26,10 @@ fn under(path: &Path, root: &Path) -> String {
 }
 
 /// A revocation failure.
-pub(crate) fn revocation(root: &Path, e: &RevocationError) -> Reported {
+pub(crate) fn revocation(e: &RevocationError) -> Reported {
     let text = match e {
-        RevocationError::CacheInvalid { path, why } => {
-            revoke_cache_damaged(Path::new(&under(path, root)), why)
-        }
+        // The parser's text can quote the file, so only the code is kept.
+        RevocationError::CacheInvalid { .. } => e.code().to_owned(),
         RevocationError::NoRootKey
         | RevocationError::TooLarge
         | RevocationError::BadSignature
@@ -47,7 +45,7 @@ pub(crate) fn revocation(root: &Path, e: &RevocationError) -> Reported {
 /// A sync or status failure.
 pub(crate) fn sync(root: &Path, e: &SyncError) -> Reported {
     let text = match e {
-        SyncError::Revocation(inner) => return revocation(root, inner),
+        SyncError::Revocation(inner) => return revocation(inner),
         SyncError::CacheTampered { id, path } => cache_tampered(id, Path::new(&under(path, root))),
         SyncError::OfflinePackMissing { .. }
         | SyncError::Unsigned { .. }
@@ -62,7 +60,7 @@ pub(crate) fn sync(root: &Path, e: &SyncError) -> Reported {
 /// An update failure.
 pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
     let text = match e {
-        UpdateError::Revocation(inner) => return revocation(root, inner),
+        UpdateError::Revocation(inner) => return revocation(inner),
         UpdateError::Busy { path, timeout } => {
             update_busy(&under(Path::new(path), root), timeout.as_secs_f32())
         }
@@ -73,10 +71,9 @@ pub(crate) fn update(root: &Path, e: &UpdateError) -> Reported {
 }
 
 /// A trust store failure: the reported failure when it has a code, else the sentence alone.
-pub(crate) fn store(root: &Path, e: &TrustError) -> Result<Reported, String> {
+pub(crate) fn store(e: &TrustError) -> Result<Reported, String> {
     let text = match e {
-        TrustError::Revocation(inner) => return Ok(revocation(root, inner)),
-        TrustError::Corrupt { path, why } => store_damaged(Path::new(&under(path, root)), why),
+        TrustError::Revocation(inner) => return Ok(revocation(inner)),
         TrustError::NotAHash(_)
         | TrustError::NamespaceBound { .. }
         | TrustError::ReservedNamespace { .. }

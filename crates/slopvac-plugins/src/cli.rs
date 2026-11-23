@@ -376,8 +376,8 @@ fn kind_name(kind: PackKind) -> String {
 
 /// A trust store failure, with every path shown under the project root. A failure with a code
 /// keeps it.
-fn store_failed(runner: &Runner<'_>, e: &TrustError) -> RunError {
-    match cause::store(&runner.dirs.project_root, e) {
+fn store_failed(e: &TrustError) -> RunError {
+    match cause::store(e) {
         Ok(source) => RunError::Failed { source },
         Err(detail) => RunError::Store {
             source: Redacted::new(detail.clone()),
@@ -387,9 +387,9 @@ fn store_failed(runner: &Runner<'_>, e: &TrustError) -> RunError {
 }
 
 /// A revocation failure, with every path shown under the project root.
-fn revocation_failed(runner: &Runner<'_>, e: &RevocationError) -> RunError {
+fn revocation_failed(e: &RevocationError) -> RunError {
     RunError::Failed {
-        source: cause::revocation(&runner.dirs.project_root, e),
+        source: cause::revocation(e),
     }
 }
 
@@ -420,7 +420,7 @@ fn trust_part(runner: &Runner<'_>, pack: &LockedPack) -> CliText {
         .and_then(|(gate, vp, spec)| {
             gate.state(&vp, &spec)
                 .map(|(_, s)| s)
-                .map_err(|e| store_failed(runner, &e).to_string())
+                .map_err(|e| store_failed(&e).to_string())
         });
     match state {
         Ok(TrustState::Trusted) => CliText::PartTrusted,
@@ -467,7 +467,7 @@ fn run_status(runner: &Runner<'_>, out: &mut dyn Write) -> Result<u8, RunError> 
     let current = runner
         .revocations
         .cached()
-        .map_err(|e| revocation_failed(runner, &e))?;
+        .map_err(|e| revocation_failed(&e))?;
     let mut complete = true;
     for s in &statuses {
         let Some(pack) = lock.get(&s.id) else {
@@ -631,7 +631,7 @@ fn run_update(runner: &Runner<'_>, only: &[String], out: &mut dyn Write) -> Resu
             },
             Outcome::Refused(e) => CliText::UpdateRefused {
                 id: id.clone(),
-                reason: line(&cause::sync(&runner.dirs.project_root, e).to_string()),
+                reason: e.code().to_owned(),
             },
         };
         say(out, &text)?;
@@ -677,7 +677,7 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
     let current = runner
         .revocations
         .cached()
-        .map_err(|e| revocation_failed(runner, &e))?;
+        .map_err(|e| revocation_failed(&e))?;
     notices(out, &current.notices)?;
     if lock
         .get(&pack_id)
@@ -689,15 +689,13 @@ fn run_trust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8, R
         .load(&pack_id)
         .map_err(|_| refused(render(&CliText::Withheld)))?;
     let (gate, spec) = runner.prepared(&vp, spec).map_err(refused)?;
-    let (_, state) = gate
-        .state(&vp, &spec)
-        .map_err(|e| store_failed(runner, &e))?;
+    let (_, state) = gate.state(&vp, &spec).map_err(|e| store_failed(&e))?;
     if state == TrustState::Revoked {
         return Err(RunError::Revoked { id: line(id) });
     }
     let record = gate
         .record_trust(&vp, &spec, &runner.now)
-        .map_err(|e| store_failed(runner, &e))?;
+        .map_err(|e| store_failed(&e))?;
     say(
         out,
         &CliText::Trusted {
@@ -717,7 +715,7 @@ fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8,
     let store = runner.trust_store();
     let hashes: Vec<String> = store
         .records()
-        .map_err(|e| store_failed(runner, &e))?
+        .map_err(|e| store_failed(&e))?
         .into_iter()
         .filter(|r| r.name == id)
         .map(|r| r.hash)
@@ -727,17 +725,12 @@ fn run_untrust(runner: &Runner<'_>, id: &str, out: &mut dyn Write) -> Result<u8,
     }
     for hash in hashes {
         let digest = Digest::parse(&hash).map_err(|e| {
-            store_failed(
-                runner,
-                &TrustError::Corrupt {
-                    path: runner.dirs.state_dir.join("trust.json"),
-                    why: e.to_string(),
-                },
-            )
+            store_failed(&TrustError::Corrupt {
+                path: runner.dirs.state_dir.join("trust.json"),
+                why: e.to_string(),
+            })
         })?;
-        store
-            .forget(&digest)
-            .map_err(|e| store_failed(runner, &e))?;
+        store.forget(&digest).map_err(|e| store_failed(&e))?;
     }
     say(out, &CliText::Untrusted { id: line(id) })?;
     Ok(0)

@@ -580,6 +580,12 @@ fn update_refuses_a_newer_version_it_cannot_fetch_and_exits_2() {
     let ran = f.run(&["update"], true, |s| s.range("style", "^1.2"));
     assert_eq!(ran.result.unwrap(), 2);
     assert!(ran.out.starts_with("style: refused: "), "{}", ran.out);
+    // The line names the code of the retained cause and no free text.
+    let reason = ran.out.trim_end().strip_prefix("style: refused: ").unwrap();
+    assert!(
+        reason.chars().all(|c| c.is_ascii_lowercase() || c == '-'),
+        "{reason}"
+    );
 }
 
 #[test]
@@ -706,7 +712,7 @@ fn a_corrupt_trust_store_is_reported_without_the_absolute_state_path() {
     let shown = names_in_chain(&err);
     let base = f.base.path().to_string_lossy().into_owned();
     assert!(!shown.contains(&base), "absolute path leaked: {shown}");
-    assert!(shown.contains("<external>/trust.json"), "{shown}");
+    assert!(shown.contains("withheld"), "{shown}");
 }
 
 // ---- status: managed Python environments ----------------------------------------------
@@ -1106,6 +1112,39 @@ fn trust_tells_a_stale_revocation_list_and_still_records_trust() {
         "{}",
         ran.out
     );
+}
+
+#[test]
+fn a_malformed_revocation_cache_shows_no_parser_text_in_the_chain() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("style", "data", "1.2.0", "r.example", OTHER_HASH)]);
+    fs::write(
+        f.revocations().cache_file(),
+        r#"{"SENSITIVE_MARKER": 1, "schema_version": "SENSITIVE_MARKER"}"#,
+    )
+    .unwrap();
+    let err = f.run(&["status"], false, |s| s).result.unwrap_err();
+    assert_eq!(err.code(), "revocation-cache-invalid");
+    let shown = names_in_chain(&err);
+    assert!(!shown.contains("SENSITIVE_MARKER"), "{shown}");
+}
+
+#[test]
+fn a_malformed_trust_store_shows_no_parser_text_in_the_chain() {
+    let f = Fixture::new();
+    f.write_lock(&[oci_entry("fake", "code", "1.0.0", "r.example", OTHER_HASH)]);
+    fs::create_dir_all(f.state()).unwrap();
+    fs::write(
+        f.state().join("trust.json"),
+        r#"{"SENSITIVE_MARKER": 1, "version": "SENSITIVE_MARKER"}"#,
+    )
+    .unwrap();
+    let err = f
+        .run(&["untrust", "fake"], false, |s| s)
+        .result
+        .unwrap_err();
+    let shown = names_in_chain(&err);
+    assert!(!shown.contains("SENSITIVE_MARKER"), "{shown}");
 }
 
 // ---- sync of a signed native archive -------------------------------------------------------
