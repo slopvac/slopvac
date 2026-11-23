@@ -145,3 +145,49 @@ fn a_table_with_one_cell_in_every_four_bytes_is_checked() {
     let result = engine().lint(&Input::markdown("a.md", &source));
     assert!(result.is_ok(), "{:?}", result.map(|d| d.findings.len()));
 }
+
+/// An engine whose one rule reads the whole document as one text.
+fn document_engine() -> Engine {
+    common::engine(&[common::tokens(
+        "r",
+        "leverage",
+        &json!({"scope": "document"}),
+    )])
+}
+
+#[test]
+fn a_table_cell_of_many_sentences_is_not_checked_when_a_document_rule_splits_it() {
+    // One cell holds 300000 sentences of 4 bytes. The cell is one sentence under the cell
+    // budget, but a document rule reads the table as one text and splits the cell into
+    // sentences. One sentence for every 8 bytes, plus 65,536, allows 215,536 of them.
+    let source = format!("| h |\n|---|\n| {} |\n", "Go. ".repeat(300_000));
+    let limit = source.len() / 8 + 65_536;
+    let result = document_engine().lint(&Input::markdown("a.md", &source));
+    assert_eq!(
+        result.map(|d| d.findings.len()),
+        Err(EngineError::TagBuildBudget { limit })
+    );
+}
+
+/// A tagger that reads the sentences of code blocks and matches none.
+fn code_sentence_tagger() -> TagRegistry {
+    let yaml = "schema_version: 3\nid: c\ntag: k\nscope: sentence\nwhen:\n  block_kind: code-block\n  sentence: 'zzz'\n";
+    let tagger = TaggerSpec::from_yaml(yaml).unwrap().compile().unwrap();
+    let mut registry = TagRegistry::new();
+    registry.register(Box::new(tagger)).unwrap();
+    registry
+}
+
+#[test]
+fn a_code_block_of_many_sentences_is_not_checked_when_a_tagger_reads_its_sentences() {
+    // 300000 sentences of 3 bytes in a fenced code block, and a tagger that matches none.
+    let source = format!("```\n{}\n```\n", "a. ".repeat(300_000));
+    let limit = source.len() / 8 + 65_536;
+    let result = engine()
+        .with_taggers(code_sentence_tagger())
+        .lint(&Input::markdown("a.md", &source));
+    assert_eq!(
+        result.map(|d| d.findings.len()),
+        Err(EngineError::TagBuildBudget { limit })
+    );
+}
