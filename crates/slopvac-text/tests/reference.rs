@@ -4,6 +4,10 @@
     reason = "TEMPORARY: burn-down in slopvac-8l4.3.50"
 )]
 #![allow(missing_docs, clippy::cast_possible_truncation)]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "test: the reference texts are a few lines, and these tests check the unlimited split itself"
+)]
 
 use serde_json::Value;
 use slopvac_text::{TextType, classify_text_type, count_words, split_sentences};

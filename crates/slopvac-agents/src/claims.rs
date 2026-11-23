@@ -210,6 +210,10 @@ fn normalize(t: &str) -> String {
 }
 
 /// Sentences of one Markdown paragraph.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "reviews two files the user names, outside any lint run and its document budget; bounding it is a separate change"
+)]
 fn sentences(paragraph: &str) -> Result<Vec<String>, AgentsError> {
     Ok(slopvac_text::split_sentences(paragraph)?
         .into_iter()

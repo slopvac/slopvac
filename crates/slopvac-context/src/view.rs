@@ -73,6 +73,10 @@ pub trait DocumentView {
     /// Blocks in document order.
     fn blocks(&self) -> Vec<BlockView<'_>>;
     /// Sentences of one block.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the default serves in-memory documents the caller holds; the engine's view overrides it with a split that stops at the document's budget"
+    )]
     fn sentences<'a>(&self, block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
         split_sentences(block)
     }

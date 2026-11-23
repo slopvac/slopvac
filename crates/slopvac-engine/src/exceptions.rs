@@ -201,6 +201,10 @@ struct NegatedAntecedent;
 
 impl NegatedAntecedent {
     /// The last [`ANTECEDENT_SENTENCES`] sentences before the match, nearest last.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "both texts are prefixes of block projections that `Prepared::new` already split under the document's sentence budget, so neither holds more sentences than that"
+    )]
     fn preceding(site: &MatchSite<'_>) -> Option<Vec<String>> {
         let blocks = &site.document.blocks;
         // The projection's own offset locates the match, so a repeated sentence, a
@@ -318,6 +322,10 @@ mod tests {
     /// of `document`, counting across blocks in order. As the engine does for a sentence
     /// rule, the site's text is the sentence that holds the match, and its origin is the
     /// block's projection.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test: the document is a few lines"
+    )]
     fn detects_in(document: &Document, needle: &str, nth: usize) -> bool {
         let mut seen = 0;
         for block in &document.blocks {

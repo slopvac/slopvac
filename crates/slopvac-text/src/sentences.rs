@@ -298,7 +298,7 @@ fn split_vertical_list<'a>(
 }
 
 /// Sentence records built on this thread, for the tests that bound allocation.
-#[cfg(feature = "test-counters")]
+#[cfg(feature = "work-counters")]
 mod counted {
     use std::cell::Cell;
 
@@ -315,7 +315,7 @@ mod counted {
     }
 }
 
-#[cfg(not(feature = "test-counters"))]
+#[cfg(not(feature = "work-counters"))]
 mod counted {
     #[inline(always)]
     pub(super) fn built() {}
@@ -324,7 +324,7 @@ mod counted {
 /// The sentence records [`split_sentences`] and [`split_sentences_within`] built on this
 /// thread since the last call. A test that lints a document of very short sentences and
 /// reads the count shows whether the split stops at its limit or builds every sentence first.
-#[cfg(feature = "test-counters")]
+#[cfg(feature = "work-counters")]
 #[doc(hidden)]
 #[must_use]
 pub fn take_sentences_built() -> usize {
@@ -433,6 +433,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test: compares the limited split with the unlimited one on a short text"
+    )]
     fn splitting_within_a_limit_stops_past_it_and_matches_the_plain_split_under_it() {
         let text = "Go on. Stop it. Wait.";
         assert_eq!(split_sentences_within(text, 2).unwrap(), None);

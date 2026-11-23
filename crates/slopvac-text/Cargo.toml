@@ -10,7 +10,7 @@ publish.workspace = true
 
 [features]
 # Counts the sentence records the splitter builds, for tests that bound allocation.
-test-counters = []
+work-counters = []
 
 [dependencies]
 serde = { workspace = true }
