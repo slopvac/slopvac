@@ -1080,7 +1080,7 @@
        "core:ste-verbs.nominalized-action": "suggestion",
        "core:ste-verbs.passive-voice": "suggestion",
        "core:ste-verbs.past-participle-not-adjectival": "suggestion",
-       "core:ste-verbs.verb-form-not-listed": "suggestion",
+       "core:ste-verbs.verb-form-not-listed": "off",
        "core:ste-words.domain-noun-category-membership": "suggestion",
        "core:ste-words.domain-noun-not-organization-approved": "suggestion",
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
@@ -1088,9 +1088,9 @@
        "core:ste-words.obligation-word-substitution": "suggestion",
        "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
-       "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
-       "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
-       "core:ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "off",
+       "core:ste-words.word-outside-controlled-vocabulary": "off",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "off",
        "core:ste-words.word-used-outside-permitted-sense": "suggestion"
       }
      },
@@ -1741,7 +1741,7 @@
        "core:ste-verbs.nominalized-action": "suggestion",
        "core:ste-verbs.passive-voice": "suggestion",
        "core:ste-verbs.past-participle-not-adjectival": "suggestion",
-       "core:ste-verbs.verb-form-not-listed": "suggestion",
+       "core:ste-verbs.verb-form-not-listed": "off",
        "core:ste-words.domain-noun-category-membership": "suggestion",
        "core:ste-words.domain-noun-not-organization-approved": "suggestion",
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
@@ -1749,9 +1749,9 @@
        "core:ste-words.obligation-word-substitution": "suggestion",
        "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
-       "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
-       "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
-       "core:ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "off",
+       "core:ste-words.word-outside-controlled-vocabulary": "off",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "off",
        "core:ste-words.word-used-outside-permitted-sense": "suggestion"
       }
      },
@@ -5131,7 +5131,7 @@
        "core:ste-verbs.nominalized-action": "suggestion",
        "core:ste-verbs.passive-voice": "suggestion",
        "core:ste-verbs.past-participle-not-adjectival": "suggestion",
-       "core:ste-verbs.verb-form-not-listed": "suggestion",
+       "core:ste-verbs.verb-form-not-listed": "off",
        "core:ste-words.domain-noun-category-membership": "suggestion",
        "core:ste-words.domain-noun-not-organization-approved": "suggestion",
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
@@ -5139,9 +5139,9 @@
        "core:ste-words.obligation-word-substitution": "suggestion",
        "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
-       "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
-       "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
-       "core:ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "off",
+       "core:ste-words.word-outside-controlled-vocabulary": "off",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "off",
        "core:ste-words.word-used-outside-permitted-sense": "suggestion"
       }
      },
@@ -8159,7 +8159,7 @@
        "core:ste-verbs.nominalized-action": "suggestion",
        "core:ste-verbs.passive-voice": "suggestion",
        "core:ste-verbs.past-participle-not-adjectival": "suggestion",
-       "core:ste-verbs.verb-form-not-listed": "suggestion",
+       "core:ste-verbs.verb-form-not-listed": "off",
        "core:ste-words.domain-noun-category-membership": "suggestion",
        "core:ste-words.domain-noun-not-organization-approved": "suggestion",
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
@@ -8167,9 +8167,9 @@
        "core:ste-words.obligation-word-substitution": "suggestion",
        "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
-       "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
-       "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
-       "core:ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "off",
+       "core:ste-words.word-outside-controlled-vocabulary": "off",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "off",
        "core:ste-words.word-used-outside-permitted-sense": "suggestion"
       }
      },
@@ -8497,7 +8497,7 @@
        "core:ste-verbs.nominalized-action": "suggestion",
        "core:ste-verbs.passive-voice": "suggestion",
        "core:ste-verbs.past-participle-not-adjectival": "suggestion",
-       "core:ste-verbs.verb-form-not-listed": "suggestion",
+       "core:ste-verbs.verb-form-not-listed": "off",
        "core:ste-words.domain-noun-category-membership": "suggestion",
        "core:ste-words.domain-noun-not-organization-approved": "suggestion",
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
@@ -8505,9 +8505,9 @@
        "core:ste-words.obligation-word-substitution": "suggestion",
        "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
-       "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
-       "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
-       "core:ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "off",
+       "core:ste-words.word-outside-controlled-vocabulary": "off",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "off",
        "core:ste-words.word-used-outside-permitted-sense": "suggestion"
       }
      },
@@ -8833,7 +8833,7 @@
        "core:ste-verbs.nominalized-action": "suggestion",
        "core:ste-verbs.passive-voice": "suggestion",
        "core:ste-verbs.past-participle-not-adjectival": "suggestion",
-       "core:ste-verbs.verb-form-not-listed": "suggestion",
+       "core:ste-verbs.verb-form-not-listed": "off",
        "core:ste-words.domain-noun-category-membership": "suggestion",
        "core:ste-words.domain-noun-not-organization-approved": "suggestion",
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
@@ -8841,9 +8841,9 @@
        "core:ste-words.obligation-word-substitution": "suggestion",
        "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
-       "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
-       "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
-       "core:ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "off",
+       "core:ste-words.word-outside-controlled-vocabulary": "off",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "off",
        "core:ste-words.word-used-outside-permitted-sense": "suggestion"
       }
      },
@@ -9165,7 +9165,7 @@
        "core:ste-verbs.nominalized-action": "suggestion",
        "core:ste-verbs.passive-voice": "suggestion",
        "core:ste-verbs.past-participle-not-adjectival": "suggestion",
-       "core:ste-verbs.verb-form-not-listed": "suggestion",
+       "core:ste-verbs.verb-form-not-listed": "off",
        "core:ste-words.domain-noun-category-membership": "suggestion",
        "core:ste-words.domain-noun-not-organization-approved": "suggestion",
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
@@ -9173,9 +9173,9 @@
        "core:ste-words.obligation-word-substitution": "suggestion",
        "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
-       "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
-       "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
-       "core:ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "off",
+       "core:ste-words.word-outside-controlled-vocabulary": "off",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "off",
        "core:ste-words.word-used-outside-permitted-sense": "suggestion"
       }
      },
@@ -9498,7 +9498,7 @@
        "core:ste-verbs.nominalized-action": "suggestion",
        "core:ste-verbs.passive-voice": "suggestion",
        "core:ste-verbs.past-participle-not-adjectival": "suggestion",
-       "core:ste-verbs.verb-form-not-listed": "suggestion",
+       "core:ste-verbs.verb-form-not-listed": "off",
        "core:ste-words.domain-noun-category-membership": "suggestion",
        "core:ste-words.domain-noun-not-organization-approved": "suggestion",
        "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
@@ -9506,9 +9506,9 @@
        "core:ste-words.obligation-word-substitution": "suggestion",
        "core:ste-words.spelling": "warning",
        "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
-       "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
-       "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
-       "core:ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "off",
+       "core:ste-words.word-outside-controlled-vocabulary": "off",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "off",
        "core:ste-words.word-used-outside-permitted-sense": "suggestion"
       }
      },
@@ -11837,7 +11837,7 @@
      "ste-verbs.nominalized-action": "suggestion",
      "ste-verbs.passive-voice": "suggestion",
      "ste-verbs.past-participle-not-adjectival": "suggestion",
-     "ste-verbs.verb-form-not-listed": "suggestion",
+     "ste-verbs.verb-form-not-listed": "off",
      "ste-words.approved-word-substitution": "warning",
      "ste-words.domain-noun-category-membership": "suggestion",
      "ste-words.domain-noun-not-organization-approved": "suggestion",
@@ -11849,10 +11849,10 @@
      "ste-words.slang-or-jargon-term": "warning",
      "ste-words.spelling": "warning",
      "ste-words.unapproved-word-not-a-domain-noun": "suggestion",
-     "ste-words.verb-or-adjective-form-not-permitted": "suggestion",
+     "ste-words.verb-or-adjective-form-not-permitted": "off",
      "ste-words.verb-used-as-noun": "warning",
-     "ste-words.word-outside-controlled-vocabulary": "suggestion",
-     "ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+     "ste-words.word-outside-controlled-vocabulary": "off",
+     "ste-words.word-used-in-wrong-part-of-speech": "off",
      "ste-words.word-used-outside-permitted-sense": "suggestion"
     }
    },
@@ -12519,7 +12519,7 @@
      "ste-verbs.nominalized-action": "error",
      "ste-verbs.passive-voice": "error",
      "ste-verbs.past-participle-not-adjectival": "error",
-     "ste-verbs.verb-form-not-listed": "error",
+     "ste-verbs.verb-form-not-listed": "off",
      "ste-words.approved-word-substitution": "error",
      "ste-words.domain-noun-category-membership": "error",
      "ste-words.domain-noun-not-organization-approved": "error",
@@ -12531,10 +12531,10 @@
      "ste-words.slang-or-jargon-term": "error",
      "ste-words.spelling": "error",
      "ste-words.unapproved-word-not-a-domain-noun": "error",
-     "ste-words.verb-or-adjective-form-not-permitted": "error",
+     "ste-words.verb-or-adjective-form-not-permitted": "off",
      "ste-words.verb-used-as-noun": "error",
-     "ste-words.word-outside-controlled-vocabulary": "error",
-     "ste-words.word-used-in-wrong-part-of-speech": "error",
+     "ste-words.word-outside-controlled-vocabulary": "off",
+     "ste-words.word-used-in-wrong-part-of-speech": "off",
      "ste-words.word-used-outside-permitted-sense": "error"
     }
    }
@@ -12569,8 +12569,7 @@
       "ste-verbs.auxiliary-stacking": "warning",
       "ste-verbs.complex-tense": "warning",
       "ste-verbs.nominalized-action": "warning",
-      "ste-verbs.passive-voice": "warning",
-      "ste-verbs.verb-form-not-listed": "warning"
+      "ste-verbs.passive-voice": "warning"
      },
      "profile": "normal"
     }
