@@ -118,6 +118,21 @@ fn refused() -> Result<Vec<String>> {
         .collect()
 }
 
+/// The 3.0 category of the 2.x rule `qid`, or `None` for a `judgement` rule, which resolves
+/// without one.
+fn rule_category(renames: &RenameTable, qid: &str, judgement: bool) -> Result<Option<String>> {
+    let (category, _) = qid
+        .split_once('.')
+        .ok_or_else(|| format!("{qid} is not a qualified rule id"))?;
+    if judgement {
+        return Ok(None);
+    }
+    let category = renames
+        .category(category)
+        .ok_or_else(|| format!("{qid}: no rename for its category"))?;
+    Ok(Some(category))
+}
+
 #[test]
 fn every_migrated_config_resolves_to_the_measured_2x_levels() -> Result<()> {
     let vectors: Value = serde_json::from_str(&fs::read_to_string(
@@ -184,15 +199,7 @@ fn every_migrated_config_resolves_to_the_measured_2x_levels() -> Result<()> {
                 let Some(id) = renames.rule(&qid) else {
                     continue;
                 };
-                let category = match qid.split_once('.') {
-                    Some((category, _)) if !judgement(&qid) => Some(
-                        renames
-                            .category(category)
-                            .ok_or_else(|| format!("{qid}: no rename for its category"))?,
-                    ),
-                    Some(_) => None,
-                    None => return Err(format!("{qid} is not a qualified rule id").into()),
-                };
+                let category = rule_category(&renames, &qid, judgement(&qid))?;
                 let got = resolved
                     .level(&id, category.as_deref())
                     .map(|l| l.level.as_str());
