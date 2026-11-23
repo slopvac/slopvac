@@ -476,7 +476,7 @@ pub(crate) fn utc_seconds(text: &str) -> Option<i64> {
 }
 
 /// The UTC time `secs` seconds after the epoch as `YYYY-MM-DDTHH:MM:SSZ`, the inverse of
-/// [`utc_seconds`] for dates from 1970 on. A negative count gives the epoch.
+/// `utc_seconds` for dates from 1970 on. A negative count gives the epoch.
 #[must_use]
 pub fn utc_time(secs: i64) -> String {
     let secs = secs.max(0);
