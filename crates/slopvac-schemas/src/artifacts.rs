@@ -65,7 +65,28 @@ pub const ARTIFACTS: &[Artifact] = &[
         inline: &["Genre"],
         build: lint_report,
     },
+    Artifact {
+        file: "plugin-manifest.schema.json",
+        title: "slopvac v3 plugin manifest",
+        description: Some(
+            "The slopvac-plugin.toml file at the root of a plugin. A data plugin holds rules, \
+             styles, genres, terms, taggers and prime snippets, and no code. A code plugin adds \
+             one [plugin] table with the command to run and the embedded plugin declaration. The \
+             manifest of a code plugin is part of the content hash that `slopvac plugins trust` \
+             records. Semantics are specified in docs/contract/plugins.md.",
+        ),
+        imports: &["common.schema.json"],
+        inline: &[],
+        build: manifest,
+    },
 ];
+
+fn manifest() -> Value {
+    schema_settings(Contract::Deserialize)
+        .into_generator()
+        .into_root_schema_for::<slopvac_packs::Manifest>()
+        .to_value()
+}
 
 fn common() -> Value {
     let mut generator = schema_settings(Contract::Deserialize).into_generator();

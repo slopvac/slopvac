@@ -2843,6 +2843,7 @@ dependencies = [
  "serde_json",
  "similar 3.2.1",
  "slopvac-model",
+ "slopvac-packs",
  "slopvac-rules",
  "snapbox",
  "tempfile",

@@ -682,6 +682,102 @@
       "input": "word/document.xml\n",
       "python": false,
       "rust": false
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?=[^\\\\]*(?![\\s\\S]))(?!([^/]*/)*\\.\\.(/|(?![\\s\\S])))",
+      "input": "a/b",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?=[^\\\\]*(?![\\s\\S]))(?!([^/]*/)*\\.\\.(/|(?![\\s\\S])))",
+      "input": "a\n\\",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?=[^\\\\]*(?![\\s\\S]))(?!([^/]*/)*\\.\\.(/|(?![\\s\\S])))",
+      "input": "a\\b",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?=[^\\\\]*(?![\\s\\S]))(?!([^/]*/)*\\.\\.(/|(?![\\s\\S])))",
+      "input": "x\n/../",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?=[^\\\\]*(?![\\s\\S]))(?!([^/]*/)*\\.\\.(/|(?![\\s\\S])))",
+      "input": "a/..",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?=[^\\\\]*(?![\\s\\S]))(?!([^/]*/)*\\.\\.(/|(?![\\s\\S])))",
+      "input": "..a",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?=[^\\\\]*(?![\\s\\S]))(?!([^/]*/)*\\.\\.(/|(?![\\s\\S])))",
+      "input": "a/../b",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?=[^\\\\]*(?![\\s\\S]))(?!([^/]*/)*\\.\\.(/|(?![\\s\\S])))",
+      "input": "a\n..",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^(?![/\\\\])(?![A-Za-z]:)(?=[^\\\\]*(?![\\s\\S]))(?!([^/]*/)*\\.\\.(/|(?![\\s\\S])))",
+      "input": "/a",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[^\\x09-\\x0D\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]+(?![\\s\\S])",
+      "input": "3.12",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[^\\x09-\\x0D\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]+(?![\\s\\S])",
+      "input": "3.12\n",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[^\\x09-\\x0D\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]+(?![\\s\\S])",
+      "input": "3.1 2",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[^\\x09-\\x0D\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]+(?![\\s\\S])",
+      "input": "3　2",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[^\\x09-\\x0D\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]+(?![\\s\\S])",
+      "input": "3 2",
+      "python": false,
+      "rust": false
+    },
+    {
+      "pattern": "^[^\\x09-\\x0D\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]+(?![\\s\\S])",
+      "input": "3​2",
+      "python": true,
+      "rust": true
+    },
+    {
+      "pattern": "^[^\\x09-\\x0D\\x20\\x85\\xA0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000]+(?![\\s\\S])",
+      "input": "3\u000b2",
+      "python": false,
+      "rust": false
     }
   ]
 }

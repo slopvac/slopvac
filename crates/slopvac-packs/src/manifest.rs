@@ -7,9 +7,10 @@
 use std::fmt;
 use std::io::Read;
 
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema};
 use semver::{Version, VersionReq};
-use slopvac_model::{ApiVersion, PackId};
+use serde_json::{Value as Json, json};
+use slopvac_model::{ApiVersion, PackId, absent_not_null, if_then, x_extensions};
 use toml::{Table, Value};
 
 /// Largest manifest the reader accepts, in bytes.
@@ -72,7 +73,7 @@ fn err(pointer: &str, message: impl Into<String>) -> ManifestError {
 
 /// What a pack is: data only, or data plus a plugin command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, JsonSchema)]
-#[schemars(rename_all = "lowercase")]
+#[schemars(rename_all = "lowercase", inline)]
 #[non_exhaustive]
 pub enum PackKind {
     /// Rules, styles, genres, terms and taggers. No code.
@@ -83,7 +84,16 @@ pub enum PackKind {
 
 /// A path inside a pack: relative, with forward slashes and no `..` segment. A glob is allowed.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, JsonSchema)]
-#[schemars(with = "String")]
+// The pattern refuses what `PackPath::parse` refuses: a leading `/`, a drive letter, a backslash
+// anywhere and a `..` segment. Negated classes stand for "any character", newline included,
+// because the engines disagree on what `.` matches.
+#[schemars(
+    with = "String",
+    extend(
+        "minLength" = 1,
+        "pattern" = r"^(?![/\\])(?![A-Za-z]:)(?=[^\\]*(?![\s\S]))(?!([^/]*/)*\.\.(/|(?![\s\S])))"
+    )
+)]
 pub struct PackPath(String);
 
 impl PackPath {
@@ -121,36 +131,93 @@ impl fmt::Display for PackPath {
     }
 }
 
-/// The files a pack contributes, by kind.
+/// A list of pack paths with no repeats.
+#[derive(JsonSchema)]
+// Schema only. The reader checks the repeats itself in `Obj::strings`.
+#[schemars(with = "Vec<PackPath>", extend("uniqueItems" = true))]
+struct PathList;
+
+/// Version requirement: comma-separated comparators, each an optional operator (^ ~ = > >= < <=)
+/// and a version with one to three numeric parts. A pre-release suffix is allowed only after a
+/// full MAJOR.MINOR.PATCH, so 1.0.0-rc.1 is valid and 1.0-rc is not. Numbers have no leading
+/// zeros and a pre-release has no empty segment, as in the Semver def of common.schema.json.
+/// Spaces are allowed after an operator and around a comma, and nowhere else: no leading or
+/// trailing space, no newline.
+#[derive(JsonSchema)]
+// Schema only. `parse_requirement` checks the same grammar on the value.
+#[schemars(
+    rename = "VersionReq",
+    with = "String",
+    extend(
+        "pattern" = r"^((\^|~|=|>=|<=|>|<) *)?(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)?)?( *, *((\^|~|=|>=|<=|>|<) *)?(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?)?)?)*(?![\s\S])"
+    )
+)]
+struct VersionRequest;
+
+/// Point `schema` at the shared definition `target` and drop the shape that Rust derived.
+fn point_at(schema: &mut Schema, target: &str) {
+    schema.remove("type");
+    schema.insert("$ref".into(), json!(target));
+}
+
+fn plugin_id(schema: &mut Schema) {
+    point_at(schema, "common.schema.json#/$defs/PluginId");
+}
+
+fn semver(schema: &mut Schema) {
+    point_at(schema, "common.schema.json#/$defs/Semver");
+}
+
+/// Every member is optional: the reader treats an absent key as an empty list.
+fn provides_schema(schema: &mut Schema) {
+    x_extensions(schema);
+    schema.remove("required");
+}
+
+/// Files the plugin contributes, as paths or globs inside the plugin. Each path holds one
+/// artifact of the named kind, and the host validates it against that schema.
 #[derive(Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[schemars(transform = provides_schema)]
 #[non_exhaustive]
 pub struct Provides {
-    /// Category files.
+    /// Category files (category.schema.json).
+    #[schemars(with = "PathList")]
     pub categories: Vec<PackPath>,
-    /// Style files.
+    /// Style files (style.schema.json).
+    #[schemars(with = "PathList")]
     pub styles: Vec<PackPath>,
-    /// Genre files.
+    /// Genre files (genre.schema.json).
+    #[schemars(with = "PathList")]
     pub genres: Vec<PackPath>,
-    /// Terms files.
+    /// Terms files (terms.schema.json).
+    #[schemars(with = "PathList")]
     pub terms: Vec<PackPath>,
-    /// Tagger files.
+    /// Declarative tagger files (tagger.schema.json).
+    #[schemars(with = "PathList")]
     pub taggers: Vec<PackPath>,
-    /// Config files a project may extend.
+    /// Config files that a project may extend as `<plugin>:<name>` (config.schema.json).
+    #[schemars(
+        description = "Config files that a project may extend as <plugin>:<name> (config.schema.json)."
+    )]
+    #[schemars(with = "PathList")]
     pub configs: Vec<PackPath>,
-    /// Markdown snippets for `slopvac prime`.
+    /// Markdown snippets that `slopvac prime` appends to a topic.
+    #[schemars(with = "PathList")]
     pub prime: Vec<PackPath>,
-    /// Blocklist files.
+    /// Word blocklist files (blocklist.schema.json).
+    #[schemars(with = "PathList")]
     pub blocklists: Vec<PackPath>,
 }
 
 /// A pack this pack needs.
 #[derive(Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[schemars(transform = x_extensions)]
 #[non_exhaustive]
 pub struct Requirement {
     /// The required pack.
     pub id: PackId,
     /// The versions that satisfy the requirement.
-    #[schemars(with = "String")]
+    #[schemars(with = "VersionRequest")]
     pub version: VersionReq,
 }
 
@@ -185,7 +252,7 @@ impl HookDecl {
 
 /// How the host runs a plugin's `command`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(rename_all = "lowercase")]
+#[schemars(rename_all = "lowercase", inline)]
 #[non_exhaustive]
 pub enum PluginRuntime {
     /// A program from the pack, or a bare name the plugin's own environment provides.
@@ -195,21 +262,134 @@ pub enum PluginRuntime {
     Python,
 }
 
-/// The `[plugin]` table: how to run the plugin and its pre-spawn declaration.
+/// One or more characters that are not Unicode `White_Space`, the set `char::is_whitespace` uses,
+/// which is the check the reader makes. The engines read `\S` differently, so the set is spelled
+/// out.
+const NO_WHITESPACE: &str =
+    r"^[^\x09-\x0D\x20\x85\xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+(?![\s\S])";
+
+/// The `python` member: a [`VersionRequest`] with no whitespace, short enough that it can never
+/// pass for an option, and absent unless the runtime is Python.
+fn python_request(schema: &mut Schema) {
+    absent_not_null(schema);
+    schema.insert("$ref".into(), json!("#/$defs/VersionReq"));
+    schema.remove("type");
+    schema.insert("maxLength".into(), json!(64));
+    schema.insert("pattern".into(), json!(NO_WHITESPACE));
+}
+
+/// An environment variable name, listed once.
+fn env_names(schema: &mut Schema) {
+    schema.insert("uniqueItems".into(), json!(true));
+    schema.insert(
+        "items".into(),
+        json!({"type": "string", "pattern": r"^[A-Z_][A-Z0-9_]*(?![\s\S])"}),
+    );
+}
+
+/// The `[plugin]` table as the published schema writes it. The declaration members (`network`,
+/// `hooks`, `features`) come from the protocol schema's `PluginDeclaration`, so the Rust fields
+/// for them, and the flat feature lists, are replaced by that reference. Only `command` is
+/// required here; the reference requires the rest.
+fn plugin_schema(schema: &mut Schema) {
+    let protocol = "plugin-protocol.schema.json#/$defs/";
+    if let Some(Json::Object(properties)) = schema.get_mut("properties") {
+        for flat in ["network", "features_required", "features_optional"] {
+            properties.remove(flat);
+        }
+        // The published `args` member carries no description.
+        if let Some(Json::Object(args)) = properties.get_mut("args") {
+            args.remove("description");
+        }
+        properties.insert(
+            "hooks".into(),
+            json!({
+                "type": "array",
+                "items": {
+                    "$ref": format!("{protocol}HookDecl"),
+                    "patternProperties": {"^x-": {}},
+                    "unevaluatedProperties": false
+                }
+            }),
+        );
+        properties.insert(
+            "features".into(),
+            json!({
+                "type": "object",
+                "properties": {"required": true, "optional": true},
+                "patternProperties": {"^x-": {}},
+                "additionalProperties": false
+            }),
+        );
+    }
+    // The reference to `PluginDeclaration` already makes the value an object.
+    schema.remove("type");
+    schema.insert(
+        "allOf".into(),
+        json!([{"$ref": format!("{protocol}PluginDeclaration")}]),
+    );
+    schema.insert("required".into(), json!(["command"]));
+    let python = json!({"properties": {"runtime": {"const": "python"}}, "required": ["runtime"]});
+    let then = json!({
+        "properties": {
+            "command": {
+                "description": "With runtime python, a script inside the plugin that the interpreter runs.",
+                "$ref": "#/$defs/PackPath",
+                "pattern": "^[^-]"
+            }
+        },
+        "required": ["python"]
+    });
+    let mut conditional = if_then(&python, &then);
+    conditional["else"] = json!({"not": {"required": ["python"]}});
+    if let Json::Object(map) = conditional {
+        for (key, value) in map {
+            schema.insert(key, value);
+        }
+    }
+    schema.insert("patternProperties".into(), json!({"^x-": {}}));
+    schema.insert("unevaluatedProperties".into(), json!(false));
+}
+
+/// How to run the code plugin, plus its pre-spawn declaration. The declaration fields (network,
+/// hooks, features) sit flat in this table, so the host reads them from the same bytes that it
+/// hashes. See the PluginDeclaration def in plugin-protocol.schema.json. The manifest closes the
+/// hook entries and the features table: they take only the declared keys and x- keys, so the
+/// hashed bytes carry no unreviewed data.
+#[expect(
+    clippy::doc_markdown,
+    reason = "the text is the published schema description, which names the definitions without backticks"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[schemars(rename = "Plugin", transform = plugin_schema)]
 #[non_exhaustive]
 pub struct PluginTable {
-    /// Executable inside the pack, or a bare name. With the Python runtime, a script inside the
-    /// pack that does not start with a dash.
+    /// Executable inside the plugin, or a bare name that the plugin's own environment provides.
+    /// With runtime python it is a script inside the plugin (PackPath, no leading dash).
+    #[expect(
+        clippy::doc_markdown,
+        reason = "the text is the published schema description, which names the definitions without backticks"
+    )]
+    #[schemars(length(min = 1))]
     pub command: String,
-    /// How the host runs `command`.
+    /// How the host runs the command. native (the default) runs it as a program from the plugin.
+    /// python runs it as a script of the plugin in a managed Python environment that sync builds
+    /// from the plugin's pylock.toml (threat-model.md section 6.6).
     pub runtime: PluginRuntime,
-    /// The Python version request for the managed environment. Set exactly when `runtime` is
-    /// [`PluginRuntime::Python`].
+    /// The Python version request for the managed environment, for example 3.12. Required with
+    /// runtime python and invalid otherwise. It is a VersionReq without whitespace, so it can
+    /// never start with a dash that uv would read as an option.
+    #[expect(
+        clippy::doc_markdown,
+        reason = "the text is the published schema description, which names the definitions without backticks"
+    )]
+    #[schemars(transform = python_request)]
     pub python: Option<String>,
     /// Arguments.
     pub args: Vec<String>,
-    /// Environment variable names the plugin may receive.
+    /// Names of environment variables the plugin may receive when the user allows them. Nothing
+    /// else passes through.
+    #[schemars(transform = env_names)]
     pub env: Vec<String>,
     /// Whether the plugin may open connections.
     pub network: bool,
@@ -240,30 +420,61 @@ impl PluginTable {
     }
 }
 
+/// The manifest as the published schema writes it. The reader checks `schema_version` and then
+/// drops it, so it has no Rust field; the schema adds it. `provides` and `requires` may be
+/// absent, and a code plugin needs a `plugin` table that a data plugin must not have.
+fn manifest_schema(schema: &mut Schema) {
+    x_extensions(schema);
+    if let Some(Json::Object(properties)) = schema.get_mut("properties") {
+        properties.insert(
+            "schema_version".into(),
+            json!({"$ref": "common.schema.json#/$defs/SchemaVersion"}),
+        );
+    }
+    schema.insert(
+        "required".into(),
+        json!(["schema_version", "id", "version", "slopvac_api", "kind"]),
+    );
+    let code = json!({"properties": {"kind": {"const": "code"}}});
+    let mut conditional = if_then(&code, &json!({"required": ["plugin"]}));
+    conditional["else"] = json!({"not": {"required": ["plugin"]}});
+    schema.insert("allOf".into(), json!([conditional]));
+}
+
 /// A parsed `slopvac-plugin.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[schemars(transform = manifest_schema)]
 #[non_exhaustive]
 pub struct Manifest {
-    /// Pack id, the prefix of every rule id the pack provides.
+    /// Plugin id. It prefixes every rule id the plugin provides. `core` is reserved for the
+    /// built-in plugin.
+    #[schemars(transform = plugin_id)]
     pub id: PackId,
     /// Pack version.
-    #[schemars(with = "String")]
+    #[schemars(with = "String", transform = semver)]
     pub version: Version,
-    /// Extension API the pack targets.
+    /// Plugin extension API the plugin was written for. A host that implements a lower version
+    /// refuses the plugin.
     pub slopvac_api: ApiVersion,
-    /// Data or plugin pack.
+    /// data: a data plugin, which holds declarative files only and forbids a plugin table. code:
+    /// a code plugin, which requires the plugin table and runs as a subprocess. Either kind may
+    /// provide data files.
     pub kind: PackKind,
     /// One-line description.
+    #[schemars(length(min = 1), transform = absent_not_null)]
     pub description: Option<String>,
     /// SPDX license expression.
+    #[schemars(length(min = 1), transform = absent_not_null)]
     pub license: Option<String>,
     /// Home page URI.
+    #[schemars(url, transform = absent_not_null)]
     pub homepage: Option<String>,
     /// Files the pack contributes.
     pub provides: Provides,
-    /// Packs this pack needs.
+    /// Plugins this plugin needs. The host resolves them before it loads this one.
     pub requires: Vec<Requirement>,
     /// The plugin table; present exactly when `kind` is [`PackKind::Code`].
+    #[schemars(transform = absent_not_null)]
     pub plugin: Option<PluginTable>,
 }
 
