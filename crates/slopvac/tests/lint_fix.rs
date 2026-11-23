@@ -213,3 +213,48 @@ fn an_over_budget_document_reports_the_same_code_with_and_without_fix(
         .stderr(predicate::str::contains("error[context-budget-exceeded]"));
     Ok(())
 }
+
+/// 300000 sentences of 3 bytes in one paragraph.
+fn too_many_sentences() -> (String, &'static str, usize) {
+    let text = format!("{}\n", vec!["Go."; 300_000].join(" "));
+    let limit = text.len() / 8 + 65_536;
+    (text, "sentences", limit)
+}
+
+/// 300000 table cells of one character.
+fn too_many_cells() -> (String, &'static str, usize) {
+    let row = format!("{}|\n", "|a".repeat(100));
+    let rule = format!("{}|\n", "|-".repeat(100));
+    let text = format!("{row}{rule}{}", row.repeat(3_000));
+    let limit = text.len() / 4 + 65_536;
+    (text, "table-cells", limit)
+}
+
+/// The same document as `over_budget`, with its expected budget name and limit.
+fn too_many_tags() -> (String, &'static str, usize) {
+    let text = over_budget();
+    let limit = text.len() / 64 + 65_536;
+    (text, "tags", limit)
+}
+
+#[rstest]
+#[case::tags(too_many_tags())]
+#[case::sentences(too_many_sentences())]
+#[case::table_cells(too_many_cells())]
+fn each_refused_budget_is_named_in_the_notice_data(
+    #[case] input: (String, &'static str, usize),
+) -> TestResult {
+    let (text, budget, limit) = input;
+    let dir = project(&text)?;
+    slopvac(dir.path())?
+        .args(["lint", "--format", "json", "--out", "r.json", "a.md"])
+        .assert()
+        .code(2);
+    let report: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.path().join("r.json"))?)?;
+    let notice = &report["notices"][0];
+    assert_eq!(notice["code"], "context-budget-exceeded", "{report}");
+    assert_eq!(notice["data"]["budget"], budget, "{report}");
+    assert_eq!(notice["data"]["limit"], limit, "{report}");
+    Ok(())
+}
