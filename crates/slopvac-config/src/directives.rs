@@ -112,7 +112,10 @@ fn locate_in_code(doc: &str, family: Family) -> Vec<Range<usize>> {
         }
         let body = &doc[c.body.clone()];
         let text = body.trim_start();
-        let Some(rest) = text.strip_prefix("slopvac:") else {
+        let Some(rest) = text
+            .strip_prefix("slopvac:")
+            .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+        else {
             continue;
         };
         let start = c.body.start + (body.len() - rest.len());
@@ -226,6 +229,14 @@ impl Literals {
     }
 }
 
+/// Whether `text` starts with the `slopvac:` keyword of a directive: the colon is followed by
+/// white space or the end. A marker such as the `slopvac:begin` of a steering block is no
+/// directive.
+fn is_keyword(text: &str) -> bool {
+    text.strip_prefix("slopvac:")
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+}
+
 /// The byte range of the text after `slopvac:` in a directive comment, if `line` is one.
 fn payload_of(line: &str, style: Style) -> Option<Range<usize>> {
     let lead = line.len() - line.trim_start().len();
@@ -241,7 +252,7 @@ fn payload_of(line: &str, style: Style) -> Option<Range<usize>> {
     let skipped = rest.len() - rest.trim_start().len();
     let key_at = after_open + skipped;
     let payload_at = key_at + "slopvac:".len();
-    if !line[key_at..].starts_with("slopvac:") {
+    if !is_keyword(&line[key_at..]) {
         return None;
     }
     let mut end = line.trim_end().len();
@@ -414,37 +425,37 @@ fn insert(
                 .insert((table, (*seg).to_owned()), Slot { at, table: None });
             return;
         }
-        let (at, child) = match slot {
-            Some(Slot {
-                at,
-                table: Some(child),
-            }) => (at, child),
-            _ => {
-                let child = slots.new_table();
-                let entry = Entry {
-                    key: (*seg).to_owned(),
-                    key_span: span.clone(),
-                    node: Node {
-                        span,
-                        value: Value::Table(Vec::new()),
-                    },
-                };
-                let at = if let Some(slot) = slot {
-                    cur[slot.at] = entry;
-                    slot.at
-                } else {
-                    cur.push(entry);
-                    cur.len() - 1
-                };
-                slots.index.insert(
-                    (table, (*seg).to_owned()),
-                    Slot {
-                        at,
-                        table: Some(child),
-                    },
-                );
-                (at, child)
-            }
+        let (at, child) = if let Some(Slot {
+            at,
+            table: Some(child),
+        }) = slot
+        {
+            (at, child)
+        } else {
+            let child = slots.new_table();
+            let entry = Entry {
+                key: (*seg).to_owned(),
+                key_span: span.clone(),
+                node: Node {
+                    span,
+                    value: Value::Table(Vec::new()),
+                },
+            };
+            let at = if let Some(slot) = slot {
+                cur[slot.at] = entry;
+                slot.at
+            } else {
+                cur.push(entry);
+                cur.len() - 1
+            };
+            slots.index.insert(
+                (table, (*seg).to_owned()),
+                Slot {
+                    at,
+                    table: Some(child),
+                },
+            );
+            (at, child)
         };
         let Value::Table(next) = &mut cur[at].node.value else {
             return;

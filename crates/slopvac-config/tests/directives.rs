@@ -679,3 +679,18 @@ fn a_repeated_key_counts_each_time_it_is_written() {
     let doc = format!("<!-- slopvac: {} -->\n", "locale=en-GB ".repeat(3_000));
     assert_refused(&doc, 2_243);
 }
+
+/// A comment that starts `slopvac:` with no white space after the colon is no directive: the
+/// markers of a steering block (`slopvac:begin`, `slopvac:end`) are not.
+#[test]
+fn a_steering_block_marker_is_no_directive() {
+    for (doc, file) in [
+        ("<!-- slopvac:begin -->\n", "AGENTS.md"),
+        ("<!-- slopvac:end -->\n", "AGENTS.md"),
+        (".. slopvac:begin\n", "notes.rst"),
+        ("# slopvac:begin\n", "a.py"),
+        ("# slopvac:begin\n", "notes.txt"),
+    ] {
+        assert_eq!(find(doc, file), [], "{file}: {doc}");
+    }
+}
