@@ -387,3 +387,36 @@ fn a_rule_less_category_is_dropped_with_one_notice_per_use(
         .collect();
     assert!(errors.is_empty(), "{errors:?}");
 }
+
+/// The switch block that `--preserve-behavior` writes for a profile override states each
+/// vocabulary rule at the 2.x level of the target profile when a blocklist is set. The
+/// legacy styles leave those rules off, so a block that wrote nothing would silence them.
+#[rstest]
+#[case::strict("", "strict", "error")]
+#[case::normal("profile = \"strict\"\n", "normal", "suggestion")]
+#[case::relaxed("", "relaxed", "off")]
+// An authored top-level level for the rule is final, as E3 says for authored rules.
+#[case::authored(
+    "[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"warning\"\n",
+    "relaxed",
+    "warning"
+)]
+fn a_profile_switch_states_the_vocabulary_rule_at_the_target_level(
+    #[case] top: &str,
+    #[case] target: &str,
+    #[case] expected: &str,
+) {
+    let config = format!(
+        "schema_version = 2\n{top}[vocabulary]\npath = \"blocklist.toml\"\n\n\
+         [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"{target}\"\n"
+    );
+    let rw = preserve(&config).unwrap();
+    let doc = toml::from_str::<toml::Table>(&rw.text).unwrap();
+    let switch = &doc["overrides"].as_array().unwrap()[0];
+    assert_eq!(
+        switch["rules"]["core:ste-words.word-outside-controlled-vocabulary"].as_str(),
+        Some(expected),
+        "{}",
+        rw.text
+    );
+}

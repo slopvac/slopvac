@@ -1,6 +1,6 @@
 //! The 2.x profile data that `--preserve-behavior` expands against: the
 //! `core:legacy-<profile>` styles, each rule's kind and tiers, and the per-rule
-//! defaults of each profile.
+//! defaults of each profile, and the level of each vocabulary rule when a blocklist is set.
 //!
 //! `tests/fixtures/generate.py` writes the data files from
 //! `docs/contract/compat/profiles/` and the 2.x ruleset.
@@ -91,6 +91,7 @@ impl RuleInfo {
 pub(crate) struct Legacy {
     styles: [Layer; 3],
     defaults: [BTreeMap<String, String>; 3],
+    vocabulary: [BTreeMap<String, String>; 3],
     pub(crate) rules: BTreeMap<String, RuleInfo>,
     /// Categories that some legacy style gives a budget.
     pub(crate) budgeted: BTreeSet<String>,
@@ -176,6 +177,13 @@ impl Legacy {
                     .and_then(Item::as_table_like),
             )
         });
+        let vocabulary = PROFILES.map(|p| {
+            levels(
+                cat.get("vocabulary")
+                    .and_then(|d| d.get(p))
+                    .and_then(Item::as_table_like),
+            )
+        });
         let rules = cat
             .get("rules")
             .and_then(Item::as_table_like)
@@ -199,6 +207,7 @@ impl Legacy {
         Self {
             styles,
             defaults,
+            vocabulary,
             rules,
             budgeted,
         }
@@ -212,6 +221,12 @@ impl Legacy {
     /// The 2.x per-rule defaults of a profile.
     pub(crate) fn defaults(&self, profile: &str) -> &BTreeMap<String, String> {
         &self.defaults[profile_index(profile)]
+    }
+
+    /// The 2.x level of each vocabulary rule under a profile when a word blocklist is set.
+    /// The legacy styles leave these rules off, so a config with a blocklist needs them back.
+    pub(crate) fn vocabulary(&self, profile: &str) -> &BTreeMap<String, String> {
+        &self.vocabulary[profile_index(profile)]
     }
 
     /// The 2.x engine state of a rule under a profile with no authored config. It

@@ -58,15 +58,20 @@ def test_no_shipped_legacy_preset_sets_a_removed_rule():
     # Read both files directly, not through the generator.
     removed_file = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
     removed = {
-        entry["id"]
-        for entry in tomllib.loads(removed_file.read_text("utf-8"))["rules"]
+        entry["id"] for entry in tomllib.loads(removed_file.read_text("utf-8"))["rules"]
     }
     assert removed
     for profile in PROFILES:
-        path = ROOT / "docs" / "contract" / "compat" / "profiles" / f"legacy-{profile}.toml"
+        path = (
+            ROOT
+            / "docs"
+            / "contract"
+            / "compat"
+            / "profiles"
+            / f"legacy-{profile}.toml"
+        )
         rules = tomllib.loads(path.read_text("utf-8")).get("rules", {})
         assert removed & set(rules) == set(), profile
-
 
 
 def test_committed_files_equal_regenerated_output():
@@ -209,6 +214,24 @@ def test_a_legacy_style_names_exactly_the_2x_rules_and_categories(truth):
     assert set(style["rules"]) - rule_ids == set()
     # The generated spelling rule is part of the catalogue, resolved like any rule.
     assert "ste-words.spelling" in rule_ids
+
+
+@pytest.mark.parametrize(
+    ("profile", "level"),
+    [("strict", "error"), ("normal", "suggestion"), ("relaxed", "off")],
+)
+def test_mapping_keeps_the_2x_level_of_each_vocabulary_rule(profile, level):
+    # The styles leave the vocabulary rules off, and `migrate --preserve-behavior` turns
+    # them back on from these levels when a blocklist moves. The levels are the ones that
+    # the 2.x styles carried: the category level of each profile.
+    data = json.loads((mapping.OUT / "mapping.json").read_text(encoding="utf-8"))
+    levels = data["profiles"][profile]["vocabulary_levels"]
+    assert levels == {
+        "ste-verbs.verb-form-not-listed": level,
+        "ste-words.verb-or-adjective-form-not-permitted": level,
+        "ste-words.word-outside-controlled-vocabulary": level,
+        "ste-words.word-used-in-wrong-part-of-speech": level,
+    }
 
 
 @pytest.mark.parametrize("profile", PROFILES)

@@ -115,15 +115,25 @@ fn read_config(doc: &DocumentMut, legacy: &Legacy, ctx: &mut Ctx<'_>) -> Option<
             .unwrap_or_default();
         overrides.push(Block2 {
             files,
+            blocklist: has_blocklist(t),
             profile: read_profile(t, &format!("{path}.profile"), ctx),
             layer: read_layer(t, &path, legacy, ctx),
         });
     }
     (ctx.dropped.total() == before).then_some(Config2 {
         profile,
+        blocklist: has_blocklist(doc.as_table()),
         layer,
         overrides,
     })
+}
+
+/// Whether the 2.x table sets `vocabulary.path`, which the plain migration moves into
+/// `terms.blocklists`.
+fn has_blocklist(t: &dyn TableLike) -> bool {
+    t.get("vocabulary")
+        .and_then(Item::as_table_like)
+        .is_some_and(|v| v.contains_key("path"))
 }
 
 fn read_profile(t: &dyn TableLike, path: &str, ctx: &mut Ctx<'_>) -> Option<String> {

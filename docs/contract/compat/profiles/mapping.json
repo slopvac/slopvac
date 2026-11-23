@@ -29,6 +29,12 @@
         "max_total_per_100_words": 3.0,
         "max_unicode_dashes": 0,
         "min_score": 70.0
+      },
+      "vocabulary_levels": {
+        "ste-verbs.verb-form-not-listed": "suggestion",
+        "ste-words.verb-or-adjective-form-not-permitted": "suggestion",
+        "ste-words.word-outside-controlled-vocabulary": "suggestion",
+        "ste-words.word-used-in-wrong-part-of-speech": "suggestion"
       }
     },
     "relaxed": {
@@ -48,6 +54,12 @@
       "thresholds": {
         "max_total_per_100_words": 8.0,
         "max_unicode_dashes": 0
+      },
+      "vocabulary_levels": {
+        "ste-verbs.verb-form-not-listed": "off",
+        "ste-words.verb-or-adjective-form-not-permitted": "off",
+        "ste-words.word-outside-controlled-vocabulary": "off",
+        "ste-words.word-used-in-wrong-part-of-speech": "off"
       }
     },
     "strict": {
@@ -72,6 +84,12 @@
         "max_total_per_100_words": 1.5,
         "max_unicode_dashes": 0,
         "min_score": 85.0
+      },
+      "vocabulary_levels": {
+        "ste-verbs.verb-form-not-listed": "error",
+        "ste-words.verb-or-adjective-form-not-permitted": "error",
+        "ste-words.word-outside-controlled-vocabulary": "error",
+        "ste-words.word-used-in-wrong-part-of-speech": "error"
       }
     }
   },

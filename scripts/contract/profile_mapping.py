@@ -46,14 +46,17 @@ def style_name(profile: str) -> str:
 JUDGEMENT_LEVEL = {"enforced": "error", "advisory": "suggestion", "excluded": "off"}
 
 
-def engine_states(profile: str, config=None, path: str = "doc.md"):
+def engine_states(
+    profile: str, config=None, path: str = "doc.md", *, blocklist: bool = False
+):
     """Ground truth: the 2.x engine's state per rule, with the resolved config.
 
     The catalogue includes the generated spelling rule for the default locale.
     Checked rules come from ``is_active`` and ``severity_for``. A judgement rule
     never fires, so its review level comes from its tier: enforced blocks the
     review verdict (``error``), advisory reports (``suggestion``), excluded skips
-    (``off``). A vocabulary rule is ``off``: the engine has no blocklist to give it.
+    (``off``). Without a word blocklist (``blocklist=False``) a vocabulary rule is
+    ``off``: the engine has nothing to give it. With one, it keeps its 2.x state.
     """
     from slopvac.config import Config, resolve_for
     from slopvac.engine import Engine
@@ -72,7 +75,7 @@ def engine_states(profile: str, config=None, path: str = "doc.md"):
     for rule in ruleset.rules:
         active = engine.is_active(rule)
         severity = engine.severity_for(rule).value if active else "off"
-        if rule.kind.value == "vocabulary":
+        if rule.kind.value == "vocabulary" and not blocklist:
             # Vocabulary checking is opt-in: 2.x ran it only when `vocabulary.path`
             # was set, and a style cannot set a blocklist. An enabled rule without
             # one reports `vocabulary-no-blocklist` on every document in 3.0.
@@ -94,7 +97,9 @@ def build_style(profile: str) -> dict:
     categories: dict[str, dict] = {}
     for rule in ruleset.all_rules:
         if rule.category not in resolved.categories:
-            raise SystemExit(f"{profile}: category {rule.category} has no profile entry")
+            raise SystemExit(
+                f"{profile}: category {rule.category} has no profile entry"
+            )
     # 2.x profile tables also name categories that no rule belongs to (`meta`,
     # `orwell-voice`, `prose-density`, `ste-vocabulary`). Nothing in them can report,
     # and 3.0 rejects a style category that no pack defines.
@@ -128,6 +133,21 @@ def build_style(profile: str) -> dict:
         ):
             rules[qid] = want
     return {"id": style_name(profile), "categories": categories, "rules": rules}
+
+
+def vocabulary_levels(profile: str) -> dict[str, str]:
+    """The level of each vocabulary rule under the 2.x profile when a blocklist is set.
+
+    The legacy styles leave these rules off, and `slopvac migrate --preserve-behavior`
+    reads these levels to turn them back on for a config that moved `vocabulary.path`.
+    """
+    ruleset, _, states = engine_states(profile, blocklist=True)
+    return {
+        rule.qualified_id: states[rule.qualified_id][1]
+        for rule in ruleset.all_rules
+        if rule.kind.value == "vocabulary"
+        and rule.qualified_id not in load_removed_rules()
+    }
 
 
 def rule_defaults(profile: str) -> dict[str, str]:
@@ -210,6 +230,7 @@ def build() -> dict[str, str]:
             "severity_shift": 0,
             "thresholds": thresholds(profile),
             "rule_defaults": rule_defaults(profile),
+            "vocabulary_levels": vocabulary_levels(profile),
             "rule_entries": len(style["rules"]),
             "categories": len(style["categories"]),
         }
