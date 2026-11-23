@@ -175,8 +175,10 @@ pub(crate) enum AgentsMessage {
     ModelReportedMismatch { requested: String, reported: String },
     /// The provider's reply names payload items that do not exist or repeats one.
     #[code("review-provider-reply-invalid")]
-    #[message("the model provider's reply is invalid: {detail}")]
-    ProviderReplyInvalid { detail: String },
+    #[message(
+        "the model provider's reply names payload item {index} twice or outside the {count} payload items"
+    )]
+    ProviderReplyInvalid { index: usize, count: usize },
     /// The review type named with --type is lighter than the change needs.
     #[code("review-type-ineligible")]
     #[message(
@@ -923,11 +925,9 @@ mod tests {
                  Check which model reviewed those items.",
             ),
             (
-                AgentsMessage::ProviderReplyInvalid {
-                    detail: "item 3 is outside the 2 payload items".into(),
-                },
+                AgentsMessage::ProviderReplyInvalid { index: 3, count: 2 },
                 "review-provider-reply-invalid",
-                "the model provider's reply is invalid: item 3 is outside the 2 payload items",
+                "the model provider's reply names payload item 3 twice or outside the 2 payload items",
             ),
             (
                 AgentsMessage::TypeIneligible {

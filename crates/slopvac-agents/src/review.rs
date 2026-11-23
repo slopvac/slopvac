@@ -782,20 +782,10 @@ fn call_provider(
 fn check_reply(reply: &ProviderReply, payload: &Payload) -> Result<(), AgentsError> {
     let mut seen = std::collections::BTreeSet::new();
     for item in &reply.items {
-        let detail = if item.index >= payload.items.len() {
-            Some(format!(
-                "item {} is outside the {} payload items",
-                item.index,
-                payload.items.len()
-            ))
-        } else if !seen.insert(item.index) {
-            Some(format!("item {} is reported twice", item.index))
-        } else {
-            None
-        };
-        if let Some(detail) = detail {
+        if item.index >= payload.items.len() || !seen.insert(item.index) {
             return Err(AgentsError::coded(&AgentsMessage::ProviderReplyInvalid {
-                detail,
+                index: item.index,
+                count: payload.items.len(),
             }));
         }
     }
