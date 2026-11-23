@@ -408,6 +408,31 @@ def test_2x_and_v3_reports_project_to_the_same_document():
     assert golden.project_document(v3, SOURCE, 3) == two
 
 
+@pytest.mark.parametrize(
+    ("source", "line", "column", "offset"),
+    [
+        # "Café " is 5 code points and 6 bytes, so column 6 starts at byte 6.
+        pytest.param("Café ok.\n", 1, 6, 6, id="multibyte"),
+        # "one\r\n" is 5 bytes, so column 1 of line 2 is byte 5 and the text has no final newline.
+        pytest.param("one\r\ntwo", 2, 1, 5, id="crlf-last-line"),
+        # The BOM is 3 bytes in offsets but no column: column 2 is "i", after "\ufeffH" (4 bytes).
+        pytest.param("\ufeffHi\nyo", 1, 2, 4, id="bom"),
+    ],
+)
+def test_v3_metric_finding_without_a_range_is_a_point_at_its_offset(
+    source, line, column, offset
+):
+    doc = _doc_2x()
+    f = doc["findings"][0]
+    f.update(rule_id="core:metric.x", line=line, column=column, matched_text="")
+    f.pop("end_column")
+    f.pop("replacement")
+    doc["gate"] = {"passed": True, "reasons": []}
+    finding = golden.project_document(doc, source.encode(), 3)["findings"][0]
+    assert finding["span"] == {"start": offset, "end": offset}
+    assert (finding["end_line"], finding["end_column"]) == (line, column)
+
+
 def test_multi_edit_fix_has_no_2x_replacement():
     doc = _doc_2x()
     f = doc["findings"][0]

@@ -51,6 +51,7 @@ RULE_EXAMPLES = GOLDEN / "inputs" / "rule-examples"
 LEGACY_STYLES = ROOT / "docs" / "contract" / "compat" / "profiles"
 PROFILES = ("strict", "normal", "relaxed")
 MODES = ("parity", "preserve", "policy")
+BOM = "\ufeff".encode()
 LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
 # Fixture inputs that live outside tests/golden. Each is pinned by sha256 in inputs.toml.
@@ -247,6 +248,10 @@ def derive_span(
     starts = line_starts(data)
     text = data.decode("utf-8")
     lines_text = LINE_BREAK.split(text)
+    if text.startswith("\ufeff"):
+        # A leading BOM counts in byte offsets but is no column (positions.md).
+        starts[0] = len(BOM)
+        lines_text[0] = lines_text[0][1:]
     try:
         start = starts[line - 1] + len(
             lines_text[line - 1][: column - 1].encode("utf-8")
@@ -288,7 +293,7 @@ def _finding_2x(f: dict, data: bytes) -> dict:
     }
 
 
-def _finding_3(f: dict) -> dict:
+def _finding_3(f: dict, data: bytes) -> dict:
     fix = f.get("fix")
     replacement = None
     if fix:
@@ -296,17 +301,23 @@ def _finding_3(f: dict) -> dict:
         if len(edits) != 1:
             raise ValueError(f"{f['rule_id']}: a multi-edit fix has no 2.x replacement")
         replacement = edits[0]["text"]
+    span = f.get("span")
+    end_line, end_column = f.get("end_line", f["line"]), f.get("end_column")
+    if span is None and end_column is None:
+        # A finding without a range (a metric) is a point: positions.md gives an empty
+        # span at the byte offset of its line and column.
+        span = derive_span(data, f["line"], f["column"], f["line"], f["column"])
+        if span is not None:
+            end_line, end_column = f["line"], f["column"]
     return {
         "rule_id": f["rule_id"],
         "category": f["category"],
         "severity": f["severity"],
         "line": f["line"],
         "column": f["column"],
-        "end_line": f.get("end_line", f["line"])
-        if f.get("end_column") is not None
-        else None,
-        "end_column": f.get("end_column"),
-        "span": f.get("span"),
+        "end_line": end_line if end_column is not None else None,
+        "end_column": end_column,
+        "span": span,
         "matched_text": f["matched_text"],
         "message": f["message"],
         "ai_signal": f["ai_signal"],
@@ -330,7 +341,7 @@ def _unchecked(items: list) -> list[str]:
 
 def project_document(doc: dict, data: bytes, schema_version: int) -> dict:
     if schema_version == 3:
-        findings = [_finding_3(f) for f in doc["findings"]]
+        findings = [_finding_3(f, data) for f in doc["findings"]]
         gate = {
             "passed": doc["gate"]["passed"],
             "reasons": list(doc["gate"]["reasons"]),
