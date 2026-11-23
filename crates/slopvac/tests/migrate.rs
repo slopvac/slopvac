@@ -213,6 +213,12 @@ fn a_guard_that_repeats_a_block_scope_stops_the_write_and_changes_nothing() {
      categories = { ai-tells-agentic = { minimum_severity = \"error\" } }\n\n\
      [[overrides]]\nfiles = [\"docs/api/**\"]\nprofile = \"normal\"\n"
 )]
+// A top-level category level with any switch: the switch leaves an advisory rule at the
+// `off` of the relaxed style, where 2.x applied the top-level level.
+#[case::top_level_level(
+    "profile = \"relaxed\"\n\n[categories]\nai-tells-formatting = \"warning\"\n\n\
+     [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+)]
 fn a_category_level_above_a_profile_switch_stops_the_write_and_changes_nothing(
     #[case] config: &str,
 ) {

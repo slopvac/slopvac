@@ -27,11 +27,8 @@
   ],
   "profile-override": [{"files": ["docs/**"], "profile": "relaxed"}],
   "profile-override-clears-a-budget-with-none": [{"files": ["docs/**"], "profile": "strict"}],
-  "profile-override-keeps-top-authored-category": [{"files": ["docs/**"], "profile": "relaxed"}],
   "profile-override-keeps-top-authored-rule": [{"files": ["docs/**"], "profile": "relaxed"}],
   "profile-override-with-own-category": [{"files": ["docs/**"], "profile": "strict"}],
-  "switch-writes-a-weight-the-target-style-lacks": [{"files": ["docs/**"], "profile": "relaxed"}],
-  "top-category-level-under-a-switch-from-relaxed": [{"files": ["docs/**"], "profile": "normal"}],
   "top-rule-ignored-at-baseline-valid-in-override": [
    {"files": ["docs/**"], "profile": "strict"},
    {"files": ["**", "!docs/**"], "profile": null}

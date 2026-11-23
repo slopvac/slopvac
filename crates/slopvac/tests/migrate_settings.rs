@@ -130,6 +130,13 @@ const CATEGORY_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\n
                                      [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n\
                                      categories = { ai-tells-agentic = \"warning\" }\n";
 
+/// A relaxed 2.x config with a top-level category level and an override that switches
+/// profile, which `--preserve-behavior` refuses. The top-level `categories` table starts on
+/// line 4.
+const TOP_LEVEL_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\n\n\
+                                      [categories]\nai-tells-formatting = \"warning\"\n\n\
+                                      [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n";
+
 #[rstest]
 #[case::glob_outside_the_grammar(
     UNREPRODUCIBLE,
@@ -138,6 +145,10 @@ const CATEGORY_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\n
 #[case::category_under_a_switch(
     CATEGORY_UNDER_SWITCH,
     "could not be reproduced: `overrides[0].categories` on line 4 sets a category that applies above the profile switch in `overrides[0]`"
+)]
+#[case::top_level_level_under_a_switch(
+    TOP_LEVEL_UNDER_SWITCH,
+    "could not be reproduced: `categories` on line 4 sets a category that applies above the profile switch in `overrides[0]`"
 )]
 fn a_config_whose_2x_settings_cannot_be_reproduced_makes_the_comparison_incomplete(
     #[case] config: &str,

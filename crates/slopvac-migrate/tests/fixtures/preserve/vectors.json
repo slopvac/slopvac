@@ -8522,6 +8522,338 @@
    },
    "input": "profile = \"relaxed\"\n[categories]\n\"ai-tells-agentic\" = \"warning\"\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
   },
+  "top-category-level-under-a-switch-revives-an-advisory-rule": {
+   "expected": {
+    "categories": {
+     "core:ai-tells-formatting": {
+      "severity": "warning"
+     }
+    },
+    "overrides": [
+     {
+      "categories": {
+       "core:ai-residue": {
+        "max_per_100_words": 0.0,
+        "severity": "error",
+        "weight": 1.5
+       },
+       "core:ai-tells-agentic": {
+        "max_per_100_words": 0.6,
+        "severity": "warning",
+        "weight": 1.5
+       },
+       "core:ai-tells-content-shape": {
+        "max_per_100_words": 0.4,
+        "severity": "error",
+        "weight": 1.5
+       },
+       "core:ai-tells-figurative": {
+        "max_per_100_words": 0.8,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:ai-tells-formatting": {
+        "max_per_100_words": 1.0,
+        "weight": 0.8
+       },
+       "core:ai-tells-register": {
+        "max_per_100_words": 0.6,
+        "severity": "error",
+        "weight": 1.5
+       },
+       "core:ai-tells-structure": {
+        "max_per_100_words": 0.6,
+        "severity": "error",
+        "weight": 1.5
+       },
+       "core:docs-discipline": {
+        "max_per_100_words": 0.5,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:orwell": {
+        "max_per_100_words": 0.8,
+        "severity": "error",
+        "weight": 1.5
+       },
+       "core:prose-agency": {
+        "max_per_100_words": 0.8,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:prose-craft": {
+        "max_per_100_words": 1.5,
+        "severity": "warning",
+        "weight": 0.8
+       },
+       "core:prose-discipline": {
+        "max_per_100_words": 0.8,
+        "severity": "error",
+        "weight": 1.5
+       },
+       "core:prose-format": {
+        "max_per_100_words": 0.4,
+        "severity": "error",
+        "weight": 0.8
+       },
+       "core:prose-inclusive": {
+        "max_per_100_words": 0.0,
+        "severity": "error",
+        "weight": 1.0
+       },
+       "core:prose-inflation": {
+        "max_per_100_words": 0.6,
+        "severity": "error",
+        "weight": 1.5
+       },
+       "core:prose-promotion": {
+        "max_per_100_words": 0.4,
+        "severity": "error",
+        "weight": 1.2
+       },
+       "core:prose-scope": {
+        "max_per_100_words": 0.6,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:ste-descriptive": {
+        "max_per_100_words": 1.0,
+        "severity": "warning",
+        "weight": 0.8
+       },
+       "core:ste-nouns": {
+        "max_per_100_words": 1.0,
+        "severity": "warning",
+        "weight": 0.8
+       },
+       "core:ste-practices": {
+        "max_per_100_words": 1.5,
+        "severity": "suggestion",
+        "weight": 0.5
+       },
+       "core:ste-procedural": {
+        "max_per_100_words": 1.0,
+        "severity": "warning",
+        "weight": 0.8
+       },
+       "core:ste-punctuation": {
+        "max_per_100_words": 1.5,
+        "severity": "suggestion",
+        "weight": 0.5
+       },
+       "core:ste-safety": {
+        "max_per_100_words": 0.0,
+        "severity": "error",
+        "weight": 1.2
+       },
+       "core:ste-sentences": {
+        "max_per_100_words": 1.5,
+        "severity": "warning",
+        "weight": 1.0
+       },
+       "core:ste-verbs": {
+        "max_per_100_words": 1.0,
+        "severity": "warning",
+        "weight": 0.8
+       },
+       "core:ste-words": {
+        "max_per_100_words": 1.5,
+        "severity": "warning",
+        "weight": 0.8
+       }
+      },
+      "files": [
+       "docs/**"
+      ],
+      "rules": {
+       "core:ai-tells-agentic.formulaic-universal-heading": "warning",
+       "core:ai-tells-content-shape.adjective-per-noun-spray": "suggestion",
+       "core:ai-tells-content-shape.durable-vocabulary-habits": "suggestion",
+       "core:ai-tells-content-shape.elegant-variation": "error",
+       "core:ai-tells-content-shape.epigram-closer-remainder": "suggestion",
+       "core:ai-tells-content-shape.fabricated-citations-remainder": "error",
+       "core:ai-tells-content-shape.one-point-dilution": "error",
+       "core:ai-tells-content-shape.over-writing-remainder": "error",
+       "core:ai-tells-content-shape.padded-symmetry": "error",
+       "core:ai-tells-content-shape.superficial-ing-analysis": "error",
+       "core:ai-tells-content-shape.textbook-connector-runs": "suggestion",
+       "core:ai-tells-content-shape.unasked-for-rationale": "error",
+       "core:ai-tells-content-shape.vaporware-description": "error",
+       "core:ai-tells-figurative.colloquial-assessment": "warning",
+       "core:ai-tells-figurative.figurative-casts": "warning",
+       "core:ai-tells-figurative.figurative-draws": "warning",
+       "core:ai-tells-figurative.figurative-falls": "warning",
+       "core:ai-tells-figurative.figurative-lends": "warning",
+       "core:ai-tells-figurative.figurative-loud": "warning",
+       "core:ai-tells-figurative.figurative-rides": "warning",
+       "core:ai-tells-figurative.figurative-runs": "warning",
+       "core:ai-tells-figurative.figurative-sits": "warning",
+       "core:ai-tells-figurative.figurative-strikes": "warning",
+       "core:ai-tells-figurative.figurative-wins": "warning",
+       "core:ai-tells-figurative.resonate-overuse": "warning",
+       "core:ai-tells-formatting.table-wrapping-one-sentence": "error",
+       "core:ai-tells-register.anthropomorphised-justification-core": "error",
+       "core:ai-tells-register.anthropomorphised-justification-remainder": "suggestion",
+       "core:ai-tells-register.corporate-analytic-filler-core": "error",
+       "core:ai-tells-register.disclaimed-claim-core": "error",
+       "core:ai-tells-register.disclaimed-claim-remainder": "suggestion",
+       "core:ai-tells-register.false-agency-remainder": "error",
+       "core:ai-tells-register.faux-candor-core": "error",
+       "core:ai-tells-register.faux-candor-remainder": "suggestion",
+       "core:ai-tells-register.figurative-verb-verdict-core": "error",
+       "core:ai-tells-register.figurative-verb-verdict-remainder": "error",
+       "core:ai-tells-register.hedged-symmetry": "error",
+       "core:ai-tells-register.intensifier-tics-core": "error",
+       "core:ai-tells-register.intensifier-tics-remainder": "suggestion",
+       "core:ai-tells-register.organic-consequence-remainder": "error",
+       "core:ai-tells-register.over-formatting-reflex": "error",
+       "core:ai-tells-register.urgency-inflation-remainder": "suggestion",
+       "core:ai-tells-structure.absolute-assertion-core": "error",
+       "core:ai-tells-structure.absolute-assertion-remainder": "suggestion",
+       "core:ai-tells-structure.analogy-stack-authority": "suggestion",
+       "core:ai-tells-structure.anaphora-abuse": "suggestion",
+       "core:ai-tells-structure.audience-straddle-core": "error",
+       "core:ai-tells-structure.audience-straddle-remainder": "suggestion",
+       "core:ai-tells-structure.cataphoric-lead-in-core": "suggestion",
+       "core:ai-tells-structure.cataphoric-lead-in-remainder": "suggestion",
+       "core:ai-tells-structure.contrastive-appositive": "suggestion",
+       "core:ai-tells-structure.contrastive-inversion-frames": "error",
+       "core:ai-tells-structure.contrastive-inversion-remainder": "suggestion",
+       "core:ai-tells-structure.definitional-negation-pair": "warning",
+       "core:ai-tells-structure.false-range": "suggestion",
+       "core:ai-tells-structure.false-suspense-frames": "error",
+       "core:ai-tells-structure.false-suspense-remainder": "suggestion",
+       "core:ai-tells-structure.fragment-question-pivot": "suggestion",
+       "core:ai-tells-structure.heading-echo": "error",
+       "core:ai-tells-structure.hollow-acknowledgment": "error",
+       "core:ai-tells-structure.invented-concept-label": "suggestion",
+       "core:ai-tells-structure.listicle-in-a-trench-coat": "suggestion",
+       "core:ai-tells-structure.meta-narration-frames": "error",
+       "core:ai-tells-structure.meta-narration-remainder": "suggestion",
+       "core:ai-tells-structure.negative-guarantee-core": "warning",
+       "core:ai-tells-structure.negative-inventory-core": "error",
+       "core:ai-tells-structure.negative-inventory-remainder": "suggestion",
+       "core:ai-tells-structure.rhetorical-question-transition": "suggestion",
+       "core:ai-tells-structure.staccato-negative-parallel-frames": "suggestion",
+       "core:ai-tells-structure.staccato-negative-parallel-remainder": "suggestion",
+       "core:ai-tells-structure.summary-closer-frames": "error",
+       "core:ai-tells-structure.summary-closer-remainder": "suggestion",
+       "core:ai-tells-structure.think-of-it-as-core": "suggestion",
+       "core:ai-tells-structure.think-of-it-as-remainder": "suggestion",
+       "core:ai-tells-structure.tricolon-abuse-core": "suggestion",
+       "core:ai-tells-structure.tricolon-abuse-remainder": "suggestion",
+       "core:ai-tells-structure.vague-attribution-remainder": "error",
+       "core:docs-discipline.history-internal-reference": "warning",
+       "core:docs-discipline.history-narration": "warning",
+       "core:docs-discipline.internal-refs": "warning",
+       "core:docs-discipline.no-longer-change": "warning",
+       "core:orwell.compound-preposition": "warning",
+       "core:orwell.concrete-floor": "error",
+       "core:orwell.not-un": "error",
+       "core:orwell.stale-figure": "error",
+       "core:orwell.unsupported-evaluative": "error",
+       "core:prose-craft.command-prompt": "off",
+       "core:prose-craft.directional-ref": "suggestion",
+       "core:prose-craft.first-person-plural": "suggestion",
+       "core:prose-craft.future-tense": "suggestion",
+       "core:prose-craft.gerund-heading": "warning",
+       "core:prose-craft.latinisms": "off",
+       "core:prose-craft.negative-requirement": "warning",
+       "core:prose-craft.plural-abbreviation": "suggestion",
+       "core:prose-craft.politeness": "suggestion",
+       "core:prose-craft.self-reference": "suggestion",
+       "core:prose-craft.spacing": "suggestion",
+       "core:prose-craft.unclear-antecedent": "suggestion",
+       "core:prose-craft.versions": "suggestion",
+       "core:prose-discipline.bare-quantifier-with-figure-available": "error",
+       "core:prose-discipline.bidirectional-hedge": "error",
+       "core:prose-discipline.competing-actor-terms": "error",
+       "core:prose-discipline.frozen-verb": "error",
+       "core:prose-discipline.hedged-hedge": "error",
+       "core:prose-discipline.hedged-into-uselessness": "error",
+       "core:prose-discipline.marketing-lexicon": "error",
+       "core:prose-discipline.marketing-register": "error",
+       "core:prose-discipline.negative-guarantee-remainder": "suggestion",
+       "core:prose-discipline.no-longer-change-remainder": "suggestion",
+       "core:prose-discipline.overloaded-sentence": "error",
+       "core:prose-discipline.phrasal-verb": "error",
+       "core:prose-discipline.run-on": "error",
+       "core:prose-format.prose-block": "suggestion",
+       "core:prose-inclusive.ableist": "off",
+       "core:prose-inclusive.device-assumption": "off",
+       "core:prose-inclusive.exclusive": "off",
+       "core:prose-inflation.apologizing": "error",
+       "core:prose-inflation.borderline-hype": "suggestion",
+       "core:prose-inflation.hedge-stack": "error",
+       "core:prose-inflation.intensifier": "error",
+       "core:prose-inflation.nominalized-verb": "error",
+       "core:prose-inflation.vague-quantifier": "suggestion",
+       "core:prose-promotion.promotional-adjective-noun": "error",
+       "core:prose-promotion.promotional-verbs": "error",
+       "core:prose-scope.code-change-prose-scope": "error",
+       "core:prose-scope.epigram": "suggestion",
+       "core:prose-scope.formulaic-subject-verb-slogan": "warning",
+       "core:prose-scope.implementation-leak": "warning",
+       "core:prose-scope.mixed-content-types": "suggestion",
+       "core:prose-scope.rejected-alternative": "warning",
+       "core:ste-descriptive.information-not-gradual": "suggestion",
+       "core:ste-descriptive.missing-key-word-structure": "suggestion",
+       "core:ste-descriptive.paragraph-has-multiple-topics": "error",
+       "core:ste-descriptive.paragraph-without-related-information": "suggestion",
+       "core:ste-nouns.long-domain-term-without-short-form": "suggestion",
+       "core:ste-nouns.multiword-noun-too-long": "suggestion",
+       "core:ste-practices.ambiguous-preposition-with": "suggestion",
+       "core:ste-practices.false-friend-term": "suggestion",
+       "core:ste-practices.gendered-or-exclusionary-language": "off",
+       "core:ste-practices.latin-abbreviation": "off",
+       "core:ste-practices.omitted-conjunction-that": "suggestion",
+       "core:ste-practices.possessive-form-unclear": "suggestion",
+       "core:ste-practices.unclear-demonstrative-this": "off",
+       "core:ste-practices.unclear-pronoun": "off",
+       "core:ste-practices.word-sense-incorrect": "suggestion",
+       "core:ste-practices.word-swap-insufficient": "error",
+       "core:ste-procedural.condition-after-command": "suggestion",
+       "core:ste-punctuation.hyphen-missing-in-compound-modifier": "suggestion",
+       "core:ste-punctuation.parentheses-misuse": "suggestion",
+       "core:ste-safety.risk-level-word-missing-or-wrong": "error",
+       "core:ste-sentences.missing-article-or-determiner": "suggestion",
+       "core:ste-sentences.missing-connector-between-related-sentences": "suggestion",
+       "core:ste-sentences.omitted-subject": "suggestion",
+       "core:ste-sentences.sentence-not-short-or-clear": "error",
+       "core:ste-verbs.auxiliary-stacking": "suggestion",
+       "core:ste-verbs.complex-tense": "suggestion",
+       "core:ste-verbs.gerund-outside-noun-use": "suggestion",
+       "core:ste-verbs.nominalized-action": "suggestion",
+       "core:ste-verbs.passive-voice": "suggestion",
+       "core:ste-verbs.past-participle-not-adjectival": "suggestion",
+       "core:ste-verbs.verb-form-not-listed": "suggestion",
+       "core:ste-words.domain-noun-category-membership": "suggestion",
+       "core:ste-words.domain-noun-not-organization-approved": "suggestion",
+       "core:ste-words.domain-noun-too-long-or-unclear": "suggestion",
+       "core:ste-words.domain-verb-category-membership": "suggestion",
+       "core:ste-words.obligation-word-substitution": "suggestion",
+       "core:ste-words.spelling": "warning",
+       "core:ste-words.unapproved-word-not-a-domain-noun": "suggestion",
+       "core:ste-words.verb-or-adjective-form-not-permitted": "suggestion",
+       "core:ste-words.word-outside-controlled-vocabulary": "suggestion",
+       "core:ste-words.word-used-in-wrong-part-of-speech": "suggestion",
+       "core:ste-words.word-used-outside-permitted-sense": "suggestion"
+      }
+     },
+     {
+      "files": [
+       "docs/**"
+      ],
+      "profile": "normal"
+     }
+    ],
+    "profile": "relaxed",
+    "styles": [
+     "core:legacy-relaxed"
+    ]
+   },
+   "input": "profile = \"relaxed\"\n[categories]\n\"ai-tells-formatting\" = \"warning\"\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+  },
   "top-rule-ignored-at-baseline-valid-in-override": {
    "expected": {
     "overrides": [
@@ -12404,6 +12736,33 @@
     "docs/a.md": {
      "dials": {},
      "levels": {},
+     "profile": "normal"
+    }
+   },
+   "top-category-level-under-a-switch-revives-an-advisory-rule": {
+    "a.md": {
+     "dials": {
+      "ai-tells-formatting": {
+       "budget": null,
+       "weight": 1.0
+      }
+     },
+     "levels": {
+      "ai-tells-formatting.cross-reference-signposting": "warning",
+      "ai-tells-formatting.emoji-list-markers": "warning",
+      "ai-tells-formatting.heading-hierarchy": "warning",
+      "ai-tells-formatting.italicised-copula": "warning"
+     },
+     "profile": "relaxed"
+    },
+    "docs/a.md": {
+     "dials": {},
+     "levels": {
+      "ai-tells-formatting.bold-spray": "warning",
+      "ai-tells-formatting.em-dash-density": "warning",
+      "ai-tells-formatting.inline-header-list": "warning",
+      "ai-tells-formatting.title-case-heading": "warning"
+     },
      "profile": "normal"
     }
    },
