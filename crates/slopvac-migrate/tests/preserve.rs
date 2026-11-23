@@ -568,11 +568,9 @@ fn a_guard_with_the_selector_of_a_dropped_override_gets_no_authored_allowance() 
     let authored = format!(
         "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}\n[[overrides]]\nfiles = [\"api/**\"]\n"
     );
-    let broken = format!(
-        "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n"
-    );
+    let broken = "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n";
     assert_eq!(
-        check_no_generated_vocabulary_entry(&broken, &authored),
+        check_no_generated_vocabulary_entry(broken, &authored),
         Err(Offence::AuthoredOverrideMissing { index: 0 })
     );
 }
