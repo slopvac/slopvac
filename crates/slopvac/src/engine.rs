@@ -29,7 +29,7 @@ use crate::errors::CliError;
 use crate::lint_settings::{self, Overrides};
 use crate::lint_terms::{self, TermInputs};
 use crate::redact;
-use crate::rule_catalog::Catalog;
+use crate::rule_catalog::{Catalog, PluginSelection};
 use crate::stdin::StdinPlan;
 use crate::summary::summarize;
 
@@ -424,7 +424,11 @@ fn prepare(request: &LintRequest, run: &mut Run) -> Result<(Catalog, Vec<Item>),
             .map_err(|err| config_error(&err, &request.root))?;
         configs.explicit = Some(config);
     }
-    let rules = Catalog::load()?;
+    let selection = PluginSelection::from_config(
+        &request.root,
+        configs.of(&request.root).ok().flatten().as_deref(),
+    )?;
+    let rules = selection.load()?;
     run.notices
         .extend(validate_configs(request, &configs, &rules)?);
     let items = collect(request, &configs, run)?;
@@ -1080,10 +1084,11 @@ fn lint_items(
     };
 
     let mut documents: Vec<Option<Document>> = vec![None; items.len()];
+    let selection = rules.selection().clone();
     let mut spare = Some(rules);
     for (settings, terms, indexes) in groups.into_values() {
         // The engine owns its rule sets, and a set does not clone: reload them for later groups.
-        let sets = match spare.take().map_or_else(Catalog::load, Ok) {
+        let sets = match spare.take().map_or_else(|| selection.load(), Ok) {
             Ok(catalog) => catalog.into_sets(),
             Err(err) => return failed(request, run, &err),
         };
