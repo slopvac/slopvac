@@ -229,7 +229,11 @@ fn sentences(paragraph: &str, budget: &mut SentenceBudget) -> Result<Vec<String>
     let limit = budget.limit;
     let found = slopvac_text::split_sentences_within(paragraph, budget.left)?
         .ok_or(slopvac_context::Error::TagLimit { limit })?;
-    budget.left = budget.left.saturating_sub(found.len());
+    // The splitter stops at `left`, so this cannot fail; the error keeps it from panicking.
+    budget.left = budget
+        .left
+        .checked_sub(found.len())
+        .ok_or(slopvac_context::Error::TagLimit { limit })?;
     Ok(found.into_iter().map(|s| s.text).collect())
 }
 
