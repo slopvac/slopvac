@@ -43,7 +43,6 @@
       },
       "properties": {
         "args": {
-          "description": "Arguments.",
           "items": {
             "type": "string"
           },
@@ -113,7 +112,6 @@
           "python"
         ]
       },
-      "type": "object",
       "unevaluatedProperties": false
     },
     "Provides": {

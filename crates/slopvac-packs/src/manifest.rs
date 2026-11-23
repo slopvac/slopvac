@@ -288,6 +288,10 @@ fn plugin_schema(schema: &mut Schema) {
         for flat in ["network", "features_required", "features_optional"] {
             properties.remove(flat);
         }
+        // The published `args` member carries no description.
+        if let Some(Json::Object(args)) = properties.get_mut("args") {
+            args.remove("description");
+        }
         properties.insert(
             "hooks".into(),
             json!({
@@ -309,6 +313,8 @@ fn plugin_schema(schema: &mut Schema) {
             }),
         );
     }
+    // The reference to `PluginDeclaration` already makes the value an object.
+    schema.remove("type");
     schema.insert(
         "allOf".into(),
         json!([{"$ref": format!("{protocol}PluginDeclaration")}]),
