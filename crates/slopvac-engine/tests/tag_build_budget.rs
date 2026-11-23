@@ -191,3 +191,52 @@ fn a_code_block_of_many_sentences_is_not_checked_when_a_tagger_reads_its_sentenc
         Err(EngineError::TagBuildBudget { limit })
     );
 }
+
+#[test]
+fn the_split_of_a_dense_paragraph_builds_no_record_past_the_budget() {
+    // 300000 sentences of 4 bytes against a budget of 215,536. A split that stops at the
+    // budget builds that many records; one that builds them all and then checks builds
+    // 300000.
+    let source = paragraph("Go.", 300_000);
+    let limit = source.len() / 8 + 65_536;
+    let _ = slopvac_text::take_sentences_built();
+    assert!(engine().lint(&Input::markdown("a.md", &source)).is_err());
+    let built = slopvac_text::take_sentences_built();
+    assert!(
+        built <= limit + 1,
+        "{built} records for a budget of {limit}"
+    );
+}
+
+#[test]
+fn the_split_of_a_dense_code_block_builds_no_record_past_the_budget() {
+    let source = format!("```\n{}\n```\n", "a. ".repeat(300_000));
+    let limit = source.len() / 8 + 65_536;
+    let _ = slopvac_context::take_sentences_built();
+    let result = engine()
+        .with_taggers(code_sentence_tagger())
+        .lint(&Input::markdown("a.md", &source));
+    assert!(result.is_err());
+    let built = slopvac_context::take_sentences_built();
+    assert!(
+        built <= limit + 1,
+        "{built} records for a budget of {limit}"
+    );
+}
+
+#[test]
+fn the_split_of_a_composite_text_builds_no_record_past_the_budget() {
+    let source = format!("| h |\n|---|\n| {} |\n", "Go. ".repeat(300_000));
+    let limit = source.len() / 8 + 65_536;
+    let _ = slopvac_text::take_sentences_built();
+    assert!(
+        document_engine()
+            .lint(&Input::markdown("a.md", &source))
+            .is_err()
+    );
+    let built = slopvac_text::take_sentences_built();
+    assert!(
+        built <= limit + 1,
+        "{built} records for a budget of {limit}"
+    );
+}
