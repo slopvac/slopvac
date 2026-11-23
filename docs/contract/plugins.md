@@ -123,7 +123,7 @@ Any other value, such as `Noun`, `adp`, or `noun` with a leading space, is inval
 | `plugins rotate <namespace> [--registry <host>]` | Accepts a key rotation for a pinned key and replaces the pin (threat-model.md, section 5.3). |
 | `plugins new`, `validate`, `test`, `build`, `publish` | Author a plugin: create its files, check them against their schemas, run its tests, build the artifact and push it. |
 
-- `plugins trust` and `plugins untrust` apply to code plugins only. A data plugin has no executable content and needs no trust, so either command on a data plugin is to exit 2 with the reserved code `plugin-not-code`. Nothing emits that code yet (policies.md, section 3.5).
+- `plugins trust` and `plugins untrust` apply to code plugins only. A data plugin has no executable content and needs no trust, so either command on a data plugin exits 2 with the code `plugin-not-code` (policies.md, section 3.5).
 - A code plugin that the config lists starts only after `plugins trust` records its hash. Until then the run reports it with its trust code (`plugin-untrusted`, or `plugin-hash-mismatch` for changed files) and exits 2 (plugin-protocol.md, section 10).
 - `--registry` names the registry host, such as `ghcr.io`, and defaults to `ghcr.io`. A pin binds a key to the pair of registry host and namespace, and only to that pair.
 - `plugins pin` and `plugins rotate` refuse the namespaces `slopvac` and `core` with exit 2 (section 9).

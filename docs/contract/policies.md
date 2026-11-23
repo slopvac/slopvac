@@ -454,13 +454,13 @@ Owners: `slopvac-8l4.2.6`, `slopvac-8l4.9.6`, `slopvac-8l4.9.1`.
 
 A `fix` that fails for any other reason, such as an I/O error during the write, reports `fix-failed` and exits 2. The write is atomic (section 1.8), so the target keeps its old content. A staged temporary file may remain beside it.
 
-The `slopvac plugins` group reserves this code. It is not emitted yet: nothing in the code raises it, and the message registry does not list it. Plugin-protocol.md, section 10, lists the other plugin host codes.
+The `slopvac plugins` group reports `plugin-not-code`, and the message registry lists it. Plugin-protocol.md, section 10, lists the other plugin host codes.
 
 | Code | Meaning | Exit |
 | --- | --- | --- |
-| `plugin-not-code` (reserved) | `slopvac plugins trust` or `slopvac plugins untrust` named a data plugin. A data plugin has no executable content, so trust does not apply to it ([plugins.md](plugins.md), section 8). The command records nothing. | 2 |
+| `plugin-not-code` | `slopvac plugins trust` or `slopvac plugins untrust` named a data plugin. A data plugin has no executable content, so trust does not apply to it ([plugins.md](plugins.md), section 8). The command records nothing. | 2 |
 
-The `plugins` command is a placeholder in the binary and reports `command-not-wired`. The codes below are errors that the `slopvac-plugins` library returns. Each one exits 2, because slopvac did not finish the part of the run that it names. The `Raised by` column names the command that reports the code once the command is wired. Plugin-protocol.md, section 10, lists the codes of the plugin host that are not in this section.
+The binary runs the `plugins` group. The subcommands `search`, `pin`, `rotate`, `new`, `validate`, `test`, `build` and `publish` are not available yet: each reports `command-not-wired` and exits 2. The codes below are errors that the `slopvac-plugins` library returns. Each one exits 2, because slopvac did not finish the part of the run that it names. The `Raised by` column names the command that reports the code. Plugin-protocol.md, section 10, lists the codes of the plugin host that are not in this section.
 
 | Code | Meaning | Raised by |
 | --- | --- | --- |

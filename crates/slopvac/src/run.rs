@@ -320,13 +320,14 @@ fn dispatch(
         Some(("review", m)) => owners::review(m, globals.offline, out),
         Some(("claims", m)) => owners::claims(m, out),
         Some(("man", m)) => man(m, out),
+        Some(("plugins", m)) => plugins(m, globals.offline, env, out),
         Some(("doctor", m)) => doctor(matches, m, env, out),
         Some(("cli-reference", _)) => write_stdout(
             out,
             generate::markdown_reference(&cli::command()).as_bytes(),
         ),
         Some((name, _)) => Err(CliError::new(
-            "command-not-wired",
+            not_wired_code(),
             format!("`slopvac {name}` is not available in this build yet."),
         )),
         None => {
@@ -334,6 +335,85 @@ fn dispatch(
             write_stdout(out, cmd.render_help().to_string().as_bytes())
         }
     }
+}
+
+/// The code of a command that is in the tree but not available yet. The plugins catalog
+/// declares it once, so the binary reads it from there.
+fn not_wired_code() -> &'static str {
+    slopvac_plugins::RunError::NotWired {
+        command: String::new(),
+    }
+    .code()
+}
+
+/// `slopvac plugins`: build the runner from the environment and the project config, then run
+/// the subcommand the library selects.
+fn plugins(
+    m: &ArgMatches,
+    offline: bool,
+    env: &dyn Env,
+    out: &mut dyn std::io::Write,
+) -> Result<u8, CliError> {
+    use slopvac_plugins::{Dirs, Runner, oci, revoke, sign, sync};
+    let io_failed = |what: &str, e: &dyn std::fmt::Display| {
+        CliError::new("plugins-io-failed", format!("{what}: {e}"))
+    };
+    let cwd = std::env::current_dir().map_err(|e| io_failed("working directory", &e))?;
+    let presets = slopvac_styles::StylePresets(slopvac_styles::BuiltinSource);
+    let config = slopvac_config::Discovery::new(&presets)
+        .nearest(&cwd)
+        .map_err(|e| crate::engine::config_error(&e, &cwd))?;
+    let root = config.as_ref().map_or_else(|| cwd.clone(), |c| c.root.clone());
+    let lookup = |name: &str| env.var(name).ok_or(std::env::VarError::NotPresent);
+    let cache = slopvac_fs::cache_dir_with(&lookup, &std::env::home_dir)
+        .map_err(|e| io_failed("cache directory", &e))?;
+    let state = slopvac_fs::state_dir_with(&lookup, &std::env::home_dir)
+        .map_err(|e| io_failed("state directory", &e))?;
+    let (mut ranges, mut configured) = (std::collections::BTreeMap::new(), Vec::new());
+    if let Some(serde_json::Value::Array(entries)) =
+        config.as_ref().and_then(|c| c.project_value(&["plugins"]))
+    {
+        for entry in &entries {
+            let Some(id) = entry.get("id").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            configured.push(id.to_owned());
+            let range = entry
+                .get("version")
+                .and_then(|v| v.as_str())
+                .and_then(|v| slopvac_plugins::lock::parse_version_req(v).ok());
+            if let (Ok(pack), Some(range)) = (id.parse(), range) {
+                ranges.insert(pack, range);
+            }
+        }
+    }
+    let now = sign::utc_time(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX)),
+    );
+    let policy = sign::KeyPolicy::compiled().map_err(|e| io_failed("plugin keys", &e))?;
+    let source = oci::Reference::parse(revoke::DEFAULT_SOURCE)
+        .map_err(|e| io_failed("revocation source", &e))?;
+    let revocations = revoke::Revocations::with_compiled_root(&state, source, &now)
+        .map_err(|e| CliError::new(e.code(), e.to_string()))?;
+    let client = oci::Client::new(&root);
+    let network = if offline {
+        sync::Network::Offline
+    } else {
+        sync::Network::Online(&client)
+    };
+    let runner = Runner::new(
+        Dirs::new(root, cache, state),
+        network,
+        &policy,
+        &revocations,
+        now,
+    )
+    .with_ranges(ranges)
+    .with_configured(configured)
+    .with_core_version(env!("CARGO_PKG_VERSION"));
+    slopvac_plugins::run(m, &runner, out).map_err(|e| CliError::new(e.code(), e.to_string()))
 }
 
 /// `slopvac doctor`: print the report, and exit 2 when something needs attention.
@@ -383,7 +463,7 @@ fn reject_unwired_lint_flags(m: &ArgMatches) -> Result<(), CliError> {
             && m.value_source(name) == Some(clap::parser::ValueSource::CommandLine);
         if given {
             return Err(CliError::new(
-                "command-not-wired",
+                not_wired_code(),
                 format!("`slopvac lint --{name}` is not available in this build yet."),
             ));
         }
