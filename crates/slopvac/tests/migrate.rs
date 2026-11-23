@@ -230,6 +230,16 @@ fn a_category_level_above_a_profile_switch_stops_the_write_and_changes_nothing(
     assert_refused_before_any_write(config)
 }
 
+#[test]
+fn a_stray_scalar_in_an_inline_overrides_array_stops_the_write_and_changes_nothing()
+-> Result<(), Box<dyn std::error::Error>> {
+    // The second entry is not an override block. The rewrite must not drop it and write
+    // the valid block alone.
+    assert_refused_before_any_write(
+        "overrides = [{ files = [\"docs/**\"], categories = { orwell = \"off\" } }, \"stray\"]\n",
+    )
+}
+
 /// Run `migrate --preserve-behavior --write` on a project whose `.slopvac.toml` is
 /// `config`, and check that it stops with `migrate-output-invalid` and exit 2, keeps the
 /// source, and writes no `slopvac.toml`, backup or trusted record.
