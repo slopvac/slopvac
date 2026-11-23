@@ -189,6 +189,7 @@ mod tests {
                 ("context-match-failed", Kind::Text),
                 ("context-tagger-duplicate", Kind::Text),
                 ("context-tag-limit", Kind::Text),
+                ("context-sentence-limit", Kind::Text),
                 ("context-genre-unknown", Kind::Text),
                 ("context-yaml-invalid", Kind::Text),
                 ("context-glob-invalid", Kind::Text),
