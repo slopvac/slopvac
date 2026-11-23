@@ -396,11 +396,14 @@ fn plugins(
                 continue;
             };
             configured.push(id.to_owned());
-            let range = entry
-                .get("version")
-                .and_then(|v| v.as_str())
-                .and_then(|v| slopvac_plugins::lock::parse_version_req(v).ok());
-            if let (Ok(pack), Some(range)) = (id.parse(), range) {
+            let Some(text) = entry.get("version").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            // An invalid range stops the run: dropping it would let `outdated` and `update`
+            // ignore the limit the user set.
+            let range = slopvac_plugins::config_range(id, text)
+                .map_err(|message| CliError::new("config-invalid-value", message))?;
+            if let Ok(pack) = id.parse() {
                 ranges.insert(pack, range);
             }
         }

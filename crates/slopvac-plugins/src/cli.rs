@@ -28,6 +28,16 @@ use crate::sync::{
 use crate::trust::{TrustError, TrustGate, TrustState, TrustStore, VerifiedPlugin};
 use crate::update::{LISTING_BUDGET_BYTES, Outcome, Updater, list_candidates};
 
+/// Parse the version range that the config sets for plugin `id`.
+///
+/// # Errors
+/// The sentence that names the plugin and never the value, when the range is not valid.
+pub fn config_range(id: &str, text: &str) -> Result<VersionReq, String> {
+    crate::lock::parse_version_req(text).map_err(|_| {
+        render(&CliText::ConfigRangeInvalid { id: line(id) })
+    })
+}
+
 /// Where `slopvac plugins` reads and writes. The caller resolves the directories: the plugin
 /// store and the state directory belong to the user, never to the project.
 #[derive(Debug, Clone)]

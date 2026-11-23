@@ -735,6 +735,7 @@ plugins-change-in-place text
 plugins-change-installed text
 plugins-change-reinstalled text
 plugins-change-unchanged text
+plugins-config-range-invalid text
 plugins-detail-withheld text
 plugins-extract-changed text
 plugins-extract-collision text

@@ -231,6 +231,10 @@ pub(crate) enum CliText {
     #[code("plugins-outdated-failed")]
     #[text("{id}: cannot check for newer versions: {reason}")]
     OutdatedFailed { id: String, reason: String },
+    /// A version range in the config that does not parse. It names the plugin, never the value.
+    #[code("plugins-config-range-invalid")]
+    #[text("the version range of plugin `{id}` in the config is not a valid range")]
+    ConfigRangeInvalid { id: String },
     /// A lock file that does not parse, with no location.
     #[code("plugins-lock-diagnostic-whole")]
     #[text("not a valid lockfile")]

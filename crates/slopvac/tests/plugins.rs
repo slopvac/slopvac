@@ -166,6 +166,26 @@ fn sync_offline_from_any_source_reports_the_missing_cache_entry(
         ));
 }
 
+/// A range that does not parse must stop the run and name the plugin, never the value.
+#[test]
+fn an_invalid_version_range_in_the_config_exits_2_and_names_the_plugin() {
+    let sandbox = Sandbox::new();
+    fs::write(
+        sandbox.project().join("slopvac.toml"),
+        "schema_version = 3\n[[plugins]]\nid = \"style\"\nsource = \"oci://registry.invalid/acme/style\"\n\
+         version = \"bogus-range\"\n",
+    )
+    .unwrap();
+    sandbox
+        .slopvac()
+        .args(["--offline", "plugins", "list"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::starts_with("error[config-invalid-value]: "))
+        .stderr(predicate::str::contains("plugin `style`"))
+        .stderr(predicate::str::contains("bogus-range").not());
+}
+
 #[test]
 fn sync_without_a_lock_passes_outside_ci() {
     let sandbox = Sandbox::new();

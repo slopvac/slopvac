@@ -51,7 +51,7 @@ mod protocol_corpus;
 
 pub use api::{DocOutcome, plan_batches};
 pub use budget::{BudgetCaps, RunBudget};
-pub use cli::{Dirs, PluginLoader, Runner, command, run};
+pub use cli::{Dirs, PluginLoader, Runner, command, config_range, run};
 pub use error::{PluginError, RpcError, StartError};
 pub use host::{
     DrainHook, HostConfig, Plugin, PluginSpec, ReadHook, RunCaps, Shutdown, SpawnGate, Timeouts,
