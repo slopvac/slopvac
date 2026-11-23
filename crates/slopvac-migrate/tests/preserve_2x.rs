@@ -6,12 +6,6 @@
 //! `tests/fixtures/preserve/vectors.json`; `tests/contract/test_migrate_fixtures.py`
 //! fails when that file is stale. A scenario that `tests/fixtures/preserve/refused.json`
 //! lists must stop with `migrate-output-invalid` instead.
-#![allow(
-    clippy::panic,
-    clippy::unwrap_used,
-    reason = "test code: a panic is a failed test"
-)]
-
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,19 +14,25 @@ use serde_json::{Value, json};
 use slopvac_config::{ConfigLayer, Inputs, PackFile, Presets, Setting};
 use slopvac_migrate::{Options, RenameTable, migrate_config};
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn read_toml(rel: &str) -> toml::Table {
-    fs::read_to_string(crate_dir().join(rel))
-        .unwrap()
-        .parse()
-        .unwrap()
+fn read_toml(rel: &str) -> Result<toml::Table> {
+    Ok(fs::read_to_string(crate_dir().join(rel))?.parse()?)
 }
 
-fn to_json(v: &toml::Value) -> Value {
-    serde_json::to_value(v).unwrap()
+fn to_json(v: &toml::Value) -> Result<Value> {
+    Ok(serde_json::to_value(v)?)
+}
+
+/// The table at `key` of `t`, or an error that names `what`.
+fn table<'a>(t: &'a toml::Table, key: &str, what: &str) -> Result<&'a toml::Table> {
+    t.get(key)
+        .and_then(toml::Value::as_table)
+        .ok_or_else(|| format!("{what} has no `{key}` table").into())
 }
 
 /// The `core:legacy-<profile>` styles, as the core pack ships them: the bundled
@@ -40,33 +40,39 @@ fn to_json(v: &toml::Value) -> Value {
 struct LegacyStyles(HashMap<String, Vec<Setting>>);
 
 impl LegacyStyles {
-    fn bundled(renames: &RenameTable) -> Self {
+    fn bundled(renames: &RenameTable) -> Result<Self> {
         let mut styles = HashMap::new();
         for profile in ["strict", "normal", "relaxed"] {
-            let style = read_toml(&format!("data/legacy/legacy-{profile}.toml"));
+            let file = format!("data/legacy/legacy-{profile}.toml");
+            let style = read_toml(&file)?;
             let mut settings = Vec::new();
-            for (name, dials) in style["categories"].as_table().unwrap() {
-                let cat = renames.category(name).unwrap();
-                for (dial, v) in dials.as_table().unwrap() {
+            for (name, dials) in table(&style, "categories", &file)? {
+                let cat = renames
+                    .category(name)
+                    .ok_or_else(|| format!("{file}: no rename for category {name}"))?;
+                let dials = dials
+                    .as_table()
+                    .ok_or_else(|| format!("{file}: category {name} is not a table"))?;
+                for (dial, v) in dials {
                     settings.push(Setting::bare(
                         ConfigLayer::Style,
                         &["categories", &cat, dial],
-                        to_json(v),
+                        to_json(v)?,
                     ));
                 }
             }
-            for (qid, level) in style["rules"].as_table().unwrap() {
+            for (qid, level) in table(&style, "rules", &file)? {
                 if let Some(id) = renames.rule(qid) {
                     settings.push(Setting::bare(
                         ConfigLayer::Style,
                         &["rules", &id],
-                        to_json(level),
+                        to_json(level)?,
                     ));
                 }
             }
             styles.insert(format!("core:legacy-{profile}"), settings);
         }
-        Self(styles)
+        Ok(Self(styles))
     }
 }
 
@@ -85,42 +91,42 @@ impl Presets for LegacyStyles {
 }
 
 /// A measured map for one file: the base of its profile with the file's differences.
-fn overlay(base: &Value, diff: &Value) -> BTreeMap<String, Value> {
-    let mut out: BTreeMap<String, Value> = base
-        .as_object()
-        .unwrap()
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    for (k, v) in diff.as_object().unwrap() {
-        out.insert(k.clone(), v.clone());
-    }
-    out
+fn overlay(base: &Value, diff: &Value) -> Result<BTreeMap<String, Value>> {
+    let object = |v: &Value| {
+        v.as_object()
+            .cloned()
+            .ok_or_else(|| format!("measured map is not an object: {v}"))
+    };
+    let mut out: BTreeMap<String, Value> = object(base)?.into_iter().collect();
+    out.extend(object(diff)?);
+    Ok(out)
 }
 
 /// The scenarios that `--preserve-behavior` refuses, from `tests/fixtures/preserve/refused.json`.
-fn refused() -> Vec<String> {
-    let text =
-        fs::read_to_string(crate_dir().join("tests/fixtures/preserve/refused.json")).unwrap();
-    let data: Value = serde_json::from_str(&text).unwrap();
+fn refused() -> Result<Vec<String>> {
+    let text = fs::read_to_string(crate_dir().join("tests/fixtures/preserve/refused.json"))?;
+    let data: Value = serde_json::from_str(&text)?;
     data["refused"]
         .as_array()
-        .unwrap()
+        .ok_or("refused.json has no `refused` list")?
         .iter()
-        .map(|v| v.as_str().unwrap().to_owned())
+        .map(|v| {
+            v.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("refused.json lists a non-string: {v}").into())
+        })
         .collect()
 }
 
 #[test]
-fn every_migrated_config_resolves_to_the_measured_2x_levels() {
-    let vectors: Value = serde_json::from_str(
-        &fs::read_to_string(crate_dir().join("tests/fixtures/preserve/vectors.json")).unwrap(),
-    )
-    .unwrap();
+fn every_migrated_config_resolves_to_the_measured_2x_levels() -> Result<()> {
+    let vectors: Value = serde_json::from_str(&fs::read_to_string(
+        crate_dir().join("tests/fixtures/preserve/vectors.json"),
+    )?)?;
     let measured = &vectors["measured_2x"];
     let renames = RenameTable::bundled();
-    let presets = LegacyStyles::bundled(&renames);
-    let catalogue = read_toml("data/legacy/catalogue.toml");
+    let presets = LegacyStyles::bundled(&renames)?;
+    let catalogue = read_toml("data/legacy/catalogue.toml")?;
     let judgement = |qid: &str| catalogue["rules"][qid]["kind"].as_str() == Some("judgement");
     let inputs = Inputs {
         presets: &presets,
@@ -130,15 +136,19 @@ fn every_migrated_config_resolves_to_the_measured_2x_levels() {
         env: &[],
     };
 
-    let refused = refused();
-    let scenarios = measured["files"].as_object().unwrap();
+    let refused = refused()?;
+    let scenarios = measured["files"]
+        .as_object()
+        .ok_or("vectors.json has no `measured_2x.files` map")?;
     for name in &refused {
         assert!(scenarios.contains_key(name), "refused.json names {name}");
     }
     assert!(scenarios.len() >= 29, "{}", scenarios.len());
     let mut wrong: Vec<String> = Vec::new();
     for (name, files) in scenarios {
-        let input = vectors["expansions"][name]["input"].as_str().unwrap();
+        let input = vectors["expansions"][name]["input"]
+            .as_str()
+            .ok_or_else(|| format!("{name}: vectors.json has no input"))?;
         let migrated = migrate_config(
             input,
             "slopvac.toml",
@@ -155,23 +165,34 @@ fn every_migrated_config_resolves_to_the_measured_2x_levels() {
             }
             continue;
         }
-        let text = migrated.unwrap_or_else(|e| panic!("{name}: {e}")).text;
-        let dir = tempfile::tempdir().unwrap();
+        let text = migrated.map_err(|e| format!("{name}: {e}"))?.text;
+        let dir = tempfile::tempdir()?;
         let path = dir.path().join("slopvac.toml");
-        fs::write(&path, &text).unwrap();
-        let config =
-            slopvac_config::load(&path, &presets).unwrap_or_else(|e| panic!("{name}: {e}"));
+        fs::write(&path, &text)?;
+        let config = slopvac_config::load(&path, &presets).map_err(|e| format!("{name}: {e}"))?;
 
-        for (file, want) in files.as_object().unwrap() {
-            let profile = want["profile"].as_str().unwrap();
+        let files = files
+            .as_object()
+            .ok_or_else(|| format!("{name}: the measured files are not a map"))?;
+        for (file, want) in files {
+            let profile = want["profile"]
+                .as_str()
+                .ok_or_else(|| format!("{name} {file}: no measured profile"))?;
             let base = &measured["base"][profile];
             let resolved = config.resolve(Path::new(file), &inputs);
-            for (qid, level) in overlay(&base["levels"], &want["levels"]) {
+            for (qid, level) in overlay(&base["levels"], &want["levels"])? {
                 let Some(id) = renames.rule(&qid) else {
                     continue;
                 };
-                let category = qid.split_once('.').unwrap().0;
-                let category = (!judgement(&qid)).then(|| renames.category(category).unwrap());
+                let category = match qid.split_once('.') {
+                    Some((category, _)) if !judgement(&qid) => Some(
+                        renames
+                            .category(category)
+                            .ok_or_else(|| format!("{qid}: no rename for its category"))?,
+                    ),
+                    Some(_) => None,
+                    None => return Err(format!("{qid} is not a qualified rule id").into()),
+                };
                 let got = resolved
                     .level(&id, category.as_deref())
                     .map(|l| l.level.as_str());
@@ -179,7 +200,7 @@ fn every_migrated_config_resolves_to_the_measured_2x_levels() {
                     wrong.push(format!("{name} {file} {qid}: {got:?}, 2.x {level}"));
                 }
             }
-            for (cat, dials) in overlay(&base["dials"], &want["dials"]) {
+            for (cat, dials) in overlay(&base["dials"], &want["dials"])? {
                 if dials == json!("off") {
                     continue;
                 }
@@ -207,4 +228,5 @@ fn every_migrated_config_resolves_to_the_measured_2x_levels() {
         wrong.len(),
         wrong.join("\n")
     );
+    Ok(())
 }
