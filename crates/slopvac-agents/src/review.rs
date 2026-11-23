@@ -574,37 +574,17 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
     } else {
         (None, None, "none", "none")
     };
-    let comparison = match (&author, &reviewer) {
-        (Some(a), Some(r)) => compare_models(Some(a), r),
-        _ => ModelCheck::Unchecked,
+    let (checked, notices) = if uses_provider {
+        precall_notices(
+            author.as_deref(),
+            author_source,
+            reviewer.as_deref(),
+            reviewer_source,
+            env.provider,
+        )?
+    } else {
+        (false, Vec::new())
     };
-    let checked = comparison != ModelCheck::Unchecked;
-    let mut notices = Vec::new();
-    if uses_provider {
-        notices.extend(unchecked_notice(author.is_some(), reviewer.is_some())?);
-        if let (ModelCheck::Same, Some(a), Some(r)) = (comparison, &author, &reviewer) {
-            notices.push(same_model_notice(
-                a,
-                author_source,
-                r,
-                reviewer_source,
-                None,
-            )?);
-        }
-        // The provider declares its own model. When that one matches the author, a reviewer
-        // flag naming another model does not hide it. A dry run reports it too, at no cost.
-        if let (ModelCheck::Different, Some(a), Some(p)) = (comparison, &author, env.provider)
-            && compare_models(Some(a), p.model()) == ModelCheck::Same
-        {
-            notices.push(same_model_notice(
-                a,
-                author_source,
-                p.model(),
-                "provider",
-                None,
-            )?);
-        }
-    }
     let mut plan = Plan {
         review_type,
         reason,
@@ -650,6 +630,48 @@ fn item_locations(payload: &Payload, indexes: &[usize]) -> serde_json::Value {
         .filter_map(|&i| payload.items.get(i))
         .map(|item| serde_json::json!({ "role": item.role, "line": item.line }))
         .collect()
+}
+
+/// The notices known before any call, and whether the reviewer was compared with the author.
+///
+/// A reviewer that is the author's model gets `review-model-same`. The provider declares its own
+/// model too. When that one matches the author, a reviewer flag naming another model does not
+/// hide it. A dry run reports both at no cost.
+fn precall_notices(
+    author: Option<&str>,
+    author_source: &str,
+    reviewer: Option<&str>,
+    reviewer_source: &str,
+    provider: Option<&dyn ModelProvider>,
+) -> Result<(bool, Vec<Notice>), AgentsError> {
+    let comparison = match (author, reviewer) {
+        (Some(a), Some(r)) => compare_models(Some(a), r),
+        _ => ModelCheck::Unchecked,
+    };
+    let mut notices: Vec<Notice> = unchecked_notice(author.is_some(), reviewer.is_some())?
+        .into_iter()
+        .collect();
+    if let (ModelCheck::Same, Some(a), Some(r)) = (comparison, author, reviewer) {
+        notices.push(same_model_notice(
+            a,
+            author_source,
+            r,
+            reviewer_source,
+            None,
+        )?);
+    }
+    if let (ModelCheck::Different, Some(a), Some(p)) = (comparison, author, provider)
+        && compare_models(Some(a), p.model()) == ModelCheck::Same
+    {
+        notices.push(same_model_notice(
+            a,
+            author_source,
+            p.model(),
+            "provider",
+            None,
+        )?);
+    }
+    Ok((comparison != ModelCheck::Unchecked, notices))
 }
 
 /// The notice for a reviewer that is the author's model. `items` is set only when the
