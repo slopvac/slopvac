@@ -11,9 +11,7 @@ use rstest::rstest;
 use schemars::generate::Contract;
 use serde_json::{Value, json};
 use slopvac_cli::doctor::Report;
-use slopvac_model::schema_settings;
-
-const BASE: &str = "https://slopvac.github.io/slopvac/schemas/v3/";
+use slopvac_model::{schema_id, schema_settings};
 
 #[rstest]
 fn valid_report_fits_the_derived_schema(
@@ -23,7 +21,7 @@ fn valid_report_fits_the_derived_schema(
         .into_generator()
         .into_root_schema_for::<Report>()
         .to_value();
-    schema["$id"] = json!(format!("{BASE}doctor-report.schema.json"));
+    schema["$id"] = json!(schema_id("doctor-report.schema.json"));
     let common: Value = serde_json::from_str(
         &fs::read_to_string(
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas/v3/common.schema.json"),
@@ -32,7 +30,7 @@ fn valid_report_fits_the_derived_schema(
     )
     .expect("common parses");
     let registry = jsonschema::Registry::new()
-        .add(format!("{BASE}common.schema.json"), common)
+        .add(schema_id("common.schema.json"), common)
         .expect("register common")
         .prepare()
         .expect("registry builds");
