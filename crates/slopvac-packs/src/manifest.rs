@@ -195,7 +195,10 @@ pub struct Provides {
     /// Declarative tagger files (tagger.schema.json).
     #[schemars(with = "PathList")]
     pub taggers: Vec<PackPath>,
-    /// Config files that a project may extend as <plugin>:<name> (config.schema.json).
+    /// Config files that a project may extend as `<plugin>:<name>` (config.schema.json).
+    #[schemars(
+        description = "Config files that a project may extend as <plugin>:<name> (config.schema.json)."
+    )]
     #[schemars(with = "PathList")]
     pub configs: Vec<PackPath>,
     /// Markdown snippets that `slopvac prime` appends to a topic.
