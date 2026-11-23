@@ -270,8 +270,11 @@ fn a_symlink_to_a_fifo_is_refused_without_blocking(#[case] linked: &str) {
         .status()
         .expect("mkfifo");
     assert!(made.success());
-    std::os::unix::fs::symlink(std::path::Path::new("real").join(linked), dir.path().join(linked))
-        .expect("link");
+    std::os::unix::fs::symlink(
+        std::path::Path::new("real").join(linked),
+        dir.path().join(linked),
+    )
+    .expect("link");
     let out = slopvac(dir.path())
         .args(["claims", "new.md", "--original", "old.md"])
         .output()
