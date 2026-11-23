@@ -180,7 +180,14 @@ impl Diagnostic {
     /// One-based line and column of the span start in `text`.
     #[must_use]
     pub fn location(&self, text: &str) -> (usize, usize) {
-        LineIndex::new(text).line_col(self.span.start)
+        self.location_in(&LineIndex::new(text))
+    }
+
+    /// One-based line and column of the span start, from a line index of the text built once
+    /// for all the diagnostics of a document.
+    #[must_use]
+    pub fn location_in(&self, lines: &LineIndex<'_>) -> (usize, usize) {
+        lines.line_col(self.span.start)
     }
 }
 

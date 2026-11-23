@@ -369,13 +369,18 @@ impl Linter for EngineLinter {
                 Some((config, rel)) => (config.as_ref(), rel.clone()),
                 None => (&none, PathBuf::from(&item.shown)),
             };
-            // The same document inputs as the lint of the file takes.
-            let layers = DocumentLayers::read(
+            // The same document inputs as the lint of the file takes, and the same errors in
+            // them: a block that a lint run refuses makes the explanation incomplete.
+            let blocks = DocumentBlocks::read(
                 &item.text,
                 &item.shown,
                 item.config.as_ref().map(|(c, _)| &**c),
-            )
-            .with_detected_genre(reads.detected[index].clone());
+            );
+            for e in block_errors(&item.shown, &item.text, &blocks) {
+                run.incomplete.push(CliError::new(e.code, e.escaped));
+            }
+            let layers = DocumentLayers::from_blocks(&blocks)
+                .with_detected_genre(reads.detected[index].clone());
             let mut explained = lint_settings::resolve(config, &rel, &layers).explain();
             for entry in &mut explained {
                 redact_urls(&mut entry.value);
@@ -810,17 +815,24 @@ fn schema_pointer(path: &[String]) -> String {
 /// the code, the position and the key path are reported: a diagnostic's own message quotes
 /// the offending value, and front matter values stay out of error output (policies 1.7).
 pub(crate) fn block_errors(shown: &str, text: &str, blocks: &DocumentBlocks) -> Vec<BlockError> {
+    let lines = slopvac_config::tree::LineIndex::new(text);
     [&blocks.front_matter, &blocks.directives]
         .into_iter()
         .flat_map(|read| &read.diagnostics)
         .map(|d| {
-            let (line, column) = d.location(text);
+            let (line, column) = d.location_in(&lines);
             let pointer = schema_pointer(&d.path);
+            // The limit refusal says only how many entries fit, so its message is safe to
+            // show. Every other message may quote a value of the document.
+            let limit = slopvac_config::directives::is_over_cap(d).then_some(&d.message);
+            let raw_limit = limit.map_or_else(String::new, |m| format!(": {m}"));
+            let escaped_limit =
+                limit.map_or_else(String::new, |m| format!(": {}", slopvac_sanitize::line(m)));
             BlockError {
                 code: d.code.as_str(),
-                raw: format!("{shown}:{line}:{column}: {pointer}"),
+                raw: format!("{shown}:{line}:{column}: {pointer}{raw_limit}"),
                 escaped: format!(
-                    "{}:{line}:{column}: {}",
+                    "{}:{line}:{column}: {}{escaped_limit}",
                     slopvac_sanitize::line(shown),
                     slopvac_sanitize::line(&pointer)
                 ),

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use slopvac_engine::Settings;
-use slopvac_migrate::{Configure, Error, SettingsOf};
+use slopvac_migrate::{Configure, DocumentSettings, Error, SettingsOf};
 use slopvac_model::{GenreId, GenreResult, GenreSource, NonEmptyString};
 
 /// Gives every document the core defaults: profile `normal` and the default genre
@@ -17,14 +17,14 @@ impl Configure for NoConfig {
         }
         let failed = |e: &dyn std::fmt::Display| Error::Lint(e.to_string());
         Ok(Box::new(move |_, _| {
-            Ok(Settings::new(
+            Ok(DocumentSettings::new(Settings::new(
                 NonEmptyString::new("normal").map_err(|e| failed(&e))?,
                 GenreResult {
                     id: GenreId::new("reference").map_err(|e| failed(&e))?,
                     source: GenreSource::Default,
                     reasons: Vec::new(),
                 },
-            ))
+            )))
         }))
     }
 }

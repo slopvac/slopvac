@@ -4,10 +4,10 @@
 use std::path::Path;
 
 use slopvac_config::LoadedConfig;
-use slopvac_engine::{Engine, Input};
-use slopvac_migrate::{Configure, Error, SettingsOf};
+use slopvac_engine::{Engine, Input, Kind};
+use slopvac_migrate::{Configure, DocumentSettings, Error, SettingsOf};
 
-use crate::engine::{config_error, file_settings, rel_text};
+use crate::engine::{block_errors, config_error, file_settings, rel_text};
 use crate::errors::CliError;
 use crate::lint_settings::{self, DocumentBlocks, DocumentLayers, Overrides};
 use crate::rule_catalog::Catalog;
@@ -69,8 +69,15 @@ impl Configure for MigrateConfigure {
         Ok(Box::new(move |rel, text| {
             let shown = rel.display().to_string();
             let blocks = DocumentBlocks::read(text, &shown, Some(&loaded));
+            // A block or directive that a lint run reports as an error stops the comparison,
+            // as a document that was not checked in full does.
+            if let Some(failure) = block_errors(&shown, text, &blocks).into_iter().next() {
+                return Err(Error::Lint(format!("{}: {}", failure.code, failure.raw)));
+            }
             let relative = rel_text(rel);
-            let mut input = Input::new(&shown, text).with_relative_path(&relative);
+            let mut input = Input::new(&shown, text)
+                .with_kind(kind_of(rel))
+                .with_relative_path(&relative);
             let declared = blocks.declared_genre();
             if let Some(genre) = &declared {
                 input = input.with_declared_genre(genre);
@@ -82,8 +89,17 @@ impl Configure for MigrateConfigure {
                 .map(|genre| genre.id.as_str().to_owned());
             let layers = DocumentLayers::from_blocks(&blocks).with_detected_genre(detected);
             file_settings(&self.rules, &loaded, rel, &Overrides::default(), &layers)
-                .map(|(settings, _)| settings)
+                .map(|(settings, _)| DocumentSettings::new(settings).with_declared_genre(declared))
                 .map_err(lint_error)
         }))
+    }
+}
+
+/// The engine kind of a document by its extension, as discovery in `slopvac lint` reads it.
+fn kind_of(rel: &Path) -> Kind {
+    match rel.extension().and_then(|e| e.to_str()) {
+        Some("mdx") => Kind::Mdx,
+        Some("rst") => Kind::Rst,
+        _ => Kind::Markdown,
     }
 }

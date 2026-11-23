@@ -19,10 +19,40 @@ use crate::{Error, Finding, Linter, Phase};
 /// The config file name that 3.0 reads.
 const CONFIG_NAME: &str = "slopvac.toml";
 
+/// What a loaded config resolves for one document.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct DocumentSettings {
+    /// The engine settings of the document.
+    pub settings: Settings,
+    /// The genre that the document itself declares, when the config's front matter policy
+    /// allows it and the declaration is valid. The engine reads the document under the same
+    /// genre that the settings came from.
+    pub declared_genre: Option<String>,
+}
+
+impl DocumentSettings {
+    /// Settings with no declared genre.
+    #[must_use]
+    pub fn new(settings: Settings) -> Self {
+        Self {
+            settings,
+            declared_genre: None,
+        }
+    }
+
+    /// The same settings for a document that declares `genre`.
+    #[must_use]
+    pub fn with_declared_genre(mut self, genre: Option<String>) -> Self {
+        self.declared_genre = genre;
+        self
+    }
+}
+
 /// The settings of one document under a loaded config, from the path of the document
 /// relative to the config's directory and its text. The text carries the document's own
 /// `slopvac:` block and inline directives, which a lint run reads too.
-pub type SettingsOf<'a> = Box<dyn Fn(&Path, &str) -> Result<Settings, Error> + 'a>;
+pub type SettingsOf<'a> = Box<dyn Fn(&Path, &str) -> Result<DocumentSettings, Error> + 'a>;
 
 /// Turns a 3.0 config into engine settings, the way `slopvac lint` resolves it.
 ///
@@ -115,6 +145,7 @@ struct Doc {
     text: String,
     path: PathBuf,
     rel: Option<String>,
+    declared_genre: Option<String>,
 }
 
 impl Doc {
@@ -125,8 +156,12 @@ impl Doc {
             FileKind::Mdx => Input::mdx(&self.label, &self.text),
             _ => Input::markdown(&self.label, &self.text),
         };
-        match &self.rel {
+        let input = match &self.rel {
             Some(rel) => input.with_relative_path(rel),
+            None => input,
+        };
+        match &self.declared_genre {
+            Some(genre) => input.with_declared_genre(genre),
             None => input,
         }
     }
@@ -166,7 +201,9 @@ impl EngineLinter {
                 loaded.insert(dir.clone(), of);
             }
             let rel = doc.path.strip_prefix(&dir).unwrap_or(&doc.path).to_owned();
-            out.push(loaded[&dir](&rel, &doc.text)?);
+            let found = loaded[&dir](&rel, &doc.text)?;
+            doc.declared_genre = found.declared_genre;
+            out.push(found.settings);
             if configs.contains_key(&dir.join(CONFIG_NAME)) {
                 doc.rel = Some(slash_path(&rel));
             }
@@ -226,6 +263,7 @@ impl Linter for EngineLinter {
                 text,
                 path,
                 rel: None,
+                declared_genre: None,
             });
         }
         let settings = self.settings_of(&base, &mut docs, &configs)?;
@@ -264,5 +302,24 @@ impl Linter for EngineLinter {
             .into_iter()
             .map(|(rule, count)| Finding { rule, count })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The engine reads the document under the genre its own declaration gave the settings.
+    #[test]
+    fn the_engine_input_carries_the_declared_genre_of_the_settings() {
+        let doc = Doc {
+            label: "doc.md".into(),
+            kind: FileKind::Markdown,
+            text: "Text.\n".into(),
+            path: PathBuf::from("doc.md"),
+            rel: Some("doc.md".into()),
+            declared_genre: Some("change-comms".into()),
+        };
+        assert_eq!(doc.input().declared_genre, Some("change-comms"));
     }
 }

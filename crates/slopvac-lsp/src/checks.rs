@@ -1,13 +1,16 @@
-//! The checks the binary registers next to the engine: front-matter validation. Term casing
-//! needs none: the engine reports it as `terms:terms.casing`.
+//! The checks the binary registers next to the engine: validation of the `slopvac:` block and
+//! the inline directives. Term casing needs none: the engine reports it as
+//! `terms:terms.casing`.
 
+use slopvac_config::directives;
 use slopvac_config::frontmatter::{self, Policy};
 use slopvac_model::{Severity, Span};
 
 use crate::linter::{Check, Problem};
 
-/// Front-matter validation: the `slopvac:` block checked as `slopvac validate` checks it. Each
-/// diagnostic keeps its validate code and points at the span validate reports.
+/// Front-matter validation: the `slopvac:` block and the inline directives checked as
+/// `slopvac validate` checks them. Each diagnostic keeps its validate code and points at the
+/// span validate reports.
 pub struct FrontMatterCheck {
     policy: Policy,
 }
@@ -22,8 +25,9 @@ impl FrontMatterCheck {
 
 impl Check for FrontMatterCheck {
     fn check(&self, path: &str, text: &str) -> Vec<Problem> {
-        frontmatter::read(text, path, &self.policy)
-            .diagnostics
+        let mut diagnostics = frontmatter::read(text, path, &self.policy).diagnostics;
+        diagnostics.extend(directives::read(text, path, &self.policy).diagnostics);
+        diagnostics
             .into_iter()
             .filter_map(|d| {
                 // A span past the buffer cannot be shown, so it is dropped.

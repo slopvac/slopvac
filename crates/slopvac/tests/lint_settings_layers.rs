@@ -172,6 +172,21 @@ fn a_bad_inline_directive_is_an_error_and_the_run_is_incomplete(
     assert!(stderr.contains("doc.md:1:15:"), "{stderr}");
 }
 
+/// A document with more directives than its size allows is refused, and the error states the
+/// limit with the message of the registry (`config-list-too-long`). The 1 100 lines of 31 bytes
+/// and the 45-byte body make 34 145 bytes, so the cap is 1024 + 34 145 / 32 = 2 091.
+#[test]
+fn a_document_with_too_many_directives_is_refused_with_the_limit() {
+    let lines = "<!-- slopvac: locale=en-GB -->\n".repeat(1_100);
+    let (status, stderr, _) = run_doc(&format!("{BODY}{lines}"));
+    assert_eq!(status, Some(2), "{stderr}");
+    assert!(stderr.contains("config-invalid-value"), "{stderr}");
+    assert!(
+        stderr.contains("the list holds more than 2091 entries"),
+        "{stderr}"
+    );
+}
+
 #[test]
 fn an_inline_genre_is_the_genre_of_the_document_and_of_its_settings() {
     // `informal` has `profile: relaxed` and the directive layer sits above detection.
@@ -222,4 +237,21 @@ fn the_explanation_follows_the_detected_genre() {
         text.contains("profile.name = \"strict\"  [genre plugin:core/genres/reference.yaml:4:1]"),
         "{text}"
     );
+}
+
+/// A directive that a lint run reports as an error is reported by the explanation too, and the
+/// explanation is incomplete (exit 2) as the run is. `<!-- slopvac: ` is 14 bytes, so the key
+/// starts at column 15 of line 1.
+#[test]
+fn the_explanation_reports_a_bad_directive_and_is_incomplete() {
+    let (_dir, path) = project(CONFIG, "<!-- slopvac: network.offline=true -->\n# T\n");
+    let out = slopvac()
+        .args(["lint", "--explain-config"])
+        .arg(&path)
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(stderr.contains("config-unknown-key"), "{stderr}");
+    assert!(stderr.contains("doc.md:1:15:"), "{stderr}");
 }

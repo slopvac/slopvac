@@ -180,17 +180,29 @@ fn linted_history_count(path: &Path) -> Result<usize, Box<dyn Error>> {
         .count())
 }
 
-/// The `slopvac:` block of a document reaches the settings of the after side as it reaches a
-/// lint run (`docs/contract/config.md`, section 1.1): `genre: change-comms` in the front
-/// matter turns the history rule off, so the comparison counts what `slopvac lint` reports.
+/// A document reaches the settings of the after side as it reaches a lint run
+/// (`docs/contract/config.md`, section 1.1): the genre of its `slopvac:` block, or the one that
+/// its content gives, picks the profile. The genre `change-comms` turns the history rule off,
+/// so the comparison counts what `slopvac lint` reports.
+///
+/// The detected case is MDX: an indented `# Changelog` is a heading in MDX, which has no
+/// indented code, and code in Markdown. It scores the `change-comms` heading signal (3, the
+/// minimum) only when the document is read as MDX.
 #[rstest]
 #[case::explicit_genre(
+    "doc.md",
     "---\nslopvac:\n  v: 3\n  genre: change-comms\n---\n# Title\n\n\
      The retry loop landed in commit 3f9a2c1 after the outage.\n",
     0
 )]
-#[case::no_block(HISTORY, 1)]
+#[case::detected_in_mdx(
+    "doc.mdx",
+    "    # Changelog\n\nThe retry loop landed in commit 3f9a2c1 after the outage.\n",
+    0
+)]
+#[case::no_block("doc.md", HISTORY, 1)]
 fn the_after_side_lints_a_document_as_slopvac_lint_does(
+    #[case] name: &str,
     #[case] doc: &str,
     #[case] expected: usize,
 ) -> Result<(), Box<dyn Error>> {
@@ -198,9 +210,27 @@ fn the_after_side_lints_a_document_as_slopvac_lint_does(
     let dir = project("schema_version = 2\nprofile = \"normal\"\n", "Plain.\n")?;
     fs::create_dir_all(dir.path().join("sub"))?;
     fs::write(dir.path().join("sub/slopvac.toml"), "schema_version = 3\n")?;
-    fs::write(dir.path().join("sub/doc.md"), doc)?;
+    let path = dir.path().join("sub").join(name);
+    fs::write(&path, doc)?;
     let (_, after) = sides(dir.path(), false, HISTORY_RULE)?;
-    assert_eq!(after, linted_history_count(&dir.path().join("sub/doc.md"))?);
+    assert_eq!(after, linted_history_count(&path)?);
     assert_eq!(after, expected);
+    Ok(())
+}
+
+/// A directive that `slopvac lint` reports as an error is an error of the comparison too: the
+/// document was not checked as written. `network.offline` is no setting, so the directive is a
+/// `config-unknown-key` at its key, which starts at column 15 of line 1.
+#[test]
+fn a_bad_directive_stops_the_comparison_as_it_stops_a_lint() -> Result<(), Box<dyn Error>> {
+    let dir = project(
+        "schema_version = 2\nprofile = \"normal\"\n",
+        &format!("<!-- slopvac: network.offline=true -->\n{HYPHEN}"),
+    )?;
+    let result = sides(dir.path(), false, HYPHENS);
+    assert!(result.is_err(), "the comparison went on: {result:?}");
+    let text = result.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(text.contains("config-unknown-key"), "{text}");
+    assert!(text.contains("doc.md:1:15:"), "{text}");
     Ok(())
 }

@@ -31,10 +31,17 @@ struct Session {
 
 impl Session {
     fn start(dir: &Path) -> TestResult<Self> {
+        Self::start_with(dir, &[])
+    }
+
+    /// A session whose server runs with `envs` set.
+    fn start_with(dir: &Path, envs: &[(&str, &str)]) -> TestResult<Self> {
         let mut child = Command::new(env!("CARGO_BIN_EXE_slopvac"))
             .arg("lsp")
             .current_dir(dir)
+            .envs(envs.iter().copied())
             .env_remove("SLOPVAC_LOG")
+            .env_remove("SLOPVAC_RST_CONVERTER")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -697,6 +704,93 @@ fn a_broken_config_in_a_folder_with_no_open_document_does_not_fail_the_reload() 
     changed(&mut session, &uri_of(&root, "slopvac.toml"))?;
     // Nothing is open under `sub`, so its config is not part of this reload.
     assert!(session.codes(&root, "top.md")?.iter().any(|c| c == LEXICON));
+    session.finish()?;
+    Ok(())
+}
+
+/// An inline directive that `slopvac validate` reports is a diagnostic of the open buffer too.
+/// `<!-- slopvac: ` is 14 bytes, so the key starts at byte 14.
+#[test]
+fn a_bad_inline_directive_is_a_diagnostic_of_the_buffer() -> TestResult {
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start(&root)?;
+    session.open(
+        &root,
+        "a.md",
+        "<!-- slopvac: network.offline=true -->\n# T\n",
+    )?;
+    let codes = session.codes(&root, "a.md")?;
+    assert!(codes.iter().any(|c| c == "config-unknown-key"), "{codes:?}");
+    session.finish()?;
+    Ok(())
+}
+
+/// What a fake docutils driver prints for one RST document: a title and a paragraph, as the
+/// real driver reports them, with 1-based lines.
+fn rst_driver_output(title: &str, paragraph: &str) -> String {
+    json!({
+        "docutils": "0.21.2",
+        "nodes": [
+            {"tag": "title", "start": 1, "end": 1, "level": 1, "containers": [],
+             "pieces": [{"k": "t", "t": title}]},
+            {"tag": "paragraph", "start": 4, "end": 4, "containers": [],
+             "pieces": [{"k": "t", "t": paragraph}]},
+        ],
+    })
+    .to_string()
+}
+
+/// The genre of an RST buffer follows its content, as the genre of a Markdown buffer does. The
+/// interpreter is the first `python3` on `PATH`, outside the project, so the server finds it
+/// only when it knows the project roots.
+///
+/// The fake driver answers by the text it reads. `Release notes` is a heading signal of
+/// `change-comms` (weight 3, its minimum), which turns the history rule off. `Overview` is no
+/// signal, so the buffer stays `consumer`, where the rule is a warning. The two buffers have
+/// no path signal.
+#[cfg(unix)]
+#[test]
+fn an_rst_buffer_gets_the_genre_its_content_signals() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+    const SENTENCE: &str = "The retry loop landed in commit 3f9a2c1 after the outage.";
+    let tools = tempfile::tempdir()?;
+    let notes = tools.path().join("notes.json");
+    let overview = tools.path().join("overview.json");
+    fs::write(&notes, rst_driver_output("Release notes", SENTENCE))?;
+    fs::write(&overview, rst_driver_output("Overview", SENTENCE))?;
+    let driver = tools.path().join("python3");
+    fs::write(
+        &driver,
+        format!(
+            "#!/bin/sh\ninput=$(cat)\ncase \"$input\" in\n*'Release notes'*) cat '{}' ;;\n*) cat '{}' ;;\nesac\n",
+            notes.display(),
+            overview.display()
+        ),
+    )?;
+    fs::set_permissions(&driver, fs::Permissions::from_mode(0o755))?;
+    let path = format!("{}:/usr/bin:/bin", tools.path().canonicalize()?.display());
+    let dir = project("schema_version = 3\n", &[])?;
+    let root = dir.path().canonicalize()?;
+    let mut session = Session::start_with(&root, &[("PATH", &path)])?;
+    session.open(
+        &root,
+        "notes.rst",
+        &format!("Release notes\n=============\n\n{SENTENCE}\n"),
+    )?;
+    session.open(
+        &root,
+        "overview.rst",
+        &format!("Overview\n========\n\n{SENTENCE}\n"),
+    )?;
+    let signalled = session.codes(&root, "notes.rst")?;
+    let plain = session.codes(&root, "overview.rst")?;
+    // The plain buffer reports the rule, which shows the adapter ran; the other does not.
+    assert!(plain.iter().any(|c| c == HISTORY_RULE), "{plain:?}");
+    assert!(
+        !signalled.iter().any(|c| c == HISTORY_RULE),
+        "{signalled:?}"
+    );
     session.finish()?;
     Ok(())
 }

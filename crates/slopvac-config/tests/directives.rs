@@ -642,26 +642,40 @@ fn regressions_that_the_first_scanner_failed() {
 /// One directive line of 31 bytes that sets one setting.
 const LOCALE_LINE: &str = "<!-- slopvac: locale=en-GB -->\n";
 
-#[test]
-fn directives_past_the_cap_that_grows_with_the_document_are_refused() {
-    // 20 000 lines of 31 bytes make 620 000 bytes, so the cap is 1024 + 620 000 / 32 = 20 399.
-    // The lines hold 20 000 directives and 20 000 settings, which is 40 000 units.
-    let doc = LOCALE_LINE.repeat(20_000);
-    let read = read(&doc, "doc.md", &default_policy());
+/// The refusal of a document: no settings and one `InvalidValue` that states the limit.
+fn assert_refused(doc: &str, cap: usize) {
+    let read = read(doc, "doc.md", &default_policy());
     assert_eq!(read.settings, Vec::new());
     let codes: Vec<Code> = read.diagnostics.iter().map(|d| d.code).collect();
     assert_eq!(codes, [Code::InvalidValue]);
     assert_eq!(
         read.diagnostics[0].message,
-        "the list holds more than 20399 entries"
+        format!("the list holds more than {cap} entries")
     );
 }
 
 #[test]
-fn directives_at_an_ordinary_density_stay_under_the_cap() {
-    // 500 lines make 15 500 bytes, so the cap is 1024 + 484 = 1508. The lines use 1 000 units.
-    let doc = LOCALE_LINE.repeat(500);
+fn directives_past_the_cap_that_grows_with_the_document_are_refused() {
+    // 1 100 lines of 31 bytes make 34 100 bytes, so the cap is 1024 + 34 100 / 32 = 2 089. The
+    // lines hold 1 100 directives and 1 100 settings, which is 2 200 units.
+    assert_refused(&LOCALE_LINE.repeat(1_100), 2_089);
+}
+
+#[test]
+fn the_same_directives_in_a_longer_document_stay_under_the_cap() {
+    // The 1 100 lines of the test above, then 20 000 bytes of text: the cap is
+    // 1024 + 54 100 / 32 = 2 714, above the 2 200 units.
+    let doc = format!("{}{}", LOCALE_LINE.repeat(1_100), "x".repeat(20_000));
     let read = read(&doc, "doc.md", &default_policy());
     assert_eq!(read.diagnostics, Vec::new());
-    assert_eq!(read.settings.len(), 500);
+    assert_eq!(read.settings.len(), 1_100);
+}
+
+#[test]
+fn a_repeated_key_counts_each_time_it_is_written() {
+    // One directive of 3 000 pairs of the same key sets one setting, but it allocates 3 000
+    // pairs. The text is 14 + 3 000 * 13 + 5 = 39 019 bytes, so the cap is
+    // 1024 + 39 019 / 32 = 2 243.
+    let doc = format!("<!-- slopvac: {} -->\n", "locale=en-GB ".repeat(3_000));
+    assert_refused(&doc, 2_243);
 }

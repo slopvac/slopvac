@@ -13,6 +13,7 @@
 //! A dotted key sets a nested field: `thresholds.min_score=60`, `rules.core:no-dash=off`.
 //! `terms.allow` takes a comma-separated list.
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::path::Path;
 
@@ -68,9 +69,21 @@ fn style_of(file: &str) -> Style {
 /// literal block, or a multi-line string in code are examples or data, not directives.
 #[must_use]
 pub fn find(doc: &str, file: &str) -> Vec<Directive> {
+    let mut unlimited = usize::MAX;
+    locate(doc, file)
+        .into_iter()
+        .filter_map(|payload| {
+            let node = parse_pairs(doc, payload.clone(), &mut unlimited)?;
+            Some(Directive { payload, node })
+        })
+        .collect()
+}
+
+/// The payload range of every directive in `doc`, found without reading any key.
+fn locate(doc: &str, file: &str) -> Vec<Range<usize>> {
     let style = style_of(file);
     if let Style::Code(family) = style {
-        return find_in_code(doc, family);
+        return locate_in_code(doc, family);
     }
     let mut literal = Literals::new(style);
     let mut out = Vec::new();
@@ -78,12 +91,7 @@ pub fn find(doc: &str, file: &str) -> Vec<Directive> {
     for line in doc.split_inclusive('\n') {
         let in_literal = literal.step(line);
         if !in_literal && let Some(payload) = payload_of(line, style) {
-            let start = offset + payload.start;
-            let range = start..offset + payload.end;
-            out.push(Directive {
-                node: parse_pairs(doc, range.clone()),
-                payload: range,
-            });
+            out.push(offset + payload.start..offset + payload.end);
         }
         offset += line.len();
     }
@@ -92,7 +100,7 @@ pub fn find(doc: &str, file: &str) -> Vec<Directive> {
 
 /// Directives in the comments of source code, found with a scanner that knows the language's
 /// strings. A comment counts when it is the first thing on its line.
-fn find_in_code(doc: &str, family: Family) -> Vec<Directive> {
+fn locate_in_code(doc: &str, family: Family) -> Vec<Range<usize>> {
     let mut out = Vec::new();
     for c in comments(doc, family) {
         let line_start = doc.as_bytes()[..c.marker]
@@ -109,10 +117,7 @@ fn find_in_code(doc: &str, family: Family) -> Vec<Directive> {
         };
         let start = c.body.start + (body.len() - rest.len());
         let end = (c.body.start + body.trim_end().len()).max(start);
-        out.push(Directive {
-            node: parse_pairs(doc, start..end),
-            payload: start..end,
-        });
+        out.push(start..end);
     }
     out
 }
@@ -254,9 +259,13 @@ fn payload_of(line: &str, style: Style) -> Option<Range<usize>> {
 }
 
 /// Split `key=value` pairs at white space; a value may be in double quotes.
-fn parse_pairs(doc: &str, payload: Range<usize>) -> Node {
+///
+/// Each pair costs one unit of `budget`, a repeated key included, so the work and the memory
+/// stay bounded by the cap. `None` when the budget runs out.
+fn parse_pairs(doc: &str, payload: Range<usize>, budget: &mut usize) -> Option<Node> {
     let text = &doc[payload.clone()];
     let mut entries: Vec<Entry> = Vec::new();
+    let mut slots = Slots::default();
     let mut i = 0;
     let bytes = text.as_bytes();
     while i < bytes.len() {
@@ -264,6 +273,7 @@ fn parse_pairs(doc: &str, payload: Range<usize>) -> Node {
             i += 1;
             continue;
         }
+        *budget = budget.checked_sub(1)?;
         let key_start = i;
         while i < bytes.len() && bytes[i] != b'=' && !bytes[i].is_ascii_whitespace() {
             i += 1;
@@ -275,10 +285,11 @@ fn parse_pairs(doc: &str, payload: Range<usize>) -> Node {
             i += 1;
             let (value, value_span, next) = read_value(text, i, payload.start);
             i = next;
-            insert(&mut entries, key, key_span, value, value_span);
+            insert(&mut entries, &mut slots, key, key_span, value, value_span);
         } else {
             insert(
                 &mut entries,
+                &mut slots,
                 key,
                 key_span.clone(),
                 Value::Bool(true),
@@ -286,10 +297,10 @@ fn parse_pairs(doc: &str, payload: Range<usize>) -> Node {
             );
         }
     }
-    Node {
+    Some(Node {
         span: payload,
         value: Value::Table(entries),
-    }
+    })
 }
 
 fn read_value(text: &str, from: usize, base: usize) -> (String, Range<usize>, usize) {
@@ -335,9 +346,34 @@ fn typed(key: &str, raw: &str, span: &Range<usize>) -> Value {
     }
 }
 
+/// Where each key of a directive sits, so that a repeated key is found without a scan. A table
+/// has an id; the root is 0.
+#[derive(Default)]
+struct Slots {
+    index: HashMap<(usize, String), Slot>,
+    tables: usize,
+}
+
+#[derive(Clone, Copy)]
+struct Slot {
+    /// Position in the entries of the table.
+    at: usize,
+    /// The id of the table the entry holds, when it holds one.
+    table: Option<usize>,
+}
+
+impl Slots {
+    /// The id of a table that no key points at yet.
+    fn new_table(&mut self) -> usize {
+        self.tables += 1;
+        self.tables
+    }
+}
+
 /// Add `dotted.key = value`, creating or extending the nested tables.
 fn insert(
     entries: &mut Vec<Entry>,
+    slots: &mut Slots,
     dotted: &str,
     key_span: Range<usize>,
     raw: impl Into<Rawish>,
@@ -347,11 +383,12 @@ fn insert(
     let mut offset = key_span.start;
     let segments: Vec<&str> = dotted.split('.').collect();
     let mut cur = entries;
+    let mut table = 0;
     for (n, seg) in segments.iter().enumerate() {
         let span = offset..offset + seg.len();
         offset += seg.len() + 1;
         let last = n + 1 == segments.len();
-        let pos = cur.iter().position(|e| e.key == *seg);
+        let slot = slots.index.get(&(table, (*seg).to_owned())).copied();
         if last {
             let value = match &raw {
                 Rawish::Str(s) => typed(dotted, s, &value_span),
@@ -365,15 +402,25 @@ fn insert(
                     value,
                 },
             };
-            match pos {
-                Some(p) => cur[p] = entry,
-                None => cur.push(entry),
-            }
+            let at = if let Some(slot) = slot {
+                cur[slot.at] = entry;
+                slot.at
+            } else {
+                cur.push(entry);
+                cur.len() - 1
+            };
+            slots
+                .index
+                .insert((table, (*seg).to_owned()), Slot { at, table: None });
             return;
         }
-        let p = match pos {
-            Some(p) if matches!(cur[p].node.value, Value::Table(_)) => p,
+        let (at, child) = match slot {
+            Some(Slot {
+                at,
+                table: Some(child),
+            }) => (at, child),
             _ => {
+                let child = slots.new_table();
                 let entry = Entry {
                     key: (*seg).to_owned(),
                     key_span: span.clone(),
@@ -382,19 +429,28 @@ fn insert(
                         value: Value::Table(Vec::new()),
                     },
                 };
-                if let Some(p) = pos {
-                    cur[p] = entry;
-                    p
+                let at = if let Some(slot) = slot {
+                    cur[slot.at] = entry;
+                    slot.at
                 } else {
                     cur.push(entry);
                     cur.len() - 1
-                }
+                };
+                slots.index.insert(
+                    (table, (*seg).to_owned()),
+                    Slot {
+                        at,
+                        table: Some(child),
+                    },
+                );
+                (at, child)
             }
         };
-        let Value::Table(next) = &mut cur[p].node.value else {
+        let Value::Table(next) = &mut cur[at].node.value else {
             return;
         };
         cur = next;
+        table = child;
     }
 }
 
@@ -428,6 +484,13 @@ fn directive_cap(doc: &str) -> usize {
     DIRECTIVE_BASE_UNITS + doc.len() / DIRECTIVE_BYTES_PER_UNIT
 }
 
+/// True for the refusal of a document whose directives pass the cap. Its message holds only
+/// the limit, never a value of the document.
+#[must_use]
+pub fn is_over_cap(diagnostic: &Diagnostic) -> bool {
+    diagnostic.code == Code::InvalidValue && diagnostic.path == ["directive"]
+}
+
 /// The refusal of a document whose directives pass the cap, at `span`.
 fn over_cap(cap: usize, span: Range<usize>) -> Read {
     Read {
@@ -454,10 +517,20 @@ pub fn read(doc: &str, file: &str, policy: &Policy) -> Read {
     if !policy.enabled {
         return Read::default();
     }
-    let directives = find(doc, file);
+    let payloads = locate(doc, file);
     let cap = directive_cap(doc);
-    if let Some(excess) = directives.get(cap) {
-        return over_cap(cap, excess.payload.clone());
+    // The markers are counted before any key is read, so a document of many directives is
+    // refused without building one of them.
+    if let Some(excess) = payloads.get(cap) {
+        return over_cap(cap, excess.clone());
+    }
+    let mut budget = cap - payloads.len();
+    let mut directives = Vec::with_capacity(payloads.len());
+    for payload in payloads {
+        let Some(node) = parse_pairs(doc, payload.clone(), &mut budget) else {
+            return over_cap(cap, payload);
+        };
+        directives.push(Directive { payload, node });
     }
     let mut diagnostics = Vec::new();
     for d in &directives {
