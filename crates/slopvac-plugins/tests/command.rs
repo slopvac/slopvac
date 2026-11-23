@@ -803,6 +803,24 @@ mod python_env {
         }
     }
 
+    /// What `trust` shows when the built environment gained a file after `sync`.
+    pub(super) fn trust_after_environment_change() -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let p = project();
+        p.f.run(&["sync"], false, |s| s.python(p.build()))
+            .result
+            .unwrap();
+        let root = p.f.project().join("plugins/py");
+        let tree = tree_hash(&root).unwrap();
+        let env = p.envs.load(&tree, "3.12").unwrap().unwrap();
+        let bin = env.root().join("bin");
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::write(bin.join("added-after-sync"), "x\n").unwrap();
+        seen(&p.f.run(&["trust", "py"], false, |s| {
+            s.envs(&p.envs).loader(PyLoader { root })
+        }))
+    }
+
     #[test]
     fn trust_for_a_managed_python_plugin_is_accepted_by_the_production_spawn_gate() {
         let p = project();
@@ -1382,22 +1400,71 @@ fn library_sites() -> Vec<Site> {
     ]
 }
 
+/// A loader whose plugin tree changes on disk after the loader hashed it.
+struct ChangedTree(TreeLoader);
+
+impl PluginLoader for ChangedTree {
+    fn load(&self, id: &PackId) -> Result<(VerifiedPlugin, PluginSpec), String> {
+        let loaded = self.0.load(id)?;
+        fs::write(self.0.root.join("added-after-hash.py"), "x = 1\n").unwrap();
+        Ok(loaded)
+    }
+}
+
+/// Sites where `trust` refuses because verification failed, not because the store did.
+/// `status` cannot reach these: it computes the trust state and verifies nothing.
+fn verification_sites() -> Vec<Site> {
+    let mut sites = vec![Site {
+        name: "changed tree, trust",
+        code: "plugin-hash-mismatch",
+        reach: || {
+            let f = code_fixture();
+            let loader = ChangedTree(TreeLoader::new(f.base.path(), "fake"));
+            seen(&f.run(&["trust", "fake"], false, |s| s.loader(loader)))
+        },
+    }];
+    #[cfg(unix)]
+    sites.push(Site {
+        name: "changed python environment, trust",
+        code: "plugin-hash-mismatch",
+        reach: python_env::trust_after_environment_change,
+    });
+    sites
+}
+
 fn sites() -> Vec<Site> {
-    [python_and_loader_sites(), store_sites(), library_sites()]
-        .into_iter()
-        .flatten()
-        .collect()
+    [
+        python_and_loader_sites(),
+        store_sites(),
+        library_sites(),
+        verification_sites(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// Whether `code: sentence` appears with the whole code token before the sentence: the text
+/// before it is empty or ends in a character that cannot belong to a code.
+fn has_whole_code_before(shown: &str, code: &str) -> bool {
+    let expected = format!("{code}: {WITHHELD}");
+    shown.match_indices(&expected).any(|(at, _)| {
+        shown[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '-'))
+    })
 }
 
 #[test]
 fn every_withheld_sentence_shows_the_code_of_its_failure() {
     for site in sites() {
         let shown = (site.reach)();
-        let expected = format!("{}: {WITHHELD}", site.code);
         assert!(
-            shown.contains(&expected),
-            "{}: expected `{expected}` in `{shown}`",
-            site.name
+            has_whole_code_before(&shown, site.code),
+            "{}: expected the whole code `{}` before the sentence in `{shown}`",
+            site.name,
+            site.code
         );
     }
 }
