@@ -137,6 +137,17 @@ const TOP_LEVEL_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\
                                       [categories]\nai-tells-formatting = \"warning\"\n\n\
                                       [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n";
 
+/// The same with only a `weight` in the top-level category, which 2.x also credits as
+/// authored.
+const TOP_LEVEL_WEIGHT_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\n\n\
+                                             [categories]\nai-tells-formatting = { weight = 2.0 }\n\n\
+                                             [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n";
+
+/// The same with only a budget in the top-level category.
+const TOP_LEVEL_BUDGET_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\n\n\
+                                             [categories]\nai-tells-formatting = { max_per_100_words = 2.0 }\n\n\
+                                             [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n";
+
 #[rstest]
 #[case::glob_outside_the_grammar(
     UNREPRODUCIBLE,
@@ -148,6 +159,14 @@ const TOP_LEVEL_UNDER_SWITCH: &str = "schema_version = 2\nprofile = \"relaxed\"\
 )]
 #[case::top_level_level_under_a_switch(
     TOP_LEVEL_UNDER_SWITCH,
+    "could not be reproduced: `categories` on line 4 sets a category that applies above the profile switch in `overrides[0]`"
+)]
+#[case::top_level_weight_under_a_switch(
+    TOP_LEVEL_WEIGHT_UNDER_SWITCH,
+    "could not be reproduced: `categories` on line 4 sets a category that applies above the profile switch in `overrides[0]`"
+)]
+#[case::top_level_budget_under_a_switch(
+    TOP_LEVEL_BUDGET_UNDER_SWITCH,
     "could not be reproduced: `categories` on line 4 sets a category that applies above the profile switch in `overrides[0]`"
 )]
 fn a_config_whose_2x_settings_cannot_be_reproduced_makes_the_comparison_incomplete(

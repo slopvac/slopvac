@@ -219,9 +219,21 @@ fn a_guard_that_repeats_a_block_scope_stops_the_write_and_changes_nothing() {
     "profile = \"relaxed\"\n\n[categories]\nai-tells-formatting = \"warning\"\n\n\
      [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
 )]
+// An entry with no field still names the category, which 2.x credits as authored.
+#[case::top_level_empty_entry(
+    "profile = \"relaxed\"\n\n[categories]\nai-tells-formatting = {}\n\n\
+     [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+)]
 fn a_category_level_above_a_profile_switch_stops_the_write_and_changes_nothing(
     #[case] config: &str,
 ) {
+    assert_refused_before_any_write(config);
+}
+
+/// Run `migrate --preserve-behavior --write` on a project whose `.slopvac.toml` is
+/// `config`, and check that it stops with `migrate-output-invalid` and exit 2, keeps the
+/// source, and writes no `slopvac.toml`, backup or trusted record.
+fn assert_refused_before_any_write(config: &str) {
     let dir = project(config);
     let cache = tempfile::tempdir().expect("tempdir");
     slopvac()
@@ -237,11 +249,57 @@ fn a_category_level_above_a_profile_switch_stops_the_write_and_changes_nothing(
         ));
     assert_eq!(
         fs::read_to_string(dir.path().join(".slopvac.toml")).expect("source kept"),
-        config
+        config,
+        "{config}"
     );
-    assert!(!dir.path().join("slopvac.toml").exists());
-    assert!(!dir.path().join(".slopvac").exists());
-    assert_eq!(fs::read_dir(cache.path()).expect("cache").count(), 0);
+    assert!(!dir.path().join("slopvac.toml").exists(), "{config}");
+    assert!(!dir.path().join(".slopvac").exists(), "{config}");
+    assert_eq!(
+        fs::read_dir(cache.path()).expect("cache").count(),
+        0,
+        "{config}"
+    );
+}
+
+/// A value 2.x accepts for each field of a `[categories.<name>]` table.
+const CATEGORY_FIELD_VALUES: &[(&str, &str)] = &[
+    ("max_per_100_words", "2.0"),
+    ("minimum_severity", "\"error\""),
+    ("severity", "\"warning\""),
+    ("weight", "2.0"),
+];
+
+/// The fields of a 2.x category table, as `tests/fixtures/generate.py` reads them from the
+/// 2.x config model into `vectors.json`.
+fn category_fields_of_2x() -> Vec<String> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../slopvac-migrate/tests/fixtures/preserve/vectors.json");
+    let vectors: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(path).expect("vectors")).expect("json");
+    vectors["category_fields"]
+        .as_array()
+        .expect("category_fields")
+        .iter()
+        .map(|v| v.as_str().expect("field name").to_owned())
+        .collect()
+}
+
+#[test]
+fn each_2x_category_field_at_the_top_level_with_a_profile_switch_stops_the_write() {
+    // 2.x credits a category as authored when a layer writes any of its fields, so each
+    // one, alone at the top level, must stop the write when an override switches profile.
+    let covered: Vec<&str> = CATEGORY_FIELD_VALUES.iter().map(|(f, _)| *f).collect();
+    assert_eq!(
+        category_fields_of_2x(),
+        covered,
+        "a 2.x category field has no case here"
+    );
+    for (field, value) in CATEGORY_FIELD_VALUES {
+        assert_refused_before_any_write(&format!(
+            "profile = \"relaxed\"\n\n[categories]\nai-tells-formatting = {{ {field} = {value} }}\n\n\
+             [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+        ));
+    }
 }
 
 #[test]

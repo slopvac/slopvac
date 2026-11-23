@@ -1,6 +1,7 @@
 {
- "_doc": "Scenarios of vectors.json that `migrate --preserve-behavior` refuses with migrate-output-invalid, because a category entry applies above a profile switch, or the top level sets a category level next to one (docs/contract/profiles.md, E3, limit). Their 2.x levels stay measured for the change that supports them. tests/preserve_2x.rs and tests/preserve.rs read this list.",
+ "_doc": "Scenarios of vectors.json that `migrate --preserve-behavior` refuses with migrate-output-invalid, because a category entry applies above a profile switch, or the top level sets any field of a category next to one (docs/contract/profiles.md, E3, limit). Their 2.x levels stay measured for the change that supports them. tests/preserve_2x.rs and tests/preserve.rs read this list.",
  "refused": [
+  "authored-budget-survives-a-switch",
   "authored-category-without-severity-in-override",
   "block-moved-by-two-profile-switches",
   "guard-held-back-by-a-later-category-level",
@@ -10,7 +11,9 @@
   "profile-override-keeps-top-authored-category",
   "switch-writes-a-weight-the-target-style-lacks",
   "switching-block-category-revives-a-style-off-rule",
+  "top-category-budget-under-a-switch-revives-an-advisory-rule",
   "top-category-level-under-a-switch-from-relaxed",
-  "top-category-level-under-a-switch-revives-an-advisory-rule"
+  "top-category-level-under-a-switch-revives-an-advisory-rule",
+  "top-category-weight-under-a-switch-revives-an-advisory-rule"
  ]
 }

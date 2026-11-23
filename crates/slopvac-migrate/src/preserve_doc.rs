@@ -188,6 +188,10 @@ fn read_config(doc: &DocumentMut, legacy: &Legacy, ctx: &mut Ctx<'_>) -> Option<
         profile,
         layer,
         overrides,
+        top_names_category: doc
+            .get("categories")
+            .and_then(Item::as_table_like)
+            .is_some_and(|t| !t.is_empty()),
     })
 }
 

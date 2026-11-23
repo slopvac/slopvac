@@ -23,6 +23,9 @@ pub(crate) struct Config2 {
     pub(crate) profile: String,
     pub(crate) layer: Layer,
     pub(crate) overrides: Vec<Block2>,
+    /// Whether the top-level `categories` table names any category, with any fields or none,
+    /// including one that 3.0 removed. 2.x credits a named category as authored.
+    pub(crate) top_names_category: bool,
 }
 
 /// A 3.0 override block that the expansion adds: an E4 guard.
@@ -338,8 +341,8 @@ pub(crate) fn expand(config: &Config2, legacy: &Legacy) -> Result<Expanded, Unsu
 /// (docs/contract/profiles.md, E3, limit).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CategoryUnderSwitch {
-    /// The override block that authors the category entry, or `None` for a `severity` or
-    /// `minimum_severity` at the top level.
+    /// The override block that authors the category entry, or `None` for an entry in the
+    /// top-level `categories`.
     pub(crate) block: Option<usize>,
     /// The override block whose profile switch the entry applies above.
     pub(crate) switch: usize,
@@ -351,29 +354,26 @@ pub(crate) struct CategoryUnderSwitch {
 /// switch: i itself, an earlier block that contains i (its entries are restated in i), an
 /// earlier block inside i (it moves after i) and a later block whose files meet those of
 /// i. Each of them is refused when it authors any field of a category, because E5 credits
-/// the category with a level. The top level is refused when it authors the `severity` or
-/// the `minimum_severity` of a category: every file under the switch inherits it, and the
-/// switch leaves an advisory rule of that category at the target style's level, where 2.x
-/// applied the authored one. Categories that 3.0 removed are not in `config`. A block whose
-/// glob is outside the grammar finds nothing; [`expand`] reports it first.
+/// the category with a level. The top level is refused when its `categories` table names
+/// any category, whatever fields the entry sets: 2.x credits a named category as authored,
+/// every file under the switch inherits it, and the switch leaves an advisory rule of that
+/// category at the target style's level, where 2.x applied the authored one. The check is
+/// on the entry, not on a list of fields, and it counts a category that 3.0 removed. In the
+/// blocks, categories that 3.0 removed are not in `config`. A block whose glob is outside
+/// the grammar finds nothing; [`expand`] reports it first.
 pub(crate) fn category_under_switch(config: &Config2) -> Option<CategoryUnderSwitch> {
     let globs: Vec<Glob> = config
         .overrides
         .iter()
         .map(|b| parse_glob(&b.files).ok())
         .collect::<Option<_>>()?;
-    let top_level = config
-        .layer
-        .categories
-        .values()
-        .any(|d| d.contains_key("severity") || d.contains_key("minimum_severity"));
     for (switch, _) in config
         .overrides
         .iter()
         .enumerate()
         .filter(|(_, b)| b.profile.is_some())
     {
-        if top_level {
+        if config.top_names_category {
             return Some(CategoryUnderSwitch {
                 block: None,
                 switch,
