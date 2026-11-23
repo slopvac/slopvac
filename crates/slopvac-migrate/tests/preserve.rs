@@ -457,28 +457,60 @@ fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
         .collect()
 }
 
+/// Why the sweep refused a written config.
+#[derive(Debug, PartialEq, Eq)]
+enum Offence {
+    /// A layer carries a vocabulary rule entry that its authored counterpart does not.
+    GeneratedEntry { rule: String, layer: usize },
+    /// No written block with the authored `files` sits where the authored override must.
+    AuthoredOverrideMissing { index: usize },
+}
+
 /// A vocabulary rule entry that the user did not author must not sit in a layer above the
-/// styles: it would outrank the companion style and the settings 2.x let win. Each written
-/// layer is compared only with the authored layer it came from: the top level with the top
-/// level, and an override with the authored override that has the same `files`. A layer
-/// with no authored counterpart (a guard, moved or switch block) gets no allowance.
-/// Returns the number of layers walked, or the first offending entry.
-fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usize, String> {
+/// styles: it would outrank the companion style and the settings 2.x let win.
+///
+/// Each written layer is compared only with the authored layer it came from. The top level
+/// pairs with the top level. An authored override pairs by position, never by `files`,
+/// because a generated guard can have the same `files` as the override it guards
+/// (profiles.md E4). The layout comes from profiles.md: E3 puts one switch block before all
+/// override blocks for each authored override that sets `profile`, the authored overrides
+/// keep their order, and E4 puts the guards after them. So authored override `i` is written
+/// block `k + i`, where `k` counts the authored overrides that set `profile`. That block
+/// must exist and have the authored `files`, or the authored override is missing. Switch
+/// and guard blocks have no authored counterpart and get no allowance.
+///
+/// Returns the number of layers walked, or the first offence.
+fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usize, Offence> {
     let doc = toml::from_str::<toml::Table>(text).unwrap();
     let authored = toml::from_str::<toml::Table>(authored).unwrap_or_default();
-    let mut authored_blocks = override_blocks(&authored);
+    let authored_blocks = override_blocks(&authored);
+    let written_blocks = override_blocks(&doc);
+    let switches = authored_blocks
+        .iter()
+        .filter(|a| a.contains_key("profile"))
+        .count();
     let mut layers: Vec<(&toml::Table, BTreeSet<String>)> = vec![(&doc, rule_ids(&authored))];
-    for block in override_blocks(&doc) {
-        let counterpart = authored_blocks
-            .iter()
-            .position(|a| a.get("files") == block.get("files"))
-            .map(|at| authored_blocks.remove(at));
-        layers.push((block, counterpart.map(rule_ids).unwrap_or_default()));
+    for (index, block) in written_blocks.iter().enumerate() {
+        let counterpart = index
+            .checked_sub(switches)
+            .and_then(|i| authored_blocks.get(i));
+        layers.push((block, counterpart.map(|a| rule_ids(a)).unwrap_or_default()));
     }
-    for (layer, allowed) in &layers {
+    for (index, a) in authored_blocks.iter().enumerate() {
+        let same_files = written_blocks
+            .get(switches + index)
+            .is_some_and(|w| w.get("files") == a.get("files"));
+        if !same_files {
+            return Err(Offence::AuthoredOverrideMissing { index });
+        }
+    }
+    for (layer_at, (layer, allowed)) in layers.iter().enumerate() {
         for id in rule_ids(layer) {
             if VOCABULARY_RULES.contains(&id.as_str()) && !allowed.contains(&id) {
-                return Err(format!("generated vocabulary entry {id}\n{text}"));
+                return Err(Offence::GeneratedEntry {
+                    rule: id,
+                    layer: layer_at,
+                });
             }
         }
     }
@@ -507,7 +539,7 @@ fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usi
 fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[case] config: &str) {
     let rw = preserve(config).unwrap();
     let walked = check_no_generated_vocabulary_entry(&rw.text, config)
-        .unwrap_or_else(|why| panic!("written config: {why}"));
+        .unwrap_or_else(|why| panic!("{why:?}\n{}", rw.text));
     assert!(walked >= 1, "the check walked no layer\n{}", rw.text);
 }
 
@@ -520,24 +552,45 @@ fn the_sweep_fails_when_an_override_carries_the_top_level_rule() {
     let broken = format!(
         "schema_version = 2\n[rules]\n{TOP_RULE}\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}"
     );
-    let result = check_no_generated_vocabulary_entry(&broken, &authored);
-    let why = result.expect_err("the sweep accepted an override that carries the top-level rule");
-    assert!(
-        why.contains("generated vocabulary entry ste-words.word-outside-controlled-vocabulary"),
-        "{why}"
+    assert_eq!(
+        check_no_generated_vocabulary_entry(&broken, &authored),
+        Err(Offence::GeneratedEntry {
+            rule: "ste-words.word-outside-controlled-vocabulary".to_owned(),
+            layer: 1,
+        })
     );
 }
 
 #[test]
 fn a_guard_with_the_selector_of_a_dropped_override_gets_no_authored_allowance() {
+    // Authored: two overrides, the first authors the rule. Written: the first override is
+    // gone, and a guard after the second one has the same `files` and carries the rule.
     let authored = format!(
         "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}\n[[overrides]]\nfiles = [\"api/**\"]\n"
     );
-    let broken = "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
-    let result = check_no_generated_vocabulary_entry(broken, &authored);
-    assert!(
-        result.is_err(),
-        "the sweep accepted a guard as the authored override: {result:?}"
+    let broken = format!(
+        "schema_version = 2\n[[overrides]]\nfiles = [\"api/**\"]\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"off\"\n"
+    );
+    assert_eq!(
+        check_no_generated_vocabulary_entry(&broken, &authored),
+        Err(Offence::AuthoredOverrideMissing { index: 0 })
+    );
+}
+
+#[test]
+fn a_guard_that_follows_every_authored_override_gets_no_allowance() {
+    let authored = format!(
+        "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n{TOP_RULE}"
+    );
+    let broken = format!(
+        "{authored}\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-used-in-wrong-part-of-speech\" = \"off\"\n"
+    );
+    assert_eq!(
+        check_no_generated_vocabulary_entry(&broken, &authored),
+        Err(Offence::GeneratedEntry {
+            rule: "ste-words.word-used-in-wrong-part-of-speech".to_owned(),
+            layer: 2,
+        })
     );
 }
 
