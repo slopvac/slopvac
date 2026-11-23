@@ -139,10 +139,7 @@ fn a_table_of_cells_of_one_character_is_not_checked_and_builds_no_index() {
     assert_eq!(take_build_elements(), 0, "an index was built");
     // The cells are charged before their records are built, so no record passes the budget.
     let built = slopvac_text::take_cell_records_built();
-    assert!(
-        built <= limit + 1,
-        "{built} records for a budget of {limit}"
-    );
+    assert!(built <= limit, "{built} records for a budget of {limit}");
 }
 
 #[test]
@@ -211,10 +208,7 @@ fn the_split_of_a_dense_paragraph_builds_no_record_past_the_budget() {
     let _ = slopvac_text::take_sentences_built();
     assert!(engine().lint(&Input::markdown("a.md", &source)).is_err());
     let built = slopvac_text::take_sentences_built();
-    assert!(
-        built <= limit + 1,
-        "{built} records for a budget of {limit}"
-    );
+    assert!(built <= limit, "{built} records for a budget of {limit}");
 }
 
 #[test]
@@ -228,10 +222,7 @@ fn the_split_of_a_dense_code_block_builds_no_record_past_the_budget()
         .lint(&Input::markdown("a.md", &source));
     assert!(result.is_err());
     let built = slopvac_context::take_sentences_built();
-    assert!(
-        built <= limit + 1,
-        "{built} records for a budget of {limit}"
-    );
+    assert!(built <= limit, "{built} records for a budget of {limit}");
     Ok(())
 }
 
@@ -246,10 +237,7 @@ fn the_split_of_a_composite_text_builds_no_record_past_the_budget() {
             .is_err()
     );
     let built = slopvac_text::take_sentences_built();
-    assert!(
-        built <= limit + 1,
-        "{built} records for a budget of {limit}"
-    );
+    assert!(built <= limit, "{built} records for a budget of {limit}");
 }
 
 #[test]

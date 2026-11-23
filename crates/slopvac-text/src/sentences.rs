@@ -307,7 +307,8 @@ mod counted {
         static BUILT: Cell<usize> = const { Cell::new(0) };
         static CUTS: Cell<usize> = const { Cell::new(0) };
         static CELLS: Cell<usize> = const { Cell::new(0) };
-        static HELD: Cell<usize> = const { Cell::new(0) };
+        static LIVE: Cell<usize> = const { Cell::new(0) };
+        static PEAK: Cell<usize> = const { Cell::new(0) };
     }
 
     pub(super) fn cut() {
@@ -326,16 +327,20 @@ mod counted {
         CUTS.with(|c| c.replace(0))
     }
 
-    pub(super) fn held(n: usize) {
-        HELD.with(|c| c.set(c.get().max(n)));
+    /// The records the caller of the splitter holds now.
+    pub(super) fn live(n: usize) {
+        LIVE.with(|c| c.set(n));
     }
 
-    pub(super) fn take_held() -> usize {
-        HELD.with(|c| c.replace(0))
+    pub(super) fn take_peak() -> usize {
+        PEAK.with(|c| c.replace(0))
     }
 
+    /// A record is being built: it and the records held now are alive together.
     pub(super) fn built() {
         BUILT.with(|c| c.set(c.get() + 1));
+        let alive = LIVE.with(Cell::get) + 1;
+        PEAK.with(|c| c.set(c.get().max(alive)));
     }
 
     pub(super) fn take() -> usize {
@@ -355,7 +360,7 @@ mod counted {
     pub(super) fn cell() {}
 
     #[inline(always)]
-    pub(super) fn held(_n: usize) {}
+    pub(super) fn live(_n: usize) {}
 }
 
 /// The sentence records [`split_sentences`] and [`split_sentences_within`] built on this
@@ -386,12 +391,13 @@ pub fn take_cell_records_built() -> usize {
     counted::take_cells()
 }
 
-/// The most sentence records one split held at once on this thread since the last call.
+/// The most sentence records alive at once on this thread since the last call: the records the
+/// caller of a split held, and the one being built. It is sampled when a record is built.
 #[cfg(feature = "work-counters")]
 #[doc(hidden)]
 #[must_use]
 pub fn take_peak_sentences_held() -> usize {
-    counted::take_held()
+    counted::take_peak()
 }
 
 /// Split prose into sentences, applying vertical-list structure before punctuation.
@@ -457,6 +463,7 @@ fn each_sentence(
     work: &mut Work,
     mut visit: impl FnMut(Sentence) -> bool,
 ) -> Result<(), TextError> {
+    counted::live(0);
     if py_strip(text).is_empty() {
         return Ok(());
     }
@@ -510,8 +517,8 @@ fn split_limited(
             over = true;
             return false;
         }
-        counted::held(out.len() + 1);
         out.push(found);
+        counted::live(out.len());
         true
     })?;
     Ok((!over).then_some(out))
@@ -529,7 +536,7 @@ pub fn split_sentences_tail(text: &str, keep: usize) -> Result<Vec<Sentence>, Te
             tail.pop_front();
         }
         tail.push_back(found);
-        counted::held(tail.len());
+        counted::live(tail.len());
         true
     })?;
     Ok(tail.into())
@@ -558,6 +565,33 @@ mod tests {
             split_sentences_within(text, 3).unwrap(),
             Some(split_sentences(text).unwrap())
         );
+    }
+
+    #[cfg(feature = "work-counters")]
+    #[test]
+    fn a_limit_of_zero_builds_no_record() {
+        let _ = take_sentences_built();
+        assert_eq!(split_sentences_within("Go on. Stop it.", 0).unwrap(), None);
+        assert_eq!(take_sentences_built(), 0);
+    }
+
+    #[cfg(feature = "work-counters")]
+    #[test]
+    fn a_tail_of_zero_holds_no_record() {
+        let _ = take_peak_sentences_held();
+        assert_eq!(split_sentences_tail("Go on. Stop it.", 0).unwrap(), []);
+        assert_eq!(take_peak_sentences_held(), 0);
+    }
+
+    #[cfg(feature = "work-counters")]
+    #[test]
+    fn a_tail_of_two_never_holds_more_than_two_records_while_it_builds_the_next() {
+        // Five sentences, a window of two: each later one is built after the oldest left.
+        let _ = take_peak_sentences_held();
+        let got = split_sentences_tail("One a. Two b. Three c. Four d. Five e.", 2).unwrap();
+        let text: Vec<&str> = got.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(text, ["Four d.", "Five e."]);
+        assert_eq!(take_peak_sentences_held(), 2);
     }
 
     #[test]
