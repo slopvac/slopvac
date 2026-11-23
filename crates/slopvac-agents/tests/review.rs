@@ -980,10 +980,7 @@ fn every_data_key_a_model_notice_carries_is_documented() -> Result<(), Box<dyn s
             .lines()
             .find(|l| l.starts_with(&format!("| `data.{key}` |")))
             .ok_or_else(|| format!("data.{key} is not documented"))?;
-        assert!(
-            row.contains(&format!("`{code}`")) || row.contains("both"),
-            "{code} {key}: {row}"
-        );
+        assert!(row.contains(&format!("`{code}`")), "{code} {key}: {row}");
     }
     Ok(())
 }

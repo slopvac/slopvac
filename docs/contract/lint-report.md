@@ -84,7 +84,7 @@ keys, and a consumer must ignore keys it does not know.
 | `data.requested` | `review-model-reported-mismatch` | The reviewer model the review asked for. |
 | `data.requested_source` | `review-model-reported-mismatch` | Where the requested model came from: `flag`, `config` or `provider`. |
 | `data.reported` | `review-model-reported-mismatch` | The model the provider reports. |
-| `data.items` | both | The payload items the reported model covers, as an array of `{role, line}`. Present when `reviewer_source` is `reported`, and always on the mismatch notice. |
+| `data.items` | `review-model-same`, `review-model-reported-mismatch` | The payload items the reported model covers, as an array of `{role, line}`. Present when `reviewer_source` is `reported`, and always on the mismatch notice. |
 
 An `items` entry has the `role` of the payload item (`changed`, `added`, `dropped`, `original_document` or `revised_document`) and its `line`. The line sits in the revision, except for `dropped` and `original_document`, which sit in the original.
 
