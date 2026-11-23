@@ -352,6 +352,181 @@ List the claims a revision changed, added or dropped
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
 
+### `slopvac plugins`
+
+Manage data plugins and code plugins: sync, trust, update.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins list`
+
+List the built-in core and each plugin that the config names.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins search`
+
+Search the plugin indexes that the config names.
+
+| Argument | Description |
+| --- | --- |
+| `<QUERY>` | Words to look for in plugin ids and descriptions. |
+| `--index` | Search only the configured index with this name. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins sync`
+
+Install what the lock pins and verify each digest.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins status`
+
+Show each locked plugin with its kind, install state and trust state.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins outdated`
+
+List newer versions from the pinned sources.
+
+| Argument | Description |
+| --- | --- |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins update`
+
+Move the lock to the newest versions that the config allows.
+
+| Argument | Description |
+| --- | --- |
+| `<ID>` | Update only these plugins. Default: every locked plugin. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins trust`
+
+Record trust for the content hash of a code plugin.
+
+| Argument | Description |
+| --- | --- |
+| `<ID>` | The plugin id. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins untrust`
+
+Remove the trust recorded for a code plugin.
+
+| Argument | Description |
+| --- | --- |
+| `<ID>` | The plugin id. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins pin`
+
+Pin a publisher key for one namespace on one registry host.
+
+| Argument | Description |
+| --- | --- |
+| `<NAMESPACE>` | The publisher namespace. |
+| `<FINGERPRINT>` | The key fingerprint: 64 lowercase hex digits. |
+| `--registry` | The registry host. Default: ghcr.io. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins rotate`
+
+Accept a key rotation for a pinned namespace and replace the pin.
+
+| Argument | Description |
+| --- | --- |
+| `<NAMESPACE>` | The publisher namespace. |
+| `--registry` | The registry host. Default: ghcr.io. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins new`
+
+Create the files of a new plugin.
+
+| Argument | Description |
+| --- | --- |
+| `<NAME>` | The id of the new plugin. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins validate`
+
+Check a plugin's files against their schemas.
+
+| Argument | Description |
+| --- | --- |
+| `<PATH>` | The plugin directory. Default: the current directory. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins test`
+
+Run the tests of a plugin.
+
+| Argument | Description |
+| --- | --- |
+| `<PATH>` | The plugin directory. Default: the current directory. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins build`
+
+Build the artifact of a plugin.
+
+| Argument | Description |
+| --- | --- |
+| `<PATH>` | The plugin directory. Default: the current directory. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
+#### `slopvac plugins publish`
+
+Push the artifact of a plugin to a registry.
+
+| Argument | Description |
+| --- | --- |
+| `<PATH>` | The plugin directory. Default: the current directory. |
+| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
+| `--color` | Colour output. NO_COLOR is honoured. |
+| `--no-color` | Alias for --color never. |
+
 ### `slopvac completions`
 
 Print a shell completion script.
@@ -370,16 +545,6 @@ Write man pages.
 | Argument | Description |
 | --- | --- |
 | `--out-dir` | Write one page per command into this directory. Default: print the main page. |
-| `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
-| `--color` | Colour output. NO_COLOR is honoured. |
-| `--no-color` | Alias for --color never. |
-
-### `slopvac plugins`
-
-Manage data plugins and code plugins: sync, trust, update.
-
-| Argument | Description |
-| --- | --- |
 | `--offline` | Never use the network. SLOPVAC_OFFLINE=1 and `[network] offline = true` do the same, and nothing turns it off. |
 | `--color` | Colour output. NO_COLOR is honoured. |
 | `--no-color` | Alias for --color never. |
