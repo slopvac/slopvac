@@ -12,6 +12,9 @@ use crate::messages::{self, AgentsMessage, AgentsText, codes};
 
 /// The registered code for a text that passes a budget. The `slopvac` binary reports the
 /// engine's budget errors under the same code.
+// TODO(8l4.21.6): take this code from the message registry. `slopvac_context::Error::code()`
+// answers `context-tag-limit`, and the binary writes `context-budget-exceeded` as a literal in
+// `engine.rs`, so no exported constant carries it yet.
 const BUDGET_EXCEEDED: &str = "context-budget-exceeded";
 
 /// A setup or steering failure. Each variant has a stable kebab-case code.
