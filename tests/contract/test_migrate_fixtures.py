@@ -31,6 +31,7 @@ OUTPUTS = (
     "data/legacy/legacy-strict-vocabulary.toml",
     "data/legacy/legacy-normal-vocabulary.toml",
     "data/legacy/legacy-relaxed-vocabulary.toml",
+    "tests/fixtures/preserve/refused-blocklist.json",
     "tests/fixtures/preserve/vectors.json",
 )
 

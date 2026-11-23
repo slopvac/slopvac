@@ -1,0 +1,25 @@
+{
+ "_doc": "Configs that `migrate --preserve-behavior` refuses with migrate-output-invalid, because the vocabulary companion style cannot keep the 2.x levels for them (docs/contract/profiles.md, section 4, limit). `at` is the key that the refusal names. tests/preserve.rs reads this list.",
+ "layouts": {
+  "moved-path-with-a-nested-switch": {
+   "at": "overrides[1].profile",
+   "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"other.toml\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\nprofile = \"relaxed\"\n"
+  },
+  "path-only-in-an-override": {
+   "at": "overrides[0].vocabulary.path",
+   "config": "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"other.toml\"\n"
+  },
+  "path-only-in-an-override-with-a-nested-switch": {
+   "at": "overrides[0].vocabulary.path",
+   "config": "schema_version = 2\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.vocabulary]\npath = \"other.toml\"\n\n[[overrides]]\nfiles = [\"docs/api/**\"]\nprofile = \"relaxed\"\n"
+  },
+  "switch-to-another-profile": {
+   "at": "overrides[0].profile",
+   "config": "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"strict\"\n"
+  },
+  "top-profile-differs-from-the-switch": {
+   "at": "overrides[0].profile",
+   "config": "schema_version = 2\nprofile = \"relaxed\"\n[vocabulary]\npath = \"deploy.toml\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n"
+  }
+ }
+}

@@ -63,6 +63,13 @@ fn every_code_keeps_its_published_text_and_is_registered() {
         ),
         (MigrateMessage::LintFailed { detail: s("d") }, s("lint: d")),
         (
+            MigrateMessage::OutputInvalid {
+                file: s("slopvac.toml"),
+                reason: s("r"),
+            },
+            s("slopvac.toml: the migrated config is refused, so nothing is written: r"),
+        ),
+        (
             MigrateMessage::RunLimit {
                 path: s("docs"),
                 limit: 5000,
@@ -372,6 +379,29 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
                 profile: s("strict"),
             },
             "added styles = [\"core:legacy-strict\"] to reproduce the 2.x strict profile",
+        ),
+        (
+            MigrateText::NoteAddedVocabularyStyle {
+                style: s("core:legacy-strict-vocabulary"),
+                profile: s("strict"),
+            },
+            "added \"core:legacy-strict-vocabulary\" to styles: 2.x ran the vocabulary rules once a word blocklist was set, at the level of the strict profile",
+        ),
+        (
+            MigrateText::ReasonBlocklistInOverride {
+                at: s("overrides[0].vocabulary.path"),
+                line: s("4"),
+            },
+            "`overrides[0].vocabulary.path` on line 4 sets a word blocklist, and the top level sets none. `--preserve-behavior` cannot keep the 2.x vocabulary levels for a blocklist that applies to some files only. A follow-up will support these layouts.",
+        ),
+        (
+            MigrateText::ReasonBlocklistUnderSwitch {
+                at: s("overrides[0].profile"),
+                line: s("5"),
+                profile: s("strict"),
+                top: s("normal"),
+            },
+            "`overrides[0].profile` on line 5 switches files to the 2.x strict profile, which gives the vocabulary rules a different level than the normal profile, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels there. A follow-up will support these layouts.",
         ),
         (
             MigrateText::NoteAddedSwitchBlocks {

@@ -387,3 +387,74 @@ fn a_rule_less_category_is_dropped_with_one_notice_per_use(
         .collect();
     assert!(errors.is_empty(), "{errors:?}");
 }
+
+fn refused_blocklist_layouts() -> Value {
+    let text =
+        fs::read_to_string(crate_dir().join("tests/fixtures/preserve/refused-blocklist.json"))
+            .unwrap();
+    serde_json::from_str::<Value>(&text).unwrap()["layouts"].clone()
+}
+
+#[test]
+fn a_blocklist_layout_the_companion_style_cannot_keep_is_refused() {
+    let layouts = refused_blocklist_layouts();
+    assert!(layouts.as_object().unwrap().len() >= 5);
+    for (name, layout) in layouts.as_object().unwrap() {
+        let err = preserve(layout["config"].as_str().unwrap()).unwrap_err();
+        assert!(
+            matches!(err, Error::BlocklistLayout { .. }),
+            "{name}: {err}"
+        );
+        let at = layout["at"].as_str().unwrap();
+        let text = err.to_string();
+        assert!(text.contains(&format!("`{at}`")), "{name}: {text}");
+        assert!(text.contains("nothing is written"), "{name}: {text}");
+    }
+}
+
+#[rstest]
+// The companion follows the profile that the legacy style reproduces.
+#[case::default_profile("", "normal")]
+#[case::strict("profile = \"strict\"\n", "strict")]
+#[case::relaxed("profile = \"relaxed\"\n", "relaxed")]
+fn a_moved_top_level_blocklist_adds_the_vocabulary_companion_style(
+    #[case] profile: &str,
+    #[case] name: &str,
+) {
+    let rw = preserve(&format!(
+        "schema_version = 2\n{profile}[vocabulary]\npath = \"deploy.toml\"\n"
+    ))
+    .unwrap();
+    let doc = toml::from_str::<toml::Table>(&rw.text).unwrap();
+    let styles: Vec<&str> = doc["styles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        styles,
+        [
+            format!("core:legacy-{name}"),
+            format!("core:legacy-{name}-vocabulary")
+        ]
+    );
+    // The levels sit in the style, not in the user's own layers.
+    assert!(!doc.contains_key("rules"), "{}", rw.text);
+}
+
+#[test]
+fn a_config_without_a_blocklist_gets_no_vocabulary_companion_style() {
+    let rw = preserve("schema_version = 2\nprofile = \"strict\"\n").unwrap();
+    let doc = toml::from_str::<toml::Table>(&rw.text).unwrap();
+    assert_eq!(doc["styles"].as_array().unwrap().len(), 1, "{}", rw.text);
+}
+
+#[test]
+fn a_switch_to_the_profile_of_the_top_level_keeps_a_blocklist() {
+    let rw = preserve(
+        "schema_version = 2\n[vocabulary]\npath = \"deploy.toml\"\n\n\
+         [[overrides]]\nfiles = [\"docs/**\"]\nprofile = \"normal\"\n",
+    );
+    assert!(rw.is_ok(), "{rw:?}");
+}
