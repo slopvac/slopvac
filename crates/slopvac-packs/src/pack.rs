@@ -211,21 +211,11 @@ impl LoadedPack {
             genres.push((path, GenreFile::new(spec, text, root)));
         }
         let mut taggers = Vec::new();
-        if origin == Source::Core {
-            for (path, text) in reader.read_all(&provides.taggers)? {
-                let spec = TaggerSpec::from_yaml(&text)
-                    .and_then(|spec| spec.clone().compile().map(|_| spec))
-                    .map_err(|e| artifact(&path, &text, &e))?;
-                taggers.push(spec);
-            }
-        } else if !provides.taggers.is_empty() {
-            // STUB(slopvac-8l4.5.44): a tagger from a synced pack stays unregistered until the
-            // tag-lookup amplification fix lands. The file is not read either.
-            tracing::debug!(
-                pack = %manifest.id,
-                count = provides.taggers.len(),
-                "skipping the taggers of a synced pack"
-            );
+        for (path, text) in reader.read_all(&provides.taggers)? {
+            let spec = TaggerSpec::from_yaml(&text)
+                .and_then(|spec| spec.clone().compile().map(|_| spec))
+                .map_err(|e| artifact(&path, &text, &e))?;
+            taggers.push(spec);
         }
         let styles = reader.read_all(&provides.styles)?;
         let configs = reader.read_all(&provides.configs)?;
@@ -264,7 +254,7 @@ impl LoadedPack {
         &self.rules
     }
 
-    /// The pack's declarative taggers, in registration order. Empty unless this is the core.
+    /// The pack's declarative taggers, in registration order.
     #[must_use]
     pub fn taggers(&self) -> &[TaggerSpec] {
         &self.taggers

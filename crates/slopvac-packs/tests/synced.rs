@@ -17,8 +17,8 @@ use rstest::rstest;
 use slopvac_config::Presets;
 use slopvac_model::PackId;
 use slopvac_packs::{
-    Budget, Limits, LoadedPack, PackError, Packs, Reference, SyncedError, load_synced,
-    load_synced_within,
+    ArtifactFault, Budget, Limits, LoadedPack, PackError, Packs, Reference, SyncedError,
+    load_synced, load_synced_within,
 };
 use slopvac_plugins::extract::tree_hash;
 use slopvac_plugins::lock::Lockfile;
@@ -435,7 +435,7 @@ fn a_required_version_the_lock_does_not_provide_is_refused() {
 }
 
 #[test]
-fn a_synced_pack_registers_no_taggers() {
+fn a_synced_pack_registers_its_taggers_after_the_core_ones() {
     let mut w = World::new();
     let mut spec = Spec::new("acme");
     spec.provides = "taggers = [\"taggers/t.yaml\"]".into();
@@ -447,9 +447,39 @@ fn a_synced_pack_registers_no_taggers() {
 
     let packs = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap();
 
-    assert_eq!(
-        packs.taggers().count(),
-        Packs::core().unwrap().taggers().count()
+    let ids: Vec<&str> = packs.taggers().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids.len(), Packs::core().unwrap().taggers().count() + 1);
+    assert_eq!(ids.last(), Some(&"t"));
+}
+
+// Policies section 1.9: an authored tagger pattern over 8,192 bytes is refused, whichever pack
+// supplies it. The contract also names the code `tagger-pattern-too-long`, which the loader does
+// not report yet: it files a too-long pattern under the general pattern fault.
+#[test]
+fn a_synced_tagger_over_the_pattern_cap_is_refused() {
+    let mut w = World::new();
+    let mut spec = Spec::new("acme");
+    spec.provides = "taggers = [\"taggers/t.yaml\"]".into();
+    spec.files.push((
+        "taggers/t.yaml",
+        format!(
+            "schema_version: 3\nid: t\ntag: procedure\nmatch:\n  - pattern: '{}'\n",
+            "a".repeat(8_193)
+        ),
+    ));
+    w.install(&spec);
+
+    let err = Packs::with_synced(&ids(&["acme"]), &w.lock(), &w.store()).unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            SyncedError::Pack(PackError::Artifact {
+                fault: ArtifactFault::Pattern,
+                ..
+            })
+        ),
+        "{err}"
     );
 }
 

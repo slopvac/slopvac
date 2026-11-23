@@ -148,14 +148,18 @@ fn write_pack(provides: &str) -> tempfile::TempDir {
     );
     fs::write(dir.path().join(MANIFEST_FILE), manifest).unwrap();
     fs::create_dir(dir.path().join("taggers")).unwrap();
-    // Valid YAML that would fail the tagger schema: the loader must not read it.
-    fs::write(dir.path().join("taggers/t.yaml"), "not: a tagger\n").unwrap();
+    fs::write(
+        dir.path().join("taggers/t.yaml"),
+        "schema_version: 3\nid: t\ntag: procedure\nmatch:\n  - pattern: 'a'\n",
+    )
+    .unwrap();
     dir
 }
 
 #[test]
-fn a_non_core_pack_loads_no_taggers() {
+fn a_non_core_pack_loads_its_taggers() {
     let dir = write_pack("taggers = [\"taggers/t.yaml\"]");
     let pack = LoadedPack::load(&DirSource::new(dir.path()), Source::Pack).unwrap();
-    assert!(pack.taggers().is_empty());
+    let ids: Vec<&str> = pack.taggers().iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["t"]);
 }
