@@ -35,3 +35,5 @@
 "plugin-python-command-dash.toml" = "/plugin/command"
 "plugin-python-request-whitespace.toml" = "/plugin/python"
 "plugin-python-request-too-long.toml" = "/plugin/python"
+"provides-newline-backslash.toml" = "/provides/styles/0"
+"provides-newline-traversal.toml" = "/provides/styles/0"
