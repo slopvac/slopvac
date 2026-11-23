@@ -149,10 +149,12 @@ fn segments(text: &str) -> Result<Vec<Segment>, AgentsError> {
     }
     let mut para: Vec<String> = Vec::new();
     let mut para_line = 0;
-    let flush =
+    // One budget for the whole text: each paragraph draws on what the earlier ones left.
+    let mut budget = SentenceBudget::new(text.len());
+    let mut flush =
         |para: &mut Vec<String>, line: usize, out: &mut Vec<Segment>| -> Result<(), AgentsError> {
             if !para.is_empty() {
-                for s in sentences(&para.join(" "))? {
+                for s in sentences(&para.join(" "), &mut budget)? {
                     out.push(Segment {
                         text: s,
                         line,
@@ -209,12 +211,25 @@ fn normalize(t: &str) -> String {
     }
 }
 
-/// Sentences of one Markdown paragraph, at most as many as `slopvac-context` allows a text
-/// of its length.
-fn sentences(paragraph: &str) -> Result<Vec<String>, AgentsError> {
-    let limit = slopvac_context::sentence_budget(paragraph.len());
-    let found = slopvac_text::split_sentences_within(paragraph, limit)?
+/// The sentences a whole text may hold, as `slopvac-context` allows a text of its length.
+struct SentenceBudget {
+    limit: usize,
+    left: usize,
+}
+
+impl SentenceBudget {
+    fn new(text_len: usize) -> Self {
+        let limit = slopvac_context::sentence_budget(text_len);
+        Self { limit, left: limit }
+    }
+}
+
+/// Sentences of one Markdown paragraph, charged to the budget of the text it is in.
+fn sentences(paragraph: &str, budget: &mut SentenceBudget) -> Result<Vec<String>, AgentsError> {
+    let limit = budget.limit;
+    let found = slopvac_text::split_sentences_within(paragraph, budget.left)?
         .ok_or(slopvac_context::Error::TagLimit { limit })?;
+    budget.left = budget.left.saturating_sub(found.len());
     Ok(found.into_iter().map(|s| s.text).collect())
 }
 
