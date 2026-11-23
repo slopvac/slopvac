@@ -173,10 +173,11 @@ pub(crate) enum AgentsMessage {
         "the provider reported {reported} for part of the review, not the requested {requested}. Check which model reviewed those items."
     )]
     ModelReportedMismatch { requested: String, reported: String },
-    /// The provider's reply names payload items that do not exist or repeats one.
+    /// The provider's reply breaks the completion contract: a repeated, outside or missing item,
+    /// or an entry without text or a model.
     #[code("review-provider-reply-invalid")]
     #[message(
-        "the model provider's reply is invalid at payload item {index}: it repeats an item, names an item outside the {count} payload items, or reports an empty model"
+        "the model provider's reply is invalid at payload item {index}: it repeats an item, names an item outside the {count} payload items, leaves an item out, or has an entry without text or a model"
     )]
     ProviderReplyInvalid { index: usize, count: usize },
     /// The review type named with --type is lighter than the change needs.
@@ -927,7 +928,7 @@ mod tests {
             (
                 AgentsMessage::ProviderReplyInvalid { index: 3, count: 2 },
                 "review-provider-reply-invalid",
-                "the model provider's reply is invalid at payload item 3: it repeats an item, names an item outside the 2 payload items, or reports an empty model",
+                "the model provider's reply is invalid at payload item 3: it repeats an item, names an item outside the 2 payload items, leaves an item out, or has an entry without text or a model",
             ),
             (
                 AgentsMessage::TypeIneligible {

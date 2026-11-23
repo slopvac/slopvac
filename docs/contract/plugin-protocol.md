@@ -145,7 +145,7 @@ The lifecycle methods are `initialize`, `initialized`, `shutdown`, `exit` and `$
 
 Every hook that works on documents takes a `documents` array. The host sends all the documents of one request in one message, up to `maxBatchDocuments` and `maxMessageBytes`. A result holds exactly one entry per document, and each entry echoes the document `id`. Order does not matter, because the host matches by id. A missing or extra entry, or a duplicate id, makes the whole result invalid (`plugin-output-invalid`).
 
-A provider result follows the same rule with the item id. The `item` of each entry must match exactly one requested item. A missing, extra, or duplicate item makes the whole result invalid, and the host does not guess a match by position or text. An entry without `error` must carry `text` and `model`.
+A provider result follows the same rule with the item id. The `item` of each entry must match exactly one requested item. A missing, extra, or duplicate item makes the whole result invalid, and the host does not guess a match by position or text. An entry without `error` must carry `text` and `model`. The `review` command reports a refused provider result as `review-provider-reply-invalid`. That code is the one exception to the generic `plugin-output-invalid`.
 
 A document entry may carry `error`. That fails the one document, and the run exits 2 for it. Other documents in the batch stand. A request-level error fails the whole batch.
 

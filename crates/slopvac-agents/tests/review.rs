@@ -1005,3 +1005,66 @@ fn a_declared_provider_on_the_author_model_adds_one_notice_when_the_reviewer_fla
     assert_eq!(json.get("report").is_some(), !dry_run, "{json}");
     assert_eq!(mock.calls.get(), calls);
 }
+
+/// The `*_source` values of notice data, per the notice-data table in `lint-report.md`.
+/// A case names where the author and the reviewer come from, and which notice carries which.
+#[rstest]
+#[case::author_and_reviewer_flags(
+    &["--author-model", "gpt-5", "--reviewer-model", "gpt-5"], None, None, "author_source", "flag", "reviewer_source", "flag"
+)]
+#[case::author_and_reviewer_config(
+    &[], Some("gpt-5"), Some("gpt-5"), "author_source", "config", "reviewer_source", "config"
+)]
+fn the_same_model_notice_names_where_each_model_came_from(
+    #[case] flags: &[&str],
+    #[case] author_config: Option<&str>,
+    #[case] reviewer_config: Option<&str>,
+    #[case] author_key: &str,
+    #[case] author_source: &str,
+    #[case] reviewer_key: &str,
+    #[case] reviewer_source: &str,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let setting = ReviewEnv {
+        author_model: author_config.map(Into::into),
+        reviewer_model: reviewer_config.map(Into::into),
+        ..ReviewEnv::default()
+    };
+    let mut extra = vec!["--dry-run"];
+    extra.extend_from_slice(flags);
+    let json = plan_json(dir.path(), &extra, &setting);
+    let found = notice_with(&json, "review-model-same");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(found[0]["data"][author_key], author_source, "{json}");
+    assert_eq!(found[0]["data"][reviewer_key], reviewer_source, "{json}");
+}
+
+#[rstest]
+#[case::requested_from_config(Some("gpt-5"), "claude-sonnet-5-5", "config")]
+#[case::requested_from_the_provider(None, "gpt-5", "provider")]
+fn the_mismatch_notice_names_where_the_requested_model_came_from(
+    #[case] reviewer_config: Option<&str>,
+    #[case] declared: &'static str,
+    #[case] requested_source: &str,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Reporting {
+        declared,
+        reported: vec![(0, "gemini-3")],
+    };
+    let setting = ReviewEnv {
+        provider: Some(&provider),
+        reviewer_model: reviewer_config.map(Into::into),
+        ..ReviewEnv::default()
+    };
+    let argv = pair(dir.path(), ORIGINAL, REVISED, &["--type", "rewrite"]);
+    let out = run(&argv, &setting).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let found = notice_with(&json, "review-model-reported-mismatch");
+    assert_eq!(found.len(), 1, "{json}");
+    assert_eq!(
+        found[0]["data"]["requested_source"], requested_source,
+        "{json}"
+    );
+    assert_eq!(found[0]["data"]["reported"], "gemini-3", "{json}");
+}
