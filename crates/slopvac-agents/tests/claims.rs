@@ -381,3 +381,32 @@ fn doubled_hyphens_in_a_quoted_span_split_like_ordinary_tokens() {
     assert_eq!(r.summary.dropped, 1, "{r:?}");
     assert_eq!(r.dropped[0].token_coverage, 0.8, "{:?}", r.dropped[0]);
 }
+
+#[test]
+fn a_paragraph_of_very_short_sentences_is_refused_with_the_budget_code() {
+    // 300000 sentences of 4 bytes. One sentence for every 8 bytes, plus 65,536, allows
+    // 150,000 + 65,536 = 215,536 of them, so the paragraph is not segmented.
+    let paragraph = format!("{}\n", "Go. ".repeat(300_000));
+    let result = compare("The pack is signed.\n", &paragraph);
+    assert!(
+        matches!(&result, Err(e) if e.code() == "context-budget-exceeded"),
+        "{:?}",
+        result.map(|r| r.summary)
+    );
+}
+
+#[test]
+fn many_paragraphs_that_together_pass_the_budget_are_refused_with_the_budget_code() {
+    // 30 paragraphs of 10000 sentences of 4 bytes, about 1.2 MB. Each paragraph fits the
+    // budget of its own length, 5,000 + 65,536, but the 300000 sentences of all of them pass
+    // the budget of the whole text, about 150,000 + 65,536.
+    let paragraph = "Go. ".repeat(10_000);
+    let revised = vec![paragraph; 30].join("\n\n");
+    let result = compare("The pack is signed.\n", &revised);
+    assert!(
+        matches!(&result, Err(slopvac_agents::AgentsError::Context(_))),
+        "{:?}",
+        result.map(|r| r.summary)
+    );
+    assert!(matches!(&result, Err(e) if e.code() == "context-budget-exceeded"));
+}

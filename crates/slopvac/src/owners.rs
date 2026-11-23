@@ -90,6 +90,7 @@ fn agents_message(err: &AgentsError, root: &Path) -> String {
                 .join(", ")
         ),
         AgentsError::Text(e) => format!("text segmentation failed: {e}"),
+        AgentsError::Context(e) => e.to_string(),
         AgentsError::NotUtf8(p) => format!("steering must be UTF-8: {}", path(p)),
         AgentsError::Conflict(p) => format!("file changed during setup; retry: {}", path(p)),
         AgentsError::NotManaged(p) => format!(

@@ -10,6 +10,13 @@ use slopvac_model::{KebabName, NonEmptyString, Notice, NoticeLevel};
 
 use crate::messages::{self, AgentsMessage, AgentsText, codes};
 
+/// The registered code for a text that passes a budget. The `slopvac` binary reports the
+/// engine's budget errors under the same code.
+// TODO(8l4.21.6): take this code from the message registry. `slopvac_context::Error::code()`
+// answers `context-tag-limit`, and the binary writes `context-budget-exceeded` as a literal in
+// `engine.rs`, so no exported constant carries it yet.
+const BUDGET_EXCEEDED: &str = "context-budget-exceeded";
+
 /// A setup or steering failure. Each variant has a stable kebab-case code.
 ///
 /// Every path a variant carries is relative to the project root, or to the working
@@ -61,6 +68,9 @@ pub enum AgentsError {
     /// `slopvac-text` failed to segment or tokenize.
     #[error("{}", messages::text_failed(.0))]
     Text(#[from] slopvac_text::TextError),
+    /// A context budget was passed: the text holds more sentences than its size allows.
+    #[error(transparent)]
+    Context(#[from] slopvac_context::Error),
     /// A step failed after earlier files were already written.
     #[error("{}", messages::partial(.source, .changed))]
     Partial {
@@ -230,6 +240,7 @@ impl AgentsError {
             Self::Coded { code, .. } | Self::Config { code, .. } => code,
             Self::Partial { source, .. } => source.code(),
             Self::Text(_) => codes::TEXT_FAILED,
+            Self::Context(_) => BUDGET_EXCEEDED,
             Self::Io { .. } => codes::IO,
         }
     }

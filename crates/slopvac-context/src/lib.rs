@@ -46,14 +46,15 @@ pub use schema::{GENRE_SCHEMA_VERSION, TAGGER_SCHEMA_VERSION};
 pub use structural::{FrontMatterCondition, Scope, When};
 pub use tag::{ContextGate, Tag, TagIndex, TagRegistry, TagSink, Tagger, normalize_tags};
 pub use view::{
-    BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, split_sentences,
+    BlockKind, BlockView, DocumentView, OwnedBlock, PlainDocument, SentenceView, sentence_budget,
+    split_sentences, split_sentences_within,
 };
 #[cfg(feature = "work-counters")]
 #[doc(hidden)]
 pub use work::{
     take_admonition_steps, take_build_elements, take_evidence_bytes, take_heading_steps,
     take_lookup_steps, take_materialised_tags, take_negation_steps, take_section_steps,
-    take_text_steps,
+    take_sentences_built, take_text_steps,
 };
 
 pub use pattern::MAX_PATTERN_BYTES;

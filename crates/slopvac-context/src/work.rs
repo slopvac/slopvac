@@ -18,6 +18,17 @@ mod enabled {
         static MATERIALISED: Cell<usize> = const { Cell::new(0) };
         static NEGATION: Cell<usize> = const { Cell::new(0) };
         static EVIDENCE: Cell<usize> = const { Cell::new(0) };
+        static SENTENCE: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn sentence(n: usize) {
+        SENTENCE.with(|c| c.set(c.get() + n));
+    }
+
+    /// Sentence records the fallback splitter built since the last call.
+    #[must_use]
+    pub fn take_sentences_built() -> usize {
+        SENTENCE.with(|c| c.replace(0))
     }
 
     pub(crate) fn evidence(n: usize) {
@@ -118,13 +129,13 @@ mod enabled {
 
 #[cfg(feature = "work-counters")]
 pub(crate) use enabled::{
-    admonition, build, evidence, heading, lookup, materialised, negation, section, text,
+    admonition, build, evidence, heading, lookup, materialised, negation, section, sentence, text,
 };
 #[cfg(feature = "work-counters")]
 pub use enabled::{
     take_admonition_steps, take_build_elements, take_evidence_bytes, take_heading_steps,
     take_lookup_steps, take_materialised_tags, take_negation_steps, take_section_steps,
-    take_text_steps,
+    take_sentences_built, take_text_steps,
 };
 
 #[cfg(not(feature = "work-counters"))]
@@ -162,3 +173,7 @@ pub(crate) fn negation(_n: usize) {}
 #[cfg(not(feature = "work-counters"))]
 #[inline(always)]
 pub(crate) fn evidence(_n: usize) {}
+
+#[cfg(not(feature = "work-counters"))]
+#[inline(always)]
+pub(crate) fn sentence(_n: usize) {}

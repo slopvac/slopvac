@@ -306,7 +306,7 @@ impl DeclarativeTagger {
             Some(_) => {}
             None if b.kind == BlockKind::CodeBlock => {}
             None => {
-                for s in doc.sentences(b) {
+                for s in doc.sentences(b)? {
                     if self.fires(s.text)? {
                         sink.push_with(|| self.tag_for(s.span))?;
                     }

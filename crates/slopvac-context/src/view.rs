@@ -10,6 +10,8 @@ use std::ops::Range;
 use slopvac_config::frontmatter::{self, Policy, extract, parse_block};
 use slopvac_config::tree::Value;
 
+use crate::Error;
+
 /// Block kinds a tagger can see.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -73,14 +75,46 @@ pub trait DocumentView {
     /// Blocks in document order.
     fn blocks(&self) -> Vec<BlockView<'_>>;
     /// Sentences of one block.
-    fn sentences<'a>(&self, block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
-        split_sentences(block)
+    ///
+    /// The default splits the block text and stops at [`sentence_budget`] of the document's
+    /// length, so a document of very short sentences cannot make a tagger build a record for
+    /// each.
+    ///
+    /// # Errors
+    /// Returns [`Error::TagLimit`] when the block holds more sentences than that.
+    fn sentences<'a>(&self, block: &BlockView<'a>) -> Result<Vec<SentenceView<'a>>, Error> {
+        let limit = sentence_budget(self.source_len());
+        split_sentences_within(block, limit).ok_or(Error::TagLimit { limit })
     }
+}
+
+/// Bytes of a document for each sentence it may hold. Prose holds one every few dozen bytes,
+/// so one for every 8 sits far above what prose needs.
+const BYTES_PER_SENTENCE: usize = 8;
+
+/// Sentences allowed whatever the length of the document.
+const SENTENCE_HEADROOM: usize = 65_536;
+
+/// The sentences a document of `source_len` bytes may hold, and the most a split of its text
+/// may build.
+#[must_use]
+pub fn sentence_budget(source_len: usize) -> usize {
+    (source_len / BYTES_PER_SENTENCE).saturating_add(SENTENCE_HEADROOM)
 }
 
 /// Split a block into sentences at `.`, `!` or `?` followed by whitespace.
 #[must_use]
 pub fn split_sentences<'a>(block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
+    split_sentences_within(block, usize::MAX).unwrap_or_default()
+}
+
+/// Split a block as [`split_sentences`] does, but stop as soon as more than `max` sentences
+/// are found, so the result never holds more than `max`. Returns `None` in that case.
+#[must_use]
+pub fn split_sentences_within<'a>(
+    block: &BlockView<'a>,
+    max: usize,
+) -> Option<Vec<SentenceView<'a>>> {
     let text = block.text;
     let mut out = Vec::new();
     let mut start = 0;
@@ -100,7 +134,7 @@ pub fn split_sentences<'a>(block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
                 && !at_end
                 && bytes[j].is_ascii_digit();
             if (at_end || spaced) && !digit_dot {
-                push(&mut out, block, start, j);
+                push(&mut out, block, start, j, max)?;
                 start = j;
             }
             i = j;
@@ -108,22 +142,35 @@ pub fn split_sentences<'a>(block: &BlockView<'a>) -> Vec<SentenceView<'a>> {
             i += 1;
         }
     }
-    push(&mut out, block, start, text.len());
-    out
+    push(&mut out, block, start, text.len(), max)?;
+    Some(out)
 }
 
-fn push<'a>(out: &mut Vec<SentenceView<'a>>, block: &BlockView<'a>, a: usize, b: usize) {
-    let raw = &block.text[a..b];
+/// Add the sentence in `a..b` of the block, unless it is empty. `None` when `out` already
+/// holds `max` sentences.
+fn push<'a>(
+    out: &mut Vec<SentenceView<'a>>,
+    block: &BlockView<'a>,
+    a: usize,
+    b: usize,
+    max: usize,
+) -> Option<()> {
+    let raw = block.text.get(a..b).unwrap_or_default();
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return;
+        return Some(());
+    }
+    if out.len() >= max {
+        return None;
     }
     let lead = raw.len() - raw.trim_start().len();
     let s = block.span.start + a + lead;
+    crate::work::sentence(1);
     out.push(SentenceView {
         span: s..s + trimmed.len(),
         text: trimmed,
     });
+    Some(())
 }
 
 /// Plain in-memory document for tests and tools.

@@ -39,6 +39,7 @@ pub fn cell_sentence(text: &str) -> Result<Option<Sentence>, TextError> {
         return Ok(None);
     }
     let leading = text.len() - py_lstrip(text).len();
+    counted::cell();
     Ok(Some(Sentence {
         text: part.to_owned(),
         start: leading,
@@ -297,9 +298,120 @@ fn split_vertical_list<'a>(
     Ok(vec![(text, 0)])
 }
 
+/// Sentence records built on this thread, for the tests that bound allocation.
+#[cfg(feature = "work-counters")]
+mod counted {
+    use std::cell::Cell;
+
+    thread_local! {
+        static BUILT: Cell<usize> = const { Cell::new(0) };
+        static CUTS: Cell<usize> = const { Cell::new(0) };
+        static CELLS: Cell<usize> = const { Cell::new(0) };
+        static LIVE: Cell<usize> = const { Cell::new(0) };
+        static PEAK: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn cut() {
+        CUTS.with(|c| c.set(c.get() + 1));
+    }
+
+    pub(super) fn cell() {
+        CELLS.with(|c| c.set(c.get() + 1));
+    }
+
+    pub(super) fn take_cells() -> usize {
+        CELLS.with(|c| c.replace(0))
+    }
+
+    pub(super) fn take_cuts() -> usize {
+        CUTS.with(|c| c.replace(0))
+    }
+
+    /// The records the caller of the splitter holds now.
+    pub(super) fn live(n: usize) {
+        LIVE.with(|c| c.set(n));
+    }
+
+    pub(super) fn take_peak() -> usize {
+        PEAK.with(|c| c.replace(0))
+    }
+
+    /// A record is being built: it and the records held now are alive together.
+    pub(super) fn built() {
+        BUILT.with(|c| c.set(c.get() + 1));
+        let alive = LIVE.with(Cell::get) + 1;
+        PEAK.with(|c| c.set(c.get().max(alive)));
+    }
+
+    pub(super) fn take() -> usize {
+        BUILT.with(|c| c.replace(0))
+    }
+}
+
+#[cfg(not(feature = "work-counters"))]
+mod counted {
+    #[inline(always)]
+    pub(super) fn built() {}
+
+    #[inline(always)]
+    pub(super) fn cut() {}
+
+    #[inline(always)]
+    pub(super) fn cell() {}
+
+    #[inline(always)]
+    pub(super) fn live(_n: usize) {}
+}
+
+/// The sentence records [`split_sentences`] and [`split_sentences_within`] built on this
+/// thread since the last call. A test that lints a document of very short sentences and
+/// reads the count shows whether the split stops at its limit or builds every sentence first.
+#[cfg(feature = "work-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn take_sentences_built() -> usize {
+    counted::take()
+}
+
+/// The sentence boundaries the splitter found on this thread since the last call. A split
+/// that stops at its limit finds about that many, and one that finds every boundary before it
+/// checks the limit finds them all.
+#[cfg(feature = "work-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn take_cuts_found() -> usize {
+    counted::take_cuts()
+}
+
+/// The records [`cell_sentence`] built on this thread since the last call.
+#[cfg(feature = "work-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn take_cell_records_built() -> usize {
+    counted::take_cells()
+}
+
+/// The most sentence records alive at once on this thread since the last call: the records the
+/// caller of a split held, and the one being built. It is sampled when a record is built.
+#[cfg(feature = "work-counters")]
+#[doc(hidden)]
+#[must_use]
+pub fn take_peak_sentences_held() -> usize {
+    counted::take_peak()
+}
+
 /// Split prose into sentences, applying vertical-list structure before punctuation.
 pub fn split_sentences(text: &str) -> Result<Vec<Sentence>, TextError> {
     split_sentences_counted(text, &mut Work::default())
+}
+
+/// Split prose as [`split_sentences`] does, but stop as soon as more than `max` sentences
+/// are found, so the result never holds more than `max`. Returns `None` in that case.
+///
+/// # Errors
+/// Returns a [`TextError`] when a pattern fails.
+pub fn split_sentences_within(text: &str, max: usize) -> Result<Option<Vec<Sentence>>, TextError> {
+    split_limited(text, &mut Work::default(), max)
 }
 
 /// Units of scanning the splitter does outside the single pass each pattern makes over a
@@ -316,17 +428,71 @@ impl Work {
 }
 
 fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>, TextError> {
-    if py_strip(text).is_empty() {
-        return Ok(Vec::new());
+    Ok(split_limited(text, work, usize::MAX)?.unwrap_or_default())
+}
+
+/// A sentence the splitter found and has not built: the caller decides whether to build it.
+struct Pending<'a> {
+    part: &'a str,
+    start: usize,
+    end: usize,
+}
+
+impl Pending<'_> {
+    /// Build the record: copy the text and read its word count and type.
+    fn build(&self) -> Result<Sentence, TextError> {
+        counted::built();
+        Ok(Sentence {
+            text: self.part.to_owned(),
+            start: self.start,
+            end: self.end,
+            word_count: count_words(self.part)?,
+            text_type: classify_text_type(self.part)?,
+        })
     }
-    let mut out = Vec::new();
+}
+
+/// The sentence in `start..end` of `chunk`, which starts at `chunk_offset` in the text, or
+/// `None` when it holds no word. Nothing is built or classified.
+fn sentence_in(
+    chunk: &str,
+    chunk_offset: usize,
+    start: usize,
+    end: usize,
+) -> Result<Option<Pending<'_>>, TextError> {
+    let raw = chunk.get(start..end).unwrap_or_default();
+    let part = py_strip(raw);
+    let leading = raw.len() - py_lstrip(raw).len();
+    let absolute = chunk_offset + start + leading;
+    if part.is_empty() || !WORDLIKE.is_match(part)? {
+        return Ok(None);
+    }
+    Ok(Some(Pending {
+        part,
+        start: absolute,
+        end: absolute + part.len(),
+    }))
+}
+
+/// Hand each sentence of `text` to `visit` as the splitter finds it, before it is built, and
+/// stop when `visit` returns `false`. Nothing is held between sentences, so the caller decides
+/// what to build and keep, and a record it refuses is never built.
+fn each_sentence(
+    text: &str,
+    work: &mut Work,
+    mut visit: impl FnMut(Pending<'_>) -> Result<bool, TextError>,
+) -> Result<(), TextError> {
+    counted::live(0);
+    if py_strip(text).is_empty() {
+        return Ok(());
+    }
     for (chunk, chunk_offset) in split_vertical_list(text, work)? {
         work.tick(chunk.len());
         let scan = Scan {
             protected: Protected::new(protected_ranges(chunk)?),
             runs: dotted_runs(chunk.as_bytes()),
         };
-        let mut cuts = Vec::new();
+        let mut start = 0;
         let mut index = 0;
         while index < chunk.len() {
             let c = chunk[index..]
@@ -336,33 +502,68 @@ fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>,
             if matches!(c, '.' | '!' | '?')
                 && let Some(end) = terminal_cut(chunk, index, &scan, work)?
             {
-                cuts.push(end);
+                counted::cut();
+                if let Some(found) = sentence_in(chunk, chunk_offset, start, end)?
+                    && !visit(found)?
+                {
+                    return Ok(());
+                }
+                start = end;
                 index = end;
                 continue;
             }
             index += c.len_utf8();
         }
-        let mut start = 0;
-        cuts.push(chunk.len());
-        for end in cuts {
-            let raw = &chunk[start..end];
-            let part = py_strip(raw);
-            let leading = raw.len() - py_lstrip(raw).len();
-            let absolute = chunk_offset + start + leading;
-            start = end;
-            if part.is_empty() || !WORDLIKE.is_match(part)? {
-                continue;
-            }
-            out.push(Sentence {
-                text: part.to_owned(),
-                start: absolute,
-                end: absolute + part.len(),
-                word_count: count_words(part)?,
-                text_type: classify_text_type(part)?,
-            });
+        if let Some(found) = sentence_in(chunk, chunk_offset, start, chunk.len())?
+            && !visit(found)?
+        {
+            return Ok(());
         }
     }
-    Ok(out)
+    Ok(())
+}
+
+/// The sentences of `text`, or `None` when there are more than `max`. The first sentence past
+/// `max` is not built.
+fn split_limited(
+    text: &str,
+    work: &mut Work,
+    max: usize,
+) -> Result<Option<Vec<Sentence>>, TextError> {
+    let mut out = Vec::new();
+    let mut over = false;
+    each_sentence(text, work, |found| {
+        if out.len() >= max {
+            over = true;
+            return Ok(false);
+        }
+        counted::live(out.len());
+        out.push(found.build()?);
+        Ok(true)
+    })?;
+    Ok((!over).then_some(out))
+}
+
+/// The last `keep` sentences of `text`, nearest last, as [`split_sentences`] splits it, held
+/// at most `keep` at a time whatever the length of the text. The oldest record leaves before
+/// the next is built, so a record is never alive beside a full window.
+///
+/// # Errors
+/// Returns a [`TextError`] when a pattern fails.
+pub fn split_sentences_tail(text: &str, keep: usize) -> Result<Vec<Sentence>, TextError> {
+    let mut tail = std::collections::VecDeque::new();
+    if keep == 0 {
+        return Ok(Vec::new());
+    }
+    each_sentence(text, &mut Work::default(), |found| {
+        if tail.len() >= keep {
+            tail.pop_front();
+        }
+        counted::live(tail.len());
+        tail.push_back(found.build()?);
+        Ok(true)
+    })?;
+    Ok(tail.into())
 }
 
 #[cfg(test)]
@@ -374,6 +575,47 @@ mod tests {
         let cell = cell_sentence(" Stops it. Then waits. ").unwrap().unwrap();
         assert_eq!(cell.text, "Stops it. Then waits.");
         assert_eq!((cell.start, cell.end, cell.word_count), (1, 22, 4));
+    }
+
+    #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test: compares the limited split with the unlimited one on a short text"
+    )]
+    fn splitting_within_a_limit_stops_past_it_and_matches_the_plain_split_under_it() {
+        let text = "Go on. Stop it. Wait.";
+        assert_eq!(split_sentences_within(text, 2).unwrap(), None);
+        assert_eq!(
+            split_sentences_within(text, 3).unwrap(),
+            Some(split_sentences(text).unwrap())
+        );
+    }
+
+    #[cfg(feature = "work-counters")]
+    #[test]
+    fn a_limit_of_zero_builds_no_record() {
+        let _ = take_sentences_built();
+        assert_eq!(split_sentences_within("Go on. Stop it.", 0).unwrap(), None);
+        assert_eq!(take_sentences_built(), 0);
+    }
+
+    #[cfg(feature = "work-counters")]
+    #[test]
+    fn a_tail_of_zero_holds_no_record() {
+        let _ = take_peak_sentences_held();
+        assert_eq!(split_sentences_tail("Go on. Stop it.", 0).unwrap(), []);
+        assert_eq!(take_peak_sentences_held(), 0);
+    }
+
+    #[cfg(feature = "work-counters")]
+    #[test]
+    fn a_tail_of_two_never_holds_more_than_two_records_while_it_builds_the_next() {
+        // Five sentences, a window of two: each later one is built after the oldest left.
+        let _ = take_peak_sentences_held();
+        let got = split_sentences_tail("One a. Two b. Three c. Four d. Five e.", 2).unwrap();
+        let text: Vec<&str> = got.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(text, ["Four d.", "Five e."]);
+        assert_eq!(take_peak_sentences_held(), 2);
     }
 
     #[test]

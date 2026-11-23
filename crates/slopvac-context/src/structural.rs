@@ -303,12 +303,12 @@ impl StructuralTagger {
             }
             let hits: Vec<Range<usize>> = match &self.sentence {
                 None if self.scope == Scope::Sentence => {
-                    doc.sentences(b).into_iter().map(|s| s.span).collect()
+                    doc.sentences(b)?.into_iter().map(|s| s.span).collect()
                 }
                 None => vec![b.span.clone()],
                 Some(p) => {
                     let mut v = Vec::new();
-                    for s in doc.sentences(b) {
+                    for s in doc.sentences(b)? {
                         if p.is_match(s.text)? {
                             v.push(s.span);
                         }

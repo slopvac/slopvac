@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 
 use slopvac_model::Span;
 use slopvac_parse::{Document, Projection};
-use slopvac_text::{Pattern, split_sentences};
+use slopvac_text::{Pattern, split_sentences_tail};
 
 /// Where a [`MatchSite`]'s text sits in the projection it was cut from.
 ///
@@ -216,12 +216,14 @@ impl NegatedAntecedent {
                     .is_some_and(|p| std::ptr::eq(p, o.projection))
             })
         });
-        let mut sentences = split_sentences(before).ok()?;
+        let mut sentences = split_sentences_tail(before, ANTECEDENT_SENTENCES).ok()?;
         if sentences.len() < ANTECEDENT_SENTENCES
             && let Some(i) = owner
             && let Some(previous) = blocks[..i].iter().rev().find_map(|b| b.projection.as_ref())
         {
-            let mut earlier = split_sentences(previous.text()).ok()?;
+            // Only the records still missing are asked of the earlier block.
+            let missing = ANTECEDENT_SENTENCES - sentences.len();
+            let mut earlier = split_sentences_tail(previous.text(), missing).ok()?;
             earlier.append(&mut sentences);
             sentences = earlier;
         }
@@ -318,6 +320,10 @@ mod tests {
     /// of `document`, counting across blocks in order. As the engine does for a sentence
     /// rule, the site's text is the sentence that holds the match, and its origin is the
     /// block's projection.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test: the document is a few lines"
+    )]
     fn detects_in(document: &Document, needle: &str, nth: usize) -> bool {
         let mut seen = 0;
         for block in &document.blocks {
@@ -330,7 +336,7 @@ mod tests {
                 seen += text.matches(needle).count();
                 continue;
             };
-            let sentence = split_sentences(text)
+            let sentence = slopvac_text::split_sentences(text)
                 .unwrap()
                 .into_iter()
                 .find(|s| s.start <= at && at < s.end)
