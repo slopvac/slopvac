@@ -162,3 +162,45 @@ fn a_nested_config_assigns_genres_by_paths_relative_to_its_own_directory()
     assert_eq!(sides(dir.path(), false, HISTORY_RULE)?, (1, 1));
     Ok(())
 }
+
+/// The history rule findings that `slopvac lint` itself reports for `path`.
+fn linted_history_count(path: &Path) -> Result<usize, Box<dyn Error>> {
+    let assert = slopvac()
+        .arg("lint")
+        .args(["--format", "json"])
+        .arg(path)
+        .assert();
+    let report: serde_json::Value = serde_json::from_slice(&assert.get_output().stdout)?;
+    let findings = report["documents"][0]["findings"]
+        .as_array()
+        .ok_or("the report has no findings array")?;
+    Ok(findings
+        .iter()
+        .filter(|f| f["rule_id"] == HISTORY_RULE)
+        .count())
+}
+
+/// The `slopvac:` block of a document reaches the settings of the after side as it reaches a
+/// lint run (`docs/contract/config.md`, section 1.1): `genre: change-comms` in the front
+/// matter turns the history rule off, so the comparison counts what `slopvac lint` reports.
+#[rstest]
+#[case::explicit_genre(
+    "---\nslopvac:\n  v: 3\n  genre: change-comms\n---\n# Title\n\n\
+     The retry loop landed in commit 3f9a2c1 after the outage.\n",
+    0
+)]
+#[case::no_block(HISTORY, 1)]
+fn the_after_side_lints_a_document_as_slopvac_lint_does(
+    #[case] doc: &str,
+    #[case] expected: usize,
+) -> Result<(), Box<dyn Error>> {
+    // The 2.x root config gives the migration something to plan. `sub` holds a 3.0 config.
+    let dir = project("schema_version = 2\nprofile = \"normal\"\n", "Plain.\n")?;
+    fs::create_dir_all(dir.path().join("sub"))?;
+    fs::write(dir.path().join("sub/slopvac.toml"), "schema_version = 3\n")?;
+    fs::write(dir.path().join("sub/doc.md"), doc)?;
+    let (_, after) = sides(dir.path(), false, HISTORY_RULE)?;
+    assert_eq!(after, linted_history_count(&dir.path().join("sub/doc.md"))?);
+    assert_eq!(after, expected);
+    Ok(())
+}
