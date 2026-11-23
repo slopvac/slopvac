@@ -591,6 +591,19 @@ pub fn run(matches: &ArgMatches, env: &ReviewEnv<'_>) -> Result<String, AgentsEr
                 None,
             )?);
         }
+        // The provider declares its own model. When that one matches the author, a reviewer
+        // flag naming another model does not hide it. A dry run reports it too, at no cost.
+        if let (ModelCheck::Different, Some(a), Some(p)) = (comparison, &author, env.provider)
+            && compare_models(Some(a), p.model()) == ModelCheck::Same
+        {
+            notices.push(same_model_notice(
+                a,
+                author_source,
+                p.model(),
+                "provider",
+                None,
+            )?);
+        }
     }
     let mut plan = Plan {
         review_type,
@@ -704,28 +717,6 @@ fn call_provider(
         .provider
         .ok_or_else(|| AgentsError::coded(&AgentsMessage::ProviderMissing))?;
     let declared = provider.model();
-    // A provider that declares the author's model gets a notice, unless the plan has one for it.
-    if let Some(author) = plan.author_model.clone()
-        && compare_models(Some(&author), declared) == ModelCheck::Same
-    {
-        let known = plan.notices.iter().any(|n| {
-            n.code.as_str() == "review-model-same"
-                && !n.data.contains_key("items")
-                && n.data
-                    .get("reviewer")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|r| model_key(r) == model_key(declared))
-        });
-        if !known {
-            plan.notices.push(same_model_notice(
-                &author,
-                sources.author,
-                declared,
-                "provider",
-                None,
-            )?);
-        }
-    }
     let reply = provider.review(&plan.payload)?;
     check_reply(&reply, &plan.payload)?;
     // Group the reported items by model, in the order models first appear.
