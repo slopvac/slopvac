@@ -491,6 +491,7 @@ migrate-note-added-rule-entries text
 migrate-note-added-rule-entry text
 migrate-note-added-style text
 migrate-note-added-switch-blocks text
+migrate-note-added-vocabulary-style text
 migrate-note-before-approximate text
 migrate-note-deleted-vale text
 migrate-note-dropped-extension-key text
@@ -514,6 +515,7 @@ migrate-out-preview text
 migrate-out-restored text
 migrate-out-warning text
 migrate-out-wrote text
+migrate-output-invalid error
 migrate-overlap-many-patterns text
 migrate-overlap-unsupported text
 migrate-override-block-one text
@@ -524,6 +526,8 @@ migrate-parse-failed text
 migrate-path-reason text
 migrate-path-too-large text
 migrate-place-top-level text
+migrate-reason-blocklist-in-override text
+migrate-reason-blocklist-under-switch text
 migrate-reason-category-gone text
 migrate-reason-expected-boolean text
 migrate-reason-expected-level text

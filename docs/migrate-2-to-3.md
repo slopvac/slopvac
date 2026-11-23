@@ -69,6 +69,8 @@ It stops, naming the file and line, for a blocklist that is outside the project,
 
 `--preserve-behavior` keeps the 2.x gates with the `core:legacy-<profile>` style. Each override then needs one pattern, such as `docs/api` or `docs/**`. Others fail with `migrate-override-overlap`.
 
+When the 2.x config sets `vocabulary.path`, `--preserve-behavior` also lists the companion style `core:legacy-<profile>-vocabulary`, so the word blocklist keeps reporting at the 2.x level. Two layouts stop with `migrate-output-invalid`, exit 2 and nothing written: a `vocabulary.path` that only an override sets, and a blocklist together with an override that switches to a profile whose vocabulary level differs. A follow-up will support these layouts.
+
 ## 5. Verify and undo
 
 Compare `slopvac lint` with the preview report.
