@@ -86,7 +86,7 @@
   "$id": "https://slopvac.github.io/slopvac/schemas/v3/plugins-lock.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The .slopvac/plugins.lock file. `slopvac plugins sync` writes it and a run reads it. It pins each data plugin and code plugin to a version, a source and a content digest, so a run on another machine loads the same bytes. A digest mismatch makes the run fail with exit 2. The lockfile records no trust: trust is a separate per-user record. The built-in core plugin is compiled into the binary and never appears here. Semantics are specified in docs/contract/plugins.md.",
+  "description": "The .slopvac/plugins.lock file. `slopvac plugins sync` writes it and a run reads it. It pins each data plugin and code plugin to a version, a source and a content digest, so a run on another machine loads the same bytes. A digest mismatch makes the run fail with exit 2. The lockfile records no trust: trust is a separate per-user record. The built-in core plugin is compiled into the binary and never appears here. Semantics are specified in docs/contract/plugins.md. The reader also refuses a file over 1 MiB, and an id, a dependency id or a version over 4096 bytes.",
   "patternProperties": {
     "^x-": true
   },

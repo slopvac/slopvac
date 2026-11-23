@@ -120,7 +120,8 @@ pub const ARTIFACTS: &[Artifact] = &[
              digest, so a run on another machine loads the same bytes. A digest mismatch makes \
              the run fail with exit 2. The lockfile records no trust: trust is a separate \
              per-user record. The built-in core plugin is compiled into the binary and never \
-             appears here. Semantics are specified in docs/contract/plugins.md.",
+             appears here. Semantics are specified in docs/contract/plugins.md. The reader also \
+             refuses a file over 1 MiB, and an id, a dependency id or a version over 4096 bytes.",
         ),
         imports: &["common.schema.json"],
         inline: &[],
