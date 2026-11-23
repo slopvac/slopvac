@@ -15,6 +15,8 @@ Every output comes from one snapshot of its source, so the crate cannot drift fr
 - `data/legacy/catalogue.toml`: each 2.x rule's kind and tier per profile, from the
   2.x ruleset, and each profile's per-rule defaults, from
   `docs/contract/compat/profiles/mapping.json`.
+- `tests/fixtures/preserve/refused-blocklist.json`: the word blocklist layouts that
+  `--preserve-behavior` refuses, with the key each refusal names.
 - `tests/fixtures/preserve/vectors.json`: what `expand()` and `build_regions()` in
   `tests/contract/preserve_expansion.py` return for the scenarios, glob errors and
   region cases of `tests/contract/test_profile_mapping.py`, plus the crate's own
@@ -231,6 +233,57 @@ def style_toml(profile: str) -> str:
     return header + source.read_text(encoding="utf-8")
 
 
+# Layouts that `migrate --preserve-behavior` refuses because the companion vocabulary style
+# cannot keep the 2.x levels (docs/contract/profiles.md, section 4, limit). Each entry is a
+# 2.x config and the key that the refusal names. Any profile switch counts, because a
+# switch block restates the category levels, which outrank the companion style.
+_BLOCKLIST = '[vocabulary]\npath = "deploy.toml"\n'
+_OVERRIDE_PATH = (
+    '[[overrides]]\nfiles = ["docs/**"]\n[overrides.vocabulary]\npath = "other.toml"\n'
+)
+REFUSED_BLOCKLIST_LAYOUTS = {
+    "path-only-in-an-override": (
+        f"schema_version = 2\n{_OVERRIDE_PATH}",
+        "overrides[0].vocabulary.path",
+    ),
+    "path-only-in-an-override-with-a-nested-switch": (
+        f'schema_version = 2\n{_OVERRIDE_PATH}\n[[overrides]]\nfiles = ["docs/api/**"]\nprofile = "relaxed"\n',
+        "overrides[0].vocabulary.path",
+    ),
+    "switch-to-another-profile": (
+        f'schema_version = 2\n{_BLOCKLIST}\n[[overrides]]\nfiles = ["docs/**"]\nprofile = "strict"\n',
+        "overrides[0].profile",
+    ),
+    "moved-path-with-a-nested-switch": (
+        f'schema_version = 2\n{_BLOCKLIST}\n{_OVERRIDE_PATH}\n[[overrides]]\nfiles = ["docs/api/**"]\nprofile = "relaxed"\n',
+        "overrides[1].profile",
+    ),
+    "switch-to-the-same-profile-normal": (
+        f'schema_version = 2\n{_BLOCKLIST}\n[[overrides]]\nfiles = ["docs/**"]\nprofile = "normal"\n',
+        "overrides[0].profile",
+    ),
+    "switch-to-the-same-profile-strict": (
+        f'schema_version = 2\nprofile = "strict"\n{_BLOCKLIST}\n[[overrides]]\nfiles = ["docs/**"]\nprofile = "strict"\n',
+        "overrides[0].profile",
+    ),
+    "top-profile-differs-from-the-switch": (
+        f'schema_version = 2\nprofile = "relaxed"\n{_BLOCKLIST}\n[[overrides]]\nfiles = ["docs/**"]\nprofile = "normal"\n',
+        "overrides[0].profile",
+    ),
+}
+
+
+def refused_blocklist_json() -> str:
+    doc = {
+        "_doc": "Configs that `migrate --preserve-behavior` refuses with migrate-output-invalid, because the vocabulary companion style cannot keep the 2.x levels for them (docs/contract/profiles.md, section 4, limit). `at` is the key that the refusal names. tests/preserve.rs reads this list.",
+        "layouts": {
+            name: {"config": config, "at": at}
+            for name, (config, at) in REFUSED_BLOCKLIST_LAYOUTS.items()
+        },
+    }
+    return json.dumps(doc, indent=1, sort_keys=True) + "\n"
+
+
 def catalogue_toml(ruleset) -> str:
     mapping = json.loads((PROFILES_DIR / "mapping.json").read_text(encoding="utf-8"))
     lines = [
@@ -260,7 +313,9 @@ def _qualified(
         if src.get("categories"):
             out["categories"] = {categories[k]: v for k, v in src["categories"].items()}
         if src.get("rules"):
-            kept = {rules[k]: v for k, v in src["rules"].items() if k not in REMOVED_RULES}
+            kept = {
+                rules[k]: v for k, v in src["rules"].items() if k not in REMOVED_RULES
+            }
             if kept:
                 out["rules"] = kept
 
@@ -363,6 +418,7 @@ def outputs() -> dict[str, str]:
     files = {
         "data/renames.toml": renames_toml(rules, categories, rule_less),
         "data/legacy/catalogue.toml": catalogue_toml(ruleset),
+        "tests/fixtures/preserve/refused-blocklist.json": refused_blocklist_json(),
         "tests/fixtures/preserve/vectors.json": vectors_json(
             ruleset, rules, categories
         ),

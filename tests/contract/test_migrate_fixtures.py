@@ -28,6 +28,7 @@ OUTPUTS = (
     "data/legacy/legacy-strict.toml",
     "data/legacy/legacy-normal.toml",
     "data/legacy/legacy-relaxed.toml",
+    "tests/fixtures/preserve/refused-blocklist.json",
     "tests/fixtures/preserve/vectors.json",
 )
 

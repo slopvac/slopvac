@@ -24,7 +24,7 @@ mod common;
 
 use std::path::Path;
 
-use common::{legacy_engine, read_json, root};
+use common::{legacy_engine_with_blocklist, read_json, root};
 use serde_json::Value;
 use slopvac_engine::Input;
 use slopvac_terms::Blocklist;
@@ -52,7 +52,8 @@ fn the_native_sweep_matches_the_recorded_vale_results() {
     );
     let blocklist =
         Blocklist::load(&root().join("packages/slopvac-lint/examples/blocklist.toml")).unwrap();
-    let engine = legacy_engine("normal").with_blocklist(&blocklist).unwrap();
+    // The oracle ran 2.x with the blocklist, so the rules are on at their 2.x `normal` level.
+    let engine = legacy_engine_with_blocklist("normal", &blocklist);
     let mut problems = Vec::new();
     let mut compared = 0;
     for entry in fixture["documents"].as_array().unwrap() {

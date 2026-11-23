@@ -197,6 +197,17 @@ pub enum Error {
         /// What is wrong with the pattern.
         reason: String,
     },
+    /// `--preserve-behavior` refuses a word blocklist whose 2.x levels the migrated config
+    /// could not keep. Its code is `migrate-output-invalid`. Nothing is written.
+    #[error("{}", messages::text(self))]
+    BlocklistLayout {
+        /// The file.
+        file: String,
+        /// One-based line of the setting that makes the layout unsupported.
+        line: usize,
+        /// Why the layout is refused, from the message catalog.
+        reason: String,
+    },
     /// The rename table is malformed.
     #[error("{}", messages::text(self))]
     RenameTable(String),

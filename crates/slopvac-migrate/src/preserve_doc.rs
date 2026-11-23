@@ -68,13 +68,64 @@ pub(crate) fn apply(
     let Some(config) = read_config(original, &legacy, ctx) else {
         return Ok(());
     };
+    let blocklist = has_blocklist(original.as_table());
+    check_blocklist_layout(original, &config, blocklist, ctx)?;
     let expanded = expand(&config, &legacy).map_err(|e| Error::OverrideOverlap {
         file: ctx.file.to_owned(),
         line: ctx.lines.of(&format!("overrides[{}]", e.block)),
         block: e.block,
         reason: e.reason,
     })?;
-    write(doc, &config, &expanded, ctx);
+    write(doc, &config, &expanded, blocklist, ctx);
+    Ok(())
+}
+
+/// Whether the 2.x table sets `vocabulary.path`, which the plain migration moves into
+/// `terms.blocklists`.
+fn has_blocklist(t: &dyn TableLike) -> bool {
+    t.get("vocabulary")
+        .and_then(Item::as_table_like)
+        .is_some_and(|v| v.contains_key("path"))
+}
+
+/// Refuse the layouts where the companion style cannot keep the 2.x vocabulary levels: a
+/// blocklist that only an override sets, and a blocklist together with any profile switch. A
+/// switch block restates the category levels of the target profile, and those outrank the
+/// companion style's rule levels.
+fn check_blocklist_layout(
+    original: &DocumentMut,
+    config: &Config2,
+    blocklist: bool,
+    ctx: &Ctx<'_>,
+) -> Result<(), Error> {
+    let refuse = |path: String, reason: String| Error::BlocklistLayout {
+        file: ctx.file.to_owned(),
+        line: ctx.lines.of(&path),
+        reason,
+    };
+    let blocks = override_tables(original);
+    if !blocklist && let Some(i) = blocks.iter().position(|t| has_blocklist(*t)) {
+        let at = format!("overrides[{i}].vocabulary.path");
+        let reason = MigrateText::ReasonBlocklistInOverride {
+            at: at.clone(),
+            line: ctx.lines.of(&at).to_string(),
+        }
+        .to_string();
+        return Err(refuse(at, reason));
+    }
+    if blocklist {
+        for (i, block) in config.overrides.iter().enumerate() {
+            if block.profile.is_some() {
+                let at = format!("overrides[{i}].profile");
+                let reason = MigrateText::ReasonBlocklistUnderSwitch {
+                    at: at.clone(),
+                    line: ctx.lines.of(&at).to_string(),
+                }
+                .to_string();
+                return Err(refuse(at, reason));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -190,13 +241,19 @@ fn note_dropped(expanded: &Expanded, ctx: &mut Ctx<'_>) {
     }
 }
 
-fn write(doc: &mut DocumentMut, config: &Config2, expanded: &Expanded, ctx: &mut Ctx<'_>) {
+/// Set `profile` and list the legacy style of the profile in `styles`, followed by its
+/// vocabulary companion when the config moved a word blocklist.
+fn add_styles(doc: &mut DocumentMut, config: &Config2, blocklist: bool, ctx: &mut Ctx<'_>) {
     let style = format!("{STYLE_PREFIX}{}", config.profile);
     if !doc.contains_key("profile") {
         doc.insert("profile", value(&config.profile));
     }
     let mut styles = Array::new();
     styles.push(style.as_str());
+    let companion = format!("{style}-vocabulary");
+    if blocklist {
+        styles.push(companion.as_str());
+    }
     doc.insert("styles", value(styles));
     ctx.notes.push(
         MigrateText::NoteAddedStyle {
@@ -205,6 +262,25 @@ fn write(doc: &mut DocumentMut, config: &Config2, expanded: &Expanded, ctx: &mut
         }
         .to_string(),
     );
+    if blocklist {
+        ctx.notes.push(
+            MigrateText::NoteAddedVocabularyStyle {
+                style: companion,
+                profile: config.profile.clone(),
+            }
+            .to_string(),
+        );
+    }
+}
+
+fn write(
+    doc: &mut DocumentMut,
+    config: &Config2,
+    expanded: &Expanded,
+    blocklist: bool,
+    ctx: &mut Ctx<'_>,
+) {
+    add_styles(doc, config, blocklist, ctx);
     note_dropped(expanded, ctx);
     let first_override = first_override_position(doc);
     patch_layer(

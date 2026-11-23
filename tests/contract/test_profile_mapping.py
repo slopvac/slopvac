@@ -34,8 +34,8 @@ NO_RULE_CATEGORIES = {"meta", "orwell-voice", "prose-density", "ste-vocabulary"}
 REMOVED = set(mapping.load_removed_rules())
 
 
-def _style(profile: str) -> dict:
-    path = mapping.OUT / f"{mapping.style_name(profile)}.toml"
+def _style(profile: str, suffix: str = "") -> dict:
+    path = mapping.OUT / f"{mapping.style_name(profile)}{suffix}.toml"
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
@@ -58,15 +58,20 @@ def test_no_shipped_legacy_preset_sets_a_removed_rule():
     # Read both files directly, not through the generator.
     removed_file = ROOT / "docs" / "contract" / "compat" / "removed-rules.toml"
     removed = {
-        entry["id"]
-        for entry in tomllib.loads(removed_file.read_text("utf-8"))["rules"]
+        entry["id"] for entry in tomllib.loads(removed_file.read_text("utf-8"))["rules"]
     }
     assert removed
     for profile in PROFILES:
-        path = ROOT / "docs" / "contract" / "compat" / "profiles" / f"legacy-{profile}.toml"
+        path = (
+            ROOT
+            / "docs"
+            / "contract"
+            / "compat"
+            / "profiles"
+            / f"legacy-{profile}.toml"
+        )
         rules = tomllib.loads(path.read_text("utf-8")).get("rules", {})
         assert removed & set(rules) == set(), profile
-
 
 
 def test_committed_files_equal_regenerated_output():
@@ -212,6 +217,44 @@ def test_a_legacy_style_names_exactly_the_2x_rules_and_categories(truth):
 
 
 @pytest.mark.parametrize(
+    ("profile", "level"),
+    [("strict", "error"), ("normal", "suggestion"), ("relaxed", "off")],
+)
+def test_the_vocabulary_companion_keeps_the_2x_level_of_each_vocabulary_rule(
+    profile, level
+):
+    # The legacy styles leave the vocabulary rules off. The companion style sets the level
+    # that the 2.x profile gave them, which `migrate --preserve-behavior` lists after the
+    # legacy style when a word blocklist moves. The levels are the category levels that the
+    # styles carried before the rules went off.
+    path = mapping.OUT / f"{mapping.vocabulary_style_name(profile)}.toml"
+    companion = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert companion["rules"] == {
+        "ste-verbs.verb-form-not-listed": level,
+        "ste-words.verb-or-adjective-form-not-permitted": level,
+        "ste-words.word-outside-controlled-vocabulary": level,
+        "ste-words.word-used-in-wrong-part-of-speech": level,
+    }
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_a_legacy_style_turns_every_vocabulary_rule_off(profile):
+    # Vocabulary checking is opt-in: a style cannot set a blocklist, and an
+    # enabled vocabulary rule without one reports a notice on every document.
+    ruleset = mapping.engine_states(profile)[0]
+    vocabulary = {
+        rule.qualified_id
+        for rule in ruleset.all_rules
+        if rule.kind.value == "vocabulary"
+    } - REMOVED
+    assert vocabulary, "the rule data marks no vocabulary rule"
+    entries = _style(profile)["rules"]
+    assert {qid: entries.get(qid) for qid in vocabulary} == dict.fromkeys(
+        vocabulary, "off"
+    )
+
+
+@pytest.mark.parametrize(
     ("profile", "level"), [("strict", None), ("normal", None), ("relaxed", "off")]
 )
 def test_spelling_follows_the_2x_tier(profile, level):
@@ -269,7 +312,8 @@ def test_genres_keep_their_2x_profile():
 
 
 @pytest.mark.parametrize("profile", PROFILES)
-def test_generated_style_validates_against_the_style_schema(profile):
+@pytest.mark.parametrize("name", ["", "-vocabulary"])
+def test_generated_style_validates_against_the_style_schema(profile, name):
     resources = [
         (s["$id"], Resource.from_contents(s))
         for s in (
@@ -279,7 +323,9 @@ def test_generated_style_validates_against_the_style_schema(profile):
     registry = Registry().with_resources(resources)
     schema = json.loads((SCHEMAS / "style.schema.json").read_text("utf-8"))
     errors = list(
-        Draft202012Validator(schema, registry=registry).iter_errors(_style(profile))
+        Draft202012Validator(schema, registry=registry).iter_errors(
+            _style(profile, name)
+        )
     )
     assert errors == []
 
