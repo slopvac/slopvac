@@ -247,13 +247,9 @@ fn note_dropped(expanded: &Expanded, ctx: &mut Ctx<'_>) {
     }
 }
 
-fn write(
-    doc: &mut DocumentMut,
-    config: &Config2,
-    expanded: &Expanded,
-    blocklist: bool,
-    ctx: &mut Ctx<'_>,
-) {
+/// Set `profile` and list the legacy style of the profile in `styles`, followed by its
+/// vocabulary companion when the config moved a word blocklist.
+fn add_styles(doc: &mut DocumentMut, config: &Config2, blocklist: bool, ctx: &mut Ctx<'_>) {
     let style = format!("{STYLE_PREFIX}{}", config.profile);
     if !doc.contains_key("profile") {
         doc.insert("profile", value(&config.profile));
@@ -281,6 +277,16 @@ fn write(
             .to_string(),
         );
     }
+}
+
+fn write(
+    doc: &mut DocumentMut,
+    config: &Config2,
+    expanded: &Expanded,
+    blocklist: bool,
+    ctx: &mut Ctx<'_>,
+) {
+    add_styles(doc, config, blocklist, ctx);
     note_dropped(expanded, ctx);
     let first_override = first_override_position(doc);
     patch_layer(
