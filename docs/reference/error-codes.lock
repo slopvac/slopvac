@@ -205,6 +205,7 @@ context-glob-set-invalid text
 context-match-failed text
 context-pattern-invalid text
 context-read-failed text
+context-sentence-limit text
 context-signal-glob-invalid text
 context-tag-limit text
 context-tagger-duplicate text
@@ -261,6 +262,7 @@ engine-cases-no-rule text
 engine-cases-none text
 engine-cases-plugin-help text
 engine-cases-rule-help text
+engine-cell-budget text
 engine-changed-file-label text
 engine-coded-size-error text
 engine-comments-error text
@@ -363,6 +365,7 @@ engine-rst-world-writable text
 engine-rule-inactive text
 engine-rule-needs-blocklist text
 engine-rule-not-run text
+engine-sentence-budget text
 engine-sentence-mapping text
 engine-suppression-legacy text
 engine-suppression-no-exceptions text

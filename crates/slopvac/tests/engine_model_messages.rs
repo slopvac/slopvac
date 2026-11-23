@@ -22,6 +22,16 @@ use slopvac_messages::Kind;
     Kind::Text,
     "the document has more than {limit} context tags: the document is not checked"
 )]
+#[case::sentence_budget(
+    "engine-sentence-budget",
+    Kind::Text,
+    "the document has more than {limit} sentences: the document is not checked"
+)]
+#[case::cell_budget(
+    "engine-cell-budget",
+    Kind::Text,
+    "the document has more than {limit} table cells: the document is not checked"
+)]
 #[case::terms("engine-terms-error", Kind::Text, "terms file: {reason}")]
 #[case::comments("engine-comments-error", Kind::Text, "comment extraction: {reason}")]
 #[case::internal("engine-internal-error", Kind::Text, "internal error: {reason}")]

@@ -331,8 +331,9 @@ impl<'a> Prepared<'a> {
     /// for the whole document, and at most [`cell_budget`] table cells.
     ///
     /// # Errors
-    /// Returns [`EngineError::TagBuildBudget`] when the document has more sentences than
-    /// its size allows, before the rest are built, and a text error when a split fails.
+    /// Returns [`EngineError::SentenceBudget`] or [`EngineError::CellBudget`] when the document
+    /// has more sentences or table cells than its size allows, before the rest are built, and a
+    /// text error when a split fails.
     pub(crate) fn new(source: &'a str, doc: &'a Document) -> Result<Self, EngineError> {
         let limit = sentence_budget(source.len());
         let mut left = limit;
@@ -351,11 +352,11 @@ impl<'a> Prepared<'a> {
                 // A cell is charged on its own budget, before its record is built.
                 cells_left = cells_left
                     .checked_sub(1)
-                    .ok_or(EngineError::TagBuildBudget { limit: cell_limit })?;
+                    .ok_or(EngineError::CellBudget { limit: cell_limit })?;
                 cell_sentence(projection.text())?.into_iter().collect()
             } else {
                 let found = split_sentences_within(projection.text(), left)?
-                    .ok_or(EngineError::TagBuildBudget { limit })?;
+                    .ok_or(EngineError::SentenceBudget { limit })?;
                 left -= found.len();
                 found
             };
@@ -421,7 +422,7 @@ impl<'a> Prepared<'a> {
                 // The composite is kept, so its sentences are charged to the document.
                 let (left, limit) = self.sentences_left();
                 let sentences = split_sentences_within(projection.text(), left)?
-                    .ok_or(EngineError::TagBuildBudget { limit })?;
+                    .ok_or(EngineError::SentenceBudget { limit })?;
                 self.left.set(left - sentences.len());
                 Ok(Composite {
                     projection,

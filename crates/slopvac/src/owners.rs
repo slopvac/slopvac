@@ -60,7 +60,11 @@ fn terms_error(err: &TermsError) -> CliError {
 /// project `root`; it is joined to `root` and shown through `shown_path`, so it reads relative
 /// to the run root or as `<external>/<file name>` outside it (policies.md, 1.7).
 pub(crate) fn agents_error(err: &AgentsError, root: &Path) -> CliError {
-    CliError::new(err.code(), agents_message(err, root))
+    let error = CliError::new(err.code(), agents_message(err, root));
+    match err.budget() {
+        Some((budget, limit)) => error.with_data(crate::engine::budget_data_of(budget, limit)),
+        None => error,
+    }
 }
 
 fn agents_message(err: &AgentsError, root: &Path) -> String {

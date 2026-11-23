@@ -245,6 +245,17 @@ impl AgentsError {
         }
     }
 
+    /// The budget this error reports as passed, with its limit, when it is a context budget
+    /// refusal: `("tags", n)` or `("sentences", n)`.
+    #[must_use]
+    pub fn budget(&self) -> Option<(&'static str, usize)> {
+        match self {
+            Self::Context(error) => error.budget(),
+            Self::Partial { source, .. } => source.budget(),
+            _ => None,
+        }
+    }
+
     /// The config diagnostics with source snippets, when this is a config error. They may hold
     /// config values: show them to the user, never log them.
     #[must_use]

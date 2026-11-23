@@ -181,6 +181,20 @@ pub(crate) enum EngineText {
         #[count]
         limit: usize,
     },
+    /// A document holds more sentences than its size allows.
+    #[code("engine-sentence-budget")]
+    #[text("the document has more than {limit} sentences: the document is not checked")]
+    SentenceBudget {
+        #[count]
+        limit: usize,
+    },
+    /// A document holds more table cells than its size allows.
+    #[code("engine-cell-budget")]
+    #[text("the document has more than {limit} table cells: the document is not checked")]
+    CellBudget {
+        #[count]
+        limit: usize,
+    },
     /// A terms file failed.
     #[code("engine-terms-error")]
     #[text("terms file: {reason}")]

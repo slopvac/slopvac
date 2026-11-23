@@ -112,7 +112,7 @@ fn a_paragraph_of_one_character_sentences_is_not_checked_before_its_sentences_ar
     let result = engine().lint(&Input::markdown("a.md", &source));
     assert_eq!(
         result.map(|d| d.findings.len()),
-        Err(EngineError::TagBuildBudget { limit })
+        Err(EngineError::SentenceBudget { limit })
     );
 }
 
@@ -134,7 +134,7 @@ fn a_table_of_cells_of_one_character_is_not_checked_and_builds_no_index() {
     let result = engine().lint(&Input::markdown("a.md", &source));
     assert_eq!(
         result.map(|d| d.findings.len()),
-        Err(EngineError::TagBuildBudget { limit })
+        Err(EngineError::CellBudget { limit })
     );
     assert_eq!(take_build_elements(), 0, "an index was built");
     // The cells are charged before their records are built, so no record passes the budget.
@@ -169,7 +169,7 @@ fn a_table_cell_of_many_sentences_is_not_checked_when_a_document_rule_splits_it(
     let result = document_engine().lint(&Input::markdown("a.md", &source));
     assert_eq!(
         result.map(|d| d.findings.len()),
-        Err(EngineError::TagBuildBudget { limit })
+        Err(EngineError::SentenceBudget { limit })
     );
 }
 
@@ -193,7 +193,7 @@ fn a_code_block_of_many_sentences_is_not_checked_when_a_tagger_reads_its_sentenc
         .lint(&Input::markdown("a.md", &source));
     assert_eq!(
         result.map(|d| d.findings.len()),
-        Err(EngineError::TagBuildBudget { limit })
+        Err(EngineError::SentenceBudget { limit })
     );
     Ok(())
 }
@@ -318,7 +318,7 @@ fn a_composite_text_draws_on_the_budget_the_prose_already_used() {
     let result = document_engine().lint(&Input::markdown("a.md", &source));
     assert_eq!(
         result.map(|d| d.findings.len()),
-        Err(EngineError::TagBuildBudget { limit })
+        Err(EngineError::SentenceBudget { limit })
     );
 }
 
@@ -340,7 +340,7 @@ fn a_code_block_draws_on_the_budget_the_prose_already_used()
         .lint(&Input::markdown("a.md", &source));
     assert_eq!(
         result.map(|d| d.findings.len()),
-        Err(EngineError::TagBuildBudget { limit })
+        Err(EngineError::SentenceBudget { limit })
     );
     Ok(())
 }
@@ -365,7 +365,7 @@ fn a_budget_failure_in_a_code_block_wins_over_a_later_tagger_that_fails()
         .lint(&Input::markdown("a.md", &source));
     assert_eq!(
         result.map(|d| d.findings.len()),
-        Err(EngineError::TagBuildBudget { limit })
+        Err(EngineError::SentenceBudget { limit })
     );
     Ok(())
 }

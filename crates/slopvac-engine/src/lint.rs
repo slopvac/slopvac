@@ -251,6 +251,20 @@ pub enum EngineError {
         /// The tags the document was allowed.
         limit: usize,
     },
+    /// The document holds more sentences than its size allows, so it was not split and the
+    /// document is not checked. A very large document of very short sentences causes it.
+    #[error("{}", crate::messages::EngineText::SentenceBudget { limit: *.limit })]
+    SentenceBudget {
+        /// The sentences the document was allowed.
+        limit: usize,
+    },
+    /// The document holds more table cells than its size allows, so no cell record was
+    /// built and the document is not checked. A table of very short cells causes it.
+    #[error("{}", crate::messages::EngineText::CellBudget { limit: *.limit })]
+    CellBudget {
+        /// The table cells the document was allowed.
+        limit: usize,
+    },
     /// A terms file could not be read or is not valid.
     #[error("{}", crate::messages::terms(.0))]
     Terms(String),

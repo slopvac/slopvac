@@ -36,6 +36,7 @@ fn ignore_error() -> ignore::Error {
 )]
 #[case::duplicate_tagger(Error::DuplicateTagger("list".into()), "context-tagger-duplicate")]
 #[case::tag_limit(Error::TagLimit { limit: 1 }, "context-tag-limit")]
+#[case::sentence_limit(Error::SentenceLimit { limit: 1 }, "context-sentence-limit")]
 #[case::unknown_genre(Error::UnknownGenre("memo".into()), "context-genre-unknown")]
 #[case::yaml(TaggerSpec::from_yaml("[").unwrap_err(), "context-yaml-invalid")]
 #[case::glob(

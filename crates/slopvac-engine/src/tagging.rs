@@ -356,7 +356,7 @@ impl DocumentView for View<'_> {
             // read the sentences of a code block whether or not any matches, so the split
             // stops at what the document may still hold.
             return slopvac_context::split_sentences_within(block, self.sentences_left.0).ok_or(
-                ContextError::TagLimit {
+                ContextError::SentenceLimit {
                     limit: self.sentences_left.1,
                 },
             );
@@ -400,6 +400,12 @@ pub(crate) enum TagError {
         /// The most tags, or pieces of tags, the document was allowed.
         limit: usize,
     },
+    /// The document has more sentences than its size allows, so a block was not split.
+    #[error("{}", crate::messages::EngineText::SentenceBudget { limit: *.limit })]
+    SentenceBudget {
+        /// The most sentences the document was allowed.
+        limit: usize,
+    },
     /// The sentences of a block do not lie on the text the block was projected from.
     #[error("{}", crate::messages::EngineText::SentenceMapping)]
     Unmapped,
@@ -409,6 +415,7 @@ impl From<ContextError> for TagError {
     fn from(e: ContextError) -> Self {
         match e {
             ContextError::TagLimit { limit } => Self::Budget { limit },
+            ContextError::SentenceLimit { limit } => Self::SentenceBudget { limit },
             other => Self::Tagger(other),
         }
     }

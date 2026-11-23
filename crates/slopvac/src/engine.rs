@@ -142,13 +142,24 @@ impl Run {
     /// for their own output, so the notice keeps it raw. The error goes to stderr as it is,
     /// so it carries the message escaped once.
     fn skip(&mut self, code: &'static str, shown: &str, message: String) {
+        self.skip_with_data(code, shown, message, serde_json::Map::new());
+    }
+
+    /// `skip` with the machine-readable detail of the refusal in the notice.
+    fn skip_with_data(
+        &mut self,
+        code: &'static str,
+        shown: &str,
+        message: String,
+        data: serde_json::Map<String, serde_json::Value>,
+    ) {
         let error = CliError::new(code, line(&message));
         self.notices.push(Notice {
             code: KebabName::new(code).expect("skip codes are kebab-case"),
             level: NoticeLevel::Warning,
             message: NonEmptyString::new(message).expect("messages are not empty"),
             path: Some(shown.to_owned()),
-            data: serde_json::Map::new(),
+            data,
         });
         self.incomplete.push(error);
     }
@@ -174,15 +185,28 @@ impl Run {
     fn skip_engine_error(&mut self, shown: &str, err: &EngineError) {
         // `EngineError` is `#[non_exhaustive]`, so a new variant lands in `lint-failed` until
         // it gets a code of its own.
-        let code = match err {
-            // The check is incomplete for a reason a pack can fix, so it has a code.
-            EngineError::TagLookupBudget { .. } | EngineError::TagBuildBudget { .. } => {
-                "context-budget-exceeded"
+        // Every refused budget has this code. The `budget` and `limit` keys say which one.
+        let (code, data) = match err.budget() {
+            Some((budget, limit)) => {
+                let mut data = budget_data_of(budget, limit);
+                data.insert("path".into(), shown.into());
+                ("context-budget-exceeded", data)
             }
-            _ => "lint-failed",
+            None => ("lint-failed", serde_json::Map::new()),
         };
-        self.skip(code, shown, format!("{shown}: {}", err.raw_message()));
+        self.skip_with_data(code, shown, format!("{shown}: {}", err.raw_message()), data);
     }
+}
+
+/// The `budget` and `limit` keys of a context budget diagnostic.
+pub(crate) fn budget_data_of(
+    budget: &str,
+    limit: usize,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut data = serde_json::Map::new();
+    data.insert("budget".into(), budget.into());
+    data.insert("limit".into(), limit.into());
+    data
 }
 
 /// The engine kind for a discovered file, or why there is none.
@@ -1436,6 +1460,14 @@ mod skip_tests {
     )]
     #[case::tag_build_budget(
         EngineError::TagBuildBudget { limit: 65_536 },
+        "context-budget-exceeded"
+    )]
+    #[case::sentence_budget(
+        EngineError::SentenceBudget { limit: 65_536 },
+        "context-budget-exceeded"
+    )]
+    #[case::cell_budget(
+        EngineError::CellBudget { limit: 65_536 },
         "context-budget-exceeded"
     )]
     #[case::terms(EngineError::Terms("x".into()), "lint-failed")]

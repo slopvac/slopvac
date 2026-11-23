@@ -256,5 +256,8 @@ fn each_refused_budget_is_named_in_the_notice_data(
     assert_eq!(notice["code"], "context-budget-exceeded", "{report}");
     assert_eq!(notice["data"]["budget"], budget, "{report}");
     assert_eq!(notice["data"]["limit"], limit, "{report}");
+    assert_eq!(notice["data"]["path"], "a.md", "{report}");
+    let message = notice["message"].as_str().unwrap_or_default();
+    assert!(!message.contains("Go.") && !message.contains("must"), "{message}");
     Ok(())
 }
