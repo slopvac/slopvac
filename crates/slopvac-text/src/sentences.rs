@@ -431,14 +431,35 @@ fn split_sentences_counted(text: &str, work: &mut Work) -> Result<Vec<Sentence>,
     Ok(split_limited(text, work, usize::MAX)?.unwrap_or_default())
 }
 
+/// A sentence the splitter found and has not built: the caller decides whether to build it.
+struct Pending<'a> {
+    part: &'a str,
+    start: usize,
+    end: usize,
+}
+
+impl Pending<'_> {
+    /// Build the record: copy the text and read its word count and type.
+    fn build(&self) -> Result<Sentence, TextError> {
+        counted::built();
+        Ok(Sentence {
+            text: self.part.to_owned(),
+            start: self.start,
+            end: self.end,
+            word_count: count_words(self.part)?,
+            text_type: classify_text_type(self.part)?,
+        })
+    }
+}
+
 /// The sentence in `start..end` of `chunk`, which starts at `chunk_offset` in the text, or
-/// `None` when it holds no word.
+/// `None` when it holds no word. Nothing is built or classified.
 fn sentence_in(
     chunk: &str,
     chunk_offset: usize,
     start: usize,
     end: usize,
-) -> Result<Option<Sentence>, TextError> {
+) -> Result<Option<Pending<'_>>, TextError> {
     let raw = chunk.get(start..end).unwrap_or_default();
     let part = py_strip(raw);
     let leading = raw.len() - py_lstrip(raw).len();
@@ -446,22 +467,20 @@ fn sentence_in(
     if part.is_empty() || !WORDLIKE.is_match(part)? {
         return Ok(None);
     }
-    counted::built();
-    Ok(Some(Sentence {
-        text: part.to_owned(),
+    Ok(Some(Pending {
+        part,
         start: absolute,
         end: absolute + part.len(),
-        word_count: count_words(part)?,
-        text_type: classify_text_type(part)?,
     }))
 }
 
-/// Hand each sentence of `text` to `visit` as the splitter finds it, and stop when `visit`
-/// returns `false`. Nothing is held between sentences, so the caller decides what to keep.
+/// Hand each sentence of `text` to `visit` as the splitter finds it, before it is built, and
+/// stop when `visit` returns `false`. Nothing is held between sentences, so the caller decides
+/// what to build and keep, and a record it refuses is never built.
 fn each_sentence(
     text: &str,
     work: &mut Work,
-    mut visit: impl FnMut(Sentence) -> bool,
+    mut visit: impl FnMut(Pending<'_>) -> Result<bool, TextError>,
 ) -> Result<(), TextError> {
     counted::live(0);
     if py_strip(text).is_empty() {
@@ -485,7 +504,7 @@ fn each_sentence(
             {
                 counted::cut();
                 if let Some(found) = sentence_in(chunk, chunk_offset, start, end)?
-                    && !visit(found)
+                    && !visit(found)?
                 {
                     return Ok(());
                 }
@@ -496,7 +515,7 @@ fn each_sentence(
             index += c.len_utf8();
         }
         if let Some(found) = sentence_in(chunk, chunk_offset, start, chunk.len())?
-            && !visit(found)
+            && !visit(found)?
         {
             return Ok(());
         }
@@ -504,7 +523,8 @@ fn each_sentence(
     Ok(())
 }
 
-/// The sentences of `text`, or `None` when there are more than `max`.
+/// The sentences of `text`, or `None` when there are more than `max`. The first sentence past
+/// `max` is not built.
 fn split_limited(
     text: &str,
     work: &mut Work,
@@ -515,29 +535,33 @@ fn split_limited(
     each_sentence(text, work, |found| {
         if out.len() >= max {
             over = true;
-            return false;
+            return Ok(false);
         }
-        out.push(found);
         counted::live(out.len());
-        true
+        out.push(found.build()?);
+        Ok(true)
     })?;
     Ok((!over).then_some(out))
 }
 
 /// The last `keep` sentences of `text`, nearest last, as [`split_sentences`] splits it, held
-/// at most `keep` at a time whatever the length of the text.
+/// at most `keep` at a time whatever the length of the text. The oldest record leaves before
+/// the next is built, so a record is never alive beside a full window.
 ///
 /// # Errors
 /// Returns a [`TextError`] when a pattern fails.
 pub fn split_sentences_tail(text: &str, keep: usize) -> Result<Vec<Sentence>, TextError> {
     let mut tail = std::collections::VecDeque::new();
+    if keep == 0 {
+        return Ok(Vec::new());
+    }
     each_sentence(text, &mut Work::default(), |found| {
         if tail.len() >= keep {
             tail.pop_front();
         }
-        tail.push_back(found);
         counted::live(tail.len());
-        true
+        tail.push_back(found.build()?);
+        Ok(true)
     })?;
     Ok(tail.into())
 }
