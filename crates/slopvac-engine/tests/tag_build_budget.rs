@@ -170,26 +170,28 @@ fn a_table_cell_of_many_sentences_is_not_checked_when_a_document_rule_splits_it(
 }
 
 /// A tagger that reads the sentences of code blocks and matches none.
-fn code_sentence_tagger() -> TagRegistry {
+fn code_sentence_tagger() -> Result<TagRegistry, Box<dyn std::error::Error>> {
     let yaml = "schema_version: 3\nid: c\ntag: k\nscope: sentence\nwhen:\n  block_kind: code-block\n  sentence: 'zzz'\n";
-    let tagger = TaggerSpec::from_yaml(yaml).unwrap().compile().unwrap();
+    let tagger = TaggerSpec::from_yaml(yaml)?.compile()?;
     let mut registry = TagRegistry::new();
-    registry.register(Box::new(tagger)).unwrap();
-    registry
+    registry.register(Box::new(tagger))?;
+    Ok(registry)
 }
 
 #[test]
-fn a_code_block_of_many_sentences_is_not_checked_when_a_tagger_reads_its_sentences() {
+fn a_code_block_of_many_sentences_is_not_checked_when_a_tagger_reads_its_sentences()
+-> Result<(), Box<dyn std::error::Error>> {
     // 300000 sentences of 3 bytes in a fenced code block, and a tagger that matches none.
     let source = format!("```\n{}\n```\n", "a. ".repeat(300_000));
     let limit = source.len() / 8 + 65_536;
     let result = engine()
-        .with_taggers(code_sentence_tagger())
+        .with_taggers(code_sentence_tagger()?)
         .lint(&Input::markdown("a.md", &source));
     assert_eq!(
         result.map(|d| d.findings.len()),
         Err(EngineError::TagBuildBudget { limit })
     );
+    Ok(())
 }
 
 #[test]
@@ -209,12 +211,13 @@ fn the_split_of_a_dense_paragraph_builds_no_record_past_the_budget() {
 }
 
 #[test]
-fn the_split_of_a_dense_code_block_builds_no_record_past_the_budget() {
+fn the_split_of_a_dense_code_block_builds_no_record_past_the_budget()
+-> Result<(), Box<dyn std::error::Error>> {
     let source = format!("```\n{}\n```\n", "a. ".repeat(300_000));
     let limit = source.len() / 8 + 65_536;
     let _ = slopvac_context::take_sentences_built();
     let result = engine()
-        .with_taggers(code_sentence_tagger())
+        .with_taggers(code_sentence_tagger()?)
         .lint(&Input::markdown("a.md", &source));
     assert!(result.is_err());
     let built = slopvac_context::take_sentences_built();
@@ -222,6 +225,7 @@ fn the_split_of_a_dense_code_block_builds_no_record_past_the_budget() {
         built <= limit + 1,
         "{built} records for a budget of {limit}"
     );
+    Ok(())
 }
 
 #[test]
