@@ -165,6 +165,9 @@ fn locate_in_code(
         let Some(rest) = text.strip_prefix("slopvac:") else {
             return true;
         };
+        if is_steering_marker(rest) {
+            return true;
+        }
         if budget.charge(1).is_err() {
             over = true;
             return false;
@@ -281,12 +284,12 @@ impl Literals {
     }
 }
 
-/// Whether `text` starts with the `slopvac:` keyword of a directive: the colon is followed by
-/// white space or the end. A marker such as the `slopvac:begin` of a steering block is no
-/// directive.
-fn is_keyword(text: &str) -> bool {
-    text.strip_prefix("slopvac:")
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+/// Whether the text after `slopvac:` makes the comment a steering marker. A comment whose body
+/// is exactly `slopvac:begin` or `slopvac:end`, compared after trimming, is the marker that
+/// the 2.x steering block carries, not a directive. Every other `slopvac:` comment is read as
+/// a directive, so a mistyped one is reported.
+fn is_steering_marker(after_keyword: &str) -> bool {
+    matches!(after_keyword.trim_end(), "begin" | "end")
 }
 
 /// The byte range of the text after `slopvac:` in a directive comment, if `line` is one.
@@ -304,7 +307,7 @@ fn payload_of(line: &str, style: Style) -> Option<Range<usize>> {
     let skipped = rest.len() - rest.trim_start().len();
     let key_at = after_open + skipped;
     let payload_at = key_at + "slopvac:".len();
-    if !is_keyword(&line[key_at..]) {
+    if !line[key_at..].starts_with("slopvac:") {
         return None;
     }
     let mut end = line.trim_end().len();
@@ -318,7 +321,11 @@ fn payload_of(line: &str, style: Style) -> Option<Range<usize>> {
     if style == Style::Html && !line.trim_end().ends_with("-->") {
         return None;
     }
-    Some(payload_at..end.max(payload_at))
+    let end = end.max(payload_at);
+    if is_steering_marker(&line[payload_at..end]) {
+        return None;
+    }
+    Some(payload_at..end)
 }
 
 /// Split `key=value` pairs at white space; a value may be in double quotes.

@@ -28,6 +28,10 @@ The order comes from the plan, section "Layer order". Environment switches (`SLO
 
 **2.x behavior.** The chain had three layers: the profile, the top-level tables, and each matching `[[overrides]]` block in file order (`config.py`, module docstring and `resolve_for`). Front matter, genres, styles and `extends` did not exist.
 
+#### 1.1.1 Inline directives
+
+A `slopvac:` comment in a document sets fields for that document, in the `directive` layer. A comment whose body is exactly `slopvac:begin` or `slopvac:end` is a steering marker, not a directive.
+
 ### 1.2 Merge rules
 
 **3.0 requirement.** A higher layer patches a lower one field by field.

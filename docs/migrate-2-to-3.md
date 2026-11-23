@@ -13,7 +13,7 @@ Look for:
 - `.slopvac.toml`, or a `slopvac.toml` with no `schema_version = 3`.
 - A `[tool.slopvac]` table in `pyproject.toml`.
 - `slopvac-allow` comments whose `rule=` value has no plugin prefix, such as `rule=prose-format.no-unicode-dash`.
-- Steering blocks between `<!-- slopvac:begin -->` and `<!-- slopvac:end -->` in agent instruction files.
+- Steering blocks between `<!-- slopvac:begin -->` and `<!-- slopvac:end -->` in agent instruction files. Slopvac reads those two comments as [steering markers, not directives](contract/config.md#111-inline-directives).
 
 ## 2. Preview
 
