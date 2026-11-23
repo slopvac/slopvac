@@ -429,62 +429,60 @@ fn every_refusal_vector_has_a_case() {
     assert_eq!(doc["layouts"].as_object().unwrap().len(), 7);
 }
 
+const VOCABULARY_RULES: [&str; 4] = [
+    "ste-verbs.verb-form-not-listed",
+    "ste-words.verb-or-adjective-form-not-permitted",
+    "ste-words.word-outside-controlled-vocabulary",
+    "ste-words.word-used-in-wrong-part-of-speech",
+];
+
+fn rule_ids(layer: &toml::Table) -> BTreeSet<String> {
+    layer
+        .get("rules")
+        .and_then(toml::Value::as_table)
+        .map(|r| {
+            r.keys()
+                .map(|k| k.strip_prefix("core:").unwrap_or(k).to_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn override_blocks(doc: &toml::Table) -> Vec<&toml::Table> {
+    doc.get("overrides")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_table)
+        .collect()
+}
+
 /// A vocabulary rule entry that the user did not author must not sit in a layer above the
-/// styles: it would outrank the companion style and the settings 2.x let win.
-fn assert_no_generated_vocabulary_entry(text: &str, authored: &str, what: &str) {
+/// styles: it would outrank the companion style and the settings 2.x let win. Each written
+/// layer is compared only with the authored layer it came from: the top level with the top
+/// level, and an override with the authored override that has the same `files`. A layer
+/// with no authored counterpart (a guard, moved or switch block) gets no allowance.
+/// Returns the number of layers walked, or the first offending entry.
+fn check_no_generated_vocabulary_entry(text: &str, authored: &str) -> Result<usize, String> {
     let doc = toml::from_str::<toml::Table>(text).unwrap();
     let authored = toml::from_str::<toml::Table>(authored).unwrap_or_default();
-    let is_vocab = |id: &str| {
-        [
-            "ste-verbs.verb-form-not-listed",
-            "ste-words.verb-or-adjective-form-not-permitted",
-            "ste-words.word-outside-controlled-vocabulary",
-            "ste-words.word-used-in-wrong-part-of-speech",
-        ]
-        .iter()
-        .any(|v| id.ends_with(v))
-    };
-    let authored_ids = |table: &toml::Table| -> BTreeSet<String> {
-        let mut ids: BTreeSet<String> = table
-            .get("rules")
-            .and_then(toml::Value::as_table)
-            .map(|r| r.keys().cloned().collect())
-            .unwrap_or_default();
-        for block in table
-            .get("overrides")
-            .and_then(toml::Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            if let Some(r) = block.get("rules").and_then(toml::Value::as_table) {
-                ids.extend(r.keys().cloned());
+    let mut authored_blocks = override_blocks(&authored);
+    let mut layers: Vec<(&toml::Table, BTreeSet<String>)> = vec![(&doc, rule_ids(&authored))];
+    for block in override_blocks(&doc) {
+        let counterpart = authored_blocks
+            .iter()
+            .position(|a| a.get("files") == block.get("files"))
+            .map(|at| authored_blocks.remove(at));
+        layers.push((block, counterpart.map(rule_ids).unwrap_or_default()));
+    }
+    for (layer, allowed) in &layers {
+        for id in rule_ids(layer) {
+            if VOCABULARY_RULES.contains(&id.as_str()) && !allowed.contains(&id) {
+                return Err(format!("generated vocabulary entry {id}\n{text}"));
             }
         }
-        ids
-    };
-    let allowed: BTreeSet<String> = authored_ids(&authored);
-    let mut layers: Vec<&toml::Table> = vec![&doc];
-    layers.extend(
-        doc.get("overrides")
-            .and_then(toml::Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(toml::Value::as_table),
-    );
-    for layer in layers {
-        for id in layer
-            .get("rules")
-            .and_then(toml::Value::as_table)
-            .into_iter()
-            .flat_map(toml::map::Map::keys)
-        {
-            let bare = id.strip_prefix("core:").unwrap_or(id);
-            assert!(
-                !is_vocab(id) || allowed.contains(bare) || allowed.contains(id),
-                "{what}: generated vocabulary entry {id}\n{text}"
-            );
-        }
     }
+    Ok(layers.len())
 }
 
 #[rstest]
@@ -497,6 +495,9 @@ fn assert_no_generated_vocabulary_entry(text: &str, authored: &str, what: &str) 
 #[case::authored_category(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n"
 )]
+#[case::top_rule_with_an_override_that_does_not_author_it(
+    "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"warning\"\n"
+)]
 #[case::category_override(
     "schema_version = 2\n[vocabulary]\npath = \"d.toml\"\n[categories]\nste-words = \"off\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.categories]\nste-words = \"error\"\n"
 )]
@@ -505,7 +506,20 @@ fn assert_no_generated_vocabulary_entry(text: &str, authored: &str, what: &str) 
 )]
 fn an_accepted_blocklist_layout_writes_no_vocabulary_rule_entry_of_its_own(#[case] config: &str) {
     let rw = preserve(config).unwrap();
-    assert_no_generated_vocabulary_entry(&rw.text, config, "written config");
+    let walked = check_no_generated_vocabulary_entry(&rw.text, config)
+        .unwrap_or_else(|why| panic!("written config: {why}"));
+    assert!(walked >= 1, "the check walked no layer\n{}", rw.text);
+}
+
+#[test]
+#[should_panic(
+    expected = "generated vocabulary entry ste-words.word-outside-controlled-vocabulary"
+)]
+fn the_sweep_fails_when_an_override_carries_the_top_level_rule() {
+    let authored = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n";
+    let broken = "schema_version = 2\n[rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n\n[[overrides]]\nfiles = [\"docs/**\"]\n[overrides.rules]\n\"ste-words.word-outside-controlled-vocabulary\" = \"error\"\n";
+    check_no_generated_vocabulary_entry(broken, authored)
+        .unwrap_or_else(|why| panic!("written config: {why}"));
 }
 
 #[rstest]

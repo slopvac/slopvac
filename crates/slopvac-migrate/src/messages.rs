@@ -381,7 +381,7 @@ pub(crate) enum MigrateText {
     /// Why a migrated config is refused: a blocklist and a profile switch.
     #[code("migrate-reason-blocklist-under-switch")]
     #[text(
-        "`{at}` on line {line} switches files to another 2.x profile, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels in the switched files. A follow-up will support these layouts."
+        "`{at}` on line {line} sets `profile` in an override, whatever its value, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels in the files that override covers. A follow-up will support these layouts."
     )]
     ReasonBlocklistUnderSwitch { at: String, line: String },
     /// The vocabulary companion style was added.

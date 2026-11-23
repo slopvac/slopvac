@@ -399,7 +399,7 @@ fn every_sentence_keeps_its_published_text_and_is_registered() {
                 at: s("overrides[0].profile"),
                 line: s("5"),
             },
-            "`overrides[0].profile` on line 5 switches files to another 2.x profile, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels in the switched files. A follow-up will support these layouts.",
+            "`overrides[0].profile` on line 5 sets `profile` in an override, whatever its value, and the project sets a word blocklist. `--preserve-behavior` cannot keep the 2.x vocabulary levels in the files that override covers. A follow-up will support these layouts.",
         ),
         (
             MigrateText::NoteAddedSwitchBlocks {
